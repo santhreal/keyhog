@@ -35,12 +35,15 @@ Deep runs the normal detector corpus and expands bounded recovery around it:
 - comment scanning without the normal comment penalty;
 - static JavaScript recovery for recognized cyclic XOR expressions;
 - static AES-256-CBC recovery when the key, IV, ciphertext, and bindings are
-  literal and internally consistent.
+  literal and internally consistent;
+- static CryptoJS passphrase recovery for the exact immutable wrapper dialect,
+  with strict OpenSSL `Salted__`, EVP_BytesToKey MD5, AES-256-CBC, PKCS#7, and
+  UTF-8 validation.
 
 Static program recovery does not execute JavaScript or invoke Node.js. It
 accepts a small side-effect-free grammar and rejects dynamic operands. The
 implementation lives in `crates/scanner/src/decode/javascript_static.rs` and
-`crates/scanner/src/decode/javascript_static/aes.rs`.
+its `aes.rs` and `cryptojs.rs` submodules.
 
 The static evaluator caps source size, literal arrays, binding count, and
 expression count. Decode recursion also enforces depth, output-size, expansion,

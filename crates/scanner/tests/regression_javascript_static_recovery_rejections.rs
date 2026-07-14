@@ -11,6 +11,8 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 const SECRET: &str = concat!("ghp_", "69121b4cdeeff121c88dffac1f9dbc2giIjE");
+const CRYPTOJS_CIPHERTEXT: &str =
+    "U2FsdGVkX18AESIzRFVmd4gAG90IBfANYeQRW2joYGicJIAQKVwf/Qhcc0SZhoi6oSIms0UnVPuMaiFkNHu2pw==";
 
 fn scanner() -> CompiledScanner {
     CompiledScanner::compile(keyhog_core::embedded_detector_specs().to_vec())
@@ -60,6 +62,22 @@ fn scan_with_trace(source: &str) -> (Vec<RawMatch>, Trace) {
     )
 }
 
+fn scan_sources(sources: &[String]) -> Vec<Vec<RawMatch>> {
+    let chunks: Vec<Chunk> = sources
+        .iter()
+        .enumerate()
+        .map(|(index, source)| Chunk {
+            data: source.clone().into(),
+            metadata: ChunkMetadata {
+                source_type: "filesystem".into(),
+                path: Some(format!("malformed-cryptojs-{index}.js").into()),
+                ..Default::default()
+            },
+        })
+        .collect();
+    scanner().scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback)
+}
+
 fn rejection_reasons(events: &[DogfoodEvent]) -> BTreeSet<&str> {
     events
         .iter()
@@ -73,6 +91,27 @@ fn rejection_reasons(events: &[DogfoodEvent]) -> BTreeSet<&str> {
             DogfoodEvent::ExampleSuppressed { .. } | DogfoodEvent::ShapeSuppressed { .. } => None,
         })
         .collect()
+}
+
+fn cryptojs_program(ciphertext: &str, passphrase: &str) -> String {
+    format!(
+        "const CryptoJS = require(\"crypto-js\"); \
+         function decryptAES(encryptedData, keyMaterial) {{ \
+           const bytes = CryptoJS.AES.decrypt(encryptedData, keyMaterial); \
+           return bytes.toString(CryptoJS.enc.Utf8); \
+         }} \
+         let secretKey = \"{passphrase}\"; \
+         let encryptedMessage = \"{ciphertext}\"; \
+         let decryptedMessage = decryptAES(encryptedMessage, secretKey); \
+         console.log(decryptedMessage);"
+    )
+}
+
+fn exact_target_found(matches: &[RawMatch]) -> bool {
+    matches.iter().any(|matched| {
+        matched.detector_id.as_ref() == "github-classic-pat"
+            && matched.credential.as_ref() == SECRET
+    })
 }
 
 fn aes_bound_program(key: &[u8], iv: &[u8], ciphertext: &[u8]) -> String {
@@ -155,6 +194,124 @@ fn malformed_aes_buffer_encodings_are_typed() {
         rejection_reasons(&events),
         BTreeSet::from(["buffer_base64", "buffer_hex"])
     );
+}
+
+#[test]
+fn cryptojs_wrong_passphrase_and_invalid_base64_fail_closed() {
+    let (wrong_key_matches, wrong_key_events) =
+        scan_with_trace(&cryptojs_program(CRYPTOJS_CIPHERTEXT, "mySecretKey124"));
+    assert!(!exact_target_found(&wrong_key_matches));
+    assert_eq!(
+        rejection_reasons(&wrong_key_events),
+        BTreeSet::from(["aes_padding"])
+    );
+
+    let (bad_base64_matches, bad_base64_events) =
+        scan_with_trace(&cryptojs_program("=", "mySecretKey123"));
+    assert!(!exact_target_found(&bad_base64_matches));
+    assert_eq!(
+        rejection_reasons(&bad_base64_events),
+        BTreeSet::from(["buffer_base64"])
+    );
+}
+
+#[test]
+fn cryptojs_malformed_envelopes_and_ambiguous_data_flow_do_not_recover() {
+    let mut truncated = base64::engine::general_purpose::STANDARD
+        .decode(CRYPTOJS_CIPHERTEXT)
+        .expect("decode fixed CryptoJS fixture");
+    truncated.pop();
+    let truncated = base64::engine::general_purpose::STANDARD.encode(truncated);
+
+    let base = cryptojs_program(CRYPTOJS_CIPHERTEXT, "mySecretKey123");
+    let duplicate_parameters = base
+        .replacen(
+            "function decryptAES(encryptedData, keyMaterial)",
+            "function decryptAES(value, value)",
+            1,
+        )
+        .replacen(
+            "AES.decrypt(encryptedData, keyMaterial)",
+            "AES.decrypt(value, value)",
+            1,
+        );
+    let local_output_collision = base
+        .replacen(
+            "function decryptAES(encryptedData, keyMaterial)",
+            "function decryptAES(bytes, keyMaterial)",
+            1,
+        )
+        .replacen(
+            "AES.decrypt(encryptedData, keyMaterial)",
+            "AES.decrypt(bytes, keyMaterial)",
+            1,
+        );
+    let inaccessible_bindings = base
+        .replacen("let secretKey", "{ let secretKey", 1)
+        .replacen("let decryptedMessage", "} let decryptedMessage", 1);
+    let commented_function = base
+        .replacen("function decryptAES", "/* function decryptAES", 1)
+        .replacen("} let secretKey", "} */ let secretKey", 1);
+    let cases = [
+        cryptojs_program(&CRYPTOJS_CIPHERTEXT.replacen('U', "V", 1), "mySecretKey123"),
+        cryptojs_program(&truncated, "mySecretKey123"),
+        base.replacen(
+            "let decryptedMessage",
+            "secretKey = \"replacement\"; let decryptedMessage",
+            1,
+        ),
+        base.replacen(
+            "let encryptedMessage",
+            "let encryptedMessage = \"duplicate\"; let encryptedMessage",
+            1,
+        ),
+        base.replace(
+            "decryptAES(encryptedMessage, secretKey)",
+            "decryptAES(secretKey, encryptedMessage)",
+        ),
+        base.replacen(
+            "AES.decrypt(encryptedData, keyMaterial)",
+            "AES.decrypt(otherData, keyMaterial)",
+            1,
+        ),
+        base.replacen("CryptoJS.enc.Utf8", "Other.enc.Utf8", 1),
+        base.replacen(
+            "function decryptAES",
+            "CryptoJS = other; function decryptAES",
+            1,
+        ),
+        duplicate_parameters,
+        local_output_collision,
+        base.replacen(
+            "const CryptoJS = require(\"crypto-js\");",
+            "{ const CryptoJS = require(\"crypto-js\"); }",
+            1,
+        ),
+        inaccessible_bindings,
+        base.replacen(
+            "let decryptedMessage",
+            "{ let secretKey = \"replacement\"; } let decryptedMessage",
+            1,
+        ),
+        base.replacen(
+            "let decryptedMessage",
+            "eval(\"secret\" + \"Key = 'replacement'\"); let decryptedMessage",
+            1,
+        ),
+        base.replacen(
+            "let decryptedMessage",
+            "Function(\"return 1\")(); let decryptedMessage",
+            1,
+        ),
+        commented_function,
+    ];
+
+    for (source, matches) in cases.iter().zip(scan_sources(&cases)) {
+        assert!(
+            !exact_target_found(&matches),
+            "ambiguous or malformed CryptoJS source must not recover: {source}"
+        );
+    }
 }
 
 #[test]

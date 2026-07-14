@@ -4,6 +4,18 @@ use keyhog_core::ChunkMetadata;
 
 const SECRET: &str = concat!("ghp_", "69121b4cdeeff121c88dffac1f9dbc2giIjE");
 
+const UPSTREAM_CRYPTOJS_AES: &str = concat!(
+    "const CryptoJS = require(\"crypto-js\");\n",
+    "function decryptAES(encryptedData, keyMaterial) {\n",
+    "  const bytes = CryptoJS.AES.decrypt(encryptedData, keyMaterial);\n",
+    "  return bytes.toString(CryptoJS.enc.Utf8);\n",
+    "}\n",
+    "let secretKey = \"mySecretKey123\";\n",
+    "let encryptedMessage = \"U2FsdGVkX1/A/6wHmBj8+Fry+QrYVv97+87j7QLl5ZY=\";\n",
+    "let decryptedMessage = decryptAES(encryptedMessage, secretKey);\n",
+    "console.log(decryptedMessage);",
+);
+
 fn xor_program(encoded_arrays: bool, valid_callback: bool) -> String {
     let key = [19u8, 71, 211, 4, 99, 28, 8];
     let data: Vec<u8> = SECRET
@@ -74,6 +86,176 @@ fn static_recovery_fails_closed_when_expression_offset_overflows() {
         decode_at(xor_program(false, true), usize::MAX).is_empty(),
         "a recoverable expression without a representable source offset must not emit misattributed plaintext"
     );
+}
+
+#[test]
+fn cryptojs_recovery_fails_closed_when_expression_offset_overflows() {
+    assert_eq!(decode_at(UPSTREAM_CRYPTOJS_AES.to_owned(), 4096).len(), 1);
+    assert!(
+        decode_at(UPSTREAM_CRYPTOJS_AES.to_owned(), usize::MAX).is_empty(),
+        "CryptoJS recovery without a representable source offset must not emit plaintext"
+    );
+}
+
+#[test]
+fn recovers_upstream_cryptojs_passphrase_aes_example() {
+    let base_offset = 4096;
+    let decoded = decode_at(UPSTREAM_CRYPTOJS_AES.to_owned(), base_offset);
+    assert_eq!(decoded.len(), 1);
+    let span = decoded[0]
+        .metadata
+        .decoded_span
+        .expect("CryptoJS recovery carries its exact spliced span");
+    assert_eq!(&decoded[0].data[span.0..span.1], "192.168.17.65");
+    let call_start = UPSTREAM_CRYPTOJS_AES
+        .find("decryptAES(encryptedMessage, secretKey)")
+        .expect("fixed decrypt invocation");
+    assert_eq!(
+        decoded[0].metadata.base_offset + span.0,
+        base_offset + call_start
+    );
+    assert!(
+        decoded[0]
+            .data
+            .contains("let decryptedMessage = 192.168.17.65;"),
+        "splicing only the invocation must preserve assignment context"
+    );
+}
+
+#[test]
+fn cryptojs_recovery_rejects_ambiguous_semantic_bindings() {
+    let duplicate_parameter = UPSTREAM_CRYPTOJS_AES
+        .replace(
+            "function decryptAES(encryptedData, keyMaterial)",
+            "function decryptAES(encryptedData, encryptedData)",
+        )
+        .replace(
+            "AES.decrypt(encryptedData, keyMaterial)",
+            "AES.decrypt(encryptedData, encryptedData)",
+        );
+    assert!(decode(duplicate_parameter).is_empty());
+
+    let output_parameter_collision = UPSTREAM_CRYPTOJS_AES
+        .replace("const bytes =", "const encryptedData =")
+        .replace("return bytes.toString", "return encryptedData.toString");
+    assert!(decode(output_parameter_collision).is_empty());
+}
+
+#[test]
+fn cryptojs_recovery_rejects_inaccessible_lexical_bindings() {
+    let inaccessible_require = UPSTREAM_CRYPTOJS_AES.replace(
+        "const CryptoJS = require(\"crypto-js\");",
+        "{ const CryptoJS = require(\"crypto-js\"); }",
+    );
+    assert!(decode(inaccessible_require).is_empty());
+
+    let inaccessible_ciphertext = UPSTREAM_CRYPTOJS_AES.replace(
+        "let encryptedMessage = \"U2FsdGVkX1/A/6wHmBj8+Fry+QrYVv97+87j7QLl5ZY=\";",
+        "{ let encryptedMessage = \"U2FsdGVkX1/A/6wHmBj8+Fry+QrYVv97+87j7QLl5ZY=\"; }",
+    );
+    assert!(decode(inaccessible_ciphertext).is_empty());
+
+    let shadowed_passphrase = UPSTREAM_CRYPTOJS_AES.replace(
+        "let decryptedMessage",
+        "{ let secretKey = \"replacement\"; }\nlet decryptedMessage",
+    );
+    assert!(decode(shadowed_passphrase).is_empty());
+}
+
+#[test]
+fn cryptojs_recovery_rejects_dynamic_or_non_code_candidates() {
+    let dynamic_eval = UPSTREAM_CRYPTOJS_AES.replace(
+        "let secretKey = \"mySecretKey123\";",
+        "eval(\"let secret\" + \"Key = \\\"mySecretKey123\\\";\");",
+    );
+    assert!(decode(dynamic_eval).is_empty());
+
+    let function_constructor = format!("Function(\"return 1\")();\n{UPSTREAM_CRYPTOJS_AES}");
+    assert!(decode(function_constructor).is_empty());
+
+    let template_literal = format!("const unsupported = `value`;\n{UPSTREAM_CRYPTOJS_AES}");
+    assert!(decode(template_literal).is_empty());
+
+    let escaped_identifier = UPSTREAM_CRYPTOJS_AES.replace(
+        "let decryptedMessage",
+        "secr\\u0065tKey = \"replacement\"; let decryptedMessage",
+    );
+    assert!(decode(escaped_identifier).is_empty());
+
+    let commented_function = UPSTREAM_CRYPTOJS_AES.replace(
+        "function decryptAES(encryptedData, keyMaterial) {\n  const bytes = CryptoJS.AES.decrypt(encryptedData, keyMaterial);\n  return bytes.toString(CryptoJS.enc.Utf8);\n}",
+        "/* function decryptAES(encryptedData, keyMaterial) {\n  const bytes = CryptoJS.AES.decrypt(encryptedData, keyMaterial);\n  return bytes.toString(CryptoJS.enc.Utf8);\n} */",
+    );
+    assert!(decode(commented_function).is_empty());
+}
+
+#[test]
+fn cryptojs_recovery_ignores_identifiers_and_braces_inside_regex_literals() {
+    let source = format!(
+        "const marker = /CryptoJS[{{}}\\/ let ghost = decryptAES(encryptedMessage, secretKey);]/giu;\n{UPSTREAM_CRYPTOJS_AES}"
+    );
+    let decoded = decode(source);
+    assert_eq!(decoded.len(), 1);
+    let span = decoded[0]
+        .metadata
+        .decoded_span
+        .expect("recovered plaintext span");
+    assert_eq!(&decoded[0].data[span.0..span.1], "192.168.17.65");
+
+    let invalid_flags = format!("const marker = /safe/gg;\n{UPSTREAM_CRYPTOJS_AES}");
+    assert!(
+        decode(invalid_flags).is_empty(),
+        "a regex that makes Node reject the program cannot be treated as inert"
+    );
+
+    let escaped_newline = format!("const marker = /safe\\\ntext/;\n{UPSTREAM_CRYPTOJS_AES}");
+    assert!(decode(escaped_newline).is_empty());
+}
+
+#[test]
+fn cryptojs_recovery_rejects_side_effects_fake_loaders_and_control_flow() {
+    let monkeypatched = UPSTREAM_CRYPTOJS_AES.replace(
+        "let decryptedMessage",
+        "require(\"crypto-js\").AES.decrypt = () => ({ toString: () => \"different\" });\nlet decryptedMessage",
+    );
+    assert!(decode(monkeypatched).is_empty());
+
+    let fake_loader = format!(
+        "function wrapper(require) {{\n{UPSTREAM_CRYPTOJS_AES}\n}}\nwrapper(() => ({{}}));"
+    );
+    assert!(decode(fake_loader).is_empty());
+
+    let computed_eval = UPSTREAM_CRYPTOJS_AES.replace(
+        "let decryptedMessage",
+        "globalThis[\"ev\" + \"al\"](\"throw 0\");\nlet decryptedMessage",
+    );
+    assert!(decode(computed_eval).is_empty());
+
+    let conditional = UPSTREAM_CRYPTOJS_AES.replace(
+        "let decryptedMessage",
+        "if (true) { console.log(\"side effect\"); }\nlet decryptedMessage",
+    );
+    assert!(decode(conditional).is_empty());
+
+    for terminator in ["\r", "\u{2028}", "\u{2029}"] {
+        let comment_escape = UPSTREAM_CRYPTOJS_AES.replace(
+            "let decryptedMessage",
+            &format!(
+                "// apparently inert{terminator}require(\"crypto-js\").AES.decrypt = () => ({{}});\nlet decryptedMessage"
+            ),
+        );
+        assert!(
+            decode(comment_escape).is_empty(),
+            "every JavaScript line terminator must end a line comment"
+        );
+    }
+}
+
+#[test]
+fn cryptojs_recovery_rejects_base64url_ciphertext() {
+    let urlsafe = UPSTREAM_CRYPTOJS_AES.replacen('/', "_", 1);
+    assert_ne!(urlsafe, UPSTREAM_CRYPTOJS_AES);
+    assert!(decode(urlsafe).is_empty());
 }
 
 #[test]

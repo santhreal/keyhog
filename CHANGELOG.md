@@ -28,7 +28,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   of autoroute config identity.
 - Decode-enabled scans now perform bounded, side-effect-free recovery of static
   JavaScript XOR and AES-256-CBC expressions whose byte arrays, keys, IVs, and
-  ciphertext are embedded in the source. Literal arrays, Base64-encoded JSON
+  ciphertext are embedded in the source. Exact CryptoJS passphrase wrappers
+  recover OpenSSL `Salted__` envelopes through EVP_BytesToKey MD5 and the same
+  strict AES, padding, and UTF-8 path. Literal arrays, Base64-encoded JSON
   arrays, obfuscated binding names, dead code, and empty-join key/ciphertext
   fragments are supported; dynamic operands, inconsistent bindings, invalid
   padding, non-UTF-8 plaintext, and oversized inputs are rejected. Static XOR

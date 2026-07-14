@@ -316,7 +316,7 @@ fn resolve_binding<T>(
     }
 }
 
-fn decrypt_aes_256_cbc(
+pub(super) fn decrypt_aes_256_cbc(
     key: &[u8],
     iv: &[u8],
     ciphertext: &[u8],

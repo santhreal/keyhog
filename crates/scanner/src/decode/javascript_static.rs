@@ -5,12 +5,13 @@
 //! whose result is therefore deterministic: `String.fromCharCode(...data.map(
 //! (byte, index) => byte ^ key[index % key.length]))`. Both literal numeric
 //! arrays and Base64-encoded JSON byte arrays are supported, along with a
-//! bounded AES-256-CBC form using literal buffers or empty-joined strings.
+//! bounded AES-256-CBC forms using literal buffers, empty-joined strings, or
+//! an exact CryptoJS passphrase wrapper with an OpenSSL `Salted__` envelope.
 //! Dynamic operands, mismatched identifiers, oversized programs, invalid
 //! padding, and non-UTF-8 results fail closed while the original source remains
 //! in the normal scan path.
 
-use super::pipeline::push_decoded_text_chunk;
+use super::pipeline::{push_decoded_text_chunk, push_decoded_text_chunk_spliced_at};
 use super::Decoder;
 use keyhog_core::{Chunk, ChunkMetadata};
 use regex::Regex;
@@ -20,6 +21,7 @@ use std::sync::LazyLock;
 use crate::telemetry::{record_static_recovery_rejection, StaticRecoveryRejection};
 
 mod aes;
+mod cryptojs;
 
 const MAX_STATIC_SOURCE_BYTES: usize = 1024 * 1024;
 const MAX_BYTE_ARRAY_LEN: usize = 64 * 1024;
@@ -60,9 +62,14 @@ impl Decoder for JavaScriptStaticDecoder {
         }
 
         let has_xor_expression = chunk.data.contains("fromCharCode") && chunk.data.contains('^');
-        let has_aes_expression =
+        let has_node_aes_expression =
             chunk.data.contains("createDecipheriv") && chunk.data.contains("aes-256-cbc");
-        if !has_xor_expression && !has_aes_expression {
+        let has_cryptojs_aes_expression = chunk.data.contains("crypto-js")
+            && chunk.data.contains(".AES")
+            && chunk.data.contains(".decrypt")
+            && chunk.data.contains(".enc")
+            && chunk.data.contains(".Utf8");
+        if !has_xor_expression && !has_node_aes_expression && !has_cryptojs_aes_expression {
             return Vec::new();
         }
         if chunk.data.len() > MAX_STATIC_SOURCE_BYTES {
@@ -76,8 +83,26 @@ impl Decoder for JavaScriptStaticDecoder {
         if has_xor_expression {
             recover_xor_plaintexts(&chunk.data, &chunk.metadata, base_offset, &mut emitted);
         }
-        if has_aes_expression {
+        if has_node_aes_expression {
             aes::recover_plaintexts(&chunk.data, &chunk.metadata, base_offset, &mut emitted);
+        }
+        if has_cryptojs_aes_expression {
+            let mut recovered = BTreeSet::new();
+            cryptojs::recover_plaintexts(&chunk.data, &chunk.metadata, base_offset, &mut recovered);
+            for recovery in recovered {
+                let Some(original) = chunk.data.get(recovery.source_start..recovery.source_end)
+                else {
+                    continue;
+                };
+                push_decoded_text_chunk_spliced_at(
+                    &mut decoded_chunks,
+                    chunk,
+                    Some((recovery.source_start, recovery.source_end)),
+                    original,
+                    recovery.plaintext,
+                    self.name(),
+                );
+            }
         }
         for plaintext in emitted {
             push_decoded_text_chunk(&mut decoded_chunks, chunk, plaintext, self.name());

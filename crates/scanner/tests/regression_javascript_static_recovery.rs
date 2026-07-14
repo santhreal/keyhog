@@ -49,6 +49,38 @@ const AES_JOINED_BUFFERS: &str = concat!(
     "_dec.final()]).toString('utf8');",
 );
 
+const CRYPTOJS_PASSPHRASE: &str = concat!(
+    "const CryptoJS = require(\"crypto-js\"); ",
+    "function decryptAES(encryptedData, keyMaterial) { ",
+    "const bytes = CryptoJS.AES.decrypt(encryptedData, keyMaterial); ",
+    "return bytes.toString(CryptoJS.enc.Utf8); } ",
+    "let secretKey = \"mySecretKey123\"; ",
+    "let encryptedMessage = \"U2FsdGVkX18AESIzRFVmd4gAG90IBfANYeQRW2joYGicJIAQKVwf/Qhcc0SZhoi6oSIms0UnVPuMaiFkNHu2pw==\"; ",
+    "let decryptedMessage = decryptAES(encryptedMessage, secretKey); ",
+    "console.log(decryptedMessage);",
+);
+
+const CRYPTOJS_RENAMED: &str = concat!(
+    "const jediw = require(\"crypto-js\"); ",
+    "function vmmgm(encryptedData, hqlpz) { ",
+    "const txfvq = jediw.AES.decrypt(encryptedData, hqlpz); ",
+    "return txfvq.toString(jediw.enc.Utf8); } ",
+    "let spipm = \"mySecretKey123\"; ",
+    "let vbsqh = \"U2FsdGVkX18AESIzRFVmd4gAG90IBfANYeQRW2joYGicJIAQKVwf/Qhcc0SZhoi6oSIms0UnVPuMaiFkNHu2pw==\"; ",
+    "let vzwod = vmmgm(vbsqh, spipm); console.log(vzwod);",
+);
+
+const ANCHORED_SECRET: &str = "X7qP2mN9vK4sR8tY5wC3fH6jL1zB0dE7uA9iQ";
+const CRYPTOJS_ANCHORED_ASSIGNMENT: &str = concat!(
+    "const CryptoJS = require(\"crypto-js\"); ",
+    "function decryptAES(encryptedData, keyMaterial) { ",
+    "const bytes = CryptoJS.AES.decrypt(encryptedData, keyMaterial); ",
+    "return bytes.toString(CryptoJS.enc.Utf8); } ",
+    "let secretKey = \"mySecretKey123\"; ",
+    "let encryptedMessage = \"U2FsdGVkX18AESIzRFVmd7gI6FXxdUdNPWSM65ik+d83V+nCKTW7tVDRu4O8s0pkbE7ruGTUXT/as9OqTMXKMg==\"; ",
+    "let api_key = decryptAES(encryptedMessage, secretKey);",
+);
+
 fn scanner(config: ScannerConfig) -> CompiledScanner {
     CompiledScanner::compile(keyhog_core::embedded_detector_specs().to_vec())
         .expect("compile embedded detector corpus")
@@ -78,6 +110,12 @@ fn exact_target_found(matches: &[RawMatch]) -> bool {
     })
 }
 
+fn credential_found(matches: &[RawMatch], credential: &str) -> bool {
+    matches
+        .iter()
+        .any(|matched| matched.credential.as_ref() == credential)
+}
+
 #[test]
 fn deep_scan_recovers_every_supported_static_program_shape() {
     let scanner = scanner(ScannerConfig::thorough());
@@ -87,6 +125,8 @@ fn deep_scan_recovers_every_supported_static_program_shape() {
         XOR_BASE64_ARRAYS,
         AES_BOUND_BUFFERS,
         AES_JOINED_BUFFERS,
+        CRYPTOJS_PASSPHRASE,
+        CRYPTOJS_RENAMED,
     ] {
         let matches = scan(&scanner, source, ScanBackend::CpuFallback);
         assert!(
@@ -94,6 +134,20 @@ fn deep_scan_recovers_every_supported_static_program_shape() {
             "deep scan must recover the exact plaintext from {source:?}; got {matches:?}"
         );
     }
+}
+
+#[test]
+fn cryptojs_recovery_preserves_assignment_anchor_for_unprefixed_secret() {
+    let scanner = scanner(ScannerConfig::thorough());
+    let matches = scan(
+        &scanner,
+        CRYPTOJS_ANCHORED_ASSIGNMENT,
+        ScanBackend::CpuFallback,
+    );
+    assert!(
+        credential_found(&matches, ANCHORED_SECRET),
+        "the retained api_key assignment must detect the recovered unprefixed credential: {matches:?}"
+    );
 }
 
 #[cfg(feature = "simd")]
@@ -106,11 +160,42 @@ fn simd_scan_recovers_every_supported_static_program_shape() {
         XOR_BASE64_ARRAYS,
         AES_BOUND_BUFFERS,
         AES_JOINED_BUFFERS,
+        CRYPTOJS_PASSPHRASE,
+        CRYPTOJS_RENAMED,
+        CRYPTOJS_ANCHORED_ASSIGNMENT,
     ] {
-        let matches = scan(&scanner, source, ScanBackend::SimdCpu);
+        let mut cpu = scan(&scanner, source, ScanBackend::CpuFallback);
+        let mut simd = scan(&scanner, source, ScanBackend::SimdCpu);
+        cpu.sort();
+        simd.sort();
+        assert_eq!(
+            simd, cpu,
+            "SIMD and CPU static recovery must return identical findings for {source:?}"
+        );
         assert!(
-            exact_target_found(&matches),
-            "SIMD and CPU decode admission must recover the same plaintext from {source:?}; got {matches:?}"
+            exact_target_found(&simd) || credential_found(&simd, ANCHORED_SECRET),
+            "SIMD route must preserve the recovered credential"
+        );
+    }
+}
+
+#[cfg(feature = "gpu")]
+#[test]
+fn cryptojs_static_recovery_has_exact_gpu_cpu_parity() {
+    let scanner = scanner(ScannerConfig::thorough());
+    for source in [
+        CRYPTOJS_PASSPHRASE,
+        CRYPTOJS_RENAMED,
+        CRYPTOJS_ANCHORED_ASSIGNMENT,
+    ] {
+        let mut cpu = scan(&scanner, source, ScanBackend::CpuFallback);
+        let mut gpu = scan(&scanner, source, ScanBackend::Gpu);
+        cpu.sort();
+        gpu.sort();
+        assert_eq!(gpu, cpu, "CryptoJS recovery must be backend-neutral");
+        assert!(
+            exact_target_found(&gpu) || credential_found(&gpu, ANCHORED_SECRET),
+            "GPU route must preserve the recovered credential"
         );
     }
 }
@@ -118,7 +203,7 @@ fn simd_scan_recovers_every_supported_static_program_shape() {
 #[test]
 fn fast_scan_does_not_run_static_program_recovery() {
     let scanner = scanner(ScannerConfig::fast());
-    for source in [XOR_LITERAL, AES_BOUND_BUFFERS] {
+    for source in [XOR_LITERAL, AES_BOUND_BUFFERS, CRYPTOJS_PASSPHRASE] {
         let matches = scan(&scanner, source, ScanBackend::CpuFallback);
         assert!(
             !exact_target_found(&matches),
