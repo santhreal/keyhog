@@ -455,7 +455,7 @@ pub(super) fn process_entry(
         Ok(kind) => kind,
         Err(error) => {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            let _ = emit(Err(SourceError::Other(format!(
+            emit(Err(SourceError::Other(format!(
                 "failed to inspect image metadata signature for '{}': {error}; image metadata was not scanned",
                 display_path(&path)
             ))));
@@ -524,13 +524,13 @@ pub(super) fn process_entry(
                     let _event = crate::record_skip_event(
                         crate::SourceSkipEvent::StructuredSourceParseFailure,
                     );
-                    let _ = emit(Err(error));
+                    emit(Err(error));
                 }
             }
             Err(error) => {
                 let _event =
                     crate::record_skip_event(crate::SourceSkipEvent::StructuredSourceParseFailure);
-                let _ = emit(Err(error));
+                emit(Err(error));
             }
         }
         return;
@@ -827,7 +827,7 @@ pub(super) fn process_entry(
                             std::io::ErrorKind::PermissionDenied,
                             "large file is locked by another process",
                         );
-                        let _ = emit(Err(keyhog_core::SourceError::Io(error))); // LAW10: locked fallback is visible partial coverage, not a silent clean file
+                        emit(Err(keyhog_core::SourceError::Io(error)));
                         return;
                     }
                 }
@@ -868,7 +868,7 @@ pub(super) fn process_entry(
                                 );
                                 let _event =
                                     crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                                let _ = emit(Err(keyhog_core::SourceError::Io(error))); // LAW10: unused-binding marker; no runtime effect, not a fallback
+                                emit(Err(keyhog_core::SourceError::Io(error)));
                                 return;
                             }
                         }
