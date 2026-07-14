@@ -128,6 +128,12 @@ impl ServerState {
     fn uptime_secs(&self) -> u64 {
         self.started_at.elapsed().as_secs()
     }
+
+    fn backend_policy(&self) -> &'static str {
+        self.backend_override
+            .map(ScanBackend::label)
+            .unwrap_or("autoroute")
+    }
 }
 
 /// Run the daemon until a `Shutdown` request comes in or the
@@ -417,6 +423,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             keyhog_version: KEYHOG_VERSION.to_string(),
             git_hash: keyhog_core::git_hash().to_string(),
             detector_rules_digest: state.detector_rules_digest.clone(),
+            backend_policy: state.backend_policy().to_string(),
             detector_count: state.detector_count,
             uptime_secs: state.uptime_secs(),
         },

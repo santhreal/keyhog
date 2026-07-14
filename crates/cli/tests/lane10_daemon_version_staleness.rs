@@ -58,6 +58,7 @@ async fn spawn_mock_daemon_identity(
             keyhog_version,
             git_hash,
             detector_rules_digest,
+            backend_policy: "autoroute".to_string(),
             detector_count: 902,
             uptime_secs: 1,
         },
@@ -93,6 +94,25 @@ async fn spawn_mock_daemon_response(socket: PathBuf, response: Response) {
     });
     // Give the spawned accept loop a beat to be ready.
     tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+}
+
+async fn spawn_mock_daemon_backend_policy(socket: PathBuf, backend_policy: &str) {
+    let detectors = keyhog_core::load_embedded_detectors_or_fail().expect("embedded detectors");
+    let detector_rules_digest =
+        keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&detectors));
+    spawn_mock_daemon_response(
+        socket,
+        Response::Hello {
+            wire_version: WIRE_VERSION,
+            keyhog_version: env!("CARGO_PKG_VERSION").to_string(),
+            git_hash: keyhog_core::git_hash().to_string(),
+            detector_rules_digest,
+            backend_policy: backend_policy.to_string(),
+            detector_count: detectors.len(),
+            uptime_secs: 1,
+        },
+    )
+    .await;
 }
 
 async fn spawn_stuck_handshake_daemon(socket: PathBuf) -> tokio::task::JoinHandle<()> {
@@ -156,6 +176,7 @@ async fn spawn_stop_protocol_mismatch_daemon(
                 keyhog_version: env!("CARGO_PKG_VERSION").to_string(),
                 git_hash: keyhog_core::git_hash().to_string(),
                 detector_rules_digest,
+                backend_policy: "autoroute".to_string(),
                 detector_count,
                 uptime_secs: 1,
             },
@@ -311,6 +332,25 @@ async fn connect_still_rejects_wire_version_mismatch() {
     assert!(
         msg.contains("wire version mismatch"),
         "wire-version mismatch must be reported distinctly: {msg}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn connect_rejects_unrecognized_daemon_backend_policy() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = dir.path().join("bad-backend-policy.sock");
+    spawn_mock_daemon_backend_policy(socket.clone(), "prefer-gpu-then-fallback").await;
+
+    let error = client::connect(&socket)
+        .await
+        .err()
+        .expect("an undisclosed fallback policy must not be accepted");
+    let message = format!("{error:#}");
+    assert!(
+        message.contains("invalid backend policy")
+            && message.contains("prefer-gpu-then-fallback")
+            && message.contains("Restart it"),
+        "invalid daemon routing policy must fail with repair guidance: {message}"
     );
 }
 

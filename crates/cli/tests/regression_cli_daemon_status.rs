@@ -337,7 +337,9 @@ fn daemon_help_names_start_stop_status_subactions() {
         );
     }
     assert!(
-        stdout.contains("Print uptime, scans served, active scans, and detector count"),
+        stdout.contains(
+            "Print uptime, scans served, active scans, detector count, and backend policy"
+        ),
         "daemon help must carry the `status` description; got:\n{stdout}"
     );
 }
@@ -352,7 +354,9 @@ fn daemon_status_help_describes_its_output_exit_0() {
     );
     let stdout = stdout_of(&out);
     assert!(
-        stdout.contains("Print uptime, scans served, active scans, and detector count"),
+        stdout.contains(
+            "Print uptime, scans served, active scans, detector count, and backend policy"
+        ),
         "status --help must describe exactly what it prints; got:\n{stdout}"
     );
     assert!(

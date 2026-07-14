@@ -151,7 +151,10 @@ stderr before the identical request runs in process. In `--daemon=on` it is an
 error. Wire v4 scan-result frames require suppression telemetry, exact dogfood
 aggregates, bounded dogfood details, and source-coverage fields. Missing fields
 are malformed protocol data, not
-permission to synthesize zeroes that could hide incomplete scanning.
+permission to synthesize zeroes that could hide incomplete scanning. Wire v5
+also carries the daemon-owned backend policy. Clients reject malformed policy
+labels, and `daemon status` distinguishes persisted autoroute from a forced
+startup diagnostic backend.
 
 ## Autoroute semantics
 
@@ -180,7 +183,8 @@ execution fails with the GPU error status.
 
 `daemon start --request-timeout-secs <N>` bounds the time a client may take to
 finish a request frame (default `300`). `daemon status` reports uptime, scans
-served, active scans, detector count, and any build/corpus identity mismatch. A
+served, active scans, detector count, backend policy, and any build/corpus
+identity mismatch. A
 stale socket is removed only after ownership and directory trust checks pass.
 
 The status counter labeled `scans served` currently counts completed scan

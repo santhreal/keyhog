@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use tokio::io::AsyncWriteExt;
 
 #[tokio::test]
-async fn daemon_wire_v4_hello_roundtrip() {
+async fn daemon_wire_v5_hello_roundtrip() {
     let (mut client, mut server) = tokio::io::duplex(64 * 1024);
 
     frame::write_request(&mut client, &Request::Hello)
@@ -25,6 +25,7 @@ async fn daemon_wire_v4_hello_roundtrip() {
             keyhog_version: "test".into(),
             git_hash: "abc123".into(),
             detector_rules_digest: "rules123".into(),
+            backend_policy: "cpu-fallback".into(),
             detector_count: 1,
             uptime_secs: 0,
         },

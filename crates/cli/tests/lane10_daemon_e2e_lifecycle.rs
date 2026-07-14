@@ -92,6 +92,10 @@ fn daemon_start_status_stop_lifecycle_and_socket_hygiene() {
             && out.contains("run in-process"),
         "status must disclose the daemon scan scope and in-process-only post-steps; got {out}"
     );
+    assert!(
+        out.contains("backend policy: autoroute") && out.contains("persisted warm-route evidence"),
+        "status must disclose that this daemon resolves persisted warm routes; got {out}"
+    );
 
     // stop exits 0 and removes the socket.
     assert_eq!(stop_daemon(&socket), Some(0), "daemon stop must exit 0");

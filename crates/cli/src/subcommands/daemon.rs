@@ -136,6 +136,7 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
     // very reason their scans are silently routed in-process.
     let stale = conn.is_stale();
     let daemon_version = conn.daemon_version().to_string();
+    let backend_policy = conn.backend_policy().to_string();
     let stale_reason = conn.stale_reason().map(str::to_string);
     match conn.round_trip(&Request::Health).await? {
         Response::Health {
@@ -153,6 +154,13 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
                  skip-cache, and verification; directories, git/remote sources, policy \
                  changes, baseline, and --verify run in-process."
             );
+            if backend_policy == "autoroute" {
+                println!("backend policy: autoroute (persisted warm-route evidence)");
+            } else {
+                println!(
+                    "backend policy: forced {backend_policy} (daemon startup diagnostic override)"
+                );
+            }
             if stale {
                 let palette = style::for_stderr();
                 eprintln!(

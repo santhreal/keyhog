@@ -85,6 +85,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - `keyhog backend --autoroute --autoroute-cache PATH` now inspects the exact
   non-default cache selected by a scan or `[system].autoroute_cache` instead of
   falsely reporting only the platform-default cache state.
+- Daemon wire v5 exposes the daemon-owned backend policy during every client
+  handshake. `daemon status` now distinguishes persisted autoroute from a
+  forced startup diagnostic backend, and malformed policy labels fail closed.
 - Current scan, daemon, reporter, and suppression contracts now require the
   canonical detector TOML id on accelerated paths instead of accepting the
   retired `hot-*` finding namespace. `keyhog explain` retains a finite,

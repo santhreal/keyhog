@@ -36,7 +36,10 @@ use std::collections::BTreeMap;
 /// * v4 - `ScanResults` carries exact static-recovery rejection aggregates and
 ///   the omitted-detail count. These cannot default because reconstructing exact
 ///   totals from a bounded detail list would silently undercount.
-pub const WIRE_VERSION: u32 = 4;
+/// * v5 - `Hello` names the daemon-owned backend policy so scan clients consent
+///   to an observable autoroute or forced diagnostic route instead of accepting
+///   an undisclosed startup override.
+pub const WIRE_VERSION: u32 = 5;
 
 /// Maximum length of a single framed message body. 64 MiB ceiling
 /// matches `MAX_SCAN_CHUNK_BYTES * 64` so a chunk batch fits, but
@@ -82,6 +85,9 @@ pub enum Response {
         keyhog_version: String,
         git_hash: String,
         detector_rules_digest: String,
+        /// `autoroute` or the canonical label of the backend forced at daemon
+        /// startup (`gpu-region-presence`, `simd-regex`, or `cpu-fallback`).
+        backend_policy: String,
         detector_count: usize,
         uptime_secs: u64,
     },

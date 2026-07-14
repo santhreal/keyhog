@@ -395,6 +395,7 @@ fn daemon_frame_error() {
         keyhog_version: "0.0.0".into(),
         git_hash: "test".into(),
         detector_rules_digest: "test".into(),
+        backend_policy: "autoroute".into(),
         detector_count: 0,
         uptime_secs: 0,
     })
@@ -406,7 +407,7 @@ fn daemon_frame_error() {
 #[cfg(unix)]
 #[test]
 fn daemon_protocol_happy() {
-    assert_eq!(WIRE_VERSION, 4);
+    assert_eq!(WIRE_VERSION, 5);
 }
 #[cfg(unix)]
 #[test]

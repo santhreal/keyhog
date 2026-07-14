@@ -60,7 +60,7 @@ pub enum DaemonAction {
         #[arg(long, value_name = "PATH")]
         socket: Option<PathBuf>,
     },
-    /// Print uptime, scans served, active scans, and detector count.
+    /// Print uptime, scans served, active scans, detector count, and backend policy.
     Status {
         #[arg(long, value_name = "PATH")]
         socket: Option<PathBuf>,

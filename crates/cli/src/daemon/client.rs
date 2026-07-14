@@ -28,9 +28,10 @@ pub async fn connect(socket_path: &Path) -> Result<Client> {
     connect_inner(socket_path, true).await
 }
 
-/// Connect WITHOUT the build/corpus staleness rejection, only wire
-/// compatibility is enforced. `daemon stop` / `daemon status` use this so an
-/// operator can still stop or inspect a daemon left running across an upgrade
+/// Connect WITHOUT the build/corpus staleness rejection. Wire compatibility
+/// and canonical handshake fields remain enforced. `daemon stop` and
+/// `daemon status` use this so an operator can still stop or inspect a daemon
+/// left running across an upgrade
 /// (the whole point of `stop` on a stale daemon is to clear it; refusing on a
 /// version mismatch would strand it). The wire-version gate still applies
 /// because a wire-incompatible daemon cannot be framed at all.
@@ -58,6 +59,7 @@ async fn connect_inner(socket_path: &Path, require_same_version: bool) -> Result
     let mut client = Client {
         transport: frame::client_transport(stream),
         daemon_version: String::new(),
+        backend_policy: String::new(),
         stale_reason: None,
     };
 
@@ -87,8 +89,10 @@ async fn connect_inner(socket_path: &Path, require_same_version: bool) -> Result
             keyhog_version,
             git_hash,
             detector_rules_digest,
+            backend_policy,
             ..
         } if wire_version == WIRE_VERSION => {
+            validate_backend_policy(&backend_policy)?;
             // Staleness gate: the wire version can stay stable across keyhog
             // releases that change the DETECTOR CORPUS or scan pipeline (e.g.
             // 0.5.40 -> 0.5.41). A daemon started before a
@@ -128,6 +132,7 @@ async fn connect_inner(socket_path: &Path, require_same_version: bool) -> Result
             // Record the daemon's reported version so callers that tolerate a
             // mismatch (`status`) can still surface staleness to the operator.
             client.daemon_version = keyhog_version;
+            client.backend_policy = backend_policy;
             client.stale_reason = stale_reason;
             Ok(client)
         }
@@ -159,6 +164,8 @@ pub struct Client {
     /// `connect`/`connect_any_version`. Lets `daemon status` warn loudly when a
     /// daemon left running across an upgrade is now stale.
     daemon_version: String,
+    /// Canonical daemon-owned route policy received in the Hello handshake.
+    backend_policy: String,
     stale_reason: Option<String>,
 }
 
@@ -167,6 +174,11 @@ impl Client {
     /// handshake did not complete (it always does on a returned `Client`).
     pub(crate) fn daemon_version(&self) -> &str {
         &self.daemon_version
+    }
+
+    /// `autoroute` or the canonical backend label forced at daemon startup.
+    pub(crate) fn backend_policy(&self) -> &str {
+        &self.backend_policy
     }
 
     /// `true` when the daemon package, Git build, or detector rules differ from
@@ -200,6 +212,18 @@ impl Client {
         self.send(request).await?;
         self.recv().await
     }
+}
+
+fn validate_backend_policy(policy: &str) -> Result<()> {
+    if policy == "autoroute" {
+        return Ok(());
+    }
+    if keyhog_scanner::hw_probe::parse_backend_str(policy)
+        .is_some_and(|backend| backend.label() == policy)
+    {
+        return Ok(());
+    }
+    bail!("daemon reported invalid backend policy {policy:?}. Restart it with this KeyHog build")
 }
 
 fn embedded_detector_rules_digest() -> Result<String> {

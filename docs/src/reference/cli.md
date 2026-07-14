@@ -255,7 +255,7 @@ daemon route cannot be honored.
 |--------------------|-----------------------------------------------------|
 | `daemon start`     | Bind the Unix socket and accept connections. Startup options include `--socket`, `--detectors`, `--cache-dir`, `--backend`, and `--request-timeout-secs`. |
 | `daemon stop`      | Tell the running daemon to shut down.               |
-| `daemon status`    | Print uptime, scans served, active scans, and detector count. |
+| `daemon status`    | Print uptime, scans served, active scans, detector count, and backend policy. |
 
 `daemon start --request-timeout-secs <N>` sets how long one client connection
 may sit without completing a request frame before the daemon closes it and

@@ -427,6 +427,11 @@ fn daemon_start_status_stop_reports_exact_lines_and_codes() {
             && stdout.contains(" detectors"),
         "status line must carry the served/active/detectors columns; got: {stdout}"
     );
+    assert!(
+        stdout.contains("backend policy: forced cpu-fallback")
+            && stdout.contains("daemon startup diagnostic override"),
+        "status must disclose the daemon-owned forced backend policy; got: {stdout}"
+    );
 
     // stop: exit 0, exact confirmation on stderr.
     let stop = Command::new(keyhog())
