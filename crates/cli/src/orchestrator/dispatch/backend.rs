@@ -49,6 +49,7 @@ use self::store::{
     autoroute_cache_file_presence, load_autoroute_cache, save_autoroute_cache,
     AutorouteCacheSaveOutcome,
 };
+pub(crate) use self::workload::source_route_class;
 use self::workload::{render_workload_key, workload_key, WorkloadClassificationError, WorkloadKey};
 use keyhog_core::Chunk;
 use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};

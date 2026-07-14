@@ -39,6 +39,13 @@ fn source_chunk(source_type: &str, body: &str) -> Chunk {
     }
 }
 
+fn routed_chunk(source_type: &str, path: &str, body: &str, full_size: bool) -> Chunk {
+    let mut chunk = source_chunk(source_type, body);
+    chunk.metadata.path = Some(path.into());
+    chunk.metadata.size_bytes = full_size.then_some(body.len() as u64);
+    chunk
+}
+
 /// The MiB scan-ceiling used in operator skip messages is DERIVED from the
 /// byte constant, so the two can never drift apart. Pins both the value (512)
 /// and the exact byte<->MiB relationship the derivation relies on.
@@ -97,6 +104,81 @@ fn coalesced_producer_never_mixes_distinct_sources_in_one_autoroute_batch() {
     assert!(batches[1]
         .iter()
         .all(|chunk| chunk.metadata.source_type.as_ref() == "web"));
+}
+
+#[test]
+fn route_class_split_separates_distinct_filesystem_provenance() {
+    let full = routed_chunk("filesystem", "plain.txt", "plain", true);
+    let extracted = routed_chunk("filesystem:archive", "bundle.zip/item.txt", "inner", false);
+
+    assert!(should_split_for_route_class(&[full], &extracted, true));
+}
+
+#[test]
+fn route_class_split_preserves_same_identity_boundary_closure() {
+    let full = routed_chunk("filesystem", "window.txt", "left", true);
+    let mut transformed = routed_chunk("filesystem", "window.txt", "right", false);
+    transformed.metadata.base_offset = full.data.len();
+
+    assert!(!should_split_for_route_class(&[full], &transformed, true));
+}
+
+#[test]
+fn route_class_split_requires_a_contiguous_identity_source_contract() {
+    let full = routed_chunk("git-diff", "tracked.rs", "tracked", true);
+    let payload = routed_chunk("git-diff", "patch.diff", "patch", false);
+
+    assert!(!should_split_for_route_class(&[full], &payload, false));
+}
+
+#[test]
+fn coalesced_producer_separates_real_files_and_extracted_tar_members() {
+    let root = tempfile::tempdir().expect("tempdir");
+    std::fs::write(root.path().join("a.txt"), "plain-source-body").expect("write plain file");
+    let tar_path = root.path().join("b.tar");
+    let tar_file = std::fs::File::create(&tar_path).expect("create tar");
+    let mut archive = tar::Builder::new(tar_file);
+    let member = b"archive-member-body";
+    let mut header = tar::Header::new_gnu();
+    header.set_size(member.len() as u64);
+    header.set_mode(0o600);
+    header.set_cksum();
+    archive
+        .append_data(&mut header, "member.txt", member.as_slice())
+        .expect("append tar member");
+    archive.finish().expect("finish tar");
+
+    let sources: Vec<Box<dyn Source>> = vec![Box::new(
+        keyhog_sources::FilesystemSource::new(root.path().to_path_buf())
+            .with_default_excludes(false),
+    )];
+    let plan = CoalescedPipelinePlan {
+        batch_chunk_limit: 16,
+        batch_bytes_budget: usize::MAX,
+        pipeline_depth: 4,
+    };
+    let (tx, rx) = std::sync::mpsc::sync_channel(4);
+
+    CoalescedBatchProducer::new(tx, plan, None).produce_sources(&sources);
+    let batches: Vec<Vec<Chunk>> = rx.into_iter().collect();
+
+    assert_eq!(
+        batches.len(),
+        2,
+        "plain and extracted payload classes split"
+    );
+    assert_eq!(batches.iter().map(Vec::len).sum::<usize>(), 2);
+    assert!(batches.iter().all(|batch| {
+        let class = backend::source_route_class(&batch[0]);
+        batch
+            .iter()
+            .all(|chunk| backend::source_route_class(chunk) == class)
+    }));
+    let bodies: Vec<&str> = batches
+        .iter()
+        .flat_map(|batch| batch.iter().map(|chunk| chunk.data.as_ref()))
+        .collect();
+    assert_eq!(bodies, ["plain-source-body", "archive-member-body"]);
 }
 
 #[test]

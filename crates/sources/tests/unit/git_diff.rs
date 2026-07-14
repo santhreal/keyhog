@@ -372,6 +372,7 @@ fn git_diff_yields_tracked_chunks_before_untracked_file_errors() {
     let mut limits = SourceLimits::default();
     limits.git_blob_bytes = 1024;
     let source = GitDiffSource::new(repo_path, "HEAD").with_limits(limits);
+    assert!(source.chunk_identities_are_contiguous());
     let mut chunks = source.chunks();
 
     let first = chunks
@@ -381,6 +382,10 @@ fn git_diff_yields_tracked_chunks_before_untracked_file_errors() {
     assert!(
         first.data.contains("tracked_secret = sk-live-tracked"),
         "first git-diff chunk must come from the tracked worktree diff; got {first:?}"
+    );
+    assert_eq!(
+        first.metadata.size_bytes, None,
+        "tracked diff hunks must retain payload-derived provenance"
     );
 
     let second = chunks
@@ -403,6 +408,11 @@ fn git_diff_yields_tracked_chunks_before_untracked_file_errors() {
             .data
             .contains("safe_untracked_secret = sk-live-untracked"),
         "git-diff must continue after recoverable untracked file errors; got {third:?}"
+    );
+    assert_eq!(
+        third.metadata.size_bytes,
+        Some(42),
+        "untracked worktree files must retain their full-size provenance"
     );
 }
 

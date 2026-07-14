@@ -276,6 +276,31 @@ fn batch_has_no_scan_bytes(batch: &[Chunk]) -> bool {
     batch.iter().all(|chunk| chunk.data.is_empty())
 }
 
+fn should_split_for_route_class(
+    batch: &[Chunk],
+    next: &Chunk,
+    source_keeps_chunk_identities_contiguous: bool,
+) -> bool {
+    if batch.is_empty() || !source_keeps_chunk_identities_contiguous {
+        return false;
+    }
+    let Some(batch_class) = backend::source_route_class(&batch[0]) else {
+        return false;
+    };
+    if batch.iter().any(
+        |chunk| !matches!(backend::source_route_class(chunk), Some(class) if class == batch_class),
+    ) || matches!(backend::source_route_class(next), Some(class) if class == batch_class)
+    {
+        return false;
+    }
+    !batch.iter().any(|chunk| same_chunk_identity(chunk, next))
+}
+
+fn same_chunk_identity(left: &Chunk, right: &Chunk) -> bool {
+    left.metadata.source_type == right.metadata.source_type
+        && left.metadata.path == right.metadata.path
+}
+
 fn append_scanned_batch_findings(
     findings: &mut Vec<RawMatch>,
     batch: &[Chunk],
@@ -369,6 +394,7 @@ impl CoalescedBatchProducer {
 
     fn produce_sources(mut self, sources: &[Box<dyn Source>]) -> CoalescedProducerOutcome {
         'sources: for source in sources {
+            let source_keeps_chunk_identities_contiguous = source.chunk_identities_are_contiguous();
             // Per-source outcome: a source that yields ZERO chunks AND errors
             // failed entirely (e.g. --github-org with a bad token), even if a
             // co-requested source succeeded. Tracked so `run()` can fail closed
@@ -384,7 +410,12 @@ impl CoalescedBatchProducer {
                 if self.record_unchanged_chunk(&c) {
                     continue;
                 }
-                if self.should_flush_before(&c) {
+                if should_split_for_route_class(
+                    &self.batch,
+                    &c,
+                    source_keeps_chunk_identities_contiguous,
+                ) || self.should_flush_before(&c)
+                {
                     self.flush_batch();
                     if !self.pipeline_alive {
                         break 'sources;

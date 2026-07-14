@@ -101,6 +101,10 @@ impl Source for GitDiffSource {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
+
+    fn chunk_identities_are_contiguous(&self) -> bool {
+        true
+    }
 }
 
 /// Stream only ADDED lines from git diff output.

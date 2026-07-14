@@ -1313,6 +1313,35 @@ prime_autoroute_cache() {
         cfg_flag="--config"
         cfg_file="$tmpdir/empty-config.toml"
     fi
+    core_via_subcommand=0
+    top_help_err="$tmpdir/top-help.err"
+    if ! top_help="$("$bin" --help 2>"$top_help_err")"; then
+        real_err="$(head -n 1 "$top_help_err" 2>/dev/null)"
+        err "Could not inspect installed keyhog --help before core autoroute calibration."
+        if [ -n "$real_err" ]; then
+            err "keyhog --help error: $real_err"
+        fi
+        return 1
+    fi
+    if [ -z "$top_help" ]; then
+        err "Installed keyhog --help returned no output; refusing to guess the core calibration path."
+        return 1
+    fi
+    if printf '%s\n' "$top_help" | grep -q -- 'calibrate-autoroute'; then
+        if ! core_output="$("$bin" calibrate-autoroute --quiet)"; then
+            err "The installed binary's canonical core autoroute calibration failed."
+            return 1
+        fi
+        core_total="$(printf '%s\n' "$core_output" | sed -n 's/.*calibrated \([0-9][0-9]*\) workload.*/\1/p' | tail -n 1)"
+        case "$core_total" in
+            ''|*[!0-9]*)
+                err "Canonical core calibration completed without a readable probe count."
+                return 1
+                ;;
+        esac
+        printf '%s\n' "$core_output"
+        core_via_subcommand=1
+    fi
     # Calibrate the SAME resolved-config digest a real scan requests.
     # `--autoroute-gpu` controls candidate admission during calibration and is
     # intentionally excluded from that digest, so the persisted winner is valid
@@ -1397,23 +1426,27 @@ prime_autoroute_cache() {
     # The stdin + filesystem "core" probes run once per scan-policy preset
     # (default + each supported preset); the external-source probes
     # (git/docker/web) calibrate the default policy only.
-    core_total=0
-    core_total=$((core_total + 1)) # empty stdin
-    core_total=$((core_total + 1)) # stdin 64 KiB
-    for _bytes in $byte_sizes; do
-        core_total=$((core_total + 1))
-    done
-    for _kib in $kib_sizes; do
-        core_total=$((core_total + 1))
-    done
-    for _mib in $mib_sizes; do
-        core_total=$((core_total + 1))
-    done
-    core_total=$((core_total + 1)) # decode-heavy 256 KiB
-    for _count in $many_file_counts; do
-        core_total=$((core_total + 1))
-    done
-    total=$((core_total * preset_count))
+    if [ "$core_via_subcommand" = "1" ]; then
+        total=$core_total
+    else
+        core_total=0
+        core_total=$((core_total + 1)) # empty stdin compatibility probe
+        core_total=$((core_total + 1)) # stdin 64 KiB
+        for _bytes in $byte_sizes; do
+            core_total=$((core_total + 1))
+        done
+        for _kib in $kib_sizes; do
+            core_total=$((core_total + 1))
+        done
+        for _mib in $mib_sizes; do
+            core_total=$((core_total + 1))
+        done
+        core_total=$((core_total + 1)) # decode-heavy 256 KiB
+        for _count in $many_file_counts; do
+            core_total=$((core_total + 1))
+        done
+        total=$((core_total * preset_count))
+    fi
     if [ "$git_calibration" = "1" ]; then
         total=$((total + 3))
     fi
@@ -1424,12 +1457,16 @@ prime_autoroute_cache() {
         total=$((total + 1))
     fi
     idx=0
+    if [ "$core_via_subcommand" = "1" ]; then
+        idx=$core_total
+    fi
     failed=0
 
     # Calibrate the core stdin + filesystem workloads once per scan-policy preset.
     # The default policy (empty flags) runs first; `autoroute_scan_flags` carries
     # the preset into run_keyhog_calibration_scan, so each pass resolves and
     # persists the exact digest a real `keyhog scan <path> [preset]` requests.
+    if [ "$core_via_subcommand" = "0" ]; then
     for autoroute_scan_flags in "" $autoroute_presets; do
 
     idx=$((idx + 1))
@@ -1535,6 +1572,7 @@ prime_autoroute_cache() {
     done
 
     done # end per-preset core workload sweep
+    fi
 
     # External-source probes (git/docker/web) calibrate the default policy only.
     autoroute_scan_flags=""
@@ -2005,6 +2043,7 @@ make_calibration_git_repo() {
     "$git_cmd" -C "$dir" add probe.txt || return 1
     "$git_cmd" -C "$dir" commit -q -m "keyhog autoroute calibration head" || return 1
     make_calibration_probe_kib "$dir/probe.txt" 12 || return 1
+    make_calibration_probe_kib "$dir/untracked-probe.txt" 4 || return 1
 }
 
 make_calibration_docker_image() {

@@ -889,4 +889,8 @@ impl Source for FilesystemSource {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
+
+    fn chunk_identities_are_contiguous(&self) -> bool {
+        true
+    }
 }

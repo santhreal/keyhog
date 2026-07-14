@@ -53,7 +53,7 @@ const DECODE_HEAVY_SEED: &str = "apiVersion:v1 kind:Secret data token:QUtJQUlPU0
 /// One calibration workload: how to materialize the probe and feed it to the
 /// child scan.
 enum Workload {
-    /// Pipe `bytes` of plain content over stdin (`bytes == 0` is the empty case).
+    /// Pipe `bytes` of plain content over stdin.
     Stdin { label: &'static str, bytes: usize },
     /// A single file of exactly `bytes`; `decode_heavy` selects the base64-dense block.
     File {
@@ -67,13 +67,19 @@ enum Workload {
         files: usize,
         kib: usize,
     },
+    /// A tar archive whose extracted members exercise payload-derived filesystem routing.
+    Tar {
+        label: String,
+        members: usize,
+        kib: usize,
+    },
 }
 
 impl Workload {
     fn label(&self) -> &str {
         match self {
             Workload::Stdin { label, .. } | Workload::File { label, .. } => label,
-            Workload::Tree { label, .. } => label.as_str(),
+            Workload::Tree { label, .. } | Workload::Tar { label, .. } => label.as_str(),
         }
     }
 }
@@ -84,10 +90,6 @@ impl Workload {
 /// adjacent counts within one logarithmic chunk band.
 fn core_workload_plan() -> Vec<Workload> {
     let mut workloads = vec![
-        Workload::Stdin {
-            label: "empty stdin workload",
-            bytes: 0,
-        },
         Workload::Stdin {
             label: "stdin 64 KiB workload",
             bytes: 64 * 1024,
@@ -232,6 +234,13 @@ fn core_workload_plan() -> Vec<Workload> {
         (1..=crate::orchestrator_config::FUSED_BATCH_DEFAULT).map(|files| Workload::Tree {
             label: format!("{files} x 4 KiB files workload"),
             files,
+            kib: 4,
+        }),
+    );
+    workloads.extend(
+        (1..=crate::orchestrator_config::FUSED_BATCH_DEFAULT).map(|members| Workload::Tar {
+            label: format!("{members} x 4 KiB tar members workload"),
+            members,
             kib: 4,
         }),
     );
@@ -500,6 +509,31 @@ fn materialize_probe(
                     .with_context(|| format!("writing tree probe {}", path.display()))?;
             }
             cmd.arg(&tree);
+            Ok(None)
+        }
+        Workload::Tar { members, kib, .. } => {
+            let path = workspace.join(format!("archive-{idx}.tar"));
+            let file = std::fs::File::create(&path)
+                .with_context(|| format!("creating tar probe {}", path.display()))?;
+            let mut archive = tar::Builder::new(file);
+            for member_idx in 0..*members {
+                let content = plain_calibration_bytes(kib * 1024);
+                let mut header = tar::Header::new_gnu();
+                header.set_size(content.len() as u64);
+                header.set_mode(0o600);
+                header.set_cksum();
+                archive
+                    .append_data(
+                        &mut header,
+                        format!("member-{member_idx}.txt"),
+                        content.as_slice(),
+                    )
+                    .with_context(|| format!("writing tar member {member_idx}"))?;
+            }
+            archive
+                .finish()
+                .with_context(|| format!("finishing tar probe {}", path.display()))?;
+            cmd.arg(&path);
             Ok(None)
         }
     }

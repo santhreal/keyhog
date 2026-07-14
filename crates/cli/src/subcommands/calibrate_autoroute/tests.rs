@@ -6,6 +6,7 @@
 //! could not provide.
 
 use super::*;
+use keyhog_core::Source;
 
 #[test]
 fn scan_policy_plan_covers_every_digest_changing_preset() {
@@ -52,10 +53,10 @@ fn plain_route_probe_has_sparse_real_phase2_work_without_changing_size() {
 #[test]
 fn workload_plan_matches_the_installer_ladder() {
     let plan = core_workload_plan();
-    // 2 stdin + 27 single-file (incl. decode-heavy) + every default fused count.
-    assert_eq!(plan.len(), 61);
+    // 1 stdin + 27 single-file + every fused count for full-size and extracted payloads.
+    assert_eq!(plan.len(), 92);
     let labels: Vec<&str> = plan.iter().map(Workload::label).collect();
-    assert!(labels.contains(&"empty stdin workload"));
+    assert!(labels.contains(&"stdin 64 KiB workload"));
     assert!(labels.contains(&"1 B workload"));
     assert!(labels.contains(&"1 KiB workload"));
     assert!(labels.contains(&"16 KiB workload"));
@@ -66,6 +67,9 @@ fn workload_plan_matches_the_installer_ladder() {
     assert!(labels.contains(&"1 x 4 KiB files workload"));
     assert!(labels.contains(&"17 x 4 KiB files workload"));
     assert!(labels.contains(&"32 x 4 KiB files workload"));
+    assert!(labels.contains(&"1 x 4 KiB tar members workload"));
+    assert!(labels.contains(&"17 x 4 KiB tar members workload"));
+    assert!(labels.contains(&"32 x 4 KiB tar members workload"));
 
     let plain_file_bytes: Vec<usize> = plan
         .iter()
@@ -123,6 +127,19 @@ fn workload_plan_matches_the_installer_ladder() {
         (1..=crate::orchestrator_config::FUSED_BATCH_DEFAULT).collect::<Vec<_>>(),
         "tree probes must represent every exact count in the default fused batch"
     );
+
+    let tar_member_counts: Vec<usize> = plan
+        .iter()
+        .filter_map(|workload| match workload {
+            Workload::Tar { members, .. } => Some(*members),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        tar_member_counts,
+        (1..=crate::orchestrator_config::FUSED_BATCH_DEFAULT).collect::<Vec<_>>(),
+        "archive probes must represent every exact extracted payload count"
+    );
 }
 
 #[test]
@@ -151,4 +168,33 @@ fn decode_heavy_block_is_denser_than_plain() {
         "decode-heavy block (longest b64 run {heavy}) must clear the plain block \
          (longest run {plain}) by the encoded-run threshold"
     );
+}
+
+#[test]
+fn tar_probe_materializes_exact_payload_derived_member_batch() {
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let workload = Workload::Tar {
+        label: "test tar".to_string(),
+        members: 17,
+        kib: 4,
+    };
+    let mut command = Command::new("keyhog-test-placeholder");
+
+    assert!(
+        materialize_probe(workspace.path(), 1, &workload, &mut command)
+            .expect("materialize tar")
+            .is_none()
+    );
+    let source = keyhog_sources::FilesystemSource::new(workspace.path().join("archive-1.tar"));
+    let chunks: Vec<keyhog_core::Chunk> = source
+        .chunks()
+        .map(|chunk| chunk.expect("read tar member"))
+        .collect();
+
+    assert_eq!(chunks.len(), 17);
+    assert!(chunks.iter().all(|chunk| {
+        chunk.data.len() == 4 * 1024
+            && chunk.metadata.size_bytes.is_none()
+            && chunk.metadata.source_type.starts_with("filesystem/archive")
+    }));
 }

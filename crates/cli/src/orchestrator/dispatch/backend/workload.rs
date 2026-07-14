@@ -15,6 +15,12 @@ const AUTOROUTE_DECODE_MIN_CHUNK_SAMPLE: usize =
     AUTOROUTE_DECODE_SAMPLE_WINDOW_BYTES * AUTOROUTE_DECODE_MIN_STRATA;
 const MAX_SOURCE_MIXTURE_ENTRIES: usize = 64;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct SourceRouteClass {
+    family_digest: [u8; 32],
+    has_full_size: bool,
+}
+
 // `Ord` gives the multi-config cache a deterministic on-disk decision order
 // (decisions are collected through a `BTreeMap<WorkloadKey, _>` on save), so a
 // recalibration that re-measures the same buckets produces a byte-stable file.
@@ -444,6 +450,13 @@ pub(super) fn source_mixture_key(
         return Err(WorkloadClassificationError::SourceFamilyIdentityCollision);
     }
     Ok(SourceMixtureKey { entries })
+}
+
+pub(crate) fn source_route_class(chunk: &Chunk) -> Option<SourceRouteClass> {
+    Some(SourceRouteClass {
+        family_digest: source_family_id(source_family(chunk).ok()?),
+        has_full_size: chunk.metadata.size_bytes.is_some(),
+    })
 }
 
 pub(super) fn source_family_id(family: &str) -> [u8; 32] {

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add an opt-in source ordering contract for contiguous chunk identities so
+  dispatchers can split routing batches without assuming concrete source types.
+
 - Add shared overflow-safe median and paired confidence primitives for
   autoroute calibration and release crossover evidence.
 

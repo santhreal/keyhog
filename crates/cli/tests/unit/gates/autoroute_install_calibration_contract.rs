@@ -358,6 +358,10 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
     assert!(
         install_sh.contains("prime_autoroute_cache")
             && install_sh.contains("--calibrate")
+            && install_sh.contains("top_help=\"$(\"$bin\" --help 2>\"$top_help_err\")\"")
+            && install_sh.contains("refusing to guess the core calibration path")
+            && install_sh.contains("\"$bin\" calibrate-autoroute")
+            && install_sh.contains("core_via_subcommand=1")
             && install_sh.contains(
                 "Modes:  (default) install/upgrade   --repair   --diagnose   --calibrate   --uninstall"
             )
@@ -432,6 +436,10 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
     assert!(
         install_ps1.contains("Invoke-AutorouteCalibration")
             && install_ps1.contains("-Calibrate")
+            && install_ps1.contains("& $BinPath --help")
+            && install_ps1.contains("refusing to guess the core calibration path")
+            && install_ps1.contains("& $BinPath calibrate-autoroute")
+            && install_ps1.contains("$coreViaSubcommand")
             && install_ps1.contains("Autoroute calibration")
             && install_ps1.contains("TotalMilliseconds")
             && install_ps1.contains("PASS {0} ({1}ms)")

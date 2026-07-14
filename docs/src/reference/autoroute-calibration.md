@@ -38,6 +38,17 @@ invalidate the cache instead of being normalized silently.
 Each persisted decision also carries a digest of the complete workload key.
 Changing or relabeling any keyed field invalidates the row before routing.
 
+Filesystem producers keep each path's chunks contiguous. KeyHog uses that
+contract to end a batch when the source family or full-size provenance changes,
+unless the next chunk belongs to the same path dependency. Ordinary files and
+extracted archive members therefore use independently measured homogeneous
+routes. Sources without a contiguous-path contract retain their exact mixed
+key instead of being split on an unsafe assumption.
+
+Git diff producers make the same ordering guarantee. Tracked diff hunks and
+full-size untracked files therefore calibrate as separate route classes during
+installer calibration, even when one `--git-diff` scan contains both.
+
 Performance selection uses the median of the recorded trials, not the single
 fastest sample. If one route's 95% Student-t confidence interval is entirely
 below every competitor, it is the separated winner. If intervals overlap,
@@ -88,12 +99,19 @@ keyhog calibrate-autoroute
 This drives the core stdin + filesystem workload ladder across every scan
 preset. Plain single-file probes cover every power-of-two size band from 1 byte
 through 32 MiB. File-tree probes cover every chunk-count band through the
-default 32-chunk fused batch, plus decode-heavy and many-file shapes. It does **not**
+default 32-chunk fused batch. Tar-member probes cover the same count ladder for
+payload-derived extracted filesystem chunks. Decode-heavy probes cover the
+decoder path. Empty input has no routing work and is not counted as a calibrated
+workload. The command does **not**
 cover the git / docker / web source probes; those need environment orchestration
 (a repo, a running daemon, a served URL) that only the installer's
-`--calibrate` mode performs. The installers construct those fixtures and invoke
-the low-level `scan --autoroute-calibrate` probe mode; that scan flag records one
-caller-supplied workload but does not build or sweep the external fixtures. If
+`--calibrate` mode performs. Current installers delegate the complete core sweep
+to this command, then construct external fixtures and invoke the low-level
+`scan --autoroute-calibrate` probe mode. Older binaries without the command use
+the installers' compatibility sweep. Capability inspection must succeed before
+that choice, so broken help output cannot silently select the older matrix. The
+low-level scan flag records one
+caller-supplied workload but does not build or sweep external fixtures. If
 you scan those sources and hit
 `autoroute calibration required`, re-run `install.sh --calibrate` /
 `install.ps1 -Calibrate` rather than the subcommand. Decisions are written,

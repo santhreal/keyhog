@@ -176,6 +176,8 @@ impl ScanOrchestrator {
         let drain = std::thread::spawn(move || {
             let mut batch: Vec<keyhog_core::Chunk> = Vec::with_capacity(fused_batch);
             'sources: for source in &sources {
+                let source_keeps_chunk_identities_contiguous =
+                    source.chunk_identities_are_contiguous();
                 // Per-source outcome (see the non-fused path): a source that
                 // yields zero chunks AND errors failed entirely; tracked so a
                 // failed remote scan isn't masked by a clean local one.
@@ -189,6 +191,16 @@ impl ScanOrchestrator {
                     ) else {
                         continue;
                     };
+                    if super::should_split_for_route_class(
+                        &batch,
+                        &c,
+                        source_keeps_chunk_identities_contiguous,
+                    ) {
+                        if tx.send(std::mem::take(&mut batch)).is_err() {
+                            break 'sources;
+                        }
+                        batch = Vec::with_capacity(fused_batch);
+                    }
                     batch.push(c);
                     if batch.len() >= fused_batch {
                         if tx.send(std::mem::take(&mut batch)).is_err() {

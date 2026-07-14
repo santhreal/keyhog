@@ -180,6 +180,13 @@ pub trait Source: Send + Sync {
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_>;
     /// Support downcasting to concrete types.
     fn as_any(&self) -> &dyn std::any::Any;
+
+    /// Whether all chunks for one exact `(source_type, path)` identity are
+    /// emitted contiguously. Dispatch may use this to split unrelated routing
+    /// classes without cutting a future cross-chunk dependency.
+    fn chunk_identities_are_contiguous(&self) -> bool {
+        false
+    }
 }
 
 /// Errors returned by input sources while enumerating or reading content.

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Declare the filesystem and git-diff sources' contiguous chunk-identity
+  ordering contract for safe provenance-aware autoroute batching.
+
 - Let all four WebSource DNS-screening workers wait on and consume the bounded
   job queue concurrently instead of serializing receives behind one mutex.
 - Add GitLab group and Bitbucket workspace source backends through a shared

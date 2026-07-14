@@ -65,10 +65,71 @@ if [ "$1" = "scan" ]; then
     echo "error: GPU adapter request failed (mock driver fault)" >&2
     exit 1
 fi
+[ "$1" = "--help" ] && echo "Usage: keyhog scan"
 [ "$1" = "--version" ] && echo "keyhog 0.5.40"
 exit 0
 EOF
 chmod +x "$work/binB/keyhog"
+
+# --- mock C: a current binary that owns the canonical core sweep ------------
+mkdir -p "$work/binC"
+cat > "$work/binC/keyhog" <<'EOF'
+#!/usr/bin/env sh
+if [ "$1 $2" = "scan --help" ]; then
+    printf '%s\n' "Usage: keyhog scan --autoroute-calibrate --no-config <PATH>"
+    exit 0
+fi
+if [ "$1" = "--help" ]; then
+    printf '%s\n' "Commands: scan calibrate-autoroute backend"
+    exit 0
+fi
+if [ "$1" = "calibrate-autoroute" ]; then
+    mkdir -p "$HOME/.cache/keyhog"
+    printf '%s\n' cache > "$HOME/.cache/keyhog/autoroute.json"
+    printf '%s\n' "calibrated 368 workload buckets across 4 scan policies"
+    exit 0
+fi
+if [ "$1" = "backend" ]; then
+    cat <<'JSON'
+{
+  "configs": [{
+    "decisions": [{
+      "backend": "simd-cpu",
+      "sample_bytes": 65536,
+      "sample_chunks": 1,
+      "simd_ms": 1,
+      "cpu_ms": 2,
+      "gpu_cuda_ms": null,
+      "gpu_wgpu_ms": null,
+      "selected_margin_ns": 1000,
+      "daemon_backend": null
+    }]
+  }]
+}
+JSON
+    exit 0
+fi
+[ "$1" = "--version" ] && echo "keyhog 0.5.41"
+exit 0
+EOF
+chmod +x "$work/binC/keyhog"
+
+# --- mock D: scan help works but top-level capability inspection fails ------
+mkdir -p "$work/binD"
+cat > "$work/binD/keyhog" <<'EOF'
+#!/usr/bin/env sh
+if [ "$1 $2" = "scan --help" ]; then
+    printf '%s\n' "Usage: keyhog scan --autoroute-calibrate --no-config <PATH>"
+    exit 0
+fi
+if [ "$1" = "--help" ]; then
+    echo "error: top-level help failed (mock corruption)" >&2
+    exit 7
+fi
+[ "$1" = "--version" ] && echo "keyhog 0.5.41"
+exit 0
+EOF
+chmod +x "$work/binD/keyhog"
 
 run_calibrate() { # $1=install-dir-with-keyhog
     env -i PATH="/usr/bin:/bin" HOME="$work/home" TMPDIR="$work/tmp" \
@@ -117,6 +178,28 @@ elif grep -q 'scan --help 2>"\$scan_help_err"' "$INSTALL_SH" \
     _pass "calibration help inspection fails loud"
 else
     _fail "calibration help inspection fails loud" "expected captured scan_help_err and no-output refusal"
+fi
+
+# 6. Current binaries own the core matrix. The installer must invoke that one
+#    command and must not replay its compatibility workload loop.
+outC="$(run_calibrate "$work/binC")"
+if printf '%s' "$outC" | grep -q 'calibrated 368 workload buckets' \
+   && printf '%s' "$outC" | grep -q 'probes: 368' \
+   && ! printf '%s' "$outC" | grep -q 'PASS .* workload'; then
+    _pass "current binary canonical sweep replaces installer core replay"
+else
+    _fail "current binary canonical sweep replaces installer core replay" "got: $(printf '%s' "$outC" | tr '\n' '|' | tail -c 500)"
+fi
+
+# 7. A broken capability probe must not silently select the compatibility
+#    matrix, because that matrix cannot calibrate current archive classes.
+outD="$(run_calibrate "$work/binD")"
+if printf '%s' "$outD" | grep -q 'top-level help failed (mock corruption)' \
+   && printf '%s' "$outD" | grep -q 'Could not inspect installed keyhog --help' \
+   && ! printf '%s' "$outD" | grep -q 'PASS .* workload'; then
+    _pass "failed top-level capability inspection never falls back silently"
+else
+    _fail "failed top-level capability inspection never falls back silently" "got: $(printf '%s' "$outD" | tr '\n' '|' | tail -c 500)"
 fi
 
 total=$((pass + fail))

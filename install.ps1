@@ -1054,6 +1054,42 @@ function Invoke-AutorouteCalibration {
             # later normal auto scans. --batch-pipeline changes execution identity
             # and remains absent. Keep this in parity with install.sh.
             $batchArgs = @('--autoroute-calibrate', '--autoroute-gpu')
+            $coreViaSubcommand = $false
+            $coreProbeCount = 0
+            $topHelpErr = Join-Path $tmpDir 'top-help.err'
+            $topHelpException = $null
+            try {
+                $topHelp = (& $BinPath --help 2> $topHelpErr | Out-String)
+                $topHelpExit = $LASTEXITCODE
+            } catch {
+                $topHelp = ''
+                $topHelpExit = 1
+                $topHelpException = $_.Exception.Message
+            }
+            if ($topHelpExit -ne 0) {
+                $realErr = Get-FirstErrorLine $topHelpErr $topHelpException
+                Err "Could not inspect installed keyhog --help before core autoroute calibration."
+                if ($realErr) { Err "keyhog --help error: $realErr" }
+                return $false
+            }
+            if ([string]::IsNullOrWhiteSpace($topHelp)) {
+                Err "Installed keyhog --help returned no output; refusing to guess the core calibration path."
+                return $false
+            }
+            $coreViaSubcommand = ($topHelp -match 'calibrate-autoroute')
+            if ($coreViaSubcommand) {
+                $coreOutput = (& $BinPath calibrate-autoroute --quiet | Out-String)
+                if ($LASTEXITCODE -ne 0) {
+                    Err "The installed binary's canonical core autoroute calibration failed."
+                    return $false
+                }
+                if ($coreOutput -notmatch 'calibrated\s+(\d+)\s+workload') {
+                    Err "Canonical core calibration completed without a readable probe count."
+                    return $false
+                }
+                $coreProbeCount = [int]$Matches[1]
+                Say $coreOutput.Trim()
+            }
             # Calibrate the documented scan-policy presets too: each changes scanner
             # fields hashed into the config digest, so `keyhog scan . --fast` resolves a
             # DIFFERENT digest than the default and needs its own decisions or it fails
@@ -1108,6 +1144,7 @@ function Invoke-AutorouteCalibration {
                 $webCalibration = $true
             }
             $workloads = @()
+            if (-not $coreViaSubcommand) {
             $emptyStdin = Join-Path $tmpDir 'probe-stdin-empty.txt'
             New-Item -ItemType File -Force -Path $emptyStdin | Out-Null
             $workloads += [pscustomobject]@{
@@ -1187,6 +1224,7 @@ function Invoke-AutorouteCalibration {
                     Stdout = Join-Path $tmpDir "stdout-many-${fileCount}x4k.txt"
                     Stderr = Join-Path $tmpDir "stderr-many-${fileCount}x4k.txt"
                 }
+            }
             }
             if ($gitCalibration) {
                 $gitRepo = Join-Path $tmpDir 'git-source'
@@ -1336,7 +1374,8 @@ function Invoke-AutorouteCalibration {
                 Warn ("Autoroute calibration incomplete for unavailable source classes: {0}." -f ($unavailableCalibrations -join ', '))
                 Warn "Install the required source tools and rerun install.ps1 -Calibrate before using those source routes."
             }
-            if (-not (Show-AutorouteCalibrationSummary -ProbeCount $probePlan.Count -StartedAt $calibrationStartedAt -BinPath $BinPath)) {
+            $totalProbeCount = $coreProbeCount + $probePlan.Count
+            if (-not (Show-AutorouteCalibrationSummary -ProbeCount $totalProbeCount -StartedAt $calibrationStartedAt -BinPath $BinPath)) {
                 Err "Autoroute calibration completed but persisted decisions could not be read back."
                 return $false
             }
@@ -1470,6 +1509,7 @@ function New-CalibrationGitRepository {
     Invoke-GitCalibrationCommand -GitPath $GitPath -Arguments @('-C', $Path, 'add', 'probe.txt')
     Invoke-GitCalibrationCommand -GitPath $GitPath -Arguments @('-C', $Path, 'commit', '-q', '-m', 'keyhog autoroute calibration head')
     New-CalibrationProbeKiB -Path (Join-Path $Path 'probe.txt') -KiB 12
+    New-CalibrationProbeKiB -Path (Join-Path $Path 'untracked-probe.txt') -KiB 4
 }
 
 function Invoke-DockerCalibrationCommand {
