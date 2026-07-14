@@ -295,7 +295,7 @@ impl ScanOrchestrator {
                 let gpu_degrade_before =
                     matches!(backend, keyhog_scanner::hw_probe::ScanBackend::Gpu)
                         .then(|| scanner_ref.gpu_degrade_count());
-                let per_chunk = match backend {
+                match backend {
                     keyhog_scanner::hw_probe::ScanBackend::Gpu => {
                         tracing::debug!(
                             target: "keyhog::routing",
@@ -304,21 +304,9 @@ impl ScanOrchestrator {
                             chunks = scanned_count,
                             "fused batch dispatched to GPU region presence",
                         );
-                        scanner_ref.scan_chunks_with_backend(
-                            &batch,
-                            keyhog_scanner::hw_probe::ScanBackend::Gpu,
-                        )
                     }
-                    keyhog_scanner::hw_probe::ScanBackend::CpuFallback => scanner_ref
-                        .scan_chunks_with_backend(
-                            &batch,
-                            keyhog_scanner::hw_probe::ScanBackend::CpuFallback,
-                        ),
-                    keyhog_scanner::hw_probe::ScanBackend::SimdCpu => scanner_ref
-                        .scan_coalesced_with_backend(
-                            &batch,
-                            keyhog_scanner::hw_probe::ScanBackend::SimdCpu,
-                        ),
+                    keyhog_scanner::hw_probe::ScanBackend::CpuFallback
+                    | keyhog_scanner::hw_probe::ScanBackend::SimdCpu => {}
                     backend => {
                         record_routing_error(
                             &routing_error_ref,
@@ -326,7 +314,8 @@ impl ScanOrchestrator {
                         );
                         return Vec::new();
                     }
-                };
+                }
+                let per_chunk = scanner_ref.scan_coalesced_with_backend(&batch, backend);
                 crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
                 // Count as GPU-scanned only if routed to GPU AND no runtime degrade
                 // was recorded while dispatching this batch (see snapshot above)

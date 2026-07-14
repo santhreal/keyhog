@@ -162,6 +162,14 @@ impl CompiledScanner {
                 return results;
             };
 
+            // The ordinary batch API records these before per-chunk dispatch.
+            // Coalesced SIMD bypasses `scan_inner`, so it must own the same
+            // operator-visible file/byte accounting exactly once.
+            profile::add_bytes(chunks.iter().map(|chunk| chunk.data.len() as u64).sum());
+            profile::add_files(chunks.len() as u64);
+            for chunk in chunks {
+                crate::telemetry::record_file_scanned(chunk.data.len());
+            }
             let triggers = self.compute_coalesced_triggers(chunks, scanner);
             return self.scan_coalesced_phase2(chunks, triggers);
         }

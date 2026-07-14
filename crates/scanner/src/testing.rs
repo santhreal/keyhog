@@ -3321,6 +3321,11 @@ pub fn build_entropy_bpe_tokenizer() -> Result<tiktoken_rs::CoreBPE, String> {
     tiktoken_rs::cl100k_base().map_err(|error| error.to_string())
 }
 
+/// Process-global file and byte counts recorded by scanner entry points.
+pub fn telemetry_scan_counts() -> (usize, usize) {
+    crate::telemetry::global_scan_counts()
+}
+
 #[cfg(test)]
 pub(crate) fn set_hs_prefilter_max_len(
     scanner: &crate::engine::CompiledScanner,

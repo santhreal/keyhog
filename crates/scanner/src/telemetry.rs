@@ -1007,6 +1007,13 @@ pub(crate) fn record_file_scanned(bytes: usize) {
     BYTES_SCANNED.fetch_add(bytes, Ordering::Relaxed);
 }
 
+pub(crate) fn global_scan_counts() -> (usize, usize) {
+    (
+        FILES_SCANNED.load(Ordering::Relaxed),
+        BYTES_SCANNED.load(Ordering::Relaxed),
+    )
+}
+
 pub(crate) fn record_file_skipped() {
     SKIPPED_FILES.fetch_add(1, Ordering::Relaxed);
 }
