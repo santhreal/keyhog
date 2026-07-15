@@ -136,6 +136,30 @@ now_ms() {
   fi
 }
 
+scan_status_for_exit() {
+  case "$1" in
+    0 | 1 | 10) printf 'success\n' ;;
+    13)
+      if [[ "${2:-false}" == "true" ]]; then
+        printf 'partial\n'
+      else
+        printf 'failed\n'
+      fi
+      ;;
+    130) printf 'cancelled\n' ;;
+    *) printf 'failed\n' ;;
+  esac
+}
+
+md_cell() {
+  local value="$1"
+  value="${value//$'\r'/ }"
+  value="${value//$'\n'/ }"
+  value="${value//|/\\|}"
+  value="${value//\`/\\\`}"
+  printf '%s%s%s' '`' "$value" '`'
+}
+
 case "$severity" in
   info | client-safe | low | medium | high | critical) ;;
   *)
@@ -218,6 +242,57 @@ if [[ "$print_effective_config" == "true" ]]; then
   fi
 fi
 
+findings=0
+report_present=false
+scan_status=failed
+receipt_written=false
+scan_start_ms=""
+duration_ms=0
+keyhog_exit=3
+
+publish_receipt() {
+  if [[ "$receipt_written" == "true" ]]; then
+    return
+  fi
+  receipt_written=true
+
+  if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+    {
+      printf 'findings=%s\n' "$findings"
+      printf 'exit-code=%s\n' "$keyhog_exit"
+      printf 'duration-ms=%s\n' "$duration_ms"
+      printf 'scan-status=%s\n' "$scan_status"
+      printf 'report-present=%s\n' "$report_present"
+    } >> "$GITHUB_OUTPUT"
+  fi
+
+  gha_notice "scan status: $scan_status"
+  gha_notice "Found $findings finding(s) at or above '$severity' severity."
+  gha_notice "Scan completed in ${duration_ms} ms."
+  if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+    {
+      echo '### KeyHog scan'
+      echo
+      echo '| Field | Value |'
+      echo '| --- | --- |'
+      printf '| Path | %s |\n' "$(md_cell "$scan_path")"
+      printf '| Severity floor | %s |\n' "$(md_cell "$severity")"
+      printf '| Format | %s |\n' "$(md_cell "$format")"
+      printf '| Report | %s |\n' "$(md_cell "$report")"
+      printf '| Report present | %s |\n' "$(md_cell "$report_present")"
+      printf '| Findings | %s |\n' "$(md_cell "$findings")"
+      printf '| Exit code | %s |\n' "$(md_cell "$keyhog_exit")"
+      printf '| Completion status | %s |\n' "$(md_cell "$scan_status")"
+      printf '| Duration | %s |\n' "$(md_cell "${duration_ms} ms")"
+      printf '| Fail on findings | %s |\n' "$(md_cell "$fail_on_findings")"
+      printf '| Upload SARIF | %s |\n' "$(md_cell "$upload_sarif")"
+      if [[ -n "$baseline" ]]; then
+        printf '| Baseline | %s |\n' "$(md_cell "$baseline")"
+      fi
+    } >> "$GITHUB_STEP_SUMMARY"
+  fi
+}
+
 scan_start_ms="$(now_ms)"
 set +e
 keyhog "${args[@]}"
@@ -228,6 +303,10 @@ duration_ms="$((scan_end_ms - scan_start_ms))"
 if (( duration_ms < 0 )); then
   duration_ms=0
 fi
+if [[ -f "$report" ]]; then
+  report_present=true
+fi
+scan_status="$(scan_status_for_exit "$keyhog_exit" "$report_present")"
 
 count_from_report() {
   local report_format="$1"
@@ -326,8 +405,8 @@ PY
   esac
 }
 
-findings=0
 if [[ "$keyhog_exit" != "0" && "$keyhog_exit" != "1" && "$keyhog_exit" != "10" ]]; then
+  publish_receipt
   gha_error "keyhog exited $keyhog_exit (not a findings code) - treating as a scan failure"
   exit "$keyhog_exit"
 fi
@@ -336,58 +415,24 @@ if [[ -f "$report" ]]; then
   if parsed_findings="$(count_from_report "$format" "$report" 2>/dev/null)"; then
     findings="$parsed_findings"
   elif [[ "$keyhog_exit" == "1" || "$keyhog_exit" == "10" ]]; then
+    scan_status=failed
     findings=1
     gha_warning "Could not parse '$report'; keyhog exited $keyhog_exit, so treating the scan as having findings."
   else
+    scan_status=failed
+    publish_receipt
     gha_error "Could not parse clean scan report '$report'."
     exit 3
   fi
 else
+  scan_status=failed
+  publish_receipt
   gha_error "keyhog exited $keyhog_exit but did not write '$report'."
   exit 3
 fi
 
-if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
-  {
-    echo "findings=$findings"
-    echo "exit-code=$keyhog_exit"
-    echo "duration-ms=$duration_ms"
-  } >> "$GITHUB_OUTPUT"
-fi
-
-gha_notice "Found $findings finding(s) at or above '$severity' severity."
-gha_notice "Scan completed in ${duration_ms} ms."
+publish_receipt
 
 if [[ "$keyhog_exit" == "10" ]]; then
   gha_error "LIVE credential(s) confirmed by --verify (exit 10)."
-fi
-
-md_cell() {
-  local value="$1"
-  value="${value//$'\r'/ }"
-  value="${value//$'\n'/ }"
-  value="${value//|/\\|}"
-  value="${value//\`/\\\`}"
-  printf '`%s`' "$value"
-}
-
-if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
-  {
-    echo "### KeyHog scan"
-    echo
-    echo "| Field | Value |"
-    echo "| --- | --- |"
-    printf '| Path | %s |\n' "$(md_cell "$scan_path")"
-    printf '| Severity floor | %s |\n' "$(md_cell "$severity")"
-    printf '| Format | %s |\n' "$(md_cell "$format")"
-    printf '| Report | %s |\n' "$(md_cell "$report")"
-    printf '| Findings | %s |\n' "$(md_cell "$findings")"
-    printf '| Exit code | %s |\n' "$(md_cell "$keyhog_exit")"
-    printf '| Duration | %s |\n' "$(md_cell "${duration_ms} ms")"
-    printf '| Fail on findings | %s |\n' "$(md_cell "$fail_on_findings")"
-    printf '| Upload SARIF | %s |\n' "$(md_cell "$upload_sarif")"
-    if [[ -n "$baseline" ]]; then
-      printf '| Baseline | %s |\n' "$(md_cell "$baseline")"
-    fi
-  } >> "$GITHUB_STEP_SUMMARY"
 fi

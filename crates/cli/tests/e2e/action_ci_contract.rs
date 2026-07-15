@@ -1116,6 +1116,10 @@ exit 1
         output_file(&dir).contains("findings=1"),
         "parse failure after findings exit must not become zero findings"
     );
+    assert!(
+        output_file(&dir).contains("scan-status=failed\n"),
+        "malformed findings reports must publish a failed completion state"
+    );
 }
 
 #[test]
@@ -1148,6 +1152,10 @@ exit 10
     assert!(
         output_file(&dir).contains("findings=1"),
         "parse failure after live exit must not become zero findings"
+    );
+    assert!(
+        output_file(&dir).contains("scan-status=failed\n"),
+        "malformed live reports must publish a failed completion state"
     );
     assert!(
         combined_output(&output).contains("LIVE credential(s) confirmed by --verify (exit 10)."),
@@ -1291,6 +1299,125 @@ exit 0
             .contains("keyhog exited 0 but did not write 'keyhog-results.sarif'."),
         "missing clean report must be operator-visible; output={}",
         combined_output(&output)
+    );
+    let receipt = output_file(&dir);
+    assert!(
+        receipt.contains("exit-code=0\n")
+            && receipt.contains("scan-status=failed\n")
+            && receipt.contains("report-present=false\n"),
+        "missing clean reports must publish an honest failed receipt; receipt={receipt}"
+    );
+}
+
+#[test]
+fn action_publishes_receipt_before_invalid_config_exit() {
+    let dir = TempDir::new().expect("tempdir");
+    write_stub(&dir, "#!/usr/bin/env bash\nexit 2\n");
+
+    let output = run_action(&dir, &[]);
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "invalid config must preserve the scanner exit code; output={}",
+        combined_output(&output)
+    );
+    let receipt = output_file(&dir);
+    assert!(
+        receipt.contains("exit-code=2\n"),
+        "invalid config must publish the raw scanner exit code; receipt={receipt}"
+    );
+    assert!(
+        receipt.contains("scan-status=failed\n"),
+        "invalid config must publish a failed typed completion state; receipt={receipt}"
+    );
+    assert!(
+        receipt.contains("report-present=false\n"),
+        "invalid config without a report must publish report presence; receipt={receipt}"
+    );
+    assert!(
+        receipt
+            .lines()
+            .find_map(|line| line.strip_prefix("duration-ms="))
+            .and_then(|value| value.parse::<u64>().ok())
+            .is_some(),
+        "invalid config must publish a numeric duration; receipt={receipt}"
+    );
+    let summary = summary_file(&dir);
+    assert!(
+        summary.contains("| Completion status | `failed` |")
+            && summary.contains("| Report present | `false` |"),
+        "failure summary must retain typed state and report presence; summary={summary}"
+    );
+}
+
+#[test]
+fn action_publishes_partial_receipt_before_incomplete_coverage_exit() {
+    let dir = TempDir::new().expect("tempdir");
+    write_stub(
+        &dir,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ "$#" -gt 0 ]]; do
+  if [[ "$1" == "--output" ]]; then
+    shift
+    out="$1"
+  fi
+  shift || true
+done
+printf '{"runs":[{"results":[]}]}' > "$out"
+exit 13
+"#,
+    );
+
+    let output = run_action(&dir, &[]);
+    assert_eq!(
+        output.status.code(),
+        Some(13),
+        "incomplete coverage must preserve the scanner exit code; output={}",
+        combined_output(&output)
+    );
+    let receipt = output_file(&dir);
+    assert!(
+        receipt.contains("exit-code=13\n") && receipt.contains("scan-status=partial\n"),
+        "incomplete coverage must publish raw code and partial state; receipt={receipt}"
+    );
+    assert!(
+        receipt.contains("report-present=true\n"),
+        "incomplete coverage with a report must publish report presence; receipt={receipt}"
+    );
+    let summary = summary_file(&dir);
+    assert!(
+        summary.contains("| Completion status | `partial` |")
+            && summary.contains("| Exit code | `13` |"),
+        "incomplete coverage summary must distinguish the partial terminal class; summary={summary}"
+    );
+}
+
+#[test]
+fn action_publishes_failure_receipt_before_internal_scanner_exit() {
+    let dir = TempDir::new().expect("tempdir");
+    write_stub(&dir, "#!/usr/bin/env bash\nexit 11\n");
+
+    let output = run_action(&dir, &[]);
+    assert_eq!(
+        output.status.code(),
+        Some(11),
+        "internal scanner failure must preserve the scanner exit code; output={}",
+        combined_output(&output)
+    );
+    let receipt = output_file(&dir);
+    assert!(
+        receipt.contains("exit-code=11\n")
+            && receipt.contains("scan-status=failed\n")
+            && receipt.contains("report-present=false\n"),
+        "internal scanner failure must publish a complete failure receipt; receipt={receipt}"
+    );
+    let summary = summary_file(&dir);
+    assert!(
+        summary.contains("| Completion status | `failed` |")
+            && summary.contains("| Exit code | `11` |"),
+        "internal scanner failure summary must retain the panic exit class; summary={summary}"
     );
 }
 
@@ -1578,6 +1705,16 @@ fn composite_action_exposes_scan_duration_output() {
     assert!(
         manifest.contains("value: ${{ steps.scan.outputs.duration-ms }}"),
         "duration output must come from the tested scan script"
+    );
+    assert!(
+        manifest.contains("scan-status:")
+            && manifest.contains("value: ${{ steps.scan.outputs.scan-status }}"),
+        "typed scan status output must come from the tested scan script"
+    );
+    assert!(
+        manifest.contains("report-present:")
+            && manifest.contains("value: ${{ steps.scan.outputs.report-present }}"),
+        "report presence output must come from the tested scan script"
     );
 }
 

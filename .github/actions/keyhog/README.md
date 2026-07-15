@@ -101,6 +101,8 @@ git add keyhog-baseline.json && git commit -m "chore: keyhog baseline"
 | `findings` | Number of findings at or above `severity`. |
 | `exit-code` | Raw `keyhog` process exit: `0` clean, `1` findings, `10` live findings under `--verify`. |
 | `duration-ms` | Wall-clock scan duration in milliseconds from the action wrapper. |
+| `scan-status` | Typed terminal state: `success`, `partial`, `cancelled`, or `failed`. Published even when the scanner fails before producing a report. |
+| `report-present` | `true` when the requested report exists, otherwise `false`; published on every scanner terminal path. |
 | `report`   | Path to the produced report file. |
 | `analysis-category` | Validated identity shared by Code Scanning, the report filename, and the artifact. |
 

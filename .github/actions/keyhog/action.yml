@@ -69,6 +69,12 @@ outputs:
   duration-ms:
     description: 'Wall-clock scan duration in milliseconds, measured by the Action wrapper.'
     value: ${{ steps.scan.outputs.duration-ms }}
+  scan-status:
+    description: 'Typed terminal scan state: success, partial, cancelled, or failed.'
+    value: ${{ steps.scan.outputs.scan-status }}
+  report-present:
+    description: 'Whether the scanner wrote the requested report before termination.'
+    value: ${{ steps.scan.outputs.report-present }}
   report:
     description: 'Path to the produced scan report (relative to the workspace).'
     value: ${{ steps.outfile.outputs.name }}
