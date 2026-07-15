@@ -2,7 +2,7 @@
 
 use std::io::Write;
 
-use crate::VerifiedFinding;
+use crate::{ScanCompletionStatus, VerifiedFinding};
 
 use super::{
     escape::{escape_cdata, escape_xml_attr},
@@ -15,6 +15,7 @@ pub(crate) struct JunitReporter<W: Write + Send> {
     testcases: Vec<u8>,
     tests_count: usize,
     skip_summary: Vec<(String, usize)>,
+    scan_status: ScanCompletionStatus,
 }
 
 impl<W: Write + Send> JunitReporter<W> {
@@ -25,6 +26,7 @@ impl<W: Write + Send> JunitReporter<W> {
             testcases: Vec::new(),
             tests_count: 0,
             skip_summary: Vec::new(),
+            scan_status: ScanCompletionStatus::Success,
         }
     }
 
@@ -34,6 +36,14 @@ impl<W: Write + Send> JunitReporter<W> {
             .into_iter()
             .filter(|(_, count)| *count > 0)
             .collect();
+        self.scan_status =
+            ScanCompletionStatus::resolve(Some(self.scan_status), !self.skip_summary.is_empty());
+        self
+    }
+
+    /// Attach the explicit terminal state from the shared scan metadata.
+    pub(crate) fn with_scan_status(mut self, status: ScanCompletionStatus) -> Self {
+        self.scan_status = status;
         self
     }
 }
@@ -59,11 +69,7 @@ impl<W: Write + Send> Reporter for JunitReporter<W> {
         writeln!(
             self.writer,
             "      <property name=\"keyhog.scan.status\" value=\"{}\"/>",
-            if self.skip_summary.is_empty() {
-                "success"
-            } else {
-                "partial"
-            }
+            serde_json::to_string(&self.scan_status)?.trim_matches('"')
         )?;
         for (reason, count) in &self.skip_summary {
             writeln!(

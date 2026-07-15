@@ -3,7 +3,7 @@
 use std::borrow::Cow;
 use std::io::Write;
 
-use crate::{Severity, VerifiedFinding};
+use crate::{ScanCompletionStatus, Severity, VerifiedFinding};
 use serde::Serialize;
 
 use super::{impl_writer_backed, ReportError, Reporter, WriterBackedReporter};
@@ -19,6 +19,7 @@ pub(crate) struct GitlabSastReporter<W: Write + Send> {
     prefix_written: bool,
     first_vulnerability: bool,
     skip_summary: Vec<(String, usize)>,
+    scan_status: ScanCompletionStatus,
 }
 
 impl<W: Write + Send> GitlabSastReporter<W> {
@@ -31,6 +32,7 @@ impl<W: Write + Send> GitlabSastReporter<W> {
             prefix_written: false,
             first_vulnerability: true,
             skip_summary: Vec::new(),
+            scan_status: ScanCompletionStatus::Success,
         }
     }
 
@@ -42,6 +44,14 @@ impl<W: Write + Send> GitlabSastReporter<W> {
             .into_iter()
             .filter(|(_, count)| *count > 0)
             .collect();
+        self.scan_status =
+            ScanCompletionStatus::resolve(Some(self.scan_status), !self.skip_summary.is_empty());
+        self
+    }
+
+    /// Attach the explicit terminal state from the shared scan metadata.
+    pub(crate) fn with_scan_status(mut self, status: ScanCompletionStatus) -> Self {
+        self.scan_status = status;
         self
     }
 
@@ -59,7 +69,7 @@ impl<W: Write + Send> GitlabSastReporter<W> {
             &scan_object(
                 &self.scan_started_at,
                 &self.scan_finished_at,
-                !self.skip_summary.is_empty(),
+                self.scan_status,
             ),
         )?;
         write!(self.writer, ",\"vulnerabilities\":[")?;
@@ -95,6 +105,10 @@ struct GitlabScan<'a> {
     #[serde(rename = "type")]
     scan_type: &'static str,
     status: &'static str,
+    /// KeyHog's lossless terminal state. GitLab's schema only has success or
+    /// failure, so this additive namespaced field preserves partial, failed,
+    /// and cancelled distinctions for detached-artifact consumers.
+    keyhog_scan_status: String,
     start_time: &'a str,
     end_time: &'a str,
     analyzer: GitlabTool,
@@ -165,11 +179,22 @@ struct GitlabTextDetail<'a> {
 fn scan_object<'a>(
     scan_started_at: &'a str,
     scan_finished_at: &'a str,
-    partial: bool,
+    scan_status: ScanCompletionStatus,
 ) -> GitlabScan<'a> {
     GitlabScan {
         scan_type: "sast",
-        status: if partial { "failure" } else { "success" },
+        status: if matches!(scan_status, ScanCompletionStatus::Success) {
+            "success"
+        } else {
+            "failure"
+        },
+        keyhog_scan_status: match scan_status {
+            ScanCompletionStatus::Success => "success",
+            ScanCompletionStatus::Partial => "partial",
+            ScanCompletionStatus::Cancelled => "cancelled",
+            ScanCompletionStatus::Failed => "failed",
+        }
+        .to_string(),
         start_time: scan_started_at,
         end_time: scan_finished_at,
         analyzer: keyhog_tool(),

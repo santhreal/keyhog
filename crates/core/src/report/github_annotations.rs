@@ -2,7 +2,7 @@
 
 use std::io::Write;
 
-use crate::{Severity, VerifiedFinding};
+use crate::{ScanCompletionStatus, Severity, VerifiedFinding};
 
 use super::escape::sanitize_terminal;
 use super::{impl_writer_backed, ReportError, Reporter, WriterBackedReporter};
@@ -12,6 +12,7 @@ pub(crate) struct GithubAnnotationsReporter<W: Write + Send> {
     writer: W,
     skip_summary: Vec<(String, usize)>,
     emit_scan_status: bool,
+    scan_status: ScanCompletionStatus,
 }
 
 impl<W: Write + Send> GithubAnnotationsReporter<W> {
@@ -21,6 +22,7 @@ impl<W: Write + Send> GithubAnnotationsReporter<W> {
             writer,
             skip_summary: Vec::new(),
             emit_scan_status: false,
+            scan_status: ScanCompletionStatus::Success,
         }
     }
 
@@ -31,6 +33,14 @@ impl<W: Write + Send> GithubAnnotationsReporter<W> {
             .into_iter()
             .filter(|(_, count)| *count > 0)
             .collect();
+        self.scan_status =
+            ScanCompletionStatus::resolve(Some(self.scan_status), !self.skip_summary.is_empty());
+        self
+    }
+
+    /// Attach the explicit terminal state from the shared scan metadata.
+    pub(crate) fn with_scan_status(mut self, status: ScanCompletionStatus) -> Self {
+        self.scan_status = status;
         self
     }
 }
@@ -62,14 +72,10 @@ impl<W: Write + Send> Reporter for GithubAnnotationsReporter<W> {
 
     fn finish(&mut self) -> Result<(), ReportError> {
         if self.emit_scan_status {
-            let status = if self.skip_summary.is_empty() {
-                "success"
-            } else {
-                "partial"
-            };
             writeln!(
                 self.writer,
-                "::notice title=keyhog scan::scan status: {status}"
+                "::notice title=keyhog scan::scan status: {}",
+                serde_json::to_string(&self.scan_status)?.trim_matches('"')
             )?;
         }
         if !self.skip_summary.is_empty() {

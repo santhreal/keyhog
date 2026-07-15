@@ -550,7 +550,9 @@ pub fn write_scan_report<W: Write + Send>(
             findings,
         ),
         ReportFormat::Sarif { skip_summary } => finish_reporter(
-            sarif::SarifReporter::new(writer).with_skip_summary(skip_summary),
+            sarif::SarifReporter::new(writer)
+                .with_skip_summary(skip_summary.clone())
+                .with_scan_status(resolve_report_status(report_metadata, &skip_summary)),
             findings,
         ),
         ReportFormat::Csv => finish_reporter(csv::CsvReporter::new(writer)?, findings),
@@ -560,7 +562,8 @@ pub fn write_scan_report<W: Write + Send>(
         ),
         ReportFormat::GithubAnnotationsCoverage { skip_summary } => finish_reporter(
             github_annotations::GithubAnnotationsReporter::new(writer)
-                .with_skip_summary(skip_summary),
+                .with_skip_summary(skip_summary.clone())
+                .with_scan_status(resolve_report_status(report_metadata, &skip_summary)),
             findings,
         ),
         ReportFormat::GitlabSast {
@@ -604,7 +607,8 @@ pub fn write_scan_report<W: Write + Send>(
                     "scan_finished_at",
                 )?,
             )
-            .with_skip_summary(skip_summary),
+            .with_skip_summary(skip_summary.clone())
+            .with_scan_status(resolve_report_status(report_metadata, &skip_summary)),
             findings,
         ),
         ReportFormat::Html {
@@ -618,10 +622,22 @@ pub fn write_scan_report<W: Write + Send>(
         ),
         ReportFormat::Junit => finish_reporter(junit::JunitReporter::new(writer), findings),
         ReportFormat::JunitCoverage { skip_summary } => finish_reporter(
-            junit::JunitReporter::new(writer).with_skip_summary(skip_summary),
+            junit::JunitReporter::new(writer)
+                .with_skip_summary(skip_summary.clone())
+                .with_scan_status(resolve_report_status(report_metadata, &skip_summary)),
             findings,
         ),
     }
+}
+
+fn resolve_report_status(
+    metadata: Option<&ScanReportMetadata>,
+    coverage_gap_summary: &[(String, usize)],
+) -> ScanCompletionStatus {
+    ScanCompletionStatus::resolve(
+        metadata.map(|value| value.scan_status),
+        !coverage_gap_summary.is_empty(),
+    )
 }
 
 /// Write a CSV scan artifact with a self-describing scan-status preamble.

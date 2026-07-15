@@ -42,6 +42,7 @@ pub(crate) struct SarifReporter<W: Write + Send> {
     /// kept as plain `(String, usize)` so `core` takes no dependency on the
     /// sources crate.
     skip_summary: Vec<(String, usize)>,
+    scan_status: ScanCompletionStatus,
 }
 
 #[path = "sarif_types.rs"]
@@ -69,6 +70,7 @@ impl<W: Write + Send> SarifReporter<W> {
             prefix_written: false,
             any_result: false,
             skip_summary: Vec::new(),
+            scan_status: ScanCompletionStatus::Success,
         }
     }
 
@@ -79,6 +81,14 @@ impl<W: Write + Send> SarifReporter<W> {
     #[must_use]
     pub(crate) fn with_skip_summary(mut self, summary: Vec<(String, usize)>) -> Self {
         self.skip_summary = summary.into_iter().filter(|(_, n)| *n > 0).collect();
+        self.scan_status =
+            ScanCompletionStatus::resolve(Some(self.scan_status), !self.skip_summary.is_empty());
+        self
+    }
+
+    /// Attach the explicit terminal state from the shared scan metadata.
+    pub(crate) fn with_scan_status(mut self, status: ScanCompletionStatus) -> Self {
+        self.scan_status = status;
         self
     }
 
@@ -409,10 +419,7 @@ impl<W: Write + Send> Reporter for SarifReporter<W> {
         // consumers do not need the process exit code or stderr to distinguish
         // a complete run from one with coverage gaps.
         write!(self.writer, ",\"properties\":{{\"keyhog.scan.status\":")?;
-        serde_json::to_writer(
-            &mut self.writer,
-            &ScanCompletionStatus::from_coverage_gaps(!self.skip_summary.is_empty()),
-        )?;
+        serde_json::to_writer(&mut self.writer, &self.scan_status)?;
         write!(self.writer, "}}")?;
 
         // Coverage transparency: report whole-file skips and partial scan

@@ -85,9 +85,9 @@ additive and may be accepted. See [Your first scan](./first-scan.md#json-output)
 for the complete schema. Metadata includes the binary Git identity, detector-set
 digest, effective-config digest when available, a stable non-secret `scan_id`,
 targets, timing, and counters including the exact source bytes and chunks
-consumed by the scanner. The top-level `scan_status` is `success` or `partial`
-for completed reports; readers should preserve `cancelled` and `failed` when
-those terminal states are supplied by another producer. The `scan_id` lets
+consumed by the scanner. The top-level `scan_status` is one of `success`,
+`partial`, `cancelled`, or `failed`; readers must preserve the explicit
+terminal state in detached artifacts. The `scan_id` lets
 independently stored metadata-bearing JSON, JSONL, and HTML projections be
 joined without exposing secrets. Reports
 from older KeyHog versions may omit it; the HTML projection displays that state
@@ -125,7 +125,7 @@ finding model. The other formats are deliberate projections:
 | `sarif` | Detector identity, redacted credential/hash, verification, confidence, entropy, metadata, companions, primary and additional locations | Run properties and coverage notifications |
 | `html` | Complete redacted findings plus the full report metadata object | Status and coverage panel |
 | `junit` | Human-readable detector, service, severity, location, hash, verification, confidence, entropy, and companions in CDATA | Suite properties |
-| `gitlab-sast` | GitLab schema fields plus redacted credential/hash, service, companions, and entropy details | Schema-native `scan.status` |
+| `gitlab-sast` | GitLab schema fields plus redacted credential/hash, service, companions, and entropy details | Schema-native `scan.status` plus `scan.keyhog_scan_status` |
 | `github-annotations` | Redacted detector, location, severity, and verification message | Coverage warning annotation when partial |
 
 Fields not listed for a projection are intentionally unavailable in that
@@ -171,7 +171,7 @@ and confidence when available. The plaintext credential is not emitted.
 When source coverage is incomplete, the formatter also emits one terminal
 `::warning` notice with deterministic reason/count pairs, so the GitHub job log
 shows the incomplete state even when there are no findings. CLI output always
-also emits `::notice title=keyhog scan::scan status: success|partial`; the
+also emits `::notice title=keyhog scan::scan status: success|partial|cancelled|failed`; the
 legacy library-only `ReportFormat::GithubAnnotations` variant remains finding-
 only for compatibility.
 
@@ -202,8 +202,10 @@ metadata used by HTML. This keeps CI artifacts and the human report aligned
 when a daemon or a long-running scan finishes at a different time than the
 reporting step began. If source coverage gaps occur, KeyHog emits the
 schema-supported `scan.status: "failure"`; a complete scan emits
-`scan.status: "success"`. This keeps partial GitLab artifacts distinguishable
-without adding fields GitLab does not define.
+`scan.status: "success"`. Because GitLab's schema has no distinct cancelled or
+failed values, the nested `scan.keyhog_scan_status` extension preserves
+KeyHog's exact `success|partial|cancelled|failed` state for detached-artifact
+consumers.
 
 ## `--format html`
 
@@ -216,7 +218,7 @@ metadata is descriptive only; it never changes finding or exit-code semantics.
 ## `--format junit`
 
 JUnit XML contains one failing testcase per finding. The suite always contains
-`keyhog.scan.status` (`success` or `partial`), and partial scans add one
+`keyhog.scan.status` (`success`, `partial`, `cancelled`, or `failed`), and partial scans add one
 `keyhog.coverage_gap` property per reason/count pair. CI consumers can reject a
 partial artifact without scraping stderr.
 

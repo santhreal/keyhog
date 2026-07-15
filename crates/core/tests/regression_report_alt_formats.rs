@@ -193,6 +193,78 @@ fn versioned_json_reports_preserve_explicit_failed_status() {
 }
 
 #[test]
+fn structured_projections_preserve_explicit_failed_and_cancelled_status() {
+    for status in [
+        ScanCompletionStatus::Failed,
+        ScanCompletionStatus::Cancelled,
+    ] {
+        let metadata = test_metadata(status);
+        let report = ScanReport::new(&[]).with_metadata(&metadata);
+
+        let mut sarif = Vec::new();
+        write_scan_report(
+            &mut sarif,
+            ReportFormat::Sarif {
+                skip_summary: Vec::new(),
+            },
+            report,
+        )
+        .expect("SARIF report");
+        let sarif: serde_json::Value = serde_json::from_slice(&sarif).expect("SARIF parses");
+        assert_eq!(
+            sarif["runs"][0]["properties"]["keyhog.scan.status"],
+            serde_json::to_value(status).expect("status serializes")
+        );
+
+        let mut annotations = Vec::new();
+        write_scan_report(
+            &mut annotations,
+            ReportFormat::GithubAnnotationsCoverage {
+                skip_summary: Vec::new(),
+            },
+            report,
+        )
+        .expect("GitHub annotations report");
+        let annotations = String::from_utf8(annotations).expect("annotations are UTF-8");
+        let label = serde_json::to_string(&status)
+            .expect("status serializes")
+            .trim_matches('"')
+            .to_string();
+        assert_eq!(
+            annotations,
+            format!("::notice title=keyhog scan::scan status: {label}\n")
+        );
+
+        let mut junit = Vec::new();
+        write_scan_report(
+            &mut junit,
+            ReportFormat::JunitCoverage {
+                skip_summary: Vec::new(),
+            },
+            report,
+        )
+        .expect("JUnit report");
+        let junit = String::from_utf8(junit).expect("JUnit is UTF-8");
+        assert!(junit.contains(&format!("name=\"keyhog.scan.status\" value=\"{label}\"")));
+
+        let mut gitlab = Vec::new();
+        write_scan_report(
+            &mut gitlab,
+            ReportFormat::GitlabSastCoverage {
+                scan_started_at: "2026-01-01T00:00:00".into(),
+                scan_finished_at: "2026-01-01T00:00:01".into(),
+                skip_summary: Vec::new(),
+            },
+            report,
+        )
+        .expect("GitLab report");
+        let gitlab: serde_json::Value = serde_json::from_slice(&gitlab).expect("GitLab parses");
+        assert_eq!(gitlab["scan"]["status"], "failure");
+        assert_eq!(gitlab["scan"]["keyhog_scan_status"], label);
+    }
+}
+
+#[test]
 fn structured_projection_matrix_preserves_declared_fields() {
     let mut finding = planted();
     finding
