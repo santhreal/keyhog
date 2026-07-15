@@ -31,6 +31,7 @@
 # Guides
 
 - [Deep recovery](./guides/deep-recovery.md)
+- [Mass scanning](./guides/mass-scanning.md)
 
 # Reference
 
