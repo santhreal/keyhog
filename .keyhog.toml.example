@@ -7,6 +7,7 @@
 # ============================================================================
 
 # Path to detector TOML directory (default: "detectors")
+# Relative paths resolve from the directory containing this config file.
 detectors = "detectors"
 
 # ============================================================================
@@ -128,7 +129,7 @@ show_secrets = false
 # flat spellings are rejected so every setting has one predictable owner.
 [scan]
 severity = "info"                 # info | client-safe | low | medium | high | critical
-format = "text"                   # text | json | jsonl | sarif | csv | ...
+format = "text"                   # text | json | json-envelope | jsonl | jsonl-envelope | sarif | csv | github-annotations | gitlab-sast | html | junit
 min_confidence = 0.40             # 0.0-1.0; raise toward 0.85 for precision
 # ml_threshold = 0.5              # explicit 0.5 raises the 0.40 report floor
 decode_depth = 10                 # recursive decode passes, 1-10

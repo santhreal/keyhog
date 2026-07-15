@@ -375,7 +375,7 @@ keyhog scan . --deep                           # highest-recall built-in preset
 keyhog scan . --incremental                    # BLAKE3 Merkle skip → 10-100× CI loop
 ```
 
-One scan, every CI/SIEM dialect: `text · json · jsonl · sarif · csv · html · junit · github-annotations · gitlab-sast`, all from the same engine:
+One scan, every CI/SIEM dialect: `text · json · json-envelope · jsonl · jsonl-envelope · sarif · csv · html · junit · github-annotations · gitlab-sast`, all from the same engine:
 
 <p align="center">
   <img src="demo/keyhog-formats.gif" alt="keyhog emitting the same findings as text, JSON, and SARIF: machine-readable surfaces for pipelines and code scanning" width="860" />

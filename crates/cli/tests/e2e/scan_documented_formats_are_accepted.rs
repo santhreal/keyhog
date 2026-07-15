@@ -29,7 +29,9 @@ fn every_output_format_documented_in_user_docs_is_accepted_by_scan() {
         vec![
             "text",
             "json",
+            "json-envelope",
             "jsonl",
+            "jsonl-envelope",
             "sarif",
             "csv",
             "github-annotations",
@@ -37,7 +39,7 @@ fn every_output_format_documented_in_user_docs_is_accepted_by_scan() {
             "html",
             "junit"
         ],
-        "docs/src/output-formats.md must enumerate the canonical nine scan formats"
+        "docs/src/output-formats.md must enumerate the canonical eleven scan formats"
     );
 
     let dir = TempDir::new().expect("tempdir");
