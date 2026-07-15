@@ -137,6 +137,11 @@ fn json_findings(value: &serde_json::Value) -> &[serde_json::Value] {
         .expect("versioned JSON report must contain findings")
 }
 
+fn json_envelope_finding_count(output: &str) -> usize {
+    let value = serde_json::from_str::<serde_json::Value>(output.trim()).expect("json-envelope");
+    json_findings(&value).len()
+}
+
 // ---------------------------------------------------------------------------
 // EXIT-CODE CONTRACT across every format
 // ---------------------------------------------------------------------------
@@ -334,7 +339,7 @@ fn json_unverified_finding_serializes_skipped() {
 fn json_credential_is_redacted_not_plaintext() {
     let (stdout, _stderr, _code) = scan_with_format(AWS_KEY_FIXTURE, "json-envelope");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("JSON parses");
-    let arr = v.as_array().expect("array");
+    let arr = json_findings(&v);
     let aws = arr
         .iter()
         .find(|f| {
@@ -1201,11 +1206,7 @@ fn csv_row_count_matches_json_finding_count() {
 fn junit_testcase_count_matches_json_finding_count() {
     let (json_out, _e1, _c1) = scan_with_format(AWS_KEY_FIXTURE, "json-envelope");
     let (junit_out, _e2, _c2) = scan_with_format(AWS_KEY_FIXTURE, "junit");
-    let json_count = serde_json::from_str::<serde_json::Value>(json_out.trim())
-        .expect("json-envelope")
-        .as_array()
-        .expect("array")
-        .len();
+    let json_count = json_envelope_finding_count(&json_out);
     let junit_count = junit_out.matches("<testcase ").count();
     assert_eq!(
         junit_count, json_count,
@@ -1219,14 +1220,15 @@ fn junit_testcase_count_matches_json_finding_count() {
 fn github_annotation_count_matches_json_finding_count() {
     let (json_out, _e1, _c1) = scan_with_format(AWS_KEY_FIXTURE, "json-envelope");
     let (annotation_out, _e2, _c2) = scan_with_format(AWS_KEY_FIXTURE, "github-annotations");
-    let json_count = serde_json::from_str::<serde_json::Value>(json_out.trim())
-        .expect("json-envelope")
-        .as_array()
-        .expect("array")
-        .len();
+    let json_count = json_envelope_finding_count(&json_out);
     let annotation_count = annotation_out
         .lines()
-        .filter(|line| line.starts_with("::"))
+        .filter(|line| {
+            line.starts_with("::")
+                && line.contains("title=keyhog ")
+                && !line.contains("title=keyhog scan")
+                && !line.contains("title=keyhog coverage")
+        })
         .count();
     assert_eq!(
         annotation_count, json_count,
@@ -1240,11 +1242,7 @@ fn github_annotation_count_matches_json_finding_count() {
 fn gitlab_sast_count_matches_json_finding_count() {
     let (json_out, _e1, _c1) = scan_with_format(AWS_KEY_FIXTURE, "json-envelope");
     let (sast_out, _e2, _c2) = scan_with_format(AWS_KEY_FIXTURE, "gitlab-sast");
-    let json_count = serde_json::from_str::<serde_json::Value>(json_out.trim())
-        .expect("json-envelope")
-        .as_array()
-        .expect("array")
-        .len();
+    let json_count = json_envelope_finding_count(&json_out);
     let sast_count = serde_json::from_str::<serde_json::Value>(sast_out.trim())
         .expect("gitlab-sast")
         .get("vulnerabilities")
@@ -1316,9 +1314,26 @@ fn empty_file_is_clean_for_every_format() {
     }
     // And the empty-corpus structural invariants still hold.
     let (json_out, _e, _c) = scan_with_format("", "json-envelope");
-    assert_eq!(json_out, "[]", "zero-byte file JSON must be `[]`");
+    let json: serde_json::Value = serde_json::from_str(json_out.trim()).expect("JSON envelope");
+    assert!(
+        json_findings(&json).is_empty(),
+        "zero-byte file JSON envelope must contain no findings"
+    );
     let (jsonl_out, _e, _c) = scan_with_format("", "jsonl-envelope");
-    assert_eq!(jsonl_out, "", "zero-byte file JSONL must be empty");
+    let jsonl_lines: Vec<&str> = jsonl_out.lines().collect();
+    assert_eq!(
+        jsonl_lines.len(),
+        2,
+        "zero-byte JSONL envelope must contain header and terminal summary"
+    );
+    assert!(
+        jsonl_lines[0].contains("\"schema_version\""),
+        "JSONL envelope must start with its schema header"
+    );
+    assert!(
+        jsonl_lines[1].contains("\"scan_status\":\"success\""),
+        "JSONL envelope must carry the terminal success summary"
+    );
 }
 
 /// Boundary: an UNKNOWN `--format` value is rejected by clap as a usage
