@@ -171,6 +171,42 @@ fn deep_scan_recovers_every_supported_static_program_shape() {
 }
 
 #[test]
+fn base64_json_array_recovery_accepts_node_utf8_defaults_and_case() {
+    let scanner = scanner(ScannerConfig::thorough());
+    for spelling in [".toString()", ".toString('UTF8')"] {
+        let source = XOR_BASE64_ARRAYS.replace(".toString('utf8')", spelling);
+        let matches = scan(&scanner, &source, ScanBackend::CpuFallback);
+        assert!(
+            exact_target_found(&matches),
+            "Node's argument-free/case-normalized UTF-8 spelling must recover the plaintext: {spelling}; got {matches:?}"
+        );
+    }
+    let rejected = XOR_BASE64_ARRAYS.replace(".toString('utf8')", ".toString('latin1')");
+    assert!(
+        !exact_target_found(&scan(&scanner, &rejected, ScanBackend::CpuFallback)),
+        "non-UTF-8 Buffer.toString encodings must remain outside bounded static recovery"
+    );
+}
+
+#[test]
+fn xor_recovery_accepts_only_a_literal_modulo_equal_to_key_length() {
+    let scanner = scanner(ScannerConfig::thorough());
+    let exact = XOR_BASE64_ARRAYS.replace("i % _k.length", "i % 8");
+    assert!(
+        exact_target_found(&scan(&scanner, &exact, ScanBackend::CpuFallback)),
+        "a literal modulo equal to the bound key length must recover the plaintext"
+    );
+
+    for literal in ["0", "7", "999999999999999999999999"] {
+        let mismatch = XOR_BASE64_ARRAYS.replace("i % _k.length", &format!("i % {literal}"));
+        assert!(
+            !exact_target_found(&scan(&scanner, &mismatch, ScanBackend::CpuFallback)),
+            "a zero, mismatched, or oversized literal modulo must fail closed: {literal}"
+        );
+    }
+}
+
+#[test]
 fn cryptojs_recovery_preserves_assignment_anchor_for_unprefixed_secret() {
     let scanner = scanner(ScannerConfig::thorough());
     let matches = scan(

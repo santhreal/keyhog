@@ -66,14 +66,14 @@ static LITERAL_ARRAY_RE: LazyLock<Regex> = LazyLock::new(|| {
 
 static BASE64_JSON_ARRAY_RE: LazyLock<Regex> = LazyLock::new(|| {
     compile_static_regex(
-        r#"(?m)\bconst\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*JSON\s*\.\s*parse\s*\(\s*Buffer\s*\.\s*from\s*\(\s*(["'][A-Za-z0-9+/=_-]+["'])\s*,\s*(?:'base64'|"base64")\s*\)\s*\.\s*toString\s*\(\s*(?:'utf8'|"utf8")\s*\)\s*\)"#,
+        r#"(?m)\bconst\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*JSON\s*\.\s*parse\s*\(\s*Buffer\s*\.\s*from\s*\(\s*(["'][A-Za-z0-9+/=_-]+["'])\s*,\s*(?:'base64'|"base64")\s*\)\s*\.\s*toString\s*\(\s*(?:(?:'(?i:utf8)'|"(?i:utf8)"))?\s*\)\s*\)"#,
         "Base64 JSON byte-array assignment",
     )
 });
 
 static XOR_MAP_RE: LazyLock<Regex> = LazyLock::new(|| {
     compile_static_regex(
-        r"String\s*\.\s*fromCharCode\s*\(\s*\.\.\.\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*map\s*\(\s*\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*,\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\)\s*=>\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\^\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\[\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*%\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*length\s*\]\s*\)\s*\)",
+        r"String\s*\.\s*fromCharCode\s*\(\s*\.\.\.\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*map\s*\(\s*\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*,\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\)\s*=>\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\^\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\[\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*%\s*(?:(?:([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*length)|([0-9]+))\s*\]\s*\)\s*\)",
         "static XOR map expression",
     )
 });
@@ -204,7 +204,8 @@ fn recover_xor_plaintexts(
             byte_use,
             key_name,
             index_use,
-            key_length_use,
+            key_length_name,
+            key_length_literal,
         )) = capture_xor_names(&captures)
         else {
             continue;
@@ -216,13 +217,23 @@ fn recover_xor_plaintexts(
             record_static_limit("XOR expression offset overflow");
             continue;
         };
-        if byte_parameter != byte_use || index_parameter != index_use || key_name != key_length_use
-        {
+        if byte_parameter != byte_use || index_parameter != index_use {
             continue;
         }
-        if data_name == key_name
-            || identifier_occurrence_count(source, data_name) != 2
-            || identifier_occurrence_count(source, key_name) != 3
+        let modulo_matches_key = match (key_length_name, key_length_literal) {
+            (Some(length_name), None) => length_name == key_name,
+            (None, Some(length_literal)) => length_literal
+                .parse::<usize>()
+                .ok()
+                .is_some_and(|length| length > 0),
+            _ => false,
+        };
+        if !modulo_matches_key || data_name == key_name {
+            continue;
+        }
+        let key_occurrences = if key_length_name.is_some() { 3 } else { 2 };
+        if identifier_occurrence_count(source, data_name) != 2
+            || identifier_occurrence_count(source, key_name) != key_occurrences
         {
             continue;
         }
@@ -243,6 +254,12 @@ fn recover_xor_plaintexts(
                 continue;
             }
         };
+        if key_length_literal.is_some()
+            && key_length_literal.and_then(|literal| literal.parse::<usize>().ok())
+                != Some(key.len())
+        {
+            continue;
+        }
         if data.is_empty() || key.is_empty() || data.len() > MAX_BYTE_ARRAY_LEN {
             continue;
         }
@@ -432,7 +449,8 @@ fn capture_xor_names<'a>(
     &'a str,
     &'a str,
     &'a str,
-    &'a str,
+    Option<&'a str>,
+    Option<&'a str>,
 )> {
     Some((
         captures.get(1)?.as_str(),
@@ -441,7 +459,8 @@ fn capture_xor_names<'a>(
         captures.get(4)?.as_str(),
         captures.get(5)?.as_str(),
         captures.get(6)?.as_str(),
-        captures.get(7)?.as_str(),
+        captures.get(7).map(|capture| capture.as_str()),
+        captures.get(8).map(|capture| capture.as_str()),
     ))
 }
 
