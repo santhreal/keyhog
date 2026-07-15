@@ -1,10 +1,11 @@
 # musl (Alpine) integration image for the Docker test matrix.
 #
-# Builds the `portable` feature set (no Hyperscan / Ghidra / CUDA system
-# libs - pure-Rust scan path) against musl libc, the configuration shipped
-# to users who run keyhog in minimal/static Alpine containers. Catches musl-
-# vs-glibc regressions (static linking, no glibc-specific syscalls) that the
-# glibc image can't.
+# Builds the `portable` feature set (no Hyperscan / Ghidra / CUDA build
+# dependencies) against musl libc. The source build still uses reqwest's
+# native TLS and therefore installs OpenSSL development and static libraries;
+# `OPENSSL_STATIC=1` makes that TLS dependency self-contained in the image.
+# This is the configuration for users running keyhog in minimal Alpine
+# containers. It catches musl-vs-glibc regressions that the glibc image can't.
 FROM rust:alpine AS builder
 WORKDIR /build
 # musl-dev: C runtime for build scripts. openssl-{dev,libs-static} + pkgconf:

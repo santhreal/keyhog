@@ -321,8 +321,9 @@ else
 fi
 
 # ── 4. install smoke, the install-flow gate ─────────────────────────────────
-# Build + install via the system-lib-free `portable` path (the one that works on
-# every OS incl. arm64 macOS), then prove the installed binary actually detects.
+# Build + install via the portable path (the one that works on every OS,
+# including arm64 macOS). Native TLS build prerequisites are documented by the
+# install guide and are present in the release-smoke image.
 step "install smoke: cargo install (portable) + version + real detection"
 SMOKE="$(mktemp -d)"
 if cargo install --path crates/cli --root "$SMOKE/kh" --no-default-features --features portable --locked -q 2>"$SMOKE/build.log"; then

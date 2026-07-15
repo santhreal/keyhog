@@ -25,7 +25,7 @@
 #
 # Machine registry  (name | transport | os | tree | cargo-target | features)
 #   work-linux    local ssh work-linux   linux   NFS tree              GPU host, default features
-#   santhserver   ssh santhserver        linux   /mnt/santh-desktop    portable (no system libs assumed)
+#   santhserver   ssh santhserver        linux   /mnt/santh-desktop    portable (native TLS prerequisites)
 #   macbook       ssh tt-macbook         macos   discovered            portable
 #   win           ssh windows-thinkpad   windows shipped to C:         portable (Windows-shippable)
 set -uo pipefail
@@ -178,9 +178,11 @@ run_unix() {  # $1 name  $2 host(or 'local')  $3 os  $4 tree  $5 target  $6 feat
   # Phase 1 -- headless CLI: real exit codes, detector hits, clean tree,
   # fail-closed git-history, lossy binary stdin.
   echo "  [cli]"
-  if [ "$host" = local ]; then unix_payload | bash -s "$bin"
-  else unix_payload | "${SSH[@]}" "$host" "bash -s '$bin'"; fi
-  [ $? -ne 0 ] && rc=1
+  if [ "$host" = local ]; then
+    if ! unix_payload | bash -s "$bin"; then rc=1; fi
+  elif ! unix_payload | "${SSH[@]}" "$host" "bash -s '$bin'"; then
+    rc=1
+  fi
 
   # Phase 2 -- installer. Reuses the canonical local-build install proof
   # (install.sh --from-file -> backup/atomic-swap -> `keyhog doctor` self-test

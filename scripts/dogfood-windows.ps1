@@ -13,8 +13,9 @@
   tripping core/build.rs ("contains no .toml"); removing it lets build.rs fall
   through to the workspace detectors/.
 
-  Windows ships the `portable` feature set (no hyperscan / CUDA / GPU system
-  libs), which is the cargo-install profile real Windows users get.
+  Windows ships the `portable` feature set (no Hyperscan, CUDA, or GPU build
+  libraries; native TLS uses Windows platform support), which is the
+  cargo-install profile real Windows users get.
 
 .EXAMPLE
   pwsh scripts\dogfood-windows.ps1                       # from Z: (interactive session)
