@@ -183,6 +183,7 @@ fn config_effective_emits_all_core_default_keys() {
         "entropy_threshold",
         "max_decode_depth",
         "max_decode_bytes",
+        "validate_decode",
         "regex_dfa_limit",
         "gpu_batch_input_limit",
         "max_file_size",

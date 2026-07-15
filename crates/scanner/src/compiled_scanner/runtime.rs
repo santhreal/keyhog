@@ -138,6 +138,15 @@ impl CompiledScanner {
         }
     }
 
+    /// Whether the live compiled SIMD/Hyperscan prefilter initialized for this
+    /// scanner. Routing must use this runtime fact, not only the crate feature
+    /// flag, because database construction can fail on an otherwise SIMD-built
+    /// host and cached evidence must be invalidated in that state.
+    #[must_use]
+    pub fn simd_backend_available(&self) -> bool {
+        self.simd_backend_usable()
+    }
+
     #[inline]
     pub(crate) fn live_cpu_backend(&self) -> ScanBackend {
         if self.simd_backend_usable() {

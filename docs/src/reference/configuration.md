@@ -67,6 +67,7 @@ A dash means that layer intentionally has no surface.
 | Min confidence | **0.40** | `[scan].min_confidence` | `--min-confidence` | Drop findings scoring below this (0.0-1.0). Bench-tuned for max F1. |
 | Decode depth | **10** | `[scan].decode_depth` | `--decode-depth` | Max recursive decode passes, e.g. `base64(hex(url(secret)))` (1-10). A zero value also disables bounded static JavaScript XOR/AES recovery. |
 | Decode size limit | **512KB** | `decode_size_limit` | `--decode-size-limit` | Maximum prepared chunk admitted to decode-through. Large files are windowed, so this is not a whole-file limit. |
+| Decoded payload validation | on | - | - | Validate decoded payloads (including UTF-8 validity) before recursive scanning. This engine safety policy is always included in `config --effective` and the autoroute identity; it has no public override. |
 | Entropy enabled | on | `no_entropy = true` disables | `--no-entropy` | Shannon-entropy detection for novel high-entropy strings. |
 | Entropy in source | off | `entropy_source_files` | `--entropy-source-files` | Run entropy inside `.py`/`.js`/`.go`/… (off by default to cut FPs). |
 | Entropy threshold | **4.5** | `[scan].entropy_threshold` | `--entropy-threshold` | Scan-wide Shannon-entropy control in bits/byte. It is not a blanket replacement for detector `entropy_low`/`entropy_high`/`entropy_very_high`/length-bucket floors: each detection path composes it with the owning detector's evidence band. The byte-entropy domain is `[0.0, 8.0]`; non-finite and out-of-range requests fail closed. |

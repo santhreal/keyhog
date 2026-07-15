@@ -374,7 +374,8 @@ impl CachedBackendRouter {
             gpu_peer_identity.as_deref(),
             gpu_participates,
             eligible_backends,
-        );
+        )
+        .with_live_hyperscan(scanner.simd_backend_available());
         let (cache_path, decisions, cache_load_error) = load_persistent_autoroute_decisions(
             detector_digest,
             &rules_digest,
@@ -513,7 +514,8 @@ impl MeasuredBackendRouter {
             gpu_peer_identity.as_deref(),
             gpu_participates,
             eligible_backends,
-        );
+        )
+        .with_live_hyperscan(scanner.simd_backend_available());
         let (cache_path, decisions, cache_load_error) = load_persistent_autoroute_decisions(
             detector_digest,
             &rules_digest,
@@ -820,10 +822,10 @@ fn gpu_peer_identity(scanner: &CompiledScanner) -> Option<String> {
 }
 
 fn eligible_backend_labels(scanner: &CompiledScanner, gpu_participates: bool) -> Vec<String> {
-    let mut labels = vec![
-        ScanBackend::SimdCpu.label().to_string(),
-        ScanBackend::CpuFallback.label().to_string(),
-    ];
+    let mut labels = vec![ScanBackend::CpuFallback.label().to_string()];
+    if scanner.simd_backend_available() {
+        labels.push(ScanBackend::SimdCpu.label().to_string());
+    }
     if gpu_participates {
         labels.extend(
             scanner

@@ -144,6 +144,7 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
     ));
     out.push_str(&format!("max_decode_depth = {}\n", s.max_decode_depth));
     out.push_str(&format!("max_decode_bytes = {}\n", s.max_decode_bytes));
+    out.push_str(&format!("validate_decode = {}\n", s.validate_decode));
     out.push_str(&format!(
         "per_chunk_timeout_ms = {}\n",
         s.per_chunk_timeout_ms
@@ -417,6 +418,7 @@ pub(crate) fn autoroute_config_digest(resolved: &ResolvedScanConfig) -> u64 {
     h.field_bool("scanner.entropy_in_source_files", s.entropy_in_source_files);
     h.field_usize("scanner.max_decode_depth", s.max_decode_depth);
     h.field_usize("scanner.max_decode_bytes", s.max_decode_bytes);
+    h.field_bool("scanner.validate_decode", s.validate_decode);
     h.field_option_u64("scanner.per_chunk_timeout_ms", s.per_chunk_timeout_ms);
     h.field_usize("scanner.max_matches_per_chunk", s.max_matches_per_chunk);
     h.field_bool("scanner.scan_comments", s.scan_comments);

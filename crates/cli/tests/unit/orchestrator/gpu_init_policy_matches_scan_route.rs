@@ -251,6 +251,20 @@ fn autoroute_config_digest_includes_min_secret_len() {
 }
 
 #[test]
+fn autoroute_config_digest_includes_decoded_payload_validation() {
+    let mut validated = keyhog_scanner::ScannerConfig::default();
+    let validated_digest = API.autoroute_config_digest_for_scanner(validated.clone());
+
+    validated.validate_decode = false;
+    let unvalidated_digest = API.autoroute_config_digest_for_scanner(validated);
+
+    assert_ne!(
+        validated_digest, unvalidated_digest,
+        "decoded payload validation changes recursive scanner work and must invalidate autoroute evidence"
+    );
+}
+
+#[test]
 fn canonical_calibration_shares_normal_identity_but_gpu_exclusion_is_isolated() {
     let mut normal = scan_args(&["scan", "--no-config", "--stdin"]);
     let normal_digest = API

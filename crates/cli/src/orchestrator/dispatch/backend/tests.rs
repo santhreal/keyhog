@@ -33,6 +33,33 @@ fn test_eligible_backends(gpu: Option<ScanBackend>) -> Vec<String> {
     labels
 }
 
+fn test_live_eligible_backends(scanner: &CompiledScanner, gpu: Option<ScanBackend>) -> Vec<String> {
+    let mut labels = vec![ScanBackend::CpuFallback.label().to_string()];
+    if scanner.simd_backend_available() {
+        labels.push(ScanBackend::SimdCpu.label().to_string());
+    }
+    if let Some(gpu) = gpu {
+        labels.push(gpu.label().to_string());
+    }
+    labels.sort_unstable();
+    labels
+}
+
+#[test]
+fn eligible_backend_labels_follow_live_simd_initialization() {
+    let scanner = phase1_test_scanner();
+    let labels = super::eligible_backend_labels(&scanner, false);
+    assert!(
+        labels.contains(&ScanBackend::CpuFallback.label().to_string()),
+        "the scalar CPU backend is always an eligible calibration peer"
+    );
+    assert_eq!(
+        labels.contains(&ScanBackend::SimdCpu.label().to_string()),
+        scanner.simd_backend_available(),
+        "autoroute candidate census must reflect live Hyperscan initialization, not only the compiled feature"
+    );
+}
+
 fn workload_key(
     batch: &[Chunk],
     pattern_count: usize,
@@ -53,7 +80,11 @@ fn all_admitted_phase1(batch: &[Chunk]) -> keyhog_scanner::Phase1AdmissionSummar
 }
 
 fn phase1_test_scanner() -> CompiledScanner {
-    CompiledScanner::compile(vec![keyhog_core::DetectorSpec {
+    CompiledScanner::compile(phase1_test_detectors()).expect("autoroute phase-1 scanner compiles")
+}
+
+fn phase1_test_detectors() -> Vec<keyhog_core::DetectorSpec> {
+    vec![keyhog_core::DetectorSpec {
         tests: Vec::new(),
         id: "autoroute-phase1-token".into(),
         name: "Autoroute phase 1 token".into(),
@@ -68,8 +99,7 @@ fn phase1_test_scanner() -> CompiledScanner {
         keywords: vec!["ghp_".into()],
         min_confidence: Some(0.0),
         ..Default::default()
-    }])
-    .expect("autoroute phase-1 scanner compiles")
+    }]
 }
 
 fn repeated_to_len(seed: &str, len: usize) -> String {
@@ -455,7 +485,7 @@ fn gpu_excluded_calibration_collapses_an_already_acquired_peer() {
 #[test]
 fn cached_router_replays_cpu_identity_when_runtime_policy_disables_gpu() {
     let scanner = CompiledScanner::compile_with_gpu_policy(
-        Vec::new(),
+        phase1_test_detectors(),
         keyhog_scanner::GpuInitPolicy::ForceDisabled,
     )
     .expect("compile CPU-policy scanner");
@@ -465,8 +495,13 @@ fn cached_router_replays_cpu_identity_when_runtime_policy_disables_gpu() {
     probed_caps.gpu_runtime_identity = Some("wgpu:Vulkan:NVIDIA:565.00".to_string());
     probed_caps.gpu_is_software = false;
 
-    let host =
-        AutorouteHostProfile::from_caps(&probed_caps, None, false, test_eligible_backends(None));
+    let host = AutorouteHostProfile::from_caps(
+        &probed_caps,
+        None,
+        false,
+        test_live_eligible_backends(&scanner, None),
+    )
+    .with_live_hyperscan(scanner.simd_backend_available());
     let directory = tempfile::tempdir().expect("CPU-policy autoroute cache directory");
     let path = directory.path().join("autoroute.json");
     let config_digest = 0x6f4d_11c2_731a_b908;
@@ -485,7 +520,11 @@ fn cached_router_replays_cpu_identity_when_runtime_policy_disables_gpu() {
     let decisions = HashMap::from([(
         key,
         AutorouteDecision::new(
-            ScanBackend::SimdCpu,
+            if scanner.simd_backend_available() {
+                ScanBackend::SimdCpu
+            } else {
+                ScanBackend::CpuFallback
+            },
             batch[0].data.len() as u64,
             1,
             5,
@@ -523,7 +562,7 @@ fn cached_router_replays_cpu_identity_when_runtime_policy_disables_gpu() {
 #[test]
 fn measured_router_collapses_stale_gpu_identity_when_runtime_policy_disables_gpu() {
     let scanner = CompiledScanner::compile_with_gpu_policy(
-        Vec::new(),
+        phase1_test_detectors(),
         keyhog_scanner::GpuInitPolicy::ForceDisabled,
     )
     .expect("compile CPU-policy scanner");
@@ -2923,7 +2962,7 @@ fn cached_router_loads_persisted_decision_and_fails_loud_on_missing_bucket() {
     std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired pre-state, recall-irrelevant
 
     let scanner = CompiledScanner::compile_with_gpu_policy(
-        Vec::new(),
+        phase1_test_detectors(),
         keyhog_scanner::GpuInitPolicy::ForceDisabled,
     )
     .expect("compile scanner");
@@ -2933,8 +2972,9 @@ fn cached_router_loads_persisted_decision_and_fails_loud_on_missing_bucket() {
         &caps,
         None,
         keyhog_scanner::hw_probe::gpu_backend_compiled(),
-        test_eligible_backends(None),
-    );
+        test_live_eligible_backends(&scanner, None),
+    )
+    .with_live_hyperscan(scanner.simd_backend_available());
     let pattern_count = 902;
     let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
     let hit_batch = vec![test_chunk_with_source(
@@ -2969,7 +3009,11 @@ fn cached_router_loads_persisted_decision_and_fails_loud_on_missing_bucket() {
     decisions.insert(
         hit_key,
         AutorouteDecision::new(
-            ScanBackend::SimdCpu,
+            if scanner.simd_backend_available() {
+                ScanBackend::SimdCpu
+            } else {
+                ScanBackend::CpuFallback
+            },
             hit_sample_bytes,
             hit_batch.len(),
             9,
@@ -3000,7 +3044,11 @@ fn cached_router_loads_persisted_decision_and_fails_loud_on_missing_bucket() {
         router
             .choose(&scanner, None, &hit_batch)
             .expect("cache hit should choose persisted backend"),
-        ScanBackend::SimdCpu
+        if scanner.simd_backend_available() {
+            ScanBackend::SimdCpu
+        } else {
+            ScanBackend::CpuFallback
+        }
     );
     let miss = router
         .choose(&scanner, None, &miss_batch)

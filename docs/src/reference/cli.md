@@ -171,7 +171,9 @@ the operator-visible way to prove what KeyHog would run after compiled defaults,
 `.keyhog.toml`, and CLI overrides are merged. The output includes report format,
 severity floor, dedup scope, secret visibility, client-safe/test-fixture policy,
 and lockdown alongside backend, detector, scanner, source-limit, verification,
-and cache settings.
+and cache settings. It also prints `validate_decode`, the scanner's decoded-
+payload safety policy, so the operator can see the exact recursive-decoding
+contract covered by the autoroute identity.
 
 `config --effective` accepts the same config-affecting flags as `scan`, including
 `--config`, `--fast`, `--deep`, `--precision`, source limits, detector paths,

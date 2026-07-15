@@ -137,6 +137,7 @@ fn config_effective_prints_and_exits_without_source() {
         "ml_enabled = true",
         "max_decode_depth = 10",
         "max_decode_bytes = 524288",
+        "validate_decode = true",
         "per_chunk_timeout_ms = off",
         "disabled_detectors = ",
         "calibration_cache_path = <disabled>",

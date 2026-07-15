@@ -28,6 +28,11 @@ pub(super) struct AutorouteHostProfile {
 }
 
 impl AutorouteHostProfile {
+    pub(super) fn with_live_hyperscan(mut self, available: bool) -> Self {
+        self.hyperscan_available = available;
+        self
+    }
+
     pub(super) fn from_caps(
         caps: &HardwareCaps,
         gpu_peer_identity: Option<&str>,
@@ -172,8 +177,11 @@ impl AutorouteHostProfile {
             has_simd |= backend == keyhog_scanner::ScanBackend::SimdCpu;
             has_scalar |= backend == keyhog_scanner::ScanBackend::CpuFallback;
         }
-        if !has_simd || !has_scalar {
-            return Err("eligible backend census omits a required CPU peer");
+        if !has_scalar {
+            return Err("eligible backend census omits the required scalar CPU peer");
+        }
+        if has_simd != self.hyperscan_available {
+            return Err("eligible backend census disagrees with live Hyperscan availability");
         }
         Ok(())
     }

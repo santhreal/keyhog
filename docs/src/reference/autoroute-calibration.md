@@ -181,6 +181,10 @@ which backend is fastest:
   and the exact sorted eligible-backend census for that resolved config. A
   missing or changed required field invalidates the evidence and requires
   recalibration.
+- SIMD is admitted only when the scanner's live Hyperscan/Vectorscan database
+  initialized successfully. A binary built with the SIMD feature but unable to
+  construct its database records a CPU-fallback-only census, so old SIMD
+  evidence cannot be reused or silently selected.
 - Each scan preset (default, `--fast`, `--deep`, `--precision`) is calibrated
   separately.
 - Flags hashed into the scan config (for example `--threads` or
