@@ -592,6 +592,23 @@ pub fn write_scan_report<W: Write + Send>(
     }
 }
 
+/// Write a CSV scan artifact with a self-describing scan-status preamble.
+///
+/// This dedicated entrypoint keeps the legacy [`ReportFormat::Csv`] enum
+/// variant and its header-first byte contract unchanged for library callers,
+/// while CLI scan artifacts can retain coverage state even when no finding row
+/// exists.
+pub fn write_csv_coverage_report<W: Write + Send>(
+    writer: W,
+    report: ScanReport<'_>,
+    coverage_gap_summary: &[(String, usize)],
+) -> Result<(), ReportError> {
+    finish_reporter(
+        csv::CsvReporter::with_scan_metadata(writer, report.metadata, coverage_gap_summary)?,
+        report.findings,
+    )
+}
+
 fn report_time(
     metadata: Option<&ScanReportMetadata>,
     explicit: String,

@@ -40,7 +40,7 @@
 //!   case_12_scan_clean_format_html  - `scan --format html <tmp>/clean-tree/`
 //!
 //! Cases 10-12 scan a tree with NO planted secret so every format's
-//! zero-finding shape is pinned (CSV header-only, JUnit `tests="0"
+//! zero-finding shape is pinned (CSV metadata plus header-only data, JUnit `tests="0"
 //! failures="0"`, HTML `rawFindings = []`). The with-findings HTML report is
 //! still not byte-snapshotted because its `rawFindings` payload embeds a serde
 //! JSON dump whose field set tracks `VerifiedFinding`, so that byte snapshot
@@ -130,7 +130,7 @@ fn write_single_file() -> (TempDir, PathBuf) {
 }
 
 /// Build a tree that plants NO credential, so every output format must emit
-/// its zero-finding shape (CSV header-only, JUnit `tests="0" failures="0"`,
+/// its zero-finding shape (CSV metadata plus header-only data, JUnit `tests="0" failures="0"`,
 /// HTML with `const rawFindings = []`). The clean-input snapshots pin that
 /// shape so a regression that, say, started emitting a spurious data row on a
 /// finding-less scan, or dropped the CSV header, or produced a malformed
@@ -915,6 +915,10 @@ fn json_finding_count(tree_s: &str, root: &Path) -> usize {
 /// real parse, not a `split(',')`, so it fails on unbalanced quotes exactly
 /// as a downstream CSV consumer would choke.
 fn parse_csv(text: &str) -> Vec<Vec<String>> {
+    let text = text
+        .strip_prefix("# keyhog.scan.metadata=")
+        .and_then(|rest| rest.find('\n').map(|index| &rest[index + 1..]))
+        .unwrap_or(text);
     let mut records = Vec::new();
     let mut field = String::new();
     let mut record = Vec::new();

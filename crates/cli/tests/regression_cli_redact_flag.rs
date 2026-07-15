@@ -234,7 +234,10 @@ fn default_csv_masks_credential_cell_and_hides_plaintext() {
     let (_dir, path) = planted_fixture();
     let (code, out, err) = scan(&path, &["--format", "csv"]);
     assert_eq!(code, Some(1), "a finding must exit 1; stderr={err}");
-    let rows: Vec<&str> = out.lines().filter(|l| !l.is_empty()).collect();
+    let rows: Vec<&str> = out
+        .lines()
+        .filter(|l| !l.is_empty() && !l.starts_with("# keyhog.scan.metadata="))
+        .collect();
     assert_eq!(rows.len(), 2, "header + exactly one data row: {rows:?}");
     let cells: Vec<&str> = rows[1].split(',').collect();
     assert_eq!(
@@ -254,7 +257,10 @@ fn default_csv_masks_credential_cell_and_hides_plaintext() {
 fn show_secrets_csv_cell_is_full_plaintext() {
     let (_dir, path) = planted_fixture();
     let (_code, out, _err) = scan(&path, &["--format", "csv", "--show-secrets"]);
-    let rows: Vec<&str> = out.lines().filter(|l| !l.is_empty()).collect();
+    let rows: Vec<&str> = out
+        .lines()
+        .filter(|l| !l.is_empty() && !l.starts_with("# keyhog.scan.metadata="))
+        .collect();
     assert_eq!(rows.len(), 2, "header + one data row: {rows:?}");
     let cells: Vec<&str> = rows[1].split(',').collect();
     assert_eq!(

@@ -54,7 +54,10 @@ fn scan_format_csv_finding_row_count() {
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let lines: Vec<&str> = stdout.lines().collect();
+    let lines: Vec<&str> = stdout
+        .lines()
+        .filter(|line| !line.starts_with("# keyhog.scan.metadata="))
+        .collect();
     assert!(
         lines.len() >= 2,
         "csv must have header + at least one data row"

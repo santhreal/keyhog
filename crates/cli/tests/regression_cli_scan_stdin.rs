@@ -21,7 +21,7 @@
 //!              detector id/name/service/severity/redaction/hash/source in order.
 //!
 //! Negative twins: a clean stdin and an EMPTY stdin each exit 0 and produce the
-//! format's honest empty shape (`[]`, header-only CSV, zero SARIF results, the
+//! format's honest empty shape (`[]`, CSV metadata plus header-only data, zero SARIF results, the
 //! "No secrets detected" line).
 //!
 //! Every assertion pins a concrete value (exact bool / int / string / bytes /
@@ -383,7 +383,7 @@ fn stdin_text_clean_honest_no_secrets_line_exit_0() {
 // CSV
 // ---------------------------------------------------------------------------
 
-/// csv off stdin: the first line is EXACTLY the documented 20-field header, and
+/// csv off stdin: the first non-comment line is EXACTLY the documented 20-field header, and
 /// the sole data row's cells are id/name/service/severity/redaction/hash/source
 /// in order, with exactly 20 fields.
 #[test]
@@ -396,7 +396,10 @@ fn stdin_csv_header_and_single_data_row_exact_cells() {
         "stdin csv scan with a finding must exit 1; stderr={err}"
     );
 
-    let lines: Vec<&str> = out.lines().filter(|l| !l.is_empty()).collect();
+    let lines: Vec<&str> = out
+        .lines()
+        .filter(|l| !l.is_empty() && !l.starts_with("# keyhog.scan.metadata="))
+        .collect();
     let header = lines.first().expect("csv must have a header line");
     assert_eq!(
         header.trim_end(),
@@ -429,7 +432,7 @@ fn stdin_csv_header_and_single_data_row_exact_cells() {
     assert_eq!(fields[19], "[]");
 }
 
-/// csv negative twin: clean stdin exits 0 and emits ONLY the header.
+/// csv negative twin: clean stdin exits 0 and emits the metadata preamble plus ONLY the header.
 #[test]
 fn stdin_csv_clean_is_header_only_exit_0() {
     let (code, out, err) = run_stdin(CLEAN_INPUT, "csv");
@@ -438,7 +441,10 @@ fn stdin_csv_clean_is_header_only_exit_0() {
         Some(0),
         "clean stdin csv scan must exit 0; stderr={err}"
     );
-    let lines: Vec<&str> = out.lines().filter(|l| !l.is_empty()).collect();
+    let lines: Vec<&str> = out
+        .lines()
+        .filter(|l| !l.is_empty() && !l.starts_with("# keyhog.scan.metadata="))
+        .collect();
     assert_eq!(
         lines.len(),
         1,
@@ -546,7 +552,7 @@ fn stdin_all_structured_formats_surface_same_detector_id() {
     let (_c3, csv_out, _e3) = run_stdin(input.as_bytes(), "csv");
     let csv_id = csv_out
         .lines()
-        .filter(|l| !l.is_empty())
+        .filter(|l| !l.is_empty() && !l.starts_with("# keyhog.scan.metadata="))
         .nth(1)
         .and_then(|row| row.split(',').next());
 

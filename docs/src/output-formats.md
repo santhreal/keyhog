@@ -95,7 +95,15 @@ as `not recorded` rather than inventing an identifier.
 
 ## `--format csv`
 
-CSV emits one row per finding. The `companions_redacted`, `remediation`,
+CSV emits one row per finding. CLI scan output begins with one metadata comment
+(`# keyhog.scan.metadata=<JSON>`) before the header. It records a schema
+version, terminal `scan_status`, and the complete `coverage_gap_summary`, so a
+zero-finding partial scan cannot be mistaken for a clean scan. CSV consumers
+should ignore comment lines before parsing the RFC 4180 header and data rows.
+The library-compatible `ReportFormat::Csv` renderer omits this preamble;
+the `write_csv_coverage_report` entrypoint emits it explicitly.
+
+The `companions_redacted`, `remediation`,
 `metadata`, and `additional_locations` columns contain deterministic JSON
 objects or arrays. Metadata keys are sorted before serialization, and duplicate
 locations retain their complete source, path, line, offset, commit, author, and

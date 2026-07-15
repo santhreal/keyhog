@@ -44,6 +44,15 @@ fn report_with<W: std::io::Write + 'static + Send>(
     findings: &[VerifiedFinding],
     metadata: &ScanReportMetadata,
 ) -> Result<()> {
+    if matches!(format, OutputFormat::Csv) {
+        let coverage_gap_summary = coverage_gap_summary(&CoverageCounts::current());
+        keyhog_core::write_csv_coverage_report(
+            w,
+            ScanReport::new(findings).with_metadata(metadata),
+            &coverage_gap_summary,
+        )?;
+        return Ok(());
+    }
     let format = match format {
         OutputFormat::Text => ReportFormat::Text {
             color,

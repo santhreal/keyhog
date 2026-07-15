@@ -326,7 +326,7 @@ fn short_o_flag_equivalent_to_long_output() {
 // Other formats round-trip to the file with their exact structure
 // ---------------------------------------------------------------------------
 
-/// CSV `--output`: the file's first line is the exact 20-field header and there
+/// CSV `--output`: the first non-comment line is the exact 20-field header and there
 /// is exactly one data row whose first cell is the detector id.
 #[test]
 fn csv_output_file_header_and_single_row() {
@@ -339,11 +339,14 @@ fn csv_output_file_header_and_single_row() {
     assert_eq!(code, Some(1), "csv scan with finding exits 1; stderr={err}");
 
     let bytes = std::fs::read_to_string(&out_file).expect("csv file must exist");
-    let lines: Vec<&str> = bytes.lines().filter(|l| !l.is_empty()).collect();
+    let lines: Vec<&str> = bytes
+        .lines()
+        .filter(|l| !l.is_empty() && !l.starts_with("# keyhog.scan.metadata="))
+        .collect();
     assert_eq!(
         lines[0].trim_end(),
         CSV_HEADER,
-        "csv file's first line must be the exact documented header"
+        "csv file's first non-comment line must be the exact documented header"
     );
     let data: Vec<&str> = lines.iter().skip(1).copied().collect();
     assert_eq!(data.len(), 1, "one planted secret -> one csv data row");

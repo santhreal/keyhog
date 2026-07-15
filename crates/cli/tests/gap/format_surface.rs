@@ -95,6 +95,13 @@ fn parse_csv_row(row: &str) -> Vec<String> {
     fields
 }
 
+fn csv_content_lines(output: &str) -> Vec<&str> {
+    output
+        .lines()
+        .filter(|line| !line.starts_with("# keyhog.scan.metadata="))
+        .collect()
+}
+
 /// Same as `scan_with_format` but writes to `--output <file>` and returns
 /// the file's bytes alongside the exit code. The reporting code in
 /// `reporting.rs` atomic-writes the report to a NamedTempFile then renames,
@@ -608,15 +615,18 @@ fn sarif_rules_carry_code_scanning_severity_props() {
 // CSV (CsvReporter)
 // ---------------------------------------------------------------------------
 
-/// The CSV header is written in `CsvReporter::new()` unconditionally, so
-/// it appears even on an EMPTY corpus. Assert the exact 20-column header.
+/// The CSV metadata preamble and header are written unconditionally, so the
+/// exact 20-column header appears even on an EMPTY corpus.
 const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence,entropy,remediation,metadata,additional_locations";
 
 #[test]
 fn csv_empty_corpus_is_header_only() {
     let (stdout, stderr, code) = scan_with_format(CLEAN_FIXTURE, "csv");
     assert_eq!(code, Some(0), "clean csv scan must exit 0; stderr={stderr}");
-    let lines: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
+    let lines: Vec<&str> = csv_content_lines(&stdout)
+        .into_iter()
+        .filter(|l| !l.is_empty())
+        .collect();
     assert_eq!(
         lines.len(),
         1,
@@ -639,7 +649,10 @@ fn csv_planted_finding_has_header_plus_data_rows() {
         Some(1),
         "csv planted scan must exit 1; stderr={stderr}"
     );
-    let lines: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
+    let lines: Vec<&str> = csv_content_lines(&stdout)
+        .into_iter()
+        .filter(|l| !l.is_empty())
+        .collect();
     assert!(
         lines.len() >= 2,
         "CSV must have header + >=1 data row; got {lines:?}"
@@ -662,7 +675,10 @@ fn csv_planted_finding_has_header_plus_data_rows() {
 #[test]
 fn csv_data_row_carries_aws_detector_and_redacted_credential() {
     let (stdout, _stderr, _code) = scan_with_format(AWS_KEY_FIXTURE, "csv");
-    let lines: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
+    let lines: Vec<&str> = csv_content_lines(&stdout)
+        .into_iter()
+        .filter(|l| !l.is_empty())
+        .collect();
     let row = lines
         .iter()
         .skip(1)
@@ -1153,15 +1169,15 @@ fn sarif_result_count_matches_json_finding_count() {
 fn csv_row_count_matches_json_finding_count() {
     let (json_out, _e1, _c1) = scan_with_format(AWS_KEY_FIXTURE, "json-envelope");
     let (csv_out, _e2, _c2) = scan_with_format(AWS_KEY_FIXTURE, "csv");
-    let json_value = serde_json::from_str::<serde_json::Value>(json_out.trim())
-        .expect("json-envelope");
+    let json_value =
+        serde_json::from_str::<serde_json::Value>(json_out.trim()).expect("json-envelope");
     let json_count = json_value["findings"]
         .as_array()
         .expect("findings array")
         .len();
     let csv_rows = csv_out
         .lines()
-        .filter(|l| !l.is_empty())
+        .filter(|l| !l.is_empty() && !l.starts_with("# keyhog.scan.metadata="))
         .count()
         .saturating_sub(1); // drop the header
     assert_eq!(
@@ -1245,8 +1261,8 @@ fn gitlab_sast_count_matches_json_finding_count() {
 #[test]
 fn csv_no_unquoted_formula_trigger_cells() {
     let (stdout, _stderr, _code) = scan_with_format(AWS_KEY_FIXTURE, "csv");
-    for (i, line) in stdout.lines().enumerate() {
-        if i == 0 || line.is_empty() {
+    for line in csv_content_lines(&stdout) {
+        if line.is_empty() {
             continue; // skip header / blanks
         }
         for cell in line.split(',') {
@@ -1414,7 +1430,10 @@ fn sarif_output_file_is_complete_for_planted_finding() {
 fn csv_output_file_roundtrips_header_and_rows() {
     let (clean_bytes, clean_code) = scan_to_output_file(CLEAN_FIXTURE, "csv");
     assert_eq!(clean_code, Some(0));
-    let clean_lines: Vec<&str> = clean_bytes.lines().filter(|l| !l.is_empty()).collect();
+    let clean_lines: Vec<&str> = csv_content_lines(&clean_bytes)
+        .into_iter()
+        .filter(|l| !l.is_empty())
+        .collect();
     assert_eq!(
         clean_lines,
         vec![CSV_HEADER],
@@ -1423,10 +1442,13 @@ fn csv_output_file_roundtrips_header_and_rows() {
 
     let (planted_bytes, planted_code) = scan_to_output_file(AWS_KEY_FIXTURE, "csv");
     assert_eq!(planted_code, Some(1));
-    let planted_lines: Vec<&str> = planted_bytes.lines().filter(|l| !l.is_empty()).collect();
+    let planted_lines: Vec<&str> = csv_content_lines(&planted_bytes)
+        .into_iter()
+        .filter(|l| !l.is_empty())
+        .collect();
     assert_eq!(
         planted_lines[0], CSV_HEADER,
-        "CSV --output first line is the header"
+        "CSV --output first content line is the header"
     );
     assert!(
         planted_lines.len() >= 2,

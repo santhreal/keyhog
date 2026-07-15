@@ -13,7 +13,8 @@
 //! specific string, byte count, integer, or parsed-JSON value.
 
 use keyhog_core::{
-    write_report, CredentialHash, MatchLocation, ReportFormat, Severity, VerificationResult,
+    write_csv_coverage_report, write_report, CredentialHash, MatchLocation, ReportFormat,
+    ScanCompletionStatus, ScanReport, ScanReportMetadata, Severity, VerificationResult,
     VerifiedFinding,
 };
 use std::borrow::Cow;
@@ -114,6 +115,41 @@ fn csv_empty_run_is_header_only() {
     let out = render_str(ReportFormat::Csv, &[]);
     assert_eq!(out, format!("{CSV_HEADER}\n"));
     assert_eq!(out.lines().count(), 1);
+}
+
+#[test]
+fn csv_coverage_preamble_preserves_zero_finding_partial_status() {
+    let metadata = ScanReportMetadata {
+        scan_id: "0123456789abcdef0123456789abcdef".into(),
+        scan_status: ScanCompletionStatus::Partial,
+        keyhog_version: "test".into(),
+        git_hash: "test".into(),
+        detector_digest: "test".into(),
+        config_digest: None,
+        generated_at: "2026-01-01T00:00:00".into(),
+        scan_started_at: "2026-01-01T00:00:00".into(),
+        scan_finished_at: "2026-01-01T00:00:01".into(),
+        duration_ms: 1,
+        targets: vec!["fixture".into()],
+        source_chunks_scanned: 0,
+        source_bytes_scanned: 0,
+        detector_count: 1,
+    };
+    let mut buf = Vec::new();
+    write_csv_coverage_report(
+        &mut buf,
+        ScanReport::new(&[]).with_metadata(&metadata),
+        &[("unreadable source".into(), 2)],
+    )
+    .expect("CSV coverage report");
+    let out = String::from_utf8(buf).expect("CSV is UTF-8");
+    let mut lines = out.lines();
+    assert_eq!(
+        lines.next(),
+        Some("# keyhog.scan.metadata={\"schema_version\":1,\"scan_status\":\"partial\",\"coverage_gap_summary\":[{\"reason\":\"unreadable source\",\"count\":2}]}")
+    );
+    assert_eq!(lines.next(), Some(CSV_HEADER));
+    assert_eq!(lines.next(), None);
 }
 
 // ---------------------------------------------------------------------------

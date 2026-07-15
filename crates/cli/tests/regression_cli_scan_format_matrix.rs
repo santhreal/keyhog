@@ -14,7 +14,7 @@
 //!              are `github-classic-pat,GitHub Classic PAT,github,critical,...`
 //!
 //! Negative twins: a clean file must exit 0 in every format and produce that
-//! format's honest empty shape (`[]`, header-only CSV, zero SARIF results, the
+//! format's honest empty shape (`[]`, CSV metadata plus header-only data, zero SARIF results, the
 //! "No secrets detected" text line).
 //!
 //! Every assertion pins a concrete value (exact bool / int / string / bytes /
@@ -295,7 +295,7 @@ fn text_clean_run_honest_no_secrets_line() {
 // CSV
 // ---------------------------------------------------------------------------
 
-/// csv: the first line is EXACTLY the documented 20-field header.
+/// csv: the first non-comment line is EXACTLY the documented 20-field header.
 #[test]
 fn csv_format_header_is_exact() {
     let (_dir, path) = leak_fixture();
@@ -305,7 +305,10 @@ fn csv_format_header_is_exact() {
         Some(1),
         "csv scan with a finding must exit 1; stderr={err}"
     );
-    let header = out.lines().next().expect("csv must have a header line");
+    let header = out
+        .lines()
+        .find(|line| !line.starts_with("# keyhog.scan.metadata="))
+        .expect("csv must have a header line");
     assert_eq!(
         header.trim_end(),
         CSV_HEADER,
@@ -319,7 +322,10 @@ fn csv_format_header_is_exact() {
 fn csv_format_single_data_row_fields() {
     let (_dir, path) = leak_fixture();
     let (_code, out, _err) = run(&path, "csv");
-    let lines: Vec<&str> = out.lines().collect();
+    let lines: Vec<&str> = out
+        .lines()
+        .filter(|l| !l.starts_with("# keyhog.scan.metadata="))
+        .collect();
     let data: Vec<&str> = lines
         .iter()
         .skip(1)
@@ -347,14 +353,17 @@ fn csv_format_single_data_row_fields() {
     assert_eq!(fields[19], "[]");
 }
 
-/// csv negative twin: a clean file exits 0 and emits ONLY the header (no data
-/// rows).
+/// csv negative twin: a clean file exits 0 and emits metadata plus ONLY the
+/// header (no data rows).
 #[test]
 fn csv_clean_run_is_header_only() {
     let (_dir, path) = clean_fixture();
     let (code, out, err) = run(&path, "csv");
     assert_eq!(code, Some(0), "clean csv scan must exit 0; stderr={err}");
-    let lines: Vec<&str> = out.lines().filter(|l| !l.is_empty()).collect();
+    let lines: Vec<&str> = out
+        .lines()
+        .filter(|l| !l.is_empty() && !l.starts_with("# keyhog.scan.metadata="))
+        .collect();
     assert_eq!(
         lines.len(),
         1,
@@ -423,7 +432,11 @@ fn all_structured_formats_surface_same_detector_id() {
         .and_then(|x| x.as_str());
 
     let (_c3, csv_out, _e3) = run(&path, "csv");
-    let csv_lines: Vec<&str> = csv_out.lines().skip(1).filter(|l| !l.is_empty()).collect();
+    let csv_lines: Vec<&str> = csv_out
+        .lines()
+        .filter(|l| !l.is_empty() && !l.starts_with("# keyhog.scan.metadata="))
+        .skip(1)
+        .collect();
     let csv_id = csv_lines.first().and_then(|row| row.split(',').next());
 
     assert_eq!(json_id, Some(DETECTOR_ID), "json detector id");
@@ -458,7 +471,11 @@ fn redacted_credential_consistent_between_json_and_csv() {
     );
 
     let (_c2, csv_out, _e2) = run(&path, "csv");
-    let data_row = csv_out.lines().nth(1).expect("csv must have a data row");
+    let data_row = csv_out
+        .lines()
+        .filter(|line| !line.starts_with("# keyhog.scan.metadata="))
+        .nth(1)
+        .expect("csv must have a data row");
     let cell = data_row
         .split(',')
         .nth(4)

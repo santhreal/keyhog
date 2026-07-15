@@ -5,7 +5,10 @@ use std::io::Write;
 
 use crate::VerifiedFinding;
 
-use super::{escape::escape_csv, impl_writer_backed, ReportError, Reporter, WriterBackedReporter};
+use super::{
+    escape::escape_csv, impl_writer_backed, ReportError, Reporter, ScanCompletionStatus,
+    ScanReportMetadata, WriterBackedReporter,
+};
 
 /// Tabular CSV output.
 pub(crate) struct CsvReporter<W: Write + Send> {
@@ -15,12 +18,63 @@ pub(crate) struct CsvReporter<W: Write + Send> {
 impl<W: Write + Send> CsvReporter<W> {
     /// Create a new CSV reporter and write headers.
     pub(crate) fn new(mut writer: W) -> Result<Self, ReportError> {
-        writeln!(
-            writer,
-            "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence,entropy,remediation,metadata,additional_locations"
-        )?;
+        write_header(&mut writer)?;
         Ok(Self { writer })
     }
+
+    /// Create a CSV reporter with a deterministic scan-wide status preamble.
+    ///
+    /// The preamble is a comment line understood by KeyHog's CSV consumers and
+    /// ignored by RFC-4180 readers that support comment records. Keeping it
+    /// before the header makes a zero-finding partial scan self-describing.
+    pub(crate) fn with_scan_metadata(
+        mut writer: W,
+        metadata: Option<&ScanReportMetadata>,
+        coverage_gap_summary: &[(String, usize)],
+    ) -> Result<Self, ReportError> {
+        let scan_status = metadata.map(|value| value.scan_status).unwrap_or_else(|| {
+            ScanCompletionStatus::from_coverage_gaps(!coverage_gap_summary.is_empty())
+        });
+        let preamble = CsvScanMetadata {
+            schema_version: 1,
+            scan_status,
+            coverage_gap_summary: coverage_gap_summary
+                .iter()
+                .map(|(reason, count)| CsvCoverageGap {
+                    reason: reason.clone(),
+                    count: *count,
+                })
+                .collect(),
+        };
+        write!(
+            writer,
+            "# keyhog.scan.metadata={}\n",
+            serde_json::to_string(&preamble)?
+        )?;
+        write_header(&mut writer)?;
+        Ok(Self { writer })
+    }
+}
+
+fn write_header<W: Write>(writer: &mut W) -> Result<(), ReportError> {
+    writeln!(
+        writer,
+        "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence,entropy,remediation,metadata,additional_locations"
+    )?;
+    Ok(())
+}
+
+#[derive(Debug, serde::Serialize)]
+struct CsvScanMetadata {
+    schema_version: u8,
+    scan_status: ScanCompletionStatus,
+    coverage_gap_summary: Vec<CsvCoverageGap>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct CsvCoverageGap {
+    reason: String,
+    count: usize,
 }
 
 impl<W: Write + Send> Reporter for CsvReporter<W> {

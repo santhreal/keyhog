@@ -290,11 +290,15 @@ fn every_format_parses_and_carries_the_planted_finding() {
                 );
             }
             "csv" => {
+                let header = stdout
+                    .lines()
+                    .find(|line| !line.starts_with("# keyhog.scan.metadata="))
+                    .unwrap_or_default();
                 assert!(
-                    stdout.starts_with(
+                    header.starts_with(
                         "detector_id,detector_name,service,severity,credential_redacted,"
                     ),
-                    "csv must start with the documented header row; got {stdout}"
+                    "csv must contain the documented header row; got {stdout}"
                 );
                 assert!(
                     stdout.contains(&format!(

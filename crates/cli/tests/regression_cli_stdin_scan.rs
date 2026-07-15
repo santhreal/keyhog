@@ -235,7 +235,7 @@ fn stdin_csv_multiline_row_has_line_3_offset_43_cells() {
     assert_eq!(code, Some(1), "multiline csv scan exits 1");
     let row = out
         .lines()
-        .filter(|l| !l.is_empty())
+        .filter(|l| !l.is_empty() && !l.starts_with("# keyhog.scan.metadata="))
         .nth(1)
         .expect("csv must have one data row after the header");
     let expected_prefix = format!(

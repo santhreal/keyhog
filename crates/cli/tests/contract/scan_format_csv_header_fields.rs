@@ -26,7 +26,7 @@ fn scan_format_csv_header_fields() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let header = stdout
         .lines()
-        .next()
+        .find(|line| !line.starts_with("# keyhog.scan.metadata="))
         .expect("csv must have at least a header");
 
     // Verify exact field names as documented in CsvReporter::new()
