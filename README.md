@@ -140,7 +140,7 @@ persisted calibration at install time. Explicit `--backend` overrides are for
 diagnostics and benchmarking, not evidence that autoroute is correct.
 
 A single-backend build (one compiled without Hyperscan (`simd`) or the GPU stack,
-such as the portable/static release) has no backend *choice* to route, so it
+such as the portable release) has no backend *choice* to route, so it
 resolves its lone CPU backend directly and never requires calibration (and never
 fails closed). Autoroute engages only when a build compiled more than one backend.
 
