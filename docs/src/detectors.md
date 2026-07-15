@@ -203,6 +203,7 @@ The available per-detector tuning fields are:
 *   **`entropy_low`** (float, optional): Per-detector keyword-context (low) entropy threshold. Falls back to `LOW_ENTROPY_THRESHOLD` (3.0) if unset.
 *   **`entropy_very_high`** (float, optional): Per-detector very-high entropy threshold for keyword-free or isolated tokens. Falls back to `VERY_HIGH_ENTROPY_THRESHOLD` (5.8) if unset.
 *   **`sensitive_path_entropy_very_high`** (float, optional): Per-detector keyword-free threshold for clearly sensitive paths. When unset, the detector's `entropy_very_high` applies; the sensitive-path policy is never an undocumented scanner-wide discount.
+*   **`entropy_fallback`** (table, optional): Identity metadata for synthetic entropy findings owned by this detector. `id` must use the `entropy-` namespace and `name`/`service` must be non-empty. Embedded generic detectors declare this block; custom legacy specs may omit it and use the compatibility identity.
 *   **`mixed_alnum_floor`** (float, optional): Per-detector mixed alpha-numeric token entropy floor. Falls back to `MIXED_ALNUM_TOKEN_THRESHOLD` (4.0) if unset.
 *   **`entropy_floor`** (array of tables, optional): Length-bucketed low-entropy suppression floor mapping maximum lengths to minimum entropy scores. If absent, generic adjudication uses its compiled 3.5-bit fallback where this gate applies.
     *   `max_len` (integer, optional): Inclusive maximum length for this bucket.

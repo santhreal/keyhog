@@ -305,6 +305,24 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
             )));
         }
     }
+    if let Some(metadata) = &spec.entropy_fallback {
+        if !metadata.id.starts_with("entropy-") {
+            issues.push(QualityIssue::Error(format!(
+                "entropy_fallback.id {:?} must use the entropy- namespace",
+                metadata.id
+            )));
+        }
+        if metadata.name.trim().is_empty() {
+            issues.push(QualityIssue::Error(
+                "entropy_fallback.name must not be empty".into(),
+            ));
+        }
+        if metadata.service.trim().is_empty() {
+            issues.push(QualityIssue::Error(
+                "entropy_fallback.service must not be empty".into(),
+            ));
+        }
+    }
 }
 
 fn validate_entropy_floor(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {

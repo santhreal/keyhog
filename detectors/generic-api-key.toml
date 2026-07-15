@@ -48,6 +48,11 @@ entropy_floor = [
     { floor = 3.5 },
 ]
 
+[detector.entropy_fallback]
+id = "entropy-api-key"
+name = "API Key (Entropy Detected)"
+service = "generic"
+
 # Explicit JSON envelopes belong to the API/access-key owner. Keeping these as
 # separate fixed-anchor patterns makes every backend compile the same trigger
 # roots instead of relying on one multi-family alternation.

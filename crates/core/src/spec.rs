@@ -144,6 +144,13 @@ pub struct DetectorSpec {
     /// `None` → the single-owner default `VERY_HIGH_ENTROPY_THRESHOLD`.
     #[serde(default)]
     pub entropy_very_high: Option<f64>,
+    /// Optional metadata used when this detector owns a synthetic entropy
+    /// finding. Keeping the emitted id, display name, and service beside the
+    /// owning detector prevents scanner-side identity tables from drifting
+    /// away from detector policy. Custom legacy specs may omit it and use the
+    /// documented compatibility metadata for their entropy class.
+    #[serde(default)]
+    pub entropy_fallback: Option<EntropyFallbackMetadata>,
     /// Per-detector keyword-free entropy threshold used for clearly sensitive
     /// paths. `None` inherits `entropy_very_high` for that detector; setting it
     /// lower is an explicit recall policy for files such as `.env` and secrets
@@ -298,6 +305,18 @@ pub struct EntropyFloorBucket {
     /// Shannon-entropy floor (bits/byte). A candidate scoring below this is
     /// suppressed by the low-entropy gate.
     pub floor: f64,
+}
+
+/// Detector-owned identity for a finding emitted by the entropy fallback path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct EntropyFallbackMetadata {
+    /// Stable emitted detector id. Must use the `entropy-` namespace.
+    pub id: String,
+    /// Human-readable finding name.
+    pub name: String,
+    /// Service family attached to the synthetic finding.
+    pub service: String,
 }
 
 /// One detector-local pure-hex key-material policy.

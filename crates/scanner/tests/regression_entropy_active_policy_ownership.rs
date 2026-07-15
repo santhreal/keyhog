@@ -216,6 +216,42 @@ fn sensitive_path_discount_is_relative_to_detector_owned_threshold() {
     );
 }
 
+#[test]
+fn entropy_fallback_identity_comes_from_active_detector_policy() {
+    let mut generic_secret = detector("generic-secret", &["secret"], 8);
+    generic_secret.entropy_fallback = Some(keyhog_core::EntropyFallbackMetadata {
+        id: "entropy-custom-policy".into(),
+        name: "Custom Policy Entropy".into(),
+        service: "custom-service".into(),
+    });
+    generic_secret.keyword_free_min_len = Some(20);
+    generic_secret.bpe_enabled = Some(false);
+    generic_secret.sensitive_path_entropy_very_high = Some(5.5);
+    let mut config = ScannerConfig::default();
+    config.entropy_enabled = true;
+    config.entropy_in_source_files = true;
+    config.min_confidence = 0.0;
+    let scanner = CompiledScanner::compile(vec![generic_secret, entropy_only_owner(false)])
+        .expect("compile detector-owned entropy metadata corpus")
+        .with_config(config);
+    let chunk = Chunk {
+        data: format!("x:\"{KEYWORD_FREE_VALUE}\"").into(),
+        metadata: ChunkMetadata {
+            source_type: "detector-threshold-boundary".into(),
+            path: Some("secrets.yaml".into()),
+            ..Default::default()
+        },
+    };
+    let finding = scanner
+        .scan_with_backend(&chunk, ScanBackend::CpuFallback)
+        .into_iter()
+        .find(|finding| finding.credential.as_ref() == KEYWORD_FREE_VALUE)
+        .expect("custom entropy metadata corpus must emit the keyword-free candidate");
+    assert_eq!(finding.detector_id.as_ref(), "entropy-custom-policy");
+    assert_eq!(finding.detector_name.as_ref(), "Custom Policy Entropy");
+    assert_eq!(finding.service.as_ref(), "custom-service");
+}
+
 #[cfg(feature = "gpu")]
 #[test]
 fn detector_owned_very_high_boundary_is_exact_on_every_accelerated_backend() {

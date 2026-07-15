@@ -61,6 +61,29 @@ fn sensitive_path_entropy_threshold_cannot_exceed_detector_threshold() {
 }
 
 #[test]
+fn entropy_fallback_metadata_requires_entropy_identity_and_labels() {
+    let mut detector = detector_with_pattern("token=([A-Za-z0-9]+)");
+    detector.entropy_fallback = Some(keyhog_core::EntropyFallbackMetadata {
+        id: "generic-secret".into(),
+        name: "".into(),
+        service: "".into(),
+    });
+    let issues = validate_detector(&detector);
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("entropy_fallback.id")
+    )));
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("entropy_fallback.name")
+    )));
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("entropy_fallback.service")
+    )));
+}
+
+#[test]
 fn phase2_generic_max_len_must_be_positive_and_not_below_min_len() {
     let mut detector = detector_with_pattern("token=([A-Za-z0-9]+)");
     detector.kind = keyhog_core::DetectorKind::Phase2Generic;

@@ -1,15 +1,28 @@
 //! Focused shape helpers for fallback entropy filtering.
 
 #[cfg(feature = "entropy")]
-use crate::detector_ids::{ENTROPY_API_KEY, ENTROPY_GENERIC, ENTROPY_PASSWORD, ENTROPY_TOKEN};
+use crate::detector_ids::{
+    ENTROPY_API_KEY, ENTROPY_GENERIC, ENTROPY_PASSWORD, ENTROPY_TOKEN, GENERIC_API_KEY,
+    GENERIC_KEYWORD_SECRET, GENERIC_PASSWORD, GENERIC_SECRET,
+};
 
-/// The four synthetic entropy-fallback metadata triples, index-parallel with
-/// [`classify_entropy_detector_index`]. Single source of truth: the scanner
-/// pre-interns this exact table into `entropy_metadata_by_index` at
-/// construction so the emit path clones an `Arc<str>` by index instead of
-/// re-interning these constants per finding (PERF-locality_intern-1).
+/// Generic detector owners for the four entropy-fallback classes, index-parallel
+/// with [`classify_entropy_detector_index`]. The loaded detector TOMLs provide
+/// the emitted identity through `entropy_fallback`; these ids only select the
+/// owner policy at compile time.
 #[cfg(feature = "entropy")]
-pub(crate) const ENTROPY_DETECTOR_METADATA: [(&str, &str, &str); 4] = [
+pub(crate) const ENTROPY_FALLBACK_OWNER_IDS: [&str; 4] = [
+    GENERIC_SECRET,
+    GENERIC_PASSWORD,
+    GENERIC_KEYWORD_SECRET,
+    GENERIC_API_KEY,
+];
+
+/// Compatibility metadata for custom/legacy specs that omit the optional
+/// detector-owned identity block. Embedded generic TOMLs all declare their
+/// metadata, so shipped output is TOML-defined.
+#[cfg(feature = "entropy")]
+pub(crate) const ENTROPY_DETECTOR_METADATA_COMPAT: [(&str, &str, &str); 4] = [
     (ENTROPY_GENERIC, "Generic High-Entropy Secret", "generic"),
     (ENTROPY_PASSWORD, "Password (Entropy Detected)", "generic"),
     (ENTROPY_TOKEN, "API Token (Entropy Detected)", "generic"),
@@ -17,7 +30,7 @@ pub(crate) const ENTROPY_DETECTOR_METADATA: [(&str, &str, &str); 4] = [
 ];
 
 /// Classify an entropy candidate's keyword into the index of its metadata
-/// triple in [`ENTROPY_DETECTOR_METADATA`]. The branch order matches the
+/// triple in the compiled metadata table. The branch order matches the
 /// historical keyword→detector mapping, so the resolved detector
 /// id/name/service are unchanged; the scanner clones the pre-interned triple
 /// at this index at the emit site (PERF-locality_intern-1).

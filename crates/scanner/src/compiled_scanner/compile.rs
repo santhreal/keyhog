@@ -326,7 +326,24 @@ impl CompiledScanner {
         // once per scanner; lock-free on read.
         let static_intern_strings: Vec<&str> = detectors
             .iter()
-            .flat_map(|d| [d.id.as_str(), d.name.as_str(), d.service.as_str()].into_iter())
+            .flat_map(|d| {
+                let metadata = d.entropy_fallback.as_ref().map(|metadata| {
+                    [
+                        metadata.id.as_str(),
+                        metadata.name.as_str(),
+                        metadata.service.as_str(),
+                    ]
+                });
+                [
+                    d.id.as_str(),
+                    d.name.as_str(),
+                    d.service.as_str(),
+                    metadata.map_or("", |values| values[0]),
+                    metadata.map_or("", |values| values[1]),
+                    metadata.map_or("", |values| values[2]),
+                ]
+                .into_iter()
+            })
             .collect();
         let static_intern = Arc::new(crate::static_intern::StaticInterner::from_detector_strings(
             static_intern_strings,
@@ -436,16 +453,29 @@ impl CompiledScanner {
             .collect();
 
         // Pre-intern the four synthetic entropy-fallback metadata triples once
-        // (PERF-locality_intern-1). These are not detector specs, so they are
-        // not in the StaticInterner universe; intern them directly into shared
-        // Arc<str> here so the entropy emit path clones by index rather than
-        // re-allocating/re-hashing the same four constants per finding. String
-        // values are byte-identical to the prior `intern_metadata` results.
+        // (PERF-locality_intern-1). Shipped generic detector TOMLs own these
+        // identities through `entropy_fallback`; the compatibility triples are
+        // used only when a custom legacy spec omits that optional block.
         #[cfg(feature = "entropy")]
         let entropy_metadata_by_index: [(Arc<str>, Arc<str>, Arc<str>); 4] = {
-            use crate::engine::phase2_entropy::helpers::ENTROPY_DETECTOR_METADATA;
+            use crate::engine::phase2_entropy::helpers::{
+                ENTROPY_DETECTOR_METADATA_COMPAT, ENTROPY_FALLBACK_OWNER_IDS,
+            };
             std::array::from_fn(|i| {
-                let (id, name, service) = ENTROPY_DETECTOR_METADATA[i];
+                let (fallback_id, fallback_name, fallback_service) =
+                    ENTROPY_DETECTOR_METADATA_COMPAT[i];
+                let metadata = detectors
+                    .iter()
+                    .find(|detector| detector.id == ENTROPY_FALLBACK_OWNER_IDS[i])
+                    .and_then(|detector| detector.entropy_fallback.as_ref());
+                let (id, name, service) =
+                    metadata.map_or((fallback_id, fallback_name, fallback_service), |metadata| {
+                        (
+                            metadata.id.as_str(),
+                            metadata.name.as_str(),
+                            metadata.service.as_str(),
+                        )
+                    });
                 (
                     static_intern.lookup(id).unwrap_or_else(|| Arc::from(id)), // LAW10: string-intern miss => owned Arc of identical bytes, recall-safe
                     static_intern
