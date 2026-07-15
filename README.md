@@ -52,6 +52,11 @@ without breaking an existing tree by committing a baseline
 (`keyhog scan --create-baseline .keyhog-baseline.json`) so the action
 fails only on NEW secrets.
 
+Release-tag behavior is fail-closed: exact release tags and the floating
+`@v0` tag require complete, verifiable release assets. A missing or
+unverifiable asset never silently falls back to building different source;
+only branch/SHA refs build from source.
+
 For lean CI source builds, disable default features and select the CI profile:
 
 ```sh

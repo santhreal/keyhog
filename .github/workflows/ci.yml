@@ -735,11 +735,15 @@ jobs:
           # and the smoke test would mis-assert "scanner broken."
           prefix="sk_$(printf live)"
           body="4eC39HqLyjWDarjtT1zdp7dc"
-          printf 'API_KEY="%s_%s"\n' "$prefix" "$body" \
+          if printf 'API_KEY="%s_%s"\n' "$prefix" "$body" \
             | ./target/release-fast/keyhog scan --stdin --no-config \
                 --backend cpu --daemon=off --min-confidence 0.0 \
-                --no-suppress-test-fixtures
-          test $? -eq 1  # exit 1 = findings detected (expected)
+                --no-suppress-test-fixtures; then
+            dogfood_status=0
+          else
+            dogfood_status=$?
+          fi
+          test "$dogfood_status" -eq 1  # exit 1 = findings detected (expected)
 
       # Prove current-source -> install -> working binary on Linux via
       # install.sh's --from-file path (doctor self-test, seeded scan, SARIF,

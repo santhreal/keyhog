@@ -59,7 +59,7 @@ resolves the exact version from its checked-out manifest. The Action verifies
 both minisign signatures with KeyHog's pinned public key, verifies both SHA-256
 files, validates the sidecar archive, and seeds its matcher artifacts before
 execution. A missing or unverifiable payload fails closed. Branch/SHA Action
-refs skip release lookup and build the checked-out tree instead.
+refs skip release lookup and build from source using the checked-out tree.
 
 When `upload-sarif: 'true'`, SARIF upload is fail-closed on trusted pushes
 and same-repo pull requests. Fork pull requests often lack
