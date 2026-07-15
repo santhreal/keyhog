@@ -471,7 +471,7 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       - name: Install Vectorscan
         run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
-      - name: portable (no system libs)
+      - name: portable (no Hyperscan or GPU build libraries)
         run: cargo check -p keyhog --no-default-features --features portable
       - name: portable runtime dogfood (scalar CPU, real exclusions)
         run: |
@@ -479,7 +479,7 @@ jobs:
           tests/dogfood/repository_scan.sh ./target/release-fast/keyhog cpu json \
             "$RUNNER_TEMP/keyhog-portable-dogfood.json"
           tests/dogfood/product_matrix.sh ./target/release-fast/keyhog cpu
-      - name: CI profile runtime dogfood (documented system-library-free build)
+      - name: CI profile runtime dogfood (documented feature profile build)
         run: |
           cargo build --profile release-fast -p keyhog --no-default-features --features ci
           tests/dogfood/repository_scan.sh ./target/release-fast/keyhog cpu json \

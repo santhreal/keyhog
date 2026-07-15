@@ -192,9 +192,9 @@ status = "alpha"
 #                                                   backends, verification, and mimalloc
 # `--fast` is a runtime CLI flag (not Cargo `-F fast`; the `fast` feature is unused).
 # cargo build --release -F binary                -> add Ghidra decompiler + printable string extraction
-# cargo build --release -F full                  -> source/decompiler surface without accelerator/system-library features
+# cargo build --release -F full                  -> source/decompiler surface without accelerator features (native TLS remains)
 # cargo build --release --no-default-features    -> bare filesystem/stdin scanner surface
-# cargo build --release --no-default-features -F portable -> portable source-backend build without Hyperscan/GPU/CUDA/Ghidra
+# cargo build --release --no-default-features -F portable -> portable source-backend build without Hyperscan/GPU/CUDA/Ghidra build deps (native TLS remains)
 # cargo build --release --no-default-features -F ci       -> lean CI/embeddable scanner
 # cargo build --release --no-default-features -F ci-lean -> default source/verification surface without GPU dispatch
 #

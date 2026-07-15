@@ -27,8 +27,9 @@ path = "src/main.rs"
 # Default = full desktop experience: scanner defaults, source backends,
 # verification, and the allocator. The scanner default intentionally includes
 # GPU, Hyperscan/SIMD, simdsieve, ML, entropy, decode-through, and multiline.
-# Use `portable`, `ci-lean`, or `ci` for builds that strip accelerator/system
-# dependencies; `binary` (Ghidra) remains opt-in.
+# Use `portable`, `ci-lean`, or `ci` for builds that strip accelerator and
+# optional system-backend dependencies; network sources still use native TLS.
+# `binary` (Ghidra) remains opt-in.
 default = [
     "keyhog-scanner/default",  # scanner full desktop stack, including GPU + Hyperscan/SIMD
     "simd",                    # activate CLI Hyperscan surfaces alongside scanner/default
@@ -68,9 +69,11 @@ ci-lean = [
     "docker",
     "verify",
 ]
-# macOS release builds: every keyhog-scanner data feature, no system-lib deps
-# (no Hyperscan / Ghidra / CUDA). Workflows pass just `--features portable`
-# instead of having to enumerate `keyhog-scanner/...` per release.
+# Portable release builds: every keyhog-scanner data feature, with no
+# Hyperscan / Ghidra / CUDA build dependencies. Network sources still use the
+# native TLS stack and therefore retain the documented platform prerequisites.
+# Workflows pass just `--features portable` instead of enumerating each
+# `keyhog-scanner/...` feature per release.
 portable = [
     "keyhog-scanner/ml",
     "keyhog-scanner/entropy",
@@ -88,8 +91,9 @@ portable = [
     "verify",
     "mimalloc",
 ]
-# Full source/decompiler surface without accelerator/system-library features.
-# Add `gpu` / `simd` explicitly when this profile needs accelerator paths.
+# Full source/decompiler surface without accelerator features. Network sources
+# retain native TLS dependencies; add `gpu` / `simd` explicitly when this
+# profile needs accelerator paths.
 full = [
     "keyhog-scanner/ml",
     "keyhog-scanner/entropy",
