@@ -212,7 +212,7 @@ impl AutorouteRoutingError {
                  fastest-correct backend decision.\n  \
                  fix: rerun this same scan once with `--autoroute-calibrate --autoroute-gpu` \
                  to measure its actual source/config/workload class, or run \
-                 `keyhog calibrate-autoroute` for the core ladder.\n  \
+                 `keyhog calibrate-autoroute` for the core ladder; installers can use `install.sh --calibrate` or `install.ps1 -Calibrate`.\n  \
                  workload bucket: [{}], runtime={}\n  \
                  coverage: {coverage}.\n  \
                  cache: {cache_state}.\n  \

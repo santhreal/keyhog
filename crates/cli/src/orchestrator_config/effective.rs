@@ -517,11 +517,13 @@ pub(crate) fn autoroute_config_digest(resolved: &ResolvedScanConfig) -> u64 {
         "hyperscan_cache_dir",
         resolved.hyperscan_cache_dir.as_deref(),
     );
-    h.field_option_path(
-        "calibration_cache_path",
-        resolved.calibration_cache_path.as_deref(),
-    );
-    h.field_u64("calibration_digest", resolved.calibration_digest);
+    // Calibration evidence is the data looked up by this identity, not part of
+    // the scan policy that the evidence describes. Including the cache path or
+    // its rolling digest here made every successful calibration change the
+    // lookup key, so the immediately following normal scan rejected its own
+    // fresh decision as a config mismatch. Store identity is already bound by
+    // the cache schema's detector/rules/host fields; keep it out of this stable
+    // policy fingerprint.
     hash_strings(&mut h, "aws_canary_accounts", &resolved.aws_canary_accounts);
     hash_scanner_tuning(&mut h, &resolved.scanner_tuning);
     h.field_option_path("allowlist.file", resolved.allowlist.file.as_deref());

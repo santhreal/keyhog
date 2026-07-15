@@ -179,9 +179,10 @@ fn backend_autoroute_inspects_explicit_cache_path() {
     );
 }
 
-/// After an `--autoroute-calibrate` scan writes a decision, `backend --autoroute
-/// --json` lists the resolved config, its workload decision(s), and a real
-/// backend label, and reports the freshly-written cache as matching this build.
+/// After a canonical all-candidate `--autoroute-calibrate` scan writes a
+/// decision, `backend --autoroute --json` lists the resolved config, its
+/// workload decision(s), and a real backend label, and reports the
+/// freshly-written cache as matching this build.
 #[test]
 fn backend_autoroute_shows_calibrated_decisions_after_calibration() {
     let cache = TempDir::new().unwrap();
@@ -194,13 +195,14 @@ fn backend_autoroute_shows_calibrated_decisions_after_calibration() {
             "scan",
             "--daemon=off",
             "--autoroute-calibrate",
+            "--autoroute-gpu",
             "--format",
             "json",
         ])
         .arg(&target)
         .env("XDG_CACHE_HOME", cache.path())
         .output()
-        .expect("spawn keyhog scan --autoroute-calibrate");
+        .expect("spawn keyhog scan --autoroute-calibrate --autoroute-gpu");
     // A calibration scan runs calibration THEN scans, so it returns the scan code
     // (0 clean / 1 found). Anything >= 2 means calibration failed.
     assert!(

@@ -13,7 +13,8 @@ use std::process::Command;
 use tempfile::TempDir;
 
 /// Run `keyhog scan <preset...> <target>` with an isolated cache; returns the
-/// exit code. `calibrate` prepends `--autoroute-calibrate`.
+/// exit code. Calibration uses the canonical all-candidate probe contract so
+/// the persisted identity is reusable by the following normal auto scan.
 fn scan(
     cache_home: &std::path::Path,
     target: &std::path::Path,
@@ -22,7 +23,7 @@ fn scan(
 ) -> Option<i32> {
     let mut args: Vec<&str> = vec!["scan", "--daemon=off"];
     if calibrate {
-        args.push("--autoroute-calibrate");
+        args.extend_from_slice(&["--autoroute-calibrate", "--autoroute-gpu"]);
     }
     args.extend_from_slice(preset);
     args.extend_from_slice(&["--format", "json"]);
