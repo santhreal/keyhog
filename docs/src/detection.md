@@ -90,6 +90,13 @@ detector definition. `keyhog explain <detector-id>` shows the policy declared by
 that detector TOML and its provenance; `keyhog config --effective` shows the
 resolved scan-wide policy.
 
+Practical ownership rule: any numeric value that changes one secret family's
+recall, precision, shape admission, or scoring must be a named detector-TOML
+field. If the schema cannot express it, extend the typed schema and its
+explain/contract surfaces rather than adding a detector-specific literal in
+scanner code. Only true shared invariants, such as parser safety caps or a
+model's fixed vocabulary, remain global.
+
 | Detector TOML field | If increased / enabled | If decreased / disabled |
 |---|---|---|
 | `entropy_low` | Requires more Shannon entropy for keyword-anchored generic values; fewer low-randomness passwords/tokens survive | Admits more values when the assignment key supplies evidence; shape, BPE, context, and confidence gates still apply |
