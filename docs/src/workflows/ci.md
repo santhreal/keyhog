@@ -51,7 +51,10 @@ ancestry. Add `--git-blobs` for complete reachable blob coverage.
 The composite action installs KeyHog, writes a SARIF report, uploads it
 to **Security -> Code scanning**, attaches the report as a workflow
 artifact, and prints a job summary with the finding count, raw exit code,
-and scan duration.
+and scan duration. Its `format` input intentionally supports the four formats
+that the Action wrapper can count (`text`, `json`, `sarif`, and `jsonl`). Use
+the installed CLI directly when a workflow needs envelope, CSV, HTML, JUnit,
+or provider-specific formats documented in [Output formats](../output-formats.md).
 
 Exact release tags, the floating major tag (`@v0`), and explicit `version:`
 inputs require the complete binary and GPU literal bundle. The floating tag

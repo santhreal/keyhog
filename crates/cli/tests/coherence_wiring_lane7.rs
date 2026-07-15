@@ -564,6 +564,15 @@ fn output_formats_doc_states_eleven_values() {
             "the composite Action must not advertise unsupported `{v}` format"
         );
     }
+    let ci_doc = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/src/workflows/ci.md"
+    ));
+    assert!(
+        ci_doc.contains("`format` input intentionally supports the four formats")
+            && ci_doc.contains("use the installed CLI directly"),
+        "CI docs must distinguish the four-format Action wrapper from the full CLI format surface"
+    );
 }
 
 /// README↔installer verification coherence (dogfood 2026-06-22). `install.sh`

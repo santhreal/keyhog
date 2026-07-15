@@ -3,6 +3,7 @@ use crate::support::reporters::CsvReporter;
 use keyhog_core::VerificationResult;
 
 const AWS_REMEDIATION_CSV: &str = r#""{""action"":""Disable or delete the exposed IAM access key, then rotate any paired secret access key and session token."",""revoke_url"":""https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html#Using_ManagingAccessKeys"",""docs_url"":""https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html"",""revoke_command"":""aws iam update-access-key --access-key-id {{credential}} --status Inactive""}""#;
+const AWS_METADATA_CSV: &str = r#""{""account_id"":""123456789012""}""#;
 
 fn render(finding: &keyhog_core::VerifiedFinding) -> String {
     let mut buf: Vec<u8> = Vec::new();
@@ -26,7 +27,7 @@ fn csv_emits_header_then_escaped_row() {
 
     assert_eq!(
         lines.next().expect("data row"),
-        format!("aws-access-key,\"AWS Key, \"\"prod\"\" <a&b>\",aws,high,AKIA...7XYA,deadbeef00000000000000000000000000000000000000000000000000000000,{{}},filesystem,config/app.env,12,5,,,,live,0.875,,{AWS_REMEDIATION_CSV},{{}},[]"),
+        format!("aws-access-key,\"AWS Key, \"\"prod\"\" <a&b>\",aws,high,AKIA...7XYA,deadbeef00000000000000000000000000000000000000000000000000000000,{{}},filesystem,config/app.env,12,5,,,,live,0.875,,{AWS_REMEDIATION_CSV},{AWS_METADATA_CSV},[]"),
     );
     assert!(
         lines.next().is_none(),
@@ -50,7 +51,9 @@ fn csv_uses_canonical_structured_verification_tokens() {
         let out = render(&finding);
         let row = out.lines().nth(1).expect("csv data row");
         assert!(
-            row.ends_with(&format!(",,,,{expected},0.875,,{AWS_REMEDIATION_CSV}")),
+            row.ends_with(&format!(
+                ",,,,{expected},0.875,,{AWS_REMEDIATION_CSV},{AWS_METADATA_CSV},[]"
+            )),
             "CSV must use the canonical structured verification token: {out:?}"
         );
     }

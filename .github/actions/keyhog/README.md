@@ -17,6 +17,11 @@ SARIF, uploads it to Code Scanning, and attaches the report as a workflow
 artifact. The job summary includes the scan path, severity floor, report name,
 raw exit code, finding count, and scan duration.
 
+The Action wrapper supports `text`, `json`, `sarif`, and `jsonl`. The CLI also
+offers envelope, CSV, GitLab SAST, HTML, and JUnit formats; use the installed
+`keyhog` binary directly for those outputs so the wrapper does not miscount a
+report it cannot parse.
+
 With `upload-sarif: 'true'`, Code Scanning
 upload failures fail closed on trusted pushes and same-repo PRs. Fork PRs can
 lack `security-events: write`; those upload failures stay advisory and the
