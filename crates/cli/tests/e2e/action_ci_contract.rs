@@ -705,6 +705,55 @@ fn action_runs_real_keyhog_and_counts_sarif_findings() {
 }
 
 #[test]
+fn action_quick_start_scans_the_checked_out_workspace_by_default() {
+    let checked_out = TempDir::new().expect("checked-out workspace tempdir");
+    fs::write(
+        checked_out.path().join("secret.env"),
+        "AWS_ACCESS_KEY_ID=AKIAQYLPMN5HFIQR7XYA\n",
+    )
+    .expect("write planted secret");
+
+    let binary = keyhog_binary();
+    let binary_dir = binary
+        .parent()
+        .expect("binary parent")
+        .to_str()
+        .expect("utf-8 binary dir");
+    let finding = run_action_with_path_prefix(
+        &checked_out,
+        binary_dir,
+        &[("ACTION_INPUT_BACKEND", "cpu")],
+    );
+    assert_eq!(
+        finding.status.code(),
+        Some(0),
+        "quick-start finding must use the action findings path; output={}",
+        combined_output(&finding)
+    );
+    assert!(
+        output_file(&checked_out).contains("findings=1"),
+        "default action path must scan the checked-out workspace"
+    );
+
+    let no_checkout = TempDir::new().expect("empty workspace tempdir");
+    let clean = run_action_with_path_prefix(
+        &no_checkout,
+        binary_dir,
+        &[("ACTION_INPUT_BACKEND", "cpu")],
+    );
+    assert_eq!(
+        clean.status.code(),
+        Some(0),
+        "an empty no-checkout workspace should remain clean; output={}",
+        combined_output(&clean)
+    );
+    assert!(
+        output_file(&no_checkout).contains("findings=0"),
+        "the action must not claim repository coverage without checked-out content"
+    );
+}
+
+#[test]
 fn action_runs_real_keyhog_and_counts_text_findings() {
     let dir = TempDir::new().expect("tempdir");
     let repo = dir.path().join("repo");
