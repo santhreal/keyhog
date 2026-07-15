@@ -97,114 +97,24 @@ contract:
 | `simd-regex` | Hyperscan compiled and live | parallel Hyperscan trigger scan plus full-regex extraction; portable builds do not expose this backend and report `cpu-fallback` instead |
 | `cpu-fallback` | portable build or explicit CPU selection | Aho-Corasick prefix + Rust `regex` extraction |
 
-### Autoroute Contract
+### Autoroute
 
-The goal of autoroute is simple and strict: for every scan, on every supported
-OS, architecture, CPU, GPU, driver stack, detector set, config, and workload
-shape, KeyHog must pick the fastest backend that returns the same findings.
+KeyHog autoroute measures every eligible backend and persists the fastest
+parity-checked choice for the exact binary, host, resolved policy, and workload
+class. It is not a hardware heuristic or fallback hierarchy: a missing or stale
+decision fails closed instead of silently choosing CPU, SIMD, or GPU.
 
-That means autoroute is not a fixed threshold table, not a hardware-name
-heuristic, and not a fallback hierarchy. There is no "GPU primary with CPU
-fallback", no "CPU safe default", and no preferred backend that runs when the
-decision table is missing. GPU, Hyperscan/SIMD, scalar CPU, and any new engine
-are peer candidates. A backend is eligible only after calibration proves two
-things for the current binary, detector digest, host profile, and workload
-class:
+Install performs the visible calibration. To recalibrate an installed binary,
+run `keyhog calibrate-autoroute`; inspect evidence with
+`keyhog backend --autoroute`. Explicit `--backend` values are diagnostic and
+benchmark overrides, not autoroute proof. Single-backend portable builds do
+not need a routing cache.
 
-- **Correctness parity:** the candidate returns the same complete redacted raw
-  match identity as the reference path: detector metadata, severity, hashed
-  credential and companions, full source location/history metadata, entropy,
-  confidence, chunk membership, and finding multiplicity.
-- **Measured speed:** the candidate is faster than the alternatives on this
-  host and workload class, including batching, detector digest, file-size
-  distribution, accelerator state, and platform overhead. Calibration records
-  store repeated parity-checked trials, not a single lucky timing sample.
+The complete parity contract, workload identity, GPU/Hyperscan behavior, daemon
+semantics, cache lifecycle, and troubleshooting matrix live in the
+[autoroute reference](docs/src/reference/autoroute-calibration.md).
 
-The selected decision must be explainable and reproducible. Any cached routing
-decision is keyed by exact executable SHA-256, binary version, OS/arch, CPU features, GPU identity,
-detector digest, resolved scan-config digest including batch-pipeline route,
-calibration schema, and workload-shape buckets. Canonical GPU admission during
-calibration shares normal scan identity; deliberately excluding GPU candidates
-is isolated as a diagnostic-only calibration identity. Changing any keyed input
-invalidates the decision and requires a fresh calibration probe during install
-or explicit recalibration. Invalid existing cache records are rejected instead
-of being silently trusted. The installer runs a visible autoroute calibration
-phase and persists those measured decisions on disk. Normal scans do not
-benchmark candidates or rewrite routing records; they either find a valid
-persisted fastest-correct decision for the scan class or report an invalid
-autoroute state. A missing, stale, invalid, or incomplete decision is not
-permission to run SIMD/CPU/GPU as a substitute. Run `keyhog calibrate-autoroute`
-to re-prime every preset and workload bucket for the installed binary in place,
-or rerun `install.sh --calibrate` / `install.ps1 -Calibrate` to replace the
-persisted calibration at install time. Explicit `--backend` overrides are for
-diagnostics and benchmarking, not evidence that autoroute is correct.
-
-A single-backend build (one compiled without Hyperscan (`simd`) or the GPU stack,
-such as the portable release) has no backend *choice* to route, so it
-resolves its lone CPU backend directly and never requires calibration (and never
-fails closed). Autoroute engages only when a build compiled more than one backend.
-
-The visible calibration phase measures stdin and filesystem workload classes for
-the default policy and every preset. The default policy also measures Git
-history, blobs, and diffs, a loopback web URL, and a live container image when
-the host can materialize them. Each class times every eligible backend and
-persists only a route it can prove fastest (or the sound lowest measured median
-among statistically non-dominated routes when confidence intervals overlap).
-Backend engagement overhead breaks only an exact median tie. A materialized
-class must calibrate successfully. Missing tools or fixtures are reported as
-unavailable instead of claimed as covered.
-
-Because a scan-policy preset (`--fast`, `--deep`, `--precision`) changes the
-scanner fields hashed into the routing digest, each preset resolves a *different*
-decision than the default policy. The installer therefore calibrates the default
-policy **and** every preset the binary exposes, so `keyhog scan . --fast` (or
-`--deep`/`--precision`) resolves a persisted fastest-correct decision instead of
-failing closed. The decisions for the default policy and every preset coexist in
-one cache file (each keyed by its own resolved-config digest):
-
-<p align="center">
-  <img src="demo/keyhog-calibrate.gif" alt="install.sh --calibrate streaming the autoroute sweep: stdin, contiguous stable file-size buckets through 32 MiB, decode-heavy input, many-file trees, git history/blobs/diff, web URL, and a live docker image; each workload class measures every backend before the persisted decisions summary" width="860" />
-</p>
-
-`keyhog backend` prints the hardware probe and a size-keyed capability matrix for
-diagnostics. That matrix is advisory; normal `auto` scans do not route from its
-static tier thresholds. They consume only persisted fastest-correct decisions
-for the exact workload key shown by `keyhog backend --autoroute`.
-
-`keyhog backend --autoroute` is the companion view: it reads the *persisted*
-calibration cache and lists which resolved scan configs and workload buckets
-already have a fastest-correct decision, the distinct cold-aware one-shot and
-warm-daemon routes, representative medians, confidence separation, selection
-basis, and whether the cache is stale for this build. When a scan exits with
-`autoroute calibration required: no decision for workload bucket …`, this is
-how you see what *is* calibrated and recalibrate the gap. The inspection health
-is explicit: `direct` and `ready` exit `0`; a multi-backend `calibration_required`,
-`disabled`, `stale`, or `invalid` state exits `4`. Add `--json` for the same
-health value in a stable, scriptable shape.
-
-<p align="center">
-  <img src="demo/keyhog-backend.gif" alt="keyhog backend diagnostic hardware probe and advisory size matrix; persisted automatic routing is inspected separately with keyhog backend --autoroute" width="860" />
-</p>
-
-The `simdsieve` prefilter is a performance layer, not a separate detector: a
-hit surfaces under its **canonical detector id** (`aws-access-key`,
-`github-classic-pat`, `slack-bot-token`, …) - identical on every platform and
-build, whether the fast path or the full regex engine made the find.
-
-Backend selection is reported on startup (the host line also names the GPU and
-`io_uring` when present):
-
-```
-v0.5.41 · secret scanner · 922 detectors
-⚡ 16 cores | SIMD: AVX-512 | Hyperscan | 922 detectors (6061 patterns) | backend=simd-regex
-```
-
-Banner **patterns** is the compiled pattern count shown in the startup banner above
-(here 6061). The detector corpus has 922 TOML files (four generic catch-alls -
-`generic-api-key`, `generic-keyword-secret`, `generic-password`, `generic-secret`
-- plus vendor-specific rules) with ~1697 `[[detector.patterns]]` rows in total.
-
-**Full documentation:** [santhreal.github.io/keyhog](https://santhreal.github.io/keyhog/) - install, first scan, output formats, detection internals, suppressions, verification, pre-commit + CI integration, CLI reference, exit codes, env vars, contributing. Source under `docs/`.
+**Full documentation:** [santhreal.github.io/keyhog](https://santhreal.github.io/keyhog/) - install, first scan, output formats, detection internals, suppressions, verification, pre-commit + CI integration, CLI reference, autoroute, exit codes, env vars, and contributing. Source under `docs/`.
 
 ---
 
