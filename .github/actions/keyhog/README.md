@@ -137,7 +137,9 @@ tag resolves the exact version from its checked-out manifest. Missing,
 malformed, or unverifiable release payloads fail closed instead of silently
 source-building different code. Branch/SHA action refs skip the release lookup
 and build from source. The Action intentionally uses the portable feature set
-for both macOS
+for release refs of the form `vMAJOR.MINOR.PATCH` with an optional prerelease
+suffix; build metadata (`+...`) is rejected because no matching release asset
+namespace is published. It uses that portable feature set for both macOS
 prebuilts and branch/SHA source fallbacks. A manual macOS source build can use
 Hyperscan after `brew install vectorscan pkg-config`; that is a different build
 from the Action asset. Both include entropy, multiline reassembly, ML scoring,

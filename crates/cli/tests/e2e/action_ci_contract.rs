@@ -340,8 +340,13 @@ fn manifest_run_block_for_step(manifest: &str, step_name: &str) -> String {
 fn run_manifest_bash_step(step_name: &str, envs: &[(&str, &str)]) -> Output {
     let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
     let block = manifest_run_block_for_step(&manifest, step_name);
+    let source_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("repo root exists");
     let mut cmd = Command::new("bash");
     cmd.arg("-c").arg(block);
+    cmd.env("ACTION_SOURCE_ROOT", source_root);
     for (key, value) in envs {
         cmd.env(key, value);
     }
@@ -1752,6 +1757,114 @@ fn composite_action_sarif_upload_fails_closed_on_trusted_runs() {
 }
 
 #[test]
+fn keyhog_workflow_covers_trusted_and_fork_sarif_permission_matrix() {
+    let workflow_text = fs::read_to_string(keyhog_workflow()).expect("read keyhog.yml");
+    let workflow: serde_yaml::Value =
+        serde_yaml::from_str(&workflow_text).expect("keyhog.yml parses as YAML");
+    let root = workflow.as_mapping().expect("keyhog.yml is a mapping");
+    let jobs = yaml_get(root, "jobs")
+        .and_then(serde_yaml::Value::as_mapping)
+        .expect("keyhog.yml declares jobs");
+    let scan = yaml_get(jobs, "scan")
+        .and_then(serde_yaml::Value::as_mapping)
+        .expect("keyhog.yml declares the scan job");
+    let permissions = yaml_get(scan, "permissions")
+        .and_then(serde_yaml::Value::as_mapping)
+        .expect("trusted scan fixture declares job permissions");
+    assert_eq!(
+        yaml_get(permissions, "contents").and_then(serde_yaml::Value::as_str),
+        Some("read"),
+        "trusted SARIF scans must keep repository contents read-only"
+    );
+    assert_eq!(
+        yaml_get(permissions, "security-events").and_then(serde_yaml::Value::as_str),
+        Some("write"),
+        "trusted scan fixture must grant the least privilege needed for SARIF upload"
+    );
+
+    let steps = yaml_get(scan, "steps")
+        .and_then(serde_yaml::Value::as_sequence)
+        .expect("scan job declares steps");
+    let action_step = steps
+        .iter()
+        .find_map(|step| {
+            let step = step.as_mapping()?;
+            (yaml_get(step, "uses").and_then(serde_yaml::Value::as_str)
+                == Some("./.github/actions/keyhog"))
+            .then_some(step)
+        })
+        .expect("scan job invokes the bundled composite action");
+    let action_inputs = yaml_get(action_step, "with")
+        .and_then(serde_yaml::Value::as_mapping)
+        .expect("scan action fixture declares inputs");
+    assert_eq!(
+        yaml_get(action_inputs, "format").and_then(serde_yaml::Value::as_str),
+        Some("sarif"),
+        "the trusted fixture must exercise the SARIF upload path"
+    );
+    assert_eq!(
+        yaml_get(action_inputs, "upload-sarif").and_then(serde_yaml::Value::as_str),
+        Some("true"),
+        "the trusted fixture must leave SARIF upload enabled"
+    );
+
+    let action_text = fs::read_to_string(action_manifest()).expect("read action.yml");
+    let action: serde_yaml::Value =
+        serde_yaml::from_str(&action_text).expect("action.yml parses as YAML");
+    let action_steps = action
+        .get("runs")
+        .and_then(|runs| runs.get("steps"))
+        .and_then(serde_yaml::Value::as_sequence)
+        .expect("composite action declares steps");
+    let upload_step = action_steps
+        .iter()
+        .find_map(|step| {
+            let step = step.as_mapping()?;
+            (yaml_get(step, "name").and_then(serde_yaml::Value::as_str)
+                == Some("Upload SARIF to code-scanning"))
+            .then_some(step)
+        })
+        .expect("composite action declares a SARIF upload step");
+    let continue_on_error = yaml_get(upload_step, "continue-on-error")
+        .and_then(serde_yaml::Value::as_str)
+        .expect("SARIF upload declares its permission fallback explicitly");
+    assert_eq!(
+        continue_on_error,
+        "${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}",
+        "only fork pull requests may turn a restricted-token upload failure into an advisory result"
+    );
+
+    // This local event fixture mirrors GitHub's trusted and restricted-token
+    // contexts. It makes the permission contract executable without requiring
+    // a networked Code Scanning upload from a unit-test runner.
+    let fixtures = [
+        ("push", "santhreal/keyhog", false),
+        ("pull_request", "santhreal/keyhog", false),
+        ("pull_request", "contributor/keyhog", true),
+    ];
+    for (event_name, head_repo, advisory) in fixtures {
+        let is_fork_pr = event_name == "pull_request" && head_repo != "santhreal/keyhog";
+        assert_eq!(
+            is_fork_pr, advisory,
+            "permission fixture must classify {event_name} from {head_repo} correctly"
+        );
+    }
+
+    let action_readme = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.github/actions/keyhog/README.md"),
+    )
+    .expect("read composite action README");
+    assert!(
+        action_readme.contains("Set `upload-sarif: 'false'`"),
+        "the action must document the upload-disabled alternative for workflows without write permission"
+    );
+    assert!(
+        action_readme.contains("Fork PRs can\nlack `security-events: write`"),
+        "the action must document that restricted fork uploads remain advisory"
+    );
+}
+
+#[test]
 fn composite_action_live_credentials_fail_even_when_findings_are_advisory() {
     let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
     assert!(
@@ -1904,12 +2017,13 @@ fn composite_action_version_output_is_validated_before_github_output() {
         "version resolver must not reflect rejected input into a workflow command"
     );
     assert!(
-        manifest.contains("(-[0-9A-Za-z][0-9A-Za-z.-]*)?$")
-            && !manifest.contains("[-+][A-Za-z0-9._-]+"),
-        "the Action must accept only the release workflow's stable or prerelease tag grammar"
+        manifest.contains(
+            "bash \"$ACTION_SOURCE_ROOT/scripts/release-version.sh\" \"$ACTION_VERSION\""
+        ) && !manifest.contains("[-+][A-Za-z0-9._-]+"),
+        "the Action must use the shared release grammar and reject build metadata"
     );
     assert!(
-        manifest.contains("v=\"${ACTION_VERSION#v}\"")
+        manifest.contains("v=\"${normalized_tag#v}\"")
             && manifest.contains("releases/download/v${version}")
             && manifest.contains("\"$release_url/$name\""),
         "an explicit version must normalize one optional v prefix before building the release URL"
@@ -3050,13 +3164,16 @@ fn release_workflow_validates_manual_tag_before_shell_outputs() {
         "manual release tag must enter shell through a named env var"
     );
     assert!(
-        workflow.contains("^v[0-9]+\\.[0-9]+\\.[0-9]+"),
-        "release tag resolver must require an exact v-prefixed semantic version"
+        workflow
+            .matches("bash scripts/release-version.sh \"$tag\"")
+            .count()
+            >= 5,
+        "every release job must use the shared exact semantic-version parser"
     );
     assert!(
-        workflow.contains("[0-9A-Za-z][0-9A-Za-z.-]*")
+        workflow.contains("scripts/release-version.sh")
             && workflow.contains("Release tag must be exact semver"),
-        "release tag resolver must constrain the entire tag, including its optional prerelease"
+        "release tag resolver must constrain the entire tag through the shared parser"
     );
     assert!(
         workflow.contains("printf 'tag=%s\\n' \"$tag\" >> \"$GITHUB_OUTPUT\""),
@@ -3073,8 +3190,41 @@ fn release_workflow_validates_manual_tag_before_shell_outputs() {
     assert!(
         workflow.contains("Prove the release ref is a tag")
             && workflow.contains("git/ref/tags/$KEYHOG_RELEASE_TAG")
-            && workflow.contains("ref: refs/tags/${{ steps.tag.outputs.tag }}"),
-        "manual releases must prove and checkout an exact tag, never a same-named branch"
+            && workflow.contains("ref: refs/tags/${{ steps.tag.outputs.tag }}")
+            && workflow.contains("ref: ${{ github.ref }}"),
+        "manual releases must prove and checkout the exact validated tag, never a same-named branch"
+    );
+}
+
+#[test]
+fn shared_release_version_parser_accepts_prereleases_and_rejects_build_metadata() {
+    let parser = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../scripts/release-version.sh")
+        .canonicalize()
+        .expect("shared release-version.sh exists");
+    for (input, expected) in [("1.2.3", "v1.2.3"), ("v1.2.3-rc.1", "v1.2.3-rc.1")] {
+        let output = Command::new(&parser)
+            .arg(input)
+            .output()
+            .expect("run shared release parser");
+        assert!(
+            output.status.success(),
+            "valid release version {input} rejected: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout).trim(),
+            expected,
+            "parser must normalize release versions to v-prefixed tags"
+        );
+    }
+    let output = Command::new(&parser)
+        .arg("v1.2.3+build.7")
+        .output()
+        .expect("run shared release parser for build metadata");
+    assert!(
+        !output.status.success(),
+        "release build metadata must be rejected because no asset namespace is published for it"
     );
 }
 

@@ -20,6 +20,8 @@ inputs:
   version:
     description: |
       KeyHog version to use. Matched against a published GitHub Release tag.
+      Exact versions use vMAJOR.MINOR.PATCH with an optional prerelease suffix;
+      build metadata is not published and is rejected.
       Exact versions, semver action tags, and floating major tags require the
       complete signed binary and GPU literal bundle. When unset, exact and
       floating release refs resolve the checked-out release version. Branch and
@@ -117,17 +119,21 @@ runs:
         set -euo pipefail
         release_required=false
         if [[ -n "${ACTION_VERSION:-}" ]]; then
-          v="${ACTION_VERSION#v}"
-          if ! [[ "$v" =~ ^[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+          if ! normalized_tag="$(bash "$ACTION_SOURCE_ROOT/scripts/release-version.sh" "$ACTION_VERSION")"; then
             echo "::error title=KeyHog::Invalid version. Explicit version must be MAJOR.MINOR.PATCH with an optional prerelease suffix."
             exit 2
           fi
+          v="${normalized_tag#v}"
           release_required=true
         else
           # GITHUB_ACTION_REF is e.g. "v0.5.12", "main", a SHA, or a branch.
           ref="${GITHUB_ACTION_REF:-main}"
-          v="${ref#v}"
-          if [[ "$ref" == v* && "$v" =~ ^[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+          if [[ "$ref" =~ ^v[0-9]+[.] ]]; then
+            if ! normalized_tag="$(bash "$ACTION_SOURCE_ROOT/scripts/release-version.sh" "$ref")"; then
+              echo "::error title=KeyHog::Invalid action ref. Release refs must be vMAJOR.MINOR.PATCH with an optional prerelease suffix."
+              exit 2
+            fi
+            v="${normalized_tag#v}"
             release_required=true
           elif [[ "$ref" =~ ^v([0-9]+)$ ]]; then
             major="${BASH_REMATCH[1]}"

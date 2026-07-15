@@ -61,6 +61,10 @@ files, validates the sidecar archive, and seeds its matcher artifacts before
 execution. A missing or unverifiable payload fails closed. Branch/SHA Action
 refs skip release lookup and build from source using the checked-out tree.
 
+Release refs use `vMAJOR.MINOR.PATCH` with an optional prerelease suffix.
+Build metadata (`+...`) is rejected because release assets are not published
+under a build-metadata namespace.
+
 When `upload-sarif: 'true'`, SARIF upload is fail-closed on trusted pushes
 and same-repo pull requests. Fork pull requests often lack
 `security-events: write`; in that case the upload step is advisory and the

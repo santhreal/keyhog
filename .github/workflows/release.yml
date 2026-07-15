@@ -82,6 +82,10 @@ jobs:
             artifact_features: 'ml,entropy,decode,multiline'
     runs-on: ${{ matrix.os }}
     steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
       - name: Resolve tag
         id: tag
         shell: bash
@@ -95,7 +99,7 @@ jobs:
           else
             tag="${GITHUB_REF##refs/tags/}"
           fi
-          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+          if ! tag="$(bash scripts/release-version.sh "$tag")"; then
             echo "::error title=KeyHog::Release tag must be exact semver (vMAJOR.MINOR.PATCH with an optional prerelease suffix)."
             exit 2
           fi
@@ -122,6 +126,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: refs/tags/${{ steps.tag.outputs.tag }}
+          fetch-depth: 0
 
       - name: Prove checkout matches attested event
         shell: bash
@@ -232,6 +237,10 @@ jobs:
       id-token: write
       attestations: write
     steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
       - name: Resolve tag
         id: tag
         shell: bash
@@ -245,7 +254,7 @@ jobs:
           else
             tag="${GITHUB_REF##refs/tags/}"
           fi
-          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+          if ! tag="$(bash scripts/release-version.sh "$tag")"; then
             echo "::error title=KeyHog::Release tag must be exact semver (vMAJOR.MINOR.PATCH with an optional prerelease suffix)."
             exit 2
           fi
@@ -258,6 +267,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: refs/tags/${{ steps.tag.outputs.tag }}
+          fetch-depth: 0
 
       - name: Prove and stage installer bytes
         shell: bash
@@ -306,6 +316,10 @@ jobs:
     permissions:
       contents: write  # publish the complete signed draft manifest
     steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 1
       - name: Resolve tag
         id: tag
         shell: bash
@@ -318,11 +332,16 @@ jobs:
           else
             tag="${GITHUB_REF##refs/tags/}"
           fi
-          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+          if ! tag="$(bash scripts/release-version.sh "$tag")"; then
             echo "::error title=KeyHog::Release tag must be exact semver (vMAJOR.MINOR.PATCH with an optional prerelease suffix)."
             exit 2
           fi
           printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: refs/tags/${{ steps.tag.outputs.tag }}
+          fetch-depth: 1
 
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # pinned action
         with:
@@ -462,6 +481,10 @@ jobs:
       contents: read
       packages: write
     steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
       - name: Resolve tag
         id: tag
         shell: bash
@@ -474,16 +497,18 @@ jobs:
           else
             tag="${GITHUB_REF##refs/tags/}"
           fi
-          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+          if ! tag="$(bash scripts/release-version.sh "$tag")"; then
             echo "::error title=KeyHog::Release tag must be exact semver (vMAJOR.MINOR.PATCH with an optional prerelease suffix)."
             exit 2
           fi
           printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
           printf 'version=%s\n' "${tag#v}" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: refs/tags/${{ steps.tag.outputs.tag }}
           fetch-depth: 0
+
       - name: Decide whether this is the newest stable release
         id: floating
         shell: bash
@@ -542,6 +567,10 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
       - name: Resolve tag
         id: tag
         shell: bash
@@ -554,15 +583,17 @@ jobs:
           else
             tag="${GITHUB_REF##refs/tags/}"
           fi
-          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+          if ! tag="$(bash scripts/release-version.sh "$tag")"; then
             echo "::error title=KeyHog::Release tag must be exact semver (vMAJOR.MINOR.PATCH with an optional prerelease suffix)."
             exit 2
           fi
           printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: refs/tags/${{ steps.tag.outputs.tag }}
           fetch-depth: 0
+
       - name: Decide whether this is the newest stable release
         id: floating
         shell: bash
