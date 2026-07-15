@@ -24,6 +24,24 @@ use keyhog_scanner::{CompiledScanner, GpuInitPolicy};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+fn collect_detector_signatures(detectors: &[DetectorSpec]) -> std::collections::HashSet<Arc<str>> {
+    detectors
+        .iter()
+        .flat_map(|detector| {
+            detector
+                .patterns
+                .iter()
+                .map(|pattern| Arc::from(pattern.regex.as_str()))
+        })
+        .chain(detectors.iter().flat_map(|detector| {
+            detector
+                .companions
+                .iter()
+                .map(|companion| Arc::from(companion.regex.as_str()))
+        }))
+        .collect()
+}
+
 /// Hosts with strictly less RAM than this are treated as low-RAM and get the
 /// deep-decode scan limits below clamped down to avoid an OOM. 4 GiB, expressed
 /// in MiB to compare directly against `HardwareCaps::total_memory_mb`.
@@ -734,15 +752,7 @@ fn setup_default_scan_runtime_with_rayon_policy(
     scan_runtime.validate_explicit_backend(subcommand_name)?;
 
     if let Some(root) = filter_root {
-        let signatures: std::collections::HashSet<Arc<str>> = detectors
-            .iter()
-            .flat_map(|d| d.patterns.iter().map(|p| Arc::from(p.regex.as_str())))
-            .chain(
-                detectors
-                    .iter()
-                    .flat_map(|d| d.companions.iter().map(|c| Arc::from(c.regex.as_str()))),
-            )
-            .collect();
+        let signatures = collect_detector_signatures(&detectors);
         let allowlist = allowlist::load_allowlist(Some(root), &effective_config.allowlist)?;
         let test_fixture_suppressions = if effective_config.report.no_suppress_test_fixtures {
             crate::test_fixture_suppressions::TestFixtureSuppressions::empty()
@@ -1052,15 +1062,7 @@ impl ScanOrchestrator {
         // unconditionally parallelizes work the first scan would otherwise pay.
         scanner.warm();
 
-        let signatures: std::collections::HashSet<Arc<str>> = detectors
-            .iter()
-            .flat_map(|d| d.patterns.iter().map(|p| Arc::from(p.regex.as_str())))
-            .chain(
-                detectors
-                    .iter()
-                    .flat_map(|d| d.companions.iter().map(|c| Arc::from(c.regex.as_str()))),
-            )
-            .collect();
+        let signatures = collect_detector_signatures(&detectors);
 
         let test_fixture_suppressions = if args.no_suppress_test_fixtures {
             crate::test_fixture_suppressions::TestFixtureSuppressions::empty()

@@ -1,7 +1,7 @@
-//! Unit tests for the `orchestrator` low-RAM OOM-guard constants. Housed in a
-//! sibling `tests.rs` module (rather than an inline `#[cfg(test)] mod {}` block)
-//! so the `no_inline_tests_in_src` gate stays green while these still reach the
-//! parent module's private constants via `use super::*`.
+//! Focused unit tests for private `orchestrator` helpers and runtime policy.
+//! Housed in a sibling `tests.rs` module (rather than an inline `#[cfg(test)]
+//! mod {}` block) so the `no_inline_tests_in_src` gate stays green while these
+//! still reach the parent module's private items via `use super::*`.
 
 use super::run::{resolve_scan_exit, ScanOutcome};
 #[cfg(feature = "simd")]
@@ -17,6 +17,30 @@ use crate::exit_codes::{
     EXIT_FINDINGS, EXIT_LIVE_CREDENTIALS, EXIT_SCANNER_PANIC, EXIT_SOURCE_FAILED, EXIT_SUCCESS,
     EXIT_SYSTEM_ERROR, EXIT_USER_ERROR,
 };
+
+#[test]
+fn collect_detector_signatures_unifies_primary_and_companion_regexes() {
+    let detectors = vec![keyhog_core::DetectorSpec {
+        patterns: vec![keyhog_core::PatternSpec {
+            regex: "primary_[A-Z]+".into(),
+            description: None,
+            group: None,
+            client_safe: false,
+        }],
+        companions: vec![keyhog_core::CompanionSpec {
+            name: "secondary".into(),
+            regex: "secondary_[A-Z]+".into(),
+            within_lines: 2,
+            required: false,
+        }],
+        ..keyhog_core::DetectorSpec::default()
+    }];
+
+    let signatures = super::collect_detector_signatures(&detectors);
+    assert_eq!(signatures.len(), 2);
+    assert!(signatures.contains("primary_[A-Z]+"));
+    assert!(signatures.contains("secondary_[A-Z]+"));
+}
 
 #[test]
 fn scan_exit_priority_is_explicit_for_every_terminal_class() {
