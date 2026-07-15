@@ -536,6 +536,34 @@ fn output_formats_doc_states_eleven_values() {
             "output-formats.md must mention the `{v}` format value it advertises."
         );
     }
+    let action = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../.github/actions/keyhog/action.yml"
+    ));
+    let action_readme = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../.github/actions/keyhog/README.md"
+    ));
+    for v in ["text", "json", "sarif", "jsonl"] {
+        assert!(
+            action.contains(v) && action_readme.contains(v),
+            "the composite Action must advertise its supported `{v}` format"
+        );
+    }
+    for v in [
+        "json-envelope",
+        "jsonl-envelope",
+        "csv",
+        "github-annotations",
+        "gitlab-sast",
+        "html",
+        "junit",
+    ] {
+        assert!(
+            !action.contains(v) && !action_readme.contains(v),
+            "the composite Action must not advertise unsupported `{v}` format"
+        );
+    }
 }
 
 /// README↔installer verification coherence (dogfood 2026-06-22). `install.sh`

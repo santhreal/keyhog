@@ -12,7 +12,7 @@ inputs:
     description: 'Minimum severity to report: info | client-safe | low | medium | high | critical.'
     default: 'high'
   format:
-    description: 'Output format: text | json | sarif | jsonl.'
+    description: 'Output format supported by the composite Action: text | json | sarif | jsonl.'
     default: 'sarif'
   verify:
     description: 'Run live credential verification on findings ("true" enables --verify).'

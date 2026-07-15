@@ -192,6 +192,22 @@ fn config_scan_section_format_json_is_honored() {
 }
 
 #[test]
+fn config_scan_section_format_json_envelope_is_honored() {
+    let dir = make_scan_dir(Some("[scan]\nformat = \"json-envelope\"\n"));
+    let (code, stdout, stderr) = scan(dir.path(), &[]);
+    assert_eq!(
+        code,
+        Some(1),
+        "the envelope format must preserve the finding exit code; stdout={stdout} stderr={stderr}"
+    );
+    let report: serde_json::Value =
+        serde_json::from_str(&stdout).expect("[scan].format=json-envelope must emit a JSON object");
+    assert_eq!(report["schema_version"]["major"], 1);
+    assert!(report["findings"].is_array());
+    assert_eq!(report["findings"][0]["detector_id"], "aws-access-key");
+}
+
+#[test]
 fn config_show_secrets_reveals_full_credential() {
     // Default: credential is redacted to "AK...YA". `show_secrets = true` in the
     // config must reveal the full token in the JSON.
