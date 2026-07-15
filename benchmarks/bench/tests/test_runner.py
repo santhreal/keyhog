@@ -1,3 +1,4 @@
+import hashlib
 import json
 
 from bench import runner
@@ -68,6 +69,58 @@ def test_write_result_round_trips_json(tmp_path):
     decoded = json.loads(output.read_text(encoding="utf-8"))
     assert decoded["scanner"]["name"] == "keyhog"
     assert decoded["available"] is True
+
+
+def test_runner_hashes_competitor_executable_identity(tmp_path):
+    binary = tmp_path / "competitor"
+    payload = b"immutable competitor build\n"
+    binary.write_bytes(payload)
+
+    scanner = type("Scanner", (), {"binary": str(binary)})()
+    digest = runner._scanner_executable_sha256(scanner)
+
+    assert digest == hashlib.sha256(payload).hexdigest()
+
+
+def test_runner_persists_competitor_executable_identity(tmp_path, monkeypatch):
+    binary = tmp_path / "competitor"
+    payload = b"competitor build used by the measured row\n"
+    binary.write_bytes(payload)
+
+    class FakeScanner:
+        name = "betterleaks"
+        binary = ""
+
+        def version(self):
+            return "betterleaks 1.test"
+
+        def available(self):
+            return True
+
+        def detector_corpus_sha256(self):
+            return ""
+
+        def default_config(self):
+            return ScannerConfig()
+
+        def run(self, root, cfg, output=None, timeout=3600):
+            return [], RunStats(exit_code=0)
+
+        def exit_success(self, code):
+            return code == 0
+
+    FakeScanner.binary = str(binary)
+    monkeypatch.setattr(runner, "resolve_scanner", lambda *args, **kwargs: FakeScanner())
+    monkeypatch.setattr(
+        runner,
+        "resolve_corpus_with_root",
+        lambda *args, **kwargs: KernelCorpus(root=tmp_path),
+    )
+
+    result = runner.run_once(scanner_name="betterleaks", corpus_name="kernel")
+
+    assert result.available is True
+    assert result.scanner.executable_sha256 == hashlib.sha256(payload).hexdigest()
 
 
 def test_resolve_corpus_with_root_maps_mirror_to_corpus_dir(tmp_path):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import shutil
 # timezone.utc (not datetime.UTC, which is 3.11+) (macOS ships Python 3.9).
 from datetime import datetime, timezone
 from typing import Protocol
@@ -16,6 +17,7 @@ from .scanners.base import Finding, MeasurementProvenance, RunStats
 from .schema import Detection, RunResult
 from .schema import Scanner as ScannerRecord
 from .schema import ScannerConfig, Speed, is_sha256
+from .executable_snapshot import sha256_file
 from .score import score
 
 
@@ -38,6 +40,28 @@ class _ScannerAdapter(Protocol):
 def _scanner_detector_corpus_sha256(scanner: _ScannerAdapter) -> str:
     digest = getattr(scanner, "detector_corpus_sha256", None)
     return digest() if callable(digest) else ""
+
+
+def _scanner_executable_sha256(scanner: _ScannerAdapter) -> str:
+    """Hash the exact executable selected for a non-snapshot scanner.
+
+    KeyHog supplies a held-inode digest through ``MeasurementProvenance``;
+    competitor adapters do not, so the common runner records their immutable
+    input here instead of leaving version-only rows that cannot be reproduced.
+    """
+    raw = getattr(scanner, "binary", "")
+    if not raw:
+        # Minimal test doubles and library-only adapters may intentionally have
+        # no subprocess binary. Production adapters expose ``binary`` and are
+        # required to carry a digest in their result rows.
+        return ""
+    candidate = pathlib.Path(raw)
+    if not candidate.is_file():
+        resolved = shutil.which(str(raw))
+        if resolved is None:
+            raise FileNotFoundError(f"scanner executable {raw!r} is not a file")
+        candidate = pathlib.Path(resolved)
+    return sha256_file(candidate.resolve(strict=True))
 
 
 def _assert_scanner_freshness(scanner: _ScannerAdapter) -> str | None:
@@ -145,8 +169,15 @@ def _run_resolved_scanner(
             scanner, version, cfg, corpus, "scanner binary not found",
             detector_corpus_sha256=detector_digest,
         )
+    try:
+        executable_digest = _scanner_executable_sha256(scanner)
+    except Exception as exc:
+        return _unavailable_result(
+            scanner, version, cfg, corpus,
+            f"executable provenance failed: {type(exc).__name__}: {exc}",
+            detector_corpus_sha256=detector_digest,
+        )
     run_with_provenance = getattr(scanner, "run_with_provenance", None)
-    executable_digest = ""
     execution_route = ""
     daemon_pid = 0
     daemon_requests = 0
@@ -197,6 +228,7 @@ def _run_resolved_scanner(
         except Exception as exc:
             return _unavailable_result(
                 scanner, version, cfg, corpus, f"{type(exc).__name__}: {exc}",
+                executable_sha256=executable_digest,
                 detector_corpus_sha256=detector_digest,
             )
     else:
@@ -205,6 +237,7 @@ def _run_resolved_scanner(
         except Exception as exc:
             return _unavailable_result(
                 scanner, version, cfg, corpus, f"{type(exc).__name__}: {exc}",
+                executable_sha256=executable_digest,
                 detector_corpus_sha256=detector_digest,
             )
         try:
@@ -213,12 +246,14 @@ def _run_resolved_scanner(
             return _unavailable_result(
                 scanner, version, cfg, corpus,
                 f"detector provenance failed after scan: {type(exc).__name__}: {exc}",
+                executable_sha256=executable_digest,
                 detector_corpus_sha256=detector_digest,
             )
         if detector_digest_after != detector_digest:
             return _unavailable_result(
                 scanner, version, cfg, corpus,
                 "detector corpus changed during the measured scan; rerun against stable detector bytes",
+                executable_sha256=executable_digest,
                 detector_corpus_sha256=detector_digest,
             )
     if not callable(run_with_provenance):
@@ -228,12 +263,14 @@ def _run_resolved_scanner(
             return _unavailable_result(
                 scanner, version, cfg, corpus,
                 f"freshness failed after scan: {type(exc).__name__}: {exc}",
+                executable_sha256=executable_digest,
                 detector_corpus_sha256=detector_digest,
             )
         if final_version is not None and final_version != version:
             return _unavailable_result(
                 scanner, version, cfg, corpus,
                 "freshness failed after scan: scanner identity changed during measurement",
+                executable_sha256=executable_digest,
                 detector_corpus_sha256=detector_digest,
             )
     result = build_result(

@@ -65,8 +65,12 @@ jobs:
       - name: install required competitors
         run: |
           set -euo pipefail
-          go install github.com/betterleaks/betterleaks@latest
-          cargo install --locked --git https://github.com/mongodb/kingfisher kingfisher
+          # Keep competitor source identities immutable. The result row also
+          # records each installed executable SHA-256, so toolchain changes or
+          # tampered caches cannot masquerade as a reproducible rerun.
+          go install github.com/betterleaks/betterleaks@v1.6.1
+          cargo install --locked --git https://github.com/mongodb/kingfisher \
+            --rev 07644722fd6c3cea60d431cd8a77a914e9b54d65 kingfisher
           cp "$HOME/go/bin/betterleaks" "$HOME/.local/bin/betterleaks"
           cp "$HOME/.cargo/bin/kingfisher" "$HOME/.local/bin/kingfisher"
 
