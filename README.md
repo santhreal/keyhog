@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/keyhog-banner.svg" alt="keyhog - secret scanner - 922 detectors - gpu" width="560" />
+  <img src="docs/assets/keyhog-banner.svg" alt="keyhog - secret scanner - 923 detectors - gpu" width="560" />
 </p>
 
 <p align="center">
@@ -16,7 +16,7 @@
 ---
 
 **keyhog** scans source trees, git history, Docker images, GitHub/GitLab/Bitbucket
-repository collections, S3/GCS/Azure Blob buckets, and running systems for leaked credentials. **922 embedded detectors**,
+repository collections, S3/GCS/Azure Blob buckets, and running systems for leaked credentials. **923 embedded detectors**,
 decode-through (base64/hex/url/protobuf), confidence scoring, and SARIF output
 without hand-written runtime configuration. After verified-install calibration,
 `keyhog scan .` works with the canonical defaults; a source-built multi-backend
@@ -82,7 +82,7 @@ adoption, report retention, and exit handling.
 
 ### How it works
 
-KeyHog compiles its 922 detectors into a shared trigger/extraction plan,
+KeyHog compiles its 923 detectors into a shared trigger/extraction plan,
 uses Hyperscan when that feature is present, decodes nested encodings before
 matching, and can apply explicit per-detector Bayesian Beta(α,β) confidence
 calibration. Hardware acceleration is an explicit backend selection layer;
@@ -228,7 +228,7 @@ GPU scan path, GPU literal set, and GPU MoE shader against the CPU reference;
 those GPU checks are skipped on hosts without an eligible accelerator:
 
 <p align="center">
-  <img src="demo/keyhog-doctor.gif" alt="keyhog doctor: host probe (RTX 5090, AVX-512, Hyperscan), one keyhog on PATH, 922 embedded detectors, and a four-way self-test (scan engine, GPU scan path, GPU literal set, GPU MoE shader vs CPU reference) all reporting PASS, then 'keyhog is healthy'" width="860" />
+  <img src="demo/keyhog-doctor.gif" alt="keyhog doctor: host probe (RTX 5090, AVX-512, Hyperscan), one keyhog on PATH, 923 embedded detectors, and a four-way self-test (scan engine, GPU scan path, GPU literal set, GPU MoE shader vs CPU reference) all reporting PASS, then 'keyhog is healthy'" width="860" />
 </p>
 
 `keyhog doctor` reuses the scanner's own hardware probe and runs a real
@@ -300,7 +300,7 @@ unavailable, `13` requested source failed or input coverage was incomplete. Matc
 
 ## What it catches
 
-922 embedded detectors with checksum / companion validation:
+923 embedded detectors with checksum / companion validation:
 
 - **Cloud providers:** AWS (access key + secret + STS verification),
   Azure (subscription key, storage account key, SAS), GCP (service account,
@@ -315,7 +315,11 @@ unavailable, `13` requested source failed or input coverage was incomplete. Matc
 - **Comms:** Slack, Discord, Twilio, SendGrid, Postmark, Mailgun,
   Resend, Loops.
 - **AI / ML:** OpenAI (sk-/sk-proj-), Anthropic, Google AI Studio,
-  Cohere, Mistral, HuggingFace, Replicate.
+  Cohere, Mistral, HuggingFace, Replicate. HuggingFace organization
+  credentials include both the current `hf_` form and legacy `api_org_`
+  tokens.
+- **Password managers:** 1Password account secret keys (`A3-` followed by
+  five or six segmented uppercase alpha-numeric components).
 - **Databases:** Postgres connection strings, MongoDB Atlas, Supabase
   service-role, PlanetScale, Neon, Turso, MySQL, Redis URLs.
 - **Generic + entropy discovery:** `API_KEY=<high-entropy-blob>` catches
@@ -651,7 +655,7 @@ crates/
   sources/    File system, git (staged/diff/history), stdin, Docker, S3, GCS, Azure Blob, GitHub/GitLab/Bitbucket, web
   verifier/   Live credential verification for detectors with an active `[detector.verify]` endpoint
   cli/        CLI binary, daemon, watch, baselines, calibrate, hook installer
-detectors/    922 TOML files (data, not code)
+detectors/    923 TOML files (data, not code)
 docs/src/     Canonical mdBook documentation deployed to GitHub Pages
 benchmarks/   Reproducible eval harness: corpus generators, scanner adapters, scorer, gate, README report generator
 tools/        Contract generators (gen_contracts.py, gen_companion_contracts.py)

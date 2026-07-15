@@ -13,6 +13,11 @@ text = "HF_TOKEN=hf_Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw"
 credential = "hf_Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw"
 reason = "HF_TOKEN env-var assignment around prefix detector."
 
+[[positive]]
+text = "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"
+credential = "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"
+reason = "Legacy HuggingFace api_org_ organization token."
+
 [[negative]]
 text = "hf_short"
 reason = "Body below 34 alnum chars after `hf_`."

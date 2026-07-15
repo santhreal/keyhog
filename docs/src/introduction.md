@@ -8,7 +8,7 @@ credentials.
 $ keyhog scan .
     K E Y H O G
     ───────────
-    v0.5.41 · secret scanner · 922 detectors
+    v0.5.41 · secret scanner · 923 detectors
     by santh
 
   ┌    CRITICAL ─── Stripe Secret Key

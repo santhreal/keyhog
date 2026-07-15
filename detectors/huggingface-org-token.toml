@@ -14,6 +14,10 @@ keywords = ["hf_"]
 regex = 'hf_[a-zA-Z0-9]{34,}'
 description = "HuggingFace organization access token (hf_ prefix)"
 
+[[detector.patterns]]
+regex = 'api_org_[a-zA-Z0-9]{34,}'
+description = "Legacy HuggingFace organization token (api_org_ prefix)"
+
 [detector.verify]
 method = "GET"
 url = "https://huggingface.co/api/whoami-v2"
@@ -44,3 +48,7 @@ sensitivity = "hashed"
 [[detector.tests]]
 test_positive = "hf_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb"
 test_negative = "hf_short"
+
+[[detector.tests]]
+test_positive = "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"
+test_negative = "api_org_short"

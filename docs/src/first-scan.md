@@ -37,10 +37,10 @@ By default, output is human-readable:
 $ keyhog scan .
 K E Y H O G
 ───────────
-v0.5.41 · secret scanner · 922 detectors
+v0.5.41 · secret scanner · 923 detectors
 by santh
 
-⚡ 16 cores | GPU: NVIDIA GeForce RTX 5090 | SIMD: AVX-512 | Hyperscan | 922 detectors (6061 patterns) io_uring | backend=simd-regex | gpu=none
+⚡ 16 cores | GPU: NVIDIA GeForce RTX 5090 | SIMD: AVX-512 | Hyperscan | 923 detectors (5963 patterns) io_uring | backend=simd-regex | gpu=none
 
   ┌    CRITICAL ─── Stripe Secret Key
   │ Secret:     sk_l...p7dc
@@ -117,7 +117,7 @@ the artifact without scraping console progress.
     "scan_status": "success",
     "keyhog_version": "0.5.41",
     "git_hash": "<build-commit>",
-    "detector_digest": "922-<digest>",
+    "detector_digest": "923-<digest>",
     "config_digest": "<effective-config-digest>",
     "resolved_scan": {
       "schema_version": 1,
@@ -132,7 +132,7 @@ the artifact without scraping console progress.
     "targets": ["."],
     "source_chunks_scanned": 1,
     "source_bytes_scanned": 128,
-    "detector_count": 922
+    "detector_count": 923
   },
   "coverage_gap_summary": [],
   "findings": [
