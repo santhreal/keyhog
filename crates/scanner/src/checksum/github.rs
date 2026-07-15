@@ -39,7 +39,7 @@ impl ChecksumValidator for GithubClassicPatValidator {
         if payload.len() != GITHUB_CLASSIC_BODY_LEN {
             return ChecksumResult::NotApplicable;
         }
-        if !payload.chars().all(|c| c.is_ascii_alphanumeric()) {
+        if !keyhog_core::ascii_ci::is_ascii_alphanumeric_str(payload) {
             return ChecksumResult::Invalid;
         }
         let entropy = &payload[..GITHUB_CLASSIC_ENTROPY_LEN];
@@ -103,8 +103,8 @@ impl ChecksumValidator for GithubFineGrainedPatValidator {
         {
             return ChecksumResult::Invalid;
         }
-        if !left.chars().all(|c| c.is_ascii_alphanumeric())
-            || !right.chars().all(|c| c.is_ascii_alphanumeric())
+        if !keyhog_core::ascii_ci::is_ascii_alphanumeric_str(left)
+            || !keyhog_core::ascii_ci::is_ascii_alphanumeric_str(right)
         {
             return ChecksumResult::Invalid;
         }

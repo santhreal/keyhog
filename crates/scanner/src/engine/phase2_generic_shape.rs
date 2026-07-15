@@ -158,7 +158,7 @@ impl CompiledScanner {
             && value.len() >= min_len
             && value.len() <= 40
             && value.as_bytes()[0].is_ascii_uppercase()
-            && value.bytes().all(|b| b.is_ascii_alphanumeric())
+            && keyhog_core::ascii_ci::is_ascii_alphanumeric_str(value)
             && value.bytes().filter(u8::is_ascii_uppercase).count() >= 2
             && value.bytes().any(|b| b.is_ascii_lowercase())
         {

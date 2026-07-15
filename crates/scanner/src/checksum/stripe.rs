@@ -30,7 +30,7 @@ impl ChecksumValidator for StripeTokenValidator {
         if payload.len() < MIN_STRIPE_PAYLOAD_LEN || payload.len() > MAX_STRIPE_PAYLOAD_LEN {
             return ChecksumResult::Invalid;
         }
-        if !payload.chars().all(|c| c.is_ascii_alphanumeric()) {
+        if !keyhog_core::ascii_ci::is_ascii_alphanumeric_str(payload) {
             return ChecksumResult::Invalid;
         }
         ChecksumResult::StructurallyValid

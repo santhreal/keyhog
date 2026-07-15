@@ -169,7 +169,7 @@ pub(crate) fn valid_aws_format(access_key: &str, secret_key: &str) -> bool {
         .iter()
         .any(|p| access_key.starts_with(p))
         && access_key.len() == AWS_ACCESS_KEY_LEN
-        && access_key.chars().all(|c| c.is_ascii_alphanumeric())
+        && keyhog_core::ascii_ci::is_ascii_alphanumeric_str(access_key)
         && secret_key.len() >= AWS_MIN_SECRET_KEY_LEN
         && secret_key
             .chars()

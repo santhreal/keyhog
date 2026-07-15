@@ -426,7 +426,7 @@ pub(crate) fn looks_like_source_type_identifier_with_randomness(
     if bytes.len() < 8 || bytes.len() > 120 || !bytes[0].is_ascii_uppercase() {
         return false;
     }
-    if !bytes.iter().all(|b| b.is_ascii_alphanumeric()) {
+    if !keyhog_core::ascii_ci::is_ascii_alphanumeric_bytes(bytes) {
         return false;
     }
     let upper = bytes.iter().filter(|b| b.is_ascii_uppercase()).count();

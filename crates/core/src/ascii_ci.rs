@@ -42,3 +42,19 @@ pub fn ends_with_ignore_ascii_case(bytes: &[u8], suffix: &[u8]) -> bool {
         .get(bytes.len().saturating_sub(suffix.len())..)
         .is_some_and(|tail| tail.eq_ignore_ascii_case(suffix))
 }
+
+/// Returns true when `value` contains only ASCII letters and decimal digits.
+/// The empty string follows the standard `Iterator::all` identity and returns
+/// true. Non-ASCII Unicode letters and digits are rejected deliberately so
+/// format validators share the same byte-level contract.
+#[inline]
+pub fn is_ascii_alphanumeric_str(value: &str) -> bool {
+    is_ascii_alphanumeric_bytes(value.as_bytes())
+}
+
+/// Returns true when every byte in `bytes` is an ASCII letter or decimal digit.
+/// The empty slice returns true, matching `slice.iter().all(...)`.
+#[inline]
+pub fn is_ascii_alphanumeric_bytes(bytes: &[u8]) -> bool {
+    bytes.iter().all(|byte| byte.is_ascii_alphanumeric())
+}

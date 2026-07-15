@@ -297,7 +297,7 @@ pub(crate) fn parse_vocab(raw: &str) -> Result<PlaceholderVocab, String> {
         if word != word.to_ascii_lowercase() {
             return Err(format!("placeholder word {word:?} must be lowercase ASCII"));
         }
-        if !word.bytes().all(|byte| byte.is_ascii_alphanumeric()) {
+        if !keyhog_core::ascii_ci::is_ascii_alphanumeric_bytes(word.as_bytes()) {
             return Err(format!(
                 "placeholder word {word:?} must be ASCII alphanumeric"
             ));
@@ -380,7 +380,6 @@ fn validate_markers(raw: Vec<String>, kind: &str) -> Result<Vec<String>, String>
     }
     Ok(out)
 }
-
 
 #[cfg(test)]
 #[path = "../tests/unit/placeholder_words.rs"]

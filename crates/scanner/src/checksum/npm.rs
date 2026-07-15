@@ -24,7 +24,7 @@ impl ChecksumValidator for NpmTokenValidator {
         if payload.len() != NPM_BODY_LEN {
             return ChecksumResult::NotApplicable;
         }
-        if !payload.chars().all(|c| c.is_ascii_alphanumeric()) {
+        if !keyhog_core::ascii_ci::is_ascii_alphanumeric_str(payload) {
             return ChecksumResult::Invalid;
         }
         let entropy = &payload[..NPM_ENTROPY_LEN];
