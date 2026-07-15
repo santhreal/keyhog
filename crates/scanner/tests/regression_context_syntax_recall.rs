@@ -196,10 +196,7 @@ fn tawkto_api_key_fires() {
 #[test]
 fn tawkto_property_id_alone_is_companion_context() {
     let k = hex(24, 18);
-    assert!(!fires(
-        &format!("TAWKTO_PROPERTY_ID={k}"),
-        "tawkto-api-key"
-    ));
+    assert!(!fires(&format!("TAWKTO_PROPERTY_ID={k}"), "tawkto-api-key"));
 }
 
 #[test]
@@ -215,10 +212,7 @@ fn tawkto_token_lower_fires() {
 #[test]
 fn tawkto_site_id_alone_is_companion_context() {
     let k = hex(24, 20);
-    assert!(!fires(
-        &format!("TAWKTO_SITE_ID={k}"),
-        "tawkto-api-key"
-    ));
+    assert!(!fires(&format!("TAWKTO_SITE_ID={k}"), "tawkto-api-key"));
 }
 
 // ── cross: several anchor-gated bodies co-surface ────────────────────────────

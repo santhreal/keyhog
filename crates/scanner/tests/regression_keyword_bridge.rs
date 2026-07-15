@@ -7,15 +7,19 @@
 //! It is deliberately narrow: it fires only on lines that carry a generic
 //! credential-assignment keyword (the prefilter vocab derived from the generic
 //! detector specs), stamps every emit with the single stable
-//! identity `generic-secret` / `Generic Secret (Key=Value)` / service `generic`
-//! / `Severity::Medium`, and applies a value-shape + entropy gauntlet before
-//! emitting. Because the trigger set is a fixed credential vocabulary (not "any
+//! identity owned by the active generic detector TOML (`generic-password`,
+//! `generic-keyword-secret`, `generic-api-key`, or `generic-secret`) / service
+//! `generic` / `Severity::Medium`, and applies a value-shape + entropy gauntlet
+//! before emitting. Overlapping keywords intentionally retain detector-local
+//! ownership: `password=` may have both the native password detector and the
+//! low-entropy keyword detector, while `private_key=` is owned by the keyword
+//! detector. Because the trigger set is a fixed credential vocabulary (not "any
 //! assignment"), the bridge reaches only a small slice of a source tree's
 //! assignments, a random `hostname=<token>` or a bare high-entropy blob never
 //! reaches it. This file pins:
-//!   * the exact stamped identity of a bridged `password=<value>` (positive),
+//!   * detector-local ownership for a bridged `password=<value>` (positive),
 //!   * that the whole credential vocabulary + all three separator spellings
-//!     bridge to that same identity (breadth),
+//!     reach an active generic owner (breadth),
 //!   * the low-entropy floor and 8-byte length floor reject trivial values
 //!     (negative / boundary),
 //!   * the SAME value surfaces under a credential key yet NOT under a
@@ -40,23 +44,15 @@ use keyhog_core::{Chunk, ChunkMetadata, DetectorKind, RawMatch, Severity};
 use keyhog_scanner::testing::entropy_fast::shannon_entropy_simd;
 use keyhog_scanner::{CompiledScanner, ScanBackend, ScannerConfig};
 
-/// The stable identity the generic keyword bridge stamps on every emit
-/// (`engine/phase2_generic.rs` -> `pipeline::build_synthetic_raw_match`). The
-/// bridge's TRIGGER vocab is derived from the generic detector specs (the
-/// generic-password / generic-secret keyword sets: password/passwd/pwd/secret/
-/// token/api_key/client_secret/…), but every bridged emit is stamped with the
-/// single stable `generic-secret` id under the DISTINCT name
-/// `Generic Secret (Key=Value)`: distinguishing a keyword-bridge finding from a
-/// native `generic-secret.toml` match. (The BRIDGE stamp was migrated from the
-/// old `generic-password` id to `generic-secret`; `generic-password` is NOT
-/// gone, it remains a LIVE native detector (`detectors/generic-password.toml`,
-/// id `generic-password`) whose entropy floor comes from the active detector
-/// spec's `entropy_floor`. So a `password=`/`client_password=` line is claimed
-/// by that dedicated native detector, NOT this bridge, see DR-336: the intended
-/// owner of `password=` (native detector vs bridge) is a detection-design call.)
-const BRIDGE_DETECTOR_ID: &str = "generic-secret";
-const BRIDGE_DETECTOR_NAME: &str = "Generic Secret (Key=Value)";
-const BRIDGE_SERVICE: &str = "generic";
+/// Generic detector IDs are data-owned in the detector corpus. This test keeps
+/// the accepted family explicit so a new generic owner cannot silently pass by
+/// merely sharing the `generic-` prefix.
+const GENERIC_DETECTOR_IDS: &[&str] = &[
+    "generic-api-key",
+    "generic-keyword-secret",
+    "generic-password",
+    "generic-secret",
+];
 
 /// `generic-keyword-secret` detector-local floor: a
 /// keyword-anchored value at or below this bits/byte is dropped even with the
@@ -130,11 +126,19 @@ fn find<'a>(matches: &'a [RawMatch], credential: &str) -> Option<&'a RawMatch> {
     matches.iter().find(|m| m.credential.as_ref() == credential)
 }
 
-/// A generic-bridge finding is one carrying the `generic-secret` id for `value`.
+/// A generic-bridge finding is one carrying an active generic detector identity
+/// for `value`. The exact owner is asserted where ownership is load-bearing.
 fn bridged(matches: &[RawMatch], credential: &str) -> bool {
     matches.iter().any(|m| {
-        m.credential.as_ref() == credential && m.detector_id.as_ref() == BRIDGE_DETECTOR_ID
+        m.credential.as_ref() == credential
+            && GENERIC_DETECTOR_IDS.contains(&m.detector_id.as_ref())
     })
+}
+
+fn owned_by(matches: &[RawMatch], credential: &str, detector_id: &str) -> bool {
+    matches
+        .iter()
+        .any(|m| m.credential.as_ref() == credential && m.detector_id.as_ref() == detector_id)
 }
 
 // ---------------------------------------------------------------------------
@@ -170,14 +174,14 @@ fn mid_entropy_fixture_entropy_is_exactly_2_5_inside_the_bridge_band() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn password_assignment_bridges_with_the_exact_generic_password_identity() {
+fn password_assignment_retains_the_detector_local_password_identity() {
     let s = default_scanner();
     let matches = scan(&s, "password=ufnlbbavawsdeecn\n");
     let m = find(&matches, HIGH_ENTROPY_VALUE)
         .unwrap_or_else(|| panic!("password=<value> must bridge; matches: {matches:#?}"));
-    assert_eq!(m.detector_id.as_ref(), BRIDGE_DETECTOR_ID);
-    assert_eq!(m.detector_name.as_ref(), BRIDGE_DETECTOR_NAME);
-    assert_eq!(m.service.as_ref(), BRIDGE_SERVICE);
+    assert_eq!(m.detector_id.as_ref(), "generic-password");
+    assert_eq!(m.detector_name.as_ref(), "Generic Password");
+    assert_eq!(m.service.as_ref(), "generic");
     assert_eq!(m.severity, Severity::Medium);
     assert_eq!(
         m.credential.as_ref(),
@@ -221,12 +225,12 @@ fn bridged_match_confidence_is_finite_within_unit_interval_and_medium_severity()
 }
 
 // ---------------------------------------------------------------------------
-// Breadth: the credential vocabulary + separator spellings all bridge to the
-// SAME identity. This is the surface the bridge is allowed to reach.
+// Breadth: the credential vocabulary + separator spellings all reach an active
+// generic detector owner. This is the surface the bridge is allowed to reach.
 // ---------------------------------------------------------------------------
 
 #[test]
-fn every_bare_credential_keyword_bridges_to_generic_password() {
+fn every_bare_credential_keyword_reaches_an_active_generic_owner() {
     let s = default_scanner();
     // Bare credential slots OWNED by the generic-password keyword set
     // (detectors/generic-password.toml). `pass` and `credential` are NOT in that
@@ -238,7 +242,7 @@ fn every_bare_credential_keyword_bridges_to_generic_password() {
         let matches = scan(&s, &body);
         assert!(
             bridged(&matches, HIGH_ENTROPY_VALUE),
-            "`{kw}=<value>` must bridge to `{BRIDGE_DETECTOR_ID}`; matches: {matches:#?}"
+            "`{kw}=<value>` must reach an active generic owner; matches: {matches:#?}"
         );
         bridged_count += 1;
     }
@@ -274,7 +278,11 @@ fn uppercase_keyword_bridges_case_insensitively() {
     let m = find(&matches, MID_ENTROPY_VALUE).unwrap_or_else(|| {
         panic!("PASSWORD=<value> must bridge case-insensitively; matches: {matches:#?}")
     });
-    assert_eq!(m.detector_id.as_ref(), BRIDGE_DETECTOR_ID);
+    assert!(owned_by(
+        &matches,
+        MID_ENTROPY_VALUE,
+        "generic-keyword-secret"
+    ));
     assert_eq!(m.severity, Severity::Medium);
 }
 
@@ -417,12 +425,12 @@ fn ordinary_non_credential_assignment_keys_do_not_bridge() {
 fn bare_token_without_any_assignment_keyword_is_not_bridged() {
     // No `key=` at all: the assignment bridge has nothing to anchor on, and a
     // 2.5-entropy token is far too low for any isolated bare-entropy path, so
-    // the generic-secret identity never appears.
+    // no generic detector identity appears.
     let s = default_scanner();
     let matches = scan(&s, "gjbubxsu\n");
     assert!(
         !bridged(&matches, MID_ENTROPY_VALUE),
-        "a bare token with no credential keyword must not produce a generic-secret finding; matches: {matches:#?}"
+        "a bare token with no credential keyword must not produce a generic finding; matches: {matches:#?}"
     );
 }
 
@@ -432,14 +440,14 @@ fn bare_token_without_any_assignment_keyword_is_not_bridged() {
 
 #[test]
 fn bridge_is_produced_on_the_scalar_cpu_fallback_backend() {
-    // `generic-secret` is a scalar keyword+regex detector: it must fire on the
-    // pure-CPU CpuFallback path with no Hyperscan/SIMD/GPU present. (All scans in
-    // this file use CpuFallback; this test states that contract explicitly.)
+    // Generic detector ownership must remain available on the pure-CPU
+    // CpuFallback path with no Hyperscan/SIMD/GPU present. (All scans in this
+    // file use CpuFallback; this test states that contract explicitly.)
     let s = default_scanner();
     let matches = scan(&s, "client_password=ufnlbbavawsdeecn\n");
     let m = find(&matches, HIGH_ENTROPY_VALUE).unwrap_or_else(|| {
         panic!("the generic bridge must fire on the host-independent CpuFallback path; matches: {matches:#?}")
     });
-    assert_eq!(m.detector_id.as_ref(), BRIDGE_DETECTOR_ID);
-    assert_eq!(m.service.as_ref(), BRIDGE_SERVICE);
+    assert!(GENERIC_DETECTOR_IDS.contains(&m.detector_id.as_ref()));
+    assert_eq!(m.service.as_ref(), "generic");
 }

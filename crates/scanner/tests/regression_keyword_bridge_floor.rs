@@ -5,10 +5,10 @@
 //! applies the active detector's per-family Shannon-entropy floor as its
 //! very first suppression gate. When `generic_keyword_low_entropy` is ON (the
 //! shipped default) a keyword-anchored value is judged against the
-//! `generic-keyword-secret` family floor of **1.5** bits/byte; when it is OFF the
-//! stricter `generic-secret` family floor applies (**2.8** for values of length
-//! <= 24). The band `[1.5, 2.8)` is therefore surfaced ONLY because of the
-//! keyword low-entropy floor, a genuine weak/random password like
+//! `generic-keyword-secret` family floor of **1.5** bits/byte and keeps that
+//! detector-local identity; when it is OFF the stricter `generic-secret` family
+//! floor applies (**2.8** for values of length <= 24). The band `[1.5, 2.8)` is
+//! therefore surfaced ONLY because of the keyword low-entropy floor, a genuine weak/random password like
 //! `GRAPHITE_PASS=gjbubxsu` (Shannon entropy exactly 2.5) lives in that band.
 //!
 //! Every entropy value asserted here is the SAME number the engine feeds the
@@ -34,10 +34,10 @@ const KEYWORD_SECRET_FLOOR: f64 = 1.5;
 /// `generic_keyword_low_entropy` is OFF.
 const GENERIC_SECRET_SHORT_FLOOR: f64 = 2.8;
 
-/// The stable identity the generic bridge stamps on every emitted match
-/// (`pipeline::build_synthetic_raw_match` in `engine/phase2_generic.rs`).
-const BRIDGE_DETECTOR_ID: &str = "generic-secret";
-const BRIDGE_DETECTOR_NAME: &str = "Generic Secret (Key=Value)";
+/// With the keyword floor enabled, the bridge reports the detector-local
+/// `generic-keyword-secret` identity from its TOML.
+const BRIDGE_DETECTOR_ID: &str = "generic-keyword-secret";
+const BRIDGE_DETECTOR_NAME: &str = "Generic Keyword Secret";
 const BRIDGE_SERVICE: &str = "generic";
 
 /// Compile the full shipped detector set with an explicit

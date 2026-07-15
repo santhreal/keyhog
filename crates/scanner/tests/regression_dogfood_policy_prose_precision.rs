@@ -490,7 +490,7 @@ fn random_hyphenated_password_under_keyword_still_surfaces() {
     assert!(
         findings
             .iter()
-            .any(|(id, found)| id == "generic-secret" && found == credential),
+            .any(|(id, found)| id == "generic-keyword-secret" && found == credential),
         "random hyphenated password must still surface; findings: {findings:#?}"
     );
 }

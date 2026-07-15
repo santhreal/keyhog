@@ -131,9 +131,9 @@ pub(crate) fn build_phase2_keyword_ac(
     let mut keyword_map: std::collections::HashMap<String, usize> =
         std::collections::HashMap::new();
 
-    for (pattern_idx, (_, keywords)) in phase2_patterns.iter().enumerate() {
+    for (pattern_idx, (pattern, keywords)) in phase2_patterns.iter().enumerate() {
         for kw in keywords {
-            // Floor stays at 4: lowering it to 3 to admit
+            // The ordinary raw-keyword floor stays at 4: lowering it to 3 to admit
             // mailchimp's `-us`/`-eu`/`-uk` and openai/anthropic's
             // `sk-`/`sk-ant-`/`pk-` measured a NET F1 regression
             // (-67 TP, +28 FP) on SecretBench-medium 15k seed-0
@@ -143,15 +143,36 @@ pub(crate) fn build_phase2_keyword_ac(
             // gain on mailchimp was small. The right fix for
             // those detectors is per-detector keyword tightening,
             // not a global threshold change.
-            if kw.len() < 4 {
-                continue;
+            let mut candidates = Vec::with_capacity(2);
+            if kw.len() >= 4 {
+                candidates.push(kw.clone());
             }
-            let idx = *keyword_map.entry(kw.clone()).or_insert_with(|| {
-                all_keywords.push(kw.clone());
-                keyword_to_patterns.push(Vec::new());
-                all_keywords.len() - 1
-            });
-            keyword_to_patterns[idx].push(pattern_idx);
+            // Detector regexes are canonicalized to `[_\-\s]*`, which accepts
+            // repeated separators (`SA__API__KEY`). The raw TOML keyword cannot
+            // admit that spelling through the AC, so add the longest contiguous
+            // alphanumeric segment as a detector-scoped stem. The full detector
+            // regex still confirms the match; this is routing only, not a new
+            // detection rule. Keeping one longest stem bounds prefilter breadth
+            // while preserving the existing four-byte floor for ordinary keys.
+            if pattern
+                .regex
+                .as_str()
+                .contains(keyhog_core::CANONICAL_SEPARATOR)
+            {
+                if let Some(stem) = longest_compound_keyword_segment(kw) {
+                    if stem.len() >= 2 && !candidates.iter().any(|candidate| candidate == &stem) {
+                        candidates.push(stem);
+                    }
+                }
+            }
+            for candidate in candidates {
+                let idx = *keyword_map.entry(candidate.clone()).or_insert_with(|| {
+                    all_keywords.push(candidate.clone());
+                    keyword_to_patterns.push(Vec::new());
+                    all_keywords.len() - 1
+                });
+                keyword_to_patterns[idx].push(pattern_idx);
+            }
         }
     }
 
@@ -176,6 +197,16 @@ pub(crate) fn build_phase2_keyword_ac(
     };
 
     (ac, keyword_to_patterns, all_keywords)
+}
+
+fn longest_compound_keyword_segment(keyword: &str) -> Option<String> {
+    keyword
+        .split(['_', '-', '.'])
+        .filter(|segment| {
+            segment.len() >= 2 && segment.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        })
+        .max_by_key(|segment| segment.len())
+        .map(str::to_ascii_lowercase)
 }
 
 pub(crate) fn log_quality_warnings(warnings: &[String]) {
