@@ -76,7 +76,6 @@ jobs:
           keyhog --version
           betterleaks --version
           kingfisher --version
-          trufflehog --version
 
       - name: keyhog smoke check (broken binary != F1 regression)
         # A broken install / unsatisfied libhyperscan runtime makes `keyhog scan`
