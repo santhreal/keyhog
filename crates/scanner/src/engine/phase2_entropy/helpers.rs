@@ -1,22 +1,7 @@
 //! Focused shape helpers for fallback entropy filtering.
 
 #[cfg(feature = "entropy")]
-use crate::detector_ids::{
-    ENTROPY_API_KEY, ENTROPY_GENERIC, ENTROPY_PASSWORD, ENTROPY_TOKEN, GENERIC_API_KEY,
-    GENERIC_KEYWORD_SECRET, GENERIC_PASSWORD, GENERIC_SECRET,
-};
-
-/// Generic detector owners for the four entropy-fallback classes, index-parallel
-/// with [`classify_entropy_detector_index`]. The loaded detector TOMLs provide
-/// the emitted identity through `entropy_fallback`; these ids only select the
-/// owner policy at compile time.
-#[cfg(feature = "entropy")]
-pub(crate) const ENTROPY_FALLBACK_OWNER_IDS: [&str; 4] = [
-    GENERIC_SECRET,
-    GENERIC_PASSWORD,
-    GENERIC_KEYWORD_SECRET,
-    GENERIC_API_KEY,
-];
+use crate::detector_ids::{ENTROPY_API_KEY, ENTROPY_GENERIC, ENTROPY_PASSWORD, ENTROPY_TOKEN};
 
 /// Compatibility metadata for custom/legacy specs that omit the optional
 /// detector-owned identity block. Embedded generic TOMLs all declare their

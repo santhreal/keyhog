@@ -382,6 +382,11 @@ pub struct CompiledScanner {
     /// (PERF-locality_intern-1). String values are unchanged.
     #[cfg(feature = "entropy")]
     pub(crate) entropy_metadata_by_index: [(Arc<str>, Arc<str>, Arc<str>); 4],
+    /// Detector-indexed entropy identities declared by the active TOML corpus.
+    /// This keeps custom generic owners on their own identity without routing
+    /// emission through detector-ID branches.
+    #[cfg(feature = "entropy")]
+    pub(crate) entropy_metadata_by_detector_index: Vec<Option<(Arc<str>, Arc<str>, Arc<str>)>>,
     pub config: ScannerConfig,
     pub(crate) alphabet_screen: Option<crate::alphabet_filter::AlphabetScreen>,
     pub(crate) bigram_bloom: crate::bigram_bloom::BigramBloom,

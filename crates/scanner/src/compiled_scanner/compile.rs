@@ -457,33 +457,43 @@ impl CompiledScanner {
         // identities through `entropy_fallback`; the compatibility triples are
         // used only when a custom legacy spec omits that optional block.
         #[cfg(feature = "entropy")]
+        let entropy_metadata_by_detector_index: Vec<
+            Option<(Arc<str>, Arc<str>, Arc<str>)>,
+        > = detectors
+            .iter()
+            .map(|detector| {
+                detector.entropy_fallback.as_ref().map(|metadata| {
+                    (
+                        static_intern
+                            .lookup(&metadata.id)
+                            .unwrap_or_else(|| Arc::from(metadata.id.as_str())),
+                        static_intern
+                            .lookup(&metadata.name)
+                            .unwrap_or_else(|| Arc::from(metadata.name.as_str())),
+                        static_intern
+                            .lookup(&metadata.service)
+                            .unwrap_or_else(|| Arc::from(metadata.service.as_str())),
+                    )
+                })
+            })
+            .collect();
+
+        #[cfg(feature = "entropy")]
         let entropy_metadata_by_index: [(Arc<str>, Arc<str>, Arc<str>); 4] = {
-            use crate::engine::phase2_entropy::helpers::{
-                ENTROPY_DETECTOR_METADATA_COMPAT, ENTROPY_FALLBACK_OWNER_IDS,
-            };
+            use crate::engine::phase2_entropy::helpers::ENTROPY_DETECTOR_METADATA_COMPAT;
             std::array::from_fn(|i| {
                 let (fallback_id, fallback_name, fallback_service) =
                     ENTROPY_DETECTOR_METADATA_COMPAT[i];
-                let metadata = detectors
-                    .iter()
-                    .find(|detector| detector.id == ENTROPY_FALLBACK_OWNER_IDS[i])
-                    .and_then(|detector| detector.entropy_fallback.as_ref());
-                let (id, name, service) =
-                    metadata.map_or((fallback_id, fallback_name, fallback_service), |metadata| {
-                        (
-                            metadata.id.as_str(),
-                            metadata.name.as_str(),
-                            metadata.service.as_str(),
-                        )
-                    });
                 (
-                    static_intern.lookup(id).unwrap_or_else(|| Arc::from(id)), // LAW10: string-intern miss => owned Arc of identical bytes, recall-safe
                     static_intern
-                        .lookup(name)
-                        .unwrap_or_else(|| Arc::from(name)), // LAW10: string-intern miss => owned Arc of identical bytes, recall-safe
+                        .lookup(fallback_id)
+                        .unwrap_or_else(|| Arc::from(fallback_id)),
                     static_intern
-                        .lookup(service)
-                        .unwrap_or_else(|| Arc::from(service)), // LAW10: string-intern miss => owned Arc of identical bytes, recall-safe
+                        .lookup(fallback_name)
+                        .unwrap_or_else(|| Arc::from(fallback_name)),
+                    static_intern
+                        .lookup(fallback_service)
+                        .unwrap_or_else(|| Arc::from(fallback_service)),
                 )
             })
         };
@@ -542,6 +552,8 @@ impl CompiledScanner {
             hot_pattern_slots,
             #[cfg(feature = "entropy")]
             entropy_metadata_by_index,
+            #[cfg(feature = "entropy")]
+            entropy_metadata_by_detector_index,
             config: ScannerConfig::default(),
             alphabet_screen,
             bigram_bloom,

@@ -184,11 +184,11 @@ impl CompiledScanner {
         for mut entropy_match in entropy_matches {
             // Resolve metadata once; emit clones the pre-interned triple.
             let entropy_meta_idx = helpers::classify_entropy_detector_index(&entropy_match.keyword);
-            let policy_detector = crate::entropy::scanner::active_policy_detector_index(
+            let policy_detector_index = crate::entropy::scanner::active_policy_detector_index(
                 &self.generic_owning_detector,
                 &entropy_match.keyword,
-            )
-            .map(|index| &self.detectors[index]);
+            );
+            let policy_detector = policy_detector_index.and_then(|index| self.detectors.get(index));
             let transport_decoded = preprocessed.transport_decoded_for_offset(entropy_match.offset);
             let detector_owned_canonical_hex_key = policy_detector.is_some_and(|detector| {
                 if transport_decoded {
@@ -268,7 +268,10 @@ impl CompiledScanner {
                 continue;
             }
 
-            let metadata = &self.entropy_metadata_by_index[entropy_meta_idx];
+            let metadata = policy_detector_index
+                .and_then(|index| self.entropy_metadata_by_detector_index.get(index))
+                .and_then(Option::as_ref)
+                .unwrap_or(&self.entropy_metadata_by_index[entropy_meta_idx]);
             let line_number = absolute_line(chunk.metadata.base_line, mapped_line);
             let build_raw_match = |scan_state: &mut ScanState, report_conf| {
                 // Clone metadata only for candidates that need an owned RawMatch.
