@@ -47,7 +47,9 @@ fn parse_output_format_accepts_every_cli_format() {
     let cases = [
         ("text", OutputFormat::Text),
         ("json", OutputFormat::Json),
+        ("json-envelope", OutputFormat::JsonEnvelope),
         ("jsonl", OutputFormat::Jsonl),
+        ("jsonl-envelope", OutputFormat::JsonlEnvelope),
         ("sarif", OutputFormat::Sarif),
         ("csv", OutputFormat::Csv),
         ("github-annotations", OutputFormat::GithubAnnotations),

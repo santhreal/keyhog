@@ -449,17 +449,30 @@ fn docs_keep_backend_override_on_explicit_cli_surface() {
     assert!(
         config_doc.contains("`--backend`")
             && config_doc.contains("`auto`/`gpu-cuda`/`gpu-wgpu`/`simd`/`cpu`")
-            && config_doc.contains(
-                "`gpu-cuda-region-presence`/`gpu-wgpu-region-presence`/`simd-regex`/`cpu-fallback`"
-            ),
+            && docs_backend_aliases_are_explicit(),
         "configuration docs must document the explicit --backend surface"
     );
     assert!(
         !env_doc.contains("`KEYHOG_GPU_AUTOROUTE`")
             && config_doc.contains("`--autoroute-gpu`")
-            && config_doc.contains("`[system] autoroute_gpu`"),
+            && config_doc.contains("`[system].autoroute_gpu`"),
         "autoroute GPU opt-in must be documented as explicit CLI/TOML config, not env"
     );
+}
+
+fn docs_backend_aliases_are_explicit() -> bool {
+    let backend_doc = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/src/backends.md"
+    ));
+    [
+        "gpu-cuda-region-presence",
+        "gpu-wgpu-region-presence",
+        "simd-regex",
+        "cpu-fallback",
+    ]
+    .iter()
+    .all(|label| backend_doc.contains(label))
 }
 
 /// first-scan.md and verification.md must agree on the dead-credential severity
@@ -493,23 +506,31 @@ fn docs_agree_dead_downgrade_is_one_tier_not_fixed_low() {
 }
 
 /// docs/src/output-formats.md must state the real format count and not undersell
-/// the surface. The enum has 9 variants; the doc must not say "four formats".
+/// the surface. The enum has 11 variants; the doc must not say "four formats".
 #[test]
-fn output_formats_doc_states_nine_values() {
+fn output_formats_doc_states_eleven_values() {
     let doc = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../docs/src/output-formats.md"
     ));
     assert!(
         !doc.contains("KeyHog speaks four formats"),
-        "output-formats.md still says \"four formats\" but `--format` takes nine values \
-         (text/json/jsonl/sarif/csv/github-annotations/gitlab-sast/html/junit)."
+        "output-formats.md still says \"four formats\" but `--format` takes eleven values \
+         (text/json/json-envelope/jsonl/jsonl-envelope/sarif/csv/github-annotations/gitlab-sast/html/junit)."
     );
     assert!(
-        doc.contains("takes one of nine values"),
-        "output-formats.md must state the current nine-value format surface."
+        doc.contains("takes one of eleven values"),
+        "output-formats.md must state the current eleven-value format surface."
     );
-    for v in ["csv", "github-annotations", "gitlab-sast", "html", "junit"] {
+    for v in [
+        "json-envelope",
+        "jsonl-envelope",
+        "csv",
+        "github-annotations",
+        "gitlab-sast",
+        "html",
+        "junit",
+    ] {
         assert!(
             doc.contains(v),
             "output-formats.md must mention the `{v}` format value it advertises."
@@ -579,7 +600,54 @@ fn readme_documents_minisign_install_gate_coherently() {
         "README `## Install` must document the `--insecure` offline/air-gapped escape hatch."
     );
     assert!(
+        install_section.contains("libhyperscan5")
+            && install_section.contains("apt-get install")
+            && install_section.contains("brew install minisign"),
+        "README `## Install` must name Linux Hyperscan/minisign and macOS minisign prerequisites"
+    );
+    assert!(
         install_sh.contains("--insecure") || install_sh.contains("INSECURE_INSTALL"),
         "install.sh must implement the `--insecure` flag the README documents."
     );
+
+    let install_guide = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/src/install.md"
+    ));
+    let pinned = install_guide
+        .split("## Pinned verified install: Linux / macOS")
+        .nth(1)
+        .expect("install guide must have the pinned Linux/macOS section")
+        .split("\n## ")
+        .next()
+        .expect("pinned install section must have body text");
+    assert!(
+        pinned.contains("libhyperscan5")
+            && pinned.contains("minisign")
+            && pinned.contains("brew install minisign"),
+        "the canonical pinned install guide must name every platform verifier/runtime prerequisite"
+    );
+}
+
+#[test]
+fn public_ci_install_recipes_name_verified_runtime_prerequisites() {
+    let guide = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/src/workflows/ci.md"
+    ));
+    for heading in ["## GitLab CI", "## CircleCI", "## Drone CI", "## Buildkite"] {
+        let section = guide
+            .split(heading)
+            .nth(1)
+            .unwrap_or_else(|| panic!("CI guide must contain {heading}"))
+            .split("\n## ")
+            .next()
+            .expect("CI recipe section must have body text");
+        assert!(
+            section.contains("install.sh")
+                && section.contains("minisign")
+                && section.contains("libhyperscan5"),
+            "{heading} must install the signed installer verifier and Linux release runtime before scanning"
+        );
+    }
 }

@@ -360,7 +360,7 @@ pub(crate) fn parse_severity_filter(s: &str) -> Option<crate::args::SeverityFilt
 /// Accepted-spelling description for [`parse_output_format`]. One owner (see
 /// [`SEVERITY_ACCEPTED`]).
 pub(crate) const OUTPUT_FORMAT_ACCEPTED: &str =
-    "expected one of text, json, jsonl, sarif, csv, github-annotations, gitlab-sast, html, junit";
+    "expected one of text, json, json-envelope, jsonl, jsonl-envelope, sarif, csv, github-annotations, gitlab-sast, html, junit";
 
 /// Parse an output-format string. Shared by the flat `format` field and `[scan]`.
 pub(crate) fn parse_output_format(s: &str) -> Option<crate::args::OutputFormat> {
@@ -368,7 +368,9 @@ pub(crate) fn parse_output_format(s: &str) -> Option<crate::args::OutputFormat> 
     match s.to_lowercase().as_str() {
         "text" => Some(F::Text),
         "json" => Some(F::Json),
+        "json-envelope" | "json_envelope" => Some(F::JsonEnvelope),
         "jsonl" => Some(F::Jsonl),
+        "jsonl-envelope" | "jsonl_envelope" => Some(F::JsonlEnvelope),
         "sarif" => Some(F::Sarif),
         "csv" => Some(F::Csv),
         "github-annotations" | "github_annotations" => Some(F::GithubAnnotations),

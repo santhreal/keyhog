@@ -92,7 +92,7 @@ A dash means that layer intentionally has no surface.
 | Max file size | 100 MiB | `max_file_size` | `--max-file-size` | Walker skips files larger than this. |
 | GPU batch input limit | VRAM-adaptive (128 MiB to 1 GiB) | `[scan].gpu_batch_input_limit` | `--gpu-batch-input-limit` | Sets the CLI coalesced-batch and per-dispatch byte budget and is clamped to 128 MiB through 1 GiB. The pipeline can lower it further to keep its in-flight batches within host RAM headroom. A stricter backend ceiling still wins. Larger literal-presence requests shard between chunks and split an oversized chunk into overlap-preserving physical windows while retaining one logical result row. Retired MegaScan spellings are rejected. |
 | Severity floor | (all) | `[scan].severity` | `--severity` | Minimum severity to report: info/client-safe/low/medium/high/critical. |
-| Output format | `text` | `[scan].format` | `--format` | text/json/jsonl/sarif/csv/github-annotations/gitlab-sast/html/junit. |
+| Output format | `text` | `[scan].format` | `--format` | text/json/json-envelope/jsonl/jsonl-envelope/sarif/csv/github-annotations/gitlab-sast/html/junit. |
 | Show secrets | off | `show_secrets` | `--show-secrets` | Print plaintext credentials. **Never enable in CI/logs.** |
 | Incremental cache | off | `[scan].incremental` / `[scan].incremental_cache` | `--incremental` / `--incremental-cache` | BLAKE3 Merkle skip-cache; 10-100× on CI re-runs. |
 | Hyperscan cache dir | platform cache dir | `[system].cache_dir` | `--cache-dir` | Compiled-database cache directory. Must be an absolute user-owned path under the home directory or per-user keyhog temp cache root. |

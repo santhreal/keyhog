@@ -5,6 +5,12 @@ your supported host; platform feature differences are explicit below.
 
 ## Pinned verified install: Linux / macOS
 
+Install the host prerequisites before downloading the signed installer. Debian
+or Ubuntu needs `curl`, `minisign`, and the Linux release binary's Hyperscan
+runtime: `sudo apt-get update && sudo apt-get install -y --no-install-recommends curl libhyperscan5 minisign`.
+macOS release assets are portable, so run `brew install minisign` and use the
+system `curl`.
+
 ```sh
 TAG=v0.5.41
 BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"

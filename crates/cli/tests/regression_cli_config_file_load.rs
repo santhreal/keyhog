@@ -286,6 +286,32 @@ fn no_config_flag_ignores_disabling_config() {
 }
 
 #[test]
+fn multi_root_scan_refuses_ambiguous_repository_configs() {
+    let first = make_scan_dir(Some("[scan]\nformat = \"json\"\n"));
+    let second = make_scan_dir(Some("[scan]\nformat = \"text\"\n"));
+    let output = Command::new(binary())
+        .args(["scan", "--daemon=off", "--backend", "cpu"])
+        .arg(first.path())
+        .arg(second.path())
+        .output()
+        .expect("spawn multi-root keyhog scan");
+
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "one scan must not silently apply the first root's policy to a differently configured root; stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("scan roots resolve different repository configuration identities")
+            && stderr.contains("pass one explicit --config PATH"),
+        "the operator must see the conflicting policy identities and an explicit resolution; stderr={stderr}"
+    );
+}
+
+#[test]
 fn no_config_flag_ignores_config_format() {
     // Config asks for JSON, but `--no-config` skips the file, so the output is
     // the compiled-default text report (leading char is not '[').
@@ -509,8 +535,8 @@ fn invalid_format_value_lists_the_valid_formats() {
     );
     assert!(
         stderr.contains(
-            "- [scan].format = \"xmlish\": expected one of text, json, jsonl, sarif, csv, \
-             github-annotations, gitlab-sast, html, junit"
+            "- [scan].format = \"xmlish\": expected one of text, json, json-envelope, jsonl, \
+             jsonl-envelope, sarif, csv, github-annotations, gitlab-sast, html, junit"
         ),
         "error must quote the bad value and list the valid formats.\n--- stderr ---\n{stderr}"
     );

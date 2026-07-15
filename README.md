@@ -210,6 +210,12 @@ Banner **patterns** is the compiled pattern count shown in the startup banner ab
 
 ## Install
 
+The signed Linux release binary needs the Hyperscan runtime and the installer
+needs `minisign` before it can verify anything. On Debian/Ubuntu, install both
+with `sudo apt-get update && sudo apt-get install -y --no-install-recommends curl libhyperscan5 minisign`;
+on macOS, run `brew install minisign` (the macOS release asset is portable and
+does not need Hyperscan).
+
 ```bash
 # Linux / macOS, pinned and authenticated before execution
 TAG=v0.5.41
