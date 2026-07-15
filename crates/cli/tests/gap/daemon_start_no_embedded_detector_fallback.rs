@@ -1,5 +1,8 @@
 //! KH-GAP-105: `daemon start` requires a `detectors/` directory on disk and
 //! does not fall back to the embedded corpus (unlike `scan`, `watch`, `explain`).
+//! The test forces SIMD so it isolates corpus discovery from the separate
+//! autoroute-readiness contract, which intentionally requires persisted route
+//! evidence for the default daemon policy.
 
 use crate::e2e::support::binary;
 use std::process::{Child, Command, Stdio};
@@ -12,7 +15,7 @@ fn daemon_start_from_empty_cwd_uses_embedded_detectors_like_scan() {
     let runtime = TempDir::new().expect("runtime dir");
     let mut daemon: Child = Command::new(binary())
         .env("XDG_RUNTIME_DIR", runtime.path())
-        .args(["daemon", "start"])
+        .args(["daemon", "start", "--backend", "simd"])
         .current_dir(dir.path())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
