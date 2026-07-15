@@ -181,7 +181,7 @@ fn helpscout_19_hex_does_not_fire() {
     ));
 }
 
-// ── Tawk.to (32-64-hex key, 24-hex property/site id) ─────────────────────────
+// ── Tawk.to (32-64-hex key, 24-hex property/site companion id) ──────────────
 
 #[test]
 fn tawkto_api_key_fires() {
@@ -194,12 +194,11 @@ fn tawkto_api_key_fires() {
 }
 
 #[test]
-fn tawkto_property_id_fires() {
+fn tawkto_property_id_alone_is_companion_context() {
     let k = hex(24, 18);
-    assert!(surfaces_under(
+    assert!(!fires(
         &format!("TAWKTO_PROPERTY_ID={k}"),
-        "tawkto-api-key",
-        &k
+        "tawkto-api-key"
     ));
 }
 
@@ -214,12 +213,11 @@ fn tawkto_token_lower_fires() {
 }
 
 #[test]
-fn tawkto_site_id_fires() {
+fn tawkto_site_id_alone_is_companion_context() {
     let k = hex(24, 20);
-    assert!(surfaces_under(
+    assert!(!fires(
         &format!("TAWKTO_SITE_ID={k}"),
-        "tawkto-api-key",
-        &k
+        "tawkto-api-key"
     ));
 }
 
