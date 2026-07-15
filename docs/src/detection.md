@@ -316,10 +316,12 @@ Detectors fall into two camps:
   have high Shannon entropy but tokenize into a few common pieces, while opaque
   secrets usually require many short tokens. The mechanisms are complementary,
   and generic detector TOMLs may own their token-efficiency ceiling through
-  `bpe_max_bytes_per_token`. Opaque API-key/secret policies use the measured
-  2.3 ceiling; password/passphrase policies set `bpe_enabled = false` because
-  human-chosen credentials may intentionally be word-like. Disabled policies
-  skip tokenizer work entirely rather than using a magic oversized ceiling.
+  `bpe_max_bytes_per_token`. Opaque API-key/secret policies use their
+  detector-owned ceiling, falling back to the scan-wide default of `2.2` UTF-8
+  bytes per token when they do not declare one; password/passphrase policies
+  set `bpe_enabled = false` because human-chosen credentials may intentionally
+  be word-like. Disabled policies skip tokenizer work entirely rather than
+  using a magic oversized ceiling.
 
 The `entropy-generic`, `entropy-password`, `entropy-token`, and
 `entropy-api-key` IDs are output classifications for entropy-discovered

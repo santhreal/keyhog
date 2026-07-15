@@ -228,19 +228,11 @@ The available per-detector tuning fields are:
     the compiled scan fallback. An explicitly configured
     `[scan].entropy_bpe_max_bytes_per_token` or CLI flag is the final Tier-A
     override for all eligible detectors. Lower ceilings favor precision and
-    higher ceilings favor recall. This is the
-    token-efficiency mechanism popularized by BetterLeaks, not another Shannon
-    entropy calculation: it measures language-model subword compressibility.
-    A generic detector may use it as the main **precision discriminator** by
-    choosing a permissive detector-local entropy floor and a measured BPE
-    ceiling, or compose both gates when byte-distribution and language-likeness
-    each reject different noise. It is not a candidate generator: the
-    detector's regex or phase-2 assignment/entropy discovery path must first
-    produce a candidate, and the current pipeline does not offer a true
-    entropy-or-BPE branch. BetterLeaks likewise applies configured Shannon
-    entropy before Token Efficiency in its shipped generic rule. Its public
-    implementation calls this Token Efficiency, not BPD. KeyHog uses
-    `bpe_...` field names to keep that distinction explicit.
+    higher ceilings favor recall. This field tunes the precision gate after a
+    detector or phase-2 discovery path has produced a candidate; it never
+    creates one. The runtime relationship between BPE, Shannon entropy, and
+    BetterLeaks' Token Efficiency terminology is defined in
+    [How detection works](./detection.md#detection-mechanisms).
 
 ### Decoded key material
 *   **`decoded_hex_key_material_lengths`** (integer array, optional;
