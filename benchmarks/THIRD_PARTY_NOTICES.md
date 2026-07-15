@@ -15,7 +15,7 @@ keyhog; it documents the third-party tools and data the benchmark *uses*.
 | Kingfisher | https://github.com/mongodb/kingfisher | Apache-2.0 |
 | TruffleHog | https://github.com/trufflesecurity/trufflehog | AGPL-3.0 |
 | Nosey Parker | https://github.com/praetorian-inc/noseyparker | Apache-2.0 |
-| Betterleaks | https://github.com/betterleaks/betterleaks (benchmark pin: v1.1.1, `df7dbcb43c51b3cfe258607c2d7941a87cc98672`) | MIT |
+| Betterleaks | https://github.com/betterleaks/betterleaks (benchmark pin: v1.6.1, `28f08b4c8c4420a601f67ee9887c201697ff4568`) | MIT |
 | Titus | https://github.com/praetorian-inc/titus (benchmark pin: v1.1.20, `750ced31697c3eb209adc145f3d13a754e849ffa`) | Apache-2.0 |
 
 Each scanner is invoked as an external binary the operator installs; keyhog does

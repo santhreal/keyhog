@@ -29,6 +29,7 @@ Output (split layout the bench loader reads):
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import pathlib
@@ -36,7 +37,9 @@ import re
 import shutil
 import sys
 
-BETTERLEAKS_MODULE = "github.com/betterleaks/betterleaks@v1.1.1"
+BETTERLEAKS_VERSION = "v1.6.1"
+BETTERLEAKS_COMMIT = "28f08b4c8c4420a601f67ee9887c201697ff4568"
+BETTERLEAKS_MODULE = f"github.com/betterleaks/betterleaks@{BETTERLEAKS_VERSION}"
 # Split layout under the canonical corpus home: answer key at
 # <home>/manifest.jsonl, neutrally-named scan tree at <home>/corpus/, see
 # bench.corpora.homefield / bench.corpora.mirror for why the manifest must
@@ -104,6 +107,17 @@ def _unescape_go(s: str) -> str:
         )
 
 
+def _rules_digest(rules_dir: pathlib.Path) -> str:
+    """Hash the exact rule sources used for a harvest, path and bytes."""
+    digest = hashlib.sha256()
+    for path in sorted(rules_dir.glob("*.go")):
+        digest.update(path.name.encode())
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
 def _strip_go_strings(line: str) -> str:
     """Blank the contents of Go double-quoted and raw (backtick) string literals
     so brace counting isn't skewed by braces INSIDE a literal (a secret or a
@@ -164,6 +178,7 @@ def _extract_block(lines: list[str], start: int) -> tuple[list[str], int]:
 def harvest(rules_dir: pathlib.Path) -> list[dict]:
     records: list[dict] = []
     counter = 0
+    source_digest = _rules_digest(rules_dir)
     go_files = sorted(rules_dir.glob("*.go"))
     for gf in go_files:
         text = gf.read_text(errors="replace")
@@ -197,6 +212,9 @@ def harvest(rules_dir: pathlib.Path) -> list[dict]:
                             "label": label,
                             "category": current_rule,
                             "source_tool": "betterleaks",
+                            "source_version": BETTERLEAKS_VERSION,
+                            "source_commit": BETTERLEAKS_COMMIT,
+                            "source_rules_sha256": source_digest,
                             "value": v,
                             "file_type": "txt",
                         }
@@ -232,7 +250,7 @@ def main() -> int:
     ap.add_argument(
         "--betterleaks-root",
         default=None,
-        help="checkout or Go module-cache root for github.com/betterleaks/betterleaks@v1.1.1 "
+        help=f"checkout or Go module-cache root for {BETTERLEAKS_MODULE} "
              "(also accepted via BETTERLEAKS_ROOT)",
     )
     ap.add_argument(

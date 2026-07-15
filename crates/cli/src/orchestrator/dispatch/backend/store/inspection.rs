@@ -168,23 +168,13 @@ fn inspect_autoroute_cache_for_build(
 
     let cache = match parse_autoroute_cache(&data) {
         Ok(cache) => cache,
-        Err(CacheParseError::NotJson(error)) => {
-            out.error = Some(format!("autoroute cache is not valid cache JSON: {error}"));
-            return out;
-        }
-        Err(CacheParseError::Version { found }) => {
-            out.version = Some(found);
-            out.error = Some(format!(
-                "cache schema version {found} is incompatible with this build (expects \
-                 {AUTOROUTE_CACHE_VERSION}); re-run calibration to regenerate it"
-            ));
-            return out;
-        }
-        Err(CacheParseError::Payload(error)) => {
-            out.version = Some(AUTOROUTE_CACHE_VERSION);
-            out.error = Some(format!(
-                "autoroute cache payload did not deserialize: {error}"
-            ));
+        Err(error) => {
+            out.version = match &error {
+                CacheParseError::Version { found } => Some(*found),
+                CacheParseError::Payload(_) => Some(AUTOROUTE_CACHE_VERSION),
+                CacheParseError::NotJson(_) => None,
+            };
+            out.error = Some(error.diagnostic());
             return out;
         }
     };

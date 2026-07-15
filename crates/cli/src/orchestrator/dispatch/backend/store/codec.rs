@@ -16,6 +16,23 @@ pub(super) enum CacheParseError {
     Payload(serde_json::Error),
 }
 
+impl CacheParseError {
+    /// Render the single operator-facing compatibility diagnostic shared by
+    /// scan loading, cache merging, and read-only inspection.
+    pub(super) fn diagnostic(&self) -> String {
+        match self {
+            Self::NotJson(error) => format!("autoroute cache is not valid cache JSON: {error}"),
+            Self::Version { found } => format!(
+                "unsupported autoroute cache version {found} (this build expects {}); re-run calibration to regenerate it",
+                AUTOROUTE_CACHE_VERSION
+            ),
+            Self::Payload(error) => {
+                format!("autoroute cache payload did not deserialize: {error}")
+            }
+        }
+    }
+}
+
 pub(super) fn parse_autoroute_cache(data: &[u8]) -> Result<AutorouteCache, CacheParseError> {
     let envelope: AutorouteCacheVersionEnvelope =
         serde_json::from_slice(data).map_err(CacheParseError::NotJson)?;

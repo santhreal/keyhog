@@ -31,6 +31,12 @@ python3 harvest_betterleaks.py --betterleaks-root /path/to/betterleaks
 python3 harvest_kingfisher.py    # reads a kingfisher checkout
 ```
 
+The BetterLeaks harvester resolves the pinned `v1.6.1` module at commit
+`28f08b4c8c4420a601f67ee9887c201697ff4568`. Every generated manifest row
+records that version, commit, and a SHA-256 over the exact rule sources. The
+`homefield-betterleaks` loader rejects rows without consistent provenance, so
+an old or mixed harvest cannot silently become benchmark evidence.
+
 ## Run
 
 Scored by the unified bench, from `benchmarks/`:

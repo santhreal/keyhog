@@ -43,18 +43,7 @@ pub(crate) fn load_autoroute_cache(
     let data = read_autoroute_cache_file(path)?;
     let cache = match parse_autoroute_cache(&data) {
         Ok(cache) => cache,
-        Err(CacheParseError::NotJson(error)) => {
-            return Err(format!("autoroute cache is not valid cache JSON: {error}").into());
-        }
-        Err(CacheParseError::Version { found }) => {
-            return Err(format!(
-                "unsupported autoroute cache version {found} (this build expects {}); \
-                 re-run calibration to regenerate it",
-                AUTOROUTE_CACHE_VERSION
-            )
-            .into());
-        }
-        Err(CacheParseError::Payload(error)) => return Err(error.into()),
+        Err(error) => return Err(error.diagnostic().into()),
     };
     host_profile.require_exact_identity()?;
     validate_cache_global_identity(&cache, detector_digest, rules_digest)?;
@@ -206,37 +195,33 @@ fn read_mergeable_configs(
     };
     let cache = match parse_autoroute_cache(&data) {
         Ok(cache) => cache,
-        Err(CacheParseError::Version { found }) => {
+        Err(error @ CacheParseError::Version { .. }) => {
             tracing::info!(
                 target: "keyhog::routing",
                 path = %path.display(),
-                found_version = found,
+                diagnostic = %error.diagnostic(),
                 expected_version = AUTOROUTE_CACHE_VERSION,
                 "existing autoroute cache is an older schema; superseding it with this build's calibration"
             );
-            return replacement(format!(
-                "cache schema {found} is incompatible with schema {AUTOROUTE_CACHE_VERSION}"
-            ));
+            return replacement(error.diagnostic());
         }
-        Err(CacheParseError::NotJson(error)) => {
+        Err(error @ CacheParseError::NotJson(_)) => {
             tracing::warn!(
                 target: "keyhog::routing",
                 path = %path.display(),
-                %error,
+                diagnostic = %error.diagnostic(),
                 "existing autoroute cache is not valid cache JSON; replacing it with a fresh calibration"
             );
-            return replacement(format!("existing cache is not valid cache JSON: {error}"));
+            return replacement(error.diagnostic());
         }
-        Err(CacheParseError::Payload(error)) => {
+        Err(error @ CacheParseError::Payload(_)) => {
             tracing::warn!(
                 target: "keyhog::routing",
                 path = %path.display(),
-                %error,
+                diagnostic = %error.diagnostic(),
                 "existing autoroute cache failed to deserialize; replacing it with a fresh calibration"
             );
-            return replacement(format!(
-                "existing cache payload failed to deserialize: {error}"
-            ));
+            return replacement(error.diagnostic());
         }
     };
     if let Err(error) = validate_cache_global_identity(&cache, detector_digest, rules_digest) {

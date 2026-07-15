@@ -159,6 +159,18 @@ merges only that host's workload rows. A scan replays only the generation whose
 complete host identity matches the live machine. JSON inspection exposes the
 stable `host_identity` digest used to distinguish those generations.
 
+### Cache schema compatibility
+
+The cache has one strict schema version. KeyHog reads the small `version` field
+before decoding any version-specific payload, so an older or newer cache cannot
+be mistaken for a partially valid one. There is no silent in-place migration:
+an unsupported version is reported as `unsupported autoroute cache version`
+with the version found, the version expected by the binary, and the command to
+regenerate it. The scan loader, calibration merge path, and `backend --autoroute`
+inspection use this same diagnostic. Re-run calibration after upgrading KeyHog
+or changing the cache format; a replacement save never merges rows from an
+incompatible schema.
+
 ## What a decision covers
 
 A decision is tied to its recorded build identity, host profile, detector

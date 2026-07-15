@@ -69,14 +69,39 @@ def test_betterleaks_generator_failure_names_overrides(tmp_path, monkeypatch):
     assert str(tmp_path / "go" / "pkg" / "mod" / gen.BETTERLEAKS_MODULE) in message
 
 
+def test_betterleaks_harvest_binds_pinned_source_provenance(tmp_path):
+    gen = _load_betterleaks_generator()
+    rules = tmp_path / "rules"
+    rules.mkdir()
+    (rules / "aws.go").write_text(
+        'RuleID: "aws-access-key"\n'
+        'tps := []string{\n'
+        '    "AKIAIOSFODNN7EXAMPLE",\n'
+        '}\n'
+    )
+
+    records = gen.harvest(rules)
+
+    assert len(records) == 1
+    record = records[0]
+    assert record["source_version"] == gen.BETTERLEAKS_VERSION
+    assert record["source_commit"] == gen.BETTERLEAKS_COMMIT
+    assert len(record["source_rules_sha256"]) == 64
+    assert record["source_rules_sha256"] == gen._rules_digest(rules)
+
+
 # ── manifest placement: answer key beside, never inside, the scan tree ──
 
 _SAMPLE_RECORDS = [
     {"id": "xx-00001", "secret": "AKIAIOSFODNN7EXAMPLE", "label": True,
-     "category": "aws", "source_tool": "t", "value": "AKIAIOSFODNN7EXAMPLE",
+     "category": "aws", "source_tool": "betterleaks", "source_version": "v1.6.1",
+     "source_commit": "a" * 40, "source_rules_sha256": "b" * 64,
+     "value": "AKIAIOSFODNN7EXAMPLE",
      "file_type": "txt"},
     {"id": "xx-00002", "secret": "", "label": False, "category": "aws",
-     "source_tool": "t", "value": "not-a-secret", "file_type": "txt"},
+     "source_tool": "betterleaks", "source_version": "v1.6.1",
+     "source_commit": "a" * 40, "source_rules_sha256": "b" * 64,
+     "value": "not-a-secret", "file_type": "txt"},
 ]
 
 
@@ -109,6 +134,23 @@ def test_betterleaks_write_corpus_places_manifest_beside_scan_tree(tmp_path):
     gen = _load_betterleaks_generator()
     gen.write_corpus([dict(r) for r in _SAMPLE_RECORDS], tmp_path)
     _assert_split_layout(tmp_path, "betterleaks")
+
+
+def test_betterleaks_corpus_rejects_manifest_without_source_provenance(tmp_path):
+    gen = _load_betterleaks_generator()
+    records = [
+        {
+            **{
+                key: value for key, value in row.items()
+                if key not in {"source_version", "source_commit", "source_rules_sha256"}
+            },
+            "source_tool": "betterleaks",
+        }
+        for row in _SAMPLE_RECORDS
+    ]
+    gen.write_corpus(records, tmp_path)
+    with pytest.raises(SystemExit, match="missing source_version"):
+        HomefieldCorpus(turf="betterleaks", corpus_dir=tmp_path).records()
 
 
 def test_kingfisher_write_corpus_places_manifest_beside_scan_tree(tmp_path):
