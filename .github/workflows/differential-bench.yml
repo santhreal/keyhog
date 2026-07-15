@@ -10,7 +10,8 @@ name: differential-bench
 # scanner adapters + canonical scorer + `gate` subcommand are the single
 # source of differential truth. The corpus is generated at runtime (gitignored,
 # never committed) so no literal credential lands in a tracked file or trips
-# GitHub push-protection. See benchmarks/README.md.
+# GitHub push-protection. The KeyHog row is always the checked-out commit built
+# by this job, never an unrelated latest release. See benchmarks/README.md.
 
 on:
   schedule:
@@ -52,33 +53,14 @@ jobs:
           sudo apt-get install -y --no-install-recommends libhyperscan5 || \
             sudo apt-get install -y --no-install-recommends libhyperscan-dev
 
-      - name: install keyhog (release binary)
+      - name: build checked-out keyhog (release binary)
         run: |
           set -euo pipefail
+          cargo build --locked --release -p keyhog --bin keyhog
           mkdir -p "$HOME/.local/bin"
-          # Track the latest release rather than pinning a version 
-          # the bench is intentionally measuring "current production
-          # keyhog" not a specific tag.
-          tag=$(curl -fsSL https://api.github.com/repos/santhreal/keyhog/releases/latest | \
-                python3 -c 'import json,sys;print(json.load(sys.stdin)["tag_name"])')
-          echo "using keyhog $tag"
-          asset="keyhog-linux-x86_64"
-          url="https://github.com/santhreal/keyhog/releases/download/${tag}/${asset}"
-          curl --proto '=https' --tlsv1.2 --retry 5 --retry-connrefused \
-               --location --silent --show-error --fail \
-               -o "$RUNNER_TEMP/$asset" "$url"
-          curl --proto '=https' --tlsv1.2 --retry 5 --retry-connrefused \
-               --location --silent --show-error --fail \
-               -o "$RUNNER_TEMP/$asset.sha256" "$url.sha256"
-          (cd "$RUNNER_TEMP" && sha256sum -c "$asset.sha256")
-          install -m 0755 "$RUNNER_TEMP/$asset" "$HOME/.local/bin/keyhog"
+          install -m 0755 target/release/keyhog "$HOME/.local/bin/keyhog"
+          echo "using checked-out keyhog $(git rev-parse HEAD)"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-      - name: install trufflehog
-        run: |
-          set -euo pipefail
-          curl -fsSL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh \
-            | sh -s -- -b "$HOME/.local/bin"
 
       - name: install required competitors
         run: |

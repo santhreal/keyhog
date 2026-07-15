@@ -343,8 +343,9 @@ newest-wins logic as the README table, and exits non-zero unless keyhog both:
   anchor in `baselines/`).
 
 Exit codes: `0` pass · `1` violation · `2` undecidable (keyhog produced no
-usable result). The `differential-bench` workflow runs it nightly against
-TruffleHog; the `bench-nightly` workflow renders the leaderboard the gate reads.
+usable result). The `differential-bench` workflow builds the checked-out
+KeyHog commit and runs the gate against BetterLeaks and Kingfisher; the
+`bench-nightly` workflow renders the leaderboard the gate reads.
 
 ## Continuous-improvement loop
 
