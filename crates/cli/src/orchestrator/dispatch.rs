@@ -15,6 +15,7 @@ mod pipeline;
 use anyhow::Result;
 pub(crate) use backend::backend_requires_coalesced_batch_pipeline_for_test;
 pub(crate) use backend::inspect_autoroute_cache;
+pub(crate) use backend::AutorouteCacheInspection;
 use backend::{is_gpu_backend, AutorouteRoutingError, MeasuredBackendRouter};
 pub(crate) use backend::{AutorouteMeasurementObserver, CachedBackendRouter};
 use keyhog_core::{Chunk, RawMatch, Source};

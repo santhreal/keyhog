@@ -3,10 +3,9 @@
 //! `backend --autoroute [--json]` renders the persisted autoroute calibration
 //! cache read-only (`run_autoroute_inspection` in
 //! `crates/cli/src/subcommands/backend.rs`, backed by `inspect_autoroute_cache`
-//! in `crates/cli/src/orchestrator/dispatch/backend/store/codec.rs`). It always exits
-//! 0, even for a missing / corrupt / stale cache, because it is a diagnostic
-//! read, not a scan; the loud status text tells the operator what a real scan
-//! would fail closed on.
+//! in `crates/cli/src/orchestrator/dispatch/backend/store/codec.rs`). It exits
+//! 4 for missing / corrupt / stale evidence on a multi-backend build, while a
+//! single-backend build reports its direct route and remains healthy.
 //!
 //! These tests drive the REAL binary via `CARGO_BIN_EXE_keyhog`. The autoroute
 //! cache resolves to `dirs::cache_dir()/keyhog/autoroute.json`, so each test
@@ -31,6 +30,14 @@ use tempfile::TempDir;
 const EXPECTED_CACHE_VERSION: u64 = 34;
 /// Read cap for the cache file (kept in sync with the cache codec).
 const CACHE_FILE_CAP_BYTES: usize = 8 * 1024 * 1024;
+
+fn unhealthy_inspection_exit() -> i32 {
+    if keyhog_scanner::hw_probe::multiple_backends_compiled() {
+        4
+    } else {
+        0
+    }
+}
 
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
@@ -92,11 +99,11 @@ fn write_cache(home: &Path, contents: &[u8]) -> PathBuf {
 // --- uncalibrated (no cache file) -------------------------------------------
 
 #[test]
-fn autoroute_json_uncalibrated_reports_not_present_exit_zero() {
+fn autoroute_json_uncalibrated_reports_not_present_health() {
     let home = cache_home();
     let (code, value) = inspect_json(home.path());
 
-    assert_eq!(code, 0, "read-only inspection always exits 0");
+    assert_eq!(code, unhealthy_inspection_exit());
     assert_eq!(
         value.get("present"),
         Some(&serde_json::Value::Bool(false)),
@@ -132,7 +139,7 @@ fn autoroute_json_uncalibrated_omits_identity_and_digest_fields() {
     let home = cache_home();
     let (code, value) = inspect_json(home.path());
 
-    assert_eq!(code, 0);
+    assert_eq!(code, unhealthy_inspection_exit());
     // The resolved path is still reported (so the operator knows WHERE to prime).
     let path = value
         .get("path")
@@ -164,7 +171,11 @@ fn autoroute_human_uncalibrated_prints_status_and_repair_command() {
         .args(["backend", "--autoroute"])
         .output()
         .expect("spawn keyhog backend --autoroute");
-    assert_eq!(out.status.code(), Some(0), "inspection exits 0");
+    assert_eq!(
+        out.status.code(),
+        Some(unhealthy_inspection_exit()),
+        "inspection health exit"
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
         stdout.contains("## autoroute calibration cache"),
@@ -189,10 +200,7 @@ fn autoroute_json_wrong_schema_version_reports_incompatible() {
     write_cache(home.path(), br#"{"version": 3}"#);
 
     let (code, value) = inspect_json(home.path());
-    assert_eq!(
-        code, 0,
-        "an incompatible cache is a diagnostic, still exit 0"
-    );
+    assert_eq!(code, unhealthy_inspection_exit());
     assert_eq!(
         value.get("present"),
         Some(&serde_json::Value::Bool(true)),
@@ -228,7 +236,7 @@ fn autoroute_json_corrupt_non_json_reports_parse_error() {
     write_cache(home.path(), b"not-json-at-all");
 
     let (code, value) = inspect_json(home.path());
-    assert_eq!(code, 0);
+    assert_eq!(code, unhealthy_inspection_exit());
     assert_eq!(
         value.get("present"),
         Some(&serde_json::Value::Bool(true)),
@@ -260,7 +268,7 @@ fn autoroute_json_version_ok_but_payload_undeserializable() {
     );
 
     let (code, value) = inspect_json(home.path());
-    assert_eq!(code, 0);
+    assert_eq!(code, unhealthy_inspection_exit());
     assert_eq!(
         value.get("version"),
         Some(&serde_json::Value::Number(EXPECTED_CACHE_VERSION.into())),
@@ -284,7 +292,7 @@ fn autoroute_json_oversized_cache_reports_unreadable_cap() {
     write_cache(home.path(), &oversized);
 
     let (code, value) = inspect_json(home.path());
-    assert_eq!(code, 0);
+    assert_eq!(code, unhealthy_inspection_exit());
     assert_eq!(
         value.get("present"),
         Some(&serde_json::Value::Bool(true)),
@@ -309,7 +317,7 @@ fn autoroute_human_wrong_version_prints_repair_command() {
         .args(["backend", "--autoroute"])
         .output()
         .expect("spawn keyhog backend --autoroute");
-    assert_eq!(out.status.code(), Some(0));
+    assert_eq!(out.status.code(), Some(unhealthy_inspection_exit()));
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
         stdout.contains("## autoroute calibration cache"),
@@ -334,7 +342,7 @@ fn autoroute_human_corrupt_cache_prints_error_and_repair() {
         .args(["backend", "--autoroute"])
         .output()
         .expect("spawn keyhog backend --autoroute");
-    assert_eq!(out.status.code(), Some(0));
+    assert_eq!(out.status.code(), Some(unhealthy_inspection_exit()));
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
         stdout.contains("not valid cache JSON"),

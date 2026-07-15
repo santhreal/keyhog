@@ -208,8 +208,8 @@ pub(crate) use reporting::{
     verification_breakdown, TickerGuard,
 };
 
-pub(crate) use dispatch::inspect_autoroute_cache;
 pub(crate) use dispatch::CachedBackendRouter;
+pub(crate) use dispatch::{inspect_autoroute_cache, AutorouteCacheInspection};
 pub(crate) use streaming::{scan_streaming_source, StreamingSourceEvent};
 
 pub(crate) fn cached_autoroute_router_for_default_config(

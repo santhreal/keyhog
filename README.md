@@ -177,8 +177,10 @@ already have a fastest-correct decision, the distinct cold-aware one-shot and
 warm-daemon routes, representative medians, confidence separation, selection
 basis, and whether the cache is stale for this build. When a scan exits with
 `autoroute calibration required: no decision for workload bucket …`, this is
-how you see what *is* calibrated and recalibrate the gap. Add `--json` for a
-stable, scriptable shape.
+how you see what *is* calibrated and recalibrate the gap. The inspection health
+is explicit: `direct` and `ready` exit `0`; a multi-backend `calibration_required`,
+`disabled`, `stale`, or `invalid` state exits `4`. Add `--json` for the same
+health value in a stable, scriptable shape.
 
 <p align="center">
   <img src="demo/keyhog-backend.gif" alt="keyhog backend diagnostic hardware probe and advisory size matrix; persisted automatic routing is inspected separately with keyhog backend --autoroute" width="860" />

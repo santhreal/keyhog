@@ -10,7 +10,7 @@
 //! this report shows the hardware/workload heuristic matrix.
 
 use crate::args::BackendArgs;
-use crate::exit_codes::{EXIT_BACKEND_SELF_TEST_FAILED, EXIT_SUCCESS};
+use crate::exit_codes::{EXIT_BACKEND_SELF_TEST_FAILED, EXIT_HEALTH_FAILURE, EXIT_SUCCESS};
 use crate::format::format_bytes;
 use crate::style::{self, Palette};
 use anyhow::Result;
@@ -114,14 +114,24 @@ fn run_autoroute_inspection(json: bool, autoroute_cache: Option<&str>) -> Result
     let path = crate::autoroute_cache_path::resolve_autoroute_cache_path(autoroute_cache)
         .map_err(|message| anyhow::anyhow!(message))?;
     let inspection = crate::orchestrator::inspect_autoroute_cache(path.as_deref());
+    let health = autoroute_inspection_health(&inspection);
+    let exit = autoroute_inspection_exit_code(health);
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&inspection)?);
-        return Ok(ExitCode::SUCCESS);
+        let mut value = serde_json::to_value(&inspection)?;
+        value["health"] = serde_json::Value::String(health.as_str().to_string());
+        println!("{}", serde_json::to_string_pretty(&value)?);
+        return Ok(exit);
     }
 
     let p = style::for_stdout();
     println!("{}## autoroute calibration cache{}", p.bold, p.reset);
+    println!(
+        "  health:          {}{}{}",
+        p.cyan,
+        health.as_str(),
+        p.reset
+    );
     match &inspection.path {
         Some(path) => println!("  path:            {path}"),
         None => println!("  path:            (disabled)"),
@@ -138,14 +148,14 @@ fn run_autoroute_inspection(json: bool, autoroute_cache: Option<&str>) -> Result
                 "This cache artifact is not used by automatic scans in a single-backend build. \
                  Automatic scans resolve {direct_backend} directly."
             );
-            return Ok(ExitCode::SUCCESS);
+            return Ok(exit);
         }
         println!(
             "Run `keyhog calibrate-autoroute` to (re)build the cache in place, or \
              `install.sh --calibrate` (Unix) / `install.ps1 -Calibrate` (Windows), or scan \
              with an explicit `--backend`."
         );
-        return Ok(ExitCode::SUCCESS);
+        return Ok(exit);
     }
 
     // Cache absence is unhealthy only when this build has a routing choice.
@@ -161,7 +171,7 @@ fn run_autoroute_inspection(json: bool, autoroute_cache: Option<&str>) -> Result
                 "Automatic scans resolve {direct_backend} directly. No autoroute cache is needed \
                  for this build."
             );
-            return Ok(ExitCode::SUCCESS);
+            return Ok(exit);
         }
         println!(
             "  status:          {}not calibrated yet{}",
@@ -173,7 +183,7 @@ fn run_autoroute_inspection(json: bool, autoroute_cache: Option<&str>) -> Result
              `keyhog calibrate-autoroute` to prime it in place, or `install.sh --calibrate` \
              (Unix) / `install.ps1 -Calibrate` (Windows), or scan with an explicit `--backend`."
         );
-        return Ok(ExitCode::SUCCESS);
+        return Ok(exit);
     }
 
     if let Some(version) = inspection.version {
@@ -300,7 +310,69 @@ fn run_autoroute_inspection(json: bool, autoroute_cache: Option<&str>) -> Result
             );
         }
     }
-    Ok(ExitCode::SUCCESS)
+    Ok(exit)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AutorouteInspectionHealth {
+    Direct,
+    Ready,
+    CalibrationRequired,
+    Disabled,
+    Stale,
+    Invalid,
+}
+
+impl AutorouteInspectionHealth {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Direct => "direct",
+            Self::Ready => "ready",
+            Self::CalibrationRequired => "calibration_required",
+            Self::Disabled => "disabled",
+            Self::Stale => "stale",
+            Self::Invalid => "invalid",
+        }
+    }
+}
+
+fn autoroute_inspection_health(
+    inspection: &crate::orchestrator::AutorouteCacheInspection,
+) -> AutorouteInspectionHealth {
+    if !inspection.calibration_required {
+        return AutorouteInspectionHealth::Direct;
+    }
+    if inspection
+        .error
+        .as_deref()
+        .is_some_and(|error| error.contains("disabled"))
+    {
+        return AutorouteInspectionHealth::Disabled;
+    }
+    if !inspection.present && inspection.error.is_none() {
+        return AutorouteInspectionHealth::CalibrationRequired;
+    }
+    if inspection.error.is_some() {
+        return AutorouteInspectionHealth::Invalid;
+    }
+    if inspection.identity_matches_build == Some(false) {
+        return AutorouteInspectionHealth::Stale;
+    }
+    if inspection.present && inspection.identity_matches_build == Some(true) {
+        AutorouteInspectionHealth::Ready
+    } else {
+        AutorouteInspectionHealth::Invalid
+    }
+}
+
+fn autoroute_inspection_exit_code(health: AutorouteInspectionHealth) -> ExitCode {
+    match health {
+        AutorouteInspectionHealth::Direct | AutorouteInspectionHealth::Ready => ExitCode::SUCCESS,
+        AutorouteInspectionHealth::CalibrationRequired
+        | AutorouteInspectionHealth::Disabled
+        | AutorouteInspectionHealth::Stale
+        | AutorouteInspectionHealth::Invalid => ExitCode::from(EXIT_HEALTH_FAILURE),
+    }
 }
 
 fn direct_backend_or_error(direct_backend: Option<&'static str>) -> Result<&'static str> {

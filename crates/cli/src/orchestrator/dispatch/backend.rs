@@ -44,11 +44,11 @@ mod workload;
 use self::calibration::calibrate_fastest_correct_backend;
 use self::evidence::AutorouteDecision;
 use self::host::{host_identity_digest, AutorouteHostProfile};
-pub(crate) use self::store::inspect_autoroute_cache;
 use self::store::{
     autoroute_cache_file_presence, load_autoroute_cache, save_autoroute_cache,
     AutorouteCacheSaveOutcome,
 };
+pub(crate) use self::store::{inspect_autoroute_cache, AutorouteCacheInspection};
 pub(crate) use self::workload::source_route_class;
 use self::workload::{
     differing_workload_dimensions, render_workload_key, workload_key, WorkloadClassificationError,
