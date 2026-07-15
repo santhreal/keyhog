@@ -114,6 +114,12 @@ On Unix, omitting `--daemon` is equivalent to `--daemon=auto`. Bare
 | `--daemon=on` or bare `--daemon` | Require the daemon result. | Exit with the specific availability, trust, identity, or protocol error. | Exit with the specific unsupported requirement. |
 | `--daemon=off` | Do not connect. | Run in process. | Run in process. |
 
+`--daemon=on` and bare `--daemon` require the daemon route. If the daemon is unavailable or cannot
+honor the request's source or policy, that is an error and the scan exits with
+the specific diagnostic; no in-process retry is attempted. Use
+`--daemon=auto` when an opportunistic daemon attempt with an in-process retry
+is the intended behavior: use a reachable daemon only when it can honor the request.
+
 `--daemon-socket` cannot be combined with `--daemon=off`.
 
 The socket state and daemon state are separate signals. Use this matrix when
