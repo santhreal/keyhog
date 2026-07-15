@@ -914,17 +914,19 @@ fn junit_failure_body_carries_detection_metadata() {
 // GITHUB ANNOTATIONS (GithubAnnotationsReporter)
 // ---------------------------------------------------------------------------
 
-/// Empty corpus -> no workflow command lines. GitHub annotations are
-/// finding events, not a container format with an empty skeleton.
+/// Empty corpus -> an explicit terminal success notice and no finding command.
 #[test]
-fn github_annotations_empty_corpus_is_empty_output() {
+fn github_annotations_empty_corpus_emits_success_status() {
     let (stdout, stderr, code) = scan_with_format(CLEAN_FIXTURE, "github-annotations");
     assert_eq!(
         code,
         Some(0),
         "clean GitHub-annotations scan must exit 0; stderr={stderr}"
     );
-    assert_eq!(stdout, "", "clean GitHub-annotations output must be empty");
+    assert_eq!(
+        stdout, "::notice title=keyhog scan::scan status: success\n",
+        "clean GitHub-annotations output must carry terminal status"
+    );
 }
 
 /// Non-empty corpus -> one GitHub workflow-command annotation per finding,
@@ -943,8 +945,16 @@ fn github_annotations_planted_finding_has_error_command() {
         "planted finding must produce at least one GitHub annotation"
     );
     assert!(
-        lines.iter().all(|line| line.starts_with("::error ")),
+        lines
+            .iter()
+            .filter(|line| line.starts_with("::error "))
+            .count()
+            >= 1,
         "AWS high-severity findings must render as error annotations; got {stdout:?}"
+    );
+    assert_eq!(
+        lines.last().copied(),
+        Some("::notice title=keyhog scan::scan status: success")
     );
     assert!(
         stdout.contains("file=") && stdout.contains(",line=1,") && stdout.contains("title=keyhog"),

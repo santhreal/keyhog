@@ -107,7 +107,24 @@ fn github_annotation_partial_scan_emits_terminal_coverage_notice() {
     let out = String::from_utf8(buf).expect("annotation output is UTF-8");
     assert_eq!(
         out,
-        "::warning title=keyhog coverage::partial scan coverage: oversize file=2\n"
+        "::notice title=keyhog scan::scan status: partial\n::warning title=keyhog coverage::partial scan coverage: oversize file=2\n"
+    );
+}
+
+#[test]
+fn github_annotation_coverage_success_emits_terminal_status_notice() {
+    let mut buf = Vec::new();
+    write_report(
+        &mut buf,
+        ReportFormat::GithubAnnotationsCoverage {
+            skip_summary: Vec::new(),
+        },
+        &[],
+    )
+    .expect("render successful GitHub annotations");
+    assert_eq!(
+        String::from_utf8(buf).expect("annotation output is UTF-8"),
+        "::notice title=keyhog scan::scan status: success\n"
     );
 }
 

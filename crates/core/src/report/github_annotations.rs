@@ -11,6 +11,7 @@ use super::{impl_writer_backed, ReportError, Reporter, WriterBackedReporter};
 pub(crate) struct GithubAnnotationsReporter<W: Write + Send> {
     writer: W,
     skip_summary: Vec<(String, usize)>,
+    emit_scan_status: bool,
 }
 
 impl<W: Write + Send> GithubAnnotationsReporter<W> {
@@ -19,11 +20,13 @@ impl<W: Write + Send> GithubAnnotationsReporter<W> {
         Self {
             writer,
             skip_summary: Vec::new(),
+            emit_scan_status: false,
         }
     }
 
     /// Attach a terminal workflow notice for incomplete source coverage.
     pub(crate) fn with_skip_summary(mut self, summary: Vec<(String, usize)>) -> Self {
+        self.emit_scan_status = true;
         self.skip_summary = summary
             .into_iter()
             .filter(|(_, count)| *count > 0)
@@ -58,6 +61,17 @@ impl<W: Write + Send> Reporter for GithubAnnotationsReporter<W> {
     }
 
     fn finish(&mut self) -> Result<(), ReportError> {
+        if self.emit_scan_status {
+            let status = if self.skip_summary.is_empty() {
+                "success"
+            } else {
+                "partial"
+            };
+            writeln!(
+                self.writer,
+                "::notice title=keyhog scan::scan status: {status}"
+            )?;
+        }
         if !self.skip_summary.is_empty() {
             let details = self
                 .skip_summary

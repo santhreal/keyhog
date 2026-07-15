@@ -170,7 +170,10 @@ line, title, detector, service, redacted credential, verification state,
 and confidence when available. The plaintext credential is not emitted.
 When source coverage is incomplete, the formatter also emits one terminal
 `::warning` notice with deterministic reason/count pairs, so the GitHub job log
-shows the incomplete state even when there are no findings.
+shows the incomplete state even when there are no findings. CLI output always
+also emits `::notice title=keyhog scan::scan status: success|partial`; the
+legacy library-only `ReportFormat::GithubAnnotations` variant remains finding-
+only for compatibility.
 
 SARIF carries the same terminal state in `runs[0].properties["keyhog.scan.status"]`;
 coverage gaps remain detailed in `invocations[].toolExecutionNotifications`.

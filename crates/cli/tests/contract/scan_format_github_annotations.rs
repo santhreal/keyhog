@@ -36,7 +36,7 @@ fn scan_directory_with_cap(path: &std::path::Path) -> std::process::Output {
 }
 
 #[test]
-fn clean_scan_emits_no_github_annotations() {
+fn clean_scan_emits_success_status_notice() {
     let (_dir, path) = write_temp_file("clean.env", "no secrets here\n");
     let output = scan(&path);
     assert_eq!(
@@ -44,9 +44,10 @@ fn clean_scan_emits_no_github_annotations() {
         Some(0),
         "clean scan with GitHub annotations must exit 0"
     );
-    assert!(
-        output.stdout.is_empty(),
-        "GitHub annotations must not emit an empty-report skeleton"
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "::notice title=keyhog scan::scan status: success\n",
+        "clean annotation output must carry an explicit terminal status"
     );
 }
 
