@@ -20,7 +20,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 /// The exact CSV header keyhog writes on `CsvReporter::new`.
-const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence,entropy,remediation";
+const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence,entropy,remediation,metadata,additional_locations";
 const AWS_REMEDIATION_CSV: &str = r#""{""action"":""Disable or delete the exposed IAM access key, then rotate any paired secret access key and session token."",""revoke_url"":""https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html#Using_ManagingAccessKeys"",""docs_url"":""https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html"",""revoke_command"":""aws iam update-access-key --access-key-id {{credential}} --status Inactive""}""#;
 
 /// GitLab SAST schema version and URL pinned by the reporter.
@@ -81,7 +81,7 @@ fn has_line(text: &str, line: &str) -> bool {
 // CSV
 // ---------------------------------------------------------------------------
 
-/// Positive: the CSV report's first line is the fixed 15-column header verbatim.
+/// Positive: the CSV report's first line is the fixed 20-column header verbatim.
 #[test]
 fn csv_header_is_exact_first_line() {
     let out = render_str(ReportFormat::Csv, &[planted()]);
@@ -96,7 +96,7 @@ fn csv_header_is_exact_first_line() {
 fn csv_planted_finding_row_is_exact() {
     let out = render_str(ReportFormat::Csv, &[planted()]);
     let expected_row = format!(
-        "aws-access-key,AWS Access Key,aws,high,AKIA****,{},{{}},filesystem,config/app.env,7,0,,,,unverifiable,0.9,,{AWS_REMEDIATION_CSV}",
+        "aws-access-key,AWS Access Key,aws,high,AKIA****,{},{{}},filesystem,config/app.env,7,0,,,,unverifiable,0.9,,{AWS_REMEDIATION_CSV},{{}},[]",
         hash_hex()
     );
     assert!(

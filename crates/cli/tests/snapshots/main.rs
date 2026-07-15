@@ -977,8 +977,8 @@ fn parse_csv(text: &str) -> Vec<Vec<String>> {
 }
 
 /// Drive the real binary in `--format csv` on a finding-bearing tree, parse
-/// the output as RFC-4180 CSV, and assert: the header is the exact 15-column
-/// header keyhog promises, every data row has exactly 15 fields (no row
+/// the output as RFC-4180 CSV, and assert: the header is the exact 20-column
+/// header keyhog promises, every data row has exactly 20 fields (no row
 /// torn by an unescaped comma), and the data-row count equals the JSON
 /// ground-truth finding count.
 #[test]
@@ -1011,6 +1011,7 @@ fn csv_format_is_valid_and_row_count_matches_findings() {
         "severity",
         "credential_redacted",
         "credential_hash",
+        "companions_redacted",
         "source",
         "file_path",
         "line",
@@ -1020,10 +1021,14 @@ fn csv_format_is_valid_and_row_count_matches_findings() {
         "date",
         "verification",
         "confidence",
+        "entropy",
+        "remediation",
+        "metadata",
+        "additional_locations",
     ];
     assert_eq!(
         records[0], HEADER,
-        "csv header row is not the promised 15-column schema: {:?}",
+        "csv header row is not the promised 20-column schema: {:?}",
         records[0]
     );
 

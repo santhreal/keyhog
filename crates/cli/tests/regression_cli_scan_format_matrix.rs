@@ -35,7 +35,7 @@ const DETECTOR_ID: &str = "github-classic-pat";
 /// The human-facing detector name (CSV column 2, text block).
 const DETECTOR_NAME: &str = "GitHub Classic PAT";
 /// The exact CSV header line the reporter writes (from `CsvReporter::new`).
-const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,source,file_path,line,offset,commit,author,date,verification,confidence";
+const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence,entropy,remediation,metadata,additional_locations";
 
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
@@ -87,6 +87,33 @@ fn run(path: &PathBuf, format: &str) -> (Option<i32>, String, String) {
         String::from_utf8_lossy(&output.stdout).into_owned(),
         String::from_utf8_lossy(&output.stderr).into_owned(),
     )
+}
+
+fn parse_csv_row(row: &str) -> Vec<String> {
+    let mut fields = Vec::new();
+    let mut field = String::new();
+    let mut quoted = false;
+    let mut chars = row.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if quoted {
+            match ch {
+                '"' if chars.peek() == Some(&'"') => {
+                    field.push('"');
+                    chars.next();
+                }
+                '"' => quoted = false,
+                _ => field.push(ch),
+            }
+        } else {
+            match ch {
+                '"' if field.is_empty() => quoted = true,
+                ',' => fields.push(std::mem::take(&mut field)),
+                _ => field.push(ch),
+            }
+        }
+    }
+    fields.push(field);
+    fields
 }
 
 // ---------------------------------------------------------------------------
@@ -268,7 +295,7 @@ fn text_clean_run_honest_no_secrets_line() {
 // CSV
 // ---------------------------------------------------------------------------
 
-/// csv: the first line is EXACTLY the documented 15-field header.
+/// csv: the first line is EXACTLY the documented 20-field header.
 #[test]
 fn csv_format_header_is_exact() {
     let (_dir, path) = leak_fixture();
@@ -287,7 +314,7 @@ fn csv_format_header_is_exact() {
 }
 
 /// csv: exactly one data row, and its leading cells are the detector id, name,
-/// service, and severity in order; the row has exactly 15 fields.
+/// service, and severity in order; the RFC-4180 row has exactly 20 fields.
 #[test]
 fn csv_format_single_data_row_fields() {
     let (_dir, path) = leak_fixture();
@@ -310,11 +337,14 @@ fn csv_format_single_data_row_fields() {
         row.starts_with("github-classic-pat,GitHub Classic PAT,github,critical,"),
         "csv row must begin with id,name,service,severity in order, got: {row}"
     );
-    let field_count = row.matches(',').count() + 1;
+    let field_count = parse_csv_row(row).len();
     assert_eq!(
-        field_count, 15,
-        "csv data row must have exactly 15 fields, got {field_count}"
+        field_count, 20,
+        "csv data row must have exactly 20 fields, got {field_count}"
     );
+    let fields = parse_csv_row(row);
+    assert_eq!(fields[18], "{}");
+    assert_eq!(fields[19], "[]");
 }
 
 /// csv negative twin: a clean file exits 0 and emits ONLY the header (no data

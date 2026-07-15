@@ -17,7 +17,7 @@
 //!              exactly one result.
 //!   * text  -> the "1 secret found" roll-up + "CRITICAL" label + detector
 //!              name + the "stdin" location.
-//!   * csv   -> the exact 15-field header, then a data row whose cells are the
+//!   * csv   -> the exact 20-field header, then a data row whose cells are the
 //!              detector id/name/service/severity/redaction/hash/source in order.
 //!
 //! Negative twins: a clean stdin and an EMPTY stdin each exit 0 and produce the
@@ -46,8 +46,8 @@ const DETECTOR_NAME: &str = "Slack Bot Token";
 const TOKEN_SHA256: &str = "a8dd917042994f6c6f183c6f0718ab4241065165b299050b51302d3167cc3901";
 /// The redacted credential form the reporter emits for this token.
 const REDACTED: &str = "xoxb...uvwx";
-/// The exact 15-field CSV header the reporter writes (from `CsvReporter::new`).
-const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,source,file_path,line,offset,commit,author,date,verification,confidence";
+/// The exact 20-field CSV header the reporter writes (from `CsvReporter::new`).
+const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence,entropy,remediation,metadata,additional_locations";
 
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
@@ -91,6 +91,33 @@ fn run_stdin_args(input: &[u8], args: &[&str]) -> (Option<i32>, String, String) 
         String::from_utf8_lossy(&out.stdout).into_owned(),
         String::from_utf8_lossy(&out.stderr).into_owned(),
     )
+}
+
+fn parse_csv_row(row: &str) -> Vec<String> {
+    let mut fields = Vec::new();
+    let mut field = String::new();
+    let mut quoted = false;
+    let mut chars = row.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if quoted {
+            match ch {
+                '"' if chars.peek() == Some(&'"') => {
+                    field.push('"');
+                    chars.next();
+                }
+                '"' => quoted = false,
+                _ => field.push(ch),
+            }
+        } else {
+            match ch {
+                '"' if field.is_empty() => quoted = true,
+                ',' => fields.push(std::mem::take(&mut field)),
+                _ => field.push(ch),
+            }
+        }
+    }
+    fields.push(field);
+    fields
 }
 
 /// A byte string with no credential-shaped content at all (a true negative
@@ -356,9 +383,9 @@ fn stdin_text_clean_honest_no_secrets_line_exit_0() {
 // CSV
 // ---------------------------------------------------------------------------
 
-/// csv off stdin: the first line is EXACTLY the documented 15-field header, and
+/// csv off stdin: the first line is EXACTLY the documented 20-field header, and
 /// the sole data row's cells are id/name/service/severity/redaction/hash/source
-/// in order, with exactly 15 fields.
+/// in order, with exactly 20 fields.
 #[test]
 fn stdin_csv_header_and_single_data_row_exact_cells() {
     let input = format!("{TOKEN}\n");
@@ -386,17 +413,20 @@ fn stdin_csv_header_and_single_data_row_exact_cells() {
     let row = data[0];
     // id,name,service,severity,redacted,hash,source(stdin),file_path(empty)...
     let expected_prefix = format!(
-        "{DETECTOR_ID},{DETECTOR_NAME},slack,critical,{REDACTED},{TOKEN_SHA256},stdin,,1,0,"
+        "{DETECTOR_ID},{DETECTOR_NAME},slack,critical,{REDACTED},{TOKEN_SHA256},{{}},stdin,,1,0,"
     );
     assert!(
         row.starts_with(&expected_prefix),
         "csv row must begin with id,name,service,severity,redacted,hash,stdin,(no path),line,offset; got:\n{row}\nwanted prefix:\n{expected_prefix}"
     );
-    let field_count = row.matches(',').count() + 1;
+    let fields = parse_csv_row(row);
+    let field_count = fields.len();
     assert_eq!(
-        field_count, 15,
-        "csv data row must have exactly 15 fields, got {field_count}"
+        field_count, 20,
+        "csv data row must have exactly 20 fields, got {field_count}"
     );
+    assert_eq!(fields[18], "{}");
+    assert_eq!(fields[19], "[]");
 }
 
 /// csv negative twin: clean stdin exits 0 and emits ONLY the header.

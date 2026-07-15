@@ -95,10 +95,12 @@ as `not recorded` rather than inventing an identifier.
 
 ## `--format csv`
 
-CSV emits one row per finding. The `companions_redacted` and `remediation`
-columns contain deterministic JSON objects. `entropy` is a numeric
-bits-per-byte column; it is empty when the detection path did not measure
-entropy. Every textual cell is escaped with RFC 4180 quoting plus
+CSV emits one row per finding. The `companions_redacted`, `remediation`,
+`metadata`, and `additional_locations` columns contain deterministic JSON
+objects or arrays. Metadata keys are sorted before serialization, and duplicate
+locations retain their complete source, path, line, offset, commit, author, and
+date fields. `entropy` is a numeric bits-per-byte column; it is empty when the
+detection path did not measure entropy. Every textual cell is escaped with RFC 4180 quoting plus
 spreadsheet-formula neutralization. An unavailable confidence score remains an
 empty cell; remediation is still emitted so a CSV artifact never loses the
 canonical action guidance.

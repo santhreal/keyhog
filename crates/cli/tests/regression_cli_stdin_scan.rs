@@ -84,6 +84,33 @@ fn run_args(input: &[u8], args: &[&str]) -> (Option<i32>, String, String) {
     )
 }
 
+fn parse_csv_row(row: &str) -> Vec<String> {
+    let mut fields = Vec::new();
+    let mut field = String::new();
+    let mut quoted = false;
+    let mut chars = row.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if quoted {
+            match ch {
+                '"' if chars.peek() == Some(&'"') => {
+                    field.push('"');
+                    chars.next();
+                }
+                '"' => quoted = false,
+                _ => field.push(ch),
+            }
+        } else {
+            match ch {
+                '"' if field.is_empty() => quoted = true,
+                ',' => fields.push(std::mem::take(&mut field)),
+                _ => field.push(ch),
+            }
+        }
+    }
+    fields.push(field);
+    fields
+}
+
 /// Parse stdout as the top-level JSON findings array.
 fn json_findings(out: &str) -> Vec<serde_json::Value> {
     let v: serde_json::Value = serde_json::from_str(out).expect("stdin json stdout must parse");
@@ -199,7 +226,7 @@ fn stdin_sarif_two_secrets_produce_two_results_same_ruleid() {
 }
 
 /// CSV path carries the multi-line token's exact `line`/`offset` cells (columns
-/// 9 and 10 of the 15-field row): a token on line 3 at offset 43 must appear in
+/// 9 and 10 of the 20-field row): a token on line 3 at offset 43 must appear in
 /// the sole data row as `...,stdin,,3,43,...`.
 #[test]
 fn stdin_csv_multiline_row_has_line_3_offset_43_cells() {
@@ -212,14 +239,14 @@ fn stdin_csv_multiline_row_has_line_3_offset_43_cells() {
         .nth(1)
         .expect("csv must have one data row after the header");
     let expected_prefix = format!(
-        "{DETECTOR_ID},{DETECTOR_NAME},slack,critical,{REDACTED},{TOKEN_SHA256},stdin,,3,43,"
+        "{DETECTOR_ID},{DETECTOR_NAME},slack,critical,{REDACTED},{TOKEN_SHA256},{{}},stdin,,3,43,"
     );
     assert!(
         row.starts_with(&expected_prefix),
         "csv data row must encode line 3 / offset 43 for the piped token;\ngot:  {row}\nwant: {expected_prefix}"
     );
-    let field_count = row.matches(',').count() + 1;
-    assert_eq!(field_count, 15, "csv data row must have exactly 15 fields");
+    let field_count = parse_csv_row(row).len();
+    assert_eq!(field_count, 20, "csv data row must have exactly 20 fields");
 }
 
 // ---------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 //! Tabular CSV findings reporter.
 
+use std::collections::BTreeMap;
 use std::io::Write;
 
 use crate::VerifiedFinding;
@@ -16,7 +17,7 @@ impl<W: Write + Send> CsvReporter<W> {
     pub(crate) fn new(mut writer: W) -> Result<Self, ReportError> {
         writeln!(
             writer,
-            "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence,entropy,remediation"
+            "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence,entropy,remediation,metadata,additional_locations"
         )?;
         Ok(Self { writer })
     }
@@ -70,7 +71,15 @@ impl<W: Write + Send> Reporter for CsvReporter<W> {
         if let Some(entropy) = finding.entropy {
             write!(w, "{entropy}")?;
         }
-        write!(w, ",{}", escape_csv(&super::remediation_json(finding)?))?;
+        let metadata = metadata_json(finding)?;
+        let additional_locations = serde_json::to_string(&finding.additional_locations)?;
+        write!(
+            w,
+            ",{},{}",
+            escape_csv(&super::remediation_json(finding)?),
+            escape_csv(&metadata),
+        )?;
+        write!(w, ",{}", escape_csv(&additional_locations))?;
         writeln!(w)?;
         Ok(())
     }
@@ -81,3 +90,15 @@ impl<W: Write + Send> Reporter for CsvReporter<W> {
 }
 
 impl_writer_backed!(CsvReporter);
+
+/// Serialize detector/provider metadata in key order so repeated scans produce
+/// byte-identical CSV even when the source map was populated in a different
+/// insertion order.
+fn metadata_json(finding: &VerifiedFinding) -> Result<String, ReportError> {
+    let metadata: BTreeMap<&str, &str> = finding
+        .metadata
+        .iter()
+        .map(|(key, value)| (key.as_str(), value.as_str()))
+        .collect();
+    Ok(serde_json::to_string(&metadata)?)
+}

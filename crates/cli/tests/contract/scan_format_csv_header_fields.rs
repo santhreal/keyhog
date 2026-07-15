@@ -37,6 +37,7 @@ fn scan_format_csv_header_fields() {
         "severity",
         "credential_redacted",
         "credential_hash",
+        "companions_redacted",
         "source",
         "file_path",
         "line",
@@ -46,6 +47,10 @@ fn scan_format_csv_header_fields() {
         "date",
         "verification",
         "confidence",
+        "entropy",
+        "remediation",
+        "metadata",
+        "additional_locations",
     ];
 
     for field in &expected_fields {
@@ -58,7 +63,7 @@ fn scan_format_csv_header_fields() {
     // Verify field order by checking the exact header line
     assert_eq!(
         header.trim(),
-        "detector_id,detector_name,service,severity,credential_redacted,credential_hash,source,file_path,line,offset,commit,author,date,verification,confidence",
+        "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence,entropy,remediation,metadata,additional_locations",
         "csv header must be exactly the documented field list in order"
     );
 }

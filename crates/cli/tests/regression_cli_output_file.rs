@@ -326,11 +326,11 @@ fn short_o_flag_equivalent_to_long_output() {
 // Other formats round-trip to the file with their exact structure
 // ---------------------------------------------------------------------------
 
-/// CSV `--output`: the file's first line is the exact 15-field header and there
+/// CSV `--output`: the file's first line is the exact 20-field header and there
 /// is exactly one data row whose first cell is the detector id.
 #[test]
 fn csv_output_file_header_and_single_row() {
-    const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,source,file_path,line,offset,commit,author,date,verification,confidence";
+    const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence,entropy,remediation,metadata,additional_locations";
     let (_dir, target) = leak_fixture();
     let out_dir = TempDir::new().expect("out tempdir");
     let out_file = out_dir.path().join("report.csv");

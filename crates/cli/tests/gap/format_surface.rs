@@ -68,6 +68,33 @@ fn scan_with_format(content: &str, fmt: &str) -> (String, String, Option<i32>) {
     )
 }
 
+fn parse_csv_row(row: &str) -> Vec<String> {
+    let mut fields = Vec::new();
+    let mut field = String::new();
+    let mut quoted = false;
+    let mut chars = row.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if quoted {
+            match ch {
+                '"' if chars.peek() == Some(&'"') => {
+                    field.push('"');
+                    chars.next();
+                }
+                '"' => quoted = false,
+                _ => field.push(ch),
+            }
+        } else {
+            match ch {
+                '"' if field.is_empty() => quoted = true,
+                ',' => fields.push(std::mem::take(&mut field)),
+                _ => field.push(ch),
+            }
+        }
+    }
+    fields.push(field);
+    fields
+}
+
 /// Same as `scan_with_format` but writes to `--output <file>` and returns
 /// the file's bytes alongside the exit code. The reporting code in
 /// `reporting.rs` atomic-writes the report to a NamedTempFile then renames,
@@ -582,8 +609,8 @@ fn sarif_rules_carry_code_scanning_severity_props() {
 // ---------------------------------------------------------------------------
 
 /// The CSV header is written in `CsvReporter::new()` unconditionally, so
-/// it appears even on an EMPTY corpus. Assert the exact 15-column header.
-const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,source,file_path,line,offset,commit,author,date,verification,confidence";
+/// it appears even on an EMPTY corpus. Assert the exact 20-column header.
+const CSV_HEADER: &str = "detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence,entropy,remediation,metadata,additional_locations";
 
 #[test]
 fn csv_empty_corpus_is_header_only() {
@@ -602,9 +629,8 @@ fn csv_empty_corpus_is_header_only() {
 }
 
 /// Non-empty corpus -> header + >=1 data row. Each data row has exactly
-/// 15 logical fields (matching the header column count). We count rows
-/// rather than naive comma-splitting because redacted/path fields are
-/// RFC-4180 safe (no embedded commas for an AKIA detection).
+/// 20 logical fields (matching the header column count), parsed as RFC-4180
+/// because JSON remediation cells contain commas.
 #[test]
 fn csv_planted_finding_has_header_plus_data_rows() {
     let (stdout, stderr, code) = scan_with_format(AWS_KEY_FIXTURE, "csv");
@@ -619,15 +645,14 @@ fn csv_planted_finding_has_header_plus_data_rows() {
         "CSV must have header + >=1 data row; got {lines:?}"
     );
     assert_eq!(lines[0], CSV_HEADER, "first CSV line must be the header");
-    // The AKIA detection has no comma/quote/newline in any field, so the
-    // header's 15 columns map to exactly 15 comma-separated fields per row.
+    // Parse the JSON-bearing row instead of counting commas inside cells.
     let header_cols = CSV_HEADER.split(',').count();
-    assert_eq!(header_cols, 15, "CSV header must declare 15 columns");
+    assert_eq!(header_cols, 20, "CSV header must declare 20 columns");
     for row in &lines[1..] {
         assert_eq!(
-            row.split(',').count(),
-            15,
-            "CSV data row must have 15 columns matching the header; row={row:?}"
+            parse_csv_row(row).len(),
+            20,
+            "CSV data row must have 20 columns matching the header; row={row:?}"
         );
     }
 }
@@ -642,18 +667,19 @@ fn csv_data_row_carries_aws_detector_and_redacted_credential() {
         .iter()
         .skip(1)
         .find(|r| {
-            let cols: Vec<&str> = r.split(',').collect();
-            matches!(cols.first().copied(), Some("aws-access-key"))
+            let cols = parse_csv_row(r);
+            cols.first()
+                .is_some_and(|column| column == "aws-access-key")
         })
         .expect("a CSV data row for the AWS detection");
-    let cols: Vec<&str> = row.split(',').collect();
+    let cols = parse_csv_row(row);
     assert_eq!(
         cols[4], "AK...YA",
         "credential_redacted column must be the redacted key; row={row:?}"
     );
-    // verification column (index 13) must be the unverified discriminant.
+    // verification column (index 14) must be the unverified discriminant.
     assert_eq!(
-        cols[13], "skipped",
+        cols[14], "skipped",
         "verification column must be `skipped` without --verify; row={row:?}"
     );
     // Full plaintext must never appear.
@@ -1104,10 +1130,11 @@ fn json_and_jsonl_agree_on_finding_count() {
 fn sarif_result_count_matches_json_finding_count() {
     let (json_out, _e1, _c1) = scan_with_format(AWS_KEY_FIXTURE, "json-envelope");
     let (sarif_out, _e2, _c2) = scan_with_format(AWS_KEY_FIXTURE, "sarif");
-    let json_count = serde_json::from_str::<serde_json::Value>(json_out.trim())
-        .expect("json-envelope")
+    let json_value =
+        serde_json::from_str::<serde_json::Value>(json_out.trim()).expect("json-envelope");
+    let json_count = json_value["findings"]
         .as_array()
-        .expect("array")
+        .expect("findings array")
         .len();
     let sarif_v: serde_json::Value = serde_json::from_str(sarif_out.trim()).expect("sarif");
     let sarif_count = sarif_v["runs"][0]["results"]
@@ -1120,16 +1147,17 @@ fn sarif_result_count_matches_json_finding_count() {
     );
 }
 
-/// CSV data-row count equals the JSON array length for the same corpus
+/// CSV data-row count equals the JSON envelope finding count for the same corpus
 /// (one CSV row per finding, minus the header line).
 #[test]
 fn csv_row_count_matches_json_finding_count() {
     let (json_out, _e1, _c1) = scan_with_format(AWS_KEY_FIXTURE, "json-envelope");
     let (csv_out, _e2, _c2) = scan_with_format(AWS_KEY_FIXTURE, "csv");
-    let json_count = serde_json::from_str::<serde_json::Value>(json_out.trim())
-        .expect("json-envelope")
+    let json_value = serde_json::from_str::<serde_json::Value>(json_out.trim())
+        .expect("json-envelope");
+    let json_count = json_value["findings"]
         .as_array()
-        .expect("array")
+        .expect("findings array")
         .len();
     let csv_rows = csv_out
         .lines()

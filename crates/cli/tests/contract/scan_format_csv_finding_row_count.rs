@@ -3,6 +3,33 @@
 use crate::e2e::support::{binary, write_temp_file};
 use std::process::Command;
 
+fn parse_csv_row(row: &str) -> Vec<String> {
+    let mut fields = Vec::new();
+    let mut field = String::new();
+    let mut quoted = false;
+    let mut chars = row.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if quoted {
+            match ch {
+                '"' if chars.peek() == Some(&'"') => {
+                    field.push('"');
+                    chars.next();
+                }
+                '"' => quoted = false,
+                _ => field.push(ch),
+            }
+        } else {
+            match ch {
+                '"' if field.is_empty() => quoted = true,
+                ',' => fields.push(std::mem::take(&mut field)),
+                _ => field.push(ch),
+            }
+        }
+    }
+    fields.push(field);
+    fields
+}
+
 #[test]
 fn scan_format_csv_finding_row_count() {
     // Plant exactly one AWS key to guarantee one finding
@@ -34,7 +61,7 @@ fn scan_format_csv_finding_row_count() {
     );
 
     // Line 0 is the header; line 1+ are findings. Verify there is exactly one data row.
-    // (A well-formed finding will have 15 comma-separated fields per the CSV header.)
+    // Parse the RFC-4180 row rather than counting commas inside JSON columns.
     let data_lines: Vec<&str> = lines
         .iter()
         .skip(1)
@@ -48,10 +75,15 @@ fn scan_format_csv_finding_row_count() {
         data_lines.len()
     );
 
-    // Verify the data row has the expected field count (15 fields means 14 commas)
-    let field_count = data_lines[0].matches(',').count() + 1;
+    // Verify the data row has the expected field count.
+    let fields = parse_csv_row(data_lines[0]);
+    let field_count = fields.len();
     assert_eq!(
-        field_count, 15,
-        "csv data row must have exactly 15 fields, got {field_count}"
+        field_count, 20,
+        "csv data row must have exactly 20 fields, got {field_count}"
     );
+    let metadata: serde_json::Value =
+        serde_json::from_str(&fields[18]).expect("metadata JSON must parse");
+    assert!(metadata["account_id"].is_string());
+    assert_eq!(fields[19], "[]");
 }
