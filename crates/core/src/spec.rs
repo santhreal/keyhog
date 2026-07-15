@@ -144,6 +144,12 @@ pub struct DetectorSpec {
     /// `None` → the single-owner default `VERY_HIGH_ENTROPY_THRESHOLD`.
     #[serde(default)]
     pub entropy_very_high: Option<f64>,
+    /// Per-detector keyword-free entropy threshold used for clearly sensitive
+    /// paths. `None` inherits `entropy_very_high` for that detector; setting it
+    /// lower is an explicit recall policy for files such as `.env` and secrets
+    /// manifests, not a scanner-wide hidden discount.
+    #[serde(default)]
+    pub sensitive_path_entropy_very_high: Option<f64>,
     /// Per-detector mixed-alnum token entropy floor (bits/byte).
     /// `None` → the single-owner default `MIXED_ALNUM_TOKEN_THRESHOLD`.
     #[serde(default)]

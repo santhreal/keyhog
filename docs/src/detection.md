@@ -102,6 +102,7 @@ model's fixed vocabulary, remain global.
 | `entropy_low` | Requires more Shannon entropy for keyword-anchored generic values; fewer low-randomness passwords/tokens survive | Admits more values when the assignment key supplies evidence; shape, BPE, context, and confidence gates still apply |
 | `entropy_high` | Tightens keyword-independent generic admission | Admits more opaque candidates without strong assignment context |
 | `entropy_very_high` | Tightens isolated, anchor-free token admission | Expands the no-keyword search and therefore its false-positive surface |
+| `sensitive_path_entropy_very_high` | Raises the keyword-free bar even in sensitive files | Lowers the explicit sensitive-path bar for that detector, improving recall in `.env`/secret manifests |
 | `entropy_floor` | A higher applicable length-bucket floor suppresses more low-entropy candidates for that detector | A lower floor preserves more human-chosen or structured credentials |
 | `mixed_alnum_floor` | Rejects more identifier-like alphanumeric runs | Preserves more low-randomness mixed-alphanumeric values |
 | `entropy_policy_priority` | Wins more overlapping generic keyword-policy claims | Yields shared keywords to a more specific detector; unique keywords are unchanged |
@@ -152,6 +153,10 @@ These settings do not all use one generic “last value wins” rule:
   exceeds the high band. These rules preserve the different evidence carried
   by an assignment key, an isolated opaque token, and an unanchored generic
   value.
+- **Sensitive paths:** `sensitive_path_entropy_very_high` is an optional
+  detector-local threshold for keyword-free candidates in paths classified as
+  sensitive. When omitted, that detector's `entropy_very_high` applies; there
+  is no hidden scanner-wide discount.
 
 Token efficiency can carry more of the precision burden for a detector whose
 assignment key or regex already creates the candidate. That is the practical

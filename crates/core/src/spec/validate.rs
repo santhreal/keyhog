@@ -280,6 +280,10 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
         ("entropy_high", spec.entropy_high),
         ("entropy_low", spec.entropy_low),
         ("entropy_very_high", spec.entropy_very_high),
+        (
+            "sensitive_path_entropy_very_high",
+            spec.sensitive_path_entropy_very_high,
+        ),
         ("mixed_alnum_floor", spec.mixed_alnum_floor),
     ] {
         let Some(score) = value else {
@@ -288,6 +292,16 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
         if !score.is_finite() || !(0.0..=8.0).contains(&score) {
             issues.push(QualityIssue::Error(format!(
                 "{name} must be a finite Shannon entropy score in [0.0, 8.0], found {score}"
+            )));
+        }
+    }
+    if let (Some(very_high), Some(sensitive)) = (
+        spec.entropy_very_high,
+        spec.sensitive_path_entropy_very_high,
+    ) {
+        if sensitive > very_high {
+            issues.push(QualityIssue::Error(format!(
+                "sensitive_path_entropy_very_high {sensitive} must not exceed entropy_very_high {very_high}; sensitive paths may lower the keyword-free bar, never raise it"
             )));
         }
     }

@@ -47,6 +47,20 @@ fn entropy_policy_priority_is_restricted_to_generic_detectors() {
 }
 
 #[test]
+fn sensitive_path_entropy_threshold_cannot_exceed_detector_threshold() {
+    let mut detector = detector_with_pattern("token=([A-Za-z0-9]+)");
+    detector.entropy_very_high = Some(5.0);
+    detector.sensitive_path_entropy_very_high = Some(5.1);
+    let issues = validate_detector(&detector);
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message)
+            if message.contains("sensitive_path_entropy_very_high")
+                && message.contains("must not exceed entropy_very_high")
+    )));
+}
+
+#[test]
 fn phase2_generic_max_len_must_be_positive_and_not_below_min_len() {
     let mut detector = detector_with_pattern("token=([A-Za-z0-9]+)");
     detector.kind = keyhog_core::DetectorKind::Phase2Generic;

@@ -21,7 +21,7 @@
 
 use keyhog_scanner::entropy::{
     normalized_entropy, shannon_entropy, HIGH_ENTROPY_THRESHOLD, LOW_ENTROPY_THRESHOLD,
-    SENSITIVE_FILE_VERY_HIGH_ENTROPY_THRESHOLD, VERY_HIGH_ENTROPY_THRESHOLD,
+    VERY_HIGH_ENTROPY_THRESHOLD,
 };
 use keyhog_scanner::testing::confidence::{
     compute_confidence, unique_byte_count, ConfidenceSignals,
@@ -436,8 +436,12 @@ fn confidence_moderate_entropy_between_penalty_and_tier() {
 fn entropy_thresholds_keep_their_tuned_values() {
     assert_eq!(LOW_ENTROPY_THRESHOLD, 3.0);
     assert_eq!(HIGH_ENTROPY_THRESHOLD, 4.5);
-    assert_eq!(SENSITIVE_FILE_VERY_HIGH_ENTROPY_THRESHOLD, 5.5);
     assert_eq!(VERY_HIGH_ENTROPY_THRESHOLD, 5.8);
+    assert_eq!(
+        keyhog_core::detector_spec_by_id("generic-secret")
+            .and_then(|spec| spec.sensitive_path_entropy_very_high),
+        Some(5.5)
+    );
 }
 
 #[test]
@@ -445,8 +449,11 @@ fn entropy_thresholds_are_strictly_ordered() {
     // The detection ladder must climb: low keyword floor < high floor <
     // sensitive-file very-high < keyword-independent very-high.
     assert!(LOW_ENTROPY_THRESHOLD < HIGH_ENTROPY_THRESHOLD);
-    assert!(HIGH_ENTROPY_THRESHOLD < SENSITIVE_FILE_VERY_HIGH_ENTROPY_THRESHOLD);
-    assert!(SENSITIVE_FILE_VERY_HIGH_ENTROPY_THRESHOLD < VERY_HIGH_ENTROPY_THRESHOLD);
+    let sensitive = keyhog_core::detector_spec_by_id("generic-secret")
+        .and_then(|spec| spec.sensitive_path_entropy_very_high)
+        .expect("generic-secret sensitive path threshold must be declared");
+    assert!(HIGH_ENTROPY_THRESHOLD < sensitive);
+    assert!(sensitive < VERY_HIGH_ENTROPY_THRESHOLD);
     // The very-high margin the confidence scorer derives (5.8 - 4.5 = 1.3) is
     // positive, so the very-high confidence tier always sits above the high tier.
     assert!((VERY_HIGH_ENTROPY_THRESHOLD - HIGH_ENTROPY_THRESHOLD - 1.3).abs() < EPS);

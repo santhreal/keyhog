@@ -122,6 +122,15 @@ fn full_scan_keyword_free_values(
 ) -> Vec<String> {
     let mut generic_secret = detector("generic-secret", &["secret"], 8);
     generic_secret.entropy_very_high = Some(entropy_very_high);
+    let embedded_policy = keyhog_core::detector_spec_by_id("generic-secret")
+        .expect("embedded generic-secret policy must load");
+    let embedded_discount = embedded_policy
+        .entropy_very_high
+        .expect("generic-secret must declare entropy_very_high")
+        - embedded_policy
+            .sensitive_path_entropy_very_high
+            .expect("generic-secret must declare sensitive path entropy policy");
+    generic_secret.sensitive_path_entropy_very_high = Some(entropy_very_high - embedded_discount);
     generic_secret.keyword_free_min_len = Some(20);
     generic_secret.bpe_enabled = Some(false);
     let mut config = ScannerConfig::default();
@@ -177,8 +186,14 @@ fn keyword_free_full_scan_uses_detector_owned_very_high_boundary() {
 #[test]
 fn sensitive_path_discount_is_relative_to_detector_owned_threshold() {
     let entropy = keyhog_scanner::entropy::shannon_entropy(KEYWORD_FREE_VALUE.as_bytes());
-    let sensitive_discount = keyhog_scanner::entropy::VERY_HIGH_ENTROPY_THRESHOLD
-        - keyhog_scanner::entropy::SENSITIVE_FILE_VERY_HIGH_ENTROPY_THRESHOLD;
+    let generic_secret = keyhog_core::detector_spec_by_id("generic-secret")
+        .expect("embedded generic-secret policy must load");
+    let sensitive_discount = generic_secret
+        .entropy_very_high
+        .expect("generic-secret must declare entropy_very_high")
+        - generic_secret
+            .sensitive_path_entropy_very_high
+            .expect("generic-secret must declare sensitive path entropy policy");
     assert!(
         full_scan_keyword_free_values(
             entropy + sensitive_discount,
@@ -205,8 +220,14 @@ fn sensitive_path_discount_is_relative_to_detector_owned_threshold() {
 #[test]
 fn detector_owned_very_high_boundary_is_exact_on_every_accelerated_backend() {
     let entropy = keyhog_scanner::entropy::shannon_entropy(KEYWORD_FREE_VALUE.as_bytes());
-    let sensitive_discount = keyhog_scanner::entropy::VERY_HIGH_ENTROPY_THRESHOLD
-        - keyhog_scanner::entropy::SENSITIVE_FILE_VERY_HIGH_ENTROPY_THRESHOLD;
+    let generic_secret = keyhog_core::detector_spec_by_id("generic-secret")
+        .expect("embedded generic-secret policy must load");
+    let sensitive_discount = generic_secret
+        .entropy_very_high
+        .expect("generic-secret must declare entropy_very_high")
+        - generic_secret
+            .sensitive_path_entropy_very_high
+            .expect("generic-secret must declare sensitive path entropy policy");
     for backend in [
         ScanBackend::SimdCpu,
         ScanBackend::GpuCuda,

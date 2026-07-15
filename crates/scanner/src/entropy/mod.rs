@@ -64,8 +64,6 @@ pub(crate) const KEYWORD_FREE_MIN_LEN: usize = 20;
 /// This is the single-owner default for the per-detector `DetectorSpec::entropy_very_high` field,
 /// applied only when a detector leaves that field unset (not a global gate applied uniformly).
 pub const VERY_HIGH_ENTROPY_THRESHOLD: f64 = 5.8;
-/// Threshold for keyword-independent detection in clearly sensitive files.
-pub const SENSITIVE_FILE_VERY_HIGH_ENTROPY_THRESHOLD: f64 = 5.5;
 
 /// One-based offset added to a zero-based `text.lines()` index to produce the
 /// [`EntropyMatch::line`] source line number. Single canonical owner for the
@@ -492,7 +490,6 @@ pub(crate) fn is_entropy_appropriate_inner(
     // in `Cargo.toml` cannot re-enable scanning here.
     has_secret_keyword_line
 }
-
 
 #[cfg(test)]
 #[path = "../../tests/unit/entropy_inline.rs"]

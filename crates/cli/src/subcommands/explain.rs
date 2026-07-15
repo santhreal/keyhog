@@ -247,6 +247,11 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
     optional_policy!("entropy_high", d.entropy_high, " bits/byte");
     optional_policy!("entropy_low", d.entropy_low, " bits/byte");
     optional_policy!("entropy_very_high", d.entropy_very_high, " bits/byte");
+    optional_policy!(
+        "sensitive_path_entropy_very_high",
+        d.sensitive_path_entropy_very_high,
+        " bits/byte"
+    );
     optional_policy!("mixed_alnum_floor", d.mixed_alnum_floor, " bits/byte");
     optional_policy!("entropy_policy_priority", d.entropy_policy_priority, "");
     optional_policy!(

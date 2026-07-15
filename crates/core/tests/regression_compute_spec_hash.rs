@@ -67,9 +67,9 @@ fn companion(name: &str, regex: &str, within_lines: usize, required: bool) -> Co
 #[test]
 fn spec_hash_of_bare_detector_matches_hand_fed_blake3() {
     // A detector with NO patterns, keywords, or companions contributes exactly
-    // two keys: `id:x` and `sev:x:High` (the severity key is bound to the
-    // detector id so a severity swap between detectors is not a hash collision).
-    // They are sorted ('i' 0x69 < 's' 0x73) and each is terminated with a
+    // three keys: `id:x`, `service:x:x`, and `sev:x:High` (the severity and
+    // service keys are bound to the detector id so swaps between detectors are
+    // not hash collisions). They are sorted and each is terminated with a
     // newline. Reconstruct the exact pre-image so an accidental salt byte,
     // separator change, or reordering is caught.
     let bare = DetectorSpec {
@@ -88,10 +88,10 @@ fn spec_hash_of_bare_detector_matches_hand_fed_blake3() {
         ..Default::default()
     };
     let got = compute_spec_hash(std::slice::from_ref(&bare));
-    let expect = *blake3::hash(b"id:x\nsev:x:High\n").as_bytes();
+    let expect = *blake3::hash(b"id:x\nservice:x:x\nsev:x:High\n").as_bytes();
     assert_eq!(
         got, expect,
-        "bare detector must hash BLAKE3(\"id:x\\nsev:x:High\\n\") exactly"
+        "bare detector must hash BLAKE3(\"id:x\\nservice:x:x\\nsev:x:High\\n\") exactly"
     );
 }
 
@@ -467,6 +467,9 @@ knob_changes_digest!(spec_hash_binds_entropy_high, |d| d.entropy_high = Some(4.5
 knob_changes_digest!(spec_hash_binds_entropy_low, |d| d.entropy_low = Some(3.1));
 knob_changes_digest!(spec_hash_binds_entropy_very_high, |d| d.entropy_very_high =
     Some(5.2));
+knob_changes_digest!(spec_hash_binds_sensitive_path_entropy_very_high, |d| d
+    .sensitive_path_entropy_very_high =
+    Some(5.2));
 knob_changes_digest!(spec_hash_binds_mixed_alnum_floor, |d| d.mixed_alnum_floor =
     Some(3.7));
 knob_changes_digest!(spec_hash_binds_entropy_policy_priority, |d| d
@@ -608,6 +611,18 @@ fn spec_hash_binds_each_knob_to_its_detector_id() {
 }
 
 #[test]
+fn spec_hash_binds_service_to_its_detector_id() {
+    let base = knob_base();
+    let mut changed = base.clone();
+    changed.service = "generic".into();
+    assert_ne!(
+        compute_spec_hash(std::slice::from_ref(&base)),
+        compute_spec_hash(std::slice::from_ref(&changed)),
+        "service changes generic keyword ownership and must invalidate the digest"
+    );
+}
+
+#[test]
 fn spec_hash_ignores_live_verify_and_cosmetic_description() {
     // `verify` (live-verification config) changes a finding's post-scan verdict,
     // not the scanned finding SET the merkle cache reuses; a pattern's
@@ -634,10 +649,9 @@ fn spec_hash_ignores_live_verify_and_cosmetic_description() {
 
 #[test]
 fn spec_hash_bare_detector_preimage_survives_knob_migration() {
-    // The all-default detector must STILL hash the exact two-key pre-image: the
-    // migration knobs are emitted only when non-default, so a corpus that sets
-    // none of them is byte-for-byte unchanged (no spurious full re-scan on
-    // upgrade). This is the gating invariant the whole design rests on.
+    // The all-default detector still emits no optional migration knobs. Its
+    // non-empty service is material and therefore appears in the pre-image;
+    // an empty service remains the compatibility case with no service key.
     let bare = DetectorSpec {
         id: "x".to_string(),
         name: "x".to_string(),
@@ -647,7 +661,7 @@ fn spec_hash_bare_detector_preimage_survives_knob_migration() {
     };
     assert_eq!(
         compute_spec_hash(std::slice::from_ref(&bare)),
-        *blake3::hash(b"id:x\nsev:x:High\n").as_bytes(),
-        "an all-default detector must still hash BLAKE3(\"id:x\\nsev:x:High\\n\") after the knob migration"
+        *blake3::hash(b"id:x\nservice:x:x\nsev:x:High\n").as_bytes(),
+        "a detector with service x must hash BLAKE3(\"id:x\\nservice:x:x\\nsev:x:High\\n\")"
     );
 }

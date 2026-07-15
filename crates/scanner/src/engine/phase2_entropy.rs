@@ -14,22 +14,20 @@ use line_context::entropy_value_line;
 use std::sync::Arc;
 
 #[cfg(feature = "entropy")]
-const SENSITIVE_FILE_KEYWORD_FREE_ENTROPY_DISCOUNT: f64 =
-    crate::entropy::VERY_HIGH_ENTROPY_THRESHOLD
-        - crate::entropy::SENSITIVE_FILE_VERY_HIGH_ENTROPY_THRESHOLD;
-
 #[cfg(feature = "entropy")]
 impl CompiledScanner {
     fn keyword_free_entropy_threshold(&self, sensitive_path: bool) -> f64 {
-        let detector_threshold = self
+        let detector = self
             .generic_owning_detector
             .generic_secret_index()
-            .and_then(|index| self.detectors.get(index))
+            .and_then(|index| self.detectors.get(index));
+        let detector_threshold = detector
             .and_then(|spec| spec.entropy_very_high)
-            .unwrap_or(crate::entropy::VERY_HIGH_ENTROPY_THRESHOLD); // LAW10: omitted field uses documented numeric default; findings are unchanged
+            .unwrap_or(crate::entropy::VERY_HIGH_ENTROPY_THRESHOLD);
         if sensitive_path {
-            // Preserve the historical recall discount relative to detector policy.
-            (detector_threshold - SENSITIVE_FILE_KEYWORD_FREE_ENTROPY_DISCOUNT).max(0.0)
+            detector
+                .and_then(|spec| spec.sensitive_path_entropy_very_high)
+                .unwrap_or(detector_threshold)
         } else {
             detector_threshold
         }

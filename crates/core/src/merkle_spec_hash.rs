@@ -57,7 +57,14 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
             // `{:016x}`), never a lossy decimal render, so two distinct floors
             // never collide and `-0.0`/`0.0` stay distinguishable.
             //
-            // DELIBERATELY EXCLUDED (like the cosmetic `name`/`service` and
+            // `service` participates in generic-keyword ownership and therefore
+            // changes which detector claims a candidate. Bind it to the id so a
+            // service swap cannot leave a stale merkle skip. Keep the empty
+            // default omitted to preserve the historical all-default pre-image.
+            if !d.service.is_empty() {
+                entries.push(format!("service:{}:{}", d.id, d.service));
+            }
+            // DELIBERATELY EXCLUDED (like the cosmetic `name` and
             // `PatternSpec.description`, whose exclusion `spec_hash_ignores_
             // cosmetic_name_field` pins): `verify` (live-verification config
             // changing it alters a finding's post-scan verdict, not the scanned
@@ -91,6 +98,9 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
             }
             if let Some(v) = d.entropy_very_high {
                 entries.push(format!("evh:{}:{:016x}", d.id, v.to_bits()));
+            }
+            if let Some(v) = d.sensitive_path_entropy_very_high {
+                entries.push(format!("spevh:{}:{:016x}", d.id, v.to_bits()));
             }
             if let Some(v) = d.mixed_alnum_floor {
                 entries.push(format!("maf:{}:{:016x}", d.id, v.to_bits()));
