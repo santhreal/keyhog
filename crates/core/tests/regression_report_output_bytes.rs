@@ -313,6 +313,24 @@ fn json_array_field_names_and_values() {
     assert_eq!(obj["confidence"].as_f64(), Some(0.9));
 }
 
+#[test]
+fn json_array_omits_unmeasured_optional_scores() {
+    let mut finding = aws_high();
+    finding.entropy = None;
+    finding.confidence = None;
+    let buf = render(ReportFormat::Json, &[finding]);
+    let json: serde_json::Value = serde_json::from_slice(&buf).expect("JSON array parses");
+    let object = json[0].as_object().expect("finding is a JSON object");
+    assert!(
+        !object.contains_key("entropy"),
+        "unmeasured entropy must be omitted, not fabricated"
+    );
+    assert!(
+        !object.contains_key("confidence"),
+        "unavailable confidence must be omitted as documented"
+    );
+}
+
 /// Boundary: ClientSafe severity serializes as the hyphenated "client-safe"
 /// token (the ClientSafe/clientsafe drift trap).
 #[test]
