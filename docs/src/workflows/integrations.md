@@ -321,6 +321,12 @@ keyhog scan . --create-baseline .keyhog-baseline.json
 keyhog scan . --baseline .keyhog-baseline.json
 ```
 
+Baseline JSON is strict: unknown root or entry fields fail closed instead of
+silently changing suppression policy. The legacy v1 entry `status` field is
+accepted only for compatibility and is never serialized or used as a policy
+decision. Review baseline edits like code and regenerate them with
+`--create-baseline` when the identity set is intentionally changed.
+
 For per-file/per-line allowlists, the moving parts live in two separate files.
 Scan execution policy has one canonical `[scan]` owner; unknown tables and
 retired flat spellings fail closed:

@@ -31,6 +31,7 @@ fn baseline_hash_key(hash: &keyhog_core::CredentialHash) -> String {
 /// calls so we don't re-hash every entry on every call. Constructors that
 /// know the entry list will not change can call `build_index()` to amortize.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Baseline {
     pub version: u32,
     #[serde(default = "default_created")]
@@ -42,6 +43,7 @@ pub(crate) struct Baseline {
 
 /// A single entry in a baseline file.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct BaselineEntry {
     pub detector_id: String,
     pub credential_hash: String,
@@ -49,6 +51,9 @@ pub(crate) struct BaselineEntry {
     pub file_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub line: Option<usize>,
+    /// Legacy v1 input accepted for compatibility; never an active policy.
+    #[serde(rename = "status", default, skip_serializing)]
+    pub(crate) legacy_status: Option<String>,
 }
 
 fn default_created() -> String {
@@ -141,6 +146,7 @@ impl Baseline {
                 credential_hash: baseline_hash_key(&f.credential_hash),
                 file_path: f.location.file_path.as_ref().map(|p| p.to_string()),
                 line: f.location.line,
+                legacy_status: None,
             })
             .collect();
 
@@ -181,6 +187,7 @@ impl Baseline {
                     credential_hash: key.1,
                     file_path: finding.location.file_path.as_ref().map(|p| p.to_string()),
                     line: finding.location.line,
+                    legacy_status: None,
                 });
             }
         }

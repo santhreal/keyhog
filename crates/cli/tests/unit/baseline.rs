@@ -234,3 +234,43 @@ fn load_of_valid_baseline_roundtrips() {
     let loaded = API.baseline_load(tmp.path()).expect("valid baseline loads");
     assert_eq!(loaded.version, API.baseline_version());
 }
+
+#[test]
+fn unknown_baseline_fields_fail_closed_but_legacy_status_is_explicit() {
+    let mut root = tempfile::NamedTempFile::new().unwrap();
+    write!(
+        root,
+        r#"{{"version":1,"created":"now","entries":[],"reviewd":true}}"#
+    )
+    .unwrap();
+    let root_error = API
+        .baseline_load(root.path())
+        .expect_err("unknown root fields must not silently change baseline policy");
+    assert!(
+        format!("{root_error:#}").contains("reviewd"),
+        "root typo should be named in the parse error: {root_error:#}"
+    );
+
+    let mut entry = tempfile::NamedTempFile::new().unwrap();
+    write!(
+        entry,
+        r#"{{"version":1,"created":"now","entries":[{{"detector_id":"aws-key","credential_hash":"sha256:0000000000000000000000000000000000000000000000000000000000000000","file_path":"x","line":1,"reviewd":true}}]}}"#
+    )
+    .unwrap();
+    let entry_error = API
+        .baseline_load(entry.path())
+        .expect_err("unknown entry fields must not silently change suppression policy");
+    assert!(
+        format!("{entry_error:#}").contains("reviewd"),
+        "entry typo should be named in the parse error: {entry_error:#}"
+    );
+
+    let mut legacy = tempfile::NamedTempFile::new().unwrap();
+    write!(
+        legacy,
+        r#"{{"version":1,"created":"legacy","entries":[{{"detector_id":"aws-key","credential_hash":"sha256:0000000000000000000000000000000000000000000000000000000000000000","file_path":"x","line":1,"status":"rejected"}}]}}"#
+    )
+    .unwrap();
+    API.baseline_load(legacy.path())
+        .expect("the documented legacy status alias remains readable");
+}

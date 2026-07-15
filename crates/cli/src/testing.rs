@@ -1444,6 +1444,7 @@ impl Baseline {
                 credential_hash: entry.credential_hash.clone(),
                 file_path: entry.file_path.clone(),
                 line: entry.line,
+                legacy_status: None,
             })
             .collect();
         baseline
