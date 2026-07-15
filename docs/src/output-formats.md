@@ -15,7 +15,13 @@ owned by the core `ScanReport` model, so an output format cannot accidentally
 invent a second scan clock or target list. Formats keep their established
 schemas: HTML displays the full metadata panel, GitLab SAST projects the scan
 times required by its schema, and finding-only formats preserve their stable
-finding shape.
+finding shape. Metadata-bearing JSON, JSONL, and HTML artifacts also include
+`resolved_scan`: a versioned object with the selected `preset`, sorted
+`effective` detection values, and an `overrides` list. This is the authoritative
+machine-diffable record of what `default`, `fast`, `deep`, or `precision` meant
+for that run; it includes compatible refinements such as
+`--deep --decode-depth 3`, rather than requiring consumers to infer behavior
+from CLI text or stderr.
 
 Every finding also carries `companions_redacted`, a sorted JSON object of
 nearby credential or context values captured by the detector. Companion values
@@ -91,7 +97,8 @@ terminal state in detached artifacts. The `scan_id` lets
 independently stored metadata-bearing JSON, JSONL, and HTML projections be
 joined without exposing secrets. Reports
 from older KeyHog versions may omit it; the HTML projection displays that state
-as `not recorded` rather than inventing an identifier.
+as `not recorded` rather than inventing an identifier. `resolved_scan` is
+omitted only for library-created reports that have no resolved CLI scan policy.
 
 ## `--format csv`
 

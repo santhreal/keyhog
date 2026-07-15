@@ -5,8 +5,10 @@ use crate::stable_hash::StableHasher;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use keyhog_core::{
-    ReportFormat, ScanCompletionStatus, ScanReport, ScanReportMetadata, VerifiedFinding,
+    ReportFormat, ResolvedScanManifest, ScanCompletionStatus, ScanReport, ScanReportMetadata,
+    VerifiedFinding,
 };
+use std::collections::BTreeMap;
 use std::io::{self, IsTerminal};
 
 pub(crate) fn report_findings(findings: &[VerifiedFinding], args: &ScanArgs) -> Result<()> {
@@ -120,6 +122,8 @@ pub(crate) fn report_metadata_from_scan_run(
     metadata.source_chunks_scanned = source_chunks_scanned;
     metadata.source_bytes_scanned = source_bytes_scanned;
     metadata.detector_count = detector_count;
+    let scanner = crate::orchestrator_config::build_scanner_config(args);
+    metadata.resolved_scan = Some(resolved_scan_manifest(args, &scanner));
     metadata.scan_status = ScanCompletionStatus::from_coverage_gaps(
         !coverage_gap_summary(&CoverageCounts::current()).is_empty(),
     );
@@ -139,6 +143,7 @@ fn report_metadata_from_times(
         git_hash: keyhog_core::git_hash().to_string(),
         detector_digest: keyhog_core::detector_digest().to_string(),
         config_digest: config_digest.map(|digest| format!("{digest:016x}")),
+        resolved_scan: None,
         generated_at: format_gitlab_time(finished_at),
         scan_started_at: format_gitlab_time(started_at),
         scan_finished_at: format_gitlab_time(finished_at),
@@ -150,6 +155,140 @@ fn report_metadata_from_times(
     };
     metadata.scan_id = scan_report_id(&metadata);
     metadata
+}
+
+/// Build the one report-visible description of the preset and every effective
+/// detection knob. The scanner config has already passed the normal merge and
+/// sanitisation path, so this cannot describe a policy different from the one
+/// the engine received. Values are strings by contract to keep the manifest
+/// extensible without floating-point equality or schema churn.
+fn resolved_scan_manifest(
+    args: &ScanArgs,
+    scanner: &keyhog_scanner::ScannerConfig,
+) -> ResolvedScanManifest {
+    let (preset, base) = if args.fast {
+        ("fast", keyhog_scanner::ScannerConfig::fast())
+    } else if args.deep {
+        ("deep", keyhog_scanner::ScannerConfig::thorough())
+    } else if args.precision {
+        ("precision", keyhog_scanner::ScannerConfig::high_precision())
+    } else {
+        ("default", keyhog_scanner::ScannerConfig::default())
+    };
+    let effective = scanner_manifest_values(scanner);
+    let base_values = scanner_manifest_values(&base);
+    let overrides = effective
+        .keys()
+        .filter(|key| effective.get(*key) != base_values.get(*key))
+        .cloned()
+        .collect();
+    ResolvedScanManifest {
+        schema_version: 1,
+        preset: preset.to_string(),
+        effective,
+        overrides,
+    }
+}
+
+fn scanner_manifest_values(scanner: &keyhog_scanner::ScannerConfig) -> BTreeMap<String, String> {
+    let mut values = BTreeMap::new();
+    values.insert(
+        "max_decode_depth".to_string(),
+        scanner.max_decode_depth.to_string(),
+    );
+    values.insert(
+        "max_decode_bytes".to_string(),
+        scanner.max_decode_bytes.to_string(),
+    );
+    values.insert(
+        "entropy_enabled".to_string(),
+        scanner.entropy_enabled.to_string(),
+    );
+    values.insert(
+        "entropy_in_source_files".to_string(),
+        scanner.entropy_in_source_files.to_string(),
+    );
+    values.insert(
+        "entropy_ml_authoritative".to_string(),
+        scanner.entropy_ml_authoritative.to_string(),
+    );
+    values.insert(
+        "generic_keyword_low_entropy".to_string(),
+        scanner.generic_keyword_low_entropy.to_string(),
+    );
+    values.insert(
+        "entropy_threshold".to_string(),
+        scanner.entropy_threshold.to_string(),
+    );
+    values.insert(
+        "entropy_bpe_max_bytes_per_token".to_string(),
+        scanner.entropy_bpe_max_bytes_per_token.to_string(),
+    );
+    values.insert(
+        "entropy_bpe_override".to_string(),
+        scanner
+            .entropy_bpe_max_bytes_per_token_override
+            .map_or_else(|| "unset".to_string(), |value| value.to_string()),
+    );
+    values.insert(
+        "min_secret_len".to_string(),
+        scanner.min_secret_len.to_string(),
+    );
+    values.insert(
+        "min_confidence".to_string(),
+        scanner.min_confidence.to_string(),
+    );
+    values.insert("ml_enabled".to_string(), scanner.ml_enabled.to_string());
+    values.insert("ml_weight".to_string(), scanner.ml_weight.to_string());
+    values.insert(
+        "unicode_normalization".to_string(),
+        scanner.unicode_normalization.to_string(),
+    );
+    values.insert(
+        "validate_decode".to_string(),
+        scanner.validate_decode.to_string(),
+    );
+    values.insert(
+        "max_matches_per_chunk".to_string(),
+        scanner.max_matches_per_chunk.to_string(),
+    );
+    values.insert(
+        "scan_comments".to_string(),
+        scanner.scan_comments.to_string(),
+    );
+    values.insert(
+        "penalize_test_paths".to_string(),
+        scanner.penalize_test_paths.to_string(),
+    );
+    values.insert(
+        "known_prefixes_digest".to_string(),
+        digest_strings("known-prefixes", &scanner.known_prefixes),
+    );
+    values.insert(
+        "secret_keywords_digest".to_string(),
+        digest_strings("secret-keywords", &scanner.secret_keywords),
+    );
+    values.insert(
+        "test_keywords_digest".to_string(),
+        digest_strings("test-keywords", &scanner.test_keywords),
+    );
+    values.insert(
+        "placeholder_keywords_digest".to_string(),
+        digest_strings("placeholder-keywords", &scanner.placeholder_keywords),
+    );
+    values
+}
+
+fn digest_strings(domain: &str, values: &[String]) -> String {
+    let mut hasher = StableHasher::new(domain);
+    for value in values {
+        hasher.field_str("value", value);
+    }
+    hasher
+        .finish_256()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 /// Derive the artifact join key from non-secret scan identity and workload
@@ -169,6 +308,18 @@ fn scan_report_id(metadata: &ScanReportMetadata) -> String {
         .field_usize("source_chunks_scanned", metadata.source_chunks_scanned)
         .field_u64("source_bytes_scanned", metadata.source_bytes_scanned)
         .field_usize("detector_count", metadata.detector_count);
+    if let Some(resolved_scan) = &metadata.resolved_scan {
+        hasher
+            .field_u64("resolved_scan_schema", resolved_scan.schema_version as u64)
+            .field_str("resolved_scan_preset", &resolved_scan.preset);
+        for (key, value) in &resolved_scan.effective {
+            hasher.field_str("resolved_scan_key", key);
+            hasher.field_str("resolved_scan_value", value);
+        }
+        for override_key in &resolved_scan.overrides {
+            hasher.field_str("resolved_scan_override", override_key);
+        }
+    }
     for target in &metadata.targets {
         hasher.field_str("target", target);
     }
@@ -185,8 +336,11 @@ fn format_gitlab_time(time: DateTime<Utc>) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{scan_report_id, ScanReportMetadata};
-    use keyhog_core::ScanCompletionStatus;
+    use super::{resolved_scan_manifest, scan_report_id, ScanReportMetadata};
+    use crate::args::ScanArgs;
+    use clap::Parser;
+    use keyhog_core::{ResolvedScanManifest, ScanCompletionStatus};
+    use std::collections::BTreeMap;
 
     fn metadata() -> ScanReportMetadata {
         ScanReportMetadata {
@@ -196,6 +350,7 @@ mod tests {
             git_hash: "test-git".to_string(),
             detector_digest: "test-detectors".to_string(),
             config_digest: Some("0000000000000001".to_string()),
+            resolved_scan: None,
             generated_at: "2026-07-14T00:00:01".to_string(),
             scan_started_at: "2026-07-14T00:00:00".to_string(),
             scan_finished_at: "2026-07-14T00:00:01".to_string(),
@@ -226,6 +381,44 @@ mod tests {
             scan_report_id(&changed_target),
             scan_report_id(&changed_config)
         );
+
+        let mut changed_mode = changed_config.clone();
+        changed_mode.resolved_scan = Some(ResolvedScanManifest {
+            schema_version: 1,
+            preset: "deep".to_string(),
+            effective: BTreeMap::new(),
+            overrides: Vec::new(),
+        });
+        assert_ne!(
+            scan_report_id(&changed_mode),
+            scan_report_id(&changed_config)
+        );
+    }
+
+    #[test]
+    fn resolved_scan_manifest_is_diffable_across_presets_and_overrides() {
+        let default_args = ScanArgs::parse_from(["keyhog"]);
+        let deep_args = ScanArgs::parse_from(["keyhog", "--deep", "--decode-depth", "3"]);
+        let default_manifest =
+            resolved_scan_manifest(&default_args, &keyhog_scanner::ScannerConfig::default());
+        let deep_manifest = resolved_scan_manifest(
+            &deep_args,
+            &crate::orchestrator_config::build_scanner_config(&deep_args),
+        );
+
+        assert_eq!(default_manifest.schema_version, 1);
+        assert_eq!(default_manifest.preset, "default");
+        assert_eq!(deep_manifest.preset, "deep");
+        assert_ne!(default_manifest, deep_manifest);
+        assert_eq!(deep_manifest.effective["max_decode_depth"], "3");
+        assert!(deep_manifest
+            .overrides
+            .iter()
+            .any(|key| key == "max_decode_depth"));
+
+        let encoded = serde_json::to_string(&deep_manifest).expect("manifest serializes");
+        assert!(encoded.contains("\"preset\":\"deep\""));
+        assert!(encoded.contains("\"max_decode_depth\":\"3\""));
     }
 }
 

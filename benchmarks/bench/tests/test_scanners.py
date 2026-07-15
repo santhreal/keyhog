@@ -222,6 +222,55 @@ def test_keyhog_parser_rejects_empty_success_artifact_but_accepts_json_array(tmp
     assert scanners.KeyhogScanner._parse(output, config_id="deep") == []
 
 
+def test_keyhog_parser_requires_complete_resolved_mode_envelope(tmp_path):
+    output = tmp_path / "result.json"
+    output.write_text(
+        json.dumps(
+            {
+                "schema_version": {"major": 1, "minor": 5},
+                "scan_status": "success",
+                "metadata": {
+                    "resolved_scan": {
+                        "schema_version": 1,
+                        "preset": "deep",
+                        "effective": {"max_decode_depth": "10"},
+                        "overrides": [],
+                    }
+                },
+                "findings": [],
+            }
+        )
+    )
+    assert scanners.KeyhogScanner._parse(output, config_id="deep") == []
+    assert scanners.KeyhogScanner._read_scan_manifest(output)["preset"] == "deep"
+
+    output.write_text(
+        json.dumps(
+            {
+                "schema_version": {"major": 1, "minor": 5},
+                "scan_status": "partial",
+                "metadata": {"resolved_scan": {}},
+                "findings": [],
+            }
+        )
+    )
+    with pytest.raises(RuntimeError, match="terminal scan_status"):
+        scanners.KeyhogScanner._parse(output, config_id="deep")
+
+    output.write_text(
+        json.dumps(
+            {
+                "schema_version": {"major": 1, "minor": 5},
+                "scan_status": "success",
+                "metadata": {},
+                "findings": [],
+            }
+        )
+    )
+    with pytest.raises(RuntimeError, match="resolved_scan manifest"):
+        scanners.KeyhogScanner._parse(output, config_id="deep")
+
+
 def test_betterleaks_normalizer_reads_gitleaks_json_shape():
     data = [{"File": "a.env", "StartLine": 2, "Secret": "sekret", "RuleID": "aws"}]
 
@@ -634,7 +683,7 @@ def test_keyhog_daemon_commands_keep_server_and_client_ownership_separate(tmp_pa
         "--detectors", str(detectors), "--backend", backend,
     ]
     assert client == [
-        str(executable), "scan", "--format", "json", "--no-config",
+        str(executable), "scan", "--format", "json-envelope", "--no-config",
         "--daemon=on", "--daemon-socket", str(socket_path),
         "--output", str(output), str(input_file),
     ]

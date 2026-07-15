@@ -32,7 +32,7 @@ import sys
 import tempfile
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ..measurement import RunStats
 from ..schema import ScannerConfig
@@ -64,6 +64,7 @@ class MeasurementProvenance:
     execution_route: str = ""
     daemon_pid: int = 0
     daemon_requests: int = 0
+    scan_manifest: dict[str, object] = field(default_factory=dict)
 
 
 # ── path collapse (verbatim intent from score.py::_scan_roots) ────────

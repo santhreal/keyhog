@@ -10,6 +10,8 @@ The schema is a superset of the legacy ``score.py`` ``ScoreReport``: it
 keeps the detection block (overall + per-category P/R/F1) byte-for-byte
 compatible and adds the requested axes, host hardware, scanner config
 (backend/cache/daemon/mode), corpus size, and speed (wall/throughput/RSS).
+KeyHog rows additionally retain the resolved scan manifest so a mode label is
+backed by the exact detection policy that produced the measurement.
 
 Every dataclass round-trips through :meth:`to_json` / :meth:`from_json`
 losslessly; ``test_schema.py`` asserts it.
@@ -460,6 +462,7 @@ class RunResult:
     timed_out: bool = False
     available: bool = True
     error: str = ""
+    scan_manifest: dict[str, object] = field(default_factory=dict)
 
     def to_json(self) -> dict:
         return {
@@ -475,6 +478,7 @@ class RunResult:
             "timed_out": self.timed_out,
             "available": self.available,
             "error": self.error,
+            "scan_manifest": self.scan_manifest,
         }
 
     @classmethod
@@ -499,6 +503,7 @@ class RunResult:
             timed_out=bool(d.get("timed_out", False)),
             available=bool(d.get("available", True)),
             error=d.get("error", ""),
+            scan_manifest=dict(d.get("scan_manifest") or {}),
         )
 
     def result_filename(self) -> str:

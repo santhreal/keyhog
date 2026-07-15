@@ -110,7 +110,7 @@ the artifact without scraping console progress.
 
 ```json
 {
-  "schema_version": {"major": 1, "minor": 4},
+  "schema_version": {"major": 1, "minor": 5},
   "scan_status": "success",
   "metadata": {
     "scan_id": "0123456789abcdef0123456789abcdef",
@@ -119,6 +119,12 @@ the artifact without scraping console progress.
     "git_hash": "<build-commit>",
     "detector_digest": "922-<digest>",
     "config_digest": "<effective-config-digest>",
+    "resolved_scan": {
+      "schema_version": 1,
+      "preset": "default",
+      "effective": {"max_decode_depth": "10", "entropy_enabled": "true"},
+      "overrides": []
+    },
     "generated_at": "2026-07-14T00:00:01",
     "scan_started_at": "2026-07-14T00:00:00",
     "scan_finished_at": "2026-07-14T00:00:01",

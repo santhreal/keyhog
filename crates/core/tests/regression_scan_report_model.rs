@@ -2,7 +2,10 @@
 //! model. Metadata used to be assembled in the CLI and attached only to HTML,
 //! which made the GitLab projection silently disagree with the scan record.
 
-use keyhog_core::{write_scan_report, ReportFormat, ScanReport, ScanReportMetadata};
+use keyhog_core::{
+    write_scan_report, ReportFormat, ResolvedScanManifest, ScanReport, ScanReportMetadata,
+};
+use std::collections::BTreeMap;
 
 fn metadata() -> ScanReportMetadata {
     ScanReportMetadata {
@@ -12,6 +15,7 @@ fn metadata() -> ScanReportMetadata {
         git_hash: "test-git".to_string(),
         detector_digest: "922-test".to_string(),
         config_digest: Some("0000000000000001".to_string()),
+        resolved_scan: None,
         generated_at: "2026-07-14T12:00:02".to_string(),
         scan_started_at: "2026-07-14T12:00:00".to_string(),
         scan_finished_at: "2026-07-14T12:00:02".to_string(),
@@ -73,6 +77,39 @@ fn conflicting_format_metadata_fails_closed() {
     )
     .expect_err("conflicting report metadata must not be silently overridden");
     assert!(error.to_string().contains("scan_started_at"));
+}
+
+#[test]
+fn json_metadata_embeds_resolved_scan_manifest() {
+    let mut metadata = metadata();
+    let mut effective = BTreeMap::new();
+    effective.insert("max_decode_depth".to_string(), "3".to_string());
+    effective.insert("entropy_enabled".to_string(), "true".to_string());
+    metadata.resolved_scan = Some(ResolvedScanManifest {
+        schema_version: 1,
+        preset: "deep".to_string(),
+        effective,
+        overrides: vec!["max_decode_depth".to_string()],
+    });
+    let mut output = Vec::new();
+    write_scan_report(
+        &mut output,
+        ReportFormat::JsonEnvelope {
+            coverage_gap_summary: Vec::new(),
+        },
+        ScanReport::new(&[]).with_metadata(&metadata),
+    )
+    .expect("JSON envelope must render");
+    let value: serde_json::Value = serde_json::from_slice(&output).expect("valid JSON");
+    assert_eq!(value["metadata"]["resolved_scan"]["preset"], "deep");
+    assert_eq!(
+        value["metadata"]["resolved_scan"]["effective"]["max_decode_depth"],
+        "3"
+    );
+    assert_eq!(
+        value["metadata"]["resolved_scan"]["overrides"][0],
+        "max_decode_depth"
+    );
 }
 
 #[test]

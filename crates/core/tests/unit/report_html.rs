@@ -234,6 +234,7 @@ fn html_report_embeds_scan_metadata_panel() {
         git_hash: "test-git".to_string(),
         detector_digest: "test-detectors".to_string(),
         config_digest: None,
+        resolved_scan: None,
         generated_at: "2026-06-23T12:00:01".to_string(),
         scan_started_at: "2026-06-23T12:00:00".to_string(),
         scan_finished_at: "2026-06-23T12:00:01".to_string(),

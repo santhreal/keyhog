@@ -87,7 +87,7 @@ def daemon_client_command(
         str(executable),
         "scan",
         "--format",
-        "json",
+        "json-envelope",
         "--no-config",
         "--daemon=on",
         "--daemon-socket",

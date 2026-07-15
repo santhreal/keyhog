@@ -49,6 +49,10 @@ Run them explicitly with `make targets`.
   matrix.
 - **Config:** keyhog's `backend × cache × daemon × mode` axes; each competitor
   carries its own knob (kingfisher confidence, etc.) in the same `config_id`.
+- **Resolved scan manifest:** KeyHog benchmark artifacts persist the exact
+  preset, effective detection values, and compatible overrides from the
+  report's `resolved_scan` object. A mode label alone is never treated as proof
+  that two runs used the same detection policy.
 - **Execution route:** each KeyHog result records whether execution was
   in-process or daemon-served. A daemon result also records the owned server
   PID and exactly two served requests (one warmup, one timed scan).

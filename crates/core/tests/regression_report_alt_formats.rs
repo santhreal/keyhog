@@ -90,6 +90,7 @@ fn test_metadata(scan_status: ScanCompletionStatus) -> ScanReportMetadata {
         git_hash: "test".into(),
         detector_digest: "test".into(),
         config_digest: None,
+        resolved_scan: None,
         generated_at: "2026-01-01T00:00:00".into(),
         scan_started_at: "2026-01-01T00:00:00".into(),
         scan_finished_at: "2026-01-01T00:00:01".into(),

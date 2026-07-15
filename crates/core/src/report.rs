@@ -91,6 +91,26 @@ impl ScanCompletionStatus {
     }
 }
 
+/// Stable, machine-diffable description of the resolved detection mode.
+///
+/// The preset names the shipped base (`default`, `fast`, `deep`, or
+/// `precision`). `effective` contains the scalar and list-identity values the
+/// scanner actually used, while `overrides` names values that refine that
+/// preset. Maps are ordered so equivalent scans serialize byte-for-byte
+/// identically across report formats and benchmark runs.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ResolvedScanManifest {
+    /// Version of this manifest contract. Additive fields require a new minor
+    /// report schema, while a breaking manifest change increments this value.
+    pub schema_version: u16,
+    /// Shipped base preset selected for the scan.
+    pub preset: String,
+    /// Resolved detection settings encoded as stable string values.
+    pub effective: BTreeMap<String, String>,
+    /// Settings that differ from the selected preset base.
+    pub overrides: Vec<String>,
+}
+
 /// Format-neutral operator-visible metadata for a scan report.
 ///
 /// The metadata belongs to the report, not to one renderer. Individual output
@@ -119,6 +139,11 @@ pub struct ScanReportMetadata {
     /// a resolved configuration identity available.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub config_digest: Option<String>,
+    /// Stable resolved preset and override manifest for mode comparisons.
+    /// Absent only for reports produced by callers that do not have a CLI scan
+    /// configuration (for example a library-created report).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolved_scan: Option<ResolvedScanManifest>,
     /// UTC generation timestamp formatted as `YYYY-MM-DDTHH:MM:SS`.
     pub generated_at: String,
     /// UTC scan start timestamp formatted as `YYYY-MM-DDTHH:MM:SS`.
@@ -140,9 +165,9 @@ pub struct ScanReportMetadata {
 /// Current major version for the versioned JSON report envelope.
 pub const JSON_REPORT_SCHEMA_MAJOR: u16 = 1;
 /// Current minor version for the versioned JSON report envelope.
-pub const JSON_REPORT_SCHEMA_MINOR: u16 = 4;
+pub const JSON_REPORT_SCHEMA_MINOR: u16 = 5;
 /// Current minor version for the versioned JSONL stream contract.
-pub const JSONL_REPORT_SCHEMA_MINOR: u16 = 5;
+pub const JSONL_REPORT_SCHEMA_MINOR: u16 = 6;
 
 /// Version marker carried by every versioned JSON report.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

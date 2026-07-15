@@ -69,6 +69,7 @@ def build_result(
     execution_route: str = "",
     daemon_pid: int = 0,
     daemon_requests: int = 0,
+    scan_manifest: dict[str, object] | None = None,
 ) -> RunResult:
     info = corpus.info()
     throughput = 0.0
@@ -103,6 +104,7 @@ def build_result(
         timed_out=stats.timed_out,
         available=True,
         error="" if stats.exit_code >= 0 and not stats.timed_out else "scanner timed out",
+        scan_manifest=dict(scan_manifest or {}),
     )
 
 
@@ -148,6 +150,7 @@ def _run_resolved_scanner(
     execution_route = ""
     daemon_pid = 0
     daemon_requests = 0
+    scan_manifest: dict[str, object] = {}
     if callable(run_with_provenance):
         try:
             findings, stats, provenance = run_with_provenance(corpus.scan_root, cfg)
@@ -173,6 +176,7 @@ def _run_resolved_scanner(
             execution_route = provenance.execution_route
             daemon_pid = provenance.daemon_pid
             daemon_requests = provenance.daemon_requests
+            scan_manifest = dict(provenance.scan_manifest)
             if scanner.name == "keyhog":
                 expected_route = "daemon" if cfg.daemon == "on" else "in_process"
                 if execution_route != expected_route:
@@ -244,6 +248,7 @@ def _run_resolved_scanner(
         execution_route=execution_route,
         daemon_pid=daemon_pid,
         daemon_requests=daemon_requests,
+        scan_manifest=scan_manifest,
     )
     if stats.timed_out:
         result.error = "scanner timed out"

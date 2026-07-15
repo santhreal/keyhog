@@ -15,7 +15,7 @@ Maps a :class:`ScannerConfig` to keyhog CLI flags:
   explicit presets, full pipeline otherwise.
 
 Labeled-corpus in-process scoring parity flags are present:
-``--format json --show-secrets --no-suppress-test-fixtures --no-config`` plus
+``--format json-envelope --show-secrets --no-suppress-test-fixtures --no-config`` plus
 an explicit repository detector corpus. ``--no-config`` blocks ancestor config
 discovery, while ``--detectors`` blocks installed-corpus discovery. Findings are
 written to ``--output`` so GNU time's RSS report never crosses the JSON.
@@ -248,6 +248,7 @@ class KeyhogScanner(Scanner):
                  detector_corpus: pathlib.Path = _DETECTOR_CORPUS):
         super().__init__(binary)
         self._detector_corpus = detector_corpus
+        self._last_scan_manifest: dict[str, object] = {}
 
     @property
     def binary(self) -> str:
@@ -401,7 +402,7 @@ class KeyhogScanner(Scanner):
              detector_corpus: pathlib.Path | None = None) -> list[str]:
         self._validate_config(cfg)
         cmd = [str(executable), "scan",
-               "--format", "json", "--show-secrets",
+               "--format", "json-envelope", "--show-secrets",
                # Hermetic config: the leaderboard scores the COMPILED shipped
                # defaults, never a stray `.keyhog.toml` that happens to sit on
                # an ancestor of the corpus (which lives inside the repo tree).
@@ -468,6 +469,7 @@ class KeyhogScanner(Scanner):
     ) -> tuple[list[Finding], RunStats, MeasurementProvenance]:
         """Scan immutable executable and detector snapshots with exact identity."""
         self._validate_config(cfg)
+        self._last_scan_manifest = {}
         snapshot, digest = self._detector_snapshot()
         with self._binary_snapshot() as (
             executable, executable_digest, version, pass_fds,
@@ -506,6 +508,7 @@ class KeyhogScanner(Scanner):
             execution_route=execution_route,
             daemon_pid=daemon_pid,
             daemon_requests=daemon_requests,
+            scan_manifest=dict(self._last_scan_manifest),
         )
 
     def _run_daemon_prepared(
@@ -559,6 +562,7 @@ class KeyhogScanner(Scanner):
                     )
                 stats = daemon.run_client(root, result_output, timeout)
                 findings = self._parse(result_output, config_id=cfg.config_id)
+                self._last_scan_manifest = self._read_scan_manifest(result_output)
                 evidence = daemon.evidence()
                 if evidence.scans_served != 2:
                     raise RuntimeError(
@@ -634,6 +638,7 @@ class KeyhogScanner(Scanner):
             )
             self._require_success(stdout, stderr, stats, cfg, timeout, phase="timed scan")
             findings = self._parse(result_output, config_id=cfg.config_id)
+            self._last_scan_manifest = self._read_scan_manifest(result_output)
             return findings, stats
 
     def _require_success(
@@ -685,4 +690,27 @@ class KeyhogScanner(Scanner):
                 f"keyhog wrote invalid JSON for {config_id or output} "
                 f"(exit was success): {exc}"
             ) from exc
+        if isinstance(data, dict) and data.get("schema_version"):
+            status = data.get("scan_status")
+            if status != "success":
+                raise RuntimeError(
+                    f"keyhog benchmark artifact has terminal scan_status={status!r} "
+                    f"for {config_id or output}; refusing to score incomplete coverage"
+                )
+            metadata = data.get("metadata")
+            if not isinstance(metadata, dict) or not isinstance(
+                metadata.get("resolved_scan"), dict
+            ):
+                raise RuntimeError(
+                    f"keyhog benchmark artifact for {config_id or output} lacks the "
+                    "resolved_scan manifest"
+                )
         return _normalize_keyhog(data)
+
+    @staticmethod
+    def _read_scan_manifest(output: pathlib.Path) -> dict[str, object]:
+        """Read the already-validated manifest for persistent benchmark provenance."""
+        data = json.loads(output.read_text())
+        metadata = data.get("metadata") if isinstance(data, dict) else None
+        manifest = metadata.get("resolved_scan") if isinstance(metadata, dict) else None
+        return dict(manifest) if isinstance(manifest, dict) else {}

@@ -35,6 +35,12 @@ def test_run_result_round_trips_losslessly():
         finding_count=3,
         exit_code=1,
         timed_out=False,
+        scan_manifest={
+            "schema_version": 1,
+            "preset": "full",
+            "effective": {"max_decode_depth": "10"},
+            "overrides": [],
+        },
     )
 
     encoded = result.to_json()
@@ -47,6 +53,7 @@ def test_run_result_round_trips_losslessly():
     assert decoded.scanner.execution_route == "daemon"
     assert decoded.scanner.daemon_pid == 4242
     assert decoded.scanner.daemon_requests == 2
+    assert decoded.scan_manifest["preset"] == "full"
     assert decoded.result_filename() == "mirror-keyhog-simd-nocache-daemon-full.json"
 
 

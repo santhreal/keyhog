@@ -10,6 +10,27 @@ keyhog config --effective --deep
 The second command prints the resolved policy. Record it with benchmark or
 incident results.
 
+When a report is written as `json-envelope`, `jsonl-envelope`, or `html`, its
+metadata contains a `resolved_scan` manifest. The manifest records the selected
+`preset`, every effective detection value, and the keys that differ from that
+preset's base. This makes a deep run with compatible overrides directly
+comparable to default, fast, and precision artifacts:
+
+```json
+{
+  "schema_version": 1,
+  "preset": "deep",
+  "effective": {"max_decode_depth": "3", "entropy_enabled": "true"},
+  "overrides": ["max_decode_depth"]
+}
+```
+
+Values are strings by contract so the manifest remains stable as new typed
+settings are added; maps are serialized in key order. It contains no paths,
+credentials, or host-specific routing decisions. The benchmark runner should
+store this object alongside timing and accuracy so results are never compared
+across silently different detection policies.
+
 ## What changes
 
 `--deep` is a bounded preset, not an unbounded evaluator.

@@ -122,6 +122,7 @@ fn poisoned_scan_metadata_does_not_break_out_of_script_element() {
         git_hash: "test-git".to_string(),
         detector_digest: "test-detectors".to_string(),
         config_digest: None,
+        resolved_scan: None,
         generated_at: PAYLOAD.to_string(),
         scan_started_at: PAYLOAD.to_string(),
         scan_finished_at: PAYLOAD.to_string(),
