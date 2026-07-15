@@ -51,6 +51,10 @@ fn calibrate_autoroute_primes_every_preset_for_a_later_scan() {
     let out = Command::new(&stable_binary)
         .arg("calibrate-autoroute")
         .env("XDG_CACHE_HOME", cache.path())
+        // Keep this long-lived calibration subprocess bounded when the test
+        // shard runs beside other real scans. The route decisions are
+        // backend/parity-bound, not dependent on Rayon width.
+        .env("RAYON_NUM_THREADS", "4")
         .output()
         .expect("spawn keyhog calibrate-autoroute");
     assert!(
@@ -85,6 +89,7 @@ fn calibrate_autoroute_primes_every_preset_for_a_later_scan() {
             let scan = Command::new(&stable_binary)
                 .args(&args)
                 .env("XDG_CACHE_HOME", cache.path())
+                .env("RAYON_NUM_THREADS", "4")
                 .output()
                 .expect("spawn keyhog scan");
             let code = scan.status.code();
