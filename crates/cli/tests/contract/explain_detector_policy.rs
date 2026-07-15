@@ -125,3 +125,38 @@ fn explain_password_reports_explicit_bpe_disablement() {
         "disabled policy must not retain a magic BPE ceiling:\n{stdout}"
     );
 }
+
+#[test]
+fn every_generic_entropy_owner_exposes_complete_toml_policy() {
+    for detector_id in [
+        "generic-api-key",
+        "generic-keyword-secret",
+        "generic-password",
+        "generic-secret",
+    ] {
+        let output = explain(detector_id);
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "explain failed for {detector_id}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for field in [
+            "entropy_high:",
+            "entropy_low:",
+            "entropy_very_high:",
+            "mixed_alnum_floor:",
+            "entropy_policy_priority:",
+        ] {
+            assert!(
+                stdout.contains(field),
+                "{detector_id} must expose TOML-owned {field} in explain output:\n{stdout}"
+            );
+        }
+        assert!(
+            stdout.contains("declared policy owner: [detector] in the loaded detector TOML"),
+            "{detector_id} must identify the detector TOML as policy owner:\n{stdout}"
+        );
+    }
+}
