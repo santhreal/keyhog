@@ -38,11 +38,17 @@ fn write_plain_bytes(path: &std::path::Path, bytes: usize) {
 fn calibrate_autoroute_primes_every_preset_for_a_later_scan() {
     let cache = TempDir::new().expect("cache home");
     let work = TempDir::new().expect("workdir");
+    // Cargo may rebuild `CARGO_BIN_EXE_keyhog` while another test shard is
+    // compiling. Capture one immutable artifact so calibration and every
+    // verifying scan have the same executable identity; otherwise a perfectly
+    // valid cache can be rejected as stale halfway through this long sweep.
+    let stable_binary = work.path().join("keyhog");
+    std::fs::copy(binary(), &stable_binary).expect("copy stable keyhog artifact");
 
     // One command calibrates the default policy plus every preset across the
     // whole workload ladder. The policy-local runtimes write to the isolated
     // cache resolved through XDG_CACHE_HOME.
-    let out = Command::new(binary())
+    let out = Command::new(&stable_binary)
         .arg("calibrate-autoroute")
         .env("XDG_CACHE_HOME", cache.path())
         .output()
@@ -76,7 +82,7 @@ fn calibrate_autoroute_primes_every_preset_for_a_later_scan() {
             let mut args: Vec<&str> = vec!["scan", "--daemon=off", "--no-config"];
             args.extend_from_slice(preset);
             args.extend_from_slice(&["--format", "json", &target_arg]);
-            let scan = Command::new(binary())
+            let scan = Command::new(&stable_binary)
                 .args(&args)
                 .env("XDG_CACHE_HOME", cache.path())
                 .output()
