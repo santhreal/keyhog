@@ -130,7 +130,7 @@ minus the `limit-` prefix and with dashes changed to underscores.
 
 | Control                               | Effect                                                                |
 |---------------------------------------|-----------------------------------------------------------------------|
-| `keyhog scan --backend auto\|gpu-cuda\|gpu-wgpu\|simd\|cpu` | Use persisted automatic routing (`auto`) or force one diagnostic backend. CUDA and WGPU use distinct `gpu-cuda-region-presence` and `gpu-wgpu-region-presence` evidence. A selected GPU driver that becomes unusable exits `12` instead of substituting another driver or CPU/SIMD. |
+| `keyhog scan --backend auto\|gpu-cuda\|gpu-cuda-region-presence\|gpu-wgpu\|gpu-wgpu-region-presence\|simd\|simd-regex\|cpu\|cpu-fallback` | Use persisted automatic routing (`auto`) or force one diagnostic backend. Descriptive labels (`gpu-cuda-region-presence`, `gpu-wgpu-region-presence`, `simd-regex`, and `cpu-fallback`) are accepted aliases of their short operator values and are the same strings shown in persisted evidence. A selected GPU driver that becomes unusable exits `12` instead of substituting another driver or CPU/SIMD. |
 | `keyhog scan --gpu-batch-input-limit 512MB` | Override the VRAM-adaptive byte limit for one GPU region-presence batch (clamped to 128 MiB–1 GiB). |
 | `keyhog scan --max-file-size <SIZE>` | Bound one filesystem input (default 100 MiB); larger files are named in the coverage summary. |
 | `keyhog scan --regex-dfa-limit <SIZE>` | Bound each regex lazy-DFA cache (default 1 MiB); lowering the safety ceiling may force complex patterns onto the slower NFA path. |

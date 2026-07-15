@@ -415,7 +415,17 @@ pub(super) fn test_backend_override() -> Option<ScanBackend> {
 /// Keep this list at the parser owner so Clap validation, error messages, docs
 /// gates, and `parse_backend_str` cannot drift into rejecting canonical labels
 /// before routing sees them.
-pub const BACKEND_OVERRIDE_VALUES: [&str; 5] = ["auto", "gpu-cuda", "gpu-wgpu", "simd", "cpu"];
+pub const BACKEND_OVERRIDE_VALUES: [&str; 9] = [
+    "auto",
+    "gpu-cuda",
+    "gpu-cuda-region-presence",
+    "gpu-wgpu",
+    "gpu-wgpu-region-presence",
+    "simd",
+    "simd-regex",
+    "cpu",
+    "cpu-fallback",
+];
 
 /// Pure backend string → [`ScanBackend`] mapping, with no env or
 /// thread-local override read. Tests that only verify the string→backend

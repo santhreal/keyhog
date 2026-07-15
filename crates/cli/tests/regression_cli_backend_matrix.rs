@@ -22,10 +22,10 @@
 //!   * `AKIAQYLPMN5HFIQR7XYA` fires `aws-access-key`
 //!     (`backend_parity_determinism_fixed_corpus.rs`).
 //!   * `--backend` accepts `BACKEND_OVERRIDE_VALUES`
-//!     (`crates/scanner/src/hw_probe/select.rs`): `auto`, `simd`, `simd-regex`,
-//!     `cpu`, `cpu-fallback`, plus the gpu variants. `scalar` is a canonical
-//!     alias inside `parse_backend_str` but is NOT in `BACKEND_OVERRIDE_VALUES`,
-//!     so clap rejects `--backend scalar` (exit 2) (pinned as a coherence gap).
+//!     (`crates/scanner/src/hw_probe/select.rs`): `auto`, the short backend
+//!     values, and their descriptive persisted-label aliases. `scalar` remains
+//!     a retired alias outside `BACKEND_OVERRIDE_VALUES`, so clap rejects
+//!     `--backend scalar` (exit 2).
 //!   * findings present, none verified live -> exit 1 (`EXIT_FINDINGS`); a
 //!     clean scan -> exit 0 (`EXIT_SUCCESS`); a bad flag value -> exit 2
 //!     (`EXIT_USER_ERROR`).
@@ -439,13 +439,9 @@ fn clean_file_yields_the_same_empty_set_on_cpu_and_simd() {
 
 #[test]
 fn scalar_alias_is_rejected_by_the_cli_parser_exit_2() {
-    // COHERENCE GAP: `scalar` is a canonical alias inside
-    // `keyhog_scanner::hw_probe::parse_backend_str` (-> CpuFallback), whose own
-    // doc calls itself "the single source of truth for CLI/config backend
-    // parsing", yet it is NOT in `BACKEND_OVERRIDE_VALUES`, the list clap
-    // validates `--backend` against. So the CLI rejects `--backend scalar`
-    // before routing ever sees it. This test pins the CURRENT (buggy) behavior:
-    // exit 2, not a scan.
+    // `scalar` is intentionally retired rather than advertised as a portable
+    // backend spelling. The parser rejects it before routing, so a stale alias
+    // cannot silently select the scalar CPU path.
     let home = cache_home();
     let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={GHP}\n"));
 
