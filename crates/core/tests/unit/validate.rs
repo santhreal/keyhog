@@ -81,6 +81,14 @@ fn entropy_fallback_metadata_requires_entropy_identity_and_labels() {
         issue,
         QualityIssue::Error(message) if message.contains("entropy_fallback.service")
     )));
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("only valid for service")
+    )));
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("only valid for kind")
+    )));
 }
 
 #[test]

@@ -306,6 +306,16 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
         }
     }
     if let Some(metadata) = &spec.entropy_fallback {
+        if spec.service != "generic" {
+            issues.push(QualityIssue::Error(
+                "entropy_fallback is only valid for service = \"generic\" detectors".into(),
+            ));
+        }
+        if spec.kind != crate::DetectorKind::Phase2Generic {
+            issues.push(QualityIssue::Error(
+                "entropy_fallback is only valid for kind = \"phase2-generic\" detectors".into(),
+            ));
+        }
         if !metadata.id.starts_with("entropy-") {
             issues.push(QualityIssue::Error(format!(
                 "entropy_fallback.id {:?} must use the entropy- namespace",
