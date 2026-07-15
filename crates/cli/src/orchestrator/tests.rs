@@ -238,6 +238,19 @@ fn persistent_runtime_uses_configured_autoroute_cache_path() {
             ..ChunkMetadata::default()
         },
     };
+    let empty = Chunk {
+        data: String::new().into(),
+        metadata: ChunkMetadata {
+            source_type: "filesystem".into(),
+            ..ChunkMetadata::default()
+        },
+    };
+    assert_eq!(
+        runtime
+            .scan_chunk(&empty)
+            .expect("empty chunks have a backend-independent exact result"),
+        Vec::<keyhog_core::RawMatch>::new()
+    );
     let error = runtime
         .scan_chunk(&chunk)
         .expect_err("an uncalibrated multi-backend runtime must fail closed");

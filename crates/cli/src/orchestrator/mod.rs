@@ -491,6 +491,12 @@ impl DefaultScanRuntime {
     }
 
     pub(crate) fn scan_chunk(&self, chunk: &Chunk) -> Result<Vec<RawMatch>> {
+        // Empty input has one exact backend-independent result. Avoid asking
+        // autoroute for a workload key that cannot carry timing evidence and
+        // keep empty daemon/watch chunks clean even on an uncalibrated host.
+        if chunk.data.is_empty() {
+            return Ok(Vec::new());
+        }
         let backend = self.router.choose(
             self.scanner.as_ref(),
             self.backend_override,

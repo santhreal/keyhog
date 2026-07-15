@@ -103,7 +103,8 @@ through 32 MiB. File-tree probes cover every chunk-count band through the
 default 32-chunk fused batch. Tar-member probes cover the same count ladder for
 payload-derived extracted filesystem chunks. Decode-heavy probes cover the
 decoder path. Empty input has no routing work and is not counted as a calibrated
-workload. Each preset uses one compiled production scanner. Immutable detector,
+workload; daemon and watch paths return the exact empty result without consulting
+the cache. Each preset uses one compiled production scanner. Immutable detector,
 GPU literal, and GPU phase-two program artifacts are reused. Workload-shaped
 resident GPU state is reset before each representative. The measured shared
 literal and backend-shaped phase-two preparation costs are added to every
