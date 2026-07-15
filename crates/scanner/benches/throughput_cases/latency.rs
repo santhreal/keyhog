@@ -58,6 +58,15 @@ fn benchmark_latency_entropy_calculation(c: &mut Criterion) {
     let mut group = c.benchmark_group("latency_entropy_calculation");
     group.sampling_mode(SamplingMode::Flat);
 
+    fn sized_candidate(seed: &str, length: usize) -> String {
+        let mut value = String::with_capacity(length);
+        while value.len() < length {
+            value.push_str(seed);
+        }
+        value.truncate(length);
+        value
+    }
+
     let test_candidates = [
         ("random_16", "aK7xP9mQ2wE5rT8y"),
         ("random_17", "aK7xP9mQ2wE5rT8yU"),
@@ -80,6 +89,27 @@ fn benchmark_latency_entropy_calculation(c: &mut Criterion) {
             "CorrectHorseBatteryStapleConfigurationIdentifier",
         ),
     ];
+    let boundary_candidates = [
+        // These are the detector policy boundaries: keeping both sides in
+        // every input class catches tokenizer cost or threshold drift at the
+        // exact lengths where entropy/BPE admission changes.
+        ("random", "aK7xP9mQ2wE5rT8yU1iO3pA6sD4fG0hJ"),
+        (
+            "word_like",
+            "CorrectHorseBatteryStapleConfigurationIdentifier",
+        ),
+        (
+            "encoded_base64",
+            "U2FsdGVkX18AESIzRFVmd4gAG90IBfANYeQRW2joYGicJIAQKVwfQhcc0SZhoi6",
+        ),
+    ]
+    .into_iter()
+    .flat_map(|(class, seed)| {
+        [24usize, 25, 40, 41]
+            .into_iter()
+            .map(move |length| (format!("{class}_{length}"), sized_candidate(seed, length)))
+    })
+    .collect::<Vec<_>>();
 
     group.bench_function("bpe_tokenizer_build", |b| {
         b.iter(|| {
@@ -103,6 +133,20 @@ fn benchmark_latency_entropy_calculation(c: &mut Criterion) {
 
         group.bench_with_input(
             BenchmarkId::new("token_efficiency", name),
+            candidate,
+            |b, cand| {
+                b.iter(|| {
+                    let eff = keyhog_scanner::testing::entropy_bpe_bytes_per_token(black_box(cand));
+                    black_box(eff)
+                });
+            },
+        );
+    }
+
+    for (name, candidate) in &boundary_candidates {
+        debug_assert!(matches!(candidate.len(), 24 | 25 | 40 | 41));
+        group.bench_with_input(
+            BenchmarkId::new("token_efficiency_boundary", name),
             candidate,
             |b, cand| {
                 b.iter(|| {
