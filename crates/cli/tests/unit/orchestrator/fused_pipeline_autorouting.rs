@@ -110,10 +110,11 @@ fn dispatch_autoroute_calibrates_missing_buckets_and_persists() {
     assert!(
         !calibration.contains("gpu_could_engage")
             && calibration.contains("gpu_candidate_allowed")
-            && calibration.contains("scanner.gpu_backend_candidates()")
+            && backend.contains("eligible_backend_labels")
+            && backend.contains("scanner.gpu_backend_candidates()")
             && calibration.contains("ScanBackend::GpuCuda => gpu_cuda_timing = Some(measured)")
             && calibration.contains("ScanBackend::GpuWgpu => gpu_wgpu_timing = Some(measured)"),
-        "explicit autoroute GPU calibration must measure each acquired CUDA and WGPU candidate independently; fixed heuristic thresholds must not decide whether calibration probes GPU"
+        "explicit autoroute GPU calibration must measure each acquired CUDA and WGPU candidate independently; candidate census belongs to the router boundary and fixed heuristic thresholds must not decide whether calibration probes GPU"
     );
     assert!(
         !dispatch.contains("select_backend_for_batch(")
