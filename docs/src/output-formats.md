@@ -113,6 +113,24 @@ spreadsheet-formula neutralization. An unavailable confidence score remains an
 empty cell; remediation is still emitted so a CSV artifact never loses the
 canonical action guidance.
 
+### Finding-field losslessness
+
+Use the versioned envelope formats when a downstream system needs the complete
+finding model. The other formats are deliberate projections:
+
+| Format | Finding fields retained | Scan-wide state |
+| --- | --- | --- |
+| `json-envelope` / `jsonl-envelope` | Every `VerifiedFinding` field, including metadata, remediation, and duplicate locations | `scan_status` and `coverage_gap_summary` |
+| `csv` | All 20 documented columns, with metadata and duplicate locations encoded as JSON | Metadata preamble before the header |
+| `sarif` | Detector identity, redacted credential/hash, verification, confidence, entropy, metadata, companions, primary and additional locations | Run properties and coverage notifications |
+| `html` | Complete redacted findings plus the full report metadata object | Status and coverage panel |
+| `junit` | Human-readable detector, service, severity, location, hash, verification, confidence, entropy, and companions in CDATA | Suite properties |
+| `gitlab-sast` | GitLab schema fields plus redacted credential/hash, service, companions, and entropy details | Schema-native `scan.status` |
+| `github-annotations` | Redacted detector, location, severity, and verification message | Coverage warning annotation when partial |
+
+Fields not listed for a projection are intentionally unavailable in that
+format; they must not be inferred from stderr or the process exit code.
+
 ## `--format sarif`
 
 [SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html)

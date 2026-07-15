@@ -152,6 +152,76 @@ fn csv_coverage_preamble_preserves_zero_finding_partial_status() {
     assert_eq!(lines.next(), None);
 }
 
+#[test]
+fn structured_projection_matrix_preserves_declared_fields() {
+    let mut finding = planted();
+    finding
+        .companions_redacted
+        .insert("account".into(), "12...34".into());
+    finding.metadata.insert("scope".into(), "read".into());
+    finding.additional_locations.push(MatchLocation {
+        source: "git".into(),
+        file_path: Some("history.env".into()),
+        line: Some(19),
+        offset: 4,
+        commit: Some("deadbeef".into()),
+        author: None,
+        date: None,
+    });
+    finding.entropy = Some(4.25);
+    finding.confidence = Some(0.875);
+
+    let json: serde_json::Value = serde_json::from_slice(&render(
+        ReportFormat::JsonEnvelope {
+            coverage_gap_summary: Vec::new(),
+        },
+        &[finding.clone()],
+    ))
+    .expect("JSON envelope parses");
+    let json_finding = &json["findings"][0];
+    assert_eq!(json_finding["metadata"]["scope"], "read");
+    assert_eq!(
+        json_finding["additional_locations"][0]["file_path"],
+        "history.env"
+    );
+    assert_eq!(json_finding["confidence"], 0.875);
+    assert_eq!(json_finding["entropy"], 4.25);
+
+    let jsonl_lines: Vec<serde_json::Value> = render(
+        ReportFormat::JsonlEnvelope {
+            coverage_gap_summary: Vec::new(),
+        },
+        &[finding.clone()],
+    )
+    .split(|byte| *byte == b'\n')
+    .filter(|line| !line.is_empty())
+    .map(|line| serde_json::from_slice(line).expect("JSONL record parses"))
+    .collect();
+    assert_eq!(jsonl_lines[1]["metadata"]["scope"], "read");
+    assert_eq!(jsonl_lines[1]["additional_locations"][0]["offset"], 4);
+
+    let sarif: serde_json::Value = serde_json::from_slice(&render(
+        ReportFormat::Sarif {
+            skip_summary: Vec::new(),
+        },
+        &[finding],
+    ))
+    .expect("SARIF parses");
+    let result = &sarif["runs"][0]["results"][0];
+    assert_eq!(result["ruleId"], "aws-access-key");
+    assert_eq!(result["properties"]["metadata.scope"], "read");
+    assert_eq!(
+        result["properties"]["companions_redacted.account"],
+        "12...34"
+    );
+    assert_eq!(result["properties"]["confidence"], 0.875);
+    assert_eq!(result["properties"]["entropy"], 4.25);
+    assert_eq!(
+        result["relatedLocations"][0]["physicalLocation"]["artifactLocation"]["uri"],
+        "history.env"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // JUnit XML
 // ---------------------------------------------------------------------------
