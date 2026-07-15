@@ -33,6 +33,7 @@ fn test_eligible_backends(gpu: Option<ScanBackend>) -> Vec<String> {
     labels
 }
 
+#[cfg(feature = "simd")]
 fn test_live_eligible_backends(scanner: &CompiledScanner, gpu: Option<ScanBackend>) -> Vec<String> {
     let mut labels = vec![ScanBackend::CpuFallback.label().to_string()];
     if scanner.simd_backend_available() {
@@ -483,6 +484,7 @@ fn gpu_excluded_calibration_collapses_an_already_acquired_peer() {
 }
 
 #[test]
+#[cfg(feature = "simd")]
 fn cached_router_replays_cpu_identity_when_runtime_policy_disables_gpu() {
     let scanner = CompiledScanner::compile_with_gpu_policy(
         phase1_test_detectors(),
@@ -2954,6 +2956,7 @@ fn calibration_mode_remeasures_loaded_cache_decisions_before_reuse() {
 }
 
 #[test]
+#[cfg(feature = "simd")]
 fn cached_router_loads_persisted_decision_and_fails_loud_on_missing_bucket() {
     let path = std::env::temp_dir().join(format!(
         "keyhog_cached_router_hit_miss_{}.json",

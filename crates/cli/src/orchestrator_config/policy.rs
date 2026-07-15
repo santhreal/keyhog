@@ -51,6 +51,7 @@ pub(crate) struct ResolvedVerifyPolicy {
 #[derive(Debug, Clone)]
 pub(crate) struct ResolvedOobPolicy {
     pub(crate) enabled: bool,
+    #[cfg(feature = "verify")]
     pub(crate) server: String,
     pub(crate) timeout_secs: u64,
 }
@@ -126,6 +127,7 @@ impl ResolvedVerifyPolicy {
             allow_script_verify: false,
             oob: ResolvedOobPolicy {
                 enabled: false,
+                #[cfg(feature = "verify")]
                 server: "https://oob.invalid".into(),
                 timeout_secs: 30,
             },

@@ -664,6 +664,7 @@ pub(crate) fn progress_ticker(done: Arc<AtomicBool>, started: Instant) {
 /// completed, so the scan ticker is no longer alive. This keeps `--verify`
 /// operator-visible during the network phase instead of going quiet between
 /// scanning and the final report.
+#[cfg(feature = "verify")]
 pub(crate) fn verification_ticker(done: Arc<AtomicBool>, started: Instant, total: usize) {
     terminal_ticker_loop(done, started, "verification", |elapsed, frame, color| {
         render_verification_ticker_line(total, elapsed, frame, color)

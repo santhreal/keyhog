@@ -719,11 +719,8 @@ fn action_quick_start_scans_the_checked_out_workspace_by_default() {
         .expect("binary parent")
         .to_str()
         .expect("utf-8 binary dir");
-    let finding = run_action_with_path_prefix(
-        &checked_out,
-        binary_dir,
-        &[("ACTION_INPUT_BACKEND", "cpu")],
-    );
+    let finding =
+        run_action_with_path_prefix(&checked_out, binary_dir, &[("ACTION_INPUT_BACKEND", "cpu")]);
     assert_eq!(
         finding.status.code(),
         Some(0),
@@ -736,11 +733,8 @@ fn action_quick_start_scans_the_checked_out_workspace_by_default() {
     );
 
     let no_checkout = TempDir::new().expect("empty workspace tempdir");
-    let clean = run_action_with_path_prefix(
-        &no_checkout,
-        binary_dir,
-        &[("ACTION_INPUT_BACKEND", "cpu")],
-    );
+    let clean =
+        run_action_with_path_prefix(&no_checkout, binary_dir, &[("ACTION_INPUT_BACKEND", "cpu")]);
     assert_eq!(
         clean.status.code(),
         Some(0),

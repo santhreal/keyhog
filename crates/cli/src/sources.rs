@@ -206,6 +206,7 @@ pub(crate) fn build_sources(
     let mut sources: Vec<Box<dyn Source>> = Vec::new();
     let source_limits = resolved.source_limits;
     let requested_roots = args.scan_roots();
+    #[cfg(feature = "git")]
     let scan_path = requested_roots.first();
     validate_source_flag_combinations(args, !requested_roots.is_empty())?;
 

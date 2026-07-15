@@ -542,12 +542,16 @@ pub(crate) mod testing {
         // has none). A made-up non-existent path is (correctly) rejected as an
         // operator typo, so it can't be used to force embedded.
         let embedded_sentinel = std::path::Path::new("detectors");
+        #[cfg(feature = "simd")]
+        let test_backend = keyhog_scanner::ScanBackend::SimdCpu;
+        #[cfg(not(feature = "simd"))]
+        let test_backend = keyhog_scanner::ScanBackend::CpuFallback;
         let runtime = crate::orchestrator::setup_default_scan_runtime_for_test(
             embedded_sentinel,
             false,
             None,
             Some(rayon::current_num_threads()),
-            Some(keyhog_scanner::ScanBackend::SimdCpu),
+            Some(test_backend),
             "keyhog watch",
             false,
             Some(root),

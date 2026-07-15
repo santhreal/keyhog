@@ -210,6 +210,7 @@ struct EffectivePolicy {
     /// Live verification after the merge (CLI flag OR `.keyhog.toml`). The
     /// daemon returns scanner matches only, so a config-driven verify request
     /// must route in-process exactly like `--verify`.
+    #[cfg(feature = "verify")]
     verify: bool,
     /// Minimum-severity filter after the merge (CLI flag OR `.keyhog.toml`).
     severity: bool,
@@ -257,13 +258,12 @@ impl EffectivePolicy {
         let show_secrets = probe.show_secrets;
         #[cfg(feature = "verify")]
         let verify = probe.verify;
-        #[cfg(not(feature = "verify"))]
-        let verify = false;
         let severity = probe.severity.is_some();
         EffectivePolicy {
             effective_args: probe,
             min_confidence,
             show_secrets,
+            #[cfg(feature = "verify")]
             verify,
             severity,
             require_lockdown: outcome.require_lockdown,
