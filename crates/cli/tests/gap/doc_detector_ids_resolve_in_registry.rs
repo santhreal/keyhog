@@ -45,10 +45,20 @@ fn referenced_stems(text: &str) -> BTreeSet<String> {
     let mut stems = BTreeSet::new();
     let mut rest = text;
     while let Some(pos) = rest.find("detectors/") {
+        // Match the repository's canonical `detectors/` directory, not a
+        // custom corpus such as `my-detectors/` used in the documentation
+        // examples. The latter owns arbitrary IDs and must not be resolved
+        // against the embedded registry.
         let is_repo_relative = pos == 0
             || !matches!(
                 rest[..pos].as_bytes().last().copied(),
-                Some(b'/') | Some(b'\\')
+                Some(b'/')
+                    | Some(b'\\')
+                    | Some(b'-')
+                    | Some(b'_')
+                    | Some(b'0'..=b'9')
+                    | Some(b'a'..=b'z')
+                    | Some(b'A'..=b'Z')
             );
         let after = &rest[pos + "detectors/".len()..];
         // Read the stem up to `.toml`.
