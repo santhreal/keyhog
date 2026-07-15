@@ -90,11 +90,15 @@ impl CompiledScanner {
             .and_then(|spec| spec.keyword_free_min_len)
             .map_or(crate::entropy::KEYWORD_FREE_MIN_LEN, |min_len| min_len);
         let isolated_bare_candidate = !path_entropy_appropriate
-            && crate::entropy::scanner::has_isolated_bare_secret_candidate_with_lines(
+            && crate::entropy::scanner::has_isolated_bare_secret_candidate_with_lines_and_policy(
                 &entropy_lines,
                 self.config.entropy_threshold,
                 &self.config.placeholder_keywords,
                 generic_keyword_secret_min_len,
+                self.generic_owning_detector
+                    .generic_keyword_secret_index()
+                    .and_then(|index| self.detectors.get(index))
+                    .and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape),
             );
         #[cfg(feature = "simd")]
         let lower_dash_app_password_candidate = path_entropy_appropriate
@@ -236,6 +240,7 @@ impl CompiledScanner {
                 detector_owned_canonical_hex_key,
                 source_entropy_requires_same_line_credential,
                 bpe_bound,
+                policy_detector.and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape),
             ) {
                 let entropy_ctx = crate::adjudicate::MatchCtx::for_entropy_fallback(
                     crate::adjudicate::EntropyFallbackSignal::ValueShape(shape_stage),

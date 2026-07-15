@@ -267,6 +267,12 @@ impl CompiledScanner {
             .and_then(|index| self.detectors.get(index))
             .and_then(|spec| spec.keyword_free_min_len)
             .map_or(crate::entropy::KEYWORD_FREE_MIN_LEN, |min_len| min_len);
+        #[cfg(feature = "entropy")]
+        let generic_keyword_secret_entropy_shape = self
+            .generic_owning_detector
+            .generic_keyword_secret_index()
+            .and_then(|index| self.detectors.get(index))
+            .and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape);
         #[cfg(feature = "multiline")]
         if crate::multiline::has_concatenation_indicators(text) {
             if keyword_admits {
@@ -274,11 +280,12 @@ impl CompiledScanner {
             }
             #[cfg(feature = "entropy")]
             if small_chunk && self.config.entropy_enabled {
-                if crate::entropy::scanner::has_isolated_bare_secret_candidate(
+                if crate::entropy::scanner::has_isolated_bare_secret_candidate_with_policy(
                     text,
                     self.config.entropy_threshold,
                     &self.config.placeholder_keywords,
                     generic_keyword_secret_min_len,
+                    generic_keyword_secret_entropy_shape,
                 ) {
                     return true;
                 }
@@ -293,11 +300,12 @@ impl CompiledScanner {
                 text,
                 &self.config.secret_keywords,
             ) && has_high_entropy_run_fast(data))
-                || crate::entropy::scanner::has_isolated_bare_secret_candidate(
+                || crate::entropy::scanner::has_isolated_bare_secret_candidate_with_policy(
                     text,
                     self.config.entropy_threshold,
                     &self.config.placeholder_keywords,
                     generic_keyword_secret_min_len,
+                    generic_keyword_secret_entropy_shape,
                 ));
         #[cfg(feature = "entropy")]
         {

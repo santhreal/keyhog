@@ -24,7 +24,8 @@
 use keyhog_core::compute_spec_hash;
 use keyhog_core::{
     CanonicalHexKeyMaterialSpec, CompanionSpec, CredentialShape, DetectorKind, DetectorSpec,
-    EntropyFallbackMetadata, EntropyFloorBucket, PatternSpec, Severity, VerifySpec,
+    EntropyFallbackMetadata, EntropyFloorBucket, EntropyShapeSpec, PatternSpec, Severity,
+    VerifySpec,
 };
 
 /// Fully-populated single-pattern detector. `name`/`service` are set equal to
@@ -477,6 +478,13 @@ knob_changes_digest!(spec_hash_binds_entropy_fallback_metadata, |d| d
         name: "Custom entropy".into(),
         service: "generic".into(),
     }));
+knob_changes_digest!(spec_hash_binds_entropy_shapes, |d| d.entropy_shapes =
+    vec![EntropyShapeSpec::LowerDashAppPassword {
+        entropy_floor: 3.9,
+        group_count: 4,
+        group_length: 4,
+        special_min_length: 16,
+    }]);
 knob_changes_digest!(spec_hash_binds_mixed_alnum_floor, |d| d.mixed_alnum_floor =
     Some(3.7));
 knob_changes_digest!(spec_hash_binds_entropy_policy_priority, |d| d

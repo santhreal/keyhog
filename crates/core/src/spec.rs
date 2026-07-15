@@ -157,6 +157,12 @@ pub struct DetectorSpec {
     /// manifests, not a scanner-wide hidden discount.
     #[serde(default)]
     pub sensitive_path_entropy_very_high: Option<f64>,
+    /// Detector-owned isolated entropy shapes. These are explicit structural
+    /// exceptions to the broad keyword-free floor, such as a four-group
+    /// lower-dash app password. An omitted list means no detector-specific
+    /// isolated shape exception.
+    #[serde(default)]
+    pub entropy_shapes: Vec<EntropyShapeSpec>,
     /// Per-detector mixed-alnum token entropy floor (bits/byte).
     /// `None` → the single-owner default `MIXED_ALNUM_TOKEN_THRESHOLD`.
     #[serde(default)]
@@ -319,6 +325,25 @@ pub struct EntropyFallbackMetadata {
     pub service: String,
 }
 
+/// A structural shape that may cross a detector's broad isolated entropy floor.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum EntropyShapeSpec {
+    /// Lowercase alphanumeric groups separated by dashes, used by Bluesky app
+    /// passwords and emitted through the generic entropy fallback path.
+    LowerDashAppPassword {
+        /// Minimum Shannon entropy in bits/byte.
+        entropy_floor: f64,
+        /// Number of dash-separated groups.
+        group_count: usize,
+        /// Exact byte length of every group.
+        group_length: usize,
+        /// Minimum candidate length used by the isolated-shape revisit. This
+        /// may be below the detector's broad keyword-free minimum.
+        special_min_length: usize,
+    },
+}
+
 /// One detector-local pure-hex key-material policy.
 ///
 /// A candidate is eligible only when its captured assignment key matches one of
@@ -338,6 +363,13 @@ pub struct CanonicalHexKeyMaterialSpec {
 }
 
 impl DetectorSpec {
+    /// Return the detector-owned lower-dash isolated shape, if declared.
+    pub fn lower_dash_entropy_shape(&self) -> Option<EntropyShapeSpec> {
+        self.entropy_shapes.iter().find_map(|shape| match shape {
+            EntropyShapeSpec::LowerDashAppPassword { .. } => Some(*shape),
+        })
+    }
+
     /// Return the stable, redaction-safe declaration used by detector
     /// introspection surfaces.
     ///

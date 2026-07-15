@@ -20,12 +20,12 @@ const SYMBOLIC_ALPHA_ONLY_MIN_LEN: usize = 18;
 /// is 16 characters can still pass.
 const COLON_RIGHT_PART_MIN_LEN: usize = 16;
 
-#[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
-pub(crate) fn has_isolated_bare_secret_candidate(
+pub(crate) fn has_isolated_bare_secret_candidate_with_policy(
     text: &str,
     entropy_threshold: f64,
     placeholder_keywords: &[String],
     min_len: usize,
+    entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
 ) -> bool {
     // Stream `text.lines()` straight into `.any()` instead of collecting a
     // `Vec<&str>` first (Law 7: this runs twice per coalesced chunk in
@@ -34,20 +34,32 @@ pub(crate) fn has_isolated_bare_secret_candidate(
     // collected slice did, so this is byte-for-byte equivalent.
     let threshold = isolated_bare_entropy_threshold(entropy_threshold);
     text.lines().any(|line| {
-        line_has_isolated_bare_secret_candidate(line, threshold, placeholder_keywords, min_len)
+        line_has_isolated_bare_secret_candidate(
+            line,
+            threshold,
+            placeholder_keywords,
+            min_len,
+            entropy_shape,
+        )
     })
 }
 
-#[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
-pub(crate) fn has_isolated_bare_secret_candidate_with_lines(
+pub(crate) fn has_isolated_bare_secret_candidate_with_lines_and_policy(
     lines: &[&str],
     entropy_threshold: f64,
     placeholder_keywords: &[String],
     min_len: usize,
+    entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
 ) -> bool {
     let threshold = isolated_bare_entropy_threshold(entropy_threshold);
     lines.iter().any(|line| {
-        line_has_isolated_bare_secret_candidate(line, threshold, placeholder_keywords, min_len)
+        line_has_isolated_bare_secret_candidate(
+            line,
+            threshold,
+            placeholder_keywords,
+            min_len,
+            entropy_shape,
+        )
     })
 }
 
@@ -60,24 +72,33 @@ fn line_has_isolated_bare_secret_candidate(
     threshold: f64,
     placeholder_keywords: &[String],
     min_len: usize,
+    entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
 ) -> bool {
     if is_likely_innocuous_line(line) {
         return false;
     }
     let mut found = false;
     visit_isolated_bare_candidates(line, min_len.max(1), |candidate, _| {
-        found |= isolated_bare_secret_entropy(candidate, threshold, placeholder_keywords).is_some();
+        found |=
+            isolated_bare_secret_entropy(candidate, threshold, placeholder_keywords, entropy_shape)
+                .is_some();
     });
     // Generic detector TOMLs keep their broad keyword-free floor at 20 bytes,
     // but narrower symbolic/app-password shapes have stronger shape proof down
     // to 16 bytes. Revisit only that special band; ordinary tokens continue to
     // obey the detector-owned broad minimum.
-    if !found && min_len > ISOLATED_SPECIAL_SHAPE_MIN_LEN {
-        visit_isolated_bare_candidates(line, ISOLATED_SPECIAL_SHAPE_MIN_LEN, |candidate, _| {
+    let special_min_len = isolated_special_shape_min_len(entropy_shape.as_ref());
+    if !found && min_len > special_min_len {
+        visit_isolated_bare_candidates(line, special_min_len, |candidate, _| {
             let entropy = shannon_entropy(candidate.as_bytes());
-            if isolated_special_shape_floor_met(candidate, entropy) {
-                found |= isolated_bare_secret_entropy(candidate, threshold, placeholder_keywords)
-                    .is_some();
+            if isolated_special_shape_floor_met(candidate, entropy, entropy_shape.as_ref()) {
+                found |= isolated_bare_secret_entropy(
+                    candidate,
+                    threshold,
+                    placeholder_keywords,
+                    entropy_shape,
+                )
+                .is_some();
             }
         });
     }
@@ -95,7 +116,12 @@ fn isolated_bare_entropy_threshold(entropy_threshold: f64) -> f64 {
         .map_or(MIXED_ALNUM_TOKEN_THRESHOLD, |threshold| threshold)
 }
 
-fn isolated_bare_entropy_floor_met(candidate: &str, entropy: f64, threshold: f64) -> bool {
+fn isolated_bare_entropy_floor_met(
+    candidate: &str,
+    entropy: f64,
+    threshold: f64,
+    shape_policy: Option<&keyhog_core::EntropyShapeSpec>,
+) -> bool {
     if entropy >= threshold {
         return true;
     }
@@ -103,13 +129,14 @@ fn isolated_bare_entropy_floor_met(candidate: &str, entropy: f64, threshold: f64
         return false;
     }
     mixed_separator_token_floor_met(candidate, entropy)
-        || lower_dash_app_password_floor_met(candidate, entropy)
+        || lower_dash_app_password_floor_met_with_policy(candidate, entropy, shape_policy)
         || mixed_contiguous_token_floor_met(candidate, entropy)
 }
 
-pub(super) fn isolated_bare_keyword_context(
+pub(super) fn isolated_bare_keyword_context_with_shape(
     entropy_threshold: f64,
     min_len: usize,
+    entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
 ) -> KeywordContext {
     KeywordContext {
         keyword: ISOLATED_BARE_ENTROPY_LABEL.to_string(),
@@ -117,6 +144,7 @@ pub(super) fn isolated_bare_keyword_context(
         min_len: min_len.max(1),
         is_credential_context: false,
         allow_canonical_shapes: false,
+        entropy_shape,
     }
 }
 
@@ -144,28 +172,61 @@ pub(crate) fn mixed_separator_token_floor_met(candidate: &str, entropy: f64) -> 
     has_upper && has_lower && has_digit
 }
 
-const LOWER_DASH_APP_PASSWORD_LEN: usize = 19;
-pub(super) const ISOLATED_SPECIAL_SHAPE_MIN_LEN: usize = 16;
+const SYMBOLIC_SPECIAL_SHAPE_MIN_LEN: usize = 18;
 
-fn isolated_special_shape_floor_met(candidate: &str, entropy: f64) -> bool {
-    lower_dash_app_password_floor_met(candidate, entropy)
-        || (candidate.len() >= ISOLATED_SPECIAL_SHAPE_MIN_LEN
+pub(super) fn isolated_special_shape_min_len(
+    entropy_shape: Option<&keyhog_core::EntropyShapeSpec>,
+) -> usize {
+    entropy_shape
+        .and_then(|shape| match shape {
+            keyhog_core::EntropyShapeSpec::LowerDashAppPassword {
+                special_min_length, ..
+            } => Some(*special_min_length),
+        })
+        .map_or(SYMBOLIC_SPECIAL_SHAPE_MIN_LEN, |min_len| {
+            min_len.min(SYMBOLIC_SPECIAL_SHAPE_MIN_LEN)
+        })
+}
+
+fn isolated_special_shape_floor_met(
+    candidate: &str,
+    entropy: f64,
+    entropy_shape: Option<&keyhog_core::EntropyShapeSpec>,
+) -> bool {
+    lower_dash_app_password_floor_met_with_policy(candidate, entropy, entropy_shape)
+        || (candidate.len() >= SYMBOLIC_SPECIAL_SHAPE_MIN_LEN
             && symbolic_isolated_bare_candidate(candidate))
 }
 
-pub(crate) fn lower_dash_app_password_floor_met(candidate: &str, entropy: f64) -> bool {
-    const LOWER_DASH_APP_PASSWORD_THRESHOLD: f64 = 3.9;
-    // Four `-`-separated groups of 4 chars + 3 dashes = 19 (e.g. `a1b2-c3d4-e5f6-g7h8`).
-    if entropy < LOWER_DASH_APP_PASSWORD_THRESHOLD || candidate.len() != LOWER_DASH_APP_PASSWORD_LEN
-    {
+pub(crate) fn lower_dash_app_password_floor_met_with_policy(
+    candidate: &str,
+    entropy: f64,
+    entropy_shape: Option<&keyhog_core::EntropyShapeSpec>,
+) -> bool {
+    let Some(keyhog_core::EntropyShapeSpec::LowerDashAppPassword {
+        entropy_floor,
+        group_count: expected_group_count,
+        group_length,
+        ..
+    }) = entropy_shape
+    else {
+        return false;
+    };
+    let Some(expected_len) = expected_group_count
+        .checked_mul(*group_length)
+        .and_then(|length| length.checked_add(expected_group_count.saturating_sub(1)))
+    else {
+        return false;
+    };
+    if entropy < *entropy_floor || candidate.len() != expected_len {
         return false;
     }
 
     let mut has_non_hex = false;
-    let mut group_count = 0usize;
+    let mut actual_group_count = 0usize;
     for group in candidate.split('-') {
-        group_count += 1;
-        if group.len() != 4 {
+        actual_group_count += 1;
+        if group.len() != *group_length {
             return false;
         }
         let mut has_alpha = false;
@@ -183,7 +244,7 @@ pub(crate) fn lower_dash_app_password_floor_met(candidate: &str, entropy: f64) -
         }
     }
 
-    group_count == 4 && has_non_hex
+    actual_group_count == *expected_group_count && has_non_hex
 }
 
 pub(crate) fn mixed_contiguous_token_floor_met(candidate: &str, entropy: f64) -> bool {
@@ -228,6 +289,7 @@ pub(super) fn collect_isolated_bare_candidates_inner(
             candidate,
             context.threshold,
             placeholder_keywords,
+            context.entropy_shape,
         ) {
             Ok(entropy) => entropy,
             Err(stage_id) => {
@@ -256,19 +318,20 @@ pub(super) fn collect_isolated_bare_candidates_inner(
     // See the matching admission exception in
     // `line_has_isolated_bare_secret_candidate`: only shape-proven symbolic or
     // 4x4 app-password candidates may cross a broader detector TOML floor.
-    if context.min_len > ISOLATED_SPECIAL_SHAPE_MIN_LEN {
-        visit_isolated_bare_candidates(
-            line,
-            ISOLATED_SPECIAL_SHAPE_MIN_LEN,
-            |candidate, candidate_offset| {
-                let entropy = shannon_entropy(candidate.as_bytes());
-                if candidate.len() < context.min_len
-                    && isolated_special_shape_floor_met(candidate, entropy)
-                {
-                    emit_candidate(candidate, candidate_offset);
-                }
-            },
-        );
+    let special_min_len = isolated_special_shape_min_len(context.entropy_shape.as_ref());
+    if context.min_len > special_min_len {
+        visit_isolated_bare_candidates(line, special_min_len, |candidate, candidate_offset| {
+            let entropy = shannon_entropy(candidate.as_bytes());
+            if candidate.len() < context.min_len
+                && isolated_special_shape_floor_met(
+                    candidate,
+                    entropy,
+                    context.entropy_shape.as_ref(),
+                )
+            {
+                emit_candidate(candidate, candidate_offset);
+            }
+        });
     }
 }
 
@@ -276,8 +339,14 @@ fn isolated_bare_secret_entropy(
     candidate: &str,
     threshold: f64,
     placeholder_keywords: &[String],
+    entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
 ) -> Option<f64> {
-    match isolated_bare_secret_entropy_decision(candidate, threshold, placeholder_keywords) {
+    match isolated_bare_secret_entropy_decision(
+        candidate,
+        threshold,
+        placeholder_keywords,
+        entropy_shape,
+    ) {
         Ok(entropy) => Some(entropy),
         Err(_stage) => {
             // Boolean-predicate adapter: a rejection is simply "not an isolated
@@ -292,6 +361,7 @@ fn isolated_bare_secret_entropy_decision(
     candidate: &str,
     threshold: f64,
     placeholder_keywords: &[String],
+    entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
 ) -> Result<f64, StageId> {
     if super::scanner::is_canonical_non_secret_shape(candidate) {
         return Err(StageId::EntropyValueShape(
@@ -299,10 +369,10 @@ fn isolated_bare_secret_entropy_decision(
         ));
     }
     let entropy = shannon_entropy(candidate.as_bytes());
-    if !isolated_bare_entropy_floor_met(candidate, entropy, threshold) {
+    if !isolated_bare_entropy_floor_met(candidate, entropy, threshold, entropy_shape.as_ref()) {
         return Err(StageId::EntropyBelowFloor);
     }
-    if !is_isolated_bare_secret_plausible(candidate, placeholder_keywords) {
+    if !is_isolated_bare_secret_plausible(candidate, placeholder_keywords, entropy_shape) {
         return Err(StageId::EntropyValueShape(
             EntropyShapeStage::SecretPlausibilityRejected,
         ));

@@ -311,11 +311,6 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
                 "entropy_fallback is only valid for service = \"generic\" detectors".into(),
             ));
         }
-        if spec.kind != crate::DetectorKind::Phase2Generic {
-            issues.push(QualityIssue::Error(
-                "entropy_fallback is only valid for kind = \"phase2-generic\" detectors".into(),
-            ));
-        }
         if !metadata.id.starts_with("entropy-") {
             issues.push(QualityIssue::Error(format!(
                 "entropy_fallback.id {:?} must use the entropy- namespace",
@@ -331,6 +326,53 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
             issues.push(QualityIssue::Error(
                 "entropy_fallback.service must not be empty".into(),
             ));
+        }
+    }
+    let mut lower_dash_shape_seen = false;
+    if !spec.entropy_shapes.is_empty() && spec.service != "generic" {
+        issues.push(QualityIssue::Error(
+            "entropy_shapes are only valid for service = \"generic\" detectors".into(),
+        ));
+    }
+    for (index, shape) in spec.entropy_shapes.iter().enumerate() {
+        match shape {
+            crate::spec::EntropyShapeSpec::LowerDashAppPassword {
+                entropy_floor,
+                group_count,
+                group_length,
+                special_min_length,
+            } => {
+                if lower_dash_shape_seen {
+                    issues.push(QualityIssue::Error(
+                        "entropy_shapes contains duplicate kind \"lower-dash-app-password\"".into(),
+                    ));
+                }
+                lower_dash_shape_seen = true;
+                if !entropy_floor.is_finite() || !(0.0..=8.0).contains(entropy_floor) {
+                    issues.push(QualityIssue::Error(format!(
+                        "entropy_shapes[{index}].entropy_floor must be finite and in [0.0, 8.0], found {entropy_floor}"
+                    )));
+                }
+                if *group_count == 0 || *group_length == 0 {
+                    issues.push(QualityIssue::Error(format!(
+                        "entropy_shapes[{index}] group_count and group_length must both be greater than 0"
+                    )));
+                }
+                let derived_length = group_count
+                    .checked_mul(*group_length)
+                    .and_then(|length| length.checked_add(group_count.saturating_sub(1)));
+                let Some(derived_length) = derived_length else {
+                    issues.push(QualityIssue::Error(format!(
+                        "entropy_shapes[{index}] group_count/group_length overflow the derived candidate length"
+                    )));
+                    continue;
+                };
+                if *special_min_length == 0 || *special_min_length > derived_length {
+                    issues.push(QualityIssue::Error(format!(
+                        "entropy_shapes[{index}].special_min_length must be in 1..={derived_length}, found {special_min_length}"
+                    )));
+                }
+            }
         }
     }
 }

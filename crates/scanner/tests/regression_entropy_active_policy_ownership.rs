@@ -252,6 +252,75 @@ fn entropy_fallback_identity_comes_from_active_detector_policy() {
     assert_eq!(finding.service.as_ref(), "custom-service");
 }
 
+#[test]
+fn lower_dash_entropy_exception_is_owned_by_the_active_detector_shape_policy() {
+    let secret = "kp4q-x7rm-2sn5-tb8v";
+    let mut detectors =
+        keyhog_core::load_embedded_detectors_or_fail().expect("embedded detector corpus must load");
+    for detector in &mut detectors {
+        if matches!(
+            detector.id.as_str(),
+            "generic-secret" | "generic-keyword-secret"
+        ) {
+            detector.entropy_shapes.clear();
+        }
+    }
+    let generic_keyword_secret = detectors
+        .iter_mut()
+        .find(|detector| detector.id == "generic-keyword-secret")
+        .expect("generic-keyword-secret policy must be present");
+    generic_keyword_secret.entropy_shapes.clear();
+
+    let mut config = ScannerConfig::default();
+    config.entropy_enabled = true;
+    config.min_confidence = 0.0;
+    config.penalize_test_paths = false;
+    let scanner_without_shape = CompiledScanner::compile(detectors.clone())
+        .expect("custom detector shape corpus must compile")
+        .with_config(config.clone());
+    let chunk = Chunk {
+        data: format!("{secret}\n").into(),
+        metadata: ChunkMetadata {
+            path: Some("notes/sufficiency-probe.txt".into()),
+            ..Default::default()
+        },
+    };
+    assert!(
+        scanner_without_shape
+            .scan(&chunk)
+            .iter()
+            .all(|finding| finding.credential.as_ref() != secret),
+        "omitting the detector-owned shape must remove the isolated exception"
+    );
+
+    let generic_keyword_secret = detectors
+        .iter_mut()
+        .find(|detector| detector.id == "generic-keyword-secret")
+        .expect("generic-keyword-secret policy must be present");
+    generic_keyword_secret.entropy_shapes =
+        vec![keyhog_core::EntropyShapeSpec::LowerDashAppPassword {
+            entropy_floor: 3.9,
+            group_count: 4,
+            group_length: 4,
+            special_min_length: 16,
+        }];
+    detectors
+        .iter_mut()
+        .find(|detector| detector.id == "generic-secret")
+        .expect("generic-secret policy must be present")
+        .entropy_shapes = generic_keyword_secret.entropy_shapes.clone();
+    let scanner_with_shape = CompiledScanner::compile(detectors)
+        .expect("detector-owned shape policy corpus must compile")
+        .with_config(config);
+    let with_shape = scanner_with_shape.scan(&chunk);
+    assert!(
+        with_shape
+            .iter()
+            .any(|finding| finding.credential.as_ref() == secret),
+        "declaring the detector-owned shape must admit the exact structural exception: {with_shape:?}"
+    );
+}
+
 #[cfg(feature = "gpu")]
 #[test]
 fn detector_owned_very_high_boundary_is_exact_on_every_accelerated_backend() {

@@ -104,6 +104,7 @@ model's fixed vocabulary, remain global.
 | `entropy_very_high` | Tightens isolated, anchor-free token admission | Expands the no-keyword search and therefore its false-positive surface |
 | `sensitive_path_entropy_very_high` | Raises the keyword-free bar even in sensitive files | Lowers the explicit sensitive-path bar for that detector, improving recall in `.env`/secret manifests |
 | `[detector.entropy_fallback]` | Changes the emitted synthetic entropy finding identity for that detector's class | Omitting it uses the explicit custom-spec compatibility identity |
+| `[[detector.entropy_shapes]]` | Allows only the declared structural exception to cross the broad isolated floor | Omitting the shape removes that detector's isolated exception |
 | `entropy_floor` | A higher applicable length-bucket floor suppresses more low-entropy candidates for that detector | A lower floor preserves more human-chosen or structured credentials |
 | `mixed_alnum_floor` | Rejects more identifier-like alphanumeric runs | Preserves more low-randomness mixed-alphanumeric values |
 | `entropy_policy_priority` | Wins more overlapping generic keyword-policy claims | Yields shared keywords to a more specific detector; unique keywords are unchanged |
@@ -164,6 +165,15 @@ These settings do not all use one generic “last value wins” rule:
   custom specs that omit the block use the documented compatibility labels, so
   omission is visible in `explain` rather than silently changing a shipped
   detector's identity.
+- **Isolated entropy shapes:** generic entropy owners may declare a typed
+  `lower-dash-app-password` shape with its entropy floor, group count/length,
+  and special minimum length. The candidate length is derived as
+  `group_count * group_length + group_count - 1`, with one dash between groups;
+  `special_min_length` controls the short-candidate revisit and must not exceed
+  that derived length. The shape is used for anchorless synthetic entropy
+  recovery; the anchored `bluesky-app-password` regex remains the source of the
+  named Bluesky finding. A custom corpus without the shape has no isolated
+  exception, rather than inheriting an embedded detector policy.
 
 Token efficiency can carry more of the precision burden for a detector whose
 assignment key or regex already creates the candidate. That is the practical

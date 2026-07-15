@@ -108,6 +108,24 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
             if let Some(v) = d.sensitive_path_entropy_very_high {
                 entries.push(format!("spevh:{}:{:016x}", d.id, v.to_bits()));
             }
+            for (index, shape) in d.entropy_shapes.iter().enumerate() {
+                match shape {
+                    crate::EntropyShapeSpec::LowerDashAppPassword {
+                        entropy_floor,
+                        group_count,
+                        group_length,
+                        special_min_length,
+                    } => entries.push(format!(
+                        "entropy-shape:{}:{}:lower-dash-app-password:{:016x}:{}:{}:{}",
+                        d.id,
+                        index,
+                        entropy_floor.to_bits(),
+                        group_count,
+                        group_length,
+                        special_min_length,
+                    )),
+                }
+            }
             if let Some(v) = d.mixed_alnum_floor {
                 entries.push(format!("maf:{}:{:016x}", d.id, v.to_bits()));
             }

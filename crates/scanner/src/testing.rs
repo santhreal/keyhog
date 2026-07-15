@@ -1105,6 +1105,7 @@ pub fn credential_context_too_short_rejection_for_test(
         min_len,
         is_credential_context: true,
         allow_canonical_shapes: false,
+        entropy_shape: None,
     };
     let entropy = crate::entropy::shannon_entropy(candidate.as_bytes());
     matches!(
@@ -3614,11 +3615,18 @@ pub mod entropy_isolated {
         crate::entropy::scanner::mixed_separator_token_floor_met(candidate, entropy)
     }
 
-    /// `entropy >= 3.9`, `len == 19`, four `-`-separated groups of 4 lowercase/
-    /// digit chars (each with a letter AND a digit), with at least one non-hex
-    /// letter (g–z) so a pure-hex UUID-ish token does not qualify.
+    /// The shipped generic-secret TOML's lower-dash shape policy: four
+    /// `-`-separated groups of lowercase/digit chars (each with a letter AND a
+    /// digit), with at least one non-hex letter so a pure-hex UUID-ish token
+    /// does not qualify.
     pub fn lower_dash_app_password_floor_met(candidate: &str, entropy: f64) -> bool {
-        crate::entropy::scanner::lower_dash_app_password_floor_met(candidate, entropy)
+        let shape = keyhog_core::detector_spec_by_id(crate::detector_ids::GENERIC_SECRET)
+            .and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape);
+        crate::entropy::scanner::lower_dash_app_password_floor_met_with_policy(
+            candidate,
+            entropy,
+            shape.as_ref(),
+        )
     }
 
     /// `entropy >= 3.65`, `len >= 20`, every byte ASCII-alphanumeric (no

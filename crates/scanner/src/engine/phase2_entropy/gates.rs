@@ -26,6 +26,7 @@ pub(crate) fn entropy_match_suppression_stage(
     // explicitly disabled token efficiency; `Some` carries detector policy
     // with any Tier-A scan ceiling override already applied.
     bpe_max_bytes_per_token: Option<f64>,
+    entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
 ) -> Option<EntropyShapeStage> {
     let randomness =
         crate::suppression::token_randomness::TokenRandomness::for_candidate(&entropy_match.value);
@@ -57,10 +58,12 @@ pub(crate) fn entropy_match_suppression_stage(
                     &entropy_match.keyword,
                 )));
     let isolated_bare_token = entropy_match.keyword == crate::entropy::ISOLATED_BARE_ENTROPY_LABEL;
-    let lower_dash_app_password = crate::entropy::scanner::lower_dash_app_password_floor_met(
-        &entropy_match.value,
-        entropy_match.entropy,
-    );
+    let lower_dash_app_password =
+        crate::entropy::scanner::lower_dash_app_password_floor_met_with_policy(
+            &entropy_match.value,
+            entropy_match.entropy,
+            entropy_shape.as_ref(),
+        );
     // Keep shared content gates live even when canonical shape gates are lifted.
     if let Some(stage) = crate::adjudicate::entropy_fallback_example_suppression_stage(
         entropy_match.value.as_str(),

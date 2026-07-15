@@ -54,6 +54,7 @@ pub(crate) struct PlausibilityContext {
     pub(crate) allow_canonical_shapes: bool,
     entropy_high: Option<f64>,
     mixed_alnum_floor: Option<f64>,
+    entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
 }
 
 impl PlausibilityContext {
@@ -63,12 +64,14 @@ impl PlausibilityContext {
             allow_canonical_shapes,
             entropy_high: None,
             mixed_alnum_floor: None,
+            entropy_shape: None,
         }
     }
 
     pub(crate) fn with_detector(mut self, detector: Option<&keyhog_core::DetectorSpec>) -> Self {
         self.entropy_high = detector.and_then(|spec| spec.entropy_high);
         self.mixed_alnum_floor = detector.and_then(|spec| spec.mixed_alnum_floor);
+        self.entropy_shape = detector.and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape);
         self
     }
 }
@@ -233,6 +236,7 @@ pub(crate) fn passes_secret_strength_checks(value: &str, context: PlausibilityCo
 pub(crate) fn is_isolated_bare_secret_plausible(
     value: &str,
     placeholder_keywords: &[String],
+    entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
 ) -> bool {
     if is_isolated_leading_slash_base64_secret(value, placeholder_keywords) {
         return true;
@@ -255,8 +259,17 @@ pub(crate) fn is_isolated_bare_secret_plausible(
         value,
         PlausibilityMode::Lenient,
         placeholder_keywords,
-        PlausibilityContext::default(),
-    ) && passes_secret_shape_checks(value, PlausibilityContext::default())
+        PlausibilityContext {
+            entropy_shape,
+            ..PlausibilityContext::default()
+        },
+    ) && passes_secret_shape_checks(
+        value,
+        PlausibilityContext {
+            entropy_shape,
+            ..PlausibilityContext::default()
+        },
+    )
 }
 
 fn is_isolated_leading_slash_base64_secret(value: &str, placeholder_keywords: &[String]) -> bool {
@@ -349,9 +362,10 @@ fn passes_secret_shape_checks(value: &str, context: PlausibilityContext) -> bool
     // gate narrow: real service tokens often contain one or more
     // dashes inside otherwise random alnum bodies.
     if crate::suppression::shape::is_dash_segmented_alnum_decoy(value)
-        && !super::isolated::lower_dash_app_password_floor_met(
+        && !super::isolated::lower_dash_app_password_floor_met_with_policy(
             value,
             shannon_entropy(value.as_bytes()),
+            context.entropy_shape.as_ref(),
         )
     {
         return false;

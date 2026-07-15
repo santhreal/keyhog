@@ -48,6 +48,13 @@ entropy_floor = [
     { floor = 3.5 },
 ]
 
+[[detector.entropy_shapes]]
+kind = "lower-dash-app-password"
+entropy_floor = 3.9
+group_count = 4
+group_length = 4
+special_min_length = 16
+
 [detector.entropy_fallback]
 id = "entropy-api-key"
 name = "API Key (Entropy Detected)"

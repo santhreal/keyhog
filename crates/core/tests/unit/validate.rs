@@ -85,9 +85,61 @@ fn entropy_fallback_metadata_requires_entropy_identity_and_labels() {
         issue,
         QualityIssue::Error(message) if message.contains("only valid for service")
     )));
+}
+
+#[test]
+fn entropy_shape_policy_rejects_invalid_bounds_and_duplicate_kinds() {
+    let mut detector = detector_with_pattern("token=([A-Za-z0-9]+)");
+    detector.entropy_shapes = vec![
+        keyhog_core::EntropyShapeSpec::LowerDashAppPassword {
+            entropy_floor: 8.1,
+            group_count: 0,
+            group_length: 4,
+            special_min_length: 20,
+        },
+        keyhog_core::EntropyShapeSpec::LowerDashAppPassword {
+            entropy_floor: 3.9,
+            group_count: 4,
+            group_length: 4,
+            special_min_length: 16,
+        },
+    ];
+    let issues = validate_detector(&detector);
     assert!(issues.iter().any(|issue| matches!(
         issue,
-        QualityIssue::Error(message) if message.contains("only valid for kind")
+        QualityIssue::Error(message) if message.contains("duplicate kind")
+    )));
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("entropy_floor")
+    )));
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("group_count and group_length")
+    )));
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("special_min_length")
+    )));
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("entropy_shapes are only valid for service")
+    )));
+}
+
+#[test]
+fn entropy_shape_policy_rejects_derived_length_overflow() {
+    let mut detector = detector_with_pattern("token=([A-Za-z0-9]+)");
+    detector.entropy_shapes = vec![keyhog_core::EntropyShapeSpec::LowerDashAppPassword {
+        entropy_floor: 3.9,
+        group_count: usize::MAX,
+        group_length: 2,
+        special_min_length: 1,
+    }];
+    let issues = validate_detector(&detector);
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("overflow the derived candidate length")
     )));
 }
 

@@ -1,13 +1,16 @@
-use super::isolated::{collect_isolated_bare_candidates_inner, isolated_bare_keyword_context};
+use super::isolated::{
+    collect_isolated_bare_candidates_inner, isolated_bare_keyword_context_with_shape,
+};
 #[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
 pub(crate) use super::isolated::{
-    colon_separated_opaque_candidate, lower_dash_app_password_floor_met,
+    colon_separated_opaque_candidate, lower_dash_app_password_floor_met_with_policy,
     mixed_contiguous_token_floor_met, mixed_separator_token_floor_met,
     symbolic_alpha_only_opaque_candidate, symbolic_isolated_bare_candidate,
 };
 #[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
 pub(crate) use super::isolated::{
-    has_isolated_bare_secret_candidate, has_isolated_bare_secret_candidate_with_lines,
+    has_isolated_bare_secret_candidate_with_lines_and_policy,
+    has_isolated_bare_secret_candidate_with_policy,
 };
 use super::{
     keywords::*, shannon_entropy, EntropyMatch, FIRST_SOURCE_LINE_NUMBER, HIGH_ENTROPY_THRESHOLD,
@@ -148,6 +151,7 @@ pub(crate) fn credential_keyword_context_with_lift(
         min_len,
         is_credential_context: true,
         allow_canonical_shapes: allow_canonical_lift,
+        entropy_shape: spec.and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape),
     }
 }
 
@@ -517,6 +521,8 @@ fn scan_keyword_free_candidates(
         get_spec(active_policy, crate::detector_ids::GENERIC_KEYWORD_SECRET)
             .and_then(|s| s.keyword_free_min_len)
             .map_or(KEYWORD_FREE_MIN_LEN, |min_len| min_len);
+    let isolated_shape = get_spec(active_policy, crate::detector_ids::GENERIC_KEYWORD_SECRET)
+        .and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape);
     let keyword_free_context = KeywordContext {
         keyword: KEYWORD_FREE_LABEL.to_string(),
         threshold: effective_keyword_free_threshold,
@@ -526,9 +532,13 @@ fn scan_keyword_free_candidates(
         // canonical hash/UUID-shape gate stays strict here unconditionally,
         // regardless of model authority. The lift is anchor-gated.
         allow_canonical_shapes: false,
+        entropy_shape: spec.and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape),
     };
-    let isolated_token_context =
-        isolated_bare_keyword_context(entropy_threshold, generic_keyword_secret_min_len);
+    let isolated_token_context = isolated_bare_keyword_context_with_shape(
+        entropy_threshold,
+        generic_keyword_secret_min_len,
+        isolated_shape,
+    );
     let isolated_min_len = isolated_token_context.min_len;
     for (line_idx, line) in lines.iter().enumerate() {
         if let Some(skip) = skip_lines {
@@ -595,9 +605,11 @@ fn scan_keyword_free_candidates(
         // even the longest entropy run is too short, since the isolated-bare
         // path's `isolated_bare_candidate` requires alpha+digit or symbolic
         // opacity, which implies entropy bytes.
-        let special_shape_may_cross_minimum = isolated_min_len
-            > super::isolated::ISOLATED_SPECIAL_SHAPE_MIN_LEN
-            && max_nonws_run >= super::isolated::ISOLATED_SPECIAL_SHAPE_MIN_LEN;
+        let special_shape_min_len = super::isolated::isolated_special_shape_min_len(
+            isolated_token_context.entropy_shape.as_ref(),
+        );
+        let special_shape_may_cross_minimum =
+            isolated_min_len > special_shape_min_len && max_nonws_run >= special_shape_min_len;
         if max_nonws_run >= isolated_min_len || special_shape_may_cross_minimum {
             collect_isolated_bare_candidates_inner(
                 line,
@@ -675,15 +687,17 @@ pub(crate) fn has_lower_dash_app_password_candidate_with_precomputed_keywords_an
             detector,
         ) {
             let entropy = shannon_entropy(candidate.as_bytes());
-            if lower_dash_app_password_floor_met(&candidate, entropy)
-                && candidate_is_plausible_with_policy(
-                    &candidate,
-                    entropy,
-                    &context,
-                    &config.placeholder_keywords,
-                    active_policy,
-                )
-            {
+            if lower_dash_app_password_floor_met_with_policy(
+                &candidate,
+                entropy,
+                context.entropy_shape.as_ref(),
+            ) && candidate_is_plausible_with_policy(
+                &candidate,
+                entropy,
+                &context,
+                &config.placeholder_keywords,
+                active_policy,
+            ) {
                 return true;
             }
         }
@@ -1135,5 +1149,6 @@ fn keyword_context_with_policy(
         // the line, both must hold, so a non-credential line never lifts even
         // under the model.
         allow_canonical_shapes: allow_canonical_lift && is_credential_context,
+        entropy_shape: spec.and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape),
     }
 }

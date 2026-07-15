@@ -254,6 +254,19 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
         );
         declared += 1;
     }
+    for shape in &d.entropy_shapes {
+        match shape {
+            keyhog_core::EntropyShapeSpec::LowerDashAppPassword {
+                entropy_floor,
+                group_count,
+                group_length,
+                special_min_length,
+            } => println!(
+                "    entropy_shape: kind=lower-dash-app-password entropy_floor={entropy_floor} group_count={group_count} group_length={group_length} special_min_length={special_min_length}"
+            ),
+        }
+        declared += 1;
+    }
     optional_policy!(
         "sensitive_path_entropy_very_high",
         d.sensitive_path_entropy_very_high,

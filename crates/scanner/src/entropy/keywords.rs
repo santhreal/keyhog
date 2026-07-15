@@ -32,6 +32,7 @@ pub(crate) struct KeywordContext {
     /// no model, no lift. The keyword-FREE path keeps the strict gate
     /// unconditionally (no anchor ⇒ no evidence ⇒ no lift).
     pub(crate) allow_canonical_shapes: bool,
+    pub(crate) entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
 }
 
 pub(crate) fn find_keyword_assignment_lines<'a>(
