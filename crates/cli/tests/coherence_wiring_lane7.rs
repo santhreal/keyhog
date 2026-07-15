@@ -24,8 +24,8 @@
 //!   * README's cited detector count equals the live embedded count.
 //!   * README no longer claims a `0.3` default confidence floor (the canonical
 //!     default is `0.40`).
-//!   * docs/src/reference/env.md lists the `KEYHOG_BACKEND` values the parser
-//!     actually accepts and documents `--autoroute-gpu`.
+//!   * the canonical backend docs list every live `--backend` spelling the
+//!     parser accepts and keep the explicit `--autoroute-gpu` contract visible.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -447,11 +447,24 @@ fn docs_keep_backend_override_on_explicit_cli_surface() {
         "env.md must not document the retired KEYHOG_BACKEND control"
     );
     assert!(
-        config_doc.contains("`--backend`")
-            && config_doc.contains("`auto`/`gpu-cuda`/`gpu-wgpu`/`simd`/`cpu`")
-            && docs_backend_aliases_are_explicit(),
+        config_doc.contains("`--backend <BACKEND>`") && docs_backend_aliases_are_explicit(),
         "configuration docs must document the explicit --backend surface"
     );
+    for label in [
+        "gpu-cuda-region-presence",
+        "gpu-wgpu-region-presence",
+        "simd-regex",
+        "cpu-fallback",
+    ] {
+        assert!(
+            config_doc.contains(label),
+            "configuration docs must expose backend alias {label:?}"
+        );
+        assert!(
+            env_doc.contains(label),
+            "environment reference must expose backend alias {label:?}"
+        );
+    }
     assert!(
         !env_doc.contains("`KEYHOG_GPU_AUTOROUTE`")
             && config_doc.contains("`--autoroute-gpu`")

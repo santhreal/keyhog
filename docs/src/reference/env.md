@@ -69,7 +69,7 @@ controls. The common replacements are:
 
 | Need | Now set via |
 |------|-------------|
-| Backend override | `--backend <auto\|gpu-cuda\|gpu-wgpu\|simd\|cpu>` |
+| Backend override | `--backend <BACKEND>` where values are `auto`, `cpu` (`cpu-fallback`), `simd` (`simd-regex`), `gpu-cuda` (`gpu-cuda-region-presence`), or `gpu-wgpu` (`gpu-wgpu-region-presence`) |
 | GPU routing requirement or disablement | `--require-gpu`, `--no-gpu`, or `[system].gpu = "required"` / `"off"` |
 | Direct diagnostic calibration GPU control | `--autoroute-gpu`, `--no-autoroute-gpu`, or `[system].autoroute_gpu`; canonical `keyhog calibrate-autoroute` measures all eligible peers |
 | Scanner concurrency and per-chunk limits | `--threads` plus `[scan].threads`, `reader_threads`, `per_chunk_timeout_ms`, `fused_batch`, and `fused_depth` |
