@@ -328,6 +328,7 @@ meanings:
 | `selected_margin_ns` | One-shot representative-time margin to the next candidate; `null` when there is no competitor. |
 | `daemon_backend` | Backend derived for a ready persistent daemon from warm GPU evidence. |
 | `daemon_confidence_separated`, `daemon_selection_basis`, `daemon_selected_margin_ns` | Daemon-route counterparts of the one-shot confidence, basis, and margin fields. |
+| `source_mixture` | Structured source-class components used by the workload identity: canonical family digest, full-size versus payload provenance, reduced chunk/payload ratios, and maximum source-span bucket. JSON consumers should use these fields instead of parsing the human-readable `workload` string. |
 | `candidate_receipts` | One receipt per backend named by the config's `eligible_backends`, containing its canonical backend identity, secret-safe correctness digest, complete trial count, and evidence digest over those fields plus the exact timing vector. The receipt and timing sets must both equal the eligible census. Every result digest must equal the SIMD reference and every evidence digest must recompute exactly or the cache is rejected. |
 
 ## Single-backend builds
