@@ -61,6 +61,7 @@ impl_writer_backed!(JsonlReporter);
 pub(crate) struct JsonlEnvelopeReporter<W: Write + Send> {
     writer: W,
     finding_count: usize,
+    scan_status: ScanCompletionStatus,
     coverage_gap_summary: Vec<(String, usize)>,
 }
 
@@ -75,6 +76,10 @@ impl<W: Write + Send> JsonlEnvelopeReporter<W> {
         Ok(Self {
             writer,
             finding_count: 0,
+            scan_status: ScanCompletionStatus::resolve(
+                metadata.map(|value| value.scan_status),
+                !coverage_gap_summary.is_empty(),
+            ),
             coverage_gap_summary: coverage_gap_summary.to_vec(),
         })
     }
@@ -91,7 +96,11 @@ impl<W: Write + Send> Reporter for JsonlEnvelopeReporter<W> {
     fn finish(&mut self) -> Result<(), ReportError> {
         serde_json::to_writer(
             &mut self.writer,
-            &JsonlStreamSummary::complete(self.finding_count, &self.coverage_gap_summary),
+            &JsonlStreamSummary::complete_with_status(
+                self.finding_count,
+                self.scan_status,
+                &self.coverage_gap_summary,
+            ),
         )?;
         writeln!(self.writer)?;
         self.flush_writer()
@@ -177,11 +186,12 @@ impl<W: Write + Send> JsonEnvelopeReporter<W> {
             "{{\"schema_version\":{{\"major\":{},\"minor\":{}}}",
             JSON_REPORT_SCHEMA_MAJOR, JSON_REPORT_SCHEMA_MINOR
         )?;
+        let scan_status = ScanCompletionStatus::resolve(
+            metadata.map(|value| value.scan_status),
+            !coverage_gap_summary.is_empty(),
+        );
         write!(writer, ",\"scan_status\":")?;
-        serde_json::to_writer(
-            &mut writer,
-            &ScanCompletionStatus::from_coverage_gaps(!coverage_gap_summary.is_empty()),
-        )?;
+        serde_json::to_writer(&mut writer, &scan_status)?;
         if let Some(metadata) = metadata {
             write!(writer, ",\"metadata\":")?;
             serde_json::to_writer(&mut writer, metadata)?;

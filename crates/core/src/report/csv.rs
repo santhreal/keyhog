@@ -32,9 +32,10 @@ impl<W: Write + Send> CsvReporter<W> {
         metadata: Option<&ScanReportMetadata>,
         coverage_gap_summary: &[(String, usize)],
     ) -> Result<Self, ReportError> {
-        let scan_status = metadata.map(|value| value.scan_status).unwrap_or_else(|| {
-            ScanCompletionStatus::from_coverage_gaps(!coverage_gap_summary.is_empty())
-        });
+        let scan_status = ScanCompletionStatus::resolve(
+            metadata.map(|value| value.scan_status),
+            !coverage_gap_summary.is_empty(),
+        );
         let preamble = CsvScanMetadata {
             schema_version: 1,
             scan_status,

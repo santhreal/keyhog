@@ -72,6 +72,23 @@ impl ScanCompletionStatus {
             Self::Success
         }
     }
+
+    /// Resolve metadata and observed coverage into one terminal state.
+    ///
+    /// A non-empty coverage summary upgrades an optimistic `success` metadata
+    /// value to `partial`, while explicit `cancelled` and `failed` states are
+    /// preserved even when no gap counter was recorded.
+    #[must_use]
+    pub fn resolve(metadata: Option<Self>, has_gaps: bool) -> Self {
+        match metadata {
+            Some(Self::Cancelled) => Self::Cancelled,
+            Some(Self::Failed) => Self::Failed,
+            Some(Self::Partial) => Self::Partial,
+            Some(Self::Success) if has_gaps => Self::Partial,
+            Some(status) => status,
+            None => Self::from_coverage_gaps(has_gaps),
+        }
+    }
 }
 
 /// Format-neutral operator-visible metadata for a scan report.
@@ -262,10 +279,25 @@ impl JsonlStreamSummary {
     /// Construct a complete summary for a stream.
     #[must_use]
     pub fn complete(finding_count: usize, coverage_gap_summary: &[(String, usize)]) -> Self {
+        Self::complete_with_status(
+            finding_count,
+            ScanCompletionStatus::from_coverage_gaps(!coverage_gap_summary.is_empty()),
+            coverage_gap_summary,
+        )
+    }
+
+    /// Construct a complete summary using an explicitly recorded terminal
+    /// state from the scan metadata.
+    #[must_use]
+    pub fn complete_with_status(
+        finding_count: usize,
+        scan_status: ScanCompletionStatus,
+        coverage_gap_summary: &[(String, usize)],
+    ) -> Self {
         Self {
             record_type: "summary".to_string(),
             status: "complete".to_string(),
-            scan_status: ScanCompletionStatus::from_coverage_gaps(!coverage_gap_summary.is_empty()),
+            scan_status,
             finding_count,
             coverage_gap_summary: coverage_gap_summary
                 .iter()

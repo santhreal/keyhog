@@ -13,9 +13,9 @@
 //! specific string, byte count, integer, or parsed-JSON value.
 
 use keyhog_core::{
-    write_csv_coverage_report, write_report, CredentialHash, MatchLocation, ReportFormat,
-    ScanCompletionStatus, ScanReport, ScanReportMetadata, Severity, VerificationResult,
-    VerifiedFinding,
+    write_csv_coverage_report, write_report, write_scan_report, CredentialHash, MatchLocation,
+    ReportFormat, ScanCompletionStatus, ScanReport, ScanReportMetadata, Severity,
+    VerificationResult, VerifiedFinding,
 };
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -82,6 +82,25 @@ fn has_line(text: &str, line: &str) -> bool {
 // CSV
 // ---------------------------------------------------------------------------
 
+fn test_metadata(scan_status: ScanCompletionStatus) -> ScanReportMetadata {
+    ScanReportMetadata {
+        scan_id: "0123456789abcdef0123456789abcdef".into(),
+        scan_status,
+        keyhog_version: "test".into(),
+        git_hash: "test".into(),
+        detector_digest: "test".into(),
+        config_digest: None,
+        generated_at: "2026-01-01T00:00:00".into(),
+        scan_started_at: "2026-01-01T00:00:00".into(),
+        scan_finished_at: "2026-01-01T00:00:01".into(),
+        duration_ms: 1,
+        targets: vec!["fixture".into()],
+        source_chunks_scanned: 0,
+        source_bytes_scanned: 0,
+        detector_count: 1,
+    }
+}
+
 /// Positive: the CSV report's first line is the fixed 20-column header verbatim.
 #[test]
 fn csv_header_is_exact_first_line() {
@@ -119,22 +138,7 @@ fn csv_empty_run_is_header_only() {
 
 #[test]
 fn csv_coverage_preamble_preserves_zero_finding_partial_status() {
-    let metadata = ScanReportMetadata {
-        scan_id: "0123456789abcdef0123456789abcdef".into(),
-        scan_status: ScanCompletionStatus::Partial,
-        keyhog_version: "test".into(),
-        git_hash: "test".into(),
-        detector_digest: "test".into(),
-        config_digest: None,
-        generated_at: "2026-01-01T00:00:00".into(),
-        scan_started_at: "2026-01-01T00:00:00".into(),
-        scan_finished_at: "2026-01-01T00:00:01".into(),
-        duration_ms: 1,
-        targets: vec!["fixture".into()],
-        source_chunks_scanned: 0,
-        source_bytes_scanned: 0,
-        detector_count: 1,
-    };
+    let metadata = test_metadata(ScanCompletionStatus::Partial);
     let mut buf = Vec::new();
     write_csv_coverage_report(
         &mut buf,
@@ -150,6 +154,42 @@ fn csv_coverage_preamble_preserves_zero_finding_partial_status() {
     );
     assert_eq!(lines.next(), Some(CSV_HEADER));
     assert_eq!(lines.next(), None);
+}
+
+#[test]
+fn versioned_json_reports_preserve_explicit_failed_status() {
+    let metadata = test_metadata(ScanCompletionStatus::Failed);
+    let report = ScanReport::new(&[]).with_metadata(&metadata);
+
+    let mut json = Vec::new();
+    write_scan_report(
+        &mut json,
+        ReportFormat::JsonEnvelope {
+            coverage_gap_summary: Vec::new(),
+        },
+        report,
+    )
+    .expect("failed JSON envelope report");
+    let json: serde_json::Value = serde_json::from_slice(&json).expect("JSON envelope parses");
+    assert_eq!(json["scan_status"], "failed");
+    assert_eq!(json["metadata"]["scan_status"], "failed");
+
+    let mut jsonl = Vec::new();
+    write_scan_report(
+        &mut jsonl,
+        ReportFormat::JsonlEnvelope {
+            coverage_gap_summary: Vec::new(),
+        },
+        report,
+    )
+    .expect("failed JSONL envelope report");
+    let records: Vec<serde_json::Value> = String::from_utf8(jsonl)
+        .expect("JSONL UTF-8")
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("JSONL record parses"))
+        .collect();
+    assert_eq!(records[0]["metadata"]["scan_status"], "failed");
+    assert_eq!(records[1]["scan_status"], "failed");
 }
 
 #[test]
