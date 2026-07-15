@@ -450,21 +450,6 @@ fn docs_keep_backend_override_on_explicit_cli_surface() {
         config_doc.contains("`--backend <BACKEND>`") && docs_backend_aliases_are_explicit(),
         "configuration docs must document the explicit --backend surface"
     );
-    for label in [
-        "gpu-cuda-region-presence",
-        "gpu-wgpu-region-presence",
-        "simd-regex",
-        "cpu-fallback",
-    ] {
-        assert!(
-            config_doc.contains(label),
-            "configuration docs must expose backend alias {label:?}"
-        );
-        assert!(
-            env_doc.contains(label),
-            "environment reference must expose backend alias {label:?}"
-        );
-    }
     assert!(
         !env_doc.contains("`KEYHOG_GPU_AUTOROUTE`")
             && config_doc.contains("`--autoroute-gpu`")
@@ -474,18 +459,27 @@ fn docs_keep_backend_override_on_explicit_cli_surface() {
 }
 
 fn docs_backend_aliases_are_explicit() -> bool {
-    let backend_doc = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../docs/src/backends.md"
-    ));
-    [
-        "gpu-cuda-region-presence",
-        "gpu-wgpu-region-presence",
-        "simd-regex",
-        "cpu-fallback",
-    ]
-    .iter()
-    .all(|label| backend_doc.contains(label))
+    let docs = [
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../docs/src/backends.md"
+        )),
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../docs/src/reference/cli.md"
+        )),
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../docs/src/reference/configuration.md"
+        )),
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../docs/src/reference/env.md"
+        )),
+    ];
+    keyhog_scanner::hw_probe::BACKEND_OVERRIDE_VALUES
+        .iter()
+        .all(|label| docs.iter().all(|doc| doc.contains(label)))
 }
 
 /// first-scan.md and verification.md must agree on the dead-credential severity
