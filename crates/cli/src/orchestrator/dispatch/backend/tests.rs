@@ -1369,6 +1369,27 @@ fn exact_source_mixtures_survive_cache_replay_and_inspection() {
     assert!(rows
         .iter()
         .all(|row| { !row.workload.contains("filesystem") && !row.workload.contains("web") }));
+    for row in rows {
+        assert_eq!(row.source_mixture.len(), 2);
+        assert!(row
+            .source_mixture
+            .iter()
+            .all(|entry| entry.family_digest.len() == 64));
+        assert!(row
+            .source_mixture
+            .iter()
+            .all(|entry| entry.chunk_ratio > 0 && entry.payload_ratio > 0));
+    }
+    let inspection_json = serde_json::to_value(&inspection).expect("inspection serializes");
+    let json_entries = inspection_json["configs"][0]["decisions"][0]["source_mixture"]
+        .as_array()
+        .expect("JSON inspection exposes source-mixture entries");
+    assert_eq!(json_entries.len(), 2);
+    assert!(json_entries[0]["family_digest"]
+        .as_str()
+        .is_some_and(|digest| {
+            digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+        }));
 
     let mut cache: AutorouteCache = serde_json::from_slice(
         &std::fs::read(&path).expect("read exact-mixture cache for binding tamper"),

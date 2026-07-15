@@ -61,6 +61,10 @@ pub(crate) struct AutorouteConfigInspection {
 #[derive(Debug, Serialize)]
 pub(crate) struct AutorouteDecisionInspection {
     pub(crate) workload: String,
+    /// Canonical source-mixture components backing the workload identity.
+    /// These fields make the source-class hash-free diagnosis possible for
+    /// JSON consumers without parsing the human-readable workload string.
+    pub(crate) source_mixture: Vec<AutorouteSourceMixtureInspection>,
     pub(crate) calibrated_at_unix_ms: u128,
     pub(crate) calibration_age_ms: u128,
     /// Cold-aware backend for an in-process one-shot scan.
@@ -85,6 +89,15 @@ pub(crate) struct AutorouteDecisionInspection {
     pub(crate) daemon_confidence_separated: bool,
     pub(crate) daemon_selection_basis: &'static str,
     pub(crate) daemon_selected_margin_ns: Option<u128>,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct AutorouteSourceMixtureInspection {
+    pub(crate) family_digest: String,
+    pub(crate) has_full_size: bool,
+    pub(crate) chunk_ratio: u64,
+    pub(crate) payload_ratio: u64,
+    pub(crate) max_span_bucket: u8,
 }
 
 #[derive(Debug, Serialize)]
@@ -260,6 +273,18 @@ fn inspect_autoroute_cache_for_build(
             let daemon_confidence_separated = decision.has_separated_fastest_persistent_route();
             decisions.push(AutorouteDecisionInspection {
                 workload: render_workload_key(key),
+                source_mixture: key
+                    .source_mixture
+                    .entries
+                    .iter()
+                    .map(|entry| AutorouteSourceMixtureInspection {
+                        family_digest: keyhog_core::hex_encode(&entry.family_digest),
+                        has_full_size: entry.has_full_size,
+                        chunk_ratio: entry.chunk_ratio,
+                        payload_ratio: entry.payload_ratio,
+                        max_span_bucket: entry.max_span_bucket,
+                    })
+                    .collect(),
                 calibrated_at_unix_ms: decision.calibrated_at_unix_ms,
                 calibration_age_ms: inspected_at_unix_ms - decision.calibrated_at_unix_ms,
                 backend: decision.backend.clone(),
