@@ -14,6 +14,7 @@ pub mod regression;
 pub mod reliability;
 pub mod stress;
 pub mod unit;
+pub mod unit_daemon_stdin_replay;
 
 // Top-level standalone `tests/*.rs` that are PURE (in-process; they do NOT spawn
 // the keyhog binary), so folding them into this aggregator does not grow the

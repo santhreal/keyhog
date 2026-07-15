@@ -268,9 +268,15 @@ pub(crate) fn build_sources(
     }
 
     if args.stdin {
-        sources.push(Box::new(
-            keyhog_sources::StdinSource.with_limits(source_limits),
-        ));
+        if let Some(bytes) = args.buffered_stdin.clone() {
+            sources.push(Box::new(
+                keyhog_sources::BufferedStdinSource::new(bytes).with_limits(source_limits),
+            ));
+        } else {
+            sources.push(Box::new(
+                keyhog_sources::StdinSource.with_limits(source_limits),
+            ));
+        }
     }
 
     #[cfg(feature = "git")]

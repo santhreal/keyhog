@@ -147,6 +147,13 @@ pub struct ScanArgs {
     #[arg(long)]
     pub stdin: bool,
 
+    /// Already-acquired stdin bytes used when an automatic daemon route must
+    /// replay the request in process. This is internal state, never a CLI
+    /// surface; `BufferedStdinSource` preserves the normal stdin metadata and
+    /// lossy UTF-8 decoding contract without reading the pipe a second time.
+    #[arg(skip)]
+    pub(crate) buffered_stdin: Option<Vec<u8>>,
+
     /// Scan reachable git blobs from repository history (deduplicated by blob ID)
     #[cfg(feature = "git")]
     #[arg(long)]

@@ -139,6 +139,13 @@ creation, serialization, and report writes occur after that boundary. Those
 client-side failures return directly and never rescan. This prevents duplicate
 or mixed output after a partial write.
 
+`stdin` is single-consumer, so the client acquires it into one bounded replay
+buffer before sending `ScanText`. If an automatic daemon request fails before
+the validated result boundary, the in-process retry scans that same buffer as
+the `stdin` source. It does not read the pipe again, and it preserves the
+configured byte limit, source metadata, and lossy UTF-8 decoding. A successful
+daemon response releases the buffer with the rest of the request.
+
 An automatic in-process retry uses the normal one-shot autoroute contract. It
 does not pin CPU to make the retry succeed. Missing or stale one-shot evidence
 therefore remains a visible calibration error.

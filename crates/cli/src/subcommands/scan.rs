@@ -101,29 +101,38 @@ pub(crate) async fn run(args: ScanArgs) -> Result<ExitCode> {
             let orchestrator = ScanOrchestrator::new(args)?;
             return orchestrator.run().await;
         }
-        let policy = EffectivePolicy::resolve(&args);
+        let mut policy = EffectivePolicy::resolve(&args);
         match daemon_route(&args, &policy) {
-            DaemonRoute::Required => run_via_daemon(&policy.effective_args).await,
-            DaemonRoute::Opportunistic => match acquire_via_daemon(&policy.effective_args).await {
-                Ok(scan) => finish_daemon_scan(scan, &policy.effective_args),
-                Err(e) => {
-                    if policy.effective_args.daemon_mode() == DaemonMode::Auto {
-                        let palette = crate::style::for_stderr();
-                        eprintln!(
-                            "{}: daemon auto route unavailable ({e:#}); running in-process scanner",
-                            crate::style::warn("keyhog", &palette)
+            DaemonRoute::Required => run_via_daemon(&mut policy.effective_args).await,
+            DaemonRoute::Opportunistic => {
+                match acquire_via_daemon(&mut policy.effective_args).await {
+                    Ok(scan) => finish_daemon_scan(scan, &policy.effective_args),
+                    Err(e) => {
+                        if policy.effective_args.daemon_mode() == DaemonMode::Auto {
+                            let palette = crate::style::for_stderr();
+                            eprintln!(
+                                "{}: daemon auto route unavailable ({e:#}); running in-process scanner",
+                                crate::style::warn("keyhog", &palette)
+                            );
+                        }
+                        // LAW10: opportunistic daemon failure is reported on stderr in
+                        // auto mode, then the same scan runs in-process.
+                        tracing::debug!(
+                            error = %e,
+                            "daemon auto route unavailable; running in-process scanner"
                         );
+                        // An stdin request is single-consumer. `acquire_via_daemon`
+                        // buffers it before sending `ScanText`, so an execution or
+                        // protocol failure can replay the exact bytes instead of
+                        // retrying against EOF. File requests need no special
+                        // handling because the path remains replayable.
+                        let mut retry_args = args.clone();
+                        retry_args.buffered_stdin = policy.effective_args.buffered_stdin.clone();
+                        let orchestrator = ScanOrchestrator::new(retry_args)?;
+                        orchestrator.run().await
                     }
-                    // LAW10: opportunistic daemon failure is reported on stderr in
-                    // auto mode, then the same scan runs in-process.
-                    tracing::debug!(
-                        error = %e,
-                        "daemon auto route unavailable; running in-process scanner"
-                    );
-                    let orchestrator = ScanOrchestrator::new(args)?;
-                    orchestrator.run().await
                 }
-            },
+            }
             DaemonRoute::Rejected(reason) => bail!("{reason}"),
             DaemonRoute::Forbidden => {
                 let orchestrator = ScanOrchestrator::new(args)?;
@@ -564,7 +573,7 @@ fn effective_single_file_path(args: &ScanArgs) -> Result<Option<&Path>> {
 }
 
 #[cfg(unix)]
-async fn run_via_daemon(args: &ScanArgs) -> Result<ExitCode> {
+async fn run_via_daemon(args: &mut ScanArgs) -> Result<ExitCode> {
     let scan = acquire_via_daemon(args).await?;
     finish_daemon_scan(scan, args)
 }
@@ -578,7 +587,7 @@ struct DaemonScan {
 }
 
 #[cfg(unix)]
-async fn acquire_via_daemon(args: &ScanArgs) -> Result<DaemonScan> {
+async fn acquire_via_daemon(args: &mut ScanArgs) -> Result<DaemonScan> {
     crate::reset_scan_runtime_state();
     if args.dogfood {
         keyhog_scanner::telemetry::enable_dogfood();
@@ -597,8 +606,19 @@ async fn acquire_via_daemon(args: &ScanArgs) -> Result<DaemonScan> {
     })?;
 
     let (matches, source_coverage_gaps, source_bytes_scanned) = if args.stdin {
-        let text = read_stdin_to_string(args)?;
-        let source_bytes_scanned = text.len() as u64;
+        let bytes = read_stdin_bytes(args)?;
+        let source_bytes_scanned = bytes.len() as u64;
+        // Keep the owned payload on the effective argument clone until the
+        // route is known to have completed. The automatic fallback consumes
+        // this same buffer through `BufferedStdinSource`.
+        args.buffered_stdin = Some(bytes.clone());
+        let stdin_cap_bytes = args.limits.to_source_limits().stdin_bytes;
+        if bytes.len() > stdin_cap_bytes {
+            bail!(
+                "daemon route: stdin exceeds {stdin_cap_bytes} byte limit. +                 Drop `--daemon` to use the streaming in-process path."
+            );
+        }
+        let text = String::from_utf8_lossy(&bytes).into_owned();
         let resp = conn
             .round_trip(&Request::ScanText {
                 path: None,
@@ -691,7 +711,7 @@ fn finish_daemon_scan(scan: DaemonScan, args: &ScanArgs) -> Result<ExitCode> {
 }
 
 #[cfg(unix)]
-fn read_stdin_to_string(args: &ScanArgs) -> Result<String> {
+fn read_stdin_bytes(args: &ScanArgs) -> Result<Vec<u8>> {
     use std::io::Read;
     let stdin_cap_bytes = args.limits.to_source_limits().stdin_bytes;
     let mut buf = Vec::with_capacity(8 * 1024);
@@ -700,13 +720,7 @@ fn read_stdin_to_string(args: &ScanArgs) -> Result<String> {
         .take(stdin_cap_bytes.saturating_add(1) as u64)
         .read_to_end(&mut buf)
         .context("daemon route: reading stdin")?;
-    if buf.len() > stdin_cap_bytes {
-        bail!(
-            "daemon route: stdin exceeds {stdin_cap_bytes} byte limit. \
-             Drop `--daemon` to use the streaming in-process path."
-        );
-    }
-    Ok(String::from_utf8_lossy(&buf).into_owned())
+    Ok(buf)
 }
 
 #[cfg(unix)]

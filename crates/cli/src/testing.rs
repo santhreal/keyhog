@@ -147,6 +147,7 @@ pub trait CliTestApi {
         allowlist_paths: Vec<String>,
         merkle: Option<Arc<keyhog_core::MerkleIndex>>,
     ) -> Result<Vec<Box<dyn Source>>>;
+    fn set_buffered_stdin(&self, args: &mut ScanArgs, bytes: Vec<u8>);
     fn merge_scan_ignore_paths(&self, args: &ScanArgs, allowlist_paths: Vec<String>)
         -> Vec<String>;
     fn validate_cli_path_arg(&self, path: &Path, name: &str) -> Result<()>;
@@ -580,6 +581,9 @@ impl CliTestApi for TestApi {
         let mut resolved_args = args.clone();
         let resolved = crate::orchestrator_config::resolve_scan_config(&mut resolved_args)?;
         crate::sources::build_sources(&resolved_args, &resolved, allowlist_paths, merkle)
+    }
+    fn set_buffered_stdin(&self, args: &mut ScanArgs, bytes: Vec<u8>) {
+        args.buffered_stdin = Some(bytes);
     }
     fn merge_scan_ignore_paths(
         &self,
