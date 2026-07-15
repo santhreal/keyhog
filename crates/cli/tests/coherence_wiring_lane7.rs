@@ -384,6 +384,61 @@ fn readme_detector_count_matches_embedded() {
     );
 }
 
+/// The CLI reference must name every command and every live long flag
+/// exposed by the same Clap command model the binary executes.  The prose in
+/// the reference remains curated, but its command/flag inventory is generated
+/// from this model by the test so adding or renaming a surface cannot leave a
+/// stale hand-written table behind.
+#[test]
+fn cli_reference_covers_live_command_and_flag_inventory() {
+    let docs = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/src/reference/cli.md"
+    ));
+    let root = keyhog::args::command();
+    let mut missing_commands = Vec::new();
+    let mut missing_flags = std::collections::BTreeSet::new();
+
+    fn collect_flags(
+        command: &clap::Command,
+        docs: &str,
+        missing: &mut std::collections::BTreeSet<String>,
+    ) {
+        for argument in command
+            .get_arguments()
+            .filter_map(|argument| argument.get_long())
+            .filter(|long| *long != "help")
+        {
+            if !docs.contains(&format!("--{argument}")) {
+                missing.insert(argument.to_string());
+            }
+        }
+        for subcommand in command.get_subcommands() {
+            collect_flags(subcommand, docs, missing);
+        }
+    }
+
+    for subcommand in root
+        .get_subcommands()
+        .filter(|sub| sub.get_name() != "help")
+    {
+        let name = subcommand.get_name();
+        if !docs.contains(&format!("keyhog {name}")) {
+            missing_commands.push(name.to_string());
+        }
+    }
+    collect_flags(&root, docs, &mut missing_flags);
+
+    assert!(
+        missing_commands.is_empty(),
+        "reference/cli.md is missing live command headings or examples: {missing_commands:?}"
+    );
+    assert!(
+        missing_flags.is_empty(),
+        "reference/cli.md is missing live command flags: {missing_flags:?}"
+    );
+}
+
 /// README must not claim a `0.3` default confidence floor. The canonical
 /// default is `0.40` (`ScanConfig::default()`); README previously contradicted
 /// itself (0.3 in one place, 0.40 in another). This pins the corrected text.
@@ -575,9 +630,10 @@ fn output_formats_doc_states_eleven_values() {
         env!("CARGO_MANIFEST_DIR"),
         "/../../docs/src/workflows/ci.md"
     ));
+    let ci_doc_single_line = ci_doc.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
-        ci_doc.contains("`format` input intentionally supports the four formats")
-            && ci_doc.contains("use the installed CLI directly"),
+        ci_doc_single_line.contains("`format` input intentionally supports the four formats")
+            && ci_doc_single_line.contains("Use the installed CLI directly"),
         "CI docs must distinguish the four-format Action wrapper from the full CLI format surface"
     );
 }

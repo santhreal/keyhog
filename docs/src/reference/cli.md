@@ -1,5 +1,10 @@
 # CLI reference
 
+The command names and long-flag inventory in this page are checked against
+KeyHog's live Clap command model in CI. The descriptions and workflow guidance
+below remain curated so they explain semantics, precedence, and failure modes
+that generated `--help` output cannot express.
+
 ## `keyhog scan [PATH]...`
 
 The main subcommand. Scans one or more `PATH` roots (default: current
@@ -31,7 +36,7 @@ or coverage incomplete.
 | `--github-org <ORG>`          | Clone and scan every repository in a GitHub organization. Requires `KEYHOG_GITHUB_TOKEN` (recommended) or `--github-token`. |
 | `--github-collaboration <OWNER/REPO>` | Select a GitHub collaboration target. Requires one or more of `--github-issues`, `--github-pull-requests`, `--github-discussions`, `--github-wiki`, or `--github-gists`. |
 | `--gitlab-group <GROUP>`      | Clone and scan every project in a GitLab group, including subgroups. Requires `KEYHOG_GITLAB_TOKEN` (recommended) or `--gitlab-token`; use `--gitlab-endpoint` for self-managed GitLab. |
-| `--bitbucket-workspace <WORKSPACE>` | Clone and scan every repository in a Bitbucket Cloud workspace. Requires `KEYHOG_BITBUCKET_USERNAME` plus `KEYHOG_BITBUCKET_TOKEN` (recommended), or the corresponding flags; `--bitbucket-endpoint` selects the API root. |
+| `--bitbucket-workspace <WORKSPACE>` | Clone and scan every repository in a Bitbucket Cloud workspace. Requires `KEYHOG_BITBUCKET_USERNAME` plus `KEYHOG_BITBUCKET_TOKEN` (recommended), or `--bitbucket-username` plus `--bitbucket-token`; `--bitbucket-endpoint` selects the API root. |
 | `--s3-bucket <BUCKET>`        | Scan an S3 bucket. Use `--s3-prefix` to narrow and `--s3-endpoint` for an S3-compatible API. |
 | `--gcs-bucket <BUCKET>`       | Scan a Google Cloud Storage bucket. Use `--gcs-prefix` to narrow and `--gcs-endpoint` for a compatible API. |
 | `--azure-container-url <URL>` | Scan an Azure Blob container URL. Include a SAS query string for private containers; use `--azure-prefix` to narrow. |
