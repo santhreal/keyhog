@@ -1096,7 +1096,7 @@ Silicon M4 Pro: `vyre_ac_kernel PASS (backend=wgpu)`.
 
 ### Deep vyre: AC kernel becomes the default GPU scan path
 
-- **`gpu_literal_phase1.rs`** previously routed all WGPU hosts through the
+- **GPU region dispatch** previously routed all WGPU hosts through the
   `literal_set` GpuLiteralSet program, gating the AC-kernel workaround
   to CUDA only. The vyre canonical pre-emit lowering actually rejects
   the subgroup form (`subgroup_ballot` + `subgroup_shuffle`) emitted by
