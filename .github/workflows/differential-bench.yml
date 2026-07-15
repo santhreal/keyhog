@@ -1,10 +1,10 @@
 name: differential-bench
 
-# Differential precision / recall / speed gate: run the unified benchmark
-# package (benchmarks/bench) over the synthetic mirror corpus with keyhog plus
-# required competitors, then assert keyhog leads on F1. `bench gate` exits
-# non-zero unless BetterLeaks and Kingfisher both produce usable rows and
-# keyhog's F1 is STRICTLY better.
+# Differential F1 gate: run the unified benchmark package (benchmarks/bench)
+# over the synthetic mirror corpus with KeyHog plus required competitors, then
+# assert KeyHog leads on F1. Precision, recall, and speed remain recorded in
+# the result artifacts; `bench gate` exits non-zero unless BetterLeaks and
+# Kingfisher both produce usable rows and KeyHog's F1 is STRICTLY better.
 #
 # This replaces the retired tools/diff_bench runner: the bench package's
 # scanner adapters + canonical scorer + `gate` subcommand are the single
