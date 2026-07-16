@@ -57,8 +57,9 @@ keyhog scan PATH --backend gpu-wgpu --profile
 `--backend gpu-wgpu` is a diagnostic/benchmark override. It proves neither automatic
 selection nor a valid calibration record. GPU initialization, runtime, parity,
 and calibration failures remain visible in the command result and exit status.
-A selected GPU route that fails dispatch exits `12`; KeyHog does not silently
-substitute a CPU/SIMD backend.
+An explicit or required GPU route that fails dispatch exits `12`. A normal
+automatic scan visibly replays the same stable batch through the CPU reference
+path, records recovered work, and never counts that batch as GPU execution.
 
 ## Feature boundaries
 

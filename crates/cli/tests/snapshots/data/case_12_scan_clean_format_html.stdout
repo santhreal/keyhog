@@ -647,7 +647,7 @@ tbody tr:hover {
   <!-- Header -->
   <header>
     <div class="logo-section">
-      <h1>🐗 Key<span>Hog</span></h1>
+      <h1>Key<span>Hog</span></h1>
       <p>Developer-first Secret Scanning Report &bull; Verified Findings</p>
     </div>
     <div class="theme-selector" aria-label="Report theme">

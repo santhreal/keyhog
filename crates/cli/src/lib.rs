@@ -44,6 +44,12 @@ pub(crate) static FINDINGS_COUNT: AtomicUsize = AtomicUsize::new(0);
 /// per-chunk telemetry, so that snapshot under-counts on the production batch
 /// path; this orchestrator-level counter is the authoritative routing signal.
 pub(crate) static GPU_SCANNED_CHUNKS: AtomicUsize = AtomicUsize::new(0);
+/// Exact work replayed through the scalar reference after an automatic GPU
+/// route failed at runtime. These are successful coverage receipts, not source
+/// errors: every counted chunk and byte completed through the recovery path.
+pub(crate) static BACKEND_RECOVERY_EVENTS: AtomicUsize = AtomicUsize::new(0);
+pub(crate) static BACKEND_RECOVERED_CHUNKS: AtomicUsize = AtomicUsize::new(0);
+pub(crate) static BACKEND_RECOVERED_BYTES: AtomicU64 = AtomicU64::new(0);
 /// Number of source-read errors (a source yielded `Err` instead of a chunk).
 /// Read at the end of `run()`: if a scan produced ZERO chunks AND a source
 /// errored, the requested scan never actually ran (e.g. `--git-history` /
@@ -144,6 +150,9 @@ pub(crate) fn reset_scan_runtime_state() {
     TOTAL_CHUNKS.store(0, Ordering::Relaxed);
     FINDINGS_COUNT.store(0, Ordering::Relaxed);
     GPU_SCANNED_CHUNKS.store(0, Ordering::Relaxed);
+    BACKEND_RECOVERY_EVENTS.store(0, Ordering::Relaxed);
+    BACKEND_RECOVERED_CHUNKS.store(0, Ordering::Relaxed);
+    BACKEND_RECOVERED_BYTES.store(0, Ordering::Relaxed);
     SOURCE_ERRORS.store(0, Ordering::Relaxed);
     FAILED_SOURCES.store(0, Ordering::Relaxed);
     INCREMENTAL_CACHE_ERRORS.store(0, Ordering::Relaxed);

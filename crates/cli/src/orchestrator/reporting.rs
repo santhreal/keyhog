@@ -318,6 +318,9 @@ pub(crate) fn report_backend_summary(
     // coalesced SIMD arm) ran on SIMD/CPU.
     let gpu = crate::GPU_SCANNED_CHUNKS.load(Ordering::Relaxed).min(total);
     let simd = total - gpu;
+    let recovery_events = crate::BACKEND_RECOVERY_EVENTS.load(Ordering::Relaxed);
+    let recovered_chunks = crate::BACKEND_RECOVERED_CHUNKS.load(Ordering::Relaxed);
+    let recovered_bytes = crate::BACKEND_RECOVERED_BYTES.load(Ordering::Relaxed);
     let hw = keyhog_scanner::hw_probe::probe_hardware();
     let line = if let Some(backend) = backend_override {
         format!("backend: {} (forced via --backend)", backend.label())
@@ -342,6 +345,13 @@ pub(crate) fn report_backend_summary(
         "backend: simd-regex (no GPU available on this host)".to_string()
     };
 
+    let line = if recovery_events == 0 {
+        line
+    } else {
+        format!(
+            "{line}; recovered {recovered_chunks} chunk(s), {recovered_bytes} byte(s) after {recovery_events} accelerator fault(s)"
+        )
+    };
     let palette = terminal_palette(ansi, false);
     eprintln!("{}INFO{} {line}", palette.cyan, palette.reset);
 }

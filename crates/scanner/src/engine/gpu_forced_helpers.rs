@@ -49,9 +49,9 @@ pub(crate) fn gpu_forced_unavailable_message(
     ))
 }
 
-/// Exit with an explicit message whenever a selected GPU route cannot dispatch.
-/// A persisted autoroute decision and an explicit GPU override are both hard
-/// execution contracts; neither may turn into CPU/SIMD after routing succeeds.
+/// Exit from the infallible direct-library API when its selected GPU cannot
+/// dispatch. CLI autoroute uses the fallible coalesced boundary and owns visible
+/// replay of the same stable input instead.
 ///
 /// ## Why a scanner hard exit survives in the library here (M12)
 ///
@@ -60,15 +60,9 @@ pub(crate) fn gpu_forced_unavailable_message(
 /// `orchestrator::run` before any scan) which returns the documented
 /// `ExitCode` through the CLI - no library `process::exit`, so embedders
 /// stay alive. This function's hard exit covers a *different*, narrower
-/// case: an explicit or autoroute-selected per-chunk GPU dispatch that then
-/// found the stack unusable, deep inside the parallel scan loop
-/// where there is no `Result` channel back to the caller (it runs under
-/// `par_iter` map closures returning `Vec<RawMatch>`). For that forced-
-/// dispatch contract the no-silent-fallback rule requires an immediate
-/// stop, and the only correct stop signal from inside that closure is the
-/// process exit. The hazard for embedders is bounded: it fires only after the
-/// caller selected GPU and reached dispatch with a broken stack, never on a
-/// CPU/SIMD call or a host where routing did not select GPU.
+/// case: a caller chose an infallible direct-backend API whose return type has
+/// no error channel. The process exit is bounded to that explicit contract;
+/// production orchestrators call the fallible companion and preserve coverage.
 pub(crate) fn require_selected_gpu_stack(scanner: &CompiledScanner, backend: ScanBackend) {
     if let Some(msg) = gpu_forced_unavailable_message(scanner, backend) {
         crate::process_exit::require_gpu_unmet(msg);

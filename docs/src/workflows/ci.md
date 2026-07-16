@@ -85,8 +85,10 @@ before the scan. On an eligible GPU host, the JSON includes `ok`, `status`, `exi
 `vyre_literal_set`, and the production `gpu_region_presence` route. Exit `4`
 means the binary is present but a required GPU capability or the production
 route failed; fail the GPU
-lane or intentionally start a separate explicit SIMD/CPU lane. A selected GPU
-scan never changes backend inside the failed route. A runner without an
+lane or intentionally start a separate explicit SIMD/CPU lane. Normal automatic
+scans recover a transient runtime dispatch fault against the same stable bytes
+and expose the recovered byte count; `--require-gpu` keeps absence or runtime
+failure as a hard lane contract. A runner without an
 eligible physical GPU instead returns one `gpu_adapter` probe with status
 `skip` and exits `0`; add `--require-gpu` when absence must fail the lane.
 

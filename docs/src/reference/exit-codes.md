@@ -13,7 +13,7 @@ plugins, and health checks) can rely on it.
 | `4`  | Health/self-test failure: `keyhog doctor` unhealthy, `keyhog repair` could not restore a working binary, `keyhog backend` self-test failed, or multi-backend `keyhog backend --autoroute` reports `calibration_required`, `disabled`, `stale`, or `invalid`. |
 | `10` | **LIVE credentials confirmed** (a `--verify` scan where the vendor API accepted a found secret) - the highest-severity gate. Also returned by `keyhog update --check` when a newer release exists. |
 | `11` | Scanner thread panicked. The finding count is NOT trustworthy - investigate, don't ship. Distinct from `2`/`3` so CI can tell a code bug from a config error. |
-| `12` | Selected/required GPU unavailable: `--require-gpu`, an explicit GPU backend, or persisted autoroute selected GPU but the stack or dispatch could not honor it. CPU/SIMD is not substituted. |
+| `12` | Required or explicit GPU unavailable, or a GPU calibration candidate could not execute. Normal automatic runtime faults recover stable input visibly when possible. |
 | `13` | A requested source failed before producing scan data, or a zero-finding scan had incomplete input coverage, so KeyHog refuses to report clean. |
 | `130`| Interrupted (SIGINT / Ctrl-C).                                     |
 
@@ -134,17 +134,24 @@ The reason this is `11` rather than `2`:
 ## `12` (selected or required GPU unavailable)
 
 Returned when the operator explicitly required GPU execution (`--require-gpu`
-or `[system].gpu = "required"`), explicitly selected the GPU backend, or a
-persisted autoroute decision selected GPU, but the host cannot provide or keep
-a usable GPU dispatch path. This can happen before scanning or during a runtime
-dispatch. CPU/SIMD is not substituted. The distinct code lets CI identify a GPU
-runner/driver regression without scraping stderr.
+or `[system].gpu = "required"`), explicitly selected a GPU backend, or a GPU
+calibration candidate cannot execute. CPU/SIMD is not substituted for those
+explicit contracts. The distinct code lets CI identify a GPU runner/driver
+regression without scraping stderr.
+
+An automatically selected GPU that faults after routing is different: KeyHog
+warns, records the accelerator fault, and replays the same stable batch through
+the scalar reference path. A fully recovered scan keeps the ordinary
+finding/clean exit semantics and reports recovered chunks and bytes. If exact
+recovery cannot cover the requested input, the result is incomplete rather
+than clean.
 
 For `keyhog daemon start`, exit `12` covers required GPU preflight, GPU scanner
-compilation, an unavailable or incompatible initialized backend, and a warmup
-that degrades before readiness. A GPU dispatch failure after the ready line also
-terminates the daemon with `12`. Run `keyhog backend --self-test`; repair the
-GPU driver/runtime or select `--backend simd` or `--backend cpu` explicitly.
+compilation, an unavailable or incompatible explicitly required backend, and a
+warmup that fails before readiness. An automatic-route fault after readiness
+recovers the affected stable request through CPU and leaves the daemon alive;
+an explicit GPU daemon route returns a request error. Run
+`keyhog backend --self-test`, repair the GPU driver/runtime, and recalibrate.
 
 ## `13` (requested source failed or coverage incomplete)
 

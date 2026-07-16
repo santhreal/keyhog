@@ -180,6 +180,27 @@ This separation is deliberate: persisted bytes cannot define routing policy,
 inspection cannot bypass cache validation, and performance evidence cannot
 silently weaken detection parity.
 
+### Failure and recovery contract
+
+KeyHog separates trust failures from recoverable execution failures:
+
+- **Complete:** the selected backend covered the input normally.
+- **Complete after recovery:** an automatically selected accelerator failed,
+  KeyHog warned visibly, replayed the same stable batch through the scalar
+  reference path, and counted the recovered chunks and bytes. The result is
+  complete, but the backend fault remains visible and invalidates confidence in
+  that accelerator's runtime health.
+- **Incomplete:** some requested bytes or transformation could not be recovered.
+  The scan may report findings from covered input, but it cannot report clean.
+- **Fatal trust or explicit-contract failure:** invalid policy, corrupt or
+  unauthenticated artifacts, or an explicitly required backend cannot be
+  substituted.
+
+Recovery is an owned execution path, not a silent fallback. It must operate on
+the same stable source snapshot, preserve finding parity, identify exactly how
+much work was replayed, and remain absent during autoroute calibration so a
+backend that needs recovery cannot be certified fastest-correct.
+
 ### Finding identity and dedup
 
 There is one identity contract with stage-specific keys, not interchangeable
@@ -292,6 +313,23 @@ Inference indexes that compact immutable policy and does not reinterpret the
 loaded detector schema for each candidate. The public training oracle compiles
 the same facts from the supplied detector before extracting its feature row.
 
+## Detector-owned compiled validation
+
+Offline validation is declared in each detector TOML's `validators` array. A
+declaration selects a typed shared primitive and supplies that secret type's
+prefixes, layout widths, bounds, and confidence floor. Scanner construction
+compiles those declarations into the same immutable detector plan as matching,
+entropy, suppression, companions, and ML policy.
+
+Named matches dispatch directly to their detector plan. Generic and entropy
+candidates use a first-byte index compiled from the active corpus instead of
+walking a global validator registry. CRC32/base62 comparison is allocation-free;
+base64 validation reuses zeroed per-thread scratch storage. Boundary extension
+returns its validation decision with the final credential slice, and ML pending
+rows carry that decision to final reporting. No candidate is revalidated after
+model inference, and custom detector corpora never inherit an embedded service
+table.
+
 ---
 
 ## Where do I find X?
@@ -304,6 +342,7 @@ the same facts from the supplied detector before extracting its feature row.
 | Add a suppression gate / change what counts as a non-secret | the one gate list `public_noncredential_shape`; see "Match adjudication" above (never inline a `looks_like_*` call in an emission path) |
 | Retrain / improve the ML model | `ml/retrain_loop.sh` (+ `ml/README.md`) |
 | Change an entropy entry path or weak-anchor floor | the owning detector TOML (`entropy_roles`, `entropy_floor`, `entropy_high`) |
+| Add or tune offline validation | the owning detector TOML `validators` declaration |
 | Add an input source | `crates/sources/src/` |
 | Add live verification for a detector | `[detector.verify]` in the TOML + `crates/verifier/src/verify/` |
 | Change output format / exit codes | `crates/cli/src/format.rs`, `reporting.rs` |

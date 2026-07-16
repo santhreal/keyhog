@@ -280,6 +280,13 @@ Hyperscan/SIMD, and GPU remain peers in both cases. See
 [Daemon and warm scans](../workflows/daemon.md) for request eligibility,
 in-process retry policy, socket, and timeout semantics.
 
+Calibration never accepts a candidate that needs recovery. During an ordinary
+automatic scan, however, a transient GPU dispatch failure warns and replays the
+same stable batch through the scalar reference path so coverage is preserved.
+Recovered work is counted separately and the GPU fault remains visible. An
+explicit GPU override or `--require-gpu` remains a hard backend contract and is
+not substituted.
+
 ## When an auto scan reports `calibration required`
 
 The error names the missing workload bucket and reports which dimensions differ

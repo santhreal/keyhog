@@ -129,6 +129,7 @@ impl ScanOrchestrator {
         let scanner = Arc::clone(&self.scanner);
         let explicit_backend = self.effective_config.backend_override;
         let calibration_mode = self.effective_config.autoroute_calibration;
+        let recover_automatic_gpu_faults = explicit_backend.is_none() && !calibration_mode;
         let active_router = if let Some(backend) = explicit_backend {
             ActiveBackendRouter::Explicit(backend)
         } else if calibration_mode {
@@ -291,11 +292,13 @@ impl ScanOrchestrator {
                 // router on the SAME fused batch shape normal scans request, so
                 // persisted decisions cover the production runtime key.
                 let selected = match &active_router {
-                    ActiveBackendRouter::Explicit(backend) => Ok(super::backend::BackendSelection {
-                        backend: *backend,
-                        phase1_plan: (!backend.is_gpu())
-                            .then(|| scanner_ref.phase1_admission_plan(&batch)),
-                    }),
+                    ActiveBackendRouter::Explicit(backend) => {
+                        Ok(super::backend::BackendSelection {
+                            backend: *backend,
+                            phase1_plan: (!backend.is_gpu())
+                                .then(|| scanner_ref.phase1_admission_plan(&batch)),
+                        })
+                    }
                     ActiveBackendRouter::Measured(router) => {
                         let mut router = match router.lock() {
                             Ok(guard) => guard,
@@ -319,9 +322,8 @@ impl ScanOrchestrator {
                 let scanned_count = batch.len();
                 // Snapshot the runtime GPU-degrade counter so GPU_SCANNED_CHUNKS
                 // reflects REAL GPU execution, not the router's CHOICE (Law 10): a
-                // batch routed to GPU that degrades mid-dispatch (loudly, via
-                // require_selected_backend_stack) must not be counted as
-                // GPU-scanned. The
+                // batch routed to GPU that recovers through CPU must not be
+                // counted as GPU-scanned. The
                 // increment moved BELOW the dispatch, gated on this snapshot.
                 let gpu_degrade_before = backend.is_gpu().then(|| scanner_ref.gpu_degrade_count());
                 match backend {
@@ -345,21 +347,40 @@ impl ScanOrchestrator {
                         return Vec::new();
                     }
                 }
-                let per_chunk = scanner_ref.scan_coalesced_with_backend_and_admission(
-                    &batch,
-                    backend,
-                    selection.phase1_plan.as_ref(),
-                );
-                if let Some(before) = gpu_degrade_before {
-                    let after = scanner_ref.gpu_degrade_count();
-                    if after != before {
+                let (per_chunk, mut recovered) = match scanner_ref
+                    .try_scan_coalesced_with_backend_and_admission(
+                        &batch,
+                        backend,
+                        selection.phase1_plan.as_ref(),
+                    ) {
+                    Ok(per_chunk) => (per_chunk, false),
+                    Err(error) if backend.is_gpu() && recover_automatic_gpu_faults => (
+                        super::recover_automatic_gpu_batch(scanner_ref, &batch, backend, &error),
+                        true,
+                    ),
+                    Err(error) => {
                         record_routing_error(
                             &routing_error_ref,
-                            AutorouteRoutingError::selected_backend_degraded(
-                                backend, before, after,
-                            ),
+                            AutorouteRoutingError::selected_backend_dispatch_failed(backend, error),
                         );
                         return Vec::new();
+                    }
+                };
+                if let Some(before) = gpu_degrade_before {
+                    let after = scanner_ref.gpu_degrade_count();
+                    if !recovered && after != before {
+                        if recover_automatic_gpu_faults {
+                            super::record_completed_gpu_recovery(&batch);
+                            recovered = true;
+                        } else {
+                            record_routing_error(
+                                &routing_error_ref,
+                                AutorouteRoutingError::selected_backend_degraded(
+                                    backend, before, after,
+                                ),
+                            );
+                            return Vec::new();
+                        }
                     }
                 }
                 crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
@@ -373,8 +394,9 @@ impl ScanOrchestrator {
                 // Count only a selected GPU dispatch that completed without a
                 // degradation record. Degraded batches return a routing error
                 // above and never contribute findings or GPU telemetry.
-                if gpu_degrade_before
-                    .is_some_and(|before| scanner_ref.gpu_degrade_count() == before)
+                if !recovered
+                    && gpu_degrade_before
+                        .is_some_and(|before| scanner_ref.gpu_degrade_count() == before)
                 {
                     crate::GPU_SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
                 }

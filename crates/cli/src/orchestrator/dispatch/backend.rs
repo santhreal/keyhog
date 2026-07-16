@@ -324,6 +324,18 @@ impl AutorouteRoutingError {
         }
     }
 
+    pub(super) fn selected_backend_dispatch_failed(
+        backend: ScanBackend,
+        error: impl fmt::Display,
+    ) -> Self {
+        Self {
+            message: format!(
+                "selected backend {} failed during dispatch ({error}); an explicit backend request or calibration candidate cannot be substituted. Repair the backend, rerun calibration, or select another diagnostic backend",
+                backend.label(),
+            ),
+        }
+    }
+
     pub(super) fn unsupported_backend(backend: ScanBackend) -> Self {
         Self {
             message: format!(

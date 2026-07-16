@@ -53,9 +53,9 @@ impl CompiledScanner {
     /// Coalesced GPU region-presence scan: bounded GPU dispatches over the
     /// `chunks` batch produce the per-chunk trigger bitmap, then the SHARED
     /// coalesced phase-2 tail runs the identical per-chunk extraction every
-    /// other backend uses. If the matcher/backend is unavailable or dispatch
-    /// fails, the selected GPU route terminates with exit `12`; it never
-    /// substitutes an unselected CPU/SIMD path.
+    /// other backend uses. This infallible direct-library wrapper exits when
+    /// dispatch fails; production orchestrators use the fallible companion so
+    /// they can replay the same stable bytes and report the recovery.
     pub(crate) fn scan_coalesced_gpu_region_presence(
         &self,
         chunks: &[keyhog_core::Chunk],
@@ -67,11 +67,10 @@ impl CompiledScanner {
         }
     }
 
-    /// Result-returning production GPU path for health diagnostics. Normal scan
-    /// entry points use `scan_coalesced_gpu_region_presence`, which maps this
-    /// structured failure to the public exit-12 contract. The backend self-test
-    /// consumes the error in-band so it can emit its complete JSON report and
-    /// documented health-check exit code.
+    /// Result-returning production GPU boundary. CLI orchestrators consume the
+    /// error in-band to recover stable input; health diagnostics consume it to
+    /// emit a complete report. Only the infallible direct-library wrapper maps
+    /// it to the process-level explicit-backend contract.
     pub(crate) fn try_scan_coalesced_gpu_region_presence(
         &self,
         chunks: &[keyhog_core::Chunk],

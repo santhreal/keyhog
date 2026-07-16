@@ -27,6 +27,7 @@ name = "Stripe Secret Key"
 service = "stripe"
 severity = "critical"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
+validators = [{ type = "pattern-shape", prefixes = ["sk_live_", "sk_test_", "rk_live_", "rk_test_"], allow_overlong = false }]
 keywords = ["sk_live_", "sk_test_", "rk_live_", "rk_test_", "stripe"]
 simdsieve_prefixes = ["sk_live_", "sk_test_", "rk_live_", "rk_test_"]
 
@@ -113,6 +114,21 @@ to every secret type.
 Every detector TOML must declare `detector.ml`; omission fails parsing instead
 of silently applying an embedded or scanner-side model policy. Programmatic
 `DetectorSpec::default()` disables both model paths until the caller opts in.
+
+`detector.validators` - optional typed offline validation programs compiled with
+this detector. `crc32-base62` declares `prefixes`, `entropy_len`,
+`checksum_len`, `reject_overlong`, and the confidence floor earned by a valid
+checksum. `github-fine-grained-crc32` declares both segment lengths and checksum
+width. `base64-payload` declares the exact base64 `alphabet` (`standard`,
+`standard-no-pad`, `url-safe`, or `url-safe-no-pad`) plus encoded and decoded
+length bounds, so the hot path performs one direct decode without guessing a
+dialect from candidate bytes.
+`pattern-shape` reuses this detector's patterns as its structural contract and
+does not claim checksum proof or raise confidence. Prefixes, widths, bounds, and
+floors belong here, never in a scanner-side service table. Named matches dispatch
+directly through their compiled detector plan; generic candidates use a compiled
+first-byte prefix index. One verdict follows the candidate through suppression,
+ML batching, and final confidence, so validation is not repeated after inference.
 
 `detector.name` - human-readable name. Shows up in `keyhog detectors`
 listing and IDE plugins.

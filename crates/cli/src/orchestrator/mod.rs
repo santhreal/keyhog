@@ -2,7 +2,10 @@
 
 mod allowlist;
 mod dispatch;
-pub(crate) use dispatch::{COALESCED_CHUNK_SCAN_CEILING_BYTES, COALESCED_CHUNK_SCAN_CEILING_MB};
+pub(crate) use dispatch::{
+    record_completed_gpu_recovery, recover_automatic_gpu_batch, COALESCED_CHUNK_SCAN_CEILING_BYTES,
+    COALESCED_CHUNK_SCAN_CEILING_MB,
+};
 mod postprocess;
 pub(crate) mod reporting;
 mod run;

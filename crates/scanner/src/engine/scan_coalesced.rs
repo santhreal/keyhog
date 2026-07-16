@@ -96,9 +96,9 @@ impl CompiledScanner {
     /// High-throughput coalesced scan: all files scanned in parallel, zero
     /// overhead for non-hit files.
     ///
-    /// Backend selection is a hard process contract: unavailable selected SIMD
-    /// exits `3`, and unavailable or failed selected GPU execution exits `12`.
-    /// The method never completes through an unselected backend.
+    /// Direct library backend selection is a hard process contract. CLI
+    /// orchestrators that own stable input replay use the fallible companion
+    /// method below and record any automatic-route recovery explicitly.
     pub fn scan_coalesced_with_backend(
         &self,
         chunks: &[keyhog_core::Chunk],
@@ -116,16 +116,56 @@ impl CompiledScanner {
         backend: crate::hw_probe::ScanBackend,
         plan: Option<&super::Phase1AdmissionPlan>,
     ) -> Vec<Vec<keyhog_core::RawMatch>> {
+        match self.try_scan_coalesced_with_backend_and_admission(chunks, backend, plan) {
+            Ok(matches) => matches,
+            Err(crate::error::ScanError::Gpu(reason)) => {
+                super::gpu_forced::fail_selected_gpu_dispatch(self, &reason)
+            }
+            Err(error) => crate::process_exit::backend_unavailable(format!(
+                "selected scanner backend failed: {error}"
+            )),
+        }
+    }
+
+    /// Fallible production dispatch boundary used by orchestrators that can
+    /// recover the same stable input bytes after a transient accelerator fault.
+    /// This method never substitutes a backend itself: the caller must either
+    /// surface the error or explicitly replay the input and record recovery.
+    pub fn try_scan_coalesced_with_backend_and_admission(
+        &self,
+        chunks: &[keyhog_core::Chunk],
+        backend: crate::hw_probe::ScanBackend,
+        plan: Option<&super::Phase1AdmissionPlan>,
+    ) -> crate::error::Result<Vec<Vec<keyhog_core::RawMatch>>> {
         if backend == crate::hw_probe::ScanBackend::SimdCpu {
             self.require_selected_backend_stack(backend);
-            return self
-                .scan_coalesced_simd(chunks, plan.filter(|plan| plan.matches_chunks(chunks)));
+            return Ok(
+                self.scan_coalesced_simd(chunks, plan.filter(|plan| plan.matches_chunks(chunks)))
+            );
         }
-        self.scan_chunks_with_backend_internal_and_admission(
+        if backend.is_gpu() {
+            #[cfg(feature = "gpu")]
+            {
+                return self
+                    .try_scan_coalesced_gpu_region_presence(chunks, backend)
+                    .map_err(|error| {
+                        self.record_gpu_runtime_fault(error.reason());
+                        crate::error::ScanError::Gpu(error.to_string())
+                    });
+            }
+            #[cfg(not(feature = "gpu"))]
+            {
+                return Err(crate::error::ScanError::Gpu(format!(
+                    "{} selected but this scanner build has no GPU support",
+                    backend.label()
+                )));
+            }
+        }
+        Ok(self.scan_chunks_with_backend_internal_and_admission(
             chunks,
             backend,
             plan.filter(|plan| plan.matches_chunks(chunks)),
-        )
+        ))
     }
 
     /// Deterministic portable reference scan over several chunks.

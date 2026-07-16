@@ -125,9 +125,11 @@ identity plus the calibration command. Run `keyhog calibrate-autoroute` for the
 core ladder or the installer calibration for source-specific probes. Use an
 explicit backend only when you intentionally want a diagnostic override.
 
-After selection, the backend remains a hard execution contract. If a selected
-GPU route fails during runtime dispatch, KeyHog exits `12`; it does not complete
-that scan through an unselected CPU or SIMD backend.
+Calibration candidates and explicit backend overrides remain hard execution
+contracts. During a normal automatic scan, a runtime GPU fault is warned and
+the same stable batch is replayed through the CPU reference path. Recovered
+chunks and bytes are reported and do not count as GPU work. If recovery cannot
+prove full coverage, the result is incomplete rather than clean.
 
 For cache identity, inspection commands, calibration coverage, and recovery,
 see [Autoroute calibration](./reference/autoroute-calibration.md).

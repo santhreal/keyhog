@@ -20,7 +20,7 @@ mod support;
 use support::paths::detector_dir;
 
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::{CompiledScanner, ScanBackend};
+use keyhog_scanner::{CompiledScanner, GpuInitPolicy, ScanBackend};
 use std::sync::{Arc, Barrier, OnceLock};
 
 fn scanner() -> &'static Arc<CompiledScanner> {
@@ -229,4 +229,32 @@ fn r8_empty_regions_around_nonempty_chunks_backend_parity() {
     assert_eq!(aws.len(), 1, "mixed-region scalar oracle: {reference:?}");
     assert_eq!(aws[0].location.file_path.as_deref(), Some("credential.rs"));
     assert_backend_parity(scanner, &chunks);
+}
+
+#[test]
+fn r9_fallible_gpu_boundary_preserves_stable_bytes_for_cpu_recovery() {
+    let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors dir loadable");
+    let scanner = CompiledScanner::compile_with_gpu_policy(detectors, GpuInitPolicy::ForceDisabled)
+        .expect("GPU-disabled scanner compiles");
+    let chunks = vec![make_chunk(
+        "const AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\";\n",
+        "recover.env",
+    )];
+
+    let error = scanner
+        .try_scan_coalesced_with_backend_and_admission(&chunks, ScanBackend::GpuWgpu, None)
+        .expect_err("a disabled GPU peer must return an in-band dispatch error");
+    assert!(
+        error.to_string().contains("GPU"),
+        "dispatch error must identify the failed accelerator: {error}"
+    );
+
+    let recovered = canonical_scan(&scanner, &chunks, ScanBackend::CpuFallback);
+    let aws: Vec<_> = recovered[0]
+        .iter()
+        .filter(|finding| finding.detector_id.as_ref() == "aws-access-key")
+        .collect();
+    assert_eq!(aws.len(), 1, "stable-byte CPU recovery lost the finding");
+    assert_eq!(aws[0].credential.as_ref(), "AKIAQYLPMN5HFIQR7XYA");
+    assert_eq!(aws[0].location.file_path.as_deref(), Some("recover.env"));
 }

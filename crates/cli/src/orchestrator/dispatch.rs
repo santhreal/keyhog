@@ -16,9 +16,7 @@ use anyhow::Result;
 pub(crate) use backend::backend_requires_coalesced_batch_pipeline_for_test;
 pub(crate) use backend::inspect_autoroute_cache;
 pub(crate) use backend::AutorouteCacheInspection;
-use backend::{
-    is_gpu_backend, AutorouteRoutingError, BackendSelection, MeasuredBackendRouter,
-};
+use backend::{is_gpu_backend, AutorouteRoutingError, BackendSelection, MeasuredBackendRouter};
 pub(crate) use backend::{AutorouteMeasurementObserver, CachedBackendRouter};
 use keyhog_core::{Chunk, RawMatch, Source};
 use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
@@ -111,6 +109,7 @@ pub(super) fn finalize_source_outcome(src_chunks: usize, src_errored: bool) {
 struct CoalescedScannerWorker {
     scanner: Arc<CompiledScanner>,
     router: CoalescedBatchRouter,
+    recover_automatic_gpu_faults: bool,
     perf_trace: bool,
 }
 
@@ -159,6 +158,7 @@ impl CoalescedScannerWorker {
         Self {
             scanner,
             router: CoalescedBatchRouter::Explicit(backend),
+            recover_automatic_gpu_faults: false,
             perf_trace,
         }
     }
@@ -168,6 +168,7 @@ impl CoalescedScannerWorker {
         config: CoalescedMeasuredRouterConfig,
         perf_trace: bool,
     ) -> Self {
+        let recover_automatic_gpu_faults = !config.autoroute_calibration;
         let router = MeasuredBackendRouter::new(
             config.hw_caps,
             config.pattern_count,
@@ -183,6 +184,7 @@ impl CoalescedScannerWorker {
         Self {
             scanner,
             router: CoalescedBatchRouter::Measured(router),
+            recover_automatic_gpu_faults,
             perf_trace,
         }
     }
@@ -224,22 +226,16 @@ impl CoalescedScannerWorker {
             crate::SCANNED_BYTES.fetch_add(scanned_bytes as u64, Ordering::Relaxed);
             return Ok(scan_start.elapsed());
         }
-        let selection = self
-            .router
-            .choose_with_plan(self.scanner.as_ref(), batch)?;
+        let selection = self.router.choose_with_plan(self.scanner.as_ref(), batch)?;
         let chosen_backend = selection.backend;
         let chose_gpu = is_gpu_backend(chosen_backend);
-        // Snapshot the scanner's runtime GPU-degrade counter BEFORE the GPU arm so
-        // we can tell whether THIS batch actually executed on the GPU. Runtime
-        // failure terminates in `require_selected_backend_stack`; the counter
-        // check keeps GPU_SCANNED_CHUNKS honest for embedders that replace that
-        // process boundary.
+        // Snapshot the runtime fault counter so telemetry distinguishes a real
+        // GPU completion from an automatic CPU recovery of the same batch.
         let degrade_before = chose_gpu.then(|| self.scanner.gpu_degrade_count());
         match chosen_backend {
             // The VYRE GpuLiteralSet region-presence route is the single on-GPU
-            // trigger path. It owns backend acquisition and fails the selected
-            // route if dispatch cannot remain on GPU, so both an explicit GPU
-            // request and an autoroute-selected GPU batch land here.
+            // trigger path. Explicit requests remain hard contracts; automatic
+            // routes may recover visibly at the fallible boundary below.
             ScanBackend::GpuCuda | ScanBackend::GpuWgpu => {
                 let batch_bytes: u64 = batch.iter().map(|c| c.data.len() as u64).sum();
                 tracing::debug!(
@@ -253,26 +249,46 @@ impl CoalescedScannerWorker {
             ScanBackend::CpuFallback | ScanBackend::SimdCpu => {}
             backend => return Err(AutorouteRoutingError::unsupported_backend(backend)),
         }
-        let per_chunk = self
+        let (per_chunk, recovered) = match self
             .scanner
-            .scan_coalesced_with_backend_and_admission(
+            .try_scan_coalesced_with_backend_and_admission(
                 batch,
                 chosen_backend,
                 selection.phase1_plan.as_ref(),
-            );
-        // A selected GPU that records a runtime degradation is not a successful
-        // scan. Refuse the result before reporting findings instead of quietly
-        // returning a CPU-recovered or under-fired batch as GPU evidence.
-        let ran_on_gpu = if let Some(before) = degrade_before {
-            let after = self.scanner.gpu_degrade_count();
-            if after != before {
-                return Err(AutorouteRoutingError::selected_backend_degraded(
+            ) {
+            Ok(per_chunk) => (per_chunk, false),
+            Err(error) if chose_gpu && self.recover_automatic_gpu_faults => (
+                recover_automatic_gpu_batch(self.scanner.as_ref(), batch, chosen_backend, &error),
+                true,
+            ),
+            Err(error) => {
+                return Err(AutorouteRoutingError::selected_backend_dispatch_failed(
                     chosen_backend,
-                    before,
-                    after,
+                    error,
                 ));
             }
-            true
+        };
+        // Recovered batches are complete CPU work and must never count as GPU
+        // execution. An unaccounted runtime-fault counter change is still an
+        // invalid dispatch result.
+        let ran_on_gpu = if recovered {
+            false
+        } else if let Some(before) = degrade_before {
+            let after = self.scanner.gpu_degrade_count();
+            if after != before {
+                if self.recover_automatic_gpu_faults {
+                    record_completed_gpu_recovery(batch);
+                    false
+                } else {
+                    return Err(AutorouteRoutingError::selected_backend_degraded(
+                        chosen_backend,
+                        before,
+                        after,
+                    ));
+                }
+            } else {
+                true
+            }
         } else {
             false
         };
@@ -299,6 +315,53 @@ impl CoalescedScannerWorker {
             100.0 * recv_dur.as_secs_f64() / wall,
         );
     }
+}
+
+/// Replay one stable batch after an automatically selected GPU peer faults.
+/// Explicit backend requests and calibration candidates never call this path.
+pub(crate) fn recover_automatic_gpu_batch(
+    scanner: &CompiledScanner,
+    batch: &[Chunk],
+    failed_backend: ScanBackend,
+    error: &keyhog_scanner::ScanError,
+) -> Vec<Vec<RawMatch>> {
+    let chunks = batch.len();
+    let bytes = batch
+        .iter()
+        .map(|chunk| chunk.data.len() as u64)
+        .sum::<u64>();
+    crate::BACKEND_RECOVERY_EVENTS.fetch_add(1, Ordering::Relaxed);
+    crate::BACKEND_RECOVERED_CHUNKS.fetch_add(chunks, Ordering::Relaxed);
+    crate::BACKEND_RECOVERED_BYTES.fetch_add(bytes, Ordering::Relaxed);
+    eprintln!(
+        "keyhog: WARNING: automatic backend {} failed ({error}); replaying {chunks} stable chunk(s), {bytes} byte(s) through cpu-fallback for complete coverage",
+        failed_backend.label(),
+    );
+    tracing::warn!(
+        target: "keyhog::routing",
+        backend = failed_backend.label(),
+        chunks,
+        bytes,
+        error = %error,
+        "automatic GPU dispatch failed; exact batch recovered through CPU reference",
+    );
+    let admission = scanner.phase1_admission_plan(batch);
+    scanner.scan_coalesced_with_backend_and_admission(
+        batch,
+        ScanBackend::CpuFallback,
+        Some(&admission),
+    )
+}
+
+/// Record a GPU dispatch whose built-in CPU recall floor completed accelerator
+/// misses. The scanner emits the concrete warning; this is the coverage receipt.
+pub(crate) fn record_completed_gpu_recovery(batch: &[Chunk]) {
+    crate::BACKEND_RECOVERY_EVENTS.fetch_add(1, Ordering::Relaxed);
+    crate::BACKEND_RECOVERED_CHUNKS.fetch_add(batch.len(), Ordering::Relaxed);
+    crate::BACKEND_RECOVERED_BYTES.fetch_add(
+        batch.iter().map(|chunk| chunk.data.len() as u64).sum(),
+        Ordering::Relaxed,
+    );
 }
 
 fn batch_has_no_scan_bytes(batch: &[Chunk]) -> bool {

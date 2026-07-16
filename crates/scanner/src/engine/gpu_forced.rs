@@ -1,12 +1,8 @@
-//! KH-GAP-002: explicit failure when the selected GPU backend is unavailable.
+//! Direct-library GPU selection and runtime-fault accounting.
 //!
-//! Runtime GPU dispatch failures also fail the selected route. The hardware
-//! probe + compile-time visibility
-//! warnings can't catch the case where GPU acquisition succeeds but
-//! a specific scan dispatch fails (vyre lowering rejecting a
-//! program, CUDA driver returning a transient error, etc.). Per
-//! the no-silent-fallback rule, the user needs to know the scan
-//! did not actually use the GPU it selected.
+//! Infallible backend APIs preserve their explicit process contract here.
+//! Production orchestrators use the scanner's fallible coalesced boundary,
+//! visibly replay stable input, and report complete-after-recovery receipts.
 
 pub(crate) use super::gpu_forced_helpers::{
     fail_selected_gpu_dispatch, require_selected_gpu_stack,

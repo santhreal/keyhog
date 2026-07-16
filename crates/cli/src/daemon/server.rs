@@ -644,12 +644,50 @@ async fn scan_path(
                     .lock()
                     .map_err(|_| anyhow::anyhow!("daemon fragment scan lock is poisoned"))?;
                 scanner.clear_fragment_cache();
-                let selection = router.choose_with_plan(scanner.as_ref(), backend_override, &chunks)?;
-                let mut per_chunk = scanner.scan_coalesced_with_backend_and_admission(
-                    &chunks,
-                    selection.backend,
-                    selection.phase1_plan.as_ref(),
-                );
+                let selection =
+                    router.choose_with_plan(scanner.as_ref(), backend_override, &chunks)?;
+                let degrade_before = selection
+                    .backend
+                    .is_gpu()
+                    .then(|| scanner.gpu_degrade_count());
+                let (mut per_chunk, replayed) = match scanner
+                    .try_scan_coalesced_with_backend_and_admission(
+                        &chunks,
+                        selection.backend,
+                        selection.phase1_plan.as_ref(),
+                    ) {
+                    Ok(per_chunk) => (per_chunk, false),
+                    Err(error) if selection.backend.is_gpu() && backend_override.is_none() => {
+                        (
+                            crate::orchestrator::recover_automatic_gpu_batch(
+                                scanner.as_ref(),
+                                &chunks,
+                                selection.backend,
+                                &error,
+                            ),
+                            true,
+                        )
+                    }
+                    Err(error) => {
+                        anyhow::bail!(
+                            "selected backend {} failed during daemon dispatch: {error}",
+                            selection.backend.label()
+                        )
+                    }
+                };
+                if let Some(before) = degrade_before {
+                    let after = scanner.gpu_degrade_count();
+                    if !replayed && after != before {
+                        if backend_override.is_none() {
+                            crate::orchestrator::record_completed_gpu_recovery(&chunks);
+                        } else {
+                            anyhow::bail!(
+                                "selected backend {} degraded during daemon dispatch (GPU degradation counter {before} -> {after}); explicit backend requests cannot be substituted",
+                                selection.backend.label()
+                            );
+                        }
+                    }
+                }
                 scanner.clear_fragment_cache();
                 crate::inline_suppression::attach_inline_suppression_context(
                     &chunks,

@@ -398,7 +398,7 @@ engine.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Exit `12` with a selected-GPU diagnostic | Required, explicit, or autoroute-selected GPU execution could not start or complete | Run `keyhog backend --self-test`, recalibrate autoroute after fixing the GPU stack, or select another backend explicitly; KeyHog never substitutes CPU/SIMD inside the failed route |
+| Exit `12` with a selected-GPU diagnostic | Required, explicit, or calibration GPU execution could not start or complete | Run `keyhog backend --self-test`, repair the GPU stack, and recalibrate; normal automatic runtime faults instead produce a visible complete-after-recovery receipt when the stable bytes can be replayed |
 | Findings count drops vs prior run | Baseline, detector corpus, scan policy, or `.keyhog.toml` changed | Compare the effective config, detector digest, baseline, and input scope from both runs |
 | Pre-commit hook is slow | Scanning the whole repo on every commit | Use `--git-staged` not `scan .` |
 | SARIF report is too large for the consumer | The selected scope produced more findings than the consumer accepts | Narrow the scanned source, use a reviewed baseline, or choose an explicit severity policy; do not hide an incomplete upload |

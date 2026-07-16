@@ -6,6 +6,26 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Automatic GPU runtime faults now cross a fallible scanner boundary: normal
+  one-shot, fused, and daemon scans visibly replay the same stable batch through
+  the scalar reference path and report recovered chunks and bytes. Calibration,
+  explicit GPU overrides, `--require-gpu`, invalid policy, and artifact trust
+  failures remain hard contracts, so recovery cannot become silent fallback or
+  certify a broken accelerator.
+- `https://santh.dev/keyhog/install.sh` and
+  `https://santh.dev/keyhog/install.ps1` are now the canonical installer URLs
+  across the repository and product site. The santh.dev build copies the exact
+  in-tree installer bytes and serves them with explicit script content types;
+  signed, version-pinned release installation remains documented for operators
+  who authenticate the installer before execution.
+- Offline token validation is now detector-owned data. GitHub, npm, PyPI,
+  Slack, Stripe, GitLab, and their wrapper detectors declare typed validator
+  programs, prefixes, lengths, and confidence floors in their own TOMLs. Scanner
+  construction compiles direct per-detector dispatch plus a first-byte generic
+  index; CRC comparison no longer allocates, base64 decoding reuses zeroed
+  thread-local storage, and one verdict is carried through suppression, ML
+  batching, and final confidence. The duplicate Rust prefix registry and
+  service-specific validator modules have been removed.
 - ML score memoization now binds the complete resolved feature vocabulary as
   well as candidate text and context, preventing one scanner configuration
   from reusing another configuration's confidence. Model diagnostics now expose

@@ -54,6 +54,9 @@ pub struct ScanRuntimeSnapshot {
     pub total_chunks: usize,
     pub findings_count: usize,
     pub gpu_scanned_chunks: usize,
+    pub backend_recovery_events: usize,
+    pub backend_recovered_chunks: usize,
+    pub backend_recovered_bytes: u64,
     pub source_errors: usize,
     pub failed_sources: usize,
     pub incremental_cache_errors: usize,
@@ -397,6 +400,11 @@ pub trait CliTestApi {
     /// scans WITHOUT autoroute calibration (the `keyhog watch --backend` fix).
     fn forced_backend_runtime_detector_ids(&self, backend: &str, body: &str)
         -> Result<Vec<String>>;
+    fn recover_disabled_gpu_batch_for_test(
+        &self,
+        body: &str,
+        _guard: &ScanRuntimeGuard,
+    ) -> Result<Vec<String>>;
     fn allowlist_root_for_test(&self, path: &Path) -> PathBuf;
     fn backend_requires_coalesced_batch_pipeline_for_test(
         &self,
@@ -1191,6 +1199,45 @@ impl CliTestApi for TestApi {
             .map(|m| m.detector_id.as_ref().to_string())
             .collect())
     }
+    fn recover_disabled_gpu_batch_for_test(
+        &self,
+        body: &str,
+        _guard: &ScanRuntimeGuard,
+    ) -> Result<Vec<String>> {
+        crate::reset_scan_runtime_state();
+        let detectors = keyhog_core::load_embedded_detectors_or_fail()?;
+        let scanner = keyhog_scanner::CompiledScanner::compile_with_gpu_policy(
+            detectors,
+            keyhog_scanner::GpuInitPolicy::ForceDisabled,
+        )?;
+        let chunks = vec![keyhog_core::Chunk {
+            data: body.to_string().into(),
+            metadata: keyhog_core::ChunkMetadata {
+                source_type: "filesystem".into(),
+                path: Some("gpu-recovery.env".into()),
+                ..Default::default()
+            },
+        }];
+        let error = match scanner.try_scan_coalesced_with_backend_and_admission(
+            &chunks,
+            keyhog_scanner::ScanBackend::GpuWgpu,
+            None,
+        ) {
+            Ok(_) => anyhow::bail!("disabled GPU unexpectedly completed dispatch"),
+            Err(error) => error,
+        };
+        let per_chunk = crate::orchestrator::recover_automatic_gpu_batch(
+            &scanner,
+            &chunks,
+            keyhog_scanner::ScanBackend::GpuWgpu,
+            &error,
+        );
+        Ok(per_chunk
+            .into_iter()
+            .flatten()
+            .map(|finding| finding.detector_id.as_ref().to_string())
+            .collect())
+    }
     fn allowlist_root_for_test(&self, path: &Path) -> PathBuf {
         crate::orchestrator::allowlist_root_for_test(path)
     }
@@ -1281,6 +1328,9 @@ impl CliTestApi for TestApi {
         crate::TOTAL_CHUNKS.store(13, Relaxed);
         crate::FINDINGS_COUNT.store(17, Relaxed);
         crate::GPU_SCANNED_CHUNKS.store(19, Relaxed);
+        crate::BACKEND_RECOVERY_EVENTS.store(2, Relaxed);
+        crate::BACKEND_RECOVERED_CHUNKS.store(3, Relaxed);
+        crate::BACKEND_RECOVERED_BYTES.store(5, Relaxed);
         let _source_error_receipt = crate::record_source_error();
         let _failed_source_receipt = crate::record_failed_source();
         let _incremental_cache_receipt = crate::record_incremental_cache_persist_failed();
@@ -1301,6 +1351,9 @@ impl CliTestApi for TestApi {
             total_chunks: crate::TOTAL_CHUNKS.load(Relaxed),
             findings_count: crate::FINDINGS_COUNT.load(Relaxed),
             gpu_scanned_chunks: crate::GPU_SCANNED_CHUNKS.load(Relaxed),
+            backend_recovery_events: crate::BACKEND_RECOVERY_EVENTS.load(Relaxed),
+            backend_recovered_chunks: crate::BACKEND_RECOVERED_CHUNKS.load(Relaxed),
+            backend_recovered_bytes: crate::BACKEND_RECOVERED_BYTES.load(Relaxed),
             source_errors: crate::SOURCE_ERRORS.load(Relaxed),
             failed_sources: crate::FAILED_SOURCES.load(Relaxed),
             incremental_cache_errors: crate::INCREMENTAL_CACHE_ERRORS.load(Relaxed),
