@@ -24,6 +24,7 @@ pub(crate) fn entropy_match_suppression_stage(
     // with any Tier-A scan ceiling override already applied.
     bpe_max_bytes_per_token: Option<f64>,
     entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
+    public_identifier_assignment_markers: &[String],
 ) -> Option<EntropyShapeStage> {
     let randomness =
         crate::suppression::token_randomness::TokenRandomness::for_candidate(&entropy_match.value);
@@ -237,28 +238,9 @@ pub(crate) fn entropy_match_suppression_stage(
     // identifiers, not credentials. Cheap line lookup via the
     // preprocessed text + line_offsets table.
     if let Some(line_text) = entropy_value_line(entropy_match, preprocessed, line_offsets) {
-        let line_upper = line_text.to_ascii_uppercase();
-        #[derive(serde::Deserialize)]
-        struct BlockchainAddrKeywordsFile {
-            keywords: Vec<String>,
-        }
-        // One owner: rules/blockchain-address-keywords.toml (Tier-B data).
-        static BLOCKCHAIN_ADDR_KEYWORDS: std::sync::LazyLock<Vec<String>> =
-            std::sync::LazyLock::new(|| {
-                match toml::from_str::<BlockchainAddrKeywordsFile>(include_str!(
-                    "../../../../../rules/blockchain-address-keywords.toml"
-                )) {
-                    Ok(parsed) => parsed.keywords,
-                    Err(error) => panic!(
-                        "rules/blockchain-address-keywords.toml is invalid: {error}. \
-                         Fix the Tier-B blockchain keyword list."
-                    ),
-                }
-            });
-        if BLOCKCHAIN_ADDR_KEYWORDS
-            .iter()
-            .any(|kw| line_upper.contains(kw.as_str()))
-        {
+        if public_identifier_assignment_markers.iter().any(|marker| {
+            crate::ascii_ci::ci_find_nonempty(line_text.as_bytes(), marker.as_bytes())
+        }) {
             return Some(EntropyShapeStage::BlockchainOrNetworkAddress);
         }
     }

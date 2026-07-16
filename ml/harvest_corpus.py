@@ -11,7 +11,7 @@ actual candidates keyhog surfaces, labelled by ground truth, is the
 categorical fix.
 
 For each keyhog finding we emit a corpus record
-`{text, context, label, kind, class, detector_id}`
+`{text, context, label, kind, class, detector_id, candidate_channel}`
 matching `ml/corpus.py`'s schema:
   - text    : the finding's credential value (what the model scores)
   - context : the SERVE ml_context: "file:{path}\n{±5-line window}", a
@@ -24,6 +24,9 @@ matching `ml/corpus.py`'s schema:
   - class   : ground-truth secret category used by per-class retrain gates.
   - detector_id: keyhog detector that produced the candidate, used by the
               per-detector model-card breakdown.
+  - candidate_channel: `entropy` for synthetic entropy finding identities,
+              otherwise `pattern`; this is the production channel presented to
+              the detector-conditioned model.
 
 Run:
   python3 ml/harvest_corpus.py --corpora creddata homefield \
@@ -41,6 +44,8 @@ import json
 import pathlib
 import sys
 from collections import Counter
+
+import detector_policy
 
 HERE = pathlib.Path(__file__).resolve().parent
 BENCH = HERE.parent / "benchmarks"
@@ -192,6 +197,7 @@ def harvest(corpus_name: str, keyhog_bin: str | None, floor: float) -> list[dict
                 "kind": f"real-{corpus_name}-{'pos' if label else 'neg'}",
                 "class": secret_class,
                 "detector_id": detector_id,
+                "candidate_channel": detector_policy.candidate_channel(detector_id),
                 # provenance for the no-leakage group split downstream
                 "source_file": key,
             }

@@ -361,11 +361,7 @@ fn uppercase_keyword_bridges_case_insensitively() {
     let m = find(&matches, MID_ENTROPY_VALUE).unwrap_or_else(|| {
         panic!("PASSWORD=<value> must bridge case-insensitively; matches: {matches:#?}")
     });
-    assert!(owned_by(
-        &matches,
-        MID_ENTROPY_VALUE,
-        "generic-keyword-secret"
-    ));
+    assert!(owned_by(&matches, MID_ENTROPY_VALUE, "generic-password"));
     assert_eq!(m.severity, Severity::Medium);
 }
 

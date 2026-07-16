@@ -58,7 +58,6 @@ pub(crate) fn credential_context_keywords() -> &'static [String] {
     &CREDENTIAL_CONTEXT_KEYWORDS
 }
 
-
 #[cfg(test)]
 #[path = "../tests/unit/credential_context_keywords.rs"]
 mod tests;

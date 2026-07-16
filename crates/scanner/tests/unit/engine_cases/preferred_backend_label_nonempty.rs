@@ -13,6 +13,7 @@ fn no_backend_library_status_names_the_portable_reference() {
             description: None,
             group: None,
             client_safe: false,
+            weak_anchor: false,
         }],
         companions: vec![],
         verify: None,

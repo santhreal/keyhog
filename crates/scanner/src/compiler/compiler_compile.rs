@@ -266,6 +266,7 @@ pub(crate) fn compile_pattern(
         regex: LazyRegex::detector_compiled(spec.regex.as_str(), regex),
         group: spec.group,
         client_safe: spec.client_safe,
+        weak_anchor: spec.weak_anchor,
         match_proves_keyword_nearby: match_proves_keyword_nearby(
             spec.regex.as_str(),
             detector_keywords,

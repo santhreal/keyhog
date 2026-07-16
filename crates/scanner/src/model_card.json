@@ -1,18 +1,18 @@
 {
   "architecture": "moe-v1",
-  "feature_count": 43,
+  "feature_count": 55,
   "feature_source": "Rust dump_features serve path",
   "metrics": {
     "real_heldout": {
       "n_neg": 2211,
       "n_pos": 883,
       "n_test": 3094,
-      "neg_mean_score": 0.1577,
+      "neg_mean_score": 0.1487,
       "per_class": {
         "API": {
           "f1": 0.0,
           "fn": 0,
-          "fp": 20,
+          "fp": 47,
           "n_neg": 379,
           "n_pos": 0,
           "n_test": 379,
@@ -34,16 +34,16 @@
           "tp": 0
         },
         "API:Key": {
-          "f1": 0.7273,
-          "fn": 2,
-          "fp": 1,
+          "f1": 0.7143,
+          "fn": 1,
+          "fp": 3,
           "n_neg": 3,
           "n_pos": 6,
           "n_test": 9,
-          "precision": 0.8,
-          "recall": 0.6667,
-          "recall_at_0_40_floor": 0.6667,
-          "tp": 4
+          "precision": 0.625,
+          "recall": 0.8333,
+          "recall_at_0_40_floor": 0.8333,
+          "tp": 5
         },
         "API:Key:Dropbox App secret": {
           "f1": 0.0,
@@ -58,25 +58,25 @@
           "tp": 0
         },
         "API:Token": {
-          "f1": 0.8571,
-          "fn": 1,
+          "f1": 1.0,
+          "fn": 0,
           "fp": 0,
           "n_neg": 6,
           "n_pos": 4,
           "n_test": 10,
           "precision": 1.0,
-          "recall": 0.75,
-          "recall_at_0_40_floor": 0.75,
-          "tp": 3
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 4
         },
         "AWS Client ID": {
-          "f1": 0.6,
+          "f1": 0.6207,
           "fn": 0,
-          "fp": 12,
+          "fp": 11,
           "n_neg": 71,
           "n_pos": 9,
           "n_test": 80,
-          "precision": 0.4286,
+          "precision": 0.45,
           "recall": 1.0,
           "recall_at_0_40_floor": 1.0,
           "tp": 9
@@ -94,16 +94,16 @@
           "tp": 14
         },
         "Auth": {
-          "f1": 0.7222,
-          "fn": 2,
-          "fp": 8,
+          "f1": 0.8333,
+          "fn": 0,
+          "fp": 6,
           "n_neg": 55,
           "n_pos": 15,
           "n_test": 70,
-          "precision": 0.619,
-          "recall": 0.8667,
-          "recall_at_0_40_floor": 0.8667,
-          "tp": 13
+          "precision": 0.7143,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 15
         },
         "Auth:Azure Access Token:JSON Web Token:Bearer Authorization": {
           "f1": 1.0,
@@ -130,16 +130,16 @@
           "tp": 0
         },
         "Auth:Basic Authorization": {
-          "f1": 0.9282,
-          "fn": 15,
+          "f1": 1.0,
+          "fn": 0,
           "fp": 0,
           "n_neg": 6,
           "n_pos": 112,
           "n_test": 118,
           "precision": 1.0,
-          "recall": 0.8661,
-          "recall_at_0_40_floor": 0.8661,
-          "tp": 97
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 112
         },
         "Auth:Bearer Authorization": {
           "f1": 1.0,
@@ -154,16 +154,16 @@
           "tp": 9
         },
         "Auth:Key": {
-          "f1": 0.8,
-          "fn": 1,
+          "f1": 1.0,
+          "fn": 0,
           "fp": 0,
           "n_neg": 0,
           "n_pos": 3,
           "n_test": 3,
           "precision": 1.0,
-          "recall": 0.6667,
-          "recall_at_0_40_floor": 0.6667,
-          "tp": 2
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 3
         },
         "Auth:Key:Token": {
           "f1": 0.0,
@@ -202,28 +202,28 @@
           "tp": 1
         },
         "Auth:Secret:Token": {
-          "f1": 0.0,
-          "fn": 2,
+          "f1": 1.0,
+          "fn": 0,
           "fp": 0,
           "n_neg": 0,
           "n_pos": 2,
           "n_test": 2,
-          "precision": 0.0,
-          "recall": 0.0,
-          "recall_at_0_40_floor": 0.5,
-          "tp": 0
+          "precision": 1.0,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 2
         },
         "Auth:Token": {
-          "f1": 0.8462,
-          "fn": 4,
+          "f1": 1.0,
+          "fn": 0,
           "fp": 0,
           "n_neg": 7,
           "n_pos": 15,
           "n_test": 22,
           "precision": 1.0,
-          "recall": 0.7333,
-          "recall_at_0_40_floor": 0.8,
-          "tp": 11
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 15
         },
         "Auth:Token:JSON Web Token": {
           "f1": 1.0,
@@ -238,28 +238,28 @@
           "tp": 1
         },
         "Auth:Token:UUID": {
-          "f1": 0.0,
-          "fn": 1,
+          "f1": 1.0,
+          "fn": 0,
           "fp": 0,
           "n_neg": 0,
           "n_pos": 1,
           "n_test": 1,
-          "precision": 0.0,
-          "recall": 0.0,
-          "recall_at_0_40_floor": 0.0,
-          "tp": 0
+          "precision": 1.0,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 1
         },
         "Azure Access Token:JSON Web Token": {
-          "f1": 0.0,
-          "fn": 1,
+          "f1": 1.0,
+          "fn": 0,
           "fp": 0,
           "n_neg": 0,
           "n_pos": 1,
           "n_test": 1,
-          "precision": 0.0,
-          "recall": 0.0,
-          "recall_at_0_40_floor": 0.0,
-          "tp": 0
+          "precision": 1.0,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 1
         },
         "BASE64 encoded PEM Private Key:Key": {
           "f1": 0.5,
@@ -274,13 +274,13 @@
           "tp": 1
         },
         "Basic Authorization": {
-          "f1": 1.0,
+          "f1": 0.4,
           "fn": 0,
-          "fp": 0,
+          "fp": 3,
           "n_neg": 4,
           "n_pos": 1,
           "n_test": 5,
-          "precision": 1.0,
+          "precision": 0.25,
           "recall": 1.0,
           "recall_at_0_40_floor": 1.0,
           "tp": 1
@@ -310,16 +310,16 @@
           "tp": 0
         },
         "CMD Password": {
-          "f1": 0.9091,
-          "fn": 1,
+          "f1": 0.6667,
+          "fn": 3,
           "fp": 0,
           "n_neg": 2,
           "n_pos": 6,
           "n_test": 8,
           "precision": 1.0,
-          "recall": 0.8333,
-          "recall_at_0_40_floor": 0.8333,
-          "tp": 5
+          "recall": 0.5,
+          "recall_at_0_40_floor": 0.5,
+          "tp": 3
         },
         "CURL User Password": {
           "f1": 0.0,
@@ -348,7 +348,7 @@
         "Dropbox App secret": {
           "f1": 0.0,
           "fn": 0,
-          "fp": 0,
+          "fp": 1,
           "n_neg": 82,
           "n_pos": 0,
           "n_test": 82,
@@ -358,52 +358,52 @@
           "tp": 0
         },
         "Dropbox App secret:Password": {
-          "f1": 1.0,
+          "f1": 0.9744,
           "fn": 0,
-          "fp": 0,
+          "fp": 1,
           "n_neg": 4,
           "n_pos": 19,
           "n_test": 23,
-          "precision": 1.0,
+          "precision": 0.95,
           "recall": 1.0,
           "recall_at_0_40_floor": 1.0,
           "tp": 19
         },
         "Google API Key:Key": {
-          "f1": 1.0,
+          "f1": 0.6667,
           "fn": 0,
-          "fp": 0,
+          "fp": 2,
           "n_neg": 2,
           "n_pos": 2,
           "n_test": 4,
-          "precision": 1.0,
+          "precision": 0.5,
           "recall": 1.0,
           "recall_at_0_40_floor": 1.0,
           "tp": 2
         },
         "Google Multi": {
-          "f1": 0.0,
-          "fn": 4,
+          "f1": 1.0,
+          "fn": 0,
           "fp": 0,
           "n_neg": 0,
           "n_pos": 4,
           "n_test": 4,
-          "precision": 0.0,
-          "recall": 0.0,
-          "recall_at_0_40_floor": 0.0,
-          "tp": 0
+          "precision": 1.0,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 4
         },
         "JSON Web Token": {
-          "f1": 0.6364,
-          "fn": 6,
-          "fp": 2,
+          "f1": 0.963,
+          "fn": 0,
+          "fp": 1,
           "n_neg": 12,
           "n_pos": 13,
           "n_test": 25,
-          "precision": 0.7778,
-          "recall": 0.5385,
-          "recall_at_0_40_floor": 0.5385,
-          "tp": 7
+          "precision": 0.9286,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 13
         },
         "JSON Web Token:Bearer Authorization": {
           "f1": 1.0,
@@ -418,40 +418,40 @@
           "tp": 16
         },
         "JSON Web Token:Token": {
-          "f1": 1.0,
+          "f1": 0.8,
           "fn": 0,
-          "fp": 0,
+          "fp": 1,
           "n_neg": 1,
           "n_pos": 2,
           "n_test": 3,
-          "precision": 1.0,
+          "precision": 0.6667,
           "recall": 1.0,
           "recall_at_0_40_floor": 1.0,
           "tp": 2
         },
         "JWK": {
-          "f1": 0.8,
-          "fn": 1,
+          "f1": 0.9091,
+          "fn": 0,
           "fp": 1,
           "n_neg": 2,
           "n_pos": 5,
           "n_test": 7,
-          "precision": 0.8,
-          "recall": 0.8,
-          "recall_at_0_40_floor": 0.8,
-          "tp": 4
+          "precision": 0.8333,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 5
         },
         "Key": {
-          "f1": 0.7742,
-          "fn": 3,
-          "fp": 4,
+          "f1": 0.5769,
+          "fn": 0,
+          "fp": 22,
           "n_neg": 258,
           "n_pos": 15,
           "n_test": 273,
-          "precision": 0.75,
-          "recall": 0.8,
-          "recall_at_0_40_floor": 0.8,
-          "tp": 12
+          "precision": 0.4054,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 15
         },
         "Key:AWS Multi:AWS Client ID": {
           "f1": 0.0,
@@ -478,33 +478,33 @@
           "tp": 1
         },
         "Key:Secret": {
-          "f1": 0.6486,
-          "fn": 1,
-          "fp": 12,
+          "f1": 0.6667,
+          "fn": 0,
+          "fp": 13,
           "n_neg": 26,
           "n_pos": 13,
           "n_test": 39,
           "precision": 0.5,
-          "recall": 0.9231,
-          "recall_at_0_40_floor": 0.9231,
-          "tp": 12
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 13
         },
         "Key:Stripe Credentials": {
-          "f1": 0.0,
-          "fn": 2,
+          "f1": 0.6667,
+          "fn": 1,
           "fp": 0,
           "n_neg": 0,
           "n_pos": 2,
           "n_test": 2,
-          "precision": 0.0,
-          "recall": 0.0,
-          "recall_at_0_40_floor": 0.0,
-          "tp": 0
+          "precision": 1.0,
+          "recall": 0.5,
+          "recall_at_0_40_floor": 0.5,
+          "tp": 1
         },
         "Key:Token": {
           "f1": 0.0,
           "fn": 0,
-          "fp": 3,
+          "fp": 0,
           "n_neg": 34,
           "n_pos": 0,
           "n_test": 34,
@@ -514,37 +514,37 @@
           "tp": 0
         },
         "NKEY Seed": {
-          "f1": 0.3333,
-          "fn": 3,
+          "f1": 0.8889,
+          "fn": 0,
           "fp": 1,
           "n_neg": 3,
           "n_pos": 4,
           "n_test": 7,
-          "precision": 0.5,
-          "recall": 0.25,
-          "recall_at_0_40_floor": 0.25,
-          "tp": 1
+          "precision": 0.8,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 4
         },
         "Nonce": {
-          "f1": 0.75,
-          "fn": 1,
-          "fp": 1,
+          "f1": 0.8,
+          "fn": 0,
+          "fp": 2,
           "n_neg": 4,
           "n_pos": 4,
           "n_test": 8,
-          "precision": 0.75,
-          "recall": 0.75,
-          "recall_at_0_40_floor": 0.75,
-          "tp": 3
+          "precision": 0.6667,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 4
         },
         "PEM Private Key": {
-          "f1": 0.8789,
+          "f1": 0.895,
           "fn": 0,
-          "fp": 27,
+          "fp": 23,
           "n_neg": 93,
           "n_pos": 98,
           "n_test": 191,
-          "precision": 0.784,
+          "precision": 0.8099,
           "recall": 1.0,
           "recall_at_0_40_floor": 1.0,
           "tp": 98
@@ -562,16 +562,16 @@
           "tp": 1
         },
         "Password": {
-          "f1": 0.7469,
-          "fn": 27,
-          "fp": 116,
+          "f1": 0.8481,
+          "fn": 23,
+          "fp": 54,
           "n_neg": 450,
           "n_pos": 238,
           "n_test": 688,
-          "precision": 0.6453,
-          "recall": 0.8866,
-          "recall_at_0_40_floor": 0.9034,
-          "tp": 211
+          "precision": 0.7993,
+          "recall": 0.9034,
+          "recall_at_0_40_floor": 0.9076,
+          "tp": 215
         },
         "Password:Auth": {
           "f1": 1.0,
@@ -630,44 +630,44 @@
           "n_test": 8,
           "precision": 0.0,
           "recall": 0.0,
-          "recall_at_0_40_floor": 0.0,
+          "recall_at_0_40_floor": 0.3333,
           "tp": 0
         },
         "Password:URL Credentials": {
-          "f1": 0.8,
+          "f1": 1.0,
           "fn": 0,
-          "fp": 1,
+          "fp": 0,
           "n_neg": 34,
           "n_pos": 2,
           "n_test": 36,
-          "precision": 0.6667,
+          "precision": 1.0,
           "recall": 1.0,
           "recall_at_0_40_floor": 1.0,
           "tp": 2
         },
         "Salt": {
-          "f1": 0.9524,
-          "fn": 2,
+          "f1": 1.0,
+          "fn": 0,
           "fp": 0,
           "n_neg": 0,
           "n_pos": 22,
           "n_test": 22,
           "precision": 1.0,
-          "recall": 0.9091,
-          "recall_at_0_40_floor": 0.9091,
-          "tp": 20
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 22
         },
         "Secret": {
-          "f1": 0.7545,
-          "fn": 4,
-          "fp": 37,
+          "f1": 0.825,
+          "fn": 1,
+          "fp": 27,
           "n_neg": 258,
           "n_pos": 67,
           "n_test": 325,
-          "precision": 0.63,
-          "recall": 0.9403,
-          "recall_at_0_40_floor": 0.9403,
-          "tp": 63
+          "precision": 0.7097,
+          "recall": 0.9851,
+          "recall_at_0_40_floor": 0.9851,
+          "tp": 66
         },
         "Secret:Key": {
           "f1": 1.0,
@@ -694,15 +694,15 @@
           "tp": 2
         },
         "Token": {
-          "f1": 0.7273,
+          "f1": 0.699,
           "fn": 16,
-          "fp": 11,
+          "fp": 15,
           "n_neg": 161,
           "n_pos": 52,
           "n_test": 213,
-          "precision": 0.766,
+          "precision": 0.7059,
           "recall": 0.6923,
-          "recall_at_0_40_floor": 0.6923,
+          "recall_at_0_40_floor": 0.75,
           "tp": 36
         },
         "Token:Auth": {
@@ -718,28 +718,28 @@
           "tp": 1
         },
         "Token:JSON Web Token": {
-          "f1": 0.0,
-          "fn": 1,
+          "f1": 1.0,
+          "fn": 0,
           "fp": 0,
           "n_neg": 0,
           "n_pos": 1,
           "n_test": 1,
-          "precision": 0.0,
-          "recall": 0.0,
-          "recall_at_0_40_floor": 0.0,
-          "tp": 0
+          "precision": 1.0,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 1
         },
         "Token:UUID": {
-          "f1": 0.7711,
-          "fn": 18,
-          "fp": 1,
+          "f1": 0.8936,
+          "fn": 8,
+          "fp": 2,
           "n_neg": 33,
           "n_pos": 50,
           "n_test": 83,
-          "precision": 0.9697,
-          "recall": 0.64,
-          "recall_at_0_40_floor": 0.64,
-          "tp": 32
+          "precision": 0.9545,
+          "recall": 0.84,
+          "recall_at_0_40_floor": 0.86,
+          "tp": 42
         },
         "Twilio Credentials": {
           "f1": 1.0,
@@ -754,40 +754,40 @@
           "tp": 1
         },
         "URL Credentials": {
-          "f1": 0.5106,
-          "fn": 8,
-          "fp": 15,
+          "f1": 0.7755,
+          "fn": 1,
+          "fp": 10,
           "n_neg": 35,
           "n_pos": 20,
           "n_test": 55,
-          "precision": 0.4444,
-          "recall": 0.6,
-          "recall_at_0_40_floor": 0.65,
-          "tp": 12
+          "precision": 0.6552,
+          "recall": 0.95,
+          "recall_at_0_40_floor": 0.95,
+          "tp": 19
         },
         "UUID": {
-          "f1": 0.3333,
+          "f1": 0.1053,
           "fn": 1,
-          "fp": 3,
+          "fp": 16,
           "n_neg": 94,
           "n_pos": 2,
           "n_test": 96,
-          "precision": 0.25,
+          "precision": 0.0588,
           "recall": 0.5,
           "recall_at_0_40_floor": 0.5,
           "tp": 1
         },
         "UUID:Key": {
-          "f1": 0.0,
-          "fn": 2,
+          "f1": 1.0,
+          "fn": 0,
           "fp": 0,
           "n_neg": 0,
           "n_pos": 2,
           "n_test": 2,
-          "precision": 0.0,
-          "recall": 0.0,
-          "recall_at_0_40_floor": 0.0,
-          "tp": 0
+          "precision": 1.0,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 2
         },
         "UUID:Token": {
           "f1": 1.0,
@@ -804,13 +804,13 @@
       },
       "per_detector": {
         "akamai-api-credentials": {
-          "f1": 1.0,
+          "f1": 0.6667,
           "fn": 0,
-          "fp": 0,
+          "fp": 1,
           "n_neg": 1,
           "n_pos": 1,
           "n_test": 2,
-          "precision": 1.0,
+          "precision": 0.5,
           "recall": 1.0,
           "recall_at_0_40_floor": 1.0,
           "tp": 1
@@ -818,7 +818,7 @@
         "autoblocks-api-key": {
           "f1": 0.0,
           "fn": 0,
-          "fp": 0,
+          "fp": 1,
           "n_neg": 1,
           "n_pos": 0,
           "n_test": 1,
@@ -842,7 +842,7 @@
         "aws-secrets-manager-arn": {
           "f1": 0.0,
           "fn": 0,
-          "fp": 0,
+          "fp": 12,
           "n_neg": 13,
           "n_pos": 0,
           "n_test": 13,
@@ -864,16 +864,16 @@
           "tp": 0
         },
         "basic-auth-credentials": {
-          "f1": 0.9282,
-          "fn": 15,
-          "fp": 0,
+          "f1": 0.9912,
+          "fn": 0,
+          "fp": 2,
           "n_neg": 2,
           "n_pos": 112,
           "n_test": 114,
-          "precision": 1.0,
-          "recall": 0.8661,
-          "recall_at_0_40_floor": 0.8661,
-          "tp": 97
+          "precision": 0.9825,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 112
         },
         "bearer-authorization": {
           "f1": 1.0,
@@ -900,13 +900,13 @@
           "tp": 0
         },
         "budibase-credentials": {
-          "f1": 1.0,
+          "f1": 0.75,
           "fn": 0,
-          "fp": 0,
+          "fp": 2,
           "n_neg": 2,
           "n_pos": 3,
           "n_test": 5,
-          "precision": 1.0,
+          "precision": 0.6,
           "recall": 1.0,
           "recall_at_0_40_floor": 1.0,
           "tp": 3
@@ -914,7 +914,7 @@
         "carbon-black-api-key": {
           "f1": 0.0,
           "fn": 0,
-          "fp": 0,
+          "fp": 1,
           "n_neg": 1,
           "n_pos": 0,
           "n_test": 1,
@@ -924,16 +924,16 @@
           "tp": 0
         },
         "cli-password-flag": {
-          "f1": 0.6087,
-          "fn": 4,
-          "fp": 5,
+          "f1": 0.5556,
+          "fn": 6,
+          "fp": 2,
           "n_neg": 7,
           "n_pos": 11,
           "n_test": 18,
-          "precision": 0.5833,
-          "recall": 0.6364,
-          "recall_at_0_40_floor": 0.7273,
-          "tp": 7
+          "precision": 0.7143,
+          "recall": 0.4545,
+          "recall_at_0_40_floor": 0.4545,
+          "tp": 5
         },
         "confluent-cloud-api-key": {
           "f1": 0.0,
@@ -972,16 +972,16 @@
           "tp": 0
         },
         "entropy-api-key": {
-          "f1": 0.3849,
-          "fn": 23,
-          "fp": 140,
+          "f1": 0.5281,
+          "fn": 13,
+          "fp": 96,
           "n_neg": 1284,
           "n_pos": 74,
           "n_test": 1358,
-          "precision": 0.267,
-          "recall": 0.6892,
-          "recall_at_0_40_floor": 0.6892,
-          "tp": 51
+          "precision": 0.3885,
+          "recall": 0.8243,
+          "recall_at_0_40_floor": 0.8784,
+          "tp": 61
         },
         "entropy-api-key:reassembled": {
           "f1": 1.0,
@@ -1008,88 +1008,88 @@
           "tp": 3
         },
         "entropy-password": {
-          "f1": 0.8525,
+          "f1": 0.8062,
           "fn": 4,
-          "fp": 14,
+          "fp": 21,
           "n_neg": 131,
           "n_pos": 56,
           "n_test": 187,
-          "precision": 0.7879,
+          "precision": 0.7123,
           "recall": 0.9286,
           "recall_at_0_40_floor": 0.9286,
           "tp": 52
         },
         "entropy-token": {
-          "f1": 0.6094,
-          "fn": 21,
-          "fp": 29,
+          "f1": 0.8485,
+          "fn": 4,
+          "fp": 16,
           "n_neg": 404,
           "n_pos": 60,
           "n_test": 464,
-          "precision": 0.5735,
-          "recall": 0.65,
-          "recall_at_0_40_floor": 0.65,
-          "tp": 39
+          "precision": 0.7778,
+          "recall": 0.9333,
+          "recall_at_0_40_floor": 0.9333,
+          "tp": 56
         },
         "generic-api-key": {
-          "f1": 0.7778,
-          "fn": 2,
-          "fp": 2,
+          "f1": 0.8889,
+          "fn": 1,
+          "fp": 1,
           "n_neg": 8,
           "n_pos": 9,
           "n_test": 17,
-          "precision": 0.7778,
-          "recall": 0.7778,
-          "recall_at_0_40_floor": 0.7778,
-          "tp": 7
+          "precision": 0.8889,
+          "recall": 0.8889,
+          "recall_at_0_40_floor": 0.8889,
+          "tp": 8
         },
         "generic-keyword-secret": {
-          "f1": 0.9283,
-          "fn": 9,
-          "fp": 14,
+          "f1": 0.9172,
+          "fn": 14,
+          "fp": 12,
           "n_neg": 89,
           "n_pos": 158,
           "n_test": 247,
-          "precision": 0.9141,
-          "recall": 0.943,
-          "recall_at_0_40_floor": 0.9557,
-          "tp": 149
+          "precision": 0.9231,
+          "recall": 0.9114,
+          "recall_at_0_40_floor": 0.9241,
+          "tp": 144
         },
         "generic-password": {
-          "f1": 0.8936,
-          "fn": 8,
-          "fp": 7,
+          "f1": 0.9324,
+          "fn": 2,
+          "fp": 8,
           "n_neg": 16,
           "n_pos": 71,
           "n_test": 87,
-          "precision": 0.9,
-          "recall": 0.8873,
-          "recall_at_0_40_floor": 0.9014,
-          "tp": 63
+          "precision": 0.8961,
+          "recall": 0.9718,
+          "recall_at_0_40_floor": 0.9718,
+          "tp": 69
         },
         "generic-secret": {
-          "f1": 0.7477,
-          "fn": 21,
-          "fp": 6,
+          "f1": 0.8462,
+          "fn": 6,
+          "fp": 14,
           "n_neg": 87,
           "n_pos": 61,
           "n_test": 148,
-          "precision": 0.8696,
-          "recall": 0.6557,
-          "recall_at_0_40_floor": 0.6885,
-          "tp": 40
+          "precision": 0.7971,
+          "recall": 0.9016,
+          "recall_at_0_40_floor": 0.9016,
+          "tp": 55
         },
         "generic-secret:reassembled": {
-          "f1": 0.5455,
-          "fn": 4,
-          "fp": 6,
+          "f1": 0.5714,
+          "fn": 6,
+          "fp": 0,
           "n_neg": 10,
           "n_pos": 10,
           "n_test": 20,
-          "precision": 0.5,
-          "recall": 0.6,
-          "recall_at_0_40_floor": 0.6,
-          "tp": 6
+          "precision": 1.0,
+          "recall": 0.4,
+          "recall_at_0_40_floor": 0.4,
+          "tp": 4
         },
         "github-app-private-key": {
           "f1": 0.9643,
@@ -1104,13 +1104,13 @@
           "tp": 27
         },
         "google-api-key": {
-          "f1": 1.0,
+          "f1": 0.8,
           "fn": 0,
-          "fp": 0,
+          "fp": 1,
           "n_neg": 1,
           "n_pos": 2,
           "n_test": 3,
-          "precision": 1.0,
+          "precision": 0.6667,
           "recall": 1.0,
           "recall_at_0_40_floor": 1.0,
           "tp": 2
@@ -1118,7 +1118,7 @@
         "google-cloud-storage-hmac-key": {
           "f1": 0.0,
           "fn": 0,
-          "fp": 2,
+          "fp": 33,
           "n_neg": 60,
           "n_pos": 0,
           "n_test": 60,
@@ -1128,16 +1128,16 @@
           "tp": 0
         },
         "google-oauth-client-secret": {
-          "f1": 0.0,
-          "fn": 4,
-          "fp": 0,
+          "f1": 0.8,
+          "fn": 0,
+          "fp": 2,
           "n_neg": 2,
           "n_pos": 4,
           "n_test": 6,
-          "precision": 0.0,
-          "recall": 0.0,
-          "recall_at_0_40_floor": 0.0,
-          "tp": 0
+          "precision": 0.6667,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 4
         },
         "grafana-cloud-api-key": {
           "f1": 1.0,
@@ -1154,7 +1154,7 @@
         "huggingface-user-token": {
           "f1": 0.0,
           "fn": 0,
-          "fp": 0,
+          "fp": 1,
           "n_neg": 5,
           "n_pos": 0,
           "n_test": 5,
@@ -1166,7 +1166,7 @@
         "ipinfo-api-token": {
           "f1": 0.0,
           "fn": 0,
-          "fp": 1,
+          "fp": 0,
           "n_neg": 1,
           "n_pos": 0,
           "n_test": 1,
@@ -1176,28 +1176,28 @@
           "tp": 0
         },
         "jwt-token": {
-          "f1": 0.6923,
-          "fn": 8,
+          "f1": 1.0,
+          "fn": 0,
           "fp": 0,
           "n_neg": 0,
           "n_pos": 17,
           "n_test": 17,
           "precision": 1.0,
-          "recall": 0.5294,
-          "recall_at_0_40_floor": 0.5294,
-          "tp": 9
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 17
         },
         "kubernetes-bootstrap-token": {
-          "f1": 0.0,
-          "fn": 1,
+          "f1": 1.0,
+          "fn": 0,
           "fp": 0,
           "n_neg": 0,
           "n_pos": 1,
           "n_test": 1,
-          "precision": 0.0,
-          "recall": 0.0,
-          "recall_at_0_40_floor": 0.0,
-          "tp": 0
+          "precision": 1.0,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 1
         },
         "lastfm-api-key": {
           "f1": 1.0,
@@ -1238,7 +1238,7 @@
         "mongodb-connection-string": {
           "f1": 0.0,
           "fn": 0,
-          "fp": 1,
+          "fp": 0,
           "n_neg": 1,
           "n_pos": 0,
           "n_test": 1,
@@ -1262,7 +1262,7 @@
         "nats-credentials": {
           "f1": 0.0,
           "fn": 0,
-          "fp": 7,
+          "fp": 3,
           "n_neg": 18,
           "n_pos": 0,
           "n_test": 18,
@@ -1284,16 +1284,16 @@
           "tp": 0
         },
         "npmrc-auth-token": {
-          "f1": 0.0,
-          "fn": 1,
+          "f1": 1.0,
+          "fn": 0,
           "fp": 0,
           "n_neg": 0,
           "n_pos": 1,
           "n_test": 1,
-          "precision": 0.0,
-          "recall": 0.0,
-          "recall_at_0_40_floor": 0.0,
-          "tp": 0
+          "precision": 1.0,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 1
         },
         "postgresql-connection-string": {
           "f1": 0.3333,
@@ -1308,16 +1308,16 @@
           "tp": 1
         },
         "postmark-webhook-credentials": {
-          "f1": 0.0,
-          "fn": 1,
-          "fp": 0,
+          "f1": 0.6667,
+          "fn": 0,
+          "fp": 1,
           "n_neg": 1,
           "n_pos": 1,
           "n_test": 2,
-          "precision": 0.0,
-          "recall": 0.0,
-          "recall_at_0_40_floor": 0.0,
-          "tp": 0
+          "precision": 0.5,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 1
         },
         "private-key": {
           "f1": 0.0,
@@ -1344,16 +1344,16 @@
           "tp": 0
         },
         "rabbitmq-management-credentials": {
-          "f1": 0.4,
-          "fn": 0,
-          "fp": 9,
+          "f1": 0.0,
+          "fn": 3,
+          "fp": 0,
           "n_neg": 11,
           "n_pos": 3,
           "n_test": 14,
-          "precision": 0.25,
-          "recall": 1.0,
-          "recall_at_0_40_floor": 1.0,
-          "tp": 3
+          "precision": 0.0,
+          "recall": 0.0,
+          "recall_at_0_40_floor": 0.0,
+          "tp": 0
         },
         "redis-connection-string": {
           "f1": 0.0,
@@ -1370,7 +1370,7 @@
         "smugmug-api-key": {
           "f1": 0.0,
           "fn": 0,
-          "fp": 1,
+          "fp": 0,
           "n_neg": 1,
           "n_pos": 0,
           "n_test": 1,
@@ -1392,28 +1392,28 @@
           "tp": 73
         },
         "stripe-secret-key": {
-          "f1": 0.0,
-          "fn": 1,
+          "f1": 1.0,
+          "fn": 0,
           "fp": 0,
           "n_neg": 0,
           "n_pos": 1,
           "n_test": 1,
-          "precision": 0.0,
-          "recall": 0.0,
-          "recall_at_0_40_floor": 0.0,
-          "tp": 0
+          "precision": 1.0,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 1
         },
         "url-credentials": {
-          "f1": 0.6667,
-          "fn": 7,
+          "f1": 0.8696,
+          "fn": 0,
           "fp": 6,
           "n_neg": 7,
           "n_pos": 20,
           "n_test": 27,
-          "precision": 0.6842,
-          "recall": 0.65,
-          "recall_at_0_40_floor": 0.7,
-          "tp": 13
+          "precision": 0.7692,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 20
         },
         "wordpress-api-token": {
           "f1": 1.0,
@@ -1428,3457 +1428,584 @@
           "tp": 8
         }
       },
-      "pos_mean_score": 0.7963,
-      "real_f1": 0.7806,
-      "real_pos_recall_at_0.40_floor": 0.8539,
-      "real_precision": 0.7245,
-      "real_recall": 0.846,
-      "recall_at_0_40_floor": 0.8539,
-      "six_scanner_differential": {
-        "benchmark_category_count": 195,
-        "classes": {
-          "API:Key": {
-            "benchmark_best_competitor": {
-              "f1": 0.7429,
-              "fn": 27,
-              "precision": 1.0,
-              "recall": 0.5909,
-              "scanner": "betterleaks",
-              "tp": 39
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.7429,
-                "fn": 27,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.5909,
-                "tp": 39
-              },
-              "kingfisher": {
-                "f1": 0.4074,
-                "fn": 44,
-                "fp": 20,
-                "precision": 0.5238,
-                "recall": 0.3333,
-                "tp": 22
-              },
-              "noseyparker": {
-                "f1": 0.5043,
-                "fn": 37,
-                "fp": 20,
-                "precision": 0.5918,
-                "recall": 0.4394,
-                "tp": 29
-              },
-              "titus": {
-                "f1": 0.5686,
-                "fn": 37,
-                "fp": 7,
-                "precision": 0.8056,
-                "recall": 0.4394,
-                "tp": 29
-              },
-              "trufflehog": {
-                "f1": 0.0299,
-                "fn": 65,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.0152,
-                "tp": 1
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.3588,
-              "fn": 12,
-              "fp": 181,
-              "precision": 0.2298,
-              "recall": 0.8182,
-              "tp": 54
-            },
-            "benchmark_recall_gap": -0.2273,
-            "heldout_n_pos": 6,
-            "heldout_recall_at_0_40_floor": 0.6667
-          },
-          "API:Token": {
-            "benchmark_best_competitor": {
-              "f1": 0.0727,
-              "fn": 101,
-              "precision": 0.8,
-              "recall": 0.0381,
-              "scanner": "betterleaks",
-              "tp": 4
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.0727,
-                "fn": 101,
-                "fp": 1,
-                "precision": 0.8,
-                "recall": 0.0381,
-                "tp": 4
-              },
-              "kingfisher": {
-                "f1": 0.0,
-                "fn": 105,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "noseyparker": {
-                "f1": 0.0,
-                "fn": 105,
-                "fp": 1,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "titus": {
-                "f1": 0.0,
-                "fn": 105,
-                "fp": 1,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 105,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.1034,
-              "fn": 99,
-              "fp": 5,
-              "precision": 0.5455,
-              "recall": 0.0571,
-              "tp": 6
-            },
-            "benchmark_recall_gap": -0.019,
-            "heldout_n_pos": 4,
-            "heldout_recall_at_0_40_floor": 0.75
-          },
-          "AWS Client ID": {
-            "benchmark_best_competitor": {
-              "f1": 0.5202,
-              "fn": 104,
-              "precision": 0.9508,
-              "recall": 0.358,
-              "scanner": "betterleaks",
-              "tp": 58
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.5202,
-                "fn": 104,
-                "fp": 3,
-                "precision": 0.9508,
-                "recall": 0.358,
-                "tp": 58
-              },
-              "kingfisher": {
-                "f1": 0.0,
-                "fn": 162,
-                "fp": 17,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "noseyparker": {
-                "f1": 0.0482,
-                "fn": 158,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.0247,
-                "tp": 4
-              },
-              "titus": {
-                "f1": 0.0482,
-                "fn": 158,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.0247,
-                "tp": 4
-              },
-              "trufflehog": {
-                "f1": 0.0941,
-                "fn": 154,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.0494,
-                "tp": 8
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.4106,
-              "fn": 108,
-              "fp": 47,
-              "precision": 0.5347,
-              "recall": 0.3333,
-              "tp": 54
-            },
-            "benchmark_recall_gap": 0.0247,
-            "heldout_n_pos": 9,
-            "heldout_recall_at_0_40_floor": 1.0
-          },
-          "AWS Client ID:Key": {
-            "benchmark_best_competitor": {
-              "f1": 0.9714,
-              "fn": 2,
-              "precision": 1.0,
-              "recall": 0.9444,
-              "scanner": "betterleaks",
-              "tp": 34
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.9714,
-                "fn": 2,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.9444,
-                "tp": 34
-              },
-              "kingfisher": {
-                "f1": 0.0,
-                "fn": 36,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "noseyparker": {
-                "f1": 0.56,
-                "fn": 22,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.3889,
-                "tp": 14
-              },
-              "titus": {
-                "f1": 0.56,
-                "fn": 22,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.3889,
-                "tp": 14
-              },
-              "trufflehog": {
-                "f1": 0.6154,
-                "fn": 20,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.4444,
-                "tp": 16
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.9589,
-              "fn": 1,
-              "fp": 2,
-              "precision": 0.9459,
-              "recall": 0.9722,
-              "tp": 35
-            },
-            "benchmark_recall_gap": -0.0278,
-            "heldout_n_pos": 14,
-            "heldout_recall_at_0_40_floor": 1.0
-          },
-          "Auth": {
-            "benchmark_best_competitor": {
-              "f1": 0.2518,
-              "fn": 133,
-              "precision": 0.3182,
-              "recall": 0.2083,
-              "scanner": "betterleaks",
-              "tp": 35
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.2518,
-                "fn": 133,
-                "fp": 75,
-                "precision": 0.3182,
-                "recall": 0.2083,
-                "tp": 35
-              },
-              "kingfisher": {
-                "f1": 0.0698,
-                "fn": 159,
-                "fp": 81,
-                "precision": 0.1,
-                "recall": 0.0536,
-                "tp": 9
-              },
-              "noseyparker": {
-                "f1": 0.048,
-                "fn": 162,
-                "fp": 76,
-                "precision": 0.0732,
-                "recall": 0.0357,
-                "tp": 6
-              },
-              "titus": {
-                "f1": 0.0788,
-                "fn": 160,
-                "fp": 27,
-                "precision": 0.2286,
-                "recall": 0.0476,
-                "tp": 8
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 168,
-                "fp": 21,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.1575,
-              "fn": 112,
-              "fp": 487,
-              "precision": 0.1031,
-              "recall": 0.3333,
-              "tp": 56
-            },
-            "benchmark_recall_gap": -0.125,
-            "heldout_n_pos": 15,
-            "heldout_recall_at_0_40_floor": 0.8667
-          },
-          "Auth:Azure Access Token:JSON Web Token:Bearer Authorization": {
-            "benchmark_best_competitor": {
-              "f1": 1.0,
-              "fn": 0,
-              "precision": 1.0,
-              "recall": 1.0,
-              "scanner": "betterleaks",
-              "tp": 1
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 1.0,
-                "fn": 0,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 1.0,
-                "tp": 1
-              },
-              "kingfisher": {
-                "f1": 1.0,
-                "fn": 0,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 1.0,
-                "tp": 1
-              },
-              "noseyparker": {
-                "f1": 1.0,
-                "fn": 0,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 1.0,
-                "tp": 1
-              },
-              "titus": {
-                "f1": 1.0,
-                "fn": 0,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 1.0,
-                "tp": 1
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 1,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 1.0,
-              "fn": 0,
-              "fp": 0,
-              "precision": 1.0,
-              "recall": 1.0,
-              "tp": 1
-            },
-            "benchmark_recall_gap": 0.0,
-            "heldout_n_pos": 1,
-            "heldout_recall_at_0_40_floor": 1.0
-          },
-          "Auth:BASE64 encoded PEM Private Key": {
-            "benchmark_best_competitor": {
-              "f1": 0.6667,
-              "fn": 0,
-              "precision": 0.5,
-              "recall": 1.0,
-              "scanner": "trufflehog",
-              "tp": 2
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.0,
-                "fn": 2,
-                "fp": 2,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "kingfisher": {
-                "f1": 0.0,
-                "fn": 2,
-                "fp": 4,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "noseyparker": {
-                "f1": 0.0,
-                "fn": 2,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "titus": {
-                "f1": 0.0,
-                "fn": 2,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "trufflehog": {
-                "f1": 0.6667,
-                "fn": 0,
-                "fp": 2,
-                "precision": 0.5,
-                "recall": 1.0,
-                "tp": 2
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.0,
-              "fn": 2,
-              "fp": 0,
-              "precision": 0.0,
-              "recall": 0.0,
-              "tp": 0
-            },
-            "benchmark_recall_gap": 1.0,
-            "heldout_n_pos": 1,
-            "heldout_recall_at_0_40_floor": 0.0
-          },
-          "Auth:Basic Authorization": {
-            "benchmark_best_competitor": {
-              "f1": 0.1033,
-              "fn": 563,
-              "precision": 0.7674,
-              "recall": 0.0554,
-              "scanner": "kingfisher",
-              "tp": 33
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.0,
-                "fn": 596,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "kingfisher": {
-                "f1": 0.1033,
-                "fn": 563,
-                "fp": 10,
-                "precision": 0.7674,
-                "recall": 0.0554,
-                "tp": 33
-              },
-              "noseyparker": {
-                "f1": 0.0889,
-                "fn": 564,
-                "fp": 92,
-                "precision": 0.2581,
-                "recall": 0.0537,
-                "tp": 32
-              },
-              "titus": {
-                "f1": 0.0932,
-                "fn": 564,
-                "fp": 59,
-                "precision": 0.3516,
-                "recall": 0.0537,
-                "tp": 32
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 596,
-                "fp": 3,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.9788,
-              "fn": 19,
-              "fp": 6,
-              "precision": 0.9897,
-              "recall": 0.9681,
-              "tp": 577
-            },
-            "benchmark_recall_gap": -0.9127,
-            "heldout_n_pos": 112,
-            "heldout_recall_at_0_40_floor": 0.8661
-          },
-          "Auth:Bearer Authorization": {
-            "benchmark_best_competitor": {
-              "f1": 0.9677,
-              "fn": 3,
-              "precision": 0.974,
-              "recall": 0.9615,
-              "scanner": "kingfisher",
-              "tp": 75
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.0976,
-                "fn": 74,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.0513,
-                "tp": 4
-              },
-              "kingfisher": {
-                "f1": 0.9677,
-                "fn": 3,
-                "fp": 2,
-                "precision": 0.974,
-                "recall": 0.9615,
-                "tp": 75
-              },
-              "noseyparker": {
-                "f1": 0.9677,
-                "fn": 3,
-                "fp": 2,
-                "precision": 0.974,
-                "recall": 0.9615,
-                "tp": 75
-              },
-              "titus": {
-                "f1": 0.9677,
-                "fn": 3,
-                "fp": 2,
-                "precision": 0.974,
-                "recall": 0.9615,
-                "tp": 75
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 78,
-                "fp": 2,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.9935,
-              "fn": 1,
-              "fp": 0,
-              "precision": 1.0,
-              "recall": 0.9872,
-              "tp": 77
-            },
-            "benchmark_recall_gap": -0.0257,
-            "heldout_n_pos": 9,
-            "heldout_recall_at_0_40_floor": 1.0
-          },
-          "Auth:Key": {
-            "benchmark_best_competitor": {
-              "f1": 0.5312,
-              "fn": 28,
-              "precision": 0.8947,
-              "recall": 0.3778,
-              "scanner": "betterleaks",
-              "tp": 17
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.5312,
-                "fn": 28,
-                "fp": 2,
-                "precision": 0.8947,
-                "recall": 0.3778,
-                "tp": 17
-              },
-              "kingfisher": {
-                "f1": 0.0,
-                "fn": 45,
-                "fp": 6,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "noseyparker": {
-                "f1": 0.0,
-                "fn": 45,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "titus": {
-                "f1": 0.0,
-                "fn": 45,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "trufflehog": {
-                "f1": 0.037,
-                "fn": 44,
-                "fp": 8,
-                "precision": 0.1111,
-                "recall": 0.0222,
-                "tp": 1
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.7209,
-              "fn": 14,
-              "fp": 10,
-              "precision": 0.7561,
-              "recall": 0.6889,
-              "tp": 31
-            },
-            "benchmark_recall_gap": -0.3111,
-            "heldout_n_pos": 3,
-            "heldout_recall_at_0_40_floor": 0.6667
-          },
-          "Auth:Password": {
-            "benchmark_best_competitor": {
-              "f1": 0.6122,
-              "fn": 16,
-              "precision": 0.8333,
-              "recall": 0.4839,
-              "scanner": "titus",
-              "tp": 15
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.1212,
-                "fn": 29,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.0645,
-                "tp": 2
-              },
-              "kingfisher": {
-                "f1": 0.2174,
-                "fn": 26,
-                "fp": 10,
-                "precision": 0.3333,
-                "recall": 0.1613,
-                "tp": 5
-              },
-              "noseyparker": {
-                "f1": 0.5882,
-                "fn": 16,
-                "fp": 5,
-                "precision": 0.75,
-                "recall": 0.4839,
-                "tp": 15
-              },
-              "titus": {
-                "f1": 0.6122,
-                "fn": 16,
-                "fp": 3,
-                "precision": 0.8333,
-                "recall": 0.4839,
-                "tp": 15
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 31,
-                "fp": 2,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.7037,
-              "fn": 12,
-              "fp": 4,
-              "precision": 0.8261,
-              "recall": 0.6129,
-              "tp": 19
-            },
-            "benchmark_recall_gap": -0.129,
-            "heldout_n_pos": 1,
-            "heldout_recall_at_0_40_floor": 0.0
-          },
-          "Auth:Salt": {
-            "benchmark_best_competitor": {
-              "f1": 1.0,
-              "fn": 0,
-              "precision": 1.0,
-              "recall": 1.0,
-              "scanner": "betterleaks",
-              "tp": 2
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 1.0,
-                "fn": 0,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 1.0,
-                "tp": 2
-              },
-              "kingfisher": {
-                "f1": 0.0,
-                "fn": 2,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "noseyparker": {
-                "f1": 0.0,
-                "fn": 2,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "titus": {
-                "f1": 0.0,
-                "fn": 2,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 2,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.0,
-              "fn": 2,
-              "fp": 0,
-              "precision": 0.0,
-              "recall": 0.0,
-              "tp": 0
-            },
-            "benchmark_recall_gap": 1.0,
-            "heldout_n_pos": 1,
-            "heldout_recall_at_0_40_floor": 1.0
-          },
-          "Auth:Secret:Token": {
-            "benchmark_best_competitor": {
-              "f1": 0.8,
-              "fn": 5,
-              "precision": 1.0,
-              "recall": 0.6667,
-              "scanner": "betterleaks",
-              "tp": 10
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.8,
-                "fn": 5,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.6667,
-                "tp": 10
-              },
-              "kingfisher": {
-                "f1": 0.5,
-                "fn": 10,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.3333,
-                "tp": 5
-              },
-              "noseyparker": {
-                "f1": 0.5,
-                "fn": 10,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.3333,
-                "tp": 5
-              },
-              "titus": {
-                "f1": 0.5,
-                "fn": 10,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.3333,
-                "tp": 5
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 15,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.8276,
-              "fn": 3,
-              "fp": 2,
-              "precision": 0.8571,
-              "recall": 0.8,
-              "tp": 12
-            },
-            "benchmark_recall_gap": -0.1333,
-            "heldout_n_pos": 2,
-            "heldout_recall_at_0_40_floor": 0.5
-          },
-          "Auth:Token": {
-            "benchmark_best_competitor": {
-              "f1": 0.4074,
-              "fn": 62,
-              "precision": 0.9167,
-              "recall": 0.2619,
-              "scanner": "betterleaks",
-              "tp": 22
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.4074,
-                "fn": 62,
-                "fp": 2,
-                "precision": 0.9167,
-                "recall": 0.2619,
-                "tp": 22
-              },
-              "kingfisher": {
-                "f1": 0.0,
-                "fn": 84,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "noseyparker": {
-                "f1": 0.0,
-                "fn": 84,
-                "fp": 4,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "titus": {
-                "f1": 0.0,
-                "fn": 84,
-                "fp": 4,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 84,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.7444,
-              "fn": 17,
-              "fp": 29,
-              "precision": 0.6979,
-              "recall": 0.7976,
-              "tp": 67
-            },
-            "benchmark_recall_gap": -0.5357,
-            "heldout_n_pos": 15,
-            "heldout_recall_at_0_40_floor": 0.8
-          },
-          "Auth:Token:JSON Web Token": {
-            "benchmark_best_competitor": {
-              "f1": 0.0,
-              "fn": 1,
-              "precision": 0.0,
-              "recall": 0.0,
-              "scanner": "betterleaks",
-              "tp": 0
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.0,
-                "fn": 1,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "kingfisher": {
-                "f1": 0.0,
-                "fn": 1,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "noseyparker": {
-                "f1": 0.0,
-                "fn": 1,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "titus": {
-                "f1": 0.0,
-                "fn": 1,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 1,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.0,
-              "fn": 1,
-              "fp": 0,
-              "precision": 0.0,
-              "recall": 0.0,
-              "tp": 0
-            },
-            "benchmark_recall_gap": 0.0,
-            "heldout_n_pos": 1,
-            "heldout_recall_at_0_40_floor": 1.0
-          },
-          "Auth:Token:UUID": {
-            "benchmark_best_competitor": {
-              "f1": 0.6667,
-              "fn": 1,
-              "precision": 1.0,
-              "recall": 0.5,
-              "scanner": "betterleaks",
-              "tp": 1
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.6667,
-                "fn": 1,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.5,
-                "tp": 1
-              },
-              "kingfisher": {
-                "f1": 0.6667,
-                "fn": 1,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.5,
-                "tp": 1
-              },
-              "noseyparker": {
-                "f1": 0.0,
-                "fn": 2,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "titus": {
-                "f1": 0.0,
-                "fn": 2,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "trufflehog": {
-                "f1": 0.6667,
-                "fn": 1,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.5,
-                "tp": 1
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.6667,
-              "fn": 1,
-              "fp": 0,
-              "precision": 1.0,
-              "recall": 0.5,
-              "tp": 1
-            },
-            "benchmark_recall_gap": 0.0,
-            "heldout_n_pos": 1,
-            "heldout_recall_at_0_40_floor": 0.0
-          },
-          "Azure Access Token:JSON Web Token": {
-            "benchmark_best_competitor": {
-              "f1": 1.0,
-              "fn": 0,
-              "precision": 1.0,
-              "recall": 1.0,
-              "scanner": "betterleaks",
-              "tp": 11
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 1.0,
-                "fn": 0,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 1.0,
-                "tp": 11
-              },
-              "kingfisher": {
-                "f1": 1.0,
-                "fn": 0,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 1.0,
-                "tp": 11
-              },
-              "noseyparker": {
-                "f1": 1.0,
-                "fn": 0,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 1.0,
-                "tp": 11
-              },
-              "titus": {
-                "f1": 1.0,
-                "fn": 0,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 1.0,
-                "tp": 11
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 11,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 1.0,
-              "fn": 0,
-              "fp": 0,
-              "precision": 1.0,
-              "recall": 1.0,
-              "tp": 11
-            },
-            "benchmark_recall_gap": 0.0,
-            "heldout_n_pos": 1,
-            "heldout_recall_at_0_40_floor": 0.0
-          },
-          "BASE64 encoded PEM Private Key:Key": {
-            "benchmark_best_competitor": {
-              "f1": 1.0,
-              "fn": 0,
-              "precision": 1.0,
-              "recall": 1.0,
-              "scanner": "kingfisher",
-              "tp": 2
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.6667,
-                "fn": 0,
-                "fp": 2,
-                "precision": 0.5,
-                "recall": 1.0,
-                "tp": 2
-              },
-              "kingfisher": {
-                "f1": 1.0,
-                "fn": 0,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 1.0,
-                "tp": 2
-              },
-              "noseyparker": {
-                "f1": 0.6667,
-                "fn": 1,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.5,
-                "tp": 1
-              },
-              "titus": {
-                "f1": 0.6667,
-                "fn": 1,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.5,
-                "tp": 1
-              },
-              "trufflehog": {
-                "f1": 1.0,
-                "fn": 0,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 1.0,
-                "tp": 2
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.3333,
-              "fn": 0,
-              "fp": 8,
-              "precision": 0.2,
-              "recall": 1.0,
-              "tp": 2
-            },
-            "benchmark_recall_gap": 0.0,
-            "heldout_n_pos": 1,
-            "heldout_recall_at_0_40_floor": 1.0
-          },
-          "Basic Authorization": {
-            "benchmark_best_competitor": {
-              "f1": 0.5366,
-              "fn": 54,
-              "precision": 0.9167,
-              "recall": 0.3793,
-              "scanner": "trufflehog",
-              "tp": 33
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.0,
-                "fn": 87,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "kingfisher": {
-                "f1": 0.0,
-                "fn": 87,
-                "fp": 5,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "noseyparker": {
-                "f1": 0.0,
-                "fn": 87,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "titus": {
-                "f1": 0.0,
-                "fn": 87,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "trufflehog": {
-                "f1": 0.5366,
-                "fn": 54,
-                "fp": 3,
-                "precision": 0.9167,
-                "recall": 0.3793,
-                "tp": 33
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.4902,
-              "fn": 12,
-              "fp": 144,
-              "precision": 0.3425,
-              "recall": 0.8621,
-              "tp": 75
-            },
-            "benchmark_recall_gap": -0.4828,
-            "heldout_n_pos": 1,
-            "heldout_recall_at_0_40_floor": 1.0
-          },
-          "Bearer Authorization": {
-            "benchmark_best_competitor": {
-              "f1": 0.0,
-              "fn": 75,
-              "precision": 0.0,
-              "recall": 0.0,
-              "scanner": "betterleaks",
-              "tp": 0
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.0,
-                "fn": 75,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "kingfisher": {
-                "f1": 0.0,
-                "fn": 75,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "noseyparker": {
-                "f1": 0.0,
-                "fn": 75,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "titus": {
-                "f1": 0.0,
-                "fn": 75,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 75,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.0,
-              "fn": 75,
-              "fp": 0,
-              "precision": 0.0,
-              "recall": 0.0,
-              "tp": 0
-            },
-            "benchmark_recall_gap": 0.0,
-            "heldout_n_pos": 7,
-            "heldout_recall_at_0_40_floor": 1.0
-          },
-          "CMD Password": {
-            "benchmark_best_competitor": {
-              "f1": 0.45,
-              "fn": 16,
-              "precision": 0.6,
-              "recall": 0.36,
-              "scanner": "kingfisher",
-              "tp": 9
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.0,
-                "fn": 25,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "kingfisher": {
-                "f1": 0.45,
-                "fn": 16,
-                "fp": 6,
-                "precision": 0.6,
-                "recall": 0.36,
-                "tp": 9
-              },
-              "noseyparker": {
-                "f1": 0.0,
-                "fn": 25,
-                "fp": 1,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "titus": {
-                "f1": 0.0,
-                "fn": 25,
-                "fp": 2,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 25,
-                "fp": 2,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.7442,
-              "fn": 9,
-              "fp": 2,
-              "precision": 0.8889,
-              "recall": 0.64,
-              "tp": 16
-            },
-            "benchmark_recall_gap": -0.28,
-            "heldout_n_pos": 6,
-            "heldout_recall_at_0_40_floor": 0.8333
-          },
-          "Dropbox App secret:Password": {
-            "benchmark_best_competitor": {
-              "f1": 0.7952,
-              "fn": 11,
-              "precision": 0.8462,
-              "recall": 0.75,
-              "scanner": "kingfisher",
-              "tp": 33
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.1569,
-                "fn": 40,
-                "fp": 3,
-                "precision": 0.5714,
-                "recall": 0.0909,
-                "tp": 4
-              },
-              "kingfisher": {
-                "f1": 0.7952,
-                "fn": 11,
-                "fp": 6,
-                "precision": 0.8462,
-                "recall": 0.75,
-                "tp": 33
-              },
-              "noseyparker": {
-                "f1": 0.4651,
-                "fn": 24,
-                "fp": 22,
-                "precision": 0.4762,
-                "recall": 0.4545,
-                "tp": 20
-              },
-              "titus": {
-                "f1": 0.5714,
-                "fn": 24,
-                "fp": 6,
-                "precision": 0.7692,
-                "recall": 0.4545,
-                "tp": 20
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 44,
-                "fp": 1,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.6304,
-              "fn": 15,
-              "fp": 19,
-              "precision": 0.6042,
-              "recall": 0.6591,
-              "tp": 29
-            },
-            "benchmark_recall_gap": 0.0909,
-            "heldout_n_pos": 19,
-            "heldout_recall_at_0_40_floor": 1.0
-          },
-          "Google API Key:Key": {
-            "benchmark_best_competitor": {
-              "f1": 0.9231,
-              "fn": 1,
-              "precision": 1.0,
-              "recall": 0.8571,
-              "scanner": "betterleaks",
-              "tp": 6
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.9231,
-                "fn": 1,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.8571,
-                "tp": 6
-              },
-              "kingfisher": {
-                "f1": 0.0,
-                "fn": 7,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "noseyparker": {
-                "f1": 0.9231,
-                "fn": 1,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.8571,
-                "tp": 6
-              },
-              "titus": {
-                "f1": 0.9231,
-                "fn": 1,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.8571,
-                "tp": 6
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 7,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.6316,
-              "fn": 1,
-              "fp": 6,
-              "precision": 0.5,
-              "recall": 0.8571,
-              "tp": 6
-            },
-            "benchmark_recall_gap": 0.0,
-            "heldout_n_pos": 2,
-            "heldout_recall_at_0_40_floor": 1.0
-          },
-          "Google Multi": {
-            "benchmark_best_competitor": {
-              "f1": 0.9474,
-              "fn": 1,
-              "precision": 1.0,
-              "recall": 0.9,
-              "scanner": "betterleaks",
-              "tp": 9
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.9474,
-                "fn": 1,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.9,
-                "tp": 9
-              },
-              "kingfisher": {
-                "f1": 0.5,
-                "fn": 6,
-                "fp": 2,
-                "precision": 0.6667,
-                "recall": 0.4,
-                "tp": 4
-              },
-              "noseyparker": {
-                "f1": 0.1538,
-                "fn": 9,
-                "fp": 2,
-                "precision": 0.3333,
-                "recall": 0.1,
-                "tp": 1
-              },
-              "titus": {
-                "f1": 0.2857,
-                "fn": 8,
-                "fp": 2,
-                "precision": 0.5,
-                "recall": 0.2,
-                "tp": 2
-              },
-              "trufflehog": {
-                "f1": 0.1667,
-                "fn": 9,
-                "fp": 1,
-                "precision": 0.5,
-                "recall": 0.1,
-                "tp": 1
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 1.0,
-              "fn": 0,
-              "fp": 0,
-              "precision": 1.0,
-              "recall": 1.0,
-              "tp": 10
-            },
-            "benchmark_recall_gap": -0.1,
-            "heldout_n_pos": 4,
-            "heldout_recall_at_0_40_floor": 0.0
-          },
-          "JSON Web Token": {
-            "benchmark_best_competitor": {
-              "f1": 0.9241,
-              "fn": 6,
-              "precision": 0.9241,
-              "recall": 0.9241,
-              "scanner": "noseyparker",
-              "tp": 73
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.8516,
-                "fn": 13,
-                "fp": 10,
-                "precision": 0.8684,
-                "recall": 0.8354,
-                "tp": 66
-              },
-              "kingfisher": {
-                "f1": 0.8944,
-                "fn": 7,
-                "fp": 10,
-                "precision": 0.878,
-                "recall": 0.9114,
-                "tp": 72
-              },
-              "noseyparker": {
-                "f1": 0.9241,
-                "fn": 6,
-                "fp": 6,
-                "precision": 0.9241,
-                "recall": 0.9241,
-                "tp": 73
-              },
-              "titus": {
-                "f1": 0.9068,
-                "fn": 6,
-                "fp": 9,
-                "precision": 0.8902,
-                "recall": 0.9241,
-                "tp": 73
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 79,
-                "fp": 1,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.6919,
-              "fn": 6,
-              "fp": 59,
-              "precision": 0.553,
-              "recall": 0.9241,
-              "tp": 73
-            },
-            "benchmark_recall_gap": 0.0,
-            "heldout_n_pos": 13,
-            "heldout_recall_at_0_40_floor": 0.5385
-          },
-          "JSON Web Token:Bearer Authorization": {
-            "benchmark_best_competitor": {
-              "f1": 1.0,
-              "fn": 0,
-              "precision": 1.0,
-              "recall": 1.0,
-              "scanner": "betterleaks",
-              "tp": 16
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 1.0,
-                "fn": 0,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 1.0,
-                "tp": 16
-              },
-              "kingfisher": {
-                "f1": 1.0,
-                "fn": 0,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 1.0,
-                "tp": 16
-              },
-              "noseyparker": {
-                "f1": 1.0,
-                "fn": 0,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 1.0,
-                "tp": 16
-              },
-              "titus": {
-                "f1": 1.0,
-                "fn": 0,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 1.0,
-                "tp": 16
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 16,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 1.0,
-              "fn": 0,
-              "fp": 0,
-              "precision": 1.0,
-              "recall": 1.0,
-              "tp": 16
-            },
-            "benchmark_recall_gap": 0.0,
-            "heldout_n_pos": 16,
-            "heldout_recall_at_0_40_floor": 1.0
-          },
-          "JSON Web Token:Token": {
-            "benchmark_best_competitor": {
-              "f1": 0.8354,
-              "fn": 3,
-              "precision": 0.7674,
-              "recall": 0.9167,
-              "scanner": "betterleaks",
-              "tp": 33
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.8354,
-                "fn": 3,
-                "fp": 10,
-                "precision": 0.7674,
-                "recall": 0.9167,
-                "tp": 33
-              },
-              "kingfisher": {
-                "f1": 0.8148,
-                "fn": 3,
-                "fp": 12,
-                "precision": 0.7333,
-                "recall": 0.9167,
-                "tp": 33
-              },
-              "noseyparker": {
-                "f1": 0.8148,
-                "fn": 3,
-                "fp": 12,
-                "precision": 0.7333,
-                "recall": 0.9167,
-                "tp": 33
-              },
-              "titus": {
-                "f1": 0.8049,
-                "fn": 3,
-                "fp": 13,
-                "precision": 0.7174,
-                "recall": 0.9167,
-                "tp": 33
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 36,
-                "fp": 1,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.7416,
-              "fn": 3,
-              "fp": 20,
-              "precision": 0.6226,
-              "recall": 0.9167,
-              "tp": 33
-            },
-            "benchmark_recall_gap": 0.0,
-            "heldout_n_pos": 2,
-            "heldout_recall_at_0_40_floor": 1.0
-          },
-          "JWK": {
-            "benchmark_best_competitor": {
-              "f1": 0.0,
-              "fn": 78,
-              "precision": 0.0,
-              "recall": 0.0,
-              "scanner": "betterleaks",
-              "tp": 0
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.0,
-                "fn": 78,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "kingfisher": {
-                "f1": 0.0,
-                "fn": 78,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "noseyparker": {
-                "f1": 0.0,
-                "fn": 78,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "titus": {
-                "f1": 0.0,
-                "fn": 78,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 78,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.0476,
-              "fn": 76,
-              "fp": 4,
-              "precision": 0.3333,
-              "recall": 0.0256,
-              "tp": 2
-            },
-            "benchmark_recall_gap": -0.0256,
-            "heldout_n_pos": 5,
-            "heldout_recall_at_0_40_floor": 0.8
-          },
-          "Key": {
-            "benchmark_best_competitor": {
-              "f1": 0.9149,
-              "fn": 440,
-              "precision": 0.948,
-              "recall": 0.8841,
-              "scanner": "betterleaks",
-              "tp": 3355
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.9149,
-                "fn": 440,
-                "fp": 184,
-                "precision": 0.948,
-                "recall": 0.8841,
-                "tp": 3355
-              },
-              "kingfisher": {
-                "f1": 0.0052,
-                "fn": 3784,
-                "fp": 393,
-                "precision": 0.0272,
-                "recall": 0.0029,
-                "tp": 11
-              },
-              "noseyparker": {
-                "f1": 0.002,
-                "fn": 3791,
-                "fp": 166,
-                "precision": 0.0235,
-                "recall": 0.0011,
-                "tp": 4
-              },
-              "titus": {
-                "f1": 0.002,
-                "fn": 3791,
-                "fp": 236,
-                "precision": 0.0167,
-                "recall": 0.0011,
-                "tp": 4
-              },
-              "trufflehog": {
-                "f1": 0.001,
-                "fn": 3793,
-                "fp": 88,
-                "precision": 0.0222,
-                "recall": 0.0005,
-                "tp": 2
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.0248,
-              "fn": 3715,
-              "fp": 2564,
-              "precision": 0.0303,
-              "recall": 0.0211,
-              "tp": 80
-            },
-            "benchmark_recall_gap": 0.863,
-            "heldout_n_pos": 15,
-            "heldout_recall_at_0_40_floor": 0.8
-          },
-          "Key:Nonce": {
-            "benchmark_best_competitor": {
-              "f1": 1.0,
-              "fn": 0,
-              "precision": 1.0,
-              "recall": 1.0,
-              "scanner": "betterleaks",
-              "tp": 1
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 1.0,
-                "fn": 0,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 1.0,
-                "tp": 1
-              },
-              "kingfisher": {
-                "f1": 0.0,
-                "fn": 1,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "noseyparker": {
-                "f1": 0.0,
-                "fn": 1,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "titus": {
-                "f1": 0.0,
-                "fn": 1,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 1,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.0,
-              "fn": 1,
-              "fp": 0,
-              "precision": 0.0,
-              "recall": 0.0,
-              "tp": 0
-            },
-            "benchmark_recall_gap": 1.0,
-            "heldout_n_pos": 1,
-            "heldout_recall_at_0_40_floor": 1.0
-          },
-          "Key:Secret": {
-            "benchmark_best_competitor": {
-              "f1": 0.6861,
-              "fn": 39,
-              "precision": 0.9216,
-              "recall": 0.5465,
-              "scanner": "betterleaks",
-              "tp": 47
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.6861,
-                "fn": 39,
-                "fp": 4,
-                "precision": 0.9216,
-                "recall": 0.5465,
-                "tp": 47
-              },
-              "kingfisher": {
-                "f1": 0.448,
-                "fn": 58,
-                "fp": 11,
-                "precision": 0.7179,
-                "recall": 0.3256,
-                "tp": 28
-              },
-              "noseyparker": {
-                "f1": 0.4812,
-                "fn": 54,
-                "fp": 15,
-                "precision": 0.6809,
-                "recall": 0.3721,
-                "tp": 32
-              },
-              "titus": {
-                "f1": 0.4593,
-                "fn": 55,
-                "fp": 18,
-                "precision": 0.6327,
-                "recall": 0.3605,
-                "tp": 31
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 86,
-                "fp": 10,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.5212,
-              "fn": 43,
-              "fp": 36,
-              "precision": 0.5443,
-              "recall": 0.5,
-              "tp": 43
-            },
-            "benchmark_recall_gap": 0.0465,
-            "heldout_n_pos": 13,
-            "heldout_recall_at_0_40_floor": 0.9231
-          },
-          "Key:Stripe Credentials": {
-            "benchmark_best_competitor": {
-              "f1": 1.0,
-              "fn": 0,
-              "precision": 1.0,
-              "recall": 1.0,
-              "scanner": "betterleaks",
-              "tp": 2
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 1.0,
-                "fn": 0,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 1.0,
-                "tp": 2
-              },
-              "kingfisher": {
-                "f1": 0.0,
-                "fn": 2,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "noseyparker": {
-                "f1": 0.6667,
-                "fn": 1,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.5,
-                "tp": 1
-              },
-              "titus": {
-                "f1": 0.6667,
-                "fn": 1,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.5,
-                "tp": 1
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 2,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 1.0,
-              "fn": 0,
-              "fp": 0,
-              "precision": 1.0,
-              "recall": 1.0,
-              "tp": 2
-            },
-            "benchmark_recall_gap": 0.0,
-            "heldout_n_pos": 2,
-            "heldout_recall_at_0_40_floor": 0.0
-          },
-          "NKEY Seed": {
-            "benchmark_best_competitor": {
-              "f1": 0.0,
-              "fn": 58,
-              "precision": 0.0,
-              "recall": 0.0,
-              "scanner": "betterleaks",
-              "tp": 0
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.0,
-                "fn": 58,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "kingfisher": {
-                "f1": 0.0,
-                "fn": 58,
-                "fp": 2,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "noseyparker": {
-                "f1": 0.0,
-                "fn": 58,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "titus": {
-                "f1": 0.0,
-                "fn": 58,
-                "fp": 1,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 58,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.2969,
-              "fn": 39,
-              "fp": 51,
-              "precision": 0.2714,
-              "recall": 0.3276,
-              "tp": 19
-            },
-            "benchmark_recall_gap": -0.3276,
-            "heldout_n_pos": 4,
-            "heldout_recall_at_0_40_floor": 0.25
-          },
-          "Nonce": {
-            "benchmark_best_competitor": {
-              "f1": 0.0,
-              "fn": 99,
-              "precision": 0.0,
-              "recall": 0.0,
-              "scanner": "betterleaks",
-              "tp": 0
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.0,
-                "fn": 99,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "kingfisher": {
-                "f1": 0.0,
-                "fn": 99,
-                "fp": 7,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "noseyparker": {
-                "f1": 0.0,
-                "fn": 99,
-                "fp": 17,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "titus": {
-                "f1": 0.0,
-                "fn": 99,
-                "fp": 9,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 99,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.3776,
-              "fn": 72,
-              "fp": 17,
-              "precision": 0.6136,
-              "recall": 0.2727,
-              "tp": 27
-            },
-            "benchmark_recall_gap": -0.2727,
-            "heldout_n_pos": 4,
-            "heldout_recall_at_0_40_floor": 0.75
-          },
-          "PEM Private Key": {
-            "benchmark_best_competitor": {
-              "f1": 0.9226,
-              "fn": 0,
-              "precision": 0.8563,
-              "recall": 1.0,
-              "scanner": "betterleaks",
-              "tp": 149
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.9226,
-                "fn": 0,
-                "fp": 25,
-                "precision": 0.8563,
-                "recall": 1.0,
-                "tp": 149
-              },
-              "kingfisher": {
-                "f1": 0.8175,
-                "fn": 37,
-                "fp": 13,
-                "precision": 0.896,
-                "recall": 0.7517,
-                "tp": 112
-              },
-              "noseyparker": {
-                "f1": 0.9579,
-                "fn": 1,
-                "fp": 12,
-                "precision": 0.925,
-                "recall": 0.9933,
-                "tp": 148
-              },
-              "titus": {
-                "f1": 0.9367,
-                "fn": 1,
-                "fp": 19,
-                "precision": 0.8862,
-                "recall": 0.9933,
-                "tp": 148
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 149,
-                "fp": 5,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.8639,
-              "fn": 3,
-              "fp": 43,
-              "precision": 0.7725,
-              "recall": 0.9799,
-              "tp": 146
-            },
-            "benchmark_recall_gap": 0.0201,
-            "heldout_n_pos": 98,
-            "heldout_recall_at_0_40_floor": 1.0
-          },
-          "PEM Private Key:Key": {
-            "benchmark_best_competitor": {
-              "f1": 0.9091,
-              "fn": 0,
-              "precision": 0.8333,
-              "recall": 1.0,
-              "scanner": "betterleaks",
-              "tp": 5
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.9091,
-                "fn": 0,
-                "fp": 1,
-                "precision": 0.8333,
-                "recall": 1.0,
-                "tp": 5
-              },
-              "kingfisher": {
-                "f1": 0.7692,
-                "fn": 0,
-                "fp": 3,
-                "precision": 0.625,
-                "recall": 1.0,
-                "tp": 5
-              },
-              "noseyparker": {
-                "f1": 0.9091,
-                "fn": 0,
-                "fp": 1,
-                "precision": 0.8333,
-                "recall": 1.0,
-                "tp": 5
-              },
-              "titus": {
-                "f1": 0.7692,
-                "fn": 0,
-                "fp": 3,
-                "precision": 0.625,
-                "recall": 1.0,
-                "tp": 5
-              },
-              "trufflehog": {
-                "f1": 0.1818,
-                "fn": 4,
-                "fp": 5,
-                "precision": 0.1667,
-                "recall": 0.2,
-                "tp": 1
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.7273,
-              "fn": 1,
-              "fp": 2,
-              "precision": 0.6667,
-              "recall": 0.8,
-              "tp": 4
-            },
-            "benchmark_recall_gap": 0.2,
-            "heldout_n_pos": 1,
-            "heldout_recall_at_0_40_floor": 1.0
-          },
-          "Password": {
-            "benchmark_best_competitor": {
-              "f1": 0.5309,
-              "fn": 1065,
-              "precision": 0.5132,
-              "recall": 0.5499,
-              "scanner": "noseyparker",
-              "tp": 1301
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.0918,
-                "fn": 2251,
-                "fp": 44,
-                "precision": 0.725,
-                "recall": 0.049,
-                "tp": 116
-              },
-              "kingfisher": {
-                "f1": 0.2116,
-                "fn": 1899,
-                "fp": 1582,
-                "precision": 0.2279,
-                "recall": 0.1974,
-                "tp": 467
-              },
-              "noseyparker": {
-                "f1": 0.5309,
-                "fn": 1065,
-                "fp": 1234,
-                "precision": 0.5132,
-                "recall": 0.5499,
-                "tp": 1301
-              },
-              "titus": {
-                "f1": 0.5722,
-                "fn": 1099,
-                "fp": 797,
-                "precision": 0.614,
-                "recall": 0.5357,
-                "tp": 1268
-              },
-              "trufflehog": {
-                "f1": 0.0043,
-                "fn": 2360,
-                "fp": 426,
-                "precision": 0.0139,
-                "recall": 0.0025,
-                "tp": 6
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.5093,
-              "fn": 1221,
-              "fp": 985,
-              "precision": 0.5376,
-              "recall": 0.4839,
-              "tp": 1145
-            },
-            "benchmark_recall_gap": 0.066,
-            "heldout_n_pos": 238,
-            "heldout_recall_at_0_40_floor": 0.9034
-          },
-          "Password:Auth": {
-            "benchmark_best_competitor": {
-              "f1": 0.0,
-              "fn": 8,
-              "precision": 0.0,
-              "recall": 0.0,
-              "scanner": "betterleaks",
-              "tp": 0
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.0,
-                "fn": 8,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "kingfisher": {
-                "f1": 0.0,
-                "fn": 8,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "noseyparker": {
-                "f1": 0.0,
-                "fn": 8,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "titus": {
-                "f1": 0.0,
-                "fn": 8,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 8,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.8235,
-              "fn": 1,
-              "fp": 2,
-              "precision": 0.7778,
-              "recall": 0.875,
-              "tp": 7
-            },
-            "benchmark_recall_gap": -0.875,
-            "heldout_n_pos": 2,
-            "heldout_recall_at_0_40_floor": 1.0
-          },
-          "Password:Secret": {
-            "benchmark_best_competitor": {
-              "f1": 0.5833,
-              "fn": 10,
-              "precision": 1.0,
-              "recall": 0.4118,
-              "scanner": "betterleaks",
-              "tp": 7
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.5833,
-                "fn": 10,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.4118,
-                "tp": 7
-              },
-              "kingfisher": {
-                "f1": 0.0,
-                "fn": 17,
-                "fp": 1,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "noseyparker": {
-                "f1": 0.0,
-                "fn": 17,
-                "fp": 4,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "titus": {
-                "f1": 0.0,
-                "fn": 17,
-                "fp": 2,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 17,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.8667,
-              "fn": 4,
-              "fp": 0,
-              "precision": 1.0,
-              "recall": 0.7647,
-              "tp": 13
-            },
-            "benchmark_recall_gap": -0.3529,
-            "heldout_n_pos": 3,
-            "heldout_recall_at_0_40_floor": 0.6667
-          },
-          "Password:Token": {
-            "benchmark_best_competitor": {
-              "f1": 0.5,
-              "fn": 1,
-              "precision": 0.375,
-              "recall": 0.75,
-              "scanner": "kingfisher",
-              "tp": 3
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.0,
-                "fn": 4,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "kingfisher": {
-                "f1": 0.5,
-                "fn": 1,
-                "fp": 5,
-                "precision": 0.375,
-                "recall": 0.75,
-                "tp": 3
-              },
-              "noseyparker": {
-                "f1": 0.6667,
-                "fn": 2,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.5,
-                "tp": 2
-              },
-              "titus": {
-                "f1": 0.6667,
-                "fn": 2,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.5,
-                "tp": 2
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 4,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.5455,
-              "fn": 1,
-              "fp": 4,
-              "precision": 0.4286,
-              "recall": 0.75,
-              "tp": 3
-            },
-            "benchmark_recall_gap": 0.0,
-            "heldout_n_pos": 3,
-            "heldout_recall_at_0_40_floor": 0.0
-          },
-          "Password:URL Credentials": {
-            "benchmark_best_competitor": {
-              "f1": 0.3158,
-              "fn": 4,
-              "precision": 0.2143,
-              "recall": 0.6,
-              "scanner": "kingfisher",
-              "tp": 6
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.0,
-                "fn": 10,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "kingfisher": {
-                "f1": 0.3158,
-                "fn": 4,
-                "fp": 22,
-                "precision": 0.2143,
-                "recall": 0.6,
-                "tp": 6
-              },
-              "noseyparker": {
-                "f1": 0.1379,
-                "fn": 8,
-                "fp": 17,
-                "precision": 0.1053,
-                "recall": 0.2,
-                "tp": 2
-              },
-              "titus": {
-                "f1": 0.2667,
-                "fn": 6,
-                "fp": 16,
-                "precision": 0.2,
-                "recall": 0.4,
-                "tp": 4
-              },
-              "trufflehog": {
-                "f1": 0.2041,
-                "fn": 5,
-                "fp": 34,
-                "precision": 0.1282,
-                "recall": 0.5,
-                "tp": 5
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.5143,
-              "fn": 1,
-              "fp": 16,
-              "precision": 0.36,
-              "recall": 0.9,
-              "tp": 9
-            },
-            "benchmark_recall_gap": -0.3,
-            "heldout_n_pos": 2,
-            "heldout_recall_at_0_40_floor": 1.0
-          },
-          "Salt": {
-            "benchmark_best_competitor": {
-              "f1": 0.0,
-              "fn": 85,
-              "precision": 0.0,
-              "recall": 0.0,
-              "scanner": "betterleaks",
-              "tp": 0
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.0,
-                "fn": 85,
-                "fp": 28,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "kingfisher": {
-                "f1": 0.0,
-                "fn": 85,
-                "fp": 1,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "noseyparker": {
-                "f1": 0.0,
-                "fn": 85,
-                "fp": 2,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "titus": {
-                "f1": 0.0,
-                "fn": 85,
-                "fp": 1,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 85,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.1412,
-              "fn": 73,
-              "fp": 73,
-              "precision": 0.1412,
-              "recall": 0.1412,
-              "tp": 12
-            },
-            "benchmark_recall_gap": -0.1412,
-            "heldout_n_pos": 22,
-            "heldout_recall_at_0_40_floor": 0.9091
-          },
-          "Secret": {
-            "benchmark_best_competitor": {
-              "f1": 0.5512,
-              "fn": 212,
-              "precision": 0.4123,
-              "recall": 0.8309,
-              "scanner": "betterleaks",
-              "tp": 1042
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.5512,
-                "fn": 212,
-                "fp": 1485,
-                "precision": 0.4123,
-                "recall": 0.8309,
-                "tp": 1042
-              },
-              "kingfisher": {
-                "f1": 0.3798,
-                "fn": 586,
-                "fp": 1596,
-                "precision": 0.2951,
-                "recall": 0.5327,
-                "tp": 668
-              },
-              "noseyparker": {
-                "f1": 0.4229,
-                "fn": 679,
-                "fp": 890,
-                "precision": 0.3925,
-                "recall": 0.4585,
-                "tp": 575
-              },
-              "titus": {
-                "f1": 0.3329,
-                "fn": 679,
-                "fp": 1626,
-                "precision": 0.2612,
-                "recall": 0.4585,
-                "tp": 575
-              },
-              "trufflehog": {
-                "f1": 0.0057,
-                "fn": 1250,
-                "fp": 139,
-                "precision": 0.028,
-                "recall": 0.0032,
-                "tp": 4
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.2553,
-              "fn": 780,
-              "fp": 1985,
-              "precision": 0.1928,
-              "recall": 0.378,
-              "tp": 474
-            },
-            "benchmark_recall_gap": 0.4529,
-            "heldout_n_pos": 67,
-            "heldout_recall_at_0_40_floor": 0.9403
-          },
-          "Secret:Key": {
-            "benchmark_best_competitor": {
-              "f1": 0.7647,
-              "fn": 6,
-              "precision": 0.7222,
-              "recall": 0.8125,
-              "scanner": "titus",
-              "tp": 26
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.6027,
-                "fn": 10,
-                "fp": 19,
-                "precision": 0.5366,
-                "recall": 0.6875,
-                "tp": 22
-              },
-              "kingfisher": {
-                "f1": 0.6429,
-                "fn": 14,
-                "fp": 6,
-                "precision": 0.75,
-                "recall": 0.5625,
-                "tp": 18
-              },
-              "noseyparker": {
-                "f1": 0.7541,
-                "fn": 9,
-                "fp": 6,
-                "precision": 0.7931,
-                "recall": 0.7188,
-                "tp": 23
-              },
-              "titus": {
-                "f1": 0.7647,
-                "fn": 6,
-                "fp": 10,
-                "precision": 0.7222,
-                "recall": 0.8125,
-                "tp": 26
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 32,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.4444,
-              "fn": 22,
-              "fp": 3,
-              "precision": 0.7692,
-              "recall": 0.3125,
-              "tp": 10
-            },
-            "benchmark_recall_gap": 0.5,
-            "heldout_n_pos": 3,
-            "heldout_recall_at_0_40_floor": 1.0
-          },
-          "Secret:OTP / 2FA Secret": {
-            "benchmark_best_competitor": {
-              "f1": 0.8936,
-              "fn": 5,
-              "precision": 1.0,
-              "recall": 0.8077,
-              "scanner": "kingfisher",
-              "tp": 21
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.8444,
-                "fn": 7,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.7308,
-                "tp": 19
-              },
-              "kingfisher": {
-                "f1": 0.8936,
-                "fn": 5,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.8077,
-                "tp": 21
-              },
-              "noseyparker": {
-                "f1": 0.8571,
-                "fn": 5,
-                "fp": 2,
-                "precision": 0.913,
-                "recall": 0.8077,
-                "tp": 21
-              },
-              "titus": {
-                "f1": 0.8571,
-                "fn": 5,
-                "fp": 2,
-                "precision": 0.913,
-                "recall": 0.8077,
-                "tp": 21
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 26,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.96,
-              "fn": 2,
-              "fp": 0,
-              "precision": 1.0,
-              "recall": 0.9231,
-              "tp": 24
-            },
-            "benchmark_recall_gap": -0.1154,
-            "heldout_n_pos": 2,
-            "heldout_recall_at_0_40_floor": 1.0
-          },
-          "Token": {
-            "benchmark_best_competitor": {
-              "f1": 0.6305,
-              "fn": 282,
-              "precision": 0.8457,
-              "recall": 0.5026,
-              "scanner": "betterleaks",
-              "tp": 285
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.6305,
-                "fn": 282,
-                "fp": 52,
-                "precision": 0.8457,
-                "recall": 0.5026,
-                "tp": 285
-              },
-              "kingfisher": {
-                "f1": 0.0088,
-                "fn": 564,
-                "fp": 113,
-                "precision": 0.0259,
-                "recall": 0.0053,
-                "tp": 3
-              },
-              "noseyparker": {
-                "f1": 0.0441,
-                "fn": 552,
-                "fp": 99,
-                "precision": 0.1316,
-                "recall": 0.0265,
-                "tp": 15
-              },
-              "titus": {
-                "f1": 0.0464,
-                "fn": 552,
-                "fp": 65,
-                "precision": 0.1875,
-                "recall": 0.0265,
-                "tp": 15
-              },
-              "trufflehog": {
-                "f1": 0.0024,
-                "fn": 566,
-                "fp": 258,
-                "precision": 0.0039,
-                "recall": 0.0018,
-                "tp": 1
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.4576,
-              "fn": 273,
-              "fp": 424,
-              "precision": 0.4095,
-              "recall": 0.5185,
-              "tp": 294
-            },
-            "benchmark_recall_gap": -0.0159,
-            "heldout_n_pos": 52,
-            "heldout_recall_at_0_40_floor": 0.6923
-          },
-          "Token:Auth": {
-            "benchmark_best_competitor": {
-              "f1": 0.375,
-              "fn": 10,
-              "precision": 1.0,
-              "recall": 0.2308,
-              "scanner": "betterleaks",
-              "tp": 3
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.375,
-                "fn": 10,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.2308,
-                "tp": 3
-              },
-              "kingfisher": {
-                "f1": 0.0,
-                "fn": 13,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "noseyparker": {
-                "f1": 0.0,
-                "fn": 13,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "titus": {
-                "f1": 0.0,
-                "fn": 13,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 13,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.5455,
-              "fn": 7,
-              "fp": 3,
-              "precision": 0.6667,
-              "recall": 0.4615,
-              "tp": 6
-            },
-            "benchmark_recall_gap": -0.2307,
-            "heldout_n_pos": 1,
-            "heldout_recall_at_0_40_floor": 1.0
-          },
-          "Token:JSON Web Token": {
-            "benchmark_best_competitor": {
-              "f1": 1.0,
-              "fn": 0,
-              "precision": 1.0,
-              "recall": 1.0,
-              "scanner": "betterleaks",
-              "tp": 2
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 1.0,
-                "fn": 0,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 1.0,
-                "tp": 2
-              },
-              "kingfisher": {
-                "f1": 1.0,
-                "fn": 0,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 1.0,
-                "tp": 2
-              },
-              "noseyparker": {
-                "f1": 1.0,
-                "fn": 0,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 1.0,
-                "tp": 2
-              },
-              "titus": {
-                "f1": 1.0,
-                "fn": 0,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 1.0,
-                "tp": 2
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 2,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 1.0,
-              "fn": 0,
-              "fp": 0,
-              "precision": 1.0,
-              "recall": 1.0,
-              "tp": 2
-            },
-            "benchmark_recall_gap": 0.0,
-            "heldout_n_pos": 1,
-            "heldout_recall_at_0_40_floor": 0.0
-          },
-          "Token:UUID": {
-            "benchmark_best_competitor": {
-              "f1": 0.96,
-              "fn": 13,
-              "precision": 1.0,
-              "recall": 0.9231,
-              "scanner": "betterleaks",
-              "tp": 156
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.96,
-                "fn": 13,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.9231,
-                "tp": 156
-              },
-              "kingfisher": {
-                "f1": 0.0337,
-                "fn": 166,
-                "fp": 6,
-                "precision": 0.3333,
-                "recall": 0.0178,
-                "tp": 3
-              },
-              "noseyparker": {
-                "f1": 0.0,
-                "fn": 169,
-                "fp": 5,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "titus": {
-                "f1": 0.0343,
-                "fn": 166,
-                "fp": 3,
-                "precision": 0.5,
-                "recall": 0.0178,
-                "tp": 3
-              },
-              "trufflehog": {
-                "f1": 0.0118,
-                "fn": 168,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.0059,
-                "tp": 1
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.5992,
-              "fn": 92,
-              "fp": 11,
-              "precision": 0.875,
-              "recall": 0.4556,
-              "tp": 77
-            },
-            "benchmark_recall_gap": 0.4675,
-            "heldout_n_pos": 50,
-            "heldout_recall_at_0_40_floor": 0.64
-          },
-          "Twilio Credentials": {
-            "benchmark_best_competitor": {
-              "f1": 0.0645,
-              "fn": 29,
-              "precision": 1.0,
-              "recall": 0.0333,
-              "scanner": "trufflehog",
-              "tp": 1
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.0,
-                "fn": 30,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "kingfisher": {
-                "f1": 0.0,
-                "fn": 30,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "noseyparker": {
-                "f1": 0.0,
-                "fn": 30,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "titus": {
-                "f1": 0.0,
-                "fn": 30,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "trufflehog": {
-                "f1": 0.0645,
-                "fn": 29,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.0333,
-                "tp": 1
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.0645,
-              "fn": 29,
-              "fp": 0,
-              "precision": 1.0,
-              "recall": 0.0333,
-              "tp": 1
-            },
-            "benchmark_recall_gap": 0.0,
-            "heldout_n_pos": 1,
-            "heldout_recall_at_0_40_floor": 1.0
-          },
-          "URL Credentials": {
-            "benchmark_best_competitor": {
-              "f1": 0.3352,
-              "fn": 150,
-              "precision": 0.4054,
-              "recall": 0.2857,
-              "scanner": "trufflehog",
-              "tp": 60
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.0,
-                "fn": 210,
-                "fp": 1,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "kingfisher": {
-                "f1": 0.2871,
-                "fn": 152,
-                "fp": 136,
-                "precision": 0.299,
-                "recall": 0.2762,
-                "tp": 58
-              },
-              "noseyparker": {
-                "f1": 0.2468,
-                "fn": 172,
-                "fp": 60,
-                "precision": 0.3878,
-                "recall": 0.181,
-                "tp": 38
-              },
-              "titus": {
-                "f1": 0.2823,
-                "fn": 163,
-                "fp": 76,
-                "precision": 0.3821,
-                "recall": 0.2238,
-                "tp": 47
-              },
-              "trufflehog": {
-                "f1": 0.3352,
-                "fn": 150,
-                "fp": 88,
-                "precision": 0.4054,
-                "recall": 0.2857,
-                "tp": 60
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.7115,
-              "fn": 25,
-              "fp": 125,
-              "precision": 0.5968,
-              "recall": 0.881,
-              "tp": 185
-            },
-            "benchmark_recall_gap": -0.5953,
-            "heldout_n_pos": 20,
-            "heldout_recall_at_0_40_floor": 0.65
-          },
-          "UUID": {
-            "benchmark_best_competitor": {
-              "f1": 0.0009,
-              "fn": 2266,
-              "precision": 0.0909,
-              "recall": 0.0004,
-              "scanner": "betterleaks",
-              "tp": 1
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.0009,
-                "fn": 2266,
-                "fp": 10,
-                "precision": 0.0909,
-                "recall": 0.0004,
-                "tp": 1
-              },
-              "kingfisher": {
-                "f1": 0.0009,
-                "fn": 2266,
-                "fp": 45,
-                "precision": 0.0217,
-                "recall": 0.0004,
-                "tp": 1
-              },
-              "noseyparker": {
-                "f1": 0.0009,
-                "fn": 2266,
-                "fp": 62,
-                "precision": 0.0159,
-                "recall": 0.0004,
-                "tp": 1
-              },
-              "titus": {
-                "f1": 0.0009,
-                "fn": 2266,
-                "fp": 29,
-                "precision": 0.0333,
-                "recall": 0.0004,
-                "tp": 1
-              },
-              "trufflehog": {
-                "f1": 0.0009,
-                "fn": 2266,
-                "fp": 14,
-                "precision": 0.0667,
-                "recall": 0.0004,
-                "tp": 1
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.0049,
-              "fn": 2260,
-              "fp": 563,
-              "precision": 0.0123,
-              "recall": 0.0031,
-              "tp": 7
-            },
-            "benchmark_recall_gap": -0.0027,
-            "heldout_n_pos": 2,
-            "heldout_recall_at_0_40_floor": 0.5
-          },
-          "UUID:Key": {
-            "benchmark_best_competitor": {
-              "f1": 0.8,
-              "fn": 0,
-              "precision": 0.6667,
-              "recall": 1.0,
-              "scanner": "betterleaks",
-              "tp": 4
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.8,
-                "fn": 0,
-                "fp": 2,
-                "precision": 0.6667,
-                "recall": 1.0,
-                "tp": 4
-              },
-              "kingfisher": {
-                "f1": 0.0,
-                "fn": 4,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "noseyparker": {
-                "f1": 0.0,
-                "fn": 4,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "titus": {
-                "f1": 0.0,
-                "fn": 4,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 4,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.0,
-              "fn": 4,
-              "fp": 0,
-              "precision": 0.0,
-              "recall": 0.0,
-              "tp": 0
-            },
-            "benchmark_recall_gap": 1.0,
-            "heldout_n_pos": 2,
-            "heldout_recall_at_0_40_floor": 0.0
-          },
-          "UUID:Token": {
-            "benchmark_best_competitor": {
-              "f1": 0.7619,
-              "fn": 10,
-              "precision": 1.0,
-              "recall": 0.6154,
-              "scanner": "betterleaks",
-              "tp": 16
-            },
-            "benchmark_competitors": {
-              "betterleaks": {
-                "f1": 0.7619,
-                "fn": 10,
-                "fp": 0,
-                "precision": 1.0,
-                "recall": 0.6154,
-                "tp": 16
-              },
-              "kingfisher": {
-                "f1": 0.0,
-                "fn": 26,
-                "fp": 5,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "noseyparker": {
-                "f1": 0.0,
-                "fn": 26,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "titus": {
-                "f1": 0.0,
-                "fn": 26,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              },
-              "trufflehog": {
-                "f1": 0.0,
-                "fn": 26,
-                "fp": 0,
-                "precision": 0.0,
-                "recall": 0.0,
-                "tp": 0
-              }
-            },
-            "benchmark_keyhog": {
-              "f1": 0.3729,
-              "fn": 15,
-              "fp": 22,
-              "precision": 0.3333,
-              "recall": 0.4231,
-              "tp": 11
-            },
-            "benchmark_recall_gap": 0.1923,
-            "heldout_n_pos": 2,
-            "heldout_recall_at_0_40_floor": 1.0
-          }
+      "per_recall_sensitive_class": {
+        "API": {
+          "f1": 0.0,
+          "fn": 0,
+          "fp": 14,
+          "n_neg": 314,
+          "n_pos": 0,
+          "n_test": 314,
+          "precision": 0.0,
+          "recall": 0.0,
+          "recall_at_0_40_floor": null,
+          "tp": 0
         },
-        "compared_class_count": 54,
-        "corpus": "creddata",
-        "required_scanners": [
-          "keyhog",
-          "betterleaks",
-          "kingfisher",
-          "trufflehog",
-          "titus",
-          "noseyparker"
-        ],
-        "results_dir": "/media/mukund-thiru/SanthData/Santh/software/keyhog/benchmarks/results",
-        "scanner_count": 6,
-        "scanners": [
-          "betterleaks",
-          "keyhog",
-          "kingfisher",
-          "noseyparker",
-          "titus",
-          "trufflehog"
-        ]
+        "API:Auth": {
+          "f1": 0.0,
+          "fn": 0,
+          "fp": 1,
+          "n_neg": 2,
+          "n_pos": 0,
+          "n_test": 2,
+          "precision": 0.0,
+          "recall": 0.0,
+          "recall_at_0_40_floor": null,
+          "tp": 0
+        },
+        "API:Key": {
+          "f1": 0.8,
+          "fn": 0,
+          "fp": 1,
+          "n_neg": 1,
+          "n_pos": 2,
+          "n_test": 3,
+          "precision": 0.6667,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 2
+        },
+        "API:Token": {
+          "f1": 1.0,
+          "fn": 0,
+          "fp": 0,
+          "n_neg": 6,
+          "n_pos": 2,
+          "n_test": 8,
+          "precision": 1.0,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 2
+        },
+        "AWS Client ID": {
+          "f1": 0.0,
+          "fn": 0,
+          "fp": 11,
+          "n_neg": 69,
+          "n_pos": 0,
+          "n_test": 69,
+          "precision": 0.0,
+          "recall": 0.0,
+          "recall_at_0_40_floor": null,
+          "tp": 0
+        },
+        "Auth": {
+          "f1": 0.8485,
+          "fn": 0,
+          "fp": 5,
+          "n_neg": 52,
+          "n_pos": 14,
+          "n_test": 66,
+          "precision": 0.7368,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 14
+        },
+        "Auth:BASE64 encoded PEM Private Key": {
+          "f1": 0.0,
+          "fn": 1,
+          "fp": 0,
+          "n_neg": 0,
+          "n_pos": 1,
+          "n_test": 1,
+          "precision": 0.0,
+          "recall": 0.0,
+          "recall_at_0_40_floor": 0.0,
+          "tp": 0
+        },
+        "Auth:Basic Authorization": {
+          "f1": 1.0,
+          "fn": 0,
+          "fp": 0,
+          "n_neg": 6,
+          "n_pos": 1,
+          "n_test": 7,
+          "precision": 1.0,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 1
+        },
+        "Auth:Key": {
+          "f1": 1.0,
+          "fn": 0,
+          "fp": 0,
+          "n_neg": 0,
+          "n_pos": 1,
+          "n_test": 1,
+          "precision": 1.0,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 1
+        },
+        "Auth:Key:Token": {
+          "f1": 0.0,
+          "fn": 0,
+          "fp": 0,
+          "n_neg": 57,
+          "n_pos": 0,
+          "n_test": 57,
+          "precision": 0.0,
+          "recall": 0.0,
+          "recall_at_0_40_floor": null,
+          "tp": 0
+        },
+        "Auth:Salt": {
+          "f1": 1.0,
+          "fn": 0,
+          "fp": 0,
+          "n_neg": 0,
+          "n_pos": 1,
+          "n_test": 1,
+          "precision": 1.0,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 1
+        },
+        "Auth:Token": {
+          "f1": 0.0,
+          "fn": 0,
+          "fp": 0,
+          "n_neg": 7,
+          "n_pos": 0,
+          "n_test": 7,
+          "precision": 0.0,
+          "recall": 0.0,
+          "recall_at_0_40_floor": null,
+          "tp": 0
+        },
+        "Auth:Token:JSON Web Token": {
+          "f1": 1.0,
+          "fn": 0,
+          "fp": 0,
+          "n_neg": 0,
+          "n_pos": 1,
+          "n_test": 1,
+          "precision": 1.0,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 1
+        },
+        "Basic Authorization": {
+          "f1": 0.0,
+          "fn": 0,
+          "fp": 3,
+          "n_neg": 4,
+          "n_pos": 0,
+          "n_test": 4,
+          "precision": 0.0,
+          "recall": 0.0,
+          "recall_at_0_40_floor": null,
+          "tp": 0
+        },
+        "CMD ConvertTo-SecureString": {
+          "f1": 0.0,
+          "fn": 0,
+          "fp": 0,
+          "n_neg": 3,
+          "n_pos": 0,
+          "n_test": 3,
+          "precision": 0.0,
+          "recall": 0.0,
+          "recall_at_0_40_floor": null,
+          "tp": 0
+        },
+        "CMD Password": {
+          "f1": 0.0,
+          "fn": 0,
+          "fp": 0,
+          "n_neg": 2,
+          "n_pos": 0,
+          "n_test": 2,
+          "precision": 0.0,
+          "recall": 0.0,
+          "recall_at_0_40_floor": null,
+          "tp": 0
+        },
+        "CURL User Password": {
+          "f1": 0.0,
+          "fn": 0,
+          "fp": 0,
+          "n_neg": 1,
+          "n_pos": 0,
+          "n_test": 1,
+          "precision": 0.0,
+          "recall": 0.0,
+          "recall_at_0_40_floor": null,
+          "tp": 0
+        },
+        "Credential": {
+          "f1": 0.0,
+          "fn": 0,
+          "fp": 0,
+          "n_neg": 9,
+          "n_pos": 0,
+          "n_test": 9,
+          "precision": 0.0,
+          "recall": 0.0,
+          "recall_at_0_40_floor": null,
+          "tp": 0
+        },
+        "Dropbox App secret": {
+          "f1": 0.0,
+          "fn": 0,
+          "fp": 1,
+          "n_neg": 82,
+          "n_pos": 0,
+          "n_test": 82,
+          "precision": 0.0,
+          "recall": 0.0,
+          "recall_at_0_40_floor": null,
+          "tp": 0
+        },
+        "Dropbox App secret:Password": {
+          "f1": 0.0,
+          "fn": 0,
+          "fp": 0,
+          "n_neg": 1,
+          "n_pos": 0,
+          "n_test": 1,
+          "precision": 0.0,
+          "recall": 0.0,
+          "recall_at_0_40_floor": null,
+          "tp": 0
+        },
+        "JSON Web Token": {
+          "f1": 0.0,
+          "fn": 0,
+          "fp": 1,
+          "n_neg": 12,
+          "n_pos": 0,
+          "n_test": 12,
+          "precision": 0.0,
+          "recall": 0.0,
+          "recall_at_0_40_floor": null,
+          "tp": 0
+        },
+        "JWK": {
+          "f1": 1.0,
+          "fn": 0,
+          "fp": 0,
+          "n_neg": 0,
+          "n_pos": 3,
+          "n_test": 3,
+          "precision": 1.0,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 3
+        },
+        "Key": {
+          "f1": 0.5294,
+          "fn": 0,
+          "fp": 16,
+          "n_neg": 244,
+          "n_pos": 9,
+          "n_test": 253,
+          "precision": 0.36,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 9
+        },
+        "Key:AWS Multi:AWS Client ID": {
+          "f1": 0.0,
+          "fn": 0,
+          "fp": 0,
+          "n_neg": 6,
+          "n_pos": 0,
+          "n_test": 6,
+          "precision": 0.0,
+          "recall": 0.0,
+          "recall_at_0_40_floor": null,
+          "tp": 0
+        },
+        "Key:Nonce": {
+          "f1": 1.0,
+          "fn": 0,
+          "fp": 0,
+          "n_neg": 0,
+          "n_pos": 1,
+          "n_test": 1,
+          "precision": 1.0,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 1
+        },
+        "Key:Secret": {
+          "f1": 0.625,
+          "fn": 0,
+          "fp": 6,
+          "n_neg": 16,
+          "n_pos": 5,
+          "n_test": 21,
+          "precision": 0.4545,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 5
+        },
+        "Key:Token": {
+          "f1": 0.0,
+          "fn": 0,
+          "fp": 0,
+          "n_neg": 1,
+          "n_pos": 0,
+          "n_test": 1,
+          "precision": 0.0,
+          "recall": 0.0,
+          "recall_at_0_40_floor": null,
+          "tp": 0
+        },
+        "NKEY Seed": {
+          "f1": 0.8571,
+          "fn": 0,
+          "fp": 1,
+          "n_neg": 1,
+          "n_pos": 3,
+          "n_test": 4,
+          "precision": 0.75,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 3
+        },
+        "Nonce": {
+          "f1": 0.8571,
+          "fn": 0,
+          "fp": 1,
+          "n_neg": 3,
+          "n_pos": 3,
+          "n_test": 6,
+          "precision": 0.75,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 3
+        },
+        "PEM Private Key": {
+          "f1": 0.0,
+          "fn": 0,
+          "fp": 0,
+          "n_neg": 70,
+          "n_pos": 0,
+          "n_test": 70,
+          "precision": 0.0,
+          "recall": 0.0,
+          "recall_at_0_40_floor": null,
+          "tp": 0
+        },
+        "Password": {
+          "f1": 0.7143,
+          "fn": 7,
+          "fp": 41,
+          "n_neg": 393,
+          "n_pos": 67,
+          "n_test": 460,
+          "precision": 0.5941,
+          "recall": 0.8955,
+          "recall_at_0_40_floor": 0.8955,
+          "tp": 60
+        },
+        "Password:Salt": {
+          "f1": 0.0,
+          "fn": 0,
+          "fp": 1,
+          "n_neg": 1,
+          "n_pos": 0,
+          "n_test": 1,
+          "precision": 0.0,
+          "recall": 0.0,
+          "recall_at_0_40_floor": null,
+          "tp": 0
+        },
+        "Password:Secret": {
+          "f1": 0.8,
+          "fn": 1,
+          "fp": 0,
+          "n_neg": 1,
+          "n_pos": 3,
+          "n_test": 4,
+          "precision": 1.0,
+          "recall": 0.6667,
+          "recall_at_0_40_floor": 0.6667,
+          "tp": 2
+        },
+        "Password:Token": {
+          "f1": 0.0,
+          "fn": 0,
+          "fp": 0,
+          "n_neg": 1,
+          "n_pos": 0,
+          "n_test": 1,
+          "precision": 0.0,
+          "recall": 0.0,
+          "recall_at_0_40_floor": null,
+          "tp": 0
+        },
+        "Password:URL Credentials": {
+          "f1": 0.0,
+          "fn": 0,
+          "fp": 0,
+          "n_neg": 31,
+          "n_pos": 0,
+          "n_test": 31,
+          "precision": 0.0,
+          "recall": 0.0,
+          "recall_at_0_40_floor": null,
+          "tp": 0
+        },
+        "Salt": {
+          "f1": 1.0,
+          "fn": 0,
+          "fp": 0,
+          "n_neg": 0,
+          "n_pos": 22,
+          "n_test": 22,
+          "precision": 1.0,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 22
+        },
+        "Secret": {
+          "f1": 0.7586,
+          "fn": 1,
+          "fp": 20,
+          "n_neg": 203,
+          "n_pos": 34,
+          "n_test": 237,
+          "precision": 0.6226,
+          "recall": 0.9706,
+          "recall_at_0_40_floor": 0.9706,
+          "tp": 33
+        },
+        "Secret:OTP / 2FA Secret": {
+          "f1": 1.0,
+          "fn": 0,
+          "fp": 0,
+          "n_neg": 0,
+          "n_pos": 1,
+          "n_test": 1,
+          "precision": 1.0,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 1
+        },
+        "Token": {
+          "f1": 0.6207,
+          "fn": 6,
+          "fp": 5,
+          "n_neg": 107,
+          "n_pos": 15,
+          "n_test": 122,
+          "precision": 0.6429,
+          "recall": 0.6,
+          "recall_at_0_40_floor": 0.8,
+          "tp": 9
+        },
+        "Token:Auth": {
+          "f1": 1.0,
+          "fn": 0,
+          "fp": 0,
+          "n_neg": 0,
+          "n_pos": 1,
+          "n_test": 1,
+          "precision": 1.0,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 1
+        },
+        "Token:UUID": {
+          "f1": 0.9118,
+          "fn": 4,
+          "fp": 2,
+          "n_neg": 31,
+          "n_pos": 35,
+          "n_test": 66,
+          "precision": 0.9394,
+          "recall": 0.8857,
+          "recall_at_0_40_floor": 0.9143,
+          "tp": 31
+        },
+        "Twilio Credentials": {
+          "f1": 1.0,
+          "fn": 0,
+          "fp": 0,
+          "n_neg": 0,
+          "n_pos": 1,
+          "n_test": 1,
+          "precision": 1.0,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 1
+        },
+        "URL Credentials": {
+          "f1": 0.0,
+          "fn": 0,
+          "fp": 0,
+          "n_neg": 5,
+          "n_pos": 0,
+          "n_test": 5,
+          "precision": 0.0,
+          "recall": 0.0,
+          "recall_at_0_40_floor": null,
+          "tp": 0
+        },
+        "UUID": {
+          "f1": 0.0,
+          "fn": 1,
+          "fp": 3,
+          "n_neg": 77,
+          "n_pos": 1,
+          "n_test": 78,
+          "precision": 0.0,
+          "recall": 0.0,
+          "recall_at_0_40_floor": 0.0,
+          "tp": 0
+        },
+        "UUID:Token": {
+          "f1": 1.0,
+          "fn": 0,
+          "fp": 0,
+          "n_neg": 0,
+          "n_pos": 2,
+          "n_test": 2,
+          "precision": 1.0,
+          "recall": 1.0,
+          "recall_at_0_40_floor": 1.0,
+          "tp": 2
+        }
+      },
+      "pos_mean_score": 0.8944,
+      "real_f1": 0.8324,
+      "real_pos_recall_at_0.40_floor": 0.9377,
+      "real_precision": 0.7527,
+      "real_recall": 0.9309,
+      "recall_at_0_40_floor": 0.9377,
+      "six_scanner_differential": {
+        "error": "/media/mukund-thiru/SanthData/Santh/software/keyhog/benchmarks/results/82fcd9288623/creddata-betterleaks-default-nocache-nodaemon-no-validate.json has schema_version='bench-v1'; supported='bench-v3'. Rerun the benchmark with the current harness",
+        "status": "unavailable"
       }
     },
     "synthetic_heldout": {
-      "base64_binary_flag_rate": 0.0018281535648994515,
-      "base64_binary_mean_score": 0.010923014022409916,
-      "f1": 0.9576338928856916,
-      "n_base64_binary_val": 547,
-      "n_val": 3456,
-      "precision": 0.9315707620528771,
-      "recall": 0.9851973684210527
+      "base64_binary_flag_rate": 0.0,
+      "base64_binary_mean_score": 0.007260162848979235,
+      "f1": 0.9710230632761679,
+      "n_base64_binary_val": 532,
+      "n_val": 3816,
+      "precision": 0.9447640966628308,
+      "recall": 0.9987834549878345
     }
   },
-  "model_version": "moe-v1-35715cc22d4c4a9a",
-  "recorded_date": "2026-07-08",
+  "model_version": "moe-v1-246a05b92bec9aa3",
+  "recorded_date": "2026-07-15",
   "schema_version": 3,
   "trainer": "ml/train_classifier.py",
   "training_inputs": {
     "real_distribution": "ml/data/real_corpus.jsonl",
-    "synthetic": "ml/data/corpus.jsonl"
+    "real_distribution_sha256": "5c86cc4bbea44740495e01a55ccba9b88930bc8690d04bf59561a6acea063cd1",
+    "synthetic": "ml/data/corpus.jsonl",
+    "synthetic_sha256": "cedd49685b293469fc8054e6d4af1de6e051360cfdc1e53f5d09b4941705a491"
   },
-  "weights_fnv1a64": "35715cc22d4c4a9a"
+  "training_parameters": {
+    "epochs": 60,
+    "max_detector_positive_multiplier": 16.0,
+    "max_recall_sensitive_class_multiplier": 1.0,
+    "seed": 20260529
+  },
+  "weights_fnv1a64": "246a05b92bec9aa3"
 }

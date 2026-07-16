@@ -197,6 +197,7 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
                             ),
                             group: pattern.group,
                             client_safe: pattern.client_safe,
+                            weak_anchor: pattern.weak_anchor,
                             match_proves_keyword_nearby: false,
                             homoglyph_variant: true,
                         },

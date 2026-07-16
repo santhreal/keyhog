@@ -10,7 +10,7 @@
 //!
 //!   1. first-matching-bucket lookup from the supplied active DetectorSpec.
 //!   2. `adjudicate::generic_entropy_below_floor` / the `generic_keyword_low_entropy`
-//!      toggle in `generic_bridge_entropy_below_floor`: the kept-vs-dropped
+//!      role selection: the kept-vs-dropped
 //!      decision (`entropy < floor`) and the Tier-A `entropy_threshold` override
 //!      that can only RAISE a floor.
 //!
@@ -86,7 +86,11 @@ fn family<'a>(file: &'a FloorFile, detector: &str) -> Option<&'a Family> {
 }
 
 fn family_floor(file: &FloorFile, detector: &str, len: usize) -> f64 {
-    let spec = file.specs.iter().find(|spec| spec.id == detector);
+    let spec = file
+        .specs
+        .iter()
+        .find(|spec| spec.id == detector)
+        .expect("floor family must have a detector spec");
     keyhog_scanner::testing::generic_entropy_floor_for_test(
         spec,
         DEFAULT_GENERIC_ENTROPY_THRESHOLD,
@@ -95,7 +99,11 @@ fn family_floor(file: &FloorFile, detector: &str, len: usize) -> f64 {
 }
 
 fn effective_floor(file: &FloorFile, threshold: f64, detector: &str, len: usize) -> f64 {
-    let spec = file.specs.iter().find(|spec| spec.id == detector);
+    let spec = file
+        .specs
+        .iter()
+        .find(|spec| spec.id == detector)
+        .expect("floor family must have a detector spec");
     keyhog_scanner::testing::generic_entropy_floor_for_test(spec, threshold, len)
 }
 
@@ -104,8 +112,8 @@ fn dropped(file: &FloorFile, entropy: f64, threshold: f64, detector: &str, len: 
     entropy < effective_floor(file, threshold, detector, len)
 }
 
-/// `adjudicate::generic_bridge_entropy_below_floor`: the `generic_keyword_low_entropy`
-/// toggle selects which family floor the keyword-bridge value is judged against.
+/// The `generic_keyword_low_entropy` toggle selects which detector-owned family
+/// floor the keyword-bridge value is judged against.
 fn bridge_dropped(
     file: &FloorFile,
     entropy: f64,

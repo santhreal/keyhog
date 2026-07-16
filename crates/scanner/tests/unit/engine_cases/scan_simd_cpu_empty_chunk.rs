@@ -18,6 +18,7 @@ fn scan_simd_cpu_empty_chunk() {
             description: None,
             group: None,
             client_safe: false,
+            weak_anchor: false,
         }],
         companions: vec![],
         verify: None,

@@ -89,6 +89,7 @@ pub(crate) fn bare_auth_value_allowed(value: &str) -> bool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GenericValueShapeStage {
     CaesarGenericFallback,
+    EntropyPolicyUnavailable,
     EntropyBelowFloor,
     ValueTooShort,
     ValueTooLong,
@@ -124,6 +125,7 @@ impl GenericValueShapeStage {
     pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::CaesarGenericFallback => "caesar_generic_fallback",
+            Self::EntropyPolicyUnavailable => "entropy_policy_unavailable",
             Self::EntropyBelowFloor => "generic_entropy_below_floor",
             Self::ValueTooShort => "value_too_short",
             Self::ValueTooLong => "value_too_long",

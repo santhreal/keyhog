@@ -22,28 +22,34 @@
 //! --test regression_ml_production_weight_golden -- --ignored --nocapture` or
 //! read the panic message) and paste the emitted `GOLDEN_BITS` array below.
 
-use keyhog_scanner::testing::ml_score;
+use keyhog_scanner::testing::ml_score_for_detector;
 
 /// (candidate value, surrounding context) pairs spanning the score range and
 /// exercising distinct feature paths: real-vendor-prefix secrets, a pure-hex
 /// hash, a UUID, an explicit placeholder, a base64 blob, and prose.
-const CASES: &[(&str, &str)] = &[
+const CASES: &[(&str, &str, &str, bool)] = &[
     (
         "ghp_1a2B3c4D5e6F7g8H9i0J1k2L3m4N5o6P7q8R",
         "const GITHUB_TOKEN = \"{}\";",
+        "github-classic-pat",
+        false,
     ),
-    ("AKIAIOSFODNN7EXAMPLE", "aws_access_key_id = {}"),
+    ("AKIAIOSFODNN7EXAMPLE", "aws_access_key_id = {}", "aws-access-key", false),
     (
         "xoxb-2401234567-2401234567890-AbCdEfGhIjKlMnOpQrStUvWx",
         "slack_bot_token: {}",
+        "slack-bot-token",
+        false,
     ),
-    ("5d41402abc4b2a76b9719d911017c592", "md5 = \"{}\""),
-    ("550e8400-e29b-41d4-a716-446655440000", "request_id: {}"),
-    ("your_api_key_here", "api_key = \"{}\""),
-    ("aGVsbG8gd29ybGQgdGhpcyBpcyBhIHRlc3Q=", "payload = \"{}\""),
+    ("5d41402abc4b2a76b9719d911017c592", "md5 = \"{}\"", "generic-secret", true),
+    ("550e8400-e29b-41d4-a716-446655440000", "request_id: {}", "generic-api-key", true),
+    ("your_api_key_here", "api_key = \"{}\"", "generic-api-key", false),
+    ("aGVsbG8gd29ybGQgdGhpcyBpcyBhIHRlc3Q=", "payload = \"{}\"", "generic-secret", true),
     (
         "The quick brown fox jumps over the lazy dog",
         "// human-readable comment: {}",
+        "generic-secret",
+        false,
     ),
     // Ambiguous / mid-range cases, sensitive sentinels that catch a SMALL
     // weight or feature drift (unlike the saturated 0.0/1.0 cases, which only
@@ -53,29 +59,29 @@ const CASES: &[(&str, &str)] = &[
     (
         "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U",
         "authorization: Bearer {}",
+        "jwt-token",
+        false,
     ),
-    ("sk_test_4eC39HqLyjWDarjtT1zdp7dc", "stripe_secret_key = \"{}\""),
-    ("d1e8a70b5ccab1dc2f6f5c8e9a0b1c2d", "secret_key = \"{}\""),
-    ("aG9zdF9rZXlfMjAyNF9wcm9kdWN0aW9uX2Vudg==", "API_KEY={}"),
+    ("sk_test_4eC39HqLyjWDarjtT1zdp7dc", "stripe_secret_key = \"{}\"", "stripe-secret-key", false),
+    ("d1e8a70b5ccab1dc2f6f5c8e9a0b1c2d", "secret_key = \"{}\"", "generic-secret", true),
+    ("aG9zdF9rZXlfMjAyNF9wcm9kdWN0aW9uX2Vudg==", "API_KEY={}", "generic-api-key", false),
 ];
 
 /// `score.to_bits()` for each case, captured from the shipped `weights.bin`
-/// (2026-07-04). Human-readable: GitHub PAT → 1.0, AWS example key → 0.7622…,
-/// Slack → 1.0, and the hash / UUID / placeholder / base64 / prose cases → 0.0.
-/// The 0.7622 AWS case is the sensitive sentinel, any weight/feature drift
-/// shifts it; the saturated 1.0/0.0 cases lock the confident-classification
-/// behavior (a regression large enough to un-saturate them is caught too).
+/// for the 55-feature detector-conditioned model. The positive vendor shapes,
+/// JWT, and anchored base64 credential saturate at 1.0; the digest, UUID,
+/// placeholder, binary/prose payload, and bare hex cases saturate at 0.0.
 const GOLDEN_BITS: &[u64] = &[
     4607182418800017408, // 1.0, ghp_… GitHub PAT
-    4605040868112465920, // 0.7622401118278503: AKIA… AWS example key (mid-range sentinel)
+    4607182418800017408, // 1.0, AKIA… AWS access key
     4607182418800017408, // 1.0, xoxb-… Slack bot token
     0,                   // 0.0, md5 hex digest
     0,                   // 0.0: UUID
     0,                   // 0.0, your_api_key_here placeholder
     0,                   // 0.0, base64 blob (decodes to prose)
     0,                   // 0.0: English prose
-    0,                   // 0.0, demo JWT (jwt.io sub:1234567890 example)
-    0,                   // 0.0, sk_test_… Stripe TEST key (test→low, correct)
+    4607182418800017408, // 1.0, structurally valid demo JWT
+    4607182418800017408, // 1.0, structurally valid Stripe test key
     0,                   // 0.0, bare 32-hex, no vendor prefix (hash-ambiguous)
     4607182418800017408, // 1.0, base64 → "host_key_2024_production_env" (real cred)
 ];
@@ -87,16 +93,16 @@ fn production_weights_forward_pass_matches_golden_scores() {
         GOLDEN_BITS.len(),
         "CASES and GOLDEN_BITS must stay the same length",
     );
-    for (i, (text, context)) in CASES.iter().enumerate() {
-        let got = ml_score(text, context);
+    for (i, (text, context, detector_id, entropy_channel)) in CASES.iter().enumerate() {
+        let got = ml_score_for_detector(text, context, detector_id, *entropy_channel);
         let want = f64::from_bits(GOLDEN_BITS[i]);
         assert_eq!(
             got.to_bits(),
             GOLDEN_BITS[i],
             "case {i} ({text:?}): production MoE score drifted, got {got:.17} \
              (bits {}), golden {want:.17} (bits {}). The shipped weights.bin, the \
-             43-feature extraction order (incl. the SERVICE_CONTEXT feature added \
-             in the DET-1 bump), or the gate/expert layout changed. If \
+             55-feature extraction order (including detector/channel policy), or \
+             the gate/expert layout changed. If \
              intentional, re-run the `capture_production_weight_goldens` test and \
              paste the new GOLDEN_BITS.",
             got.to_bits(),
@@ -115,9 +121,9 @@ fn production_weights_forward_pass_matches_golden_scores() {
 /// green even while GOLDEN_BITS is being re-baselined.
 #[test]
 fn production_weights_scoring_is_deterministic() {
-    for (text, context) in CASES {
-        let a = ml_score(text, context);
-        let b = ml_score(text, context);
+    for (text, context, detector_id, entropy_channel) in CASES {
+        let a = ml_score_for_detector(text, context, detector_id, *entropy_channel);
+        let b = ml_score_for_detector(text, context, detector_id, *entropy_channel);
         assert_eq!(
             a.to_bits(),
             b.to_bits(),
@@ -133,8 +139,15 @@ fn production_weights_scoring_is_deterministic() {
 fn capture_production_weight_goldens() {
     let bits: Vec<u64> = CASES
         .iter()
-        .map(|(t, c)| ml_score(t, c).to_bits())
+        .map(|(t, c, detector_id, entropy_channel)| {
+            ml_score_for_detector(t, c, detector_id, *entropy_channel).to_bits()
+        })
         .collect();
-    let vals: Vec<f64> = CASES.iter().map(|(t, c)| ml_score(t, c)).collect();
+    let vals: Vec<f64> = CASES
+        .iter()
+        .map(|(t, c, detector_id, entropy_channel)| {
+            ml_score_for_detector(t, c, detector_id, *entropy_channel)
+        })
+        .collect();
     panic!("GOLDEN_BITS = {bits:?}\n// human-readable scores = {vals:?}");
 }

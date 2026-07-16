@@ -72,7 +72,7 @@ fn tier_b_weak_anchor_override_wins_over_min_confidence() {
         "test fixture must cover the min_confidence precedence edge"
     );
     assert!(
-        detector_weak_anchor_for_test(flickr).expect("detector classification rules must be valid"),
+        detector_weak_anchor_for_test(flickr),
         "Tier-B weak_anchor classification must remain active even when a detector self-declares min_confidence"
     );
 }

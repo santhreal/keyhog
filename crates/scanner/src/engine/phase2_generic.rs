@@ -7,7 +7,7 @@ mod metrics;
 mod pattern;
 
 use self::keywords::{
-    collect_generic_keyword_lines, collect_generic_keyword_lines_from_positions,
+    collect_generic_keyword_lines_from_positions, collect_generic_keyword_lines_with,
     is_strong_keyword_anchored_encoded_text_secret,
 };
 use self::line_mapping::line_at_index;
@@ -51,6 +51,12 @@ impl CompiledScanner {
         let Some(generic_re) = self.generic_assignment_re.as_ref() else {
             return;
         };
+        let Some(generic_keyword_stems) = self.generic_keyword_stems.as_ref() else {
+            tracing::error!(
+                "generic assignment regex exists without its compiled keyword prefilter"
+            );
+            return;
+        };
 
         // Lines already carrying finalized named findings do not need a generic
         // bridge echo. ML-pending candidates deliberately do NOT claim the line:
@@ -82,14 +88,20 @@ impl CompiledScanner {
         lines_with_keyword.clear();
         let profile_enabled = super::profile::enabled();
         let prefilter_start = profile_enabled.then(std::time::Instant::now);
-        if let Some(positions) = generic_keyword_positions {
+        if let Some(positions) =
+            generic_keyword_positions.filter(|_| self.generic_gpu_positions_compatible)
+        {
             collect_generic_keyword_lines_from_positions(
                 line_offsets,
                 positions,
                 &mut lines_with_keyword,
             );
         } else {
-            collect_generic_keyword_lines(scan_text, &mut lines_with_keyword);
+            collect_generic_keyword_lines_with(
+                generic_keyword_stems,
+                scan_text,
+                &mut lines_with_keyword,
+            );
         }
         metrics::record_prefilter_ns(prefilter_start);
         if profile_enabled {
@@ -228,7 +240,7 @@ impl CompiledScanner {
                 // Entropy gate: reject low-entropy values (variable names, prose).
                 // Routed through the SINGLE threshold-aware
                 // `crate::adjudicate::generic_entropy_floor` owner (via
-                // `generic_bridge_entropy_below_floor`), the same source of truth
+                // `generic_entropy_below_floor`), the same source of truth
                 // the named-detector generic path uses, so the per-family,
                 // length-bucketed base floor (Tier-B `entropy_floor` data in each
                 // generic detector's TOML) is identical AND the operator's Tier-A
@@ -252,15 +264,14 @@ impl CompiledScanner {
                     continue;
                 };
                 let owning_detector = &self.detectors[owning_detector_index];
-                let (Some(owning_detector_min_len), Some(owning_detector_max_len)) =
-                    (owning_detector.min_len, owning_detector.max_len)
-                else {
+                let Some(owning_policy) = self.entropy_policies.get(owning_detector_index) else {
                     tracing::error!(
                         detector_id = owning_detector.id.as_str(),
-                        "compiled phase-2 detector is missing required length policy; dropping candidate"
+                        "generic assignment owner has no compiled entropy policy; dropping candidate"
                     );
                     continue;
                 };
+                let owning_detector_max_len = owning_policy.max_len;
                 let canonical_detector = self
                     .generic_owning_detector
                     .canonical_index(keyword)
@@ -298,67 +309,13 @@ impl CompiledScanner {
                         value,
                         entropy,
                         chunk,
+                        owning_detector_index,
+                        owning_policy,
                         allow_canonical_hex_key,
                         allow_encoded_text_secret,
                         allow_decoded_hex_key_material,
                     )
                 };
-
-                // The `--keyword-low-entropy` knob relaxes the generic-bridge
-                // entropy floor to the GENERIC_KEYWORD_SECRET floor for EVERY
-                // generic assignment; when off, each candidate is held to the
-                // GENERIC_SECRET floor. This per-detector
-                // re-validation MUST honor the knob exactly as the shape-file
-                // gate (`generic_value_shape_rejected` →
-                // `generic_bridge_entropy_below_floor`) does, otherwise the knob
-                // is silently HALF-WIRED: the shape gate admits the low-entropy
-                // value under the relaxed floor, then this re-check drops it again
-                // under the strict owning-detector floor (the #9 regression).
-                let floor_detector = if self.config.generic_keyword_low_entropy {
-                    self.generic_owning_detector
-                        .generic_keyword_secret_index()
-                        .and_then(|index| self.detectors.get(index))
-                } else {
-                    self.generic_owning_detector
-                        .generic_secret_index()
-                        .and_then(|index| self.detectors.get(index))
-                };
-                if let Some(reason) = shape_rejected {
-                    match reason {
-                        crate::adjudicate::GenericValueShapeStage::ValueTooShort => {
-                            if value.len() >= owning_detector_min_len {
-                                shape_rejected = None;
-                            }
-                        }
-                        crate::adjudicate::GenericValueShapeStage::EntropyBelowFloor => {
-                            if !crate::adjudicate::generic_entropy_below_floor(
-                                entropy,
-                                self.config.entropy_threshold,
-                                floor_detector,
-                                value.len(),
-                            ) {
-                                shape_rejected = None;
-                            }
-                        }
-                        _ => {}
-                    }
-                } else {
-                    // Even if shape_rejected is None, we still need to enforce the per-detector length & entropy gates!
-                    if value.len() < owning_detector_min_len {
-                        shape_rejected =
-                            Some(crate::adjudicate::GenericValueShapeStage::ValueTooShort);
-                    } else if !allow_encoded_text_secret
-                        && crate::adjudicate::generic_entropy_below_floor(
-                            entropy,
-                            self.config.entropy_threshold,
-                            floor_detector,
-                            value.len(),
-                        )
-                    {
-                        shape_rejected =
-                            Some(crate::adjudicate::GenericValueShapeStage::EntropyBelowFloor);
-                    }
-                }
 
                 // BPE "rare-not-random" gate. LAST, so it only tokenizes values
                 // that survived every cheaper generic shape gate (bounded cost),
@@ -375,14 +332,10 @@ impl CompiledScanner {
                     && !allow_canonical_hex_key
                     && !allow_encoded_text_secret
                 {
-                    self.entropy_policies
-                        .get(owning_detector_index)
-                        .and_then(|policy| {
-                            policy.bpe_bound(
-                                self.config.entropy_bpe_max_bytes_per_token,
-                                self.config.entropy_bpe_max_bytes_per_token_override,
-                            )
-                        })
+                    owning_policy.bpe_bound(
+                        self.config.entropy_bpe_max_bytes_per_token,
+                        self.config.entropy_bpe_max_bytes_per_token_override,
+                    )
                 } else {
                     None
                 };
@@ -527,6 +480,8 @@ impl CompiledScanner {
                         value,
                         ml_policy.context_radius_lines,
                         &self.config,
+                        owning_detector,
+                        crate::ml_scorer::MlCandidateChannel::Pattern,
                     );
                     let raw = build_raw(scan_state, policy_conf);
                     scan_state.push_detector_ml_pending(

@@ -18,6 +18,7 @@ fn catastrophic_backtracking_input_does_not_hang() {
             description: None,
             group: None,
             client_safe: false,
+            weak_anchor: false,
         }],
         companions: Vec::new(),
         verify: None,

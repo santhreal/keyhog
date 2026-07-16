@@ -13,6 +13,7 @@ fn scan_scans_keyhogignore_path_when_source_hands_it_over() {
             description: None,
             group: None,
             client_safe: false,
+            weak_anchor: false,
         }],
         companions: vec![],
         verify: None,

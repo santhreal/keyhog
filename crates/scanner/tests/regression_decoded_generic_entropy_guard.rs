@@ -112,10 +112,7 @@ fn decoded_generic_assignment_and_vendor_key_both_survive() {
 
 #[test]
 fn decoded_entropy_only_token_stays_suppressed_without_an_assignment_detector() {
-    let direct = scan_text(
-        format!("secret={ENTROPY_ONLY_TOKEN}\n"),
-        "entropy-only.txt",
-    );
+    let direct = scan_text(format!("secret={ENTROPY_ONLY_TOKEN}\n"), "entropy-only.txt");
     assert!(direct.iter().any(|m| {
         m.credential.as_ref() == ENTROPY_ONLY_TOKEN
             && keyhog_scanner::is_entropy_detector(m.detector_id.as_ref())

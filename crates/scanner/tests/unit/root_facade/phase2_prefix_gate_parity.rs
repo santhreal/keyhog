@@ -202,6 +202,7 @@ fn unicode_casefold_detector() -> DetectorSpec {
             description: None,
             group: None,
             client_safe: false,
+            weak_anchor: false,
         }],
         keywords: Vec::new(),
         min_confidence: Some(0.0),

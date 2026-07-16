@@ -93,8 +93,8 @@ pub(crate) struct NamedDetectorSuppressionCtx<'a> {
     path: Option<&'a str>,
     context: context::CodeContext,
     source_type: Option<&'a str>,
-    detector_id: &'a str,
     detector_rules: Option<&'a DetectorSuppressionPolicy>,
+    service_anchored: bool,
     weak_anchor: bool,
     structural_password_slot: bool,
     allow_decoded_hex_key_material: bool,
@@ -106,6 +106,7 @@ impl<'a> NamedDetectorSuppressionCtx<'a> {
         context: context::CodeContext,
         source_type: Option<&'a str>,
         detector_id: &'a str,
+        service_anchored: bool,
         weak_anchor: bool,
         structural_password_slot: bool,
     ) -> Self {
@@ -113,8 +114,8 @@ impl<'a> NamedDetectorSuppressionCtx<'a> {
             path,
             context,
             source_type,
-            detector_id,
             test_detector_suppression_rules(detector_id),
+            service_anchored,
             weak_anchor,
             structural_password_slot,
             false,
@@ -125,8 +126,8 @@ impl<'a> NamedDetectorSuppressionCtx<'a> {
         path: Option<&'a str>,
         context: context::CodeContext,
         source_type: Option<&'a str>,
-        detector_id: &'a str,
         detector_rules: Option<&'a DetectorSuppressionPolicy>,
+        service_anchored: bool,
         weak_anchor: bool,
         structural_password_slot: bool,
         allow_decoded_hex_key_material: bool,
@@ -135,8 +136,8 @@ impl<'a> NamedDetectorSuppressionCtx<'a> {
             path,
             context,
             source_type,
-            detector_id,
             detector_rules,
+            service_anchored,
             weak_anchor,
             structural_password_slot,
             allow_decoded_hex_key_material,
@@ -166,8 +167,8 @@ pub(crate) fn suppress_named_detector_finding_stage(
     let path = ctx.path;
     let context = ctx.context;
     let source_type = ctx.source_type;
-    let detector_id = ctx.detector_id;
     let detector_rules = ctx.detector_rules;
+    let service_anchored = ctx.service_anchored;
     let weak_anchor = ctx.weak_anchor;
     let structural_password_slot = ctx.structural_password_slot;
     let randomness = TokenRandomness::for_candidate(credential);
@@ -221,7 +222,7 @@ pub(crate) fn suppress_named_detector_finding_stage(
     //
     // The previous flow applied Tier B universally and dropped 400+
     // contract evasions. See task #41 + the 2026-05-27 audit.
-    let apply_tier_b = is_generic_or_entropy(detector_id, weak_anchor);
+    let apply_tier_b = !service_anchored || weak_anchor;
 
     // A structural-password-slot detector (`url-credentials`, `sql-password`,
     // `cli-password-flag`) is strong-anchor and `is_service_anchored`, so the
@@ -476,8 +477,7 @@ pub(crate) fn suppress_named_detector_finding_stage(
     // service-specific, and shape gates are load-bearing for them.
     // Weakly anchored named detectors (e.g. carbon-black-api-key) also do not
     // bypass shape gates to prevent false positive traps from triggering.
-    let bypass_shape_gates =
-        crate::detector_ids::is_service_anchored_detector(detector_id) && !weak_anchor;
+    let bypass_shape_gates = service_anchored && !weak_anchor;
     // A service-anchored detector's regex REQUIRED its service-specific keyword
     // to match (`ALCHEMY_API_KEY=`, `CROWDIN_API_TOKEN=`, `DATADOG_API_KEY:`),
     // so a complete canonical-length pure-hex capture is a real key, not a
@@ -487,9 +487,9 @@ pub(crate) fn suppress_named_detector_finding_stage(
     // weak_anchor pure-hex case (alchemy / carbon-black / crowdin / …) whose
     // `min_confidence = 0.2` already declares the keyword anchor authoritative
     // the shape gate firing ahead of confidence was defeating that intent.
-    let allow_encoded_text_secret = crate::detector_ids::is_generic_detector(detector_id)
-        && crate::decode_structure::decodes_to_printable_text(credential);
-    let allow_canonical_hex_key = (crate::detector_ids::is_service_anchored_detector(detector_id)
+    let allow_encoded_text_secret =
+        !service_anchored && crate::decode_structure::decodes_to_printable_text(credential);
+    let allow_canonical_hex_key = (service_anchored
         && super::shape::is_canonical_service_hex_key(credential))
         || ctx.allow_decoded_hex_key_material;
     suppression_stage_inner(
@@ -506,238 +506,48 @@ pub(crate) fn suppress_named_detector_finding_stage(
     )
 }
 
-/// True if the detector that fired has no service-specific anchor -
-/// the generic `generic-*` / `entropy-*` fallbacks, or a named detector
-/// that the structural classifier flagged as weakly anchored
-/// (`weak_anchor`). Used by [`suppress_named_detector_finding`]
-/// to decide whether the Tier-B shape filters apply: strongly anchored
-/// detectors have positive evidence in their regex that the shape filter
-/// would otherwise destroy.
-fn is_generic_or_entropy(detector_id: &str, weak_anchor: bool) -> bool {
-    crate::detector_ids::is_generic_or_entropy_detector(detector_id) || weak_anchor
-}
-
 /// Structurally classify whether a named detector is *weakly anchored*:
 /// it relies on a generic keyword anchor (`api_key=`, `token=`, …) with a
 /// capture that can collide with non-secrets, so the shape-suppression
 /// gates must stay engaged (it should be treated like a `generic-*`
 /// fallback rather than a service-fingerprinted detector).
 ///
-/// Derived at the scan call site from the detector's own regex shape so
-/// every present and future detector with this shape is covered - this
-/// replaces a hand-maintained ID allowlist that drifted out of sync with
-/// the detector corpus. The broad-identifier class (Category C of
-/// the internal design notes: a `[a-zA-Z0-9_-]`-style capture with a small
-/// minimum length that matches any short identifier) is derived here; the
-/// pure-hex class, which is shape-indistinguishable from real hex keys, is
-/// declared per-detector as `DetectorSpec::weak_anchor = true` in each such
-/// detector's own TOML.
-pub(crate) fn detector_weak_anchor(spec: &keyhog_core::DetectorSpec) -> Result<bool, String> {
-    Ok(match detector_weak_anchor_base(spec)? {
+/// Declared explicitly by detector or pattern `weak_anchor`.
+/// Regex text, detector IDs, and confidence floors do not imply this policy.
+pub(crate) fn detector_weak_anchor(spec: &keyhog_core::DetectorSpec) -> bool {
+    match detector_weak_anchor_base(spec) {
         WeakAnchorBase::Always => true,
         WeakAnchorBase::Never => false,
-        // Detector-level back-compat: weak iff ANY pattern is broad-identifier.
-        // The scan path instead resolves PER PATTERN, via the memoized
-        // `LazyRegex::has_broad_identifier_capture` in
-        // `CompiledScanner::detector_pattern_weak_anchor`, so a strong pattern in
-        // an otherwise-weak detector is not dragged down by a sibling
-        // username/password pattern. This whole-detector form is for callers
-        // (classification, tooling) that have no single matched pattern in hand.
-        WeakAnchorBase::PerPattern => spec
-            .patterns
-            .iter()
-            .any(|p| has_broad_identifier_capture(&p.regex)),
-    })
+        WeakAnchorBase::PerPattern => spec.patterns.iter().any(|pattern| pattern.weak_anchor),
+    }
 }
 
-/// Per-DETECTOR portion of the weak-anchor decision, separated from the
-/// per-PATTERN broad-identifier check so the latter can be resolved against the
-/// specific pattern that matched.
+/// Detector-wide portion of the weak-anchor decision, separated from the
+/// explicit per-pattern bit carried by `CompiledPattern`.
 ///
 /// `weak_anchor` keeps the Tier-B shape gates engaged for collision-prone
-/// captures. The per-detector `DetectorSpec::weak_anchor` pure-hex class (DET-0),
-/// the generic/entropy/private-key carve-outs, and a detector-level explicit
-/// `min_confidence` are all DETECTOR-wide. Only the broad-identifier class is
-/// inherently per-pattern: a detector like `servicenow-api-key` mixes a strong
-/// `instance=(…\.service-now\.com)` pattern with a weak `user=([\w-]+)` pattern,
-/// and the strong one should not inherit the weak one's gates.
+/// captures. A detector like `servicenow-api-key` mixes a strong instance
+/// pattern with a weak username pattern, so the strong one must not inherit the
+/// weak sibling's gates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WeakAnchorBase {
     /// Always weak regardless of which pattern matched (residual pure-hex list).
     Always,
-    /// Never weak (generic/entropy/private-key fallback, or an explicit
-    /// detector-level `min_confidence` already tunes the bar).
+    /// Never weak.
     Never,
-    /// Weak iff the MATCHED pattern has a broad-identifier capture. The scan
-    /// path resolves this against the specific pattern via the memoized
-    /// `LazyRegex::has_broad_identifier_capture`
-    /// (`CompiledScanner::detector_pattern_weak_anchor`), so there is no
-    /// regex-reparsing `resolve` helper here, the hot path must use the
-    /// memoized form, not a fresh parse.
+    /// Weak iff the matched pattern declares `weak_anchor = true`.
     PerPattern,
 }
 
-pub(crate) fn detector_weak_anchor_base(
-    spec: &keyhog_core::DetectorSpec,
-) -> Result<WeakAnchorBase, String> {
-    let id = spec.id.as_str();
-    if crate::detector_ids::is_generic_or_entropy_detector(id)
-        || crate::detector_ids::is_private_key_fallback(id)
-    {
-        return Ok(WeakAnchorBase::Never);
-    }
+pub(crate) fn detector_weak_anchor_base(spec: &keyhog_core::DetectorSpec) -> WeakAnchorBase {
     if spec.weak_anchor {
-        // Per-detector `DetectorSpec::weak_anchor`.
-        return Ok(WeakAnchorBase::Always);
+        return WeakAnchorBase::Always;
     }
-    if spec.min_confidence.is_some() {
-        return Ok(WeakAnchorBase::Never);
+    if spec.patterns.iter().any(|pattern| pattern.weak_anchor) {
+        WeakAnchorBase::PerPattern
+    } else {
+        WeakAnchorBase::Never
     }
-    Ok(WeakAnchorBase::PerPattern)
-}
-
-/// True iff `regex` carries a broad-identifier capture (the per-pattern half of
-/// the weak-anchor decision). Public to the crate so the scan path can resolve
-/// [`WeakAnchorBase::PerPattern`] against the pattern that actually matched.
-pub(crate) fn pattern_has_broad_identifier_capture(regex: &str) -> bool {
-    has_broad_identifier_capture(regex)
-}
-
-/// True if `regex` contains a capture group whose entire body is a single
-/// full-alphabet identifier character class (`[a-zA-Z0-9_-]` and close
-/// variants, NOT hex-only `[a-f0-9]`) with a minimum repeat of 0 or 1
-/// (`+`, `*`, `{0,..}`, `{1,..}`, `{1}`). That is the broad-identifier
-/// false-positive shape from Category C of the internal design notes: a
-/// minimum length of one means the capture matches ANY short identifier
-/// (function name, variable, kwarg default) sitting after the detector's
-/// keyword anchor. Higher minimums (e.g. `{8,}`, `{16}`) describe real
-/// fixed-shape keys and are deliberately NOT flagged.
-fn has_broad_identifier_capture(regex: &str) -> bool {
-    let mut search_from = 0;
-    while let Some(rel) = regex[search_from..].find('[') {
-        let class_open = search_from + rel; // index of '['
-        search_from = class_open + 1;
-        if !class_opens_a_capture_group(regex, class_open) {
-            continue;
-        }
-        let Some(rel_close) = regex[class_open..].find(']') else {
-            break;
-        };
-        let class_close = class_open + rel_close; // index of ']'
-        let body = &regex[class_open + 1..class_close];
-        if let Some(min_len) = group_capture_min_len(&regex[class_close + 1..]) {
-            if min_len <= 1 && is_full_alpha_identifier_class(body) {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-/// True when the `[` at `class_open` is the first atom of a capturing group
-/// either a bare `([`, or a NAMED capture `(?P<name>[` / `(?<name>[`. Lookbehind
-/// (`(?<=` / `(?<!`) ends in `=`/`!`, never `>`, so it is never mistaken for a
-/// named capture.
-fn class_opens_a_capture_group(regex: &str, class_open: usize) -> bool {
-    let before = &regex[..class_open];
-    if before.ends_with('(') {
-        return true;
-    }
-    if let Some(name_head) = before.strip_suffix('>') {
-        if let Some(lt) = name_head.rfind('<') {
-            let opener = &name_head[..lt];
-            return opener.ends_with("(?P") || opener.ends_with("(?");
-        }
-    }
-    false
-}
-
-/// If `after` (the slice immediately following a class's closing `]`) closes the
-/// capture group right after it, return the class's minimum repeat count. `Some`
-/// only when the group is exactly `([class]<quant>)` where `<quant>` is empty
-/// (`([class])` ⇒ min 1), `?` (min 0), `+`/`*`, or `{n,..}`: an optional lazy
-/// `?` before the group close is accepted. A bare `([class])` and an optional
-/// `([class]?)` are broad captures (min ≤ 1) that were previously missed
-/// (returned `None`), so their weak-anchor detectors kept their shape gates
-/// wrongly bypassed.
-fn group_capture_min_len(after: &str) -> Option<usize> {
-    let bytes = after.as_bytes();
-    // The group must close at `idx`, allowing an optional lazy `?` first.
-    let closes_at = |idx: usize| match bytes.get(idx) {
-        Some(b')') => true,
-        Some(b'?') => bytes.get(idx + 1) == Some(&b')'),
-        _ => false,
-    };
-    match bytes.first()? {
-        b')' => Some(1),                 // ([class]), matches exactly once
-        b'?' if closes_at(1) => Some(0), // ([class]?), zero or one
-        b'+' if closes_at(1) => Some(1), // ([class]+) / lazy ([class]+?)
-        b'*' if closes_at(1) => Some(0), // ([class]*) / lazy ([class]*?)
-        b'{' => {
-            let close = after.find('}')?;
-            let mut next = close + 1;
-            if bytes.get(next) == Some(&b'?') {
-                next += 1; // lazy `{n,m}?`
-            }
-            if bytes.get(next) != Some(&b')') {
-                return None;
-            }
-            after[1..close].split(',').next()?.parse::<usize>().ok() // LAW10: malformed input => None (fail-closed at the boundary; not a valid value), recall-safe
-        }
-        _ => None,
-    }
-}
-
-#[derive(serde::Deserialize)]
-struct ApiSuppressionTokens {
-    tokens: Vec<String>,
-}
-
-fn parse_api_suppression_tokens(raw: &str) -> Result<Vec<String>, String> {
-    toml::from_str::<ApiSuppressionTokens>(raw)
-        .map(|parsed| parsed.tokens)
-        .map_err(|error| error.to_string())
-}
-
-static TOKENS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    match parse_api_suppression_tokens(include_str!(
-        "../../../../rules/api-suppression-tokens.toml"
-    )) {
-        Ok(tokens) => tokens,
-        Err(error) => panic!(
-            "rules/api-suppression-tokens.toml is invalid: {error}. \
-             Fix the bundled suppression tokens."
-        ),
-    }
-});
-
-/// True if `body` (a regex character-class body, without the brackets) includes
-/// a full alphabetic range (`a-z`, `A-Z`, or `\w`). Extra literal characters
-/// that only WIDEN the class (e.g. `.` in `[A-Za-z0-9._-]`) keep it broad, a
-/// superset of the identifier alphabet is at least as broad as the identifier
-/// alphabet itself, so it must not be mistaken for a strong fixed-shape anchor.
-/// Hex-only classes (`a-f0-9`) still return false: they contain no full-alpha
-/// range, only the narrowing `a-f`.
-fn is_full_alpha_identifier_class(body: &str) -> bool {
-    let mut full_alpha = false;
-    let mut rest = body;
-    while !rest.is_empty() {
-        match TOKENS.iter().find(|t| rest.starts_with(t.as_str())) {
-            Some(t) => {
-                if t.as_str() == "a-z" || t.as_str() == "A-Z" || t.as_str() == "\\w" {
-                    full_alpha = true;
-                }
-                rest = &rest[t.len()..];
-            }
-            // An unrecognised token is a lone literal that only widens the
-            // class; skip one char and keep scanning for a full-alpha range.
-            None => {
-                let ch_len = rest.chars().next().map_or(1, char::len_utf8);
-                rest = &rest[ch_len..];
-            }
-        }
-    }
-    full_alpha
 }
 
 #[cfg(test)]
@@ -758,55 +568,6 @@ const fn test_detector_suppression_rules(
 
 #[cfg(test)]
 mod weak_anchor_shape_tests {
-    use super::{has_broad_identifier_capture, is_full_alpha_identifier_class};
-
-    #[test]
-    fn named_and_optional_name_captures_are_broad() {
-        for regex in [
-            "token=([A-Za-z0-9_-]+)",
-            "token=(?P<v>[A-Za-z0-9_-]+)",
-            "token=(?<v>[A-Za-z0-9_-]+)",
-            "token=([A-Za-z0-9_-]*)",
-        ] {
-            assert!(
-                has_broad_identifier_capture(regex),
-                "broad identifier capture missed: {regex:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn lookbehind_and_fixed_shape_are_not_broad() {
-        // Lookbehind opens no capture; a fixed high min-length is a real key shape.
-        assert!(!has_broad_identifier_capture("(?<=[A-Za-z]+)foo"));
-        assert!(!has_broad_identifier_capture("key=([A-Za-z0-9_-]{16})"));
-        assert!(!has_broad_identifier_capture("key=([a-f0-9]+)"));
-    }
-
-    #[test]
-    fn bare_optional_and_lazy_captures_are_broad() {
-        // No quantifier: `([class])` matches exactly once (min 1 ≤ 1) (broad).
-        assert!(has_broad_identifier_capture("token=([A-Za-z0-9_-])"));
-        // Optional: `([class]?)` matches zero-or-one (min 0) (broad).
-        assert!(has_broad_identifier_capture("token=([A-Za-z0-9_-]?)"));
-        // Lazy quantifiers close the group after a `?`; still min ≤ 1 (broad).
-        assert!(has_broad_identifier_capture("token=([A-Za-z0-9_-]+?)"));
-        assert!(has_broad_identifier_capture("token=([A-Za-z0-9_-]*?)"));
-        assert!(has_broad_identifier_capture("token=([A-Za-z0-9_-]{1,}?)"));
-        // A fixed high lazy min-length is still a real key shape, not broad.
-        assert!(!has_broad_identifier_capture("key=([A-Za-z0-9_-]{16}?)"));
-    }
-
-    #[test]
-    fn superset_of_identifier_alphabet_is_broad() {
-        // A class strictly BROADER than the identifier alphabet (extra `.`) must
-        // still count as a full-alpha (broad) class, not a strong anchor.
-        assert!(is_full_alpha_identifier_class("A-Za-z0-9._-"));
-        assert!(has_broad_identifier_capture("token=([A-Za-z0-9._-]+)"));
-        // Hex-only stays narrow (no full-alpha range).
-        assert!(!is_full_alpha_identifier_class("a-f0-9"));
-    }
-
     #[test]
     fn test_per_detector_allowlist_and_stopwords() {
         use super::{suppress_named_detector_finding_stage, NamedDetectorSuppressionCtx};
@@ -817,6 +578,7 @@ mod weak_anchor_shape_tests {
             CodeContext::Unknown,
             Some("filesystem"),
             "test-detector",
+            true,
             false,
             false,
         );
@@ -831,6 +593,7 @@ mod weak_anchor_shape_tests {
             CodeContext::Unknown,
             Some("filesystem"),
             "test-detector",
+            true,
             false,
             false,
         );
@@ -885,6 +648,7 @@ mod weak_anchor_shape_tests {
             CodeContext::Unknown,
             Some("filesystem"),
             "rabbitmq-management-credentials",
+            true,
             false,
             false,
         );

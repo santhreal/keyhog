@@ -2,37 +2,45 @@
 
 use std::sync::LazyLock;
 
-struct GenericKeywordStemSet {
-    stems: Vec<&'static [u8]>,
+/// Detector-corpus-specific line prefilter compiled once with the scanner.
+/// Keeping this beside the generated assignment regex prevents custom or
+/// reduced detector corpora from being filtered by the embedded corpus.
+pub(crate) struct GenericKeywordStemSet {
+    stems: Vec<Box<[u8]>>,
     by_first: [Vec<usize>; 256],
     has_first: [bool; 256],
 }
 
-static GENERIC_KEYWORD_STEMS: LazyLock<GenericKeywordStemSet> = LazyLock::new(|| {
-    let stems: Vec<&'static [u8]> = generic_keyword_prefilter_stems()
-        .into_iter()
-        .map(str::as_bytes)
-        .collect();
-    let mut by_first: [Vec<usize>; 256] = std::array::from_fn(|_| Vec::new());
-    let mut has_first = [false; 256];
-    for (idx, stem) in stems.iter().enumerate() {
-        if let Some(&first) = stem.first() {
-            let lower = first.to_ascii_lowercase();
-            let upper = first.to_ascii_uppercase();
-            by_first[lower as usize].push(idx);
-            has_first[lower as usize] = true;
-            if upper != lower {
-                by_first[upper as usize].push(idx);
-                has_first[upper as usize] = true;
+impl GenericKeywordStemSet {
+    pub(crate) fn compile<'a>(keywords: impl IntoIterator<Item = &'a str>) -> Self {
+        let mut stems = Vec::<Box<[u8]>>::new();
+        for keyword in keywords {
+            let stem = generic_keyword_prefilter_stem(keyword).as_bytes();
+            if !stems.iter().any(|existing| existing.as_ref() == stem) {
+                stems.push(stem.into());
             }
         }
+        let mut by_first: [Vec<usize>; 256] = std::array::from_fn(|_| Vec::new());
+        let mut has_first = [false; 256];
+        for (idx, stem) in stems.iter().enumerate() {
+            if let Some(&first) = stem.first() {
+                let lower = first.to_ascii_lowercase();
+                let upper = first.to_ascii_uppercase();
+                by_first[lower as usize].push(idx);
+                has_first[lower as usize] = true;
+                if upper != lower {
+                    by_first[upper as usize].push(idx);
+                    has_first[upper as usize] = true;
+                }
+            }
+        }
+        Self {
+            stems,
+            by_first,
+            has_first,
+        }
     }
-    GenericKeywordStemSet {
-        stems,
-        by_first,
-        has_first,
-    }
-});
+}
 
 /// Compact keyword spellings into the minimal safe prefilter stems used by the
 /// generic assignment bridge.
@@ -66,8 +74,11 @@ pub(crate) fn generic_keyword_prefilter_stems() -> Vec<&'static str> {
 /// over eight compact stems. It walks the bytes once, maps newlines as it goes,
 /// and stops scanning a line after its first stem hit because the generic bridge
 /// only needs to decide which lines should run the heavier assignment regex.
-pub(crate) fn collect_generic_keyword_lines(text: &str, out: &mut Vec<usize>) {
-    let stem_set = &*GENERIC_KEYWORD_STEMS;
+pub(crate) fn collect_generic_keyword_lines_with(
+    stem_set: &GenericKeywordStemSet,
+    text: &str,
+    out: &mut Vec<usize>,
+) {
     let bytes = text.as_bytes();
     let mut idx = 0usize;
     let mut line_idx = 0usize;
@@ -124,7 +135,7 @@ pub(crate) fn collect_generic_keyword_lines_from_positions(
 #[inline]
 fn generic_stem_matches_at(bytes: &[u8], start: usize, stem_set: &GenericKeywordStemSet) -> bool {
     for &stem_idx in &stem_set.by_first[bytes[start] as usize] {
-        let stem = stem_set.stems[stem_idx];
+        let stem = stem_set.stems[stem_idx].as_ref();
         let end = start + stem.len();
         if end <= bytes.len() && bytes[start..end].eq_ignore_ascii_case(stem) {
             return true;
@@ -133,7 +144,7 @@ fn generic_stem_matches_at(bytes: &[u8], start: usize, stem_set: &GenericKeyword
     false
 }
 
-pub(crate) fn generic_keyword_prefilter_stem(keyword: &'static str) -> &'static str {
+pub(crate) fn generic_keyword_prefilter_stem(keyword: &str) -> &str {
     if keyword.contains("secret") {
         "secret"
     } else if keyword.contains("pass") {

@@ -2,18 +2,20 @@
 //!
 //! Architecture: gate Linear(D,6) → Softmax plus 6 experts of
 //! Linear(D,32) → ReLU → Linear(32,16) → ReLU → Linear(16,1), then
-//! a weighted logit sum followed by Sigmoid, where `D = NUM_FEATURES` (43).
+//! a weighted logit sum followed by Sigmoid, where `D = NUM_FEATURES` (55).
 //! Model weights are embedded in `ml_weights.rs` as little-endian f32 values.
 //! Inference: typically under ~100μs per prediction on the test hardware
 //!
-//! The 43 input features capture everything our heuristics know: length,
+//! The 55 input features capture value/context shape plus active-detector and
+//! candidate-channel evidence: length,
 //! entropy, char diversity, known prefixes, context keywords, placeholder
 //! patterns, structural signals, coarse file-type cues, the decode-structure
 //! verdict (feature #41, base64/hex → magic-bytes/protobuf) that drove the
 //! base64-of-binary false-flag rate to 0%, and the keyword-specificity signal
 //! (feature #42, context names a SPECIFIC service vs generic role words only
 //! see `service_vocab`), which separates service-keyword+UUID real secrets
-//! from generic-keyword+UUID identifiers.
+//! from generic-keyword+UUID identifiers. Features 43-54 describe the exact
+//! TOML owner, producer channel, and detector-owned entropy family.
 
 // Submodules live in `ml_scorer/` (native path resolution), matching the
 // `foo.rs` + `foo/` layout used across the workspace (e.g. sources/filesystem).
@@ -30,6 +32,7 @@ pub(crate) mod service_vocab;
 pub(crate) use ml_features::compute_features_public;
 pub use ml_features::compute_features_with_config;
 pub(crate) use ml_features::NUM_FEATURES;
+pub use ml_features::{compute_features_for_detector_with_config, MlCandidateChannel};
 
 /// Borrowed model input that lets batch inference consume its owning queue directly.
 #[cfg(any(feature = "ml", test))]

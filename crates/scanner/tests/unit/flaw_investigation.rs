@@ -35,6 +35,7 @@ fn test_nested_base64_decoding_gating() {
             description: None,
             group: None,
             client_safe: false,
+            weak_anchor: false,
         }],
         companions: Vec::new(),
         verify: None,

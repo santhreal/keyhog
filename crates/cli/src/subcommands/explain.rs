@@ -234,7 +234,14 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
     println!("  {}Declared detector policy:{}", style.bold, style.reset);
     println!("    kind: {kind}");
 
-    let mut declared = 0usize;
+    println!(
+        "    ml: match_mode={} entropy_mode={} weight={} context_radius_lines={}",
+        d.ml.match_mode.as_str(),
+        d.ml.entropy_mode.as_str(),
+        d.ml.weight,
+        d.ml.context_radius_lines
+    );
+    let mut declared = 1usize;
     macro_rules! optional_policy {
         ($name:literal, $value:expr, $unit:literal) => {
             if let Some(value) = $value {
@@ -254,6 +261,17 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
             metadata.id,
             metadata.name,
             metadata.service
+        );
+        declared += 1;
+    }
+    if !d.entropy_roles.is_empty() {
+        println!(
+            "    entropy_roles: {}",
+            d.entropy_roles
+                .iter()
+                .map(|role| role.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
         );
         declared += 1;
     }
@@ -379,6 +397,13 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
         println!("    stopwords: {}", d.stopwords.join(", "));
         declared += 1;
     }
+    if !d.public_identifier_assignment_markers.is_empty() {
+        println!(
+            "    public_identifier_assignment_markers: {}",
+            d.public_identifier_assignment_markers.join(", ")
+        );
+        declared += 1;
+    }
     for path in &d.allowlist_paths {
         println!("    allowlist_path: {path}");
         declared += 1;
@@ -394,6 +419,12 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
     ] {
         if enabled {
             println!("    {name}: true");
+            declared += 1;
+        }
+    }
+    for (index, pattern) in d.patterns.iter().enumerate() {
+        if pattern.weak_anchor {
+            println!("    pattern[{index}].weak_anchor: true");
             declared += 1;
         }
     }

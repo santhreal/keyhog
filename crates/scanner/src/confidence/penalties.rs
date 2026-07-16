@@ -363,7 +363,6 @@ pub(crate) fn apply_path_confidence_penalties(
     finalize_confidence(adjusted)
 }
 
-
 #[cfg(test)]
 #[path = "../../tests/unit/confidence_penalties_inline.rs"]
 mod tests;

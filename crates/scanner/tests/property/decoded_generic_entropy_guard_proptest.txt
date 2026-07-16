@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 5495e00ad8279f595d22c840be971c3ec530b34999a27c88368efccdf411e044 # shrinks to token = "00aAa0aaAa0AaaaAa0a0AaA0A00A000a"
+cc 227b264f58d20bf86a9cb59e40b25246d309b1450226ba92024c641890d56d0c # shrinks to token = "BAEBaA0BAaAB0AEB00aAa0Aa00aaA00bab102CcDAd3G"

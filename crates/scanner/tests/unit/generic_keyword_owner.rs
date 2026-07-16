@@ -174,6 +174,7 @@ fn generic_secret_detector() -> DetectorSpec {
         service: "generic".to_string(),
         kind: DetectorKind::Phase2Generic,
         keywords: vec!["secret".to_string()],
+        entropy_roles: vec![keyhog_core::EntropyDetectionRole::UnclaimedKeyword],
         ..Default::default()
     }
 }
@@ -190,7 +191,7 @@ fn owning_index_earliest_detector_wins_across_exact_and_normalized() {
         generic_detector("api-b", &["api-token"]),
         generic_secret_detector(),
     ];
-    let index = GenericOwningDetectorIndex::build(&detectors);
+    let index = GenericOwningDetectorIndex::build(&detectors).expect("unique entropy roles");
 
     assert_eq!(
         index.owning_index("API-TOKEN"),
@@ -204,42 +205,40 @@ fn owning_index_earliest_detector_wins_across_exact_and_normalized() {
     );
     assert_eq!(
         index.owning_index("totally_unknown_lhs"),
-        Some(2),
-        "unmatched keyword falls back to the GENERIC_SECRET detector index"
+        None,
+        "the assignment bridge must not invent ownership for an unlisted key"
     );
-    assert_eq!(index.index_for_id("api-a"), Some(0));
-    assert_eq!(index.index_for_id("api-b"), Some(1));
     assert_eq!(
-        index.index_for_id(crate::detector_ids::GENERIC_SECRET),
+        index.unclaimed_keyword_owner_index(),
         Some(2),
-        "synthetic entropy policy must resolve the active generic-secret spec"
+        "unclaimed entropy keywords resolve through the detector-declared role"
     );
-    assert_eq!(index.index_for_id("not-loaded"), None);
 }
 
 #[test]
 fn policy_index_includes_regex_backed_generic_password() {
     let mut password = generic_detector(crate::detector_ids::GENERIC_PASSWORD, &["password"]);
     password.kind = DetectorKind::Regex;
+    password.entropy_policy_priority = Some(100);
     let detectors = vec![generic_secret_detector(), password];
-    let index = GenericOwningDetectorIndex::build(&detectors);
+    let index = GenericOwningDetectorIndex::build(&detectors).expect("unique entropy roles");
 
     assert_eq!(
-        index.index_for_id(crate::detector_ids::GENERIC_PASSWORD),
+        index.claimed_policy_index("password"),
         Some(1),
-        "entropy-password policy must resolve the active regex-backed detector"
+        "regex-backed generic entropy policy must opt in through TOML priority"
     );
     assert_eq!(
         index.owning_index("password"),
-        Some(0),
-        "regex-backed generic detectors must not claim Phase2 assignment ownership"
+        Some(1),
+        "the declared entropy-policy priority owns the keyword"
     );
 }
 
 #[test]
 fn owning_index_is_none_without_a_match_or_generic_secret() {
     let detectors = vec![generic_detector("api-a", &["api_token"])];
-    let index = GenericOwningDetectorIndex::build(&detectors);
+    let index = GenericOwningDetectorIndex::build(&detectors).expect("unique entropy roles");
     assert_eq!(index.owning_index("api_token"), Some(0));
     assert_eq!(
         index.owning_index("unowned"),
@@ -262,6 +261,6 @@ fn owning_index_ignores_non_generic_service_detectors() {
         ..Default::default()
     };
     let detectors = vec![named, generic_secret_detector()];
-    let index = GenericOwningDetectorIndex::build(&detectors);
+    let index = GenericOwningDetectorIndex::build(&detectors).expect("unique entropy roles");
     assert_eq!(index.owning_index("stripe_key"), Some(1));
 }

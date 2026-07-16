@@ -7,6 +7,50 @@ import pytest
 import train_classifier
 
 
+def test_serialized_weights_round_trip_preserves_model_scores(tmp_path):
+    import torch
+
+    model = train_classifier.build_model(55)
+    inputs = torch.linspace(-1.0, 1.0, steps=110, dtype=torch.float32).reshape(2, 55)
+    with torch.no_grad():
+        expected = model(inputs).clone()
+    path = tmp_path / "weights.bin"
+    path.write_bytes(train_classifier.serialize(model, 55))
+
+    restored = train_classifier.build_model(55)
+    train_classifier.load_serialized_weights(restored, str(path), 55)
+    with torch.no_grad():
+        actual = restored(inputs)
+    assert torch.equal(actual, expected)
+
+
+def test_serialized_weights_rejects_wrong_feature_layout(tmp_path):
+    path = tmp_path / "weights.bin"
+    path.write_bytes(b"\0" * 16)
+    with pytest.raises(ValueError, match="architecture requires"):
+        train_classifier.load_serialized_weights(
+            train_classifier.build_model(55), str(path), 55
+        )
+
+
+def test_probe_gate_rejects_reversed_positive_and_negative_contracts():
+    assert train_classifier.probe_gate_error(
+        {
+            "positive": {"score": 0.49, "want": "high"},
+            "negative": {"score": 0.50, "want": "low"},
+        }
+    ) == (
+        "REFUSING model: canonical probe contract failed: "
+        "positive: score 0.490 < 0.500; negative: score 0.500 >= 0.500\n"
+    )
+    assert not train_classifier.probe_gate_error(
+        {
+            "positive": {"score": 0.50, "want": "high"},
+            "negative": {"score": 0.49, "want": "low"},
+        }
+    )
+
+
 def _bench_config(scanner):
     configs = {
         "keyhog": {"backend": "simd", "cache": "off", "daemon": "off", "mode": "full"},
@@ -130,6 +174,7 @@ def test_load_real_corpus_requires_explicit_class_detector_and_source_file(
             "kind": "real-creddata-pos",
             "class": "authentication-key",
             "detector_id": "generic-api-key",
+            "candidate_channel": "pattern",
             "source_file": "repo/a.py",
         }) + "\n",
         encoding="utf-8",
@@ -159,7 +204,13 @@ def test_real_eval_reports_per_class_truth():
         np.asarray([0.90, 0.20, 0.60, 0.30, 0.45], dtype=np.float32),
         np.asarray([1, 1, 0, 1, 0], dtype=np.float32),
         ["aws", "aws", "aws", "git", "noise"],
-        ["aws-access-key", "aws-access-key", "generic", "github-pat", "generic"],
+        [
+            "aws-access-key",
+            "aws-access-key",
+            "entropy-api-key",
+            "github-classic-pat",
+            "entropy-api-key",
+        ],
     )
 
     assert metrics["real_pos_recall_at_0.40_floor"] == 0.3333
@@ -178,7 +229,38 @@ def test_real_eval_reports_per_class_truth():
     assert metrics["per_class"]["git"]["recall_at_0_40_floor"] == 0.0
     assert metrics["per_class"]["noise"]["recall_at_0_40_floor"] is None
     assert metrics["per_detector"]["aws-access-key"]["recall_at_0_40_floor"] == 0.5
-    assert metrics["per_detector"]["generic"]["n_neg"] == 2
+    assert metrics["per_detector"]["entropy-api-key"]["n_neg"] == 2
+    assert metrics["per_recall_sensitive_class"] == {
+        "aws": {
+            "n_test": 1,
+            "n_pos": 0,
+            "n_neg": 1,
+            "tp": 0,
+            "fp": 1,
+            "fn": 0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "recall_at_0_40_floor": None,
+        },
+        "noise": {
+            "n_test": 1,
+            "n_pos": 0,
+            "n_neg": 1,
+            "tp": 0,
+            "fp": 0,
+            "fn": 0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "recall_at_0_40_floor": None,
+        },
+    }
+
+    summary = train_classifier.real_metric_summary(metrics)
+    assert summary["recall_sensitive_detectors"] == {}
+    assert summary["zero_recall_detectors"] == ["github-classic-pat"]
+    assert "per_class" not in summary
 
 
 def test_per_class_gate_rejects_weak_tail_and_baseline_regression(tmp_path):
@@ -187,7 +269,7 @@ def test_per_class_gate_rejects_weak_tail_and_baseline_regression(tmp_path):
         json.dumps({
             "metrics": {
                 "real_heldout": {
-                    "per_class": {
+                    "per_recall_sensitive_class": {
                         "aws": {"n_pos": 2, "recall_at_0_40_floor": 0.75}
                     }
                 }
@@ -205,7 +287,7 @@ def test_per_class_gate_rejects_weak_tail_and_baseline_regression(tmp_path):
 
     message = train_classifier.per_class_gate_error(
         {
-            "per_class": {
+            "per_recall_sensitive_class": {
                 "aws": {"n_pos": 2, "recall_at_0_40_floor": 0.50},
                 "git": {"n_pos": 1, "recall_at_0_40_floor": 0.0},
             }
@@ -224,7 +306,7 @@ def test_per_detector_gate_rejects_hidden_detector_hole_and_regression(tmp_path)
             "metrics": {
                 "real_heldout": {
                     "per_detector": {
-                        "generic-secret": {
+                        "entropy-generic": {
                             "n_pos": 4,
                             "recall_at_0_40_floor": 0.75,
                         }
@@ -239,18 +321,21 @@ def test_per_detector_gate_rejects_hidden_detector_hole_and_regression(tmp_path)
         baseline_model_card=str(baseline),
         min_real_detector_recall=0.50,
         min_real_detector_support=1,
+        min_real_detector_negative_support=1,
         max_real_detector_recall_drop=0.0,
     )
 
     message = train_classifier.per_detector_gate_error(
         {
             "per_detector": {
-                "generic-secret": {
+                "entropy-generic": {
                     "n_pos": 4,
+                    "n_neg": 1,
                     "recall_at_0_40_floor": 0.50,
                 },
-                "stripe-secret-key": {
+                "entropy-api-key": {
                     "n_pos": 1,
+                    "n_neg": 1,
                     "recall_at_0_40_floor": 0.0,
                 },
             }
@@ -258,8 +343,139 @@ def test_per_detector_gate_rejects_hidden_detector_hole_and_regression(tmp_path)
         args,
     )
 
-    assert "stripe-secret-key recall@0.40=0.0000 < floor 0.5000" in message
-    assert "generic-secret recall@0.40 dropped 0.7500->0.5000" in message
+    assert "entropy-api-key recall@0.40=0.0000 < floor 0.5000" in message
+    assert "entropy-generic recall@0.40 dropped 0.7500->0.5000" in message
+
+
+def test_per_detector_gate_rejects_unmeasured_authoritative_channel():
+    args = types.SimpleNamespace(
+        write=False,
+        baseline_model_card="unused.json",
+        min_real_detector_recall=0.50,
+        min_real_detector_support=1,
+        min_real_detector_negative_support=1,
+        max_real_detector_recall_drop=0.0,
+    )
+    message = train_classifier.per_detector_gate_error(
+        {
+            "per_detector": {
+                detector_id: {
+                    "n_pos": 1,
+                    "n_neg": 1,
+                    "recall_at_0_40_floor": 1.0,
+                }
+                for detector_id in (
+                    "entropy-api-key",
+                    "entropy-password",
+                    "entropy-token",
+                )
+            }
+            | {
+                "entropy-generic": {
+                    "n_pos": 3,
+                    "n_neg": 0,
+                    "recall_at_0_40_floor": 1.0,
+                }
+            }
+        },
+        args,
+    )
+    assert "entropy-generic has 0 negative held-out candidate(s), requires 1" in message
+
+
+def test_detector_balancing_uses_only_train_split_and_respects_cap():
+    combined_labels = np.asarray([1, 1, 1, 0, 0, 0, 1], dtype=np.float32)
+    weights = train_classifier.detector_balanced_sample_weights(
+        combined_labels=combined_labels,
+        combined_train_indices=np.asarray([0, 1, 2, 3, 4, 5]),
+        combined_detectors=[
+            "github-classic-pat",
+            "github-classic-pat",
+            "entropy-api-key",
+            "entropy-api-key",
+            "entropy-api-key",
+            "entropy-api-key",
+            "entropy-api-key",
+        ],
+        max_multiplier=2.0,
+    )
+
+    assert weights.tolist() == [1.0, 1.0, 2.0, 1.0, 1.0, 1.0, 1.0]
+    with pytest.raises(ValueError, match="finite and >= 1.0"):
+        train_classifier.detector_balanced_sample_weights(
+            combined_labels,
+            np.asarray([0]),
+            ["detector"],
+            0.5,
+        )
+
+
+def test_detector_balancing_does_not_reweight_lift_only_detectors():
+    weights = train_classifier.detector_balanced_sample_weights(
+        combined_labels=np.asarray([1, 0, 0, 0], dtype=np.float32),
+        combined_train_indices=np.asarray([0, 1, 2, 3]),
+        combined_detectors=["github-classic-pat"] * 4,
+        max_multiplier=8.0,
+    )
+
+    assert weights.tolist() == [1.0, 1.0, 1.0, 1.0]
+
+
+def test_recall_sensitive_class_balancing_uses_only_training_positives():
+    weights = train_classifier.recall_sensitive_class_sample_weights(
+        combined_length=7,
+        real_offset=1,
+        real_labels=np.asarray([1, 1, 1, 1, 1, 0], dtype=np.float32),
+        real_classes=["common", "common", "common", "rare", "heldout", "rare"],
+        real_detectors=["entropy-api-key"] * 6,
+        real_train_indices=np.asarray([0, 1, 2, 3, 5]),
+        max_multiplier=2.0,
+    )
+
+    assert weights.tolist() == [1.0, 1.0, 1.0, 1.0, 2.0, 1.0, 1.0]
+
+
+def test_checkpoint_selection_prioritizes_shipping_class_recall_gate():
+    labels = np.asarray([1, 1, 1, 1, 0, 0], dtype=np.float32)
+    groups = np.asarray(["rare", "rare", "common", "common", "rare", "common"])
+    aggregate_favored = np.asarray([0.1, 0.1, 0.9, 0.9, 0.1, 0.1])
+    gate_safe = np.asarray([0.6, 0.6, 0.6, 0.6, 0.3, 0.3])
+
+    assert train_classifier.validation_selection_key(
+        gate_safe, labels, groups
+    ) > train_classifier.validation_selection_key(
+        aggregate_favored, labels, groups
+    )
+
+
+def test_checkpoint_selection_keeps_real_precision_and_f1_floors_primary():
+    labels = np.asarray([1] * 10 + [0] * 20, dtype=np.float32)
+    groups = np.asarray(["rare"] * 2 + ["common"] * 28)
+    real_mask = np.ones(len(labels), dtype=bool)
+    class_safe_but_imprecise = np.asarray([0.9] * 30)
+    aggregate_safe_with_class_gap = np.asarray([0.1] * 2 + [0.9] * 8 + [0.1] * 20)
+
+    assert train_classifier.validation_selection_key(
+        aggregate_safe_with_class_gap, labels, groups, real_mask
+    ) > train_classifier.validation_selection_key(
+        class_safe_but_imprecise, labels, groups, real_mask
+    )
+
+
+def test_warm_start_checkpoint_cannot_regress_initial_real_metrics():
+    labels = np.asarray([1] * 10 + [0] * 20, dtype=np.float32)
+    groups = np.asarray(["rare"] * 2 + ["common"] * 28)
+    real_mask = np.ones(len(labels), dtype=bool)
+    baseline = np.asarray([0.9] * 8 + [0.1] * 2 + [0.1] * 20)
+    baseline_f1, baseline_precision, _ = train_classifier.prf(baseline, labels, 0.5)
+    recall_favored_regression = np.asarray([0.9] * 10 + [0.9] * 10 + [0.1] * 10)
+    floors = (baseline_f1, baseline_precision)
+
+    assert train_classifier.validation_selection_key(
+        baseline, labels, groups, real_mask, floors
+    ) > train_classifier.validation_selection_key(
+        recall_favored_regression, labels, groups, real_mask, floors
+    )
 
 
 def test_six_scanner_differential_attaches_full_class_comparison(tmp_path):

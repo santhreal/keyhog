@@ -581,7 +581,6 @@ pub(crate) fn looks_like_punctuation_decorated_identifier(value: &str) -> bool {
         || looks_like_credential_colliding_punctuation(value)
 }
 
-
 #[cfg(test)]
 #[path = "../../../tests/unit/suppression_shape_mod.rs"]
 mod tests;

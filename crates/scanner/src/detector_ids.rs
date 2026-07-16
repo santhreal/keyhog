@@ -3,9 +3,13 @@
 pub(crate) const GENERIC_PREFIX: &str = "generic-";
 pub(crate) const ENTROPY_PREFIX: &str = "entropy-";
 
+#[cfg(test)]
 pub(crate) const GENERIC_SECRET: &str = "generic-secret";
+#[cfg(test)]
 pub(crate) const GENERIC_KEYWORD_SECRET: &str = "generic-keyword-secret";
+#[cfg(test)]
 pub(crate) const GENERIC_API_KEY: &str = "generic-api-key";
+#[cfg(test)]
 pub(crate) const GENERIC_PASSWORD: &str = "generic-password";
 
 pub(crate) const ENTROPY: &str = "entropy";
@@ -95,11 +99,10 @@ pub(crate) fn is_service_anchored_detector(detector_id: &str) -> bool {
 /// Membership is DECLARED PER-DETECTOR via `DetectorSpec::private_key_block =
 /// true` in each detector's own TOML (DET-0; was the centralized
 /// `rules/detector-classification.toml` `private_key_block` id list). This reads
-/// that single-owner flag. The `Result` is retained for caller compatibility
-/// reading an embedded spec field is infallible, so it is always `Ok`.
+/// that single-owner flag.
 #[inline]
-pub(crate) fn is_private_key_block_detector(detector_id: &str) -> Result<bool, String> {
-    Ok(keyhog_core::detector_spec_by_id(detector_id).is_some_and(|spec| spec.private_key_block))
+pub(crate) fn is_private_key_block_detector(detector_id: &str) -> bool {
+    keyhog_core::detector_spec_by_id(detector_id).is_some_and(|spec| spec.private_key_block)
 }
 
 #[cfg(test)]
@@ -329,7 +332,6 @@ mod detector_id_corpus_guard {
             "bamboohr-api-key",
             "base-api-credentials",
             "calendly-api-key",
-            "carbon-black-api-key",
             "census-api-key",
             "chef-automate-token",
             "crowdin-api-token",
@@ -374,7 +376,7 @@ mod detector_id_corpus_guard {
         );
         for id in &expected {
             assert!(
-                is_private_key_block_detector(id).expect("infallible spec read"),
+                is_private_key_block_detector(id),
                 "predicate must classify declared member `{id}` as a private-key block"
             );
         }

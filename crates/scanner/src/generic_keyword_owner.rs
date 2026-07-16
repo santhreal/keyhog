@@ -32,9 +32,9 @@ pub(crate) struct GenericOwningDetectorIndex {
     policy_keywords: Vec<String>,
     canonical_exact: HashMap<String, usize>,
     canonical_normalized: HashMap<String, usize>,
-    by_id: HashMap<String, usize>,
-    generic_secret_index: Option<usize>,
-    generic_keyword_secret_index: Option<usize>,
+    keyword_free_owner_index: Option<usize>,
+    isolated_bare_owner_index: Option<usize>,
+    unclaimed_keyword_owner_index: Option<usize>,
     vendor_suffix_fallback_index: Option<usize>,
 }
 
@@ -62,28 +62,34 @@ fn insert_policy_owner(
 }
 
 impl GenericOwningDetectorIndex {
-    pub(crate) fn build(detectors: &[DetectorSpec]) -> Self {
+    pub(crate) fn build(detectors: &[DetectorSpec]) -> Result<Self, String> {
         let mut policy_exact = HashMap::new();
         let mut policy_normalized = HashMap::new();
         let mut policy_keywords = BTreeSet::new();
         let mut canonical_exact = HashMap::new();
         let mut canonical_normalized = HashMap::new();
-        let mut by_id = HashMap::new();
-        let mut generic_secret_index = None;
-        let mut generic_keyword_secret_index = None;
+        let mut keyword_free_owner_index: Option<usize> = None;
+        let mut isolated_bare_owner_index: Option<usize> = None;
+        let mut unclaimed_keyword_owner_index: Option<usize> = None;
         let mut vendor_suffix_fallback_index = None;
         for (index, detector) in detectors.iter().enumerate() {
-            if generic_secret_index.is_none() && detector.id == crate::detector_ids::GENERIC_SECRET
-            {
-                generic_secret_index = Some(index);
-            }
-            if generic_keyword_secret_index.is_none()
-                && detector.id == crate::detector_ids::GENERIC_KEYWORD_SECRET
-            {
-                generic_keyword_secret_index = Some(index);
-            }
-            if detector.service == "generic" {
-                by_id.entry(detector.id.clone()).or_insert(index);
+            for role in &detector.entropy_roles {
+                let slot = match role {
+                    keyhog_core::EntropyDetectionRole::KeywordFree => &mut keyword_free_owner_index,
+                    keyhog_core::EntropyDetectionRole::IsolatedBare => {
+                        &mut isolated_bare_owner_index
+                    }
+                    keyhog_core::EntropyDetectionRole::UnclaimedKeyword => {
+                        &mut unclaimed_keyword_owner_index
+                    }
+                };
+                if let Some(previous) = *slot {
+                    return Err(format!(
+                        "entropy role {:?} is claimed by both {:?} and {:?}; each role must have exactly one detector TOML owner",
+                        role.as_str(), detectors[previous].id, detector.id
+                    ));
+                }
+                *slot = Some(index);
             }
             if vendor_suffix_fallback_index.is_none() && detector.generic_vendor_suffix_fallback {
                 vendor_suffix_fallback_index = Some(index);
@@ -130,17 +136,17 @@ impl GenericOwningDetectorIndex {
                 }
             }
         }
-        Self {
+        Ok(Self {
             policy_exact,
             policy_normalized,
             policy_keywords: policy_keywords.into_iter().collect(),
             canonical_exact,
             canonical_normalized,
-            by_id,
-            generic_secret_index,
-            generic_keyword_secret_index,
+            keyword_free_owner_index,
+            isolated_bare_owner_index,
+            unclaimed_keyword_owner_index,
             vendor_suffix_fallback_index,
-        }
+        })
     }
 
     /// The owning generic detector's index for a matched assignment `keyword`
@@ -193,24 +199,21 @@ impl GenericOwningDetectorIndex {
         })
     }
 
-    /// Index of the loaded `GENERIC_SECRET` detector, if any. This is the ONE
-    /// cached location every generic-secret lookup resolves through, both the
-    /// owning-detector fallback above and `generic_secret_shape_floors` used to
-    /// run their own separate linear `detectors.iter().find(id == GENERIC_SECRET)`.
-    pub(crate) fn generic_secret_index(&self) -> Option<usize> {
-        self.generic_secret_index
+    /// Detector that explicitly owns anchor-free entropy candidates.
+    pub(crate) fn keyword_free_owner_index(&self) -> Option<usize> {
+        self.keyword_free_owner_index
     }
 
+    /// Detector that explicitly owns isolated bare entropy candidates.
     #[inline]
-    pub(crate) fn generic_keyword_secret_index(&self) -> Option<usize> {
-        self.generic_keyword_secret_index
+    pub(crate) fn isolated_bare_owner_index(&self) -> Option<usize> {
+        self.isolated_bare_owner_index
     }
 
-    /// Index of an active generic policy detector by its stable id. Synthetic
-    /// entropy findings use this to resolve BPE and confidence policy from the
-    /// corpus that actually compiled, rather than the embedded registry.
-    pub(crate) fn index_for_id(&self, detector_id: &str) -> Option<usize> {
-        self.by_id.get(detector_id).copied()
+    /// Detector that explicitly owns otherwise-unclaimed credential keywords.
+    #[inline]
+    pub(crate) fn unclaimed_keyword_owner_index(&self) -> Option<usize> {
+        self.unclaimed_keyword_owner_index
     }
 }
 

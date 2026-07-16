@@ -15,20 +15,17 @@ use std::sync::Arc;
 
 #[cfg(feature = "entropy")]
 impl CompiledScanner {
-    fn keyword_free_entropy_threshold(&self, sensitive_path: bool) -> f64 {
-        let policy = self
-            .generic_owning_detector
-            .generic_secret_index()
-            .and_then(|index| self.entropy_policies.get(index));
-        if let Some(policy) = policy {
-            if sensitive_path {
-                policy.sensitive_path_entropy_very_high
-            } else {
-                policy.entropy_very_high
-            }
-        } else {
-            crate::entropy::VERY_HIGH_ENTROPY_THRESHOLD
-        }
+    fn keyword_free_entropy_threshold(&self, sensitive_path: bool) -> Option<f64> {
+        self.generic_owning_detector
+            .keyword_free_owner_index()
+            .and_then(|index| self.entropy_policies.get(index))
+            .map(|policy| {
+                if sensitive_path {
+                    policy.sensitive_path_entropy_very_high
+                } else {
+                    policy.entropy_very_high
+                }
+            })
     }
 
     pub(crate) fn scan_entropy_fallback(
@@ -83,21 +80,19 @@ impl CompiledScanner {
             !self.config.entropy_in_source_files && source_path;
         let generic_keyword_secret_policy = self
             .generic_owning_detector
-            .generic_keyword_secret_index()
+            .isolated_bare_owner_index()
             .and_then(|index| self.entropy_policies.get(index));
-        let generic_keyword_secret_min_len = generic_keyword_secret_policy
-            .map_or(crate::entropy::KEYWORD_FREE_MIN_LEN, |policy| {
-                policy.keyword_free_min_len
-            });
         let isolated_bare_candidate = !path_entropy_appropriate
-            && crate::entropy::scanner::has_isolated_bare_secret_candidate_with_lines_and_policy(
-                &entropy_lines,
-                self.config.entropy_threshold,
-                &self.config.placeholder_keywords,
-                generic_keyword_secret_min_len,
-                generic_keyword_secret_policy.and_then(|policy| policy.entropy_shape),
-                generic_keyword_secret_policy.copied(),
-            );
+            && generic_keyword_secret_policy.is_some_and(|policy| {
+                crate::entropy::scanner::has_isolated_bare_secret_candidate_with_lines_and_policy(
+                    &entropy_lines,
+                    self.config.entropy_threshold,
+                    &self.config.placeholder_keywords,
+                    policy.keyword_free_min_len,
+                    policy.entropy_shape,
+                    Some(*policy),
+                )
+            });
         #[cfg(feature = "simd")]
         let lower_dash_app_password_candidate = path_entropy_appropriate
             && crate::entropy::scanner::has_lower_dash_app_password_candidate_with_precomputed_keywords_and_policy(
@@ -255,6 +250,9 @@ impl CompiledScanner {
                         policy_detector
                             .and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape)
                     }),
+                policy_detector.map_or(&[], |detector| {
+                    detector.public_identifier_assignment_markers.as_slice()
+                }),
             ) {
                 let entropy_ctx = crate::adjudicate::MatchCtx::for_entropy_fallback(
                     crate::adjudicate::EntropyFallbackSignal::ValueShape(shape_stage),
@@ -353,8 +351,9 @@ impl CompiledScanner {
                 }
             });
             #[cfg(feature = "ml")]
-            if let Some((policy, mode)) = entropy_ml_policy
+            if let Some(((policy, mode), detector)) = entropy_ml_policy
                 .zip(entropy_ml_mode)
+                .zip(policy_detector)
                 .filter(|_| self.config.ml_enabled && self.config.entropy_ml_authoritative)
             {
                 let raw_match = build_raw_match(scan_state, policy_conf);
@@ -365,6 +364,8 @@ impl CompiledScanner {
                     &entropy_match.value,
                     policy.context_radius_lines,
                     &self.config,
+                    detector,
+                    crate::ml_scorer::MlCandidateChannel::Entropy,
                 );
                 scan_state.push_entropy_ml_pending(
                     raw_match,

@@ -2,10 +2,9 @@
 //! base literal is a substring of a longer matched literal is still AC-confirmed,
 //! not left to the always-active homoglyph variant.
 //!
-//! `client_secret="…"` nests the literal `secret` (generic-password pattern 4's
-//! trigger) inside `client_secret` (pattern 5's quoted-JSON literal). A
-//! non-overlapping sweep reports `client_secret`, skips past it, and SHADOWS
-//! `secret`, so generic-password pattern 4 was never AC-confirmed, only the
+//! `DB_PASSWORD="…"` nests the literal `password` inside the broader
+//! assignment trigger. A non-overlapping sweep can report the broader literal,
+//! skip past it, and SHADOW `password`, so generic-password was not AC-confirmed, only the
 //! always-active homoglyph variant caught it on ASCII. That blocked the homoglyph
 //! ASCII-skip (skipping the variant dropped the finding). Overlapping triggers
 //! reproduce it via the AC/confirmed path, so the skip is recall-safe and now
@@ -40,7 +39,7 @@ fn shadowed_inner_literal_is_ac_confirmed_with_variant_skipped() {
     assert_eq!(detectors.len(), 1, "fixture requires generic-password");
     let scanner = CompiledScanner::compile(detectors).expect("compile");
 
-    let c = chunk("client_secret=\"0123456789abcdefABCDEFxyz\"\n");
+    let c = chunk("DB_PASSWORD=\"0123456789abcdefABCDEFxyz\"\n");
 
     // Skip the always-active homoglyph variant on ASCII AND force the legacy HS
     // prefilter off, so the pure AC trigger sweep is the ONLY thing that can
@@ -63,7 +62,7 @@ fn shadowed_inner_literal_is_ac_confirmed_with_variant_skipped() {
         .find(|m| m.detector_id.to_string() == "generic-password");
     assert!(
         gp.is_some(),
-        "generic-password must be AC-confirmed on `client_secret=\"…\"` even with the \
+        "generic-password must be AC-confirmed on `DB_PASSWORD=\"…\"` even with the \
          homoglyph variant skipped (overlapping-trigger fix); got detectors: {:?}",
         matches
             .iter()

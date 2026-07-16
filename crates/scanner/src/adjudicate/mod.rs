@@ -133,20 +133,17 @@ impl ProcessCandidateSignals {
         is_generic: bool,
         is_weakly_anchored: bool,
         entropy: f64,
-        entropy_threshold: f64,
-        floor_detector: Option<&keyhog_core::DetectorSpec>,
+        effective_entropy_floor: Option<f64>,
         credential: &str,
     ) -> Self {
         if !(is_generic || is_weakly_anchored) {
             return Self::pass();
         }
+        let Some(entropy_floor) = effective_entropy_floor else {
+            return Self::suppress(StageId::EntropyPolicyUnavailable);
+        };
         Self::from_entropy_shape(
-            generic_entropy_below_floor(
-                entropy,
-                entropy_threshold,
-                floor_detector,
-                credential.len(),
-            ),
+            entropy < entropy_floor,
             crate::suppression::shape::looks_like_camel_case_no_digit(credential),
         )
     }
@@ -246,106 +243,6 @@ pub(crate) fn detector_min_confidence_floor(
     default_floor: f64,
 ) -> f64 {
     detector_floor.unwrap_or(default_floor) // LAW10: absent detector floor => explicit Tier-A scan default floor, recall-safe
-}
-
-/// The compiled default for the Tier-A `entropy_threshold` knob. Single-sourced
-/// from `keyhog_core::DEFAULT_ENTROPY_THRESHOLD` so this fallback and
-/// `ScanConfig::default().entropy_threshold` can never drift apart (they were two
-/// hand-kept `4.5` literals before).
-use keyhog_core::DEFAULT_ENTROPY_THRESHOLD as DEFAULT_GENERIC_ENTROPY_THRESHOLD;
-
-/// Recall-safe base floor for a detector that declares no length-bucketed
-/// `entropy_floor`. Detector TOMLs override this through the active spec passed
-/// by the compiled scanner; no embedded registry or parallel floor table exists.
-const DEFAULT_GENERIC_ENTROPY_FLOOR: f64 = 3.5;
-
-/// Single source of truth for the generic-detector entropy gate used by named
-/// generic/weak-anchor processing and the generic-secret fallback bridge.
-///
-/// The per-family, length-bucketed base floors are Tier-B calibration data owned
-/// in each generic detector's TOML `entropy_floor` field. The active spec is
-/// passed directly from the compiled scanner; this owner layers only the Tier-A
-/// `entropy_threshold` knob on top. An operator can raise the floor above the
-/// detector calibration for a stricter scan but cannot silently replace it.
-pub(crate) fn generic_entropy_floor(
-    entropy_threshold: f64,
-    detector: Option<&keyhog_core::DetectorSpec>,
-    credential_len: usize,
-) -> f64 {
-    let base = detector
-        .and_then(|spec| {
-            spec.entropy_floor
-                .iter()
-                .find(|bucket| bucket.max_len.is_none_or(|max| credential_len <= max))
-        })
-        .map_or(DEFAULT_GENERIC_ENTROPY_FLOOR, |bucket| bucket.floor);
-
-    let threshold_val = detector
-        .and_then(|s| s.entropy_high)
-        .map_or(DEFAULT_GENERIC_ENTROPY_THRESHOLD, |threshold| threshold);
-
-    if entropy_threshold.is_finite() && entropy_threshold > threshold_val {
-        base.max(entropy_threshold)
-    } else {
-        base
-    }
-}
-
-pub(crate) fn generic_entropy_below_floor(
-    entropy: f64,
-    entropy_threshold: f64,
-    detector: Option<&keyhog_core::DetectorSpec>,
-    credential_len: usize,
-) -> bool {
-    entropy < generic_entropy_floor(entropy_threshold, detector, credential_len)
-}
-
-pub(crate) fn generic_bridge_entropy_below_floor(
-    entropy: f64,
-    entropy_threshold: f64,
-    generic_keyword_low_entropy: bool,
-    generic_secret_detector: Option<&keyhog_core::DetectorSpec>,
-    generic_keyword_detector: Option<&keyhog_core::DetectorSpec>,
-    credential_len: usize,
-) -> bool {
-    let detector = if generic_keyword_low_entropy {
-        generic_keyword_detector
-    } else {
-        generic_secret_detector
-    };
-    generic_entropy_below_floor(entropy, entropy_threshold, detector, credential_len)
-}
-
-/// Resolved shape-gate parameters of the `generic-secret` detector: its
-/// configured minimum credential length, with the engine's historical fallback
-/// (`8`) when the spec omits it. (The detector's `entropy_high` is a
-/// confidence-boost threshold read directly from the spec where confidence is
-/// scored; the base64 value-shape gates own their OWN `HIGH_ENTROPY_BASE64_CUTOFF`
-/// and never borrow this one, the two must not be conflated.)
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct GenericSecretShapeFloors {
-    pub(crate) min_len: usize,
-}
-
-/// Select the `generic-secret` detector from the ACTIVE detector set and read its
-/// shape-gate floors. This owns the generic-secret floor VALUE so the generic
-/// value-shape leaf never names the detector id itself, the
-/// `suppression_named_detector_ctx_owner` gate requires generic floor policy to
-/// live in adjudicate, not in engine leaves (ONE PLACE). The `GENERIC_SECRET`
-/// detector is resolved ONCE at scanner build through the shared compiled
-/// [`crate::generic_keyword_owner::GenericOwningDetectorIndex`] (the single owner
-/// of the `id == GENERIC_SECRET` selection) and passed in here, replacing a
-/// per-candidate linear `detectors.iter().find(...)`. `None` (no GENERIC_SECRET
-/// detector loaded) yields the literal default floor, identical to the old
-/// `find(...)` returning `None`.
-pub(crate) fn generic_secret_shape_floors(
-    generic_secret: Option<&keyhog_core::DetectorSpec>,
-) -> GenericSecretShapeFloors {
-    GenericSecretShapeFloors {
-        min_len: generic_secret
-            .and_then(|s| s.min_len)
-            .map_or(8, |min_len| min_len),
-    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]

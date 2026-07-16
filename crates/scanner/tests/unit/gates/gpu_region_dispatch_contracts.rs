@@ -100,7 +100,8 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
             && dispatch_src.contains("scan_coalesced_phase2_with_admission")
             && dispatch_src.contains("phase2_gpu_admitted")
             && (dispatch_src.contains("CPU admission remains authoritative")
-                || helper_src.contains("CPU admission remains authoritative")),
+                || helper_src.contains("CPU admission remains authoritative")
+                || gpu_dfa_src.contains("CPU admission remains authoritative")),
         "region dispatch must wire phase-2 GPU regex-DFA admission visibly, with CPU admission authoritative on failure"
     );
     assert!(

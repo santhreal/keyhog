@@ -23,6 +23,7 @@ use keyhog_scanner::{CompiledScanner, ScanBackend, ScannerConfig};
 const UUID_SECRET: &str = "636765a9-1f92-4b40-ab0b-85ebd1e2c23d";
 const HEX64_SECRET: &str = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
 const HEX32_SECRET: &str = "3f8a9c2e1b7d4f6a8c0e2d4f6a8b0c1e";
+const SHA1_DIGEST: &str = "356a192b7913b04c54574d18c28d46e6395428ab";
 
 /// The SAME Shannon-entropy metric the scanner computes for a candidate, so the
 /// generation-gate unit tests below feed `candidate_is_plausible` the exact
@@ -36,11 +37,11 @@ fn entropy(value: &str) -> f64 {
 #[test]
 fn strict_gate_drops_canonical_shapes_under_anchor() {
     // The non-lift (model-absent) credential context MUST keep the strict gate:
-    // a UUID / 64-hex / 32-hex value is a hash/UUID shape and never generates a
-    // candidate. This pins that the lift is genuinely OFF by default, the
-    // SecretBench-mirror-safe behaviour.
+    // a UUID / 64-hex / SHA-1 value is a hash/UUID shape and never generates a
+    // candidate. A 32-hex api_key is deliberately detector-owned key material,
+    // even without model arbitration.
     let ctx = credential_keyword_context("api_key");
-    for shape in [UUID_SECRET, HEX64_SECRET, HEX32_SECRET] {
+    for shape in [UUID_SECRET, HEX64_SECRET, SHA1_DIGEST] {
         assert!(
             is_canonical_non_secret_shape(shape),
             "{shape:?} must be a canonical non-secret shape (test fixture invariant)"

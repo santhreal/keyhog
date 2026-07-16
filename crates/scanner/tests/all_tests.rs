@@ -13,6 +13,8 @@ pub mod regression;
 // are dead weight, and the regression it guards can ship silently. The
 // `scripts/gates/recall_locks_wired.py` gate fails the build if any top-level
 // `regression_*.rs` is orphaned, so this list stays exhaustive. Keep sorted.
+#[path = "property/decoded_generic_entropy_guard_proptest.rs"]
+pub mod decoded_generic_entropy_guard_proptest;
 #[path = "regression_ac_literal_prefilter.rs"]
 pub mod regression_ac_literal_prefilter;
 #[path = "regression_ac_overlap_shadow.rs"]
@@ -121,8 +123,6 @@ pub mod regression_decode_through_strict;
 pub mod regression_decode_url_plus;
 #[path = "regression_decoded_generic_entropy_guard.rs"]
 pub mod regression_decoded_generic_entropy_guard;
-#[path = "property/decoded_generic_entropy_guard_proptest.rs"]
-pub mod decoded_generic_entropy_guard_proptest;
 #[path = "regression_deep_preset_recovery.rs"]
 pub mod regression_deep_preset_recovery;
 #[path = "regression_deepl_bare_key_recall.rs"]

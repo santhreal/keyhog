@@ -240,8 +240,9 @@ ml/harvest_corpus.py   real labelled candidates (CredData), harvested at a LOW
                        report floor so sub-floor hard negatives are captured
         │
 ml/train_classifier.py blend synthetic + real, file-grouped split (no leakage),
-                       train the 43-feature MoE, gate on held-out F1 plus
-                       aggregate, per-class, and per-detector real recall
+                       train the 55-feature detector-conditioned MoE, gate on
+                       held-out F1 plus
+                       aggregate plus recall-sensitive class/detector recall
         │
 ml/retrain_loop.sh     one command: harvest → train → (--write) ship weights.bin
                        → (--verify) rebuild + per-detector-FP bench gate,
@@ -265,6 +266,7 @@ summary shown by `keyhog --version`.
 | Change how confidence is scored | `crates/scanner/src/confidence/`, `ml_scorer.rs` |
 | Add a suppression gate / change what counts as a non-secret | the one gate list `public_noncredential_shape`; see "Match adjudication" above (never inline a `looks_like_*` call in an emission path) |
 | Retrain / improve the ML model | `ml/retrain_loop.sh` (+ `ml/README.md`) |
+| Change an entropy entry path or weak-anchor floor | the owning detector TOML (`entropy_roles`, `entropy_floor`, `entropy_high`) |
 | Add an input source | `crates/sources/src/` |
 | Add live verification for a detector | `[detector.verify]` in the TOML + `crates/verifier/src/verify/` |
 | Change output format / exit codes | `crates/cli/src/format.rs`, `reporting.rs` |

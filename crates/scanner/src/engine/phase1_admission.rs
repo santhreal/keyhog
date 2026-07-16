@@ -53,10 +53,13 @@ impl Phase1AdmissionPlan {
     #[inline]
     pub(crate) fn matches_chunks(&self, chunks: &[Chunk]) -> bool {
         chunks.len() == self.chunk_shapes.len()
-            && chunks.iter().zip(&self.chunk_shapes).all(|(chunk, &(ptr, len))| {
-                let bytes = chunk.data.as_bytes();
-                bytes.as_ptr() as usize == ptr && bytes.len() == len
-            })
+            && chunks
+                .iter()
+                .zip(&self.chunk_shapes)
+                .all(|(chunk, &(ptr, len))| {
+                    let bytes = chunk.data.as_bytes();
+                    bytes.as_ptr() as usize == ptr && bytes.len() == len
+                })
     }
 }
 
@@ -149,7 +152,10 @@ impl CompiledScanner {
                     );
                     summary
                 })
-                .reduce(Phase1AdmissionSummary::default, Phase1AdmissionSummary::merge);
+                .reduce(
+                    Phase1AdmissionSummary::default,
+                    Phase1AdmissionSummary::merge,
+                );
         }
 
         let mut summary = Phase1AdmissionSummary::default();

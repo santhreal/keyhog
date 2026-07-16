@@ -222,6 +222,7 @@ fn gpu_region_presence_self_test_impl(
             description: None,
             group: None,
             client_safe: false,
+            weak_anchor: false,
         }],
         keywords: vec!["KHGPUSELFTEST".into()],
         min_confidence: None,

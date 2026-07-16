@@ -42,6 +42,7 @@ fn detector() -> DetectorSpec {
             description: Some("reverse placeholder fixture".into()),
             group: Some(1),
             client_safe: false,
+            weak_anchor: false,
         }],
         keywords: vec!["ELPMAXE".into()],
         min_confidence: Some(0.0),

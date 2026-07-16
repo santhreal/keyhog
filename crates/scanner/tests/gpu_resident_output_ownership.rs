@@ -29,6 +29,7 @@ fn resident_gpu_readback_reuse_preserves_owned_results_and_parity() {
             description: None,
             group: None,
             client_safe: false,
+            weak_anchor: false,
         }],
         keywords: vec!["KHRESIDENT".into()],
         ..DetectorSpec::default()

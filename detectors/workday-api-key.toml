@@ -10,6 +10,8 @@ service = "workday"
 severity = "critical"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["workday", "WD_HOST", "WD_USER", "WD_PASSWORD"]
+entropy_high = 4.5
+entropy_floor = [{ max_len = 24, floor = 3.0 }, { max_len = 40, floor = 2.8 }, { floor = 3.5 }]
 
 [[detector.patterns]]
 regex = "(?:workday|WD)[._-]?(?:host|tenant|instance)[=:\\s\"'']+([a-z0-9-]+\\.workday\\.com)"
@@ -20,6 +22,7 @@ group = 1
 regex = "(?:workday|WD)[._-]?(?:user|username)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
 description = "Workday username with context anchor"
 group = 1
+weak_anchor = true
 
 [[detector.patterns]]
 regex = "(?:workday|WD)[._-]?(?:pass|password|pwd)[=:\\s\"'']+([a-zA-Z0-9!@#$%^&*._-]{8,})"

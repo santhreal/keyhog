@@ -458,6 +458,7 @@ pub(crate) fn scan_engine_self_test() -> Result<bool> {
             description: None,
             group: None,
             client_safe: false,
+            weak_anchor: false,
         }],
         keywords: vec!["KHDOCTOR".into()],
         min_confidence: None,

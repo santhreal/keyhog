@@ -102,6 +102,14 @@ model evidence without letting an uncalibrated model veto structural evidence;
 extraction. Normal scans use these detector values. An explicitly supplied
 `--ml-weight` is a scan-wide diagnostic or benchmark override. Detectors that
 do not own entropy policy set `entropy_mode = "disabled"`.
+The model input also carries detector facts from this same TOML: exact service
+context, generic/phase-2 ownership, weak-anchor and structural-password-slot
+classification, verification, required companions, and the pattern or entropy
+candidate channel. Entropy candidates additionally carry a one-hot family read
+from this detector's `entropy_fallback.class`, so API keys, passwords, tokens,
+and generic entropy do not collapse into one model input. The shared scorer does
+not infer a detector family from its id or apply one unconditioned probability
+to every secret type.
 Every detector TOML must declare `detector.ml`; omission fails parsing instead
 of silently applying an embedded or scanner-side model policy. Programmatic
 `DetectorSpec::default()` disables both model paths until the caller opts in.
@@ -219,11 +227,12 @@ The available per-detector tuning fields are:
 *   **`entropy_high`** (float, required for active entropy owners): Per-detector high-entropy threshold (bits/byte) for keyword-independent detection.
 *   **`entropy_low`** (float, required for active entropy owners): Per-detector keyword-context entropy threshold.
 *   **`entropy_very_high`** (float, required for active entropy owners): Per-detector very-high entropy threshold for keyword-free or isolated tokens.
-*   **`sensitive_path_entropy_very_high`** (float, optional): Per-detector keyword-free threshold for clearly sensitive paths. When unset, the detector's `entropy_very_high` applies; the sensitive-path policy is never an undocumented scanner-wide discount.
+*   **`sensitive_path_entropy_very_high`** (float, required for active entropy owners): Per-detector keyword-free threshold for clearly sensitive paths. It must not exceed `entropy_very_high`; omission is invalid rather than an undocumented scanner-wide discount.
 *   **`entropy_fallback`** (table, required for active entropy owners): Identity metadata for synthetic entropy findings owned by this detector. `class` is one of `generic`, `password`, `token`, or `api-key`; `id` must use the `entropy-` namespace; and `name`/`service` must be non-empty. The owning detector itself must use `service = "generic"`, while the emitted metadata service may name a custom family. Both regex-kind detectors that set `entropy_policy_priority` and phase-2 generic owners must declare this block. Omitting it is a compile error, never a compatibility identity.
+*   **`entropy_roles`** (string array): Corpus-level entry roles owned by this detector. `keyword-free` owns anchor-free high-entropy candidates, `isolated-bare` owns detector-shaped bare candidates, and `unclaimed-keyword` owns configured credential keywords not claimed by another detector. A role may have only one owner in a compiled corpus. Omission disables that entry path for a focused custom corpus; the scanner never substitutes a built-in detector ID or global policy.
 *   **`entropy_shapes`** (array of tables, required for active entropy owners): Typed isolated-shape policy owned by this detector. The current `kind = "lower-dash-app-password"` entry declares `entropy_floor`, `group_count`, `group_length`, and `special_min_length`; its exact candidate length is derived as `group_count * group_length + group_count - 1`.
 *   **`plausibility`** (inline table, required for active entropy owners): Complete strict candidate-shape policy. It contains `mixed_alnum_floor`, `symbolic_entropy_floor`, `second_half_entropy_floor`, `mixed_alnum_min_len`, `reject_repeated_blocks`, `allow_alphabetic_credential`, `reject_program_identifiers`, and `reject_dash_segmented_alnum`. Every value is required so a detector never inherits an invisible family decision from scanner code.
-*   **`entropy_floor`** (array of tables, required for active entropy owners): Length-bucketed low-entropy suppression floor mapping maximum lengths to minimum entropy scores.
+*   **`entropy_floor`** (array of tables, required for active entropy owners and detectors or patterns using `weak_anchor`): Length-bucketed low-entropy suppression floor mapping maximum lengths to minimum entropy scores. Weak-anchor regex findings read their own table; they never borrow another detector's calibration.
     *   `max_len` (integer, optional): Inclusive maximum length for this bucket.
     *   `floor` (float): Shannon entropy floor.
 *   **`entropy_policy_priority`** (integer, optional): Resolves overlapping
@@ -303,9 +312,9 @@ policy view. `keyhog detectors --format json` exposes them under each detector's
 scanner uses.
 
 ### Candidate Lengths
-*   **`keyword_free_min_len`** (integer, optional): Per-detector minimum length for an anchor-free (keyword-free or isolated) candidate. Falls back to `KEYWORD_FREE_MIN_LEN` (20) if unset.
+*   **`keyword_free_min_len`** (integer): Per-detector minimum length for an anchor-free (keyword-free or isolated) candidate. Active entropy owners must declare it; omission fails compilation instead of selecting a scanner constant.
 *   **`min_len`** (integer, optional): Per-detector minimum candidate length in UTF-8 bytes for any candidate this detector emits. Falls back to no detector-specific floor beyond the path-wide default if unset.
-*   **`max_len`** (integer, required for `kind = "phase2-generic"`): Inclusive maximum byte length for one generic assignment value. The candidate generator is compiled from the largest ceiling in the loaded detector corpus, then the owning detector rejects an overlength value whole; it never reports a truncated prefix. It must be at least 8 and no smaller than `min_len`. Omission fails scanner construction. Regex-backed patterns keep their own explicit repetition bounds.
+*   **`max_len`** (integer, required for every generic entropy-policy owner): Inclusive maximum byte length for one generic assignment value. This includes regex detectors that claim generic keywords with `entropy_policy_priority`, such as `generic-password`. The candidate generator is compiled from the largest ceiling in the loaded detector corpus, then the owning detector rejects an overlength value whole; it never reports a truncated prefix. It must be at least 8 and no smaller than `min_len`. Omission fails scanner construction. Regex-backed patterns keep their own explicit repetition bounds.
 
 The generic assignment bridge exists only when the loaded corpus contains at
 least one `phase2-generic` detector. A focused custom corpus without one compiles
@@ -315,6 +324,7 @@ without that bridge; KeyHog does not silently inject the bundled generic rules.
 *   **`allowlist_paths`** (array of strings, optional): Per-detector path-exclusion regexes (BetterLeaks-style allowlist). Any candidate match whose file path matches any of these regexes is suppressed.
 *   **`allowlist_values`** (array of strings, optional): Per-detector value-exclusion regexes. Any candidate secret value matching any of these regexes is suppressed (useful for filtering out test, example, or placeholder values).
 *   **`stopwords`** (array of strings, optional): Per-detector literal stopwords. A matched value equal to or containing any of these strings (case-insensitive) is suppressed.
+*   **`public_identifier_assignment_markers`** (array of strings, optional): Detector-local canonical-uppercase assignment-key fragments for public IDs such as wallet, contract, address, or peer identifiers. Boundary bytes are significant; KeyHog performs allocation-free ASCII-insensitive matching against the source line. An empty list disables this suppression for that detector.
 
 ### Classification and shape policy
 
@@ -326,9 +336,13 @@ only in the individual detector TOML and have no CLI or global-config override:
     CLI flag, or an authorization scheme. The scanner keeps the dedicated
     placeholder checks but does not reject a legitimate free-form password with
     the generic randomness floor.
-*   **`weak_anchor`** (bool, default `false`): The service context is useful but
-    the captured value still collides with broad hex/base64/identifier shapes.
-    Generic shape and randomness safeguards remain active for that detector.
+*   **`weak_anchor`** (bool, default `false`): At detector level it applies to
+    every pattern. Inside one `[[detector.patterns]]` table it applies only to
+    that regex, so a strong sibling does not inherit its gates. Use it when the
+    service context is useful but the captured value still collides with broad
+    hex/base64/identifier shapes. Generic shape and randomness safeguards
+    remain active, and the detector must declare `entropy_high` and
+    `entropy_floor`. KeyHog does not infer this field from regex syntax.
 *   **`private_key_block`** (bool, default `false`): The match spans an enclosing
     PEM/OpenSSH private-key block. Resolution suppresses lower-specificity child
     findings inside that span instead of reporting the key body repeatedly.

@@ -258,18 +258,9 @@ pub struct CompiledScanner {
     /// field). The strings are byte-identical to `static_intern.lookup(...)`
     /// because they ARE its arena entries (see `perf_locality_intern.rs`).
     pub(crate) metadata_by_index: Vec<(Arc<str>, Arc<str>, Arc<str>)>,
-    /// Per-detector `detector_weak_anchor(spec)`, indexed by `detector_index`.
-    /// The weak-anchor classification is a function of the detector SPEC ONLY
-    /// (its id prefix, `min_confidence`, and a regex-string scan over every
-    /// pattern for a broad-identifier capture), so it is constant across every
-    /// candidate that detector produces. `process_match` used to recompute it
-    /// per surviving candidate, on a hot detector firing thousands of matches
-    /// per chunk that re-ran the classification thousands of times for an
-    /// unchanging value. Resolved ONCE at construction; the per-match path
-    /// indexes by `entry.detector_index` and then resolves the per-PATTERN
-    /// broad-identifier half against the matched `entry.regex` (memoized on the
-    /// `LazyRegex`). This keeps a strong pattern (`servicenow instance=…`) from
-    /// inheriting a weak sibling pattern's (`servicenow user=…`) shape gates.
+    /// Detector-wide weak-anchor mode compiled from explicit detector and
+    /// detector TOML fields. The per-match path combines this with the matched
+    /// `CompiledPattern::weak_anchor` bit, never regex-text inference.
     pub(crate) detector_weak_anchor_base_by_index: Vec<crate::suppression::WeakAnchorBase>,
     /// Active detector-owned path, value, and stopword suppression policy,
     /// indexed by `detector_index`. Compiled from the exact corpus supplied to
@@ -285,6 +276,14 @@ pub struct CompiledScanner {
     /// detector-owned, so custom corpora cannot drift from the shipped global
     /// defaults or truncate an overlength credential prefix.
     pub(crate) generic_assignment_re: Option<regex::Regex>,
+    /// Corpus-specific prefilter compiled from the same detector keywords as
+    /// `generic_assignment_re`. It must never read the embedded global corpus
+    /// when this scanner was constructed from custom detectors.
+    pub(crate) generic_keyword_stems: Option<phase2_generic::keywords::GenericKeywordStemSet>,
+    /// GPU generic-keyword positions are produced from the embedded literal
+    /// program. They are valid only when this scanner's derived vocabulary is
+    /// exactly the embedded vocabulary.
+    pub(crate) generic_gpu_positions_compatible: bool,
     /// Compiled generic-assignment keyword → owning generic `Phase2Generic`
     /// detector index. Replaces the per-candidate linear `detectors.iter()
     /// .find(...)` scan in the generic value-shape path with an O(1) lookup that
@@ -300,6 +299,9 @@ pub struct CompiledScanner {
     /// schema fields or falling back to scanner constants.
     #[cfg(feature = "entropy")]
     pub(crate) entropy_policies: crate::entropy::policy::CompiledEntropyPolicies,
+    /// Detector length-bucket entropy floors compiled into primitive lookup
+    /// tables. Named and generic hot paths never interpret optional TOML fields.
+    pub(crate) detector_entropy_floors: crate::entropy::policy::CompiledDetectorEntropyFloors,
     /// Per-`ac_map` regex byte upper bound for GPU hit-local validation. `None`
     /// means the detector regex is unbounded or unparsable by the AST bounder,
     /// so GPU validation must keep the full prepared-chunk oracle.

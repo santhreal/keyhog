@@ -10,11 +10,14 @@ service = "spacelift"
 severity = "critical"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["SPACELIFT_API_KEY", "spacectl", "SPACELIFT_TOKEN"]
+entropy_high = 4.5
+entropy_floor = [{ max_len = 24, floor = 3.0 }, { max_len = 40, floor = 2.8 }, { floor = 3.5 }]
 
 [[detector.patterns]]
 regex = "(?:SPACELIFT[_-]API[_-]KEY[_-]ID)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
 description = "Spacelift API Key ID"
 group = 1
+weak_anchor = true
 
 [[detector.patterns]]
 regex = "(?:SPACELIFT[_-]API[_-]KEY[_-]SECRET)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
@@ -30,6 +33,7 @@ group = 1
 regex = "apiKeyUser\\s*\\(\\s*id\\s*:\\s*\"([a-zA-Z0-9_-]+)\""
 description = "Spacelift API Key ID in GraphQL mutation"
 group = 1
+weak_anchor = true
 
 [[detector.tests]]
 test_positive = "SPACELIFT_TOKEN=eyJlh4gmpKuEvkwmoEhlBA1QPdLCTuoARuZx70KNqa6sYa6CucvELAWX-rSml4JuHm66N5_FJv7ONZs3urH.eyJ_Y-lC08IeiZDhXg-1jL475aE_LHd7Uu1E5C9N1.682JzA4aHBY6IEDHZhBz9uu2yN3cULBuNnWy"

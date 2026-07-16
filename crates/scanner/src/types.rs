@@ -305,13 +305,6 @@ pub(crate) struct LazyRegex {
     /// regex source (shared across `Clone`s, populated on first scoring
     /// touch), exactly like the compiled-`Regex` cache above.
     has_literal_prefix: Arc<std::sync::OnceLock<bool>>,
-    /// Memoized `pattern_has_broad_identifier_capture(src)`: the per-PATTERN
-    /// half of the weak-anchor decision (a `[a-zA-Z0-9_-]`-style capture with a
-    /// 0/1 minimum that matches any short identifier). Combined with the
-    /// per-DETECTOR [`crate::suppression::WeakAnchorBase`] at the scan call site
-    /// so a strong pattern in an otherwise-weak detector keeps its anchor. Pure
-    /// function of the regex source; cached like `has_literal_prefix`.
-    has_broad_identifier_capture: Arc<std::sync::OnceLock<bool>>,
     /// Memoized `regex_has_required_literal_run(src, MIN_DISTINCTIVE_INFIX_CHARS)`
     /// whether every match necessarily contains a distinctive required literal
     /// run (the terraform `…\.atlasv1\.…` infix). Such a pattern opens with a
@@ -334,7 +327,6 @@ impl LazyRegex {
             case_insensitive: true,
             cell: Arc::new(std::sync::OnceLock::new()),
             has_literal_prefix: Arc::new(std::sync::OnceLock::new()),
-            has_broad_identifier_capture: Arc::new(std::sync::OnceLock::new()),
             has_distinctive_inner_literal: Arc::new(std::sync::OnceLock::new()),
         }
     }
@@ -349,7 +341,6 @@ impl LazyRegex {
             case_insensitive: true,
             cell: Arc::new(std::sync::OnceLock::from(compiled)),
             has_literal_prefix: Arc::new(std::sync::OnceLock::new()),
-            has_broad_identifier_capture: Arc::new(std::sync::OnceLock::new()),
             has_distinctive_inner_literal: Arc::new(std::sync::OnceLock::new()),
         }
     }
@@ -364,7 +355,6 @@ impl LazyRegex {
             case_insensitive: false,
             cell: Arc::new(std::sync::OnceLock::new()),
             has_literal_prefix: Arc::new(std::sync::OnceLock::new()),
-            has_broad_identifier_capture: Arc::new(std::sync::OnceLock::new()),
             has_distinctive_inner_literal: Arc::new(std::sync::OnceLock::new()),
         }
     }
@@ -379,7 +369,6 @@ impl LazyRegex {
             case_insensitive: false,
             cell: Arc::new(std::sync::OnceLock::from(compiled)),
             has_literal_prefix: Arc::new(std::sync::OnceLock::new()),
-            has_broad_identifier_capture: Arc::new(std::sync::OnceLock::new()),
             has_distinctive_inner_literal: Arc::new(std::sync::OnceLock::new()),
         }
     }
@@ -409,17 +398,6 @@ impl LazyRegex {
     pub(crate) fn has_literal_prefix(&self) -> bool {
         *self.has_literal_prefix.get_or_init(|| {
             !crate::compiler::compiler_prefix::extract_literal_prefixes(&self.src).is_empty()
-        })
-    }
-
-    /// Whether THIS pattern carries a broad-identifier capture (the per-pattern
-    /// half of the weak-anchor decision), memoized. Pure function of the regex
-    /// SOURCE; combined with the per-detector [`crate::suppression::WeakAnchorBase`]
-    /// at the scan call site.
-    #[must_use]
-    pub(crate) fn has_broad_identifier_capture(&self) -> bool {
-        *self.has_broad_identifier_capture.get_or_init(|| {
-            crate::suppression::api::pattern_has_broad_identifier_capture(&self.src)
         })
     }
 
@@ -509,6 +487,8 @@ pub(crate) struct CompiledPattern {
     /// severity to `Severity::ClientSafe` so `--hide-client-safe`
     /// can drop it without affecting any other detector's tier.
     pub client_safe: bool,
+    /// Exact `PatternSpec::weak_anchor` decision compiled beside the regex.
+    pub weak_anchor: bool,
     /// True when every possible match for this regex starts with one of the
     /// detector keywords. In that case `keyword_nearby` is proven by the match
     /// bytes and does not need an additional whole-chunk substring scan.
@@ -534,7 +514,6 @@ pub(crate) struct CompiledCompanion {
     pub(crate) required: bool,
 }
 
-#[cfg(any(feature = "entropy", feature = "simdsieve"))]
 pub(crate) use crate::scan_state::RawMatchPriority;
 pub(crate) use crate::scan_state::ScanState;
 pub use crate::scanner_config::{ScannerConfig, ScannerTuningConfig};

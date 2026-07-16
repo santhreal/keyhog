@@ -41,6 +41,19 @@ candidates; companions, validators, BPE, English bigram evidence, shape/context
 policy, and confidence then confirm, reject, or score them. Verification runs
 only after a candidate survives detection and reporting policy.
 
+ML participation is detector-owned through `[detector.ml]`. `lift` can raise a
+structural score but cannot veto a match, `blend` combines model and structural
+evidence, and `authoritative` lets the model decide an otherwise ambiguous
+channel. In the shipped corpus every regex-pattern channel is currently
+`lift`; 919 of 923 entropy channels disable ML, and only the four generic
+entropy owners use `authoritative`. The model is therefore not a general regex
+false-positive veto. Its current feature record identifies detector and
+pattern-versus-entropy channel, but not the exact matched pattern. Pattern-local
+weak-anchor policy remains outside model conditioning until that provenance is
+carried end to end. The retrainer refuses mismatched detector/channel records
+and now requires positive and negative held-out support for every `blend` or
+`authoritative` channel before writing another model.
+
 Static program recovery is a decode mechanism, not arbitrary code execution.
 KeyHog does not invoke Node.js or evaluate source. It recognizes a bounded
 grammar for cyclic byte-array XOR and Node-style AES-256-CBC decryption,
@@ -104,6 +117,7 @@ model's fixed vocabulary, remain global.
 | `entropy_very_high` | Tightens isolated, anchor-free token admission | Expands the no-keyword search and therefore its false-positive surface |
 | `sensitive_path_entropy_very_high` | Raises the keyword-free bar even in sensitive files | Lowers the explicit sensitive-path bar for that detector, improving recall in `.env`/secret manifests |
 | `[detector.entropy_fallback]` | Changes the emitted synthetic entropy finding identity and semantic class for that detector | Omitting it for an active entropy owner fails compilation; there is no scanner-global compatibility identity |
+| `entropy_roles` | Claims one or more corpus entry paths: `keyword-free`, `isolated-bare`, or `unclaimed-keyword` | Omitting a role disables that path in a focused custom corpus; no built-in owner or threshold is substituted |
 | `[[detector.entropy_shapes]]` | A lower declared shape floor admits more matching isolated credentials | A higher floor narrows the exception; omission is invalid for an active entropy owner |
 | `entropy_floor` | A higher applicable length-bucket floor suppresses more low-entropy candidates for that detector | A lower floor preserves more human-chosen or structured credentials |
 | `plausibility.mixed_alnum_floor` | Rejects more identifier-like alphanumeric runs | Preserves more low-randomness mixed-alphanumeric values |
@@ -120,10 +134,11 @@ model's fixed vocabulary, remain global.
 | `decoded_hex_key_material_lengths` | Adds only the declared pure-hex widths after transport decoding | Omitted widths remain decoded-digest negatives |
 | `canonical_hex_key_material` | Adds only the declared pure-hex lengths under exact `keywords` or vendor-prefixed `suffixes`; `excluded_keywords` carve out ambiguous names | Omitted policy, keyword, suffix, or length remains a digest-shaped negative |
 | `min_len` / `keyword_free_min_len` | Longer values are required; short false positives fall, but short real credentials can also fall | Shorter credential shapes become eligible |
-| `max_len` (phase-2 generic) | Longer assignment values remain eligible; increase only when the credential contract permits them | Long assignment values are rejected rather than truncated into an apparently valid finding |
+| `max_len` (generic entropy owner) | Longer assignment values remain eligible; increase only when the credential contract permits them | Long assignment values are rejected rather than truncated into an apparently valid finding |
 | `allowlist_paths`, `allowlist_values`, `stopwords` | Adds detector-specific path, value-regex, or literal exclusions | Removing an exclusion makes that detector consider the matching path/value again; it does not affect other detectors |
+| `public_identifier_assignment_markers` | Classifies detector-local assignment-key fragments as public identifiers instead of credentials | Omission disables this suppression for that detector; there is no scanner-global blockchain/network marker list |
 | `min_confidence` | Raises this detector's reporting floor | Lowers this detector's reporting floor; an operator override can still replace it |
-| `weak_anchor` | Keeps generic shape/entropy gates active for a service detector whose captured value collides with generic identifiers | Trusts the service anchor without the weak-anchor policy; use only when the pattern itself proves the credential shape |
+| detector/pattern `weak_anchor` | Keeps generic shape/entropy gates active for a whole service detector or an individual pattern; requires the owning detector's `entropy_high` and `entropy_floor` | Trusts unmarked patterns; use only when those patterns prove the credential shape |
 | `structural_password_slot` | Applies password-slot placeholder policy to a free-form value captured from a syntactic credential slot | Leaves that detector outside the structural-password family |
 | `private_key_block` | Makes the detector's enclosing key block suppress less-specific findings nested inside it | Treats the match as an ordinary, non-enclosing finding |
 | `[detector.credential_shape]` | Declares exact prefix/length/shape constraints that a captured credential must satisfy | Omitting it leaves that detector without an additional credential-shape constraint |
@@ -137,6 +152,16 @@ These settings do not all use one generic “last value wins” rule:
   policy. Equal priorities use compiled detector order only as a deterministic
   tie-break. Custom detector policy keywords join entropy discovery directly;
   they do not need to be repeated in `[scan].secret_keywords`.
+- **Entropy entry roles:** `entropy_roles` selects the detector that owns each
+  corpus-level entry path. A compiled corpus may have at most one owner for
+  each role. Missing roles remain disabled, and duplicate owners fail scanner
+  construction. Role selection never depends on a detector ID spelling.
+- **Weak anchors:** detector-level `weak_anchor = true` applies to every pattern,
+  while the same field inside `[[detector.patterns]]` governs that exact regex. Each such detector owns `entropy_high`
+  and length-bucketed `entropy_floor`. Scanner construction rejects an explicit
+  weak anchor without that local policy. KeyHog never guesses this semantic
+  choice from regex text, and `min_confidence` does not disable it. The compiled
+  hot path uses a primitive detector-indexed floor program.
 - **BPE ceiling:** every active entropy owner declares either
   `bpe_max_bytes_per_token` or `bpe_enabled = false`; omission fails detector
   validation and scanner construction. An explicitly supplied

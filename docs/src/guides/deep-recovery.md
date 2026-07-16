@@ -77,6 +77,12 @@ The repository's `ioc-recovery` corpus contains 4,368 labeled fixtures across
 13 JavaScript concealment phases. It has exact expected credentials and is
 scored by the same benchmark runner used for other corpora.
 
+The paper authors publish 13 demonstration files in the pinned
+[`llm-ioc-detection`](https://github.com/jaimemorales52/llm-ioc-detection/tree/91d45377cf482c1de6c36a0d33744665976a19b6/1.createdFiles)
+repository. Their 336-program evaluation corpus is not present there. KeyHog's
+4,368 fixtures are deterministic synthetic adaptations of the phase taxonomy,
+not copies of the paper's evaluation files.
+
 Reproduce the checked benchmark matrix:
 
 ```bash

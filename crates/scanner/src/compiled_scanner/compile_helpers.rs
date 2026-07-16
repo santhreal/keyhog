@@ -128,6 +128,7 @@ mod tests {
             regex: LazyRegex::plain("secret_[A-Za-z0-9]{16}"),
             group: None,
             client_safe: false,
+            weak_anchor: false,
             match_proves_keyword_nearby: false,
             homoglyph_variant: false,
         }

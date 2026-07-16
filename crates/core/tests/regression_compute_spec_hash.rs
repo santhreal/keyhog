@@ -24,8 +24,8 @@
 use keyhog_core::compute_spec_hash;
 use keyhog_core::{
     CanonicalHexKeyMaterialSpec, CompanionSpec, CredentialShape, DetectorKind,
-    DetectorPlausibilityPolicySpec, DetectorSpec, EntropyFallbackMetadata, EntropyFloorBucket,
-    EntropyShapeSpec, PatternSpec, Severity, VerifySpec,
+    DetectorPlausibilityPolicySpec, DetectorSpec, EntropyDetectionRole, EntropyFallbackMetadata,
+    EntropyFloorBucket, EntropyShapeSpec, PatternSpec, Severity, VerifySpec,
 };
 
 /// Fully-populated single-pattern detector. `name`/`service` are set equal to
@@ -487,6 +487,9 @@ knob_changes_digest!(spec_hash_binds_entropy_fallback_metadata, |d| d
         name: "Custom entropy".into(),
         service: "generic".into(),
     }));
+knob_changes_digest!(spec_hash_binds_entropy_detection_role, |d| d
+    .entropy_roles =
+    vec![EntropyDetectionRole::KeywordFree]);
 #[test]
 fn spec_hash_binds_entropy_fallback_class() {
     let mut generic = knob_base();
@@ -571,6 +574,9 @@ knob_changes_digest!(spec_hash_binds_structural_password_slot, |d| d
     .structural_password_slot =
     true);
 knob_changes_digest!(spec_hash_binds_weak_anchor, |d| d.weak_anchor = true);
+knob_changes_digest!(spec_hash_binds_pattern_weak_anchor, |d| d.patterns[0]
+    .weak_anchor =
+    true);
 knob_changes_digest!(spec_hash_binds_private_key_block, |d| d.private_key_block =
     true);
 knob_changes_digest!(spec_hash_binds_credential_shape, |d| d.credential_shape =

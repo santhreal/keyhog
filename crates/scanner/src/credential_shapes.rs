@@ -127,7 +127,6 @@ pub(crate) fn build_detector_shape_rules(
         .collect()
 }
 
-
 #[cfg(test)]
 #[path = "../tests/unit/credential_shapes.rs"]
 mod tests;

@@ -1,8 +1,8 @@
 """Labeled training corpus for the keyhog ML secret scorer.
 
-Emits JSONL records {text, context, label, kind} where `text` is the candidate
-credential the scanner would extract and `context` is the local code/config
-window around it. `label` is 1 for real secrets, 0 for false-positive shapes.
+Emits JSONL records with candidate text/context, label, kind, detector identity,
+and producer channel. `label` is 1 for real secrets and 0 for false-positive
+shapes; detector identity must match the finding ID the scanner emits.
 
 Design intent (the reason this corpus exists): teach the model keyhog's
 decode-through advantage. The negative set is deliberately heavy on
@@ -133,6 +133,29 @@ def pos_b64_wrapped_secret(rnd):
     return base64.b64encode(inner.encode()).decode()
 
 
+def pos_long_generic_entropy(rnd):
+    """Long opaque material seen in generated test/spec fixtures."""
+    alphabet = B62 + "-_."
+    return _rc(rnd, alphabet, rnd.randint(180, 320))
+
+
+def pos_entropy_api_test_token(rnd):
+    return _rc(rnd, B62 + "-_.", rnd.randint(32, 64))
+
+
+def pos_entropy_password(rnd):
+    value = _rc(rnd, B62, rnd.randint(8, 24))
+    return value + rnd.choice("!@#$%") if rnd.random() < 0.625 else value
+
+
+def pos_entropy_token(rnd):
+    return _rc(rnd, B62 + "-_", rnd.randint(24, 60))
+
+
+def pos_keyword_secret_bridge(rnd):
+    return _rc(rnd, string.ascii_lowercase, rnd.choice([8, 16, 24]))
+
+
 POSITIVE_GENS = [
     ("aws-access-key", pos_aws_access_key, 8),
     ("aws-secret", pos_aws_secret, 8),
@@ -143,7 +166,34 @@ POSITIVE_GENS = [
     ("generic-high-entropy", pos_generic_highentropy, 14),
     ("hex-key", pos_hex_key, 8),
     ("b64-wrapped-secret", pos_b64_wrapped_secret, 6),
+    ("generic-long-entropy", pos_long_generic_entropy, 6),
+    ("entropy-api-test-token", pos_entropy_api_test_token, 12),
+    ("entropy-password", pos_entropy_password, 8),
+    ("entropy-token", pos_entropy_token, 4),
+    ("keyword-secret-bridge", pos_keyword_secret_bridge, 8),
 ]
+
+POSITIVE_DETECTOR_BY_KIND = {
+    "aws-access-key": "aws-access-key",
+    "aws-secret": "aws-secret-access-key",
+    "github-pat": "github-classic-pat",
+    "slack-bot": "slack-bot-token",
+    "stripe": "stripe-secret-key",
+    "openai": "openai-api-key",
+    "generic-high-entropy": "entropy-generic",
+    "hex-key": "entropy-generic",
+    "b64-wrapped-secret": "generic-secret",
+    "generic-long-entropy": "entropy-generic",
+    "entropy-api-test-token": "entropy-api-key",
+    "entropy-password": "entropy-password",
+    "entropy-token": "entropy-token",
+    "keyword-secret-bridge": "generic-keyword-secret",
+}
+
+POSITIVE_CHANNEL_BY_KIND = {
+    kind: "entropy" if detector_id.startswith("entropy-") else "pattern"
+    for kind, detector_id in POSITIVE_DETECTOR_BY_KIND.items()
+}
 
 
 # ── negatives: false-positive shapes ───────────────────────────────────────
@@ -372,8 +422,79 @@ def generate(n_per_unit: int, seed: int) -> list[dict]:
             # token / digest), so those always carry one. Provider-prefixed
             # tokens (ghp_, AKIA, sk_live_) self-anchor, so 80% keyword is fine.
             kw_prob = 1.0 if kind in ("hex-key", "generic-high-entropy") else 0.8
-            ctx = _wrap_context(rnd, cred, secret_kw=rnd.random() < kw_prob)
-            records.append({"text": cred, "context": ctx, "label": 1, "kind": kind})
+            if kind == "generic-long-entropy":
+                ctx = _fmt(
+                    rnd.choice(
+                        [
+                            "tests/data/vector = {}",
+                            "mock_payload = {}",
+                            "fixture_value = {}",
+                            "spec_data: {}",
+                        ]
+                    ),
+                    cred,
+                )
+            elif kind == "entropy-api-test-token":
+                ctx = _fmt(
+                    rnd.choice(
+                        [
+                            "tests/stripe_api_key = {}",
+                            "mock_alchemy_api_key = {}",
+                            "fixture_grafana_api_key = {}",
+                            "spec_codecov_api_key: {}",
+                        ]
+                    ),
+                    cred,
+                )
+            elif kind == "entropy-password":
+                ctx = _fmt(
+                    rnd.choice(
+                        [
+                            "tests/postgres_password = {}",
+                            "mock_redis_password = {}",
+                            "fixture_database_password: {}",
+                            "def test_login(): password = {}",
+                            "const postgresPassword = \"{}\";",
+                            "resource \"database\" {{ password = \"{}\" }}",
+                        ]
+                    ),
+                    cred,
+                )
+            elif kind == "entropy-token":
+                ctx = _fmt(
+                    rnd.choice(
+                        [
+                            "tests/github_token = {}",
+                            "mock_slack_token = {}",
+                            "fixture_grafana_token: {}",
+                        ]
+                    ),
+                    cred,
+                )
+            elif kind == "keyword-secret-bridge":
+                ctx = _fmt(
+                    rnd.choice(
+                        [
+                            "password={}",
+                            "PASSWORD={}",
+                            "passwd={}",
+                            "pwd={}",
+                            "secret={}",
+                            "token={}",
+                        ]
+                    ),
+                    cred,
+                )
+            else:
+                ctx = _wrap_context(rnd, cred, secret_kw=rnd.random() < kw_prob)
+            records.append({
+                "text": cred,
+                "context": ctx,
+                "label": 1,
+                "kind": kind,
+                "detector_id": POSITIVE_DETECTOR_BY_KIND[kind],
+                "candidate_channel": POSITIVE_CHANNEL_BY_KIND[kind],
+            })
 
     # standard negatives
     for kind, gen, weight in NEGATIVE_GENS:
@@ -389,7 +510,14 @@ def generate(n_per_unit: int, seed: int) -> list[dict]:
             else:
                 # ~40% adversarially placed under a secret keyword
                 ctx = _wrap_context(rnd, cred, secret_kw=rnd.random() < 0.4)
-            records.append({"text": cred, "context": ctx, "label": 0, "kind": kind})
+            records.append({
+                "text": cred,
+                "context": ctx,
+                "label": 0,
+                "kind": kind,
+                "detector_id": "entropy-generic",
+                "candidate_channel": "entropy",
+            })
 
     # base64-of-binary negatives (the decode-feature teacher). Heavy weight, and
     # HALF placed under a secret keyword so the model cannot lean on context
@@ -398,7 +526,14 @@ def generate(n_per_unit: int, seed: int) -> list[dict]:
     for _ in range(n_per_unit * binary_weight):
         cred = make_binary_negative(rnd)
         ctx = _wrap_context(rnd, cred, secret_kw=rnd.random() < 0.5)
-        records.append({"text": cred, "context": ctx, "label": 0, "kind": "base64-binary"})
+        records.append({
+            "text": cred,
+            "context": ctx,
+            "label": 0,
+            "kind": "base64-binary",
+            "detector_id": "entropy-generic",
+            "candidate_channel": "entropy",
+        })
 
     rnd.shuffle(records)
     return records

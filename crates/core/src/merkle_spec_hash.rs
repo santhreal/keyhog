@@ -18,7 +18,7 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
             // changed (Law 10 silent staleness).
             entries.push(format!("sev:{}:{:?}", d.id, d.severity));
             for (index, p) in d.patterns.iter().enumerate() {
-                entries.push(format!(
+                let mut pattern_entry = format!(
                     // `cs:` folds `client_safe` in: toggling it downgrades every
                     // match of this pattern to `Severity::ClientSafe` (gated by
                     // `--hide-client-safe`), a material output change that must
@@ -29,7 +29,11 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
                     p.regex,
                     p.group.map(|g| g.to_string()).unwrap_or_default(), // LAW10: missing/non-string field => empty/placeholder; recall-safe
                     p.client_safe
-                ));
+                );
+                if p.weak_anchor {
+                    pattern_entry.push_str("|wa:true");
+                }
+                entries.push(pattern_entry);
             }
             for (index, c) in d.companions.iter().enumerate() {
                 entries.push(format!(
@@ -108,6 +112,12 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
                     metadata.name,
                     metadata.service
                 ));
+            }
+            let mut entropy_roles: Vec<&str> =
+                d.entropy_roles.iter().map(|role| role.as_str()).collect();
+            entropy_roles.sort_unstable();
+            for role in entropy_roles {
+                entries.push(format!("entropy-role:{}:{}", d.id, role));
             }
             if let Some(v) = d.sensitive_path_entropy_very_high {
                 entries.push(format!("spevh:{}:{:016x}", d.id, v.to_bits()));
@@ -212,6 +222,12 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
             sw.sort();
             for s in sw {
                 entries.push(format!("sw:{}:{}", d.id, s));
+            }
+            let mut public_markers: Vec<&String> =
+                d.public_identifier_assignment_markers.iter().collect();
+            public_markers.sort();
+            for marker in public_markers {
+                entries.push(format!("public-id-marker:{}:{}", d.id, marker));
             }
             let mut hot: Vec<&String> = d.simdsieve_prefixes.iter().collect();
             hot.sort();

@@ -31,6 +31,7 @@ fn every_acquired_gpu_peer_matches_the_cpu_reference() {
             description: None,
             group: None,
             client_safe: false,
+            weak_anchor: false,
         }],
         keywords: vec!["KHGPUPEER".into()],
         ..DetectorSpec::default()

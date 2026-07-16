@@ -11,11 +11,9 @@
 //! pattern's shape gates + lost the named-detector confidence floor and dropped
 //! as `below_min_confidence`.
 //!
-//! The fix splits the decision: the per-DETECTOR base (residual pure-hex list,
-//! generic/private-key carve-outs, explicit min_confidence) stays detector-wide,
-//! but the broad-identifier half is resolved against the matched pattern's regex
-//! (`WeakAnchorBase::PerPattern`). The strong instance pattern is now treated as
-//! strong. The negative twin pins that the lift still rides on the
+//! The policy is explicit beside each detector pattern and compiled
+//! into `CompiledPattern`; no regex-text inference or confidence-floor coupling
+//! participates. The negative twin pins that the lift still rides on the
 //! service-anchored match (the keyword), not the bare host shape.
 
 mod support;

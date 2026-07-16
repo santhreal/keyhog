@@ -526,6 +526,7 @@ fn named_detector_stage_suppresses_generic_identifier() {
         "generic-secret",
         false,
         false,
+        false,
     ));
 
     assert_eq!(
@@ -547,6 +548,7 @@ fn named_detector_stage_reports_exact_email_shape_reason() {
         crate::detector_ids::GENERIC_SECRET,
         false,
         false,
+        false,
     ));
 
     assert_eq!(
@@ -562,6 +564,7 @@ fn named_detector_stage_reports_shared_suppression_reason() {
         CodeContext::Unknown,
         Some("filesystem"),
         "datadog-api-key",
+        true,
         true,
         false,
     ));
@@ -585,6 +588,7 @@ fn named_detector_stage_reports_decoded_inner_reason() {
         Some("filesystem"),
         "datadog-api-key",
         true,
+        true,
         false,
     ));
 
@@ -604,6 +608,7 @@ fn named_detector_stage_reports_service_anchored_identifier() {
         CodeContext::Unknown,
         None,
         "aws-secret-access-key",
+        true,
         false,
         false,
     ));

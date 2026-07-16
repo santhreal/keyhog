@@ -6,7 +6,9 @@ use crate::entropy::{shannon_entropy, HIGH_ENTROPY_THRESHOLD, VERY_HIGH_ENTROPY_
 /// 4 prefix features + 4 context features + 4 placeholder features +
 /// 4 structure features + 6 file-type one-hot features + 3 extra features
 /// (comment, assignment, test-file) = 37 base + 4 padding = 41, plus the
-/// decode-structure feature (#41) and the service-context feature (#42) = 43.
+/// decode-structure feature (#41), the service-context feature (#42), eight
+/// active-detector/channel features (#43-50), and four detector-owned entropy
+/// family features (#51-54) = 55.
 ///
 /// Feature 41 is keyhog's decode-through advantage fed to the model: 1.0 when
 /// the candidate base64/hex-decodes to an identifiable binary asset (magic
@@ -80,6 +82,25 @@ const TEST_FILE_CONTEXT_FEATURE_INDEX: usize = 40;
 const DECODE_STRUCTURE_FEATURE_INDEX: usize = 41;
 /// Keyword-specificity verdict: context names a specific service (DET-1).
 const SERVICE_CONTEXT_FEATURE_INDEX: usize = 42;
+const ACTIVE_SERVICE_CONTEXT_FEATURE_INDEX: usize = 43;
+const GENERIC_DETECTOR_FEATURE_INDEX: usize = 44;
+const WEAK_ANCHOR_FEATURE_INDEX: usize = 45;
+const LIVE_VERIFIER_FEATURE_INDEX: usize = 46;
+const REQUIRED_COMPANION_FEATURE_INDEX: usize = 47;
+const STRUCTURAL_PASSWORD_SLOT_FEATURE_INDEX: usize = 48;
+const PHASE2_GENERIC_FEATURE_INDEX: usize = 49;
+const ENTROPY_CHANNEL_FEATURE_INDEX: usize = 50;
+const ENTROPY_GENERIC_FEATURE_INDEX: usize = 51;
+const ENTROPY_PASSWORD_FEATURE_INDEX: usize = 52;
+const ENTROPY_TOKEN_FEATURE_INDEX: usize = 53;
+const ENTROPY_API_KEY_FEATURE_INDEX: usize = 54;
+
+/// Production channel that produced a candidate before model scoring.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MlCandidateChannel {
+    Pattern,
+    Entropy,
+}
 
 #[derive(Clone, serde::Deserialize)]
 struct MlFeatureMarkers {
@@ -132,6 +153,53 @@ pub fn compute_features_with_config(
     test_keywords: &[String],
     placeholder_keywords: &[String],
 ) -> [f32; NUM_FEATURES] {
+    compute_features_internal(
+        text,
+        context,
+        known_prefixes,
+        secret_keywords,
+        test_keywords,
+        placeholder_keywords,
+        None,
+        None,
+    )
+}
+
+/// Compute serve-path features conditioned on the detector policy that owns
+/// the candidate. Every detector feature is derived from that loaded TOML;
+/// candidate provenance contributes only the pattern-versus-entropy channel.
+pub fn compute_features_for_detector_with_config(
+    text: &str,
+    context: &str,
+    known_prefixes: &[String],
+    secret_keywords: &[String],
+    test_keywords: &[String],
+    placeholder_keywords: &[String],
+    detector: &keyhog_core::DetectorSpec,
+    channel: MlCandidateChannel,
+) -> [f32; NUM_FEATURES] {
+    compute_features_internal(
+        text,
+        context,
+        known_prefixes,
+        secret_keywords,
+        test_keywords,
+        placeholder_keywords,
+        Some(detector),
+        Some(channel),
+    )
+}
+
+fn compute_features_internal(
+    text: &str,
+    context: &str,
+    known_prefixes: &[String],
+    secret_keywords: &[String],
+    test_keywords: &[String],
+    placeholder_keywords: &[String],
+    detector: Option<&keyhog_core::DetectorSpec>,
+    channel: Option<MlCandidateChannel>,
+) -> [f32; NUM_FEATURES] {
     debug_assert!(
         !text.is_empty(),
         "compute_features_with_config requires non-empty text"
@@ -167,7 +235,59 @@ pub fn compute_features_with_config(
     apply_extra_features(&mut f, context, context_bytes);
     apply_decode_structure_feature(&mut f, text);
     apply_service_context_feature(&mut f, context_bytes);
+    apply_detector_features(&mut f, context_bytes, detector, channel);
     f
+}
+
+fn apply_detector_features(
+    features: &mut [f32; NUM_FEATURES],
+    context: &[u8],
+    detector: Option<&keyhog_core::DetectorSpec>,
+    channel: Option<MlCandidateChannel>,
+) {
+    let Some(detector) = detector else {
+        return;
+    };
+    features[ACTIVE_SERVICE_CONTEXT_FEATURE_INDEX] = binary_feature(
+        super::service_vocab::context_names_detector_service(detector, context),
+    );
+    features[GENERIC_DETECTOR_FEATURE_INDEX] =
+        binary_feature(detector.service.eq_ignore_ascii_case("generic"));
+    features[WEAK_ANCHOR_FEATURE_INDEX] = binary_feature(detector.weak_anchor);
+    features[LIVE_VERIFIER_FEATURE_INDEX] = binary_feature(detector.verify.is_some());
+    features[REQUIRED_COMPANION_FEATURE_INDEX] = binary_feature(
+        detector
+            .companions
+            .iter()
+            .any(|companion| companion.required),
+    );
+    features[STRUCTURAL_PASSWORD_SLOT_FEATURE_INDEX] =
+        binary_feature(detector.structural_password_slot);
+    features[PHASE2_GENERIC_FEATURE_INDEX] =
+        binary_feature(detector.kind == keyhog_core::DetectorKind::Phase2Generic);
+    features[ENTROPY_CHANNEL_FEATURE_INDEX] =
+        binary_feature(channel == Some(MlCandidateChannel::Entropy));
+    if channel == Some(MlCandidateChannel::Entropy) {
+        match detector
+            .entropy_fallback
+            .as_ref()
+            .map(|fallback| fallback.class)
+        {
+            Some(keyhog_core::EntropyFallbackClass::Generic) => {
+                features[ENTROPY_GENERIC_FEATURE_INDEX] = 1.0;
+            }
+            Some(keyhog_core::EntropyFallbackClass::Password) => {
+                features[ENTROPY_PASSWORD_FEATURE_INDEX] = 1.0;
+            }
+            Some(keyhog_core::EntropyFallbackClass::Token) => {
+                features[ENTROPY_TOKEN_FEATURE_INDEX] = 1.0;
+            }
+            Some(keyhog_core::EntropyFallbackClass::ApiKey) => {
+                features[ENTROPY_API_KEY_FEATURE_INDEX] = 1.0;
+            }
+            None => {}
+        }
+    }
 }
 
 /// Feature 41: keyhog's decode-through advantage as a model input. Fires when

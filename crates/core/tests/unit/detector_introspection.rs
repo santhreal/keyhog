@@ -16,6 +16,7 @@ fn introspection_uses_the_declared_spec_and_redacts_test_credentials() {
             description: Some("fixture pattern".to_string()),
             group: Some(0),
             client_safe: true,
+            weak_anchor: false,
         }],
         min_confidence: Some(0.91),
         entropy_high: Some(4.25),

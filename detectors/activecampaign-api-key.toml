@@ -14,6 +14,8 @@ keywords = ["activecampaign", "ACTIVECAMPAIGN", "Api-Token", "api_token"]
 # collides with a generic hex/base64 run), so scanner suppression keeps the
 # generic shape/entropy gates ENGAGED through this detector-owned flag.
 weak_anchor = true
+entropy_high = 4.5
+entropy_floor = [{ max_len = 24, floor = 3.0 }, { max_len = 40, floor = 2.8 }, { floor = 3.5 }]
 
 [[detector.patterns]]
 regex = '(?:ACTIVECAMPAIGN|activecampaign)[_]*(?:API|api)?[_]*(?:KEY|key|TOKEN|token)[=: ]+([a-zA-Z0-9]{32,})'

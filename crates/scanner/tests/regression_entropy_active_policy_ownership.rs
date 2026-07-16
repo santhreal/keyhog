@@ -1,7 +1,7 @@
 use keyhog_core::{
     CanonicalHexKeyMaterialSpec, Chunk, ChunkMetadata, DetectorKind,
-    DetectorPlausibilityPolicySpec, DetectorSpec, EntropyFallbackClass, EntropyFallbackMetadata,
-    EntropyFloorBucket, EntropyShapeSpec, PatternSpec,
+    DetectorPlausibilityPolicySpec, DetectorSpec, EntropyDetectionRole, EntropyFallbackClass,
+    EntropyFallbackMetadata, EntropyFloorBucket, EntropyShapeSpec, PatternSpec,
 };
 use keyhog_scanner::testing::entropy_scanner::{
     active_policy_match_values, active_policy_owner_id,
@@ -67,6 +67,52 @@ fn scan_with_owner_min_len(min_len: usize) -> Vec<String> {
         detector("generic-secret", &["secret"], 8),
     ];
     active_policy_match_values(detectors, KEYWORD, &format!(r#"{KEYWORD} = "{VALUE}""#))
+}
+
+fn full_scan_with_public_identifier_marker(marker_enabled: bool) -> Vec<String> {
+    let mut owner = detector("public-marker-owner", &["secret"], 8);
+    owner.entropy_roles = vec![EntropyDetectionRole::KeywordFree];
+    owner.bpe_enabled = Some(false);
+    owner.sensitive_path_entropy_very_high = Some(5.5);
+    if marker_enabled {
+        owner.public_identifier_assignment_markers = vec!["PUBLIC_ADDR =".into()];
+    }
+    let mut config = ScannerConfig::default();
+    config.entropy_enabled = true;
+    config.entropy_in_source_files = true;
+    config.min_confidence = 0.0;
+    let scanner = CompiledScanner::compile(vec![owner])
+        .expect("compile detector-local public identifier marker corpus")
+        .with_config(config);
+    let chunk = Chunk {
+        data: format!("PUBLIC_ADDR = \"{KEYWORD_FREE_VALUE}\"").into(),
+        metadata: ChunkMetadata {
+            path: Some("secrets.yaml".into()),
+            ..Default::default()
+        },
+    };
+    scanner
+        .scan(&chunk)
+        .into_iter()
+        .filter(|finding| {
+            finding.detector_id.as_ref() == "entropy-public-marker-owner"
+                && finding.credential.as_ref() == KEYWORD_FREE_VALUE
+        })
+        .map(|finding| finding.credential.to_string())
+        .collect()
+}
+
+#[test]
+fn public_identifier_assignment_suppression_is_detector_local() {
+    assert_eq!(
+        full_scan_with_public_identifier_marker(false),
+        vec![KEYWORD_FREE_VALUE.to_string()],
+        "omitting the marker must leave the detector's candidate eligible"
+    );
+    assert!(
+        full_scan_with_public_identifier_marker(true).is_empty(),
+        "declaring the exact marker in the owning detector must suppress the same candidate"
+    );
 }
 
 const CANONICAL_HEX_KEY: &str = "1868845451a4c85adb078195b768135b";
@@ -240,7 +286,6 @@ const WORD_LIKE_VALUE: &str = "CorrectHorseBatteryStaple!9";
 fn entropy_only_owner(bpe_enabled: bool) -> DetectorSpec {
     let mut owner = detector("custom-secret-owner", &[ENTROPY_ONLY_KEYWORD], 8);
     owner.kind = DetectorKind::Regex;
-    owner.max_len = None;
     owner.patterns = vec![PatternSpec {
         regex: "custom_owner_pattern_that_cannot_match_([0-9]{99})".to_string(),
         group: Some(1),
@@ -264,6 +309,43 @@ fn phase2_owner_without_max_len_fails_scanner_construction() {
         error.contains("max_len") && error.contains("incomplete-phase2-owner"),
         "construction error must name the detector and missing field: {error}"
     );
+}
+
+#[test]
+fn regex_entropy_owner_without_max_len_fails_scanner_construction() {
+    let mut owner = entropy_only_owner(false);
+    owner.id = "incomplete-regex-owner".into();
+    owner.max_len = None;
+    let error = match CompiledScanner::compile(vec![owner]) {
+        Ok(_) => panic!("an incomplete regex entropy owner must not compile"),
+        Err(error) => error.to_string(),
+    };
+    assert!(
+        error.contains("max_len") && error.contains("incomplete-regex-owner"),
+        "construction error must name the detector and missing field: {error}"
+    );
+}
+
+#[test]
+fn regex_entropy_owner_compiles_its_generic_assignment_generator() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    config.entropy_enabled = false;
+    let scanner = CompiledScanner::compile(vec![entropy_only_owner(false)])
+        .expect("compile regex-only generic assignment corpus")
+        .with_config(config);
+    let chunk = Chunk {
+        data: format!(r#"{ENTROPY_ONLY_KEYWORD} = "{VALUE}""#).into(),
+        metadata: ChunkMetadata::default(),
+    };
+    let findings = scanner
+        .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+        .into_iter()
+        .flatten()
+        .filter(|finding| finding.credential.as_ref() == VALUE)
+        .map(|finding| finding.detector_id.to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(findings, vec!["custom-secret-owner"]);
 }
 
 fn full_scan_findings(bpe_enabled: bool, backend: ScanBackend) -> Vec<(String, String, usize)> {
@@ -303,8 +385,9 @@ fn full_scan_keyword_free_values(
     path: &str,
     backend: ScanBackend,
 ) -> Vec<String> {
-    let mut generic_secret = detector("generic-secret", &["secret"], 8);
-    generic_secret.entropy_very_high = Some(entropy_very_high);
+    let mut keyword_free_owner = detector("custom-keyword-free-owner", &["secret"], 8);
+    keyword_free_owner.entropy_roles = vec![EntropyDetectionRole::KeywordFree];
+    keyword_free_owner.entropy_very_high = Some(entropy_very_high);
     let embedded_policy = keyhog_core::detector_spec_by_id("generic-secret")
         .expect("embedded generic-secret policy must load");
     let embedded_discount = embedded_policy
@@ -313,9 +396,10 @@ fn full_scan_keyword_free_values(
         - embedded_policy
             .sensitive_path_entropy_very_high
             .expect("generic-secret must declare sensitive path entropy policy");
-    generic_secret.sensitive_path_entropy_very_high = Some(entropy_very_high - embedded_discount);
-    generic_secret.keyword_free_min_len = Some(20);
-    generic_secret.bpe_enabled = Some(false);
+    keyword_free_owner.sensitive_path_entropy_very_high =
+        Some(entropy_very_high - embedded_discount);
+    keyword_free_owner.keyword_free_min_len = Some(20);
+    keyword_free_owner.bpe_enabled = Some(false);
     let mut config = ScannerConfig::default();
     config.entropy_enabled = true;
     config.entropy_in_source_files = true;
@@ -323,7 +407,7 @@ fn full_scan_keyword_free_values(
     // Keep one nonmatching phase-1 detector so explicit Hyperscan and GPU
     // routes execute their real production paths before the shared entropy
     // fallback evaluates the keyword-free candidate.
-    let scanner = CompiledScanner::compile(vec![generic_secret, entropy_only_owner(false)])
+    let scanner = CompiledScanner::compile(vec![keyword_free_owner, entropy_only_owner(false)])
         .expect("compile detector-owned entropy threshold corpus")
         .with_config(config);
     assert!(
@@ -401,21 +485,22 @@ fn sensitive_path_discount_is_relative_to_detector_owned_threshold() {
 
 #[test]
 fn entropy_fallback_identity_comes_from_active_detector_policy() {
-    let mut generic_secret = detector("generic-secret", &["secret"], 8);
-    generic_secret.entropy_fallback = Some(EntropyFallbackMetadata {
+    let mut keyword_free_owner = detector("custom-keyword-free-owner", &["secret"], 8);
+    keyword_free_owner.entropy_roles = vec![EntropyDetectionRole::KeywordFree];
+    keyword_free_owner.entropy_fallback = Some(EntropyFallbackMetadata {
         class: EntropyFallbackClass::Generic,
         id: "entropy-custom-policy".into(),
         name: "Custom Policy Entropy".into(),
         service: "custom-service".into(),
     });
-    generic_secret.keyword_free_min_len = Some(20);
-    generic_secret.bpe_enabled = Some(false);
-    generic_secret.sensitive_path_entropy_very_high = Some(5.5);
+    keyword_free_owner.keyword_free_min_len = Some(20);
+    keyword_free_owner.bpe_enabled = Some(false);
+    keyword_free_owner.sensitive_path_entropy_very_high = Some(5.5);
     let mut config = ScannerConfig::default();
     config.entropy_enabled = true;
     config.entropy_in_source_files = true;
     config.min_confidence = 0.0;
-    let scanner = CompiledScanner::compile(vec![generic_secret, entropy_only_owner(false)])
+    let scanner = CompiledScanner::compile(vec![keyword_free_owner, entropy_only_owner(false)])
         .expect("compile detector-owned entropy metadata corpus")
         .with_config(config);
     let chunk = Chunk {

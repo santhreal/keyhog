@@ -490,9 +490,9 @@ the CPU MoE instead. Use --require-gpu to hard-fail until the GPU shader/driver/
 ///
 /// ```rust,ignore
 /// use keyhog_scanner::gpu::batch_score_features;
-/// // The feature width is `model_arch::INPUT_DIM` (43 after DET-1), never a
+/// // The feature width is `model_arch::INPUT_DIM` (55), never a
 /// // bare literal; a wrong-width buffer is rejected by the GPU host layout.
-/// let _ = batch_score_features(&[[0.0f32; 43]], std::time::Duration::from_millis(30_000));
+/// let _ = batch_score_features(&[[0.0f32; 55]], std::time::Duration::from_millis(30_000));
 /// ```
 pub(crate) fn batch_score_features(
     features: &[[f32; INPUT_DIM]],
@@ -977,7 +977,6 @@ fn gpu_moe_numerically_trustworthy(readback_timeout: Duration) -> bool {
         }
     })
 }
-
 
 #[cfg(test)]
 #[path = "../../tests/unit/gpu_backend.rs"]

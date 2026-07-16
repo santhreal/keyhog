@@ -8,6 +8,8 @@ service = "snowflake"
 severity = "info"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["SNOWFLAKE", "snowflakecomputing", "SNOWSQL"]
+entropy_high = 4.5
+entropy_floor = [{ max_len = 24, floor = 3.0 }, { max_len = 40, floor = 2.8 }, { floor = 3.5 }]
 
 [[detector.patterns]]
 # `(?-i)` forces case-sensitive matching. Account locators are lowercase (e.g.
@@ -24,21 +26,25 @@ group = 1
 regex = "(?:SNOWFLAKE|snowflake)[._-]?(?:user|username|usr)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
 description = "Snowflake username"
 group = 1
+weak_anchor = true
 
 [[detector.patterns]]
 regex = "(?:SNOWFLAKE|snowflake)[._-]?(?:warehouse|wh)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
 description = "Snowflake warehouse"
 group = 1
+weak_anchor = true
 
 [[detector.patterns]]
 regex = "(?:SNOWFLAKE|snowflake)[._-]?(?:database|db)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
 description = "Snowflake database"
 group = 1
+weak_anchor = true
 
 [[detector.patterns]]
 regex = "(?:SNOWFLAKE|snowflake)[._-]?(?:role)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
 description = "Snowflake role"
 group = 1
+weak_anchor = true
 
 [[detector.tests]]
 test_positive = "snowflake.account=xy12345.us-east-1"

@@ -42,7 +42,6 @@ const TARGET_PATTERNS_PER_SHARD: usize =
 const MAX_COMPILE_SHARDS: usize = 64;
 const MAX_HS_PATTERN_LEN: usize = 500;
 const BASE_PATTERN_COST: u64 = 16;
-const RETRY_THRESHOLD: usize = 100;
 const RETRY_DROP_DIVISOR: usize = 10;
 const HS_CRATE_CACHE_VERSION: &[u8] = b"0.3.2";
 
@@ -883,12 +882,16 @@ impl HsScanner {
             let patterns_obj = Patterns(std::mem::take(&mut attempts));
             match Builder::build::<BlockMode>(&patterns_obj) {
                 Ok(db) => break db,
-                Err(_) if patterns_obj.0.len() > RETRY_THRESHOLD => {
+                Err(_) if patterns_obj.0.len() > 1 => {
                     // Law 10: compile retry records dropped ids and caller reroutes them to the phase-2 keyword lane.
                     // Reclaim ownership for the next attempt.
                     attempts = patterns_obj.0;
-                    attempts.sort_by_key(|p| std::cmp::Reverse(p.expression.len()));
-                    let remove_count = attempts.len() / RETRY_DROP_DIVISOR;
+                    // Remove the longest/most expensive expressions first.
+                    // The old reverse sort + pop accidentally removed the
+                    // shortest expressions, while its `> 100` threshold made a
+                    // single unsupported expression fatal in ordinary shards.
+                    attempts.sort_by_key(|p| p.expression.len());
+                    let remove_count = (attempts.len() / RETRY_DROP_DIVISOR).max(1);
                     for _ in 0..remove_count {
                         if let Some(removed) = attempts.pop() {
                             dropped.push(removed.id.unwrap_or(0)); // LAW10: ids are assigned above; fallback id is unreachable and only affects the returned reroute list.

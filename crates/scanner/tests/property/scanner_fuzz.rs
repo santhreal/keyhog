@@ -45,6 +45,7 @@ fn fuzz_detectors() -> Vec<DetectorSpec> {
                 description: None,
                 group: Some(1),
                 client_safe: false,
+                weak_anchor: false,
             }],
             companions: vec![],
             verify: None,
@@ -65,6 +66,7 @@ fn fuzz_detectors() -> Vec<DetectorSpec> {
                 description: None,
                 group: None,
                 client_safe: false,
+                weak_anchor: false,
             }],
             companions: vec![],
             verify: None,
@@ -84,8 +86,6 @@ static CORRECTNESS_SCANNER: LazyLock<CompiledScanner> = LazyLock::new(|| {
         .with_config(keyhog_scanner::ScannerConfig {
             scan: keyhog_core::ScanConfig {
                 min_confidence: 0.0,
-                #[cfg(feature = "ml")]
-                ml_mode: None,
                 #[cfg(not(feature = "ml"))]
                 ml_enabled: false,
                 entropy_enabled: false,

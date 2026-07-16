@@ -129,6 +129,7 @@ fn boundary_scanner() -> CompiledScanner {
             description: Some("Boundary-sensitive assignment".to_string()),
             group: Some(1),
             client_safe: false,
+            weak_anchor: false,
         }],
         keywords: vec!["AGORA_APP_ID".to_string()],
         ..DetectorSpec::default()

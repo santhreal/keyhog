@@ -205,11 +205,9 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
 
     /// Effective weak-anchor for the matched pattern `entry`.
     ///
-    /// Combines the precomputed per-detector [`crate::suppression::WeakAnchorBase`]
-    /// (indexed by `entry.detector_index`, built from the same detector list that
-    /// creates every `CompiledPattern::detector_index`) with the per-PATTERN
-    /// broad-identifier check resolved against `entry.regex` (memoized on the
-    /// `LazyRegex`). Index directly so an index-parallel construction bug is loud.
+    /// Combines the precomputed detector-wide mode with the exact matched
+    /// pattern's compiled TOML declaration. Index directly so an index-parallel
+    /// construction bug is loud.
     #[inline]
     pub(crate) fn detector_pattern_weak_anchor(
         &self,
@@ -218,9 +216,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         match self.detector_weak_anchor_base_by_index[entry.detector_index] {
             crate::suppression::WeakAnchorBase::Always => true,
             crate::suppression::WeakAnchorBase::Never => false,
-            crate::suppression::WeakAnchorBase::PerPattern => {
-                entry.regex.has_broad_identifier_capture()
-            }
+            crate::suppression::WeakAnchorBase::PerPattern => entry.weak_anchor,
         }
     }
 
@@ -712,8 +708,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         // to a DECODE-ONLY pass instead of skipping. Bounded: only
         // encoded-looking rejected chunks pay the decode cost, so normal
         // traffic keeps the fast skip.
-        let admission = admission
-            .unwrap_or_else(|| self.phase1_admission(chunk.data.as_bytes()));
+        let admission = admission.unwrap_or_else(|| self.phase1_admission(chunk.data.as_bytes()));
         if admission != Phase1Admission::Admitted {
             if self.should_scan_no_hit_chunk(chunk) {
                 let prepared = self.prepare_chunk(chunk);

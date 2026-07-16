@@ -21,6 +21,7 @@ pub(crate) enum StageId {
     GenericValueShape(GenericValueShapeStage),
     GenericBelowMinConfidence,
     EntropyNamedDetectorOwnedAssignment,
+    EntropyPolicyUnavailable,
     EntropyValueShape(EntropyShapeStage),
 }
 
@@ -46,6 +47,7 @@ impl StageId {
             Self::GenericValueShape(stage) => stage.as_str(),
             Self::GenericBelowMinConfidence => "generic_below_min_confidence",
             Self::EntropyNamedDetectorOwnedAssignment => "entropy_named_detector_owned_assignment",
+            Self::EntropyPolicyUnavailable => "entropy_policy_unavailable",
             Self::EntropyValueShape(stage) => stage.as_str(),
         }
     }

@@ -195,8 +195,8 @@ fn weak_anchor_is_a_pure_function_of_the_spec() {
     let mut weak = 0usize;
     let mut strong = 0usize;
     for d in &detectors {
-        let a = detector_weak_anchor(d).expect("detector classification rules must be valid");
-        let b = detector_weak_anchor(d).expect("detector classification rules must be valid");
+        let a = detector_weak_anchor(d);
+        let b = detector_weak_anchor(d);
         assert_eq!(
             a, b,
             "detector_weak_anchor is non-deterministic for `{}` ({a} vs {b}), the \
@@ -207,7 +207,7 @@ fn weak_anchor_is_a_pure_function_of_the_spec() {
         // spec, not of identity/address).
         let cloned = d.clone();
         assert_eq!(
-            detector_weak_anchor(&cloned).expect("detector classification rules must be valid"),
+            detector_weak_anchor(&cloned),
             a,
             "clone of `{}` classified differently, value is not spec-pure",
             d.id
@@ -230,8 +230,8 @@ fn weak_anchor_is_a_pure_function_of_the_spec() {
 /// Synthetic shape pins for `detector_weak_anchor` so a future change to its
 /// definition that silently flips the corpus all to one side is caught: a
 /// generic-* id is never weak-anchored; a service-anchored id with a broad
-/// identifier capture and no `min_confidence` IS weak-anchored; setting
-/// `min_confidence` un-flags it.
+/// explicitly marked pattern is weak-anchored, and `min_confidence` does not
+/// silently change that semantic classification.
 #[test]
 fn weak_anchor_known_shapes() {
     // generic-* is excluded up front -> never weak.
@@ -242,34 +242,32 @@ fn weak_anchor_known_shapes() {
         None,
     );
     assert!(
-        !detector_weak_anchor(&generic).expect("detector classification rules must be valid"),
+        !detector_weak_anchor(&generic),
         "a generic-* detector is never weak-anchored"
     );
 
-    // Service-anchored id, broad `([A-Za-z0-9_-]+)` capture, no min_confidence
-    // -> the weak-anchor shape.
-    let weak = inline_detector_full(
+    let mut weak = inline_detector_full(
         "acme-token",
         r#"acme_token\s*=\s*([A-Za-z0-9_-]+)"#,
         "acme_token",
         None,
     );
+    weak.patterns[0].weak_anchor = true;
     assert!(
-        detector_weak_anchor(&weak).expect("detector classification rules must be valid"),
-        "a service-anchored detector with a broad identifier capture and no \
-         min_confidence is weak-anchored"
+        detector_weak_anchor(&weak),
+        "an explicitly weak pattern is weak-anchored"
     );
 
-    // Same detector but with an explicit min_confidence floor -> NOT weak.
-    let pinned = inline_detector_full(
+    let mut pinned = inline_detector_full(
         "acme-token",
         r#"acme_token\s*=\s*([A-Za-z0-9_-]+)"#,
         "acme_token",
         Some(0.5),
     );
+    pinned.patterns[0].weak_anchor = true;
     assert!(
-        !detector_weak_anchor(&pinned).expect("detector classification rules must be valid"),
-        "an explicit min_confidence floor removes the weak-anchor classification"
+        detector_weak_anchor(&pinned),
+        "min_confidence must not disable explicit weak-anchor policy"
     );
 }
 

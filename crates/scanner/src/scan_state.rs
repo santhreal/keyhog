@@ -32,19 +32,23 @@ pub(crate) fn ml_features_for_candidate(
     credential: &str,
     context_radius_lines: usize,
     config: &crate::types::ScannerConfig,
+    detector: &keyhog_core::DetectorSpec,
+    channel: crate::ml_scorer::MlCandidateChannel,
 ) -> [f32; crate::ml_scorer::NUM_FEATURES] {
     if credential.is_empty() {
         return [0.0; crate::ml_scorer::NUM_FEATURES];
     }
     let text_context = crate::pipeline::local_context_window(text, line, context_radius_lines);
     let compute = |context: &str| {
-        crate::ml_scorer::compute_features_with_config(
+        crate::ml_scorer::compute_features_for_detector_with_config(
             credential,
             context,
             &config.known_prefixes,
             &config.secret_keywords,
             &config.test_keywords,
             &config.placeholder_keywords,
+            detector,
+            channel,
         )
     };
     let Some(path) = file_path else {
@@ -155,7 +159,6 @@ impl MlPendingMatch {
 /// Hot emitters can decide whether a candidate can enter the capped match heap
 /// before constructing the owned `RawMatch`, avoiding detector metadata
 /// refcount bumps for candidates that would be immediately discarded.
-#[cfg(any(feature = "entropy", feature = "simdsieve"))]
 pub(crate) struct RawMatchPriority<'a> {
     pub(crate) confidence: Option<f64>,
     pub(crate) severity: keyhog_core::Severity,
@@ -165,7 +168,6 @@ pub(crate) struct RawMatchPriority<'a> {
     pub(crate) line: Option<usize>,
 }
 
-#[cfg(any(feature = "entropy", feature = "simdsieve"))]
 impl RawMatchPriority<'_> {
     fn cmp_raw_match(&self, other: &keyhog_core::RawMatch) -> std::cmp::Ordering {
         let self_conf = self.confidence.unwrap_or(0.0); // LAW10: absent confidence => 0.0 for capped-heap ordering only; finding remains eligible
@@ -253,7 +255,6 @@ impl OwnedMatchIdentity {
     }
 }
 
-#[cfg(any(feature = "entropy", feature = "simdsieve"))]
 impl OwnedMatchIdentity {
     fn from_priority(priority: &RawMatchPriority<'_>) -> Self {
         Self {
@@ -463,7 +464,6 @@ impl ScanState {
         true
     }
 
-    #[cfg(any(feature = "entropy", feature = "simdsieve"))]
     fn claimed_priority_would_replace(
         &self,
         identity: &OwnedMatchIdentity,
@@ -475,7 +475,6 @@ impl ScanState {
             .is_none_or(|existing| !priority.cmp_raw_match(existing).is_gt())
     }
 
-    #[cfg(any(feature = "entropy", feature = "simdsieve"))]
     pub(crate) fn push_match_lazy<F>(
         &mut self,
         priority: RawMatchPriority<'_>,

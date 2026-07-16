@@ -2,14 +2,61 @@
 
 ## Unreleased
 
+- Compile each scanner's generic-assignment line prefilter from the exact
+  detector corpus that produced its assignment regex. Custom detector corpora
+  no longer lose candidates to the embedded corpus's global keyword stems, and
+  embedded GPU keyword positions are consumed only for a vocabulary-compatible
+  scanner.
+- Replace regex-text weak-anchor inference with explicit detector and
+  pattern-local TOML policy. Confidence floors no longer disable structural
+  protection, and the suppression path no longer reclassifies service/generic
+  ownership from detector IDs. Pattern-local model conditioning remains
+  disabled until training records carry the exact matched-pattern policy
+  identity.
+- Compile detector entropy-floor buckets into detector-indexed primitive lookup
+  tables. Named, weak-anchor, and generic hot paths no longer walk optional TOML
+  fields or inject a scanner-owned floor per candidate; missing weak-anchor
+  policy fails scanner construction. Twenty-seven structurally derived weak
+  anchors now declare their floor and high threshold in their own TOMLs.
+- Include regex entropy owners when compiling the generic assignment generator.
+  A focused corpus containing only a regex owner now executes its declared
+  keyword, length, entropy, and identity policy instead of disabling the bridge.
+- Match detector-local public-identifier assignment markers directly against
+  source bytes with allocation-free ASCII case folding instead of uppercasing
+  an entire source line for every entropy candidate.
+- Move blockchain/network public-identifier assignment markers from a shared
+  scanner rule into each entropy detector TOML, allowing each secret family to
+  tune or disable the suppression independently.
+- Require and compile `max_len` for every generic entropy-policy owner,
+  including regex owners such as `generic-password`, so assignment ownership
+  cannot win and then silently drop because its runtime length policy is absent.
+- Compile keyword-free, isolated-bare, and unclaimed-keyword entropy entry
+  roles from the owning detector TOMLs. Custom corpora no longer activate
+  built-in generic detector IDs or scanner-side entropy defaults when a role
+  is absent, and duplicate role owners fail scanner construction.
+- Make every weak-anchor detector own its length-bucketed entropy floor and
+  high threshold. Named weak anchors no longer borrow `generic-api-key`
+  calibration, so tuning one service cannot change another detector.
+- Select ML checkpoints against recall-sensitive validation-class gates before
+  aggregate F1. The leakage-free test split remains untouched, while rare
+  authoritative classes can no longer be lost by an aggregate-only epoch choice.
 - Group strict entropy plausibility floors and shape switches in each owning
   detector's required `plausibility` policy. Compiled assignment and isolated
   paths now use the same detector policy, including repeated-block,
   identifier, dash-segment, and alphabetic-credential decisions.
-- Refuse ML model writes when a positive-bearing held-out detector misses its
-  recall floor or regresses against the shipped model card. The build summary
-  now exposes real precision, recall, F1, floor recall, and zero-recall detector
-  count instead of hiding detector failures behind aggregate metrics.
+- Refuse ML model writes when a recall-sensitive detector channel lacks
+  positive or negative held-out evidence, misses its recall floor, or regresses
+  against the shipped model card. The build summary now exposes real precision,
+  recall, F1, floor recall, and zero-recall detector count instead of hiding
+  detector failures behind aggregate metrics.
+- Condition the 55-feature ML scorer on the exact detector TOML owner,
+  pattern-versus-entropy channel, and detector-owned entropy family. Training
+  and parity records now fail on missing or inconsistent detector identity,
+  and detector balancing applies only where `blend` or `authoritative` model
+  policy can reduce recall.
+- Cover every authoritative entropy family with positive synthetic training
+  records, including long fixture values and service-named API-token contexts,
+  instead of training some TOML families only as negatives.
 - Compile ML match mode, entropy mode, weight, and context radius from each
   detector TOML. Generic assignments now use the same pending batch and CPU/GPU
   model path as regex and entropy candidates. The explicit `lift` mode applies
@@ -28,7 +75,7 @@
   the same model inputs, cardinality checks, and CPU/GPU score policy.
 - Keep one parsed owner for ML file/context markers instead of cloning every
   marker family into separate lazy vectors.
-- Compute each queued candidate's 43 model features once while its source
+- Compute each queued candidate's 55 model features once while its source
   context is hot, using reusable per-thread context storage that is zeroized
   after extraction. Postprocess and GPU dispatch now consume the stored feature
   vector instead of retaining a formatted context string and extracting the

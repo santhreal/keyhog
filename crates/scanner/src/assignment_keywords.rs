@@ -1,9 +1,8 @@
 //! Generic credential-assignment keyword vocabulary (phase-2 prefilter triggers).
 //!
-//! DERIVED, not hand-maintained. The generic phase-2 detector TOMLs
-//! (`detectors/generic-secret.toml`, `generic-api-key.toml`,
-//! `generic-keyword-secret.toml`) already carry the credential-keyword concept in
-//! their `keywords` field, so the prefilter vocab is BUILT from them at load time
+//! DERIVED, not hand-maintained. Generic entropy-owner detector TOMLs already
+//! carry the credential-keyword concept in their `keywords` field, so the
+//! prefilter vocab is BUILT from them at load time
 //! rather than duplicated in a separate `rules/assignment_keywords.toml`. There is
 //! exactly ONE home for the vocabulary: the detector specs. This module unions
 //! their keywords, folds case, expands the three real-world separator spellings
@@ -18,7 +17,7 @@
 //! detector's `keywords` now widens the prefilter automatically, no second list to
 //! keep in sync.
 
-use keyhog_core::{DetectorKind, DetectorSpec};
+use keyhog_core::DetectorSpec;
 use std::sync::LazyLock;
 
 /// The three real-world spellings of a compound credential key differ only in the
@@ -52,31 +51,31 @@ pub(crate) fn assignment_keywords() -> &'static [String] {
     &ASSIGNMENT_KEYWORDS
 }
 
-/// Union the `keywords` of every `service == "generic"`, `kind == phase2-generic`
-/// detector, lowercase them, and expand each into its three separator spellings.
+/// Union the `keywords` of every generic entropy-policy owner, lowercase them,
+/// and expand each into its three separator spellings.
 /// The `pass` stem (the dominant `*_PASS=` CredData credential-env pattern) is a
 /// real `generic-keyword-secret` keyword, so it flows through this union like any
 /// other, the owning-detector find in `phase2_generic.rs` can then attribute
 /// `*_PASS=` candidates to that low-floor detector (the SES_PASS recall fix). The
-/// `kind` filter is load-bearing: it admits only the shapeless-secret bridge
-/// detectors and EXCLUDES the regex-kind generic detectors (e.g. `generic-password`,
-/// whose `keywords` carry uppercase `PASSWORD`/`DB_PASSWORD` regex anchors and
-/// `://`-style markers that must never pollute the lowercase assignment prefilter).
+/// Regex detectors participate only when they explicitly claim generic entropy
+/// ownership through `entropy_policy_priority`; that makes their keyword and
+/// length policy executable in a focused corpus instead of leaving a half-wired
+/// owner that can classify but never generate assignment candidates.
 ///
-/// Order-preserving with cross-detector dedup. Fails closed if no generic phase-2
-/// detector is present (an empty prefilter would be an invisible recall hole) or
+/// Order-preserving with cross-detector dedup. Fails closed if no generic entropy
+/// owner is present (an empty prefilter would be an invisible recall hole) or
 /// if a derived entry violates the Tier-B charset (reuses the shared validator).
 pub(crate) fn derive_assignment_keywords(
     detectors: &[DetectorSpec],
 ) -> Result<Vec<String>, String> {
     let mut ordered: Vec<String> = Vec::new();
     let mut seen = std::collections::BTreeSet::<String>::new();
-    let mut generic_phase2_detectors = 0usize;
+    let mut generic_entropy_owners = 0usize;
     for detector in detectors {
-        if detector.service != "generic" || detector.kind != DetectorKind::Phase2Generic {
+        if !detector.owns_entropy_policy() {
             continue;
         }
-        generic_phase2_detectors += 1;
+        generic_entropy_owners += 1;
         for keyword in &detector.keywords {
             let lower = keyword.to_ascii_lowercase();
             for spelling in separator_spellings(&lower) {
@@ -86,13 +85,11 @@ pub(crate) fn derive_assignment_keywords(
             }
         }
     }
-    if generic_phase2_detectors == 0 {
-        return Err(
-            "no service=\"generic\" kind=\"phase2-generic\" detectors in the corpus; the \
+    if generic_entropy_owners == 0 {
+        return Err("no generic entropy-policy owner exists in the corpus; the \
              assignment-keyword prefilter would admit nothing and silently drop every \
              generic-credential chunk"
-                .to_string(),
-        );
+            .to_string());
     }
     // Reuse the ONE Tier-B list validator (charset/lowercase/dup/non-empty) so a
     // malformed derived entry fails closed instead of silently widening the AC.
@@ -130,7 +127,6 @@ fn separator_spellings(keyword: &str) -> Vec<String> {
         })
         .collect()
 }
-
 
 #[cfg(test)]
 #[path = "../tests/unit/assignment_keywords.rs"]

@@ -1,7 +1,7 @@
 //! Anti-drift guard binding the GPU WGSL shader's architecture constants to the
 //! single Rust owner `ml_scorer::model_arch`.
 //!
-//! The MoE dimensions (INPUT_DIM=43 after DET-1, EXPERT_COUNT=6, hidden 32/16, the flat
+//! The MoE dimensions (INPUT_DIM=55, EXPERT_COUNT=6, hidden 32/16, the flat
 //! `weights.bin` offsets, and the per-expert parameter counts) live ONCE in
 //! `model_arch.rs`. The WGSL is now GENERATED from that owner by
 //! `gpu::gpu_shader::moe_shader` (a shader source cannot import Rust consts, so

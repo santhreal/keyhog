@@ -196,11 +196,8 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // `keyhog_core::detector_spec_by_id`, so no white-box access is needed). The
     // gate's anti-staleness check (a stale allowlist entry is a hard failure)
     // enforces that this list only names files that STILL hold inline tests.
-    // The weak-anchor API tests pin the private `has_broad_identifier_capture`
-    // and `is_full_alpha_identifier_class` regex-shape predicates that decide
-    // whether a detector's capture is too broad to trust, the exact min-length
-    // ≤1 / lazy-quantifier / lookbehind boundary is recall-load-bearing and
-    // crate-internal, co-located like the other suppression shape predicates.
+    // The suppression API tests exercise its crate-private typed contexts and
+    // stage results directly.
     "suppression/api.rs",
     // `AnchoredRegex` white-box tests assert the private anchor's `start()`/`end()`
     // span semantics AND the FAIL-CLOSED compile-failure panics (no-context /

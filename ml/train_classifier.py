@@ -23,14 +23,16 @@ Serialized order (little-endian f32), matching ml_weights.rs offsets:
 Usage:
   python3 ml/corpus.py --out ml/data/corpus.jsonl
   python3 ml/train_classifier.py --corpus ml/data/corpus.jsonl \
-      --out crates/scanner/src/weights.bin --features 43 --compare
+      --out crates/scanner/src/weights.bin --features 55 --compare
 """
 
 from __future__ import annotations
 
 import argparse
 import datetime
+import hashlib
 import json
+import math
 import os
 import pathlib
 import shutil
@@ -39,6 +41,7 @@ import sys
 import numpy as np
 
 import config_lists
+import detector_policy
 import rust_features
 
 EXPERT_COUNT = 6
@@ -46,6 +49,9 @@ FC1 = 32
 FC2 = 16
 CURRENT_MODEL_CARD = "crates/scanner/src/model_card.json"
 REAL_RECALL_FLOOR = 0.40
+REAL_F1_FLOOR = 0.78
+REAL_PRECISION_FLOOR = 0.70
+RECALL_SENSITIVE_CLASS_FLOOR = 0.50
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 DEFAULT_DIFFERENTIAL_RESULTS = "benchmarks/results"
 DEFAULT_DIFFERENTIAL_CORPUS = "creddata"
@@ -59,9 +65,9 @@ def fast_sigmoid(x):
 
 def load_corpus(path: str, num_features: int):
     kp, sk, tk, pk = config_lists.DEFAULT_LISTS
-    records, y, kinds = [], [], []
+    records, y, kinds, detectors = [], [], [], []
     with open(path) as fh:
-        for line in fh:
+        for line_no, line in enumerate(fh, start=1):
             line = line.strip()
             if not line:
                 continue
@@ -69,8 +75,12 @@ def load_corpus(path: str, num_features: int):
             records.append(rec)
             y.append(float(rec["label"]))
             kinds.append(rec.get("kind", ""))
+            detector_id = _required_corpus_field(path, line_no, rec, "detector_id")
+            channel = _required_corpus_field(path, line_no, rec, "candidate_channel")
+            detector_policy.validate_candidate_channel(detector_id, channel)
+            detectors.append(detector_id)
     X = rust_features.compute_feature_matrix(records, (kp, sk, tk, pk), num_features)
-    return X, np.asarray(y, dtype=np.float32), kinds
+    return X, np.asarray(y, dtype=np.float32), kinds, detectors
 
 
 def build_model(num_features: int):
@@ -108,25 +118,114 @@ def build_model(num_features: int):
     return MoE(num_features)
 
 
-def _fit(X, y, tr, va, num_features, epochs, seed):
-    """Train a fresh MoE on indices `tr`, keeping the epoch whose F1 on the
-    selection indices `va` is best. Shared by the synthetic-only `train()` and
-    the blended (synthetic + real) path so both use identical optimiser, class
-    balancing, batch size, and keep-best-val-F1 selection."""
+def load_serialized_weights(model, path: str, num_features: int) -> None:
+    """Load the exact Rust `weights.bin` layout into a training model.
+
+    This supports recall-preserving fine-tuning of a shipped 55-feature model
+    instead of forcing every corpus correction to restart from random weights.
+    The loader is deliberately strict: an architecture or feature-count mismatch
+    fails before training rather than partially initializing the model.
+    """
     import torch
 
-    torch.manual_seed(seed)
+    flat = np.fromfile(path, dtype="<f4")
+    state = model.state_dict()
+    names = ["gate.weight", "gate.bias"]
+    for expert in range(EXPERT_COUNT):
+        names.extend(
+            [
+                f"experts.{expert}.fc1.weight",
+                f"experts.{expert}.fc1.bias",
+                f"experts.{expert}.fc2.weight",
+                f"experts.{expert}.fc2.bias",
+                f"experts.{expert}.fc3.weight",
+                f"experts.{expert}.fc3.bias",
+            ]
+        )
+    expected = sum(state[name].numel() for name in names)
+    if flat.size != expected:
+        raise ValueError(
+            f"{path}: serialized model has {flat.size} f32 values; "
+            f"the {num_features}-feature architecture requires {expected}"
+        )
+    offset = 0
+    with torch.no_grad():
+        for name in names:
+            target = state[name]
+            count = target.numel()
+            values = np.asarray(flat[offset : offset + count], dtype=np.float32).reshape(
+                tuple(target.shape)
+            )
+            target.copy_(torch.from_numpy(values))
+            offset += count
+    model.load_state_dict(state)
+
+
+def _fit(
+    X,
+    y,
+    tr,
+    va,
+    num_features,
+    epochs,
+    seed,
+    sample_weights=None,
+    validation_groups=None,
+    validation_real_mask=None,
+    initial_weights_path=None,
+    learning_rate=2e-3,
+):
+    """Train a MoE and retain the best policy-safe validation checkpoint."""
+    import torch
+
+    # Seed the CPU generator directly. `torch.manual_seed` also probes CUDA and
+    # emits a driver warning even though this compact trainer is CPU-resident.
+    torch.random.default_generator.manual_seed(seed)
     Xt = torch.from_numpy(X[tr])
     yt = torch.from_numpy(y[tr])
     Xv = torch.from_numpy(X[va])
+    train_sample_weights = (
+        torch.from_numpy(np.asarray(sample_weights[tr], dtype=np.float32))
+        if sample_weights is not None
+        else None
+    )
 
     model = build_model(num_features)
-    opt = torch.optim.Adam(model.parameters(), lr=2e-3, weight_decay=1e-5)
+    if initial_weights_path:
+        load_serialized_weights(model, initial_weights_path, num_features)
+    opt = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-5)
 
     # class balance weight (corpus is ~balanced but be robust)
     pos_w = float((y[tr] == 0).sum()) / max(1.0, float((y[tr] == 1).sum()))
 
-    best_f1, best_state = -1.0, None
+    model.eval()
+    with torch.no_grad():
+        initial_probs = model(Xv).numpy()
+    initial_groups = None if validation_groups is None else validation_groups[va]
+    initial_real_mask = None if validation_real_mask is None else validation_real_mask[va]
+    initial_real_floors = None
+    if (
+        initial_weights_path
+        and initial_real_mask is not None
+        and np.asarray(initial_real_mask, dtype=bool).any()
+    ):
+        initial_real_f1, initial_real_precision, _ = prf(
+            initial_probs[initial_real_mask],
+            y[va][initial_real_mask],
+            0.5,
+        )
+        initial_real_floors = (
+            initial_real_f1 - 1e-12,
+            initial_real_precision - 1e-12,
+        )
+    best_key = validation_selection_key(
+        initial_probs,
+        y[va],
+        initial_groups,
+        initial_real_mask,
+        initial_real_floors,
+    )
+    best_state = {key: value.detach().clone() for key, value in model.state_dict().items()}
     batch = 512
     for _epoch in range(epochs):
         model.train()
@@ -136,6 +235,8 @@ def _fit(X, y, tr, va, num_features, epochs, seed):
             xb, yb = Xt[sel], yt[sel]
             p = model(xb).clamp(1e-6, 1 - 1e-6)
             w = torch.where(yb > 0.5, torch.tensor(pos_w), torch.tensor(1.0))
+            if train_sample_weights is not None:
+                w = w * train_sample_weights[sel]
             loss = torch.nn.functional.binary_cross_entropy(p, yb, weight=w)
             opt.zero_grad()
             loss.backward()
@@ -144,9 +245,17 @@ def _fit(X, y, tr, va, num_features, epochs, seed):
         model.eval()
         with torch.no_grad():
             pv = model(Xv).numpy()
-        f1, _, _ = prf(pv, y[va], 0.5)
-        if f1 > best_f1:
-            best_f1 = f1
+        groups = None if validation_groups is None else validation_groups[va]
+        real_mask = None if validation_real_mask is None else validation_real_mask[va]
+        key = validation_selection_key(
+            pv,
+            y[va],
+            groups,
+            real_mask,
+            initial_real_floors,
+        )
+        if best_key is None or key > best_key:
+            best_key = key
             best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
 
     model.load_state_dict(best_state)
@@ -186,21 +295,23 @@ def load_real_corpus(path, num_features):
             rec = json.loads(line)
             records.append(rec)
             y.append(float(rec["label"]))
-            classes.append(_required_real_corpus_field(path, line_no, rec, "class"))
-            detectors.append(_required_real_corpus_field(path, line_no, rec, "detector_id"))
-            files.append(_required_real_corpus_field(path, line_no, rec, "source_file"))
+            classes.append(_required_corpus_field(path, line_no, rec, "class"))
+            detector_id = _required_corpus_field(path, line_no, rec, "detector_id")
+            channel = _required_corpus_field(path, line_no, rec, "candidate_channel")
+            detector_policy.validate_candidate_channel(detector_id, channel)
+            detectors.append(detector_id)
+            files.append(_required_corpus_field(path, line_no, rec, "source_file"))
     X = rust_features.compute_feature_matrix(records, (kp, sk, tk, pk), num_features)
     return X, np.asarray(y, dtype=np.float32), classes, detectors, files
 
 
-def _required_real_corpus_field(path, line_no, record, field):
+def _required_corpus_field(path, line_no, record, field):
     value = record.get(field)
     if isinstance(value, str) and value.strip():
         return value
     raise ValueError(
-        f"{path}:{line_no}: real-corpus record missing required `{field}`; "
-        "regenerate with ml/harvest_corpus.py so the grouped split and "
-        "per-class/per-detector gates measure real provenance"
+        f"{path}:{line_no}: corpus record missing required `{field}`; "
+        "regenerate it with the owning corpus or harvest command"
     )
 
 
@@ -273,6 +384,49 @@ def per_class_eval(probs, labels, kinds, thr=0.5, floor=REAL_RECALL_FLOOR):
     return out
 
 
+def validation_selection_key(
+    probs,
+    labels,
+    groups=None,
+    real_mask=None,
+    minimum_real_metrics=None,
+):
+    """Choose checkpoints by the same recall constraints shipping enforces.
+
+    Groups are derived only from detector policy plus the real validation split;
+    the held-out test split remains untouched. Fewer recall-sensitive classes
+    below the report floor wins first, then the worst class recall, then
+    aggregate F1. Synthetic-only training retains aggregate-F1 selection.
+    """
+    f1, _, _ = prf(probs, labels, 0.5)
+    if groups is None:
+        return (f1,)
+    recalls = []
+    normalized = np.asarray([group or "" for group in groups], dtype=object)
+    labels = np.asarray(labels)
+    probs = np.asarray(probs)
+    for group in sorted(set(normalized) - {""}):
+        positive = (normalized == group) & (labels >= 0.5)
+        if int(positive.sum()) < 2:
+            continue
+        recalls.append(float(np.mean(probs[positive] >= REAL_RECALL_FLOOR)))
+    failing = sum(recall < RECALL_SENSITIVE_CLASS_FLOOR for recall in recalls)
+    minimum = min(recalls, default=1.0)
+    if real_mask is None or not np.asarray(real_mask, dtype=bool).any():
+        return (-failing, minimum, f1)
+    real_mask = np.asarray(real_mask, dtype=bool)
+    real_f1, real_precision, _ = prf(probs[real_mask], labels[real_mask], 0.5)
+    minimum_real_f1, minimum_real_precision = (
+        minimum_real_metrics
+        if minimum_real_metrics is not None
+        else (REAL_F1_FLOOR, REAL_PRECISION_FLOOR)
+    )
+    eligible = int(
+        real_f1 >= minimum_real_f1 and real_precision >= minimum_real_precision
+    )
+    return (eligible, -failing, minimum, real_f1, real_precision, f1)
+
+
 def real_eval(probs, labels, classes, detectors=None, thr=0.5):
     """Held-out real-distribution metrics. The headline is recall on real
     positives clearing the 0.40 report floor, the number the synthetic-only
@@ -305,13 +459,57 @@ def real_eval(probs, labels, classes, detectors=None, thr=0.5):
             thr,
             REAL_RECALL_FLOOR,
         )
+        sensitive = np.asarray(
+            [detector_policy.model_can_reduce_recall(detector) for detector in detectors],
+            dtype=bool,
+        )
+        out["per_recall_sensitive_class"] = per_class_eval(
+            probs[sensitive],
+            labels[sensitive],
+            [kind for kind, keep in zip(classes, sensitive) if keep],
+            thr,
+            REAL_RECALL_FLOOR,
+        )
     return out
+
+
+def real_metric_summary(metrics: dict) -> dict:
+    """Compact terminal summary; the model card retains the complete tables."""
+    headline = {
+        key: metrics.get(key)
+        for key in (
+            "real_f1",
+            "real_precision",
+            "real_recall",
+            "real_pos_recall_at_0.40_floor",
+            "n_test",
+            "n_pos",
+            "n_neg",
+        )
+    }
+    per_detector = metrics.get("per_detector", {})
+    headline["recall_sensitive_detectors"] = {
+        detector_id: metric.get("recall_at_0_40_floor")
+        for detector_id, metric in sorted(per_detector.items())
+        if isinstance(metric, dict)
+        and int(metric.get("n_pos") or 0) > 0
+        and detector_policy.model_can_reduce_recall(detector_id)
+    }
+    headline["zero_recall_detectors"] = [
+        detector_id
+        for detector_id, metric in sorted(per_detector.items())
+        if isinstance(metric, dict)
+        and int(metric.get("n_pos") or 0) > 0
+        and metric.get("recall_at_0_40_floor") == 0.0
+    ]
+    return headline
 
 
 def train_blended(
     Xs,
     ys,
     kinds_s,
+    detectors_s,
     Xr,
     yr,
     classes_r,
@@ -320,6 +518,10 @@ def train_blended(
     num_features,
     epochs,
     seed,
+    max_detector_positive_multiplier,
+    max_recall_sensitive_class_multiplier,
+    initial_weights_path=None,
+    learning_rate=2e-3,
 ):
     """Train on synthetic (breadth) + real-TRAIN, select on synthetic-val +
     real-val, and report on a real-TEST held out by file (no leakage). Returns
@@ -338,7 +540,51 @@ def train_blended(
     tr = np.concatenate([s_tr, r_tr + off])
     va = np.concatenate([s_va, r_va + off])  # model selection (syn + real val)
 
-    model = _fit(X, y, tr, va, num_features, epochs, seed)
+    sample_weights = detector_balanced_sample_weights(
+        y,
+        tr,
+        [*detectors_s, *detectors_r],
+        max_detector_positive_multiplier,
+    )
+    sample_weights *= recall_sensitive_class_sample_weights(
+        len(y),
+        off,
+        yr,
+        classes_r,
+        detectors_r,
+        r_tr,
+        max_recall_sensitive_class_multiplier,
+    )
+
+    validation_groups = np.asarray(
+        [""] * len(ys)
+        + [
+            (kind or "unknown")
+            if detector_policy.model_can_reduce_recall(detector)
+            else ""
+            for kind, detector in zip(classes_r, detectors_r)
+        ],
+        dtype=object,
+    )
+    validation_real_mask = np.asarray(
+        [False] * len(ys) + [True] * len(yr),
+        dtype=bool,
+    )
+
+    model = _fit(
+        X,
+        y,
+        tr,
+        va,
+        num_features,
+        epochs,
+        seed,
+        sample_weights,
+        validation_groups,
+        validation_real_mask,
+        initial_weights_path,
+        learning_rate,
+    )
     with torch.no_grad():
         syn_val_p = model(torch.from_numpy(Xs[s_va])).numpy()
         real_te_p = model(torch.from_numpy(Xr[r_te])).numpy() if len(r_te) else np.array([])
@@ -354,6 +600,90 @@ def train_blended(
         else {"note": "no real test split"}
     )
     return model, syn_metrics, real_metrics
+
+
+def detector_balanced_sample_weights(
+    combined_labels,
+    combined_train_indices,
+    combined_detectors,
+    max_multiplier,
+):
+    """Balance positive loss inside each detector without held-out data.
+
+    Global class weighting cannot protect a detector whose own candidate stream
+    is much more negative-heavy than the aggregate. This multiplier brings each
+    positive-bearing detector toward its own train-split class balance and
+    positive support, capped so a tiny family cannot dominate the model.
+    """
+    if not math.isfinite(max_multiplier) or max_multiplier < 1.0:
+        raise ValueError("max detector positive multiplier must be finite and >= 1.0")
+    labels = np.asarray(combined_labels)
+    train_labels = labels[combined_train_indices]
+    global_positive_weight = float((train_labels == 0).sum()) / max(
+        1.0, float((train_labels == 1).sum())
+    )
+    if len(combined_detectors) != len(labels):
+        raise ValueError("combined detector identities must match combined labels")
+    counts: dict[str, list[int]] = {}
+    for index in combined_train_indices:
+        detector = combined_detectors[index]
+        if not detector_policy.model_can_reduce_recall(detector):
+            continue
+        pair = counts.setdefault(detector, [0, 0])
+        pair[1 if labels[index] > 0.5 else 0] += 1
+
+    weights = np.ones(len(labels), dtype=np.float32)
+    positive_support_target = max((pair[1] for pair in counts.values()), default=1)
+    for index in combined_train_indices:
+        if labels[index] <= 0.5:
+            continue
+        detector = combined_detectors[index]
+        if detector not in counts:
+            continue
+        negatives, positives = counts[detector]
+        if positives == 0:
+            continue
+        detector_positive_weight = negatives / positives if negatives else 0.0
+        balance_multiplier = max(1.0, detector_positive_weight / global_positive_weight)
+        support_multiplier = positive_support_target / positives
+        weights[index] = min(
+            max_multiplier,
+            max(balance_multiplier, support_multiplier),
+        )
+    return weights
+
+
+def recall_sensitive_class_sample_weights(
+    combined_length,
+    real_offset,
+    real_labels,
+    real_classes,
+    real_detectors,
+    real_train_indices,
+    max_multiplier,
+):
+    """Balance positive recall-sensitive classes using train rows only."""
+    if not math.isfinite(max_multiplier) or max_multiplier < 1.0:
+        raise ValueError(
+            "max recall-sensitive class multiplier must be finite and >= 1.0"
+        )
+    counts: dict[tuple[str, str], int] = {}
+    for index in real_train_indices:
+        detector = real_detectors[index]
+        if real_labels[index] <= 0.5 or not detector_policy.model_can_reduce_recall(detector):
+            continue
+        key = (detector, real_classes[index] or "unknown")
+        counts[key] = counts.get(key, 0) + 1
+
+    target = max(counts.values(), default=1)
+    weights = np.ones(combined_length, dtype=np.float32)
+    for index in real_train_indices:
+        detector = real_detectors[index]
+        if real_labels[index] <= 0.5 or not detector_policy.model_can_reduce_recall(detector):
+            continue
+        count = counts[(detector, real_classes[index] or "unknown")]
+        weights[real_offset + index] = min(max_multiplier, target / count)
+    return weights
 
 
 def prf(probs, labels, thr):
@@ -400,34 +730,59 @@ def probe(model, num_features: int):
     # Fragment-assembled so this source file carries no full token literal.
     ghp = "gh" + "p_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij"
     cases = [
-        ("real ghp PAT", ghp, f"GITHUB_TOKEN={ghp}", "high"),
+        ("real ghp PAT", ghp, f"GITHUB_TOKEN={ghp}", "high", "github-classic-pat", "pattern"),
         ("md5 hash", "d41d8cd98f00b204e9800998ecf8427e",
-         "checksum = d41d8cd98f00b204e9800998ecf8427e", "low"),
+         "checksum = d41d8cd98f00b204e9800998ecf8427e", "low", "generic-secret", "entropy"),
         ("sha256 digest", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-         "sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "low"),
+         "sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "low", "generic-secret", "entropy"),
         ("real hex key", "9f8c2a1b4d6e7f80112233445566778899aabbccddeeff00",
-         "encryption_key = 9f8c2a1b4d6e7f80112233445566778899aabbccddeeff00", "high"),
-        ("placeholder", "YOUR_API_KEY_HERE", "api_key = YOUR_API_KEY_HERE", "low"),
-        ("base64 PNG", png, f"avatar = {png}", "low"),
+         "encryption_key = 9f8c2a1b4d6e7f80112233445566778899aabbccddeeff00", "high", "generic-secret", "pattern"),
+        ("placeholder", "YOUR_API_KEY_HERE", "api_key = YOUR_API_KEY_HERE", "low", "generic-api-key", "pattern"),
+        ("base64 PNG", png, f"avatar = {png}", "low", "generic-secret", "entropy"),
         # precision probes: bare/prose high-entropy tokens with NO anchor MUST
         # read low (these were the mirror false positives).
         ("bare token", "Xk9Lm2Pq7Rs4Tv8Wy1Zb3Cd6Ef0Gh5Ij2",
-         "value = Xk9Lm2Pq7Rs4Tv8Wy1Zb3Cd6Ef0Gh5Ij2", "low"),
+         "value = Xk9Lm2Pq7Rs4Tv8Wy1Zb3Cd6Ef0Gh5Ij2", "low", "generic-secret", "entropy"),
         ("prose token", "aZ4kP9qR2sT7vW1xY6bC3dE8fG0hJ5mN",
-         "Session opened with handle aZ4kP9qR2sT7vW1xY6bC3dE8fG0hJ5mN. See docs.", "low"),
+         "Session opened with handle aZ4kP9qR2sT7vW1xY6bC3dE8fG0hJ5mN. See docs.", "low", "generic-secret", "entropy"),
         # recall probe: same shape WITH a secret keyword MUST read high.
         ("anchored secret", "Xk9Lm2Pq7Rs4Tv8Wy1Zb3Cd6Ef0Gh5Ij2",
-         "api_key = Xk9Lm2Pq7Rs4Tv8Wy1Zb3Cd6Ef0Gh5Ij2", "high"),
+         "api_key = Xk9Lm2Pq7Rs4Tv8Wy1Zb3Cd6Ef0Gh5Ij2", "high", "generic-api-key", "pattern"),
     ]
     model.eval()
     out = {}
-    records = [{"text": text, "context": ctx} for _name, text, ctx, _want in cases]
+    records = [
+        {
+            "text": text,
+            "context": ctx,
+            "detector_id": detector_id,
+            "candidate_channel": channel,
+        }
+        for _name, text, ctx, _want, detector_id, channel in cases
+    ]
     vectors = rust_features.compute_feature_matrix(records, (kp, sk, tk, pk), num_features)
     with torch.no_grad():
-        for (name, _text, _ctx, want), vec in zip(cases, vectors):
-            s = float(model(torch.tensor([vec], dtype=torch.float32))[0])
+        for (name, _text, _ctx, want, _detector_id, _channel), vec in zip(cases, vectors):
+            s = float(model(torch.from_numpy(np.asarray(vec, dtype=np.float32)[None, :]))[0])
             out[name] = {"score": round(s, 3), "want": want}
     return out
+
+
+def probe_gate_error(probes: dict, threshold: float = 0.5) -> str:
+    """Reject a model that reverses a canonical positive/negative contract."""
+    failures = []
+    for name, result in probes.items():
+        score = result.get("score")
+        want = result.get("want")
+        if not isinstance(score, (float, int)) or want not in {"high", "low"}:
+            failures.append(f"{name}: malformed probe result {result!r}")
+        elif want == "high" and score < threshold:
+            failures.append(f"{name}: score {score:.3f} < {threshold:.3f}")
+        elif want == "low" and score >= threshold:
+            failures.append(f"{name}: score {score:.3f} >= {threshold:.3f}")
+    if not failures:
+        return ""
+    return "REFUSING model: canonical probe contract failed: " + "; ".join(failures) + "\n"
 
 
 def serialize(model, num_features: int) -> bytes:
@@ -469,6 +824,16 @@ def weights_fnv1a64(blob: bytes) -> str:
     return f"{h:016x}"
 
 
+def file_sha256(path: str | None) -> str | None:
+    if not path:
+        return None
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def write_model_card(blob: bytes, args, metrics, real_metrics=None) -> None:
     """Write model-card provenance beside the serialized weights.
 
@@ -503,6 +868,11 @@ def write_model_card(blob: bytes, args, metrics, real_metrics=None) -> None:
             "REFUSING to write: real held-out metrics must include per_detector "
             "precision/recall for model_card.json"
         )
+    if args.write and not isinstance(real_card.get("per_recall_sensitive_class"), dict):
+        raise SystemExit(
+            "REFUSING to write: real held-out metrics must include "
+            "per_recall_sensitive_class precision/recall for model_card.json"
+        )
     if getattr(args, "real_corpus", None) and not isinstance(
         real_card.get("six_scanner_differential"),
         dict,
@@ -524,9 +894,20 @@ def write_model_card(blob: bytes, args, metrics, real_metrics=None) -> None:
         "feature_source": "Rust dump_features serve path",
         "training_inputs": {
             "synthetic": args.corpus,
+            "synthetic_sha256": file_sha256(args.corpus),
             "real_distribution": args.real_corpus
             if args.real_corpus
             else "scratch training only; not shipped",
+            "real_distribution_sha256": file_sha256(args.real_corpus),
+        },
+        "training_parameters": {
+            "epochs": args.epochs,
+            "seed": args.seed,
+            "max_detector_positive_multiplier": args.max_detector_positive_multiplier,
+            "max_recall_sensitive_class_multiplier": args.max_recall_sensitive_class_multiplier,
+            "initial_weights": args.init_weights,
+            "initial_weights_sha256": file_sha256(args.init_weights),
+            "learning_rate": args.learning_rate,
         },
         "metrics": {
             "synthetic_heldout": metrics,
@@ -558,26 +939,36 @@ def main() -> int:
     ap.add_argument("--out", default="crates/scanner/src/weights.bin")
     ap.add_argument("--model-card", default=CURRENT_MODEL_CARD,
                     help="model-card JSON to update with --write; must match weights.bin")
-    ap.add_argument("--features", type=int, default=43, choices=[41, 42, 43])
+    ap.add_argument("--features", type=int, default=55, choices=[41, 42, 43, 51, 55])
     ap.add_argument("--epochs", type=int, default=60)
+    ap.add_argument("--learning-rate", type=float, default=2e-3)
+    ap.add_argument("--init-weights", default=None,
+                    help="strictly load an existing compatible weights.bin before training")
     ap.add_argument("--seed", type=int, default=20260529)
     ap.add_argument("--compare", action="store_true", help="also train 41-feat baseline")
     ap.add_argument("--min-f1", type=float, default=0.85, help="refuse to write below this")
     ap.add_argument("--min-real-recall", type=float, default=0.50,
                     help="with --real-corpus, refuse to write if real held-out recall "
                          "at the 0.40 report floor drops below this (recall-first gate)")
+    ap.add_argument("--min-real-f1", type=float, default=REAL_F1_FLOOR,
+                    help="with --real-corpus, refuse a model below this held-out F1")
+    ap.add_argument("--min-real-precision", type=float, default=REAL_PRECISION_FLOOR,
+                    help="with --real-corpus, refuse a model below this held-out precision")
     ap.add_argument("--min-real-class-recall", type=float, default=0.50,
                     help="with --real-corpus, refuse to write if any positive-bearing "
                          "held-out class falls below this recall at the 0.40 report floor")
-    ap.add_argument("--min-real-class-support", type=int, default=1,
+    ap.add_argument("--min-real-class-support", type=int, default=2,
                     help="minimum positive held-out examples for a class to enter the "
                          "per-class recall gate")
     ap.add_argument("--min-real-detector-recall", type=float, default=0.50,
                     help="with --real-corpus, refuse to write if any positive-bearing "
                          "held-out detector falls below this recall at the 0.40 floor")
     ap.add_argument("--min-real-detector-support", type=int, default=1,
-                    help="minimum positive held-out examples for a detector to enter "
-                         "the per-detector recall gate")
+                    help="minimum positive held-out examples required for every "
+                         "recall-sensitive detector channel")
+    ap.add_argument("--min-real-detector-negative-support", type=int, default=1,
+                    help="minimum negative held-out examples required for every "
+                         "recall-sensitive detector channel")
     ap.add_argument("--baseline-model-card", default=CURRENT_MODEL_CARD,
                     help="existing model card used to reject per-class and per-detector "
                          "real recall regressions during --write")
@@ -585,21 +976,47 @@ def main() -> int:
                     help="allowed per-class recall@0.40 drop vs --baseline-model-card")
     ap.add_argument("--max-real-detector-recall-drop", type=float, default=0.0,
                     help="allowed per-detector recall@0.40 drop vs --baseline-model-card")
+    ap.add_argument("--max-detector-positive-multiplier", type=float, default=16.0,
+                    help="cap for train-split per-detector positive-loss balancing")
+    ap.add_argument("--max-recall-sensitive-class-multiplier", type=float, default=1.0,
+                    help="cap for train-split positive class balancing inside "
+                         "recall-sensitive detectors")
     ap.add_argument("--differential-results", default=DEFAULT_DIFFERENTIAL_RESULTS,
                     help="benchmark RunResult directory used to compare every "
                          "positive held-out class against the full six-scanner "
                          "differential")
     ap.add_argument("--differential-corpus", default=DEFAULT_DIFFERENTIAL_CORPUS,
                     help="benchmark corpus name for the six-scanner differential")
-    ap.add_argument("--write", action="store_true", help="actually overwrite weights.bin")
+    ap.add_argument("--require-differential", action="store_true",
+                    help="refuse an artifact when the current six-scanner differential "
+                         "is unavailable; normal writes record the unavailable status so "
+                         "the freshly built candidate can be benchmarked")
+    ap.add_argument("--verbose-metrics", action="store_true",
+                    help="print full per-class/per-detector tables; they are always "
+                         "retained in the model card")
+    ap.add_argument("--write", action="store_true",
+                    help="internal verified-loop write; direct invocation is refused")
     args = ap.parse_args()
+    if not math.isfinite(args.learning_rate) or args.learning_rate <= 0.0:
+        ap.error("--learning-rate must be finite and greater than zero")
+    if args.epochs < 0 or (args.epochs == 0 and not args.init_weights):
+        ap.error("--epochs must be positive, or zero only with --init-weights for evaluation")
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    sys.stderr.write("[TRAIN] device=cpu (runtime CPU/GPU inference parity is gated separately)\n")
+
+    if args.write and os.environ.get("KEYHOG_VERIFIED_WRITE") != "1":
+        sys.stderr.write(
+            "REFUSING direct write: use `ml/retrain_loop.sh --write --verify` so "
+            "the production scanner contracts and benchmark gates run\n"
+        )
+        return 2
 
     if args.real_corpus:
         # Stage 2: blend the real distribution in and measure on a file-grouped
         # real held-out (no leakage). The F1 gate still uses the SYNTHETIC val
         # (so breadth coverage cannot silently regress); the real held-out is
         # the recall number that matters and is reported alongside.
-        Xs, ys, kinds_s = load_corpus(args.corpus, args.features)
+        Xs, ys, kinds_s, detectors_s = load_corpus(args.corpus, args.features)
         Xr, yr, classes_r, detectors_r, files_r = load_real_corpus(
             args.real_corpus,
             args.features,
@@ -613,6 +1030,7 @@ def main() -> int:
             Xs,
             ys,
             kinds_s,
+            detectors_s,
             Xr,
             yr,
             classes_r,
@@ -621,10 +1039,21 @@ def main() -> int:
             args.features,
             args.epochs,
             args.seed,
+            args.max_detector_positive_multiplier,
+            args.max_recall_sensitive_class_multiplier,
+            args.init_weights,
+            args.learning_rate,
         )
         sys.stderr.write(f"[BLENDED syn-val {args.features}f] {json.dumps(metrics)}\n")
-        sys.stderr.write(f"[BLENDED real-held-out] {json.dumps(real_metrics)}\n")
-        sys.stderr.write(f"[PROBE] {json.dumps(probe(model, args.features))}\n")
+        shown_real_metrics = (
+            real_metrics if args.verbose_metrics else real_metric_summary(real_metrics)
+        )
+        sys.stderr.write(f"[BLENDED real-held-out] {json.dumps(shown_real_metrics)}\n")
+        probes = probe(model, args.features)
+        sys.stderr.write(f"[PROBE] {json.dumps(probes)}\n")
+        if probe_error := probe_gate_error(probes):
+            sys.stderr.write(probe_error)
+            return 1
         blob = serialize(model, args.features)
         sys.stderr.write(f"serialized {len(blob)} bytes ({len(blob) // 4} f32)\n")
         if metrics["f1"] < args.min_f1:
@@ -639,6 +1068,29 @@ def main() -> int:
                 f"{args.min_real_recall} (a retrain must not regress real-distribution recall)\n"
             )
             return 1
+        real_f1 = real_metrics.get("real_f1")
+        if not isinstance(real_f1, (float, int)) or real_f1 < args.min_real_f1:
+            shown = "missing" if not isinstance(real_f1, (float, int)) else f"{real_f1:.4f}"
+            sys.stderr.write(
+                f"REFUSING to write: real held-out F1 {shown} < floor "
+                f"{args.min_real_f1:.4f}\n"
+            )
+            return 1
+        real_precision = real_metrics.get("real_precision")
+        if (
+            not isinstance(real_precision, (float, int))
+            or real_precision < args.min_real_precision
+        ):
+            shown = (
+                "missing"
+                if not isinstance(real_precision, (float, int))
+                else f"{real_precision:.4f}"
+            )
+            sys.stderr.write(
+                f"REFUSING to write: real held-out precision {shown} < floor "
+                f"{args.min_real_precision:.4f}\n"
+            )
+            return 1
         class_gate_error = per_class_gate_error(real_metrics, args)
         if class_gate_error:
             sys.stderr.write(class_gate_error)
@@ -647,13 +1099,22 @@ def main() -> int:
         if detector_gate_error:
             sys.stderr.write(detector_gate_error)
             return 1
-        try:
-            differential = six_scanner_differential_comparison(real_metrics, args)
-        except ValueError as error:
-            sys.stderr.write(f"REFUSING retrain artifact: {error}\n")
-            return 1
         real_metrics = dict(real_metrics)
-        real_metrics["six_scanner_differential"] = differential
+        try:
+            real_metrics["six_scanner_differential"] = (
+                six_scanner_differential_comparison(real_metrics, args)
+            )
+        except ValueError as error:
+            if args.require_differential:
+                sys.stderr.write(f"REFUSING retrain artifact: {error}\n")
+                return 1
+            real_metrics["six_scanner_differential"] = {
+                "status": "unavailable",
+                "error": str(error),
+            }
+            sys.stderr.write(
+                f"candidate artifact has no current six-scanner differential: {error}\n"
+            )
         _write_weights(blob, args, metrics, real_metrics)
         return 0
 
@@ -666,14 +1127,18 @@ def main() -> int:
 
     if args.compare:
         for d in (41, 42):
-            X, y, kinds = load_corpus(args.corpus, d)
+            X, y, kinds, _detectors = load_corpus(args.corpus, d)
             _, m = train(X, y, d, args.epochs, args.seed, kinds)
             sys.stderr.write(f"[{d} features] {json.dumps(m)}\n")
 
-    X, y, kinds = load_corpus(args.corpus, args.features)
+    X, y, kinds, _detectors = load_corpus(args.corpus, args.features)
     model, metrics = train(X, y, args.features, args.epochs, args.seed, kinds)
     sys.stderr.write(f"[FINAL {args.features} features] {json.dumps(metrics)}\n")
-    sys.stderr.write(f"[PROBE] {json.dumps(probe(model, args.features))}\n")
+    probes = probe(model, args.features)
+    sys.stderr.write(f"[PROBE] {json.dumps(probes)}\n")
+    if probe_error := probe_gate_error(probes):
+        sys.stderr.write(probe_error)
+        return 1
 
     blob = serialize(model, args.features)
     sys.stderr.write(f"serialized {len(blob)} bytes ({len(blob)//4} f32)\n")
@@ -709,6 +1174,11 @@ def _write_weights(blob: bytes, args, metrics, real_metrics=None) -> None:
             raise SystemExit(
                 "REFUSING to write: real held-out metrics must include per_detector "
                 "precision/recall before weights.bin is touched"
+            )
+        if not isinstance(real.get("per_recall_sensitive_class"), dict):
+            raise SystemExit(
+                "REFUSING to write: real held-out metrics must include "
+                "per_recall_sensitive_class precision/recall before weights.bin is touched"
             )
         if os.path.exists(args.out):
             shutil.copy2(args.out, args.out + ".bak")
@@ -749,7 +1219,7 @@ def _load_baseline_group(path: str, group: str) -> dict:
 
 
 def _load_baseline_per_class(path: str) -> dict:
-    return _load_baseline_group(path, "per_class")
+    return _load_baseline_group(path, "per_recall_sensitive_class")
 
 
 def _load_baseline_per_detector(path: str) -> dict:
@@ -847,12 +1317,13 @@ def six_scanner_differential_comparison(real_metrics: dict, args) -> dict:
 
 
 def per_class_gate_error(real_metrics: dict, args) -> str:
-    """Return a refusal message when class-level real recall is unsafe."""
-    per_class = real_metrics.get("per_class")
+    """Guard classes whose detector policy lets the model reduce recall."""
+    per_class = real_metrics.get("per_recall_sensitive_class")
     if not isinstance(per_class, dict):
         return (
-            "REFUSING to write: real held-out metrics must include per_class "
-            "precision/recall so aggregate recall cannot hide class failures\n"
+            "REFUSING to write: real held-out metrics must include "
+            "per_recall_sensitive_class precision/recall so aggregate recall "
+            "cannot hide failures on model-authoritative paths\n"
         )
 
     offenders = []
@@ -914,11 +1385,25 @@ def per_detector_gate_error(real_metrics: dict, args) -> str:
         )
 
     offenders = []
-    for detector_id, metric in sorted(per_detector.items()):
+    recall_sensitive = detector_policy.recall_sensitive_finding_ids()
+    for detector_id in sorted(recall_sensitive):
+        metric = per_detector.get(detector_id)
         if not isinstance(metric, dict):
+            offenders.append(f"{detector_id} has no real held-out candidates")
             continue
         n_pos = int(metric.get("n_pos") or 0)
         if n_pos < args.min_real_detector_support:
+            offenders.append(
+                f"{detector_id} has {n_pos} positive held-out candidate(s), requires "
+                f"{args.min_real_detector_support}"
+            )
+            continue
+        n_neg = int(metric.get("n_neg") or 0)
+        if n_neg < args.min_real_detector_negative_support:
+            offenders.append(
+                f"{detector_id} has {n_neg} negative held-out candidate(s), requires "
+                f"{args.min_real_detector_negative_support}"
+            )
             continue
         recall = _class_floor(metric)
         if recall is None or recall < args.min_real_detector_recall:
@@ -931,6 +1416,8 @@ def per_detector_gate_error(real_metrics: dict, args) -> str:
     regressions = []
     baseline = _load_baseline_per_detector(args.baseline_model_card) if args.write else {}
     for detector_id, old_metric in sorted(baseline.items()):
+        if not detector_policy.model_can_reduce_recall(detector_id):
+            continue
         new_metric = per_detector.get(detector_id)
         if not isinstance(old_metric, dict) or not isinstance(new_metric, dict):
             continue

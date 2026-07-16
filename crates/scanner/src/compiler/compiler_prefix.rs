@@ -7,18 +7,16 @@
 //!   - `inner`: inner-literal extraction and required-run analysis
 
 mod flags;
-mod guard;
 mod groups;
+mod guard;
 mod inner;
 
-pub(crate) use flags::{
-    strip_leading_inline_flags, strip_leading_zero_width_assertions,
-};
-pub(crate) use guard::{split_leading_boundary_guard, strip_leading_boundary_guard};
+pub(crate) use flags::{strip_leading_inline_flags, strip_leading_zero_width_assertions};
 pub(crate) use groups::{
     expand_leading_charclass_prefixes, expand_leading_literal_alternation_with_tail,
     MAX_CHARCLASS_PREFIX_EXPANSION,
 };
+pub(crate) use guard::{split_leading_boundary_guard, strip_leading_boundary_guard};
 pub(crate) use inner::{
     extract_inner_literals, is_escaped_literal, regex_has_required_literal_run,
     MIN_DISTINCTIVE_INFIX_CHARS, MIN_INNER_LITERAL_CHARS,
@@ -140,7 +138,7 @@ pub(crate) fn extract_literal_prefixes(pattern: &str) -> Vec<String> {
     }
 
     // Fallback: a leading alternation of SHORT pure literals that only clear the
-    // floor once extended with the literal following the group (`(?:pk|sk)\.` -> 
+    // floor once extended with the literal following the group (`(?:pk|sk)\.` ->
     // `pk.`/`sk.`). The per-branch alternation path above expands `pk`/`sk` but
     // each is sub-floor on its own, so it declined; carrying the trailing `\.`
     // discriminator onto every branch recovers them (contracts_runner:
@@ -226,13 +224,15 @@ pub(crate) fn extract_literal_prefix(pattern: &str) -> Option<String> {
                 // patterns like `(https?://...)` route from their earliest
                 // guaranteed bytes instead of a later inner literal.
                 let group_start = chars.clone().collect::<String>();
-                let optional_group = groups::leading_group_parts(&group_start).is_some_and(|(_, tail)| {
-                    tail.starts_with('?') || tail.starts_with('*') || tail.starts_with("{0")
-                });
+                let optional_group =
+                    groups::leading_group_parts(&group_start).is_some_and(|(_, tail)| {
+                        tail.starts_with('?') || tail.starts_with('*') || tail.starts_with("{0")
+                    });
                 if optional_group {
                     // Bytes inside an optional group are not a required prefix.
                     // Keep the literal accumulated before the group and stop.
-                } else if let Some(alternatives) = groups::extract_group_alternatives(&group_start) {
+                } else if let Some(alternatives) = groups::extract_group_alternatives(&group_start)
+                {
                     // Find the longest common prefix of all alternatives
                     if let Some(first) = alternatives.first() {
                         let common: String = first

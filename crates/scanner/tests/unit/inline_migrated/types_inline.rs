@@ -20,8 +20,6 @@ mod sanitise_tests {
                 entropy_in_source_files: false,
                 entropy_ml_authoritative: true,
                 generic_keyword_low_entropy: true,
-                #[cfg(feature = "ml")]
-                ml_mode: None,
                 #[cfg(not(feature = "ml"))]
                 ml_enabled: false,
                 ml_weight: 0.6,

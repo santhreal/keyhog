@@ -118,7 +118,8 @@ impl CompiledScanner {
     ) -> Vec<Vec<keyhog_core::RawMatch>> {
         if backend == crate::hw_probe::ScanBackend::SimdCpu {
             self.require_selected_backend_stack(backend);
-            return self.scan_coalesced_simd(chunks, plan.filter(|plan| plan.matches_chunks(chunks)));
+            return self
+                .scan_coalesced_simd(chunks, plan.filter(|plan| plan.matches_chunks(chunks)));
         }
         self.scan_chunks_with_backend_internal_and_admission(
             chunks,
@@ -283,43 +284,27 @@ impl CompiledScanner {
         let small_chunk = text.len() <= NO_HIT_ENTROPY_ADMISSION_MAX_BYTES;
         let keyword_admits = has_generic_assignment_keyword(data) || has_secret_keyword_fast(data);
         #[cfg(feature = "entropy")]
-        let generic_keyword_secret_index =
-            self.generic_owning_detector.generic_keyword_secret_index();
+        let isolated_bare_owner_index = self.generic_owning_detector.isolated_bare_owner_index();
         #[cfg(feature = "entropy")]
-        let generic_keyword_secret_policy = generic_keyword_secret_index
+        let isolated_bare_policy = isolated_bare_owner_index
             .and_then(|index| self.entropy_policies.get(index))
             .copied();
-        #[cfg(feature = "entropy")]
-        let generic_keyword_secret_min_len = generic_keyword_secret_policy
-            .map(|policy| policy.keyword_free_min_len)
-            .or_else(|| {
-                generic_keyword_secret_index
-                    .and_then(|index| self.detectors.get(index))
-                    .and_then(|spec| spec.keyword_free_min_len)
-            })
-            .map_or(crate::entropy::KEYWORD_FREE_MIN_LEN, |min_len| min_len);
-        #[cfg(feature = "entropy")]
-        let generic_keyword_secret_entropy_shape = generic_keyword_secret_policy
-            .and_then(|policy| policy.entropy_shape)
-            .or_else(|| {
-                generic_keyword_secret_index
-                    .and_then(|index| self.detectors.get(index))
-                    .and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape)
-            });
         #[cfg(feature = "multiline")]
         if crate::multiline::has_concatenation_indicators(text) {
             if keyword_admits {
                 return true;
             }
             #[cfg(feature = "entropy")]
-            if small_chunk && self.config.entropy_enabled {
+            if let Some(policy) =
+                isolated_bare_policy.filter(|_| small_chunk && self.config.entropy_enabled)
+            {
                 if crate::entropy::scanner::has_isolated_bare_secret_candidate_with_policy(
                     text,
                     self.config.entropy_threshold,
                     &self.config.placeholder_keywords,
-                    generic_keyword_secret_min_len,
-                    generic_keyword_secret_entropy_shape,
-                    generic_keyword_secret_policy,
+                    policy.keyword_free_min_len,
+                    policy.entropy_shape,
+                    Some(policy),
                 ) {
                     return true;
                 }
@@ -334,14 +319,16 @@ impl CompiledScanner {
                 text,
                 &self.config.secret_keywords,
             ) && has_high_entropy_run_fast(data))
-                || crate::entropy::scanner::has_isolated_bare_secret_candidate_with_policy(
-                    text,
-                    self.config.entropy_threshold,
-                    &self.config.placeholder_keywords,
-                    generic_keyword_secret_min_len,
-                    generic_keyword_secret_entropy_shape,
-                    generic_keyword_secret_policy,
-                ));
+                || isolated_bare_policy.is_some_and(|policy| {
+                    crate::entropy::scanner::has_isolated_bare_secret_candidate_with_policy(
+                        text,
+                        self.config.entropy_threshold,
+                        &self.config.placeholder_keywords,
+                        policy.keyword_free_min_len,
+                        policy.entropy_shape,
+                        Some(policy),
+                    )
+                }));
         #[cfg(feature = "entropy")]
         {
             keyword_admits || entropy_admits

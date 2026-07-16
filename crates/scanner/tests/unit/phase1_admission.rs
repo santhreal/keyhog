@@ -13,6 +13,7 @@ fn scanner() -> CompiledScanner {
             description: None,
             group: None,
             client_safe: false,
+            weak_anchor: false,
         }],
         keywords: vec!["ghp_".into()],
         min_confidence: Some(0.0),
@@ -118,9 +119,7 @@ fn phase1_summary_parallel_fold_preserves_admission_totals() {
     assert_eq!(summary.bigram_rejected_chunks, 1);
     assert_eq!(summary.admitted_chunks, 2);
     assert_eq!(
-        summary.alphabet_rejected_bytes
-            + summary.bigram_rejected_bytes
-            + summary.admitted_bytes,
+        summary.alphabet_rejected_bytes + summary.bigram_rejected_bytes + summary.admitted_bytes,
         batch
             .iter()
             .map(|chunk| chunk.data.len() as u64)

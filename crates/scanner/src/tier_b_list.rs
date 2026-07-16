@@ -78,7 +78,6 @@ pub(crate) fn parse_token_list(
     Ok(out)
 }
 
-
 #[cfg(test)]
 #[path = "../tests/unit/tier_b_list.rs"]
 mod tests;

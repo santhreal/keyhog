@@ -215,6 +215,7 @@ fn production_wgpu_shards_the_8mib_overlapped_workload_with_cpu_parity() {
             description: None,
             group: None,
             client_safe: false,
+            weak_anchor: false,
         }],
         keywords: vec!["KHGPUWG".into()],
         ..DetectorSpec::default()
@@ -305,6 +306,7 @@ fn production_cuda_windows_seam_tail_and_mixed_rows_with_cpu_parity() {
             description: None,
             group: None,
             client_safe: false,
+            weak_anchor: false,
         }],
         keywords: vec!["KHCUDAX_".into()],
         ..DetectorSpec::default()

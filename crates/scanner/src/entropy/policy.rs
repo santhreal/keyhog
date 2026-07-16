@@ -1,4 +1,116 @@
-use keyhog_core::{DetectorKind, DetectorSpec, EntropyShapeSpec};
+use keyhog_core::{DetectorSpec, EntropyShapeSpec};
+
+/// Length-bucketed detector floor compiled into parallel primitive arrays.
+/// Runtime lookup performs one binary search and never walks optional TOML
+/// fields or substitutes a scanner-owned threshold.
+#[derive(Debug)]
+struct CompiledEntropyFloorPolicy {
+    max_lengths: Box<[usize]>,
+    floors: Box<[f64]>,
+    catch_all: f64,
+    entropy_high: f64,
+}
+
+impl CompiledEntropyFloorPolicy {
+    fn compile(detector: &DetectorSpec) -> Result<Option<Self>, String> {
+        if detector.entropy_floor.is_empty() {
+            return Ok(None);
+        }
+        let entropy_high = detector.entropy_high.ok_or_else(|| {
+            format!(
+                "detector {:?} declares entropy_floor but omits entropy_high",
+                detector.id
+            )
+        })?;
+        let (catch_all_bucket, bounded) = detector
+            .entropy_floor
+            .split_last()
+            .ok_or_else(|| format!("detector {:?} declares an empty entropy_floor", detector.id))?;
+        if catch_all_bucket.max_len.is_some() {
+            return Err(format!(
+                "detector {:?} entropy_floor must end with a catch-all bucket",
+                detector.id
+            ));
+        }
+        let mut max_lengths = Vec::with_capacity(bounded.len());
+        let mut floors = Vec::with_capacity(bounded.len());
+        for bucket in bounded {
+            let max_len = bucket.max_len.ok_or_else(|| {
+                format!(
+                    "detector {:?} entropy_floor contains a catch-all bucket before the end",
+                    detector.id
+                )
+            })?;
+            if max_lengths
+                .last()
+                .is_some_and(|previous| *previous >= max_len)
+            {
+                return Err(format!(
+                    "detector {:?} entropy_floor max_len values must strictly increase",
+                    detector.id
+                ));
+            }
+            max_lengths.push(max_len);
+            floors.push(bucket.floor);
+        }
+        Ok(Some(Self {
+            max_lengths: max_lengths.into_boxed_slice(),
+            floors: floors.into_boxed_slice(),
+            catch_all: catch_all_bucket.floor,
+            entropy_high,
+        }))
+    }
+
+    #[inline]
+    fn effective_floor(&self, credential_len: usize, operator_threshold: f64) -> f64 {
+        let bucket = self
+            .max_lengths
+            .partition_point(|max_len| credential_len > *max_len);
+        let base = self.floors.get(bucket).copied().unwrap_or(self.catch_all);
+        if operator_threshold.is_finite() && operator_threshold > self.entropy_high {
+            base.max(operator_threshold)
+        } else {
+            base
+        }
+    }
+}
+
+/// Detector-indexed floor programs used by named, weak-anchor, and generic
+/// candidate paths, compiled once with the scanner.
+#[derive(Debug)]
+pub(crate) struct CompiledDetectorEntropyFloors {
+    by_detector_index: Vec<Option<CompiledEntropyFloorPolicy>>,
+}
+
+impl CompiledDetectorEntropyFloors {
+    pub(crate) fn compile(detectors: &[DetectorSpec]) -> Result<Self, String> {
+        let by_detector_index = detectors
+            .iter()
+            .map(CompiledEntropyFloorPolicy::compile)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self { by_detector_index })
+    }
+
+    #[inline]
+    pub(crate) fn effective_floor(
+        &self,
+        detector_index: usize,
+        credential_len: usize,
+        operator_threshold: f64,
+    ) -> Option<f64> {
+        self.by_detector_index
+            .get(detector_index)
+            .and_then(Option::as_ref)
+            .map(|policy| policy.effective_floor(credential_len, operator_threshold))
+    }
+
+    #[inline]
+    pub(crate) fn has_policy(&self, detector_index: usize) -> bool {
+        self.by_detector_index
+            .get(detector_index)
+            .is_some_and(Option::is_some)
+    }
+}
 
 /// Fully resolved entropy policy compiled once from an owning detector.
 ///
@@ -21,6 +133,7 @@ pub(crate) struct CompiledEntropyPolicy {
     pub(crate) mixed_alnum_min_len: usize,
     pub(crate) keyword_free_min_len: usize,
     pub(crate) min_len: usize,
+    pub(crate) max_len: usize,
     pub(crate) bpe_enabled: bool,
     pub(crate) bpe_max_bytes_per_token: Option<f64>,
     pub(crate) entropy_shape: Option<EntropyShapeSpec>,
@@ -71,12 +184,6 @@ impl CompiledEntropyPolicy {
                 detector.id
             ));
         }
-        if detector.kind == DetectorKind::Phase2Generic && detector.max_len.is_none() {
-            return Err(format!(
-                "detector {:?} owns phase-2 generic detection but omits max_len",
-                detector.id
-            ));
-        }
         let bpe_enabled = Self::required(detector, "bpe_enabled", detector.bpe_enabled)?;
         let bpe_max_bytes_per_token = if bpe_enabled {
             Some(Self::required(
@@ -121,6 +228,7 @@ impl CompiledEntropyPolicy {
                 detector.keyword_free_min_len,
             )?,
             min_len: Self::required(detector, "min_len", detector.min_len)?,
+            max_len: Self::required(detector, "max_len", detector.max_len)?,
             bpe_enabled,
             bpe_max_bytes_per_token,
             entropy_shape: Some(entropy_shape),

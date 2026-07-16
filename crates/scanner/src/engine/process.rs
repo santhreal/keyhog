@@ -115,10 +115,9 @@ impl CompiledScanner {
             chunk.metadata.path.as_deref(),
             documentation_lines,
         );
-        // Per-pattern weak-anchor: the per-detector base class (resolved once at
-        // construction, index-parallel with `detectors`) combined with the
-        // matched pattern's memoized broad-identifier check. A mismatch in the
-        // index-parallel base vector is an internal construction bug and is loud.
+        // Combine the construction-time detector base with the explicit policy
+        // bit compiled beside this exact regex. Index mismatch is an internal
+        // construction bug and remains loud.
         let weak_anchor = self.detector_pattern_weak_anchor(entry);
         let allow_decoded_hex_key_material = detector.allows_decoded_hex_key_material_len(
             crate::decode_structure::evidence(credential).decoded_hex_text_len(),
@@ -128,8 +127,8 @@ impl CompiledScanner {
                 chunk.metadata.path.as_deref(),
                 inferred_context,
                 Some(chunk.metadata.source_type.as_ref()),
-                detector.id.as_ref(),
                 self.detector_suppression_by_index.get(entry.detector_index),
+                detector.service != "generic",
                 weak_anchor,
                 detector.structural_password_slot,
                 allow_decoded_hex_key_material,
@@ -169,20 +168,21 @@ impl CompiledScanner {
 
         let is_generic = crate::detector_ids::is_generic_detector(detector.id.as_ref());
         let is_weakly_anchored = weak_anchor;
-        let entropy_floor_detector = if is_weakly_anchored {
-            self.generic_owning_detector
-                .index_for_id(crate::detector_ids::GENERIC_API_KEY)
-                .and_then(|index| self.detectors.get(index))
-        } else {
-            Some(detector)
-        };
+        let effective_entropy_floor = (is_generic || is_weakly_anchored)
+            .then(|| {
+                self.detector_entropy_floors.effective_floor(
+                    entry.detector_index,
+                    credential.len(),
+                    self.config.entropy_threshold,
+                )
+            })
+            .flatten();
         let entropy_shape_ctx = crate::adjudicate::MatchCtx::for_process_signals(
             crate::adjudicate::ProcessCandidateSignals::from_process_entropy_shape(
                 is_generic,
                 is_weakly_anchored,
                 entropy,
-                self.config.entropy_threshold,
-                entropy_floor_detector,
+                effective_entropy_floor,
                 credential,
             ),
         );
@@ -365,6 +365,8 @@ impl CompiledScanner {
                     credential,
                     detector_ml_policy.context_radius_lines,
                     &self.config,
+                    detector,
+                    crate::ml_scorer::MlCandidateChannel::Pattern,
                 );
                 let raw_match = build_raw_match(
                     detector,

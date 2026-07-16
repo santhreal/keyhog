@@ -1,12 +1,12 @@
 //! Regression: the generic keyword-bridge low-entropy floor.
 //!
 //! The generic-assignment bridge (`engine/phase2_generic.rs` →
-//! `generic_value_shape_rejected` → `adjudicate::generic_bridge_entropy_below_floor`)
+//! `generic_value_shape_rejected` → `adjudicate::generic_entropy_below_floor`)
 //! applies the active detector's per-family Shannon-entropy floor as its
 //! very first suppression gate. When `generic_keyword_low_entropy` is ON (the
 //! shipped default) a keyword-anchored value is judged against the
-//! `generic-keyword-secret` family floor of **1.5** bits/byte and keeps that
-//! detector-local identity; when it is OFF the stricter `generic-secret` family
+//! `generic-keyword-secret` family floor of **1.5** bits/byte while the exact
+//! assignment owner keeps its own detector identity; when it is OFF the stricter `generic-secret` family
 //! floor applies (**2.8** for values of length <= 24). The band `[1.5, 2.8)` is
 //! therefore surfaced ONLY because of the keyword low-entropy floor, a genuine weak/random password like
 //! `GRAPHITE_PASS=gjbubxsu` (Shannon entropy exactly 2.5) lives in that band.
@@ -169,11 +169,7 @@ fn low_entropy_password_surfaces_under_password_keyword() {
     let m = find(&matches, "gjbubxsu").unwrap_or_else(|| {
         panic!("gjbubxsu (entropy 2.5, above the 1.5 keyword floor) must surface under `password =`; matches: {matches:#?}")
     });
-    assert_eq!(
-        m.detector_id.as_ref(),
-        BRIDGE_DETECTOR_ID,
-        "surfaced via the generic keyword bridge"
-    );
+    assert_eq!(m.detector_id.as_ref(), "generic-password");
 }
 
 #[test]

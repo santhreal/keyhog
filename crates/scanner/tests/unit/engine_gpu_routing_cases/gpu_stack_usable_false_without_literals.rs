@@ -14,6 +14,7 @@ fn gpu_stack_usable_false_without_literals() {
             description: None,
             group: None,
             client_safe: false,
+            weak_anchor: false,
         }],
         companions: vec![],
         verify: None,

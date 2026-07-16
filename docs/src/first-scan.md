@@ -37,10 +37,10 @@ By default, output is human-readable:
 $ keyhog scan .
 K E Y H O G
 ───────────
-v0.5.41 · secret scanner · 923 detectors
+    v0.5.41 · secret scanner · 923 detectors
 by santh
 
-⚡ 16 cores | GPU: NVIDIA GeForce RTX 5090 | SIMD: AVX-512 | Hyperscan | 923 detectors (5963 patterns) io_uring | backend=simd-regex | gpu=none
+  ⚡ 16 cores | GPU: NVIDIA GeForce RTX 5090 | SIMD: AVX-512 | Hyperscan | 923 detectors (5963 patterns) io_uring | backend=simd-regex | gpu=none
 
   ┌    CRITICAL ─── Stripe Secret Key
   │ Secret:     sk_l...p7dc

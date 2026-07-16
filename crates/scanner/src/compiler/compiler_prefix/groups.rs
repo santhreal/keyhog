@@ -1,5 +1,5 @@
-use super::leading_literal_run;
 use super::inner::is_escaped_literal;
+use super::leading_literal_run;
 use crate::types::MIN_LITERAL_PREFIX_CHARS;
 
 /// Upper bound on how many members a leading character class may have before

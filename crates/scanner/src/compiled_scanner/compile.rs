@@ -34,6 +34,9 @@ impl CompiledScanner {
         // LAW10: cfg-only Hyperscan tuning marker; no runtime effect.
         #[cfg(not(feature = "simd"))]
         let _tuning_config = tuning_config;
+        let detector_entropy_floors =
+            crate::entropy::policy::CompiledDetectorEntropyFloors::compile(&detectors)
+                .map_err(crate::error::ScanError::Config)?;
         #[cfg(feature = "entropy")]
         let entropy_policies = crate::entropy::policy::CompiledEntropyPolicies::compile(&detectors)
             .map_err(crate::error::ScanError::Config)?;
@@ -380,28 +383,45 @@ impl CompiledScanner {
             })
             .collect();
 
-        // Pre-resolve the per-detector weak-anchor BASE classification once,
-        // indexed by detector_index. The detector-wide half (residual pure-hex
-        // list, generic/private-key carve-out, explicit min_confidence) depends
-        // ONLY on the spec and is resolved here; the per-PATTERN broad-identifier
-        // half is resolved in `process_match` against the matched `entry.regex`
-        // (memoized on the `LazyRegex`), so a strong pattern in a multi-pattern
-        // detector keeps its anchor. Built before `detectors` is moved.
+        // Pre-resolve the detector-wide weak-anchor base once. The per-pattern
+        // bit is compiled beside its regex, so mixed detectors protect only the
+        // patterns that declare the policy. Built before `detectors` is moved.
         let detector_weak_anchor_base_by_index: Vec<crate::suppression::WeakAnchorBase> = detectors
             .iter()
             .map(crate::suppression::detector_weak_anchor_base)
-            .collect::<std::result::Result<_, _>>()
-            .map_err(crate::error::ScanError::Config)?;
+            .collect();
+        let missing_weak_anchor_floors = detectors
+            .iter()
+            .zip(&detector_weak_anchor_base_by_index)
+            .enumerate()
+            .filter_map(|(index, (detector, base))| {
+                let has_weak_pattern = match base {
+                    crate::suppression::WeakAnchorBase::Always => true,
+                    crate::suppression::WeakAnchorBase::PerPattern => {
+                        detector.patterns.iter().any(|pattern| pattern.weak_anchor)
+                    }
+                    crate::suppression::WeakAnchorBase::Never => false,
+                };
+                (has_weak_pattern && !detector_entropy_floors.has_policy(index))
+                    .then_some(detector.id.as_str())
+            })
+            .collect::<Vec<_>>();
+        if !missing_weak_anchor_floors.is_empty() {
+            return Err(crate::error::ScanError::Config(format!(
+                "weak-anchor detectors omit detector-local entropy_high/entropy_floor policy: {}",
+                missing_weak_anchor_floors.join(", ")
+            )));
+        }
         let generic_named_assignment_keywords =
             crate::generic_keyword_owner::build_generic_named_assignment_keywords(&detectors);
         let mut generic_assignment_max_len = None;
         for detector in detectors
             .iter()
-            .filter(|detector| detector.kind == keyhog_core::DetectorKind::Phase2Generic)
+            .filter(|detector| detector.owns_entropy_policy())
         {
             let max_len = detector.max_len.ok_or_else(|| {
                 crate::error::ScanError::Config(format!(
-                    "phase-2 detector {:?} omits max_len; declare it in the detector TOML",
+                    "generic entropy owner {:?} omits max_len; declare it in the detector TOML",
                     detector.id
                 ))
             })?;
@@ -409,6 +429,8 @@ impl CompiledScanner {
                 generic_assignment_max_len.map_or(max_len, |current: usize| current.max(max_len)),
             );
         }
+        let mut generic_keyword_stems = None;
+        let mut generic_gpu_positions_compatible = false;
         let generic_assignment_re = if let Some(max_len) = generic_assignment_max_len {
             let keywords = crate::assignment_keywords::derive_assignment_keywords(&detectors)
                 .map_err(crate::error::ScanError::Config)?;
@@ -423,6 +445,16 @@ impl CompiledScanner {
                 ));
             }
             let include_vendor_fallback = vendor_fallback_owners == 1;
+            generic_gpu_positions_compatible =
+                keywords.as_slice() == crate::assignment_keywords::assignment_keywords();
+            generic_keyword_stems = Some(
+                crate::engine::phase2_generic::keywords::GenericKeywordStemSet::compile(
+                    keywords
+                        .iter()
+                        .map(String::as_str)
+                        .chain(include_vendor_fallback.then_some("key")),
+                ),
+            );
             let alternation = crate::engine::phase2_generic::generic_keyword_alternation_from_with_vendor_fallback(
                 &keywords,
                 include_vendor_fallback,
@@ -442,7 +474,8 @@ impl CompiledScanner {
             None
         };
         let generic_owning_detector =
-            crate::generic_keyword_owner::GenericOwningDetectorIndex::build(&detectors);
+            crate::generic_keyword_owner::GenericOwningDetectorIndex::build(&detectors)
+                .map_err(crate::error::ScanError::Config)?;
         #[cfg(feature = "ml")]
         let detector_ml_policies = crate::detector_ml_policy::compile(&detectors);
 
@@ -522,11 +555,14 @@ impl CompiledScanner {
             detector_suppression_by_index,
             generic_named_assignment_keywords,
             generic_assignment_re,
+            generic_keyword_stems,
+            generic_gpu_positions_compatible,
             generic_owning_detector,
             #[cfg(feature = "ml")]
             detector_ml_policies,
             #[cfg(feature = "entropy")]
             entropy_policies,
+            detector_entropy_floors,
             #[cfg(feature = "gpu")]
             ac_match_upper_bounds,
             suffix_gate_ac,

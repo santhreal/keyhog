@@ -61,7 +61,7 @@ fn try_resolve_matches_with_policy(
         matches,
         private_key_block_detectors,
         &source_families,
-    )?;
+    );
     suppress_entropy_duplicates_near_named_detectors(matches, &source_families);
     *matches = resolve_match_groups(std::mem::take(matches), &source_families);
     Ok(())
@@ -71,20 +71,16 @@ fn suppress_matches_nested_in_private_key_blocks(
     matches: &mut Vec<RawMatch>,
     private_key_block_detectors: Option<&HashSet<String>>,
     source_families: &SourceFamilyIndex,
-) -> Result<(), String> {
+) {
     let private_key_spans: Vec<(MatchOrigin, usize, usize)> = matches
         .iter()
-        .filter_map(|m| {
+        .filter(|m| {
             is_private_key_block_detector(m.detector_id.as_ref(), private_key_block_detectors)
-                .map(|is_block| is_block.then(|| m))
-                .transpose()
         })
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
         .filter_map(|matched| match_span(matched, source_families))
         .collect();
     if private_key_spans.is_empty() {
-        return Ok(());
+        return;
     }
 
     // Index spans per source, path, and revision with a running prefix-maximum.
@@ -100,7 +96,7 @@ fn suppress_matches_nested_in_private_key_blocks(
 
     let mut retain = Vec::with_capacity(matches.len());
     for m in matches.iter() {
-        if is_private_key_block_detector(m.detector_id.as_ref(), private_key_block_detectors)? {
+        if is_private_key_block_detector(m.detector_id.as_ref(), private_key_block_detectors) {
             retain.push(true);
             continue;
         }
@@ -117,7 +113,6 @@ fn suppress_matches_nested_in_private_key_blocks(
         }
     }
     *matches = retained;
-    Ok(())
 }
 
 fn match_span(
@@ -371,12 +366,9 @@ fn suppress_entropy_duplicates_near_named_detectors(
     });
 }
 
-fn is_private_key_block_detector(
-    detector_id: &str,
-    active: Option<&HashSet<String>>,
-) -> Result<bool, String> {
+fn is_private_key_block_detector(detector_id: &str, active: Option<&HashSet<String>>) -> bool {
     match active {
-        Some(detectors) => Ok(detectors.contains(detector_id)),
+        Some(detectors) => detectors.contains(detector_id),
         None => crate::detector_ids::is_private_key_block_detector(detector_id),
     }
 }

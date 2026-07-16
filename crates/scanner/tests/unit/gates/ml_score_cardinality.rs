@@ -122,13 +122,16 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
     let credential = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij";
     let context =
         keyhog_scanner::testing::ml_context_for_candidate(source, 2, Some("src/token.rs"), 5);
-    let expected = keyhog_scanner::ml_scorer::compute_features_with_config(
+    let detector = keyhog_core::detector_spec_by_id("github-classic-pat").unwrap();
+    let expected = keyhog_scanner::ml_scorer::compute_features_for_detector_with_config(
         credential,
         &context,
         &config.known_prefixes,
         &config.secret_keywords,
         &config.test_keywords,
         &config.placeholder_keywords,
+        detector,
+        keyhog_scanner::ml_scorer::MlCandidateChannel::Pattern,
     );
     let queued = keyhog_scanner::testing::queued_ml_features(
         source,
@@ -137,6 +140,8 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
         credential,
         5,
         &config,
+        "github-classic-pat",
+        false,
     );
     assert_eq!(queued.as_slice(), expected.as_slice());
     assert!(

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The keyhog ML feedback loop, in one command: harvest the real distribution →
 # blend with the synthetic corpus → retrain → validate on a leakage-free real
-# held-out → (optionally) ship weights.bin behind recall-first gates.
+# held-out → optionally ship weights.bin behind statistical, contract, and
+# benchmark gates.
 #
 # Why this exists: the MoE is only as good as the distribution it trains on. The
 # synthetic-only model scored real ambiguous secrets ~0.02; feeding it the real
@@ -12,7 +13,6 @@
 #
 # Usage:
 #   ml/retrain_loop.sh                      # measure only (writes a scratch model)
-#   ml/retrain_loop.sh --write              # ship weights.bin if train-gates pass (+.bak)
 #   ml/retrain_loop.sh --write --verify     # ship, then REBUILD + per-detector FP gate
 #                                           #   + full contract-recall gate;
 #                                           #   auto-revert weights.bin on any regression
@@ -22,15 +22,14 @@
 # Train-time gates (enforced by train_classifier.py; --write refuses on any miss):
 #   * synthetic held-out F1    >= --min-f1            (breadth must not regress)
 #   * real held-out recall@.40 >= --min-real-recall  (real recall must not regress)
-#   * each held-out class and detector clears its own recall floor and baseline
+#   * each recall-sensitive held-out class and detector clears its floor/baseline
 #
 # Bench gate (--verify only; the guard the train-gates can't be): held-out F1 and
 # recall passed last time too, the kubernetes-bootstrap-token +203-FP regression
 # only showed up in the full per-detector CredData bench. --verify reproduces that
 # bench against a self-captured baseline of the model being replaced and refuses
 # (fail-closed: restores weights.bin from .bak + rebuilds) on any per-detector FP
-# spike or overall-F1 regression. Without --verify, --write prints a loud banner
-# that this guard has NOT run (it never silently ships an unverified model).
+# spike or overall-F1 regression. Writes require this verification path.
 #
 # Contract-recall gate (--verify, second guard): the bench above is BLIND to the
 # known-positive contract fixtures, so a model that suppresses generic/entropy
@@ -47,7 +46,7 @@ cd "${REPO_ROOT}"
 CORPORA="${CORPORA:-creddata}"
 REAL_OUT="${REAL_OUT:-ml/data/real_corpus.jsonl}"
 SYN_CORPUS="${SYN_CORPUS:-ml/data/corpus.jsonl}"
-FEATURES="${FEATURES:-43}"
+FEATURES="${FEATURES:-55}"
 WEIGHTS="${WEIGHTS:-crates/scanner/src/weights.bin}"
 # The model card is written+backed-up alongside weights.bin by train_classifier's
 # write_model_card. build.rs enforces weights.bin <-> model_card consistency
@@ -101,6 +100,10 @@ for a in "$@"; do
 done
 if [[ "${DO_VERIFY}" == "1" && "${DO_WRITE}" != "1" ]]; then
   echo "error: --verify requires --write (nothing is shipped to verify otherwise)" >&2
+  exit 2
+fi
+if [[ "${DO_WRITE}" == "1" && "${DO_VERIFY}" != "1" ]]; then
+  echo "error: --write requires --verify so production scanner contracts and benchmark gates run" >&2
   exit 2
 fi
 
@@ -237,7 +240,7 @@ fi
 #    writes a scratch model and never touches the crate. With --write it ships
 #    weights.bin (+ a .bak of the pre-ship model) iff the train-gates pass.
 echo "→ retraining (synthetic + real, file-grouped held-out)"
-python3 ml/train_classifier.py \
+KEYHOG_VERIFIED_WRITE="${DO_VERIFY}" python3 ml/train_classifier.py \
     --corpus "${SYN_CORPUS}" \
     --real-corpus "${REAL_OUT}" \
     --features "${FEATURES}" \
@@ -281,22 +284,10 @@ if [[ "${DO_WRITE}" == "1" && "${DO_VERIFY}" == "1" ]]; then
     exit 1
   fi
   echo "✓ [verify] all corpora (${VERIFY_CORPORA}) passed the per-detector FP + F1 gate; candidate kept"
-elif [[ "${DO_WRITE}" == "1" ]]; then
-  cat >&2 <<'BANNER'
-┌──────────────────────────────────────────────────────────────────────────┐
-│ weights.bin SHIPPED, but the per-detector bench gate has NOT run.          │
-│ Held-out F1/recall passing does NOT prove no per-detector FP regression. │
-│ the kubernetes-bootstrap-token +203-FP spike passed the held-out gates and │
-│ only surfaced in the full CredData per-detector bench. Before trusting it: │
-│   ml/retrain_loop.sh --write --verify     (re-ships + auto-verifies)       │
-└──────────────────────────────────────────────────────────────────────────┘
-BANNER
 fi
 
-if [[ "${DO_WRITE}" == "1" && "${DO_VERIFY}" == "1" ]]; then
+if [[ "${DO_WRITE}" == "1" ]]; then
   echo "✓ loop complete: model retrained, verified against the pre-ship baseline, and kept."
-elif [[ "${DO_WRITE}" == "1" ]]; then
-  echo "✓ loop complete: model shipped (train-gates passed). Run --write --verify to gate per-detector FP before trusting it."
 else
-  echo "✓ loop complete (measure-only). Re-run with --write [--verify] to ship + gate weights.bin."
+  echo "✓ loop complete (measure-only). Re-run with --write --verify to ship + gate weights.bin."
 fi

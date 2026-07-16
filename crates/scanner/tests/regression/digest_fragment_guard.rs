@@ -13,6 +13,7 @@ fn hex32_detector() -> DetectorSpec {
             description: Some("test-only 32-hex token".into()),
             group: Some(1),
             client_safe: false,
+            weak_anchor: false,
         }],
         companions: vec![],
         verify: None,

@@ -22,15 +22,17 @@
 /// Feature-vector dimensionality = gate/expert input width. Feature 41 is the
 /// decode-structure verdict (base64/hex -> magic-bytes/protobuf); feature 42 is
 /// the keyword-specificity verdict (context names a specific service, DET-1,
-/// see `service_vocab.rs`); layout in `ml_features.rs`.
+/// see `service_vocab.rs`). Features 43-54 condition scoring on the active
+/// detector TOML, candidate channel, and entropy family; layout lives in
+/// `ml_features.rs`.
 ///
-/// 42 -> 43 (2026-07-08, DET-1). Any bump here REQUIRES a matching
-/// `weights.bin` + `model_card.json` retrain (`FEATURES=43
+/// 43 -> 55 adds detector/channel conditioning. Any bump here REQUIRES a matching
+/// `weights.bin` + `model_card.json` retrain (`FEATURES=55
 /// ml/retrain_loop.sh --write --verify`); `ml_weights::parse_weights` fails
 /// closed on the stride mismatch until they land, and the generated WGSL
 /// shader + GPU host buffers derive from this const so the GPU path can never
 /// lag the CPU layout.
-pub(crate) const INPUT_DIM: usize = 43;
+pub(crate) const INPUT_DIM: usize = 55;
 
 /// Mixture-of-experts specialist count (grid-searched over {4, 6, 8, 12}).
 pub(crate) const EXPERT_COUNT: usize = 6;

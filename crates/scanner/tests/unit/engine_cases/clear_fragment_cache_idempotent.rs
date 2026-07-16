@@ -13,6 +13,7 @@ fn clear_fragment_cache_idempotent() {
             description: None,
             group: None,
             client_safe: false,
+            weak_anchor: false,
         }],
         companions: vec![],
         verify: None,

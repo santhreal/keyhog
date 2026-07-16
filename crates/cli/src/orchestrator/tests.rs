@@ -26,6 +26,7 @@ fn collect_detector_signatures_unifies_primary_and_companion_regexes() {
             description: None,
             group: None,
             client_safe: false,
+            weak_anchor: false,
         }],
         companions: vec![keyhog_core::CompanionSpec {
             name: "secondary".into(),

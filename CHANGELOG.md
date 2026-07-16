@@ -6,6 +6,13 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Made weak-anchor detection policy explicit per detector pattern instead of
+  inferring it from regex syntax, detector-ID families, or `min_confidence`.
+- Detector-local entropy floors are compiled into detector-indexed lookup
+  programs for named, weak-anchor, and generic paths. Broad-capture detectors
+  must declare their own high threshold and length buckets, regex entropy owners
+  participate in generic assignment generation, and public-ID marker matching
+  no longer allocates an uppercased source line per candidate.
 - Autoroute calibration now resets workload-shaped GPU resident state before
   each GPU candidate while retaining immutable program preparation costs, so
   candidate order cannot turn prior dispatch state into a false cold-cost win.
@@ -13,6 +20,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   config and host identity. Recalibrating one host preserves other hosts, and
   calibration readback proves the current host rather than accepting a shared
   cache row from another machine.
+- Autoroute calibration now measures extracted tar-member workloads across
+  every default fused batch count. Filesystem dispatch separates safe
+  family/provenance transitions while preserving same-path dependency closures.
 - GitHub collaboration scans now independently select issues, pull requests,
   discussions, wiki history, and owner public gists. REST and GraphQL requests share
   bounded rate-aware pagination, findings retain immutable revision
@@ -79,8 +89,16 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   recover checksum-valid known-prefix credentials even when the temporary
   variable name is obfuscated. Non-empty separators and arrays without a known
   credential prefix remain excluded from this structural recovery path.
+- Entropy fallback now resolves length, entropy, canonical-shape, and BPE policy
+  from the active detector corpus. Generic detectors declare overlap precedence
+  with `entropy_policy_priority`, custom policy keywords join discovery without
+  duplicate scan configuration, and synthetic isolated or keyword-free paths
+  retain their exact detector owners across CPU, Hyperscan, and GPU scans.
 - The unified benchmark harness now includes an official deterministic secret
   recovery corpus adapted from the P0-P12 methodology in arXiv:2605.06910.
+  Provenance now pins the authors' public 13-example repository at commit
+  `91d45377cf482c1de6c36a0d33744665976a19b6` and states that the paper's
+  336-program evaluation corpus is not published there.
   Its 4,368 generated JavaScript fixtures cover plaintext, Base64, identifier,
   dead-code, structural, XOR, and AES-256-CBC variants; answer keys remain
   outside the scan tree, exact scoring rejects encoded or containing aliases,

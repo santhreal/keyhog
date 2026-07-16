@@ -10,6 +10,8 @@ service = "transifex"
 severity = "high"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["TRANSIFEX", "TRANSIFEX_API_KEY", "TRANSIFEX_TOKEN", "transifex.com"]
+entropy_high = 4.5
+entropy_floor = [{ max_len = 24, floor = 3.0 }, { max_len = 40, floor = 2.8 }, { floor = 3.5 }]
 
 [[detector.patterns]]
 regex = "(?:TRANSIFEX|TRANSIFEX_API|TRANSIFEX_TOKEN)[_\\s]?(?:API[_\\s]?(?:KEY|TOKEN)|TOKEN|KEY)?[=:\\s\"'']+([a-zA-Z0-9_-]{40,})"
@@ -30,6 +32,7 @@ group = 1
 regex = "(?:TRANSIFEX|TRANSIFEX_API)[_\\s]?USERNAME[=:\\s\"'']+([a-zA-Z0-9_-]+)"
 description = "Transifex username for API authentication"
 group = 1
+weak_anchor = true
 
 [[detector.companions]]
 name = "Transifex API Password/Token"

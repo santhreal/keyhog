@@ -60,6 +60,34 @@ fn active_entropy_owner_must_declare_fallback_metadata() {
 }
 
 #[test]
+fn pattern_weak_anchor_policy_is_local_and_unambiguous() {
+    let mut detector = detector_with_pattern("token_([A-Z0-9]{12})");
+    detector.patterns.push(PatternSpec {
+        regex: "user=([A-Za-z0-9_-]+)".into(),
+        ..Default::default()
+    });
+    detector.entropy_high = Some(4.5);
+    detector.entropy_floor = vec![keyhog_core::EntropyFloorBucket {
+        max_len: None,
+        floor: 3.5,
+    }];
+
+    detector.patterns[1].weak_anchor = true;
+    let valid = validate_detector(&detector);
+    assert!(!valid.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("weak_anchor")
+    )));
+
+    detector.weak_anchor = true;
+    let redundant = validate_detector(&detector);
+    assert!(redundant.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("remove redundant pattern")
+    )));
+}
+
+#[test]
 fn vendor_suffix_fallback_is_restricted_to_generic_phase2_detectors() {
     let mut detector = detector_with_pattern("token_([A-Z0-9]{12})");
     detector.generic_vendor_suffix_fallback = true;

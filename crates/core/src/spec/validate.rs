@@ -300,9 +300,9 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
             "max_len must be at least the generic assignment path minimum of 8".to_string(),
         ));
     }
-    if spec.max_len.is_some() && spec.kind != crate::DetectorKind::Phase2Generic {
+    if spec.max_len.is_some() && !spec.owns_entropy_policy() {
         issues.push(QualityIssue::Error(
-            "max_len is only valid for kind = \"phase2-generic\" detectors".to_string(),
+            "max_len is only valid for detectors that own generic entropy policy".to_string(),
         ));
     }
     if spec.generic_vendor_suffix_fallback
@@ -340,6 +340,20 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
             "entropy_policy_priority is only valid for service = \"generic\" detectors; provider detectors use their own regex evidence"
                 .into(),
         ));
+    }
+    if !spec.entropy_roles.is_empty() && !spec.owns_entropy_policy() {
+        issues.push(QualityIssue::Error(
+            "entropy_roles require a detector that owns a complete entropy policy".into(),
+        ));
+    }
+    let mut entropy_roles = std::collections::HashSet::new();
+    for role in &spec.entropy_roles {
+        if !entropy_roles.insert(*role) {
+            issues.push(QualityIssue::Error(format!(
+                "entropy_roles contains duplicate role {:?}",
+                role.as_str()
+            )));
+        }
     }
     for (name, value) in [
         ("entropy_high", spec.entropy_high),
@@ -397,6 +411,26 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
         }
     }
     let entropy_owner = spec.owns_entropy_policy();
+    let has_weak_pattern = spec.patterns.iter().any(|pattern| pattern.weak_anchor);
+    if spec.weak_anchor && has_weak_pattern {
+        issues.push(QualityIssue::Error(
+            "detector weak_anchor=true already applies to every pattern; remove redundant pattern weak_anchor flags"
+                .into(),
+        ));
+    }
+    if spec.weak_anchor || has_weak_pattern {
+        if spec.entropy_high.is_none() {
+            issues.push(QualityIssue::Error(
+                "weak_anchor detectors and patterns must declare entropy_high in their own detector TOML".into(),
+            ));
+        }
+        if spec.entropy_floor.is_empty() {
+            issues.push(QualityIssue::Error(
+                "weak_anchor detectors and patterns must declare entropy_floor in their own detector TOML"
+                    .into(),
+            ));
+        }
+    }
     if entropy_owner {
         for (field, present) in [
             ("entropy_high", spec.entropy_high.is_some()),
@@ -409,6 +443,7 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
             ("[detector.plausibility]", spec.plausibility.is_some()),
             ("keyword_free_min_len", spec.keyword_free_min_len.is_some()),
             ("min_len", spec.min_len.is_some()),
+            ("max_len", spec.max_len.is_some()),
             (
                 "entropy_policy_priority",
                 spec.entropy_policy_priority.is_some(),
@@ -429,12 +464,6 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
         if spec.entropy_floor.is_empty() {
             issues.push(QualityIssue::Error(
                 "active entropy owner must declare entropy_floor in its detector TOML".into(),
-            ));
-        }
-        if spec.kind == crate::DetectorKind::Phase2Generic && spec.max_len.is_none() {
-            issues.push(QualityIssue::Error(
-                "active phase2-generic entropy owner must declare max_len in its detector TOML"
-                    .into(),
             ));
         }
         if spec.bpe_enabled.is_none() {
@@ -620,6 +649,29 @@ fn validate_detector_allowlists(spec: &DetectorSpec, issues: &mut Vec<QualityIss
         match first_index_by_stopword.entry(normalized) {
             Entry::Occupied(first) => issues.push(QualityIssue::Error(format!(
                 "detector {:?} stopwords[{index}] duplicates stopwords[{}] under case-insensitive matching",
+                spec.id,
+                first.get()
+            ))),
+            Entry::Vacant(slot) => {
+                slot.insert(index);
+            }
+        }
+    }
+    let mut first_marker_index = HashMap::new();
+    for (index, marker) in spec.public_identifier_assignment_markers.iter().enumerate() {
+        if marker.is_empty()
+            || !marker.is_ascii()
+            || marker.bytes().any(|byte| byte.is_ascii_lowercase())
+        {
+            issues.push(QualityIssue::Error(format!(
+                "detector {:?} public_identifier_assignment_markers[{index}] must be non-empty uppercase ASCII because runtime matching is allocation-free ASCII-insensitive",
+                spec.id
+            )));
+            continue;
+        }
+        match first_marker_index.entry(marker.as_str()) {
+            Entry::Occupied(first) => issues.push(QualityIssue::Error(format!(
+                "detector {:?} public_identifier_assignment_markers[{index}] duplicates public_identifier_assignment_markers[{}]",
                 spec.id,
                 first.get()
             ))),

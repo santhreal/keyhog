@@ -1,6 +1,6 @@
 //! Regression contract for the MoE ML scorer's feature extractor and score path.
 //!
-//! These tests pin CONCRETE expected values of the 43-dimensional feature vector
+//! These tests pin concrete expected values of the 55-dimensional feature vector
 //! (`ml_scorer::compute_features_with_config`) and of the observable score path
 //! (`testing::ml_score`, which routes through the memoized `score` → forward pass
 //! → rational sigmoid). Every assertion is an exact value: an f32 within a tight
@@ -19,10 +19,13 @@
 //!   [38]=comment [39]=assignment [40]=test-file [41]=decode-structure binary
 //!   [42]=service-context (DET-1: context names a specific service from the
 //!        detector-corpus-derived vocab, vs a generic api_key/secret/token role word)
+//!   [43..50]=active-service, generic-owner, weak-anchor, live-verifier,
+//!        required-companion, structural-password-slot, phase2, entropy-channel
+//!   [51..54]=entropy family: generic, password, token, API key
 
 const EPS: f32 = 1e-6;
 
-fn feats(text: &str, ctx: &str) -> [f32; 43] {
+fn feats(text: &str, ctx: &str) -> [f32; 55] {
     keyhog_scanner::ml_scorer::compute_features_with_config(text, ctx, &[], &[], &[], &[])
 }
 
@@ -33,7 +36,7 @@ fn feats_cfg(
     secret_kw: &[String],
     test_kw: &[String],
     placeholder_kw: &[String],
-) -> [f32; 43] {
+) -> [f32; 55] {
     keyhog_scanner::ml_scorer::compute_features_with_config(
         text,
         ctx,
@@ -41,6 +44,25 @@ fn feats_cfg(
         secret_kw,
         test_kw,
         placeholder_kw,
+    )
+}
+
+fn detector_feats(
+    text: &str,
+    ctx: &str,
+    detector_id: &str,
+    channel: keyhog_scanner::ml_scorer::MlCandidateChannel,
+) -> [f32; 55] {
+    let detector = keyhog_core::detector_spec_by_id(detector_id).unwrap();
+    keyhog_scanner::ml_scorer::compute_features_for_detector_with_config(
+        text,
+        ctx,
+        &[],
+        &[],
+        &[],
+        &[],
+        detector,
+        channel,
     )
 }
 
@@ -253,7 +275,7 @@ fn structure_features_unique_chars_and_punctuation_counts() {
 #[test]
 fn file_type_one_hot_is_exactly_one_and_priority_ordered() {
     // Helper: sum of the six one-hot slots must always be exactly 1.0.
-    let one_hot_sum = |f: &[f32; 43]| f[32] + f[33] + f[34] + f[35] + f[36] + f[37];
+    let one_hot_sum = |f: &[f32; 55]| f[32] + f[33] + f[34] + f[35] + f[36] + f[37];
 
     // Empty context -> OTHER (index 4 -> slot 36).
     let other = feats("secret", "");
@@ -399,6 +421,81 @@ fn service_context_feature_reflects_named_service_vs_generic() {
     for f in [&named, &named_upper, &generic, &no_context] {
         assert!(f[42] == 0.0 || f[42] == 1.0, "feature 42 must be binary");
     }
+}
+
+#[test]
+fn detector_conditioning_comes_from_the_active_toml_and_channel() {
+    use keyhog_scanner::ml_scorer::MlCandidateChannel::{Entropy, Pattern};
+
+    let alchemy = detector_feats(
+        "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d",
+        "ALCHEMY_API_KEY=7b3e...",
+        "alchemy-api-key",
+        Pattern,
+    );
+    assert_eq!(alchemy[43], 1.0, "the active detector's service is present");
+    assert_eq!(alchemy[44], 0.0, "Alchemy is not a generic detector");
+    assert_eq!(alchemy[45], 1.0, "weak_anchor comes from its detector TOML");
+    assert_eq!(alchemy[46], 1.0, "the detector declares live verification");
+    assert_eq!(alchemy[49], 0.0, "Alchemy is a regex detector");
+    assert_eq!(alchemy[50], 0.0, "the producer was the pattern channel");
+
+    let wrong_service = detector_feats(
+        "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d",
+        "GITHUB_TOKEN=7b3e...",
+        "alchemy-api-key",
+        Pattern,
+    );
+    assert_eq!(wrong_service[42], 1.0, "some known service is present");
+    assert_eq!(
+        wrong_service[43], 0.0,
+        "the active Alchemy service is absent"
+    );
+
+    let generic_entropy = detector_feats(
+        "Xk9Lm2Pq7Rs4Tv8Wy1Zb3Cd6Ef0Gh5Ij",
+        "secret=Xk9...",
+        "generic-secret",
+        Entropy,
+    );
+    assert_eq!(generic_entropy[43], 0.0);
+    assert_eq!(generic_entropy[44], 1.0);
+    assert_eq!(generic_entropy[49], 1.0);
+    assert_eq!(generic_entropy[50], 1.0);
+    assert_eq!(generic_entropy[51], 1.0);
+    assert_eq!(&generic_entropy[52..55], &[0.0, 0.0, 0.0]);
+
+    let api_entropy = detector_feats(
+        "Xk9Lm2Pq7Rs4Tv8Wy1Zb3Cd6Ef0Gh5Ij",
+        "api_key=Xk9...",
+        "generic-api-key",
+        Entropy,
+    );
+    assert_eq!(&api_entropy[51..55], &[0.0, 0.0, 0.0, 1.0]);
+
+    let pattern_api = detector_feats(
+        "Xk9Lm2Pq7Rs4Tv8Wy1Zb3Cd6Ef0Gh5Ij",
+        "api_key=Xk9...",
+        "generic-api-key",
+        Pattern,
+    );
+    assert_eq!(&pattern_api[51..55], &[0.0, 0.0, 0.0, 0.0]);
+
+    let password_slot = detector_feats(
+        "hunter2hunter2",
+        "postgres://user:hunter2hunter2@db",
+        "url-credentials",
+        Pattern,
+    );
+    assert_eq!(password_slot[48], 1.0);
+
+    let required_pair = detector_feats(
+        "0123456789abcdef0123456789abcdef",
+        "TWILIO_AUTH_TOKEN=0123...",
+        "twilio-auth-token",
+        Pattern,
+    );
+    assert_eq!(required_pair[47], 1.0);
 }
 
 #[test]

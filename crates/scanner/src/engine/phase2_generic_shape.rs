@@ -44,6 +44,8 @@ impl CompiledScanner {
         value: &str,
         entropy: f64,
         chunk: &Chunk,
+        owning_detector_index: usize,
+        owning_policy: &crate::entropy::policy::CompiledEntropyPolicy,
         // The keyword bridge proved this is complete pure-hex key material via
         // the owning detector's exact keyword/length policy, or via the legacy
         // structural 32/48 vendor-key family. Threaded into the placeholder/hash
@@ -56,34 +58,32 @@ impl CompiledScanner {
             return Some(GenericValueShapeStage::CaesarGenericFallback);
         }
 
-        // Generic-secret min length comes from adjudicate, which owns the
-        // `GENERIC_SECRET` identity selection (this leaf never names the id
-        // see suppression_named_detector_ctx_owner gate). The base64-shape gates
+        // Generic-secret min length comes from the detector that explicitly
+        // owns the keyword-free entropy role. The base64-shape gates
         // below take the RAW `entropy`: their boundary is the base64-blob shape
         // constant `HIGH_ENTROPY_BASE64_CUTOFF` (owned once inside the decoy
         // predicate), NOT generic-secret's confidence-boost `entropy_high`: those
         // are two distinct thresholds and must not be conflated (a marshalled-binary
         // blob is a blob regardless of the generic-secret confidence floor).
-        let generic_secret_detector = self
-            .generic_owning_detector
-            .generic_secret_index()
-            .and_then(|index| self.detectors.get(index));
-        let generic_keyword_detector = self
-            .generic_owning_detector
-            .generic_keyword_secret_index()
-            .and_then(|index| self.detectors.get(index));
-        let crate::adjudicate::GenericSecretShapeFloors { min_len } =
-            crate::adjudicate::generic_secret_shape_floors(generic_secret_detector);
-        if !allow_encoded_text_secret
-            && crate::adjudicate::generic_bridge_entropy_below_floor(
-                entropy,
-                self.config.entropy_threshold,
-                self.config.generic_keyword_low_entropy,
-                generic_secret_detector,
-                generic_keyword_detector,
-                value.len(),
-            )
-        {
+        let floor_detector_index = if self.config.generic_keyword_low_entropy {
+            self.generic_owning_detector.isolated_bare_owner_index()
+        } else {
+            self.generic_owning_detector.keyword_free_owner_index()
+        }
+        .unwrap_or(owning_detector_index);
+        let Some(entropy_floor) = self.detector_entropy_floors.effective_floor(
+            floor_detector_index,
+            value.len(),
+            self.config.entropy_threshold,
+        ) else {
+            tracing::error!(
+                detector_id = self.detectors[floor_detector_index].id.as_str(),
+                "generic assignment floor owner has no compiled detector-local policy"
+            );
+            return Some(GenericValueShapeStage::EntropyPolicyUnavailable);
+        };
+        let min_len = owning_policy.min_len;
+        if !allow_encoded_text_secret && entropy < entropy_floor {
             return Some(GenericValueShapeStage::EntropyBelowFloor);
         }
 

@@ -96,6 +96,7 @@ fn phase1_test_detectors() -> Vec<keyhog_core::DetectorSpec> {
             description: None,
             group: None,
             client_safe: false,
+            weak_anchor: false,
         }],
         keywords: vec!["ghp_".into()],
         min_confidence: Some(0.0),
@@ -5302,6 +5303,7 @@ fn live_calibration_measures_both_gpu_driver_peers() {
             description: None,
             group: None,
             client_safe: false,
+            weak_anchor: false,
         }],
         keywords: vec!["KHGPUCAL".into()],
         ..keyhog_core::DetectorSpec::default()
@@ -5328,15 +5330,14 @@ fn live_calibration_measures_both_gpu_driver_peers() {
     }];
     let eligible = super::eligible_backend_labels(&scanner, true);
     let admission_plan = scanner.phase1_admission_plan(&sample);
-    let decision =
-        super::calibration::calibrate_fastest_correct_backend(
-            &scanner,
-            0,
-            &sample,
-            &eligible,
-            Some(&admission_plan),
-        )
-        .expect("calibrate every scanner-owned eligible peer");
+    let decision = super::calibration::calibrate_fastest_correct_backend(
+        &scanner,
+        0,
+        &sample,
+        &eligible,
+        Some(&admission_plan),
+    )
+    .expect("calibrate every scanner-owned eligible peer");
     assert!(decision.gpu_cuda_timing.is_some());
     assert!(decision.gpu_wgpu_timing.is_some());
     assert!(decision.backend().is_some());

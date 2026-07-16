@@ -20,6 +20,7 @@ fn demo_detector() -> DetectorSpec {
             description: None,
             group: None,
             client_safe: false,
+            weak_anchor: false,
         }],
         companions: vec![],
         verify: None,
@@ -41,6 +42,7 @@ fn mx_api_detector() -> DetectorSpec {
             description: Some("MX API Key".into()),
             group: Some(1),
             client_safe: false,
+            weak_anchor: false,
         }],
         companions: vec![],
         verify: None,
@@ -62,6 +64,7 @@ fn service_context_detector() -> DetectorSpec {
             description: Some("Unit service token".into()),
             group: Some(1),
             client_safe: false,
+            weak_anchor: false,
         }],
         companions: vec![],
         verify: None,
@@ -709,22 +712,6 @@ fn generic_assignment_compact_prefilter_keeps_webhook_url_recall() {
 }
 
 #[test]
-fn generic_assignment_prefilter_collects_casefolded_keyword_lines_once() {
-    let text = concat!(
-        "plain first line\n",
-        "API_KEY = 'one'\n",
-        "token and SECRET both on one line\n",
-        "COMPASS = broad-prefilter-boundary-rejected-later\n",
-        "webhook_url = 'two'"
-    );
-    let mut lines = Vec::new();
-    keyhog_scanner::engine::phase2_generic::keywords::collect_generic_keyword_lines(
-        text, &mut lines,
-    );
-    assert_eq!(lines, vec![1, 2, 3, 4]);
-}
-
-#[test]
 fn generic_assignment_prefilter_collects_gpu_position_lines_once() {
     let text = concat!(
         "plain first line\n",
@@ -823,8 +810,6 @@ fn generic_keyword_low_entropy_knob_gates_low_entropy_values() {
             scan: keyhog_core::ScanConfig {
                 generic_keyword_low_entropy: true,
                 entropy_enabled: false,
-                #[cfg(feature = "ml")]
-                ml_mode: None,
                 #[cfg(not(feature = "ml"))]
                 ml_enabled: false,
                 min_confidence: 0.0,
@@ -847,8 +832,6 @@ fn generic_keyword_low_entropy_knob_gates_low_entropy_values() {
             scan: keyhog_core::ScanConfig {
                 generic_keyword_low_entropy: false,
                 entropy_enabled: false,
-                #[cfg(feature = "ml")]
-                ml_mode: None,
                 #[cfg(not(feature = "ml"))]
                 ml_enabled: false,
                 min_confidence: 0.0,

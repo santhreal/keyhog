@@ -637,12 +637,14 @@ fn real_random_token_is_not_canonical_non_secret() {
 fn candidate_is_plausible_drops_canonical_shapes_under_anchor() {
     // entropy::scanner::candidate_is_plausible: in credential context, a
     // canonical non-secret shape is dropped even though entropy clears the
-    // (low) threshold. md5 entropy is high (~3.7+) but shape wins.
+    // (low) threshold. SHA-1 entropy is high, but the digest shape wins. A
+    // 32-hex value is intentionally not used: generic-api-key owns 128-bit
+    // key material under `api_key` in its detector TOML.
     let ctx = cred_ctx();
-    let md5 = "d41d8cd98f00b204e9800998ecf8427e";
-    let ent = keyhog_scanner::entropy::shannon_entropy(md5.as_bytes());
+    let sha1 = "356a192b7913b04c54574d18c28d46e6395428ab";
+    let ent = keyhog_scanner::entropy::shannon_entropy(sha1.as_bytes());
     assert!(ent >= ctx.threshold, "entropy {ent} must clear threshold");
-    assert!(!candidate_is_plausible(md5, ent, &ctx, &[]));
+    assert!(!candidate_is_plausible(sha1, ent, &ctx, &[]));
     // A real random base62 secret of comparable length IS plausible under
     // the anchor (len >= MIN_PASSWORD_LEN(8), not a canonical shape).
     let real = "Zx9QmRtbKpLmNoVwXyAbCd";

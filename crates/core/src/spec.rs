@@ -119,9 +119,9 @@ pub struct DetectorSpec {
     #[serde(default)]
     pub min_confidence: Option<f64>,
     /// Per-detector low-entropy suppression floor, owned HERE in the detector's
-    /// own TOML, the single source of truth for the generic-detector entropy
-    /// gate (there is no separate `rules/entropy-floors.toml`, no code table, no
-    /// override). Length-bucketed: the FIRST bucket (in listed order) whose
+    /// own TOML, the single source of truth for generic and weak-anchor entropy
+    /// gates (there is no separate `rules/entropy-floors.toml`, no code table,
+    /// no cross-detector policy borrowing). Length-bucketed: the FIRST bucket whose
     /// `max_len >= L` sets the floor for a candidate of length `L`; the last
     /// bucket omits `max_len` and is the catch-all. `max_len` must strictly
     /// increase. A generic-detector candidate whose Shannon entropy is BELOW the
@@ -158,6 +158,13 @@ pub struct DetectorSpec {
     /// scanner identity.
     #[serde(default)]
     pub entropy_fallback: Option<EntropyFallbackMetadata>,
+    /// Corpus-level entropy roles owned by this detector. Roles make the
+    /// shared entropy engine data-driven: it resolves keyword-free,
+    /// isolated-bare, and unclaimed-keyword candidates from detector TOML
+    /// instead of naming built-in detector IDs in scanner code. Each role may
+    /// be claimed by at most one detector in a compiled corpus.
+    #[serde(default)]
+    pub entropy_roles: Vec<EntropyDetectionRole>,
     /// Per-detector keyword-free entropy threshold used for clearly sensitive
     /// paths. Active entropy owners must declare it; setting it lower than
     /// `entropy_very_high` is an explicit recall policy for files such as `.env`
@@ -215,7 +222,9 @@ pub struct DetectorSpec {
     /// detector emits). Active entropy owners must declare it.
     #[serde(default)]
     pub min_len: Option<usize>,
-    /// Per-detector maximum byte length for phase-2 generic assignment values.
+    /// Per-detector maximum byte length for generic assignment values owned by
+    /// this entropy policy, including regex detectors that also claim generic
+    /// keywords through `entropy_policy_priority`.
     /// Values above this ceiling are rejected whole; they are never truncated
     /// into an apparently valid credential. Active phase-2 entropy owners must
     /// declare it.
@@ -238,6 +247,13 @@ pub struct DetectorSpec {
     /// of these (case-insensitive) is suppressed. Owned per detector.
     #[serde(default)]
     pub stopwords: Vec<String>,
+    /// Uppercase assignment-key fragments that identify public IDs rather than
+    /// credentials for this detector's entropy path. Runtime matching is ASCII
+    /// case-insensitive without allocating a normalized source line, so boundary
+    /// bytes such as `=`, `:`, space, and quote are semantic. An empty list
+    /// disables this detector-local suppression. TOML stores canonical uppercase.
+    #[serde(default)]
+    pub public_identifier_assignment_markers: Vec<String>,
     /// Per-detector "structural password slot" classification, OWNED HERE per the
     /// architecture law above (was a hardcoded detector-id list in scanner
     /// code, so a detector's family lived outside its TOML).
@@ -454,6 +470,29 @@ pub enum EntropyFallbackClass {
     ApiKey,
 }
 
+/// Detector-owned entry roles for the shared entropy engine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum EntropyDetectionRole {
+    /// Own anchor-free high-entropy candidates.
+    KeywordFree,
+    /// Own isolated bare candidates admitted by a detector shape policy.
+    IsolatedBare,
+    /// Own credential keywords not explicitly claimed by another detector.
+    UnclaimedKeyword,
+}
+
+impl EntropyDetectionRole {
+    /// Stable serialized spelling used by diagnostics and policy hashes.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::KeywordFree => "keyword-free",
+            Self::IsolatedBare => "isolated-bare",
+            Self::UnclaimedKeyword => "unclaimed-keyword",
+        }
+    }
+}
+
 impl EntropyFallbackClass {
     /// Stable serialized spelling used by explain output and policy hashes.
     pub const fn as_str(self) -> &'static str {
@@ -517,9 +556,7 @@ impl DetectorSpec {
     /// Whether this detector supplies policy to the generic entropy engine.
     pub fn owns_entropy_policy(&self) -> bool {
         self.service == "generic"
-            && (self.id.starts_with("generic-")
-                || self.kind == DetectorKind::Phase2Generic
-                || self.entropy_policy_priority.is_some())
+            && (self.kind == DetectorKind::Phase2Generic || self.entropy_policy_priority.is_some())
     }
 
     /// Return the detector-owned lower-dash isolated shape, if declared.
@@ -830,6 +867,12 @@ pub struct PatternSpec {
     /// `(?-i)` in the TOML - no schema field needed.
     #[serde(default)]
     pub client_safe: bool,
+    /// Keep generic shape and entropy gates active for matches from this
+    /// pattern. Declare this beside the regex so policy cannot drift when a
+    /// detector's patterns are reordered. Detector-level `weak_anchor = true`
+    /// applies the same policy to every pattern.
+    #[serde(default)]
+    pub weak_anchor: bool,
 }
 
 /// Secondary pattern used to confirm a primary match or provide extra context.

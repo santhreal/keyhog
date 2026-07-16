@@ -187,14 +187,13 @@ fn generic_entropy_floor_uses_the_supplied_active_spec() {
         ..Default::default()
     };
 
-    assert_eq!(generic_entropy_floor_for_test(Some(&custom), 4.5, 12), 1.25);
-    assert_eq!(generic_entropy_floor_for_test(Some(&custom), 4.5, 13), 2.75);
+    assert_eq!(generic_entropy_floor_for_test(&custom, 4.5, 12), 1.25);
+    assert_eq!(generic_entropy_floor_for_test(&custom, 4.5, 13), 2.75);
     assert_eq!(
-        generic_entropy_floor_for_test(Some(&custom), 6.0, 12),
+        generic_entropy_floor_for_test(&custom, 6.0, 12),
         6.0,
         "a stricter Tier-A threshold composes above the active detector floor"
     );
-    assert_eq!(generic_entropy_floor_for_test(None, 4.5, 12), 3.5);
 }
 
 #[test]

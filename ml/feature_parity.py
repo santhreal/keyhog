@@ -23,6 +23,11 @@ Feature #42 (the 43rd, DET-1 keyword specificity):
         already covers). Vocabulary re-derived here from detectors/*.toml with
         rules byte-identical to ml_scorer/service_vocab.rs (length floor 4,
         generic-family keyword exclusion, stem-spread >= 3 exclusion).
+
+Features #43-54 condition the shared model on the active detector TOML and
+candidate channel: exact-service context, generic owner, weak anchor, live
+verifier, required companion, structural password slot, phase-2 owner, entropy
+channel, and a four-way detector-owned entropy-family one-hot.
 """
 
 from __future__ import annotations
@@ -32,11 +37,24 @@ import tomllib
 from pathlib import Path
 
 import decode_structure
+import detector_policy
 
 NUM_BASE_FEATURES = 41
 DECODE_FEATURE_INDEX = 41
 SERVICE_CONTEXT_FEATURE_INDEX = 42
-NUM_FEATURES = 43
+ACTIVE_SERVICE_CONTEXT_FEATURE_INDEX = 43
+GENERIC_DETECTOR_FEATURE_INDEX = 44
+WEAK_ANCHOR_FEATURE_INDEX = 45
+LIVE_VERIFIER_FEATURE_INDEX = 46
+REQUIRED_COMPANION_FEATURE_INDEX = 47
+STRUCTURAL_PASSWORD_SLOT_FEATURE_INDEX = 48
+PHASE2_GENERIC_FEATURE_INDEX = 49
+ENTROPY_CHANNEL_FEATURE_INDEX = 50
+ENTROPY_GENERIC_FEATURE_INDEX = 51
+ENTROPY_PASSWORD_FEATURE_INDEX = 52
+ENTROPY_TOKEN_FEATURE_INDEX = 53
+ENTROPY_API_KEY_FEATURE_INDEX = 54
+NUM_FEATURES = 55
 
 
 FILE_TYPE_OFFSET = 32
@@ -121,6 +139,7 @@ def _service_vocabulary() -> list[str]:
             specs.append((det["id"], det.get("keywords", [])))
         _SERVICE_VOCAB = _build_service_vocabulary(specs)
     return _SERVICE_VOCAB
+
 
 COMMENT_PREFIXES = ["#", "//", "/*", "--"]
 BINARY_MARKERS = [
@@ -251,11 +270,13 @@ def compute_features(
     secret_keywords: list[str] | None = None,
     test_keywords: list[str] | None = None,
     placeholder_keywords: list[str] | None = None,
+    detector_id: str = "",
+    candidate_channel: str = "",
     with_decode: bool = True,
 ) -> list[float]:
-    """Return the feature vector. `with_decode=False` returns the 41 base
-    features (for parity against the current 41-feature Rust scanner);
-    `with_decode=True` appends feature #41 (decode-structure)."""
+    """Return the feature vector. `with_decode=False` returns the legacy 41
+    base features; `with_decode=True` returns the complete detector-conditioned
+    serve vector and therefore requires detector/channel provenance."""
     known_prefixes = known_prefixes or []
     secret_keywords = secret_keywords or []
     test_keywords = test_keywords or []
@@ -338,5 +359,42 @@ def compute_features(
         f[SERVICE_CONTEXT_FEATURE_INDEX] = _binary(
             bool(context) and _ci_contains_any(cb, _service_vocabulary())
         )
+        detector = detector_policy.resolve_detector(detector_id)
+        if candidate_channel not in {"pattern", "entropy"}:
+            raise ValueError(
+                f"candidate_channel must be 'pattern' or 'entropy', got {candidate_channel!r}"
+            )
+        service = detector.get("service", "")
+        f[ACTIVE_SERVICE_CONTEXT_FEATURE_INDEX] = _binary(
+            len(service.encode("utf-8")) >= 3
+            and service.lower() != "generic"
+            and _ci_contains(cb, service.encode("utf-8"))
+        )
+        f[GENERIC_DETECTOR_FEATURE_INDEX] = _binary(
+            detector.get("service", "").lower() == "generic"
+        )
+        f[WEAK_ANCHOR_FEATURE_INDEX] = _binary(bool(detector.get("weak_anchor", False)))
+        f[LIVE_VERIFIER_FEATURE_INDEX] = _binary(isinstance(detector.get("verify"), dict))
+        f[REQUIRED_COMPANION_FEATURE_INDEX] = _binary(
+            any(bool(companion.get("required", False)) for companion in detector.get("companions", []))
+        )
+        f[STRUCTURAL_PASSWORD_SLOT_FEATURE_INDEX] = _binary(
+            bool(detector.get("structural_password_slot", False))
+        )
+        f[PHASE2_GENERIC_FEATURE_INDEX] = _binary(
+            detector.get("kind", "regex") == "phase2-generic"
+        )
+        f[ENTROPY_CHANNEL_FEATURE_INDEX] = _binary(candidate_channel == "entropy")
+        if candidate_channel == "entropy":
+            fallback = detector.get("entropy_fallback")
+            entropy_class = fallback.get("class") if isinstance(fallback, dict) else None
+            entropy_feature = {
+                "generic": ENTROPY_GENERIC_FEATURE_INDEX,
+                "password": ENTROPY_PASSWORD_FEATURE_INDEX,
+                "token": ENTROPY_TOKEN_FEATURE_INDEX,
+                "api-key": ENTROPY_API_KEY_FEATURE_INDEX,
+            }.get(entropy_class)
+            if entropy_feature is not None:
+                f[entropy_feature] = 1.0
 
     return f

@@ -13,6 +13,7 @@ fn scan_scans_detectors_directory_path() {
             description: None,
             group: None,
             client_safe: false,
+            weak_anchor: false,
         }],
         companions: vec![],
         verify: None,

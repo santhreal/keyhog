@@ -21,6 +21,7 @@ fn test_pattern_with_shape(
         regex,
         group: None,
         client_safe: false,
+        weak_anchor: false,
         match_proves_keyword_nearby: false,
         homoglyph_variant,
     }

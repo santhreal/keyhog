@@ -368,11 +368,11 @@ pub fn assign_re_captures_for_test(line: &str) -> Option<(String, String)> {
 }
 
 /// Test seams for detector-owned classification flags.
-pub fn detector_is_residual_weak_anchor_for_test(detector_id: &str) -> Result<bool, String> {
-    Ok(keyhog_core::detector_spec_by_id(detector_id).is_some_and(|spec| spec.weak_anchor))
+pub fn detector_is_residual_weak_anchor_for_test(detector_id: &str) -> bool {
+    keyhog_core::detector_spec_by_id(detector_id).is_some_and(|spec| spec.weak_anchor)
 }
 
-pub fn detector_is_private_key_block_for_test(detector_id: &str) -> Result<bool, String> {
+pub fn detector_is_private_key_block_for_test(detector_id: &str) -> bool {
     crate::detector_ids::is_private_key_block_detector(detector_id)
 }
 
@@ -2764,11 +2764,14 @@ pub fn is_hex_digest_fragment_for_test(
 /// detector spec a compiled scanner would pass, so tests can prove a custom
 /// detector policy wins without mutating the embedded corpus.
 pub fn generic_entropy_floor_for_test(
-    detector: Option<&keyhog_core::DetectorSpec>,
+    detector: &keyhog_core::DetectorSpec,
     entropy_threshold: f64,
     credential_len: usize,
 ) -> f64 {
-    crate::adjudicate::generic_entropy_floor(entropy_threshold, detector, credential_len)
+    crate::entropy::policy::CompiledDetectorEntropyFloors::compile(std::slice::from_ref(detector))
+        .expect("test detector entropy floor must compile")
+        .effective_floor(0, credential_len, entropy_threshold)
+        .expect("test detector must declare entropy_floor")
 }
 
 /// Test seam for [`crate::confidence::policy::entropy_fallback_confidence`].
@@ -2849,7 +2852,11 @@ pub fn queued_ml_features(
     credential: &str,
     context_radius_lines: usize,
     config: &crate::ScannerConfig,
+    detector_id: &str,
+    entropy_channel: bool,
 ) -> Vec<f32> {
+    let detector = keyhog_core::detector_spec_by_id(detector_id)
+        .unwrap_or_else(|| panic!("test detector {detector_id:?} must exist"));
     crate::scan_state::ml_features_for_candidate(
         text,
         line,
@@ -2857,6 +2864,12 @@ pub fn queued_ml_features(
         credential,
         context_radius_lines,
         config,
+        detector,
+        if entropy_channel {
+            crate::ml_scorer::MlCandidateChannel::Entropy
+        } else {
+            crate::ml_scorer::MlCandidateChannel::Pattern
+        },
     )
     .to_vec()
 }
@@ -2941,7 +2954,7 @@ pub(crate) use crate::prefix_trie::build_propagation_table;
 #[cfg(test)]
 pub(crate) use crate::suppression::detector_weak_anchor;
 
-pub fn detector_weak_anchor_for_test(spec: &keyhog_core::DetectorSpec) -> Result<bool, String> {
+pub fn detector_weak_anchor_for_test(spec: &keyhog_core::DetectorSpec) -> bool {
     crate::suppression::detector_weak_anchor(spec)
 }
 
@@ -2989,8 +3002,9 @@ pub fn named_detector_suppressed(
     source_type: Option<&str>,
     detector_id: &str,
 ) -> bool {
-    let structural_password_slot = keyhog_core::detector_spec_by_id(detector_id)
-        .is_some_and(|spec| spec.structural_password_slot);
+    let detector = keyhog_core::detector_spec_by_id(detector_id);
+    let structural_password_slot = detector.is_some_and(|spec| spec.structural_password_slot);
+    let service_anchored = detector.is_none_or(|spec| spec.service != "generic");
     crate::suppression::api::suppress_named_detector_finding(
         credential,
         crate::suppression::api::NamedDetectorSuppressionCtx::with_weak_anchor(
@@ -2998,6 +3012,7 @@ pub fn named_detector_suppressed(
             context,
             source_type,
             detector_id,
+            service_anchored,
             false,
             structural_password_slot,
         ),
@@ -3201,6 +3216,7 @@ pub(crate) fn phase2_keyword_ac_summary(regex: &str, keywords: Vec<String>) -> (
         regex: crate::types::LazyRegex::detector(regex),
         group: None,
         client_safe: false,
+        weak_anchor: false,
         match_proves_keyword_nearby: false,
         homoglyph_variant: false,
     };
@@ -3511,7 +3527,8 @@ pub mod entropy_scanner {
         use crate::entropy::scanner::ActiveDetectorPolicy;
         use crate::generic_keyword_owner::GenericOwningDetectorIndex;
 
-        let index = GenericOwningDetectorIndex::build(&detectors);
+        let index = GenericOwningDetectorIndex::build(&detectors)
+            .expect("test detector entropy roles must be unique");
         let compiled = crate::entropy::policy::CompiledEntropyPolicies::compile(&detectors)
             .expect("test detector entropy policy must compile");
         let policy = ActiveDetectorPolicy::new(&detectors, &index, &compiled);
@@ -3523,7 +3540,7 @@ pub mod entropy_scanner {
             1,
             0,
             0.0,
-            crate::entropy::VERY_HIGH_ENTROPY_THRESHOLD,
+            Some(crate::entropy::VERY_HIGH_ENTROPY_THRESHOLD),
             &secret_keywords,
             &[],
             &[],
@@ -3543,7 +3560,8 @@ pub mod entropy_scanner {
         detectors: &[keyhog_core::DetectorSpec],
         keyword: &str,
     ) -> Option<String> {
-        let index = crate::generic_keyword_owner::GenericOwningDetectorIndex::build(detectors);
+        let index =
+            crate::generic_keyword_owner::GenericOwningDetectorIndex::build(detectors).ok()?;
         crate::entropy::scanner::active_policy_detector_index(&index, keyword)
             .and_then(|owner| detectors.get(owner))
             .map(|detector| detector.id.clone())
@@ -3585,24 +3603,18 @@ pub mod entropy_scanner {
         use crate::entropy::scanner::ActiveDetectorPolicy;
         use crate::generic_keyword_owner::GenericOwningDetectorIndex;
 
-        fn detector(id: &str, keyword_free_min_len: usize) -> keyhog_core::DetectorSpec {
-            keyhog_core::DetectorSpec {
-                id: id.to_string(),
-                name: id.to_string(),
-                service: "generic".to_string(),
-                keyword_free_min_len: Some(keyword_free_min_len),
-                ..Default::default()
-            }
-        }
-
-        let detectors = vec![
-            detector(crate::detector_ids::GENERIC_SECRET, 20),
-            detector(
-                crate::detector_ids::GENERIC_KEYWORD_SECRET,
-                generic_keyword_secret_min_len,
-            ),
-        ];
-        let index = GenericOwningDetectorIndex::build(&detectors);
+        let mut detectors = keyhog_core::embedded_detector_specs().to_vec();
+        detectors
+            .iter_mut()
+            .find(|detector| {
+                detector
+                    .entropy_roles
+                    .contains(&keyhog_core::EntropyDetectionRole::IsolatedBare)
+            })
+            .expect("embedded corpus must declare an isolated-bare entropy owner")
+            .keyword_free_min_len = Some(generic_keyword_secret_min_len);
+        let index = GenericOwningDetectorIndex::build(&detectors)
+            .expect("embedded detector entropy roles must be unique");
         let compiled = crate::entropy::policy::CompiledEntropyPolicies::compile(&detectors)
             .expect("test detector entropy policy must compile");
         let policy = ActiveDetectorPolicy::new(&detectors, &index, &compiled);
@@ -3613,7 +3625,7 @@ pub mod entropy_scanner {
             1,
             1,
             crate::entropy::HIGH_ENTROPY_THRESHOLD,
-            crate::entropy::VERY_HIGH_ENTROPY_THRESHOLD,
+            Some(crate::entropy::VERY_HIGH_ENTROPY_THRESHOLD),
             &[],
             &[],
             &[],
@@ -3644,7 +3656,13 @@ pub mod entropy_isolated {
     /// digit), with at least one non-hex letter so a pure-hex UUID-ish token
     /// does not qualify.
     pub fn lower_dash_app_password_floor_met(candidate: &str, entropy: f64) -> bool {
-        let shape = keyhog_core::detector_spec_by_id(crate::detector_ids::GENERIC_SECRET)
+        let shape = keyhog_core::embedded_detector_specs()
+            .iter()
+            .find(|detector| {
+                detector
+                    .entropy_roles
+                    .contains(&keyhog_core::EntropyDetectionRole::KeywordFree)
+            })
             .and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape);
         crate::entropy::scanner::lower_dash_app_password_floor_met_with_policy(
             candidate,
@@ -4173,6 +4191,32 @@ pub(crate) fn register_thread_decoder(
 
 pub fn ml_score(text: &str, context: &str) -> f64 {
     crate::ml_scorer::score(text, context)
+}
+
+#[cfg(feature = "ml")]
+pub fn ml_score_for_detector(
+    text: &str,
+    context: &str,
+    detector_id: &str,
+    entropy_channel: bool,
+) -> f64 {
+    let detector = keyhog_core::detector_spec_by_id(detector_id)
+        .unwrap_or_else(|| panic!("test detector {detector_id:?} must exist"));
+    let features = crate::ml_scorer::compute_features_for_detector_with_config(
+        text,
+        context,
+        &[],
+        &[],
+        &[],
+        &[],
+        detector,
+        if entropy_channel {
+            crate::ml_scorer::MlCandidateChannel::Entropy
+        } else {
+            crate::ml_scorer::MlCandidateChannel::Pattern
+        },
+    );
+    crate::ml_scorer::score_features(&features)
 }
 
 #[cfg(feature = "ml")]

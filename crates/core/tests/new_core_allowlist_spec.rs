@@ -525,6 +525,7 @@ fn pattern_spec_client_safe_defaults_false_and_roundtrips() {
     let p = PatternSpec {
         regex: "pk_live_[0-9]{10}".into(),
         client_safe: true,
+        weak_anchor: false,
         ..Default::default()
     };
     let json = serde_json::to_string(&p).unwrap();

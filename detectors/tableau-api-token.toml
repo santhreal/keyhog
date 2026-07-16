@@ -11,6 +11,8 @@ severity = "high"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 min_confidence = 0.20
 keywords = ["TABLEAU", "tableau", "PAT_NAME", "PAT_SECRET"]
+entropy_high = 4.5
+entropy_floor = [{ max_len = 24, floor = 3.0 }, { max_len = 40, floor = 2.8 }, { floor = 3.5 }]
 
 [[detector.patterns]]
 regex = "(?:TABLEAU|tableau)[._-]?(?:server|host|url)[=:\\s\"'']+(https?://[a-z0-9.-]+)"
@@ -21,6 +23,7 @@ group = 1
 regex = "(?:TABLEAU|tableau)[._-]?(?:token[_-]?name|pat[_-]?name)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
 description = "Tableau personal access token name"
 group = 1
+weak_anchor = true
 
 [[detector.patterns]]
 regex = "(?:TABLEAU|tableau)[._-]?(?:token[_-]?secret|pat[_-]?secret)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
@@ -31,11 +34,13 @@ group = 1
 regex = "(?:TABLEAU|tableau)[._-]?(?:site[_-]?id|site)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
 description = "Tableau site ID"
 group = 1
+weak_anchor = true
 
 [[detector.patterns]]
 regex = "(?:TABLEAU|tableau)[._-]?(?:username|user)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
 description = "Tableau username"
 group = 1
+weak_anchor = true
 
 [[detector.patterns]]
 regex = "(?:TABLEAU|tableau)[._-]?(?:password|pass|pwd)[=:\\s\"'']+([a-zA-Z0-9!@#$%^&*._-]{8,})"

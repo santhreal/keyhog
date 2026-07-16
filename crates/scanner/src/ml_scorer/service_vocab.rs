@@ -59,6 +59,7 @@ use std::sync::LazyLock;
 /// `contains` needles they false-fire inside random base64/hex bytes that share
 /// the ±5-line ML context window with the candidate.
 pub(crate) const MIN_SERVICE_KEYWORD_LEN: usize = 4;
+const MIN_ACTIVE_SERVICE_NAME_LEN: usize = 3;
 
 /// A keyword used by detectors of this many DISTINCT id stems (or more) is a
 /// cross-vendor role word, not a service name. 2 keeps two-spelling vendors
@@ -156,4 +157,21 @@ static SERVICE_AC: LazyLock<aho_corasick::AhoCorasick> = LazyLock::new(|| {
 /// the semantics of the sibling context probes (features 17/18/20).
 pub(crate) fn context_names_service(context: &[u8]) -> bool {
     !context.is_empty() && SERVICE_AC.is_match(context)
+}
+
+/// Whether context names the service owned by this exact detector rather than
+/// merely any service in the corpus. The canonical TOML `service` value is the
+/// allocation-free identity probe; generic and one/two-byte labels cannot
+/// masquerade as positive evidence.
+pub(crate) fn context_names_detector_service(
+    detector: &keyhog_core::DetectorSpec,
+    context: &[u8],
+) -> bool {
+    if context.is_empty()
+        || detector.service.len() < MIN_ACTIVE_SERVICE_NAME_LEN
+        || detector.service.eq_ignore_ascii_case("generic")
+    {
+        return false;
+    }
+    crate::ascii_ci::ci_find_nonempty(context, detector.service.as_bytes())
 }

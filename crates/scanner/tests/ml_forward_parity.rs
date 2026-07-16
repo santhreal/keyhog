@@ -119,7 +119,7 @@ fn assert_layout_parity(in_dim: usize, out_dim: usize, draws: usize, seed: u64) 
     }
 }
 
-/// Production FC1 shape after DET-1: `model_arch::INPUT_DIM`=43 features → 32 hidden.
+/// Production FC1 shape: `model_arch::INPUT_DIM`=55 features → 32 hidden.
 #[test]
 fn output_stationary_kernel_is_bit_identical_fc1_production_shape() {
     assert_layout_parity(43, 32, 20_000, 0x1234_5678_9abc_def2);

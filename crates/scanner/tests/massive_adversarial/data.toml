@@ -6004,31 +6004,31 @@ suite = 35
 [[case.assertion]]
 kind = "fires"
 name = "normal"
-text = 'flipt_token = "abcde12345abcde12345"'
-credential = 'abcde12345abcde12345'
+text = 'flipt_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7'
+credential = 'flipt_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7'
 
 [[case.assertion]]
 kind = "silent"
 name = "prefix"
-text = 'glipt_token = "abcde12345abcde12345"'
+text = 'glipt_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwsp"
-text = 'flipt\u{200B}_token = "abcde12345abcde12345"'
-credential = 'abcde12345abcde12345'
+text = 'flipt\u{200B}_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7'
+credential = 'flipt_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7'
 
 [[case.assertion]]
 kind = "fires"
 name = "hyphen"
-text = 'flipt_token = "abcde12345abcde\u{00AD}12345"'
-credential = 'abcde12345abcde12345'
+text = 'flipt_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5\u{00AD}e9f1b7'
+credential = 'flipt_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7'
 
 [[case.assertion]]
 kind = "fires"
 name = "homoglyph"
-text = 'fl\u{0456}pt_token = "abcde12345abcde12345"'
-credential = 'abcde12345abcde12345'
+text = 'fl\u{0456}pt_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7'
+credential = 'flipt_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7'
 
 [[case]]
 detector_id = "flutterwave-api-key"
@@ -7462,31 +7462,31 @@ suite = 39
 [[case.assertion]]
 kind = "fires"
 name = "normal"
-text = 'headspin_api_token = "headspin_token_high_entropy_1234567890abcdef"'
-credential = 'headspin_token_high_entropy_1234567890abcdef'
+text = 'headspin_api_token = "31c67e127d98564a16c172d54be4e7f8"'
+credential = '31c67e127d98564a16c172d54be4e7f8'
 
 [[case.assertion]]
 kind = "silent"
 name = "prefix"
-text = 'teadspin_api_token = "headspin_token_high_entropy_1234567890abcdef"'
+text = 'teadspin_api_token = "31c67e127d98564a16c172d54be4e7f8"'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwsp"
-text = 'headspin_api_token = "headspin_token_high\u{200B}_entropy_1234567890abcdef"'
-credential = 'headspin_token_high_entropy_1234567890abcdef'
+text = 'headspin\u{200B}_api_token = "31c67e127d98564a16c172d54be4e7f8"'
+credential = '31c67e127d98564a16c172d54be4e7f8'
 
 [[case.assertion]]
 kind = "fires"
 name = "hyphen"
-text = 'headspin_api_token = "headspin_token_high\u{00AD}_entropy_1234567890abcdef"'
-credential = 'headspin_token_high_entropy_1234567890abcdef'
+text = 'headspin_api\u{00AD}_token = "31c67e127d98564a16c172d54be4e7f8"'
+credential = '31c67e127d98564a16c172d54be4e7f8'
 
 [[case.assertion]]
 kind = "fires"
 name = "homoglyph"
-text = 'h\u{0435}\u{0430}dsp\u{0456}n_api_t\u{043e}k\u{0435}n = "headspin_token_high_entropy_1234567890abcdef"'
-credential = 'headspin_token_high_entropy_1234567890abcdef'
+text = 'h\u{0435}\u{0430}dsp\u{0456}n_api_t\u{043e}k\u{0435}n = "31c67e127d98564a16c172d54be4e7f8"'
+credential = '31c67e127d98564a16c172d54be4e7f8'
 
 [[case]]
 detector_id = "heap-analytics-key"

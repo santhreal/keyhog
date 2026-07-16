@@ -16,7 +16,12 @@ use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::sync::Arc;
 
 fn scanner() -> CompiledScanner {
-    CompiledScanner::compile(Vec::new()).expect("compile scanner")
+    let detector = keyhog_core::load_embedded_detectors_or_fail()
+        .expect("embedded detector corpus")
+        .into_iter()
+        .find(|detector| detector.id == "generic-secret")
+        .expect("generic-secret detector");
+    CompiledScanner::compile(vec![detector]).expect("compile scanner")
 }
 
 /// Scan `line` through the CPU fallback path (where the generic keyword bridge +

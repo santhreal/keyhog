@@ -66,7 +66,6 @@ pub(crate) fn parse_multiline_secret_prefixes(raw: &str) -> Result<Vec<String>, 
     )
 }
 
-
 #[cfg(test)]
 #[path = "../tests/unit/secret_prefixes.rs"]
 mod tests;

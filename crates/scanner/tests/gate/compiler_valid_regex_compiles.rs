@@ -16,6 +16,7 @@ fn build_compile_state_accepts_valid_detector() {
             description: None,
             group: None,
             client_safe: false,
+            weak_anchor: false,
         }],
         companions: vec![],
         verify: None,

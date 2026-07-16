@@ -36,8 +36,8 @@ DEFAULT_LISTS = config_lists.DEFAULT_LISTS
 EMPTY_LISTS = config_lists.EMPTY_LISTS
 
 
-def build_battery() -> list[tuple[str, str, tuple]]:
-    """Return (text, context, lists) records covering every feature group."""
+def build_battery() -> list[tuple[str, str, tuple, str, str]]:
+    """Return records covering every feature and detector-policy group."""
     import base64 as b64mod
 
     png = b64mod.b64encode(b"\x89PNG\r\n\x1a\n" + bytes(range(20))).decode()
@@ -105,12 +105,23 @@ def build_battery() -> list[tuple[str, str, tuple]]:
         ("hunter2hunter2", "file:src/settings.py\npassword = hunter2hunter2", DEFAULT_LISTS),
         ("xJ8sKd0fmA2bC4dE6fG8", "STRIPE_WEBHOOK: xJ8s...", DEFAULT_LISTS),
     ]
-    return records
+    base = [
+        (text, context, lists, "generic-secret", "pattern")
+        for text, context, lists in records
+    ]
+    base.extend([
+        ("7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d", "ALCHEMY_API_KEY=7b3e...", DEFAULT_LISTS, "alchemy-api-key", "pattern"),
+        ("gh" + "p_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij", "GITHUB_TOKEN=ghp_...", DEFAULT_LISTS, "github-classic-pat", "pattern"),
+        ("7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d", "ALGOLIA_ADMIN_KEY=7b3e...", DEFAULT_LISTS, "algolia-admin-api-key", "pattern"),
+        ("Xk9Lm2Pq7Rs4Tv8Wy1Zb3Cd6Ef0Gh5Ij", "secret=Xk9...", DEFAULT_LISTS, "entropy-generic", "entropy"),
+        ("hunter2hunter2", "postgres://user:hunter2hunter2@db", DEFAULT_LISTS, "url-credentials", "pattern"),
+    ])
+    return base
 
 
 def main() -> int:
     battery = build_battery()
-    lines = [rust_features.encode_record(t, c, l) for (t, c, l) in battery]
+    lines = [rust_features.encode_record(t, c, l, d, ch) for (t, c, l, d, ch) in battery]
     try:
         rust_vectors = rust_features.run_dump_features(lines)
     except RuntimeError as error:
@@ -121,11 +132,21 @@ def main() -> int:
         raise SystemExit(f"row count mismatch: rust={len(rust_vectors)} py={len(battery)}")
 
     fails = 0
-    for idx, ((text, context, lists), rv) in enumerate(zip(battery, rust_vectors)):
+    for idx, ((text, context, lists, detector_id, channel), rv) in enumerate(zip(battery, rust_vectors)):
         kp, sk, tk, pk = lists
-        # Compare the full 43-feature vector, including decode structure (#41)
-        # and detector-corpus-derived service specificity (#42).
-        pv = feature_parity.compute_features(text, context, kp, sk, tk, pk, with_decode=True)
+        # Compare all 55 serve-path features, including detector ownership,
+        # candidate channel, and entropy-family conditioning (#43-54).
+        pv = feature_parity.compute_features(
+            text,
+            context,
+            kp,
+            sk,
+            tk,
+            pk,
+            detector_id=detector_id,
+            candidate_channel=channel,
+            with_decode=True,
+        )
         if len(rv) != len(pv):
             print(f"[row {idx}] WIDTH mismatch rust={len(rv)} py={len(pv)} text={text!r}")
             fails += 1

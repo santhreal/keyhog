@@ -217,7 +217,6 @@ fn raw_base64_path_match(path: Option<&str>, include_plain_base64_txt: bool) -> 
         || (include_plain_base64_txt && basename.eq_ignore_ascii_case(b"base64.txt"))
 }
 
-
 #[cfg(test)]
 #[path = "../../tests/unit/suppression_path_filter.rs"]
 mod tests;

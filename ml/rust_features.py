@@ -17,10 +17,13 @@ from typing import Iterable, Mapping, Sequence
 
 import numpy as np
 
+import detector_policy
+
 # Width of the CURRENT serve path (model_arch::INPUT_DIM). Legacy prefixes
-# (41 = pre-decode-structure, 42 = pre-service-context) remain requestable:
+# (41 = pre-decode-structure, 42 = pre-service-context, 43 = pre-detector
+# conditioning, 51 = pre-entropy-family conditioning) remain requestable:
 # features are strictly appended, so a narrower model is a column prefix.
-NUM_FEATURES = 43
+NUM_FEATURES = 55
 
 Lists = tuple[Sequence[str], Sequence[str], Sequence[str], Sequence[str]]
 
@@ -31,7 +34,17 @@ def _b64(value: str) -> str:
     return base64.b64encode(value.encode("utf-8")).decode("ascii")
 
 
-def encode_record(text: str, context: str, lists: Lists) -> str:
+def encode_record(
+    text: str,
+    context: str,
+    lists: Lists,
+    detector_id: str,
+    candidate_channel: str,
+) -> str:
+    if candidate_channel not in {"pattern", "entropy"}:
+        raise ValueError(
+            f"candidate_channel must be 'pattern' or 'entropy', got {candidate_channel!r}"
+        )
     kp, sk, tk, pk = lists
     fields = [
         _b64(text),
@@ -40,6 +53,8 @@ def encode_record(text: str, context: str, lists: Lists) -> str:
         _b64("\n".join(sk)),
         _b64("\n".join(tk)),
         _b64("\n".join(pk)),
+        _b64(detector_id),
+        _b64(candidate_channel),
     ]
     return " ".join(fields)
 
@@ -93,9 +108,9 @@ def compute_feature_matrix(
     lists: Lists,
     num_features: int,
 ) -> np.ndarray:
-    if num_features not in (41, 42, NUM_FEATURES):
+    if num_features not in (41, 42, 43, 51, NUM_FEATURES):
         raise ValueError(
-            f"unsupported feature width {num_features}; expected 41, 42 or {NUM_FEATURES}"
+            f"unsupported feature width {num_features}; expected 41, 42, 43, 51 or {NUM_FEATURES}"
         )
     materialized = list(records)
     for idx, rec in enumerate(materialized):
@@ -103,7 +118,24 @@ def compute_feature_matrix(
             raise ValueError(
                 f"record {idx} has empty text; dump_features requires non-empty text"
             )
-    lines = [encode_record(str(rec["text"]), str(rec["context"]), lists) for rec in materialized]
+    lines = []
+    for idx, rec in enumerate(materialized):
+        detector_id = str(rec.get("detector_id", "")).strip()
+        candidate_channel = str(rec.get("candidate_channel", "")).strip()
+        if not detector_id:
+            raise ValueError(f"record {idx} omits detector_id")
+        if not candidate_channel:
+            raise ValueError(f"record {idx} omits candidate_channel")
+        detector_policy.validate_candidate_channel(detector_id, candidate_channel)
+        lines.append(
+            encode_record(
+                str(rec["text"]),
+                str(rec["context"]),
+                lists,
+                detector_id,
+                candidate_channel,
+            )
+        )
     rows = run_dump_features(lines)
     if not rows:
         return np.zeros((0, num_features), dtype=np.float32)
