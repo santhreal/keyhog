@@ -26,6 +26,7 @@ pub(crate) fn has_isolated_bare_secret_candidate_with_policy(
     placeholder_keywords: &[String],
     min_len: usize,
     entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
+    plausibility_policy: Option<super::policy::CompiledEntropyPolicy>,
 ) -> bool {
     // Stream `text.lines()` straight into `.any()` instead of collecting a
     // `Vec<&str>` first (Law 7: this runs twice per coalesced chunk in
@@ -40,6 +41,7 @@ pub(crate) fn has_isolated_bare_secret_candidate_with_policy(
             placeholder_keywords,
             min_len,
             entropy_shape,
+            plausibility_policy,
         )
     })
 }
@@ -50,6 +52,7 @@ pub(crate) fn has_isolated_bare_secret_candidate_with_lines_and_policy(
     placeholder_keywords: &[String],
     min_len: usize,
     entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
+    plausibility_policy: Option<super::policy::CompiledEntropyPolicy>,
 ) -> bool {
     let threshold = isolated_bare_entropy_threshold(entropy_threshold);
     lines.iter().any(|line| {
@@ -59,6 +62,7 @@ pub(crate) fn has_isolated_bare_secret_candidate_with_lines_and_policy(
             placeholder_keywords,
             min_len,
             entropy_shape,
+            plausibility_policy,
         )
     })
 }
@@ -73,15 +77,21 @@ fn line_has_isolated_bare_secret_candidate(
     placeholder_keywords: &[String],
     min_len: usize,
     entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
+    plausibility_policy: Option<super::policy::CompiledEntropyPolicy>,
 ) -> bool {
     if is_likely_innocuous_line(line) {
         return false;
     }
     let mut found = false;
     visit_isolated_bare_candidates(line, min_len.max(1), |candidate, _| {
-        found |=
-            isolated_bare_secret_entropy(candidate, threshold, placeholder_keywords, entropy_shape)
-                .is_some();
+        found |= isolated_bare_secret_entropy(
+            candidate,
+            threshold,
+            placeholder_keywords,
+            entropy_shape,
+            plausibility_policy,
+        )
+        .is_some();
     });
     // Generic detector TOMLs keep their broad keyword-free floor at 20 bytes,
     // but narrower symbolic/app-password shapes have stronger shape proof down
@@ -97,6 +107,7 @@ fn line_has_isolated_bare_secret_candidate(
                     threshold,
                     placeholder_keywords,
                     entropy_shape,
+                    plausibility_policy,
                 )
                 .is_some();
             }
@@ -137,6 +148,7 @@ pub(super) fn isolated_bare_keyword_context_with_shape(
     entropy_threshold: f64,
     min_len: usize,
     entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
+    plausibility_policy: Option<super::policy::CompiledEntropyPolicy>,
 ) -> KeywordContext {
     KeywordContext {
         keyword: ISOLATED_BARE_ENTROPY_LABEL.to_string(),
@@ -145,6 +157,7 @@ pub(super) fn isolated_bare_keyword_context_with_shape(
         is_credential_context: false,
         allow_canonical_shapes: false,
         entropy_shape,
+        plausibility_policy,
     }
 }
 
@@ -290,6 +303,7 @@ pub(super) fn collect_isolated_bare_candidates_inner(
             context.threshold,
             placeholder_keywords,
             context.entropy_shape,
+            context.plausibility_policy,
         ) {
             Ok(entropy) => entropy,
             Err(stage_id) => {
@@ -340,12 +354,14 @@ fn isolated_bare_secret_entropy(
     threshold: f64,
     placeholder_keywords: &[String],
     entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
+    plausibility_policy: Option<super::policy::CompiledEntropyPolicy>,
 ) -> Option<f64> {
     match isolated_bare_secret_entropy_decision(
         candidate,
         threshold,
         placeholder_keywords,
         entropy_shape,
+        plausibility_policy,
     ) {
         Ok(entropy) => Some(entropy),
         Err(_stage) => {
@@ -362,6 +378,7 @@ fn isolated_bare_secret_entropy_decision(
     threshold: f64,
     placeholder_keywords: &[String],
     entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
+    plausibility_policy: Option<super::policy::CompiledEntropyPolicy>,
 ) -> Result<f64, StageId> {
     if super::scanner::is_canonical_non_secret_shape(candidate) {
         return Err(StageId::EntropyValueShape(
@@ -372,7 +389,12 @@ fn isolated_bare_secret_entropy_decision(
     if !isolated_bare_entropy_floor_met(candidate, entropy, threshold, entropy_shape.as_ref()) {
         return Err(StageId::EntropyBelowFloor);
     }
-    if !is_isolated_bare_secret_plausible(candidate, placeholder_keywords, entropy_shape) {
+    if !is_isolated_bare_secret_plausible(
+        candidate,
+        placeholder_keywords,
+        entropy_shape,
+        plausibility_policy,
+    ) {
         return Err(StageId::EntropyValueShape(
             EntropyShapeStage::SecretPlausibilityRejected,
         ));

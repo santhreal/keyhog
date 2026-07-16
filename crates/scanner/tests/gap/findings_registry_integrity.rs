@@ -19,6 +19,8 @@ fn internal_planning_artifacts_stay_out_of_public_repo() {
         .parent()
         .and_then(|p| p.parent())
         .expect("repo root");
+    // The project-local, gitignored BACKLOG.md is the one permitted working
+    // queue; this gate covers retired or public planning documents only.
     for retired in [
         // Purged for the operator-machine-path leak; must never re-enter.
         "docs/EXECUTION_PLAN.md",
@@ -29,7 +31,6 @@ fn internal_planning_artifacts_stay_out_of_public_repo() {
         "docs/GPU_DETECTION_REWRITE.md",
         "docs/GPU_OOM_INNOVATION_CATALOG.md",
         "benchmarks/docs/RECALL_GAP.md",
-        "BACKLOG.md",
         "planning/vyre-acceleration",
     ] {
         assert!(

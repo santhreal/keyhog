@@ -45,8 +45,8 @@ pub const HIGH_ENTROPY_THRESHOLD: f64 = 4.5;
 /// credential/auth anchor owns the quoted value. Kept below the global 4.5
 /// floor but above low-entropy identifiers.
 ///
-/// This is the single-owner default for the per-detector `DetectorSpec::mixed_alnum_floor` field,
-/// applied only when a detector leaves that field unset (not a global gate applied uniformly).
+/// Programmatic fallback for callers without an active detector policy. Shipped
+/// entropy owners use `DetectorSpec::plausibility.mixed_alnum_floor` instead.
 pub(crate) const MIXED_ALNUM_TOKEN_THRESHOLD: f64 = 4.0;
 
 pub(crate) const ISOLATED_BARE_ENTROPY_LABEL: &str = "none (isolated-token)";

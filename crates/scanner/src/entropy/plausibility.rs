@@ -61,6 +61,10 @@ pub(crate) struct PlausibilityContext {
     mixed_alnum_floor: f64,
     symbolic_entropy_floor: f64,
     second_half_entropy_floor: f64,
+    reject_repeated_blocks: bool,
+    allow_alphabetic_credential: bool,
+    reject_program_identifiers: bool,
+    reject_dash_segmented_alnum: bool,
     mixed_alnum_min_len: usize,
     entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
 }
@@ -80,6 +84,10 @@ impl PlausibilityContext {
             mixed_alnum_floor: MIXED_ALNUM_TOKEN_THRESHOLD,
             symbolic_entropy_floor: SYMBOLIC_CREDENTIAL_ENTROPY_FLOOR,
             second_half_entropy_floor: SECOND_HALF_ENTROPY_FLOOR,
+            reject_repeated_blocks: true,
+            allow_alphabetic_credential: true,
+            reject_program_identifiers: true,
+            reject_dash_segmented_alnum: true,
             mixed_alnum_min_len: MIXED_ALNUM_MIN_LEN,
             entropy_shape: None,
         }
@@ -88,16 +96,16 @@ impl PlausibilityContext {
     pub(crate) fn with_detector(mut self, detector: Option<&keyhog_core::DetectorSpec>) -> Self {
         if let Some(detector) = detector {
             self.entropy_high = detector.entropy_high.unwrap_or(self.entropy_high);
-            self.mixed_alnum_floor = detector.mixed_alnum_floor.unwrap_or(self.mixed_alnum_floor);
-            self.symbolic_entropy_floor = detector
-                .symbolic_entropy_floor
-                .unwrap_or(self.symbolic_entropy_floor);
-            self.second_half_entropy_floor = detector
-                .second_half_entropy_floor
-                .unwrap_or(self.second_half_entropy_floor);
-            self.mixed_alnum_min_len = detector
-                .mixed_alnum_min_len
-                .unwrap_or(self.mixed_alnum_min_len);
+            if let Some(policy) = detector.plausibility {
+                self.mixed_alnum_floor = policy.mixed_alnum_floor;
+                self.symbolic_entropy_floor = policy.symbolic_entropy_floor;
+                self.second_half_entropy_floor = policy.second_half_entropy_floor;
+                self.reject_repeated_blocks = policy.reject_repeated_blocks;
+                self.allow_alphabetic_credential = policy.allow_alphabetic_credential;
+                self.reject_program_identifiers = policy.reject_program_identifiers;
+                self.reject_dash_segmented_alnum = policy.reject_dash_segmented_alnum;
+                self.mixed_alnum_min_len = policy.mixed_alnum_min_len;
+            }
         }
         self.entropy_shape = detector.and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape);
         self
@@ -113,6 +121,10 @@ impl PlausibilityContext {
             self.mixed_alnum_floor = policy.mixed_alnum_floor;
             self.symbolic_entropy_floor = policy.symbolic_entropy_floor;
             self.second_half_entropy_floor = policy.second_half_entropy_floor;
+            self.reject_repeated_blocks = policy.reject_repeated_blocks;
+            self.allow_alphabetic_credential = policy.allow_alphabetic_credential;
+            self.reject_program_identifiers = policy.reject_program_identifiers;
+            self.reject_dash_segmented_alnum = policy.reject_dash_segmented_alnum;
             self.mixed_alnum_min_len = policy.mixed_alnum_min_len;
             self.entropy_shape = policy.entropy_shape;
         }
@@ -265,7 +277,7 @@ pub(crate) fn passes_secret_strength_checks(value: &str, context: PlausibilityCo
         // alphabetic password/passphrase. It still passed the detector-owned
         // length, tail-randomness, placeholder, identifier, and BPE gates; do
         // not force it through the mixed-alphanumeric carve-out.
-        if has_alpha && !has_digit && !has_symbol {
+        if context.allow_alphabetic_credential && has_alpha && !has_digit && !has_symbol {
             return true;
         }
         let mixed_alnum_floor = context.mixed_alnum_floor;
@@ -286,6 +298,7 @@ pub(crate) fn is_isolated_bare_secret_plausible(
     value: &str,
     placeholder_keywords: &[String],
     entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
+    plausibility_policy: Option<crate::entropy::policy::CompiledEntropyPolicy>,
 ) -> bool {
     if is_isolated_leading_slash_base64_secret(value, placeholder_keywords) {
         return true;
@@ -304,21 +317,17 @@ pub(crate) fn is_isolated_bare_secret_plausible(
             return false;
         }
     }
+    let context = PlausibilityContext {
+        entropy_shape,
+        ..PlausibilityContext::default()
+    }
+    .with_compiled_policy(plausibility_policy.as_ref());
     passes_plausibility_checks(
         value,
         PlausibilityMode::Lenient,
         placeholder_keywords,
-        PlausibilityContext {
-            entropy_shape,
-            ..PlausibilityContext::default()
-        },
-    ) && passes_secret_shape_checks(
-        value,
-        PlausibilityContext {
-            entropy_shape,
-            ..PlausibilityContext::default()
-        },
-    )
+        context,
+    ) && passes_secret_shape_checks(value, context)
 }
 
 fn is_isolated_leading_slash_base64_secret(value: &str, placeholder_keywords: &[String]) -> bool {
@@ -363,6 +372,9 @@ fn is_isolated_leading_slash_base64_secret(value: &str, placeholder_keywords: &[
 }
 
 fn passes_secret_shape_checks(value: &str, context: PlausibilityContext) -> bool {
+    if context.reject_repeated_blocks && crate::suppression::shape::has_repeated_block_mask(value) {
+        return false;
+    }
     // Outside a credential-keyword anchor, any >10-char pure-hex value is a
     // checksum/digest, not a credential. Inside one (`apiKey: <hex>`), the
     // keyword is positive evidence the hex IS the credential - the entropy
@@ -400,7 +412,9 @@ fn passes_secret_shape_checks(value: &str, context: PlausibilityContext) -> bool
     // a camelCase / PascalCase shape (at least one internal
     // uppercase boundary). Real secrets virtually always include
     // digits or special characters.
-    if crate::suppression::shape::looks_like_program_identifier(value) {
+    if context.reject_program_identifiers
+        && crate::suppression::shape::looks_like_program_identifier(value)
+    {
         return false;
     }
 
@@ -411,7 +425,8 @@ fn passes_secret_shape_checks(value: &str, context: PlausibilityContext) -> bool
     // reach the entropy floor without being credentials. Keep this
     // gate narrow: real service tokens often contain one or more
     // dashes inside otherwise random alnum bodies.
-    if crate::suppression::shape::is_dash_segmented_alnum_decoy(value)
+    if context.reject_dash_segmented_alnum
+        && crate::suppression::shape::is_dash_segmented_alnum_decoy(value)
         && !super::isolated::lower_dash_app_password_floor_met_with_policy(
             value,
             shannon_entropy(value.as_bytes()),

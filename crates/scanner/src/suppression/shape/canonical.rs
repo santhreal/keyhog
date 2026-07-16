@@ -571,18 +571,21 @@ fn has_repeated_full_block(bytes: &[u8]) -> bool {
     if bytes.len() < 24 || !bytes.iter().any(|b| b.is_ascii_alphanumeric()) {
         return false;
     }
-    let max_block_len = (bytes.len() / 3).min(64);
+    let max_block_len = (bytes.len() / 2).min(64);
     for block_len in 3..=max_block_len {
-        if bytes.len() % block_len != 0 {
-            continue;
-        }
         let first = &bytes[..block_len];
         if first.iter().all(|b| !b.is_ascii_alphanumeric()) {
             continue;
         }
+        // Masks are often truncated while copied, so accept two complete
+        // repetitions followed by a prefix of the same block. Requiring every
+        // byte after the first block to match its periodic position keeps the
+        // predicate exact and allocation-free while catching forms such as
+        // `passwordispasswordispassword`.
         if bytes[block_len..]
-            .chunks_exact(block_len)
-            .all(|chunk| chunk == first)
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| *byte == first[index % block_len])
         {
             return true;
         }

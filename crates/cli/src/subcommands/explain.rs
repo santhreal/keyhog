@@ -275,7 +275,42 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
         d.sensitive_path_entropy_very_high,
         " bits/byte"
     );
-    optional_policy!("mixed_alnum_floor", d.mixed_alnum_floor, " bits/byte");
+    if let Some(policy) = d.plausibility {
+        println!("    {}plausibility:{}", style.bold, style.reset);
+        println!(
+            "    mixed_alnum_floor: {} bits/byte",
+            policy.mixed_alnum_floor
+        );
+        println!(
+            "    symbolic_entropy_floor: {} bits/byte",
+            policy.symbolic_entropy_floor
+        );
+        println!(
+            "    second_half_entropy_floor: {} bits/byte",
+            policy.second_half_entropy_floor
+        );
+        println!(
+            "    mixed_alnum_min_len: {} bytes",
+            policy.mixed_alnum_min_len
+        );
+        println!(
+            "    reject_repeated_blocks: {}",
+            policy.reject_repeated_blocks
+        );
+        println!(
+            "    allow_alphabetic_credential: {}",
+            policy.allow_alphabetic_credential
+        );
+        println!(
+            "    reject_program_identifiers: {}",
+            policy.reject_program_identifiers
+        );
+        println!(
+            "    reject_dash_segmented_alnum: {}",
+            policy.reject_dash_segmented_alnum
+        );
+        declared += 1;
+    }
     optional_policy!("entropy_policy_priority", d.entropy_policy_priority, "");
     optional_policy!(
         "bpe_max_bytes_per_token",

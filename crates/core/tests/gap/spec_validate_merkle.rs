@@ -243,10 +243,7 @@ entropy_high = 4.5
 entropy_low = 3.0
 entropy_very_high = 5.8
 sensitive_path_entropy_very_high = 5.8
-mixed_alnum_floor = 4.0
-symbolic_entropy_floor = 3.5
-second_half_entropy_floor = 2.5
-mixed_alnum_min_len = 20
+plausibility = { mixed_alnum_floor = 4.0, symbolic_entropy_floor = 3.5, second_half_entropy_floor = 2.5, mixed_alnum_min_len = 20, reject_repeated_blocks = true, allow_alphabetic_credential = true, reject_program_identifiers = true, reject_dash_segmented_alnum = true }
 keyword_free_min_len = 20
 min_len = 8
 max_len = 80

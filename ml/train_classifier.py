@@ -23,7 +23,7 @@ Serialized order (little-endian f32), matching ml_weights.rs offsets:
 Usage:
   python3 ml/corpus.py --out ml/data/corpus.jsonl
   python3 ml/train_classifier.py --corpus ml/data/corpus.jsonl \
-      --out crates/scanner/src/weights.bin --features 42 --compare
+      --out crates/scanner/src/weights.bin --features 43 --compare
 """
 
 from __future__ import annotations
@@ -572,11 +572,19 @@ def main() -> int:
     ap.add_argument("--min-real-class-support", type=int, default=1,
                     help="minimum positive held-out examples for a class to enter the "
                          "per-class recall gate")
+    ap.add_argument("--min-real-detector-recall", type=float, default=0.50,
+                    help="with --real-corpus, refuse to write if any positive-bearing "
+                         "held-out detector falls below this recall at the 0.40 floor")
+    ap.add_argument("--min-real-detector-support", type=int, default=1,
+                    help="minimum positive held-out examples for a detector to enter "
+                         "the per-detector recall gate")
     ap.add_argument("--baseline-model-card", default=CURRENT_MODEL_CARD,
-                    help="existing model card used to reject per-class real recall "
-                         "regressions during --write")
+                    help="existing model card used to reject per-class and per-detector "
+                         "real recall regressions during --write")
     ap.add_argument("--max-real-class-recall-drop", type=float, default=0.0,
                     help="allowed per-class recall@0.40 drop vs --baseline-model-card")
+    ap.add_argument("--max-real-detector-recall-drop", type=float, default=0.0,
+                    help="allowed per-detector recall@0.40 drop vs --baseline-model-card")
     ap.add_argument("--differential-results", default=DEFAULT_DIFFERENTIAL_RESULTS,
                     help="benchmark RunResult directory used to compare every "
                          "positive held-out class against the full six-scanner "
@@ -634,6 +642,10 @@ def main() -> int:
         class_gate_error = per_class_gate_error(real_metrics, args)
         if class_gate_error:
             sys.stderr.write(class_gate_error)
+            return 1
+        detector_gate_error = per_detector_gate_error(real_metrics, args)
+        if detector_gate_error:
+            sys.stderr.write(detector_gate_error)
             return 1
         try:
             differential = six_scanner_differential_comparison(real_metrics, args)
@@ -720,7 +732,7 @@ def _class_floor(metric: dict) -> float | None:
     return None
 
 
-def _load_baseline_per_class(path: str) -> dict:
+def _load_baseline_group(path: str, group: str) -> dict:
     try:
         with open(path, encoding="utf-8") as fh:
             card = json.load(fh)
@@ -728,12 +740,20 @@ def _load_baseline_per_class(path: str) -> dict:
         return {}
     if not isinstance(card, dict):
         return {}
-    per_class = (
+    metrics = (
         card.get("metrics", {})
         .get("real_heldout", {})
-        .get("per_class", {})
+        .get(group, {})
     )
-    return per_class if isinstance(per_class, dict) else {}
+    return metrics if isinstance(metrics, dict) else {}
+
+
+def _load_baseline_per_class(path: str) -> dict:
+    return _load_baseline_group(path, "per_class")
+
+
+def _load_baseline_per_detector(path: str) -> dict:
+    return _load_baseline_group(path, "per_detector")
 
 
 def _repo_path(path: str) -> pathlib.Path:
@@ -874,6 +894,62 @@ def per_class_gate_error(real_metrics: dict, args) -> str:
     if not offenders and not regressions:
         return ""
     lines = ["REFUSING to write: per-class real held-out recall gate failed"]
+    lines.extend(f"  - {item}" for item in offenders)
+    lines.extend(f"  - {item}" for item in regressions)
+    lines.append("")
+    return "\n".join(lines)
+
+
+def per_detector_gate_error(real_metrics: dict, args) -> str:
+    """Return a refusal message when detector-level real recall is unsafe.
+
+    Class gates cannot expose one broken detector hidden inside a broad class,
+    so detector metrics are independently load-bearing.
+    """
+    per_detector = real_metrics.get("per_detector")
+    if not isinstance(per_detector, dict):
+        return (
+            "REFUSING to write: real held-out metrics must include per_detector "
+            "precision/recall so aggregate and class recall cannot hide detector failures\n"
+        )
+
+    offenders = []
+    for detector_id, metric in sorted(per_detector.items()):
+        if not isinstance(metric, dict):
+            continue
+        n_pos = int(metric.get("n_pos") or 0)
+        if n_pos < args.min_real_detector_support:
+            continue
+        recall = _class_floor(metric)
+        if recall is None or recall < args.min_real_detector_recall:
+            shown = "missing" if recall is None else f"{recall:.4f}"
+            offenders.append(
+                f"{detector_id} recall@0.40={shown} < floor "
+                f"{args.min_real_detector_recall:.4f} (n_pos={n_pos})"
+            )
+
+    regressions = []
+    baseline = _load_baseline_per_detector(args.baseline_model_card) if args.write else {}
+    for detector_id, old_metric in sorted(baseline.items()):
+        new_metric = per_detector.get(detector_id)
+        if not isinstance(old_metric, dict) or not isinstance(new_metric, dict):
+            continue
+        if int(new_metric.get("n_pos") or 0) < args.min_real_detector_support:
+            continue
+        old_recall = _class_floor(old_metric)
+        new_recall = _class_floor(new_metric)
+        if old_recall is None or new_recall is None:
+            continue
+        drop = old_recall - new_recall
+        if drop > args.max_real_detector_recall_drop + 1e-12:
+            regressions.append(
+                f"{detector_id} recall@0.40 dropped {old_recall:.4f}->{new_recall:.4f} "
+                f"(allowed {args.max_real_detector_recall_drop:.4f})"
+            )
+
+    if not offenders and not regressions:
+        return ""
+    lines = ["REFUSING to write: per-detector real held-out recall gate failed"]
     lines.extend(f"  - {item}" for item in offenders)
     lines.extend(f"  - {item}" for item in regressions)
     lines.append("")

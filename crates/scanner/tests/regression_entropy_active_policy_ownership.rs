@@ -1,7 +1,7 @@
 use keyhog_core::{
-    CanonicalHexKeyMaterialSpec, Chunk, ChunkMetadata, DetectorKind, DetectorSpec,
-    EntropyFallbackClass, EntropyFallbackMetadata, EntropyFloorBucket, EntropyShapeSpec,
-    PatternSpec,
+    CanonicalHexKeyMaterialSpec, Chunk, ChunkMetadata, DetectorKind,
+    DetectorPlausibilityPolicySpec, DetectorSpec, EntropyFallbackClass, EntropyFallbackMetadata,
+    EntropyFloorBucket, EntropyShapeSpec, PatternSpec,
 };
 use keyhog_scanner::testing::entropy_scanner::{
     active_policy_match_values, active_policy_owner_id,
@@ -33,10 +33,16 @@ fn detector(id: &str, keywords: &[&str], min_len: usize) -> DetectorSpec {
         entropy_high: Some(4.5),
         entropy_very_high: Some(5.8),
         sensitive_path_entropy_very_high: Some(5.8),
-        mixed_alnum_floor: Some(0.0),
-        symbolic_entropy_floor: Some(3.5),
-        second_half_entropy_floor: Some(2.5),
-        mixed_alnum_min_len: Some(20),
+        plausibility: Some(DetectorPlausibilityPolicySpec {
+            mixed_alnum_floor: 0.0,
+            symbolic_entropy_floor: 3.5,
+            second_half_entropy_floor: 2.5,
+            mixed_alnum_min_len: 20,
+            reject_repeated_blocks: true,
+            allow_alphabetic_credential: true,
+            reject_program_identifiers: true,
+            reject_dash_segmented_alnum: true,
+        }),
         keyword_free_min_len: Some(20),
         bpe_enabled: Some(false),
         entropy_shapes: vec![EntropyShapeSpec::LowerDashAppPassword {
@@ -134,10 +140,16 @@ fn scan_with_plausibility_policy(
 ) -> Vec<String> {
     let mut owner = detector("plausibility-owner", &["custom_secret"], 8);
     owner.entropy_high = Some(8.0);
-    owner.mixed_alnum_floor = Some(0.0);
-    owner.symbolic_entropy_floor = Some(symbolic_floor);
-    owner.second_half_entropy_floor = Some(second_half_floor);
-    owner.mixed_alnum_min_len = Some(mixed_min_len);
+    owner.plausibility = Some(DetectorPlausibilityPolicySpec {
+        mixed_alnum_floor: 0.0,
+        symbolic_entropy_floor: symbolic_floor,
+        second_half_entropy_floor: second_half_floor,
+        mixed_alnum_min_len: mixed_min_len,
+        reject_repeated_blocks: true,
+        allow_alphabetic_credential: true,
+        reject_program_identifiers: true,
+        reject_dash_segmented_alnum: true,
+    });
     active_policy_match_values(
         vec![owner, detector("generic-secret", &["secret"], 8)],
         "custom_secret",

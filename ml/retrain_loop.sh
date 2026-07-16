@@ -22,6 +22,7 @@
 # Train-time gates (enforced by train_classifier.py; --write refuses on any miss):
 #   * synthetic held-out F1    >= --min-f1            (breadth must not regress)
 #   * real held-out recall@.40 >= --min-real-recall  (real recall must not regress)
+#   * each held-out class and detector clears its own recall floor and baseline
 #
 # Bench gate (--verify only; the guard the train-gates can't be): held-out F1 and
 # recall passed last time too, the kubernetes-bootstrap-token +203-FP regression

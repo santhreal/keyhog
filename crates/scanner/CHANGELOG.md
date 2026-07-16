@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Group strict entropy plausibility floors and shape switches in each owning
+  detector's required `plausibility` policy. Compiled assignment and isolated
+  paths now use the same detector policy, including repeated-block,
+  identifier, dash-segment, and alphabetic-credential decisions.
+- Refuse ML model writes when a positive-bearing held-out detector misses its
+  recall floor or regresses against the shipped model card. The build summary
+  now exposes real precision, recall, F1, floor recall, and zero-recall detector
+  count instead of hiding detector failures behind aggregate metrics.
 - Compile ML match mode, entropy mode, weight, and context radius from each
   detector TOML. Generic assignments now use the same pending batch and CPU/GPU
   model path as regex and entropy candidates. The explicit `lift` mode applies

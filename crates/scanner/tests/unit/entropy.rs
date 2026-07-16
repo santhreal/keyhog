@@ -1096,12 +1096,8 @@ fn innocuous_label_prefix_only_no_false_substring_match() {
 
 /// Per-detector entropy-gate wiring (moved out of an inline `plausibility.rs`
 /// test to satisfy the `entropy_plausibility_no_inline_tests` folder contract).
-/// The plausibility strength gate resolves `entropy_high` / `mixed_alnum_floor`
-/// PER DETECTOR from `keyhog_core::detector_spec_by_id` (which the module-private
-/// `plausibility::get_spec` merely delegates to). So every generic entropy
-/// detector's embedded TOML MUST supply those overrides in a valid Shannon band,
-/// and an unknown/absent id must resolve NO spec (the gate then uses its module
-/// `HIGH_ENTROPY_THRESHOLD` fallback). This pins that public resolution chain.
+/// Every generic entropy detector's embedded TOML must supply `entropy_high`
+/// plus a complete plausibility block in valid Shannon bands.
 #[test]
 fn generic_detectors_declare_valid_per_detector_entropy_floors() {
     // Literals (not the `detector_ids` consts) because those consts are
@@ -1119,8 +1115,9 @@ fn generic_detectors_declare_valid_per_detector_entropy_floors() {
             .entropy_high
             .unwrap_or_else(|| panic!("{id} must set entropy_high in its TOML"));
         let mixed = spec
-            .mixed_alnum_floor
-            .unwrap_or_else(|| panic!("{id} must set mixed_alnum_floor in its TOML"));
+            .plausibility
+            .unwrap_or_else(|| panic!("{id} must set plausibility in its TOML"))
+            .mixed_alnum_floor;
         assert!(
             (3.0..=6.0).contains(&entropy_high),
             "{id} entropy_high {entropy_high} outside the valid Shannon band"
@@ -1130,8 +1127,7 @@ fn generic_detectors_declare_valid_per_detector_entropy_floors() {
             "{id} mixed_alnum_floor {mixed} outside the valid Shannon band"
         );
     }
-    // Absent/unknown id → no spec → the plausibility gate falls back to the
-    // module HIGH_ENTROPY_THRESHOLD (the `get_spec` None path).
+    // An unknown id must not acquire another detector's policy.
     assert!(
         keyhog_core::detector_spec_by_id("definitely-not-a-detector-xyz").is_none(),
         "an unknown id must resolve no spec so the gate uses its constant fallback"

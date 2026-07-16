@@ -96,6 +96,7 @@ impl CompiledScanner {
                 &self.config.placeholder_keywords,
                 generic_keyword_secret_min_len,
                 generic_keyword_secret_policy.and_then(|policy| policy.entropy_shape),
+                generic_keyword_secret_policy.copied(),
             );
         #[cfg(feature = "simd")]
         let lower_dash_app_password_candidate = path_entropy_appropriate

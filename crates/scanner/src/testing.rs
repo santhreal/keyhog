@@ -1094,6 +1094,7 @@ pub fn credential_context_too_short_rejection_for_test(
         is_credential_context: true,
         allow_canonical_shapes: false,
         entropy_shape: None,
+        plausibility_policy: None,
     };
     let entropy = crate::entropy::shannon_entropy(candidate.as_bytes());
     matches!(
@@ -3748,6 +3749,19 @@ pub mod entropy_keywords {
         crate::entropy::plausibility::passes_secret_strength_checks(
             value,
             PlausibilityContext::new(is_credential_context, false),
+        )
+    }
+
+    pub fn passes_secret_strength_checks_with_plausibility_policy(
+        value: &str,
+        is_credential_context: bool,
+        policy: keyhog_core::DetectorPlausibilityPolicySpec,
+    ) -> bool {
+        let mut detector = keyhog_core::DetectorSpec::default();
+        detector.plausibility = Some(policy);
+        crate::entropy::plausibility::passes_secret_strength_checks(
+            value,
+            PlausibilityContext::new(is_credential_context, false).with_detector(Some(&detector)),
         )
     }
 

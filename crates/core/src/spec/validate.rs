@@ -349,9 +349,6 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
             "sensitive_path_entropy_very_high",
             spec.sensitive_path_entropy_very_high,
         ),
-        ("mixed_alnum_floor", spec.mixed_alnum_floor),
-        ("symbolic_entropy_floor", spec.symbolic_entropy_floor),
-        ("second_half_entropy_floor", spec.second_half_entropy_floor),
     ] {
         let Some(score) = value else {
             continue;
@@ -362,10 +359,30 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
             )));
         }
     }
-    if let Some(min_len) = spec.mixed_alnum_min_len {
-        if min_len == 0 {
+    if let Some(plausibility) = spec.plausibility {
+        for (name, score) in [
+            (
+                "plausibility.mixed_alnum_floor",
+                plausibility.mixed_alnum_floor,
+            ),
+            (
+                "plausibility.symbolic_entropy_floor",
+                plausibility.symbolic_entropy_floor,
+            ),
+            (
+                "plausibility.second_half_entropy_floor",
+                plausibility.second_half_entropy_floor,
+            ),
+        ] {
+            if !score.is_finite() || !(0.0..=8.0).contains(&score) {
+                issues.push(QualityIssue::Error(format!(
+                    "{name} must be a finite Shannon entropy score in [0.0, 8.0], found {score}"
+                )));
+            }
+        }
+        if plausibility.mixed_alnum_min_len == 0 {
             issues.push(QualityIssue::Error(
-                "mixed_alnum_min_len must be greater than zero".into(),
+                "plausibility.mixed_alnum_min_len must be greater than zero".into(),
             ));
         }
     }
@@ -389,16 +406,7 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
                 "sensitive_path_entropy_very_high",
                 spec.sensitive_path_entropy_very_high.is_some(),
             ),
-            ("mixed_alnum_floor", spec.mixed_alnum_floor.is_some()),
-            (
-                "symbolic_entropy_floor",
-                spec.symbolic_entropy_floor.is_some(),
-            ),
-            (
-                "second_half_entropy_floor",
-                spec.second_half_entropy_floor.is_some(),
-            ),
-            ("mixed_alnum_min_len", spec.mixed_alnum_min_len.is_some()),
+            ("[detector.plausibility]", spec.plausibility.is_some()),
             ("keyword_free_min_len", spec.keyword_free_min_len.is_some()),
             ("min_len", spec.min_len.is_some()),
             (

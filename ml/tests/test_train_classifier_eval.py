@@ -46,6 +46,7 @@ def _bench_config(scanner):
 
 def _write_bench_result(results_dir, scanner, category, tp, fn):
     result = {
+        "schema_version": "bench-v3",
         "generated_at": "2026-06-19T00:00:00Z",
         "scanner": {
             "name": scanner,
@@ -214,6 +215,51 @@ def test_per_class_gate_rejects_weak_tail_and_baseline_regression(tmp_path):
 
     assert "git recall@0.40=0.0000 < floor 0.5000" in message
     assert "aws recall@0.40 dropped 0.7500->0.5000" in message
+
+
+def test_per_detector_gate_rejects_hidden_detector_hole_and_regression(tmp_path):
+    baseline = tmp_path / "model_card.json"
+    baseline.write_text(
+        json.dumps({
+            "metrics": {
+                "real_heldout": {
+                    "per_detector": {
+                        "generic-secret": {
+                            "n_pos": 4,
+                            "recall_at_0_40_floor": 0.75,
+                        }
+                    }
+                }
+            }
+        }),
+        encoding="utf-8",
+    )
+    args = types.SimpleNamespace(
+        write=True,
+        baseline_model_card=str(baseline),
+        min_real_detector_recall=0.50,
+        min_real_detector_support=1,
+        max_real_detector_recall_drop=0.0,
+    )
+
+    message = train_classifier.per_detector_gate_error(
+        {
+            "per_detector": {
+                "generic-secret": {
+                    "n_pos": 4,
+                    "recall_at_0_40_floor": 0.50,
+                },
+                "stripe-secret-key": {
+                    "n_pos": 1,
+                    "recall_at_0_40_floor": 0.0,
+                },
+            }
+        },
+        args,
+    )
+
+    assert "stripe-secret-key recall@0.40=0.0000 < floor 0.5000" in message
+    assert "generic-secret recall@0.40 dropped 0.7500->0.5000" in message
 
 
 def test_six_scanner_differential_attaches_full_class_comparison(tmp_path):

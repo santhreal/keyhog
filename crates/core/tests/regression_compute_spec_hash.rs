@@ -23,9 +23,9 @@
 
 use keyhog_core::compute_spec_hash;
 use keyhog_core::{
-    CanonicalHexKeyMaterialSpec, CompanionSpec, CredentialShape, DetectorKind, DetectorSpec,
-    EntropyFallbackMetadata, EntropyFloorBucket, EntropyShapeSpec, PatternSpec, Severity,
-    VerifySpec,
+    CanonicalHexKeyMaterialSpec, CompanionSpec, CredentialShape, DetectorKind,
+    DetectorPlausibilityPolicySpec, DetectorSpec, EntropyFallbackMetadata, EntropyFloorBucket,
+    EntropyShapeSpec, PatternSpec, Severity, VerifySpec,
 };
 
 /// Fully-populated single-pattern detector. `name`/`service` are set equal to
@@ -516,17 +516,17 @@ knob_changes_digest!(spec_hash_binds_entropy_shapes, |d| d.entropy_shapes =
         group_length: 4,
         special_min_length: 16,
     }]);
-knob_changes_digest!(spec_hash_binds_mixed_alnum_floor, |d| d.mixed_alnum_floor =
-    Some(3.7));
-knob_changes_digest!(spec_hash_binds_symbolic_entropy_floor, |d| d
-    .symbolic_entropy_floor =
-    Some(3.6));
-knob_changes_digest!(spec_hash_binds_second_half_entropy_floor, |d| d
-    .second_half_entropy_floor =
-    Some(2.6));
-knob_changes_digest!(spec_hash_binds_mixed_alnum_min_len, |d| d
-    .mixed_alnum_min_len =
-    Some(21));
+knob_changes_digest!(spec_hash_binds_plausibility_policy, |d| d.plausibility =
+    Some(DetectorPlausibilityPolicySpec {
+        mixed_alnum_floor: 3.7,
+        symbolic_entropy_floor: 3.6,
+        second_half_entropy_floor: 2.6,
+        mixed_alnum_min_len: 21,
+        reject_repeated_blocks: true,
+        allow_alphabetic_credential: true,
+        reject_program_identifiers: true,
+        reject_dash_segmented_alnum: true,
+    }));
 knob_changes_digest!(spec_hash_binds_entropy_policy_priority, |d| d
     .entropy_policy_priority =
     Some(80));

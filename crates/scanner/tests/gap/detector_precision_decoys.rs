@@ -520,6 +520,81 @@ fn pure_lowercase_repetition_rejected_even_with_anchor() {
 }
 
 #[test]
+fn repeated_block_rejection_is_detector_owned() {
+    use keyhog_core::DetectorPlausibilityPolicySpec;
+    use keyhog_scanner::testing::entropy_keywords::passes_secret_strength_checks_with_plausibility_policy;
+
+    let repeated = "passwordispasswordispassword";
+    let policy = DetectorPlausibilityPolicySpec {
+        mixed_alnum_floor: 4.0,
+        symbolic_entropy_floor: 3.5,
+        second_half_entropy_floor: 2.5,
+        mixed_alnum_min_len: 20,
+        reject_repeated_blocks: true,
+        allow_alphabetic_credential: true,
+        reject_program_identifiers: true,
+        reject_dash_segmented_alnum: true,
+    };
+    assert!(!passes_secret_strength_checks_with_plausibility_policy(
+        repeated, true, policy
+    ));
+    assert!(passes_secret_strength_checks_with_plausibility_policy(
+        repeated,
+        true,
+        DetectorPlausibilityPolicySpec {
+            reject_repeated_blocks: false,
+            ..policy
+        }
+    ));
+}
+
+#[test]
+fn plausibility_shape_switches_are_detector_owned() {
+    use keyhog_core::DetectorPlausibilityPolicySpec;
+    use keyhog_scanner::testing::entropy_keywords::passes_secret_strength_checks_with_plausibility_policy as passes;
+
+    let policy = DetectorPlausibilityPolicySpec {
+        mixed_alnum_floor: 4.0,
+        symbolic_entropy_floor: 3.5,
+        second_half_entropy_floor: 2.5,
+        mixed_alnum_min_len: 20,
+        reject_repeated_blocks: true,
+        allow_alphabetic_credential: true,
+        reject_program_identifiers: true,
+        reject_dash_segmented_alnum: true,
+    };
+    let alphabetic = "ufnlbbavawsdeecn";
+    assert!(passes(alphabetic, true, policy));
+    assert!(!passes(
+        alphabetic,
+        true,
+        DetectorPlausibilityPolicySpec {
+            allow_alphabetic_credential: false,
+            ..policy
+        }
+    ));
+    assert!(!passes("BulkUpdateApiKeyResponse", true, policy));
+    assert!(passes(
+        "BulkUpdateApiKeyResponse",
+        true,
+        DetectorPlausibilityPolicySpec {
+            reject_program_identifiers: false,
+            ..policy
+        }
+    ));
+    let serial = "A1B2C-D3E4F-G5H6I-J7K8L-M9N0P";
+    assert!(!passes(serial, true, policy));
+    assert!(passes(
+        serial,
+        true,
+        DetectorPlausibilityPolicySpec {
+            reject_dash_segmented_alnum: false,
+            ..policy
+        }
+    ));
+}
+
+#[test]
 fn dash_segmented_helper_only_pure_dash_alnum() {
     // is_dash_segmented_alnum_decoy contract.
     assert!(is_dash_segmented_alnum_decoy("A1B2C-D3E4F-G5H6I"));

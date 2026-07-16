@@ -169,23 +169,11 @@ pub struct DetectorSpec {
     /// lower-dash app password. Active entropy owners must declare the list.
     #[serde(default)]
     pub entropy_shapes: Vec<EntropyShapeSpec>,
-    /// Per-detector mixed-alnum token entropy floor (bits/byte).
-    /// Active entropy owners must declare it.
+    /// Complete detector-owned strict plausibility policy. Active entropy
+    /// owners must declare the block; absence is valid only for detector paths
+    /// that never invoke phase-2 plausibility scoring.
     #[serde(default)]
-    pub mixed_alnum_floor: Option<f64>,
-    /// Per-detector entropy floor for symbolic credential values that carry a
-    /// strong assignment anchor. Active entropy owners must declare it; this is
-    /// distinct from the universal character-class checks.
-    #[serde(default)]
-    pub symbolic_entropy_floor: Option<f64>,
-    /// Per-detector minimum Shannon entropy for the second half of a long
-    /// candidate. Active entropy owners must declare it.
-    #[serde(default)]
-    pub second_half_entropy_floor: Option<f64>,
-    /// Per-detector minimum byte length for the mixed-alphanumeric carve-out.
-    /// Active entropy owners must declare it.
-    #[serde(default)]
-    pub mixed_alnum_min_len: Option<usize>,
+    pub plausibility: Option<DetectorPlausibilityPolicySpec>,
     /// Precedence when this detector owns entropy-fallback policy for one of
     /// its declared keywords. Active entropy owners must declare the value;
     /// regex detectors opt in by doing so. Higher values win overlapping
@@ -363,6 +351,28 @@ pub struct DetectorMlPolicySpec {
     /// Number of source lines on each side of the candidate supplied to feature
     /// extraction. Zero intentionally restricts inference to the candidate line.
     pub context_radius_lines: usize,
+}
+
+/// Strict candidate-plausibility policy owned by one detector TOML.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DetectorPlausibilityPolicySpec {
+    /// Entropy floor for mixed alphabetic/numeric values.
+    pub mixed_alnum_floor: f64,
+    /// Entropy floor for symbolic values carrying a credential anchor.
+    pub symbolic_entropy_floor: f64,
+    /// Minimum entropy in the second half of a long value.
+    pub second_half_entropy_floor: f64,
+    /// Minimum byte length for the mixed alphabetic/numeric carve-out.
+    pub mixed_alnum_min_len: usize,
+    /// Reject periodic values, including a truncated final repetition.
+    pub reject_repeated_blocks: bool,
+    /// Admit an anchored alphabetic value after the other shape gates pass.
+    pub allow_alphabetic_credential: bool,
+    /// Reject source-language identifier shapes.
+    pub reject_program_identifiers: bool,
+    /// Reject dash-segmented product serial and identifier shapes.
+    pub reject_dash_segmented_alnum: bool,
 }
 
 impl Default for DetectorMlPolicySpec {

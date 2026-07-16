@@ -53,11 +53,10 @@ which runs:
    85/15) + real (split **by file**, never randomly; a repo's secrets must not
    span train/test) and report metrics on a leakage-free real held-out.
 3. **gate:** `--write` refuses unless synthetic held-out F1 ≥ `--min-f1`, real
-   held-out recall@0.40-floor ≥ `--min-real-recall`, every positive-bearing
-   real held-out class clears `--min-real-class-recall` without regressing versus
-   the existing model card when class metrics are present, and the model card
-   carries both per-class and per-detector held-out breakdowns. Aggregate recall
-   is not allowed to hide a failed tail class or detector family.
+   held-out recall@0.40-floor ≥ `--min-real-recall`, and every positive-bearing
+   held-out class and detector clears its own recall floor without regressing
+   versus the existing model card. Aggregate or class recall cannot hide a dead
+   detector family.
 
 Measured impact of one loop (CredData): real held-out recall@floor 0 → **0.76**,
 synthetic F1 held at 0.96, and on the never-trained-on mirror corpus precision
@@ -76,7 +75,7 @@ round so real FPs/FNs keep flowing back into the model.
 gate:   Linear(D, 6) -> softmax over 6 experts
 expert: Linear(D, 32) -> ReLU -> Linear(32, 16) -> ReLU -> Linear(16, 1)
 output: fast_sigmoid( sum_e softmax(gate)[e] * expert_logit_e )
-D = 42
+D = 43
 ```
 
 `fast_sigmoid(x) = 0.5 + 0.5*x/(1+|x|)` is the exact serve-time nonlinearity;
@@ -133,7 +132,7 @@ python3 ml/harvest_corpus.py --corpora "$CRED_CORPORA" \
 KEYHOG_DUMP_FEATURES=$(find "$CARGO_TARGET_DIR" -path '*examples/dump_features' -type f | head -1) \
   python3 ml/train_classifier.py --corpus ml/data/corpus.jsonl \
     --real-corpus ml/data/real_corpus.jsonl \
-    --features 42 --compare --write --out crates/scanner/src/weights.bin \
+    --features 43 --compare --write --out crates/scanner/src/weights.bin \
     --model-card crates/scanner/src/model_card.json
 
 # 4. rebuild and run the scanner ML tests against the new weights + card
@@ -150,7 +149,7 @@ Training features come from Rust `dump_features`, not a Python port; that keeps
 the trainer and scanner on one extractor. `feature_parity.py` and
 `decode_structure.py` remain debug/parity ports and must compute byte-identical
 results to their Rust counterparts; `parity_check.py` enforces this across an
-input battery (41/42 features). The one tolerated gap is the continuous entropy feature
+input battery of all 43 features. The one tolerated gap is the continuous entropy feature
 (#4): the serve path uses an x86 SIMD entropy kernel that accumulates in f32
 (~0.2% vs the exact f64 value), so feature #4 is checked to 5e-3 while the
 entropy threshold features (#5,#6,#7) and every other feature are exact. A

@@ -106,10 +106,14 @@ model's fixed vocabulary, remain global.
 | `[detector.entropy_fallback]` | Changes the emitted synthetic entropy finding identity and semantic class for that detector | Omitting it for an active entropy owner fails compilation; there is no scanner-global compatibility identity |
 | `[[detector.entropy_shapes]]` | A lower declared shape floor admits more matching isolated credentials | A higher floor narrows the exception; omission is invalid for an active entropy owner |
 | `entropy_floor` | A higher applicable length-bucket floor suppresses more low-entropy candidates for that detector | A lower floor preserves more human-chosen or structured credentials |
-| `mixed_alnum_floor` | Rejects more identifier-like alphanumeric runs | Preserves more low-randomness mixed-alphanumeric values |
-| `symbolic_entropy_floor` | Raises the minimum entropy for symbol-bearing credential assignments | Preserves more anchored symbolic passwords |
-| `second_half_entropy_floor` | Rejects candidates with a less-random tail | Preserves more credentials whose entropy is front-loaded |
-| `mixed_alnum_min_len` | Requires a longer mixed alpha-numeric credential before the carve-out applies | Lets shorter anchored mixed tokens use the detector's mixed floor |
+| `plausibility.mixed_alnum_floor` | Rejects more identifier-like alphanumeric runs | Preserves more low-randomness mixed-alphanumeric values |
+| `plausibility.symbolic_entropy_floor` | Raises the minimum entropy for symbol-bearing credential assignments | Preserves more anchored symbolic passwords |
+| `plausibility.second_half_entropy_floor` | Rejects candidates with a less-random tail | Preserves more credentials whose entropy is front-loaded |
+| `plausibility.mixed_alnum_min_len` | Requires a longer mixed alpha-numeric credential before the carve-out applies | Lets shorter anchored mixed tokens use the detector's mixed floor |
+| `plausibility.reject_repeated_blocks` | Rejects periodic mask values, including truncated repetitions | Allows that shape to continue through the remaining detector gates |
+| `plausibility.allow_alphabetic_credential` | Admits anchored all-letter passwords/tokens after other gates | Requires alphabetic-only values to clear the ordinary entropy path |
+| `plausibility.reject_program_identifiers` | Rejects source-language identifier shapes | Allows identifier-shaped values through the remaining gates |
+| `plausibility.reject_dash_segmented_alnum` | Rejects serial/product-key-like dash groups | Allows dash-segmented alphanumeric values through the remaining gates |
 | `entropy_policy_priority` | Wins more overlapping generic keyword-policy claims | Yields shared keywords to a more specific detector; unique keywords are unchanged |
 | `bpe_max_bytes_per_token` | A higher ceiling is looser: fewer compressible/word-like candidates are rejected | A lower ceiling is stricter: more language-like values are rejected, with corresponding recall risk |
 | `bpe_enabled = false` | Not applicable | Skips token-efficiency rejection for detectors such as human-chosen passwords |
@@ -165,12 +169,10 @@ These settings do not all use one generic “last value wins” rule:
   detector-local threshold for active entropy owners. Equaling
   `entropy_very_high` means no sensitive-path relaxation; a lower declared
   value is an explicit detector-owned recall choice.
-- **Credential plausibility floors:** `symbolic_entropy_floor`,
-  `second_half_entropy_floor`, and `mixed_alnum_min_len` apply when the active
-  detector owns a credential assignment. Active owners must declare them;
-  there is no production-path fallback. Anchor-free isolated candidates have
-  no assignment owner, so their separate shape predicates use the declared
-  generic detector's isolated-shape policy.
+- **Credential plausibility:** the required detector `plausibility` block owns
+  its entropy floors, length carve-out, alphabetic admission, and repeated,
+  identifier, and dash-segment rejection choices. There is no production-path
+  fallback for an active entropy owner.
 - **Synthetic entropy identity:** every active entropy owner declares
   `[detector.entropy_fallback]` with a semantic `class` (`generic`, `password`,
   `token`, or `api-key`), an `entropy-*` id, display name, and service. The

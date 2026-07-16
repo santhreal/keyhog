@@ -198,6 +198,7 @@ pub(crate) fn credential_keyword_context_with_lift(
         // production policy-aware context below always sets this false.
         allow_canonical_shapes: _allow_canonical_lift,
         entropy_shape: spec.and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape),
+        plausibility_policy: None,
     }
 }
 
@@ -591,11 +592,13 @@ fn scan_keyword_free_candidates(
         entropy_shape: compiled_secret
             .and_then(|policy| policy.entropy_shape)
             .or_else(|| spec.and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape)),
+        plausibility_policy: compiled_secret.copied(),
     };
     let isolated_token_context = isolated_bare_keyword_context_with_shape(
         entropy_threshold,
         generic_keyword_secret_min_len,
         isolated_shape,
+        compiled_keyword_secret.copied(),
     );
     let isolated_min_len = isolated_token_context.min_len;
     for (line_idx, line) in lines.iter().enumerate() {
@@ -1251,5 +1254,6 @@ fn keyword_context_with_policy(
         entropy_shape: compiled
             .and_then(|policy| policy.entropy_shape)
             .or_else(|| spec.and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape)),
+        plausibility_policy: compiled.copied(),
     }
 }

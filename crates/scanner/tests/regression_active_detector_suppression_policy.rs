@@ -40,7 +40,7 @@ id = "custom-regex-allowlist-contract"
 name = "Custom Regex Allowlist Contract"
 service = "kh674"
 severity = "high"
-ml = { match_mode = "blend", entropy_mode = "authoritative", weight = 0.5, context_radius_lines = 5 }
+ml = { match_mode = "blend", entropy_mode = "disabled", weight = 0.5, context_radius_lines = 5 }
 keywords = ["kh674rx_"]
 min_confidence = 0.0
 allowlist_values = ['^m7_Q2vN9xK4cP8rT6wY3zH5s$']
@@ -73,7 +73,7 @@ id = "custom-phase2-allowlist-contract"
 name = "Custom Phase Two Allowlist Contract"
 service = "generic"
 severity = "high"
-ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
+ml = { match_mode = "disabled", entropy_mode = "authoritative", weight = 1.0, context_radius_lines = 5 }
 kind = "phase2-generic"
 keywords = ["kh674_secret"]
 min_confidence = 0.0
@@ -84,10 +84,7 @@ entropy_low = 3.0
 entropy_high = 4.5
 entropy_very_high = 5.8
 sensitive_path_entropy_very_high = 5.8
-mixed_alnum_floor = 4.0
-symbolic_entropy_floor = 3.5
-second_half_entropy_floor = 2.5
-mixed_alnum_min_len = 20
+plausibility = { mixed_alnum_floor = 4.0, symbolic_entropy_floor = 3.5, second_half_entropy_floor = 2.5, mixed_alnum_min_len = 20, reject_repeated_blocks = true, allow_alphabetic_credential = true, reject_program_identifiers = true, reject_dash_segmented_alnum = true }
 entropy_policy_priority = 0
 bpe_enabled = false
 entropy_floor = [{ floor = 0.0 }]

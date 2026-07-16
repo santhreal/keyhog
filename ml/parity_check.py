@@ -123,7 +123,8 @@ def main() -> int:
     fails = 0
     for idx, ((text, context, lists), rv) in enumerate(zip(battery, rust_vectors)):
         kp, sk, tk, pk = lists
-        # Compare the full 42-feature vector (includes decode-structure #41).
+        # Compare the full 43-feature vector, including decode structure (#41)
+        # and detector-corpus-derived service specificity (#42).
         pv = feature_parity.compute_features(text, context, kp, sk, tk, pk, with_decode=True)
         if len(rv) != len(pv):
             print(f"[row {idx}] WIDTH mismatch rust={len(rv)} py={len(pv)} text={text!r}")

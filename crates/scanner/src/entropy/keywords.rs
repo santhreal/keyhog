@@ -3,8 +3,7 @@
 //! Per-detector entropy gates: the extraction helpers thread the classified
 //! active generic detector spec into the [`PlausibilityContext`], so
 //! `passes_secret_strength_checks` consumes that scan's `entropy_high` and
-//! `mixed_alnum_floor` values without re-reading the embedded registry. `None`
-//! falls back to the compiled defaults.
+//! compiled `plausibility` block without re-reading the embedded registry.
 
 use std::sync::LazyLock;
 
@@ -33,6 +32,7 @@ pub(crate) struct KeywordContext {
     /// unconditionally (no anchor ⇒ no evidence ⇒ no lift).
     pub(crate) allow_canonical_shapes: bool,
     pub(crate) entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
+    pub(crate) plausibility_policy: Option<super::policy::CompiledEntropyPolicy>,
 }
 
 pub(crate) fn find_keyword_assignment_lines<'a>(

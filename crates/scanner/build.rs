@@ -56,13 +56,20 @@ fn main() -> io::Result<()> {
     let synthetic_f1 = json_f64(&card, "/metrics/synthetic_heldout/f1")?;
     let synthetic_precision = json_f64(&card, "/metrics/synthetic_heldout/precision")?;
     let synthetic_recall = json_f64(&card, "/metrics/synthetic_heldout/recall")?;
-    let real_recall = json_f64(&card, "/metrics/real_heldout/recall_at_0_40_floor")?;
+    let real_f1 = json_f64(&card, "/metrics/real_heldout/real_f1")?;
+    let real_precision = json_f64(&card, "/metrics/real_heldout/real_precision")?;
+    let real_recall = json_f64(&card, "/metrics/real_heldout/real_recall")?;
+    let real_floor_recall = json_f64(&card, "/metrics/real_heldout/recall_at_0_40_floor")?;
+    let (zero_recall_detectors, positive_detectors) = detector_recall_gaps(&card)?;
     let summary = format!(
-        "recorded {recorded_date}; features {feature_count}; synthetic F1 {} / P {} / R {}; real recall@0.40 {}",
+        "recorded {recorded_date}; features {feature_count}; synthetic F1 {} / P {} / R {}; real F1 {} / P {} / R {} / recall@0.40 {}; zero-recall detectors {zero_recall_detectors}/{positive_detectors}",
         metric(synthetic_f1),
         metric(synthetic_precision),
         metric(synthetic_recall),
+        metric(real_f1),
+        metric(real_precision),
         metric(real_recall),
+        metric(real_floor_recall),
     );
 
     fs::write(
@@ -77,6 +84,39 @@ fn main() -> io::Result<()> {
         ),
     )?;
     Ok(())
+}
+
+fn detector_recall_gaps(card: &serde_json::Value) -> io::Result<(usize, usize)> {
+    let detectors = card
+        .pointer("/metrics/real_heldout/per_detector")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| {
+            invalid_data(
+                "model_card.json missing object field at JSON pointer /metrics/real_heldout/per_detector"
+                    .to_string(),
+            )
+        })?;
+    let mut positive = 0usize;
+    let mut zero_recall = 0usize;
+    for metric in detectors.values() {
+        let n_pos = metric.get("n_pos").and_then(serde_json::Value::as_u64);
+        if n_pos.unwrap_or(0) == 0 {
+            continue;
+        }
+        positive += 1;
+        let recall = metric
+            .get("recall_at_0_40_floor")
+            .and_then(serde_json::Value::as_f64)
+            .ok_or_else(|| {
+                invalid_data(
+                    "positive-bearing per_detector metric omits recall_at_0_40_floor".to_string(),
+                )
+            })?;
+        if recall == 0.0 {
+            zero_recall += 1;
+        }
+    }
+    Ok((zero_recall, positive))
 }
 
 fn fnv1a64(bytes: &[u8]) -> u64 {

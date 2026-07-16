@@ -28,11 +28,9 @@ fn cpu_scan_and_boundary_path_has_single_owner() {
         "the CPU scan + boundary path must live in one owner, scan_chunks_cpu_parallel"
     );
 
-    // The parallel per-chunk scan-map is the duplicated core, it must appear
-    // exactly once now (inside the helper), not re-inlined in each branch.
-    let map_occurrences = src
-        .matches(".map(|chunk| self.scan_with_backend(chunk, backend))")
-        .count();
+    // The parallel iterator is the duplicated core. Its admission-aware map may
+    // evolve, but the parallel traversal itself must remain in one owner.
+    let map_occurrences = src.matches(".par_iter()").count();
     assert_eq!(
         map_occurrences, 1,
         "the par_iter scan-map must appear exactly once (deduped into the helper), found {map_occurrences}"
@@ -46,7 +44,7 @@ fn cpu_scan_and_boundary_path_has_single_owner() {
 
     // Both branches must delegate to the helper rather than open-code the scan.
     let delegations = src
-        .matches("self.scan_chunks_cpu_parallel(chunks, backend)")
+        .matches("self.scan_chunks_cpu_parallel(chunks, backend, admission_plan)")
         .count();
     assert_eq!(
         delegations, 2,

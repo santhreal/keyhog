@@ -114,9 +114,16 @@ fn sensitive_path_entropy_threshold_cannot_exceed_detector_threshold() {
 #[test]
 fn plausibility_policy_fields_reject_invalid_ranges() {
     let mut detector = detector_with_pattern("token=([A-Za-z0-9]+)");
-    detector.symbolic_entropy_floor = Some(9.0);
-    detector.second_half_entropy_floor = Some(f64::NAN);
-    detector.mixed_alnum_min_len = Some(0);
+    detector.plausibility = Some(keyhog_core::DetectorPlausibilityPolicySpec {
+        mixed_alnum_floor: 4.0,
+        symbolic_entropy_floor: 9.0,
+        second_half_entropy_floor: f64::NAN,
+        mixed_alnum_min_len: 0,
+        reject_repeated_blocks: true,
+        allow_alphabetic_credential: true,
+        reject_program_identifiers: true,
+        reject_dash_segmented_alnum: true,
+    });
     let issues = validate_detector(&detector);
     assert!(issues.iter().any(|issue| matches!(
         issue,

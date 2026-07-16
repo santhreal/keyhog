@@ -14,6 +14,10 @@ pub(crate) struct CompiledEntropyPolicy {
     pub(crate) mixed_alnum_floor: f64,
     pub(crate) symbolic_entropy_floor: f64,
     pub(crate) second_half_entropy_floor: f64,
+    pub(crate) reject_repeated_blocks: bool,
+    pub(crate) allow_alphabetic_credential: bool,
+    pub(crate) reject_program_identifiers: bool,
+    pub(crate) reject_dash_segmented_alnum: bool,
     pub(crate) mixed_alnum_min_len: usize,
     pub(crate) keyword_free_min_len: usize,
     pub(crate) min_len: usize,
@@ -50,6 +54,12 @@ impl CompiledEntropyPolicy {
     }
 
     fn compile(detector: &DetectorSpec) -> Result<Self, String> {
+        let plausibility = detector.plausibility.ok_or_else(|| {
+            format!(
+                "detector {:?} owns entropy detection but omits [detector.plausibility]",
+                detector.id
+            )
+        })?;
         let _priority = Self::required(
             detector,
             "entropy_policy_priority",
@@ -97,26 +107,14 @@ impl CompiledEntropyPolicy {
                 "sensitive_path_entropy_very_high",
                 detector.sensitive_path_entropy_very_high,
             )?,
-            mixed_alnum_floor: Self::required(
-                detector,
-                "mixed_alnum_floor",
-                detector.mixed_alnum_floor,
-            )?,
-            symbolic_entropy_floor: Self::required(
-                detector,
-                "symbolic_entropy_floor",
-                detector.symbolic_entropy_floor,
-            )?,
-            second_half_entropy_floor: Self::required(
-                detector,
-                "second_half_entropy_floor",
-                detector.second_half_entropy_floor,
-            )?,
-            mixed_alnum_min_len: Self::required(
-                detector,
-                "mixed_alnum_min_len",
-                detector.mixed_alnum_min_len,
-            )?,
+            mixed_alnum_floor: plausibility.mixed_alnum_floor,
+            symbolic_entropy_floor: plausibility.symbolic_entropy_floor,
+            second_half_entropy_floor: plausibility.second_half_entropy_floor,
+            reject_repeated_blocks: plausibility.reject_repeated_blocks,
+            allow_alphabetic_credential: plausibility.allow_alphabetic_credential,
+            reject_program_identifiers: plausibility.reject_program_identifiers,
+            reject_dash_segmented_alnum: plausibility.reject_dash_segmented_alnum,
+            mixed_alnum_min_len: plausibility.mixed_alnum_min_len,
             keyword_free_min_len: Self::required(
                 detector,
                 "keyword_free_min_len",

@@ -283,18 +283,29 @@ impl CompiledScanner {
         let small_chunk = text.len() <= NO_HIT_ENTROPY_ADMISSION_MAX_BYTES;
         let keyword_admits = has_generic_assignment_keyword(data) || has_secret_keyword_fast(data);
         #[cfg(feature = "entropy")]
-        let generic_keyword_secret_min_len = self
-            .generic_owning_detector
-            .generic_keyword_secret_index()
-            .and_then(|index| self.detectors.get(index))
-            .and_then(|spec| spec.keyword_free_min_len)
+        let generic_keyword_secret_index =
+            self.generic_owning_detector.generic_keyword_secret_index();
+        #[cfg(feature = "entropy")]
+        let generic_keyword_secret_policy = generic_keyword_secret_index
+            .and_then(|index| self.entropy_policies.get(index))
+            .copied();
+        #[cfg(feature = "entropy")]
+        let generic_keyword_secret_min_len = generic_keyword_secret_policy
+            .map(|policy| policy.keyword_free_min_len)
+            .or_else(|| {
+                generic_keyword_secret_index
+                    .and_then(|index| self.detectors.get(index))
+                    .and_then(|spec| spec.keyword_free_min_len)
+            })
             .map_or(crate::entropy::KEYWORD_FREE_MIN_LEN, |min_len| min_len);
         #[cfg(feature = "entropy")]
-        let generic_keyword_secret_entropy_shape = self
-            .generic_owning_detector
-            .generic_keyword_secret_index()
-            .and_then(|index| self.detectors.get(index))
-            .and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape);
+        let generic_keyword_secret_entropy_shape = generic_keyword_secret_policy
+            .and_then(|policy| policy.entropy_shape)
+            .or_else(|| {
+                generic_keyword_secret_index
+                    .and_then(|index| self.detectors.get(index))
+                    .and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape)
+            });
         #[cfg(feature = "multiline")]
         if crate::multiline::has_concatenation_indicators(text) {
             if keyword_admits {
@@ -308,6 +319,7 @@ impl CompiledScanner {
                     &self.config.placeholder_keywords,
                     generic_keyword_secret_min_len,
                     generic_keyword_secret_entropy_shape,
+                    generic_keyword_secret_policy,
                 ) {
                     return true;
                 }
@@ -328,6 +340,7 @@ impl CompiledScanner {
                     &self.config.placeholder_keywords,
                     generic_keyword_secret_min_len,
                     generic_keyword_secret_entropy_shape,
+                    generic_keyword_secret_policy,
                 ));
         #[cfg(feature = "entropy")]
         {
