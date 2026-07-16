@@ -1,4 +1,6 @@
-use keyhog_core::{Chunk, ChunkMetadata, DetectorKind, DetectorSpec, PatternSpec};
+use keyhog_core::{
+    CanonicalHexKeyMaterialSpec, Chunk, ChunkMetadata, DetectorKind, DetectorSpec, PatternSpec,
+};
 use keyhog_scanner::testing::entropy_scanner::{
     active_policy_match_values, active_policy_owner_id,
 };
@@ -33,6 +35,52 @@ fn scan_with_owner_min_len(min_len: usize) -> Vec<String> {
         detector("generic-secret", &["secret"], 8),
     ];
     active_policy_match_values(detectors, KEYWORD, &format!(r#"{KEYWORD} = "{VALUE}""#))
+}
+
+const CANONICAL_HEX_KEY: &str = "1868845451a4c85adb078195b768135b";
+
+fn scan_custom_canonical_hex(policy: bool) -> Vec<String> {
+    let mut owner = detector("custom-key-owner", &["custom_key"], 8);
+    owner.patterns.clear();
+    if policy {
+        owner.canonical_hex_key_material = vec![CanonicalHexKeyMaterialSpec {
+            lengths: vec![32],
+            keywords: vec!["custom_key".into()],
+            ..Default::default()
+        }];
+    }
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    let scanner = CompiledScanner::compile(vec![owner, detector("generic-secret", &["secret"], 8)])
+        .expect("compile custom canonical-hex policy corpus")
+        .with_config(config);
+    let chunk = Chunk {
+        data: format!("custom_key = {CANONICAL_HEX_KEY}").into(),
+        metadata: ChunkMetadata {
+            source_type: "canonical-policy-probe".into(),
+            path: Some("probe.conf".into()),
+            ..Default::default()
+        },
+    };
+    scanner
+        .scan(&chunk)
+        .into_iter()
+        .filter(|finding| finding.credential.as_ref() == CANONICAL_HEX_KEY)
+        .map(|finding| finding.credential.to_string())
+        .collect()
+}
+
+#[test]
+fn canonical_hex_admission_fails_closed_when_detector_policy_is_omitted() {
+    assert!(
+        scan_custom_canonical_hex(false).is_empty(),
+        "a custom detector without canonical_hex_key_material must not inherit the old global hex-key lift"
+    );
+    assert_eq!(
+        scan_custom_canonical_hex(true),
+        vec![CANONICAL_HEX_KEY.to_string()],
+        "the same detector must admit the exact value only after declaring its policy"
+    );
 }
 
 #[test]

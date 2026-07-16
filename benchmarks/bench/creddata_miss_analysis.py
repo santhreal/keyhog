@@ -239,8 +239,7 @@ CANDIDATES: dict[str, list[re.Pattern]] = {
     ],
     # hex64 (32-byte / AES-256 key length) under the NARROW strong cryptographic
     # keyword family ONLY (excludes bare `key`/`secret` to isolate the
-    # mirror-safe precision of the strong-anchor subset that the shipped
-    # `is_strong_keyword_anchored_hex_key` currently excludes at len 64).
+    # mirror-safe precision of the detector-owned cryptographic-key subset.
     "crypto_key_hex64_strong": [
         re.compile(
             r"(?i)(?:^|[^a-z0-9_])"

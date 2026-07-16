@@ -502,6 +502,8 @@ knob_changes_digest!(spec_hash_binds_canonical_hex_key_material, |d| d
     vec![CanonicalHexKeyMaterialSpec {
         lengths: vec![64],
         keywords: vec!["k".into()],
+        suffixes: vec!["key".into()],
+        excluded_keywords: vec!["license_key".into()],
     }]);
 knob_changes_digest!(spec_hash_binds_keyword_free_min_len, |d| d
     .keyword_free_min_len =

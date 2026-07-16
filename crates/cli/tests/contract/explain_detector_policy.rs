@@ -53,6 +53,7 @@ fn explain_generic_secret_prints_detector_owned_entropy_and_bpe_policy() {
         "entropy_low: 3 bits/byte".to_string(),
         format!("bpe_max_bytes_per_token: {bpe_ceiling} UTF-8 bytes/token"),
         "max_len: 512 bytes".to_string(),
+        "canonical_hex_key_material: lengths=[32, 48] keywords=[secret, private_key, signing_secret] suffixes=[key, secret] excluded_keywords=[license_key]".to_string(),
         "canonical_hex_key_material: lengths=[64] keywords=[private_key, signing_secret]"
             .to_string(),
         "entropy_floor: 2.8 bits/byte through 24 bytes".to_string(),
@@ -73,7 +74,7 @@ fn explain_generic_api_key_prints_transport_and_direct_hex_policy() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     for expected in [
         "decoded_hex_key_material_lengths: 32, 48",
-        "canonical_hex_key_material: lengths=[32, 48]",
+        "canonical_hex_key_material: lengths=[32, 48] keywords=[api_key, access_key, secret_key, client_secret, x-api-key, auth_key, signing_key, encryption_key, master_key, session_key, hmac_secret, hmac_seed] suffixes=[key, secret] excluded_keywords=[license_key]",
         "canonical_hex_key_material: lengths=[64]",
     ] {
         assert!(

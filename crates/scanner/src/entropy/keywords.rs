@@ -140,15 +140,15 @@ pub(super) fn extract_candidates(
     min_length: usize,
     placeholder_keywords: &[String],
     is_credential_context: bool,
-    // When set, a strong credential anchor may release only the narrow canonical
-    // hex key shapes accepted downstream. UUIDs remain identifiers in this
-    // generic path and provider detector TOMLs own their credential syntax.
-    allow_canonical_shapes: bool,
+    // Historical model-authority flag retained in the internal signature;
+    // detector-owned canonical policy is checked per candidate below.
+    _allow_canonical_shapes: bool,
     // Per-detector entropy-gate resolution: the classified generic detector id
     // (`generic-secret`/`generic-api-key`/…) whose `DetectorSpec` overrides the
     // `HIGH_ENTROPY_THRESHOLD` / `MIXED_ALNUM_TOKEN_THRESHOLD` gate floors in
     // `passes_secret_strength_checks`. `None` falls back to the module constants.
     detector: Option<&DetectorSpec>,
+    canonical_detector: Option<&DetectorSpec>,
 ) -> Vec<String> {
     extract_candidates_internal(
         line,
@@ -156,9 +156,10 @@ pub(super) fn extract_candidates(
         min_length,
         placeholder_keywords,
         is_credential_context,
-        allow_canonical_shapes,
+        _allow_canonical_shapes,
         false,
         detector,
+        canonical_detector,
     )
     .candidates
 }
@@ -179,8 +180,9 @@ pub(super) fn extract_candidates_with_rejections(
     min_length: usize,
     placeholder_keywords: &[String],
     is_credential_context: bool,
-    allow_canonical_shapes: bool,
+    _allow_canonical_shapes: bool,
     detector: Option<&DetectorSpec>,
+    canonical_detector: Option<&DetectorSpec>,
 ) -> ExtractedCandidates {
     extract_candidates_internal(
         line,
@@ -188,9 +190,10 @@ pub(super) fn extract_candidates_with_rejections(
         min_length,
         placeholder_keywords,
         is_credential_context,
-        allow_canonical_shapes,
+        _allow_canonical_shapes,
         true,
         detector,
+        canonical_detector,
     )
 }
 
@@ -200,9 +203,10 @@ fn extract_candidates_internal(
     min_length: usize,
     placeholder_keywords: &[String],
     is_credential_context: bool,
-    allow_canonical_shapes: bool,
+    _allow_canonical_shapes: bool,
     trace_rejections: bool,
     detector: Option<&DetectorSpec>,
+    canonical_detector: Option<&DetectorSpec>,
 ) -> ExtractedCandidates {
     let mut candidates = Vec::new();
     let mut rejections = Vec::new();
@@ -236,13 +240,12 @@ fn extract_candidates_internal(
         }
         let structured_dotted = allow_structured_dotted
             && crate::suppression::shape::is_structured_dotted_token(cleaned);
-        let detector_owned_canonical_hex_key =
-            detector.is_some_and(|spec| spec.allows_canonical_hex_key_material(keyword, cleaned));
-        let plausibility_context = PlausibilityContext::new(
-            is_credential_context,
-            allow_canonical_shapes || detector_owned_canonical_hex_key,
-        )
-        .with_detector(detector);
+        let detector_owned_canonical_hex_key = canonical_detector
+            .or(detector)
+            .is_some_and(|spec| spec.allows_canonical_hex_key_material(keyword, cleaned));
+        let plausibility_context =
+            PlausibilityContext::new(is_credential_context, detector_owned_canonical_hex_key)
+                .with_detector(detector);
         let plausible = structured_dotted
             || if strict {
                 is_secret_plausible(cleaned, placeholder_keywords, plausibility_context)

@@ -309,8 +309,19 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
             .map(usize::to_string)
             .collect::<Vec<_>>()
             .join(", ");
+        let suffixes = (!policy.suffixes.is_empty())
+            .then(|| format!(" suffixes=[{}]", policy.suffixes.join(", ")))
+            .unwrap_or_default();
+        let excluded = (!policy.excluded_keywords.is_empty())
+            .then(|| {
+                format!(
+                    " excluded_keywords=[{}]",
+                    policy.excluded_keywords.join(", ")
+                )
+            })
+            .unwrap_or_default();
         println!(
-            "    canonical_hex_key_material: lengths=[{lengths}] keywords=[{}]",
+            "    canonical_hex_key_material: lengths=[{lengths}] keywords=[{}]{suffixes}{excluded}",
             policy.keywords.join(", ")
         );
         declared += 1;

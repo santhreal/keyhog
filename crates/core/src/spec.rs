@@ -347,9 +347,10 @@ pub enum EntropyShapeSpec {
 /// One detector-local pure-hex key-material policy.
 ///
 /// A candidate is eligible only when its captured assignment key matches one of
-/// `keywords` after the normal assignment-key case/separator normalization and
-/// its exact character count appears in `lengths`. The scanner still applies
-/// entropy, placeholder, context, and reporting gates.
+/// `keywords`, ends with one of `suffixes`, and is not in `excluded_keywords`
+/// after normal assignment-key case/separator normalization. Its exact
+/// character count must appear in `lengths`. The scanner still applies entropy,
+/// placeholder, context, and reporting gates.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct CanonicalHexKeyMaterialSpec {
@@ -360,6 +361,15 @@ pub struct CanonicalHexKeyMaterialSpec {
     /// detector's top-level `keywords` list.
     #[serde(default)]
     pub keywords: Vec<String>,
+    /// Normalized assignment-key suffixes that may own this policy. This
+    /// expresses vendor-prefixed names such as `stripe_secret_key` without a
+    /// scanner-global suffix heuristic.
+    #[serde(default)]
+    pub suffixes: Vec<String>,
+    /// Normalized assignment keys excluded from suffix ownership, such as the
+    /// ambiguous `license_key` shape.
+    #[serde(default)]
+    pub excluded_keywords: Vec<String>,
 }
 
 impl DetectorSpec {
@@ -403,11 +413,24 @@ impl DetectorSpec {
             return false;
         }
         self.canonical_hex_key_material.iter().any(|policy| {
-            policy.lengths.contains(&value.len())
-                && policy
-                    .keywords
+            if !policy.lengths.contains(&value.len()) {
+                return false;
+            }
+            if policy
+                .excluded_keywords
+                .iter()
+                .any(|excluded| compact_assignment_keywords_equal(keyword, excluded))
+            {
+                return false;
+            }
+            policy
+                .keywords
+                .iter()
+                .any(|owned_keyword| compact_assignment_keywords_equal(keyword, owned_keyword))
+                || policy
+                    .suffixes
                     .iter()
-                    .any(|owned_keyword| compact_assignment_keywords_equal(keyword, owned_keyword))
+                    .any(|suffix| compact_assignment_keyword_ends_with(keyword, suffix))
         })
     }
 }
@@ -491,6 +514,19 @@ impl Serialize for DetectorIntrospection<'_> {
 
 fn compact_assignment_keywords_equal(left: &str, right: &str) -> bool {
     compact_assignment_keyword_bytes(left).eq(compact_assignment_keyword_bytes(right))
+}
+
+fn compact_assignment_keyword_ends_with(value: &str, suffix: &str) -> bool {
+    let value_len = compact_assignment_keyword_bytes(value).count();
+    let suffix_len = compact_assignment_keyword_bytes(suffix).count();
+    // A suffix policy describes a vendor-prefixed assignment (`stripe_key`),
+    // not the bare suffix itself (`key`). Exact names belong in `keywords`,
+    // which keeps the policy explicit and preserves the bare-key digest gate.
+    suffix_len > 0
+        && value_len > suffix_len
+        && compact_assignment_keyword_bytes(value)
+            .skip(value_len - suffix_len)
+            .eq(compact_assignment_keyword_bytes(suffix))
 }
 
 fn compact_assignment_keyword_bytes(value: &str) -> impl Iterator<Item = u8> + '_ {

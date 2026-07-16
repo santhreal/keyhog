@@ -48,6 +48,12 @@ impl<'a> ActiveDetectorPolicy<'a> {
             .and_then(|index| self.detectors.get(index))
     }
 
+    fn canonical_spec_for_keyword(self, keyword: &str) -> Option<&'a DetectorSpec> {
+        self.index
+            .canonical_index(keyword)
+            .and_then(|index| self.detectors.get(index))
+    }
+
     fn claims_keyword(self, keyword: &str) -> bool {
         self.index.claimed_policy_index(keyword).is_some()
     }
@@ -128,14 +134,15 @@ pub(crate) fn credential_keyword_context(keyword: &str) -> KeywordContext {
 }
 
 /// Lift-aware sibling of [`credential_keyword_context`]: builds the same
-/// production credential anchor but with `allow_canonical_shapes` set to
-/// `allow_canonical_lift`. Exposed (doc-hidden, via `testing::entropy_scanner`)
+/// production credential anchor. The historical `allow_canonical_lift` flag is
+/// accepted for API compatibility but detector policy remains authoritative.
+/// Exposed (doc-hidden, via `testing::entropy_scanner`)
 /// so unit tests can drive `candidate_is_plausible` through both the strict gate
 /// and the model-arbitrated key-material lift.
 #[doc(hidden)]
 pub(crate) fn credential_keyword_context_with_lift(
     keyword: &str,
-    allow_canonical_lift: bool,
+    _allow_canonical_lift: bool,
 ) -> KeywordContext {
     let detector_id = classify_keyword_to_detector_id(keyword);
     let spec = get_spec(None, detector_id);
@@ -150,7 +157,10 @@ pub(crate) fn credential_keyword_context_with_lift(
         threshold: entropy_low,
         min_len,
         is_credential_context: true,
-        allow_canonical_shapes: allow_canonical_lift,
+        // This constructor is used only by the testing facade, where the
+        // historical lift switch remains useful for unit-gate coverage. The
+        // production policy-aware context below always sets this false.
+        allow_canonical_shapes: _allow_canonical_lift,
         entropy_shape: spec.and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape),
     }
 }
@@ -194,10 +204,9 @@ pub fn find_entropy_secrets_with_threshold(
     placeholder_keywords: &[String],
     skip_lines: Option<&std::collections::HashSet<usize>>,
 ) -> Vec<EntropyMatch> {
-    // Stable public signature: defaults `allow_canonical_lift = false` so the
-    // non-ML / no-model behaviour (and every caller pinned to this 9-arg form)
-    // is byte-identical. The production scanner uses the lift-aware entry point
-    // below when the MoE is authoritative.
+    // Stable public signature retained for callers that pass the historical
+    // model-authority switch. Detector TOML remains authoritative in every
+    // mode, so this compatibility entry point uses the same policy path.
     find_entropy_secrets_with_canonical_lift(
         text,
         min_length,
@@ -212,20 +221,13 @@ pub fn find_entropy_secrets_with_threshold(
     )
 }
 
-/// Model-authoritative key-material generation. Identical to
-/// [`find_entropy_secrets_with_threshold`] but with an explicit
-/// `allow_canonical_lift` switch: when `true`, a STRONG credential-anchored line
-/// (`is_credential_context`) is allowed to GENERATE a candidate whose value is a
-/// narrowly accepted canonical hex key shape, so the downstream MoE can
-/// arbitrate it. UUIDs and serials remain suppressed in this generic path.
-///
-/// `allow_canonical_lift` is wired from `ml_enabled && entropy_ml_authoritative`
-/// at the call site (`engine::phase2_entropy`). With it `false` (the default,
-/// the non-ML path, the high-precision preset) the behaviour is byte-identical
-/// to the strict gate, the SecretBench-mirror precision is preserved because
-/// the lift never engages without the model that earns it. The keyword-FREE
-/// candidate path NEVER lifts: a value with no credential anchor has no positive
-/// evidence, so canonical hash and UUID shapes stay suppressed at the source.
+/// Policy-aware entropy generation. The historical `allow_canonical_lift`
+/// switch remains in the signature for compatibility, but cannot create or
+/// widen canonical hex admission. Only the active detector's
+/// `canonical_hex_key_material` declaration can release digest-shaped values;
+/// UUIDs and serials remain suppressed in this generic path. The keyword-free
+/// candidate path never has detector-owned key evidence and therefore never
+/// lifts canonical shapes.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn find_entropy_secrets_with_canonical_lift(
     text: &str,
@@ -677,6 +679,9 @@ pub(crate) fn has_lower_dash_app_password_candidate_with_precomputed_keywords_an
             active_policy,
         );
         let detector = get_spec_for_keyword(active_policy, &context.keyword);
+        let canonical_detector = active_policy
+            .and_then(|policy| policy.canonical_spec_for_keyword(&context.keyword))
+            .or(detector);
         for candidate in extract_candidates(
             keyword_line,
             &context.keyword,
@@ -685,6 +690,7 @@ pub(crate) fn has_lower_dash_app_password_candidate_with_precomputed_keywords_an
             context.is_credential_context,
             false,
             detector,
+            canonical_detector,
         ) {
             let entropy = shannon_entropy(candidate.as_bytes());
             if lower_dash_app_password_floor_met_with_policy(
@@ -745,6 +751,9 @@ fn collect_line_candidates_inner(
     active_policy: Option<ActiveDetectorPolicy<'_>>,
 ) {
     let detector = get_spec_for_keyword(active_policy, &context.keyword);
+    let canonical_detector = active_policy
+        .and_then(|policy| policy.canonical_spec_for_keyword(&context.keyword))
+        .or(detector);
     let candidates = if crate::telemetry::is_dogfood_enabled() {
         let extracted = extract_candidates_with_rejections(
             line,
@@ -754,6 +763,7 @@ fn collect_line_candidates_inner(
             context.is_credential_context,
             context.allow_canonical_shapes,
             detector,
+            canonical_detector,
         );
         for rejection in &extracted.rejections {
             let ctx = crate::adjudicate::MatchCtx::for_entropy_generation(
@@ -771,6 +781,7 @@ fn collect_line_candidates_inner(
             context.is_credential_context,
             context.allow_canonical_shapes,
             detector,
+            canonical_detector,
         )
     };
 
@@ -856,6 +867,9 @@ fn candidate_plausibility_rejection_stage_with_policy(
     active_policy: Option<ActiveDetectorPolicy<'_>>,
 ) -> Option<StageId> {
     let spec = get_spec_for_keyword(active_policy, &context.keyword);
+    let canonical_spec = active_policy
+        .and_then(|policy| policy.canonical_spec_for_keyword(&context.keyword))
+        .or(spec);
     let keyword_free_min_len = spec
         .and_then(|s| s.keyword_free_min_len)
         .map_or(KEYWORD_FREE_MIN_LEN, |min_len| min_len);
@@ -890,17 +904,16 @@ fn candidate_plausibility_rejection_stage_with_policy(
         // even with the anchor; a real high-entropy key under a service anchor
         // is matched by its detector regex, not this generic entropy path.
         //
-        // Model-authoritative mode may generate only the narrow key-material
-        // shapes accepted by `canonical_shape_lift_allowed`. Exact UUIDs never
-        // lift through this generic path: provider-specific UUID credentials
-        // belong in that provider's detector TOML, where their syntax supplies
-        // evidence that a generic assignment keyword cannot.
-        let detector_owned_lift = spec.is_some_and(|detector| {
+        // Canonical pure-hex admission is detector-owned. Model authority may
+        // arbitrate an admitted candidate, but cannot manufacture a missing
+        // detector policy or widen its declared lengths/keywords.
+        let detector_owned_lift = canonical_spec.is_some_and(|detector| {
             detector.allows_canonical_hex_key_material(&context.keyword, candidate)
         });
-        let canonical_lift = detector_owned_lift
-            || (context.allow_canonical_shapes
-                && canonical_shape_lift_allowed(candidate, &context.keyword));
+        let compatibility_lift = active_policy.is_none()
+            && context.allow_canonical_shapes
+            && canonical_shape_lift_allowed(candidate, &context.keyword);
+        let canonical_lift = detector_owned_lift || compatibility_lift;
         if !canonical_lift && is_canonical_non_secret_shape(candidate) {
             return Some(StageId::EntropyValueShape(
                 EntropyShapeStage::CanonicalNonSecretShape,
@@ -915,11 +928,8 @@ fn candidate_plausibility_rejection_stage_with_policy(
             EntropyShapeStage::KeywordFreeTooShort,
         ));
     }
-    let plausibility_context = PlausibilityContext::new(
-        context.is_credential_context,
-        context.allow_canonical_shapes,
-    )
-    .with_detector(spec);
+    let plausibility_context =
+        PlausibilityContext::new(context.is_credential_context, false).with_detector(spec);
     if !is_secret_plausible(candidate, placeholder_keywords, plausibility_context) {
         return Some(StageId::EntropyValueShape(
             EntropyShapeStage::SecretPlausibilityRejected,
@@ -937,12 +947,9 @@ pub(crate) fn is_canonical_non_secret_shape(value: &str) -> bool {
     crate::suppression::shape::looks_like_entropy_canonical_non_secret_shape(value)
 }
 
-/// True iff the model-authoritative canonical-shape lift may release this exact
-/// value shape under this exact keyword. The lift is intentionally narrower than
-/// "credential context": mirror negatives wrap sha1/git SHAs in `api_key=` and
-/// `secret=`, so hex40 must never lift, and sha256-length hex64 only lifts under
-/// explicit cryptographic-key anchors where an AES-256/key-material value is a
-/// plausible credential.
+/// Historical compatibility predicate used only by migration tests. Runtime
+/// admission never calls this global keyword classifier; it uses the active
+/// detector's `canonical_hex_key_material` policy instead.
 pub(crate) fn canonical_shape_lift_allowed(value: &str, keyword: &str) -> bool {
     if crate::suppression::shape::looks_like_entropy_uuid_shape(value) {
         // A UUID remains an identifier even beside a generic credential word.
@@ -1079,7 +1086,7 @@ fn keyword_context_with_policy(
     min_length: usize,
     entropy_threshold: f64,
     secret_keywords: &[String],
-    allow_canonical_lift: bool,
+    _allow_canonical_lift: bool,
     active_policy: Option<ActiveDetectorPolicy<'_>>,
 ) -> KeywordContext {
     let line_bytes = keyword_line.as_bytes();
@@ -1144,11 +1151,9 @@ fn keyword_context_with_policy(
             min_length
         },
         is_credential_context,
-        // The canonical-shape generation lift engages ONLY when the MoE is the
-        // runtime precision authority AND a strong credential keyword anchors
-        // the line, both must hold, so a non-credential line never lifts even
-        // under the model.
-        allow_canonical_shapes: allow_canonical_lift && is_credential_context,
+        // Canonical pure-hex admission is detector-owned. The legacy model
+        // authority flag cannot widen a missing or narrower TOML policy.
+        allow_canonical_shapes: false,
         entropy_shape: spec.and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape),
     }
 }

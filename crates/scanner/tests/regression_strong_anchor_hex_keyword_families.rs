@@ -8,8 +8,8 @@
 //!   apikey       POS   14  NEG  0   prec 1.000
 //!   secret/token POS  ~10  NEG ~1
 //!
-//! keyhog's `is_strong_keyword_anchored_hex_key` exempts a 32/48-hex value from
-//! the hash-digest suppression ONLY under a strong cryptographic anchor, any
+//! Detector-owned `canonical_hex_key_material` policy exempts a 32/48-hex value
+//! from hash-digest suppression ONLY under a strong cryptographic anchor, any
 //! `*key`/`*secret`-suffixed keyword (so `shared_secret`, `app_secret`,
 //! `webhook_secret` are all captured via the suffix rule), plus an enumerated
 //! exact set, EXCLUDING `licensekey`. It deliberately declines the bare `key`

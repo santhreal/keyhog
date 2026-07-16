@@ -15,9 +15,6 @@ pub(crate) fn entropy_match_suppression_stage(
     preprocessed: &ScannerPreprocessedText<'_>,
     line_offsets: &[usize],
     chunk: &Chunk,
-    // ML-authoritative credential anchors may release narrow canonical hex-key
-    // shapes; UUID and every other precision gate stay live.
-    allow_canonical_lift: bool,
     // Exact owning-detector TOML keyword/length evidence. This is independent
     // of ML authority and covers structured assignment forms such as XML.
     detector_owned_canonical_hex_key: bool,
@@ -50,13 +47,10 @@ pub(crate) fn entropy_match_suppression_stage(
     }
     let same_line_high_signal_assignment_owner =
         value_line_has_random_byte_blob_owner(entropy_match, preprocessed, line_offsets);
-    let canonical_lift = same_line_credential_assignment
-        && (detector_owned_canonical_hex_key
-            || (allow_canonical_lift
-                && crate::entropy::scanner::canonical_shape_lift_allowed(
-                    &entropy_match.value,
-                    &entropy_match.keyword,
-                )));
+    // Canonical pure-hex admission is detector-owned. Model authority may
+    // arbitrate an admitted candidate, but it cannot manufacture a missing
+    // detector policy or widen its declared lengths/keywords.
+    let canonical_lift = same_line_credential_assignment && detector_owned_canonical_hex_key;
     let isolated_bare_token = entropy_match.keyword == crate::entropy::ISOLATED_BARE_ENTROPY_LABEL;
     let lower_dash_app_password =
         crate::entropy::scanner::lower_dash_app_password_floor_met_with_policy(

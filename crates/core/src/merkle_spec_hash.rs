@@ -157,6 +157,18 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
                         d.id
                     ));
                 }
+                for (suffix_index, suffix) in policy.suffixes.iter().enumerate() {
+                    entries.push(format!(
+                        "canonical-hex-key-suffix:{}:{policy_index}:{suffix_index}:{suffix}",
+                        d.id
+                    ));
+                }
+                for (excluded_index, excluded) in policy.excluded_keywords.iter().enumerate() {
+                    entries.push(format!(
+                        "canonical-hex-key-excluded:{}:{policy_index}:{excluded_index}:{excluded}",
+                        d.id
+                    ));
+                }
             }
             if let Some(v) = d.keyword_free_min_len {
                 entries.push(format!("kfml:{}:{}", d.id, v));

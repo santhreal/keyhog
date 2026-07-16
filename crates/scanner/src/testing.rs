@@ -702,15 +702,6 @@ pub fn keyword_is_password_family_for_test(keyword: &str) -> bool {
     crate::entropy::keywords::keyword_is_password_family(keyword)
 }
 
-/// The strong-keyword hex-key anchor (`engine::phase2_generic::keywords`), true
-/// only when the value is a 32/48-char hex key AND the keyword (case-folded,
-/// `_`/`-`/`.` dropped) is in the strong cryptographic-key family or ends with
-/// `key`/`secret`, with `licensekey` explicitly excluded. Lets a gap test pin the
-/// full decision tree (value gate, exact family, exclusion, suffix fallback).
-pub fn is_strong_keyword_anchored_hex_key_for_test(keyword: &str, value: &str) -> bool {
-    crate::engine::phase2_generic::keywords::is_strong_keyword_anchored_hex_key(keyword, value)
-}
-
 /// The generic-keyword prefilter-stem classifier (`engine::phase2_generic::
 /// keywords`), collapses a detector keyword to the single literal the prefilter
 /// scans for, via a PRIORITY-ORDERED `contains` chain
@@ -724,8 +715,8 @@ pub fn generic_keyword_prefilter_stem_for_test(keyword: &'static str) -> String 
 /// `compact_keyword_eq` (`engine::phase2_generic::keywords`) driven with the real
 /// assignment separator set (`_`/`-`/`.`), true iff the keyword, case-folded
 /// with those separators dropped, EXACTLY equals the needle. Lets a gap test pin
-/// the exact-equality contract (no trailing/leading slop) that the strong-key
-/// anchor's exact-family check relies on.
+/// the exact-equality contract (no trailing/leading slop) used by encoded-text
+/// anchor matching.
 pub fn compact_keyword_eq_for_test(keyword: &str, needle: &str) -> bool {
     crate::engine::phase2_generic::keywords::compact_keyword_eq(
         keyword,
@@ -734,10 +725,7 @@ pub fn compact_keyword_eq_for_test(keyword: &str, needle: &str) -> bool {
     )
 }
 
-/// `compact_keyword_ends_with` (`engine::phase2_generic::keywords`) driven with
-/// the real separator set, true iff the case-folded, separator-stripped keyword
-/// ends with the suffix. Lets a gap test pin that it is a SUFFIX match (so
-/// `keyvault` does not end with `key`), distinct from the exact-equality helper.
+/// `compact_keyword_ends_with` driven with the assignment separator set.
 pub fn compact_keyword_ends_with_for_test(keyword: &str, suffix: &str) -> bool {
     crate::engine::phase2_generic::keywords::compact_keyword_ends_with(
         keyword,

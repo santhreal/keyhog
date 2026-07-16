@@ -102,8 +102,6 @@ mod engine_backend_parity;
 mod entropy_authorization_scheme_ci;
 #[path = "gap/entropy_candidate_owned_by_named_assignment_composition_exact.rs"]
 mod entropy_candidate_owned_by_named_assignment_composition_exact;
-#[path = "gap/entropy_canonical_lift_keyword_material.rs"]
-mod entropy_canonical_lift_keyword_material;
 #[path = "gap/entropy_detector_index_case_insensitive.rs"]
 mod entropy_detector_index_case_insensitive;
 #[path = "gap/entropy_keyword_anchor_lazy_lowercase.rs"]
@@ -299,8 +297,6 @@ mod static_intern_seed_source_types;
 mod stripe_token_checksum_contract;
 #[path = "gap/strong_keyword_anchored_encoded_text_secret_exact.rs"]
 mod strong_keyword_anchored_encoded_text_secret_exact;
-#[path = "gap/strong_keyword_anchored_hex_key_decision_tree_exact.rs"]
-mod strong_keyword_anchored_hex_key_decision_tree_exact;
 #[path = "gap/structured_line_offsets_shared_builder.rs"]
 mod structured_line_offsets_shared_builder;
 #[path = "gap/structured_line_resolver_needle_attribution.rs"]

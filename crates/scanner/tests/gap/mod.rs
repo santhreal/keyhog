@@ -51,7 +51,6 @@ pub mod docs_megakernel_env_claim_matches_engine;
 pub mod engine_backend_parity;
 pub mod entropy_authorization_scheme_ci;
 pub mod entropy_candidate_owned_by_named_assignment_composition_exact;
-pub mod entropy_canonical_lift_keyword_material;
 #[cfg(feature = "entropy")]
 pub mod entropy_detector_index_case_insensitive;
 pub mod entropy_keyword_anchor_lazy_lowercase;
@@ -164,7 +163,6 @@ pub mod startup_banner_exact_shape;
 pub mod static_intern_seed_source_types;
 pub mod stripe_token_checksum_contract;
 pub mod strong_keyword_anchored_encoded_text_secret_exact;
-pub mod strong_keyword_anchored_hex_key_decision_tree_exact;
 pub mod structured_line_offsets_shared_builder;
 pub mod structured_line_resolver_needle_attribution;
 pub mod suffix_gate_literals_contract;

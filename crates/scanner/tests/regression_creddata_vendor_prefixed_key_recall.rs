@@ -173,10 +173,9 @@ fn no_separator_before_key_does_not_surface() {
 
 #[test]
 fn aes_key_hex32_surfaces_via_generalized_exemption() {
-    // hex32 AES-128 key under `aes_key`: the strong-keyword hex exemption
-    // (`is_strong_keyword_anchored_hex_key`) now generalizes to any
-    // `*key`/`*secret`-suffixed anchor, so the bare-hex-digest shape gate is
-    // released for length 32 (the mirror plants NO hex32 hash decoy).
+    // hex32 AES-128 key under `aes_key`: the active detector's
+    // `canonical_hex_key_material` suffix policy releases the bare-hex-digest
+    // shape gate for length 32 (the mirror plants NO hex32 hash decoy).
     let cred = "200cbbe4d5f76059b65ce82c10484863"; // 32 hex
     assert_eq!(cred.len(), 32);
     assert!(

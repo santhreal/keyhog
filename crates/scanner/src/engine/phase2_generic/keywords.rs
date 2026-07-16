@@ -186,78 +186,6 @@ pub(crate) fn normalized_assignment_keyword_has_secret_suffix(normalized: &str) 
         || normalized.ends_with("password")
 }
 
-/// True iff the bridge captured a complete 32/48-byte hex key under a strong
-/// cryptographic keyword. Other placeholder and hash-shape gates still run.
-pub(crate) fn is_strong_keyword_anchored_hex_key(keyword: &str, value: &str) -> bool {
-    if !matches!(value.len(), 32 | 48) {
-        return false;
-    }
-    if !value.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return false;
-    }
-    // Canonicalize the captured keyword: case-fold and drop `_`/`-`/`.` so
-    // `API_KEY`, `api-key`, `encryption_key`, `clientSecret` all normalize to a
-    // single token, then match the STRONG cryptographic-key family ONLY.
-    // Deliberately EXCLUDES the weaker / more ambiguous bridge anchors
-    // (`token`, `pass*`, `auth*`, `credential`, `license_key`, `passphrase`),
-    // whose hex captures are not as cleanly real on CredData.
-    if strong_hex_key_anchors()
-        .iter()
-        .any(|exact| compact_keyword_eq(keyword, exact.as_bytes(), is_assignment_compact_separator))
-    {
-        return true;
-    }
-    // Vendor-prefixed `*_key` / `*_secret` anchors are strong except known weak
-    // product/license names.
-    if compact_keyword_eq(keyword, b"licensekey", is_assignment_compact_separator) {
-        return false;
-    }
-    compact_keyword_ends_with(keyword, b"key", is_assignment_compact_separator)
-        || compact_keyword_ends_with(keyword, b"secret", is_assignment_compact_separator)
-}
-
-/// The STRONG cryptographic-key anchor vocabulary, loaded from Tier-B
-/// `rules/strong-hex-key-anchors.toml` (compact lowercase, no separators). ONE
-/// home for the list, a team widens it by editing the TOML, no recompile of the
-/// classifier logic. Fails CLOSED (panic) on invalid embedded data.
-pub(crate) fn strong_hex_key_anchors() -> &'static [String] {
-    &STRONG_HEX_KEY_ANCHORS
-}
-
-static STRONG_HEX_KEY_ANCHORS: LazyLock<Vec<String>> = LazyLock::new(|| {
-    match parse_strong_hex_key_anchors(include_str!(
-        "../../../../../rules/strong-hex-key-anchors.toml"
-    )) {
-        Ok(anchors) => anchors,
-        Err(error) => panic!(
-            "rules/strong-hex-key-anchors.toml is invalid: {error}. Fix the bundled Tier-B \
-             strong-hex-key anchor vocabulary; refusing to run without the strong-key hex \
-             classifier truth."
-        ),
-    }
-});
-
-#[derive(serde::Deserialize)]
-struct StrongHexKeyAnchorFile {
-    strong_hex_key_anchors: AnchorSection,
-}
-
-/// Parse + validate the strong hex-key anchors from raw TOML. Compact lowercase
-/// tokens only (no separators): the classifier compares against a separator-
-/// stripped, case-folded keyword, so any separator here would be dead bytes.
-pub(crate) fn parse_strong_hex_key_anchors(raw: &str) -> Result<Vec<String>, String> {
-    let parsed: StrongHexKeyAnchorFile = toml::from_str(raw)
-        .map_err(|error| format!("invalid strong-hex-key-anchors.toml: {error}"))?;
-    crate::tier_b_list::parse_token_list(
-        parsed.strong_hex_key_anchors.anchors,
-        &crate::tier_b_list::ListPolicy {
-            what: "strong hex-key anchor",
-            require_lowercase: true,
-            separators: b"",
-        },
-    )
-}
-
 /// True for a generic assignment where the key is a strong credential anchor
 /// and the value is an encoded printable text secret rather than a binary/base64
 /// data envelope. This lets `password: <base64("SuperSecret...")>` reach the
@@ -409,36 +337,11 @@ mod position_line_mapping_tests {
 mod strong_anchor_tests {
     use super::{
         encoded_text_secret_anchors, is_strong_keyword_anchored_encoded_text_secret,
-        is_strong_keyword_anchored_hex_key, parse_encoded_text_secret_anchors,
-        parse_strong_hex_key_anchors, strong_hex_key_anchors,
+        parse_encoded_text_secret_anchors,
     };
 
-    const HEX_32: &str = "0123456789abcdef0123456789abcdef";
-    const HEX_48: &str = "0123456789abcdef0123456789abcdef0123456789abcdef";
-    // 32 chars, but the final `g` is not a hex digit.
-    const NOT_HEX_32: &str = "0123456789abcdef0123456789abcdeg";
     // base64 of "ThisIsAPlaintextSecretValueForTests" (decodes to printable ASCII).
     const PRINTABLE_B64: &str = "VGhpc0lzQVBsYWludGV4dFNlY3JldFZhbHVlRm9yVGVzdHM=";
-
-    // ── Tier-B vocab loaded with the exact expected values (real assertions) ─
-
-    #[test]
-    fn strong_hex_key_anchor_vocab_is_the_expected_list() {
-        assert_eq!(
-            strong_hex_key_anchors(),
-            &[
-                "secret",
-                "apikey",
-                "privatekey",
-                "encryptionkey",
-                "signingkey",
-                "accesskey",
-                "clientsecret",
-                "appsecret",
-                "masterkey",
-            ]
-        );
-    }
 
     #[test]
     fn encoded_text_secret_anchor_vocab_is_the_expected_list() {
@@ -454,54 +357,6 @@ mod strong_anchor_tests {
                 "credential",
             ]
         );
-    }
-
-    // ── is_strong_keyword_anchored_hex_key: strong family vs adversarial twins ─
-
-    #[test]
-    fn exact_strong_anchor_hex_key_is_admitted() {
-        // Separator/case-folded exact anchors.
-        assert!(is_strong_keyword_anchored_hex_key("api_key", HEX_32));
-        assert!(is_strong_keyword_anchored_hex_key("API-KEY", HEX_48));
-        assert!(is_strong_keyword_anchored_hex_key("encryption.key", HEX_32));
-        assert!(is_strong_keyword_anchored_hex_key("clientSecret", HEX_32));
-        assert!(is_strong_keyword_anchored_hex_key("secret", HEX_48));
-    }
-
-    #[test]
-    fn vendor_prefixed_key_or_secret_suffix_hex_is_admitted() {
-        // Not an exact anchor, but ends in `key`/`secret` after compacting.
-        assert!(is_strong_keyword_anchored_hex_key(
-            "stripe_secret_key",
-            HEX_32
-        ));
-        assert!(is_strong_keyword_anchored_hex_key(
-            "vault_root_secret",
-            HEX_48
-        ));
-    }
-
-    #[test]
-    fn weak_or_ambiguous_anchors_are_rejected_for_hex() {
-        // The deliberately-excluded weak family: hex under these is more likely a
-        // digest than a key, so it stays gated.
-        assert!(!is_strong_keyword_anchored_hex_key("token", HEX_32));
-        assert!(!is_strong_keyword_anchored_hex_key("password", HEX_32));
-        assert!(!is_strong_keyword_anchored_hex_key("passphrase", HEX_48));
-        assert!(!is_strong_keyword_anchored_hex_key("credential", HEX_32));
-        // `license_key` is explicitly weak even though it ends in `key`.
-        assert!(!is_strong_keyword_anchored_hex_key("license_key", HEX_32));
-    }
-
-    #[test]
-    fn non_canonical_length_or_non_hex_values_are_rejected() {
-        // Right anchor, wrong shape.
-        assert!(!is_strong_keyword_anchored_hex_key("api_key", NOT_HEX_32));
-        assert!(!is_strong_keyword_anchored_hex_key(
-            "api_key",
-            &HEX_32[..31]
-        )); // length 31
-        assert!(!is_strong_keyword_anchored_hex_key("api_key", "deadbeef")); // length 8
     }
 
     // ── is_strong_keyword_anchored_encoded_text_secret ─────────────────────
@@ -542,48 +397,6 @@ mod strong_anchor_tests {
         assert!(!is_strong_keyword_anchored_encoded_text_secret(
             "password", "c2hvcnQ="
         ));
-    }
-
-    // ── Tier-B loaders fail CLOSED on malformed embedded data ──────────────
-
-    #[test]
-    fn strong_hex_key_anchor_parser_rejects_uppercase() {
-        let err =
-            parse_strong_hex_key_anchors("[strong_hex_key_anchors]\nanchors = [\"APIKEY\"]\n")
-                .unwrap_err();
-        assert!(err.contains("lowercase"), "got: {err}");
-    }
-
-    #[test]
-    fn strong_hex_key_anchor_parser_rejects_a_separator() {
-        // Compact-only policy: a separator is not allowed (it would be dead bytes).
-        let err =
-            parse_strong_hex_key_anchors("[strong_hex_key_anchors]\nanchors = [\"api_key\"]\n")
-                .unwrap_err();
-        assert!(err.contains("alphanumeric"), "got: {err}");
-    }
-
-    #[test]
-    fn strong_hex_key_anchor_parser_rejects_duplicates_and_empties() {
-        assert!(parse_strong_hex_key_anchors(
-            "[strong_hex_key_anchors]\nanchors = [\"secret\", \"secret\"]\n"
-        )
-        .unwrap_err()
-        .contains("duplicate"));
-        assert!(
-            parse_strong_hex_key_anchors("[strong_hex_key_anchors]\nanchors = []\n")
-                .unwrap_err()
-                .contains("at least one")
-        );
-    }
-
-    #[test]
-    fn strong_hex_key_anchor_parser_rejects_malformed_toml() {
-        let err = parse_strong_hex_key_anchors("not valid = = toml").unwrap_err();
-        assert!(
-            err.contains("invalid strong-hex-key-anchors.toml"),
-            "got: {err}"
-        );
     }
 
     #[test]

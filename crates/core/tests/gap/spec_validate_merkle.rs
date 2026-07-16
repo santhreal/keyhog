@@ -753,6 +753,8 @@ fn canonical_hex_key_material_requires_owned_valid_policy() {
     let policy = CanonicalHexKeyMaterialSpec {
         lengths: vec![64],
         keywords: vec!["signing_key".into()],
+        suffixes: vec![],
+        excluded_keywords: vec![],
     };
 
     let mut regex_detector = clean_detector("canonical-hex-on-regex");
@@ -777,6 +779,13 @@ fn canonical_hex_key_material_requires_owned_valid_policy() {
     assert!(generic.allows_canonical_hex_key_material("signing.key", &key));
     assert!(!generic.allows_canonical_hex_key_material("api_key", &key));
 
+    generic.canonical_hex_key_material[0].keywords.clear();
+    generic.canonical_hex_key_material[0].suffixes = vec!["key".into(), "secret".into()];
+    generic.canonical_hex_key_material[0].excluded_keywords = vec!["license_key".into()];
+    assert!(generic.allows_canonical_hex_key_material("stripe_secret_key", &key));
+    assert!(!generic.allows_canonical_hex_key_material("key", &key));
+    assert!(!generic.allows_canonical_hex_key_material("license_key", &key));
+
     generic.canonical_hex_key_material[0].keywords = vec!["unowned_key".into()];
     let issues = validate_detector(&generic);
     assert!(has_error_containing(
@@ -795,10 +804,18 @@ fn canonical_hex_key_material_rejects_ambiguous_or_invalid_tables() {
         CanonicalHexKeyMaterialSpec {
             lengths: vec![15, 32, 32],
             keywords: vec!["signing-key".into(), "Signing.Key".into(), "bad key".into()],
+            suffixes: vec!["key".into(), "KEY".into(), "bad suffix!".into()],
+            excluded_keywords: vec![
+                "license_key".into(),
+                "LICENSE-KEY".into(),
+                "bad exclusion!".into(),
+            ],
         },
         CanonicalHexKeyMaterialSpec {
             lengths: vec![32],
             keywords: vec!["signing_key".into()],
+            suffixes: vec![],
+            excluded_keywords: vec![],
         },
     ];
 
@@ -810,6 +827,10 @@ fn canonical_hex_key_material_rejects_ambiguous_or_invalid_tables() {
         "keyword \"bad key\" must contain ASCII alphanumerics",
         "repeats keyword \"Signing.Key\" at length 32",
         "repeats keyword \"signing_key\" at length 32 across policies",
+        "contains duplicate normalized suffix \"KEY\"",
+        "suffix \"bad suffix!\" must contain ASCII alphanumerics",
+        "contains duplicate excluded keyword \"LICENSE-KEY\"",
+        "excluded keyword \"bad exclusion!\" must contain ASCII alphanumerics",
     ] {
         assert!(
             has_error_containing(&issues, expected),

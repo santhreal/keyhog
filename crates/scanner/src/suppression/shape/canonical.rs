@@ -206,8 +206,8 @@ pub(crate) fn looks_like_bare_hex_digest(credential: &str) -> bool {
 /// labels, UUID, dashed serials) still runs, so explicit placeholder hex
 /// (`0000…`, `…ABCDEFGH…`-dominated) is still suppressed. This is the same
 /// KH-L-0110 escape hatch the generic bridge applies via
-/// [`crate::engine::phase2_generic::is_strong_keyword_anchored_hex_key`], keyed
-/// here on the detector's own service anchor rather than a captured keyword.
+/// detector-owned canonical-hex policy, keyed here on the detector's own
+/// service anchor rather than a captured keyword.
 ///
 /// The 56/72/128 lengths the bare-hex-digest gate also catches are deliberately
 /// excluded: those are SHA-224/384/512 digest lengths that no service detector

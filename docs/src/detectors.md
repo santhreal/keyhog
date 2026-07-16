@@ -249,22 +249,26 @@ The available per-detector tuning fields are:
 *   **`canonical_hex_key_material`** (array of tables, optional;
     `kind = "phase2-generic"` only): Declares exact pure-hex character counts
     and assignment keys that this detector may treat as key material instead of
-    a digest. Each table has non-empty `lengths` and `keywords` arrays; every
-    listed keyword must also appear in the detector's top-level `keywords`.
-    Matching ignores assignment-key case and `_`, `-`, or `.` separators.
+    a digest. Each table has non-empty `lengths` and at least one `keywords` or
+    `suffixes` entry. Exact `keywords` must also appear in the detector's
+    top-level `keywords`; `suffixes` admit only vendor-prefixed names such as
+    `stripe_secret_key` and never the bare suffix itself. `excluded_keywords`
+    removes ambiguous exact or suffix matches such as `license_key`. Matching
+    ignores assignment-key case and `_`, `-`, or `.` separators.
     Direct assignments and structured assignment extraction (including XML)
     resolve the same policy; there is no format-specific override. For
     example, `generic-api-key.toml` admits 64-hex only for its explicit
     cryptographic roles such as `signing_key`, `encryption_key`, and
-    `hmac_secret`, while `generic-secret.toml` owns `private_key` and
-    `signing_secret`. Neither turns a broad `api_key=<sha256>` assignment into a
-    finding. Canonical hex admitted by this policy skips BPE token efficiency
+    `hmac_secret`, while `generic-secret.toml` owns `private_key`,
+    `signing_secret`, and its declared vendor suffixes. Neither turns a broad
+    `api_key=<sha256>` assignment into a finding. Canonical hex admitted by
+    this policy skips BPE token efficiency
     and the generic low-diversity/decode-as-data confidence penalties because
     those mechanisms inherently classify pure hexadecimal as non-secret. The
     entropy, placeholder, degenerate-repeat, context, and reporting gates still
-    apply. With ML enabled, an exact keyword/length match preserves the
-    detector-derived heuristic floor; authoritative ML veto remains reserved
-    for unowned entropy candidates.
+    apply. With ML enabled, an exact keyword/length or suffix/length match
+    preserves the detector-derived heuristic floor; authoritative ML veto
+    remains reserved for unowned entropy candidates.
 
 The fields live beside the detector's other top-level phase-2 policy, not in a
 scan-wide suppression table. For example:
@@ -272,7 +276,7 @@ scan-wide suppression table. For example:
 ```toml
 decoded_hex_key_material_lengths = [32, 48]
 canonical_hex_key_material = [
-  { lengths = [32, 48], keywords = ["api_key", "encryption_key"] },
+  { lengths = [32, 48], keywords = ["api_key"], suffixes = ["key", "secret"], excluded_keywords = ["license_key"] },
   { lengths = [64], keywords = ["encryption_key"] },
 ]
 ```

@@ -41,6 +41,8 @@ pub(crate) struct GenericOwningDetectorIndex {
     policy_exact: HashMap<String, PolicyOwner>,
     policy_normalized: HashMap<String, PolicyOwner>,
     policy_keywords: Vec<String>,
+    canonical_exact: HashMap<String, usize>,
+    canonical_normalized: HashMap<String, usize>,
     by_id: HashMap<String, usize>,
     generic_secret_index: Option<usize>,
     generic_keyword_secret_index: Option<usize>,
@@ -76,6 +78,8 @@ impl GenericOwningDetectorIndex {
         let mut policy_exact = HashMap::new();
         let mut policy_normalized = HashMap::new();
         let mut policy_keywords = BTreeSet::new();
+        let mut canonical_exact = HashMap::new();
+        let mut canonical_normalized = HashMap::new();
         let mut by_id = HashMap::new();
         let mut generic_secret_index = None;
         let mut generic_keyword_secret_index = None;
@@ -115,6 +119,24 @@ impl GenericOwningDetectorIndex {
                     insert_policy_owner(&mut policy_exact, kw_lower, owner);
                 }
             }
+            // Canonical pure-hex ownership is independent of broad entropy
+            // priority. A detector that declares an exact canonical keyword
+            // owns that shape even when a broader keyword detector wins the
+            // ordinary low-entropy policy for the same assignment.
+            if detector.service == "generic"
+                && detector.kind == DetectorKind::Phase2Generic
+                && !detector.canonical_hex_key_material.is_empty()
+            {
+                for policy in &detector.canonical_hex_key_material {
+                    for keyword in &policy.keywords {
+                        let kw_lower = keyword.to_ascii_lowercase();
+                        canonical_exact.entry(kw_lower).or_insert(index);
+                        if let Some(normalized) = normalize_assignment_keyword(keyword) {
+                            canonical_normalized.entry(normalized).or_insert(index);
+                        }
+                    }
+                }
+            }
             if detector.service != "generic" || detector.kind != DetectorKind::Phase2Generic {
                 continue;
             }
@@ -132,6 +154,8 @@ impl GenericOwningDetectorIndex {
             policy_exact,
             policy_normalized,
             policy_keywords: policy_keywords.into_iter().collect(),
+            canonical_exact,
+            canonical_normalized,
             by_id,
             generic_secret_index,
             generic_keyword_secret_index,
@@ -184,6 +208,18 @@ impl GenericOwningDetectorIndex {
     /// in scanner configuration.
     pub(crate) fn policy_keywords(&self) -> &[String] {
         &self.policy_keywords
+    }
+
+    /// Detector index that declares canonical pure-hex policy for an exact or
+    /// normalized assignment keyword. Suffix-only policies intentionally do
+    /// not claim arbitrary names here; callers fall back to their ordinary
+    /// generic owner for vendor-prefixed assignments.
+    pub(crate) fn canonical_index(&self, keyword: &str) -> Option<usize> {
+        let kw_lower = keyword.to_ascii_lowercase();
+        self.canonical_exact.get(&kw_lower).copied().or_else(|| {
+            normalize_assignment_keyword(&kw_lower)
+                .and_then(|normalized| self.canonical_normalized.get(&normalized).copied())
+        })
     }
 
     /// Index of the loaded `GENERIC_SECRET` detector, if any. This is the ONE

@@ -559,7 +559,7 @@ pub(crate) fn decoded_benign_text_reason(credential: &str) -> Option<&'static st
     // That discrimination is the CALLER's job, a decoded canonical hex key
     // assigned to a STRONG credential keyword (`api-key: <b64>`) is exempted
     // BEFORE this arm via `decoded_hex_key_is_strong_anchored`, mirroring the
-    // direct path's `is_strong_keyword_anchored_hex_key`. Keeping this arm
+    // direct path's detector-owned canonical-hex policy. Keeping this arm
     // unconditional preserves the bare-md5/sha1 suppression contract.
     if looks_like_bare_hex_digest(decoded) {
         return Some("decoded_bare_hash_digest");

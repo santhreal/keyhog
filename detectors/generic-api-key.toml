@@ -29,8 +29,8 @@ decoded_hex_key_material_lengths = [32, 48]
 # declares exact keyword/length pairs. Broad API-key slots admit 128/192-bit
 # material; only explicit cryptographic-key slots admit SHA-256-shaped 64-hex.
 canonical_hex_key_material = [
-    { lengths = [32, 48], keywords = ["api_key", "access_key", "secret_key", "client_secret", "x-api-key", "auth_key", "signing_key", "encryption_key", "master_key", "session_key", "hmac_secret", "hmac_seed"] },
-    { lengths = [64], keywords = ["signing_key", "encryption_key", "master_key", "secret_key", "session_key", "hmac_secret", "hmac_seed"] },
+    { lengths = [32, 48], keywords = ["api_key", "access_key", "secret_key", "client_secret", "x-api-key", "auth_key", "signing_key", "encryption_key", "master_key", "session_key", "hmac_secret", "hmac_seed"], suffixes = ["key", "secret"], excluded_keywords = ["license_key"] },
+    { lengths = [64], keywords = ["signing_key", "encryption_key", "master_key", "session_key", "hmac_secret", "hmac_seed"] },
 ]
 min_len = 8
 # API/access keys are bounded tokens. Longer assignment payloads belong to a

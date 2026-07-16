@@ -134,9 +134,9 @@ fn validate_canonical_hex_key_material(spec: &DetectorSpec, issues: &mut Vec<Qua
                 "canonical_hex_key_material[{policy_index}].lengths must not be empty"
             )));
         }
-        if policy.keywords.is_empty() {
+        if policy.keywords.is_empty() && policy.suffixes.is_empty() {
             issues.push(QualityIssue::Error(format!(
-                "canonical_hex_key_material[{policy_index}].keywords must not be empty"
+                "canonical_hex_key_material[{policy_index}] must declare keywords or suffixes"
             )));
         }
         let mut seen_lengths = std::collections::HashSet::new();
@@ -176,6 +176,39 @@ fn validate_canonical_hex_key_material(spec: &DetectorSpec, issues: &mut Vec<Qua
                         "canonical_hex_key_material repeats keyword {keyword:?} at length {length} across policies"
                     )));
                 }
+            }
+        }
+        let mut seen_suffixes = std::collections::HashSet::new();
+        for suffix in &policy.suffixes {
+            let Some(normalized) = normalize_detector_keyword(suffix) else {
+                issues.push(QualityIssue::Error(format!(
+                    "canonical_hex_key_material[{policy_index}] suffix {suffix:?} must contain ASCII alphanumerics with only `_`, `-`, or `.` separators"
+                )));
+                continue;
+            };
+            if normalized.is_empty() {
+                issues.push(QualityIssue::Error(format!(
+                    "canonical_hex_key_material[{policy_index}] suffix {suffix:?} must not be empty"
+                )));
+            }
+            if !seen_suffixes.insert(normalized) {
+                issues.push(QualityIssue::Error(format!(
+                    "canonical_hex_key_material[{policy_index}] contains duplicate normalized suffix {suffix:?}"
+                )));
+            }
+        }
+        let mut seen_exclusions = std::collections::HashSet::new();
+        for excluded in &policy.excluded_keywords {
+            let Some(normalized) = normalize_detector_keyword(excluded) else {
+                issues.push(QualityIssue::Error(format!(
+                    "canonical_hex_key_material[{policy_index}] excluded keyword {excluded:?} must contain ASCII alphanumerics with only `_`, `-`, or `.` separators"
+                )));
+                continue;
+            };
+            if !seen_exclusions.insert(normalized) {
+                issues.push(QualityIssue::Error(format!(
+                    "canonical_hex_key_material[{policy_index}] contains duplicate excluded keyword {excluded:?}"
+                )));
             }
         }
     }

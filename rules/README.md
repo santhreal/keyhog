@@ -12,7 +12,6 @@ inside the file itself.
 | `default_excludes.toml` | Default source exclusion policy for binary extensions, generated/build directories, lockfiles, source maps, and related low-signal paths. |
 | `json-error-keys.toml` | Error key names recognized inside a JSON response body during verifier API error detection. |
 | `placeholder_words.toml` | Shared placeholder/sample words consumed by scanner surface, decoded, and doc-marker suppression paths. |
-| `strong-hex-key-anchors.toml` | Compact credential keywords under which a canonical-length (32/48) pure-hex value is treated as a real key, not a hash digest, exempting it from the generic-bridge bare-hex-digest gate. |
 | `encoded-text-secret-anchors.toml` | Compact credential keywords that let a base64/encoded value which decodes to printable text reach the scorer, rather than being suppressed as a binary/base64 blob. |
 
 ## Adding a new rule file

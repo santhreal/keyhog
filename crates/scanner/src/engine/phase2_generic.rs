@@ -8,7 +8,7 @@ mod pattern;
 
 use self::keywords::{
     collect_generic_keyword_lines, collect_generic_keyword_lines_from_positions,
-    is_strong_keyword_anchored_encoded_text_secret, is_strong_keyword_anchored_hex_key,
+    is_strong_keyword_anchored_encoded_text_secret,
 };
 use self::line_mapping::line_at_index;
 pub(crate) use self::metrics::{generic_profile_dump, generic_profile_reset};
@@ -246,19 +246,22 @@ impl CompiledScanner {
                 // first-match-by-exact-or-normalized-keyword semantics.
                 let owning_detector_index = self.generic_owning_detector.owning_index(keyword);
                 let owning_detector = owning_detector_index.map(|index| &self.detectors[index]);
-                // A complete pure-hex value admitted by the owning detector's
-                // exact keyword/length policy is key material rather than a
-                // digest. The legacy structural 32/48 family remains as the
-                // recall-preserving path for previously unseen vendor-prefixed
-                // `*_key` and `*_secret` assignment names.
-                let allow_canonical_hex_key = owning_detector.is_some_and(|detector| {
+                let canonical_detector = self
+                    .generic_owning_detector
+                    .canonical_index(keyword)
+                    .and_then(|index| self.detectors.get(index))
+                    .or(owning_detector);
+                // A complete pure-hex value admitted by the detector that
+                // declares its canonical policy is key material rather than a
+                // digest. Missing detector policy fails closed. Ordinary
+                // keyword policy ownership remains separate for entropy/BPE.
+                let allow_canonical_hex_key = canonical_detector.is_some_and(|detector| {
                     if transport_decoded {
                         detector.allows_decoded_hex_key_material(value)
                     } else {
                         detector.allows_canonical_hex_key_material(keyword_match.as_str(), value)
                     }
-                }) || (!transport_decoded
-                    && is_strong_keyword_anchored_hex_key(keyword_match.as_str(), value));
+                });
                 let allow_encoded_text_secret =
                     is_strong_keyword_anchored_encoded_text_secret(keyword_match.as_str(), value)
                         || crate::decode_structure::decodes_to_printable_text(value);

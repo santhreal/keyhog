@@ -189,8 +189,13 @@ impl CompiledScanner {
                 &entropy_match.keyword,
             );
             let policy_detector = policy_detector_index.and_then(|index| self.detectors.get(index));
+            let canonical_detector = self
+                .generic_owning_detector
+                .canonical_index(&entropy_match.keyword)
+                .and_then(|index| self.detectors.get(index))
+                .or(policy_detector);
             let transport_decoded = preprocessed.transport_decoded_for_offset(entropy_match.offset);
-            let detector_owned_canonical_hex_key = policy_detector.is_some_and(|detector| {
+            let detector_owned_canonical_hex_key = canonical_detector.is_some_and(|detector| {
                 if transport_decoded {
                     detector.allows_decoded_hex_key_material(&entropy_match.value)
                 } else {
@@ -227,16 +232,15 @@ impl CompiledScanner {
                 continue;
             };
 
-            // Pass both canonical-key evidence sources after generation: the
-            // optional model-authoritative lift and the owning detector's exact
-            // TOML policy. The gauntlet still owns every unrelated precision
-            // gate.
+            // Pass detector-owned canonical-key evidence after generation. ML
+            // authority can score an admitted candidate, but cannot bypass the
+            // owning detector's exact TOML policy. The gauntlet still owns every
+            // unrelated precision gate.
             if let Some(shape_stage) = entropy_match_suppression_stage(
                 &entropy_match,
                 preprocessed,
                 line_offsets,
                 chunk,
-                allow_canonical_lift,
                 detector_owned_canonical_hex_key,
                 source_entropy_requires_same_line_credential,
                 bpe_bound,
