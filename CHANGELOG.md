@@ -6,6 +6,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Isolated-bare entropy compatibility APIs now resolve their base entropy,
+  mixed, symbolic, and colon-shape policy from the embedded detector owner
+  instead of retaining a second scanner-side copy of those detector values.
 - Coalesced scans now aggregate pending ML candidates across chunks before one
   CPU or GPU MoE submission, while returning finalized findings to their
   originating chunk caps and locations. CPU scoring also resolves the immutable

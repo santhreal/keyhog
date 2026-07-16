@@ -2,23 +2,9 @@ use super::keywords::{is_likely_innocuous_line, KeywordContext};
 use super::plausibility::is_isolated_bare_secret_plausible;
 use super::{
     operator_entropy_override, shannon_entropy, EntropyMatch, FIRST_SOURCE_LINE_NUMBER,
-    ISOLATED_BARE_ENTROPY_LABEL, KEYWORD_FREE_MIN_LEN, MIXED_ALNUM_TOKEN_THRESHOLD,
+    ISOLATED_BARE_ENTROPY_LABEL,
 };
 use crate::adjudicate::{EntropyShapeStage, StageId};
-
-/// Shannon floor for a mixed-charset isolated token (separator-joined or
-/// contiguous). Single owner for the value both mixed-token floor predicates
-/// share; two byte-identical inline copies used to drift independently.
-const MIXED_TOKEN_ENTROPY_FLOOR: f64 = 3.65;
-
-/// Minimum length for a digit-free, symbol-bearing all-alpha opaque token
-/// (`symbolic_alpha_only_opaque_candidate`). Named beside the other isolated
-/// length floors instead of an inline literal so the shape gate has one owner.
-const SYMBOLIC_ALPHA_ONLY_MIN_LEN: usize = 18;
-/// Right-hand component of a colon-separated opaque token has a slightly shorter
-/// floor than the global keyword-free minimum so `user:token` forms where token
-/// is 16 characters can still pass.
-const COLON_RIGHT_PART_MIN_LEN: usize = 16;
 
 #[derive(Clone, Copy)]
 struct IsolatedCandidatePolicy {
@@ -31,26 +17,54 @@ struct IsolatedCandidatePolicy {
 }
 
 impl IsolatedCandidatePolicy {
+    fn from_compiled(policy: &super::policy::CompiledEntropyPolicy) -> Self {
+        Self {
+            mixed_entropy_floor: policy.isolated_mixed_entropy_floor,
+            mixed_min_len: policy.keyword_free_min_len,
+            symbolic_entropy_floor: policy.symbolic_entropy_floor,
+            symbolic_min_len: policy.isolated_symbolic_min_len,
+            colon_left_min_len: policy.isolated_colon_left_min_len,
+            colon_right_min_len: policy.isolated_colon_right_min_len,
+        }
+    }
+
+    /// Compatibility entropy entry points do not carry a compiled scanner, but
+    /// they still resolve the same embedded detector TOML instead of owning a
+    /// second set of scanner constants. An invalid embedded owner is a build
+    /// invariant and must fail loudly rather than changing detection silently.
+    fn from_embedded_detector() -> Self {
+        static POLICY: std::sync::LazyLock<IsolatedCandidatePolicy> =
+            std::sync::LazyLock::new(|| {
+                let detector = keyhog_core::embedded_detector_specs()
+                    .iter()
+                    .find(|detector| {
+                        detector
+                            .entropy_roles
+                            .contains(&keyhog_core::EntropyDetectionRole::IsolatedBare)
+                    })
+                    .expect(
+                        "embedded detector corpus must declare one isolated-bare entropy owner",
+                    );
+                let plausibility = detector.plausibility.expect(
+                    "embedded isolated-bare entropy owner must declare plausibility policy",
+                );
+                IsolatedCandidatePolicy {
+                    mixed_entropy_floor: plausibility.isolated_mixed_entropy_floor,
+                    mixed_min_len: detector.keyword_free_min_len.expect(
+                        "embedded isolated-bare entropy owner must declare keyword_free_min_len",
+                    ),
+                    symbolic_entropy_floor: plausibility.symbolic_entropy_floor,
+                    symbolic_min_len: plausibility.isolated_symbolic_min_len,
+                    colon_left_min_len: plausibility.isolated_colon_left_min_len,
+                    colon_right_min_len: plausibility.isolated_colon_right_min_len,
+                }
+            });
+        *POLICY
+    }
+
     #[inline]
     fn resolve(policy: Option<&super::policy::CompiledEntropyPolicy>) -> Self {
-        policy.map_or(
-            Self {
-                mixed_entropy_floor: MIXED_TOKEN_ENTROPY_FLOOR,
-                mixed_min_len: KEYWORD_FREE_MIN_LEN,
-                symbolic_entropy_floor: super::plausibility::SYMBOLIC_CREDENTIAL_ENTROPY_FLOOR,
-                symbolic_min_len: SYMBOLIC_ALPHA_ONLY_MIN_LEN,
-                colon_left_min_len: KEYWORD_FREE_MIN_LEN,
-                colon_right_min_len: COLON_RIGHT_PART_MIN_LEN,
-            },
-            |policy| Self {
-                mixed_entropy_floor: policy.isolated_mixed_entropy_floor,
-                mixed_min_len: policy.keyword_free_min_len,
-                symbolic_entropy_floor: policy.symbolic_entropy_floor,
-                symbolic_min_len: policy.isolated_symbolic_min_len,
-                colon_left_min_len: policy.isolated_colon_left_min_len,
-                colon_right_min_len: policy.isolated_colon_right_min_len,
-            },
-        )
+        policy.map_or_else(Self::from_embedded_detector, Self::from_compiled)
     }
 }
 
@@ -67,7 +81,8 @@ pub(crate) fn has_isolated_bare_secret_candidate_with_policy(
     // scan_coalesced.rs, the temporary line vector was a pure per-call
     // allocation). `text.lines()` yields exactly the same `&str` sequence the
     // collected slice did, so this is byte-for-byte equivalent.
-    let threshold = isolated_bare_entropy_threshold(entropy_threshold);
+    let candidate_policy = IsolatedCandidatePolicy::resolve(plausibility_policy.as_ref());
+    let threshold = isolated_bare_entropy_threshold(entropy_threshold, candidate_policy);
     text.lines().any(|line| {
         line_has_isolated_bare_secret_candidate(
             line,
@@ -88,7 +103,8 @@ pub(crate) fn has_isolated_bare_secret_candidate_with_lines_and_policy(
     entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
     plausibility_policy: Option<super::policy::CompiledEntropyPolicy>,
 ) -> bool {
-    let threshold = isolated_bare_entropy_threshold(entropy_threshold);
+    let candidate_policy = IsolatedCandidatePolicy::resolve(plausibility_policy.as_ref());
+    let threshold = isolated_bare_entropy_threshold(entropy_threshold, candidate_policy);
     lines.iter().any(|line| {
         line_has_isolated_bare_secret_candidate(
             line,
@@ -157,15 +173,15 @@ fn line_has_isolated_bare_secret_candidate(
     found
 }
 
-/// The isolated-bare floor: an opaque anchor-free token runs at the
-/// [`MIXED_ALNUM_TOKEN_THRESHOLD`] floor unless the operator's Tier-A threshold
-/// is stricter than the blanket high floor, in which case the shared
-/// [`operator_entropy_override`] owner honors it verbatim. One owner for the
-/// `> HIGH` override decision, shared with `scanner::keyword_context`: the two
-/// sites used to inline divergent copies of the same test.
-fn isolated_bare_entropy_threshold(entropy_threshold: f64) -> f64 {
+/// The isolated-bare floor comes from its detector's mixed-alphanumeric policy
+/// unless the operator's Tier-A threshold is stricter, in which case the shared
+/// override rule wins. Scanner code owns the resolution rule, never the value.
+fn isolated_bare_entropy_threshold(
+    entropy_threshold: f64,
+    candidate_policy: IsolatedCandidatePolicy,
+) -> f64 {
     operator_entropy_override(entropy_threshold)
-        .map_or(MIXED_ALNUM_TOKEN_THRESHOLD, |threshold| threshold)
+        .map_or(candidate_policy.mixed_entropy_floor, |threshold| threshold)
 }
 
 fn isolated_bare_entropy_floor_met(
@@ -178,7 +194,7 @@ fn isolated_bare_entropy_floor_met(
     if entropy >= threshold {
         return true;
     }
-    if threshold > MIXED_ALNUM_TOKEN_THRESHOLD {
+    if threshold > candidate_policy.mixed_entropy_floor {
         return false;
     }
     mixed_separator_token_floor_met(
@@ -202,9 +218,10 @@ pub(super) fn isolated_bare_keyword_context_with_shape(
     entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
     plausibility_policy: Option<super::policy::CompiledEntropyPolicy>,
 ) -> KeywordContext {
+    let candidate_policy = IsolatedCandidatePolicy::resolve(plausibility_policy.as_ref());
     KeywordContext {
         keyword: ISOLATED_BARE_ENTROPY_LABEL.to_string(),
-        threshold: isolated_bare_entropy_threshold(entropy_threshold),
+        threshold: isolated_bare_entropy_threshold(entropy_threshold, candidate_policy),
         min_len: min_len.max(1),
         is_credential_context: false,
         allow_canonical_shapes: false,
@@ -744,33 +761,29 @@ pub(crate) fn symbolic_isolated_bare_candidate(candidate: &str) -> bool {
 
 #[cfg(test)]
 mod threshold_tests {
-    use super::isolated_bare_entropy_threshold;
-    use crate::entropy::{HIGH_ENTROPY_THRESHOLD, MIXED_ALNUM_TOKEN_THRESHOLD};
+    use super::{isolated_bare_entropy_threshold, IsolatedCandidatePolicy};
+    use crate::entropy::HIGH_ENTROPY_THRESHOLD;
 
-    /// The isolated-bare floor defaults to [`MIXED_ALNUM_TOKEN_THRESHOLD`] (4.0)
-    /// for the default 4.5 threshold, every value at or below the high floor, and
-    /// non-finite inputs; only a threshold STRICTLY above the high floor is
-    /// honored verbatim (the shared override owner). Proves the dedup preserved
-    /// the isolated site's exact resolution at every band.
+    /// The detector-owned mixed floor wins for ordinary and non-finite Tier-A
+    /// values; only a threshold strictly above the high floor overrides it.
     #[test]
-    fn isolated_floor_defaults_to_mixed_and_overrides_only_above_high() {
+    fn isolated_floor_uses_detector_policy_and_overrides_only_above_high() {
+        let policy = IsolatedCandidatePolicy {
+            mixed_entropy_floor: 3.7,
+            mixed_min_len: 20,
+            symbolic_entropy_floor: 3.5,
+            symbolic_min_len: 18,
+            colon_left_min_len: 20,
+            colon_right_min_len: 16,
+        };
         assert_eq!(
-            isolated_bare_entropy_threshold(HIGH_ENTROPY_THRESHOLD),
-            MIXED_ALNUM_TOKEN_THRESHOLD
+            isolated_bare_entropy_threshold(HIGH_ENTROPY_THRESHOLD, policy),
+            3.7
         );
-        assert_eq!(
-            isolated_bare_entropy_threshold(4.0),
-            MIXED_ALNUM_TOKEN_THRESHOLD
-        );
-        assert_eq!(
-            isolated_bare_entropy_threshold(2.0),
-            MIXED_ALNUM_TOKEN_THRESHOLD
-        );
-        assert_eq!(
-            isolated_bare_entropy_threshold(f64::NAN),
-            MIXED_ALNUM_TOKEN_THRESHOLD
-        );
-        assert_eq!(isolated_bare_entropy_threshold(5.8), 5.8);
-        assert_eq!(isolated_bare_entropy_threshold(8.0), 8.0);
+        assert_eq!(isolated_bare_entropy_threshold(4.0, policy), 3.7);
+        assert_eq!(isolated_bare_entropy_threshold(2.0, policy), 3.7);
+        assert_eq!(isolated_bare_entropy_threshold(f64::NAN, policy), 3.7);
+        assert_eq!(isolated_bare_entropy_threshold(5.8, policy), 5.8);
+        assert_eq!(isolated_bare_entropy_threshold(8.0, policy), 8.0);
     }
 }
