@@ -56,10 +56,13 @@ fn resolution_prefers_specific_detector_over_generic_for_known_prefix() {
     }
 
     fn make_match(detector_id: &str, credential: &str, confidence: Option<f64>) -> RawMatch {
+        let service = keyhog_core::detector_spec_by_id(detector_id)
+            .map(|spec| Arc::from(spec.service.as_str()))
+            .unwrap_or_else(|| Arc::from("test"));
         RawMatch {
             detector_id: Arc::from(detector_id),
             detector_name: Arc::from(detector_id),
-            service: Arc::from("test"),
+            service,
             severity: Severity::High,
             credential: keyhog_core::SensitiveString::from(credential),
             credential_hash: credential_hash(credential).into(),

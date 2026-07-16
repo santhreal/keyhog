@@ -152,17 +152,6 @@ pub(crate) fn is_degenerate_repeat(credential: &str) -> bool {
     longest_repeat_run_len(credential) >= DEGENERATE_RUN_LEN
 }
 
-/// A detector is "service-anchored" when it is not a generic-* / entropy-* /
-/// private-key fallback. Such a detector's own regex (a service-specific
-/// keyword + shape) is positive evidence that the matched bytes ARE the
-/// credential, so the shape-based suspicion heuristics (probabilistic-promise
-/// gate, char-diversity / repeat-run penalties) that exist to filter the
-/// anchorless generic path must not bury it. This is the single predicate
-/// behind every "named anchor overrides shape" decision; keep it in one place.
-pub(crate) fn is_service_anchored_detector(detector_id: &str) -> bool {
-    crate::detector_ids::is_service_anchored_detector(detector_id)
-}
-
 /// Multiplier applied when a credential literally contains a placeholder word
 /// (`EXAMPLE`, `PLACEHOLDER`, …) on its surface or decoded form: it is a doc
 /// sample, not a live secret. Single owner for the placeholder-word slam so the

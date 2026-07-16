@@ -51,7 +51,7 @@ impl ProcessCandidateSignals {
     }
 
     pub(crate) fn from_match(
-        detector_id: &str,
+        is_generic_detector: bool,
         detector_min_len: Option<usize>,
         credential_shape: Option<&crate::credential_shapes::CredentialShapeRule>,
         credential: &str,
@@ -77,7 +77,7 @@ impl ProcessCandidateSignals {
         ) {
             return Self::suppress(StageId::HexDigestFragment);
         }
-        if crate::detector_ids::is_generic_detector(detector_id)
+        if is_generic_detector
             && crate::confidence::known_prefix_confidence_floor(credential).is_none()
             && !crate::probabilistic_gate::ProbabilisticGate::looks_promising(credential)
         {
@@ -165,7 +165,7 @@ impl HotPatternSignal {
 }
 
 fn final_emit_suppression_stage(
-    detector_id: &str,
+    is_generic_detector: bool,
     credential: &str,
     code_context: crate::context::CodeContext,
     confidence: f64,
@@ -183,7 +183,7 @@ fn final_emit_suppression_stage(
     // and operator overrides may differ from the embedded copy, and a second
     // lookup would silently replace the policy that actually compiled.
     if confidence < min_confidence_floor {
-        if crate::detector_ids::is_generic_detector(detector_id) {
+        if is_generic_detector {
             if crate::confidence::known_prefix_confidence_floor(credential).is_some()
                 && !crate::probabilistic_gate::ProbabilisticGate::looks_promising(credential)
             {
@@ -198,24 +198,24 @@ fn final_emit_suppression_stage(
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct FinalEmitSignals<'a> {
-    detector_id: &'a str,
+pub(crate) struct FinalEmitSignals {
+    is_generic_detector: bool,
     code_context: crate::context::CodeContext,
     confidence: f64,
     min_confidence_floor: f64,
     penalize_test_paths: bool,
 }
 
-impl<'a> FinalEmitSignals<'a> {
+impl FinalEmitSignals {
     pub(crate) const fn new(
-        detector_id: &'a str,
+        is_generic_detector: bool,
         code_context: crate::context::CodeContext,
         confidence: f64,
         min_confidence_floor: f64,
         penalize_test_paths: bool,
     ) -> Self {
         Self {
-            detector_id,
+            is_generic_detector,
             code_context,
             confidence,
             min_confidence_floor,
@@ -233,6 +233,10 @@ pub(crate) struct ReportAdjudicationPolicy<'a> {
     pub(crate) penalize_test_paths: bool,
     pub(crate) file_path: Option<&'a str>,
     pub(crate) is_named_detector: bool,
+    /// Compiled from the active detector's TOML `service = "generic"`, or
+    /// known directly from the synthetic entropy producer. Finalization must
+    /// not infer detector behavior from an ID prefix.
+    pub(crate) is_generic_detector: bool,
     pub(crate) allow_encoded_text_lift: bool,
     pub(crate) allow_canonical_hex_key: bool,
     pub(crate) calibration: Option<&'a keyhog_core::Calibration>,
@@ -255,7 +259,7 @@ pub(crate) struct MatchCtx<'a> {
     hot_pattern_signal: Option<HotPatternSignal>,
     entropy_generation_signal: Option<EntropyGenerationSignal>,
     named_detector_suppression: Option<NamedDetectorSuppressionCtx<'a>>,
-    final_emit_signals: Option<FinalEmitSignals<'a>>,
+    final_emit_signals: Option<FinalEmitSignals>,
 }
 
 impl<'a> MatchCtx<'a> {
@@ -357,7 +361,7 @@ impl<'a> MatchCtx<'a> {
         }
     }
 
-    pub(crate) const fn for_final_emit(signals: FinalEmitSignals<'a>) -> Self {
+    pub(crate) const fn for_final_emit(signals: FinalEmitSignals) -> Self {
         Self {
             explicit_stage: None,
             process_signals: None,
@@ -454,7 +458,7 @@ pub(crate) fn finalize_report_candidate(
     };
 
     let final_emit_ctx = MatchCtx::for_final_emit(FinalEmitSignals::new(
-        policy.detector_id,
+        policy.is_generic_detector,
         policy.code_context,
         confidence,
         policy.min_confidence_floor,
@@ -651,7 +655,7 @@ fn final_emit_stage(candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> StageO
         return StageOutcome::Pass;
     };
     if let Some(stage_id) = final_emit_suppression_stage(
-        signals.detector_id,
+        signals.is_generic_detector,
         candidate.credential(),
         signals.code_context,
         signals.confidence,

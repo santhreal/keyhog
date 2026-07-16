@@ -6,6 +6,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Generic and service-anchored match policy now compiles from each active
+  detector's TOML `service` field and travels through batched ML finalization.
+  Match processing and resolution no longer reinterpret custom detector IDs to
+  choose plausibility, suppression, confidence-floor, or priority behavior.
 - Made weak-anchor detection policy explicit per detector pattern instead of
   inferring it from regex syntax, detector-ID families, or `min_confidence`.
 - Detector-local entropy floors are compiled into detector-indexed lookup

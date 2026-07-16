@@ -90,6 +90,9 @@ pub(crate) struct MlPendingMatch {
     /// Whether the original producer classified this as a named detector after
     /// applying weak-anchor exclusions.
     pub(crate) is_named_detector: bool,
+    /// Detector-local generic classification carried from the producer. This
+    /// avoids reparsing the reporting ID after batched inference.
+    pub(crate) is_generic_detector: bool,
     /// The active detector's exact TOML policy proved this candidate is
     /// canonical hex key material for its assignment keyword and length.
     /// This evidence must survive batching so the unified finalizer does not
@@ -112,6 +115,7 @@ impl MlPendingMatch {
         ml_weight: f64,
         min_confidence_floor: f64,
         is_named_detector: bool,
+        is_generic_detector: bool,
         allow_canonical_hex_key: bool,
         allow_encoded_text_lift: bool,
         ml_mode: crate::detector_ml_policy::ActiveMlMode,
@@ -124,6 +128,7 @@ impl MlPendingMatch {
             ml_weight,
             min_confidence_floor,
             is_named_detector,
+            is_generic_detector,
             allow_canonical_hex_key,
             allow_encoded_text_lift,
             ml_mode,
@@ -147,6 +152,7 @@ impl MlPendingMatch {
             ml_weight,
             min_confidence_floor,
             is_named_detector: false,
+            is_generic_detector: true,
             allow_canonical_hex_key,
             allow_encoded_text_lift: false,
             ml_mode,
@@ -359,6 +365,7 @@ impl ScanState {
         ml_weight: f64,
         min_confidence_floor: f64,
         is_named_detector: bool,
+        is_generic_detector: bool,
         allow_canonical_hex_key: bool,
         allow_encoded_text_lift: bool,
         ml_mode: crate::detector_ml_policy::ActiveMlMode,
@@ -371,6 +378,7 @@ impl ScanState {
             ml_weight,
             min_confidence_floor,
             is_named_detector,
+            is_generic_detector,
             allow_canonical_hex_key,
             allow_encoded_text_lift,
             ml_mode,
@@ -405,9 +413,9 @@ impl ScanState {
         F: FnMut(Option<usize>),
     {
         for pending in &self.ml_pending {
-            if !crate::detector_ids::is_entropy_detector(&pending.raw_match.detector_id) {
-                visit(pending.raw_match.location.line);
-            }
+            // This is called before phase-2 entropy can queue candidates, so
+            // every pending row is an existing pattern/generic finding.
+            visit(pending.raw_match.location.line);
         }
     }
 

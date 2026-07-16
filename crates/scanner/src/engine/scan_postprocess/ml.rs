@@ -26,6 +26,7 @@ impl CompiledScanner {
                 penalize_test_paths: self.config.penalize_test_paths,
                 file_path: file_path.as_deref(),
                 is_named_detector: pending.is_named_detector,
+                is_generic_detector: pending.is_generic_detector,
                 allow_encoded_text_lift: pending.allow_encoded_text_lift,
                 allow_canonical_hex_key: pending.allow_canonical_hex_key,
                 calibration: self.config.calibration.as_deref(),

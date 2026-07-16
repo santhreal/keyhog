@@ -134,10 +134,21 @@ pub fn match_priority_for_test(
     credential: &str,
     confidence: Option<f64>,
 ) -> f64 {
+    let service = keyhog_core::detector_spec_by_id(detector_id)
+        .map(|spec| std::sync::Arc::from(spec.service.as_str()))
+        .unwrap_or_else(|| {
+            std::sync::Arc::from(
+                if crate::detector_ids::is_generic_or_entropy_detector(detector_id) {
+                    "generic"
+                } else {
+                    "test"
+                },
+            )
+        });
     let m = keyhog_core::RawMatch {
         detector_id: std::sync::Arc::from(detector_id),
         detector_name: std::sync::Arc::from(detector_id),
-        service: std::sync::Arc::from("test"),
+        service,
         severity: keyhog_core::Severity::High,
         credential: keyhog_core::SensitiveString::from(credential),
         credential_hash: [0u8; 32].into(),

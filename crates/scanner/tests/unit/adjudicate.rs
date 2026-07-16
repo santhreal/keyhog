@@ -15,8 +15,10 @@ fn adjudicate_process_signal(
     start: usize,
     end: usize,
 ) -> Verdict {
+    let is_generic_detector =
+        keyhog_core::detector_spec_by_id(detector_id).is_some_and(|spec| spec.service == "generic");
     let signals = ProcessCandidateSignals::from_match(
-        detector_id,
+        is_generic_detector,
         keyhog_core::detector_spec_by_id(detector_id).and_then(|spec| spec.min_len),
         credential_shape,
         credential,
@@ -38,8 +40,10 @@ fn adjudicate_final_emit(
     min_confidence_floor: f64,
     penalize_test_paths: bool,
 ) -> Verdict {
+    let is_generic_detector =
+        keyhog_core::detector_spec_by_id(detector_id).is_some_and(|spec| spec.service == "generic");
     let ctx = MatchCtx::for_final_emit(FinalEmitSignals::new(
-        detector_id,
+        is_generic_detector,
         code_context,
         confidence,
         min_confidence_floor,
@@ -64,7 +68,7 @@ fn process_stage_preserves_aws_length_before_hex_context_order() {
 fn process_stage_enforces_detector_minimum_length() {
     let credential = "Q7vN2xK8cP4mR9tW";
     let signals = ProcessCandidateSignals::from_match(
-        "custom-min-length",
+        false,
         Some(32),
         None,
         credential,
@@ -90,7 +94,7 @@ fn process_stage_enforces_detector_minimum_length() {
 fn process_stage_keeps_candidate_at_detector_minimum_length() {
     let credential = "Q7vN2xK8cP4mR9tW3zH6yL5sD8fJ1bG0";
     let signals = ProcessCandidateSignals::from_match(
-        "custom-min-length",
+        false,
         Some(32),
         None,
         credential,
@@ -118,7 +122,7 @@ fn process_stage_measures_detector_minimum_in_utf8_bytes() {
         (5, Verdict::Suppressed(StageId::BelowDetectorMinLength)),
     ] {
         let signals = ProcessCandidateSignals::from_match(
-            "custom-min-length",
+            false,
             Some(min_len),
             None,
             credential,
@@ -495,6 +499,7 @@ fn final_report_candidate_returns_adjudicator_reported_confidence() {
                 penalize_test_paths: true,
                 file_path: Some("service/config.rs"),
                 is_named_detector: true,
+                is_generic_detector: false,
                 allow_encoded_text_lift: false,
                 allow_canonical_hex_key: false,
                 calibration: None,

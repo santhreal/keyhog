@@ -258,6 +258,10 @@ pub struct CompiledScanner {
     /// field). The strings are byte-identical to `static_intern.lookup(...)`
     /// because they ARE its arena entries (see `perf_locality_intern.rs`).
     pub(crate) metadata_by_index: Vec<(Arc<str>, Arc<str>, Arc<str>)>,
+    /// Detector-local generic/service class compiled from TOML `service` once.
+    /// Match processing indexes this primitive instead of parsing detector IDs
+    /// or comparing service strings for every candidate.
+    pub(crate) detector_is_generic_by_index: Box<[bool]>,
     /// Detector-wide weak-anchor mode compiled from explicit detector and
     /// detector TOML fields. The per-match path combines this with the matched
     /// `CompiledPattern::weak_anchor` bit, never regex-text inference.

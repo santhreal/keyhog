@@ -67,13 +67,8 @@ const MIN_ACTIVE_SERVICE_NAME_LEN: usize = 3;
 /// role-words start (`x-api-key` spans 9 stems, `authorization` 10).
 pub(crate) const GENERIC_STEM_SPREAD_LIMIT: usize = 3;
 
-/// Detector-id families whose keywords are credential ROLE words rather than
-/// service names: the `generic-*` keyword/entropy surfacing specs and the
-/// `entropy`/`entropy-*` code-defined entropy family. Routes through the
-/// single-owner family predicate in `detector_ids` (ONE PLACE) rather than
-/// re-hardcoding the `generic-`/`entropy-` prefixes here, the detector-id
-/// family definition has exactly one home, and the `detector_id_owner` gate
-/// forbids a second inline copy.
+/// Preserve the shipped model's exact vocabulary contract until the service
+/// context feature is retrained with detector-local vocabulary policy.
 fn is_generic_family(detector_id: &str) -> bool {
     crate::detector_ids::is_generic_or_entropy_detector(detector_id)
 }

@@ -63,9 +63,12 @@ impl CompiledScanner {
         let (credential, match_end) =
             extend_known_prefix_credential(data, credential, credential_end);
         let line = match_line_number(preprocessed, line_offsets, credential_start);
+        // Resolve the detector class from the active TOML once for this
+        // candidate. Detector IDs are reporting identities, not policy.
+        let is_generic = self.detector_is_generic_by_index[entry.detector_index];
 
         let process_signals = crate::adjudicate::ProcessCandidateSignals::from_match(
-            detector.id.as_ref(),
+            is_generic,
             detector.min_len,
             self.credential_shape_by_detector_index
                 .get(entry.detector_index)
@@ -128,7 +131,7 @@ impl CompiledScanner {
                 inferred_context,
                 Some(chunk.metadata.source_type.as_ref()),
                 self.detector_suppression_by_index.get(entry.detector_index),
-                detector.service != "generic",
+                !is_generic,
                 weak_anchor,
                 detector.structural_password_slot,
                 allow_decoded_hex_key_material,
@@ -166,7 +169,6 @@ impl CompiledScanner {
         };
         let entropy = match_entropy(credential.as_bytes());
 
-        let is_generic = crate::detector_ids::is_generic_detector(detector.id.as_ref());
         let is_weakly_anchored = weak_anchor;
         let effective_entropy_floor = (is_generic || is_weakly_anchored)
             .then(|| {
@@ -267,8 +269,7 @@ impl CompiledScanner {
         // Service-anchored detector regexes are positive evidence; generic
         // shape gates stay load-bearing only for generic/entropy/private-key
         // fallbacks and weak anchors.
-        let is_named_detector =
-            crate::confidence::is_service_anchored_detector(&detector.id) && !weak_anchor;
+        let is_named_detector = !is_generic && !weak_anchor;
         #[cfg(feature = "ml")]
         let detector_ml_policy = self.detector_ml_policies[entry.detector_index];
         #[cfg(feature = "ml")]
@@ -324,6 +325,7 @@ impl CompiledScanner {
                         penalize_test_paths: self.config.penalize_test_paths,
                         file_path: chunk.metadata.path.as_deref(),
                         is_named_detector,
+                        is_generic_detector: is_generic,
                         allow_encoded_text_lift: false,
                         allow_canonical_hex_key: allow_decoded_hex_key_material,
                         calibration: self.config.calibration.as_deref(),
@@ -389,6 +391,7 @@ impl CompiledScanner {
                     detector_ml_policy.effective_weight(&self.config),
                     min_confidence_floor,
                     is_named_detector,
+                    is_generic,
                     allow_decoded_hex_key_material,
                     false,
                     mode,

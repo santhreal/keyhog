@@ -62,8 +62,16 @@ fn try_resolve_matches_with_policy(
         private_key_block_detectors,
         &source_families,
     );
-    suppress_entropy_duplicates_near_named_detectors(matches, &source_families);
-    *matches = resolve_match_groups(std::mem::take(matches), &source_families);
+    suppress_entropy_duplicates_near_named_detectors(
+        matches,
+        private_key_block_detectors,
+        &source_families,
+    );
+    *matches = resolve_match_groups(
+        std::mem::take(matches),
+        private_key_block_detectors,
+        &source_families,
+    );
     Ok(())
 }
 
@@ -276,6 +284,7 @@ fn span_contains(
 
 fn suppress_entropy_duplicates_near_named_detectors(
     matches: &mut Vec<RawMatch>,
+    private_key_block_detectors: Option<&HashSet<String>>,
     source_families: &SourceFamilyIndex,
 ) {
     #[derive(Default)]
@@ -292,7 +301,7 @@ fn suppress_entropy_duplicates_near_named_detectors(
     let mut named_lines: HashMap<MatchOrigin, HashMap<usize, PendingNamedEvidence>> =
         HashMap::new();
     for m in matches.iter() {
-        if !is_service_specific_detector(m.detector_id.as_ref()) {
+        if !match_is_service_specific(m, private_key_block_detectors) {
             continue;
         }
         if let Some(line) = m.location.line {
@@ -373,19 +382,24 @@ fn is_private_key_block_detector(detector_id: &str, active: Option<&HashSet<Stri
     }
 }
 
-/// Whether a detector carries a service contract, not generic, not entropy,
-/// and not the private-key fallback. Single owner:
-/// `detector_ids::is_service_anchored_detector`. This previously recomputed the
-/// same boolean through local `is_entropy_detector` / `is_generic_detector`
-/// wrappers (`!entropy && !(generic || private_key_fallback)`), algebraically
-/// identical to the canonical `!generic && !entropy && !private_key_fallback`
-/// but a silent-drift hazard if either definition changed independently.
+fn match_is_service_specific(
+    matched: &RawMatch,
+    private_key_block_detectors: Option<&HashSet<String>>,
+) -> bool {
+    matched.service.as_ref() != "generic"
+        && !is_private_key_block_detector(matched.detector_id.as_ref(), private_key_block_detectors)
+}
+
+/// Compatibility probe retained for the public testing seam. Production
+/// resolution uses `match_is_service_specific` and never calls this ID-family
+/// predicate.
 pub(crate) fn is_service_specific_detector(detector_id: &str) -> bool {
     crate::detector_ids::is_service_anchored_detector(detector_id)
 }
 
 fn resolve_match_groups(
     mut matches: Vec<RawMatch>,
+    private_key_block_detectors: Option<&HashSet<String>>,
     source_families: &SourceFamilyIndex,
 ) -> Vec<RawMatch> {
     // A line is only an attribution boundary. Within it, direct containment or
@@ -415,7 +429,7 @@ fn resolve_match_groups(
                 .cmp(&match_offsets(b))
                 .then_with(|| a.cmp(b))
         });
-        resolved.extend(resolve_direct_conflicts(group));
+        resolved.extend(resolve_direct_conflicts(group, private_key_block_detectors));
     }
     resolved
 }
@@ -594,12 +608,18 @@ fn priorities_tie(left: f64, right: f64) -> bool {
     left.total_cmp(&right).is_eq() || (left - right).abs() < PRIORITY_EPSILON
 }
 
-fn resolve_direct_conflicts(group: Vec<RawMatch>) -> Vec<RawMatch> {
+fn resolve_direct_conflicts(
+    group: Vec<RawMatch>,
+    private_key_block_detectors: Option<&HashSet<String>>,
+) -> Vec<RawMatch> {
     if group.len() <= SINGLE_MATCH_COUNT {
         return group;
     }
     let intervals: Vec<MatchInterval> = group.iter().map(MatchInterval::from_match).collect();
-    let priorities: Vec<f64> = group.iter().map(match_priority).collect();
+    let priorities: Vec<f64> = group
+        .iter()
+        .map(|matched| match_priority_with_policy(matched, private_key_block_detectors))
+        .collect();
     let mut prioritized: Vec<(f64, usize)> =
         priorities.iter().copied().zip(0..group.len()).collect();
     prioritized.sort_by(|left, right| {
@@ -648,6 +668,13 @@ fn resolve_direct_conflicts(group: Vec<RawMatch>) -> Vec<RawMatch> {
 
 /// Compute the resolver priority used to break ties between overlapping matches.
 pub(crate) fn match_priority(m: &RawMatch) -> f64 {
+    match_priority_with_policy(m, None)
+}
+
+fn match_priority_with_policy(
+    m: &RawMatch,
+    private_key_block_detectors: Option<&HashSet<String>>,
+) -> f64 {
     let mut priority = ENTROPY_MATCH_PRIORITY;
 
     // Service-specific detectors beat generic/entropy fallbacks. A
@@ -655,7 +682,8 @@ pub(crate) fn match_priority(m: &RawMatch) -> f64 {
     // must not outrank a lower-confidence database-URL detector on the same
     // line; the URL detector carries the service contract and fuller
     // credential boundary.
-    if is_service_specific_detector(m.detector_id.as_ref()) {
+    let service_specific = match_is_service_specific(m, private_key_block_detectors);
+    if service_specific {
         priority += NAMED_DETECTOR_PRIORITY;
     }
 
@@ -672,8 +700,7 @@ pub(crate) fn match_priority(m: &RawMatch) -> f64 {
         (m.credential.len().min(MAX_CREDENTIAL_PRIORITY_LENGTH) as f64) * CREDENTIAL_LENGTH_WEIGHT;
 
     // Prefer specific detectors over generic ones for credentials with known prefixes.
-    if crate::confidence::known_prefix_confidence_floor(&m.credential).is_some()
-        && crate::detector_ids::is_service_anchored_detector(m.detector_id.as_ref())
+    if crate::confidence::known_prefix_confidence_floor(&m.credential).is_some() && service_specific
     {
         priority += KNOWN_PREFIX_SERVICE_BONUS;
     }

@@ -13,6 +13,20 @@ fn credential_hash(credential: &str) -> [u8; 32] {
     Sha256::digest(credential.as_bytes()).into()
 }
 
+fn detector_service(detector_id: &str) -> Arc<str> {
+    keyhog_core::detector_spec_by_id(detector_id)
+        .map(|spec| Arc::from(spec.service.as_str()))
+        .unwrap_or_else(|| {
+            Arc::from(
+                if keyhog_scanner::is_generic_or_entropy_detector(detector_id) {
+                    "generic"
+                } else {
+                    "test"
+                },
+            )
+        })
+}
+
 fn make_match_at(
     detector_id: &str,
     credential: &str,
@@ -34,7 +48,7 @@ fn make_match_at_offset(
     RawMatch {
         detector_id: Arc::from(detector_id),
         detector_name: Arc::from(detector_id),
-        service: Arc::from("test"),
+        service: detector_service(detector_id),
         severity: Severity::High,
         credential: keyhog_core::SensitiveString::from(credential),
         credential_hash: credential_hash(credential).into(),

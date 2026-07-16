@@ -16,7 +16,6 @@ pub(crate) use penalties::apply_path_confidence_penalties;
 pub(crate) use penalties::apply_post_ml_penalties_with_encoded_text_lift;
 #[cfg(feature = "entropy")]
 pub(crate) use penalties::contains_placeholder_word;
-pub(crate) use penalties::is_service_anchored_detector;
 pub(crate) use signals::is_sensitive_path;
 
 const SCORE_ZERO: f64 = 0.0;

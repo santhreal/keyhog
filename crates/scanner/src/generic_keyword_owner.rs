@@ -5,7 +5,6 @@
 //! owned by loaded named detectors (`segment_write_key`, `aws_secret_access_key`,
 //! etc.). This module precomputes that owned-key set once during scanner build.
 
-use crate::detector_ids::is_generic_detector;
 use crate::engine::phase2_generic::keywords::{
     normalize_assignment_keyword, normalized_assignment_keyword_has_secret_suffix,
 };
@@ -226,7 +225,7 @@ const MIN_SERVICE_NAME_LEN: usize = 3;
 pub(crate) fn build_generic_named_assignment_keywords(detectors: &[DetectorSpec]) -> Vec<Arc<str>> {
     let mut owned = BTreeSet::<String>::new();
     for detector in detectors {
-        if is_generic_detector(&detector.id) || detector.service == "generic" {
+        if detector.service == "generic" {
             continue;
         }
         let Some(service) = normalize_assignment_keyword(&detector.service) else {

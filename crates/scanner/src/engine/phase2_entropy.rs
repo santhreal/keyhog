@@ -125,13 +125,12 @@ impl CompiledScanner {
         let mut skip_lines = std::collections::HashSet::new();
         if !scan_state.matches.is_empty() {
             for m in &scan_state.matches {
-                let id = &*m.detector_id;
-                if !crate::detector_ids::is_entropy_detector(id) {
-                    if let Some(line_idx) =
-                        entropy_skip_line_index(m.location.line, chunk.metadata.base_line)
-                    {
-                        skip_lines.insert(line_idx);
-                    }
+                // Phase-2 entropy runs once after regex and generic producers,
+                // so all matches already present are stronger line evidence.
+                if let Some(line_idx) =
+                    entropy_skip_line_index(m.location.line, chunk.metadata.base_line)
+                {
+                    skip_lines.insert(line_idx);
                 }
             }
         }
@@ -392,6 +391,7 @@ impl CompiledScanner {
                     penalize_test_paths: self.config.penalize_test_paths,
                     file_path: chunk.metadata.path.as_deref(),
                     is_named_detector: false,
+                    is_generic_detector: true,
                     allow_encoded_text_lift: false,
                     allow_canonical_hex_key: detector_owned_canonical_hex_key,
                     calibration: self.config.calibration.as_deref(),
