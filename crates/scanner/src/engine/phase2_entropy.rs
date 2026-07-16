@@ -14,22 +14,20 @@ use line_context::entropy_value_line;
 use std::sync::Arc;
 
 #[cfg(feature = "entropy")]
-#[cfg(feature = "entropy")]
 impl CompiledScanner {
     fn keyword_free_entropy_threshold(&self, sensitive_path: bool) -> f64 {
-        let detector = self
+        let policy = self
             .generic_owning_detector
             .generic_secret_index()
-            .and_then(|index| self.detectors.get(index));
-        let detector_threshold = detector
-            .and_then(|spec| spec.entropy_very_high)
-            .unwrap_or(crate::entropy::VERY_HIGH_ENTROPY_THRESHOLD);
-        if sensitive_path {
-            detector
-                .and_then(|spec| spec.sensitive_path_entropy_very_high)
-                .unwrap_or(detector_threshold)
+            .and_then(|index| self.entropy_policies.get(index));
+        if let Some(policy) = policy {
+            if sensitive_path {
+                policy.sensitive_path_entropy_very_high
+            } else {
+                policy.entropy_very_high
+            }
         } else {
-            detector_threshold
+            crate::entropy::VERY_HIGH_ENTROPY_THRESHOLD
         }
     }
 
@@ -83,22 +81,21 @@ impl CompiledScanner {
         );
         let source_entropy_requires_same_line_credential =
             !self.config.entropy_in_source_files && source_path;
-        let generic_keyword_secret_min_len = self
+        let generic_keyword_secret_policy = self
             .generic_owning_detector
             .generic_keyword_secret_index()
-            .and_then(|index| self.detectors.get(index))
-            .and_then(|spec| spec.keyword_free_min_len)
-            .map_or(crate::entropy::KEYWORD_FREE_MIN_LEN, |min_len| min_len);
+            .and_then(|index| self.entropy_policies.get(index));
+        let generic_keyword_secret_min_len = generic_keyword_secret_policy
+            .map_or(crate::entropy::KEYWORD_FREE_MIN_LEN, |policy| {
+                policy.keyword_free_min_len
+            });
         let isolated_bare_candidate = !path_entropy_appropriate
             && crate::entropy::scanner::has_isolated_bare_secret_candidate_with_lines_and_policy(
                 &entropy_lines,
                 self.config.entropy_threshold,
                 &self.config.placeholder_keywords,
                 generic_keyword_secret_min_len,
-                self.generic_owning_detector
-                    .generic_keyword_secret_index()
-                    .and_then(|index| self.detectors.get(index))
-                    .and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape),
+                generic_keyword_secret_policy.and_then(|policy| policy.entropy_shape),
             );
         #[cfg(feature = "simd")]
         let lower_dash_app_password_candidate = path_entropy_appropriate
@@ -108,6 +105,7 @@ impl CompiledScanner {
                 Some(crate::entropy::scanner::ActiveDetectorPolicy::new(
                     &self.detectors,
                     &self.generic_owning_detector,
+                    &self.entropy_policies,
                 )),
             );
         if !path_entropy_appropriate && !isolated_bare_candidate {
@@ -179,6 +177,7 @@ impl CompiledScanner {
                 Some(crate::entropy::scanner::ActiveDetectorPolicy::new(
                     &self.detectors,
                     &self.generic_owning_detector,
+                    &self.entropy_policies,
                 )),
             );
         for mut entropy_match in entropy_matches {
@@ -191,6 +190,8 @@ impl CompiledScanner {
                 &entropy_match.keyword,
             );
             let policy_detector = policy_detector_index.and_then(|index| self.detectors.get(index));
+            let compiled_policy =
+                policy_detector_index.and_then(|index| self.entropy_policies.get(index));
             let canonical_detector = self
                 .generic_owning_detector
                 .canonical_index(&entropy_match.keyword)
@@ -207,15 +208,16 @@ impl CompiledScanner {
                     )
                 }
             });
-            let bpe_bound = (!detector_owned_canonical_hex_key
-                && crate::entropy::bpe::enabled_for_detector(policy_detector))
-            .then(|| {
-                crate::entropy::bpe::max_bytes_per_token_for_detector(
-                    policy_detector,
+            let bpe_bound = if detector_owned_canonical_hex_key {
+                None
+            } else if let Some(policy) = compiled_policy {
+                policy.bpe_bound(
                     self.config.entropy_bpe_max_bytes_per_token,
                     self.config.entropy_bpe_max_bytes_per_token_override,
                 )
-            });
+            } else {
+                None
+            };
             let policy_conf = crate::confidence::policy::entropy_fallback_confidence(
                 entropy_match.entropy,
                 &entropy_match.keyword,
@@ -246,7 +248,12 @@ impl CompiledScanner {
                 detector_owned_canonical_hex_key,
                 source_entropy_requires_same_line_credential,
                 bpe_bound,
-                policy_detector.and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape),
+                compiled_policy
+                    .and_then(|policy| policy.entropy_shape)
+                    .or_else(|| {
+                        policy_detector
+                            .and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape)
+                    }),
             ) {
                 let entropy_ctx = crate::adjudicate::MatchCtx::for_entropy_fallback(
                     crate::adjudicate::EntropyFallbackSignal::ValueShape(shape_stage),

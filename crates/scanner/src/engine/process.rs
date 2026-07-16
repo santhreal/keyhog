@@ -201,7 +201,20 @@ impl CompiledScanner {
         // applies to assignment and entropy candidates. Keep tokenization
         // after the cheaper shape and entropy checks.
         #[cfg(feature = "entropy")]
-        if is_generic && crate::entropy::bpe::enabled_for_detector(Some(detector)) {
+        let bpe_bound = if is_generic {
+            self.entropy_policies
+                .get(entry.detector_index)
+                .and_then(|policy| {
+                    policy.bpe_bound(
+                        self.config.entropy_bpe_max_bytes_per_token,
+                        self.config.entropy_bpe_max_bytes_per_token_override,
+                    )
+                })
+        } else {
+            None
+        };
+        #[cfg(feature = "entropy")]
+        if let Some(bpe_bound) = bpe_bound {
             // The explicit generic regex proves an owning detector field, but
             // this stage no longer retains the textual assignment key.
             // Preserve the detector's exact canonical length evidence instead
@@ -217,11 +230,6 @@ impl CompiledScanner {
                 && !allow_encoded_text_secret
                 && !allow_decoded_hex_key_material
             {
-                let bpe_bound = crate::entropy::bpe::max_bytes_per_token_for_detector(
-                    Some(detector),
-                    self.config.entropy_bpe_max_bytes_per_token,
-                    self.config.entropy_bpe_max_bytes_per_token_override,
-                );
                 if crate::entropy::bpe::is_word_like_low_bpe(credential, bpe_bound) {
                     let bpe_ctx = crate::adjudicate::MatchCtx::for_stage(
                         crate::adjudicate::StageId::GenericValueShape(

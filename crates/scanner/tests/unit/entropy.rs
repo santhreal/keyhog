@@ -131,7 +131,9 @@ fn candidate_mode_skips_strict_secret_checks() {
 #[test]
 fn entropy_generation_rejection_stage_is_named() {
     let ctx = credential_keyword_context("api_key");
-    let canonical = "d41d8cd98f00b204e9800998ecf8427e";
+    // 32-hex is detector-owned key material for `api_key`; SHA-1 width is the
+    // canonical digest negative that must still name this rejection stage.
+    let canonical = "356a192b7913b04c54574d18c28d46e6395428ab";
     assert_eq!(
         candidate_plausibility_rejection_reason(
             canonical,

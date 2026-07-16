@@ -133,6 +133,15 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
             if let Some(v) = d.mixed_alnum_floor {
                 entries.push(format!("maf:{}:{:016x}", d.id, v.to_bits()));
             }
+            if let Some(v) = d.symbolic_entropy_floor {
+                entries.push(format!("sef:{}:{:016x}", d.id, v.to_bits()));
+            }
+            if let Some(v) = d.second_half_entropy_floor {
+                entries.push(format!("shef:{}:{:016x}", d.id, v.to_bits()));
+            }
+            if let Some(v) = d.mixed_alnum_min_len {
+                entries.push(format!("mal:{}:{}", d.id, v));
+            }
             if let Some(v) = d.entropy_policy_priority {
                 entries.push(format!("entropy-policy-priority:{}:{v}", d.id));
             }

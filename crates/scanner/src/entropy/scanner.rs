@@ -27,14 +27,20 @@ use keyhog_core::DetectorSpec;
 pub(crate) struct ActiveDetectorPolicy<'a> {
     detectors: &'a [DetectorSpec],
     index: &'a crate::generic_keyword_owner::GenericOwningDetectorIndex,
+    compiled: &'a crate::entropy::policy::CompiledEntropyPolicies,
 }
 
 impl<'a> ActiveDetectorPolicy<'a> {
     pub(crate) fn new(
         detectors: &'a [DetectorSpec],
         index: &'a crate::generic_keyword_owner::GenericOwningDetectorIndex,
+        compiled: &'a crate::entropy::policy::CompiledEntropyPolicies,
     ) -> Self {
-        Self { detectors, index }
+        Self {
+            detectors,
+            index,
+            compiled,
+        }
     }
 
     fn spec(self, detector_id: &str) -> Option<&'a DetectorSpec> {
@@ -46,6 +52,22 @@ impl<'a> ActiveDetectorPolicy<'a> {
     fn spec_for_keyword(self, keyword: &str) -> Option<&'a DetectorSpec> {
         active_policy_detector_index(self.index, keyword)
             .and_then(|index| self.detectors.get(index))
+    }
+
+    fn compiled_for_id(
+        self,
+        detector_id: &str,
+    ) -> Option<&'a crate::entropy::policy::CompiledEntropyPolicy> {
+        self.index
+            .index_for_id(detector_id)
+            .and_then(|index| self.compiled.get(index))
+    }
+
+    fn compiled_for_keyword(
+        self,
+        keyword: &str,
+    ) -> Option<&'a crate::entropy::policy::CompiledEntropyPolicy> {
+        active_policy_detector_index(self.index, keyword).and_then(|index| self.compiled.get(index))
     }
 
     fn canonical_spec_for_keyword(self, keyword: &str) -> Option<&'a DetectorSpec> {
@@ -99,6 +121,20 @@ fn get_spec_for_keyword<'a>(
         Some(policy) => policy.spec_for_keyword(keyword),
         None => get_spec(None, classify_keyword_to_detector_id(keyword)),
     }
+}
+
+fn get_compiled_policy_for_id<'a>(
+    active_policy: Option<ActiveDetectorPolicy<'a>>,
+    detector_id: &str,
+) -> Option<&'a crate::entropy::policy::CompiledEntropyPolicy> {
+    active_policy.and_then(|policy| policy.compiled_for_id(detector_id))
+}
+
+fn get_compiled_policy_for_keyword<'a>(
+    active_policy: Option<ActiveDetectorPolicy<'a>>,
+    keyword: &str,
+) -> Option<&'a crate::entropy::policy::CompiledEntropyPolicy> {
+    active_policy.and_then(|policy| policy.compiled_for_keyword(keyword))
 }
 
 pub(crate) fn classify_keyword_to_detector_id(keyword: &str) -> &'static str {
@@ -516,15 +552,33 @@ fn scan_keyword_free_candidates(
 ) {
     let effective_keyword_free_threshold = keyword_free_threshold.max(entropy_threshold + 1.0);
     let spec = get_spec(active_policy, crate::detector_ids::GENERIC_SECRET);
-    let keyword_free_min_len = spec
-        .and_then(|s| s.keyword_free_min_len)
-        .map_or(KEYWORD_FREE_MIN_LEN, |min_len| min_len);
-    let generic_keyword_secret_min_len =
-        get_spec(active_policy, crate::detector_ids::GENERIC_KEYWORD_SECRET)
-            .and_then(|s| s.keyword_free_min_len)
-            .map_or(KEYWORD_FREE_MIN_LEN, |min_len| min_len);
-    let isolated_shape = get_spec(active_policy, crate::detector_ids::GENERIC_KEYWORD_SECRET)
-        .and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape);
+    let compiled_secret =
+        get_compiled_policy_for_id(active_policy, crate::detector_ids::GENERIC_SECRET);
+    let keyword_free_min_len = compiled_secret.map_or_else(
+        || {
+            spec.and_then(|s| s.keyword_free_min_len)
+                .unwrap_or(KEYWORD_FREE_MIN_LEN)
+        },
+        |policy| policy.keyword_free_min_len,
+    );
+    let generic_keyword_secret_spec =
+        get_spec(active_policy, crate::detector_ids::GENERIC_KEYWORD_SECRET);
+    let compiled_keyword_secret =
+        get_compiled_policy_for_id(active_policy, crate::detector_ids::GENERIC_KEYWORD_SECRET);
+    let generic_keyword_secret_min_len = compiled_keyword_secret.map_or_else(
+        || {
+            generic_keyword_secret_spec
+                .and_then(|s| s.keyword_free_min_len)
+                .unwrap_or(KEYWORD_FREE_MIN_LEN)
+        },
+        |policy| policy.keyword_free_min_len,
+    );
+    let isolated_shape = compiled_keyword_secret
+        .and_then(|policy| policy.entropy_shape)
+        .or_else(|| {
+            generic_keyword_secret_spec
+                .and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape)
+        });
     let keyword_free_context = KeywordContext {
         keyword: KEYWORD_FREE_LABEL.to_string(),
         threshold: effective_keyword_free_threshold,
@@ -534,7 +588,9 @@ fn scan_keyword_free_candidates(
         // canonical hash/UUID-shape gate stays strict here unconditionally,
         // regardless of model authority. The lift is anchor-gated.
         allow_canonical_shapes: false,
-        entropy_shape: spec.and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape),
+        entropy_shape: compiled_secret
+            .and_then(|policy| policy.entropy_shape)
+            .or_else(|| spec.and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape)),
     };
     let isolated_token_context = isolated_bare_keyword_context_with_shape(
         entropy_threshold,
@@ -690,6 +746,7 @@ pub(crate) fn has_lower_dash_app_password_candidate_with_precomputed_keywords_an
             context.is_credential_context,
             false,
             detector,
+            get_compiled_policy_for_keyword(active_policy, &context.keyword),
             canonical_detector,
         ) {
             let entropy = shannon_entropy(candidate.as_bytes());
@@ -763,6 +820,7 @@ fn collect_line_candidates_inner(
             context.is_credential_context,
             context.allow_canonical_shapes,
             detector,
+            get_compiled_policy_for_keyword(active_policy, &context.keyword),
             canonical_detector,
         );
         for rejection in &extracted.rejections {
@@ -781,6 +839,7 @@ fn collect_line_candidates_inner(
             context.is_credential_context,
             context.allow_canonical_shapes,
             detector,
+            get_compiled_policy_for_keyword(active_policy, &context.keyword),
             canonical_detector,
         )
     };
@@ -870,12 +929,21 @@ fn candidate_plausibility_rejection_stage_with_policy(
     let canonical_spec = active_policy
         .and_then(|policy| policy.canonical_spec_for_keyword(&context.keyword))
         .or(spec);
-    let keyword_free_min_len = spec
-        .and_then(|s| s.keyword_free_min_len)
-        .map_or(KEYWORD_FREE_MIN_LEN, |min_len| min_len);
-    let credential_context_min_len = spec
-        .and_then(|s| s.min_len)
-        .map_or(CREDENTIAL_CONTEXT_MIN_LEN, |min_len| min_len);
+    let compiled = get_compiled_policy_for_keyword(active_policy, &context.keyword);
+    let keyword_free_min_len = compiled.map_or_else(
+        || {
+            spec.and_then(|s| s.keyword_free_min_len)
+                .unwrap_or(KEYWORD_FREE_MIN_LEN)
+        },
+        |policy| policy.keyword_free_min_len,
+    );
+    let credential_context_min_len = compiled.map_or_else(
+        || {
+            spec.and_then(|s| s.min_len)
+                .unwrap_or(CREDENTIAL_CONTEXT_MIN_LEN)
+        },
+        |policy| policy.min_len,
+    );
 
     if crate::suppression::shape::is_structured_dotted_token(candidate) {
         if candidate.len() < keyword_free_min_len.min(context.min_len) {
@@ -919,17 +987,30 @@ fn candidate_plausibility_rejection_stage_with_policy(
                 EntropyShapeStage::CanonicalNonSecretShape,
             ));
         }
-        return (candidate.len() < credential_context_min_len).then_some(
-            StageId::EntropyValueShape(EntropyShapeStage::CredentialContextTooShort),
-        );
+        if candidate.len() < credential_context_min_len {
+            return Some(StageId::EntropyValueShape(
+                EntropyShapeStage::CredentialContextTooShort,
+            ));
+        }
+        let plausibility_context = PlausibilityContext::new(true, canonical_lift)
+            .with_detector(spec)
+            .with_compiled_policy(compiled);
+        return (!is_secret_plausible(candidate, placeholder_keywords, plausibility_context))
+            .then_some(StageId::EntropyValueShape(
+                EntropyShapeStage::SecretPlausibilityRejected,
+            ));
     }
     if candidate.len() < keyword_free_min_len.min(context.min_len) {
         return Some(StageId::EntropyValueShape(
             EntropyShapeStage::KeywordFreeTooShort,
         ));
     }
-    let plausibility_context =
-        PlausibilityContext::new(context.is_credential_context, false).with_detector(spec);
+    let plausibility_context = PlausibilityContext::new(context.is_credential_context, false)
+        .with_detector(spec)
+        .with_compiled_policy(get_compiled_policy_for_keyword(
+            active_policy,
+            &context.keyword,
+        ));
     if !is_secret_plausible(candidate, placeholder_keywords, plausibility_context) {
         return Some(StageId::EntropyValueShape(
             EntropyShapeStage::SecretPlausibilityRejected,
@@ -1116,15 +1197,28 @@ fn keyword_context_with_policy(
             });
 
     let spec = get_spec_for_keyword(active_policy, keyword);
-    let entropy_low = spec
-        .and_then(|s| s.entropy_low)
-        .map_or(LOW_ENTROPY_THRESHOLD, |threshold| threshold);
-    let min_len = spec
-        .and_then(|s| s.min_len)
-        .map_or(CREDENTIAL_CONTEXT_MIN_LEN, |min_len| min_len);
-    let entropy_high = spec
-        .and_then(|s| s.entropy_high)
-        .map_or(HIGH_ENTROPY_THRESHOLD, |threshold| threshold);
+    let compiled = get_compiled_policy_for_keyword(active_policy, keyword);
+    let entropy_low = compiled.map_or_else(
+        || {
+            spec.and_then(|s| s.entropy_low)
+                .unwrap_or(LOW_ENTROPY_THRESHOLD)
+        },
+        |policy| policy.entropy_low,
+    );
+    let min_len = compiled.map_or_else(
+        || {
+            spec.and_then(|s| s.min_len)
+                .unwrap_or(CREDENTIAL_CONTEXT_MIN_LEN)
+        },
+        |policy| policy.min_len,
+    );
+    let entropy_high = compiled.map_or_else(
+        || {
+            spec.and_then(|s| s.entropy_high)
+                .unwrap_or(HIGH_ENTROPY_THRESHOLD)
+        },
+        |policy| policy.entropy_high,
+    );
 
     // Keyword-anchored floor policy (a NAMED, tested rule, not a silent clamp).
     // Inside a credential-keyword context the keyword IS the positive evidence,
@@ -1154,6 +1248,8 @@ fn keyword_context_with_policy(
         // Canonical pure-hex admission is detector-owned. The legacy model
         // authority flag cannot widen a missing or narrower TOML policy.
         allow_canonical_shapes: false,
-        entropy_shape: spec.and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape),
+        entropy_shape: compiled
+            .and_then(|policy| policy.entropy_shape)
+            .or_else(|| spec.and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape)),
     }
 }

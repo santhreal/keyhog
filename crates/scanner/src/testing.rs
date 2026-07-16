@@ -3472,7 +3472,9 @@ pub mod entropy_scanner {
         use crate::generic_keyword_owner::GenericOwningDetectorIndex;
 
         let index = GenericOwningDetectorIndex::build(&detectors);
-        let policy = ActiveDetectorPolicy::new(&detectors, &index);
+        let compiled = crate::entropy::policy::CompiledEntropyPolicies::compile(&detectors)
+            .expect("test detector entropy policy must compile");
+        let policy = ActiveDetectorPolicy::new(&detectors, &index, &compiled);
         let secret_keywords = vec![keyword.to_string()];
         crate::entropy::scanner::find_entropy_secrets_with_precomputed_keywords_and_policy(
             &[line],
@@ -3561,7 +3563,9 @@ pub mod entropy_scanner {
             ),
         ];
         let index = GenericOwningDetectorIndex::build(&detectors);
-        let policy = ActiveDetectorPolicy::new(&detectors, &index);
+        let compiled = crate::entropy::policy::CompiledEntropyPolicies::compile(&detectors)
+            .expect("test detector entropy policy must compile");
+        let policy = ActiveDetectorPolicy::new(&detectors, &index, &compiled);
         crate::entropy::scanner::find_entropy_secrets_with_precomputed_keywords_and_policy(
             &[secret],
             &[0],

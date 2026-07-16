@@ -74,6 +74,27 @@ fn sensitive_path_entropy_threshold_cannot_exceed_detector_threshold() {
 }
 
 #[test]
+fn plausibility_policy_fields_reject_invalid_ranges() {
+    let mut detector = detector_with_pattern("token=([A-Za-z0-9]+)");
+    detector.symbolic_entropy_floor = Some(9.0);
+    detector.second_half_entropy_floor = Some(f64::NAN);
+    detector.mixed_alnum_min_len = Some(0);
+    let issues = validate_detector(&detector);
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("symbolic_entropy_floor")
+    )));
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("second_half_entropy_floor")
+    )));
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("mixed_alnum_min_len")
+    )));
+}
+
+#[test]
 fn entropy_fallback_metadata_requires_entropy_identity_and_labels() {
     let mut detector = detector_with_pattern("token=([A-Za-z0-9]+)");
     detector.entropy_fallback = Some(keyhog_core::EntropyFallbackMetadata {

@@ -318,6 +318,8 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
             spec.sensitive_path_entropy_very_high,
         ),
         ("mixed_alnum_floor", spec.mixed_alnum_floor),
+        ("symbolic_entropy_floor", spec.symbolic_entropy_floor),
+        ("second_half_entropy_floor", spec.second_half_entropy_floor),
     ] {
         let Some(score) = value else {
             continue;
@@ -326,6 +328,13 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
             issues.push(QualityIssue::Error(format!(
                 "{name} must be a finite Shannon entropy score in [0.0, 8.0], found {score}"
             )));
+        }
+    }
+    if let Some(min_len) = spec.mixed_alnum_min_len {
+        if min_len == 0 {
+            issues.push(QualityIssue::Error(
+                "mixed_alnum_min_len must be greater than zero".into(),
+            ));
         }
     }
     if let (Some(very_high), Some(sensitive)) = (
@@ -338,9 +347,68 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
             )));
         }
     }
-    let entropy_owner = spec.service == "generic"
-        && (spec.kind == crate::spec::DetectorKind::Phase2Generic
-            || spec.entropy_policy_priority.is_some());
+    let entropy_owner = spec.owns_entropy_policy();
+    if entropy_owner {
+        for (field, present) in [
+            ("entropy_high", spec.entropy_high.is_some()),
+            ("entropy_low", spec.entropy_low.is_some()),
+            ("entropy_very_high", spec.entropy_very_high.is_some()),
+            (
+                "sensitive_path_entropy_very_high",
+                spec.sensitive_path_entropy_very_high.is_some(),
+            ),
+            ("mixed_alnum_floor", spec.mixed_alnum_floor.is_some()),
+            (
+                "symbolic_entropy_floor",
+                spec.symbolic_entropy_floor.is_some(),
+            ),
+            (
+                "second_half_entropy_floor",
+                spec.second_half_entropy_floor.is_some(),
+            ),
+            ("mixed_alnum_min_len", spec.mixed_alnum_min_len.is_some()),
+            ("keyword_free_min_len", spec.keyword_free_min_len.is_some()),
+            ("min_len", spec.min_len.is_some()),
+            (
+                "entropy_policy_priority",
+                spec.entropy_policy_priority.is_some(),
+            ),
+        ] {
+            if !present {
+                issues.push(QualityIssue::Error(format!(
+                    "active entropy owner must declare {field} in its detector TOML; runtime fallback policy is forbidden"
+                )));
+            }
+        }
+        if spec.entropy_shapes.is_empty() {
+            issues.push(QualityIssue::Error(
+                "active entropy owner must declare detector.entropy_shapes in its detector TOML"
+                    .into(),
+            ));
+        }
+        if spec.entropy_floor.is_empty() {
+            issues.push(QualityIssue::Error(
+                "active entropy owner must declare entropy_floor in its detector TOML".into(),
+            ));
+        }
+        if spec.kind == crate::DetectorKind::Phase2Generic && spec.max_len.is_none() {
+            issues.push(QualityIssue::Error(
+                "active phase2-generic entropy owner must declare max_len in its detector TOML"
+                    .into(),
+            ));
+        }
+        if spec.bpe_enabled.is_none() {
+            issues.push(QualityIssue::Error(
+                "active entropy owner must declare bpe_enabled in its detector TOML".into(),
+            ));
+        }
+        if spec.bpe_enabled != Some(false) && spec.bpe_max_bytes_per_token.is_none() {
+            issues.push(QualityIssue::Error(
+                "active entropy owner must declare bpe_max_bytes_per_token or bpe_enabled = false in its detector TOML"
+                    .into(),
+            ));
+        }
+    }
     if entropy_owner && spec.entropy_fallback.is_none() {
         issues.push(QualityIssue::Error(
             "active entropy owner must declare entropy_fallback metadata; omission would make synthetic finding identity ambiguous".into(),
@@ -352,9 +420,14 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
                 "entropy_fallback is only valid for service = \"generic\" detectors".into(),
             ));
         }
-        if !metadata.id.starts_with("entropy-") {
+        if !metadata.id.strip_prefix("entropy-").is_some_and(|suffix| {
+            !suffix.is_empty()
+                && suffix
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+        }) {
             issues.push(QualityIssue::Error(format!(
-                "entropy_fallback.id {:?} must use the entropy- namespace",
+                "entropy_fallback.id {:?} must use a lowercase entropy- namespace id",
                 metadata.id
             )));
         }

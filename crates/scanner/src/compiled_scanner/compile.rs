@@ -4,33 +4,6 @@ use super::compile_helpers::build_hot_pattern_slots;
 use super::compile_helpers::surface_cuda_acquisition_failure;
 use super::*;
 
-#[cfg(feature = "entropy")]
-fn validate_entropy_fallback_owners(detectors: &[DetectorSpec]) -> Result<()> {
-    for detector in detectors {
-        let active_owner = detector.service == "generic"
-            && (detector.kind == keyhog_core::DetectorKind::Phase2Generic
-                || detector.entropy_policy_priority.is_some());
-        if active_owner && detector.entropy_fallback.is_none() {
-            return Err(crate::error::ScanError::Config(format!(
-                "detector {:?} owns entropy policy but omits [detector.entropy_fallback]; declare class, id, name, and service so synthetic findings have an explicit identity",
-                detector.id
-            )));
-        }
-        if let Some(metadata) = detector.entropy_fallback.as_ref() {
-            if !metadata.id.starts_with("entropy-")
-                || metadata.name.trim().is_empty()
-                || metadata.service.trim().is_empty()
-            {
-                return Err(crate::error::ScanError::Config(format!(
-                    "detector {:?} declares invalid entropy_fallback metadata; id must use the entropy- namespace and name/service must be non-empty",
-                    detector.id
-                )));
-            }
-        }
-    }
-    Ok(())
-}
-
 impl CompiledScanner {
     /// Compile detector specs into a [`CompiledScanner`] using the process-wide
     /// runtime GPU policy and default tuning. The common entry point.
@@ -62,7 +35,8 @@ impl CompiledScanner {
         #[cfg(not(feature = "simd"))]
         let _tuning_config = tuning_config;
         #[cfg(feature = "entropy")]
-        validate_entropy_fallback_owners(&detectors)?;
+        let entropy_policies = crate::entropy::policy::CompiledEntropyPolicies::compile(&detectors)
+            .map_err(crate::error::ScanError::Config)?;
         let state = build_compile_state(&detectors)?;
         validate_compiled_pattern_detector_indices(
             &state.ac_map,
@@ -529,6 +503,8 @@ impl CompiledScanner {
             generic_named_assignment_keywords,
             generic_assignment_re,
             generic_owning_detector,
+            #[cfg(feature = "entropy")]
+            entropy_policies,
             #[cfg(feature = "gpu")]
             ac_match_upper_bounds,
             suffix_gate_ac,

@@ -118,9 +118,8 @@ pub struct DetectorSpec {
     /// `max_len >= L` sets the floor for a candidate of length `L`; the last
     /// bucket omits `max_len` and is the catch-all. `max_len` must strictly
     /// increase. A generic-detector candidate whose Shannon entropy is BELOW the
-    /// applicable floor is suppressed. Empty (the default) means the detector
-    /// declares no floor and the generic default (`EntropyFloorTable::DEFAULT_FLOOR`)
-    /// applies. Only the handful of `generic-*` detectors set this.
+    /// applicable floor is suppressed. Active entropy owners must declare at
+    /// least one bucket.
     #[serde(default)]
     pub entropy_floor: Vec<EntropyFloorBucket>,
     // ── PER-DETECTOR RECALL/PRECISION KNOBS (migration 2026-07-07) ────────────
@@ -128,20 +127,20 @@ pub struct DetectorSpec {
     // gate applied uniformly to every candidate. EVERY threshold that affects
     // whether a candidate survives is a PER-DETECTOR field, OWNED HERE in the
     // detector's own TOML spec, exactly like `min_confidence`/`entropy_floor`
-    // above. Each is an `Option`/`Vec` that OVERRIDES a single named default
-    // (the one remaining owner of the fallback value, `keyhog_scanner::entropy`
-    // consts) only when the detector is silent. Reading two places to understand
-    // one detector's behavior is banned (a detector's TOML is the whole story).
+    // above. Optional representation preserves schema compatibility for
+    // non-owning programmatic detectors, but active entropy owners must declare
+    // every field and are compiled into concrete runtime policy. Reading two
+    // places to understand one active detector's behavior is banned.
     /// Per-detector HIGH-entropy threshold (bits/byte), the keyword-independent
-    /// bar. `None` → the single-owner default `HIGH_ENTROPY_THRESHOLD`.
+    /// bar. Active entropy owners must declare it.
     #[serde(default)]
     pub entropy_high: Option<f64>,
     /// Per-detector keyword-context (LOW) entropy threshold (bits/byte).
-    /// `None` → the single-owner default `LOW_ENTROPY_THRESHOLD`.
+    /// Active entropy owners must declare it.
     #[serde(default)]
     pub entropy_low: Option<f64>,
     /// Per-detector VERY-high entropy threshold for keyword-free/isolated tokens.
-    /// `None` → the single-owner default `VERY_HIGH_ENTROPY_THRESHOLD`.
+    /// Active entropy owners must declare it.
     #[serde(default)]
     pub entropy_very_high: Option<f64>,
     /// Metadata used when this detector owns a synthetic entropy finding.
@@ -153,41 +152,51 @@ pub struct DetectorSpec {
     #[serde(default)]
     pub entropy_fallback: Option<EntropyFallbackMetadata>,
     /// Per-detector keyword-free entropy threshold used for clearly sensitive
-    /// paths. `None` inherits `entropy_very_high` for that detector; setting it
-    /// lower is an explicit recall policy for files such as `.env` and secrets
-    /// manifests, not a scanner-wide hidden discount.
+    /// paths. Active entropy owners must declare it; setting it lower than
+    /// `entropy_very_high` is an explicit recall policy for files such as `.env`
+    /// and secrets manifests, not a scanner-wide hidden discount.
     #[serde(default)]
     pub sensitive_path_entropy_very_high: Option<f64>,
     /// Detector-owned isolated entropy shapes. These are explicit structural
     /// exceptions to the broad keyword-free floor, such as a four-group
-    /// lower-dash app password. An omitted list means no detector-specific
-    /// isolated shape exception.
+    /// lower-dash app password. Active entropy owners must declare the list.
     #[serde(default)]
     pub entropy_shapes: Vec<EntropyShapeSpec>,
     /// Per-detector mixed-alnum token entropy floor (bits/byte).
-    /// `None` → the single-owner default `MIXED_ALNUM_TOKEN_THRESHOLD`.
+    /// Active entropy owners must declare it.
     #[serde(default)]
     pub mixed_alnum_floor: Option<f64>,
+    /// Per-detector entropy floor for symbolic credential values that carry a
+    /// strong assignment anchor. Active entropy owners must declare it; this is
+    /// distinct from the universal character-class checks.
+    #[serde(default)]
+    pub symbolic_entropy_floor: Option<f64>,
+    /// Per-detector minimum Shannon entropy for the second half of a long
+    /// candidate. Active entropy owners must declare it.
+    #[serde(default)]
+    pub second_half_entropy_floor: Option<f64>,
+    /// Per-detector minimum byte length for the mixed-alphanumeric carve-out.
+    /// Active entropy owners must declare it.
+    #[serde(default)]
+    pub mixed_alnum_min_len: Option<usize>,
     /// Precedence when this detector owns entropy-fallback policy for one of
-    /// its declared keywords. Phase-2 generic detectors participate with
-    /// priority zero when omitted. Regex detectors participate only when this
-    /// field is present. Higher values win overlapping keyword claims, so the
-    /// policy decision is declared in detector TOML instead of depending on
-    /// detector IDs or load order.
+    /// its declared keywords. Active entropy owners must declare the value;
+    /// regex detectors opt in by doing so. Higher values win overlapping
+    /// keyword claims, so the policy decision is declared in detector TOML
+    /// instead of depending on detector IDs or load order.
     #[serde(default)]
     pub entropy_policy_priority: Option<u16>,
     /// Per-detector BPE token-efficiency ceiling in UTF-8 bytes per
     /// `cl100k_base` token. Candidates above the ceiling are word-like and are
-    /// suppressed after the cheaper entropy/shape gates. `None` preserves the
-    /// compatible per-scan `entropy_bpe_max_bytes_per_token` fallback; `Some`
-    /// makes this detector TOML the policy owner.
+    /// suppressed after the cheaper entropy/shape gates. BPE-enabled entropy
+    /// owners must declare it; an explicit scan override still has precedence.
     #[serde(default)]
     pub bpe_max_bytes_per_token: Option<f64>,
     /// Whether the BPE token-efficiency precision gate applies to this
-    /// detector. `None` inherits the enabled default; `Some(false)` disables
-    /// tokenization for detector families such as human-chosen passwords where
-    /// word-like values are legitimate. A disabled detector must not also set a
-    /// BPE ceiling.
+    /// detector. Active entropy owners must declare the choice. `Some(false)`
+    /// disables tokenization for detector families such as human-chosen
+    /// passwords where word-like values are legitimate. A disabled detector
+    /// must not also set a BPE ceiling.
     #[serde(default)]
     pub bpe_enabled: Option<bool>,
     /// Exact printable-hex character counts this phase-2 detector may retain
@@ -204,18 +213,17 @@ pub struct DetectorSpec {
     #[serde(default)]
     pub canonical_hex_key_material: Vec<CanonicalHexKeyMaterialSpec>,
     /// Per-detector minimum length for an anchor-free (keyword-free/isolated)
-    /// candidate. `None` → the single-owner default `KEYWORD_FREE_MIN_LEN`.
+    /// candidate. Active entropy owners must declare it.
     #[serde(default)]
     pub keyword_free_min_len: Option<usize>,
     /// Per-detector minimum candidate length in UTF-8 bytes (any candidate this
-    /// detector emits). `None` means no detector-specific length floor beyond
-    /// the path-wide default.
+    /// detector emits). Active entropy owners must declare it.
     #[serde(default)]
     pub min_len: Option<usize>,
     /// Per-detector maximum byte length for phase-2 generic assignment values.
     /// Values above this ceiling are rejected whole; they are never truncated
-    /// into an apparently valid credential. Omission uses the typed 128-byte
-    /// compiled fallback.
+    /// into an apparently valid credential. Active phase-2 entropy owners must
+    /// declare it.
     #[serde(default)]
     pub max_len: Option<usize>,
     /// Per-detector path-exclusion regexes (betterleaks-style allowlist): a match
@@ -330,6 +338,23 @@ pub struct EntropyFallbackMetadata {
     pub service: String,
 }
 
+impl EntropyFallbackMetadata {
+    /// Whether this metadata can safely identify a synthetic entropy finding.
+    /// IDs stay lowercase and delimiter-stable so reports, hashes, and
+    /// suppression receipts cannot acquire ambiguous namespace variants.
+    pub fn has_valid_identity(&self) -> bool {
+        let Some(suffix) = self.id.strip_prefix("entropy-") else {
+            return false;
+        };
+        !suffix.is_empty()
+            && suffix
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+            && !self.name.trim().is_empty()
+            && !self.service.trim().is_empty()
+    }
+}
+
 /// Semantic role of a detector-owned synthetic entropy finding.
 ///
 /// The role is deliberately separate from the emitted id and display text:
@@ -411,6 +436,14 @@ pub struct CanonicalHexKeyMaterialSpec {
 }
 
 impl DetectorSpec {
+    /// Whether this detector supplies policy to the generic entropy engine.
+    pub fn owns_entropy_policy(&self) -> bool {
+        self.service == "generic"
+            && (self.id.starts_with("generic-")
+                || self.kind == DetectorKind::Phase2Generic
+                || self.entropy_policy_priority.is_some())
+    }
+
     /// Return the detector-owned lower-dash isolated shape, if declared.
     pub fn lower_dash_entropy_shape(&self) -> Option<EntropyShapeSpec> {
         self.entropy_shapes.iter().find_map(|shape| match shape {

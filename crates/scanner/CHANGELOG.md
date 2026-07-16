@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Compile each active generic detector's complete entropy, plausibility,
+  isolated-shape, and BPE policy once during scanner construction. Active
+  owners with missing policy fields now fail construction instead of reading
+  scanner-side defaults, and hot candidate paths consume concrete compiled
+  values rather than repeatedly resolving optional schema fields.
 - Preserve parent JavaScript context and exact source provenance for static
   XOR and Node AES recoveries, matching the existing CryptoJS and reverse/Base64
   recovery paths.

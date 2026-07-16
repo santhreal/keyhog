@@ -1,6 +1,7 @@
 use keyhog_core::{
     CanonicalHexKeyMaterialSpec, Chunk, ChunkMetadata, DetectorKind, DetectorSpec,
-    EntropyFallbackClass, EntropyFallbackMetadata, PatternSpec,
+    EntropyFallbackClass, EntropyFallbackMetadata, EntropyFloorBucket, EntropyShapeSpec,
+    PatternSpec,
 };
 use keyhog_scanner::testing::entropy_scanner::{
     active_policy_match_values, active_policy_owner_id,
@@ -22,10 +23,28 @@ fn detector(id: &str, keywords: &[&str], min_len: usize) -> DetectorSpec {
             .map(|keyword| (*keyword).to_string())
             .collect(),
         min_len: Some(min_len),
+        max_len: Some(512),
+        entropy_policy_priority: Some(0),
+        entropy_floor: vec![EntropyFloorBucket {
+            max_len: None,
+            floor: 0.0,
+        }],
         entropy_low: Some(0.0),
         entropy_high: Some(4.5),
         entropy_very_high: Some(5.8),
+        sensitive_path_entropy_very_high: Some(5.8),
         mixed_alnum_floor: Some(0.0),
+        symbolic_entropy_floor: Some(3.5),
+        second_half_entropy_floor: Some(2.5),
+        mixed_alnum_min_len: Some(20),
+        keyword_free_min_len: Some(20),
+        bpe_enabled: Some(false),
+        entropy_shapes: vec![EntropyShapeSpec::LowerDashAppPassword {
+            entropy_floor: 3.9,
+            group_count: 4,
+            group_length: 4,
+            special_min_length: 16,
+        }],
         entropy_fallback: Some(EntropyFallbackMetadata {
             class: EntropyFallbackClass::Generic,
             id: format!("entropy-{id}"),
@@ -107,6 +126,48 @@ fn active_entropy_owner_without_metadata_fails_compilation() {
     );
 }
 
+fn scan_with_plausibility_policy(
+    value: &str,
+    symbolic_floor: f64,
+    second_half_floor: f64,
+    mixed_min_len: usize,
+) -> Vec<String> {
+    let mut owner = detector("plausibility-owner", &["custom_secret"], 8);
+    owner.entropy_high = Some(8.0);
+    owner.mixed_alnum_floor = Some(0.0);
+    owner.symbolic_entropy_floor = Some(symbolic_floor);
+    owner.second_half_entropy_floor = Some(second_half_floor);
+    owner.mixed_alnum_min_len = Some(mixed_min_len);
+    active_policy_match_values(
+        vec![owner, detector("generic-secret", &["secret"], 8)],
+        "custom_secret",
+        &format!("custom_secret = \"{value}\""),
+    )
+}
+
+#[test]
+fn custom_symbolic_plausibility_floor_controls_assignment_admission() {
+    let value = "1E1B3b4Ho$U4kYBi";
+    let entropy = keyhog_scanner::entropy::shannon_entropy(value.as_bytes());
+    assert!(entropy > 3.5 && entropy < 4.5, "fixture entropy: {entropy}");
+    assert!(!scan_with_plausibility_policy(value, 4.5, 0.0, 8).contains(&value.to_string()));
+    assert!(scan_with_plausibility_policy(value, 3.5, 0.0, 8).contains(&value.to_string()));
+}
+
+#[test]
+fn custom_tail_entropy_floor_controls_assignment_admission() {
+    let value = "A1b2C3d4E5f6G7h8aaaaaaaaaaaaaaaa";
+    assert!(!scan_with_plausibility_policy(value, 0.0, 2.5, 8).contains(&value.to_string()));
+    assert!(scan_with_plausibility_policy(value, 0.0, 0.0, 8).contains(&value.to_string()));
+}
+
+#[test]
+fn custom_mixed_alnum_min_len_controls_assignment_admission() {
+    let value = "A1b2C3d4E5f6G7h8";
+    assert!(!scan_with_plausibility_policy(value, 0.0, 0.0, 20).contains(&value.to_string()));
+    assert!(scan_with_plausibility_policy(value, 0.0, 0.0, 8).contains(&value.to_string()));
+}
+
 #[test]
 fn malformed_entropy_fallback_metadata_fails_compilation() {
     let mut owner = detector("metadata-malformed-owner", &["custom_secret"], 8);
@@ -167,6 +228,7 @@ const WORD_LIKE_VALUE: &str = "CorrectHorseBatteryStaple!9";
 fn entropy_only_owner(bpe_enabled: bool) -> DetectorSpec {
     let mut owner = detector("custom-secret-owner", &[ENTROPY_ONLY_KEYWORD], 8);
     owner.kind = DetectorKind::Regex;
+    owner.max_len = None;
     owner.patterns = vec![PatternSpec {
         regex: "custom_owner_pattern_that_cannot_match_([0-9]{99})".to_string(),
         group: Some(1),
@@ -174,6 +236,7 @@ fn entropy_only_owner(bpe_enabled: bool) -> DetectorSpec {
     }];
     owner.entropy_policy_priority = Some(100);
     owner.bpe_enabled = Some(bpe_enabled);
+    owner.bpe_max_bytes_per_token = bpe_enabled.then_some(2.3);
     owner
 }
 
@@ -352,26 +415,24 @@ fn lower_dash_entropy_exception_is_owned_by_the_active_detector_shape_policy() {
     let secret = "kp4q-x7rm-2sn5-tb8v";
     let mut detectors =
         keyhog_core::load_embedded_detectors_or_fail().expect("embedded detector corpus must load");
-    for detector in &mut detectors {
-        if matches!(
-            detector.id.as_str(),
-            "generic-secret" | "generic-keyword-secret"
-        ) {
-            detector.entropy_shapes.clear();
-        }
-    }
     let generic_keyword_secret = detectors
         .iter_mut()
         .find(|detector| detector.id == "generic-keyword-secret")
         .expect("generic-keyword-secret policy must be present");
-    generic_keyword_secret.entropy_shapes.clear();
+    generic_keyword_secret.entropy_shapes =
+        vec![keyhog_core::EntropyShapeSpec::LowerDashAppPassword {
+            entropy_floor: 8.0,
+            group_count: 4,
+            group_length: 4,
+            special_min_length: 16,
+        }];
 
     let mut config = ScannerConfig::default();
     config.entropy_enabled = true;
     config.min_confidence = 0.0;
     config.penalize_test_paths = false;
-    let scanner_without_shape = CompiledScanner::compile(detectors.clone())
-        .expect("custom detector shape corpus must compile")
+    let scanner_with_restrictive_shape = CompiledScanner::compile(detectors.clone())
+        .expect("restrictive detector shape corpus must compile")
         .with_config(config.clone());
     let chunk = Chunk {
         data: format!("{secret}\n").into(),
@@ -381,11 +442,11 @@ fn lower_dash_entropy_exception_is_owned_by_the_active_detector_shape_policy() {
         },
     };
     assert!(
-        scanner_without_shape
+        scanner_with_restrictive_shape
             .scan(&chunk)
             .iter()
             .all(|finding| finding.credential.as_ref() != secret),
-        "omitting the detector-owned shape must remove the isolated exception"
+        "raising the detector-owned shape floor must remove the isolated exception"
     );
 
     let generic_keyword_secret = detectors

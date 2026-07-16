@@ -104,9 +104,12 @@ model's fixed vocabulary, remain global.
 | `entropy_very_high` | Tightens isolated, anchor-free token admission | Expands the no-keyword search and therefore its false-positive surface |
 | `sensitive_path_entropy_very_high` | Raises the keyword-free bar even in sensitive files | Lowers the explicit sensitive-path bar for that detector, improving recall in `.env`/secret manifests |
 | `[detector.entropy_fallback]` | Changes the emitted synthetic entropy finding identity and semantic class for that detector | Omitting it for an active entropy owner fails compilation; there is no scanner-global compatibility identity |
-| `[[detector.entropy_shapes]]` | Allows only the declared structural exception to cross the broad isolated floor | Omitting the shape removes that detector's isolated exception |
+| `[[detector.entropy_shapes]]` | A lower declared shape floor admits more matching isolated credentials | A higher floor narrows the exception; omission is invalid for an active entropy owner |
 | `entropy_floor` | A higher applicable length-bucket floor suppresses more low-entropy candidates for that detector | A lower floor preserves more human-chosen or structured credentials |
 | `mixed_alnum_floor` | Rejects more identifier-like alphanumeric runs | Preserves more low-randomness mixed-alphanumeric values |
+| `symbolic_entropy_floor` | Raises the minimum entropy for symbol-bearing credential assignments | Preserves more anchored symbolic passwords |
+| `second_half_entropy_floor` | Rejects candidates with a less-random tail | Preserves more credentials whose entropy is front-loaded |
+| `mixed_alnum_min_len` | Requires a longer mixed alpha-numeric credential before the carve-out applies | Lets shorter anchored mixed tokens use the detector's mixed floor |
 | `entropy_policy_priority` | Wins more overlapping generic keyword-policy claims | Yields shared keywords to a more specific detector; unique keywords are unchanged |
 | `bpe_max_bytes_per_token` | A higher ceiling is looser: fewer compressible/word-like candidates are rejected | A lower ceiling is stricter: more language-like values are rejected, with corresponding recall risk |
 | `bpe_enabled = false` | Not applicable | Skips token-efficiency rejection for detectors such as human-chosen passwords |
@@ -130,9 +133,9 @@ These settings do not all use one generic “last value wins” rule:
   policy. Equal priorities use compiled detector order only as a deterministic
   tie-break. Custom detector policy keywords join entropy discovery directly;
   they do not need to be repeated in `[scan].secret_keywords`.
-- **BPE ceiling:** the compiled fallback is `2.2` UTF-8 bytes per
-  `cl100k_base` token. The owning detector's `bpe_max_bytes_per_token` replaces
-  that fallback. An explicitly supplied
+- **BPE ceiling:** every active entropy owner declares either
+  `bpe_max_bytes_per_token` or `bpe_enabled = false`; omission fails detector
+  validation and scanner construction. An explicitly supplied
   `[scan].entropy_bpe_max_bytes_per_token` or
   `--entropy-bpe-max-bytes-per-token` replaces every BPE-enabled
   entropy/generic detector ceiling; the CLI wins over the config file.
@@ -142,10 +145,13 @@ These settings do not all use one generic “last value wins” rule:
   `[detector.<id>].min_confidence` replaces the detector-declared floor. Under
   `--precision`, the resolved global and per-detector floors are clamped to at
   least `0.85`; neither source can weaken the precision preset.
-- **Entropy policy:** omitted detector fields use `4.5` (`entropy_high`), `3.0`
-  (`entropy_low`), `5.8` (`entropy_very_high`), and `4.0`
-  (`mixed_alnum_floor`). Detector TOML values replace those individual
-  fallbacks. The scan-wide `entropy_threshold` is deliberately not a blanket
+- **Entropy policy:** every active entropy owner must declare its high, low,
+  very-high, sensitive-path, mixed-alphanumeric, symbolic, tail-entropy,
+  length, isolated-shape, and BPE policy. Scanner construction compiles these
+  into concrete detector-indexed values; a missing field is an error, not a
+  runtime default. Schema defaults remain only for non-owning programmatic
+  detector values that never supply entropy policy. The scan-wide
+  `entropy_threshold` is deliberately not a blanket
   replacement for all four bands. On the phase-2 generic bridge it tightens
   only when it exceeds the owning detector's high band. On the entropy scanner,
   a value above that high band tightens keyword and isolated candidates; a
@@ -155,10 +161,16 @@ These settings do not all use one generic “last value wins” rule:
   exceeds the high band. These rules preserve the different evidence carried
   by an assignment key, an isolated opaque token, and an unanchored generic
   value.
-- **Sensitive paths:** `sensitive_path_entropy_very_high` is an optional
-  detector-local threshold for keyword-free candidates in paths classified as
-  sensitive. When omitted, that detector's `entropy_very_high` applies; there
-  is no hidden scanner-wide discount.
+- **Sensitive paths:** `sensitive_path_entropy_very_high` is a required
+  detector-local threshold for active entropy owners. Equaling
+  `entropy_very_high` means no sensitive-path relaxation; a lower declared
+  value is an explicit detector-owned recall choice.
+- **Credential plausibility floors:** `symbolic_entropy_floor`,
+  `second_half_entropy_floor`, and `mixed_alnum_min_len` apply when the active
+  detector owns a credential assignment. Active owners must declare them;
+  there is no production-path fallback. Anchor-free isolated candidates have
+  no assignment owner, so their separate shape predicates use the declared
+  generic detector's isolated-shape policy.
 - **Synthetic entropy identity:** every active entropy owner declares
   `[detector.entropy_fallback]` with a semantic `class` (`generic`, `password`,
   `token`, or `api-key`), an `entropy-*` id, display name, and service. The

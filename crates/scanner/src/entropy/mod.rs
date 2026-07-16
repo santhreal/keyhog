@@ -10,6 +10,7 @@ pub(crate) mod bpe;
 mod isolated;
 pub(crate) mod keywords;
 pub(crate) mod plausibility;
+pub(crate) mod policy;
 pub(crate) mod scanner;
 
 // Fast Shannon-entropy primitives, relocated here from the crate root so all

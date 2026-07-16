@@ -375,16 +375,23 @@ impl CompiledScanner {
                 // subwords tokenize efficiently by construction, and the exact
                 // keyword/length policy is the stronger signal for that shape.
                 #[cfg(feature = "entropy")]
-                if shape_rejected.is_none()
+                let bpe_bound = if shape_rejected.is_none()
                     && !allow_canonical_hex_key
                     && !allow_encoded_text_secret
-                    && crate::entropy::bpe::enabled_for_detector(owning_detector)
                 {
-                    let bpe_bound = crate::entropy::bpe::max_bytes_per_token_for_detector(
-                        owning_detector,
-                        self.config.entropy_bpe_max_bytes_per_token,
-                        self.config.entropy_bpe_max_bytes_per_token_override,
-                    );
+                    owning_detector_index
+                        .and_then(|index| self.entropy_policies.get(index))
+                        .and_then(|policy| {
+                            policy.bpe_bound(
+                                self.config.entropy_bpe_max_bytes_per_token,
+                                self.config.entropy_bpe_max_bytes_per_token_override,
+                            )
+                        })
+                } else {
+                    None
+                };
+                #[cfg(feature = "entropy")]
+                if let Some(bpe_bound) = bpe_bound {
                     if crate::entropy::bpe::is_word_like_low_bpe(value, bpe_bound) {
                         shape_rejected =
                             Some(crate::adjudicate::GenericValueShapeStage::WordLikeLowBpe);

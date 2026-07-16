@@ -236,7 +236,33 @@ service = "generic"
 severity = "medium"
 kind = "phase2-generic"
 keywords = ["secret"]
+entropy_high = 4.5
+entropy_low = 3.0
+entropy_very_high = 5.8
+sensitive_path_entropy_very_high = 5.8
+mixed_alnum_floor = 4.0
+symbolic_entropy_floor = 3.5
+second_half_entropy_floor = 2.5
+mixed_alnum_min_len = 20
+keyword_free_min_len = 20
+min_len = 8
+max_len = 80
+entropy_policy_priority = 0
+bpe_enabled = false
 entropy_floor = [{ floor = 1.5 }]
+
+[[detector.entropy_shapes]]
+kind = "lower-dash-app-password"
+entropy_floor = 3.9
+group_count = 4
+group_length = 4
+special_min_length = 16
+
+[detector.entropy_fallback]
+class = "generic"
+id = "entropy-generic-demo"
+name = "Generic Demo Entropy"
+service = "generic"
 
 [[detector.patterns]]
 regex = '"secret"\s*:\s*"([A-Za-z0-9]{12,80})"'

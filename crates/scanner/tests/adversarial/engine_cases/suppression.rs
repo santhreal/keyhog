@@ -6,7 +6,6 @@ fn pure_placeholder_not_flagged() {
     // A placeholder that matches the pattern but is obviously fake.
     let detector = DetectorSpec {
         kind: Default::default(),
-        entropy_floor: Vec::new(),
         tests: Vec::new(),
         id: "aws-key".into(),
         name: "AWS Key".into(),
@@ -349,6 +348,34 @@ fn dogfood_records_engine_probabilistic_gate_drop() {
         verify: None,
         keywords: vec!["secret".into()],
         min_confidence: None,
+        min_len: Some(8),
+        keyword_free_min_len: Some(20),
+        entropy_low: Some(3.0),
+        entropy_high: Some(4.5),
+        entropy_very_high: Some(5.8),
+        sensitive_path_entropy_very_high: Some(5.8),
+        mixed_alnum_floor: Some(4.0),
+        symbolic_entropy_floor: Some(3.5),
+        second_half_entropy_floor: Some(2.5),
+        mixed_alnum_min_len: Some(20),
+        bpe_enabled: Some(false),
+        entropy_policy_priority: Some(0),
+        entropy_floor: vec![keyhog_core::EntropyFloorBucket {
+            max_len: None,
+            floor: 0.0,
+        }],
+        entropy_shapes: vec![keyhog_core::EntropyShapeSpec::LowerDashAppPassword {
+            entropy_floor: 3.9,
+            group_count: 4,
+            group_length: 4,
+            special_min_length: 16,
+        }],
+        entropy_fallback: Some(keyhog_core::EntropyFallbackMetadata {
+            class: keyhog_core::EntropyFallbackClass::Generic,
+            id: "entropy-generic-secret".into(),
+            name: "Generic Secret Entropy".into(),
+            service: "generic".into(),
+        }),
         ..Default::default()
     };
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();

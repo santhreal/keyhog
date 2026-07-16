@@ -48,13 +48,27 @@ pub(crate) const LEADING_SLASH_BASE64_ENTROPY_FLOOR: f64 = 4.8;
 /// the floor in [`passes_secret_shape_checks`].
 pub(crate) const SECOND_HALF_ENTROPY_FLOOR: f64 = 2.5;
 
-#[derive(Debug, Clone, Copy, Default)]
+/// Minimum length for the mixed-alphanumeric credential carve-out. Detector
+/// TOMLs may tune this per family; the constant is only the typed-schema
+/// fallback for legacy programmatic specs.
+pub(crate) const MIXED_ALNUM_MIN_LEN: usize = 20;
+
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct PlausibilityContext {
     pub(crate) is_credential_context: bool,
     pub(crate) allow_canonical_shapes: bool,
-    entropy_high: Option<f64>,
-    mixed_alnum_floor: Option<f64>,
+    entropy_high: f64,
+    mixed_alnum_floor: f64,
+    symbolic_entropy_floor: f64,
+    second_half_entropy_floor: f64,
+    mixed_alnum_min_len: usize,
     entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
+}
+
+impl Default for PlausibilityContext {
+    fn default() -> Self {
+        Self::new(false, false)
+    }
 }
 
 impl PlausibilityContext {
@@ -62,16 +76,46 @@ impl PlausibilityContext {
         Self {
             is_credential_context,
             allow_canonical_shapes,
-            entropy_high: None,
-            mixed_alnum_floor: None,
+            entropy_high: HIGH_ENTROPY_THRESHOLD,
+            mixed_alnum_floor: MIXED_ALNUM_TOKEN_THRESHOLD,
+            symbolic_entropy_floor: SYMBOLIC_CREDENTIAL_ENTROPY_FLOOR,
+            second_half_entropy_floor: SECOND_HALF_ENTROPY_FLOOR,
+            mixed_alnum_min_len: MIXED_ALNUM_MIN_LEN,
             entropy_shape: None,
         }
     }
 
     pub(crate) fn with_detector(mut self, detector: Option<&keyhog_core::DetectorSpec>) -> Self {
-        self.entropy_high = detector.and_then(|spec| spec.entropy_high);
-        self.mixed_alnum_floor = detector.and_then(|spec| spec.mixed_alnum_floor);
+        if let Some(detector) = detector {
+            self.entropy_high = detector.entropy_high.unwrap_or(self.entropy_high);
+            self.mixed_alnum_floor = detector.mixed_alnum_floor.unwrap_or(self.mixed_alnum_floor);
+            self.symbolic_entropy_floor = detector
+                .symbolic_entropy_floor
+                .unwrap_or(self.symbolic_entropy_floor);
+            self.second_half_entropy_floor = detector
+                .second_half_entropy_floor
+                .unwrap_or(self.second_half_entropy_floor);
+            self.mixed_alnum_min_len = detector
+                .mixed_alnum_min_len
+                .unwrap_or(self.mixed_alnum_min_len);
+        }
         self.entropy_shape = detector.and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape);
+        self
+    }
+
+    #[inline]
+    pub(crate) fn with_compiled_policy(
+        mut self,
+        policy: Option<&crate::entropy::policy::CompiledEntropyPolicy>,
+    ) -> Self {
+        if let Some(policy) = policy {
+            self.entropy_high = policy.entropy_high;
+            self.mixed_alnum_floor = policy.mixed_alnum_floor;
+            self.symbolic_entropy_floor = policy.symbolic_entropy_floor;
+            self.second_half_entropy_floor = policy.second_half_entropy_floor;
+            self.mixed_alnum_min_len = policy.mixed_alnum_min_len;
+            self.entropy_shape = policy.entropy_shape;
+        }
         self
     }
 }
@@ -198,9 +242,7 @@ pub(crate) fn passes_secret_strength_checks(value: &str, context: PlausibilityCo
     // are copied into `PlausibilityContext` at extraction, so custom corpora and
     // operator-composed specs override the blanket high-entropy / mixed-alnum
     // floors without any embedded-registry read here.
-    let entropy_high = context
-        .entropy_high
-        .map_or(HIGH_ENTROPY_THRESHOLD, |threshold| threshold);
+    let entropy_high = context.entropy_high;
     if entropy >= entropy_high {
         return true;
     }
@@ -215,16 +257,23 @@ pub(crate) fn passes_secret_strength_checks(value: &str, context: PlausibilityCo
             has_digit |= b.is_ascii_digit();
             has_symbol |= !b.is_ascii_alphanumeric();
         }
-        if has_symbol && entropy >= SYMBOLIC_CREDENTIAL_ENTROPY_FLOOR {
+        let symbolic_entropy_floor = context.symbolic_entropy_floor;
+        if has_symbol && entropy >= symbolic_entropy_floor {
             return true;
         }
-        let mixed_alnum_floor = context
-            .mixed_alnum_floor
-            .map_or(MIXED_ALNUM_TOKEN_THRESHOLD, |threshold| threshold);
+        // An assignment anchor is the positive evidence for a human-chosen
+        // alphabetic password/passphrase. It still passed the detector-owned
+        // length, tail-randomness, placeholder, identifier, and BPE gates; do
+        // not force it through the mixed-alphanumeric carve-out.
+        if has_alpha && !has_digit && !has_symbol {
+            return true;
+        }
+        let mixed_alnum_floor = context.mixed_alnum_floor;
+        let mixed_alnum_min_len = context.mixed_alnum_min_len;
         if !has_symbol
             && has_alpha
             && has_digit
-            && value.len() >= 20
+            && value.len() >= mixed_alnum_min_len
             && entropy >= mixed_alnum_floor
         {
             return true;
@@ -336,7 +385,8 @@ fn passes_secret_shape_checks(value: &str, context: PlausibilityContext) -> bool
     if value.len() > 16 && unique_char_count(value) < 8 {
         return false;
     }
-    if value.len() > 16 && second_half_entropy(value) < SECOND_HALF_ENTROPY_FLOOR {
+    let second_half_entropy_floor = context.second_half_entropy_floor;
+    if value.len() > 16 && second_half_entropy(value) < second_half_entropy_floor {
         return false;
     }
     // Defect #81: entropy-api-key was firing on Java/Go camelCase and

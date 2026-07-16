@@ -77,9 +77,32 @@ keywords = ["kh674_secret"]
 min_confidence = 0.0
 min_len = 8
 max_len = 64
+keyword_free_min_len = 20
+entropy_low = 3.0
+entropy_high = 4.5
+entropy_very_high = 5.8
+sensitive_path_entropy_very_high = 5.8
+mixed_alnum_floor = 4.0
+symbolic_entropy_floor = 3.5
+second_half_entropy_floor = 2.5
+mixed_alnum_min_len = 20
+entropy_policy_priority = 0
 bpe_enabled = false
 entropy_floor = [{ floor = 0.0 }]
 allowlist_values = ['^m7_Q2vN9xK4cP8rT6wY3zH5s$']
+
+[[detector.entropy_shapes]]
+kind = "lower-dash-app-password"
+entropy_floor = 3.9
+group_count = 4
+group_length = 4
+special_min_length = 16
+
+[detector.entropy_fallback]
+class = "generic"
+id = "entropy-custom-phase2-allowlist-contract"
+name = "Custom Phase Two Allowlist Entropy"
+service = "generic"
 "#,
     );
     let scanner = CompiledScanner::compile(vec![detector]).expect("compile custom detector");

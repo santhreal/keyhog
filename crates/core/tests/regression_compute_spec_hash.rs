@@ -510,6 +510,15 @@ knob_changes_digest!(spec_hash_binds_entropy_shapes, |d| d.entropy_shapes =
     }]);
 knob_changes_digest!(spec_hash_binds_mixed_alnum_floor, |d| d.mixed_alnum_floor =
     Some(3.7));
+knob_changes_digest!(spec_hash_binds_symbolic_entropy_floor, |d| d
+    .symbolic_entropy_floor =
+    Some(3.6));
+knob_changes_digest!(spec_hash_binds_second_half_entropy_floor, |d| d
+    .second_half_entropy_floor =
+    Some(2.6));
+knob_changes_digest!(spec_hash_binds_mixed_alnum_min_len, |d| d
+    .mixed_alnum_min_len =
+    Some(21));
 knob_changes_digest!(spec_hash_binds_entropy_policy_priority, |d| d
     .entropy_policy_priority =
     Some(80));

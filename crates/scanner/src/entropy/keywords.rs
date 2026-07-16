@@ -148,6 +148,7 @@ pub(super) fn extract_candidates(
     // `HIGH_ENTROPY_THRESHOLD` / `MIXED_ALNUM_TOKEN_THRESHOLD` gate floors in
     // `passes_secret_strength_checks`. `None` falls back to the module constants.
     detector: Option<&DetectorSpec>,
+    compiled_policy: Option<&crate::entropy::policy::CompiledEntropyPolicy>,
     canonical_detector: Option<&DetectorSpec>,
 ) -> Vec<String> {
     extract_candidates_internal(
@@ -159,6 +160,7 @@ pub(super) fn extract_candidates(
         _allow_canonical_shapes,
         false,
         detector,
+        compiled_policy,
         canonical_detector,
     )
     .candidates
@@ -182,6 +184,7 @@ pub(super) fn extract_candidates_with_rejections(
     is_credential_context: bool,
     _allow_canonical_shapes: bool,
     detector: Option<&DetectorSpec>,
+    compiled_policy: Option<&crate::entropy::policy::CompiledEntropyPolicy>,
     canonical_detector: Option<&DetectorSpec>,
 ) -> ExtractedCandidates {
     extract_candidates_internal(
@@ -193,6 +196,7 @@ pub(super) fn extract_candidates_with_rejections(
         _allow_canonical_shapes,
         true,
         detector,
+        compiled_policy,
         canonical_detector,
     )
 }
@@ -206,6 +210,7 @@ fn extract_candidates_internal(
     _allow_canonical_shapes: bool,
     trace_rejections: bool,
     detector: Option<&DetectorSpec>,
+    compiled_policy: Option<&crate::entropy::policy::CompiledEntropyPolicy>,
     canonical_detector: Option<&DetectorSpec>,
 ) -> ExtractedCandidates {
     let mut candidates = Vec::new();
@@ -245,7 +250,8 @@ fn extract_candidates_internal(
             .is_some_and(|spec| spec.allows_canonical_hex_key_material(keyword, cleaned));
         let plausibility_context =
             PlausibilityContext::new(is_credential_context, detector_owned_canonical_hex_key)
-                .with_detector(detector);
+                .with_detector(detector)
+                .with_compiled_policy(compiled_policy);
         let plausible = structured_dotted
             || if strict {
                 is_secret_plausible(cleaned, placeholder_keywords, plausibility_context)

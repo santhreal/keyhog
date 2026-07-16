@@ -82,6 +82,7 @@ pub(crate) fn is_word_like_low_bpe(s: &str, max_bytes_per_token: f64) -> bool {
 /// detector. Resolution happens once before tokenization and contains no hidden
 /// detector-id table.
 #[inline]
+#[cfg(test)]
 pub(crate) fn max_bytes_per_token_for_detector(
     detector: Option<&keyhog_core::DetectorSpec>,
     scan_fallback: f64,
@@ -99,12 +100,12 @@ pub(crate) fn max_bytes_per_token_for_detector(
 /// the compatible enabled default. An explicit `false` skips tokenizer work
 /// entirely instead of relying on a magic oversized ceiling.
 #[inline]
+#[cfg(test)]
 pub(crate) fn enabled_for_detector(detector: Option<&keyhog_core::DetectorSpec>) -> bool {
     detector
         .and_then(|spec| spec.bpe_enabled)
         .map_or(true, |enabled| enabled)
 }
-
 
 #[cfg(test)]
 #[path = "../../tests/unit/entropy_bpe.rs"]

@@ -15,9 +15,14 @@ keywords = ["api_key", "apikey", "api-key", "access_key", "accesskey", "secret_k
 entropy_high = 4.5
 entropy_low = 3.0
 entropy_very_high = 5.8
+sensitive_path_entropy_very_high = 5.8
 mixed_alnum_floor = 4.0
+symbolic_entropy_floor = 3.5
+second_half_entropy_floor = 2.5
+mixed_alnum_min_len = 20
 # Specific API/key-material policy outranks broader generic secret bridges.
 entropy_policy_priority = 80
+bpe_enabled = true
 # The CredData lowercase-random fixture `ufnlbbavawsdeecn` measures 2.286
 # bytes/token under cl100k_base. A 2.3 ceiling admits it while remaining well
 # below the shipped word-like FP taxonomy (3.8+ bytes/token).

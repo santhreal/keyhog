@@ -291,6 +291,11 @@ pub struct CompiledScanner {
     /// preserves the exact first-match-by-exact-or-normalized semantics. Built
     /// ONCE at construction (see [`crate::generic_keyword_owner::GenericOwningDetectorIndex`]).
     pub(crate) generic_owning_detector: crate::generic_keyword_owner::GenericOwningDetectorIndex,
+    /// Complete detector-owned entropy policy, resolved once at scanner build.
+    /// Hot candidate paths index concrete values instead of re-reading optional
+    /// schema fields or falling back to scanner constants.
+    #[cfg(feature = "entropy")]
+    pub(crate) entropy_policies: crate::entropy::policy::CompiledEntropyPolicies,
     /// Per-`ac_map` regex byte upper bound for GPU hit-local validation. `None`
     /// means the detector regex is unbounded or unparsable by the AST bounder,
     /// so GPU validation must keep the full prepared-chunk oracle.
