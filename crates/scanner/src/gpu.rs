@@ -95,8 +95,8 @@ pub(crate) fn ml_split_profile_reset() {
 }
 
 #[cfg(test)]
-pub(crate) fn batch_ml_inference(
-    candidates: &[(&str, &str)],
+pub(crate) fn batch_ml_inference<T: crate::ml_scorer::MlScoreInput>(
+    candidates: &[T],
     config: &crate::types::ScannerConfig,
 ) -> Vec<f64> {
     batch_ml_inference_with_timeout(
@@ -109,8 +109,8 @@ pub(crate) fn batch_ml_inference(
 }
 
 #[cfg(any(feature = "ml", test))]
-pub(crate) fn batch_ml_inference_with_timeout(
-    candidates: &[(&str, &str)],
+pub(crate) fn batch_ml_inference_with_timeout<T: crate::ml_scorer::MlScoreInput>(
+    candidates: &[T],
     config: &crate::types::ScannerConfig,
     gpu_moe_timeout: std::time::Duration,
 ) -> Vec<f64> {
@@ -155,7 +155,9 @@ pub(crate) fn batch_ml_inference_with_timeout(
             let t = prof.then(std::time::Instant::now);
             let scores: Vec<f64> = candidates
                 .iter()
-                .map(|(text, ctx)| {
+                .map(|candidate| {
+                    let text = candidate.ml_text();
+                    let ctx = candidate.ml_context();
                     crate::confidence::policy::ml_score_for_candidate_text(text, || {
                         crate::ml_scorer::score_features(&feat_of(text, ctx))
                     })
@@ -176,7 +178,7 @@ pub(crate) fn batch_ml_inference_with_timeout(
         let t_feat = prof.then(std::time::Instant::now);
         let features: Vec<[f32; crate::ml_scorer::NUM_FEATURES]> = candidates
             .par_iter()
-            .map(|(text, ctx)| feat_of(text, ctx))
+            .map(|candidate| feat_of(candidate.ml_text(), candidate.ml_context()))
             .collect();
         if let Some(t) = t_feat {
             MOE_FEATURE_NS.fetch_add(
@@ -190,7 +192,8 @@ pub(crate) fn batch_ml_inference_with_timeout(
             candidates
                 .par_iter()
                 .zip(features.par_iter())
-                .map(|((text, _ctx), features)| {
+                .map(|(candidate, features)| {
+                    let text = candidate.ml_text();
                     crate::confidence::policy::ml_score_for_candidate_text(text, || {
                         crate::ml_scorer::score_features(features)
                     })
@@ -203,7 +206,7 @@ pub(crate) fn batch_ml_inference_with_timeout(
                 match backend::batch_score_features(&features, gpu_moe_timeout) {
                     Some(mut scores) if scores.len() == candidates.len() => {
                         crate::confidence::policy::apply_empty_candidate_score_policy(
-                            candidates.iter().map(|(text, _ctx)| *text),
+                            candidates.iter().map(|candidate| candidate.ml_text()),
                             &mut scores,
                         );
                         scores

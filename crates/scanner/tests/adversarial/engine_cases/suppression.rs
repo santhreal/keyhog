@@ -332,7 +332,6 @@ fn dogfood_records_engine_probabilistic_gate_drop() {
     keyhog_scanner::telemetry::enable_dogfood();
     let detector = DetectorSpec {
         kind: Default::default(),
-        entropy_floor: Vec::new(),
         tests: Vec::new(),
         id: "generic-secret".into(),
         name: "Generic Secret".into(),

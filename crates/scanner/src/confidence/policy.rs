@@ -1,6 +1,6 @@
 use crate::context;
 
-pub(crate) enum MlScoreResult<'a> {
+pub(crate) enum MlScoreResult {
     /// Score is final and the match can be pushed immediately.
     Final(f64),
     #[cfg(feature = "ml")]
@@ -8,15 +8,7 @@ pub(crate) enum MlScoreResult<'a> {
     Pending {
         heuristic_conf: f64,
         code_context: crate::context::CodeContext,
-        credential: std::borrow::Cow<'a, str>,
     },
-    /// Zero-sized placeholder that keeps the `'a` lifetime live when ML batch
-    /// scoring is compiled out (lean / `--no-default-features` build). Never
-    /// constructed - it exists solely so the type still carries `'a` without
-    /// the `ml` feature, where only the borrowing `Pending` variant uses it.
-    #[cfg(not(feature = "ml"))]
-    #[doc(hidden)]
-    _Lifetime(std::marker::PhantomData<&'a ()>),
 }
 
 pub(crate) type CredentialChecksumPolicy = crate::checksum::ChecksumConfidenceDecision;
@@ -175,9 +167,7 @@ pub(crate) fn apply_named_detector_anchor_floor(
     }
 }
 
-pub(crate) fn candidate_match_score<'a>(
-    policy: CandidateMatchScorePolicy<'a>,
-) -> MlScoreResult<'a> {
+pub(crate) fn candidate_match_score(policy: CandidateMatchScorePolicy<'_>) -> MlScoreResult {
     let heuristic_conf = match_heuristic_confidence(MatchHeuristicConfidencePolicy {
         has_literal_prefix: policy.has_literal_prefix,
         has_context_anchor: policy.has_context_anchor,
@@ -225,7 +215,6 @@ pub(crate) fn candidate_match_score<'a>(
             MlScoreResult::Pending {
                 heuristic_conf,
                 code_context: policy.code_context,
-                credential: std::borrow::Cow::Borrowed(policy.credential),
             }
         }
     };
@@ -236,10 +225,6 @@ pub(crate) fn candidate_match_score<'a>(
         }
         #[cfg(feature = "ml")]
         MlScoreResult::Pending { .. } => score_result,
-        #[cfg(not(feature = "ml"))]
-        MlScoreResult::_Lifetime(_) => {
-            unreachable!("_Lifetime is a never-constructed placeholder variant")
-        }
     }
 }
 

@@ -180,7 +180,7 @@ impl CompiledScanner {
                     &self.entropy_policies,
                 )),
             );
-        for mut entropy_match in entropy_matches {
+        for entropy_match in entropy_matches {
             // Resolve the complete synthetic identity from the active policy
             // owner. There is no keyword classifier or scanner-global identity
             // table: an incomplete custom corpus fails closed instead of
@@ -352,7 +352,6 @@ impl CompiledScanner {
                 scan_state.push_entropy_ml_pending(
                     raw_match,
                     policy_conf,
-                    std::mem::take(&mut entropy_match.value),
                     ml_context,
                     min_confidence_floor,
                     detector_owned_canonical_hex_key,

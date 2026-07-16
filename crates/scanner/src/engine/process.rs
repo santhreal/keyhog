@@ -343,7 +343,6 @@ impl CompiledScanner {
             MlScoreResult::Pending {
                 heuristic_conf,
                 code_context,
-                credential: pending_credential,
             } => {
                 let source_offset =
                     preprocessed.source_offset_for_match(&chunk.data, credential_start, credential);
@@ -369,17 +368,12 @@ impl CompiledScanner {
                     raw_match,
                     heuristic_conf,
                     code_context,
-                    pending_credential.into_owned(),
                     ml_context,
                     min_confidence_floor,
                     is_named_detector,
                     allow_decoded_hex_key_material,
                 );
                 crate::telemetry::record_match_found();
-            }
-            #[cfg(not(feature = "ml"))]
-            MlScoreResult::_Lifetime(_) => {
-                unreachable!("_Lifetime is a never-constructed placeholder variant")
             }
         }
     }

@@ -18,9 +18,6 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
         "/src/engine/scan_postprocess/ml.rs"
     ))
     .expect("scan_postprocess/ml.rs readable");
-    let ml_scorer =
-        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/ml_scorer.rs"))
-            .expect("ml_scorer.rs readable");
     let policy = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/confidence/policy.rs"
@@ -32,40 +29,29 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
         std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/gpu/backend.rs"))
             .expect("gpu/backend.rs readable");
 
-    assert!(
-        ml_postprocess.contains("fn emit_finalized_pending_match")
-            && ml_postprocess.contains("crate::ml_scorer::pending_match_score_inputs(")
-            && ml_postprocess
-                .contains("crate::ml_scorer::complete_pending_match_scores_with_config(")
-            && !ml_postprocess.contains("fn score_ml_pending_cpu")
-            && !ml_postprocess.contains("scores.len() == pending_matches.len()")
-            && !ml_postprocess.contains("crate::ml_scorer::score_with_config(")
-            && !ml_postprocess.contains(".map(|pending| (pending.credential.as_str()")
-            && ml_postprocess.contains(
-                "pending_matches.into_iter().zip(scores.into_iter())"
-            ),
-        "postprocess ML scoring must delegate score input extraction and cardinality repair to the ML scorer owner"
-    );
-    assert!(
-        ml_scorer.contains("fn pending_match_score_inputs(")
-            && ml_scorer.contains("pending_matches: &[crate::types::MlPendingMatch]")
-            && ml_scorer.contains("(pending.credential.as_str(), pending.ml_context.as_str())")
-            && ml_scorer.contains("fn complete_pending_match_scores_with_config(")
-            && ml_scorer.contains("scores.len() == pending_matches.len()")
-            && ml_scorer.contains(
-                "ML score count mismatch; recomputing CPU MoE scores before confidence blending"
-            )
-            && ml_scorer.contains("score_pending_matches_with_config("),
-        "ML scorer must preserve every pending finding when score cardinality drifts"
-    );
-    assert!(
-        ml_scorer.contains("fn score_pending_matches_with_config(")
-            && ml_scorer.contains("pending_matches: &[crate::types::MlPendingMatch]")
-            && ml_scorer.contains("pending.credential.as_str()")
-            && ml_scorer.contains("pending.ml_context.as_str()")
-            && ml_scorer.contains("score_with_config("),
-        "ML scorer must own the CPU pending-match scoring loop"
-    );
+    let candidates = [
+        ("ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij", "TOKEN="),
+        ("d41d8cd98f00b204e9800998ecf8427e", "checksum="),
+        ("", "EMPTY="),
+    ];
+    let mut config = keyhog_scanner::ScannerConfig::default();
+    config.known_prefixes.clear();
+    config.secret_keywords.clear();
+    config.test_keywords.clear();
+    config.placeholder_keywords.clear();
+    let repaired =
+        keyhog_scanner::testing::complete_ml_batch_scores(&candidates, vec![0.123], &config);
+    let expected: Vec<_> = candidates
+        .iter()
+        .map(|(text, context)| keyhog_scanner::testing::ml_score(text, context))
+        .collect();
+    assert_eq!(repaired.len(), candidates.len());
+    for (index, (actual, expected)) in repaired.iter().zip(expected.iter()).enumerate() {
+        assert!(
+            (*actual - *expected).abs() <= f64::EPSILON,
+            "cardinality repair changed candidate {index}: actual={actual:.9} expected={expected:.9}"
+        );
+    }
     assert!(
         ml_postprocess.contains("self.emit_finalized_pending_match(scan_state, pending, report_conf)")
             && ml_postprocess.contains("crate::adjudicate::finalize_report_raw_match(")

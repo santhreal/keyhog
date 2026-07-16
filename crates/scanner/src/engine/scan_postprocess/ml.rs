@@ -51,16 +51,14 @@ impl CompiledScanner {
             );
         }
 
-        let candidates = crate::ml_scorer::pending_match_score_inputs(&scan_state.ml_pending);
-
         let tuning = self.tuning.resolve();
+        let pending_matches = std::mem::take(&mut scan_state.ml_pending);
         let scores = crate::gpu::batch_ml_inference_with_timeout(
-            &candidates,
+            &pending_matches,
             &self.config,
             tuning.gpu_moe_timeout(),
         );
-        let pending_matches: Vec<_> = scan_state.ml_pending.drain(..).collect();
-        let scores = crate::ml_scorer::complete_pending_match_scores_with_config(
+        let scores = crate::ml_scorer::complete_batch_scores_with_config(
             scores,
             &pending_matches,
             &self.config.known_prefixes,

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Score the ML pending queue directly instead of allocating a borrowed
+  candidate vector and then copying the queue into a second vector. Pending
+  matches now borrow their zeroizing `RawMatch` credential instead of retaining
+  a second plaintext credential allocation. Small and GPU-sized batches retain
+  the same model inputs, cardinality checks, and CPU/GPU score policy.
+- Keep one parsed owner for ML file/context markers instead of cloning every
+  marker family into separate lazy vectors.
 - Compile each active generic detector's complete entropy, plausibility,
   isolated-shape, and BPE policy once during scanner construction. Active
   owners with missing policy fields now fail construction instead of reading

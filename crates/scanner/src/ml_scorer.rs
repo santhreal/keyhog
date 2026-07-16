@@ -31,6 +31,39 @@ pub(crate) use ml_features::compute_features_public;
 pub use ml_features::compute_features_with_config;
 pub(crate) use ml_features::NUM_FEATURES;
 
+/// Borrowed model input that lets batch inference consume its owning queue directly.
+#[cfg(any(feature = "ml", test))]
+pub(crate) trait MlScoreInput: Sync {
+    fn ml_text(&self) -> &str;
+    fn ml_context(&self) -> &str;
+}
+
+#[cfg(any(feature = "ml", test))]
+impl MlScoreInput for (&str, &str) {
+    #[inline]
+    fn ml_text(&self) -> &str {
+        self.0
+    }
+
+    #[inline]
+    fn ml_context(&self) -> &str {
+        self.1
+    }
+}
+
+#[cfg(feature = "ml")]
+impl MlScoreInput for crate::types::MlPendingMatch {
+    #[inline]
+    fn ml_text(&self) -> &str {
+        self.raw_match.credential.as_ref()
+    }
+
+    #[inline]
+    fn ml_context(&self) -> &str {
+        self.ml_context.as_str()
+    }
+}
+
 // Forward-pass dimensions + sigmoid clamp: imported from the single owner. The
 // re-export keeps `crate::ml_scorer::SIGMOID_SATURATION` stable for `testing.rs`.
 pub(crate) use model_arch::SIGMOID_SATURATION;
@@ -113,22 +146,21 @@ pub(crate) fn score_with_config(
     })
 }
 
-/// Score pending ML matches on the CPU using the same candidate/context fields
-/// the GPU batch path receives.
+/// Score model inputs on the CPU through the same feature path used by GPU batches.
 #[cfg(feature = "ml")]
-pub(crate) fn score_pending_matches_with_config(
-    pending_matches: &[crate::types::MlPendingMatch],
+fn score_inputs_with_config<T: MlScoreInput>(
+    inputs: &[T],
     known_prefixes: &[String],
     secret_keywords: &[String],
     test_keywords: &[String],
     placeholder_keywords: &[String],
 ) -> Vec<f64> {
-    pending_matches
+    inputs
         .iter()
-        .map(|pending| {
+        .map(|input| {
             score_with_config(
-                pending.credential.as_str(),
-                pending.ml_context.as_str(),
+                input.ml_text(),
+                input.ml_context(),
                 known_prefixes,
                 secret_keywords,
                 test_keywords,
@@ -138,40 +170,28 @@ pub(crate) fn score_pending_matches_with_config(
         .collect()
 }
 
-/// Borrow the exact pending-match candidate/context pairs used by every model
-/// scoring backend.
-#[cfg(feature = "ml")]
-pub(crate) fn pending_match_score_inputs(
-    pending_matches: &[crate::types::MlPendingMatch],
-) -> Vec<(&str, &str)> {
-    pending_matches
-        .iter()
-        .map(|pending| (pending.credential.as_str(), pending.ml_context.as_str()))
-        .collect()
-}
-
 /// Preserve pending-match cardinality before confidence blending. A malformed
 /// GPU/backend score vector is a backend failure, not permission to drop queued
 /// findings.
 #[cfg(feature = "ml")]
-pub(crate) fn complete_pending_match_scores_with_config(
+pub(crate) fn complete_batch_scores_with_config<T: MlScoreInput>(
     scores: Vec<f64>,
-    pending_matches: &[crate::types::MlPendingMatch],
+    inputs: &[T],
     known_prefixes: &[String],
     secret_keywords: &[String],
     test_keywords: &[String],
     placeholder_keywords: &[String],
 ) -> Vec<f64> {
-    if scores.len() == pending_matches.len() {
+    if scores.len() == inputs.len() {
         return scores;
     }
     tracing::warn!(
-        pending = pending_matches.len(),
+        pending = inputs.len(),
         scores = scores.len(),
         "ML score count mismatch; recomputing CPU MoE scores before confidence blending"
     );
-    score_pending_matches_with_config(
-        pending_matches,
+    score_inputs_with_config(
+        inputs,
         known_prefixes,
         secret_keywords,
         test_keywords,

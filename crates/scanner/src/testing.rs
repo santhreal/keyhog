@@ -4122,6 +4122,23 @@ pub fn ml_score(text: &str, context: &str) -> f64 {
     crate::ml_scorer::score(text, context)
 }
 
+#[cfg(feature = "ml")]
+/// Exercise production score-cardinality repair with borrowed model inputs.
+pub fn complete_ml_batch_scores(
+    candidates: &[(&str, &str)],
+    scores: Vec<f64>,
+    config: &crate::ScannerConfig,
+) -> Vec<f64> {
+    crate::ml_scorer::complete_batch_scores_with_config(
+        scores,
+        candidates,
+        &config.known_prefixes,
+        &config.secret_keywords,
+        &config.test_keywords,
+        &config.placeholder_keywords,
+    )
+}
+
 /// Capture the coalesced GPU region-presence batch for `chunks`: `(haystack bytes
 /// the GPU DFA scans, region start offsets, borrowed-single-chunk-fast-path?)`.
 /// Lets a differential test prove the borrowed-single-chunk path and the

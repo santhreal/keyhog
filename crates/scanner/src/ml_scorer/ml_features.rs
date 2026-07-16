@@ -109,27 +109,6 @@ static ML_FEATURE_MARKERS: std::sync::LazyLock<MlFeatureMarkers> = std::sync::La
     }
 });
 
-static COMMENT_PREFIXES: std::sync::LazyLock<Vec<String>> =
-    std::sync::LazyLock::new(|| ML_FEATURE_MARKERS.comment_prefixes.clone());
-
-static BINARY_MARKERS: std::sync::LazyLock<Vec<String>> =
-    std::sync::LazyLock::new(|| ML_FEATURE_MARKERS.binary_markers.clone());
-
-static CI_MARKERS: std::sync::LazyLock<Vec<String>> =
-    std::sync::LazyLock::new(|| ML_FEATURE_MARKERS.ci_markers.clone());
-
-static INFRA_MARKERS: std::sync::LazyLock<Vec<String>> =
-    std::sync::LazyLock::new(|| ML_FEATURE_MARKERS.infra_markers.clone());
-
-static SOURCE_MARKERS: std::sync::LazyLock<Vec<String>> =
-    std::sync::LazyLock::new(|| ML_FEATURE_MARKERS.source_markers.clone());
-
-static SOURCE_EXTENSIONS: std::sync::LazyLock<Vec<String>> =
-    std::sync::LazyLock::new(|| ML_FEATURE_MARKERS.source_extensions.clone());
-
-static CONFIG_MARKERS: std::sync::LazyLock<Vec<String>> =
-    std::sync::LazyLock::new(|| ML_FEATURE_MARKERS.config_markers.clone());
-
 /// Entry point for feature-extraction unit tests.
 #[cfg(test)]
 pub(crate) fn compute_features_public(text: &str, context: &str) -> [f32; NUM_FEATURES] {
@@ -342,25 +321,26 @@ fn infer_file_type(context: &str, context_bytes: &[u8]) -> usize {
 }
 
 fn is_binary_context(context_bytes: &[u8]) -> bool {
-    contains_any_ascii_case_insensitive(context_bytes, &BINARY_MARKERS)
+    contains_any_ascii_case_insensitive(context_bytes, &ML_FEATURE_MARKERS.binary_markers)
 }
 
 fn is_ci_context(context_bytes: &[u8]) -> bool {
-    contains_any_ascii_case_insensitive(context_bytes, &CI_MARKERS)
+    contains_any_ascii_case_insensitive(context_bytes, &ML_FEATURE_MARKERS.ci_markers)
 }
 
 fn is_infra_context(context: &str, context_bytes: &[u8]) -> bool {
-    context.contains("from ") || contains_any_ascii_case_insensitive(context_bytes, &INFRA_MARKERS)
+    context.contains("from ")
+        || contains_any_ascii_case_insensitive(context_bytes, &ML_FEATURE_MARKERS.infra_markers)
 }
 
 fn is_source_context(context: &str, context_bytes: &[u8]) -> bool {
-    contains_any(context, &SOURCE_MARKERS)
-        || contains_any_ascii_case_insensitive(context_bytes, &SOURCE_EXTENSIONS)
+    contains_any(context, &ML_FEATURE_MARKERS.source_markers)
+        || contains_any_ascii_case_insensitive(context_bytes, &ML_FEATURE_MARKERS.source_extensions)
 }
 
 fn is_config_context(context: &str, context_bytes: &[u8]) -> bool {
     has_unquoted_equals(context)
-        || contains_any_ascii_case_insensitive(context_bytes, &CONFIG_MARKERS)
+        || contains_any_ascii_case_insensitive(context_bytes, &ML_FEATURE_MARKERS.config_markers)
 }
 
 fn has_unquoted_equals(value: &str) -> bool {
@@ -396,7 +376,8 @@ fn has_assignment_operator(value: &str) -> bool {
 /// derive from this same check; it lives in one place so the two features can
 /// never drift to different comment definitions.
 fn context_starts_with_comment_prefix(context: &str) -> bool {
-    COMMENT_PREFIXES
+    ML_FEATURE_MARKERS
+        .comment_prefixes
         .iter()
         .any(|prefix| context.trim().starts_with(prefix.as_str()))
 }

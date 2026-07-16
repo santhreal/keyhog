@@ -28,8 +28,6 @@ pub(crate) struct MlPendingMatch {
     pub(crate) heuristic_conf: f64,
     /// Inferred code context for post-ML adjustments.
     pub(crate) code_context: crate::context::CodeContext,
-    /// Credential text for feature extraction.
-    pub(crate) credential: String,
     /// Surrounding context passed to the ML scorer.
     pub(crate) ml_context: String,
     /// Confidence floor that applies to this pending candidate after ML blending.
@@ -61,7 +59,6 @@ impl MlPendingMatch {
         raw_match: keyhog_core::RawMatch,
         heuristic_conf: f64,
         code_context: crate::context::CodeContext,
-        credential: String,
         ml_context: String,
         min_confidence_floor: f64,
         is_named_detector: bool,
@@ -71,7 +68,6 @@ impl MlPendingMatch {
             raw_match,
             heuristic_conf,
             code_context,
-            credential,
             ml_context,
             min_confidence_floor,
             is_named_detector,
@@ -83,7 +79,6 @@ impl MlPendingMatch {
     pub(crate) fn entropy_candidate(
         raw_match: keyhog_core::RawMatch,
         heuristic_conf: f64,
-        credential: String,
         ml_context: String,
         min_confidence_floor: f64,
         allow_canonical_hex_key: bool,
@@ -92,7 +87,6 @@ impl MlPendingMatch {
             raw_match,
             heuristic_conf,
             code_context: crate::context::CodeContext::Unknown,
-            credential,
             ml_context,
             min_confidence_floor,
             is_named_detector: false,
@@ -306,7 +300,6 @@ impl ScanState {
         raw_match: keyhog_core::RawMatch,
         heuristic_conf: f64,
         code_context: crate::context::CodeContext,
-        credential: String,
         ml_context: String,
         min_confidence_floor: f64,
         is_named_detector: bool,
@@ -316,7 +309,6 @@ impl ScanState {
             raw_match,
             heuristic_conf,
             code_context,
-            credential,
             ml_context,
             min_confidence_floor,
             is_named_detector,
@@ -329,7 +321,6 @@ impl ScanState {
         &mut self,
         raw_match: keyhog_core::RawMatch,
         heuristic_conf: f64,
-        credential: String,
         ml_context: String,
         min_confidence_floor: f64,
         allow_canonical_hex_key: bool,
@@ -337,7 +328,6 @@ impl ScanState {
         self.ml_pending.push(MlPendingMatch::entropy_candidate(
             raw_match,
             heuristic_conf,
-            credential,
             ml_context,
             min_confidence_floor,
             allow_canonical_hex_key,
