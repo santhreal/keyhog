@@ -312,6 +312,26 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
             policy.mixed_alnum_min_len
         );
         println!(
+            "    isolated_mixed_entropy_floor: {} bits/byte",
+            policy.isolated_mixed_entropy_floor
+        );
+        println!(
+            "    isolated_symbolic_min_len: {} bytes",
+            policy.isolated_symbolic_min_len
+        );
+        println!(
+            "    isolated_colon_left_min_len: {} bytes",
+            policy.isolated_colon_left_min_len
+        );
+        println!(
+            "    isolated_colon_right_min_len: {} bytes",
+            policy.isolated_colon_right_min_len
+        );
+        println!(
+            "    leading_slash_base64_entropy_floor: {} bits/byte",
+            policy.leading_slash_base64_entropy_floor
+        );
+        println!(
             "    reject_repeated_blocks: {}",
             policy.reject_repeated_blocks
         );

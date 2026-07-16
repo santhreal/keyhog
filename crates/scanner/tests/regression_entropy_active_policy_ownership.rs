@@ -38,6 +38,11 @@ fn detector(id: &str, keywords: &[&str], min_len: usize) -> DetectorSpec {
             symbolic_entropy_floor: 3.5,
             second_half_entropy_floor: 2.5,
             mixed_alnum_min_len: 20,
+            isolated_mixed_entropy_floor: 3.65,
+            isolated_symbolic_min_len: 18,
+            isolated_colon_left_min_len: 20,
+            isolated_colon_right_min_len: 16,
+            leading_slash_base64_entropy_floor: 4.8,
             reject_repeated_blocks: true,
             allow_alphabetic_credential: true,
             reject_program_identifiers: true,
@@ -191,6 +196,11 @@ fn scan_with_plausibility_policy(
         symbolic_entropy_floor: symbolic_floor,
         second_half_entropy_floor: second_half_floor,
         mixed_alnum_min_len: mixed_min_len,
+        isolated_mixed_entropy_floor: 3.65,
+        isolated_symbolic_min_len: 18,
+        isolated_colon_left_min_len: 20,
+        isolated_colon_right_min_len: 16,
+        leading_slash_base64_entropy_floor: 4.8,
         reject_repeated_blocks: true,
         allow_alphabetic_credential: true,
         reject_program_identifiers: true,
@@ -224,6 +234,72 @@ fn custom_mixed_alnum_min_len_controls_assignment_admission() {
     let value = "A1b2C3d4E5f6G7h8";
     assert!(!scan_with_plausibility_policy(value, 0.0, 0.0, 20).contains(&value.to_string()));
     assert!(scan_with_plausibility_policy(value, 0.0, 0.0, 8).contains(&value.to_string()));
+}
+
+fn scan_isolated_with_policy(
+    value: &str,
+    mixed_entropy_floor: f64,
+    symbolic_min_len: usize,
+    colon_left_min_len: usize,
+    colon_right_min_len: usize,
+    leading_slash_base64_entropy_floor: f64,
+) -> Vec<String> {
+    let mut owner = detector("isolated-policy-owner", &["secret"], 8);
+    owner.entropy_roles = vec![EntropyDetectionRole::IsolatedBare];
+    let policy = owner
+        .plausibility
+        .as_mut()
+        .expect("test entropy owner must declare plausibility");
+    policy.isolated_mixed_entropy_floor = mixed_entropy_floor;
+    policy.isolated_symbolic_min_len = symbolic_min_len;
+    policy.isolated_colon_left_min_len = colon_left_min_len;
+    policy.isolated_colon_right_min_len = colon_right_min_len;
+    policy.leading_slash_base64_entropy_floor = leading_slash_base64_entropy_floor;
+    let mut config = ScannerConfig::default();
+    config.entropy_enabled = true;
+    config.entropy_in_source_files = true;
+    config.min_confidence = 0.0;
+    let scanner = CompiledScanner::compile(vec![owner])
+        .expect("compile isolated detector-policy corpus")
+        .with_config(config);
+    let chunk = Chunk {
+        data: value.to_string().into(),
+        metadata: ChunkMetadata {
+            source_type: "isolated-policy-probe".into(),
+            path: Some("probe.txt".into()),
+            ..Default::default()
+        },
+    };
+    scanner
+        .scan_with_backend(&chunk, ScanBackend::CpuFallback)
+        .into_iter()
+        .filter(|finding| finding.credential.as_ref() == value)
+        .map(|finding| finding.credential.to_string())
+        .collect()
+}
+
+#[test]
+fn isolated_candidate_floors_are_owned_by_the_active_detector() {
+    let mixed = "Ab1_Cd2_Ef3_Gh4_Ij5x";
+    assert!(scan_isolated_with_policy(mixed, 3.9, 18, 20, 16, 4.8).contains(&mixed.to_string()));
+    assert!(scan_isolated_with_policy(mixed, 4.0, 18, 20, 16, 4.8).is_empty());
+
+    let symbolic = "Xzqk-pvbg-wmjz-rql";
+    assert!(
+        scan_isolated_with_policy(symbolic, 3.65, 18, 20, 16, 4.8).contains(&symbolic.to_string())
+    );
+    assert!(scan_isolated_with_policy(symbolic, 3.65, 19, 20, 16, 4.8).is_empty());
+
+    let colon = "abcdefghij0123456789:klmnopqr01234567";
+    assert!(scan_isolated_with_policy(colon, 3.65, 18, 20, 16, 4.8).contains(&colon.to_string()));
+    assert!(scan_isolated_with_policy(colon, 3.65, 18, 21, 17, 4.8).is_empty());
+
+    let slash_base64 = "/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789+/AbCdEfGh==";
+    assert!(
+        scan_isolated_with_policy(slash_base64, 3.65, 18, 20, 16, 5.2)
+            .contains(&slash_base64.to_string())
+    );
+    assert!(scan_isolated_with_policy(slash_base64, 3.65, 18, 20, 16, 5.3).is_empty());
 }
 
 #[test]

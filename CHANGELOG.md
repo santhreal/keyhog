@@ -6,6 +6,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Entropy-owning detector TOMLs now own the isolated mixed-token entropy floor,
+  symbolic and colon-component length floors, and slash-led base64 entropy
+  floor. Scanner construction compiles those values once and the production
+  entropy path consumes the compiled owner policy instead of scanner constants.
 - Generic and service-anchored match policy now compiles from each active
   detector's TOML `service` field and travels through batched ML finalization.
   Match processing and resolution no longer reinterpret custom detector IDs to

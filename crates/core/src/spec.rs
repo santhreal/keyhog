@@ -381,6 +381,17 @@ pub struct DetectorPlausibilityPolicySpec {
     pub second_half_entropy_floor: f64,
     /// Minimum byte length for the mixed alphabetic/numeric carve-out.
     pub mixed_alnum_min_len: usize,
+    /// Shannon floor for isolated mixed-case alphanumeric tokens, with or
+    /// without an underscore separator.
+    pub isolated_mixed_entropy_floor: f64,
+    /// Minimum byte length for isolated symbolic opaque-token shapes.
+    pub isolated_symbolic_min_len: usize,
+    /// Minimum byte length for the left component of `opaque:opaque` tokens.
+    pub isolated_colon_left_min_len: usize,
+    /// Minimum byte length for the right component of `opaque:opaque` tokens.
+    pub isolated_colon_right_min_len: usize,
+    /// Shannon floor for an unanchored leading-slash base64 token.
+    pub leading_slash_base64_entropy_floor: f64,
     /// Reject periodic values, including a truncated final repetition.
     pub reject_repeated_blocks: bool,
     /// Admit an anchored alphabetic value after the other shape gates pass.

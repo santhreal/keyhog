@@ -243,12 +243,7 @@ impl CompiledScanner {
                 detector_owned_canonical_hex_key,
                 source_entropy_requires_same_line_credential,
                 bpe_bound,
-                compiled_policy
-                    .and_then(|policy| policy.entropy_shape)
-                    .or_else(|| {
-                        policy_detector
-                            .and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape)
-                    }),
+                compiled_policy,
                 policy_detector.map_or(&[], |detector| {
                     detector.public_identifier_assignment_markers.as_slice()
                 }),

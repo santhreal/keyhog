@@ -30,7 +30,7 @@ mechanisms, and their roles are deliberately different:
 | Shannon entropy | Measures byte-distribution uncertainty for opaque generic values | Yes, on the entropy-discovery path |
 | BPE token efficiency | Rejects language-like values that compress into common subword tokens; eligible candidates use it by default, and detector TOML can tune or disable it | No; precision gate |
 | English bigram discriminator | Distinguishes random alphabetic tokens from pronounceable identifiers, dictionary placeholders, and low-diversity masks inside specific shape and context gates | No; admits or rejects an extracted candidate within those gates |
-| Shape, placeholder, path, and context policy | Rejects examples, references, prose, identifiers, and context-specific noise | No; precision gates |
+| Shape, placeholder, path, and context policy | Rejects examples, references, prose, identifiers, and context-specific noise; entropy owners compile their isolated-token floors and lengths from their detector TOML `plausibility` table | No; precision gates |
 | Checksums and structural validators | Proves or rejects formats that carry intrinsic validity bits or grammar | Adjusts acceptance/confidence |
 | On-device MoE scoring | Scores ambiguous candidates using local features; never sends content away | Adjusts confidence |
 | Live verification | Optionally asks the owning service whether a surviving credential is active | Adds a verdict after detection |

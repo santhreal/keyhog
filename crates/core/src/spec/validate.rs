@@ -387,6 +387,14 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
                 "plausibility.second_half_entropy_floor",
                 plausibility.second_half_entropy_floor,
             ),
+            (
+                "plausibility.isolated_mixed_entropy_floor",
+                plausibility.isolated_mixed_entropy_floor,
+            ),
+            (
+                "plausibility.leading_slash_base64_entropy_floor",
+                plausibility.leading_slash_base64_entropy_floor,
+            ),
         ] {
             if !score.is_finite() || !(0.0..=8.0).contains(&score) {
                 issues.push(QualityIssue::Error(format!(
@@ -398,6 +406,26 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
             issues.push(QualityIssue::Error(
                 "plausibility.mixed_alnum_min_len must be greater than zero".into(),
             ));
+        }
+        for (name, length) in [
+            (
+                "plausibility.isolated_symbolic_min_len",
+                plausibility.isolated_symbolic_min_len,
+            ),
+            (
+                "plausibility.isolated_colon_left_min_len",
+                plausibility.isolated_colon_left_min_len,
+            ),
+            (
+                "plausibility.isolated_colon_right_min_len",
+                plausibility.isolated_colon_right_min_len,
+            ),
+        ] {
+            if length == 0 {
+                issues.push(QualityIssue::Error(format!(
+                    "{name} must be greater than zero"
+                )));
+            }
         }
     }
     if let (Some(very_high), Some(sensitive)) = (

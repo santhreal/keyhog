@@ -66,6 +66,7 @@ pub(crate) struct PlausibilityContext {
     reject_program_identifiers: bool,
     reject_dash_segmented_alnum: bool,
     mixed_alnum_min_len: usize,
+    leading_slash_base64_entropy_floor: f64,
     entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
 }
 
@@ -89,6 +90,7 @@ impl PlausibilityContext {
             reject_program_identifiers: true,
             reject_dash_segmented_alnum: true,
             mixed_alnum_min_len: MIXED_ALNUM_MIN_LEN,
+            leading_slash_base64_entropy_floor: LEADING_SLASH_BASE64_ENTROPY_FLOOR,
             entropy_shape: None,
         }
     }
@@ -105,6 +107,7 @@ impl PlausibilityContext {
                 self.reject_program_identifiers = policy.reject_program_identifiers;
                 self.reject_dash_segmented_alnum = policy.reject_dash_segmented_alnum;
                 self.mixed_alnum_min_len = policy.mixed_alnum_min_len;
+                self.leading_slash_base64_entropy_floor = policy.leading_slash_base64_entropy_floor;
             }
         }
         self.entropy_shape = detector.and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape);
@@ -126,6 +129,7 @@ impl PlausibilityContext {
             self.reject_program_identifiers = policy.reject_program_identifiers;
             self.reject_dash_segmented_alnum = policy.reject_dash_segmented_alnum;
             self.mixed_alnum_min_len = policy.mixed_alnum_min_len;
+            self.leading_slash_base64_entropy_floor = policy.leading_slash_base64_entropy_floor;
             self.entropy_shape = policy.entropy_shape;
         }
         self
@@ -300,8 +304,13 @@ pub(crate) fn is_isolated_bare_secret_plausible(
     entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
     plausibility_policy: Option<crate::entropy::policy::CompiledEntropyPolicy>,
 ) -> bool {
-    if is_isolated_leading_slash_base64_secret(value, placeholder_keywords) {
-        return true;
+    let context = PlausibilityContext {
+        entropy_shape,
+        ..PlausibilityContext::default()
+    }
+    .with_compiled_policy(plausibility_policy.as_ref());
+    if value.starts_with('/') {
+        return is_isolated_leading_slash_base64_secret(value, placeholder_keywords, context);
     }
     if value.contains('.') {
         if value.len() >= 40
@@ -317,11 +326,19 @@ pub(crate) fn is_isolated_bare_secret_plausible(
             return false;
         }
     }
-    let context = PlausibilityContext {
-        entropy_shape,
-        ..PlausibilityContext::default()
+    if super::isolated::isolated_special_shape_floor_met_with_policy(
+        value,
+        shannon_entropy(value.as_bytes()),
+        context.entropy_shape.as_ref(),
+        plausibility_policy.as_ref(),
+    ) {
+        return passes_plausibility_checks(
+            value,
+            PlausibilityMode::Lenient,
+            placeholder_keywords,
+            context,
+        ) && passes_secret_shape_checks(value, context);
     }
-    .with_compiled_policy(plausibility_policy.as_ref());
     passes_plausibility_checks(
         value,
         PlausibilityMode::Lenient,
@@ -330,7 +347,11 @@ pub(crate) fn is_isolated_bare_secret_plausible(
     ) && passes_secret_shape_checks(value, context)
 }
 
-fn is_isolated_leading_slash_base64_secret(value: &str, placeholder_keywords: &[String]) -> bool {
+fn is_isolated_leading_slash_base64_secret(
+    value: &str,
+    placeholder_keywords: &[String],
+    context: PlausibilityContext,
+) -> bool {
     let Some(body) = value.strip_prefix('/') else {
         return false;
     };
@@ -367,8 +388,8 @@ fn is_isolated_leading_slash_base64_secret(value: &str, placeholder_keywords: &[
     has_upper
         && has_lower
         && has_digit
-        && shannon_entropy(value.as_bytes()) >= LEADING_SLASH_BASE64_ENTROPY_FLOOR
-        && passes_secret_shape_checks(value, PlausibilityContext::default())
+        && shannon_entropy(value.as_bytes()) >= context.leading_slash_base64_entropy_floor
+        && passes_secret_shape_checks(value, context)
 }
 
 fn passes_secret_shape_checks(value: &str, context: PlausibilityContext) -> bool {

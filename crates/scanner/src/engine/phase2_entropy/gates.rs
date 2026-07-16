@@ -23,7 +23,7 @@ pub(crate) fn entropy_match_suppression_stage(
     // explicitly disabled token efficiency; `Some` carries detector policy
     // with any Tier-A scan ceiling override already applied.
     bpe_max_bytes_per_token: Option<f64>,
-    entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
+    compiled_policy: Option<&crate::entropy::policy::CompiledEntropyPolicy>,
     public_identifier_assignment_markers: &[String],
 ) -> Option<EntropyShapeStage> {
     let randomness =
@@ -57,7 +57,7 @@ pub(crate) fn entropy_match_suppression_stage(
         crate::entropy::scanner::lower_dash_app_password_floor_met_with_policy(
             &entropy_match.value,
             entropy_match.entropy,
-            entropy_shape.as_ref(),
+            compiled_policy.and_then(|policy| policy.entropy_shape.as_ref()),
         );
     // Keep shared content gates live even when canonical shape gates are lifted.
     if let Some(stage) = crate::adjudicate::entropy_fallback_example_suppression_stage(
@@ -147,10 +147,14 @@ pub(crate) fn entropy_match_suppression_stage(
     // no-op on both corpora, left as the plain gate by documented decision.
     if entropy_match.keyword != crate::entropy::ISOLATED_BARE_ENTROPY_LABEL
         && !(same_line_high_signal_assignment_owner
-            && crate::entropy::scanner::mixed_separator_token_floor_met(
-                &entropy_match.value,
-                entropy_match.entropy,
-            ))
+            && compiled_policy.is_some_and(|policy| {
+                crate::entropy::scanner::mixed_separator_token_floor_met(
+                    &entropy_match.value,
+                    entropy_match.entropy,
+                    policy.isolated_mixed_entropy_floor,
+                    policy.isolated_colon_left_min_len,
+                )
+            }))
         && !(same_line_high_signal_assignment_owner && lower_dash_app_password)
         && crate::suppression::shape::looks_like_word_separated_identifier(&entropy_match.value)
     {

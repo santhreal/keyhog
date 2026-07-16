@@ -20,6 +20,40 @@ const SYMBOLIC_ALPHA_ONLY_MIN_LEN: usize = 18;
 /// is 16 characters can still pass.
 const COLON_RIGHT_PART_MIN_LEN: usize = 16;
 
+#[derive(Clone, Copy)]
+struct IsolatedCandidatePolicy {
+    mixed_entropy_floor: f64,
+    mixed_min_len: usize,
+    symbolic_entropy_floor: f64,
+    symbolic_min_len: usize,
+    colon_left_min_len: usize,
+    colon_right_min_len: usize,
+}
+
+impl IsolatedCandidatePolicy {
+    #[inline]
+    fn resolve(policy: Option<&super::policy::CompiledEntropyPolicy>) -> Self {
+        policy.map_or(
+            Self {
+                mixed_entropy_floor: MIXED_TOKEN_ENTROPY_FLOOR,
+                mixed_min_len: KEYWORD_FREE_MIN_LEN,
+                symbolic_entropy_floor: super::plausibility::SYMBOLIC_CREDENTIAL_ENTROPY_FLOOR,
+                symbolic_min_len: SYMBOLIC_ALPHA_ONLY_MIN_LEN,
+                colon_left_min_len: KEYWORD_FREE_MIN_LEN,
+                colon_right_min_len: COLON_RIGHT_PART_MIN_LEN,
+            },
+            |policy| Self {
+                mixed_entropy_floor: policy.isolated_mixed_entropy_floor,
+                mixed_min_len: policy.keyword_free_min_len,
+                symbolic_entropy_floor: policy.symbolic_entropy_floor,
+                symbolic_min_len: policy.isolated_symbolic_min_len,
+                colon_left_min_len: policy.isolated_colon_left_min_len,
+                colon_right_min_len: policy.isolated_colon_right_min_len,
+            },
+        )
+    }
+}
+
 pub(crate) fn has_isolated_bare_secret_candidate_with_policy(
     text: &str,
     entropy_threshold: f64,
@@ -82,8 +116,9 @@ fn line_has_isolated_bare_secret_candidate(
     if is_likely_innocuous_line(line) {
         return false;
     }
+    let candidate_policy = IsolatedCandidatePolicy::resolve(plausibility_policy.as_ref());
     let mut found = false;
-    visit_isolated_bare_candidates(line, min_len.max(1), |candidate, _| {
+    visit_isolated_bare_candidates(line, min_len.max(1), candidate_policy, |candidate, _| {
         found |= isolated_bare_secret_entropy(
             candidate,
             threshold,
@@ -97,11 +132,17 @@ fn line_has_isolated_bare_secret_candidate(
     // but narrower symbolic/app-password shapes have stronger shape proof down
     // to 16 bytes. Revisit only that special band; ordinary tokens continue to
     // obey the detector-owned broad minimum.
-    let special_min_len = isolated_special_shape_min_len(entropy_shape.as_ref());
+    let special_min_len =
+        isolated_special_shape_min_len(entropy_shape.as_ref(), plausibility_policy.as_ref());
     if !found && min_len > special_min_len {
-        visit_isolated_bare_candidates(line, special_min_len, |candidate, _| {
+        visit_isolated_bare_candidates(line, special_min_len, candidate_policy, |candidate, _| {
             let entropy = shannon_entropy(candidate.as_bytes());
-            if isolated_special_shape_floor_met(candidate, entropy, entropy_shape.as_ref()) {
+            if isolated_special_shape_floor_met(
+                candidate,
+                entropy,
+                entropy_shape.as_ref(),
+                candidate_policy,
+            ) {
                 found |= isolated_bare_secret_entropy(
                     candidate,
                     threshold,
@@ -132,6 +173,7 @@ fn isolated_bare_entropy_floor_met(
     entropy: f64,
     threshold: f64,
     shape_policy: Option<&keyhog_core::EntropyShapeSpec>,
+    candidate_policy: IsolatedCandidatePolicy,
 ) -> bool {
     if entropy >= threshold {
         return true;
@@ -139,9 +181,19 @@ fn isolated_bare_entropy_floor_met(
     if threshold > MIXED_ALNUM_TOKEN_THRESHOLD {
         return false;
     }
-    mixed_separator_token_floor_met(candidate, entropy)
-        || lower_dash_app_password_floor_met_with_policy(candidate, entropy, shape_policy)
-        || mixed_contiguous_token_floor_met(candidate, entropy)
+    mixed_separator_token_floor_met(
+        candidate,
+        entropy,
+        candidate_policy.mixed_entropy_floor,
+        candidate_policy.mixed_min_len,
+    ) || lower_dash_app_password_floor_met_with_policy(candidate, entropy, shape_policy)
+        || mixed_contiguous_token_floor_met(
+            candidate,
+            entropy,
+            candidate_policy.mixed_entropy_floor,
+            candidate_policy.mixed_min_len,
+        )
+        || isolated_special_shape_floor_met(candidate, entropy, shape_policy, candidate_policy)
 }
 
 pub(super) fn isolated_bare_keyword_context_with_shape(
@@ -161,11 +213,13 @@ pub(super) fn isolated_bare_keyword_context_with_shape(
     }
 }
 
-pub(crate) fn mixed_separator_token_floor_met(candidate: &str, entropy: f64) -> bool {
-    if entropy < MIXED_TOKEN_ENTROPY_FLOOR
-        || candidate.len() < KEYWORD_FREE_MIN_LEN
-        || !candidate.contains('_')
-    {
+pub(crate) fn mixed_separator_token_floor_met(
+    candidate: &str,
+    entropy: f64,
+    entropy_floor: f64,
+    min_len: usize,
+) -> bool {
+    if entropy < entropy_floor || candidate.len() < min_len || !candidate.contains('_') {
         return false;
     }
     let mut has_upper = false;
@@ -185,19 +239,19 @@ pub(crate) fn mixed_separator_token_floor_met(candidate: &str, entropy: f64) -> 
     has_upper && has_lower && has_digit
 }
 
-const SYMBOLIC_SPECIAL_SHAPE_MIN_LEN: usize = 18;
-
 pub(super) fn isolated_special_shape_min_len(
     entropy_shape: Option<&keyhog_core::EntropyShapeSpec>,
+    policy: Option<&super::policy::CompiledEntropyPolicy>,
 ) -> usize {
+    let candidate_policy = IsolatedCandidatePolicy::resolve(policy);
     entropy_shape
         .and_then(|shape| match shape {
             keyhog_core::EntropyShapeSpec::LowerDashAppPassword {
                 special_min_length, ..
             } => Some(*special_min_length),
         })
-        .map_or(SYMBOLIC_SPECIAL_SHAPE_MIN_LEN, |min_len| {
-            min_len.min(SYMBOLIC_SPECIAL_SHAPE_MIN_LEN)
+        .map_or(candidate_policy.symbolic_min_len, |min_len| {
+            min_len.min(candidate_policy.symbolic_min_len)
         })
 }
 
@@ -205,10 +259,26 @@ fn isolated_special_shape_floor_met(
     candidate: &str,
     entropy: f64,
     entropy_shape: Option<&keyhog_core::EntropyShapeSpec>,
+    candidate_policy: IsolatedCandidatePolicy,
 ) -> bool {
     lower_dash_app_password_floor_met_with_policy(candidate, entropy, entropy_shape)
-        || (candidate.len() >= SYMBOLIC_SPECIAL_SHAPE_MIN_LEN
-            && symbolic_isolated_bare_candidate(candidate))
+        || (entropy >= candidate_policy.symbolic_entropy_floor
+            && candidate.len() >= candidate_policy.symbolic_min_len
+            && symbolic_alpha_only_opaque_candidate(candidate, candidate_policy.symbolic_min_len))
+}
+
+pub(super) fn isolated_special_shape_floor_met_with_policy(
+    candidate: &str,
+    entropy: f64,
+    entropy_shape: Option<&keyhog_core::EntropyShapeSpec>,
+    policy: Option<&super::policy::CompiledEntropyPolicy>,
+) -> bool {
+    isolated_special_shape_floor_met(
+        candidate,
+        entropy,
+        entropy_shape,
+        IsolatedCandidatePolicy::resolve(policy),
+    )
 }
 
 pub(crate) fn lower_dash_app_password_floor_met_with_policy(
@@ -260,8 +330,13 @@ pub(crate) fn lower_dash_app_password_floor_met_with_policy(
     actual_group_count == *expected_group_count && has_non_hex
 }
 
-pub(crate) fn mixed_contiguous_token_floor_met(candidate: &str, entropy: f64) -> bool {
-    if entropy < MIXED_TOKEN_ENTROPY_FLOOR || candidate.len() < KEYWORD_FREE_MIN_LEN {
+pub(crate) fn mixed_contiguous_token_floor_met(
+    candidate: &str,
+    entropy: f64,
+    entropy_floor: f64,
+    min_len: usize,
+) -> bool {
+    if entropy < entropy_floor || candidate.len() < min_len {
         return false;
     }
     let mut has_upper = false;
@@ -328,24 +403,34 @@ pub(super) fn collect_isolated_bare_candidates_inner(
             offset: line_offset + candidate_offset,
         });
     };
-    visit_isolated_bare_candidates(line, context.min_len, &mut emit_candidate);
+    let candidate_policy = IsolatedCandidatePolicy::resolve(context.plausibility_policy.as_ref());
+    visit_isolated_bare_candidates(line, context.min_len, candidate_policy, &mut emit_candidate);
     // See the matching admission exception in
     // `line_has_isolated_bare_secret_candidate`: only shape-proven symbolic or
     // 4x4 app-password candidates may cross a broader detector TOML floor.
-    let special_min_len = isolated_special_shape_min_len(context.entropy_shape.as_ref());
+    let special_min_len = isolated_special_shape_min_len(
+        context.entropy_shape.as_ref(),
+        context.plausibility_policy.as_ref(),
+    );
     if context.min_len > special_min_len {
-        visit_isolated_bare_candidates(line, special_min_len, |candidate, candidate_offset| {
-            let entropy = shannon_entropy(candidate.as_bytes());
-            if candidate.len() < context.min_len
-                && isolated_special_shape_floor_met(
-                    candidate,
-                    entropy,
-                    context.entropy_shape.as_ref(),
-                )
-            {
-                emit_candidate(candidate, candidate_offset);
-            }
-        });
+        visit_isolated_bare_candidates(
+            line,
+            special_min_len,
+            candidate_policy,
+            |candidate, candidate_offset| {
+                let entropy = shannon_entropy(candidate.as_bytes());
+                if candidate.len() < context.min_len
+                    && isolated_special_shape_floor_met(
+                        candidate,
+                        entropy,
+                        context.entropy_shape.as_ref(),
+                        candidate_policy,
+                    )
+                {
+                    emit_candidate(candidate, candidate_offset);
+                }
+            },
+        );
     }
 }
 
@@ -386,7 +471,13 @@ fn isolated_bare_secret_entropy_decision(
         ));
     }
     let entropy = shannon_entropy(candidate.as_bytes());
-    if !isolated_bare_entropy_floor_met(candidate, entropy, threshold, entropy_shape.as_ref()) {
+    if !isolated_bare_entropy_floor_met(
+        candidate,
+        entropy,
+        threshold,
+        entropy_shape.as_ref(),
+        IsolatedCandidatePolicy::resolve(plausibility_policy.as_ref()),
+    ) {
         return Err(StageId::EntropyBelowFloor);
     }
     if !is_isolated_bare_secret_plausible(
@@ -405,6 +496,7 @@ fn isolated_bare_secret_entropy_decision(
 fn visit_isolated_bare_candidates<'a>(
     line: &'a str,
     min_len: usize,
+    candidate_policy: IsolatedCandidatePolicy,
     mut visit: impl FnMut(&'a str, usize),
 ) {
     // Fast path: check for whitespace BEFORE the expensive full-line
@@ -418,7 +510,7 @@ fn visit_isolated_bare_candidates<'a>(
     let bytes = line.as_bytes();
     let has_whitespace = bytes.iter().any(|&b| b.is_ascii_whitespace());
     if !has_whitespace {
-        if let Some(candidate) = isolated_bare_candidate(line, min_len) {
+        if let Some(candidate) = isolated_bare_candidate(line, min_len, candidate_policy) {
             // SAFETY: `candidate` is returned by `isolated_bare_candidate(line, ...)`,
             // which derives it solely from `line.trim().trim_matches(...)`. Both `trim`
             // operations return subslices of `line`, so `candidate.as_ptr() >= line.as_ptr()`
@@ -443,7 +535,7 @@ fn visit_isolated_bare_candidates<'a>(
             continue;
         }
         if let Some((candidate, candidate_offset)) =
-            isolated_bare_candidate_in_span(line, token_start, token_end, min_len)
+            isolated_bare_candidate_in_span(line, token_start, token_end, min_len, candidate_policy)
         {
             visit(candidate, candidate_offset);
         }
@@ -455,6 +547,7 @@ fn isolated_bare_candidate_in_span(
     token_start: usize,
     token_end: usize,
     min_len: usize,
+    candidate_policy: IsolatedCandidatePolicy,
 ) -> Option<(&str, usize)> {
     let token_len = token_end - token_start;
     // Fast length reject: even without stripping `;`/`,`, if the token is
@@ -506,7 +599,7 @@ fn isolated_bare_candidate_in_span(
     if max_ent_run < min_len {
         return None;
     }
-    isolated_bare_candidate(candidate, min_len).map(|value| {
+    isolated_bare_candidate(candidate, min_len, candidate_policy).map(|value| {
         // SAFETY: `value` is a subslice of `candidate` (via str::trim/trim_matches inside
         // `isolated_bare_candidate`), and `candidate` is `&line[candidate_start..candidate_end]`
         // a direct subslice of `line`. Therefore `value.as_ptr() >= line.as_ptr()` is
@@ -516,14 +609,19 @@ fn isolated_bare_candidate_in_span(
     })
 }
 
-fn isolated_bare_candidate(line: &str, min_len: usize) -> Option<&str> {
+fn isolated_bare_candidate(
+    line: &str,
+    min_len: usize,
+    candidate_policy: IsolatedCandidatePolicy,
+) -> Option<&str> {
     let candidate = line.trim().trim_matches(|c: char| c == ';' || c == ',');
     if candidate.len() < min_len || candidate.bytes().any(|b| b.is_ascii_whitespace()) {
         return None;
     }
     let has_alpha = candidate.bytes().any(|b| b.is_ascii_alphabetic());
     let has_digit = candidate.bytes().any(|b| b.is_ascii_digit());
-    let no_digit_symbolic_token = !has_digit && symbolic_alpha_only_opaque_candidate(candidate);
+    let no_digit_symbolic_token = !has_digit
+        && symbolic_alpha_only_opaque_candidate(candidate, candidate_policy.symbolic_min_len);
     if !has_alpha || (!has_digit && !no_digit_symbolic_token) {
         return None;
     }
@@ -556,7 +654,11 @@ fn isolated_bare_candidate(line: &str, min_len: usize) -> Option<&str> {
         && !candidate.starts_with("!!")
         && symbolic_isolated_bare_candidate(candidate);
     if standard_token
-        || colon_separated_opaque_candidate(candidate)
+        || colon_separated_opaque_candidate(
+            candidate,
+            candidate_policy.colon_left_min_len,
+            candidate_policy.colon_right_min_len,
+        )
         || no_digit_symbolic_token
         || (!has_assignment_equals && symbolic_isolated_bare_candidate(candidate))
         || bang_led_symbolic_token
@@ -566,14 +668,18 @@ fn isolated_bare_candidate(line: &str, min_len: usize) -> Option<&str> {
     None
 }
 
-pub(crate) fn colon_separated_opaque_candidate(candidate: &str) -> bool {
+pub(crate) fn colon_separated_opaque_candidate(
+    candidate: &str,
+    left_min_len: usize,
+    right_min_len: usize,
+) -> bool {
     if candidate.contains("://") || candidate.bytes().filter(|&b| b == b':').count() != 1 {
         return false;
     }
     let Some((left, right)) = candidate.split_once(':') else {
         return false;
     };
-    if left.len() < KEYWORD_FREE_MIN_LEN || right.len() < COLON_RIGHT_PART_MIN_LEN {
+    if left.len() < left_min_len || right.len() < right_min_len {
         return false;
     }
     [left, right].into_iter().all(|part| {
@@ -590,8 +696,8 @@ pub(crate) fn colon_separated_opaque_candidate(candidate: &str) -> bool {
     })
 }
 
-pub(crate) fn symbolic_alpha_only_opaque_candidate(candidate: &str) -> bool {
-    if candidate.len() < SYMBOLIC_ALPHA_ONLY_MIN_LEN || candidate.contains("://") {
+pub(crate) fn symbolic_alpha_only_opaque_candidate(candidate: &str, min_len: usize) -> bool {
+    if candidate.len() < min_len || candidate.contains("://") {
         return false;
     }
     let mut has_upper = false;

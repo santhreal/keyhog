@@ -705,6 +705,7 @@ fn scan_keyword_free_candidates(
             let isolated_min_len = isolated_token_context.min_len;
             let special_shape_min_len = super::isolated::isolated_special_shape_min_len(
                 isolated_token_context.entropy_shape.as_ref(),
+                isolated_token_context.plausibility_policy.as_ref(),
             );
             let special_shape_may_cross_minimum =
                 isolated_min_len > special_shape_min_len && max_nonws_run >= special_shape_min_len;

@@ -3659,7 +3659,7 @@ pub mod entropy_isolated {
     /// `entropy >= 3.65`, `len >= 20`, contains `_`, every non-`_` byte is
     /// ASCII-alphanumeric, and the token has upper + lower + digit.
     pub fn mixed_separator_token_floor_met(candidate: &str, entropy: f64) -> bool {
-        crate::entropy::scanner::mixed_separator_token_floor_met(candidate, entropy)
+        crate::entropy::scanner::mixed_separator_token_floor_met(candidate, entropy, 3.65, 20)
     }
 
     /// The shipped generic-secret TOML's lower-dash shape policy: four
@@ -3688,7 +3688,7 @@ pub mod entropy_isolated {
     /// no-separator sibling of [`mixed_separator_token_floor_met`], which trades
     /// the `_`-structure signal for the `!all_hex` + randomness gates.
     pub fn mixed_contiguous_token_floor_met(candidate: &str, entropy: f64) -> bool {
-        crate::entropy::scanner::mixed_contiguous_token_floor_met(candidate, entropy)
+        crate::entropy::scanner::mixed_contiguous_token_floor_met(candidate, entropy, 3.65, 20)
     }
 
     /// The randomness gate the contiguous floor depends on, exposed so a boundary
@@ -3743,14 +3743,14 @@ pub mod entropy_isolated {
     /// >= 16, each all-alphanumeric with at least one letter and one digit, the
     /// `user:token` opaque-credential admission gate.
     pub fn colon_separated_opaque(candidate: &str) -> bool {
-        crate::entropy::scanner::colon_separated_opaque_candidate(candidate)
+        crate::entropy::scanner::colon_separated_opaque_candidate(candidate, 20, 16)
     }
 
     /// Shape gate: len >= 18, no digits, every byte graphic and not a quote,
     /// upper + lower, >= 3 punctuation bytes, alpha is at least half the length,
     /// AND the token reads as random (the symbolic alpha-only opaque gate).
     pub fn symbolic_alpha_only_opaque(candidate: &str) -> bool {
-        crate::entropy::scanner::symbolic_alpha_only_opaque_candidate(candidate)
+        crate::entropy::scanner::symbolic_alpha_only_opaque_candidate(candidate, 18)
     }
 
     /// Shape gate: no `://`, no `:` or `,`, every byte graphic and not a quote,
