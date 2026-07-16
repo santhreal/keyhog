@@ -137,12 +137,12 @@ scanning overlap; `crates/cli/src/orchestrator/dispatch.rs` and
 and report contracts. Backend choice must change performance only, never finding
 semantics.
 
-Within a coalesced scan, detector, generic, and entropy candidates retain their
-per-chunk state while their precomputed ML feature rows are submitted as one
-CPU or GPU MoE batch. Final scores return to the originating chunk before its
-cap, decode postprocess, seam handling, and report adjudication run. Single-file
-and oversized windowed scans keep the same scoring contract with smaller local
-batches.
+Within the shared SIMD/GPU coalesced tail, detector, generic, and entropy
+candidates retain their per-chunk state while their precomputed ML feature rows
+are submitted as one CPU or GPU MoE batch. Final scores return to the
+originating chunk before its cap, decode postprocess, seam handling, and report
+adjudication run. Portable CPU-fallback, single-file, and oversized windowed
+scans keep the same scoring contract with smaller local batches.
 
 ### Execution surfaces
 
