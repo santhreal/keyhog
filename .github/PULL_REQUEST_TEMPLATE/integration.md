@@ -60,7 +60,7 @@ live-check a finding against the vendor's API.
 
 Reproduce locally:
 
-    curl -fsSL https://raw.githubusercontent.com/santhreal/keyhog/main/install.sh | sh
+    curl -fsSL https://santh.dev/keyhog/install.sh | sh
     keyhog scan .
 
 Project: https://github.com/santhreal/keyhog

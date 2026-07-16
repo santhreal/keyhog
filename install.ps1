@@ -1,4 +1,5 @@
 # KeyHog installer (Windows, PowerShell 5+).
+# Canonical endpoint: https://santh.dev/keyhog/install.ps1
 #
 # Authenticated install from one tagged release:
 #   $Tag = 'v0.5.41'

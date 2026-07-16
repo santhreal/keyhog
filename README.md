@@ -120,6 +120,20 @@ semantics, cache lifecycle, and troubleshooting matrix live in the
 
 ## Install
 
+The canonical installer endpoints are short and stable:
+
+```sh
+# Linux / macOS
+curl -fsSL https://santh.dev/keyhog/install.sh | sh
+
+# Windows PowerShell
+iwr https://santh.dev/keyhog/install.ps1 -UseBasicParsing | iex
+```
+
+The installer verifies the selected release artifact before replacing a binary.
+For an installation that authenticates the installer script itself before
+execution, use the pinned signed flow below.
+
 The signed Linux release binary needs the Hyperscan runtime and the installer
 needs `minisign` before it can verify anything. On Debian/Ubuntu, install both
 with `sudo apt-get update && sudo apt-get install -y --no-install-recommends curl libhyperscan5 minisign`;
@@ -300,7 +314,7 @@ unavailable, `13` requested source failed or input coverage was incomplete. Matc
 
 ## What it catches
 
-923 embedded detectors with checksum / companion validation:
+923 embedded detectors with detector-owned offline validation and companions:
 
 - **Cloud providers:** AWS (access key + secret + STS verification),
   Azure (subscription key, storage account key, SAS), GCP (service account,
@@ -329,8 +343,9 @@ unavailable, `13` requested source failed or input coverage was incomplete. Matc
   blocks, JWT signing secrets.
 
 Each detector ships as a [TOML file](./detectors/) (data, not code):
-service metadata, regex patterns, keywords, companion fields,
-verification handler. Adding a new detector is 5-10 lines of TOML;
+service metadata, regex patterns, keywords, offline validators, entropy and ML
+policy, companion fields, and verification handler. Adding a new detector is a
+single reviewable TOML change;
 the [contributor guide](./CONTRIBUTING.md) walks through it.
 
 `keyhog explain <id>` dumps any detector's full spec: patterns, keywords,
@@ -364,7 +379,8 @@ Browse detector authoring and inspection in the
   secret, but the secret is needed for live verification.
 - **Confidence scoring.** Every finding carries a `[0.0, 1.0]` score
   derived from Shannon entropy, surrounding context, companion match,
-  checksum (GitHub CRC32, npm, Slack), and a small ML classifier
+  detector-owned offline proof (GitHub/npm CRC32 and PyPI payload decoding),
+  structural evidence, and a small ML classifier
   (~30k params). Default threshold `0.40` (the canonical
   `ScanConfig::default()` floor; same as the `--min-confidence` default
   and the `[scan].min_confidence` example below) filters low-quality
@@ -667,7 +683,7 @@ Two-phase coalesced scan:
    via rayon. Hyperscan accelerates this phase when compiled; portable builds
    use the pure-Rust trigger path. Files with no trigger hit stop before extraction.
 2. **Phase 2:** full extraction on hits only: regex capture groups,
-   companion matching, checksum validation, entropy gating, ML
+   companion matching, detector-owned offline validation, entropy gating, ML
    confidence + explicit Bayesian damping when configured.
 
 Result: extraction work is concentrated on trigger-positive data. Determinism

@@ -85,6 +85,18 @@ Three things, in order of how much they matter:
 
 ## Get going
 
+The canonical install path is:
+
+```sh
+curl -fsSL https://santh.dev/keyhog/install.sh | sh
+```
+
+On Windows PowerShell:
+
+```powershell
+iwr https://santh.dev/keyhog/install.ps1 -UseBasicParsing | iex
+```
+
 Before this pinned release example, install `minisign`; Debian/Ubuntu also
 needs the Linux asset's `libhyperscan5` runtime. The complete platform-specific
 prerequisite commands live in the [install guide](./install.md#pinned-verified-install-linux--macos).

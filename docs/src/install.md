@@ -3,6 +3,22 @@
 The quickest paths first. Each installs the canonical release artifact for
 your supported host; platform feature differences are explicit below.
 
+## Quick install
+
+```sh
+# Linux / macOS
+curl -fsSL https://santh.dev/keyhog/install.sh | sh
+```
+
+```powershell
+# Windows PowerShell
+iwr https://santh.dev/keyhog/install.ps1 -UseBasicParsing | iex
+```
+
+These are KeyHog's canonical installer URLs. The downloaded installer verifies
+the selected release artifact before replacement. Use the signed pinned flows
+below when the installer script itself must be authenticated before execution.
+
 ## Pinned verified install: Linux / macOS
 
 Install the host prerequisites before downloading the signed installer. Debian

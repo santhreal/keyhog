@@ -1,6 +1,7 @@
 #!/usr/bin/env sh
 #
 # KeyHog installer (Linux + macOS).
+# Canonical endpoint: https://santh.dev/keyhog/install.sh
 #
 # Authenticated install from one tagged release:
 #   TAG=v0.5.41
