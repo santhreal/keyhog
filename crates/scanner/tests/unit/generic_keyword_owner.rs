@@ -194,17 +194,19 @@ fn owning_index_earliest_detector_wins_across_exact_and_normalized() {
     let index = GenericOwningDetectorIndex::build(&detectors).expect("unique entropy roles");
 
     assert_eq!(
-        index.owning_index("API-TOKEN"),
+        index.resolve("API-TOKEN").map(|owner| owner.owning_index),
         Some(0),
         "exact hit on detector 1 + normalized hit on detector 0 -> earliest (0) wins"
     );
     assert_eq!(
-        index.owning_index("api_token"),
+        index.resolve("api_token").map(|owner| owner.owning_index),
         Some(0),
         "exact match on detector 0's literal keyword"
     );
     assert_eq!(
-        index.owning_index("totally_unknown_lhs"),
+        index
+            .resolve("totally_unknown_lhs")
+            .map(|owner| owner.owning_index),
         None,
         "the assignment bridge must not invent ownership for an unlisted key"
     );
@@ -213,6 +215,72 @@ fn owning_index_earliest_detector_wins_across_exact_and_normalized() {
         Some(2),
         "unclaimed entropy keywords resolve through the detector-declared role"
     );
+}
+
+#[test]
+fn one_pass_resolution_keeps_canonical_policy_independent_of_entropy_priority() {
+    let mut broad = generic_detector("broad", &["api_key"]);
+    broad.entropy_policy_priority = Some(100);
+    let mut canonical = generic_detector("canonical", &["api_key"]);
+    canonical.entropy_policy_priority = Some(50);
+    canonical.canonical_hex_key_material = vec![keyhog_core::CanonicalHexKeyMaterialSpec {
+        lengths: vec![32],
+        keywords: vec!["api_key".to_string()],
+        suffixes: Vec::new(),
+        excluded_keywords: Vec::new(),
+    }];
+    let index = GenericOwningDetectorIndex::build(&[broad, canonical])
+        .expect("test detector ownership must compile");
+
+    let resolved = index
+        .resolve("API-KEY")
+        .expect("normalized assignment must have an owner");
+    assert_eq!(resolved.owning_index, 0);
+    assert_eq!(resolved.canonical_index, 1);
+}
+
+#[test]
+fn compiled_key_material_program_is_exactly_equivalent_to_detector_schema() {
+    let detectors = keyhog_core::embedded_detector_specs();
+    let compiled =
+        crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicies::compile(
+            detectors,
+        );
+    let lengths = [16usize, 24, 32, 40, 48, 56, 64, 96];
+
+    for (detector_index, detector) in detectors.iter().enumerate() {
+        let policy = compiled.get(detector_index);
+        let mut keywords = vec!["unknown".to_string(), "vendor_key".to_string()];
+        for rule in &detector.canonical_hex_key_material {
+            keywords.extend(rule.keywords.iter().cloned());
+            keywords.extend(
+                rule.suffixes
+                    .iter()
+                    .map(|suffix| format!("vendor-{suffix}")),
+            );
+            keywords.extend(rule.excluded_keywords.iter().cloned());
+        }
+        keywords.sort_unstable();
+        keywords.dedup();
+
+        for keyword in &keywords {
+            for &len in &lengths {
+                let value = "a".repeat(len);
+                assert_eq!(
+                    policy.allows_canonical_hex(keyword, &value),
+                    detector.allows_canonical_hex_key_material(keyword, &value),
+                    "compiled canonical policy drifted for detector={} keyword={keyword:?} len={len}",
+                    detector.id
+                );
+                assert_eq!(
+                    policy.allows_decoded_hex(&value),
+                    detector.allows_decoded_hex_key_material(&value),
+                    "compiled decoded policy drifted for detector={} len={len}",
+                    detector.id
+                );
+            }
+        }
+    }
 }
 
 #[test]
@@ -229,7 +297,7 @@ fn policy_index_includes_regex_backed_generic_password() {
         "regex-backed generic entropy policy must opt in through TOML priority"
     );
     assert_eq!(
-        index.owning_index("password"),
+        index.resolve("password").map(|owner| owner.owning_index),
         Some(1),
         "the declared entropy-policy priority owns the keyword"
     );
@@ -239,9 +307,12 @@ fn policy_index_includes_regex_backed_generic_password() {
 fn owning_index_is_none_without_a_match_or_generic_secret() {
     let detectors = vec![generic_detector("api-a", &["api_token"])];
     let index = GenericOwningDetectorIndex::build(&detectors).expect("unique entropy roles");
-    assert_eq!(index.owning_index("api_token"), Some(0));
     assert_eq!(
-        index.owning_index("unowned"),
+        index.resolve("api_token").map(|owner| owner.owning_index),
+        Some(0)
+    );
+    assert_eq!(
+        index.resolve("unowned").map(|owner| owner.owning_index),
         None,
         "no keyword owner AND no GENERIC_SECRET detector -> None (caller uses defaults)"
     );
@@ -262,5 +333,8 @@ fn owning_index_ignores_non_generic_service_detectors() {
     };
     let detectors = vec![named, generic_secret_detector()];
     let index = GenericOwningDetectorIndex::build(&detectors).expect("unique entropy roles");
-    assert_eq!(index.owning_index("stripe_key"), Some(1));
+    assert_eq!(
+        index.resolve("stripe_key").map(|owner| owner.owning_index),
+        Some(1)
+    );
 }

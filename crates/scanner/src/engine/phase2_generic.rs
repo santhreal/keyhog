@@ -254,15 +254,14 @@ impl CompiledScanner {
                 // a per-candidate linear scan over every detector.
                 // `generic_owning_detector` preserves the exact original
                 // first-match-by-exact-or-normalized-keyword semantics.
-                let Some(owning_detector_index) =
-                    self.generic_owning_detector.owning_index(keyword)
-                else {
+                let Some(owner_resolution) = self.generic_owning_detector.resolve(keyword) else {
                     tracing::error!(
                         keyword,
                         "compiled generic assignment matched without a detector owner; dropping candidate"
                     );
                     continue;
                 };
+                let owning_detector_index = owner_resolution.owning_index;
                 let owning_detector = &self.detectors[owning_detector_index];
                 let Some(owning_policy) = self.entropy_policies.get(owning_detector_index) else {
                     tracing::error!(
@@ -272,28 +271,28 @@ impl CompiledScanner {
                     continue;
                 };
                 let owning_detector_max_len = owning_policy.max_len;
-                let canonical_detector = self
-                    .generic_owning_detector
-                    .canonical_index(keyword)
-                    .and_then(|index| self.detectors.get(index))
-                    .unwrap_or(owning_detector);
+                let canonical_key_material_policy = self
+                    .detector_key_material_policies
+                    .get(owner_resolution.canonical_index);
                 // A complete pure-hex value admitted by the detector that
                 // declares its canonical policy is key material rather than a
                 // digest. Missing detector policy fails closed. Ordinary
                 // keyword policy ownership remains separate for entropy/BPE.
                 let allow_canonical_hex_key = {
                     if transport_decoded {
-                        canonical_detector.allows_decoded_hex_key_material(value)
+                        canonical_key_material_policy.allows_decoded_hex(value)
                     } else {
-                        canonical_detector
-                            .allows_canonical_hex_key_material(keyword_match.as_str(), value)
+                        canonical_key_material_policy
+                            .allows_canonical_hex(keyword_match.as_str(), value)
                     }
                 };
                 let allow_encoded_text_secret =
                     is_strong_keyword_anchored_encoded_text_secret(keyword_match.as_str(), value)
                         || crate::decode_structure::decodes_to_printable_text(value);
-                let allow_decoded_hex_key_material = owning_detector
-                    .allows_decoded_hex_key_material_len(
+                let allow_decoded_hex_key_material = self
+                    .detector_key_material_policies
+                    .get(owning_detector_index)
+                    .allows_decoded_hex_len(
                         crate::decode_structure::evidence(value).decoded_hex_text_len(),
                     );
 

@@ -208,6 +208,14 @@ keyword bridge, the weak-anchor post-pass, or the hot-pattern fast path surfaced
 it. Phase-2 has several emission paths; they exist for *speed and recall*, not to
 each carry their own copy of policy.
 
+Detector-local canonical and transport-decoded hexadecimal key-material rules
+follow the same boundary. Scanner construction compacts declared lengths,
+keywords, suffixes, and exclusions into detector-indexed programs. Named,
+generic, and entropy candidate paths execute those programs; only stable public
+compatibility helpers without a compiled scanner inspect `DetectorSpec`
+directly. Generic assignment processing resolves its entropy-policy owner and
+canonical-policy owner from one normalized key lookup.
+
 **The rule.** Emission paths produce `CandidateMatch` values and typed signals;
 `adjudicate_match` owns the ordered suppression verdict. Path owners may compute
 context-specific facts (entropy shape, generic bridge boundaries, named

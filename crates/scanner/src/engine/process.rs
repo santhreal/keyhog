@@ -122,7 +122,10 @@ impl CompiledScanner {
         // bit compiled beside this exact regex. Index mismatch is an internal
         // construction bug and remains loud.
         let weak_anchor = self.detector_pattern_weak_anchor(entry);
-        let allow_decoded_hex_key_material = detector.allows_decoded_hex_key_material_len(
+        let key_material_policy = self
+            .detector_key_material_policies
+            .get(entry.detector_index);
+        let allow_decoded_hex_key_material = key_material_policy.allows_decoded_hex_len(
             crate::decode_structure::evidence(credential).decoded_hex_text_len(),
         );
         let named_suppression_ctx =
@@ -222,10 +225,7 @@ impl CompiledScanner {
             // Preserve the detector's exact canonical length evidence instead
             // of letting BPE reinterpret declared hex key material as text.
             let allow_canonical_hex_key = credential.bytes().all(|byte| byte.is_ascii_hexdigit())
-                && detector
-                    .canonical_hex_key_material
-                    .iter()
-                    .any(|policy| policy.lengths.contains(&credential.len()));
+                && key_material_policy.allows_canonical_hex_len(credential.len());
             let allow_encoded_text_secret = !allow_canonical_hex_key
                 && crate::decode_structure::decodes_to_printable_text(credential);
             if !allow_canonical_hex_key

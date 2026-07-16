@@ -43,6 +43,16 @@ struct PolicyOwner {
     priority: u16,
 }
 
+/// Generic assignment ownership resolved from one lowercase/normalized key
+/// pass. The hot bridge needs both ordinary entropy ownership and the optional
+/// canonical-hex override; resolving them together avoids normalizing the same
+/// captured LHS twice.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct GenericDetectorResolution {
+    pub(crate) owning_index: usize,
+    pub(crate) canonical_index: usize,
+}
+
 fn insert_policy_owner(
     owners: &mut HashMap<String, PolicyOwner>,
     keyword: String,
@@ -148,12 +158,22 @@ impl GenericOwningDetectorIndex {
         })
     }
 
-    /// The owning generic detector's index for a matched assignment `keyword`
-    /// (need not be pre-lowercased), or the detector-declared vendor-suffix
-    /// fallback. `None` means the active corpus claims neither form.
-    pub(crate) fn owning_index(&self, keyword: &str) -> Option<usize> {
-        self.claimed_policy_index(keyword)
-            .or(self.vendor_suffix_fallback_index)
+    /// Resolve ordinary and canonical policy owners with one key
+    /// normalization. Ordinary ownership includes the detector-declared vendor
+    /// suffix fallback. `None` means no detector owns the generic assignment.
+    pub(crate) fn resolve(&self, keyword: &str) -> Option<GenericDetectorResolution> {
+        let kw_lower = keyword.to_ascii_lowercase();
+        let normalized = normalize_assignment_keyword(&kw_lower);
+        let owning_index = self
+            .claimed_policy_index_from(&kw_lower, normalized.as_deref())
+            .or(self.vendor_suffix_fallback_index)?;
+        let canonical_index = self
+            .canonical_index_from(&kw_lower, normalized.as_deref())
+            .unwrap_or(owning_index);
+        Some(GenericDetectorResolution {
+            owning_index,
+            canonical_index,
+        })
     }
 
     /// Generic detector that explicitly claims `keyword`, without applying the
@@ -162,9 +182,13 @@ impl GenericOwningDetectorIndex {
     /// arbitrary assignment that only reaches the fallback is not.
     pub(crate) fn claimed_policy_index(&self, keyword: &str) -> Option<usize> {
         let kw_lower = keyword.to_ascii_lowercase();
-        let exact_hit = self.policy_exact.get(&kw_lower).copied();
-        let norm_hit = normalize_assignment_keyword(&kw_lower)
-            .and_then(|norm| self.policy_normalized.get(&norm).copied());
+        let normalized = normalize_assignment_keyword(&kw_lower);
+        self.claimed_policy_index_from(&kw_lower, normalized.as_deref())
+    }
+
+    fn claimed_policy_index_from(&self, lower: &str, normalized: Option<&str>) -> Option<usize> {
+        let exact_hit = self.policy_exact.get(lower).copied();
+        let norm_hit = normalized.and_then(|norm| self.policy_normalized.get(norm).copied());
         match (exact_hit, norm_hit) {
             (Some(a), Some(b)) => Some(
                 if a.priority > b.priority || (a.priority == b.priority && a.index < b.index) {
@@ -192,10 +216,15 @@ impl GenericOwningDetectorIndex {
     /// generic owner for vendor-prefixed assignments.
     pub(crate) fn canonical_index(&self, keyword: &str) -> Option<usize> {
         let kw_lower = keyword.to_ascii_lowercase();
-        self.canonical_exact.get(&kw_lower).copied().or_else(|| {
-            normalize_assignment_keyword(&kw_lower)
-                .and_then(|normalized| self.canonical_normalized.get(&normalized).copied())
-        })
+        let normalized = normalize_assignment_keyword(&kw_lower);
+        self.canonical_index_from(&kw_lower, normalized.as_deref())
+    }
+
+    fn canonical_index_from(&self, lower: &str, normalized: Option<&str>) -> Option<usize> {
+        self.canonical_exact
+            .get(lower)
+            .copied()
+            .or_else(|| normalized.and_then(|key| self.canonical_normalized.get(key).copied()))
     }
 
     /// Detector that explicitly owns anchor-free entropy candidates.

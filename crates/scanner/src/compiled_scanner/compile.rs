@@ -53,6 +53,10 @@ impl CompiledScanner {
         let detector_suppression_by_index =
             crate::suppression::CompiledDetectorSuppressions::compile(&detectors)
                 .map_err(crate::error::ScanError::Config)?;
+        let detector_key_material_policies =
+            crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicies::compile(
+                &detectors,
+            );
         // GPU is unconditional in the build; runtime probe decides whether to
         // actually use it. `gpu_available` is set by hw_probe based on adapter
         // detection (excluding software renderers like llvmpipe/lavapipe).
@@ -558,6 +562,7 @@ impl CompiledScanner {
             detector_is_generic_by_index,
             detector_weak_anchor_base_by_index,
             detector_suppression_by_index,
+            detector_key_material_policies,
             generic_named_assignment_keywords,
             generic_assignment_re,
             generic_keyword_stems,

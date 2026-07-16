@@ -6,6 +6,11 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Canonical and transport-decoded hexadecimal key-material rules now compile
+  from every active detector TOML into detector-indexed immutable programs.
+  Named, generic, and entropy producers no longer walk detector schema vectors
+  per candidate; the generic bridge also resolves ordinary and canonical
+  owners with one normalized assignment-key lookup.
 - Detector-conditioned ML inputs now compile verifier, companion, service,
   generic, structural, phase-2, and entropy-family facts once with each loaded
   detector. Candidate feature extraction consumes that compact policy instead

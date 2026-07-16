@@ -3545,7 +3545,11 @@ pub mod entropy_scanner {
             .expect("test detector entropy roles must be unique");
         let compiled = crate::entropy::policy::CompiledEntropyPolicies::compile(&detectors)
             .expect("test detector entropy policy must compile");
-        let policy = ActiveDetectorPolicy::new(&detectors, &index, &compiled);
+        let key_material =
+            crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicies::compile(
+                &detectors,
+            );
+        let policy = ActiveDetectorPolicy::new(&detectors, &index, &compiled, &key_material);
         let secret_keywords = vec![keyword.to_string()];
         crate::entropy::scanner::find_entropy_secrets_with_precomputed_keywords_and_policy(
             &[line],
@@ -3631,7 +3635,11 @@ pub mod entropy_scanner {
             .expect("embedded detector entropy roles must be unique");
         let compiled = crate::entropy::policy::CompiledEntropyPolicies::compile(&detectors)
             .expect("test detector entropy policy must compile");
-        let policy = ActiveDetectorPolicy::new(&detectors, &index, &compiled);
+        let key_material =
+            crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicies::compile(
+                &detectors,
+            );
+        let policy = ActiveDetectorPolicy::new(&detectors, &index, &compiled, &key_material);
         crate::entropy::scanner::find_entropy_secrets_with_precomputed_keywords_and_policy(
             &[secret],
             &[0],

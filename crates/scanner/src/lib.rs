@@ -95,6 +95,8 @@ pub(crate) mod decode_structure;
 pub(crate) mod detector_catalog;
 /// Canonical detector-id strings and scanner-side detector-family predicates.
 pub(crate) mod detector_ids;
+/// Compiled canonical/decoded key-material policy from detector TOMLs.
+pub(crate) mod detector_key_material_policy;
 /// Compiled cache-local form of detector-owned model policy.
 #[cfg(feature = "ml")]
 pub(crate) mod detector_ml_policy;

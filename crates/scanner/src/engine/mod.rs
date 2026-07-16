@@ -270,6 +270,11 @@ pub struct CompiledScanner {
     /// indexed by `detector_index`. Compiled from the exact corpus supplied to
     /// this scanner, so custom detectors never inherit or miss embedded policy.
     pub(crate) detector_suppression_by_index: crate::suppression::CompiledDetectorSuppressions,
+    /// Canonical and transport-decoded hex policy compiled from each detector
+    /// TOML. Candidate paths index compact rules instead of walking schema
+    /// vectors and normalizing declared keywords repeatedly.
+    pub(crate) detector_key_material_policies:
+        crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicies,
     /// Normalized assignment-key names owned by service-specific named
     /// detectors, e.g. `segment_write_key`. The generic assignment bridge uses
     /// this to avoid emitting a weaker generic finding for an LHS that a loaded

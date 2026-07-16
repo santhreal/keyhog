@@ -149,7 +149,9 @@ pub(super) fn extract_candidates(
     // `passes_secret_strength_checks`. `None` falls back to the module constants.
     detector: Option<&DetectorSpec>,
     compiled_policy: Option<&crate::entropy::policy::CompiledEntropyPolicy>,
-    canonical_detector: Option<&DetectorSpec>,
+    key_material_policy: Option<
+        &crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy,
+    >,
 ) -> Vec<String> {
     extract_candidates_internal(
         line,
@@ -161,7 +163,7 @@ pub(super) fn extract_candidates(
         false,
         detector,
         compiled_policy,
-        canonical_detector,
+        key_material_policy,
     )
     .candidates
 }
@@ -185,7 +187,9 @@ pub(super) fn extract_candidates_with_rejections(
     _allow_canonical_shapes: bool,
     detector: Option<&DetectorSpec>,
     compiled_policy: Option<&crate::entropy::policy::CompiledEntropyPolicy>,
-    canonical_detector: Option<&DetectorSpec>,
+    key_material_policy: Option<
+        &crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy,
+    >,
 ) -> ExtractedCandidates {
     extract_candidates_internal(
         line,
@@ -197,7 +201,7 @@ pub(super) fn extract_candidates_with_rejections(
         true,
         detector,
         compiled_policy,
-        canonical_detector,
+        key_material_policy,
     )
 }
 
@@ -211,7 +215,9 @@ fn extract_candidates_internal(
     trace_rejections: bool,
     detector: Option<&DetectorSpec>,
     compiled_policy: Option<&crate::entropy::policy::CompiledEntropyPolicy>,
-    canonical_detector: Option<&DetectorSpec>,
+    key_material_policy: Option<
+        &crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy,
+    >,
 ) -> ExtractedCandidates {
     let mut candidates = Vec::new();
     let mut rejections = Vec::new();
@@ -245,9 +251,13 @@ fn extract_candidates_internal(
         }
         let structured_dotted = allow_structured_dotted
             && crate::suppression::shape::is_structured_dotted_token(cleaned);
-        let detector_owned_canonical_hex_key = canonical_detector
-            .or(detector)
-            .is_some_and(|spec| spec.allows_canonical_hex_key_material(keyword, cleaned));
+        let detector_owned_canonical_hex_key = key_material_policy.map_or_else(
+            || {
+                detector
+                    .is_some_and(|spec| spec.allows_canonical_hex_key_material(keyword, cleaned))
+            },
+            |policy| policy.allows_canonical_hex(keyword, cleaned),
+        );
         let plausibility_context =
             PlausibilityContext::new(is_credential_context, detector_owned_canonical_hex_key)
                 .with_detector_policy(detector, compiled_policy);

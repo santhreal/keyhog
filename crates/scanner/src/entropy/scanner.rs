@@ -28,6 +28,7 @@ pub(crate) struct ActiveDetectorPolicy<'a> {
     detectors: &'a [DetectorSpec],
     index: &'a crate::generic_keyword_owner::GenericOwningDetectorIndex,
     compiled: &'a crate::entropy::policy::CompiledEntropyPolicies,
+    key_material: &'a crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicies,
 }
 
 impl<'a> ActiveDetectorPolicy<'a> {
@@ -35,11 +36,13 @@ impl<'a> ActiveDetectorPolicy<'a> {
         detectors: &'a [DetectorSpec],
         index: &'a crate::generic_keyword_owner::GenericOwningDetectorIndex,
         compiled: &'a crate::entropy::policy::CompiledEntropyPolicies,
+        key_material: &'a crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicies,
     ) -> Self {
         Self {
             detectors,
             index,
             compiled,
+            key_material,
         }
     }
 
@@ -84,10 +87,15 @@ impl<'a> ActiveDetectorPolicy<'a> {
         self.compiled.get(index)
     }
 
-    fn canonical_spec_for_keyword(self, keyword: &str) -> Option<&'a DetectorSpec> {
-        self.index
+    fn key_material_for_keyword(
+        self,
+        keyword: &str,
+    ) -> Option<&'a crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy> {
+        let index = self
+            .index
             .canonical_index(keyword)
-            .and_then(|index| self.detectors.get(index))
+            .or_else(|| active_policy_detector_index(self.index, keyword))?;
+        Some(self.key_material.get(index))
     }
 
     fn claims_keyword(self, keyword: &str) -> bool {
@@ -785,9 +793,8 @@ pub(crate) fn has_lower_dash_app_password_candidate_with_precomputed_keywords_an
             continue;
         };
         let detector = get_spec_for_keyword(active_policy, &context.keyword);
-        let canonical_detector = active_policy
-            .and_then(|policy| policy.canonical_spec_for_keyword(&context.keyword))
-            .or(detector);
+        let key_material_policy =
+            active_policy.and_then(|policy| policy.key_material_for_keyword(&context.keyword));
         for candidate in extract_candidates(
             keyword_line,
             &context.keyword,
@@ -797,7 +804,7 @@ pub(crate) fn has_lower_dash_app_password_candidate_with_precomputed_keywords_an
             false,
             detector,
             get_compiled_policy_for_keyword(active_policy, &context.keyword),
-            canonical_detector,
+            key_material_policy,
         ) {
             let entropy = shannon_entropy(candidate.as_bytes());
             if lower_dash_app_password_floor_met_with_policy(
@@ -858,9 +865,8 @@ fn collect_line_candidates_inner(
     active_policy: Option<ActiveDetectorPolicy<'_>>,
 ) {
     let detector = get_spec_for_keyword(active_policy, &context.keyword);
-    let canonical_detector = active_policy
-        .and_then(|policy| policy.canonical_spec_for_keyword(&context.keyword))
-        .or(detector);
+    let key_material_policy =
+        active_policy.and_then(|policy| policy.key_material_for_keyword(&context.keyword));
     let candidates = if crate::telemetry::is_dogfood_enabled() {
         let extracted = extract_candidates_with_rejections(
             line,
@@ -871,7 +877,7 @@ fn collect_line_candidates_inner(
             context.allow_canonical_shapes,
             detector,
             get_compiled_policy_for_keyword(active_policy, &context.keyword),
-            canonical_detector,
+            key_material_policy,
         );
         for rejection in &extracted.rejections {
             let ctx = crate::adjudicate::MatchCtx::for_entropy_generation(
@@ -890,7 +896,7 @@ fn collect_line_candidates_inner(
             context.allow_canonical_shapes,
             detector,
             get_compiled_policy_for_keyword(active_policy, &context.keyword),
-            canonical_detector,
+            key_material_policy,
         )
     };
 
@@ -976,9 +982,8 @@ fn candidate_plausibility_rejection_stage_with_policy(
     active_policy: Option<ActiveDetectorPolicy<'_>>,
 ) -> Option<StageId> {
     let spec = get_spec_for_keyword(active_policy, &context.keyword);
-    let canonical_spec = active_policy
-        .and_then(|policy| policy.canonical_spec_for_keyword(&context.keyword))
-        .or(spec);
+    let key_material_policy =
+        active_policy.and_then(|policy| policy.key_material_for_keyword(&context.keyword));
     let compiled = get_compiled_policy_for_keyword(active_policy, &context.keyword);
     if active_policy.is_some() && compiled.is_none() {
         return Some(StageId::EntropyPolicyUnavailable);
@@ -1028,9 +1033,14 @@ fn candidate_plausibility_rejection_stage_with_policy(
         // Canonical pure-hex admission is detector-owned. Model authority may
         // arbitrate an admitted candidate, but cannot manufacture a missing
         // detector policy or widen its declared lengths/keywords.
-        let detector_owned_lift = canonical_spec.is_some_and(|detector| {
-            detector.allows_canonical_hex_key_material(&context.keyword, candidate)
-        });
+        let detector_owned_lift = key_material_policy.map_or_else(
+            || {
+                spec.is_some_and(|detector| {
+                    detector.allows_canonical_hex_key_material(&context.keyword, candidate)
+                })
+            },
+            |policy| policy.allows_canonical_hex(&context.keyword, candidate),
+        );
         let compatibility_lift = active_policy.is_none()
             && context.allow_canonical_shapes
             && canonical_shape_lift_allowed(candidate, &context.keyword);

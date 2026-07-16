@@ -102,6 +102,7 @@ impl CompiledScanner {
                     &self.detectors,
                     &self.generic_owning_detector,
                     &self.entropy_policies,
+                    &self.detector_key_material_policies,
                 )),
             );
         if !path_entropy_appropriate && !isolated_bare_candidate {
@@ -173,6 +174,7 @@ impl CompiledScanner {
                     &self.detectors,
                     &self.generic_owning_detector,
                     &self.entropy_policies,
+                    &self.detector_key_material_policies,
                 )),
             );
         for entropy_match in entropy_matches {
@@ -187,20 +189,17 @@ impl CompiledScanner {
             let policy_detector = policy_detector_index.and_then(|index| self.detectors.get(index));
             let compiled_policy =
                 policy_detector_index.and_then(|index| self.entropy_policies.get(index));
-            let canonical_detector = self
+            let canonical_detector_index = self
                 .generic_owning_detector
                 .canonical_index(&entropy_match.keyword)
-                .and_then(|index| self.detectors.get(index))
-                .or(policy_detector);
+                .or(policy_detector_index);
             let transport_decoded = preprocessed.transport_decoded_for_offset(entropy_match.offset);
-            let detector_owned_canonical_hex_key = canonical_detector.is_some_and(|detector| {
+            let detector_owned_canonical_hex_key = canonical_detector_index.is_some_and(|index| {
+                let policy = self.detector_key_material_policies.get(index);
                 if transport_decoded {
-                    detector.allows_decoded_hex_key_material(&entropy_match.value)
+                    policy.allows_decoded_hex(&entropy_match.value)
                 } else {
-                    detector.allows_canonical_hex_key_material(
-                        &entropy_match.keyword,
-                        &entropy_match.value,
-                    )
+                    policy.allows_canonical_hex(&entropy_match.keyword, &entropy_match.value)
                 }
             });
             let bpe_bound = if detector_owned_canonical_hex_key {
