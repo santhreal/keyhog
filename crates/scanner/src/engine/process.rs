@@ -346,10 +346,12 @@ impl CompiledScanner {
             } => {
                 let source_offset =
                     preprocessed.source_offset_for_match(&chunk.data, credential_start, credential);
-                let ml_context = crate::types::ml_context_for_candidate(
+                let ml_features = crate::types::ml_features_for_candidate(
                     data,
                     line,
                     chunk.metadata.path.as_deref(),
+                    credential,
+                    &self.config,
                 );
                 let raw_match = build_raw_match(
                     detector,
@@ -368,7 +370,7 @@ impl CompiledScanner {
                     raw_match,
                     heuristic_conf,
                     code_context,
-                    ml_context,
+                    ml_features,
                     min_confidence_floor,
                     is_named_detector,
                     allow_decoded_hex_key_material,

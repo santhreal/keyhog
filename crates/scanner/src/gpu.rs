@@ -135,21 +135,6 @@ pub(crate) fn batch_ml_inference_with_timeout<T: crate::ml_scorer::MlScoreInput>
         // small-batch path is a single fused serial loop (compute feature ->
         // score, no intermediate Vec, no rayon). Byte-identical results to the
         // parallel path; the only change is the iteration strategy.
-        let feat_of = |text: &str, ctx: &str| -> [f32; crate::ml_scorer::NUM_FEATURES] {
-            if text.is_empty() {
-                [0.0; crate::ml_scorer::NUM_FEATURES]
-            } else {
-                crate::ml_scorer::compute_features_with_config(
-                    text,
-                    ctx,
-                    &config.known_prefixes,
-                    &config.secret_keywords,
-                    &config.test_keywords,
-                    &config.placeholder_keywords,
-                )
-            }
-        };
-
         if candidates.len() < crate::ml_scorer::GPU_BATCH_THRESHOLD {
             // Small-batch fused serial path (the ~99% case).
             let t = prof.then(std::time::Instant::now);
@@ -157,9 +142,8 @@ pub(crate) fn batch_ml_inference_with_timeout<T: crate::ml_scorer::MlScoreInput>
                 .iter()
                 .map(|candidate| {
                     let text = candidate.ml_text();
-                    let ctx = candidate.ml_context();
                     crate::confidence::policy::ml_score_for_candidate_text(text, || {
-                        crate::ml_scorer::score_features(&feat_of(text, ctx))
+                        crate::ml_scorer::score_features(&candidate.ml_features(config))
                     })
                 })
                 .collect();
@@ -178,7 +162,7 @@ pub(crate) fn batch_ml_inference_with_timeout<T: crate::ml_scorer::MlScoreInput>
         let t_feat = prof.then(std::time::Instant::now);
         let features: Vec<[f32; crate::ml_scorer::NUM_FEATURES]> = candidates
             .par_iter()
-            .map(|candidate| feat_of(candidate.ml_text(), candidate.ml_context()))
+            .map(|candidate| candidate.ml_features(config))
             .collect();
         if let Some(t) = t_feat {
             MOE_FEATURE_NS.fetch_add(

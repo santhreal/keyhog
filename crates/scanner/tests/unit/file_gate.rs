@@ -1183,6 +1183,53 @@ fn gpu_small_batch_cpu_fallback_matches_configured_moe() {
 }
 
 #[test]
+fn gpu_threshold_batch_preserves_feature_and_empty_candidate_parity() {
+    let mut config = ScannerConfig::default();
+    config.known_prefixes = vec!["ghp_".to_string()];
+    config.secret_keywords = vec!["TOKEN".to_string()];
+    let owned: Vec<_> = (0..64)
+        .map(|index| {
+            if index == 63 {
+                (String::new(), "EMPTY=".to_string())
+            } else {
+                (
+                    format!("ghp_{index:02}ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh"),
+                    format!("TOKEN_{index}="),
+                )
+            }
+        })
+        .collect();
+    let candidates: Vec<_> = owned
+        .iter()
+        .map(|(text, context)| (text.as_str(), context.as_str()))
+        .collect();
+
+    let scores = batch_ml_inference(&candidates, &config);
+    let expected: Vec<_> = candidates
+        .iter()
+        .map(|(text, context)| {
+            score_with_config(
+                text,
+                context,
+                &config.known_prefixes,
+                &config.secret_keywords,
+                &config.test_keywords,
+                &config.placeholder_keywords,
+            )
+        })
+        .collect();
+
+    assert_eq!(scores.len(), candidates.len());
+    assert_eq!(scores[63], 0.0);
+    for (index, (actual, expected)) in scores.iter().zip(expected.iter()).enumerate() {
+        assert!(
+            (*actual - *expected).abs() <= 1e-4,
+            "threshold candidate {index} drifted: batch={actual:.9} scalar={expected:.9}"
+        );
+    }
+}
+
+#[test]
 fn gpu_probe_availability_coheres_with_gpu_available_and_vram() {
     // Host-independent invariant: the probe's availability flag must agree with
     // `gpu_available()`, and VRAM is zero iff no GPU is available.

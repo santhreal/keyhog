@@ -35,7 +35,7 @@ pub(crate) use ml_features::NUM_FEATURES;
 #[cfg(any(feature = "ml", test))]
 pub(crate) trait MlScoreInput: Sync {
     fn ml_text(&self) -> &str;
-    fn ml_context(&self) -> &str;
+    fn ml_features(&self, config: &crate::types::ScannerConfig) -> [f32; NUM_FEATURES];
 }
 
 #[cfg(any(feature = "ml", test))]
@@ -46,8 +46,18 @@ impl MlScoreInput for (&str, &str) {
     }
 
     #[inline]
-    fn ml_context(&self) -> &str {
-        self.1
+    fn ml_features(&self, config: &crate::types::ScannerConfig) -> [f32; NUM_FEATURES] {
+        if self.0.is_empty() {
+            return [0.0; NUM_FEATURES];
+        }
+        compute_features_with_config(
+            self.0,
+            self.1,
+            &config.known_prefixes,
+            &config.secret_keywords,
+            &config.test_keywords,
+            &config.placeholder_keywords,
+        )
     }
 }
 
@@ -59,8 +69,8 @@ impl MlScoreInput for crate::types::MlPendingMatch {
     }
 
     #[inline]
-    fn ml_context(&self) -> &str {
-        self.ml_context.as_str()
+    fn ml_features(&self, _config: &crate::types::ScannerConfig) -> [f32; NUM_FEATURES] {
+        self.ml_features
     }
 }
 
@@ -150,22 +160,14 @@ pub(crate) fn score_with_config(
 #[cfg(feature = "ml")]
 fn score_inputs_with_config<T: MlScoreInput>(
     inputs: &[T],
-    known_prefixes: &[String],
-    secret_keywords: &[String],
-    test_keywords: &[String],
-    placeholder_keywords: &[String],
+    config: &crate::types::ScannerConfig,
 ) -> Vec<f64> {
     inputs
         .iter()
         .map(|input| {
-            score_with_config(
-                input.ml_text(),
-                input.ml_context(),
-                known_prefixes,
-                secret_keywords,
-                test_keywords,
-                placeholder_keywords,
-            )
+            crate::confidence::policy::ml_score_for_candidate_text(input.ml_text(), || {
+                score_features(&input.ml_features(config))
+            })
         })
         .collect()
 }
@@ -177,10 +179,7 @@ fn score_inputs_with_config<T: MlScoreInput>(
 pub(crate) fn complete_batch_scores_with_config<T: MlScoreInput>(
     scores: Vec<f64>,
     inputs: &[T],
-    known_prefixes: &[String],
-    secret_keywords: &[String],
-    test_keywords: &[String],
-    placeholder_keywords: &[String],
+    config: &crate::types::ScannerConfig,
 ) -> Vec<f64> {
     if scores.len() == inputs.len() {
         return scores;
@@ -190,13 +189,7 @@ pub(crate) fn complete_batch_scores_with_config<T: MlScoreInput>(
         scores = scores.len(),
         "ML score count mismatch; recomputing CPU MoE scores before confidence blending"
     );
-    score_inputs_with_config(
-        inputs,
-        known_prefixes,
-        secret_keywords,
-        test_keywords,
-        placeholder_keywords,
-    )
+    score_inputs_with_config(inputs, config)
 }
 
 /// Score precomputed model features without recomputing text/context signals.

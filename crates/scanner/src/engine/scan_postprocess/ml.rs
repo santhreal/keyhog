@@ -61,10 +61,7 @@ impl CompiledScanner {
         let scores = crate::ml_scorer::complete_batch_scores_with_config(
             scores,
             &pending_matches,
-            &self.config.known_prefixes,
-            &self.config.secret_keywords,
-            &self.config.test_keywords,
-            &self.config.placeholder_keywords,
+            &self.config,
         );
         for (pending, ml_conf) in pending_matches.into_iter().zip(scores.into_iter()) {
             let report_conf = crate::confidence::policy::ml_pending_match_confidence(

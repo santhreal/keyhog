@@ -344,15 +344,17 @@ impl CompiledScanner {
             #[cfg(feature = "ml")]
             if self.config.ml_enabled && self.config.entropy_ml_authoritative {
                 let raw_match = build_raw_match(scan_state, policy_conf);
-                let ml_context = crate::types::ml_context_for_candidate(
+                let ml_features = crate::types::ml_features_for_candidate(
                     &preprocessed.text,
                     entropy_match.line,
                     chunk.metadata.path.as_deref(),
+                    &entropy_match.value,
+                    &self.config,
                 );
                 scan_state.push_entropy_ml_pending(
                     raw_match,
                     policy_conf,
-                    ml_context,
+                    ml_features,
                     min_confidence_floor,
                     detector_owned_canonical_hex_key,
                 );

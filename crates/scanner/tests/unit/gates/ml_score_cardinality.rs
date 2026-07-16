@@ -108,8 +108,8 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
             && !entropy.contains(".ml_pending")
             && process.contains("ml_enabled: self.config.ml_enabled")
             && entropy.contains("if self.config.ml_enabled && self.config.entropy_ml_authoritative")
-            && process.contains("crate::types::ml_context_for_candidate(")
-            && entropy.contains("crate::types::ml_context_for_candidate(")
+            && process.contains("crate::types::ml_features_for_candidate(")
+            && entropy.contains("crate::types::ml_features_for_candidate(")
             && !process.contains("MlPendingMatch {")
             && !entropy.contains("MlPendingMatch {")
             && ml_postprocess.contains("is_named_detector: pending.is_named_detector")
@@ -118,14 +118,26 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
         ),
         "ML pending finalization must preserve the producer's weak-anchor-aware named-detector classification"
     );
-    assert!(
-        scan_state.contains("fn ml_context_for_candidate(")
-            && !policy.contains("local_context_window(")
-            && !policy.contains("file:{path}")
-            && !process.contains("format!(\"file:{path}")
-            && !entropy.contains("format!(\"file:{path}"),
-        "ML context formatting must have one owner outside confidence policy"
+    let source = "first\nTOKEN=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij\nthird";
+    let credential = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij";
+    let context =
+        keyhog_scanner::testing::ml_context_for_candidate(source, 2, Some("src/token.rs"));
+    let expected = keyhog_scanner::ml_scorer::compute_features_with_config(
+        credential,
+        &context,
+        &config.known_prefixes,
+        &config.secret_keywords,
+        &config.test_keywords,
+        &config.placeholder_keywords,
     );
+    let queued = keyhog_scanner::testing::queued_ml_features(
+        source,
+        2,
+        Some("src/token.rs"),
+        credential,
+        &config,
+    );
+    assert_eq!(queued.as_slice(), expected.as_slice());
     assert!(
         gpu.contains("let score_features_on_cpu = || -> Vec<f64>")
             && gpu.contains("scores.len() == candidates.len()")

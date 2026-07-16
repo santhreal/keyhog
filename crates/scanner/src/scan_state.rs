@@ -7,6 +7,8 @@ use std::collections::{BinaryHeap, HashSet};
 use std::sync::Arc;
 
 use keyhog_core::SensitiveString;
+#[cfg(feature = "ml")]
+use zeroize::Zeroize;
 
 #[cfg(feature = "ml")]
 pub(crate) fn ml_context_for_candidate(text: &str, line: usize, file_path: Option<&str>) -> String {
@@ -16,6 +18,48 @@ pub(crate) fn ml_context_for_candidate(text: &str, line: usize, file_path: Optio
         Some(path) => format!("file:{path}\n{text_context}"),
         None => text_context.to_string(),
     }
+}
+
+#[cfg(feature = "ml")]
+pub(crate) fn ml_features_for_candidate(
+    text: &str,
+    line: usize,
+    file_path: Option<&str>,
+    credential: &str,
+    config: &crate::types::ScannerConfig,
+) -> [f32; crate::ml_scorer::NUM_FEATURES] {
+    if credential.is_empty() {
+        return [0.0; crate::ml_scorer::NUM_FEATURES];
+    }
+    let text_context =
+        crate::pipeline::local_context_window(text, line, crate::types::ML_CONTEXT_RADIUS_LINES);
+    let compute = |context: &str| {
+        crate::ml_scorer::compute_features_with_config(
+            credential,
+            context,
+            &config.known_prefixes,
+            &config.secret_keywords,
+            &config.test_keywords,
+            &config.placeholder_keywords,
+        )
+    };
+    let Some(path) = file_path else {
+        return compute(text_context);
+    };
+    thread_local! {
+        static CONTEXT: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+    }
+    CONTEXT.with(|cell| {
+        let mut context = cell.borrow_mut();
+        context.clear();
+        context.push_str("file:");
+        context.push_str(path);
+        context.push('\n');
+        context.push_str(text_context);
+        let features = compute(&context);
+        context.zeroize();
+        features
+    })
 }
 
 /// Queued ML match waiting for batch inference at the end of a scan.
@@ -28,8 +72,8 @@ pub(crate) struct MlPendingMatch {
     pub(crate) heuristic_conf: f64,
     /// Inferred code context for post-ML adjustments.
     pub(crate) code_context: crate::context::CodeContext,
-    /// Surrounding context passed to the ML scorer.
-    pub(crate) ml_context: String,
+    /// Exact serve-path features computed while source context is still local.
+    pub(crate) ml_features: [f32; crate::ml_scorer::NUM_FEATURES],
     /// Confidence floor that applies to this pending candidate after ML blending.
     pub(crate) min_confidence_floor: f64,
     /// Whether the original producer classified this as a named detector after
@@ -59,7 +103,7 @@ impl MlPendingMatch {
         raw_match: keyhog_core::RawMatch,
         heuristic_conf: f64,
         code_context: crate::context::CodeContext,
-        ml_context: String,
+        ml_features: [f32; crate::ml_scorer::NUM_FEATURES],
         min_confidence_floor: f64,
         is_named_detector: bool,
         allow_canonical_hex_key: bool,
@@ -68,7 +112,7 @@ impl MlPendingMatch {
             raw_match,
             heuristic_conf,
             code_context,
-            ml_context,
+            ml_features,
             min_confidence_floor,
             is_named_detector,
             allow_canonical_hex_key,
@@ -79,7 +123,7 @@ impl MlPendingMatch {
     pub(crate) fn entropy_candidate(
         raw_match: keyhog_core::RawMatch,
         heuristic_conf: f64,
-        ml_context: String,
+        ml_features: [f32; crate::ml_scorer::NUM_FEATURES],
         min_confidence_floor: f64,
         allow_canonical_hex_key: bool,
     ) -> Self {
@@ -87,7 +131,7 @@ impl MlPendingMatch {
             raw_match,
             heuristic_conf,
             code_context: crate::context::CodeContext::Unknown,
-            ml_context,
+            ml_features,
             min_confidence_floor,
             is_named_detector: false,
             allow_canonical_hex_key,
@@ -300,7 +344,7 @@ impl ScanState {
         raw_match: keyhog_core::RawMatch,
         heuristic_conf: f64,
         code_context: crate::context::CodeContext,
-        ml_context: String,
+        ml_features: [f32; crate::ml_scorer::NUM_FEATURES],
         min_confidence_floor: f64,
         is_named_detector: bool,
         allow_canonical_hex_key: bool,
@@ -309,7 +353,7 @@ impl ScanState {
             raw_match,
             heuristic_conf,
             code_context,
-            ml_context,
+            ml_features,
             min_confidence_floor,
             is_named_detector,
             allow_canonical_hex_key,
@@ -321,14 +365,14 @@ impl ScanState {
         &mut self,
         raw_match: keyhog_core::RawMatch,
         heuristic_conf: f64,
-        ml_context: String,
+        ml_features: [f32; crate::ml_scorer::NUM_FEATURES],
         min_confidence_floor: f64,
         allow_canonical_hex_key: bool,
     ) {
         self.ml_pending.push(MlPendingMatch::entropy_candidate(
             raw_match,
             heuristic_conf,
-            ml_context,
+            ml_features,
             min_confidence_floor,
             allow_canonical_hex_key,
         ));

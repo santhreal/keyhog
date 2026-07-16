@@ -2820,6 +2820,18 @@ pub fn local_context_window(text: &str, line: usize, radius: usize) -> &str {
 pub fn ml_context_for_candidate(text: &str, line: usize, file_path: Option<&str>) -> String {
     crate::scan_state::ml_context_for_candidate(text, line, file_path)
 }
+
+#[cfg(feature = "ml")]
+/// Compute the exact feature vector stored in the production pending queue.
+pub fn queued_ml_features(
+    text: &str,
+    line: usize,
+    file_path: Option<&str>,
+    credential: &str,
+    config: &crate::ScannerConfig,
+) -> Vec<f32> {
+    crate::scan_state::ml_features_for_candidate(text, line, file_path, credential, config).to_vec()
+}
 pub fn match_entropy(data: &[u8]) -> f64 {
     crate::pipeline::match_entropy(data)
 }
@@ -4129,14 +4141,7 @@ pub fn complete_ml_batch_scores(
     scores: Vec<f64>,
     config: &crate::ScannerConfig,
 ) -> Vec<f64> {
-    crate::ml_scorer::complete_batch_scores_with_config(
-        scores,
-        candidates,
-        &config.known_prefixes,
-        &config.secret_keywords,
-        &config.test_keywords,
-        &config.placeholder_keywords,
-    )
+    crate::ml_scorer::complete_batch_scores_with_config(scores, candidates, config)
 }
 
 /// Capture the coalesced GPU region-presence batch for `chunks`: `(haystack bytes

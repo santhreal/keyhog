@@ -9,6 +9,11 @@
   the same model inputs, cardinality checks, and CPU/GPU score policy.
 - Keep one parsed owner for ML file/context markers instead of cloning every
   marker family into separate lazy vectors.
+- Compute each queued candidate's 43 model features once while its source
+  context is hot, using reusable per-thread context storage that is zeroized
+  after extraction. Postprocess and GPU dispatch now consume the stored feature
+  vector instead of retaining a formatted context string and extracting the
+  same features later.
 - Compile each active generic detector's complete entropy, plausibility,
   isolated-shape, and BPE policy once during scanner construction. Active
   owners with missing policy fields now fail construction instead of reading
