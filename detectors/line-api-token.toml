@@ -8,6 +8,7 @@ id = "line-api-token"
 name = "LINE Messaging API Token"
 service = "line"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["line", "LINE", "channel_access_token", "CHANNEL_ACCESS_TOKEN", "line-bot"]
 
 [[detector.patterns]]

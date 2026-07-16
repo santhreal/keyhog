@@ -8,6 +8,7 @@ id = "cortex-api-key"
 name = "Cortex API Key"
 service = "cortex"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["cortex", "CORTEX_API_KEY", "cortex_key"]
 
 [[detector.patterns]]

@@ -8,6 +8,7 @@ id = "customerio-api-key"
 name = "Customer.io API Key"
 service = "customerio"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["CUSTOMER_IO", "CUSTOMERIO", "CIO_SITE_ID", "CIO_API_KEY", "customer.io"]
 
 [[detector.patterns]]

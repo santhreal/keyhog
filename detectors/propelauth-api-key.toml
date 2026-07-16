@@ -8,6 +8,7 @@ id = "propelauth-api-key"
 name = "PropelAuth API Key"
 service = "propelauth"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["PROPELAUTH_API_KEY", "PROPELAUTH_AUTH_URL", "propelauth"]
 
 [[detector.patterns]]

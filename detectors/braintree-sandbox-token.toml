@@ -8,6 +8,7 @@ id = "braintree-sandbox-token"
 name = "Braintree Tokenization Key"
 service = "braintree"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["sandbox_", "production_", "tokenization_key", "BRAINTREE"]
 
 [[detector.patterns]]

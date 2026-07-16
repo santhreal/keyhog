@@ -8,6 +8,7 @@ id = "wandb-api-key"
 name = "Weights & Biases API Key"
 service = "wandb"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["WANDB_API_KEY", "wandb"]
 
 [[detector.patterns]]

@@ -8,6 +8,7 @@ id = "box-developer-token"
 name = "Box Developer Token"
 service = "box"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["BOX_DEVELOPER_TOKEN", "box_developer_token", "developer_token"]
 
 [[detector.patterns]]

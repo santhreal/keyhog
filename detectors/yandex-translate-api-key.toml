@@ -8,6 +8,7 @@ id = "yandex-translate-api-key"
 name = "Yandex Translate API Key"
 service = "yandex-translate"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["YANDEX_TRANSLATE", "YANDEX_API_KEY", "trnsl", "yandex_translate_api_key"]
 
 [[detector.patterns]]

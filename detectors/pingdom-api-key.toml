@@ -8,6 +8,7 @@ id = "pingdom-api-key"
 name = "Pingdom API Key"
 service = "pingdom"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["pingdom", "PINGDOM", "Authorization", "Bearer", "api.pingdom.com"]
 
 [[detector.patterns]]

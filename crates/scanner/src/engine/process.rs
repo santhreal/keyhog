@@ -269,6 +269,14 @@ impl CompiledScanner {
         // fallbacks and weak anchors.
         let is_named_detector =
             crate::confidence::is_service_anchored_detector(&detector.id) && !weak_anchor;
+        #[cfg(feature = "ml")]
+        let detector_ml_policy = self.detector_ml_policies[entry.detector_index];
+        #[cfg(feature = "ml")]
+        let detector_ml_mode = self
+            .config
+            .ml_enabled
+            .then_some(detector_ml_policy.match_mode)
+            .flatten();
         let policy_result = crate::confidence::policy::candidate_match_score(
             crate::confidence::policy::CandidateMatchScorePolicy {
                 // Per-PATTERN constant, memoized on the `LazyRegex` (see
@@ -285,7 +293,10 @@ impl CompiledScanner {
                 has_companion: !companions.is_empty(),
                 code_context: inferred_context,
                 penalize_test_paths: self.config.penalize_test_paths,
-                ml_enabled: self.config.ml_enabled,
+                #[cfg(feature = "ml")]
+                ml_mode: detector_ml_mode,
+                #[cfg(not(feature = "ml"))]
+                ml_enabled: false,
                 credential,
                 is_named_detector,
                 // Per-PATTERN constant, memoized on the `LazyRegex`: the matched
@@ -343,6 +354,7 @@ impl CompiledScanner {
             MlScoreResult::Pending {
                 heuristic_conf,
                 code_context,
+                mode,
             } => {
                 let source_offset =
                     preprocessed.source_offset_for_match(&chunk.data, credential_start, credential);
@@ -351,6 +363,7 @@ impl CompiledScanner {
                     line,
                     chunk.metadata.path.as_deref(),
                     credential,
+                    detector_ml_policy.context_radius_lines,
                     &self.config,
                 );
                 let raw_match = build_raw_match(
@@ -371,9 +384,12 @@ impl CompiledScanner {
                     heuristic_conf,
                     code_context,
                     ml_features,
+                    detector_ml_policy.effective_weight(&self.config),
                     min_confidence_floor,
                     is_named_detector,
                     allow_decoded_hex_key_material,
+                    false,
+                    mode,
                 );
                 crate::telemetry::record_match_found();
             }

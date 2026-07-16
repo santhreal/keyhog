@@ -8,6 +8,7 @@ id = "veriff-api-key"
 name = "Veriff API Key"
 service = "veriff"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["X-AUTH-CLIENT", "veriff", "vrf"]
 
 [[detector.patterns]]

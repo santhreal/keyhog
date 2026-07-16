@@ -8,6 +8,7 @@ id = "braintree-private-key"
 name = "Braintree Private Key"
 service = "braintree"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["braintree_private_key", "BRAINTREE_PRIVATE_KEY", "private_key"]
 
 [[detector.patterns]]

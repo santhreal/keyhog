@@ -8,6 +8,7 @@ id = "anthropic-api-key"
 name = "Anthropic API Key"
 service = "anthropic"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["sk-ant-", "anthropic"]
 
 # Credential shape: the `sk-ant-api03-` key form carries an 80..=120 byte body

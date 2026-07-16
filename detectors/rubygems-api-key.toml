@@ -8,6 +8,7 @@ id = "rubygems-api-key"
 name = "RubyGems API Key"
 service = "rubygems"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["rubygems_", "RUBYGEMS_API_KEY", "gem push", "rubygems.org"]
 
 [[detector.patterns]]

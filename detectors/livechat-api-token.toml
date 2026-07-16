@@ -8,6 +8,7 @@ id = "livechat-api-token"
 name = "LiveChat Personal Access Token"
 service = "livechat"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["LIVECHAT", "livechat_pat", "livechat_token", "dal:"]
 
 [[detector.patterns]]

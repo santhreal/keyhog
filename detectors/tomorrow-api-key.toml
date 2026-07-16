@@ -8,6 +8,7 @@ id = "tomorrow-api-key"
 name = "Tomorrow.io API Key"
 service = "tomorrow"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["TOMORROW", "tomorrow", "TOMORROW_API_KEY", "CLIMACELL", "climacell"]
 
 [[detector.patterns]]

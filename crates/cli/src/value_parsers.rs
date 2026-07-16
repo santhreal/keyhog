@@ -76,9 +76,10 @@ pub(crate) fn parse_min_confidence(s: &str) -> Result<f64, String> {
     parse_unit_interval(s, "min_confidence", "0.85")
 }
 
-/// `--ml-weight W` / config `ml_weight`: the model-score blend weight, a finite
-/// f64 in `[0.0, 1.0]`. A value above 1.0 over-weights the model and a negative
-/// one inverts it; NaN would silently poison every confidence. Shares
+/// `--ml-weight W` / config `ml_weight`: an explicit scan-wide override for
+/// detector-local model blend weights, as a finite f64 in `[0.0, 1.0]`. A value
+/// above 1.0 over-weights the model and a negative one inverts it; NaN would
+/// silently poison every confidence. Shares
 /// `parse_unit_interval` with `min_confidence` and (like it) is reused for the
 /// `.keyhog.toml` `ml_weight` key via `parse_config_ml_weight`, which is why the
 /// message names the bare key rather than the `--ml-weight` flag.

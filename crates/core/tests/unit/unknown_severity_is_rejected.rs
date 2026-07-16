@@ -5,6 +5,7 @@ fn unknown_severity_is_rejected() {
 [[suppress]]
 detector = "x"
 severity = "panic"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 "#;
     let err = keyhog_core::testing::CoreTestApi::rule_suppressor_parse(
         &keyhog_core::testing::TestApi,

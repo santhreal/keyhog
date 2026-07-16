@@ -8,6 +8,7 @@ id = "smugmug-api-key"
 name = "SmugMug API Key"
 service = "smugmug"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["SMUGMUG", "smugmug", "SMUG_MUG", "smug_mug"]
 
 [[detector.patterns]]

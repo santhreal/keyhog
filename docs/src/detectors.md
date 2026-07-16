@@ -26,6 +26,7 @@ id = "stripe-secret-key"
 name = "Stripe Secret Key"
 service = "stripe"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["sk_live_", "sk_test_", "rk_live_", "rk_test_", "stripe"]
 simdsieve_prefixes = ["sk_live_", "sk_test_", "rk_live_", "rk_test_"]
 
@@ -89,6 +90,21 @@ as `detector_id` and in CLI output as the third column.
 normal regex detector contract. `"phase2-generic"` selects a scanner-owned
 generic discovery mechanism whose policy remains in this TOML; it may have no
 `patterns`, but must declare the mechanism-specific fields validation requires.
+
+`detector.ml` - model policy compiled with the detector. `match_mode` controls
+regex and generic-assignment candidates; `entropy_mode` controls synthetic
+entropy candidates owned by this detector. Each mode is `disabled`, `lift`,
+`blend`, or `authoritative`. `lift` applies the declared fraction of positive
+model evidence without letting an uncalibrated model veto structural evidence;
+`blend` is the arithmetic mixture and can raise or lower confidence;
+`authoritative` uses the model score directly. `weight` controls `lift` and
+`blend`, and `context_radius_lines` is the bounded source window supplied to feature
+extraction. Normal scans use these detector values. An explicitly supplied
+`--ml-weight` is a scan-wide diagnostic or benchmark override. Detectors that
+do not own entropy policy set `entropy_mode = "disabled"`.
+Every detector TOML must declare `detector.ml`; omission fails parsing instead
+of silently applying an embedded or scanner-side model policy. Programmatic
+`DetectorSpec::default()` disables both model paths until the caller opts in.
 
 `detector.name` - human-readable name. Shows up in `keyhog detectors`
 listing and IDE plugins.
@@ -191,22 +207,23 @@ comparisons; they are not hidden detector definitions.
 
 This follows the design precedent established by `min_confidence` (the per-detector confidence floor) and `entropy_floor` (the low-entropy suppression floor).
 
-If a detector leaves one of these fields unset, the typed compiled fallback for
-that mechanism applies. When set, the detector value overrides that fallback.
-An explicitly supplied scan-wide override may have final authority where the
-field's documented precedence says so (for example, the BPE ceiling).
+Active entropy owners must declare their complete policy. Missing tuning data
+fails corpus validation or scanner construction instead of inheriting
+scanner-side detector policy. An explicitly supplied scan-wide override has
+final authority only where the field documents that precedence, such as BPE or
+the ML weight diagnostic override.
 
 The available per-detector tuning fields are:
 
 ### Entropy Thresholds
-*   **`entropy_high`** (float, optional): Per-detector high-entropy threshold (bits/byte) for keyword-independent detection. Falls back to `HIGH_ENTROPY_THRESHOLD` (4.5) if unset.
-*   **`entropy_low`** (float, optional): Per-detector keyword-context (low) entropy threshold. Falls back to `LOW_ENTROPY_THRESHOLD` (3.0) if unset.
-*   **`entropy_very_high`** (float, optional): Per-detector very-high entropy threshold for keyword-free or isolated tokens. Falls back to `VERY_HIGH_ENTROPY_THRESHOLD` (5.8) if unset.
+*   **`entropy_high`** (float, required for active entropy owners): Per-detector high-entropy threshold (bits/byte) for keyword-independent detection.
+*   **`entropy_low`** (float, required for active entropy owners): Per-detector keyword-context entropy threshold.
+*   **`entropy_very_high`** (float, required for active entropy owners): Per-detector very-high entropy threshold for keyword-free or isolated tokens.
 *   **`sensitive_path_entropy_very_high`** (float, optional): Per-detector keyword-free threshold for clearly sensitive paths. When unset, the detector's `entropy_very_high` applies; the sensitive-path policy is never an undocumented scanner-wide discount.
 *   **`entropy_fallback`** (table, required for active entropy owners): Identity metadata for synthetic entropy findings owned by this detector. `class` is one of `generic`, `password`, `token`, or `api-key`; `id` must use the `entropy-` namespace; and `name`/`service` must be non-empty. The owning detector itself must use `service = "generic"`, while the emitted metadata service may name a custom family. Both regex-kind detectors that set `entropy_policy_priority` and phase-2 generic owners must declare this block. Omitting it is a compile error, never a compatibility identity.
 *   **`entropy_shapes`** (array of tables, optional): Typed isolated-shape exceptions owned by this detector. The current `kind = "lower-dash-app-password"` entry declares `entropy_floor`, `group_count`, `group_length`, and `special_min_length`; its exact candidate length is derived as `group_count * group_length + group_count - 1`. Omission means the detector has no such exception.
-*   **`mixed_alnum_floor`** (float, optional): Per-detector mixed alpha-numeric token entropy floor. Falls back to `MIXED_ALNUM_TOKEN_THRESHOLD` (4.0) if unset.
-*   **`entropy_floor`** (array of tables, optional): Length-bucketed low-entropy suppression floor mapping maximum lengths to minimum entropy scores. If absent, generic adjudication uses its compiled 3.5-bit fallback where this gate applies.
+*   **`mixed_alnum_floor`** (float, required for active entropy owners): Per-detector mixed alpha-numeric token entropy floor.
+*   **`entropy_floor`** (array of tables, required for active entropy owners): Length-bucketed low-entropy suppression floor mapping maximum lengths to minimum entropy scores.
     *   `max_len` (integer, optional): Inclusive maximum length for this bucket.
     *   `floor` (float): Shannon entropy floor.
 *   **`entropy_policy_priority`** (integer, optional): Resolves overlapping
@@ -266,9 +283,8 @@ The available per-detector tuning fields are:
     and the generic low-diversity/decode-as-data confidence penalties because
     those mechanisms inherently classify pure hexadecimal as non-secret. The
     entropy, placeholder, degenerate-repeat, context, and reporting gates still
-    apply. With ML enabled, an exact keyword/length or suffix/length match
-    preserves the detector-derived heuristic floor; authoritative ML veto
-    remains reserved for unowned entropy candidates.
+    apply. The owning detector's `ml.match_mode` governs structurally proven key
+    material, while `ml.entropy_mode` governs its weaker entropy fallback.
 
 The fields live beside the detector's other top-level phase-2 policy, not in a
 scan-wide suppression table. For example:
@@ -289,7 +305,7 @@ scanner uses.
 ### Candidate Lengths
 *   **`keyword_free_min_len`** (integer, optional): Per-detector minimum length for an anchor-free (keyword-free or isolated) candidate. Falls back to `KEYWORD_FREE_MIN_LEN` (20) if unset.
 *   **`min_len`** (integer, optional): Per-detector minimum candidate length in UTF-8 bytes for any candidate this detector emits. Falls back to no detector-specific floor beyond the path-wide default if unset.
-*   **`max_len`** (integer, optional; `kind = "phase2-generic"` only): Inclusive maximum byte length for one generic assignment value. The candidate generator is compiled from the largest ceiling in the loaded detector corpus, then the owning detector rejects an overlength value whole; it never reports a truncated prefix. It must be at least the generic path minimum of 8 and no smaller than `min_len`. An omitted value uses the typed 128-byte compiled fallback. Keep this in the owning generic detector TOML so API keys, passphrases, and generic payloads can use different ceilings. Regex-backed patterns keep their own explicit repetition bounds.
+*   **`max_len`** (integer, required for `kind = "phase2-generic"`): Inclusive maximum byte length for one generic assignment value. The candidate generator is compiled from the largest ceiling in the loaded detector corpus, then the owning detector rejects an overlength value whole; it never reports a truncated prefix. It must be at least 8 and no smaller than `min_len`. Omission fails scanner construction. Regex-backed patterns keep their own explicit repetition bounds.
 
 The generic assignment bridge exists only when the loaded corpus contains at
 least one `phase2-generic` detector. A focused custom corpus without one compiles

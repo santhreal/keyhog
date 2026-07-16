@@ -8,6 +8,7 @@ id = "intelowl-api-key"
 name = "IntelOwl API Key"
 service = "intelowl"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["intelowl", "INTELOWL_API_KEY", "intel_owl"]
 
 [[detector.patterns]]

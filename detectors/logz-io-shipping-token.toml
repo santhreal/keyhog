@@ -8,6 +8,7 @@ id = "logz-io-shipping-token"
 name = "Logz.io Shipping Token"
 service = "logz.io"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["LOGZIO_TOKEN", "logzio_token", "logz.io", "LOGZIO_SHIPPING_TOKEN", "listener.logz.io"]
 
 [[detector.patterns]]

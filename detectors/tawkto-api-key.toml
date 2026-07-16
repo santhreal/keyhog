@@ -8,6 +8,7 @@ id = "tawkto-api-key"
 name = "Tawk.to API Key"
 service = "tawkto"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["TAWK", "tawk_to", "tawkto", "tawkto_api"]
 
 [[detector.patterns]]

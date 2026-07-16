@@ -8,6 +8,7 @@ id = "segment-sources-api-token"
 name = "Segment Sources API Token"
 service = "segment"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["SEGMENT_API_TOKEN", "segment_api_token", "segment_token", "segment-api-token"]
 
 [[detector.patterns]]

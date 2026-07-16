@@ -8,6 +8,7 @@ id = "here-maps-api-key"
 name = "HERE Maps API Key"
 service = "here"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["HERE_API_KEY", "here.api.key", "here_api_key"]
 
 [[detector.patterns]]

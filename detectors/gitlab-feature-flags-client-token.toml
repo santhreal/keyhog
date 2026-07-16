@@ -11,6 +11,7 @@ id = "gitlab-feature-flags-client-token"
 name = "GitLab Feature Flags Client Token"
 service = "gitlab"
 severity = "low"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["glffct-", "gitlab", "feature_flag", "unleash"]
 
 [[detector.patterns]]

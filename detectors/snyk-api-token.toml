@@ -8,6 +8,7 @@ id = "snyk-api-token"
 name = "Snyk API Token"
 service = "snyk"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["SNYK_TOKEN", "snyk_token", "SNYK_API_TOKEN", "snyk_api_token", "snyk.io", "SNYK"]
 
 [[detector.patterns]]

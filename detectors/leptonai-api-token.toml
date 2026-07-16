@@ -8,6 +8,7 @@ id = "leptonai-api-token"
 name = "Lepton AI API Token"
 service = "leptonai"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["LEPTONAI_API_KEY", "LEPTON_WORKSPACE_TOKEN", "lepton.ai", "lepton.run"]
 
 [[detector.patterns]]

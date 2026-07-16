@@ -8,6 +8,7 @@ id = "plaid-client-id"
 name = "Plaid Client ID"
 service = "plaid"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["PLAID_CLIENT_ID", "plaid_client_id", "PLAID-CLIENT-ID", "client_id"]
 
 [[detector.patterns]]

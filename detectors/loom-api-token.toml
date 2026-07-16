@@ -8,6 +8,7 @@ id = "loom-api-token"
 name = "Loom API Access Token"
 service = "loom"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["LOOM", "loom"]
 
 [[detector.patterns]]

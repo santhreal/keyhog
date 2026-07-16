@@ -8,6 +8,7 @@ id = "goto-meeting-api"
 name = "GoTo Meeting API Credentials"
 service = "goto-meeting"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["goto", "gotomeeting", "GOTO_MEETING", "getgo.com"]
 
 [[detector.patterns]]

@@ -10,6 +10,7 @@ id = "generic-api-key"
 name = "Generic API Key"
 service = "generic"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "authoritative", weight = 1.0, context_radius_lines = 5 }
 kind = "phase2-generic"
 keywords = ["api_key", "apikey", "api-key", "access_key", "accesskey", "secret_key", "secretkey", "client_secret", "x-api-key", "apitoken", "api_token", "auth_key", "signing_key", "encryption_key", "master_key", "masterkey", "session_key", "hmac_secret", "hmac_seed", "license_key"]
 entropy_high = 4.5

@@ -8,6 +8,7 @@ id = "neptune-api-token"
 name = "Neptune.ai API Token"
 service = "neptune"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["NEPTUNE_API_TOKEN", "neptune"]
 
 [[detector.patterns]]

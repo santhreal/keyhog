@@ -8,6 +8,7 @@ id = "meilisearch-api-key"
 name = "Meilisearch API Key"
 service = "meilisearch"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["MEILISEARCH_API_KEY", "MEILISEARCH_MASTER_KEY", "meilisearch_api_key", "meilisearch_master_key"]
 
 [[detector.patterns]]

@@ -8,6 +8,7 @@ id = "terraform-cloud-api-token"
 name = "Terraform Cloud API Token"
 service = "terraform-cloud"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = [".atlasv1.", "TFE_TOKEN", "tfe_token", "TERRAFORM_TOKEN", "terraform_token", "app.terraform.io"]
 
 [[detector.patterns]]

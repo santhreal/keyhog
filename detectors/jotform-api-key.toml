@@ -8,6 +8,7 @@ id = "jotform-api-key"
 name = "JotForm API Key"
 service = "jotform"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["jotform", "JOTFORM_API_KEY", "jotform_key"]
 
 [[detector.patterns]]

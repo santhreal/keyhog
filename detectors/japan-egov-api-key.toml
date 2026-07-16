@@ -8,6 +8,7 @@ id = "japan-egov-api-key"
 name = "Japan e-Gov e-Stat API Key"
 service = "japan-egov"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["e-Stat", "ESTAT", "e_stat", "e-gov", "appId", "e-stat.go.jp"]
 
 [[detector.patterns]]

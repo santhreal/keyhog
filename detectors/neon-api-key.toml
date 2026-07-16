@@ -8,6 +8,7 @@ id = "neon-api-key"
 name = "Neon API Key"
 service = "neon"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["NEON_API_KEY", "neon.tech", "Authorization"]
 
 [[detector.patterns]]

@@ -8,6 +8,7 @@ id = "mongodb-atlas-api-key"
 name = "MongoDB Atlas API Key"
 service = "mongodb"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["MONGODB_ATLAS", "mongodb_atlas", "publicKey", "privateKey", "ATLAS_PUBLIC_KEY"]
 
 [[detector.patterns]]

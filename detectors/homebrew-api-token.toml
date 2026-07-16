@@ -8,6 +8,7 @@ id = "homebrew-api-token"
 name = "Homebrew GitHub API Token"
 service = "homebrew"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["HOMEBREW_GITHUB_API_TOKEN", "HOMEBREW_GITHUB_PACKAGES_TOKEN"]
 
 [[detector.patterns]]

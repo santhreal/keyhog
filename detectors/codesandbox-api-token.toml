@@ -8,6 +8,7 @@ id = "codesandbox-api-token"
 name = "CodeSandbox API Token"
 service = "codesandbox"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["csb_", "csb_api", "CODESANDBOX", "codesandbox"]
 
 [[detector.patterns]]

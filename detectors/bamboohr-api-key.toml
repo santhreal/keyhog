@@ -8,6 +8,7 @@ id = "bamboohr-api-key"
 name = "BambooHR API Key"
 service = "bamboohr"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 min_confidence = 0.2
 keywords = ["BAMBOOHR_API_KEY", "bamboo_hr", "bamboohr"]
 # Weak-anchor: the vendor prefix does not tightly bound the captured value (it

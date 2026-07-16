@@ -76,10 +76,10 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
     assert!(
         ml_postprocess.contains("crate::confidence::policy::ml_pending_match_confidence(")
             && !ml_postprocess.contains("crate::confidence::policy::MlConfidencePolicy")
-            && !ml_postprocess.contains("pending.model_authoritative")
+            && !ml_postprocess.contains("pending.ml_mode")
             && !ml_postprocess.contains("pending.heuristic_conf")
             && policy.contains("fn ml_pending_match_confidence(")
-            && policy.contains("pending.model_authoritative")
+            && policy.contains("pending.ml_mode")
             && policy.contains("pending.heuristic_conf")
             && policy.contains("pending.code_context"),
         "ML postprocess must not rebuild confidence policy from pending internals"
@@ -121,7 +121,7 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
     let source = "first\nTOKEN=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij\nthird";
     let credential = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij";
     let context =
-        keyhog_scanner::testing::ml_context_for_candidate(source, 2, Some("src/token.rs"));
+        keyhog_scanner::testing::ml_context_for_candidate(source, 2, Some("src/token.rs"), 5);
     let expected = keyhog_scanner::ml_scorer::compute_features_with_config(
         credential,
         &context,
@@ -135,6 +135,7 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
         2,
         Some("src/token.rs"),
         credential,
+        5,
         &config,
     );
     assert_eq!(queued.as_slice(), expected.as_slice());

@@ -8,6 +8,7 @@ id = "cloudsmith-api-key"
 name = "Cloudsmith API Key"
 service = "cloudsmith"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["cs_", "cloudsmith", "CLOUDSMITH_API_KEY"]
 
 [[detector.patterns]]

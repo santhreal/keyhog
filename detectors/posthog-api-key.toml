@@ -8,6 +8,7 @@ id = "posthog-api-key"
 name = "PostHog API Key"
 service = "posthog"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["phc_", "phx_", "POSTHOG_API_KEY"]
 
 [[detector.patterns]]

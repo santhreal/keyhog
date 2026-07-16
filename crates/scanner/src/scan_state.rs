@@ -11,9 +11,13 @@ use keyhog_core::SensitiveString;
 use zeroize::Zeroize;
 
 #[cfg(feature = "ml")]
-pub(crate) fn ml_context_for_candidate(text: &str, line: usize, file_path: Option<&str>) -> String {
-    let text_context =
-        crate::pipeline::local_context_window(text, line, crate::types::ML_CONTEXT_RADIUS_LINES);
+pub(crate) fn ml_context_for_candidate(
+    text: &str,
+    line: usize,
+    file_path: Option<&str>,
+    context_radius_lines: usize,
+) -> String {
+    let text_context = crate::pipeline::local_context_window(text, line, context_radius_lines);
     match file_path {
         Some(path) => format!("file:{path}\n{text_context}"),
         None => text_context.to_string(),
@@ -26,13 +30,13 @@ pub(crate) fn ml_features_for_candidate(
     line: usize,
     file_path: Option<&str>,
     credential: &str,
+    context_radius_lines: usize,
     config: &crate::types::ScannerConfig,
 ) -> [f32; crate::ml_scorer::NUM_FEATURES] {
     if credential.is_empty() {
         return [0.0; crate::ml_scorer::NUM_FEATURES];
     }
-    let text_context =
-        crate::pipeline::local_context_window(text, line, crate::types::ML_CONTEXT_RADIUS_LINES);
+    let text_context = crate::pipeline::local_context_window(text, line, context_radius_lines);
     let compute = |context: &str| {
         crate::ml_scorer::compute_features_with_config(
             credential,
@@ -68,13 +72,16 @@ pub(crate) fn ml_features_for_candidate(
 pub(crate) struct MlPendingMatch {
     /// The raw match built with heuristic confidence only.
     pub(crate) raw_match: keyhog_core::RawMatch,
-    /// Heuristic confidence before ML blending.
+    /// Heuristic confidence before detector-owned ML scoring.
     pub(crate) heuristic_conf: f64,
     /// Inferred code context for post-ML adjustments.
     pub(crate) code_context: crate::context::CodeContext,
     /// Exact serve-path features computed while source context is still local.
     pub(crate) ml_features: [f32; crate::ml_scorer::NUM_FEATURES],
-    /// Confidence floor that applies to this pending candidate after ML blending.
+    /// Detector-local model contribution, already resolved against an explicit
+    /// scan-wide diagnostic override before this candidate enters the queue.
+    pub(crate) ml_weight: f64,
+    /// Confidence floor that applies after detector-owned ML scoring.
     pub(crate) min_confidence_floor: f64,
     /// Whether the original producer classified this as a named detector after
     /// applying weak-anchor exclusions.
@@ -84,17 +91,11 @@ pub(crate) struct MlPendingMatch {
     /// This evidence must survive batching so the unified finalizer does not
     /// silently reclassify the value as a digest or low-diversity blob.
     pub(crate) allow_canonical_hex_key: bool,
-    /// When true, the MoE score is authoritative for this candidate: the final
-    /// confidence is the model score directly, NOT `max(heuristic, ml)`. Set for
-    /// unowned entropy phase-2 candidates, whose "heuristic" is bare entropy magnitude -
-    /// exactly the signal that mislabels high-entropy non-secrets (FQDNs, git
-    /// SHAs, base64 blobs) as findings. Flooring by that heuristic (as the
-    /// detector path does, where the regex IS positive evidence) would defeat the
-    /// model's ability to suppress those FPs. Detector/generic matches and
-    /// entropy candidates proven by exact detector-local TOML policy set this
-    /// false and keep their structural-evidence floor. See
-    /// `apply_ml_batch_scores`.
-    pub(crate) model_authoritative: bool,
+    /// Preserve detector-owned encoded-text evidence in the common finalizer.
+    pub(crate) allow_encoded_text_lift: bool,
+    /// Compiled detector-owned scoring behavior. The inactive state is removed
+    /// before queueing, so every pending match has an executable policy.
+    pub(crate) ml_mode: crate::detector_ml_policy::ActiveMlMode,
 }
 
 #[cfg(feature = "ml")]
@@ -104,19 +105,24 @@ impl MlPendingMatch {
         heuristic_conf: f64,
         code_context: crate::context::CodeContext,
         ml_features: [f32; crate::ml_scorer::NUM_FEATURES],
+        ml_weight: f64,
         min_confidence_floor: f64,
         is_named_detector: bool,
         allow_canonical_hex_key: bool,
+        allow_encoded_text_lift: bool,
+        ml_mode: crate::detector_ml_policy::ActiveMlMode,
     ) -> Self {
         Self {
             raw_match,
             heuristic_conf,
             code_context,
             ml_features,
+            ml_weight,
             min_confidence_floor,
             is_named_detector,
             allow_canonical_hex_key,
-            model_authoritative: false,
+            allow_encoded_text_lift,
+            ml_mode,
         }
     }
 
@@ -124,18 +130,22 @@ impl MlPendingMatch {
         raw_match: keyhog_core::RawMatch,
         heuristic_conf: f64,
         ml_features: [f32; crate::ml_scorer::NUM_FEATURES],
+        ml_weight: f64,
         min_confidence_floor: f64,
         allow_canonical_hex_key: bool,
+        ml_mode: crate::detector_ml_policy::ActiveMlMode,
     ) -> Self {
         Self {
             raw_match,
             heuristic_conf,
             code_context: crate::context::CodeContext::Unknown,
             ml_features,
+            ml_weight,
             min_confidence_floor,
             is_named_detector: false,
             allow_canonical_hex_key,
-            model_authoritative: !allow_canonical_hex_key,
+            allow_encoded_text_lift: false,
+            ml_mode,
         }
     }
 }
@@ -345,18 +355,24 @@ impl ScanState {
         heuristic_conf: f64,
         code_context: crate::context::CodeContext,
         ml_features: [f32; crate::ml_scorer::NUM_FEATURES],
+        ml_weight: f64,
         min_confidence_floor: f64,
         is_named_detector: bool,
         allow_canonical_hex_key: bool,
+        allow_encoded_text_lift: bool,
+        ml_mode: crate::detector_ml_policy::ActiveMlMode,
     ) {
         self.ml_pending.push(MlPendingMatch::detector_candidate(
             raw_match,
             heuristic_conf,
             code_context,
             ml_features,
+            ml_weight,
             min_confidence_floor,
             is_named_detector,
             allow_canonical_hex_key,
+            allow_encoded_text_lift,
+            ml_mode,
         ));
     }
 
@@ -366,26 +382,29 @@ impl ScanState {
         raw_match: keyhog_core::RawMatch,
         heuristic_conf: f64,
         ml_features: [f32; crate::ml_scorer::NUM_FEATURES],
+        ml_weight: f64,
         min_confidence_floor: f64,
         allow_canonical_hex_key: bool,
+        ml_mode: crate::detector_ml_policy::ActiveMlMode,
     ) {
         self.ml_pending.push(MlPendingMatch::entropy_candidate(
             raw_match,
             heuristic_conf,
             ml_features,
+            ml_weight,
             min_confidence_floor,
             allow_canonical_hex_key,
+            ml_mode,
         ));
     }
 
     #[cfg(feature = "ml")]
-    pub(crate) fn for_each_named_pending_ml_line<F>(&self, mut visit: F)
+    pub(crate) fn for_each_pre_entropy_pending_ml_line<F>(&self, mut visit: F)
     where
         F: FnMut(Option<usize>),
     {
         for pending in &self.ml_pending {
-            let id = &*pending.raw_match.detector_id;
-            if !crate::detector_ids::is_generic_or_entropy_detector(id) {
+            if !crate::detector_ids::is_entropy_detector(&pending.raw_match.detector_id) {
                 visit(pending.raw_match.location.line);
             }
         }

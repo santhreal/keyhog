@@ -8,6 +8,7 @@ id = "onedrive-access-token"
 name = "OneDrive/SharePoint Access Token"
 service = "onedrive"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["ONEDRIVE_TOKEN", "SHAREPOINT_TOKEN", "graph.microsoft.com"]
 
 [[detector.patterns]]

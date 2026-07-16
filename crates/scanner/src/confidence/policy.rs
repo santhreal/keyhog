@@ -8,6 +8,7 @@ pub(crate) enum MlScoreResult {
     Pending {
         heuristic_conf: f64,
         code_context: crate::context::CodeContext,
+        mode: crate::detector_ml_policy::ActiveMlMode,
     },
 }
 
@@ -84,6 +85,9 @@ pub(crate) struct CandidateMatchScorePolicy<'a> {
     pub(crate) has_companion: bool,
     pub(crate) code_context: context::CodeContext,
     pub(crate) penalize_test_paths: bool,
+    #[cfg(feature = "ml")]
+    pub(crate) ml_mode: Option<crate::detector_ml_policy::ActiveMlMode>,
+    #[cfg(not(feature = "ml"))]
     pub(crate) ml_enabled: bool,
     pub(crate) credential: &'a str,
     pub(crate) is_named_detector: bool,
@@ -187,8 +191,8 @@ pub(crate) fn candidate_match_score(policy: CandidateMatchScorePolicy<'_>) -> Ml
     // infix (`has_distinctive_inner_literal`: terraform `\.atlasv1\.`, whose
     // regex opens with a class and captures the whole match so it carries
     // neither of the other two). Applied before the ML branch so it propagates
-    // through both the heuristic-only `Final` path and the `Pending` path (whose
-    // `ml_pending_confidence` takes `max(heuristic, model)`).
+    // through both the heuristic-only `Final` path and the `Pending` path,
+    // where the compiled detector-owned model mode determines its contribution.
     let heuristic_conf = apply_named_detector_anchor_floor(
         heuristic_conf,
         policy.is_named_detector,
@@ -205,9 +209,10 @@ pub(crate) fn candidate_match_score(policy: CandidateMatchScorePolicy<'_>) -> Ml
 
     #[cfg(feature = "ml")]
     let score_result = {
-        if !policy.ml_enabled {
-            MlScoreResult::Final(heuristic_conf)
-        } else if let Some(confidence) =
+        let Some(mode) = policy.ml_mode else {
+            return MlScoreResult::Final(heuristic_conf);
+        };
+        if let Some(confidence) =
             probabilistic_promise_confidence_override(policy.credential, policy.is_named_detector)
         {
             MlScoreResult::Final(confidence)
@@ -215,6 +220,7 @@ pub(crate) fn candidate_match_score(policy: CandidateMatchScorePolicy<'_>) -> Ml
             MlScoreResult::Pending {
                 heuristic_conf,
                 code_context: policy.code_context,
+                mode,
             }
         }
     };
@@ -282,7 +288,7 @@ pub(crate) struct MlConfidencePolicy {
     pub(crate) heuristic_confidence: f64,
     pub(crate) model_confidence: f64,
     pub(crate) ml_weight: f64,
-    pub(crate) model_authoritative: bool,
+    pub(crate) mode: crate::detector_ml_policy::ActiveMlMode,
     pub(crate) code_context: context::CodeContext,
     pub(crate) scan_comments: bool,
     pub(crate) penalize_test_paths: bool,
@@ -290,14 +296,17 @@ pub(crate) struct MlConfidencePolicy {
 
 #[cfg(feature = "ml")]
 pub(crate) fn ml_pending_confidence(policy: MlConfidencePolicy) -> f64 {
-    let mut confidence = if policy.model_authoritative {
-        policy.model_confidence
-    } else {
-        let blended = (policy.ml_weight * policy.model_confidence)
-            + ((1.0 - policy.ml_weight) * policy.heuristic_confidence);
-        blended
-            .max(policy.heuristic_confidence)
-            .max(policy.model_confidence)
+    let mut confidence = match policy.mode {
+        crate::detector_ml_policy::ActiveMlMode::Lift => {
+            policy.heuristic_confidence
+                + policy.ml_weight
+                    * (policy.model_confidence - policy.heuristic_confidence).max(0.0)
+        }
+        crate::detector_ml_policy::ActiveMlMode::Blend => {
+            (policy.ml_weight * policy.model_confidence)
+                + ((1.0 - policy.ml_weight) * policy.heuristic_confidence)
+        }
+        crate::detector_ml_policy::ActiveMlMode::Authoritative => policy.model_confidence,
     };
 
     let context_penalty_applies = match policy.code_context {
@@ -317,15 +326,14 @@ pub(crate) fn ml_pending_confidence(policy: MlConfidencePolicy) -> f64 {
 pub(crate) fn ml_pending_match_confidence(
     pending: &crate::types::MlPendingMatch,
     model_confidence: f64,
-    ml_weight: f64,
     scan_comments: bool,
     penalize_test_paths: bool,
 ) -> f64 {
     ml_pending_confidence(MlConfidencePolicy {
         heuristic_confidence: pending.heuristic_conf,
         model_confidence,
-        ml_weight,
-        model_authoritative: pending.model_authoritative,
+        ml_weight: pending.ml_weight,
+        mode: pending.ml_mode,
         code_context: pending.code_context,
         scan_comments,
         penalize_test_paths,

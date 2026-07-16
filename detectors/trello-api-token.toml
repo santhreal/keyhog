@@ -8,6 +8,7 @@ id = "trello-api-token"
 name = "Trello API Token"
 service = "trello"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["TRELLO_TOKEN", "TRELLO_API_TOKEN"]
 
 [[detector.patterns]]

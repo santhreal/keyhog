@@ -8,6 +8,7 @@ id = "teamwork-api-token"
 name = "Teamwork API Token"
 service = "teamwork"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["TEAMWORK_API_TOKEN", "TEAMWORK_TOKEN"]
 
 [[detector.patterns]]

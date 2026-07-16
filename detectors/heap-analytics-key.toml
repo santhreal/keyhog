@@ -8,6 +8,7 @@ id = "heap-analytics-key"
 name = "Heap Analytics App ID"
 service = "heapanalytics"
 severity = "low"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["heap.load", "HEAP_APP_ID", "heap_id", "heapAnalytics"]
 
 [[detector.patterns]]

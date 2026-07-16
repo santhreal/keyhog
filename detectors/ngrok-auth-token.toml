@@ -8,6 +8,7 @@ id = "ngrok-auth-token"
 name = "Ngrok Auth Token"
 service = "ngrok"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["NGROK_AUTHTOKEN", "ngrok", "authtoken"]
 
 [[detector.patterns]]

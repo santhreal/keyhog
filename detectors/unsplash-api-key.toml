@@ -8,6 +8,7 @@ id = "unsplash-api-key"
 name = "Unsplash API Key"
 service = "unsplash"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["UNSPLASH", "unsplash", "Client-ID"]
 
 [[detector.patterns]]

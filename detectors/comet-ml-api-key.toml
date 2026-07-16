@@ -8,6 +8,7 @@ id = "comet-ml-api-key"
 name = "Comet ML API Key"
 service = "comet"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["COMET_API_KEY", "COMET_REST_API_KEY", "comet"]
 
 [[detector.patterns]]

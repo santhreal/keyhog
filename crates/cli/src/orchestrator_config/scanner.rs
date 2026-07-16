@@ -156,12 +156,9 @@ pub(super) fn build_scanner_config_from_input(input: &ScannerConfigInput) -> Sca
     // positive flag can enable it in any other preset, but an absent flag must
     // not erase the preset base.
     config.entropy_in_source_files |= input.entropy_source_files;
-    // Entropy candidates are scored through the MoE (model authoritative) by
-    // default; `--no-entropy-ml-scoring` selects bare entropy-only scoring.
-    // No-op unless entropy + ML are both on (gated in scan_entropy_fallback).
-    // Deep retains heuristic entropy evidence by preset contract. The
-    // negative flag can disable model authority in every other mode, but an
-    // absent flag must not restore authority that the preset removed.
+    // Detector TOMLs choose the entropy ML mode; this scan-wide negative flag
+    // can only disable those compiled modes. It cannot select model authority.
+    // No-op unless entropy and ML are both enabled.
     config.entropy_ml_authoritative =
         config.entropy_ml_authoritative && !input.no_entropy_ml_scoring;
     // Keyword-anchored generic values use the relaxed entropy floor by default
@@ -180,6 +177,7 @@ pub(super) fn build_scanner_config_from_input(input: &ScannerConfigInput) -> Sca
     config.ml_enabled = !input.fast && !input.no_ml;
     if let Some(weight) = input.ml_weight {
         config.ml_weight = weight;
+        config.ml_weight_override = Some(weight);
     }
     config.unicode_normalization = !input.no_unicode_norm;
     if !input.known_prefixes.is_empty() {
@@ -203,9 +201,8 @@ pub(super) fn build_scanner_config_from_input(input: &ScannerConfigInput) -> Sca
     // `w*ml + (1-w)*heuristic` in scan_postprocess relies on `w in [0,1]`) and
     // `--entropy-threshold 99` / `-5` (a threshold > 8.0 can never fire,
     // disabling the entropy detector; a negative one makes `entropy >= thr`
-    // always true). Neither `--ml-weight` nor `--entropy-threshold` has a
-    // clamping clap value_parser, so this is the only place the override layer
-    // can honour the same invariant the `From` path enforces. Idempotent.
+    // always true). Boundary parsers reject invalid CLI/TOML values; this
+    // defensive pass also covers programmatic construction. Idempotent.
     config.sanitise();
     config
 }

@@ -8,6 +8,7 @@ id = "azure-openai-api-key"
 name = "Azure OpenAI API Key"
 service = "azure-openai"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 min_confidence = 0.2
 keywords = ["AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT", "azure-openai", "api-key"]
 # Weak-anchor: the vendor prefix does not tightly bound the captured value (it

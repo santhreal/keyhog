@@ -8,6 +8,7 @@ id = "123formbuilder-api-key"
 name = "123FormBuilder API Key"
 service = "123formbuilder"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["123formbuilder", "123FORMBUILDER", "formbuilder_api"]
 
 [[detector.patterns]]

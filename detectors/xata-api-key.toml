@@ -8,6 +8,7 @@ id = "xata-api-key"
 name = "Xata API Key"
 service = "xata"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["xau_", "XATA_API_KEY", "xata.io"]
 
 [[detector.patterns]]

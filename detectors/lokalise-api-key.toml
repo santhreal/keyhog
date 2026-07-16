@@ -8,6 +8,7 @@ id = "lokalise-api-key"
 name = "Lokalise API Key"
 service = "lokalise"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["LOKALISE", "LOKALISE_API_KEY", "LOKALISE_TOKEN", "lokalise.com", "X-Api-Token"]
 
 [[detector.patterns]]

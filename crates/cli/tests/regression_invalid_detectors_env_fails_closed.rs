@@ -171,6 +171,7 @@ id = "installed-discovery"
 name = "Installed Discovery"
 service = "test"
 severity = "high"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["INSTALLED_DISCOVERY"]
 
 [[detector.patterns]]

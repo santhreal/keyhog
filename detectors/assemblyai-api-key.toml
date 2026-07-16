@@ -9,6 +9,7 @@ id = "assemblyai-api-key"
 name = "AssemblyAI API Key"
 service = "assemblyai"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["ASSEMBLYAI_API_KEY", "assemblyai"]
 
 [[detector.patterns]]

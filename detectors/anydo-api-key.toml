@@ -8,6 +8,7 @@ id = "anydo-api-key"
 name = "Any.do API Key"
 service = "anydo"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["ANYDO_API_KEY", "ANYDO_KEY", "ANYDO_TOKEN"]
 
 [[detector.patterns]]

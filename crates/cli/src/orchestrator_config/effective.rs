@@ -114,7 +114,13 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
     ));
     out.push_str(&format!("min_confidence = {}\n", resolved.min_confidence));
     out.push_str(&format!("ml_enabled = {}\n", resolved.ml_enabled));
-    out.push_str(&format!("ml_weight = {}\n", s.ml_weight));
+    out.push_str(&format!(
+        "ml_weight = {}\n",
+        s.ml_weight_override.map_or_else(
+            || "detector-policy".to_string(),
+            |weight| weight.to_string()
+        )
+    ));
     out.push_str(&format!("entropy_enabled = {}\n", s.entropy_enabled));
     out.push_str(&format!(
         "entropy_ml_authoritative = {}\n",
@@ -389,7 +395,13 @@ pub(crate) fn autoroute_config_digest(resolved: &ResolvedScanConfig) -> u64 {
     let s = &resolved.scanner;
     h.field_f64_bits("scanner.min_confidence", s.min_confidence);
     h.field_bool("scanner.ml_enabled", s.ml_enabled);
-    h.field_f64_bits("scanner.ml_weight", s.ml_weight);
+    h.field_bool(
+        "scanner.ml_weight_override.present",
+        s.ml_weight_override.is_some(),
+    );
+    if let Some(weight) = s.ml_weight_override {
+        h.field_f64_bits("scanner.ml_weight_override.value", weight);
+    }
     h.field_bool("scanner.entropy_enabled", s.entropy_enabled);
     h.field_bool(
         "scanner.entropy_ml_authoritative",

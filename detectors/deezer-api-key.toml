@@ -8,6 +8,7 @@ id = "deezer-api-key"
 name = "Deezer API Key"
 service = "deezer"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["DEEZER", "deezer", "DEEZER_API_KEY", "deezer_api_key"]
 
 [[detector.patterns]]

@@ -8,6 +8,7 @@ id = "nasa-api-key"
 name = "NASA API Key"
 service = "nasa"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["NASA_API_KEY", "nasa", "api.nasa.gov"]
 
 [[detector.patterns]]

@@ -8,6 +8,7 @@ id = "equinix-metal-api-token"
 name = "Equinix Metal API Token"
 service = "equinix"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["METAL_AUTH_TOKEN", "EQUINIX_METAL_TOKEN", "EQUINIX_API_TOKEN", "equinix"]
 
 [[detector.patterns]]

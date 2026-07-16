@@ -8,6 +8,7 @@ id = "south-korea-datagokr-api-key"
 name = "South Korea data.go.kr API Key"
 service = "south-korea-datagokr"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["data.go.kr", "DATA_GO_KR", "serviceKey", "공공데이터포털"]
 
 [[detector.patterns]]

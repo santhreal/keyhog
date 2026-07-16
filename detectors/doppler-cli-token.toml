@@ -8,6 +8,7 @@ id = "doppler-cli-token"
 name = "Doppler CLI Token"
 service = "doppler"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["dp.ct.", "dp.pt.", "dp.sa.", "doppler"]
 
 [[detector.patterns]]

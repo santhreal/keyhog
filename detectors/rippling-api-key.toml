@@ -8,6 +8,7 @@ id = "rippling-api-key"
 name = "Rippling API Key"
 service = "rippling"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["RIPPLING_API_KEY", "RIPPLING_TOKEN", "rippling_api_key", "rpl_"]
 
 [[detector.patterns]]

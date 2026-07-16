@@ -8,6 +8,7 @@ id = "transifex-api-token"
 name = "Transifex API Token"
 service = "transifex"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["TRANSIFEX", "TRANSIFEX_API_KEY", "TRANSIFEX_TOKEN", "transifex.com"]
 
 [[detector.patterns]]

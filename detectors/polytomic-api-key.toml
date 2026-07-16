@@ -8,6 +8,7 @@ id = "polytomic-api-key"
 name = "Polytomic API Key"
 service = "polytomic"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["POLYTOMIC", "polytomic", "POLYTOMIC_API_KEY", "POLYTOMIC_TOKEN"]
 
 [[detector.patterns]]

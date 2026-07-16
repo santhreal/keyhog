@@ -8,6 +8,7 @@ id = "omnisend-api-key"
 name = "Omnisend API Key"
 service = "omnisend"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["OMNISEND", "omnisend", "OMNISEND_API_KEY", "omnisend_api_key"]
 
 [[detector.patterns]]

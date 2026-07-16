@@ -8,6 +8,7 @@ id = "contentful-delivery-token"
 name = "Contentful Delivery Token"
 service = "contentful"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["CONTENTFUL_DELIVERY_TOKEN", "CONTENTFUL_ACCESS_TOKEN", "contentful"]
 
 [[detector.patterns]]

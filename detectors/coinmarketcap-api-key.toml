@@ -8,6 +8,7 @@ id = "coinmarketcap-api-key"
 name = "CoinMarketCap API Key"
 service = "coinmarketcap"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["coinmarketcap", "CMC", "CMC_API_KEY", "COINMARKETCAP_API_KEY", "coinmarketcap_api_key", "X-CMC_PRO_API_KEY", "pro-api.coinmarketcap.com"]
 
 [[detector.patterns]]

@@ -8,6 +8,7 @@ id = "confluent-cloud-api-key"
 name = "Confluent Cloud API Key"
 service = "confluent-cloud"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["cflt", "CONFLUENT", "confluent"]
 
 [[detector.patterns]]

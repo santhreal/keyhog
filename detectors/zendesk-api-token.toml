@@ -8,6 +8,7 @@ id = "zendesk-api-token"
 name = "Zendesk API Token"
 service = "zendesk"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["zendesk", "ZENDESK", "/token", "zendesk_api_token", "ZENDESK_API_TOKEN"]
 
 [[detector.patterns]]

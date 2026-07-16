@@ -8,6 +8,7 @@ id = "payload-cms-api-key"
 name = "Payload CMS API Key"
 service = "payload"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["PAYLOAD_SECRET", "payloadcms", "API-Key", "PAYLOAD_API_KEY"]
 
 [[detector.patterns]]

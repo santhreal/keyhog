@@ -8,6 +8,7 @@ id = "usda-api-key"
 name = "USDA Food Data Central API Key"
 service = "usda"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["USDA_API_KEY", "FDC_API_KEY", "usda", "fdc", "nal.usda.gov"]
 
 [[detector.patterns]]

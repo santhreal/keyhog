@@ -15,6 +15,7 @@ id = "detector-min-length-contract"
 name = "Detector Minimum Length Contract"
 service = "length-contract"
 severity = "high"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["length_contract_"]
 min_confidence = 0.0
 min_len = 32

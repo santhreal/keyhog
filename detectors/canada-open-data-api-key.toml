@@ -8,6 +8,7 @@ id = "canada-open-data-api-key"
 name = "Canada Open Data API Key"
 service = "canada-open-data"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["open.canada.ca", "canada_api_key", "CKAN_API_KEY"]
 
 [[detector.patterns]]

@@ -84,6 +84,9 @@ static CORRECTNESS_SCANNER: LazyLock<CompiledScanner> = LazyLock::new(|| {
         .with_config(keyhog_scanner::ScannerConfig {
             scan: keyhog_core::ScanConfig {
                 min_confidence: 0.0,
+                #[cfg(feature = "ml")]
+                ml_mode: None,
+                #[cfg(not(feature = "ml"))]
                 ml_enabled: false,
                 entropy_enabled: false,
                 ..Default::default()

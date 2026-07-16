@@ -8,6 +8,7 @@ id = "phrase-api-token"
 name = "Phrase API Token"
 service = "phrase"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["PHRASE", "PHRASE_API_KEY", "PHRASE_ACCESS_TOKEN", "PHRASE_TOKEN", "phrase.com", "phraseapp"]
 
 [[detector.patterns]]

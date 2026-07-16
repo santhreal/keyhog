@@ -823,6 +823,9 @@ fn generic_keyword_low_entropy_knob_gates_low_entropy_values() {
             scan: keyhog_core::ScanConfig {
                 generic_keyword_low_entropy: true,
                 entropy_enabled: false,
+                #[cfg(feature = "ml")]
+                ml_mode: None,
+                #[cfg(not(feature = "ml"))]
                 ml_enabled: false,
                 min_confidence: 0.0,
                 ..Default::default()
@@ -844,6 +847,9 @@ fn generic_keyword_low_entropy_knob_gates_low_entropy_values() {
             scan: keyhog_core::ScanConfig {
                 generic_keyword_low_entropy: false,
                 entropy_enabled: false,
+                #[cfg(feature = "ml")]
+                ml_mode: None,
+                #[cfg(not(feature = "ml"))]
                 ml_enabled: false,
                 min_confidence: 0.0,
                 ..Default::default()

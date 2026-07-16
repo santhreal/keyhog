@@ -8,6 +8,7 @@ id = "sentry-dsn"
 name = "Sentry DSN"
 service = "sentry"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 # "dsn" removed: over-broad (fires on ODBC/`dsn=` connection strings and any
 # "dsn" mention) and redundant, both regexes require `.ingest.sentry.io`
 # (keyword "sentry.io"), which every real Sentry DSN contains. Recall-neutral.

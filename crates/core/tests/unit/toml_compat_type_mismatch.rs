@@ -9,6 +9,7 @@ id = "test"
 name = "Test"
 service = "demo"
 severity = "high"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = "should_be_array"
 
 [[detector.patterns]]
@@ -66,6 +67,7 @@ id = "test"
 name = "Test"
 service = "demo"
 severity = "high"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["test"]
 
 [detector.patterns]
@@ -90,6 +92,7 @@ id = "test"
 name = "Test"
 service = "demo"
 severity = "high"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["test"]
 
 [[detector.patterns]]

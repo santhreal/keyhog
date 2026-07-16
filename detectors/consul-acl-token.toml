@@ -8,6 +8,7 @@ id = "consul-acl-token"
 name = "Consul ACL Token"
 service = "consul"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["CONSUL_HTTP_TOKEN", "consul_token", "CONSUL_TOKEN", "bootstrap_token"]
 
 [[detector.patterns]]

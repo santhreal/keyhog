@@ -8,6 +8,7 @@ id = "clickup-api-token"
 name = "ClickUp API Token"
 service = "clickup"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["pk_", "clickup"]
 
 # Anchor `pk_` to start-of-string or non-identifier byte. The prefix

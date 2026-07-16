@@ -304,6 +304,39 @@ fn multiple_vendor_suffix_owners_fail_scanner_construction() {
     );
 }
 
+#[cfg(feature = "ml")]
+#[test]
+fn detector_ml_policy_controls_generic_assignment_scoring() {
+    fn confidence(mode: keyhog_core::DetectorMlMode) -> f64 {
+        let mut detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");
+        detectors.retain(|detector| detector.id == "generic-password");
+        detectors[0].ml.match_mode = mode;
+        detectors[0].ml.weight = 1.0;
+        let mut config = ScannerConfig::default();
+        config.min_confidence = 0.0;
+        config.entropy_enabled = false;
+        let scanner = CompiledScanner::compile(detectors)
+            .expect("compile detector-local ML policy")
+            .with_config(config);
+        let matches = scan(&scanner, &format!("password={HIGH_ENTROPY_VALUE}\n"));
+        let finding = matches
+            .iter()
+            .find(|finding| finding.credential.as_ref() == HIGH_ENTROPY_VALUE)
+            .unwrap_or_else(|| {
+                panic!("generic password must survive policy comparison: {matches:#?}")
+            });
+        assert_eq!(finding.detector_id.as_ref(), "generic-password");
+        finding.confidence.expect("final confidence")
+    }
+
+    let heuristic_only = confidence(keyhog_core::DetectorMlMode::Disabled);
+    let model_only = confidence(keyhog_core::DetectorMlMode::Authoritative);
+    assert_ne!(
+        heuristic_only, model_only,
+        "changing only detector.ml.match_mode must alter the shipped scoring path"
+    );
+}
+
 #[test]
 fn all_three_separator_spellings_of_a_compound_keyword_bridge() {
     let s = default_scanner();

@@ -8,6 +8,7 @@ id = "daily-co-api-key"
 name = "Daily.co API Key"
 service = "daily"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["DAILY_API_KEY", "daily", "api_key", "DAILY"]
 
 [[detector.patterns]]

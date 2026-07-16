@@ -8,6 +8,7 @@ id = "huggingface-org-token"
 name = "HuggingFace Organization Token"
 service = "huggingface"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["hf_"]
 
 [[detector.patterns]]

@@ -8,6 +8,7 @@ id = "umami-api-key"
 name = "Umami Analytics API Key"
 service = "umami"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["UMAMI_API_KEY", "umami_api_key", "umami.is"]
 
 [[detector.patterns]]

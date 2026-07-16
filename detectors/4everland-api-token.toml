@@ -8,6 +8,7 @@ id = "4everland-api-token"
 name = "4everland API Token"
 service = "4everland"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["4EVERLAND", "4everland", "EVERLAND", "everland", "4ever", "endpoint.4everland.co"]
 
 [[detector.patterns]]

@@ -8,6 +8,7 @@ id = "travisci-token"
 name = "Travis CI Token"
 service = "travisci"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["travis", "TRAVIS", "TRAVIS_TOKEN", "travis_token"]
 
 [[detector.patterns]]

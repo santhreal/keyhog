@@ -8,6 +8,7 @@ id = "logrocket-api-key"
 name = "LogRocket API Key"
 service = "logrocket"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["LOGROCKET_API_KEY", "logrocket_api_key", "apikey=", "api-key"]
 
 [[detector.patterns]]

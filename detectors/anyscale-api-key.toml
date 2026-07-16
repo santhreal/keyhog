@@ -8,6 +8,7 @@ id = "anyscale-api-key"
 name = "Anyscale API Key"
 service = "anyscale"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["anyscale_", "ANYSCALE_API_KEY", "ANYSCALE_CLI_TOKEN", "ANYSCALE_BASE_URL"]
 
 [[detector.patterns]]

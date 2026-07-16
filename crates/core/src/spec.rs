@@ -75,6 +75,13 @@ pub struct DetectorSpec {
     /// of engine constants scattered across `detector_ids.rs` and policy files.
     #[serde(default)]
     pub kind: DetectorKind,
+    /// Detector-owned policy for model scoring. The model implementation is a
+    /// shared engine, but whether this detector invokes it, how model and
+    /// structural evidence combine, and how much source context is extracted
+    /// are properties of the secret type and therefore live in its TOML.
+    /// TOML detectors must declare it. Programmatic `DetectorSpec::default()`
+    /// disables both model paths until the caller chooses a policy.
+    pub ml: DetectorMlPolicySpec,
     /// List of regex patterns to match. Defaults to empty so a
     /// `kind = "phase2-generic"` detector can omit it when it has no structured
     /// envelope; a `kind = "regex"` detector with no patterns is rejected by
@@ -311,6 +318,62 @@ pub enum DetectorKind {
     /// envelopes (for example a JSON `"secret"` field); those anchors compile
     /// through the same detector while phase-2 remains the shapeless fallback.
     Phase2Generic,
+}
+
+/// How the shared ML model participates in one detector path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DetectorMlMode {
+    /// Do not run model inference for this path.
+    #[default]
+    Disabled,
+    /// Let the model raise structurally derived confidence but never veto a
+    /// detector match. The detector-owned weight controls the fraction of the
+    /// positive model delta that is applied.
+    Lift,
+    /// Combine model confidence with the detector's structural evidence.
+    Blend,
+    /// Let the model score replace the heuristic score for weakly anchored
+    /// candidates where entropy magnitude is not positive evidence.
+    Authoritative,
+}
+
+impl DetectorMlMode {
+    /// Stable TOML spelling used by diagnostics and semantic hashes.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::Lift => "lift",
+            Self::Blend => "blend",
+            Self::Authoritative => "authoritative",
+        }
+    }
+}
+
+/// Complete detector-local configuration for the shared ML scoring engine.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DetectorMlPolicySpec {
+    /// Policy for regex and generic-assignment matches owned by this detector.
+    pub match_mode: DetectorMlMode,
+    /// Policy for entropy-fallback candidates owned by this detector.
+    pub entropy_mode: DetectorMlMode,
+    /// Model contribution for `lift` and `blend`, in the closed interval `[0, 1]`.
+    pub weight: f64,
+    /// Number of source lines on each side of the candidate supplied to feature
+    /// extraction. Zero intentionally restricts inference to the candidate line.
+    pub context_radius_lines: usize,
+}
+
+impl Default for DetectorMlPolicySpec {
+    fn default() -> Self {
+        Self {
+            match_mode: DetectorMlMode::Disabled,
+            entropy_mode: DetectorMlMode::Disabled,
+            weight: 0.0,
+            context_radius_lines: 0,
+        }
+    }
 }
 
 /// One length bucket of a detector's [`DetectorSpec::entropy_floor`]. Owned in the

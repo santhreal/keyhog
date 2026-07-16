@@ -8,6 +8,7 @@ id = "gitlab-package-registry-token"
 name = "GitLab Package Registry Token"
 service = "gitlab-package-registry"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["gldt-", "glcbt-", "CI_JOB_TOKEN", "CI_DEPLOY_TOKEN"]
 
 [[detector.patterns]]

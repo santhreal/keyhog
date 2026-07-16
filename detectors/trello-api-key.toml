@@ -8,6 +8,7 @@ id = "trello-api-key"
 name = "Trello API Key"
 service = "trello"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["TRELLO_API_KEY", "TRELLO_KEY"]
 
 [[detector.patterns]]

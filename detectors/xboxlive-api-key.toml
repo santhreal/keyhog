@@ -8,6 +8,7 @@ id = "xboxlive-api-key"
 name = "Xbox Live API Key"
 service = "xboxlive"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["XBOX_API_KEY", "XBOX_LIVE_KEY", "XSTS_TOKEN", "XboxLiveAPI"]
 
 [[detector.patterns]]

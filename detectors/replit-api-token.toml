@@ -8,6 +8,7 @@ id = "replit-api-token"
 name = "Replit API Token"
 service = "replit"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["replit_token", "REPLIT_TOKEN", "replit_api", "REPLIT_API"]
 
 [[detector.patterns]]

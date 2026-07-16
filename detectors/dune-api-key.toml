@@ -8,6 +8,7 @@ id = "dune-api-key"
 name = "Dune Analytics API Key"
 service = "dune"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["dune", "DUNE", "x-dune-api-key", "DUNE_API_KEY"]
 
 [[detector.patterns]]

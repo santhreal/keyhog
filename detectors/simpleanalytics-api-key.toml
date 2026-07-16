@@ -8,6 +8,7 @@ id = "simpleanalytics-api-key"
 name = "SimpleAnalytics API Key"
 service = "simpleanalytics"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["SA_API_KEY", "SIMPLE_ANALYTICS_KEY", "simpleanalytics"]
 
 [[detector.patterns]]

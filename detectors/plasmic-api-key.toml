@@ -8,6 +8,7 @@ id = "plasmic-api-key"
 name = "Plasmic API Key"
 service = "plasmic"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["PLASMIC", "plasmic", "PLASMIC_API_TOKEN"]
 
 [[detector.patterns]]

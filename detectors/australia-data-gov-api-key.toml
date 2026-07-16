@@ -8,6 +8,7 @@ id = "australia-data-gov-api-key"
 name = "Australia Data.gov.au API Key"
 service = "australia-data-gov"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["data.gov.au", "CKAN_API_KEY", "auckan"]
 
 [[detector.patterns]]

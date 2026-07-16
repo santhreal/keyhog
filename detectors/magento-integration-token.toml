@@ -8,6 +8,7 @@ id = "magento-integration-token"
 name = "Magento Integration Token"
 service = "magento"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["magento", "integration", "MAGE", "MAGENTO", "access_token"]
 
 [[detector.patterns]]

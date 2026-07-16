@@ -8,6 +8,7 @@ id = "telegram-bot-token"
 name = "Telegram Bot Token"
 service = "telegram"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["TELEGRAM_BOT_TOKEN", "telegram_bot_token", "TELEGRAM_TOKEN", "telegram_token", "api.telegram.org", "bot"]
 
 [[detector.patterns]]

@@ -11,6 +11,7 @@ id = "gitlab-agent-token"
 name = "GitLab Agent for Kubernetes Token"
 service = "gitlab"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 # "kas" removed: over-broad 3-char prefilter (kaspersky/alaska/…) that no regex
 # references: the pattern requires the unambiguous `glagent-` prefix (keyword
 # "glagent-"), so "kas" only forced wasted scan passes. Recall-neutral.

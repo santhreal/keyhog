@@ -7,6 +7,7 @@ id = "postgresql-connection-string"
 name = "PostgreSQL Connection String"
 service = "postgresql"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["postgresql", "postgres", "postgres_url", "POSTGRES_URL", "pg-url", "PG_URL", "DATABASE_URL"]
 min_confidence = 0.2
 

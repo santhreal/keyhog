@@ -8,6 +8,7 @@ id = "foundation-api-key"
 name = "Foundation API Key"
 service = "foundation"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["foundation", "FOUNDATION", "foundation.app"]
 # Weak-anchor: the vendor prefix does not tightly bound the captured value (it
 # collides with a generic hex/base64 run), so scanner suppression keeps the

@@ -8,6 +8,7 @@ id = "accuweather-api-key"
 name = "AccuWeather API Key"
 service = "accuweather"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["ACCUWEATHER", "accuweather", "ACCU_WEATHER_API_KEY"]
 
 [[detector.patterns]]

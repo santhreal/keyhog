@@ -8,6 +8,7 @@ id = "modal-api-token"
 name = "Modal API Token"
 service = "modal"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["MODAL_API_KEY", "MODAL_TOKEN", "modal-key", "modal-secret", "modal.run"]
 
 [[detector.patterns]]

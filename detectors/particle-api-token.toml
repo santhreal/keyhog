@@ -8,6 +8,7 @@ id = "particle-api-token"
 name = "Particle Cloud API Token"
 service = "particle"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["particle", "access_token", "api.particle.io"]
 
 [[detector.patterns]]

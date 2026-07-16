@@ -8,6 +8,7 @@ id = "mixpanel-project-token"
 name = "Mixpanel Project Token"
 service = "mixpanel"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["mixpanel", "MIXPANEL_TOKEN", "mp_token", "project_token", "mixpanel.init"]
 
 [[detector.patterns]]

@@ -41,6 +41,7 @@ id = "bearer-authorization"
 name = "Bearer Authorization Credentials"
 service = "generic"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["Bearer", "bearer"]
 # Strong-anchor free-form password slot: apply the placeholder-word gate, skip
 # the Tier-B randomness floor (family declared per-detector, see DetectorSpec).

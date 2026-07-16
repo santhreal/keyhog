@@ -14,6 +14,7 @@ id = "square-access-token"
 name = "Square Access Token"
 service = "square"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["sq0atp", "sq0csp", "square", "SQUARE_ACCESS_TOKEN"]
 simdsieve_prefixes = ["sq0csp-"]
 

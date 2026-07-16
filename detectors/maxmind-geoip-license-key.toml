@@ -8,6 +8,7 @@ id = "maxmind-geoip-license-key"
 name = "MaxMind GeoIP License Key"
 service = "maxmind"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["MAXMIND_LICENSE_KEY", "MAXMIND_ACCOUNT_ID", "maxmind", "GEOIP_LICENSE"]
 
 [[detector.patterns]]

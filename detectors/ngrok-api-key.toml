@@ -8,6 +8,7 @@ id = "ngrok-api-key"
 name = "Ngrok API Key"
 service = "ngrok"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["NGROK_API_KEY", "ngrok-api-key", "ngrok"]
 
 [[detector.patterns]]

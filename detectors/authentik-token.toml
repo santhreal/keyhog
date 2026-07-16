@@ -8,6 +8,7 @@ id = "authentik-token"
 name = "Authentik API Token"
 service = "authentik"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["AUTHENTIK_TOKEN", "AUTHENTIK_API_TOKEN", "authentik"]
 
 [[detector.patterns]]

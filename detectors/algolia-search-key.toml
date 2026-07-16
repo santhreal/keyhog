@@ -8,6 +8,7 @@ id = "algolia-search-key"
 name = "Algolia Search-Only API Key"
 service = "algolia"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["ALGOLIA_SEARCH_KEY", "algolia_search_key", "search_only_api_key", "ALGOLIA_API_KEY", "algoliaApiKey"]
 
 [[detector.patterns]]

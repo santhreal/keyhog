@@ -8,6 +8,7 @@ id = "bing-maps-api-key"
 name = "Bing Maps API Key"
 service = "bing"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["BING_MAPS_KEY", "bing.maps.key", "bing_maps_key"]
 
 [[detector.patterns]]

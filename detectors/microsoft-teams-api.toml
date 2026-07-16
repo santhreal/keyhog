@@ -8,6 +8,7 @@ id = "microsoft-teams-api"
 name = "Microsoft Teams API Credentials"
 service = "microsoft-teams"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["microsoft-teams", "TEAMS_API", "MS_TEAMS", "graph.microsoft.com"]
 
 [[detector.patterns]]

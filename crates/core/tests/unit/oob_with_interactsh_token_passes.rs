@@ -26,6 +26,7 @@ id = "oob-good"
 name = "OOB with token"
 service = "github"
 severity = "high"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["GHTOKEN"]
 
 [[detector.patterns]]

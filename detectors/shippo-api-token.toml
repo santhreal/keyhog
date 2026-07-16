@@ -8,6 +8,7 @@ id = "shippo-api-token"
 name = "Shippo API Token"
 service = "shippo"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["shippo_live_", "shippo_test_", "SHIPPO_TOKEN", "api.goshippo.com"]
 
 [[detector.patterns]]

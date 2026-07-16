@@ -130,7 +130,7 @@ impl CompiledScanner {
         if !scan_state.matches.is_empty() {
             for m in &scan_state.matches {
                 let id = &*m.detector_id;
-                if !crate::detector_ids::is_generic_or_entropy_detector(id) {
+                if !crate::detector_ids::is_entropy_detector(id) {
                     if let Some(line_idx) =
                         entropy_skip_line_index(m.location.line, chunk.metadata.base_line)
                     {
@@ -140,7 +140,7 @@ impl CompiledScanner {
             }
         }
         #[cfg(feature = "ml")]
-        scan_state.for_each_named_pending_ml_line(|absolute_line| {
+        scan_state.for_each_pre_entropy_pending_ml_line(|absolute_line| {
             if let Some(line_idx) = entropy_skip_line_index(absolute_line, chunk.metadata.base_line)
             {
                 skip_lines.insert(line_idx);
@@ -154,8 +154,8 @@ impl CompiledScanner {
             .is_some_and(crate::confidence::is_sensitive_path);
         let keyword_free_threshold = self.keyword_free_entropy_threshold(sensitive_path);
 
-        // With authoritative ML, narrowly accepted credential-anchored hex key
-        // candidates may be generated for model arbitration.
+        // When detector-owned entropy ML is enabled, narrowly accepted
+        // credential-anchored hex keys may enter the owning detector's model mode.
         #[cfg(feature = "ml")]
         let allow_canonical_lift = self.config.ml_enabled && self.config.entropy_ml_authoritative;
         #[cfg(not(feature = "ml"))]
@@ -323,12 +323,10 @@ impl CompiledScanner {
             };
 
             // UNIFIED SCORING. When ML is live, route the entropy candidate
-            // through the SAME MoE batch the detector/generic matches use, with
-            // the model AUTHORITATIVE (no entropy-magnitude floor, see
-            // `MlPendingMatch::model_authoritative`). Exact detector-local TOML
-            // key-material policy is structural evidence, so those candidates
-            // retain their heuristic floor just like the generic assignment
-            // path. The MoE separates otherwise unowned real
+            // through the same MoE batch as detector and generic matches. The
+            // owning detector's compiled `ml.entropy_mode` applies to fallback
+            // candidates; structurally proven canonical key material uses that
+            // detector's `ml.match_mode`. The MoE separates otherwise unowned real
             // high-entropy secrets (~0.98) from high-entropy NON-secrets (FQDNs,
             // git SHAs, base64 blobs ~0.01) that the shape gates above don't
             // catch, and `apply_ml_batch_scores` then runs the ONE canonical
@@ -342,21 +340,39 @@ impl CompiledScanner {
                 self.config.min_confidence,
             );
             #[cfg(feature = "ml")]
-            if self.config.ml_enabled && self.config.entropy_ml_authoritative {
+            let entropy_ml_policy = policy_detector_index
+                .and_then(|index| self.detector_ml_policies.get(index))
+                .copied();
+            #[cfg(feature = "ml")]
+            let entropy_ml_mode = entropy_ml_policy.and_then(|policy| {
+                if detector_owned_canonical_hex_key {
+                    policy.match_mode
+                } else {
+                    policy.entropy_mode
+                }
+            });
+            #[cfg(feature = "ml")]
+            if let Some((policy, mode)) = entropy_ml_policy
+                .zip(entropy_ml_mode)
+                .filter(|_| self.config.ml_enabled && self.config.entropy_ml_authoritative)
+            {
                 let raw_match = build_raw_match(scan_state, policy_conf);
                 let ml_features = crate::types::ml_features_for_candidate(
                     &preprocessed.text,
                     entropy_match.line,
                     chunk.metadata.path.as_deref(),
                     &entropy_match.value,
+                    policy.context_radius_lines,
                     &self.config,
                 );
                 scan_state.push_entropy_ml_pending(
                     raw_match,
                     policy_conf,
                     ml_features,
+                    policy.effective_weight(&self.config),
                     min_confidence_floor,
                     detector_owned_canonical_hex_key,
+                    mode,
                 );
                 continue;
             }

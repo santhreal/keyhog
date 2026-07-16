@@ -8,6 +8,7 @@ id = "directus-api-token"
 name = "Directus API Token"
 service = "directus"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["DIRECTUS_TOKEN", "directus", "DIRECTUS_API_KEY"]
 
 [[detector.patterns]]

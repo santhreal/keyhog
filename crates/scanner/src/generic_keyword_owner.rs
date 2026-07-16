@@ -19,25 +19,14 @@ use std::sync::Arc;
 /// value-shape candidate, the hot generic path) in `phase2_generic` with an
 /// O(1) lookup, built ONCE at scanner construction (Tier: compiled).
 ///
-/// Two maps preserve the EXACT original semantics: "the first detector, in
-/// spec order, that matches the keyword by exact-lowercase OR by
-/// `normalize_assignment_keyword` equivalence": `exact` keys the raw lowercased
-/// keyword, `normalized` keys its normalized form, each recording the FIRST
-/// (smallest) detector index for that key (insertion in ascending spec order +
-/// `or_insert` gives first-wins). A query returns the smaller of the two hits,
-/// so the earliest detector wins across BOTH conditions exactly as the linear
-/// `find` did. Structural vendor suffixes use the one detector that explicitly
-/// declares `generic_vendor_suffix_fallback`.
-///
-/// Entropy policy uses separate maps. Phase-2 generic detectors participate by
-/// default, regex detectors opt in through `entropy_policy_priority`, and the
-/// highest declared priority wins an overlap. Compiled order breaks an equal
-/// priority tie deterministically. This keeps candidate-emitter compatibility
-/// separate from explicit entropy-policy ownership.
+/// Exact and normalized assignment keys resolve through the same detector-owned
+/// priority table used by entropy policy. Phase-2 generic detectors participate
+/// by default, regex detectors opt in through `entropy_policy_priority`, and the
+/// highest priority wins an overlap. Compiled order breaks an equal-priority
+/// tie deterministically. Structural vendor suffixes use the one detector that
+/// explicitly declares `generic_vendor_suffix_fallback`.
 #[derive(Debug, Default)]
 pub(crate) struct GenericOwningDetectorIndex {
-    exact: HashMap<String, usize>,
-    normalized: HashMap<String, usize>,
     policy_exact: HashMap<String, PolicyOwner>,
     policy_normalized: HashMap<String, PolicyOwner>,
     policy_keywords: Vec<String>,
@@ -74,8 +63,6 @@ fn insert_policy_owner(
 
 impl GenericOwningDetectorIndex {
     pub(crate) fn build(detectors: &[DetectorSpec]) -> Self {
-        let mut exact = HashMap::new();
-        let mut normalized = HashMap::new();
         let mut policy_exact = HashMap::new();
         let mut policy_normalized = HashMap::new();
         let mut policy_keywords = BTreeSet::new();
@@ -142,20 +129,8 @@ impl GenericOwningDetectorIndex {
                     }
                 }
             }
-            if detector.service != "generic" || detector.kind != DetectorKind::Phase2Generic {
-                continue;
-            }
-            for keyword in &detector.keywords {
-                let kw_lower = keyword.to_ascii_lowercase();
-                if let Some(norm) = normalize_assignment_keyword(&kw_lower) {
-                    normalized.entry(norm).or_insert(index);
-                }
-                exact.entry(kw_lower).or_insert(index);
-            }
         }
         Self {
-            exact,
-            normalized,
             policy_exact,
             policy_normalized,
             policy_keywords: policy_keywords.into_iter().collect(),
@@ -172,15 +147,8 @@ impl GenericOwningDetectorIndex {
     /// (need not be pre-lowercased), or the detector-declared vendor-suffix
     /// fallback. `None` means the active corpus claims neither form.
     pub(crate) fn owning_index(&self, keyword: &str) -> Option<usize> {
-        let kw_lower = keyword.to_ascii_lowercase();
-        let exact_hit = self.exact.get(&kw_lower).copied();
-        let norm_hit = normalize_assignment_keyword(&kw_lower)
-            .and_then(|norm| self.normalized.get(&norm).copied());
-        let keyword_owner = match (exact_hit, norm_hit) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        };
-        keyword_owner.or(self.vendor_suffix_fallback_index)
+        self.claimed_policy_index(keyword)
+            .or(self.vendor_suffix_fallback_index)
     }
 
     /// Generic detector that explicitly claims `keyword`, without applying the

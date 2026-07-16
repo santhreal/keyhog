@@ -8,6 +8,7 @@ id = "lemon-squeezy-api-key"
 name = "Lemon Squeezy API Key"
 service = "lemon-squeezy"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["lmsq_", "LEMON_SQUEEZY_API_KEY", "lemonsqueezy"]
 
 [[detector.patterns]]

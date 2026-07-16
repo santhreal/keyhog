@@ -8,6 +8,7 @@ id = "datadog-api-key"
 name = "Datadog API Key"
 service = "datadog"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 min_confidence = 0.2
 keywords = ["DD-API-Key", "DD_API_KEY", "DATADOG_API_KEY", "datadog_api_key"]
 # The explicit `DD_API_KEY` / `DATADOG_API_KEY` assignment is a service-owned

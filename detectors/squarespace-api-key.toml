@@ -8,6 +8,7 @@ id = "squarespace-api-key"
 name = "Squarespace API Key"
 service = "squarespace"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["squarespace", "SQUARESPACE", "Developer API Key"]
 
 [[detector.patterns]]

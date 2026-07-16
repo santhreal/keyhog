@@ -361,25 +361,107 @@ fn match_heuristic_confidence_owns_raw_signal_scoring_and_context_adjustment() {
 #[test]
 #[cfg(feature = "ml")]
 fn ml_authoritative_score_uses_model_without_heuristic_floor() {
-    let out = ml_pending_confidence(0.9, 0.2, 0.5, true, CodeContext::Assignment, false, true);
+    let out = ml_pending_confidence(
+        0.9,
+        0.2,
+        0.5,
+        keyhog_core::DetectorMlMode::Authoritative,
+        CodeContext::Assignment,
+        false,
+        true,
+    );
     assert!((out - 0.2).abs() < 1e-9, "expected model score, got {out}");
 }
 
 #[test]
 #[cfg(feature = "ml")]
-fn ml_detector_score_keeps_heuristic_and_model_floors() {
-    let out = ml_pending_confidence(0.7, 0.2, 0.5, false, CodeContext::Assignment, false, true);
+fn ml_detector_score_uses_the_declared_blend_weight() {
+    let out = ml_pending_confidence(
+        0.7,
+        0.2,
+        0.5,
+        keyhog_core::DetectorMlMode::Blend,
+        CodeContext::Assignment,
+        false,
+        true,
+    );
     assert!(
-        (out - 0.7).abs() < 1e-9,
-        "detector/generic blend must keep heuristic floor, got {out}"
+        (out - 0.45).abs() < 1e-9,
+        "equal detector/model weight must produce the arithmetic blend, got {out}"
     );
 }
 
 #[test]
 #[cfg(feature = "ml")]
+fn ml_detector_weight_changes_the_blended_score() {
+    let heuristic = ml_pending_confidence(
+        0.8,
+        0.2,
+        0.0,
+        keyhog_core::DetectorMlMode::Blend,
+        CodeContext::Assignment,
+        false,
+        true,
+    );
+    let model = ml_pending_confidence(
+        0.8,
+        0.2,
+        1.0,
+        keyhog_core::DetectorMlMode::Blend,
+        CodeContext::Assignment,
+        false,
+        true,
+    );
+    assert!((heuristic - 0.8).abs() < 1e-9);
+    assert!((model - 0.2).abs() < 1e-9);
+}
+
+#[test]
+#[cfg(feature = "ml")]
+fn ml_lift_mode_applies_weight_only_to_positive_model_evidence() {
+    let lower_model = ml_pending_confidence(
+        0.8,
+        0.2,
+        0.5,
+        keyhog_core::DetectorMlMode::Lift,
+        CodeContext::Assignment,
+        false,
+        true,
+    );
+    let higher_model = ml_pending_confidence(
+        0.4,
+        0.8,
+        0.5,
+        keyhog_core::DetectorMlMode::Lift,
+        CodeContext::Assignment,
+        false,
+        true,
+    );
+    assert!((lower_model - 0.8).abs() < 1e-9);
+    assert!((higher_model - 0.6).abs() < 1e-9);
+}
+
+#[test]
+#[cfg(feature = "ml")]
 fn ml_context_policy_honors_scan_comments_opt_out() {
-    let penalized = ml_pending_confidence(0.7, 0.7, 0.5, false, CodeContext::Comment, false, true);
-    let unpenalized = ml_pending_confidence(0.7, 0.7, 0.5, false, CodeContext::Comment, true, true);
+    let penalized = ml_pending_confidence(
+        0.7,
+        0.7,
+        0.5,
+        keyhog_core::DetectorMlMode::Blend,
+        CodeContext::Comment,
+        false,
+        true,
+    );
+    let unpenalized = ml_pending_confidence(
+        0.7,
+        0.7,
+        0.5,
+        keyhog_core::DetectorMlMode::Blend,
+        CodeContext::Comment,
+        true,
+        true,
+    );
     assert!(penalized < unpenalized, "{penalized} vs {unpenalized}");
     assert!((unpenalized - 0.7).abs() < 1e-9);
 }

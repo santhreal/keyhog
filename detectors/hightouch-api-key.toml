@@ -8,6 +8,7 @@ id = "hightouch-api-key"
 name = "Hightouch API Key"
 service = "hightouch"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["HIGHTOUCH", "hightouch", "HIGHTOUCH_API_KEY", "HIGHTOUCH_TOKEN"]
 
 [[detector.patterns]]

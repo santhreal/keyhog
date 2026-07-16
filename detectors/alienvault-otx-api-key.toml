@@ -8,6 +8,7 @@ id = "alienvault-otx-api-key"
 name = "AlienVault OTX API Key"
 service = "alienvault"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["OTX_API_KEY", "ALIENVAULT_API_KEY", "otx", "alienvault"]
 
 [[detector.patterns]]

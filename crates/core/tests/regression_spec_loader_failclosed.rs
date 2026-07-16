@@ -47,6 +47,7 @@ id = "demo"
 name = "Demo Detector"
 service = "demo"
 severity = "high"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["demo_"]
 
 [[detector.patterns]]
@@ -207,6 +208,7 @@ id = "pub"
 name = "Public Token"
 service = "sentry"
 severity = "client-safe"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 min_confidence = 0.0
 keywords = ["sentry"]
 
@@ -410,6 +412,7 @@ id = "demo"
 name = "Demo Two"
 service = "demo"
 severity = "low"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["demo2_"]
 
 [[detector.patterns]]
@@ -455,6 +458,7 @@ id = "voidmatch"
 name = "Void Match"
 service = "x"
 severity = "high"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["x_"]
 
 [[detector.patterns]]
@@ -488,6 +492,7 @@ id = "confd"
 name = "Conf Detector"
 service = "x"
 severity = "high"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 min_confidence = 1.5
 keywords = ["x_"]
 
@@ -513,6 +518,7 @@ id = "confd"
 name = "Conf Detector"
 service = "x"
 severity = "high"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 min_confidence = 1.0
 keywords = ["x_"]
 
@@ -754,6 +760,7 @@ id = "empty"
 name = "Empty"
 service = "x"
 severity = "low"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["x"]
 patterns = []
 "#;

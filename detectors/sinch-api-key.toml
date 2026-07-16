@@ -8,6 +8,7 @@ id = "sinch-api-key"
 name = "Sinch API Credentials"
 service = "sinch"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 # "project_id" removed: over-broad generic prefilter(s) the regex does NOT need, every
 # pattern requires the service name as a leading anchor (kept). Recall-neutral.
 keywords = ["sinch", "SINCH", "key_id", "key_secret"]

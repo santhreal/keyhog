@@ -8,6 +8,7 @@ id = "sovos-api-key"
 name = "Sovos API Key"
 service = "sovos"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 # "api_key" removed: over-broad generic prefilter the regex does NOT need, every
 # pattern self-anchors on the service name (kept), which is present in any real
 # match and so also carries the case-sensitive keyword_nearby signal. Recall-neutral.

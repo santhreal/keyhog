@@ -8,6 +8,7 @@ id = "aws-ecr-token"
 name = "AWS ECR Authorization Token"
 service = "aws-ecr"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["AWS_ECR", "ecr.amazonaws.com", "get-login-password", "ECR_PASSWORD", "amazonaws"]
 
 [[detector.patterns]]

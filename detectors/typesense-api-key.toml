@@ -8,6 +8,7 @@ id = "typesense-api-key"
 name = "Typesense API Key"
 service = "typesense"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["TYPESENSE_API_KEY", "typesense_api_key", "TYPESENSE_APIKEY", "typesenseApiKey"]
 
 [[detector.patterns]]

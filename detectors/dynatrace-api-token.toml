@@ -8,6 +8,7 @@ id = "dynatrace-api-token"
 name = "Dynatrace API Token"
 service = "dynatrace"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["dt0", "dynatrace", "Api-Token"]
 
 [[detector.patterns]]

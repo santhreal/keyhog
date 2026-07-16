@@ -8,6 +8,7 @@ id = "smartthings-api-token"
 name = "SmartThings API Token"
 service = "smartthings"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["smartthings", "personal_access_token", "api.smartthings.com"]
 
 [[detector.patterns]]

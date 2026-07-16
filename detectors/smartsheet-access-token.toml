@@ -8,6 +8,7 @@ id = "smartsheet-access-token"
 name = "Smartsheet Access Token"
 service = "smartsheet"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["SMARTSHEET_ACCESS_TOKEN", "SMARTSHEET_API_TOKEN"]
 
 [[detector.patterns]]

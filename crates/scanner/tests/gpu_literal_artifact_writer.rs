@@ -12,6 +12,7 @@ id = "kh-artifact-test-token"
 name = "Artifact Test Token"
 service = "artifact-test"
 severity = "low"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["KHART"]
 
 [[detector.patterns]]

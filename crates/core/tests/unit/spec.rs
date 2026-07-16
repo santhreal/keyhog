@@ -46,6 +46,7 @@ fn detector_spec_deserialization() {
         name = "Test Name"
         service = "test-service"
         severity = "high"
+        ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
         keywords = ["KEY", "secret"]
 
         [[detector.patterns]]
@@ -69,6 +70,7 @@ fn script_auth_engine_is_typed_but_toml_stays_string_compatible() {
         name = "Script Auth"
         service = "demo"
         severity = "high"
+        ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
         keywords = ["demo_"]
 
         [[detector.patterns]]
@@ -148,6 +150,7 @@ fn malformed_toml_files_fail_closed_instead_of_returning_partial_corpus() {
         name = "Demo Token"
         service = "demo"
         severity = "high"
+        ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
         keywords = ["demo_"]
 
         [[detector.patterns]]

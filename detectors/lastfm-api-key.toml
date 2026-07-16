@@ -8,6 +8,7 @@ id = "lastfm-api-key"
 name = "Last.fm API Key"
 service = "lastfm"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["LASTFM", "lastfm", "LAST_FM", "last_fm", "LASTFM_API_KEY"]
 
 [[detector.patterns]]

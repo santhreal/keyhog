@@ -8,6 +8,7 @@ id = "passbase-api-key"
 name = "Passbase API Key"
 service = "passbase"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["passbase", "PASSBASE", "X-API-KEY"]
 
 [[detector.patterns]]

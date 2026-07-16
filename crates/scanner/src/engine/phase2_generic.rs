@@ -471,25 +471,6 @@ impl CompiledScanner {
                     owning_detector.min_confidence,
                     self.config.min_confidence,
                 );
-                let Some(report_conf) = crate::adjudicate::finalize_report_candidate(
-                    chunk.metadata.path.as_deref(),
-                    value,
-                    crate::adjudicate::ReportAdjudicationPolicy {
-                        detector_id: owning_detector.id.as_str(),
-                        code_context: context,
-                        confidence: policy_conf,
-                        min_confidence_floor,
-                        penalize_test_paths: self.config.penalize_test_paths,
-                        file_path: chunk.metadata.path.as_deref(),
-                        is_named_detector: false,
-                        allow_encoded_text_lift: allow_encoded_text_secret,
-                        allow_canonical_hex_key,
-                        calibration: self.config.calibration.as_deref(),
-                    },
-                ) else {
-                    continue;
-                };
-
                 // Defect #80: this branch hard-coded `offset: 0` for every
                 // generic-secret finding, so a `KEY = <secret>` on line 845
                 // of a 137 KiB file reported offset 0 - the start of the
@@ -510,21 +491,81 @@ impl CompiledScanner {
                 else {
                     continue;
                 };
-                let raw = crate::pipeline::build_synthetic_raw_match(
-                    (
-                        Arc::from(owning_detector.id.as_str()),
-                        Arc::from(owning_detector.name.as_str()),
-                        Arc::from(owning_detector.service.as_str()),
-                    ),
-                    owning_detector.severity,
-                    chunk,
+                let line_number = absolute_line(chunk.metadata.base_line, mapped_line);
+                let metadata = &self.metadata_by_index[owning_detector_index];
+                let build_raw = |scan_state: &mut ScanState, confidence| {
+                    crate::pipeline::build_synthetic_raw_match(
+                        (
+                            Arc::clone(&metadata.0),
+                            Arc::clone(&metadata.1),
+                            Arc::clone(&metadata.2),
+                        ),
+                        owning_detector.severity,
+                        chunk,
+                        value,
+                        absolute_offset,
+                        Some(line_number),
+                        Some(entropy),
+                        confidence,
+                        scan_state,
+                    )
+                };
+
+                #[cfg(feature = "ml")]
+                let ml_policy = self.detector_ml_policies[owning_detector_index];
+                #[cfg(feature = "ml")]
+                if let Some(ml_mode) = self
+                    .config
+                    .ml_enabled
+                    .then_some(ml_policy.match_mode)
+                    .flatten()
+                {
+                    let ml_features = crate::types::ml_features_for_candidate(
+                        scan_text,
+                        line_idx,
+                        chunk.metadata.path.as_deref(),
+                        value,
+                        ml_policy.context_radius_lines,
+                        &self.config,
+                    );
+                    let raw = build_raw(scan_state, policy_conf);
+                    scan_state.push_detector_ml_pending(
+                        raw,
+                        policy_conf,
+                        context,
+                        ml_features,
+                        ml_policy.effective_weight(&self.config),
+                        min_confidence_floor,
+                        false,
+                        allow_canonical_hex_key,
+                        allow_encoded_text_secret,
+                        ml_mode,
+                    );
+                    if profile_enabled {
+                        metrics::record_emit();
+                    }
+                    continue;
+                }
+
+                let Some(report_conf) = crate::adjudicate::finalize_report_candidate(
+                    chunk.metadata.path.as_deref(),
                     value,
-                    absolute_offset,
-                    Some(absolute_line(chunk.metadata.base_line, mapped_line)),
-                    Some(entropy),
-                    report_conf,
-                    scan_state,
-                );
+                    crate::adjudicate::ReportAdjudicationPolicy {
+                        detector_id: owning_detector.id.as_str(),
+                        code_context: context,
+                        confidence: policy_conf,
+                        min_confidence_floor,
+                        penalize_test_paths: self.config.penalize_test_paths,
+                        file_path: chunk.metadata.path.as_deref(),
+                        is_named_detector: false,
+                        allow_encoded_text_lift: allow_encoded_text_secret,
+                        allow_canonical_hex_key,
+                        calibration: self.config.calibration.as_deref(),
+                    },
+                ) else {
+                    continue;
+                };
+                let raw = build_raw(scan_state, report_conf);
                 scan_state.push_match(raw, self.config.max_matches_per_chunk);
                 if profile_enabled {
                     metrics::record_emit();

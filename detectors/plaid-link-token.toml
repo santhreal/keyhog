@@ -8,6 +8,7 @@ id = "plaid-link-token"
 name = "Plaid Link Token"
 service = "plaid"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["link-sandbox-", "link-production-", "link-development-", "link_token"]
 
 [[detector.patterns]]

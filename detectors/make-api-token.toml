@@ -8,6 +8,7 @@ id = "make-api-token"
 name = "Make (Integromat) API Token"
 service = "make"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["MAKE_API_KEY", "INTEGROMAT_API_KEY", "make.com", "integromat"]
 
 [[detector.patterns]]

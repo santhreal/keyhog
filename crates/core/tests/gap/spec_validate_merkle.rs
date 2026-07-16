@@ -90,6 +90,7 @@ id = "demo-key"
 name = "Demo Key"
 service = "demo"
 severity = "high"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["demo_"]
 
 [[detector.patterns]]
@@ -205,6 +206,7 @@ id = "demo-key"
 name = "Demo Key"
 service = "demo"
 severity = "high"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["demo_"]
 "#;
     let detectors = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
@@ -234,6 +236,7 @@ id = "generic-demo"
 name = "Generic Demo"
 service = "generic"
 severity = "medium"
+ml = { match_mode = "blend", entropy_mode = "authoritative", weight = 0.5, context_radius_lines = 5 }
 kind = "phase2-generic"
 keywords = ["secret"]
 entropy_high = 4.5
@@ -503,6 +506,7 @@ id = "x"
 name = "X"
 service = "x"
 severity = "low"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 patterns = "demo_[A-Z]{8}"
 "#;
     assert!(
@@ -652,6 +656,7 @@ id = "demo-key"
 name = "Demo Key"
 service = "demo"
 severity = "high"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["demo_"]
 min_confidence = 0.42
 
@@ -674,6 +679,7 @@ id = "pk"
 name = "Public Key"
 service = "stripe"
 severity = "medium"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["pk_live_"]
 
 [[detector.patterns]]
@@ -699,6 +705,7 @@ id = "g"
 name = "G"
 service = "g"
 severity = "low"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["token"]
 
 [[detector.patterns]]
@@ -1511,15 +1518,16 @@ fn spec_hash_ignores_name_field() {
 }
 
 #[test]
-fn spec_hash_ignores_service_field() {
-    // `service` is NOT in the key set (only id, sev, patterns, companions, kw).
+fn spec_hash_binds_service_field() {
+    // Service participates in generic assignment ownership and ML service
+    // context, so a service change invalidates prior scan evidence.
     let a = clean_detector("svc");
     let mut b = a.clone();
     b.service = "totally-different-service".into();
-    assert_eq!(
+    assert_ne!(
         compute_spec_hash(&[a]),
         compute_spec_hash(&[b]),
-        "service is not hashed; changing it must NOT change the digest"
+        "service is semantic detector policy and must change the digest"
     );
 }
 
@@ -1763,13 +1771,14 @@ fn spec_hash_proptest_keyword_permutation_invariance() {
 fn spec_hash_toml_roundtrip_matches_hand_built() {
     // The hash must depend only on the hashed fields, so a TOML-loaded detector
     // and a hand-built one with the same id/severity/patterns/companions/keywords
-    // (but different name/service/verify) must produce the same digest.
+    // (but different cosmetic name/verify) must produce the same digest.
     let toml = r#"
 [detector]
 id = "rt-key"
 name = "Round Trip"
 service = "roundtrip-svc"
 severity = "medium"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["rt_"]
 
 [[detector.patterns]]
@@ -1784,8 +1793,8 @@ regex = "rt_[A-Z0-9]{8}"
         kind: Default::default(),
         entropy_floor: Vec::new(),
         id: "rt-key".into(),
-        name: "A Different Name".into(),     // not hashed
-        service: "different-service".into(), // not hashed
+        name: "A Different Name".into(), // not hashed
+        service: "roundtrip-svc".into(),
         severity: Severity::Medium,
         patterns: vec![PatternSpec {
             regex: "rt_[A-Z0-9]{8}".into(),

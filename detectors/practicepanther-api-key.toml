@@ -8,6 +8,7 @@ id = "practicepanther-api-key"
 name = "PracticePanther API Key"
 service = "practicepanther"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["PRACTICEPANTHER_API_KEY", "PRACTICEPANTHER_TOKEN", "practicepanther_api_key", "x-practicepanther-token"]
 
 [[detector.patterns]]

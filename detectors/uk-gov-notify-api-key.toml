@@ -8,6 +8,7 @@ id = "uk-gov-notify-api-key"
 name = "UK GOV.UK Notify API Key"
 service = "uk-gov-notify"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["govuk-notify", "live-", "test-", "team-"]
 
 [[detector.patterns]]

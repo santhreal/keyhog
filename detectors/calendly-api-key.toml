@@ -8,6 +8,7 @@ id = "calendly-api-key"
 name = "Calendly Personal Access Token"
 service = "calendly"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 min_confidence = 0.2
 keywords = ["CALENDLY", "calendly", "PAT"]
 # Weak-anchor: the vendor prefix does not tightly bound the captured value (it

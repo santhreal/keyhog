@@ -8,6 +8,7 @@ id = "jfrog-api-key"
 name = "JFrog/Artifactory API Key"
 service = "jfrog"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["AKCp8"]
 
 [[detector.patterns]]

@@ -8,6 +8,7 @@ id = "trackjs-token"
 name = "TrackJS Token"
 service = "trackjs"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["TrackJS", "trackJs", "trackjs", "TRACKJS", "token", "YOUR_TOKEN"]
 
 [[detector.patterns]]

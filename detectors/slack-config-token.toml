@@ -13,6 +13,7 @@ id = "slack-config-token"
 name = "Slack App Configuration Token"
 service = "slack"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 # xoxe- / xoxe. are distinctive rotation-token prefixes, but NOT in the
 # scanner's KNOWN_PREFIXES floor list, so the long A-Z0-9 body can score
 # below the global floor and be dropped. Prefix bounds FP risk; declare

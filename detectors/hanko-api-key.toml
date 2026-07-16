@@ -8,6 +8,7 @@ id = "hanko-api-key"
 name = "Hanko API Key"
 service = "hanko"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["HANKO_API_KEY", "HANKO_KEY", "hanko"]
 
 [[detector.patterns]]

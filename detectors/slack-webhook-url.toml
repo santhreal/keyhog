@@ -8,6 +8,7 @@ id = "slack-webhook-url"
 name = "Slack Webhook URL"
 service = "slack"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["hooks.slack.com", "slack-webhook", "SLACK_WEBHOOK"]
 
 [[detector.patterns]]

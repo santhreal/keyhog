@@ -8,6 +8,7 @@ id = "twitch-client-id"
 name = "Twitch Client ID"
 service = "twitch"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["twitch", "TWITCH", "client_id", "CLIENT_ID"]
 
 [[detector.patterns]]

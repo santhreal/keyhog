@@ -9,6 +9,7 @@ id = "test"
 name = "Test"
 service = "demo"
 severity = "CRITICAL_PLUS"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["test"]
 
 [[detector.patterns]]
@@ -42,6 +43,7 @@ id = "test"
 name = "Test"
 service = "demo"
 severity = "high"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["test"]
 
 [[detector.patterns]]
@@ -73,6 +75,7 @@ id = "test"
 name = "Test"
 service = "demo"
 severity = "high"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["test"]
 min_confidence = -0.5
 
@@ -102,6 +105,7 @@ id = ""
 name = "Empty ID"
 service = "demo"
 severity = "high"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["test"]
 
 [[detector.patterns]]
@@ -127,6 +131,7 @@ id = "test"
 name = "{}"
 service = "demo"
 severity = "high"
+ml = {{ match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }}
 keywords = ["test"]
 
 [[detector.patterns]]
@@ -154,6 +159,7 @@ id = "test_🔑_key"
 name = "Unicode ID"
 service = "demo"
 severity = "high"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["test"]
 
 [[detector.patterns]]
@@ -179,6 +185,7 @@ id = "test"
 name = "Test"
 service = "demo"
 severity = "high"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["test"]
 
 [[detector.patterns]]
@@ -206,6 +213,7 @@ id = "multi"
 name = "Multiple Patterns"
 service = "demo"
 severity = "high"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["prefix_"]
 
 [[detector.patterns]]

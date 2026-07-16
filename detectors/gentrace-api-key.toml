@@ -8,6 +8,7 @@ id = "gentrace-api-key"
 name = "Gentrace API Key"
 service = "gentrace"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["GENTRACE_API_KEY", "gentrace", "GENTRACE_PIPELINE_ID"]
 
 [[detector.patterns]]

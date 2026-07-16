@@ -8,6 +8,7 @@ id = "routee-api-key"
 name = "Routee API Credentials"
 service = "routee"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["routee", "ROUTEE", "application-id", "application-secret", "go.routee.net"]
 
 [[detector.patterns]]

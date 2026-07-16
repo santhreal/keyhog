@@ -8,6 +8,7 @@ id = "honeybadger-api-key"
 name = "Honeybadger API Key"
 service = "honeybadger"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 # Drop the bare `api_key` keyword: it attributed any `api_key=<32hex>`
 # (Datadog DD_API_KEY, generic SDK keys, etc.) to honeybadger, driving
 # the named-detector FP rise. Attribution now requires an explicit

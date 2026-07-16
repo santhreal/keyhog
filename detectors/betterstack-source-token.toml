@@ -8,6 +8,7 @@ id = "betterstack-source-token"
 name = "Better Stack Source Token"
 service = "betterstack"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["betterstack", "logtail", "LOGTAIL_SOURCE_TOKEN", "sourceToken"]
 
 [[detector.patterns]]

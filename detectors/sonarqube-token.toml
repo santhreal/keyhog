@@ -8,6 +8,7 @@ id = "sonarqube-token"
 name = "SonarQube API Token"
 service = "sonarqube"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["SONARQUBE", "sonarqube", "SONAR_TOKEN", "SONARQUBE_TOKEN", "SONAR_HOST_URL"]
 
 [[detector.patterns]]

@@ -3,6 +3,7 @@ id = "lastpass-dev-creds"
 name = "LastPass 2022 Developer Credentials"
 service = "lastpass"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["lastpass", "LastPass", "LASTPASS"]
 
 [[detector.patterns]]

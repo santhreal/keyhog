@@ -8,6 +8,7 @@ id = "scrapingbee-api-key"
 name = "ScrapingBee API Key"
 service = "scrapingbee"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["scrapingbee", "SCRAPINGBEE_API_KEY", "scraping_bee"]
 
 [[detector.patterns]]

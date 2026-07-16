@@ -8,6 +8,7 @@ id = "hellosign-api-key"
 name = "HelloSign API Key"
 service = "hellosign"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["HELLOSIGN_API_KEY", "HELLOSIGN_KEY", "hellosign_api_key", "HelloSign-Key"]
 
 [[detector.patterns]]

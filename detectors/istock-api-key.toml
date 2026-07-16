@@ -8,6 +8,7 @@ id = "istock-api-key"
 name = "iStock API Key"
 service = "istock"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["ISTOCK", "istock", "iStock"]
 
 [[detector.patterns]]

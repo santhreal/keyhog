@@ -8,6 +8,7 @@ id = "lark-app-id"
 name = "Lark/Feishu App ID"
 service = "lark"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["cli_", "LARK_APP_ID", "lark_app_id", "FEISHU_APP_ID"]
 
 [[detector.patterns]]

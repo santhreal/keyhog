@@ -239,7 +239,13 @@ fn scanner_manifest_values(scanner: &keyhog_scanner::ScannerConfig) -> BTreeMap<
         scanner.min_confidence.to_string(),
     );
     values.insert("ml_enabled".to_string(), scanner.ml_enabled.to_string());
-    values.insert("ml_weight".to_string(), scanner.ml_weight.to_string());
+    values.insert(
+        "ml_weight".to_string(),
+        scanner.ml_weight_override.map_or_else(
+            || "detector-policy".to_string(),
+            |weight| weight.to_string(),
+        ),
+    );
     values.insert(
         "unicode_normalization".to_string(),
         scanner.unicode_normalization.to_string(),

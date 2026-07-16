@@ -8,6 +8,7 @@ id = "blur-api-key"
 name = "Blur API Key"
 service = "blur"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["blur", "BLUR", "BLUR_API_KEY", "blur.io"]
 
 [[detector.patterns]]

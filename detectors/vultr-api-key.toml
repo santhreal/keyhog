@@ -8,6 +8,7 @@ id = "vultr-api-key"
 name = "Vultr API Key"
 service = "vultr"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["vultr", "VULTR", "VULTR_API_KEY", "vultr_api_key", "Authorization"]
 
 [[detector.patterns]]

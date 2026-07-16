@@ -8,6 +8,7 @@ id = "qdrant-api-key"
 name = "Qdrant API Key"
 service = "qdrant"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["QDRANT_API_KEY", "qdrant_api_key", "QDRANT_APIKEY", "qdrantApiKey"]
 
 [[detector.patterns]]

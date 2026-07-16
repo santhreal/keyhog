@@ -8,6 +8,7 @@ id = "cloudflare-workers-api-token"
 name = "Cloudflare Workers API Token"
 service = "cloudflare"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["cloudflare", "workers", "CLOUDFLARE_WORKERS"]
 
 # `WORKERS` is MANDATORY here (no trailing `?`). When it was optional this

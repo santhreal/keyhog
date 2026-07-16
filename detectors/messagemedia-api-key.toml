@@ -8,6 +8,7 @@ id = "messagemedia-api-key"
 name = "MessageMedia API Key"
 service = "messagemedia"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["MESSAGEMEDIA", "messagemedia", "MessageMedia", "API_KEY", "API_SECRET", "basicAuthUserName", "basicAuthPassword"]
 
 [[detector.patterns]]

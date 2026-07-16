@@ -24,6 +24,7 @@ id = "jwt-token"
 name = "JSON Web Token"
 service = "jwt"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 # `eyJ` is the base64url of `{"`: the first two bytes of EVERY JWT header's
 # JSON object, regardless of which claim serializes first, so it triggers on
 # any header field order. The prior `eyJhbGci` keyword only fired when `alg`

@@ -8,6 +8,7 @@ id = "swetrix-api-key"
 name = "Swetrix API Key"
 service = "swetrix"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["SWETRIX_API_KEY", "swetrix"]
 
 [[detector.patterns]]

@@ -8,6 +8,7 @@ id = "fullstory-api-key"
 name = "FullStory API Key"
 service = "fullstory"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["FULLSTORY_API_KEY", "fullstory_api_key", "na1.", "eu1.", "fs_api_key"]
 
 [[detector.patterns]]

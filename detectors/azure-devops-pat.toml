@@ -8,6 +8,7 @@ id = "azure-devops-pat"
 name = "Azure DevOps Personal Access Token"
 service = "azure-devops"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["azure", "devops", "AZURE_DEVOPS", "ADO_PAT", "vsopenapi"]
 
 [[detector.patterns]]

@@ -8,6 +8,7 @@ id = "500px-api-key"
 name = "500px API Key"
 service = "500px"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["500PX", "500px"]
 
 [[detector.patterns]]

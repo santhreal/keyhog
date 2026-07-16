@@ -8,6 +8,7 @@ id = "langsmith-api-key"
 name = "LangSmith API Key"
 service = "langsmith"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["lsv2_", "LANGSMITH_API_KEY", "LANGCHAIN_API_KEY"]
 
 [[detector.patterns]]

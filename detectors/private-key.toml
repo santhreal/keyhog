@@ -17,6 +17,7 @@ id = "private-key"
 name = "Private Key (PEM)"
 service = "crypto"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["BEGIN", "PRIVATE KEY"]
 # Private-key block: the match span is an enclosing PEM/OpenSSH key body, so
 # resolution suppresses lower-specificity findings nested inside it through this

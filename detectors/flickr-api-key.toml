@@ -8,6 +8,7 @@ id = "flickr-api-key"
 name = "Flickr API Key"
 service = "flickr"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 min_confidence = 0.2
 keywords = ["FLICKR", "flickr"]
 # Weak-anchor: the vendor prefix does not tightly bound the captured value (it

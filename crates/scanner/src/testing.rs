@@ -1925,7 +1925,7 @@ pub mod confidence {
         heuristic_confidence: f64,
         model_confidence: f64,
         ml_weight: f64,
-        model_authoritative: bool,
+        mode: keyhog_core::DetectorMlMode,
         code_context: crate::context::CodeContext,
         scan_comments: bool,
         penalize_test_paths: bool,
@@ -1935,7 +1935,20 @@ pub mod confidence {
                 heuristic_confidence,
                 model_confidence,
                 ml_weight,
-                model_authoritative,
+                mode: match mode {
+                    keyhog_core::DetectorMlMode::Lift => {
+                        crate::detector_ml_policy::ActiveMlMode::Lift
+                    }
+                    keyhog_core::DetectorMlMode::Blend => {
+                        crate::detector_ml_policy::ActiveMlMode::Blend
+                    }
+                    keyhog_core::DetectorMlMode::Authoritative => {
+                        crate::detector_ml_policy::ActiveMlMode::Authoritative
+                    }
+                    keyhog_core::DetectorMlMode::Disabled => {
+                        return heuristic_confidence;
+                    }
+                },
                 code_context,
                 scan_comments,
                 penalize_test_paths,
@@ -2817,8 +2830,13 @@ pub fn local_context_window(text: &str, line: usize, radius: usize) -> &str {
     crate::pipeline::local_context_window(text, line, radius)
 }
 #[cfg(feature = "ml")]
-pub fn ml_context_for_candidate(text: &str, line: usize, file_path: Option<&str>) -> String {
-    crate::scan_state::ml_context_for_candidate(text, line, file_path)
+pub fn ml_context_for_candidate(
+    text: &str,
+    line: usize,
+    file_path: Option<&str>,
+    context_radius_lines: usize,
+) -> String {
+    crate::scan_state::ml_context_for_candidate(text, line, file_path, context_radius_lines)
 }
 
 #[cfg(feature = "ml")]
@@ -2828,9 +2846,18 @@ pub fn queued_ml_features(
     line: usize,
     file_path: Option<&str>,
     credential: &str,
+    context_radius_lines: usize,
     config: &crate::ScannerConfig,
 ) -> Vec<f32> {
-    crate::scan_state::ml_features_for_candidate(text, line, file_path, credential, config).to_vec()
+    crate::scan_state::ml_features_for_candidate(
+        text,
+        line,
+        file_path,
+        credential,
+        context_radius_lines,
+        config,
+    )
+    .to_vec()
 }
 pub fn match_entropy(data: &[u8]) -> f64 {
     crate::pipeline::match_entropy(data)

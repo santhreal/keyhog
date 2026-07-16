@@ -8,6 +8,7 @@ id = "epicgames-api-key"
 name = "Epic Games API Key"
 service = "epicgames"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["EPIC_API_KEY", "EPIC_GAMES_API", "epic_games_api_key", "EG_CLIENT_ID"]
 
 [[detector.patterns]]

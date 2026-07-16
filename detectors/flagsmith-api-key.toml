@@ -8,6 +8,7 @@ id = "flagsmith-api-key"
 name = "Flagsmith API Key"
 service = "flagsmith"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["ser.", "FLAGSMITH_KEY", "FLAGSMITH_API_KEY"]
 
 # Defect #74: the original regex `ser\.[a-zA-Z0-9]{40,}` matched the

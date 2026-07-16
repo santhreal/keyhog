@@ -8,6 +8,7 @@ id = "webex-access-token"
 name = "Webex Access Token"
 service = "webex"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["webex", "WEBEX", "WEBEX_ACCESS_TOKEN", "webex_access_token", "webexteamssdk", "WEBEX_TEAMS_ACCESS_TOKEN"]
 
 [[detector.patterns]]

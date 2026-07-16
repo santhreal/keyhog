@@ -121,17 +121,6 @@ pub(crate) const MIN_HEX_CONTEXT_DIGITS: usize = 8;
 /// window before the match is treated as a non-hex string.
 pub(crate) const MAX_HEX_CONTEXT_SEPARATORS: usize = 4;
 
-#[cfg(feature = "ml")]
-pub(crate) const ML_CONTEXT_RADIUS_LINES: usize = 5;
-// The ML/heuristic blend weight is NOT a compile-time constant: it is the
-// runtime-configurable `ScannerConfig::ml_weight` knob (default seeded from
-// `keyhog_core::ScanConfig`, overridable via `.keyhog.toml` and the
-// `--ml-weight` CLI flag, clamped to [0,1] in `ScannerConfig::sanitise`).
-// The blend at `apply_ml_batch_scores` reads `self.config.ml_weight` and
-// `(1.0 - self.config.ml_weight)`. The former `ML_WEIGHT`/`HEURISTIC_WEIGHT`
-// consts were a dead parallel source of truth (tuned!=shipped) and have been
-// removed so there is exactly one place the weight lives.
-
 /// The ONE always-compiled `LineMapping` owner. Previously duplicated field-for-field
 /// under `#[cfg(feature = "multiline")]` in `multiline/config.rs`; both the multiline
 /// and non-multiline `PreprocessedText` variants now share this single definition

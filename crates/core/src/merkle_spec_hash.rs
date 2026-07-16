@@ -228,6 +228,16 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
             if d.generic_vendor_suffix_fallback {
                 entries.push(format!("gvsf:{}", d.id));
             }
+            if d.ml != crate::DetectorMlPolicySpec::default() {
+                entries.push(format!(
+                    "model:{}:{}:{}:{:016x}:{}",
+                    d.id,
+                    d.ml.match_mode.as_str(),
+                    d.ml.entropy_mode.as_str(),
+                    d.ml.weight.to_bits(),
+                    d.ml.context_radius_lines
+                ));
+            }
             if let Some(shape) = &d.credential_shape {
                 // `CredentialShape` derives `Debug` over its four `Option` fields;
                 // its `{:?}` is total and deterministic within a build, and any

@@ -10,6 +10,7 @@ id = "deepl-api-key"
 name = "DeepL API Key"
 service = "deepl"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 min_confidence = 0.2
 keywords = [":fx"]
 

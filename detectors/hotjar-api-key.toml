@@ -8,6 +8,7 @@ id = "hotjar-api-key"
 name = "Hotjar API Credentials"
 service = "hotjar"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["HOTJAR_CLIENT_ID", "HOTJAR_CLIENT_SECRET", "hotjar_client", "hjid"]
 
 [[detector.patterns]]

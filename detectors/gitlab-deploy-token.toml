@@ -8,6 +8,7 @@ id = "gitlab-deploy-token"
 name = "GitLab Deploy Token"
 service = "gitlab"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["gldt-", "gitlab_deploy", "deploy_token"]
 
 [[detector.patterns]]

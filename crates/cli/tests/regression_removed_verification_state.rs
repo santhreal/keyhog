@@ -133,6 +133,7 @@ id = "minimal-test"
 name = "Minimal test"
 service = "minimal-test"
 severity = "high"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["khv_"]
 
 [[detector.patterns]]
@@ -172,6 +173,7 @@ id = "removed-verifier-test"
 name = "Removed verifier test"
 service = "removed-verifier-test"
 severity = "high"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["khv_"]
 
 [[detector.patterns]]

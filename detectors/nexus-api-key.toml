@@ -8,6 +8,7 @@ id = "nexus-api-key"
 name = "Nexus Repository API Key"
 service = "nexus"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["NEXUS", "nexus", "NEXUS_API_KEY", "NXRM"]
 
 [[detector.patterns]]

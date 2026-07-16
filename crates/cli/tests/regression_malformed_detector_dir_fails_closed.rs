@@ -17,6 +17,7 @@ id = "demo-token"
 name = "Demo Token"
 service = "demo"
 severity = "high"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["DEMO"]
 
 [[detector.patterns]]

@@ -8,6 +8,7 @@ id = "slack-user-token"
 name = "Slack User Token"
 service = "slack"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 # "user" removed: extremely over-broad (fires the detector on ANY text containing
 # "user") and redundant, both regexes require the unambiguous `xoxp-` prefix
 # (keyword "xoxp"), so "user" only forced wasted scan passes. Recall-neutral.

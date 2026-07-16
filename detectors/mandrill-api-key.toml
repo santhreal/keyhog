@@ -8,6 +8,7 @@ id = "mandrill-api-key"
 name = "Mandrill API Key"
 service = "mandrill"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["MANDRILL_API_KEY", "mandrill_api_key", "mandrill", "MANDRILL_KEY"]
 
 [[detector.patterns]]

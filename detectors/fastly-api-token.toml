@@ -8,6 +8,7 @@ id = "fastly-api-token"
 name = "Fastly API Token"
 service = "fastly"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["FASTLY", "fastly", "FASTLY_API_TOKEN", "fastly_api_token", "FASTLY_KEY", "Fastly-Key"]
 
 [[detector.patterns]]

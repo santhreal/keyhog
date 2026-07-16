@@ -9,6 +9,7 @@ id = "cohere-api-key"
 name = "Cohere API Key"
 service = "cohere"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["co_", "cohere", "COHERE_API_KEY", "cohere_api_key"]
 
 [[detector.patterns]]

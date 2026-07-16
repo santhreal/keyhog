@@ -8,6 +8,7 @@ id = "railway-deploy-token"
 name = "Railway Deploy Token"
 service = "railway"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["RAILWAY_TOKEN", "railway_token", "RAILWAY", "railway"]
 
 [[detector.patterns]]

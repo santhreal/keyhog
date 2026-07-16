@@ -8,6 +8,7 @@ id = "bugherd-api-key"
 name = "BugHerd API Key"
 service = "bugherd"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["BUGHERD_API_KEY", "bugherd_api_key", "bugherd.com", "api_v2"]
 
 [[detector.patterns]]

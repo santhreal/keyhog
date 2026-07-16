@@ -8,6 +8,7 @@ id = "carbon-black-api-key"
 name = "Carbon Black API Key"
 service = "carbon-black"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["CARBONBLACK", "carbonblack", "CARBON_BLACK_KEY", "CB API KEY", "CB_API_KEY", "CB KEY", "VMWARE_CB"]
 # `CARBON BLACK`, `CB API KEY`, and `VMWARE_CB KEY` are vendor-specific anchors,
 # so a random 20–32-character hex body is positive evidence, not a generic hash

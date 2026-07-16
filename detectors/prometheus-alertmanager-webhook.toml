@@ -8,6 +8,7 @@ id = "prometheus-alertmanager-webhook"
 name = "Prometheus Alertmanager Webhook"
 service = "prometheus"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["webhook_configs", "webhook_url", "alertmanager"]
 
 [[detector.patterns]]

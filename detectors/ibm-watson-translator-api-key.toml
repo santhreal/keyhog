@@ -8,6 +8,7 @@ id = "ibm-watson-translator-api-key"
 name = "IBM Watson Language Translator API Key"
 service = "ibm-watson-translator"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["IBM_WATSON", "WATSON_TRANSLATOR", "IBM_TRANSLATOR", "IAM_API_KEY", "language-translator", "ibm_cloud"]
 
 [[detector.patterns]]

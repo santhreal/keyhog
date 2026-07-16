@@ -8,6 +8,7 @@ id = "usps-webtools-api-key"
 name = "USPS Web Tools API Key"
 service = "usps"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["USPS_USER_ID", "USPS_WEBTOOLS", "USPS_API", "UserID", "usps.com"]
 
 [[detector.patterns]]

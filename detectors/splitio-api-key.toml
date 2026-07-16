@@ -8,6 +8,7 @@ id = "splitio-api-key"
 name = "Split.io API Key"
 service = "splitio"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["splitio", "SPLITIO_API_KEY", "split_io", "SPLIT_SDK_KEY"]
 
 [[detector.patterns]]

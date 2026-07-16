@@ -8,6 +8,7 @@ id = "rocketmatter-api-key"
 name = "Rocket Matter API Key"
 service = "rocketmatter"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["ROCKETMATTER_API_KEY", "ROCKETMATTER_TOKEN", "rocketmatter_api_key", "X-RocketMatter-Token"]
 
 [[detector.patterns]]

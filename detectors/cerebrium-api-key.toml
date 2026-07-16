@@ -8,6 +8,7 @@ id = "cerebrium-api-key"
 name = "Cerebrium API Key"
 service = "cerebrium"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["CEREBRIUM_API_KEY", "CEREBRIUM_TOKEN", "cerebrium.ai", "cortex.cerebrium"]
 
 [[detector.patterns]]

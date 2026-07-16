@@ -8,6 +8,7 @@ id = "crisp-api-key"
 name = "Crisp API Key"
 service = "crisp"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["CRISP", "crisp_api", "crisp_website", "X-Crisp-Tier"]
 
 [[detector.patterns]]

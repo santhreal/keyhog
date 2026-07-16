@@ -131,11 +131,11 @@ fn ml_context_for_candidate_has_one_path_prefix_owner() {
     let text = "zero\none\ntwo\nthree\nfour";
 
     assert_eq!(
-        ml_context_for_candidate(text, 3, Some("src/lib.rs")),
+        ml_context_for_candidate(text, 3, Some("src/lib.rs"), 5),
         "file:src/lib.rs\nzero\none\ntwo\nthree\nfour"
     );
     assert_eq!(
-        ml_context_for_candidate(text, 3, None),
+        ml_context_for_candidate(text, 3, None, 5),
         "zero\none\ntwo\nthree\nfour"
     );
 }

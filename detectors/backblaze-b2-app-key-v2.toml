@@ -8,6 +8,7 @@ id = "backblaze-b2-app-key-v2"
 name = "Backblaze B2 Application Key (v2)"
 service = "backblaze"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["K00M", "K00N", "b2_app_key", "B2_APP_KEY", "backblaze_v2"]
 
 [[detector.patterns]]

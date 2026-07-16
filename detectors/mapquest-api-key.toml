@@ -8,6 +8,7 @@ id = "mapquest-api-key"
 name = "MapQuest API Key"
 service = "mapquest"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["MAPQUEST_API_KEY", "mapquest.api.key", "mapquest_api_key"]
 
 [[detector.patterns]]

@@ -8,6 +8,7 @@ id = "wasabi-access-key"
 name = "Wasabi Access Key"
 service = "wasabi"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["WASABI", "wasabi_access_key", "WASABI_ACCESS_KEY", "wasabi-access-key"]
 
 [[detector.patterns]]

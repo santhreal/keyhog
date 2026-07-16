@@ -8,6 +8,7 @@ id = "activecampaign-api-key"
 name = "ActiveCampaign API Key"
 service = "activecampaign"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["activecampaign", "ACTIVECAMPAIGN", "Api-Token", "api_token"]
 # Weak-anchor: the vendor prefix does not tightly bound the captured value (it
 # collides with a generic hex/base64 run), so scanner suppression keeps the

@@ -8,6 +8,7 @@ id = "cmcom-api-key"
 name = "CM.com API Credentials"
 service = "cmcom"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["cm.com", "CMCOM", "cmcom", "product_token", "X-CM-PRODUCTTOKEN"]
 
 [[detector.patterns]]

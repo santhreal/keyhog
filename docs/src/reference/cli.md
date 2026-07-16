@@ -118,10 +118,10 @@ minus the `limit-` prefix and with dashes changed to underscores.
 | `--entropy-threshold <BITS>`  | Set the scan-wide Shannon bits-per-byte threshold where detector-owned policy does not provide the effective gate. |
 | `--entropy-bpe-max-bytes-per-token <RATIO>` | Set the scan-wide BPE word-likeness ceiling; lower values suppress more word-like entropy candidates. |
 | `--min-secret-len <N>`        | Set the minimum length for entropy-discovery candidates; named detectors retain their shape-specific lengths. |
-| `--no-entropy-ml-scoring`     | Use the bare entropy heuristic rather than MoE scoring for entropy-discovery candidates. No effect when entropy or ML is disabled. |
+| `--no-entropy-ml-scoring`     | Disable every entropy owner's compiled ML mode for this scan and use bare entropy scoring. It does not select or alter detector authority. |
 | `--no-keyword-low-entropy`    | Disable the lower-floor `generic-keyword-secret` bridge so anchored generic candidates must satisfy the stricter `generic-secret` policy. |
 | `--ml-threshold <FLOAT>`      | Raise the resolved global confidence floor. A detector-specific `min_confidence` remains that detector's effective floor. |
-| `--ml-weight <FLOAT>`         | Set the ML contribution to confidence scoring (`0.0..=1.0`). |
+| `--ml-weight <FLOAT>`         | Override detector-local ML scoring weights for diagnostics or controlled benchmarks (`0.0..=1.0`). |
 | `--no-ml`                    | Disable ML-based confidence scoring. |
 | `--no-unicode-norm`          | Disable Unicode normalization; use only for parity diagnostics because it can reduce recall. |
 | `--scan-comments`            | Treat credentials in source comments as first-class findings rather than applying the default comment-context confidence penalty. |

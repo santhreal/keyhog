@@ -8,6 +8,7 @@ id = "ghost-api-key"
 name = "Ghost CMS Admin API Key"
 service = "ghost"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["ghost", "GHOST", "admin_api_key", "ghost_admin"]
 
 [[detector.patterns]]

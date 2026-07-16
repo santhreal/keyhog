@@ -8,6 +8,7 @@ id = "wrike-access-token"
 name = "Wrike Access Token"
 service = "wrike"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["WRIKE_ACCESS_TOKEN", "WRIKE_TOKEN", "WRIKE_API_TOKEN"]
 
 [[detector.patterns]]

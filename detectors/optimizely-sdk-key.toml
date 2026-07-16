@@ -8,6 +8,7 @@ id = "optimizely-sdk-key"
 name = "Optimizely SDK Key"
 service = "optimizely"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["OPTIMIZELY", "optimizely", "OPTIMIZELY_SDK_KEY"]
 
 [[detector.patterns]]

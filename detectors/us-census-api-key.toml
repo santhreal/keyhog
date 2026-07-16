@@ -8,6 +8,7 @@ id = "us-census-api-key"
 name = "US Census Bureau API Key"
 service = "us-census"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["CENSUS_API_KEY", "census", "api.census.gov"]
 
 [[detector.patterns]]

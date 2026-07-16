@@ -8,6 +8,7 @@ id = "home-assistant-api-token"
 name = "Home Assistant API Token"
 service = "home-assistant"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["home_assistant", "homeassistant", "long_lived_access_token", "api_token"]
 
 [[detector.patterns]]

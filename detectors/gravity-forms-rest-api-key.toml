@@ -8,6 +8,7 @@ id = "gravity-forms-rest-api-key"
 name = "Gravity Forms REST API Key"
 service = "gravityforms"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["gravityforms", "GRAVITY_FORMS", "gravity_forms"]
 
 [[detector.patterns]]

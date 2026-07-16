@@ -8,6 +8,7 @@ id = "microsoft-translator-api-key"
 name = "Microsoft Translator API Key"
 service = "microsoft-translator"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["MS_TRANSLATOR_KEY", "AZURE_TRANSLATOR_KEY", "Ocp-Apim-Subscription-Key", "MICROSOFT_TRANSLATOR", "cognitiveservices"]
 
 [[detector.patterns]]

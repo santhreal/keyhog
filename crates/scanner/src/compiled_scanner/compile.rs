@@ -443,6 +443,8 @@ impl CompiledScanner {
         };
         let generic_owning_detector =
             crate::generic_keyword_owner::GenericOwningDetectorIndex::build(&detectors);
+        #[cfg(feature = "ml")]
+        let detector_ml_policies = crate::detector_ml_policy::compile(&detectors);
 
         // Resolve the detector-owned hot-prefix table once, then mark its exact
         // confirmed delegates. Limiting suppression to the delegate is
@@ -521,6 +523,8 @@ impl CompiledScanner {
             generic_named_assignment_keywords,
             generic_assignment_re,
             generic_owning_detector,
+            #[cfg(feature = "ml")]
+            detector_ml_policies,
             #[cfg(feature = "entropy")]
             entropy_policies,
             #[cfg(feature = "gpu")]

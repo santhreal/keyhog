@@ -163,6 +163,7 @@ id = "demo-token"
 name = "Demo token"
 service = "demo"
 severity = "high"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["demo_"]
 min_confidence = 0.0
 

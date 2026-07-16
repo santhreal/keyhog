@@ -26,7 +26,7 @@ impl CompiledScanner {
                 penalize_test_paths: self.config.penalize_test_paths,
                 file_path: file_path.as_deref(),
                 is_named_detector: pending.is_named_detector,
-                allow_encoded_text_lift: false,
+                allow_encoded_text_lift: pending.allow_encoded_text_lift,
                 allow_canonical_hex_key: pending.allow_canonical_hex_key,
                 calibration: self.config.calibration.as_deref(),
             },
@@ -67,7 +67,6 @@ impl CompiledScanner {
             let report_conf = crate::confidence::policy::ml_pending_match_confidence(
                 &pending,
                 ml_conf,
-                self.config.ml_weight,
                 self.config.scan_comments,
                 self.config.penalize_test_paths,
             );

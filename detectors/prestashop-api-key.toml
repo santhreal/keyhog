@@ -8,6 +8,7 @@ id = "prestashop-api-key"
 name = "PrestaShop API Key"
 service = "prestashop"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["prestashop", "PRESTASHOP", "webservice", "ws_key", "ps_ws_key"]
 
 [[detector.patterns]]

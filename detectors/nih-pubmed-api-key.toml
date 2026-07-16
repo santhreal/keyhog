@@ -8,6 +8,7 @@ id = "nih-pubmed-api-key"
 name = "NIH PubMed/NCBI API Key"
 service = "nih"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["NCBI_API_KEY", "PUBMED_API_KEY", "ncbi", "pubmed", "eutils", "ncbi.nlm.nih.gov"]
 
 [[detector.patterns]]

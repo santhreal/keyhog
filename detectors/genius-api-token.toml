@@ -8,6 +8,7 @@ id = "genius-api-token"
 name = "Genius API Token"
 service = "genius"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["GENIUS", "genius", "GENIUS_ACCESS_TOKEN", "genius_access_token", "GENIUS_API_TOKEN"]
 
 [[detector.patterns]]

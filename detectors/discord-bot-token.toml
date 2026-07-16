@@ -8,6 +8,7 @@ id = "discord-bot-token"
 name = "Discord Bot Token"
 service = "discord"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 # `discord` routes the loose non-[MN] pattern (which now requires the
 # literal in-window); the MT*/Mj*/ND*/NT* b64 snowflake prefixes route
 # the strict [MN] production form.

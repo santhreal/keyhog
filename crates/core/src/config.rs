@@ -49,14 +49,10 @@ pub struct ScanConfig {
     pub entropy_enabled: bool,
     /// Whether to enable entropy analysis even in standard source code files.
     pub entropy_in_source_files: bool,
-    /// When the entropy fallback fires, score its candidates through the MoE
-    /// with the model AUTHORITATIVE (the entropy magnitude is NOT a confidence
-    /// floor) instead of emitting the bare entropy heuristic. Default on: on the
-    /// real-distribution-trained model this is a recall-safe precision win, the
-    /// model scores real high-entropy secrets high and structured non-secrets
-    /// (FQDNs, git SHAs, base64 blobs) low, so FPs fall below the report floor
-    /// while genuine recall is preserved. Opt out with `--no-entropy-ml-scoring`.
-    /// No-op when `entropy_enabled` or `ml_enabled` is false.
+    /// Global enable for detector-owned entropy ML policy. Each entropy owner
+    /// still chooses `disabled`, `lift`, `blend`, or `authoritative` in its TOML;
+    /// this switch can only disable those compiled modes for a scan. Opt out
+    /// with `--no-entropy-ml-scoring`. No-op when entropy or ML is disabled.
     #[serde(default = "default_entropy_ml_authoritative")]
     pub entropy_ml_authoritative: bool,
     /// When the generic keyword bridge (`PASSWORD=`, `*_PASS=`, `secret:`,

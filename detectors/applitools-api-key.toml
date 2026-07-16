@@ -8,6 +8,7 @@ id = "applitools-api-key"
 name = "Applitools API Key"
 service = "applitools"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["APPLITOOLS_API_KEY", "applitools_api_key", "X-Eyes-Api-Key", "applitools"]
 
 [[detector.patterns]]

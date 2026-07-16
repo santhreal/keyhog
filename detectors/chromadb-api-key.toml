@@ -8,6 +8,7 @@ id = "chromadb-api-key"
 name = "ChromaDB API Key"
 service = "chromadb"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["CHROMA_AUTH_TOKEN", "CHROMA_SERVER_AUTHN_CREDENTIALS", "X-Chroma-Token", "chromadb"]
 
 [[detector.patterns]]

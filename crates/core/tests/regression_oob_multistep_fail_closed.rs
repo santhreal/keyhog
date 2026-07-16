@@ -8,6 +8,7 @@ id = "multi-step-oob"
 name = "Multi-step OOB"
 service = "test"
 severity = "critical"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["MSOOB"]
 
 [[detector.patterns]]

@@ -8,6 +8,7 @@ id = "pinecone-api-key"
 name = "Pinecone API Key"
 service = "pinecone"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["pcsk_", "PINECONE_API_KEY", "pinecone_api_key"]
 
 [[detector.patterns]]

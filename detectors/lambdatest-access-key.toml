@@ -8,6 +8,7 @@ id = "lambdatest-access-key"
 name = "LambdaTest Access Key"
 service = "lambdatest"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["LT_ACCESS_KEY", "LT_ACCESSKEY", "lambdatest"]
 
 [[detector.patterns]]

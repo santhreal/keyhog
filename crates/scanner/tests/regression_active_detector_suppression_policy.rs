@@ -40,6 +40,7 @@ id = "custom-regex-allowlist-contract"
 name = "Custom Regex Allowlist Contract"
 service = "kh674"
 severity = "high"
+ml = { match_mode = "blend", entropy_mode = "authoritative", weight = 0.5, context_radius_lines = 5 }
 keywords = ["kh674rx_"]
 min_confidence = 0.0
 allowlist_values = ['^m7_Q2vN9xK4cP8rT6wY3zH5s$']
@@ -72,6 +73,7 @@ id = "custom-phase2-allowlist-contract"
 name = "Custom Phase Two Allowlist Contract"
 service = "generic"
 severity = "high"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 kind = "phase2-generic"
 keywords = ["kh674_secret"]
 min_confidence = 0.0
@@ -128,6 +130,7 @@ id = "custom-shared-id-policy-contract"
 name = "Custom Shared ID Policy Contract"
 service = "kh674"
 severity = "high"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["kh674iso_"]
 min_confidence = 0.0
 allowlist_values = ['^m7_Q2vN9xK4cP8rT6wY3zH5s$']

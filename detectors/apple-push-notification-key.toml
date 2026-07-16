@@ -8,6 +8,7 @@ id = "apple-push-notification-key"
 name = "Apple Push Notification Key"
 service = "apple"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["APNS", "apns", "push notification", "AuthKey_"]
 
 [[detector.patterns]]

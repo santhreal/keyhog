@@ -8,6 +8,7 @@ id = "surveymonkey-api-token"
 name = "SurveyMonkey API Token"
 service = "surveymonkey"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["surveymonkey", "SURVEYMONKEY_API_KEY", "SurveyMonkey"]
 
 [[detector.patterns]]

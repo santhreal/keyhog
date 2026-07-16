@@ -8,6 +8,7 @@ id = "moosend-api-key"
 name = "Moosend API Key"
 service = "moosend"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["MOOSEND", "moosend", "MOOSEND_API_KEY", "moosend_api_key"]
 
 [[detector.patterns]]

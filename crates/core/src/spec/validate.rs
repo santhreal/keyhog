@@ -253,6 +253,30 @@ fn validate_simdsieve_prefixes(spec: &DetectorSpec, issues: &mut Vec<QualityIssu
 /// makes every comparison false. Reject anything outside the closed unit range
 /// (a `RangeInclusive::contains` check is false for `NaN`, so NaN is caught too).
 fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
+    if !(0.0..=1.0).contains(&spec.ml.weight) {
+        issues.push(QualityIssue::Error(format!(
+            "ml.weight {} is out of range; detector model weight must be finite and in [0.0, 1.0]",
+            spec.ml.weight
+        )));
+    }
+    if spec.ml.context_radius_lines > 64 {
+        issues.push(QualityIssue::Error(format!(
+            "ml.context_radius_lines {} exceeds the bounded maximum of 64",
+            spec.ml.context_radius_lines
+        )));
+    }
+    let owns_entropy = spec.owns_entropy_policy();
+    if owns_entropy && spec.ml.entropy_mode == crate::DetectorMlMode::Disabled {
+        issues.push(QualityIssue::Error(
+            "an active entropy-policy owner must declare a non-disabled ml.entropy_mode"
+                .to_string(),
+        ));
+    }
+    if !owns_entropy && spec.ml.entropy_mode != crate::DetectorMlMode::Disabled {
+        issues.push(QualityIssue::Error(
+            "ml.entropy_mode is only valid for a detector that owns entropy policy".to_string(),
+        ));
+    }
     for (name, value) in [
         ("min_len", spec.min_len),
         ("max_len", spec.max_len),

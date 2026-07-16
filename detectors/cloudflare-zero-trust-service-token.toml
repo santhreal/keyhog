@@ -8,6 +8,7 @@ id = "cloudflare-zero-trust-service-token"
 name = "Cloudflare Zero Trust Service Token"
 service = "cloudflare"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["CF-Access-Client-Id", "CF-Access-Client-Secret", "cloudflareaccess"]
 
 [[detector.patterns]]

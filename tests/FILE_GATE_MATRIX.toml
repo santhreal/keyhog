@@ -1990,6 +1990,16 @@ error = true
 adversarial = true
 
 [[module]]
+path = "crates/scanner/src/detector_ml_policy.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/entropy/policy.rs"
+error = true
+adversarial = true
+
+[[module]]
 path = "crates/scanner/src/generic_keyword_owner.rs"
 error = true
 adversarial = true

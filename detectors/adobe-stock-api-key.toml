@@ -8,6 +8,7 @@ id = "adobe-stock-api-key"
 name = "Adobe Stock API Key"
 service = "adobe-stock"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["ADOBE", "adobe", "STOCK", "stock"]
 
 [[detector.patterns]]

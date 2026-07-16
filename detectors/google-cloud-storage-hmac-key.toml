@@ -8,6 +8,7 @@ id = "google-cloud-storage-hmac-key"
 name = "Google Cloud Storage HMAC Key"
 service = "gcp"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["GOOG", "HMAC", "GOOG1", "GOOG2", "GOOG3", "GOOG4", "GOOG5", "gcs_hmac"]
 
 # `(?-i)` forces case-sensitive matching (keyhog compiles every regex

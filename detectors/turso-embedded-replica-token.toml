@@ -8,6 +8,7 @@ id = "turso-embedded-replica-token"
 name = "Turso Embedded Replica Token"
 service = "turso"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["TURSO_AUTH_TOKEN", "TURSO_DATABASE_URL", "libsql://", "embedded replica"]
 
 [[detector.patterns]]

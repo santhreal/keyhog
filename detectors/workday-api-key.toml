@@ -8,6 +8,7 @@ id = "workday-api-key"
 name = "Workday API Key"
 service = "workday"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["workday", "WD_HOST", "WD_USER", "WD_PASSWORD"]
 
 [[detector.patterns]]

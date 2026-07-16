@@ -771,8 +771,9 @@ pub struct ScanArgs {
     /// Score entropy-discovery candidates with the bare entropy heuristic instead
     /// of routing them through the MoE (the model is authoritative by default).
     /// The default ML path is a recall-safe precision win on the
-    /// real-distribution-trained model; this opt-out selects bare entropy-only
-    /// scoring. No effect when `--no-entropy` or `--no-ml` is set.
+    /// detector-owned model mode; this opt-out selects bare entropy-only
+    /// scoring. It does not change detector policy and has no effect when
+    /// `--no-entropy` or `--no-ml` is set.
     #[arg(long)]
     pub no_entropy_ml_scoring: bool,
 
@@ -938,7 +939,7 @@ pub struct ScanArgs {
     #[arg(long)]
     pub dogfood: bool,
 
-    /// ML weight for confidence scoring, 0.0-1.0 (default: 0.5).
+    /// Override every detector's ML scoring weight for diagnostics/benchmarks.
     #[arg(long, value_name = "WEIGHT", value_parser = crate::value_parsers::parse_ml_weight)]
     pub ml_weight: Option<f64>,
 

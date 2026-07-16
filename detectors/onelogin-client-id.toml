@@ -8,6 +8,7 @@ id = "onelogin-client-id"
 name = "OneLogin Client ID"
 service = "onelogin"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["ONELOGIN_CLIENT_ID", "onelogin_client_id", "ONELOGIN", "onelogin", "client_id"]
 
 [[detector.patterns]]

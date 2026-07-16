@@ -236,6 +236,10 @@ pub struct ScannerConfig {
     /// detector; CLI/config presence is preserved so precedence remains
     /// compiled default -> detector TOML -> scan TOML -> CLI.
     pub entropy_bpe_max_bytes_per_token_override: Option<f64>,
+    /// Explicit Tier-A override for detector-local ML scoring weights. `None`
+    /// keeps each detector TOML authoritative; presence applies one diagnostic
+    /// or benchmarking override across eligible detector paths.
+    pub ml_weight_override: Option<f64>,
     /// Configuration for multiline concatenation (scanner-local type).
     pub multiline: crate::multiline::MultilineConfig,
     /// Apply test/example path confidence and hard-suppression heuristics.
@@ -377,6 +381,12 @@ impl ScannerConfig {
         } else {
             self.ml_weight = self.ml_weight.clamp(0.0, 1.0);
         }
+        if self
+            .ml_weight_override
+            .is_some_and(|weight| !weight.is_finite() || !(0.0..=1.0).contains(&weight))
+        {
+            self.ml_weight_override = None;
+        }
         if !self.min_confidence.is_finite() {
             self.min_confidence = canon.min_confidence;
         } else {
@@ -454,6 +464,18 @@ impl ScannerConfig {
         self.entropy_bpe_max_bytes_per_token_override = Some(bound);
         Ok(self)
     }
+
+    /// Set an explicit scan-wide model-weight override. Ordinary scans should
+    /// leave this absent so detector TOMLs retain their calibrated weights.
+    pub fn with_ml_weight_override(
+        mut self,
+        weight: f64,
+    ) -> Result<Self, keyhog_core::ConfigError> {
+        self.scan.ml_weight = weight;
+        self.scan.validate()?;
+        self.ml_weight_override = Some(weight);
+        Ok(self)
+    }
 }
 
 impl From<ScanConfig> for ScannerConfig {
@@ -474,9 +496,13 @@ impl From<ScanConfig> for ScannerConfig {
         let entropy_bpe_max_bytes_per_token_override =
             (scan.entropy_bpe_max_bytes_per_token.to_bits() != canonical_bpe_bound.to_bits())
                 .then_some(scan.entropy_bpe_max_bytes_per_token);
+        let canonical_ml_weight = ScanConfig::default().ml_weight;
+        let ml_weight_override =
+            (scan.ml_weight.to_bits() != canonical_ml_weight.to_bits()).then_some(scan.ml_weight);
         let mut out = Self {
             scan,
             entropy_bpe_max_bytes_per_token_override,
+            ml_weight_override,
             multiline: crate::multiline::MultilineConfig::default(),
             penalize_test_paths: true,
             per_chunk_timeout_ms: None,
@@ -641,5 +667,19 @@ mod config_tests {
             invalid.entropy_bpe_max_bytes_per_token_override, None,
             "an invalid programmatic override must restore detector-local policy"
         );
+    }
+
+    #[test]
+    fn detector_ml_weight_remains_authoritative_until_override_is_explicit() {
+        let default = ScannerConfig::default();
+        assert_eq!(default.ml_weight_override, None);
+
+        let explicit = ScannerConfig::default()
+            .with_ml_weight_override(0.75)
+            .expect("a unit-interval model weight is valid");
+        assert_eq!(explicit.ml_weight_override, Some(0.75));
+
+        let invalid = ScannerConfig::default().with_ml_weight_override(1.5);
+        assert!(invalid.is_err());
     }
 }

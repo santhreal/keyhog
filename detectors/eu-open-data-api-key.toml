@@ -8,6 +8,7 @@ id = "eu-open-data-api-key"
 name = "EU Open Data Portal API Key"
 service = "eu-open-data"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["data.europa.eu", "EU_LOGIN", "EU-Login", "party_token"]
 
 [[detector.patterns]]

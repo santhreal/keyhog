@@ -8,6 +8,7 @@ id = "africastalking-api-key"
 name = "Africa's Talking API Key"
 service = "africastalking"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["africastalking", "AFRICASTALKING", "africa", "AT_API_KEY", "apiKey"]
 
 [[detector.patterns]]

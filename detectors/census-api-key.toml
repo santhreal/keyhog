@@ -8,6 +8,7 @@ id = "census-api-key"
 name = "Census API Key"
 service = "census"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["CENSUS", "census", "CENSUS_API_KEY", "CENSUS_TOKEN"]
 # Weak-anchor: the vendor prefix does not tightly bound the captured value (it
 # collides with a generic hex/base64 run), so scanner suppression keeps the

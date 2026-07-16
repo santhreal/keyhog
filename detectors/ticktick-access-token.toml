@@ -8,6 +8,7 @@ id = "ticktick-access-token"
 name = "TickTick Access Token"
 service = "ticktick"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["TICKTICK_ACCESS_TOKEN", "TICKTICK_TOKEN"]
 
 [[detector.patterns]]

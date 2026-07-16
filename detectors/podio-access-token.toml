@@ -8,6 +8,7 @@ id = "podio-access-token"
 name = "Podio Access Token"
 service = "podio"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["PODIO_ACCESS_TOKEN", "PODIO_TOKEN"]
 
 [[detector.patterns]]

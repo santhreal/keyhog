@@ -460,6 +460,11 @@ knob_changes_digest!(spec_hash_binds_kind, |d| d.kind =
 knob_changes_digest!(spec_hash_binds_vendor_suffix_fallback, |d| d
     .generic_vendor_suffix_fallback =
     true);
+knob_changes_digest!(spec_hash_binds_detector_ml_weight, |d| d.ml.weight = 0.73);
+knob_changes_digest!(spec_hash_binds_detector_ml_context_radius, |d| d
+    .ml
+    .context_radius_lines =
+    9);
 knob_changes_digest!(spec_hash_binds_min_confidence, |d| d.min_confidence =
     Some(0.42));
 knob_changes_digest!(spec_hash_binds_entropy_floor, |d| d.entropy_floor =

@@ -8,6 +8,7 @@ id = "azure-subscription-key"
 name = "Azure Subscription Key"
 service = "azure"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 # DET-18 floor override: vendor anchor is distinctive; the body scores below the
 # 0.40 global floor on entropy alone, dropping a real token as a false negative
 # (SecretBench mirror floor-gate analysis). FP risk bounded by the anchor.

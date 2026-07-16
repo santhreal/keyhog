@@ -8,6 +8,7 @@ id = "abuseipdb-api-key"
 name = "AbuseIPDB API Key"
 service = "abuseipdb"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 min_confidence = 0.25
 keywords = ["ABUSEIPDB_API_KEY", "ABUSEIPDB", "abuseipdb"]
 

@@ -8,6 +8,7 @@ id = "weaviate-api-key"
 name = "Weaviate API Key"
 service = "weaviate"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["WEAVIATE_API_KEY", "weaviate_api_key", "WEAVIATE_APIKEY", "weaviateApiKey"]
 
 [[detector.patterns]]

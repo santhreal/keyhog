@@ -8,6 +8,7 @@ id = "data-gov-api-key"
 name = "Data.gov API Key"
 service = "data-gov"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["DATAGOV_API_KEY", "DATA_GOV", "CKAN_API_KEY", "data.gov", "api.data.gov", "ckan"]
 
 [[detector.patterns]]

@@ -8,6 +8,7 @@ id = "amplitude-api-key"
 name = "Amplitude API Key"
 service = "amplitude"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["amplitude", "AMPLITUDE_API_KEY", "AMPLITUDE_KEY"]
 
 [[detector.patterns]]

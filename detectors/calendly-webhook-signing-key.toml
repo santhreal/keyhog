@@ -8,6 +8,7 @@ id = "calendly-webhook-signing-key"
 name = "Calendly Webhook Signing Key"
 service = "calendly"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["signing_key", "signingKey", "CALENDLY_SIGNING_KEY"]
 
 [[detector.patterns]]

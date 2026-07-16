@@ -3,6 +3,7 @@ id = "codecov-bash-creds"
 name = "Codecov 2021 Bash Uploader Credentials"
 service = "codecov"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 min_confidence = 0.25
 keywords = ["codecov", "token", "upload"]
 

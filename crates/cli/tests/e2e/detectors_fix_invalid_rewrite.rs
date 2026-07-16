@@ -14,6 +14,7 @@ id = "fix-template"
 name = "Fix Template"
 service = "example"
 severity = "low"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["EXAMPLE"]
 
 [[detector.patterns]]
@@ -60,6 +61,7 @@ id = "fix-template"
 name = "Fix Template"
 service = "example"
 severity = "low"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["EXAMPLE"]
 
 [[detector.patterns]]

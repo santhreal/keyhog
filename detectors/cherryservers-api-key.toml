@@ -8,6 +8,7 @@ id = "cherryservers-api-key"
 name = "Cherry Servers API Key"
 service = "cherryservers"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["CHERRY_AUTH_TOKEN", "CHERRY_API_TOKEN", "cherryservers", "cherryctl"]
 
 [[detector.patterns]]

@@ -8,6 +8,7 @@ id = "x2y2-api-key"
 name = "X2Y2 API Key"
 service = "x2y2"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["x2y2", "X2Y2", "X-API-KEY"]
 
 [[detector.patterns]]

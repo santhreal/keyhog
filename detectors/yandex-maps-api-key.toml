@@ -8,6 +8,7 @@ id = "yandex-maps-api-key"
 name = "Yandex Maps API Key"
 service = "yandex"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["YANDEX_MAPS_KEY", "yandex.maps.key", "yandex_maps_key"]
 
 [[detector.patterns]]

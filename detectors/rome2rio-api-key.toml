@@ -8,6 +8,7 @@ id = "rome2rio-api-key"
 name = "Rome2Rio API Key"
 service = "rome2rio"
 severity = "low"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["ROME2RIO", "rome2rio", "R2R", "r2r", "ROME2RIO_API_KEY"]
 
 [[detector.patterns]]

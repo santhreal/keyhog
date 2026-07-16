@@ -8,6 +8,7 @@ id = "cargo-registry-token"
 name = "Cargo Registry Token"
 service = "cargo"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["CARGO_REGISTRY_TOKEN", "cargo login", "crates.io", "cargo token"]
 
 [[detector.patterns]]

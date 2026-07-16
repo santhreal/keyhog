@@ -8,6 +8,7 @@ id = "airbrake-api-key"
 name = "Airbrake API Key"
 service = "airbrake"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["AIRBRAKE_API_KEY", "airbrake_api_key", "AIRBRAKE-API-KEY", "AIRBRAKE_PROJECT_KEY", "project_key"]
 
 [[detector.patterns]]

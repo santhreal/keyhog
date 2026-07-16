@@ -8,6 +8,7 @@ id = "web3-storage-api-token"
 name = "Web3.Storage API Token"
 service = "web3storage"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["WEB3_STORAGE", "web3.storage", "WEB3STORAGE", "w3s", "w3up"]
 
 [[detector.patterns]]

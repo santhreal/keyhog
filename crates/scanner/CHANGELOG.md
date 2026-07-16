@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Compile ML match mode, entropy mode, weight, and context radius from each
+  detector TOML. Generic assignments now use the same pending batch and CPU/GPU
+  model path as regex and entropy candidates. The explicit `lift` mode applies
+  weighted positive model evidence without letting an uncalibrated model veto
+  structural matches; calibrated detectors can select bidirectional `blend` or
+  model-authoritative scoring. `--ml-weight` remains a visible scan-wide
+  diagnostic override.
 - Remove scanner-side generic-assignment identity and length defaults. Every
   phase-2 candidate must resolve to a compiled detector owner with declared
   `min_len` and `max_len`; an incomplete owner fails scanner construction or

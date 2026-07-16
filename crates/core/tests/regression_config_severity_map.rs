@@ -62,6 +62,7 @@ id = "sev-probe"
 name = "Severity Probe"
 service = "probe"
 severity = "{sev_literal}"
+ml = {{ match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }}
 keywords = ["probe_"]
 
 [[detector.patterns]]

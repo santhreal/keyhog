@@ -8,6 +8,7 @@ id = "test"
 name = "Test"
 service = "test"
 severity = "critical"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = []
 
 [detector.companion]
@@ -27,6 +28,7 @@ id = "test"
 name = "Test"
 service = "test"
 severity = "critical"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = []
 
 [detector.verify]

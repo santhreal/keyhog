@@ -8,6 +8,7 @@ id = "steam-api-key"
 name = "Steam Web API Key"
 service = "steam"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["STEAM_API_KEY", "steam_api_key", "SteamAPIKey"]
 
 [[detector.patterns]]

@@ -8,6 +8,7 @@ id = "azure-functions-key"
 name = "Azure Functions Key"
 service = "azure"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["azure", "functions", "code=", "x-functions-key"]
 
 [[detector.patterns]]

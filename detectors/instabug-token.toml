@@ -8,6 +8,7 @@ id = "instabug-token"
 name = "Instabug App Token"
 service = "instabug"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["INSTABUG_APP_TOKEN", "instabug_token", "Instabug.init", "Instabug.start", "APP_TOKEN"]
 
 [[detector.patterns]]

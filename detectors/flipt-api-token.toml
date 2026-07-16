@@ -8,6 +8,7 @@ id = "flipt-api-token"
 name = "Flipt API Token"
 service = "flipt"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["flipt_", "FLIPT_TOKEN"]
 
 [[detector.patterns]]

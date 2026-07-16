@@ -8,6 +8,7 @@ id = "matomo-api-token"
 name = "Matomo API Token"
 service = "matomo"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["MATOMO_API_TOKEN", "token_auth", "MATOMO_TOKEN"]
 
 [[detector.patterns]]

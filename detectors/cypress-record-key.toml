@@ -8,6 +8,7 @@ id = "cypress-record-key"
 name = "Cypress Record Key"
 service = "cypress"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["CYPRESS_RECORD_KEY", "cypress_record_key", "record_key", "record-key", "--record --key"]
 
 [[detector.patterns]]

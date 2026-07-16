@@ -8,6 +8,7 @@ id = "linear-api-key"
 name = "Linear API Key"
 service = "linear"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["lin_api_"]
 
 [[detector.patterns]]

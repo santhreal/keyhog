@@ -8,6 +8,7 @@ id = "heap-api-key"
 name = "Heap API Key"
 service = "heap"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["heap", "HEAP_APP_ID", "heap.load", "HEAP_ID"]
 
 [[detector.patterns]]

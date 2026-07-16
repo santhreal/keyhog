@@ -8,6 +8,7 @@ id = "ai21-api-key"
 name = "AI21 Labs API Key"
 service = "ai21"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["AI21_API_KEY", "ai21", "AI21"]
 
 [[detector.patterns]]

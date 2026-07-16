@@ -8,6 +8,7 @@ id = "pagerduty-api-key"
 name = "PagerDuty API Key"
 service = "pagerduty"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["PAGERDUTY", "pagerduty", "PD_API_KEY", "PAGERDUTY_API_KEY", "Token token="]
 
 [[detector.patterns]]

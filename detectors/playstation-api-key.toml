@@ -8,6 +8,7 @@ id = "playstation-api-key"
 name = "PlayStation Network API Key"
 service = "playstation"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["PSN_API_KEY", "PLAYSTATION_API", "psn_client_secret", "NPSSO"]
 
 [[detector.patterns]]

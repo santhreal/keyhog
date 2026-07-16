@@ -8,6 +8,7 @@ id = "linode-object-storage-access-key"
 name = "Linode Object Storage Access Key"
 service = "linode"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["LINODE_OBJECT_STORAGE", "linode_object_storage", "LINODE_ACCESS_KEY", "linodeobjects.com"]
 
 [[detector.patterns]]

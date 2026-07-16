@@ -8,6 +8,7 @@ id = "azure-blob-sas-token"
 name = "Azure Blob SAS Token"
 service = "azure"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 # "se=", "sp=", "srt=" removed: over-broad SAS query-param prefilters (se= fires on
 # case=/response=, sp= on resp=/disp=) that no regex references. Every matchable SAS
 # token carries sv= AND sig= (pattern 1 requires both); the connection-string and

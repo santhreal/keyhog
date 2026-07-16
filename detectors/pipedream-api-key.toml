@@ -8,6 +8,7 @@ id = "pipedream-api-key"
 name = "Pipedream API Key"
 service = "pipedream"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["api_", "pipedream", "PIPEDREAM_API_KEY"]
 
 [[detector.patterns]]

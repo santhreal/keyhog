@@ -8,6 +8,7 @@ id = "twilio-api-key"
 name = "Twilio API Key"
 service = "twilio"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = [
     # The "SK" prefix itself is 2 chars, below the AC prefilter's 4-char
     # floor (see compiled_scanner/compile.rs), so it never reaches the prefilter

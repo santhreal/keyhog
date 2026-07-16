@@ -451,6 +451,7 @@ id = "my-token"
 name = "My Token"
 service = "myservice"
 severity = "high"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["mytok_"]
 
 [[detector.patterns]]
@@ -484,6 +485,7 @@ id = "x"
 name = "X"
 service = "x"
 severity = "low"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 bogus_field = true
 
 [[detector.patterns]]
@@ -541,6 +543,7 @@ id = "low-floor"
 name = "Low Floor"
 service = "svc"
 severity = "medium"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 min_confidence = 0.25
 keywords = ["sgp_"]
 

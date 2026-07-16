@@ -8,6 +8,7 @@ id = "radar-io-api-key"
 name = "Radar.io API Key"
 service = "radar"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["prj_live_", "prj_test_", "RADAR"]
 
 [[detector.patterns]]

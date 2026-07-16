@@ -8,6 +8,7 @@ id = "checkly-api-key"
 name = "Checkly API Key"
 service = "checkly"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["cu_", "CHECKLY_API_KEY", "checkly_api_key"]
 
 [[detector.patterns]]

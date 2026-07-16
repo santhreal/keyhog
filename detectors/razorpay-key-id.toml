@@ -8,6 +8,7 @@ id = "razorpay-key-id"
 name = "Razorpay Key ID"
 service = "razorpay"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["rzp_test_", "rzp_live_", "RAZORPAY_KEY_ID", "razorpay_key_id"]
 
 [[detector.patterns]]

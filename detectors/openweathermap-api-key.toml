@@ -8,6 +8,7 @@ id = "openweathermap-api-key"
 name = "OpenWeatherMap API Key"
 service = "openweathermap"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["OPENWEATHERMAP", "openweathermap", "OWM_API_KEY", "appid"]
 
 [[detector.patterns]]

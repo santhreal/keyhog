@@ -8,6 +8,7 @@ id = "infinite-campus-api-key"
 name = "Infinite Campus API Key"
 service = "infinite-campus"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["infinite", "campus", "INFINITE_CAMPUS", "campus_api", "icampus"]
 
 [[detector.patterns]]

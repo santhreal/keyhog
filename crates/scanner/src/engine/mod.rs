@@ -291,6 +291,10 @@ pub struct CompiledScanner {
     /// preserves the exact first-match-by-exact-or-normalized semantics. Built
     /// ONCE at construction (see [`crate::generic_keyword_owner::GenericOwningDetectorIndex`]).
     pub(crate) generic_owning_detector: crate::generic_keyword_owner::GenericOwningDetectorIndex,
+    /// Compact detector-owned model policy, indexed by detector index. Feature
+    /// extraction and score combination never re-read optional schema fields.
+    #[cfg(feature = "ml")]
+    pub(crate) detector_ml_policies: Vec<crate::detector_ml_policy::CompiledDetectorMlPolicy>,
     /// Complete detector-owned entropy policy, resolved once at scanner build.
     /// Hot candidate paths index concrete values instead of re-reading optional
     /// schema fields or falling back to scanner constants.

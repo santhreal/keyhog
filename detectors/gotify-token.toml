@@ -8,6 +8,7 @@ id = "gotify-token"
 name = "Gotify Token"
 service = "gotify"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["GOTIFY", "gotify", "GOTIFY_TOKEN", "GOTIFY_APP_TOKEN"]
 
 [[detector.patterns]]

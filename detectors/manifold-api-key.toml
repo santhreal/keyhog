@@ -8,6 +8,7 @@ id = "manifold-api-key"
 name = "Manifold API Key"
 service = "manifold"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["manifold", "MANIFOLD", "manifold.markets"]
 
 [[detector.patterns]]

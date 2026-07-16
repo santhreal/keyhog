@@ -8,6 +8,7 @@ id = "front-api-token"
 name = "Front API Token"
 service = "front"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["fpt_", "FRONT", "front_api", "front_token"]
 
 [[detector.patterns]]

@@ -8,6 +8,7 @@ id = "turso-db-token-v2"
 name = "Turso Database Token v2"
 service = "turso"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["TURSO_AUTH_TOKEN", "turso.io", "TURSO_TOKEN", "api.turso.io"]
 
 [[detector.patterns]]

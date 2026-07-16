@@ -8,6 +8,7 @@ id = "pirsch-api-token"
 name = "Pirsch Analytics API Token"
 service = "pirsch"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 min_confidence = 0.25
 keywords = ["pa_", "PIRSCH_CLIENT_ID", "pirsch.io"]
 

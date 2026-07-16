@@ -8,6 +8,7 @@ id = "loggly-customer-token"
 name = "Loggly Customer Token"
 service = "loggly"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["loggly", "LOGGLY_TOKEN", "loggly_token", "customer_token", "loggly.com"]
 
 [[detector.patterns]]

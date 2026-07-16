@@ -8,6 +8,7 @@ id = "snapchat-api-token"
 name = "Snapchat Marketing API Token"
 service = "snapchat"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["snapchat", "SNAPCHAT", "snap_chat", "Snapchat"]
 
 [[detector.patterns]]

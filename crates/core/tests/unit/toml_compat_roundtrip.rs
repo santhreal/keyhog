@@ -9,6 +9,7 @@ id = "minimal-test"
 name = "Minimal Test"
 service = "test-svc"
 severity = "high"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["prefix_"]
 
 [[detector.patterns]]
@@ -56,6 +57,7 @@ id = "full-test"
 name = "Full Test"
 service = "test-svc"
 severity = "critical"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["api_key_", "secret_"]
 min_confidence = 0.85
 
@@ -148,6 +150,7 @@ id = "defaults-test"
 name = "Defaults Test"
 service = "test"
 severity = "medium"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = []
 
 [[detector.patterns]]

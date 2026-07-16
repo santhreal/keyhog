@@ -8,6 +8,7 @@ id = "hibp-api-key"
 name = "Have I Been Pwned API Key"
 service = "hibp"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["hibp-api-key", "haveibeenpwned", "HIBP_API_KEY"]
 
 [[detector.patterns]]

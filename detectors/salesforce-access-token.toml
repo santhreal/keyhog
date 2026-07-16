@@ -8,6 +8,7 @@ id = "salesforce-access-token"
 name = "Salesforce Access Token"
 service = "salesforce"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["salesforce", "SALESFORCE", "force.com", "SF_ACCESS_TOKEN", "sf_access_token"]
 
 [[detector.patterns]]

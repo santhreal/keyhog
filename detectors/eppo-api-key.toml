@@ -8,6 +8,7 @@ id = "eppo-api-key"
 name = "Eppo API Key"
 service = "eppo"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["EPPO", "eppo", "EPPO_API_KEY"]
 
 [[detector.patterns]]

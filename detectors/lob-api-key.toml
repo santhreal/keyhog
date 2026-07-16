@@ -8,6 +8,7 @@ id = "lob-api-key"
 name = "Lob API Key"
 service = "lob"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["test_", "live_", "LOB_API_KEY", "lob.com"]
 
 [[detector.patterns]]

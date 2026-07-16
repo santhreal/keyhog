@@ -1541,6 +1541,7 @@ fn config_detector_disable_all_loaded_detectors_fails_closed() {
         name = "Demo Only"
         service = "demo"
         severity = "high"
+        ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
         keywords = ["demo_secret_"]
 
         [[detector.patterns]]
@@ -1611,6 +1612,7 @@ fn config_detector_min_confidence_floor_drops_findings() {
         name = "Demo Only"
         service = "demo"
         severity = "high"
+        ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
         keywords = ["demo_secret_"]
 
         [[detector.patterns]]
@@ -1686,6 +1688,7 @@ fn config_detector_min_confidence_floor_drops_findings() {
         name = "Demo Only"
         service = "demo"
         severity = "high"
+        ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
         min_confidence = 0.8
         keywords = ["demo_secret_"]
 

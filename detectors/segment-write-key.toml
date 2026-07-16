@@ -8,6 +8,7 @@ id = "segment-write-key"
 name = "Segment Write Key"
 service = "segment"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 min_confidence = 0.3
 keywords = ["segment", "SEGMENT_WRITE_KEY", "writeKey", "write_key"]
 

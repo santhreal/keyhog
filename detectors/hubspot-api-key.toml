@@ -8,6 +8,7 @@ id = "hubspot-api-key"
 name = "HubSpot API Key"
 service = "hubspot"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["HUBSPOT_API_KEY", "hubspot_api_key", "hapikey", "hubspot.com"]
 
 [[detector.patterns]]

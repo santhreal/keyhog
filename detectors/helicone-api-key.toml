@@ -8,6 +8,7 @@ id = "helicone-api-key"
 name = "Helicone API Key"
 service = "helicone"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["sk-", "pk-", "eu-", "HELICONE_API_KEY", "Helicone-Auth"]
 
 # Anchor each short prefix to start-of-string or a non-identifier byte.

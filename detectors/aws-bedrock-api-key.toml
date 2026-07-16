@@ -19,6 +19,7 @@ id = "aws-bedrock-api-key"
 name = "AWS Bedrock API Key"
 service = "aws"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 # Defensive floor: the 22-char fixed anchor dilutes entropy scoring, but the
 # anchor is itself the precision guarantee (it encodes "BedrockAPIKey"), so a
 # low self-declared floor preserves recall without risking false positives.

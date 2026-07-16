@@ -8,6 +8,7 @@ id = "minio-access-key"
 name = "MinIO Access Key"
 service = "minio"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["MINIO", "minioadmin", "MINIO_ROOT_USER", "MINIO_ACCESS_KEY", "MINIO_SECRET_KEY"]
 
 [[detector.patterns]]

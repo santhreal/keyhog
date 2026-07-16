@@ -12,6 +12,7 @@ id = "gitlab-feed-token"
 name = "GitLab Feed Token"
 service = "gitlab"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 # "rss" removed: over-broad prefilter (fires on any RSS/feed URL or "/rss" path)
 # that no regex references, the pattern requires the unambiguous `glft-` prefix
 # (keyword "glft-"), so "rss" only forced wasted scan passes. Recall-neutral.

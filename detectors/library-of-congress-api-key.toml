@@ -8,6 +8,7 @@ id = "library-of-congress-api-key"
 name = "Library of Congress API Key"
 service = "library-of-congress"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["LOC_API_KEY", "LIBRARY_OF_CONGRESS", "congress.gov", "loc.gov", "library_of_congress"]
 
 [[detector.patterns]]

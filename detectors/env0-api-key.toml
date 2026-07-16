@@ -8,6 +8,7 @@ id = "env0-api-key"
 name = "env0 API Key"
 service = "env0"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["ENV0_API_KEY", "ENV0_API_SECRET", "env0_api_key", "env0_api_secret", "apiKeyType"]
 
 [[detector.patterns]]

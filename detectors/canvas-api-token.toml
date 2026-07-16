@@ -8,6 +8,7 @@ id = "canvas-api-token"
 name = "Canvas LMS API Token"
 service = "canvas"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["canvas", "instructure", "CANVAS_API_TOKEN", "canvas_token"]
 
 [[detector.patterns]]

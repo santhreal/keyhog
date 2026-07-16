@@ -8,6 +8,7 @@ id = "sentry-api-key-legacy"
 name = "Sentry Legacy API Key"
 service = "sentry"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["SENTRY_API_KEY", "sentry_api_key", "SENTRY-API-KEY", "auth.api_key"]
 
 [[detector.patterns]]

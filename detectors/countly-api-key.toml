@@ -8,6 +8,7 @@ id = "countly-api-key"
 name = "Countly API Key"
 service = "countly"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["COUNTLY_API_KEY", "COUNTLY_APP_KEY", "countly"]
 
 [[detector.patterns]]

@@ -288,7 +288,7 @@ fn ml_pending_confidence_policy_routes_through_confidence_owner() {
         "struct MlConfidencePolicy",
         "fn ml_pending_confidence(",
         "fn ml_pending_match_confidence(",
-        "model_authoritative",
+        "ActiveMlMode",
         "ml_weight",
         "CodeContext::Comment",
         "CodeContext::TestCode",

@@ -8,6 +8,7 @@ id = "pinterest-ads-api-token"
 name = "Pinterest Ads API Token"
 service = "pinterest-ads"
 severity = "critical"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["pina_", "pinterest_ads", "PINTEREST_ADS"]
 
 [[detector.patterns]]

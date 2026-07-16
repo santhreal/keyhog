@@ -8,6 +8,7 @@ id = "easypost-api-key"
 name = "EasyPost API Key"
 service = "easypost"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["EZAK", "EZTK", "EASYPOST", "api.easypost.com"]
 
 [[detector.patterns]]

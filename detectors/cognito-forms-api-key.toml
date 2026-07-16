@@ -8,6 +8,7 @@ id = "cognito-forms-api-key"
 name = "Cognito Forms API Key"
 service = "cognitoforms"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["cognitoforms", "COGNITO_FORMS", "cognito_forms"]
 
 [[detector.patterns]]

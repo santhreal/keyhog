@@ -80,6 +80,24 @@ fn vendor_suffix_fallback_is_restricted_to_generic_phase2_detectors() {
 }
 
 #[test]
+fn detector_ml_policy_rejects_invalid_weight_radius_and_entropy_ownership() {
+    let mut detector = detector_with_pattern("token_([A-Z0-9]{12})");
+    detector.ml.weight = f64::NAN;
+    detector.ml.context_radius_lines = 65;
+    detector.ml.entropy_mode = keyhog_core::DetectorMlMode::Authoritative;
+    let issues = validate_detector(&detector);
+    for expected in ["ml.weight", "ml.context_radius_lines", "ml.entropy_mode"] {
+        assert!(
+            issues.iter().any(|issue| matches!(
+                issue,
+                QualityIssue::Error(message) if message.contains(expected)
+            )),
+            "missing {expected} validation error: {issues:#?}"
+        );
+    }
+}
+
+#[test]
 fn sensitive_path_entropy_threshold_cannot_exceed_detector_threshold() {
     let mut detector = detector_with_pattern("token=([A-Za-z0-9]+)");
     detector.entropy_very_high = Some(5.0);

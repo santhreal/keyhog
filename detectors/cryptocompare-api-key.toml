@@ -8,6 +8,7 @@ id = "cryptocompare-api-key"
 name = "CryptoCompare API Key"
 service = "cryptocompare"
 severity = "medium"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["cryptocompare", "CRYPTOCOMPARE", "CRYPTOCOMPARE_API_KEY", "cryptocompare_api_key", "min-api.cryptocompare.com"]
 
 [[detector.patterns]]

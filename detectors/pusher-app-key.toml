@@ -8,6 +8,7 @@ id = "pusher-app-key"
 name = "Pusher App Key"
 service = "pusher"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["PUSHER", "pusher", "PUSHER_APP_KEY", "pusher_app_key", "app_key"]
 
 [[detector.patterns]]

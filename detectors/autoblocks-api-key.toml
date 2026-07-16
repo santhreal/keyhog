@@ -8,6 +8,7 @@ id = "autoblocks-api-key"
 name = "Autoblocks API Key"
 service = "autoblocks"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["AB-", "AUTOBLOCKS_V2_API_KEY", "AUTOBLOCKS_API_KEY", "autoblocks"]
 
 [[detector.patterns]]

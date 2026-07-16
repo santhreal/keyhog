@@ -563,6 +563,7 @@ id = "installed-only"
 name = "Installed Only"
 service = "test"
 severity = "high"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
 keywords = ["INSTALLED_ONLY"]
 
 [[detector.patterns]]
@@ -608,6 +609,7 @@ id = "{id}"
 name = "{id}"
 service = "test"
 severity = "high"
+ml = {{ match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }}
 keywords = ["{keyword}"]
 
 [[detector.patterns]]

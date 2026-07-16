@@ -8,6 +8,7 @@ id = "ansible-tower-token"
 name = "Ansible Tower/AWX API Token"
 service = "ansible-tower"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["TOWER_OAUTH_TOKEN", "AWX_TOKEN", "TOWER_TOKEN", "AWX_OAUTH_TOKEN"]
 
 [[detector.patterns]]

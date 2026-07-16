@@ -8,6 +8,7 @@ id = "splunk-hec-token"
 name = "Splunk HEC Token"
 service = "splunk"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["Splunk", "SPLUNK_HEC_TOKEN", "splunk_hec_token", "hec token", "HTTP Event Collector", "services/collector"]
 
 [[detector.patterns]]

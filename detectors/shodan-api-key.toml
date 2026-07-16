@@ -8,6 +8,7 @@ id = "shodan-api-key"
 name = "Shodan API Key"
 service = "shodan"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["SHODAN_API_KEY", "shodan", "SHODAN_KEY"]
 
 [[detector.patterns]]

@@ -16,6 +16,7 @@ id = "npmrc-auth-token"
 name = "npm Registry Auth Token (.npmrc)"
 service = "npm"
 severity = "high"
+ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["_authToken"]
 # Structural slot: the `_authToken=` anchor is decisive even when the token body
 # is a low-entropy legacy value the generic model scores below the global floor.
