@@ -18,7 +18,7 @@ impl CompiledScanner {
     fn keyword_free_entropy_threshold(&self, sensitive_path: bool) -> Option<f64> {
         self.generic_owning_detector
             .keyword_free_owner_index()
-            .and_then(|index| self.entropy_policies.get(index))
+            .and_then(|index| self.detector_plans.get(index).entropy.as_ref())
             .map(|policy| {
                 if sensitive_path {
                     policy.sensitive_path_entropy_very_high
@@ -81,7 +81,7 @@ impl CompiledScanner {
         let generic_keyword_secret_policy = self
             .generic_owning_detector
             .isolated_bare_owner_index()
-            .and_then(|index| self.entropy_policies.get(index));
+            .and_then(|index| self.detector_plans.get(index).entropy.as_ref());
         let isolated_bare_candidate = !path_entropy_appropriate
             && generic_keyword_secret_policy.is_some_and(|policy| {
                 crate::entropy::scanner::has_isolated_bare_secret_candidate_with_lines_and_policy(
@@ -100,8 +100,7 @@ impl CompiledScanner {
                 &self.config,
                 Some(crate::entropy::scanner::ActiveDetectorPolicy::new(
                     &self.generic_owning_detector,
-                    &self.entropy_policies,
-                    &self.detector_key_material_policies,
+                    &self.detector_plans,
                 )),
             );
         if !path_entropy_appropriate && !isolated_bare_candidate {
@@ -171,8 +170,7 @@ impl CompiledScanner {
                 allow_canonical_lift,
                 Some(crate::entropy::scanner::ActiveDetectorPolicy::new(
                     &self.generic_owning_detector,
-                    &self.entropy_policies,
-                    &self.detector_key_material_policies,
+                    &self.detector_plans,
                 )),
             );
         for entropy_match in entropy_matches {
@@ -184,17 +182,16 @@ impl CompiledScanner {
                 &self.generic_owning_detector,
                 &entropy_match.keyword,
             );
-            let execution_policy =
-                policy_detector_index.map(|index| self.detector_execution_policies.get(index));
-            let compiled_policy =
-                policy_detector_index.and_then(|index| self.entropy_policies.get(index));
+            let detector_plan = policy_detector_index.map(|index| self.detector_plans.get(index));
+            let execution_policy = detector_plan.map(|plan| &plan.execution);
+            let compiled_policy = detector_plan.and_then(|plan| plan.entropy.as_ref());
             let canonical_detector_index = self
                 .generic_owning_detector
                 .canonical_index(&entropy_match.keyword)
                 .or(policy_detector_index);
             let transport_decoded = preprocessed.transport_decoded_for_offset(entropy_match.offset);
             let detector_owned_canonical_hex_key = canonical_detector_index.is_some_and(|index| {
-                let policy = self.detector_key_material_policies.get(index);
+                let policy = &self.detector_plans.get(index).key_material;
                 if transport_decoded {
                     policy.allows_decoded_hex(&entropy_match.value)
                 } else {
@@ -271,8 +268,7 @@ impl CompiledScanner {
             }
 
             let Some(metadata) = policy_detector_index
-                .and_then(|index| self.entropy_metadata_by_detector_index.get(index))
-                .and_then(Option::as_ref)
+                .and_then(|index| self.detector_plans.get(index).entropy_metadata.as_ref())
             else {
                 tracing::error!(
                     target: "keyhog::detection",
@@ -329,9 +325,7 @@ impl CompiledScanner {
                 self.config.min_confidence,
             );
             #[cfg(feature = "ml")]
-            let entropy_ml_policy = policy_detector_index
-                .and_then(|index| self.detector_ml_policies.get(index))
-                .copied();
+            let entropy_ml_policy = detector_plan.map(|plan| plan.ml);
             #[cfg(feature = "ml")]
             let entropy_ml_mode = entropy_ml_policy.and_then(|policy| {
                 if detector_owned_canonical_hex_key {
@@ -354,7 +348,7 @@ impl CompiledScanner {
                     &entropy_match.value,
                     policy.context_radius_lines,
                     &self.config,
-                    self.metadata_by_index[detector_index].2.as_ref(),
+                    self.detector_plans.get(detector_index).metadata.2.as_ref(),
                     policy.features,
                     crate::ml_scorer::MlCandidateChannel::Entropy,
                 );

@@ -1,11 +1,10 @@
 #[test]
 fn compiled_execution_policy_matches_every_embedded_detector() {
     let detectors = keyhog_core::embedded_detector_specs();
-    let compiled =
-        crate::detector_execution_policy::CompiledDetectorExecutionPolicies::compile(detectors);
+    let compiled = super::compiled_detector_plans(detectors);
 
     for (index, detector) in detectors.iter().enumerate() {
-        let policy = compiled.get(index);
+        let policy = &compiled.get(index).execution;
         assert_eq!(policy.is_generic, detector.service == "generic");
         assert_eq!(policy.min_len, detector.min_len);
         assert_eq!(policy.min_confidence, detector.min_confidence);
@@ -44,9 +43,8 @@ fn compiled_keyword_probe_checks_preprocessed_text_only_when_it_differs() {
         keywords: vec!["api_key".to_string()],
         ..Default::default()
     };
-    let compiled =
-        crate::detector_execution_policy::CompiledDetectorExecutionPolicies::compile(&[detector]);
-    let policy = compiled.get(0);
+    let compiled = super::compiled_detector_plans(&[detector]);
+    let policy = &compiled.get(0).execution;
 
     assert!(policy.keyword_nearby(b"api_key=value", b"api_key=value"));
     assert!(policy.keyword_nearby(b"decoded wrapper", b"api_key=value"));
@@ -63,9 +61,8 @@ fn compiled_public_identifier_markers_preserve_boundary_bytes() {
         public_identifier_assignment_markers: vec!["_ADDR=".to_string()],
         ..Default::default()
     };
-    let compiled =
-        crate::detector_execution_policy::CompiledDetectorExecutionPolicies::compile(&[detector]);
-    let policy = compiled.get(0);
+    let compiled = super::compiled_detector_plans(&[detector]);
+    let policy = &compiled.get(0).execution;
 
     assert!(policy.line_has_public_identifier_assignment(b"SOLANA_ADDR=value"));
     assert!(!policy.line_has_public_identifier_assignment(b"SOLANA_ADDRESS=value"));

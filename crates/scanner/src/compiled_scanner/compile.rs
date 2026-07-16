@@ -34,12 +34,6 @@ impl CompiledScanner {
         // LAW10: cfg-only Hyperscan tuning marker; no runtime effect.
         #[cfg(not(feature = "simd"))]
         let _tuning_config = tuning_config;
-        let detector_entropy_floors =
-            crate::entropy::policy::CompiledDetectorEntropyFloors::compile(&detectors)
-                .map_err(crate::error::ScanError::Config)?;
-        #[cfg(feature = "entropy")]
-        let entropy_policies = crate::entropy::policy::CompiledEntropyPolicies::compile(&detectors)
-            .map_err(crate::error::ScanError::Config)?;
         let state = build_compile_state(&detectors)?;
         validate_compiled_pattern_detector_indices(
             &state.ac_map,
@@ -47,16 +41,6 @@ impl CompiledScanner {
             detectors.len(),
         )?;
         let ac = build_ac_pattern_set(&state.ac_literals)?;
-        let credential_shape_by_detector_index =
-            crate::credential_shapes::build_detector_shape_rules(&detectors)
-                .map_err(crate::error::ScanError::Config)?;
-        let detector_suppression_by_index =
-            crate::suppression::CompiledDetectorSuppressions::compile(&detectors)
-                .map_err(crate::error::ScanError::Config)?;
-        let detector_key_material_policies =
-            crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicies::compile(
-                &detectors,
-            );
         // GPU is unconditional in the build; runtime probe decides whether to
         // actually use it. `gpu_available` is set by hw_probe based on adapter
         // detection (excluding software renderers like llvmpipe/lavapipe).
@@ -336,81 +320,54 @@ impl CompiledScanner {
         // once per scanner; lock-free on read.
         let static_intern_strings: Vec<&str> = detectors
             .iter()
-            .flat_map(|d| {
-                let metadata = d.entropy_fallback.as_ref().map(|metadata| {
-                    [
-                        metadata.id.as_str(),
-                        metadata.name.as_str(),
-                        metadata.service.as_str(),
-                    ]
-                });
+            .flat_map(|detector| {
                 [
-                    d.id.as_str(),
-                    d.name.as_str(),
-                    d.service.as_str(),
-                    metadata.map_or("", |values| values[0]),
-                    metadata.map_or("", |values| values[1]),
-                    metadata.map_or("", |values| values[2]),
+                    detector.id.as_str(),
+                    detector.name.as_str(),
+                    detector.service.as_str(),
                 ]
                 .into_iter()
+                .chain(
+                    detector
+                        .entropy_fallback
+                        .as_ref()
+                        .into_iter()
+                        .flat_map(|metadata| {
+                            [
+                                metadata.id.as_str(),
+                                metadata.name.as_str(),
+                                metadata.service.as_str(),
+                            ]
+                        }),
+                )
             })
             .collect();
         let static_intern = Arc::new(crate::static_intern::StaticInterner::from_detector_strings(
             static_intern_strings,
         ));
 
-        // Resolve each detector's interned (id, name, service) triple ONCE,
-        // indexed by detector index, so the per-match emission sites clone by
-        // index instead of re-hashing the same three strings through the
-        // interner on every finding (PERF-locality_intern-1). The strings
-        // are exactly the arena entries the per-match `lookup` would return;
-        // every detector field was just fed into `from_detector_strings`
-        // above, so each lookup is guaranteed `Some`. The `unwrap_or_else`
-        // fallback (interning the source string directly) is unreachable in
-        // practice but keeps the build total, a future detector field that
-        // somehow missed the interner universe still emits its true string,
-        // never an empty or wrong one.
-        let metadata_by_index: Vec<(Arc<str>, Arc<str>, Arc<str>)> = detectors
-            .iter()
-            .map(|d| {
-                (
-                    static_intern
-                        .lookup(&d.id)
-                        .unwrap_or_else(|| Arc::from(d.id.as_str())), // LAW10: string-intern miss => owned Arc of identical bytes, recall-safe
-                    static_intern
-                        .lookup(&d.name)
-                        .unwrap_or_else(|| Arc::from(d.name.as_str())), // LAW10: string-intern miss => owned Arc of identical bytes, recall-safe
-                    static_intern
-                        .lookup(&d.service)
-                        .unwrap_or_else(|| Arc::from(d.service.as_str())), // LAW10: string-intern miss => owned Arc of identical bytes, recall-safe
-                )
-            })
-            .collect();
-        let detector_execution_policies =
-            crate::detector_execution_policy::CompiledDetectorExecutionPolicies::compile(
-                &detectors,
-            );
+        let detector_plans = crate::detector_plan::CompiledDetectorPlans::compile(
+            &detectors,
+            static_intern.as_ref(),
+            state.companions,
+        )
+        .map_err(crate::error::ScanError::Config)?;
 
         // Pre-resolve the detector-wide weak-anchor base once. The per-pattern
         // bit is compiled beside its regex, so mixed detectors protect only the
         // patterns that declare the policy. Built before `detectors` is moved.
-        let detector_weak_anchor_base_by_index: Vec<crate::suppression::WeakAnchorBase> = detectors
-            .iter()
-            .map(crate::suppression::detector_weak_anchor_base)
-            .collect();
         let missing_weak_anchor_floors = detectors
             .iter()
-            .zip(&detector_weak_anchor_base_by_index)
             .enumerate()
-            .filter_map(|(index, (detector, base))| {
-                let has_weak_pattern = match base {
+            .filter_map(|(index, detector)| {
+                let has_weak_pattern = match detector_plans.get(index).weak_anchor_base {
                     crate::suppression::WeakAnchorBase::Always => true,
                     crate::suppression::WeakAnchorBase::PerPattern => {
                         detector.patterns.iter().any(|pattern| pattern.weak_anchor)
                     }
                     crate::suppression::WeakAnchorBase::Never => false,
                 };
-                (has_weak_pattern && !detector_entropy_floors.has_policy(index))
+                (has_weak_pattern && detector_plans.get(index).entropy_floor.is_none())
                     .then_some(detector.id.as_str())
             })
             .collect::<Vec<_>>();
@@ -484,9 +441,6 @@ impl CompiledScanner {
         let generic_owning_detector =
             crate::generic_keyword_owner::GenericOwningDetectorIndex::build(&detectors)
                 .map_err(crate::error::ScanError::Config)?;
-        #[cfg(feature = "ml")]
-        let detector_ml_policies = crate::detector_ml_policy::compile(&detectors);
-
         // Resolve the detector-owned hot-prefix table once, then mark its exact
         // confirmed delegates. Limiting suppression to the delegate is
         // recall-safe when one detector has overlapping regexes at one offset.
@@ -516,32 +470,6 @@ impl CompiledScanner {
             .map(|pattern| regex_match_byte_upper_bound(pattern.regex.as_str()))
             .collect();
 
-        // Pre-intern detector-owned synthetic entropy metadata once
-        // (PERF-locality_intern-1). Every active entropy owner must declare the
-        // complete identity in its TOML; there is no scanner-global identity
-        // table or compatibility label to hide an incomplete corpus.
-        #[cfg(feature = "entropy")]
-        let entropy_metadata_by_detector_index: Vec<
-            Option<(Arc<str>, Arc<str>, Arc<str>)>,
-        > = detectors
-            .iter()
-            .map(|detector| {
-                detector.entropy_fallback.as_ref().map(|metadata| {
-                    (
-                        static_intern
-                            .lookup(&metadata.id)
-                            .unwrap_or_else(|| Arc::from(metadata.id.as_str())),
-                        static_intern
-                            .lookup(&metadata.name)
-                            .unwrap_or_else(|| Arc::from(metadata.name.as_str())),
-                        static_intern
-                            .lookup(&metadata.service)
-                            .unwrap_or_else(|| Arc::from(metadata.service.as_str())),
-                    )
-                })
-            })
-            .collect();
-
         let scanner = Self {
             ac,
             gpu_backends,
@@ -558,21 +486,12 @@ impl CompiledScanner {
             gpu_degrade_count: std::sync::atomic::AtomicU64::new(0),
             autoroute_gpu_shared_cold_ns: std::sync::atomic::AtomicU64::new(0),
             static_intern,
-            metadata_by_index,
-            detector_execution_policies,
-            detector_weak_anchor_base_by_index,
-            detector_suppression_by_index,
-            detector_key_material_policies,
+            detector_plans,
             generic_named_assignment_keywords,
             generic_assignment_re,
             generic_keyword_stems,
             generic_gpu_positions_compatible,
             generic_owning_detector,
-            #[cfg(feature = "ml")]
-            detector_ml_policies,
-            #[cfg(feature = "entropy")]
-            entropy_policies,
-            detector_entropy_floors,
             #[cfg(feature = "gpu")]
             ac_match_upper_bounds,
             suffix_gate_ac,
@@ -583,8 +502,6 @@ impl CompiledScanner {
             pattern_boundary_context,
             prefix_propagation,
             phase2_patterns: state.phase2_patterns,
-            companions: state.companions,
-            credential_shape_by_detector_index,
             same_prefix_patterns,
             phase2_keyword_ac,
             phase2_keyword_to_patterns,
@@ -602,8 +519,6 @@ impl CompiledScanner {
             hs_index_map,
             #[cfg(feature = "simdsieve")]
             hot_pattern_slots,
-            #[cfg(feature = "entropy")]
-            entropy_metadata_by_detector_index,
             config: ScannerConfig::default(),
             alphabet_screen,
             bigram_bloom,

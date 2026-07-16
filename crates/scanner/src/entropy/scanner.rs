@@ -26,20 +26,17 @@ use keyhog_core::DetectorSpec;
 #[derive(Clone, Copy)]
 pub(crate) struct ActiveDetectorPolicy<'a> {
     index: &'a crate::generic_keyword_owner::GenericOwningDetectorIndex,
-    compiled: &'a crate::entropy::policy::CompiledEntropyPolicies,
-    key_material: &'a crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicies,
+    detector_plans: &'a crate::detector_plan::CompiledDetectorPlans,
 }
 
 impl<'a> ActiveDetectorPolicy<'a> {
     pub(crate) fn new(
         index: &'a crate::generic_keyword_owner::GenericOwningDetectorIndex,
-        compiled: &'a crate::entropy::policy::CompiledEntropyPolicies,
-        key_material: &'a crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicies,
+        detector_plans: &'a crate::detector_plan::CompiledDetectorPlans,
     ) -> Self {
         Self {
             index,
-            compiled,
-            key_material,
+            detector_plans,
         }
     }
 
@@ -47,7 +44,8 @@ impl<'a> ActiveDetectorPolicy<'a> {
         self,
         keyword: &str,
     ) -> Option<&'a crate::entropy::policy::CompiledEntropyPolicy> {
-        active_policy_detector_index(self.index, keyword).and_then(|index| self.compiled.get(index))
+        active_policy_detector_index(self.index, keyword)
+            .and_then(|index| self.detector_plans.get(index).entropy.as_ref())
     }
 
     fn compiled_for_role(
@@ -63,7 +61,7 @@ impl<'a> ActiveDetectorPolicy<'a> {
                 self.index.unclaimed_keyword_owner_index()
             }
         }?;
-        self.compiled.get(index)
+        self.detector_plans.get(index).entropy.as_ref()
     }
 
     fn key_material_for_keyword(
@@ -74,7 +72,7 @@ impl<'a> ActiveDetectorPolicy<'a> {
             .index
             .canonical_index(keyword)
             .or_else(|| active_policy_detector_index(self.index, keyword))?;
-        Some(self.key_material.get(index))
+        Some(&self.detector_plans.get(index).key_material)
     }
 
     fn claims_keyword(self, keyword: &str) -> bool {

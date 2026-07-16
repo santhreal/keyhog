@@ -122,16 +122,17 @@ fn build_maps_per_detector_shapes_to_compiled_rules() {
         ..DetectorSpec::default()
     };
 
-    let rules = build_detector_shape_rules(&[aws, anthropic, no_shape]).unwrap();
+    let aws_rule = compile_detector_shape_rule(&aws).unwrap();
+    let anthropic_rule = compile_detector_shape_rule(&anthropic).unwrap();
+    let no_rule = compile_detector_shape_rule(&no_shape).unwrap();
 
-    assert_eq!(rules.len(), 3);
-    assert!(rules[0].as_ref().is_some_and(|rule| {
+    assert!(aws_rule.as_ref().is_some_and(|rule| {
         rule.allows("AKIAIOSFODNN7EXAMPLE") && !rule.allows("AKIAIOSFODNN7EXAMPL")
     }));
-    assert!(rules[1]
+    assert!(anthropic_rule
         .as_ref()
         .is_some_and(|rule| !rule.allows("sk-ant-api03-short")));
-    assert!(rules[2].is_none(), "a detector with no shape maps to None");
+    assert!(no_rule.is_none(), "a detector with no shape maps to None");
 }
 
 #[test]
@@ -143,7 +144,7 @@ fn build_fails_closed_on_a_malformed_shape() {
         credential_shape: Some(shape(None, Some("sk-"), None, None)), // prefix, no length
         ..DetectorSpec::default()
     };
-    let err = build_detector_shape_rules(&[bad]).unwrap_err();
+    let err = compile_detector_shape_rule(&bad).unwrap_err();
     assert!(err.contains("prefix but no length constraint"));
 }
 

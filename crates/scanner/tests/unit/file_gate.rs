@@ -962,8 +962,8 @@ fn engine_hot_and_entropy_metadata_clones_are_heap_admission_gated() {
         "engine/phase2_entropy.rs must not resurrect unconditional detector metadata triple clones"
     );
     assert!(
-        entropy_src.contains("self.entropy_metadata_by_detector_index"),
-        "engine/phase2_entropy.rs must resolve the active detector's pre-interned metadata"
+        entropy_src.contains("self.detector_plans.get(index).entropy_metadata.as_ref()"),
+        "engine/phase2_entropy.rs must resolve the active detector's pre-interned metadata through the unified detector plan"
     );
     assert!(
         entropy_src.contains("MissingFallbackMetadata"),

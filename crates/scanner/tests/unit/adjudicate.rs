@@ -1,8 +1,9 @@
+#[cfg(feature = "simdsieve")]
+use crate::adjudicate::HotPatternSignal;
 use crate::adjudicate::{
     adjudicate_match, CandidateMatch, EntropyFallbackSignal, EntropyGenerationSignal,
-    EntropyShapeStage, FinalEmitSignals, GenericBridgeSignal, GenericValueShapeStage,
-    HotPatternSignal, MatchCtx, ProcessCandidateSignals, ReportAdjudicationPolicy, StageId,
-    Verdict,
+    EntropyShapeStage, FinalEmitSignals, GenericBridgeSignal, GenericValueShapeStage, MatchCtx,
+    ProcessCandidateSignals, ReportAdjudicationPolicy, StageId, Verdict,
 };
 use crate::context::CodeContext;
 use crate::suppression::NamedDetectorSuppressionCtx;
@@ -510,6 +511,7 @@ fn final_report_candidate_returns_adjudicator_reported_confidence() {
 }
 
 #[test]
+#[cfg(feature = "simdsieve")]
 fn hot_pattern_signal_reports_regex_validation() {
     assert_eq!(
         adjudicate_match(

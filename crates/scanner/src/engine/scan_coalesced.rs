@@ -290,7 +290,7 @@ impl CompiledScanner {
         let isolated_bare_owner_index = self.generic_owning_detector.isolated_bare_owner_index();
         #[cfg(feature = "entropy")]
         let isolated_bare_policy = isolated_bare_owner_index
-            .and_then(|index| self.entropy_policies.get(index))
+            .and_then(|index| self.detector_plans.get(index).entropy.as_ref())
             .copied();
         #[cfg(feature = "multiline")]
         if crate::multiline::has_concatenation_indicators(text) {

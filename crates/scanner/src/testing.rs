@@ -2779,10 +2779,10 @@ pub fn generic_entropy_floor_for_test(
     entropy_threshold: f64,
     credential_len: usize,
 ) -> f64 {
-    crate::entropy::policy::CompiledDetectorEntropyFloors::compile(std::slice::from_ref(detector))
+    crate::entropy::policy::CompiledEntropyFloorPolicy::compile(detector)
         .expect("test detector entropy floor must compile")
-        .effective_floor(0, credential_len, entropy_threshold)
         .expect("test detector must declare entropy_floor")
+        .effective_floor(credential_len, entropy_threshold)
 }
 
 /// Test seam for [`crate::confidence::policy::entropy_fallback_confidence`].
@@ -3485,6 +3485,41 @@ pub(crate) fn looks_like_prose_whitespace_run(value: &str) -> bool {
 /// (KH-GAP-004). `credential_keyword_context` builds the production
 /// credential anchor so tests need not know the private tuning constants.
 pub mod entropy_scanner {
+    fn compile_detector_plans(
+        detectors: &[keyhog_core::DetectorSpec],
+    ) -> crate::detector_plan::CompiledDetectorPlans {
+        let strings = detectors
+            .iter()
+            .flat_map(|detector| {
+                [
+                    detector.id.as_str(),
+                    detector.name.as_str(),
+                    detector.service.as_str(),
+                ]
+                .into_iter()
+                .chain(
+                    detector
+                        .entropy_fallback
+                        .as_ref()
+                        .into_iter()
+                        .flat_map(|metadata| {
+                            [
+                                metadata.id.as_str(),
+                                metadata.name.as_str(),
+                                metadata.service.as_str(),
+                            ]
+                        }),
+                )
+            })
+            .collect::<Vec<_>>();
+        let interner = crate::static_intern::StaticInterner::from_detector_strings(strings);
+        let companions = std::iter::repeat_with(Vec::new)
+            .take(detectors.len())
+            .collect();
+        crate::detector_plan::CompiledDetectorPlans::compile(detectors, &interner, companions)
+            .expect("test detector plans must compile")
+    }
+
     pub struct KeywordContext {
         inner: crate::entropy::keywords::KeywordContext,
         pub threshold: f64,
@@ -3543,13 +3578,8 @@ pub mod entropy_scanner {
 
         let index = GenericOwningDetectorIndex::build(&detectors)
             .expect("test detector entropy roles must be unique");
-        let compiled = crate::entropy::policy::CompiledEntropyPolicies::compile(&detectors)
-            .expect("test detector entropy policy must compile");
-        let key_material =
-            crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicies::compile(
-                &detectors,
-            );
-        let policy = ActiveDetectorPolicy::new(&index, &compiled, &key_material);
+        let detector_plans = compile_detector_plans(&detectors);
+        let policy = ActiveDetectorPolicy::new(&index, &detector_plans);
         let secret_keywords = vec![keyword.to_string()];
         crate::entropy::scanner::find_entropy_secrets_with_precomputed_keywords_and_policy(
             &[line],
@@ -3633,13 +3663,8 @@ pub mod entropy_scanner {
             .keyword_free_min_len = Some(generic_keyword_secret_min_len);
         let index = GenericOwningDetectorIndex::build(&detectors)
             .expect("embedded detector entropy roles must be unique");
-        let compiled = crate::entropy::policy::CompiledEntropyPolicies::compile(&detectors)
-            .expect("test detector entropy policy must compile");
-        let key_material =
-            crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicies::compile(
-                &detectors,
-            );
-        let policy = ActiveDetectorPolicy::new(&index, &compiled, &key_material);
+        let detector_plans = compile_detector_plans(&detectors);
+        let policy = ActiveDetectorPolicy::new(&index, &detector_plans);
         crate::entropy::scanner::find_entropy_secrets_with_precomputed_keywords_and_policy(
             &[secret],
             &[0],
@@ -4989,7 +5014,7 @@ pub(crate) fn hot_pattern_rows(
         .iter()
         .map(|slot| {
             let entry = &scanner.ac_map[slot.ac_map_index];
-            let metadata = &scanner.metadata_by_index[entry.detector_index];
+            let metadata = &scanner.detector_plans.get(entry.detector_index).metadata;
             (
                 slot.prefix.to_vec(),
                 metadata.0.to_string(),

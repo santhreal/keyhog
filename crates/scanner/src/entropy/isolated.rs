@@ -120,7 +120,6 @@ pub(crate) fn has_isolated_bare_secret_candidate_with_lines_and_policy(
 /// Per-line predicate shared by the `&str` and `&[&str]` entry points so the
 /// innocuous-line skip + candidate-visit logic has one definition. `threshold`
 /// is already resolved by [`isolated_bare_entropy_threshold`] at the caller.
-#[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
 fn line_has_isolated_bare_secret_candidate(
     line: &str,
     threshold: f64,

@@ -266,10 +266,9 @@ impl CompiledScanner {
                 }
                 self.ac_map.get(pat_idx).map(|entry| entry.detector_index)
             })
-            .filter_map(|detector_index| {
-                self.metadata_by_index
-                    .get(detector_index)
-                    .map(|metadata| (metadata.0.as_ref(), detector_index))
+            .map(|detector_index| {
+                let plan = self.detector_plans.get(detector_index);
+                (plan.metadata.0.as_ref(), detector_index)
             })
             .collect();
         if detector_by_id.is_empty() {

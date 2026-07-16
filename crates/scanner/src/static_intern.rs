@@ -100,7 +100,7 @@ impl StaticInterner {
     {
         // Dedupe + freeze the input set. BTreeSet keeps the arena order stable
         // and deterministic across runs (matters for any index-keyed cache the
-        // scanner derives from this arena, e.g. metadata_by_index).
+        // scanner derives from this arena, e.g. detector-plan metadata).
         let mut all: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
         for s in detector_strings {
             all.insert(s.as_ref().to_owned());

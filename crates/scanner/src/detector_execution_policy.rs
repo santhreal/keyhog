@@ -18,7 +18,7 @@ pub(crate) struct CompiledDetectorExecutionPolicy {
 }
 
 impl CompiledDetectorExecutionPolicy {
-    fn compile(detector: &DetectorSpec) -> Self {
+    pub(crate) fn compile(detector: &DetectorSpec) -> Self {
         Self {
             is_generic: detector.service == "generic",
             min_len: detector.min_len,
@@ -59,26 +59,5 @@ impl CompiledDetectorExecutionPolicy {
             memchr::memmem::find(chunk_data, keyword).is_some()
                 || (text_differs && memchr::memmem::find(preprocessed, keyword).is_some())
         })
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct CompiledDetectorExecutionPolicies {
-    by_detector_index: Box<[CompiledDetectorExecutionPolicy]>,
-}
-
-impl CompiledDetectorExecutionPolicies {
-    pub(crate) fn compile(detectors: &[DetectorSpec]) -> Self {
-        Self {
-            by_detector_index: detectors
-                .iter()
-                .map(CompiledDetectorExecutionPolicy::compile)
-                .collect(),
-        }
-    }
-
-    #[inline]
-    pub(crate) fn get(&self, detector_index: usize) -> &CompiledDetectorExecutionPolicy {
-        &self.by_detector_index[detector_index]
     }
 }

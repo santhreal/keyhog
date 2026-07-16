@@ -6,6 +6,17 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- The scalar-only `--no-default-features` scanner now compiles and retains the
+  isolated-bare candidate predicate; its wrappers no longer reference an
+  implementation hidden behind acceleration feature gates. The scalar test
+  target also no longer imports ML- or SimdSieve-only adjudication hooks.
+- Detector metadata, execution facts, canonical/decoded key-material rules,
+  entropy floors/policy, ML policy, credential shape, suppression, weak-anchor
+  state, and companions now share one detector-indexed compiled plan. Scan
+  paths resolve a detector once instead of coordinating parallel vectors, and
+  the superseded batch policy containers have been removed. Missing interned
+  primary or entropy-fallback identity now fails scanner construction instead
+  of silently allocating replacement metadata.
 - Detector class, minimum length/confidence, severity, structural-password-slot,
   keywords, and public-identifier marker policy now compile into cache-local
   execution records. Named, generic, and entropy emitters no longer read those

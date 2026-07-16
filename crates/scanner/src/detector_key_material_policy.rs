@@ -50,7 +50,7 @@ pub(crate) struct CompiledDetectorKeyMaterialPolicy {
 }
 
 impl CompiledDetectorKeyMaterialPolicy {
-    fn compile(detector: &DetectorSpec) -> Self {
+    pub(crate) fn compile(detector: &DetectorSpec) -> Self {
         Self {
             decoded_hex_lengths: sorted_lengths(&detector.decoded_hex_key_material_lengths),
             canonical_hex_rules: detector
@@ -93,28 +93,6 @@ impl CompiledDetectorKeyMaterialPolicy {
         self.canonical_hex_rules
             .iter()
             .any(|rule| rule.lengths.binary_search(&value_len).is_ok())
-    }
-}
-
-/// Detector-indexed key-material programs compiled with the active corpus.
-#[derive(Debug)]
-pub(crate) struct CompiledDetectorKeyMaterialPolicies {
-    by_detector_index: Box<[CompiledDetectorKeyMaterialPolicy]>,
-}
-
-impl CompiledDetectorKeyMaterialPolicies {
-    pub(crate) fn compile(detectors: &[DetectorSpec]) -> Self {
-        Self {
-            by_detector_index: detectors
-                .iter()
-                .map(CompiledDetectorKeyMaterialPolicy::compile)
-                .collect(),
-        }
-    }
-
-    #[inline]
-    pub(crate) fn get(&self, detector_index: usize) -> &CompiledDetectorKeyMaterialPolicy {
-        &self.by_detector_index[detector_index]
     }
 }
 

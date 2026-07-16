@@ -506,6 +506,7 @@ pub(crate) struct CompiledPattern {
 }
 
 /// An optional compiled companion pattern for a detector.
+#[derive(Debug)]
 pub(crate) struct CompiledCompanion {
     pub(crate) name: String,
     pub(crate) regex: Regex,

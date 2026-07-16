@@ -141,6 +141,7 @@ pub mod ml_features_entropy_threshold_owner;
 pub mod ml_features_no_inline_tests;
 pub mod ml_features_no_unwrap_expect;
 pub mod ml_model_card_provenance;
+#[cfg(feature = "ml")]
 pub mod ml_score_cardinality;
 pub mod ml_scorer_no_inline_tests;
 pub mod ml_scorer_no_unwrap_expect;

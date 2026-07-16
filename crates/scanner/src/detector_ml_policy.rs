@@ -35,7 +35,7 @@ pub(crate) struct CompiledDetectorMlPolicy {
 }
 
 impl CompiledDetectorMlPolicy {
-    fn compile(detector: &DetectorSpec) -> Self {
+    pub(crate) fn compile(detector: &DetectorSpec) -> Self {
         let policy: DetectorMlPolicySpec = detector.ml;
         Self {
             match_mode: ActiveMlMode::compile(policy.match_mode),
@@ -45,13 +45,6 @@ impl CompiledDetectorMlPolicy {
             features: CompiledDetectorMlFeatures::compile(detector),
         }
     }
-}
-
-pub(crate) fn compile(detectors: &[DetectorSpec]) -> Vec<CompiledDetectorMlPolicy> {
-    detectors
-        .iter()
-        .map(CompiledDetectorMlPolicy::compile)
-        .collect()
 }
 
 impl CompiledDetectorMlPolicy {

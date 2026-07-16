@@ -102,6 +102,8 @@ pub(crate) mod detector_key_material_policy;
 /// Compiled cache-local form of detector-owned model policy.
 #[cfg(feature = "ml")]
 pub(crate) mod detector_ml_policy;
+/// Unified detector-indexed runtime plan compiled from detector TOMLs.
+pub(crate) mod detector_plan;
 /// Core scan execution engine.
 pub(crate) mod engine;
 /// Shannon entropy analysis for secret detection.

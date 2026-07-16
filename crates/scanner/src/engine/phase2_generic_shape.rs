@@ -71,13 +71,20 @@ impl CompiledScanner {
             self.generic_owning_detector.keyword_free_owner_index()
         }
         .unwrap_or(owning_detector_index);
-        let Some(entropy_floor) = self.detector_entropy_floors.effective_floor(
-            floor_detector_index,
-            value.len(),
-            self.config.entropy_threshold,
-        ) else {
+        let Some(entropy_floor) = self
+            .detector_plans
+            .get(floor_detector_index)
+            .entropy_floor
+            .as_ref()
+            .map(|policy| policy.effective_floor(value.len(), self.config.entropy_threshold))
+        else {
             tracing::error!(
-                detector_id = self.metadata_by_index[floor_detector_index].0.as_ref(),
+                detector_id = self
+                    .detector_plans
+                    .get(floor_detector_index)
+                    .metadata
+                    .0
+                    .as_ref(),
                 "generic assignment floor owner has no compiled detector-local policy"
             );
             return Some(GenericValueShapeStage::EntropyPolicyUnavailable);

@@ -20,7 +20,7 @@ fn source_adjusted_severity(source_type: &str, severity: Severity) -> Severity {
 pub(crate) fn build_raw_match(
     detector_severity: Severity,
     // Pre-interned (detector_id, detector_name, service) for this detector,
-    // cloned by index from `CompiledScanner::metadata_by_index` instead of
+    // cloned by index from `CompiledScanner::detector_plans` instead of
     // re-hashed per match (PERF-locality_intern-1). Byte-identical to the
     // `intern_metadata` result it replaces.
     metadata: (Arc<str>, Arc<str>, Arc<str>),

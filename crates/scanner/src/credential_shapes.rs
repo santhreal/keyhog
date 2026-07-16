@@ -104,27 +104,22 @@ impl CredentialShapeRule {
     }
 }
 
-/// Compile the per-detector credential-shape gate for every detector, indexed to
-/// match `detectors`. Each detector's shape comes from its OWN spec
+/// Compile one detector's credential-shape gate for its runtime plan. The
+/// shape comes from its OWN spec
 /// (`DetectorSpec::credential_shape`, DET-0), validated fail-closed
 /// (`CredentialShape::validate`) so a malformed shape is a build error, never a
 /// silent skip. A detector with no `[detector.credential_shape]` maps to `None`
-/// (no shape gate). There is no id list and no "unknown detector" case, the
+/// (no shape gate). There is no id list and no "unknown detector" case; the
 /// shape rides on the detector's own spec, so it cannot name a detector that does
 /// not exist.
-pub(crate) fn build_detector_shape_rules(
-    detectors: &[DetectorSpec],
-) -> Result<Vec<Option<CredentialShapeRule>>, String> {
-    detectors
-        .iter()
-        .map(|detector| match &detector.credential_shape {
-            None => Ok(None),
-            Some(shape) => {
-                shape.validate(&detector.id)?;
-                Ok(Some(CredentialShapeRule::from_spec(shape)))
-            }
-        })
-        .collect()
+pub(crate) fn compile_detector_shape_rule(
+    detector: &DetectorSpec,
+) -> Result<Option<CredentialShapeRule>, String> {
+    let Some(shape) = detector.credential_shape.as_ref() else {
+        return Ok(None);
+    };
+    shape.validate(&detector.id)?;
+    Ok(Some(CredentialShapeRule::from_spec(shape)))
 }
 
 #[cfg(test)]

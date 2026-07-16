@@ -92,9 +92,9 @@ fn engine_named_detector_suppression_routes_through_adjudicator() {
         "engine/process.rs must not name adjudicator stages directly"
     );
     assert!(
-        process.contains("detector_pattern_weak_anchor(entry)")
+        process.contains("detector_plan.pattern_weak_anchor(entry.weak_anchor)")
             && !process.contains("crate::suppression::detector_weak_anchor(")
-            && !process.contains("detector_weak_anchor_base_by_index\n            .get")
+            && !process.contains("detector_plans.get(entry.detector_index).weak_anchor_base")
             && !process.contains(".unwrap_or_else(|| crate::suppression::detector_weak_anchor"),
         "engine/process.rs must resolve pattern-local weak-anchor policy through the construction-time base cache and compiled pattern bit, not silently recompute detector-wide classification on cache/index mismatch"
     );
@@ -189,7 +189,7 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
             && credential_shapes.contains("body_min_length")
             && credential_shapes.contains("body_max_length")
             && credential_shapes.contains("detector.credential_shape")
-            && credential_shapes.contains("build_detector_shape_rules")
+            && credential_shapes.contains("compile_detector_shape_rule")
             && credential_shapes.contains("CredentialShapeRule::from_spec")
             && credential_shapes.contains("shape.validate(")
             && !credential_shapes.contains("detector-credential-shapes.toml")
@@ -200,7 +200,7 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
         "detector credential shape must be a per-detector DetectorSpec::credential_shape (DET-0), compiled per detector from the detector's own spec, not a Tier-B rules-file list"
     );
     assert!(
-        process.contains("credential_shape_by_detector_index")
+        process.contains("detector_plan.credential_shape.as_ref()")
             && process.contains("ProcessCandidateSignals::from_match("),
         "engine/process.rs must pass construction-time detector shape policy into adjudicate"
     );

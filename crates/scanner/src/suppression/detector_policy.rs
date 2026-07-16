@@ -8,7 +8,7 @@ pub(crate) struct DetectorSuppressionPolicy {
 }
 
 impl DetectorSuppressionPolicy {
-    fn compile(spec: &keyhog_core::DetectorSpec) -> Result<Option<Self>, String> {
+    pub(crate) fn compile(spec: &keyhog_core::DetectorSpec) -> Result<Option<Self>, String> {
         if spec.allowlist_paths.is_empty()
             && spec.allowlist_values.is_empty()
             && spec.stopwords.is_empty()
@@ -117,44 +117,12 @@ impl DetectorSuppressionPolicy {
     }
 }
 
-pub(crate) struct CompiledDetectorSuppressions {
-    slot_by_detector: Box<[u32]>,
-    policies: Vec<DetectorSuppressionPolicy>,
-}
-
-impl CompiledDetectorSuppressions {
-    pub(crate) fn compile(detectors: &[keyhog_core::DetectorSpec]) -> Result<Self, String> {
-        let mut slot_by_detector = Vec::with_capacity(detectors.len());
-        let mut policies = Vec::new();
-        for spec in detectors {
-            let Some(policy) = DetectorSuppressionPolicy::compile(spec)? else {
-                slot_by_detector.push(0);
-                continue;
-            };
-            policies.push(policy);
-            let slot = u32::try_from(policies.len()).map_err(|_| {
-                "detector suppression policy count exceeds the u32 index capacity".to_string()
-            })?;
-            slot_by_detector.push(slot);
-        }
-        Ok(Self {
-            slot_by_detector: slot_by_detector.into_boxed_slice(),
-            policies,
-        })
-    }
-
-    pub(crate) fn get(&self, detector_index: usize) -> Option<&DetectorSuppressionPolicy> {
-        let slot = *self.slot_by_detector.get(detector_index)?;
-        self.policies.get(slot.checked_sub(1)? as usize)
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::CompiledDetectorSuppressions;
+    use super::DetectorSuppressionPolicy;
 
     #[test]
-    fn dense_slots_follow_the_active_detector_order() {
+    fn detector_local_policy_compilation_preserves_empty_and_active_cases() {
         let detectors = [
             keyhog_core::DetectorSpec {
                 id: "no-policy".into(),
@@ -172,11 +140,15 @@ mod tests {
             },
         ];
 
-        let policies = CompiledDetectorSuppressions::compile(&detectors).expect("compile policies");
-        assert!(policies.get(0).is_none());
-        assert!(policies.get(1).is_some());
-        assert!(policies.get(2).is_some());
-        assert!(policies.get(3).is_none());
+        assert!(DetectorSuppressionPolicy::compile(&detectors[0])
+            .expect("compile empty policy")
+            .is_none());
+        assert!(DetectorSuppressionPolicy::compile(&detectors[1])
+            .expect("compile value policy")
+            .is_some());
+        assert!(DetectorSuppressionPolicy::compile(&detectors[2])
+            .expect("compile stopword policy")
+            .is_some());
     }
 
     #[test]
@@ -187,7 +159,7 @@ mod tests {
             ..Default::default()
         }];
 
-        let error = CompiledDetectorSuppressions::compile(&detectors)
+        let error = DetectorSuppressionPolicy::compile(&detectors[0])
             .err()
             .expect("invalid regex must fail compilation");
         assert!(error.contains("broken-policy"), "missing detector: {error}");

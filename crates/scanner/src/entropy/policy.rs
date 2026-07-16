@@ -4,7 +4,7 @@ use keyhog_core::{DetectorSpec, EntropyShapeSpec};
 /// Runtime lookup performs one binary search and never walks optional TOML
 /// fields or substitutes a scanner-owned threshold.
 #[derive(Debug)]
-struct CompiledEntropyFloorPolicy {
+pub(crate) struct CompiledEntropyFloorPolicy {
     max_lengths: Box<[usize]>,
     floors: Box<[f64]>,
     catch_all: f64,
@@ -12,7 +12,7 @@ struct CompiledEntropyFloorPolicy {
 }
 
 impl CompiledEntropyFloorPolicy {
-    fn compile(detector: &DetectorSpec) -> Result<Option<Self>, String> {
+    pub(crate) fn compile(detector: &DetectorSpec) -> Result<Option<Self>, String> {
         if detector.entropy_floor.is_empty() {
             return Ok(None);
         }
@@ -62,7 +62,7 @@ impl CompiledEntropyFloorPolicy {
     }
 
     #[inline]
-    fn effective_floor(&self, credential_len: usize, operator_threshold: f64) -> f64 {
+    pub(crate) fn effective_floor(&self, credential_len: usize, operator_threshold: f64) -> f64 {
         let bucket = self
             .max_lengths
             .partition_point(|max_len| credential_len > *max_len);
@@ -72,43 +72,6 @@ impl CompiledEntropyFloorPolicy {
         } else {
             base
         }
-    }
-}
-
-/// Detector-indexed floor programs used by named, weak-anchor, and generic
-/// candidate paths, compiled once with the scanner.
-#[derive(Debug)]
-pub(crate) struct CompiledDetectorEntropyFloors {
-    by_detector_index: Vec<Option<CompiledEntropyFloorPolicy>>,
-}
-
-impl CompiledDetectorEntropyFloors {
-    pub(crate) fn compile(detectors: &[DetectorSpec]) -> Result<Self, String> {
-        let by_detector_index = detectors
-            .iter()
-            .map(CompiledEntropyFloorPolicy::compile)
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(Self { by_detector_index })
-    }
-
-    #[inline]
-    pub(crate) fn effective_floor(
-        &self,
-        detector_index: usize,
-        credential_len: usize,
-        operator_threshold: f64,
-    ) -> Option<f64> {
-        self.by_detector_index
-            .get(detector_index)
-            .and_then(Option::as_ref)
-            .map(|policy| policy.effective_floor(credential_len, operator_threshold))
-    }
-
-    #[inline]
-    pub(crate) fn has_policy(&self, detector_index: usize) -> bool {
-        self.by_detector_index
-            .get(detector_index)
-            .is_some_and(Option::is_some)
     }
 }
 
@@ -171,7 +134,7 @@ impl CompiledEntropyPolicy {
         })
     }
 
-    fn compile(detector: &DetectorSpec) -> Result<Self, String> {
+    pub(crate) fn compile(detector: &DetectorSpec) -> Result<Self, String> {
         let plausibility = detector.plausibility.ok_or_else(|| {
             format!(
                 "detector {:?} owns entropy detection but omits [detector.plausibility]",
@@ -246,40 +209,23 @@ impl CompiledEntropyPolicy {
     }
 }
 
-#[derive(Debug, Default)]
-pub(crate) struct CompiledEntropyPolicies {
-    by_detector_index: Vec<Option<CompiledEntropyPolicy>>,
-}
-
-impl CompiledEntropyPolicies {
-    pub(crate) fn compile(detectors: &[DetectorSpec]) -> Result<Self, String> {
-        let mut by_detector_index = Vec::with_capacity(detectors.len());
-        for detector in detectors {
-            if !detector.owns_entropy_policy() {
-                by_detector_index.push(None);
-                continue;
-            }
-            let metadata = detector.entropy_fallback.as_ref().ok_or_else(|| {
-                format!(
-                    "detector {:?} owns entropy detection but omits [detector.entropy_fallback]",
-                    detector.id
-                )
-            })?;
-            if !metadata.has_valid_identity() {
-                return Err(format!(
-                    "detector {:?} declares invalid entropy_fallback metadata; id must use a lowercase entropy- namespace and name/service must be non-empty",
-                    detector.id
-                ));
-            }
-            by_detector_index.push(Some(CompiledEntropyPolicy::compile(detector)?));
-        }
-        Ok(Self { by_detector_index })
+pub(crate) fn compile_entropy_policy(
+    detector: &DetectorSpec,
+) -> Result<Option<CompiledEntropyPolicy>, String> {
+    if !detector.owns_entropy_policy() {
+        return Ok(None);
     }
-
-    #[inline]
-    pub(crate) fn get(&self, detector_index: usize) -> Option<&CompiledEntropyPolicy> {
-        self.by_detector_index
-            .get(detector_index)
-            .and_then(Option::as_ref)
+    let metadata = detector.entropy_fallback.as_ref().ok_or_else(|| {
+        format!(
+            "detector {:?} owns entropy detection but omits [detector.entropy_fallback]",
+            detector.id
+        )
+    })?;
+    if !metadata.has_valid_identity() {
+        return Err(format!(
+            "detector {:?} declares invalid entropy_fallback metadata; id must use a lowercase entropy- namespace and name/service must be non-empty",
+            detector.id
+        ));
     }
+    CompiledEntropyPolicy::compile(detector).map(Some)
 }

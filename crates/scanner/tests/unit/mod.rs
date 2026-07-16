@@ -77,6 +77,7 @@ pub mod decode;
 pub mod decode_caesar_shift_selection;
 pub mod decode_structure;
 pub mod detector_execution_policy;
+pub mod detector_plan;
 pub mod doc_marker_example_domain_case_insensitive;
 pub mod engine;
 pub mod engine_backend;
@@ -178,3 +179,38 @@ pub mod unicode_rtl_override_removal;
 pub mod unicode_separator_and_bidi_completeness;
 pub mod unicode_zero_width_removal;
 pub mod z85_decode_alphabet_contract;
+
+pub(crate) fn compiled_detector_plans(
+    detectors: &[keyhog_core::DetectorSpec],
+) -> crate::detector_plan::CompiledDetectorPlans {
+    let strings = detectors
+        .iter()
+        .flat_map(|detector| {
+            [
+                detector.id.as_str(),
+                detector.name.as_str(),
+                detector.service.as_str(),
+            ]
+            .into_iter()
+            .chain(
+                detector
+                    .entropy_fallback
+                    .as_ref()
+                    .into_iter()
+                    .flat_map(|metadata| {
+                        [
+                            metadata.id.as_str(),
+                            metadata.name.as_str(),
+                            metadata.service.as_str(),
+                        ]
+                    }),
+            )
+        })
+        .collect::<Vec<_>>();
+    let interner = crate::static_intern::StaticInterner::from_detector_strings(strings);
+    let companions = std::iter::repeat_with(Vec::new)
+        .take(detectors.len())
+        .collect();
+    crate::detector_plan::CompiledDetectorPlans::compile(detectors, &interner, companions)
+        .expect("test detector plans must compile")
+}

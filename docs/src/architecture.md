@@ -224,6 +224,13 @@ matchers and policies are built, `CompiledScanner` drops `DetectorSpec` itself;
 the flexible structure remains a configuration and introspection schema, not a
 second runtime policy owner.
 
+Each detector index addresses one compiled plan containing its interned primary
+and entropy-fallback metadata, execution facts, canonical/decoded key-material
+program, entropy floor and policy, ML policy, credential-shape gate,
+suppression policy, weak-anchor state, and compiled companions. Those policies
+remain separate modules by responsibility, but their runtime ownership and
+index alignment live in one structure rather than parallel vectors.
+
 **The rule.** Emission paths produce `CandidateMatch` values and typed signals;
 `adjudicate_match` owns the ordered suppression verdict. Path owners may compute
 context-specific facts (entropy shape, generic bridge boundaries, named

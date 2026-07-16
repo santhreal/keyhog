@@ -242,14 +242,11 @@ fn one_pass_resolution_keeps_canonical_policy_independent_of_entropy_priority() 
 #[test]
 fn compiled_key_material_program_is_exactly_equivalent_to_detector_schema() {
     let detectors = keyhog_core::embedded_detector_specs();
-    let compiled =
-        crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicies::compile(
-            detectors,
-        );
+    let compiled = crate::unit::compiled_detector_plans(detectors);
     let lengths = [16usize, 24, 32, 40, 48, 56, 64, 96];
 
     for (detector_index, detector) in detectors.iter().enumerate() {
-        let policy = compiled.get(detector_index);
+        let policy = &compiled.get(detector_index).key_material;
         let mut keywords = vec!["unknown".to_string(), "vendor_key".to_string()];
         for rule in &detector.canonical_hex_key_material {
             keywords.extend(rule.keywords.iter().cloned());

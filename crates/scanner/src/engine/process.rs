@@ -16,8 +16,7 @@ use std::collections::HashMap;
 
 impl CompiledScanner {
     pub(crate) fn match_companions(
-        &self,
-        entry: &CompiledPattern,
+        detector_companions: &[CompiledCompanion],
         preprocessed: &ScannerPreprocessedText<'_>,
         line: usize,
     ) -> Option<HashMap<String, String>> {
@@ -25,9 +24,6 @@ impl CompiledScanner {
         // sizing a bucket array (`HashMap::new()` is allocation-free until the
         // first insert) and without entering the search loop. Only detectors
         // that actually have companions pay for the map.
-        let Some(detector_companions) = self.companions.get(entry.detector_index) else {
-            return Some(HashMap::new());
-        };
         if detector_companions.is_empty() {
             return Some(HashMap::new());
         }
@@ -46,6 +42,7 @@ impl CompiledScanner {
     pub(super) fn process_match(
         &self,
         entry: &CompiledPattern,
+        detector_plan: &crate::detector_plan::CompiledDetectorPlan,
         data: &str,
         preprocessed: &ScannerPreprocessedText<'_>,
         line_offsets: &[usize],
@@ -62,15 +59,13 @@ impl CompiledScanner {
         let (credential, match_end) =
             extend_known_prefix_credential(data, credential, credential_end);
         let line = match_line_number(preprocessed, line_offsets, credential_start);
-        let execution_policy = self.detector_execution_policies.get(entry.detector_index);
+        let execution_policy = &detector_plan.execution;
         let is_generic = execution_policy.is_generic;
 
         let process_signals = crate::adjudicate::ProcessCandidateSignals::from_match(
             is_generic,
             execution_policy.min_len,
-            self.credential_shape_by_detector_index
-                .get(entry.detector_index)
-                .and_then(Option::as_ref),
+            detector_plan.credential_shape.as_ref(),
             credential,
             data,
             credential_start,
@@ -119,10 +114,8 @@ impl CompiledScanner {
         // Combine the construction-time detector base with the explicit policy
         // bit compiled beside this exact regex. Index mismatch is an internal
         // construction bug and remains loud.
-        let weak_anchor = self.detector_pattern_weak_anchor(entry);
-        let key_material_policy = self
-            .detector_key_material_policies
-            .get(entry.detector_index);
+        let weak_anchor = detector_plan.pattern_weak_anchor(entry.weak_anchor);
+        let key_material_policy = &detector_plan.key_material;
         let allow_decoded_hex_key_material = key_material_policy.allows_decoded_hex_len(
             crate::decode_structure::evidence(credential).decoded_hex_text_len(),
         );
@@ -131,7 +124,7 @@ impl CompiledScanner {
                 chunk.metadata.path.as_deref(),
                 inferred_context,
                 Some(chunk.metadata.source_type.as_ref()),
-                self.detector_suppression_by_index.get(entry.detector_index),
+                detector_plan.suppression.as_ref(),
                 !is_generic,
                 weak_anchor,
                 execution_policy.structural_password_slot,
@@ -154,18 +147,15 @@ impl CompiledScanner {
 
         // `None` means a required companion is missing; record that hard skip
         // instead of treating it like an empty companion set.
-        let companions = if self.companions.is_empty() {
-            HashMap::new()
-        } else {
-            match self.match_companions(entry, preprocessed, line) {
-                Some(c) => c,
-                None => {
-                    crate::adjudicate::record_missing_required_companion_suppression(
-                        chunk.metadata.path.as_deref(),
-                        credential,
-                    );
-                    return;
-                }
+        let companions = match Self::match_companions(&detector_plan.companions, preprocessed, line)
+        {
+            Some(companions) => companions,
+            None => {
+                crate::adjudicate::record_missing_required_companion_suppression(
+                    chunk.metadata.path.as_deref(),
+                    credential,
+                );
+                return;
             }
         };
         let entropy = match_entropy(credential.as_bytes());
@@ -173,11 +163,9 @@ impl CompiledScanner {
         let is_weakly_anchored = weak_anchor;
         let effective_entropy_floor = (is_generic || is_weakly_anchored)
             .then(|| {
-                self.detector_entropy_floors.effective_floor(
-                    entry.detector_index,
-                    credential.len(),
-                    self.config.entropy_threshold,
-                )
+                detector_plan.entropy_floor.as_ref().map(|policy| {
+                    policy.effective_floor(credential.len(), self.config.entropy_threshold)
+                })
             })
             .flatten();
         let entropy_shape_ctx = crate::adjudicate::MatchCtx::for_process_signals(
@@ -205,14 +193,12 @@ impl CompiledScanner {
         // after the cheaper shape and entropy checks.
         #[cfg(feature = "entropy")]
         let bpe_bound = if is_generic {
-            self.entropy_policies
-                .get(entry.detector_index)
-                .and_then(|policy| {
-                    policy.bpe_bound(
-                        self.config.entropy_bpe_max_bytes_per_token,
-                        self.config.entropy_bpe_max_bytes_per_token_override,
-                    )
-                })
+            detector_plan.entropy.as_ref().and_then(|policy| {
+                policy.bpe_bound(
+                    self.config.entropy_bpe_max_bytes_per_token,
+                    self.config.entropy_bpe_max_bytes_per_token_override,
+                )
+            })
         } else {
             None
         };
@@ -269,7 +255,7 @@ impl CompiledScanner {
         // fallbacks and weak anchors.
         let is_named_detector = !is_generic && !weak_anchor;
         #[cfg(feature = "ml")]
-        let detector_ml_policy = self.detector_ml_policies[entry.detector_index];
+        let detector_ml_policy = detector_plan.ml;
         #[cfg(feature = "ml")]
         let detector_ml_mode = self
             .config
@@ -316,7 +302,7 @@ impl CompiledScanner {
                     chunk.metadata.path.as_deref(),
                     credential,
                     crate::adjudicate::ReportAdjudicationPolicy {
-                        detector_id: self.metadata_by_index[entry.detector_index].0.as_ref(),
+                        detector_id: detector_plan.metadata.0.as_ref(),
                         code_context: inferred_context,
                         confidence: policy_conf,
                         min_confidence_floor,
@@ -335,7 +321,7 @@ impl CompiledScanner {
                     preprocessed.source_offset_for_match(&chunk.data, credential_start, credential);
                 let raw_match = build_raw_match(
                     execution_policy.severity,
-                    self.interned_detector_metadata(entry.detector_index),
+                    detector_plan.cloned_metadata(),
                     chunk,
                     credential,
                     companions,
@@ -365,13 +351,13 @@ impl CompiledScanner {
                     credential,
                     detector_ml_policy.context_radius_lines,
                     &self.config,
-                    self.metadata_by_index[entry.detector_index].2.as_ref(),
+                    detector_plan.metadata.2.as_ref(),
                     detector_ml_policy.features,
                     crate::ml_scorer::MlCandidateChannel::Pattern,
                 );
                 let raw_match = build_raw_match(
                     execution_policy.severity,
-                    self.interned_detector_metadata(entry.detector_index),
+                    detector_plan.cloned_metadata(),
                     chunk,
                     credential,
                     companions,

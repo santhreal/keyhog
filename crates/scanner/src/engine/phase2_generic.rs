@@ -262,9 +262,10 @@ impl CompiledScanner {
                     continue;
                 };
                 let owning_detector_index = owner_resolution.owning_index;
-                let execution_policy = self.detector_execution_policies.get(owning_detector_index);
-                let metadata = &self.metadata_by_index[owning_detector_index];
-                let Some(owning_policy) = self.entropy_policies.get(owning_detector_index) else {
+                let detector_plan = self.detector_plans.get(owning_detector_index);
+                let execution_policy = &detector_plan.execution;
+                let metadata = &detector_plan.metadata;
+                let Some(owning_policy) = detector_plan.entropy.as_ref() else {
                     tracing::error!(
                         detector_id = metadata.0.as_ref(),
                         "generic assignment owner has no compiled entropy policy; dropping candidate"
@@ -272,18 +273,20 @@ impl CompiledScanner {
                     continue;
                 };
                 let owning_detector_max_len = owning_policy.max_len;
-                let canonical_key_material_policy = self
-                    .detector_key_material_policies
-                    .get(owner_resolution.canonical_index);
+                let canonical_key_material_policy =
+                    self.detector_plans.get(owner_resolution.canonical_index);
                 // A complete pure-hex value admitted by the detector that
                 // declares its canonical policy is key material rather than a
                 // digest. Missing detector policy fails closed. Ordinary
                 // keyword policy ownership remains separate for entropy/BPE.
                 let allow_canonical_hex_key = {
                     if transport_decoded {
-                        canonical_key_material_policy.allows_decoded_hex(value)
+                        canonical_key_material_policy
+                            .key_material
+                            .allows_decoded_hex(value)
                     } else {
                         canonical_key_material_policy
+                            .key_material
                             .allows_canonical_hex(keyword_match.as_str(), value)
                     }
                 };
@@ -291,8 +294,9 @@ impl CompiledScanner {
                     is_strong_keyword_anchored_encoded_text_secret(keyword_match.as_str(), value)
                         || crate::decode_structure::decodes_to_printable_text(value);
                 let allow_decoded_hex_key_material = self
-                    .detector_key_material_policies
+                    .detector_plans
                     .get(owning_detector_index)
+                    .key_material
                     .allows_decoded_hex_len(
                         crate::decode_structure::evidence(value).decoded_hex_text_len(),
                     );
@@ -302,7 +306,7 @@ impl CompiledScanner {
                 // dropped generic-secret candidate is visible to `--dogfood`
                 // (Law-10), then continue. Zero-cost when dogfood is off (the
                 // `is_dogfood_enabled()` atomic short-circuits before any work).
-                let mut shape_rejected = if value.len() > owning_detector_max_len {
+                let shape_rejected = if value.len() > owning_detector_max_len {
                     Some(crate::adjudicate::GenericValueShapeStage::ValueTooLong)
                 } else {
                     self.generic_value_shape_rejected(
@@ -328,24 +332,18 @@ impl CompiledScanner {
                 // subwords tokenize efficiently by construction, and the exact
                 // keyword/length policy is the stronger signal for that shape.
                 #[cfg(feature = "entropy")]
-                let bpe_bound = if shape_rejected.is_none()
-                    && !allow_canonical_hex_key
-                    && !allow_encoded_text_secret
-                {
-                    owning_policy.bpe_bound(
-                        self.config.entropy_bpe_max_bytes_per_token,
-                        self.config.entropy_bpe_max_bytes_per_token_override,
-                    )
-                } else {
-                    None
-                };
-                #[cfg(feature = "entropy")]
-                if let Some(bpe_bound) = bpe_bound {
-                    if crate::entropy::bpe::is_word_like_low_bpe(value, bpe_bound) {
-                        shape_rejected =
-                            Some(crate::adjudicate::GenericValueShapeStage::WordLikeLowBpe);
+                let shape_rejected = shape_rejected.or_else(|| {
+                    if allow_canonical_hex_key || allow_encoded_text_secret {
+                        return None;
                     }
-                }
+                    owning_policy
+                        .bpe_bound(
+                            self.config.entropy_bpe_max_bytes_per_token,
+                            self.config.entropy_bpe_max_bytes_per_token_override,
+                        )
+                        .filter(|bound| crate::entropy::bpe::is_word_like_low_bpe(value, *bound))
+                        .map(|_| crate::adjudicate::GenericValueShapeStage::WordLikeLowBpe)
+                });
 
                 if let Some(reason) = shape_rejected {
                     let generic_ctx = crate::adjudicate::MatchCtx::for_generic_bridge(
@@ -365,9 +363,9 @@ impl CompiledScanner {
                     continue;
                 }
 
-                if let Some(stage_id) = self
-                    .detector_suppression_by_index
-                    .get(owning_detector_index)
+                if let Some(stage_id) = detector_plan
+                    .suppression
+                    .as_ref()
                     .and_then(|policy| policy.full_stage(chunk.metadata.path.as_deref(), value))
                 {
                     crate::adjudicate::record_suppression(
@@ -464,7 +462,7 @@ impl CompiledScanner {
                 };
 
                 #[cfg(feature = "ml")]
-                let ml_policy = self.detector_ml_policies[owning_detector_index];
+                let ml_policy = detector_plan.ml;
                 #[cfg(feature = "ml")]
                 if let Some(ml_mode) = self
                     .config

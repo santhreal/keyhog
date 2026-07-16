@@ -249,33 +249,12 @@ pub struct CompiledScanner {
     /// but adds this cost to every GPU one-shot observation.
     pub(crate) autoroute_gpu_shared_cold_ns: std::sync::atomic::AtomicU64,
     pub(crate) static_intern: Arc<crate::static_intern::StaticInterner>,
-    /// Per-detector interned `(id, name, service)` metadata triple, indexed by
-    /// `detector_index`. Built ONCE at scanner construction from the same
-    /// frozen `StaticInterner` the per-match path used to re-hash against.
-    /// Every emission site has the detector index in hand, so emitting metadata
-    /// is three `Arc::clone`s (atomic refcount bumps) instead of three CHD
-    /// perfect-hash lookups (2x FNV-1a + verify-hash + full string compare per
-    /// field). The strings are byte-identical to `static_intern.lookup(...)`
-    /// because they ARE its arena entries (see `perf_locality_intern.rs`).
-    pub(crate) metadata_by_index: Vec<(Arc<str>, Arc<str>, Arc<str>)>,
-    /// Cache-local scalar and marker policy compiled from each detector TOML.
-    /// Named, generic, and entropy emitters consume this instead of reading the
-    /// flexible detector schema per candidate.
-    pub(crate) detector_execution_policies:
-        crate::detector_execution_policy::CompiledDetectorExecutionPolicies,
-    /// Detector-wide weak-anchor mode compiled from explicit detector and
-    /// detector TOML fields. The per-match path combines this with the matched
-    /// `CompiledPattern::weak_anchor` bit, never regex-text inference.
-    pub(crate) detector_weak_anchor_base_by_index: Vec<crate::suppression::WeakAnchorBase>,
-    /// Active detector-owned path, value, and stopword suppression policy,
-    /// indexed by `detector_index`. Compiled from the exact corpus supplied to
-    /// this scanner, so custom detectors never inherit or miss embedded policy.
-    pub(crate) detector_suppression_by_index: crate::suppression::CompiledDetectorSuppressions,
-    /// Canonical and transport-decoded hex policy compiled from each detector
-    /// TOML. Candidate paths index compact rules instead of walking schema
-    /// vectors and normalizing declared keywords repeatedly.
-    pub(crate) detector_key_material_policies:
-        crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicies,
+    /// One detector-indexed runtime owner for interned identity, execution,
+    /// entropy, key material, suppression, shape, companion, weak-anchor, and
+    /// ML policy compiled from the detector TOMLs. Global matchers still span
+    /// detectors, but candidate execution reaches detector-local behavior only
+    /// through this plan.
+    pub(crate) detector_plans: crate::detector_plan::CompiledDetectorPlans,
     /// Normalized assignment-key names owned by service-specific named
     /// detectors, e.g. `segment_write_key`. The generic assignment bridge uses
     /// this to avoid emitting a weaker generic finding for an LHS that a loaded
@@ -300,18 +279,6 @@ pub struct CompiledScanner {
     /// preserves the exact first-match-by-exact-or-normalized semantics. Built
     /// ONCE at construction (see [`crate::generic_keyword_owner::GenericOwningDetectorIndex`]).
     pub(crate) generic_owning_detector: crate::generic_keyword_owner::GenericOwningDetectorIndex,
-    /// Compact detector-owned model policy, indexed by detector index. Feature
-    /// extraction and score combination never re-read optional schema fields.
-    #[cfg(feature = "ml")]
-    pub(crate) detector_ml_policies: Vec<crate::detector_ml_policy::CompiledDetectorMlPolicy>,
-    /// Complete detector-owned entropy policy, resolved once at scanner build.
-    /// Hot candidate paths index concrete values instead of re-reading optional
-    /// schema fields or falling back to scanner constants.
-    #[cfg(feature = "entropy")]
-    pub(crate) entropy_policies: crate::entropy::policy::CompiledEntropyPolicies,
-    /// Detector length-bucket entropy floors compiled into primitive lookup
-    /// tables. Named and generic hot paths never interpret optional TOML fields.
-    pub(crate) detector_entropy_floors: crate::entropy::policy::CompiledDetectorEntropyFloors,
     /// Per-`ac_map` regex byte upper bound for GPU hit-local validation. `None`
     /// means the detector regex is unbounded or unparsable by the AST bounder,
     /// so GPU validation must keep the full prepared-chunk oracle.
@@ -336,12 +303,6 @@ pub struct CompiledScanner {
         Option<scan_postprocess::confirmed_anchor::ConfirmedAnchorIndex>,
     pub(crate) prefix_propagation: CsrU32,
     pub(crate) phase2_patterns: Vec<(CompiledPattern, Vec<String>)>,
-    pub(crate) companions: Vec<Vec<CompiledCompanion>>,
-    /// Detector-owned credential shape rules, indexed by detector index.
-    /// These come from Tier-B data so per-detector length contracts do not
-    /// live as hardcoded adjudicator branches.
-    pub(crate) credential_shape_by_detector_index:
-        Vec<Option<crate::credential_shapes::CredentialShapeRule>>,
     pub(crate) same_prefix_patterns: CsrU32,
     pub(crate) phase2_keyword_ac: Option<AhoCorasick>,
     pub(crate) phase2_keyword_to_patterns: CsrU32,
@@ -397,8 +358,6 @@ pub struct CompiledScanner {
     /// This keeps every active generic owner on its own identity without a
     /// scanner-global class table or detector-ID branch. A missing entry is a
     /// compile-time corpus error and is never replaced with a guessed label.
-    #[cfg(feature = "entropy")]
-    pub(crate) entropy_metadata_by_detector_index: Vec<Option<(Arc<str>, Arc<str>, Arc<str>)>>,
     pub config: ScannerConfig,
     pub(crate) alphabet_screen: Option<crate::alphabet_filter::AlphabetScreen>,
     pub(crate) bigram_bloom: crate::bigram_bloom::BigramBloom,

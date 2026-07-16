@@ -185,7 +185,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
 
     /// Number of loaded detectors.
     pub(crate) fn detector_count(&self) -> usize {
-        self.metadata_by_index.len()
+        self.detector_plans.len()
     }
 
     /// Pre-interned `(detector_id, detector_name, service)` triple for the
@@ -194,30 +194,13 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
     /// frozen detector metadata (PERF-locality_intern-1). Returns byte-for-byte
     /// the same `Arc<str>` values `static_intern.lookup(...)` would, because
     /// they ARE the same arena entries, so emitted findings are unchanged.
+    #[cfg(test)]
     #[inline]
     pub(crate) fn interned_detector_metadata(
         &self,
         detector_index: usize,
     ) -> (Arc<str>, Arc<str>, Arc<str>) {
-        let (id, name, service) = &self.metadata_by_index[detector_index];
-        (Arc::clone(id), Arc::clone(name), Arc::clone(service))
-    }
-
-    /// Effective weak-anchor for the matched pattern `entry`.
-    ///
-    /// Combines the precomputed detector-wide mode with the exact matched
-    /// pattern's compiled TOML declaration. Index directly so an index-parallel
-    /// construction bug is loud.
-    #[inline]
-    pub(crate) fn detector_pattern_weak_anchor(
-        &self,
-        entry: &crate::types::CompiledPattern,
-    ) -> bool {
-        match self.detector_weak_anchor_base_by_index[entry.detector_index] {
-            crate::suppression::WeakAnchorBase::Always => true,
-            crate::suppression::WeakAnchorBase::Never => false,
-            crate::suppression::WeakAnchorBase::PerPattern => entry.weak_anchor,
-        }
+        self.detector_plans.get(detector_index).cloned_metadata()
     }
 
     /// Total number of patterns (AC + phase-2 capture).
@@ -394,7 +377,12 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         let mut b = Phase2PoolBreakdown::default();
         for &idx in &self.phase2_always_active_indices {
             let pattern = &self.phase2_patterns[idx].0;
-            let id = self.metadata_by_index[pattern.detector_index].0.as_ref();
+            let id = self
+                .detector_plans
+                .get(pattern.detector_index)
+                .metadata
+                .0
+                .as_ref();
             let generic_entropy = crate::detector_ids::is_generic_or_entropy_detector(id);
             let homoglyph = pattern.homoglyph_variant;
             match (generic_entropy, homoglyph) {
