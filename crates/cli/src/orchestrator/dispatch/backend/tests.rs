@@ -3045,7 +3045,8 @@ fn cached_router_loads_persisted_decision_and_fails_loud_on_missing_bucket() {
     );
     assert_eq!(
         router
-            .choose(&scanner, None, &hit_batch)
+            .choose_with_plan(&scanner, None, &hit_batch)
+            .map(|selection| selection.backend)
             .expect("cache hit should choose persisted backend"),
         if scanner.simd_backend_available() {
             ScanBackend::SimdCpu
@@ -3054,7 +3055,8 @@ fn cached_router_loads_persisted_decision_and_fails_loud_on_missing_bucket() {
         }
     );
     let miss = router
-        .choose(&scanner, None, &miss_batch)
+        .choose_with_plan(&scanner, None, &miss_batch)
+        .map(|selection| selection.backend)
         .expect_err("cache miss must fail loud instead of guessing a backend")
         .to_string();
     assert!(
@@ -3066,7 +3068,8 @@ fn cached_router_loads_persisted_decision_and_fails_loud_on_missing_bucket() {
     );
     assert_eq!(
         router
-            .choose(&scanner, Some(ScanBackend::CpuFallback), &miss_batch)
+            .choose_with_plan(&scanner, Some(ScanBackend::CpuFallback), &miss_batch)
+            .map(|selection| selection.backend)
             .expect("explicit backend diagnostics bypass autoroute cache"),
         ScanBackend::CpuFallback
     );
@@ -5324,9 +5327,16 @@ fn live_calibration_measures_both_gpu_driver_peers() {
         metadata: keyhog_core::ChunkMetadata::default(),
     }];
     let eligible = super::eligible_backend_labels(&scanner, true);
+    let admission_plan = scanner.phase1_admission_plan(&sample);
     let decision =
-        super::calibration::calibrate_fastest_correct_backend(&scanner, 0, &sample, &eligible)
-            .expect("calibrate every scanner-owned eligible peer");
+        super::calibration::calibrate_fastest_correct_backend(
+            &scanner,
+            0,
+            &sample,
+            &eligible,
+            Some(&admission_plan),
+        )
+        .expect("calibrate every scanner-owned eligible peer");
     assert!(decision.gpu_cuda_timing.is_some());
     assert!(decision.gpu_wgpu_timing.is_some());
     assert!(decision.backend().is_some());

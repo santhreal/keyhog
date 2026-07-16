@@ -290,25 +290,32 @@ impl ScanOrchestrator {
                 // no guesses. In explicit calibration mode it uses the measured
                 // router on the SAME fused batch shape normal scans request, so
                 // persisted decisions cover the production runtime key.
-                let selected_backend = match &active_router {
-                    ActiveBackendRouter::Explicit(backend) => Ok(*backend),
+                let selected = match &active_router {
+                    ActiveBackendRouter::Explicit(backend) => Ok(super::backend::BackendSelection {
+                        backend: *backend,
+                        phase1_plan: (!backend.is_gpu())
+                            .then(|| scanner_ref.phase1_admission_plan(&batch)),
+                    }),
                     ActiveBackendRouter::Measured(router) => {
                         let mut router = match router.lock() {
                             Ok(guard) => guard,
                             Err(poisoned) => poisoned.into_inner(),
                         };
-                        router.choose(scanner_ref, None, &batch)
+                        router.choose_with_plan(scanner_ref, None, &batch)
                     }
-                    ActiveBackendRouter::Cached(router) => router.choose(scanner_ref, None, &batch),
+                    ActiveBackendRouter::Cached(router) => {
+                        router.choose_with_plan(scanner_ref, None, &batch)
+                    }
                 };
 
-                let backend = match selected_backend {
-                    Ok(backend) => backend,
+                let selection = match selected {
+                    Ok(selection) => selection,
                     Err(error) => {
                         record_routing_error(&routing_error_ref, error);
                         return Vec::new();
                     }
                 };
+                let backend = selection.backend;
                 let scanned_count = batch.len();
                 // Snapshot the runtime GPU-degrade counter so GPU_SCANNED_CHUNKS
                 // reflects REAL GPU execution, not the router's CHOICE (Law 10): a
@@ -338,7 +345,11 @@ impl ScanOrchestrator {
                         return Vec::new();
                     }
                 }
-                let per_chunk = scanner_ref.scan_coalesced_with_backend(&batch, backend);
+                let per_chunk = scanner_ref.scan_coalesced_with_backend_and_admission(
+                    &batch,
+                    backend,
+                    selection.phase1_plan.as_ref(),
+                );
                 if let Some(before) = gpu_degrade_before {
                     let after = scanner_ref.gpu_degrade_count();
                     if after != before {

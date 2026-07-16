@@ -27,6 +27,39 @@ pub struct Phase1AdmissionSummary {
     pub admitted_bytes: u64,
 }
 
+/// Exact per-chunk phase-1 admissions computed while an autoroute key is
+/// built. The plan is intentionally opaque: callers can only reuse it through
+/// the scanner method that verifies the same chunk slice shape. GPU region
+/// presence does not consume this plan because VYRE owns that path's trigger
+/// admission.
+#[derive(Debug)]
+pub struct Phase1AdmissionPlan {
+    admissions: Vec<Phase1Admission>,
+    chunk_shapes: Vec<(usize, usize)>,
+    summary: Phase1AdmissionSummary,
+}
+
+impl Phase1AdmissionPlan {
+    #[must_use]
+    pub fn summary(&self) -> Phase1AdmissionSummary {
+        self.summary
+    }
+
+    #[inline]
+    pub(crate) fn admission_for(&self, index: usize) -> Option<Phase1Admission> {
+        self.admissions.get(index).copied()
+    }
+
+    #[inline]
+    pub(crate) fn matches_chunks(&self, chunks: &[Chunk]) -> bool {
+        chunks.len() == self.chunk_shapes.len()
+            && chunks.iter().zip(&self.chunk_shapes).all(|(chunk, &(ptr, len))| {
+                let bytes = chunk.data.as_bytes();
+                bytes.as_ptr() as usize == ptr && bytes.len() == len
+            })
+    }
+}
+
 impl Phase1AdmissionSummary {
     /// Construct a summary for a caller that has independently proved every
     /// chunk advances past direct-literal admission.
@@ -127,5 +160,53 @@ impl CompiledScanner {
             );
         }
         summary
+    }
+
+    /// Build the exact per-chunk admission evidence used by autoroute and
+    /// retain it for the immediately following production scan. Reusing this
+    /// plan removes a duplicate alphabet/bigram pass on SIMD and CPU routes;
+    /// the scan boundary rejects a plan for a different chunk slice and
+    /// recomputes admissions instead of trusting stale evidence.
+    pub fn phase1_admission_plan(&self, chunks: &[Chunk]) -> Phase1AdmissionPlan {
+        let classified = if chunks.len() >= 4
+            && chunks.iter().map(|chunk| chunk.data.len()).sum::<usize>() >= 64 * 1024
+        {
+            use rayon::prelude::*;
+
+            chunks
+                .par_iter()
+                .map(|chunk| {
+                    (
+                        self.phase1_admission(chunk.data.as_bytes()),
+                        chunk.data.as_bytes().as_ptr() as usize,
+                        chunk.data.len(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        } else {
+            chunks
+                .iter()
+                .map(|chunk| {
+                    (
+                        self.phase1_admission(chunk.data.as_bytes()),
+                        chunk.data.as_bytes().as_ptr() as usize,
+                        chunk.data.len(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        let mut summary = Phase1AdmissionSummary::default();
+        let mut admissions = Vec::with_capacity(classified.len());
+        let mut chunk_shapes = Vec::with_capacity(classified.len());
+        for (admission, ptr, len) in classified {
+            summary.record(admission, len as u64);
+            admissions.push(admission);
+            chunk_shapes.push((ptr, len));
+        }
+        Phase1AdmissionPlan {
+            admissions,
+            chunk_shapes,
+            summary,
+        }
     }
 }

@@ -84,6 +84,22 @@ fn phase1_summary_distinguishes_equal_size_admission_classes() {
     let reversed =
         scanner.phase1_admission_summary(&[admitted, bigram_rejected, alphabet_rejected]);
     assert_eq!(reversed, summary, "summary must not depend on chunk order");
+
+    let planned = vec![
+        chunk("~".repeat(BYTES)),
+        chunk("g".repeat(BYTES)),
+        chunk("gh ".repeat(BYTES / 3)),
+    ];
+    let plan = scanner.phase1_admission_plan(&planned);
+    assert_eq!(
+        canonical(&scanner.scan_coalesced_with_backend_and_admission(
+            &planned,
+            ScanBackend::CpuFallback,
+            Some(&plan),
+        )),
+        canonical(&scanner.scan_coalesced_with_backend(&planned, ScanBackend::CpuFallback)),
+        "reusing the route admission plan must preserve scalar findings"
+    );
 }
 
 #[test]

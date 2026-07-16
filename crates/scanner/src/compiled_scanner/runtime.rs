@@ -624,6 +624,26 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         self.scan_with_deadline_and_backend(chunk, self.config.per_chunk_deadline(), backend)
     }
 
+    /// Scan one chunk while reusing an autoroute admission plan when it was
+    /// produced for this exact chunk. A mismatched plan is ignored and the
+    /// normal admission probe runs, preserving recall for library callers.
+    pub fn scan_with_backend_and_admission_plan(
+        &self,
+        chunk: &Chunk,
+        backend: crate::hw_probe::ScanBackend,
+        plan: Option<&crate::engine::Phase1AdmissionPlan>,
+    ) -> Vec<RawMatch> {
+        let admission = plan
+            .filter(|plan| plan.matches_chunks(std::slice::from_ref(chunk)))
+            .and_then(|plan| plan.admission_for(0));
+        self.scan_with_deadline_and_backend_and_admission(
+            chunk,
+            self.config.per_chunk_deadline(),
+            backend,
+            admission,
+        )
+    }
+
     /// Scan multiple chunks using a caller-selected backend.
     ///
     /// This infallible API has the same hard process contract as
@@ -668,6 +688,16 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         deadline: Option<std::time::Instant>,
         selected_backend: crate::hw_probe::ScanBackend,
     ) -> Vec<RawMatch> {
+        self.scan_with_deadline_and_backend_and_admission(chunk, deadline, selected_backend, None)
+    }
+
+    pub(crate) fn scan_with_deadline_and_backend_and_admission(
+        &self,
+        chunk: &Chunk,
+        deadline: Option<std::time::Instant>,
+        selected_backend: crate::hw_probe::ScanBackend,
+        admission: Option<crate::engine::Phase1Admission>,
+    ) -> Vec<RawMatch> {
         if crate::deadline::expired(deadline) {
             return Vec::new();
         }
@@ -682,7 +712,9 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         // to a DECODE-ONLY pass instead of skipping. Bounded: only
         // encoded-looking rejected chunks pay the decode cost, so normal
         // traffic keeps the fast skip.
-        if self.phase1_admission(chunk.data.as_bytes()) != Phase1Admission::Admitted {
+        let admission = admission
+            .unwrap_or_else(|| self.phase1_admission(chunk.data.as_bytes()));
+        if admission != Phase1Admission::Admitted {
             if self.should_scan_no_hit_chunk(chunk) {
                 let prepared = self.prepare_chunk(chunk);
                 let triggered = if prepared.preprocessed.text.as_bytes() == chunk.data.as_bytes() {

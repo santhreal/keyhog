@@ -536,12 +536,16 @@ async fn scan_text(
                         ..Default::default()
                     },
                 };
-                let backend = router.choose(
+                let selection = router.choose_with_plan(
                     scanner.as_ref(),
                     backend_override,
                     std::slice::from_ref(&chunk),
                 )?;
-                let matches = scanner.scan_with_backend(&chunk, backend);
+                let matches = scanner.scan_with_backend_and_admission_plan(
+                    &chunk,
+                    selection.backend,
+                    selection.phase1_plan.as_ref(),
+                );
                 scanner.clear_fragment_cache();
                 Ok(matches)
             },
@@ -640,8 +644,12 @@ async fn scan_path(
                     .lock()
                     .map_err(|_| anyhow::anyhow!("daemon fragment scan lock is poisoned"))?;
                 scanner.clear_fragment_cache();
-                let backend = router.choose(scanner.as_ref(), backend_override, &chunks)?;
-                let mut per_chunk = scanner.scan_coalesced_with_backend(&chunks, backend);
+                let selection = router.choose_with_plan(scanner.as_ref(), backend_override, &chunks)?;
+                let mut per_chunk = scanner.scan_coalesced_with_backend_and_admission(
+                    &chunks,
+                    selection.backend,
+                    selection.phase1_plan.as_ref(),
+                );
                 scanner.clear_fragment_cache();
                 crate::inline_suppression::attach_inline_suppression_context(
                     &chunks,

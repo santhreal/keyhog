@@ -104,11 +104,27 @@ impl CompiledScanner {
         chunks: &[keyhog_core::Chunk],
         backend: crate::hw_probe::ScanBackend,
     ) -> Vec<Vec<keyhog_core::RawMatch>> {
+        self.scan_coalesced_with_backend_and_admission(chunks, backend, None)
+    }
+
+    /// Coalesced scan using admission evidence computed by the autoroute key
+    /// builder. A mismatched plan is ignored and the scanner recomputes its
+    /// own exact admissions, preserving recall over the optimization.
+    pub fn scan_coalesced_with_backend_and_admission(
+        &self,
+        chunks: &[keyhog_core::Chunk],
+        backend: crate::hw_probe::ScanBackend,
+        plan: Option<&super::Phase1AdmissionPlan>,
+    ) -> Vec<Vec<keyhog_core::RawMatch>> {
         if backend == crate::hw_probe::ScanBackend::SimdCpu {
             self.require_selected_backend_stack(backend);
-            return self.scan_coalesced_simd(chunks);
+            return self.scan_coalesced_simd(chunks, plan.filter(|plan| plan.matches_chunks(chunks)));
         }
-        self.scan_chunks_with_backend(chunks, backend)
+        self.scan_chunks_with_backend_internal_and_admission(
+            chunks,
+            backend,
+            plan.filter(|plan| plan.matches_chunks(chunks)),
+        )
     }
 
     /// Deterministic portable reference scan over several chunks.
@@ -126,6 +142,7 @@ impl CompiledScanner {
     fn scan_coalesced_simd(
         &self,
         chunks: &[keyhog_core::Chunk],
+        admission_plan: Option<&super::Phase1AdmissionPlan>,
     ) -> Vec<Vec<keyhog_core::RawMatch>> {
         use rayon::prelude::*;
 
@@ -169,7 +186,7 @@ impl CompiledScanner {
             for chunk in chunks {
                 crate::telemetry::record_file_scanned(chunk.data.len());
             }
-            let triggers = self.compute_coalesced_triggers(chunks, scanner);
+            let triggers = self.compute_coalesced_triggers(chunks, scanner, admission_plan);
             return self.scan_coalesced_phase2(chunks, triggers);
         }
     }
@@ -182,15 +199,20 @@ impl CompiledScanner {
         &self,
         chunks: &[keyhog_core::Chunk],
         scanner: &crate::simd::backend::HsScanner,
+        admission_plan: Option<&super::Phase1AdmissionPlan>,
     ) -> Vec<Option<Vec<u64>>> {
         use rayon::prelude::*;
         let ac_len = self.ac_map.len();
         let words_needed = super::trigger_bitmap::words_for(ac_len);
         let triggers: Vec<Option<Vec<u64>>> = chunks
             .par_iter()
-            .map(|chunk| {
+            .enumerate()
+            .map(|(chunk_index, chunk)| {
                 let data = chunk.data.as_bytes();
-                if self.phase1_admission(data) != super::Phase1Admission::Admitted {
+                let admission = admission_plan
+                    .and_then(|plan| plan.admission_for(chunk_index))
+                    .unwrap_or_else(|| self.phase1_admission(data));
+                if admission != super::Phase1Admission::Admitted {
                     return None;
                 }
                 with_trigger_buffer(words_needed, |scratch| {

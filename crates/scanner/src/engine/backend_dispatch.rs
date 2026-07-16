@@ -8,6 +8,15 @@ impl CompiledScanner {
         chunks: &[Chunk],
         backend: ScanBackend,
     ) -> Vec<Vec<RawMatch>> {
+        self.scan_chunks_with_backend_internal_and_admission(chunks, backend, None)
+    }
+
+    pub(crate) fn scan_chunks_with_backend_internal_and_admission(
+        &self,
+        chunks: &[Chunk],
+        backend: ScanBackend,
+        admission_plan: Option<&Phase1AdmissionPlan>,
+    ) -> Vec<Vec<RawMatch>> {
         if chunks.iter().all(|chunk| chunk.data.is_empty()) {
             for _ in chunks {
                 crate::telemetry::record_file_scanned(0);
@@ -24,7 +33,7 @@ impl CompiledScanner {
         // each half too short to match) (load-bearing recall, not optional).
         let gpu_path = backend.is_gpu();
         if !gpu_path || chunks.is_empty() {
-            return self.scan_chunks_cpu_parallel(chunks, backend);
+            return self.scan_chunks_cpu_parallel(chunks, backend, admission_plan);
         }
 
         // The batched region-presence literal set is the SINGLE on-GPU trigger
@@ -39,7 +48,7 @@ impl CompiledScanner {
         // before this internal compatibility arm can execute.
         #[cfg(not(feature = "gpu"))]
         {
-            self.scan_chunks_cpu_parallel(chunks, backend)
+            self.scan_chunks_cpu_parallel(chunks, backend, admission_plan)
         }
     }
 
@@ -52,14 +61,22 @@ impl CompiledScanner {
         &self,
         chunks: &[Chunk],
         backend: ScanBackend,
+        admission_plan: Option<&Phase1AdmissionPlan>,
     ) -> Vec<Vec<RawMatch>> {
         use rayon::prelude::*;
         let telemetry = crate::telemetry::capture_scan_telemetry();
         let mut results: Vec<Vec<RawMatch>> = chunks
             .par_iter()
-            .map(|chunk| {
+            .enumerate()
+            .map(|(index, chunk)| {
                 crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
-                    self.scan_with_backend(chunk, backend)
+                    let admission = admission_plan.and_then(|plan| plan.admission_for(index));
+                    self.scan_with_deadline_and_backend_and_admission(
+                        chunk,
+                        self.config.per_chunk_deadline(),
+                        backend,
+                        admission,
+                    )
                 })
             })
             .collect();

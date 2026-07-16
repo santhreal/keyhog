@@ -16,7 +16,9 @@ use anyhow::Result;
 pub(crate) use backend::backend_requires_coalesced_batch_pipeline_for_test;
 pub(crate) use backend::inspect_autoroute_cache;
 pub(crate) use backend::AutorouteCacheInspection;
-use backend::{is_gpu_backend, AutorouteRoutingError, MeasuredBackendRouter};
+use backend::{
+    is_gpu_backend, AutorouteRoutingError, BackendSelection, MeasuredBackendRouter,
+};
 pub(crate) use backend::{AutorouteMeasurementObserver, CachedBackendRouter};
 use keyhog_core::{Chunk, RawMatch, Source};
 use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
@@ -130,14 +132,17 @@ struct CoalescedMeasuredRouterConfig {
 }
 
 impl CoalescedBatchRouter {
-    fn choose(
+    fn choose_with_plan(
         &mut self,
         scanner: &CompiledScanner,
         batch: &[Chunk],
-    ) -> std::result::Result<ScanBackend, AutorouteRoutingError> {
+    ) -> std::result::Result<BackendSelection, AutorouteRoutingError> {
         match self {
-            Self::Explicit(backend) => Ok(*backend),
-            Self::Measured(router) => router.choose(scanner, None, batch),
+            Self::Explicit(backend) => Ok(BackendSelection {
+                backend: *backend,
+                phase1_plan: (!backend.is_gpu()).then(|| scanner.phase1_admission_plan(batch)),
+            }),
+            Self::Measured(router) => router.choose_with_plan(scanner, None, batch),
         }
     }
 
@@ -219,7 +224,10 @@ impl CoalescedScannerWorker {
             crate::SCANNED_BYTES.fetch_add(scanned_bytes as u64, Ordering::Relaxed);
             return Ok(scan_start.elapsed());
         }
-        let chosen_backend = self.router.choose(self.scanner.as_ref(), batch)?;
+        let selection = self
+            .router
+            .choose_with_plan(self.scanner.as_ref(), batch)?;
+        let chosen_backend = selection.backend;
         let chose_gpu = is_gpu_backend(chosen_backend);
         // Snapshot the scanner's runtime GPU-degrade counter BEFORE the GPU arm so
         // we can tell whether THIS batch actually executed on the GPU. Runtime
@@ -247,7 +255,11 @@ impl CoalescedScannerWorker {
         }
         let per_chunk = self
             .scanner
-            .scan_coalesced_with_backend(batch, chosen_backend);
+            .scan_coalesced_with_backend_and_admission(
+                batch,
+                chosen_backend,
+                selection.phase1_plan.as_ref(),
+            );
         // A selected GPU that records a runtime degradation is not a successful
         // scan. Refuse the result before reporting findings instead of quietly
         // returning a CPU-recovered or under-fired batch as GPU evidence.

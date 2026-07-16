@@ -526,13 +526,18 @@ impl DefaultScanRuntime {
         if chunk.data.is_empty() {
             return Ok(Vec::new());
         }
-        let backend = self.router.choose(
+        let selection = self.router.choose_with_plan(
             self.scanner.as_ref(),
             self.backend_override,
             std::slice::from_ref(chunk),
         )?;
+        let backend = selection.backend;
         let degrade_before = backend.is_gpu().then(|| self.scanner.gpu_degrade_count());
-        let findings = self.scanner.scan_with_backend(chunk, backend);
+        let findings = self.scanner.scan_with_backend_and_admission_plan(
+            chunk,
+            backend,
+            selection.phase1_plan.as_ref(),
+        );
         if let Some(before) = degrade_before {
             let after = self.scanner.gpu_degrade_count();
             if after != before {

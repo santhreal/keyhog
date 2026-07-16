@@ -56,7 +56,7 @@ use self::workload::{
 };
 use keyhog_core::Chunk;
 use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
-use keyhog_scanner::CompiledScanner;
+use keyhog_scanner::{CompiledScanner, Phase1AdmissionPlan};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt;
 use std::path::PathBuf;
@@ -154,6 +154,11 @@ pub(crate) struct CachedBackendRouter {
 enum AutorouteRuntimeClass {
     OneShot,
     PersistentDaemon,
+}
+
+pub(crate) struct BackendSelection {
+    pub(crate) backend: ScanBackend,
+    pub(crate) phase1_plan: Option<Phase1AdmissionPlan>,
 }
 
 impl AutorouteRuntimeClass {
@@ -435,32 +440,43 @@ impl CachedBackendRouter {
         Ok(routes)
     }
 
-    pub(crate) fn choose(
+    pub(crate) fn choose_with_plan(
         &self,
         scanner: &CompiledScanner,
         explicit: Option<ScanBackend>,
         batch: &[Chunk],
-    ) -> Result<ScanBackend, AutorouteRoutingError> {
+    ) -> Result<BackendSelection, AutorouteRoutingError> {
         if let Some(forced) = explicit {
-            return Ok(forced);
+            return Ok(BackendSelection {
+                backend: forced,
+                phase1_plan: (!forced.is_gpu()).then(|| scanner.phase1_admission_plan(batch)),
+            });
         }
         if let Some(only) = sole_compiled_backend() {
-            return Ok(only);
+            return Ok(BackendSelection {
+                backend: only,
+                phase1_plan: (!only.is_gpu()).then(|| scanner.phase1_admission_plan(batch)),
+            });
         }
+        let phase1_plan = scanner.phase1_admission_plan(batch);
         let key = workload_key(
             batch,
             self.pattern_count,
-            scanner.phase1_admission_summary(batch),
+            phase1_plan.summary(),
             self.decode_workload_plan,
         )
         .map_err(AutorouteRoutingError::incomplete_workload_evidence)?;
-        resolve_persisted_backend(
+        let backend = resolve_persisted_backend(
             &self.decisions,
             key,
             self.runtime_class,
             &self.cache_path,
             &self.cache_load_error,
-        )
+        )?;
+        Ok(BackendSelection {
+            backend,
+            phase1_plan: Some(phase1_plan),
+        })
     }
 }
 
@@ -553,40 +569,54 @@ impl MeasuredBackendRouter {
         }
     }
 
-    pub(super) fn choose(
+    pub(super) fn choose_with_plan(
         &mut self,
         scanner: &CompiledScanner,
         explicit: Option<ScanBackend>,
         batch: &[Chunk],
-    ) -> Result<ScanBackend, AutorouteRoutingError> {
+    ) -> Result<BackendSelection, AutorouteRoutingError> {
         if let Some(forced) = explicit {
-            return Ok(forced);
+            return Ok(BackendSelection {
+                backend: forced,
+                phase1_plan: (!forced.is_gpu()).then(|| scanner.phase1_admission_plan(batch)),
+            });
         }
         if let Some(only) = sole_compiled_backend() {
-            return Ok(only);
+            return Ok(BackendSelection {
+                backend: only,
+                phase1_plan: (!only.is_gpu()).then(|| scanner.phase1_admission_plan(batch)),
+            });
         }
+        let phase1_plan = scanner.phase1_admission_plan(batch);
         let key = workload_key(
             batch,
             self.pattern_count,
-            scanner.phase1_admission_summary(batch),
+            phase1_plan.summary(),
             self.decode_workload_plan,
         )
         .map_err(AutorouteRoutingError::incomplete_workload_evidence)?;
         if let Some(backend) = self.reusable_decision_backend(&key) {
-            return Ok(backend);
+            return Ok(BackendSelection {
+                backend,
+                phase1_plan: Some(phase1_plan),
+            });
         }
 
         if !self.calibration_mode {
             // Not calibrating: behave like the cache-only router. Every miss is
             // an invalid autoroute state; neighbouring measurements are not
             // evidence for this workload identity.
-            return resolve_persisted_backend(
+            let backend = resolve_persisted_backend(
                 &self.decisions,
                 key,
                 AutorouteRuntimeClass::OneShot,
                 &self.cache_path,
                 &self.cache_load_error,
-            );
+            )?;
+            return Ok(BackendSelection {
+                backend,
+                phase1_plan: Some(phase1_plan),
+            });
         }
         self.host_profile
             .require_exact_identity()
@@ -604,6 +634,7 @@ impl MeasuredBackendRouter {
             self.pattern_count,
             batch,
             &live_eligible_backends,
+            Some(&phase1_plan),
         )?;
         let backend = match decision.backend() {
             Some(backend) => backend,
@@ -616,7 +647,10 @@ impl MeasuredBackendRouter {
         self.decisions.insert(key.clone(), decision);
         self.measured_this_run.insert(key);
         self.cache_dirty = true;
-        Ok(backend)
+        Ok(BackendSelection {
+            backend,
+            phase1_plan: Some(phase1_plan),
+        })
     }
 
     fn reusable_decision_backend(&self, key: &WorkloadKey) -> Option<ScanBackend> {
