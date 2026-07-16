@@ -310,10 +310,10 @@ fn backend_autoroute_shows_calibrated_decisions_after_calibration() {
     );
 
     let text = Command::new(binary())
-        .args(["backend", "--autoroute"])
+        .args(["backend", "--autoroute", "--verbose"])
         .env("XDG_CACHE_HOME", cache.path())
         .output()
-        .expect("spawn text autoroute inspection");
+        .expect("spawn verbose text autoroute inspection");
     assert_eq!(text.status.code(), Some(0));
     let text_stdout = String::from_utf8_lossy(&text.stdout);
     assert!(

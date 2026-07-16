@@ -596,9 +596,9 @@ fn calibrate_autoroute_primes_cache_then_inspection_shows_configs_and_counts() {
 
     // 4. The human inspection reports the same 4-config count in prose.
     let human = cmd(home.path())
-        .args(["backend", "--autoroute"])
+        .args(["backend", "--autoroute", "--verbose"])
         .output()
-        .expect("spawn keyhog backend --autoroute");
+        .expect("spawn keyhog backend --autoroute --verbose");
     assert_eq!(human.status.code(), Some(0));
     let human_stdout = String::from_utf8_lossy(&human.stdout);
     assert!(
