@@ -22,7 +22,7 @@ fn collect_trusted_bin_dirs(
     }
 }
 
-fn config_relative_path(config_path: &Path, configured: &str) -> PathBuf {
+pub(super) fn config_relative_path(config_path: &Path, configured: &str) -> PathBuf {
     let path = PathBuf::from(configured);
     if path.is_absolute() {
         return path;

@@ -13,7 +13,7 @@
 
 use keyhog_core::Chunk;
 use keyhog_scanner::hw_probe::ScanBackend;
-use keyhog_scanner::CompiledScanner;
+use keyhog_scanner::{CompiledScanner, Phase1AdmissionPlan};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::evidence::{
@@ -28,10 +28,11 @@ pub(super) fn calibrate_fastest_correct_backend(
     _pattern_count: usize,
     sample: &[Chunk],
     eligible_backend_labels: &[String],
+    admission_plan: Option<&Phase1AdmissionPlan>,
 ) -> Result<AutorouteDecision, AutorouteRoutingError> {
     let sample_bytes = calibration_sample_bytes(sample)?;
 
-    let reference_matches = establish_reference_simd(scanner, sample);
+    let reference_matches = establish_reference_simd(scanner, sample, admission_plan);
     let reference_key = canonical_matches(&reference_matches);
 
     let mut candidate_backends = eligible_backend_labels
@@ -70,7 +71,8 @@ pub(super) fn calibrate_fastest_correct_backend(
                 .reset_autoroute_calibration_gpu_workload()
                 .map_err(AutorouteRoutingError::calibration_not_persisted)?;
         }
-        let mut measured = measure_candidate_backend(scanner, sample, backend, &reference_key)?;
+        let mut measured =
+            measure_candidate_backend(scanner, sample, backend, &reference_key, admission_plan)?;
         if is_gpu_backend(backend) {
             let backend_cold_ns = scanner
                 .autoroute_calibration_gpu_backend_cold_ns(backend)
@@ -191,12 +193,13 @@ pub(super) fn calibration_candidate_rotation(
 fn establish_reference_simd(
     scanner: &CompiledScanner,
     sample: &[Chunk],
+    admission_plan: Option<&Phase1AdmissionPlan>,
 ) -> Vec<Vec<keyhog_core::RawMatch>> {
     // Establish the canonical finding set outside the rotated timed plan. SIMD
     // is still the correctness reference, but no longer receives the same
     // first thermal position in every workload.
     scanner.clear_fragment_cache();
-    let reference = scan_calibration_backend(scanner, sample, ScanBackend::SimdCpu);
+    let reference = scan_calibration_backend(scanner, sample, ScanBackend::SimdCpu, admission_plan);
     scanner.clear_fragment_cache();
     reference
 }
@@ -214,6 +217,7 @@ fn measure_candidate_backend(
     sample: &[Chunk],
     backend: ScanBackend,
     reference_key: &[CanonicalMatch<'_>],
+    admission_plan: Option<&Phase1AdmissionPlan>,
 ) -> Result<BackendTimingEvidence, AutorouteRoutingError> {
     let mut durations = Vec::with_capacity(AUTOROUTE_CALIBRATION_TRIALS);
     // GPU routing evidence deliberately stores the first real dispatch as its
@@ -232,7 +236,8 @@ fn measure_candidate_backend(
         } else {
             None
         };
-        let (matches, dur) = timed(|| scan_calibration_backend(scanner, sample, backend));
+        let (matches, dur) =
+            timed(|| scan_calibration_backend(scanner, sample, backend, admission_plan));
         if let Some(before) = gpu_degrade_count_before {
             let after = scanner.runtime_status().gpu_degrade_count;
             if after != before {
@@ -361,8 +366,9 @@ fn scan_calibration_backend(
     scanner: &CompiledScanner,
     sample: &[Chunk],
     backend: ScanBackend,
+    admission_plan: Option<&Phase1AdmissionPlan>,
 ) -> Vec<Vec<keyhog_core::RawMatch>> {
-    scanner.scan_coalesced_with_backend(sample, backend)
+    scanner.scan_coalesced_with_backend_and_admission(sample, backend, admission_plan)
 }
 
 fn timed<T>(f: impl FnOnce() -> T) -> (T, Duration) {

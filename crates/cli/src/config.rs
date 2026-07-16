@@ -68,6 +68,49 @@ pub(crate) fn find_config_file(start: Option<&std::path::Path>) -> Option<PathBu
     None
 }
 
+fn discover_config_for_scan_roots(args: &ScanArgs) -> Result<Option<PathBuf>, String> {
+    let roots = args.scan_roots();
+    if roots.len() <= 1 {
+        return Ok(find_config_file(roots.first().map(PathBuf::as_path)));
+    }
+
+    let mut resolved = Vec::with_capacity(roots.len());
+    for root in roots {
+        let config = match find_config_file(Some(&root)) {
+            Some(path) => Some(std::fs::canonicalize(&path).map_err(|error| {
+                format!(
+                    "cannot resolve repository config identity for {} at {}: {error}",
+                    root.display(),
+                    path.display()
+                )
+            })?),
+            None => None,
+        };
+        resolved.push((root, config));
+    }
+    let expected = resolved.first().and_then(|(_, config)| config.clone());
+    if resolved.iter().any(|(_, config)| config != &expected) {
+        let identities = resolved
+            .iter()
+            .map(|(root, config)| {
+                format!(
+                    "{} -> {}",
+                    root.display(),
+                    config.as_deref().map_or_else(
+                        || "no .keyhog.toml".to_string(),
+                        |path| path.display().to_string()
+                    )
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(format!(
+            "scan roots resolve different repository configuration identities ({identities})"
+        ));
+    }
+    Ok(expected)
+}
+
 /// Load and merge a `.keyhog.toml` config file into the parsed `ScanArgs`.
 /// CLI flags always take precedence over the config file.
 ///
@@ -106,10 +149,19 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
     if args.no_config {
         return base_config_outcome();
     }
-    let config_path = args
-        .config
-        .clone()
-        .or_else(|| find_config_file(args.path.as_deref()));
+    let config_path = match args.config.clone() {
+        Some(path) => Some(path),
+        None => match discover_config_for_scan_roots(args) {
+            Ok(path) => path,
+            Err(error) => {
+                return config_file_error(
+                    std::path::Path::new("<multiple scan roots>"),
+                    error,
+                    "pass one explicit --config PATH that intentionally governs every root, split the roots into separate scans, or use --no-config for compiled defaults",
+                );
+            }
+        },
+    };
 
     let config_path = match config_path {
         Some(path) => path,
