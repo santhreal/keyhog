@@ -339,6 +339,18 @@ impl ScanOrchestrator {
                     }
                 }
                 let per_chunk = scanner_ref.scan_coalesced_with_backend(&batch, backend);
+                if let Some(before) = gpu_degrade_before {
+                    let after = scanner_ref.gpu_degrade_count();
+                    if after != before {
+                        record_routing_error(
+                            &routing_error_ref,
+                            AutorouteRoutingError::selected_backend_degraded(
+                                backend, before, after,
+                            ),
+                        );
+                        return Vec::new();
+                    }
+                }
                 crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
                 crate::SCANNED_BYTES.fetch_add(
                     batch
@@ -347,9 +359,9 @@ impl ScanOrchestrator {
                         .sum::<u64>(),
                     Ordering::Relaxed,
                 );
-                // Count as GPU-scanned only if routed to GPU AND no runtime degrade
-                // was recorded while dispatching this batch (see snapshot above)
-                // a degraded batch actually ran on CPU/SIMD.
+                // Count only a selected GPU dispatch that completed without a
+                // degradation record. Degraded batches return a routing error
+                // above and never contribute findings or GPU telemetry.
                 if gpu_degrade_before
                     .is_some_and(|before| scanner_ref.gpu_degrade_count() == before)
                 {

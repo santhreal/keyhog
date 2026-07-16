@@ -248,12 +248,22 @@ impl CoalescedScannerWorker {
         let per_chunk = self
             .scanner
             .scan_coalesced_with_backend(batch, chosen_backend);
-        // Count the batch as GPU-scanned only if it was routed to the GPU AND the
-        // scanner recorded no runtime degrade while dispatching it. A degrade
-        // hard-fails the selected route; retaining the counter check also keeps
-        // telemetry honest if an embedder replaces the process-exit boundary.
-        let ran_on_gpu =
-            degrade_before.is_some_and(|before| self.scanner.gpu_degrade_count() == before);
+        // A selected GPU that records a runtime degradation is not a successful
+        // scan. Refuse the result before reporting findings instead of quietly
+        // returning a CPU-recovered or under-fired batch as GPU evidence.
+        let ran_on_gpu = if let Some(before) = degrade_before {
+            let after = self.scanner.gpu_degrade_count();
+            if after != before {
+                return Err(AutorouteRoutingError::selected_backend_degraded(
+                    chosen_backend,
+                    before,
+                    after,
+                ));
+            }
+            true
+        } else {
+            false
+        };
         append_scanned_batch_findings(findings, batch, per_chunk, scanned_count, ran_on_gpu);
         Ok(scan_start.elapsed())
     }

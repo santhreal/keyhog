@@ -308,6 +308,17 @@ impl AutorouteRoutingError {
         }
     }
 
+    pub(super) fn selected_backend_degraded(backend: ScanBackend, before: u64, after: u64) -> Self {
+        Self {
+            message: format!(
+                "selected backend {} degraded during dispatch (GPU degradation counter {} -> {}); refusing to report a successful scan. Run `keyhog backend --self-test`, recalibrate autoroute, or choose an explicit CPU backend",
+                backend.label(),
+                before,
+                after,
+            ),
+        }
+    }
+
     pub(super) fn unsupported_backend(backend: ScanBackend) -> Self {
         Self {
             message: format!(

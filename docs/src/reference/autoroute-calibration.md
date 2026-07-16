@@ -115,7 +115,9 @@ not the number of unique persisted route classes. Multiple representatives can s
 logarithmic workload key. The summary separately reports unique route classes
 measured by this sweep and the total route decisions in the cache after a
 required readback check. The cache total can include valid decisions from prior
-calibration runs. The command does **not**
+calibration runs. The command also prints a cache route summary showing how many
+one-shot and daemon rows select a VYRE GPU route, plus the number of GPU candidate
+receipts measured. The command does **not**
 cover the git / docker / web source probes; those need environment orchestration
 (a repo, a running daemon, a served URL) that only the installer's
 `--calibrate` mode performs. Current installers delegate the complete core sweep

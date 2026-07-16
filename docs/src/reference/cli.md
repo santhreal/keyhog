@@ -350,6 +350,11 @@ use persisted fastest-correct calibration. Use `keyhog backend --autoroute`
 to inspect that evidence, including distinct cold-aware one-shot and warm-daemon
 routes, and `--probe-bytes` only for heuristic what-if work.
 
+The human autoroute view is intentionally concise: it reports cache health,
+coverage, selected GPU routes, and the recalibration command. Add `--verbose`
+to expand every workload decision and parity receipt. `--json` remains the
+complete stable representation for CI and tooling.
+
 ```sh
 keyhog backend
 ```

@@ -101,7 +101,7 @@ pub(crate) fn run(args: BackendArgs) -> Result<ExitCode> {
         return run_self_test(args.json, args.require_gpu);
     }
     if args.autoroute {
-        return run_autoroute_inspection(args.json, args.autoroute_cache.as_deref());
+        return run_autoroute_inspection(args.json, args.autoroute_cache.as_deref(), args.verbose);
     }
     print_backend_report(&args)?;
     Ok(ExitCode::SUCCESS)
@@ -110,7 +110,11 @@ pub(crate) fn run(args: BackendArgs) -> Result<ExitCode> {
 /// `keyhog backend --autoroute`: render the persisted autoroute calibration
 /// cache so an operator can see which resolved configs and workload buckets are
 /// calibrated (and to which backend), diagnosing a fail-closed scan. Read-only.
-fn run_autoroute_inspection(json: bool, autoroute_cache: Option<&str>) -> Result<ExitCode> {
+fn run_autoroute_inspection(
+    json: bool,
+    autoroute_cache: Option<&str>,
+    verbose: bool,
+) -> Result<ExitCode> {
     let path = crate::autoroute_cache_path::resolve_autoroute_cache_path(autoroute_cache)
         .map_err(|message| anyhow::anyhow!(message))?;
     let inspection = crate::orchestrator::inspect_autoroute_cache(path.as_deref());
@@ -227,6 +231,39 @@ fn run_autoroute_inspection(json: bool, autoroute_cache: Option<&str>) -> Result
         total_decisions,
         p.reset
     );
+    let mut one_shot_gpu = 0usize;
+    let mut daemon_gpu = 0usize;
+    let mut first_gpu_workload = None;
+    for config in &inspection.configs {
+        for decision in &config.decisions {
+            if keyhog_scanner::hw_probe::parse_backend_str(&decision.backend)
+                .is_some_and(|backend| backend.is_gpu())
+            {
+                one_shot_gpu += 1;
+                first_gpu_workload.get_or_insert(decision.workload.clone());
+            }
+            if keyhog_scanner::hw_probe::parse_backend_str(&decision.daemon_backend)
+                .is_some_and(|backend| backend.is_gpu())
+            {
+                daemon_gpu += 1;
+            }
+        }
+    }
+    println!(
+        "  route summary: one-shot GPU {one_shot_gpu}/{total_decisions}, daemon GPU {daemon_gpu}/{total_decisions}"
+    );
+    if let Some(workload) = first_gpu_workload {
+        println!("  first calibrated GPU bucket: {workload}");
+    } else {
+        println!(
+            "  GPU route: no calibrated workload currently selects GPU; run `keyhog calibrate-autoroute` after fixing GPU health"
+        );
+    }
+    println!("  recalibrate:      `keyhog calibrate-autoroute` (measures all eligible GPU peers)");
+    if !verbose {
+        println!("  details:           omitted; add `--verbose` for every workload receipt");
+        return Ok(exit);
+    }
     for config in &inspection.configs {
         println!();
         println!(

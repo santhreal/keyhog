@@ -27,6 +27,12 @@ pub struct BackendArgs {
     #[arg(long)]
     pub autoroute: bool,
 
+    /// Include every workload decision and parity receipt in human-readable
+    /// autoroute inspection. The default view is a concise health and route
+    /// summary; `--json` remains the complete machine-readable representation.
+    #[arg(long, requires = "autoroute")]
+    pub verbose: bool,
+
     /// Inspect this explicit autoroute cache file instead of the platform
     /// default. Use the same absolute path passed to `scan --autoroute-cache`
     /// or configured as `[system].autoroute_cache`; `off` inspects the disabled

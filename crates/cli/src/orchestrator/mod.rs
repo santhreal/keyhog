@@ -81,6 +81,17 @@ fn daemon_gpu_failure(diagnostic: impl std::fmt::Display) -> anyhow::Error {
     GpuUnavailableError::new(format!("{diagnostic} {DAEMON_GPU_REMEDIATION}")).into()
 }
 
+fn selected_gpu_degradation_failure(
+    backend: keyhog_scanner::ScanBackend,
+    before: u64,
+    after: u64,
+) -> anyhow::Error {
+    anyhow::anyhow!(
+        "selected backend {} degraded during dispatch (GPU degradation counter {before} -> {after}); refusing to report a successful scan. Run `keyhog backend --self-test`, recalibrate autoroute, or choose an explicit CPU backend",
+        backend.label()
+    )
+}
+
 pub(crate) fn daemon_gpu_preflight_failure(diagnostic: String) -> anyhow::Error {
     let diagnostic = diagnostic.trim().trim_end_matches('.');
     daemon_gpu_failure(format_args!(
@@ -520,7 +531,15 @@ impl DefaultScanRuntime {
             self.backend_override,
             std::slice::from_ref(chunk),
         )?;
-        Ok(self.scanner.scan_with_backend(chunk, backend))
+        let degrade_before = backend.is_gpu().then(|| self.scanner.gpu_degrade_count());
+        let findings = self.scanner.scan_with_backend(chunk, backend);
+        if let Some(before) = degrade_before {
+            let after = self.scanner.gpu_degrade_count();
+            if after != before {
+                return Err(selected_gpu_degradation_failure(backend, before, after));
+            }
+        }
+        Ok(findings)
     }
 
     pub(crate) fn clear_fragment_cache(&self) {

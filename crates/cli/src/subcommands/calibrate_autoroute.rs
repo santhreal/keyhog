@@ -427,6 +427,31 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
         Some(path) => path.to_string(),
         None => "the default autoroute cache".to_string(),
     };
+    let mut one_shot_gpu = 0usize;
+    let mut daemon_gpu = 0usize;
+    let mut vyre_gpu_receipts = 0usize;
+    for config in &inspection.configs {
+        for decision in &config.decisions {
+            if keyhog_scanner::hw_probe::parse_backend_str(&decision.backend)
+                .is_some_and(|backend| backend.is_gpu())
+            {
+                one_shot_gpu += 1;
+            }
+            if keyhog_scanner::hw_probe::parse_backend_str(&decision.daemon_backend)
+                .is_some_and(|backend| backend.is_gpu())
+            {
+                daemon_gpu += 1;
+            }
+            vyre_gpu_receipts += decision
+                .candidate_receipts
+                .iter()
+                .filter(|receipt| {
+                    keyhog_scanner::hw_probe::parse_backend_str(&receipt.backend)
+                        .is_some_and(|backend| backend.is_gpu())
+                })
+                .count();
+        }
+    }
     println!(
         "{check} ran {green}{total}{reset} workload {probe_word} across {green}{passes}{reset} scan {policy_word}; measured {green}{measured_unique_decisions}{reset} unique route {class_word}; cache contains {green}{persisted_decisions}{reset} route {decision_word} \u{2192} {dim}{cache}{reset}",
         check = crate::style::pass("\u{2713}", &p),
@@ -447,6 +472,9 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
         passes = policy_flags.len(),
         policy_word = if policy_flags.len() == 1 { "policy" } else { "policies" },
         cache = cache_note,
+    );
+    println!(
+        "  cache route summary: one-shot GPU {one_shot_gpu}/{persisted_decisions}, daemon GPU {daemon_gpu}/{persisted_decisions}; VYRE GPU candidate receipts {vyre_gpu_receipts}"
     );
     Ok(ExitCode::SUCCESS)
 }
