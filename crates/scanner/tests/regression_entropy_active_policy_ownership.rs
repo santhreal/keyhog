@@ -1,5 +1,6 @@
 use keyhog_core::{
-    CanonicalHexKeyMaterialSpec, Chunk, ChunkMetadata, DetectorKind, DetectorSpec, PatternSpec,
+    CanonicalHexKeyMaterialSpec, Chunk, ChunkMetadata, DetectorKind, DetectorSpec,
+    EntropyFallbackClass, EntropyFallbackMetadata, PatternSpec,
 };
 use keyhog_scanner::testing::entropy_scanner::{
     active_policy_match_values, active_policy_owner_id,
@@ -25,6 +26,12 @@ fn detector(id: &str, keywords: &[&str], min_len: usize) -> DetectorSpec {
         entropy_high: Some(4.5),
         entropy_very_high: Some(5.8),
         mixed_alnum_floor: Some(0.0),
+        entropy_fallback: Some(EntropyFallbackMetadata {
+            class: EntropyFallbackClass::Generic,
+            id: format!("entropy-{id}"),
+            name: format!("{id} entropy"),
+            service: "generic".to_string(),
+        }),
         ..Default::default()
     }
 }
@@ -80,6 +87,45 @@ fn canonical_hex_admission_fails_closed_when_detector_policy_is_omitted() {
         scan_custom_canonical_hex(true),
         vec![CANONICAL_HEX_KEY.to_string()],
         "the same detector must admit the exact value only after declaring its policy"
+    );
+}
+
+#[test]
+fn active_entropy_owner_without_metadata_fails_compilation() {
+    let mut owner = detector("metadata-missing-owner", &["custom_secret"], 8);
+    owner.entropy_fallback = None;
+    let error =
+        match CompiledScanner::compile(vec![owner, detector("generic-secret", &["secret"], 8)]) {
+            Ok(_) => panic!("an active entropy owner without identity metadata must not compile"),
+            Err(error) => error,
+        };
+    let message = error.to_string();
+    assert!(
+        message.contains("metadata-missing-owner")
+            && message.contains("omits [detector.entropy_fallback]"),
+        "compile must explain the missing detector-owned identity: {message}"
+    );
+}
+
+#[test]
+fn malformed_entropy_fallback_metadata_fails_compilation() {
+    let mut owner = detector("metadata-malformed-owner", &["custom_secret"], 8);
+    owner.entropy_fallback = Some(EntropyFallbackMetadata {
+        class: EntropyFallbackClass::Generic,
+        id: "generic-secret".into(),
+        name: String::new(),
+        service: String::new(),
+    });
+    let error =
+        match CompiledScanner::compile(vec![owner, detector("generic-secret", &["secret"], 8)]) {
+            Ok(_) => panic!("malformed entropy fallback metadata must not compile"),
+            Err(error) => error,
+        };
+    assert!(
+        error
+            .to_string()
+            .contains("invalid entropy_fallback metadata"),
+        "compile must explain malformed identity metadata: {error}"
     );
 }
 
@@ -267,7 +313,8 @@ fn sensitive_path_discount_is_relative_to_detector_owned_threshold() {
 #[test]
 fn entropy_fallback_identity_comes_from_active_detector_policy() {
     let mut generic_secret = detector("generic-secret", &["secret"], 8);
-    generic_secret.entropy_fallback = Some(keyhog_core::EntropyFallbackMetadata {
+    generic_secret.entropy_fallback = Some(EntropyFallbackMetadata {
+        class: EntropyFallbackClass::Generic,
         id: "entropy-custom-policy".into(),
         name: "Custom Policy Entropy".into(),
         service: "custom-service".into(),

@@ -354,25 +354,6 @@ fn assignment_keyword_for_line_short_circuits_and_falls_back() {
 
 #[cfg(feature = "entropy")]
 #[test]
-fn classify_entropy_detector_index_is_case_insensitive() {
-    use keyhog_scanner::testing::classify_entropy_detector_index_for_test;
-    // 0 generic / 1 password / 2 token / 3 api-key.
-    assert_eq!(
-        classify_entropy_detector_index_for_test("none (high-entropy)"),
-        0
-    );
-    assert_eq!(classify_entropy_detector_index_for_test("PASSWORD"), 1);
-    assert_eq!(classify_entropy_detector_index_for_test("user_pwd"), 1);
-    assert_eq!(
-        classify_entropy_detector_index_for_test("SEGMENT_WRITE_TOKEN"),
-        2
-    );
-    // No password/pwd/token substring -> defaults to the api-key bucket.
-    assert_eq!(classify_entropy_detector_index_for_test("Api_Key"), 3);
-}
-
-#[cfg(feature = "entropy")]
-#[test]
 fn keyword_is_credential_anchor_truth_table() {
     use keyhog_scanner::testing::keyword_is_credential_anchor_for_test;
     // The no-keyword sentinel is NOT an anchor.

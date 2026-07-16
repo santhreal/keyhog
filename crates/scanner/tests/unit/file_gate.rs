@@ -959,8 +959,12 @@ fn engine_hot_and_entropy_metadata_clones_are_heap_admission_gated() {
         "engine/phase2_entropy.rs must not resurrect unconditional detector metadata triple clones"
     );
     assert!(
-        entropy_src.contains("self.entropy_metadata_by_index[entropy_meta_idx]"),
-        "engine/phase2_entropy.rs must keep using the pre-interned metadata table"
+        entropy_src.contains("self.entropy_metadata_by_detector_index"),
+        "engine/phase2_entropy.rs must resolve the active detector's pre-interned metadata"
+    );
+    assert!(
+        entropy_src.contains("MissingFallbackMetadata"),
+        "engine/phase2_entropy.rs must fail closed when active identity metadata is absent"
     );
     assert!(
         entropy_src.contains("Arc::clone(&metadata.0)")

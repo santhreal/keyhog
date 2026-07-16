@@ -2462,14 +2462,6 @@ pub fn keyword_is_credential_anchor_for_test(keyword: &str) -> bool {
     crate::engine::phase2_entropy::helpers::keyword_is_credential_anchor(keyword)
 }
 
-/// Classify an entropy candidate's keyword into its detector-metadata index
-/// (0 generic / 1 password / 2 token / 3 api-key). Exposed so a test can pin the
-/// case-insensitive mapping that keeps an all-caps `PASSWORD`/`TOKEN` anchor from
-/// being mislabelled as an API key.
-#[cfg(feature = "entropy")]
-pub fn classify_entropy_detector_index_for_test(keyword: &str) -> usize {
-    crate::engine::phase2_entropy::helpers::classify_entropy_detector_index(keyword)
-}
 /// Drive the shared `resolve_value_shaped_group` variable-name fallback through
 /// a real compiled regex: compile `pattern`, match it against `text`, take the
 /// configured `group`'s range as the starting credential, and return the range

@@ -9,14 +9,6 @@ pub(crate) const GENERIC_API_KEY: &str = "generic-api-key";
 pub(crate) const GENERIC_PASSWORD: &str = "generic-password";
 
 pub(crate) const ENTROPY: &str = "entropy";
-#[cfg(feature = "entropy")]
-pub(crate) const ENTROPY_GENERIC: &str = "entropy-generic";
-#[cfg(feature = "entropy")]
-pub(crate) const ENTROPY_PASSWORD: &str = "entropy-password";
-#[cfg(feature = "entropy")]
-pub(crate) const ENTROPY_TOKEN: &str = "entropy-token";
-#[cfg(feature = "entropy")]
-pub(crate) const ENTROPY_API_KEY: &str = "entropy-api-key";
 
 pub(crate) const PRIVATE_KEY: &str = "private-key";
 
@@ -152,24 +144,11 @@ mod detector_id_corpus_guard {
         v
     }
 
-    /// Synthetic finding ids assigned at runtime by the entropy phase. NOT
-    /// backed by any `detectors/*.toml`. They are legitimate detector-id values
-    /// on emitted findings, enumerated here so they are handled explicitly, and
-    /// asserted ABSENT from the TOML corpus (a synthetic id colliding with a real
-    /// detector would silently re-route scoring).
+    /// Synthetic finding ids are assigned by active detector TOML metadata.
+    /// Only the namespace itself is non-corpus data, so assert it has no corpus
+    /// collision.
     fn synthetic_consts() -> Vec<(&'static str, &'static str)> {
-        #[cfg(feature = "entropy")]
-        let mut v = vec![("ENTROPY", ENTROPY)];
-        #[cfg(not(feature = "entropy"))]
-        let v = vec![("ENTROPY", ENTROPY)];
-        #[cfg(feature = "entropy")]
-        {
-            v.push(("ENTROPY_GENERIC", ENTROPY_GENERIC));
-            v.push(("ENTROPY_PASSWORD", ENTROPY_PASSWORD));
-            v.push(("ENTROPY_TOKEN", ENTROPY_TOKEN));
-            v.push(("ENTROPY_API_KEY", ENTROPY_API_KEY));
-        }
-        v
+        vec![("ENTROPY", ENTROPY)]
     }
 
     #[test]

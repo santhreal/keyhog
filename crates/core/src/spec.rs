@@ -144,11 +144,12 @@ pub struct DetectorSpec {
     /// `None` → the single-owner default `VERY_HIGH_ENTROPY_THRESHOLD`.
     #[serde(default)]
     pub entropy_very_high: Option<f64>,
-    /// Optional metadata used when this detector owns a synthetic entropy
-    /// finding. Keeping the emitted id, display name, and service beside the
-    /// owning detector prevents scanner-side identity tables from drifting
-    /// away from detector policy. Custom legacy specs may omit it and use the
-    /// documented compatibility metadata for their entropy class.
+    /// Metadata used when this detector owns a synthetic entropy finding.
+    /// Keeping the semantic class, emitted id, display name, and service beside
+    /// the owning detector prevents scanner-side identity tables from drifting
+    /// away from detector policy. Active entropy owners must declare it; a
+    /// missing block is a compile-time configuration error, never a guessed
+    /// scanner identity.
     #[serde(default)]
     pub entropy_fallback: Option<EntropyFallbackMetadata>,
     /// Per-detector keyword-free entropy threshold used for clearly sensitive
@@ -317,12 +318,49 @@ pub struct EntropyFloorBucket {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct EntropyFallbackMetadata {
+    /// Semantic class used by the entropy fallback. This is detector data,
+    /// not a scanner-side identity bucket; it keeps the emitted role visible
+    /// when several custom detectors share the same generic family.
+    pub class: EntropyFallbackClass,
     /// Stable emitted detector id. Must use the `entropy-` namespace.
     pub id: String,
     /// Human-readable finding name.
     pub name: String,
     /// Service family attached to the synthetic finding.
     pub service: String,
+}
+
+/// Semantic role of a detector-owned synthetic entropy finding.
+///
+/// The role is deliberately separate from the emitted id and display text:
+/// operators may rename a detector's finding without changing which evidence
+/// family owns the candidate. Runtime emission resolves the active detector's
+/// complete metadata, so this enum never acts as a scanner-wide identity
+/// fallback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum EntropyFallbackClass {
+    /// Anchor-free high-entropy material owned by the generic-secret policy.
+    #[default]
+    Generic,
+    /// Password-family assignment or isolated password evidence.
+    Password,
+    /// Token/secret keyword-family evidence.
+    Token,
+    /// API/access-key and cryptographic-key evidence.
+    ApiKey,
+}
+
+impl EntropyFallbackClass {
+    /// Stable serialized spelling used by explain output and policy hashes.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Generic => "generic",
+            Self::Password => "password",
+            Self::Token => "token",
+            Self::ApiKey => "api-key",
+        }
+    }
 }
 
 /// A structural shape that may cross a detector's broad isolated entropy floor.

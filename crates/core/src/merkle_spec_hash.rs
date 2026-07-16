@@ -101,8 +101,12 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
             }
             if let Some(metadata) = &d.entropy_fallback {
                 entries.push(format!(
-                    "entropy-fallback:{}:{}:{}:{}",
-                    d.id, metadata.id, metadata.name, metadata.service
+                    "entropy-fallback:{}:{}:{}:{}:{}",
+                    d.id,
+                    metadata.class.as_str(),
+                    metadata.id,
+                    metadata.name,
+                    metadata.service
                 ));
             }
             if let Some(v) = d.sensitive_path_entropy_very_high {

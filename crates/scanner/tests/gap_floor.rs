@@ -102,8 +102,6 @@ mod engine_backend_parity;
 mod entropy_authorization_scheme_ci;
 #[path = "gap/entropy_candidate_owned_by_named_assignment_composition_exact.rs"]
 mod entropy_candidate_owned_by_named_assignment_composition_exact;
-#[path = "gap/entropy_detector_index_case_insensitive.rs"]
-mod entropy_detector_index_case_insensitive;
 #[path = "gap/entropy_keyword_anchor_lazy_lowercase.rs"]
 mod entropy_keyword_anchor_lazy_lowercase;
 #[path = "gap/entropy_keyword_only_requires_keyword_line.rs"]

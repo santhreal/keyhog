@@ -249,8 +249,11 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
     optional_policy!("entropy_very_high", d.entropy_very_high, " bits/byte");
     if let Some(metadata) = &d.entropy_fallback {
         println!(
-            "    entropy_fallback: id={} name={:?} service={}",
-            metadata.id, metadata.name, metadata.service
+            "    entropy_fallback: class={} id={} name={:?} service={}",
+            metadata.class.as_str(),
+            metadata.id,
+            metadata.name,
+            metadata.service
         );
         declared += 1;
     }

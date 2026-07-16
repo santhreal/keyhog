@@ -182,8 +182,10 @@ impl CompiledScanner {
                 )),
             );
         for mut entropy_match in entropy_matches {
-            // Resolve metadata once; emit clones the pre-interned triple.
-            let entropy_meta_idx = helpers::classify_entropy_detector_index(&entropy_match.keyword);
+            // Resolve the complete synthetic identity from the active policy
+            // owner. There is no keyword classifier or scanner-global identity
+            // table: an incomplete custom corpus fails closed instead of
+            // silently relabelling the candidate as a built-in entropy class.
             let policy_detector_index = crate::entropy::scanner::active_policy_detector_index(
                 &self.generic_owning_detector,
                 &entropy_match.keyword,
@@ -272,10 +274,28 @@ impl CompiledScanner {
                 continue;
             }
 
-            let metadata = policy_detector_index
+            let Some(metadata) = policy_detector_index
                 .and_then(|index| self.entropy_metadata_by_detector_index.get(index))
                 .and_then(Option::as_ref)
-                .unwrap_or(&self.entropy_metadata_by_index[entropy_meta_idx]);
+            else {
+                tracing::error!(
+                    target: "keyhog::detection",
+                    keyword = %entropy_match.keyword,
+                    detector_index = ?policy_detector_index,
+                    "entropy candidate suppressed because its active detector lacks entropy_fallback metadata"
+                );
+                let entropy_ctx = crate::adjudicate::MatchCtx::for_entropy_fallback(
+                    crate::adjudicate::EntropyFallbackSignal::ValueShape(
+                        crate::adjudicate::EntropyShapeStage::MissingFallbackMetadata,
+                    ),
+                );
+                crate::adjudicate::record_suppression(
+                    chunk.metadata.path.as_deref(),
+                    &entropy_match.value,
+                    &entropy_ctx,
+                );
+                continue;
+            };
             let line_number = absolute_line(chunk.metadata.base_line, mapped_line);
             let build_raw_match = |scan_state: &mut ScanState, report_conf| {
                 // Clone metadata only for candidates that need an owned RawMatch.

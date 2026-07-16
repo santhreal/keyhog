@@ -429,9 +429,9 @@ pub(crate) fn normalized_assignment_keyword_is_credential(normalized: &str) -> b
 /// `DB_PASS`, `app.pass`). The last-segment requirement is the boundary that
 /// keeps `bypass`/`compass`/`encompass` (no separator before `pass`) and
 /// `*_PASSING` (segment `passing`, not `pass`) out. ONE PLACE for the
-/// password-family keyword test shared by both entropy classifiers
-/// (`classify_entropy_detector_index` bucket + `classify_keyword_to_detector_id`
-/// detector-id), so the two can never drift on which keys are passwords.
+/// password-family keyword test shared by entropy policy resolution and the
+/// keyword-context detector classifier, so those paths cannot drift on which
+/// keys are passwords.
 pub(crate) fn keyword_is_password_family(keyword: &str) -> bool {
     use crate::ascii_ci::ci_find;
     let bytes = keyword.as_bytes();

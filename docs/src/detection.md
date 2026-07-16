@@ -103,7 +103,7 @@ model's fixed vocabulary, remain global.
 | `entropy_high` | Tightens keyword-independent generic admission | Admits more opaque candidates without strong assignment context |
 | `entropy_very_high` | Tightens isolated, anchor-free token admission | Expands the no-keyword search and therefore its false-positive surface |
 | `sensitive_path_entropy_very_high` | Raises the keyword-free bar even in sensitive files | Lowers the explicit sensitive-path bar for that detector, improving recall in `.env`/secret manifests |
-| `[detector.entropy_fallback]` | Changes the emitted synthetic entropy finding identity for that detector's class | Omitting it uses the explicit custom-spec compatibility identity |
+| `[detector.entropy_fallback]` | Changes the emitted synthetic entropy finding identity and semantic class for that detector | Omitting it for an active entropy owner fails compilation; there is no scanner-global compatibility identity |
 | `[[detector.entropy_shapes]]` | Allows only the declared structural exception to cross the broad isolated floor | Omitting the shape removes that detector's isolated exception |
 | `entropy_floor` | A higher applicable length-bucket floor suppresses more low-entropy candidates for that detector | A lower floor preserves more human-chosen or structured credentials |
 | `mixed_alnum_floor` | Rejects more identifier-like alphanumeric runs | Preserves more low-randomness mixed-alphanumeric values |
@@ -159,12 +159,13 @@ These settings do not all use one generic “last value wins” rule:
   detector-local threshold for keyword-free candidates in paths classified as
   sensitive. When omitted, that detector's `entropy_very_high` applies; there
   is no hidden scanner-wide discount.
-- **Synthetic entropy identity:** generic detector TOMLs may declare
-  `[detector.entropy_fallback]` with an `entropy-*` id, display name, and
-  service. The compiled scanner uses this metadata for entropy-only findings;
-  custom specs that omit the block use the documented compatibility labels, so
-  omission is visible in `explain` rather than silently changing a shipped
-  detector's identity.
+- **Synthetic entropy identity:** every active entropy owner declares
+  `[detector.entropy_fallback]` with a semantic `class` (`generic`, `password`,
+  `token`, or `api-key`), an `entropy-*` id, display name, and service. The
+  compiled scanner uses the complete metadata from the active detector corpus
+  for entropy-only findings. Omitting the block is a visible compile error;
+  no scanner-global keyword classifier or compatibility identity can relabel a
+  custom candidate.
 - **Isolated entropy shapes:** generic entropy owners may declare a typed
   `lower-dash-app-password` shape with its entropy floor, group count/length,
   and special minimum length. The candidate length is derived as

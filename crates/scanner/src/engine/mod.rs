@@ -373,18 +373,10 @@ pub struct CompiledScanner {
     /// Built once by `compiled_scanner::compile_helpers::build_hot_pattern_slots`.
     #[cfg(feature = "simdsieve")]
     pub(crate) hot_pattern_slots: Vec<crate::simdsieve_prefilter::HotPatternSlot>,
-    /// Pre-interned `(detector_id, detector_name, service)` triple for each of
-    /// the four synthetic entropy-fallback classes, indexed by
-    /// `classify_entropy_detector_index` (0 generic / 1 password / 2 token /
-    /// 3 api-key). The entropy fallback emits directly and used to re-intern
-    /// these fixed `&'static str` constants per finding; caching the four
-    /// `Arc<str>` triples once turns each emit into three `Arc::clone`s
-    /// (PERF-locality_intern-1). String values are unchanged.
-    #[cfg(feature = "entropy")]
-    pub(crate) entropy_metadata_by_index: [(Arc<str>, Arc<str>, Arc<str>); 4],
     /// Detector-indexed entropy identities declared by the active TOML corpus.
-    /// This keeps custom generic owners on their own identity without routing
-    /// emission through detector-ID branches.
+    /// This keeps every active generic owner on its own identity without a
+    /// scanner-global class table or detector-ID branch. A missing entry is a
+    /// compile-time corpus error and is never replaced with a guessed label.
     #[cfg(feature = "entropy")]
     pub(crate) entropy_metadata_by_detector_index: Vec<Option<(Arc<str>, Arc<str>, Arc<str>)>>,
     pub config: ScannerConfig,

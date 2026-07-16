@@ -47,6 +47,19 @@ fn entropy_policy_priority_is_restricted_to_generic_detectors() {
 }
 
 #[test]
+fn active_entropy_owner_must_declare_fallback_metadata() {
+    let mut detector = detector_with_pattern("token=([A-Za-z0-9]+)");
+    detector.service = "generic".into();
+    detector.kind = keyhog_core::DetectorKind::Phase2Generic;
+    let issues = validate_detector(&detector);
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message)
+            if message.contains("active entropy owner must declare entropy_fallback")
+    )));
+}
+
+#[test]
 fn sensitive_path_entropy_threshold_cannot_exceed_detector_threshold() {
     let mut detector = detector_with_pattern("token=([A-Za-z0-9]+)");
     detector.entropy_very_high = Some(5.0);
@@ -64,6 +77,7 @@ fn sensitive_path_entropy_threshold_cannot_exceed_detector_threshold() {
 fn entropy_fallback_metadata_requires_entropy_identity_and_labels() {
     let mut detector = detector_with_pattern("token=([A-Za-z0-9]+)");
     detector.entropy_fallback = Some(keyhog_core::EntropyFallbackMetadata {
+        class: keyhog_core::EntropyFallbackClass::Generic,
         id: "generic-secret".into(),
         name: "".into(),
         service: "".into(),

@@ -4,6 +4,33 @@ use super::compile_helpers::build_hot_pattern_slots;
 use super::compile_helpers::surface_cuda_acquisition_failure;
 use super::*;
 
+#[cfg(feature = "entropy")]
+fn validate_entropy_fallback_owners(detectors: &[DetectorSpec]) -> Result<()> {
+    for detector in detectors {
+        let active_owner = detector.service == "generic"
+            && (detector.kind == keyhog_core::DetectorKind::Phase2Generic
+                || detector.entropy_policy_priority.is_some());
+        if active_owner && detector.entropy_fallback.is_none() {
+            return Err(crate::error::ScanError::Config(format!(
+                "detector {:?} owns entropy policy but omits [detector.entropy_fallback]; declare class, id, name, and service so synthetic findings have an explicit identity",
+                detector.id
+            )));
+        }
+        if let Some(metadata) = detector.entropy_fallback.as_ref() {
+            if !metadata.id.starts_with("entropy-")
+                || metadata.name.trim().is_empty()
+                || metadata.service.trim().is_empty()
+            {
+                return Err(crate::error::ScanError::Config(format!(
+                    "detector {:?} declares invalid entropy_fallback metadata; id must use the entropy- namespace and name/service must be non-empty",
+                    detector.id
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
 impl CompiledScanner {
     /// Compile detector specs into a [`CompiledScanner`] using the process-wide
     /// runtime GPU policy and default tuning. The common entry point.
@@ -34,6 +61,8 @@ impl CompiledScanner {
         // LAW10: cfg-only Hyperscan tuning marker; no runtime effect.
         #[cfg(not(feature = "simd"))]
         let _tuning_config = tuning_config;
+        #[cfg(feature = "entropy")]
+        validate_entropy_fallback_owners(&detectors)?;
         let state = build_compile_state(&detectors)?;
         validate_compiled_pattern_detector_indices(
             &state.ac_map,
@@ -452,10 +481,10 @@ impl CompiledScanner {
             .map(|pattern| regex_match_byte_upper_bound(pattern.regex.as_str()))
             .collect();
 
-        // Pre-intern the four synthetic entropy-fallback metadata triples once
-        // (PERF-locality_intern-1). Shipped generic detector TOMLs own these
-        // identities through `entropy_fallback`; the compatibility triples are
-        // used only when a custom legacy spec omits that optional block.
+        // Pre-intern detector-owned synthetic entropy metadata once
+        // (PERF-locality_intern-1). Every active entropy owner must declare the
+        // complete identity in its TOML; there is no scanner-global identity
+        // table or compatibility label to hide an incomplete corpus.
         #[cfg(feature = "entropy")]
         let entropy_metadata_by_detector_index: Vec<
             Option<(Arc<str>, Arc<str>, Arc<str>)>,
@@ -477,26 +506,6 @@ impl CompiledScanner {
                 })
             })
             .collect();
-
-        #[cfg(feature = "entropy")]
-        let entropy_metadata_by_index: [(Arc<str>, Arc<str>, Arc<str>); 4] = {
-            use crate::engine::phase2_entropy::helpers::ENTROPY_DETECTOR_METADATA_COMPAT;
-            std::array::from_fn(|i| {
-                let (fallback_id, fallback_name, fallback_service) =
-                    ENTROPY_DETECTOR_METADATA_COMPAT[i];
-                (
-                    static_intern
-                        .lookup(fallback_id)
-                        .unwrap_or_else(|| Arc::from(fallback_id)),
-                    static_intern
-                        .lookup(fallback_name)
-                        .unwrap_or_else(|| Arc::from(fallback_name)),
-                    static_intern
-                        .lookup(fallback_service)
-                        .unwrap_or_else(|| Arc::from(fallback_service)),
-                )
-            })
-        };
 
         let scanner = Self {
             ac,
@@ -550,8 +559,6 @@ impl CompiledScanner {
             hs_index_map,
             #[cfg(feature = "simdsieve")]
             hot_pattern_slots,
-            #[cfg(feature = "entropy")]
-            entropy_metadata_by_index,
             #[cfg(feature = "entropy")]
             entropy_metadata_by_detector_index,
             config: ScannerConfig::default(),

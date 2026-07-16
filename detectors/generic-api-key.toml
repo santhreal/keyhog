@@ -56,6 +56,7 @@ group_length = 4
 special_min_length = 16
 
 [detector.entropy_fallback]
+class = "api-key"
 id = "entropy-api-key"
 name = "API Key (Entropy Detected)"
 service = "generic"

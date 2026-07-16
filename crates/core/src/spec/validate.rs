@@ -338,6 +338,14 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
             )));
         }
     }
+    let entropy_owner = spec.service == "generic"
+        && (spec.kind == crate::spec::DetectorKind::Phase2Generic
+            || spec.entropy_policy_priority.is_some());
+    if entropy_owner && spec.entropy_fallback.is_none() {
+        issues.push(QualityIssue::Error(
+            "active entropy owner must declare entropy_fallback metadata; omission would make synthetic finding identity ambiguous".into(),
+        ));
+    }
     if let Some(metadata) = &spec.entropy_fallback {
         if spec.service != "generic" {
             issues.push(QualityIssue::Error(

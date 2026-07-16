@@ -474,10 +474,33 @@ knob_changes_digest!(spec_hash_binds_sensitive_path_entropy_very_high, |d| d
 knob_changes_digest!(spec_hash_binds_entropy_fallback_metadata, |d| d
     .entropy_fallback =
     Some(EntropyFallbackMetadata {
+        class: keyhog_core::EntropyFallbackClass::Generic,
         id: "entropy-custom".into(),
         name: "Custom entropy".into(),
         service: "generic".into(),
     }));
+#[test]
+fn spec_hash_binds_entropy_fallback_class() {
+    let mut generic = knob_base();
+    generic.entropy_fallback = Some(EntropyFallbackMetadata {
+        class: keyhog_core::EntropyFallbackClass::Generic,
+        id: "entropy-custom".into(),
+        name: "Custom entropy".into(),
+        service: "generic".into(),
+    });
+    let mut password = generic.clone();
+    password
+        .entropy_fallback
+        .as_mut()
+        .expect("class test baseline metadata")
+        .class = keyhog_core::EntropyFallbackClass::Password;
+    assert_ne!(
+        compute_spec_hash(&[generic]),
+        compute_spec_hash(&[password]),
+        "changing only entropy-fallback class must change detector identity"
+    );
+}
+
 knob_changes_digest!(spec_hash_binds_entropy_shapes, |d| d.entropy_shapes =
     vec![EntropyShapeSpec::LowerDashAppPassword {
         entropy_floor: 3.9,

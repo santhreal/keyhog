@@ -57,6 +57,7 @@ fn explain_generic_secret_prints_detector_owned_entropy_and_bpe_policy() {
         "canonical_hex_key_material: lengths=[64] keywords=[private_key, signing_secret]"
             .to_string(),
         "entropy_floor: 2.8 bits/byte through 24 bytes".to_string(),
+        "entropy_fallback: class=generic id=entropy-generic name=\"Generic High-Entropy Secret\" service=generic".to_string(),
         "declared policy owner: [detector] in the loaded detector TOML".to_string(),
         "unset optional fields: field defaults or scan policy resolve at scan time; use `config --effective` for scan-fallback/scan-override".to_string(),
     ] {
@@ -76,6 +77,7 @@ fn explain_generic_api_key_prints_transport_and_direct_hex_policy() {
         "decoded_hex_key_material_lengths: 32, 48",
         "canonical_hex_key_material: lengths=[32, 48] keywords=[api_key, access_key, secret_key, client_secret, x-api-key, auth_key, signing_key, encryption_key, master_key, session_key, hmac_secret, hmac_seed] suffixes=[key, secret] excluded_keywords=[license_key]",
         "canonical_hex_key_material: lengths=[64]",
+        "entropy_fallback: class=api-key id=entropy-api-key",
     ] {
         assert!(
             stdout.contains(expected),
@@ -129,11 +131,11 @@ fn explain_password_reports_explicit_bpe_disablement() {
 
 #[test]
 fn every_generic_entropy_owner_exposes_complete_toml_policy() {
-    for detector_id in [
-        "generic-api-key",
-        "generic-keyword-secret",
-        "generic-password",
-        "generic-secret",
+    for (detector_id, class) in [
+        ("generic-api-key", "api-key"),
+        ("generic-keyword-secret", "token"),
+        ("generic-password", "password"),
+        ("generic-secret", "generic"),
     ] {
         let output = explain(detector_id);
         assert_eq!(
@@ -158,6 +160,10 @@ fn every_generic_entropy_owner_exposes_complete_toml_policy() {
         assert!(
             stdout.contains("declared policy owner: [detector] in the loaded detector TOML"),
             "{detector_id} must identify the detector TOML as policy owner:\n{stdout}"
+        );
+        assert!(
+            stdout.contains(&format!("entropy_fallback: class={class}")),
+            "{detector_id} must expose its typed entropy-fallback class:\n{stdout}"
         );
     }
 }

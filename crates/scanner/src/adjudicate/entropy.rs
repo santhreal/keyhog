@@ -41,6 +41,7 @@ pub(crate) enum EntropyShapeStage {
     KeywordFreeTooShort,
     CandidatePlausibilityRejected,
     SecretPlausibilityRejected,
+    MissingFallbackMetadata,
 }
 
 impl EntropyShapeStage {
@@ -83,6 +84,7 @@ impl EntropyShapeStage {
             Self::KeywordFreeTooShort => "entropy_keyword_free_too_short",
             Self::CandidatePlausibilityRejected => "entropy_candidate_plausibility_rejected",
             Self::SecretPlausibilityRejected => "entropy_secret_plausibility_rejected",
+            Self::MissingFallbackMetadata => "entropy_missing_fallback_metadata",
         }
     }
 }
