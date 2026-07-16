@@ -300,8 +300,9 @@ reject it, so recalibrate after upgrading KeyHog.
 ## Inspect what is calibrated
 
 ```sh
-keyhog backend --autoroute          # human-readable cache contents
-keyhog backend --autoroute --json   # machine-readable
+keyhog backend --autoroute          # concise human-readable summary
+keyhog backend --autoroute --verbose # every workload receipt
+keyhog backend --autoroute --json    # machine-readable
 keyhog backend --autoroute --autoroute-cache /absolute/custom/autoroute.json
 keyhog doctor                       # reports calibrated / not calibrated / STALE
 ```
