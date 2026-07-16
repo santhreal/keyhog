@@ -232,25 +232,50 @@ fn run_autoroute_inspection(
         p.reset
     );
     let mut one_shot_gpu = 0usize;
+    let mut one_shot_cuda = 0usize;
+    let mut one_shot_wgpu = 0usize;
     let mut daemon_gpu = 0usize;
+    let mut daemon_cuda = 0usize;
+    let mut daemon_wgpu = 0usize;
+    let mut vyre_gpu_receipts = 0usize;
     let mut first_gpu_workload = None;
     for config in &inspection.configs {
         for decision in &config.decisions {
-            if keyhog_scanner::hw_probe::parse_backend_str(&decision.backend)
-                .is_some_and(|backend| backend.is_gpu())
-            {
-                one_shot_gpu += 1;
-                first_gpu_workload.get_or_insert(decision.workload.clone());
+            if let Some(backend) = keyhog_scanner::hw_probe::parse_backend_str(&decision.backend) {
+                if backend.is_gpu() {
+                    one_shot_gpu += 1;
+                    first_gpu_workload.get_or_insert(decision.workload.clone());
+                    match backend {
+                        keyhog_scanner::ScanBackend::GpuCuda => one_shot_cuda += 1,
+                        keyhog_scanner::ScanBackend::GpuWgpu => one_shot_wgpu += 1,
+                        _ => {}
+                    }
+                }
             }
-            if keyhog_scanner::hw_probe::parse_backend_str(&decision.daemon_backend)
-                .is_some_and(|backend| backend.is_gpu())
+            if let Some(backend) =
+                keyhog_scanner::hw_probe::parse_backend_str(&decision.daemon_backend)
             {
-                daemon_gpu += 1;
+                if backend.is_gpu() {
+                    daemon_gpu += 1;
+                    match backend {
+                        keyhog_scanner::ScanBackend::GpuCuda => daemon_cuda += 1,
+                        keyhog_scanner::ScanBackend::GpuWgpu => daemon_wgpu += 1,
+                        _ => {}
+                    }
+                }
             }
+            vyre_gpu_receipts += decision
+                .candidate_receipts
+                .iter()
+                .filter(|receipt| {
+                    keyhog_scanner::hw_probe::parse_backend_str(&receipt.backend)
+                        .is_some_and(|backend| backend.is_gpu())
+                })
+                .count();
         }
     }
     println!(
-        "  route summary: one-shot GPU {one_shot_gpu}/{total_decisions}, daemon GPU {daemon_gpu}/{total_decisions}"
+        "  route summary: one-shot GPU {one_shot_gpu}/{total_decisions} (CUDA {one_shot_cuda}, WGPU {one_shot_wgpu}); daemon GPU {daemon_gpu}/{total_decisions} (CUDA {daemon_cuda}, WGPU {daemon_wgpu}); VYRE candidate receipts {vyre_gpu_receipts}"
     );
     if let Some(workload) = first_gpu_workload {
         println!("  first calibrated GPU bucket: {workload}");
