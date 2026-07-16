@@ -148,6 +148,9 @@ impl CompiledScanner {
         use rayon::prelude::*;
 
         #[cfg(not(feature = "simd"))]
+        let _ = admission_plan;
+
+        #[cfg(not(feature = "simd"))]
         {
             let telemetry = crate::telemetry::capture_scan_telemetry();
             let mut results: Vec<Vec<keyhog_core::RawMatch>> = chunks
@@ -409,7 +412,13 @@ impl CompiledScanner {
         let triggers = self.normalize_coalesced_phase2_triggers(chunks, triggers);
         let phase2_start = std::time::Instant::now();
         let telemetry = crate::telemetry::capture_scan_telemetry();
-        let mut results: Vec<Vec<keyhog_core::RawMatch>> = chunks
+        struct CoalescedChunkOutput {
+            state: Option<crate::types::ScanState>,
+            matches: Vec<keyhog_core::RawMatch>,
+            needs_postprocess: bool,
+        }
+
+        let mut outputs: Vec<CoalescedChunkOutput> = chunks
             .par_iter()
             .zip(triggers.into_par_iter())
             .enumerate()
@@ -427,8 +436,8 @@ impl CompiledScanner {
                         .and_then(|rows| rows.get(chunk_index))
                         .map(Vec::as_slice);
                     if let Some(triggered) = triggered_opt {
-                        let mut matches = if chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
-                            self.scan_windowed_with_triggered(
+                        if chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
+                            let matches = self.scan_windowed_with_triggered(
                                 chunk,
                                 &triggered,
                                 None,
@@ -436,10 +445,15 @@ impl CompiledScanner {
                                 always_anchor_present,
                                 confirmed_anchor_matches,
                                 generic_keyword_positions,
-                            )
+                            );
+                            return CoalescedChunkOutput {
+                                state: None,
+                                matches,
+                                needs_postprocess: true,
+                            };
                         } else {
                             let prepared = self.prepare_chunk(chunk);
-                            self.scan_prepared_with_triggered(
+                            let state = self.scan_prepared_state_with_triggered(
                                 prepared,
                                 ScanBackend::SimdCpu,
                                 &triggered,
@@ -448,10 +462,13 @@ impl CompiledScanner {
                                 always_anchor_present,
                                 confirmed_anchor_matches,
                                 generic_keyword_positions,
-                            )
-                        };
-                        self.post_process_coalesced_matches(chunk, &mut matches);
-                        return matches;
+                            );
+                            return CoalescedChunkOutput {
+                                state: Some(state),
+                                matches: Vec::new(),
+                                needs_postprocess: true,
+                            };
+                        }
                     }
                     let admitted_by_phase2_gpu =
                         match phase2_admission.and_then(|admission| admission.get(chunk_index)) {
@@ -470,9 +487,17 @@ impl CompiledScanner {
                         && !self.should_scan_no_hit_chunk(chunk)
                     {
                         if let Some(matches) = self.decode_only_coalesced_matches(chunk) {
-                            return matches;
+                            return CoalescedChunkOutput {
+                                state: None,
+                                matches,
+                                needs_postprocess: false,
+                            };
                         }
-                        return Vec::new();
+                        return CoalescedChunkOutput {
+                            state: None,
+                            matches: Vec::new(),
+                            needs_postprocess: false,
+                        };
                     }
 
                     let prepared = self.prepare_chunk(chunk);
@@ -485,7 +510,7 @@ impl CompiledScanner {
                                 ScanBackend::SimdCpu,
                             )
                         };
-                    let mut matches = self.scan_prepared_with_triggered(
+                    let state = self.scan_prepared_state_with_triggered(
                         prepared,
                         ScanBackend::SimdCpu,
                         &triggered,
@@ -495,9 +520,46 @@ impl CompiledScanner {
                         confirmed_anchor_matches,
                         generic_keyword_positions,
                     );
-                    self.post_process_coalesced_matches(chunk, &mut matches);
-                    matches
+                    CoalescedChunkOutput {
+                        state: Some(state),
+                        matches: Vec::new(),
+                        needs_postprocess: true,
+                    }
                 })
+            })
+            .collect();
+
+        #[cfg(feature = "ml")]
+        {
+            let mut output_indices = Vec::new();
+            let mut scan_states = Vec::new();
+            for (output_index, output) in outputs.iter_mut().enumerate() {
+                if let Some(state) = output.state.take() {
+                    output_indices.push(output_index);
+                    scan_states.push(state);
+                }
+            }
+            let _g = profile::span(profile::P::Ml);
+            self.apply_ml_batch_scores_across(&mut scan_states);
+            for (output_index, state) in output_indices.into_iter().zip(scan_states) {
+                outputs[output_index].matches = state.into_matches();
+            }
+        }
+        #[cfg(not(feature = "ml"))]
+        for output in &mut outputs {
+            if let Some(state) = output.state.take() {
+                output.matches = state.into_matches();
+            }
+        }
+
+        let mut results: Vec<Vec<keyhog_core::RawMatch>> = outputs
+            .into_par_iter()
+            .zip(chunks.par_iter())
+            .map(|(mut output, chunk)| {
+                if output.needs_postprocess {
+                    self.post_process_coalesced_matches(chunk, &mut output.matches);
+                }
+                output.matches
             })
             .collect();
 

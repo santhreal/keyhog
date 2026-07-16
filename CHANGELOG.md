@@ -6,6 +6,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Coalesced scans now aggregate pending ML candidates across chunks before one
+  CPU or GPU MoE submission, while returning finalized findings to their
+  originating chunk caps and locations. CPU scoring also resolves the immutable
+  model once per batch instead of once per candidate.
 - Entropy-owning detector TOMLs now own the isolated mixed-token entropy floor,
   symbolic and colon-component length floors, and slash-led base64 entropy
   floor. Scanner construction compiles those values once and the production

@@ -125,28 +125,15 @@ pub(crate) fn batch_ml_inference_with_timeout<T: crate::ml_scorer::MlScoreInput>
         let _ = gpu_moe_timeout; // LAW10: cfg-only GPU timeout marker; ML CPU scoring ignores GPU dispatch timeout by construction
         let prof = ml_split_prof_enabled();
 
-        // Measurement (`keyhog scan --profile`, regime B): batch sizes average
-        // 0.5 candidates/call and 90% of calls are empty; only 0.2% reach the
-        // GPU's 64-candidate threshold. `batch_ml_inference` runs INSIDE the
-        // already-parallel coalesced/per-chunk scan (rayon outer loop), so a
-        // `par_iter` over a 1-7 element inner batch pays rayon split/join
-        // overhead for no parallelism, pure loss on the overwhelmingly common
-        // path. Below the GPU crossover the GPU never engages anyway, so the
-        // small-batch path is a single fused serial loop (compute feature ->
-        // score, no intermediate Vec, no rayon). Byte-identical results to the
-        // parallel path; the only change is the iteration strategy.
+        // Single-chunk and windowed scans commonly produce only a handful of
+        // candidates. Coalesced scans aggregate pending rows across chunks
+        // before entering here, but any batch below the measured GPU crossover
+        // still avoids rayon split/join and GPU dispatch overhead through one
+        // fused serial feature-and-score loop.
         if candidates.len() < crate::ml_scorer::GPU_BATCH_THRESHOLD {
             // Small-batch fused serial path (the ~99% case).
             let t = prof.then(std::time::Instant::now);
-            let scores: Vec<f64> = candidates
-                .iter()
-                .map(|candidate| {
-                    let text = candidate.ml_text();
-                    crate::confidence::policy::ml_score_for_candidate_text(text, || {
-                        crate::ml_scorer::score_features(&candidate.ml_features(config))
-                    })
-                })
-                .collect();
+            let scores = crate::ml_scorer::score_input_batch_serial(candidates, config);
             if let Some(t) = t {
                 // Fused loop: attribute the whole cost to feature+score combined
                 // under MOE_SCORE_NS (kept separate from the large-batch split).
@@ -172,18 +159,8 @@ pub(crate) fn batch_ml_inference_with_timeout<T: crate::ml_scorer::MlScoreInput>
         }
 
         let t_score = prof.then(std::time::Instant::now);
-        let score_features_on_cpu = || -> Vec<f64> {
-            candidates
-                .par_iter()
-                .zip(features.par_iter())
-                .map(|(candidate, features)| {
-                    let text = candidate.ml_text();
-                    crate::confidence::policy::ml_score_for_candidate_text(text, || {
-                        crate::ml_scorer::score_features(features)
-                    })
-                })
-                .collect()
-        };
+        let score_features_on_cpu =
+            || crate::ml_scorer::score_precomputed_batch_on_cpu(candidates, &features);
         let scores = {
             #[cfg(feature = "gpu")]
             {

@@ -137,11 +137,9 @@ impl super::CompiledScanner {
     }
 }
 
-/// ML batch-size histogram. Buckets the `ml_pending.len()` seen at each
-/// [`CompiledScanner::apply_ml_batch_scores`] call so we can measure how far
-/// per-(sub)chunk ML batches sit from the GPU MoE 64-candidate dispatch threshold
-/// the data that decides whether cross-(sub)chunk batch unification is worth
-/// the recall-exactness cost. Zero-cost when unset.
+/// ML batch-size histogram. Buckets the actual batch submitted by the
+/// single-chunk or coalesced scorer so GPU engagement and remaining sparse
+/// windowed work stay measurable. Zero-cost when unset.
 ///
 /// Gated by the unified scanner profile switch (the histogram is dumped as
 /// part of [`super::profile::dump`]).

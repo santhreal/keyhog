@@ -7,7 +7,7 @@ impl CompiledScanner {
     pub(crate) fn scan_prepared_with_triggered(
         &self,
         prepared: PreparedChunk<'_>,
-        _backend: ScanBackend,
+        backend: ScanBackend,
         triggered_patterns: &[u64],
         deadline: Option<std::time::Instant>,
         phase2_keyword_hints: Option<&[u32]>,
@@ -15,8 +15,44 @@ impl CompiledScanner {
         confirmed_anchor_literal_matches: Option<&[(u32, u32)]>,
         generic_keyword_positions: Option<&[u32]>,
     ) -> Vec<RawMatch> {
+        let scan_state = self.scan_prepared_state_with_triggered(
+            prepared,
+            backend,
+            triggered_patterns,
+            deadline,
+            phase2_keyword_hints,
+            phase2_always_anchor_present,
+            confirmed_anchor_literal_matches,
+            generic_keyword_positions,
+        );
+        #[cfg(feature = "ml")]
+        {
+            let mut scan_state = scan_state;
+            if !crate::deadline::expired(deadline) {
+                let _g = profile::span(profile::P::Ml);
+                self.apply_ml_batch_scores(&mut scan_state);
+            }
+            scan_state.into_matches()
+        }
+        #[cfg(not(feature = "ml"))]
+        {
+            scan_state.into_matches()
+        }
+    }
+
+    pub(crate) fn scan_prepared_state_with_triggered(
+        &self,
+        prepared: PreparedChunk<'_>,
+        _backend: ScanBackend,
+        triggered_patterns: &[u64],
+        deadline: Option<std::time::Instant>,
+        phase2_keyword_hints: Option<&[u32]>,
+        phase2_always_anchor_present: Option<bool>,
+        confirmed_anchor_literal_matches: Option<&[(u32, u32)]>,
+        generic_keyword_positions: Option<&[u32]>,
+    ) -> ScanState {
         if crate::deadline::expired(deadline) {
-            return Vec::new();
+            return ScanState::with_static_intern(self.static_intern.clone());
         }
         // Borrow cached line offsets; downstream consumers take `&[usize]`.
         let line_offsets: &[usize] = prepared.line_offsets();
@@ -42,7 +78,7 @@ impl CompiledScanner {
             );
         }
         if crate::deadline::expired(deadline) {
-            return scan_state.into_matches();
+            return scan_state;
         }
 
         let expanded_patterns = self.expand_triggered_patterns(triggered_patterns);
@@ -105,7 +141,7 @@ impl CompiledScanner {
             );
         }
         if crate::deadline::expired(deadline) {
-            return scan_state.into_matches();
+            return scan_state;
         }
 
         // Phase-2 capture patterns (no usable literal prefix; e.g. asana-pat
@@ -159,7 +195,7 @@ impl CompiledScanner {
             ),
         }
         if crate::deadline::expired(deadline) {
-            return scan_state.into_matches();
+            return scan_state;
         }
 
         {
@@ -176,7 +212,7 @@ impl CompiledScanner {
             );
         }
         if crate::deadline::expired(deadline) {
-            return scan_state.into_matches();
+            return scan_state;
         }
 
         #[cfg(feature = "entropy")]
@@ -190,16 +226,10 @@ impl CompiledScanner {
             );
         }
         if crate::deadline::expired(deadline) {
-            return scan_state.into_matches();
+            return scan_state;
         }
 
-        #[cfg(feature = "ml")]
-        {
-            let _g = profile::span(profile::P::Ml);
-            self.apply_ml_batch_scores(&mut scan_state);
-        }
-
-        scan_state.into_matches()
+        scan_state
     }
 
     /// Test/diagnostic: run ONLY the phase-2 pass on `chunk` and return its

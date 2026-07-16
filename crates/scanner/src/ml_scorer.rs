@@ -201,6 +201,51 @@ pub(crate) fn score_features(features: &[f32; NUM_FEATURES]) -> f64 {
     forward_pass(features) as f64
 }
 
+/// Score an already-extracted batch on CPU while acquiring the immutable model
+/// once for the whole batch. Large scan batches use this as the exact GPU
+/// fallback/reference path, avoiding one `OnceLock` lookup per candidate.
+#[cfg(feature = "ml")]
+pub(crate) fn score_precomputed_batch_on_cpu<T: MlScoreInput>(
+    inputs: &[T],
+    features: &[[f32; NUM_FEATURES]],
+) -> Vec<f64> {
+    use rayon::prelude::*;
+
+    assert_eq!(
+        inputs.len(),
+        features.len(),
+        "internal invariant violation: ML input and feature batch lengths differ"
+    );
+    let model = ml_weights::model();
+    inputs
+        .par_iter()
+        .zip(features.par_iter())
+        .map(|(input, features)| {
+            crate::confidence::policy::ml_score_for_candidate_text(input.ml_text(), || {
+                forward_pass_impl(model, features) as f64
+            })
+        })
+        .collect()
+}
+
+/// Fused serial feature extraction and CPU scoring for the common tiny batch.
+/// The model pointer is resolved once while feature arrays remain stack-local.
+#[cfg(feature = "ml")]
+pub(crate) fn score_input_batch_serial<T: MlScoreInput>(
+    inputs: &[T],
+    config: &crate::types::ScannerConfig,
+) -> Vec<f64> {
+    let model = ml_weights::model();
+    inputs
+        .iter()
+        .map(|input| {
+            crate::confidence::policy::ml_score_for_candidate_text(input.ml_text(), || {
+                forward_pass_impl(model, &input.ml_features(config)) as f64
+            })
+        })
+        .collect()
+}
+
 /// Return the embedded model version string for diagnostics and CLI output.
 pub fn model_version() -> &'static str {
     ml_weights::MODEL_VERSION
