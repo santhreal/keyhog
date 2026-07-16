@@ -32,6 +32,7 @@ pub(super) fn calibrate_fastest_correct_backend(
     let sample_bytes = calibration_sample_bytes(sample)?;
 
     let reference_matches = establish_reference_simd(scanner, sample);
+    let reference_key = canonical_matches(&reference_matches);
 
     let mut candidate_backends = eligible_backend_labels
         .iter()
@@ -69,7 +70,7 @@ pub(super) fn calibrate_fastest_correct_backend(
                 .reset_autoroute_calibration_gpu_workload()
                 .map_err(AutorouteRoutingError::calibration_not_persisted)?;
         }
-        let mut measured = measure_candidate_backend(scanner, sample, backend, &reference_matches)?;
+        let mut measured = measure_candidate_backend(scanner, sample, backend, &reference_key)?;
         if is_gpu_backend(backend) {
             let backend_cold_ns = scanner
                 .autoroute_calibration_gpu_backend_cold_ns(backend)
@@ -212,17 +213,18 @@ fn measure_candidate_backend(
     scanner: &CompiledScanner,
     sample: &[Chunk],
     backend: ScanBackend,
-    reference_matches: &[Vec<keyhog_core::RawMatch>],
+    reference_key: &[CanonicalMatch<'_>],
 ) -> Result<BackendTimingEvidence, AutorouteRoutingError> {
-    let reference_key = canonical_matches(reference_matches);
     let mut durations = Vec::with_capacity(AUTOROUTE_CALIBRATION_TRIALS);
-    let records_cold_trial = is_gpu_backend(backend);
     // GPU routing evidence deliberately stores the first real dispatch as its
     // cold trial followed by warm trials. Discarding that call and labelling the
     // second one "cold" makes one-shot routing evidence optimistically false.
-    // CPU/Hyperscan candidates still get one checked, unrecorded warmup so their
-    // persisted trials measure steady-state throughput like the SIMD reference.
-    let calls = AUTOROUTE_CALIBRATION_TRIALS + usize::from(!records_cold_trial);
+    // The reference SIMD scan above is already a checked warmup for the SIMD
+    // candidate. The scalar CPU candidate keeps its dedicated warmup because it
+    // uses a different dispatch implementation. GPU keeps its first real
+    // dispatch because that call is the persisted cold observation.
+    let records_warmup = backend == ScanBackend::CpuFallback;
+    let calls = AUTOROUTE_CALIBRATION_TRIALS + usize::from(records_warmup);
     for trial_idx in 0..calls {
         scanner.clear_fragment_cache();
         let gpu_degrade_count_before = if is_gpu_backend(backend) {
@@ -287,7 +289,7 @@ fn measure_candidate_backend(
             scanner.clear_fragment_cache();
             return Err(error);
         }
-        if records_cold_trial || trial_idx > 0 {
+        if !records_warmup || trial_idx > 0 {
             durations.push(dur);
         }
     }

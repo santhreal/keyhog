@@ -37,6 +37,44 @@ impl Phase1AdmissionSummary {
             ..Self::default()
         }
     }
+
+    #[inline]
+    fn record(&mut self, admission: Phase1Admission, bytes: u64) {
+        match admission {
+            Phase1Admission::AlphabetRejected => {
+                self.alphabet_rejected_chunks += 1;
+                self.alphabet_rejected_bytes += bytes;
+            }
+            Phase1Admission::BigramRejected => {
+                self.bigram_rejected_chunks += 1;
+                self.bigram_rejected_bytes += bytes;
+            }
+            Phase1Admission::Admitted => {
+                self.admitted_chunks += 1;
+                self.admitted_bytes += bytes;
+            }
+        }
+    }
+
+    #[inline]
+    fn merge(self, other: Self) -> Self {
+        Self {
+            alphabet_rejected_chunks: self
+                .alphabet_rejected_chunks
+                .saturating_add(other.alphabet_rejected_chunks),
+            alphabet_rejected_bytes: self
+                .alphabet_rejected_bytes
+                .saturating_add(other.alphabet_rejected_bytes),
+            bigram_rejected_chunks: self
+                .bigram_rejected_chunks
+                .saturating_add(other.bigram_rejected_chunks),
+            bigram_rejected_bytes: self
+                .bigram_rejected_bytes
+                .saturating_add(other.bigram_rejected_bytes),
+            admitted_chunks: self.admitted_chunks.saturating_add(other.admitted_chunks),
+            admitted_bytes: self.admitted_bytes.saturating_add(other.admitted_bytes),
+        }
+    }
 }
 
 impl CompiledScanner {
@@ -59,23 +97,34 @@ impl CompiledScanner {
     /// production scanning uses. Decode work is intentionally separate and is
     /// represented by the scanner's decode workload plan.
     pub fn phase1_admission_summary(&self, chunks: &[Chunk]) -> Phase1AdmissionSummary {
+        // Fused batches otherwise serialize the exact admission probes on one
+        // thread immediately before the production Rayon scan. Keep tiny
+        // batches allocation-free, but fold larger batches in parallel so
+        // route selection does not become a serial pre-scan bottleneck.
+        if chunks.len() >= 4
+            && chunks.iter().map(|chunk| chunk.data.len()).sum::<usize>() >= 64 * 1024
+        {
+            use rayon::prelude::*;
+
+            return chunks
+                .par_iter()
+                .map(|chunk| {
+                    let mut summary = Phase1AdmissionSummary::default();
+                    summary.record(
+                        self.phase1_admission(chunk.data.as_bytes()),
+                        chunk.data.len() as u64,
+                    );
+                    summary
+                })
+                .reduce(Phase1AdmissionSummary::default, Phase1AdmissionSummary::merge);
+        }
+
         let mut summary = Phase1AdmissionSummary::default();
         for chunk in chunks {
-            let bytes = chunk.data.len() as u64;
-            match self.phase1_admission(chunk.data.as_bytes()) {
-                Phase1Admission::AlphabetRejected => {
-                    summary.alphabet_rejected_chunks += 1;
-                    summary.alphabet_rejected_bytes += bytes;
-                }
-                Phase1Admission::BigramRejected => {
-                    summary.bigram_rejected_chunks += 1;
-                    summary.bigram_rejected_bytes += bytes;
-                }
-                Phase1Admission::Admitted => {
-                    summary.admitted_chunks += 1;
-                    summary.admitted_bytes += bytes;
-                }
-            }
+            summary.record(
+                self.phase1_admission(chunk.data.as_bytes()),
+                chunk.data.len() as u64,
+            );
         }
         summary
     }

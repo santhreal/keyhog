@@ -87,6 +87,32 @@ fn phase1_summary_distinguishes_equal_size_admission_classes() {
 }
 
 #[test]
+fn phase1_summary_parallel_fold_preserves_admission_totals() {
+    const BYTES: usize = 16 * 1024;
+    let scanner = scanner();
+    let batch = vec![
+        chunk("~".repeat(BYTES)),
+        chunk("g".repeat(BYTES)),
+        chunk("gh ".repeat(BYTES / 3)),
+        chunk("gh ".repeat(BYTES / 3)),
+    ];
+
+    let summary = scanner.phase1_admission_summary(&batch);
+    assert_eq!(summary.alphabet_rejected_chunks, 1);
+    assert_eq!(summary.bigram_rejected_chunks, 1);
+    assert_eq!(summary.admitted_chunks, 2);
+    assert_eq!(
+        summary.alphabet_rejected_bytes
+            + summary.bigram_rejected_bytes
+            + summary.admitted_bytes,
+        batch
+            .iter()
+            .map(|chunk| chunk.data.len() as u64)
+            .sum::<u64>()
+    );
+}
+
+#[test]
 fn phase1_admission_classes_preserve_backend_findings_at_eight_mib() {
     const BYTES: usize = 8 * 1024 * 1024;
     const WGPU_GRID_BYTES: usize = 8_388_480;

@@ -541,14 +541,6 @@ impl ProbeSweep<'_> {
             std::io::stdout().flush().ok();
         }
 
-        self.orchestrator
-            .reset_autoroute_calibration_gpu_workload()
-            .with_context(|| {
-                format!(
-                    "resetting workload-shaped GPU state for {label} ({})",
-                    self.policy_label
-                )
-            })?;
         let probe = materialize_probe(self.workspace, idx, workload)
             .with_context(|| format!("creating {label} calibration probe"))?;
         let sources = probe
