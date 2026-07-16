@@ -1045,9 +1045,8 @@ fn candidate_plausibility_rejection_stage_with_policy(
                 EntropyShapeStage::CredentialContextTooShort,
             ));
         }
-        let plausibility_context = PlausibilityContext::new(true, canonical_lift)
-            .with_detector(spec)
-            .with_compiled_policy(compiled);
+        let plausibility_context =
+            PlausibilityContext::new(true, canonical_lift).with_detector_policy(spec, compiled);
         return (!is_secret_plausible(candidate, placeholder_keywords, plausibility_context))
             .then_some(StageId::EntropyValueShape(
                 EntropyShapeStage::SecretPlausibilityRejected,
@@ -1059,11 +1058,7 @@ fn candidate_plausibility_rejection_stage_with_policy(
         ));
     }
     let plausibility_context = PlausibilityContext::new(context.is_credential_context, false)
-        .with_detector(spec)
-        .with_compiled_policy(get_compiled_policy_for_keyword(
-            active_policy,
-            &context.keyword,
-        ));
+        .with_detector_policy(spec, compiled);
     if !is_secret_plausible(candidate, placeholder_keywords, plausibility_context) {
         return Some(StageId::EntropyValueShape(
             EntropyShapeStage::SecretPlausibilityRejected,

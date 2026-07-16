@@ -27,6 +27,64 @@ use crate::entropy::{shannon_entropy, HIGH_ENTROPY_THRESHOLD, VERY_HIGH_ENTROPY_
 /// input width). This name is the feature-extraction view of that same owner.
 pub(crate) const NUM_FEATURES: usize = super::model_arch::INPUT_DIM;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CompiledEntropyFeatureClass {
+    None,
+    Generic,
+    Password,
+    Token,
+    ApiKey,
+}
+
+/// Static detector-conditioned model inputs compiled once from TOML. Runtime
+/// feature extraction receives this compact copy instead of rereading kind,
+/// verifier, companion, and entropy-fallback structures for every candidate.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct CompiledDetectorMlFeatures {
+    pub(crate) generic_detector: bool,
+    pub(crate) weak_anchor: bool,
+    pub(crate) live_verifier: bool,
+    pub(crate) required_companion: bool,
+    pub(crate) structural_password_slot: bool,
+    pub(crate) phase2_generic: bool,
+    pub(crate) entropy_class: CompiledEntropyFeatureClass,
+}
+
+impl CompiledDetectorMlFeatures {
+    pub(crate) fn compile(detector: &keyhog_core::DetectorSpec) -> Self {
+        let entropy_class = match detector
+            .entropy_fallback
+            .as_ref()
+            .map(|fallback| fallback.class)
+        {
+            Some(keyhog_core::EntropyFallbackClass::Generic) => {
+                CompiledEntropyFeatureClass::Generic
+            }
+            Some(keyhog_core::EntropyFallbackClass::Password) => {
+                CompiledEntropyFeatureClass::Password
+            }
+            Some(keyhog_core::EntropyFallbackClass::Token) => CompiledEntropyFeatureClass::Token,
+            Some(keyhog_core::EntropyFallbackClass::ApiKey) => CompiledEntropyFeatureClass::ApiKey,
+            None => CompiledEntropyFeatureClass::None,
+        };
+        Self {
+            generic_detector: detector.service.eq_ignore_ascii_case("generic"),
+            // Preserve the feature contract of the currently embedded model.
+            // Exact per-pattern provenance requires a matching corpus/model
+            // migration before this input can safely change semantics.
+            weak_anchor: detector.weak_anchor,
+            live_verifier: detector.verify.is_some(),
+            required_companion: detector
+                .companions
+                .iter()
+                .any(|companion| companion.required),
+            structural_password_slot: detector.structural_password_slot,
+            phase2_generic: detector.kind == keyhog_core::DetectorKind::Phase2Generic,
+            entropy_class,
+        }
+    }
+}
+
 /// Offset into the feature vector where the one-hot file-type encoding starts.
 const FILE_TYPE_OFFSET: usize = 32;
 
@@ -162,6 +220,7 @@ pub fn compute_features_with_config(
         placeholder_keywords,
         None,
         None,
+        None,
     )
 }
 
@@ -178,6 +237,32 @@ pub fn compute_features_for_detector_with_config(
     detector: &keyhog_core::DetectorSpec,
     channel: MlCandidateChannel,
 ) -> [f32; NUM_FEATURES] {
+    let features = CompiledDetectorMlFeatures::compile(detector);
+    compute_features_for_compiled_detector_with_config(
+        text,
+        context,
+        known_prefixes,
+        secret_keywords,
+        test_keywords,
+        placeholder_keywords,
+        detector.service.as_str(),
+        features,
+        channel,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn compute_features_for_compiled_detector_with_config(
+    text: &str,
+    context: &str,
+    known_prefixes: &[String],
+    secret_keywords: &[String],
+    test_keywords: &[String],
+    placeholder_keywords: &[String],
+    detector_service: &str,
+    detector_features: CompiledDetectorMlFeatures,
+    channel: MlCandidateChannel,
+) -> [f32; NUM_FEATURES] {
     compute_features_internal(
         text,
         context,
@@ -185,7 +270,8 @@ pub fn compute_features_for_detector_with_config(
         secret_keywords,
         test_keywords,
         placeholder_keywords,
-        Some(detector),
+        Some(detector_service),
+        Some(detector_features),
         Some(channel),
     )
 }
@@ -197,7 +283,8 @@ fn compute_features_internal(
     secret_keywords: &[String],
     test_keywords: &[String],
     placeholder_keywords: &[String],
-    detector: Option<&keyhog_core::DetectorSpec>,
+    detector_service: Option<&str>,
+    detector_features: Option<CompiledDetectorMlFeatures>,
     channel: Option<MlCandidateChannel>,
 ) -> [f32; NUM_FEATURES] {
     debug_assert!(
@@ -235,57 +322,54 @@ fn compute_features_internal(
     apply_extra_features(&mut f, context, context_bytes);
     apply_decode_structure_feature(&mut f, text);
     apply_service_context_feature(&mut f, context_bytes);
-    apply_detector_features(&mut f, context_bytes, detector, channel);
+    apply_detector_features(
+        &mut f,
+        context_bytes,
+        detector_service,
+        detector_features,
+        channel,
+    );
     f
 }
 
 fn apply_detector_features(
     features: &mut [f32; NUM_FEATURES],
     context: &[u8],
-    detector: Option<&keyhog_core::DetectorSpec>,
+    detector_service: Option<&str>,
+    detector: Option<CompiledDetectorMlFeatures>,
     channel: Option<MlCandidateChannel>,
 ) {
     let Some(detector) = detector else {
         return;
     };
-    features[ACTIVE_SERVICE_CONTEXT_FEATURE_INDEX] = binary_feature(
-        super::service_vocab::context_names_detector_service(detector, context),
-    );
-    features[GENERIC_DETECTOR_FEATURE_INDEX] =
-        binary_feature(detector.service.eq_ignore_ascii_case("generic"));
+    features[ACTIVE_SERVICE_CONTEXT_FEATURE_INDEX] =
+        binary_feature(detector_service.is_some_and(|service| {
+            super::service_vocab::context_names_detector_service(service, context)
+        }));
+    features[GENERIC_DETECTOR_FEATURE_INDEX] = binary_feature(detector.generic_detector);
     features[WEAK_ANCHOR_FEATURE_INDEX] = binary_feature(detector.weak_anchor);
-    features[LIVE_VERIFIER_FEATURE_INDEX] = binary_feature(detector.verify.is_some());
-    features[REQUIRED_COMPANION_FEATURE_INDEX] = binary_feature(
-        detector
-            .companions
-            .iter()
-            .any(|companion| companion.required),
-    );
+    features[LIVE_VERIFIER_FEATURE_INDEX] = binary_feature(detector.live_verifier);
+    features[REQUIRED_COMPANION_FEATURE_INDEX] = binary_feature(detector.required_companion);
     features[STRUCTURAL_PASSWORD_SLOT_FEATURE_INDEX] =
         binary_feature(detector.structural_password_slot);
-    features[PHASE2_GENERIC_FEATURE_INDEX] =
-        binary_feature(detector.kind == keyhog_core::DetectorKind::Phase2Generic);
+    features[PHASE2_GENERIC_FEATURE_INDEX] = binary_feature(detector.phase2_generic);
     features[ENTROPY_CHANNEL_FEATURE_INDEX] =
         binary_feature(channel == Some(MlCandidateChannel::Entropy));
     if channel == Some(MlCandidateChannel::Entropy) {
-        match detector
-            .entropy_fallback
-            .as_ref()
-            .map(|fallback| fallback.class)
-        {
-            Some(keyhog_core::EntropyFallbackClass::Generic) => {
+        match detector.entropy_class {
+            CompiledEntropyFeatureClass::Generic => {
                 features[ENTROPY_GENERIC_FEATURE_INDEX] = 1.0;
             }
-            Some(keyhog_core::EntropyFallbackClass::Password) => {
+            CompiledEntropyFeatureClass::Password => {
                 features[ENTROPY_PASSWORD_FEATURE_INDEX] = 1.0;
             }
-            Some(keyhog_core::EntropyFallbackClass::Token) => {
+            CompiledEntropyFeatureClass::Token => {
                 features[ENTROPY_TOKEN_FEATURE_INDEX] = 1.0;
             }
-            Some(keyhog_core::EntropyFallbackClass::ApiKey) => {
+            CompiledEntropyFeatureClass::ApiKey => {
                 features[ENTROPY_API_KEY_FEATURE_INDEX] = 1.0;
             }
-            None => {}
+            CompiledEntropyFeatureClass::None => {}
         }
     }
 }

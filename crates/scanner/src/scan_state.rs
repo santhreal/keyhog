@@ -32,7 +32,8 @@ pub(crate) fn ml_features_for_candidate(
     credential: &str,
     context_radius_lines: usize,
     config: &crate::types::ScannerConfig,
-    detector: &keyhog_core::DetectorSpec,
+    detector_service: &str,
+    detector_features: crate::ml_scorer::ml_features::CompiledDetectorMlFeatures,
     channel: crate::ml_scorer::MlCandidateChannel,
 ) -> [f32; crate::ml_scorer::NUM_FEATURES] {
     if credential.is_empty() {
@@ -40,14 +41,15 @@ pub(crate) fn ml_features_for_candidate(
     }
     let text_context = crate::pipeline::local_context_window(text, line, context_radius_lines);
     let compute = |context: &str| {
-        crate::ml_scorer::compute_features_for_detector_with_config(
+        crate::ml_scorer::ml_features::compute_features_for_compiled_detector_with_config(
             credential,
             context,
             &config.known_prefixes,
             &config.secret_keywords,
             &config.test_keywords,
             &config.placeholder_keywords,
-            detector,
+            detector_service,
+            detector_features,
             channel,
         )
     };

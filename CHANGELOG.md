@@ -6,6 +6,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Detector-conditioned ML inputs now compile verifier, companion, service,
+  generic, structural, phase-2, and entropy-family facts once with each loaded
+  detector. Candidate feature extraction consumes that compact policy instead
+  of traversing detector schema collections on every queued match.
 - Isolated-bare entropy compatibility APIs now resolve their base entropy,
   mixed, symbolic, and colon-shape policy from the embedded detector owner
   instead of retaining a second scanner-side copy of those detector values.

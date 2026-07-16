@@ -158,15 +158,12 @@ pub(crate) fn context_names_service(context: &[u8]) -> bool {
 /// merely any service in the corpus. The canonical TOML `service` value is the
 /// allocation-free identity probe; generic and one/two-byte labels cannot
 /// masquerade as positive evidence.
-pub(crate) fn context_names_detector_service(
-    detector: &keyhog_core::DetectorSpec,
-    context: &[u8],
-) -> bool {
+pub(crate) fn context_names_detector_service(detector_service: &str, context: &[u8]) -> bool {
     if context.is_empty()
-        || detector.service.len() < MIN_ACTIVE_SERVICE_NAME_LEN
-        || detector.service.eq_ignore_ascii_case("generic")
+        || detector_service.len() < MIN_ACTIVE_SERVICE_NAME_LEN
+        || detector_service.eq_ignore_ascii_case("generic")
     {
         return false;
     }
-    crate::ascii_ci::ci_find_nonempty(context, detector.service.as_bytes())
+    crate::ascii_ci::ci_find_nonempty(context, detector_service.as_bytes())
 }

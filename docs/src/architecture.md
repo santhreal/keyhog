@@ -262,6 +262,13 @@ a rebuild, which is why `--verify` rebuilds before benching. The adjacent
 and gate metrics; `build.rs` refuses a card/weights mismatch and embeds the
 summary shown by `keyhog --version`.
 
+Scanner construction also compiles the detector-conditioned feature facts used
+by that model, including service identity, verifier and companion presence,
+generic/structural classification, phase-2 ownership, and entropy family.
+Inference indexes that compact immutable policy and does not reinterpret the
+loaded detector schema for each candidate. The public training oracle compiles
+the same facts from the supplied detector before extracting its feature row.
+
 ---
 
 ## Where do I find X?

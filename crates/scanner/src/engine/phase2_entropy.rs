@@ -345,9 +345,9 @@ impl CompiledScanner {
                 }
             });
             #[cfg(feature = "ml")]
-            if let Some(((policy, mode), detector)) = entropy_ml_policy
+            if let Some(((detector_index, policy), mode)) = policy_detector_index
+                .zip(entropy_ml_policy)
                 .zip(entropy_ml_mode)
-                .zip(policy_detector)
                 .filter(|_| self.config.ml_enabled && self.config.entropy_ml_authoritative)
             {
                 let raw_match = build_raw_match(scan_state, policy_conf);
@@ -358,7 +358,8 @@ impl CompiledScanner {
                     &entropy_match.value,
                     policy.context_radius_lines,
                     &self.config,
-                    detector,
+                    self.metadata_by_index[detector_index].2.as_ref(),
+                    policy.features,
                     crate::ml_scorer::MlCandidateChannel::Entropy,
                 );
                 scan_state.push_entropy_ml_pending(

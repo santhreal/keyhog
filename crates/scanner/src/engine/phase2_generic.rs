@@ -480,7 +480,8 @@ impl CompiledScanner {
                         value,
                         ml_policy.context_radius_lines,
                         &self.config,
-                        owning_detector,
+                        metadata.2.as_ref(),
+                        ml_policy.features,
                         crate::ml_scorer::MlCandidateChannel::Pattern,
                     );
                     let raw = build_raw(scan_state, policy_conf);

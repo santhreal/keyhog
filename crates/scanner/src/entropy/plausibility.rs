@@ -114,6 +114,22 @@ impl PlausibilityContext {
         self
     }
 
+    /// Apply the compiled detector policy when a scanner supplied one; inspect
+    /// the schema only for compatibility callers that do not own compiled
+    /// scanner state. This avoids assigning the same fields twice per active
+    /// entropy candidate (`DetectorSpec`, then compiled overwrite).
+    #[inline]
+    pub(crate) fn with_detector_policy(
+        self,
+        detector: Option<&keyhog_core::DetectorSpec>,
+        compiled: Option<&crate::entropy::policy::CompiledEntropyPolicy>,
+    ) -> Self {
+        match compiled {
+            Some(policy) => self.with_compiled_policy(Some(policy)),
+            None => self.with_detector(detector),
+        }
+    }
+
     #[inline]
     pub(crate) fn with_compiled_policy(
         mut self,

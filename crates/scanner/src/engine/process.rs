@@ -367,7 +367,8 @@ impl CompiledScanner {
                     credential,
                     detector_ml_policy.context_radius_lines,
                     &self.config,
-                    detector,
+                    self.metadata_by_index[entry.detector_index].2.as_ref(),
+                    detector_ml_policy.features,
                     crate::ml_scorer::MlCandidateChannel::Pattern,
                 );
                 let raw_match = build_raw_match(

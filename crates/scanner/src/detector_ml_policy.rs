@@ -1,5 +1,6 @@
 //! Compact runtime form of detector-owned ML policy.
 
+use crate::ml_scorer::ml_features::CompiledDetectorMlFeatures;
 use keyhog_core::{DetectorMlMode, DetectorMlPolicySpec, DetectorSpec};
 
 /// Enabled model behavior. `Disabled` is eliminated while detector policy is
@@ -30,15 +31,18 @@ pub(crate) struct CompiledDetectorMlPolicy {
     pub(crate) entropy_mode: Option<ActiveMlMode>,
     pub(crate) weight: f64,
     pub(crate) context_radius_lines: usize,
+    pub(crate) features: CompiledDetectorMlFeatures,
 }
 
-impl From<DetectorMlPolicySpec> for CompiledDetectorMlPolicy {
-    fn from(policy: DetectorMlPolicySpec) -> Self {
+impl CompiledDetectorMlPolicy {
+    fn compile(detector: &DetectorSpec) -> Self {
+        let policy: DetectorMlPolicySpec = detector.ml;
         Self {
             match_mode: ActiveMlMode::compile(policy.match_mode),
             entropy_mode: ActiveMlMode::compile(policy.entropy_mode),
             weight: policy.weight,
             context_radius_lines: policy.context_radius_lines,
+            features: CompiledDetectorMlFeatures::compile(detector),
         }
     }
 }
@@ -46,7 +50,7 @@ impl From<DetectorMlPolicySpec> for CompiledDetectorMlPolicy {
 pub(crate) fn compile(detectors: &[DetectorSpec]) -> Vec<CompiledDetectorMlPolicy> {
     detectors
         .iter()
-        .map(|detector| detector.ml.into())
+        .map(CompiledDetectorMlPolicy::compile)
         .collect()
 }
 

@@ -250,8 +250,7 @@ fn extract_candidates_internal(
             .is_some_and(|spec| spec.allows_canonical_hex_key_material(keyword, cleaned));
         let plausibility_context =
             PlausibilityContext::new(is_credential_context, detector_owned_canonical_hex_key)
-                .with_detector(detector)
-                .with_compiled_policy(compiled_policy);
+                .with_detector_policy(detector, compiled_policy);
         let plausible = structured_dotted
             || if strict {
                 is_secret_plausible(cleaned, placeholder_keywords, plausibility_context)

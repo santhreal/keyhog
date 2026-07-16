@@ -2868,6 +2868,8 @@ pub fn queued_ml_features(
 ) -> Vec<f32> {
     let detector = keyhog_core::detector_spec_by_id(detector_id)
         .unwrap_or_else(|| panic!("test detector {detector_id:?} must exist"));
+    let detector_features =
+        crate::ml_scorer::ml_features::CompiledDetectorMlFeatures::compile(detector);
     crate::scan_state::ml_features_for_candidate(
         text,
         line,
@@ -2875,7 +2877,8 @@ pub fn queued_ml_features(
         credential,
         context_radius_lines,
         config,
-        detector,
+        detector.service.as_str(),
+        detector_features,
         if entropy_channel {
             crate::ml_scorer::MlCandidateChannel::Entropy
         } else {

@@ -499,6 +499,70 @@ fn detector_conditioning_comes_from_the_active_toml_and_channel() {
 }
 
 #[test]
+fn compiled_runtime_detector_features_match_the_training_oracle() {
+    use keyhog_scanner::ml_scorer::MlCandidateChannel::{Entropy, Pattern};
+
+    let mut config = keyhog_scanner::ScannerConfig::default();
+    config.known_prefixes.clear();
+    config.secret_keywords.clear();
+    config.test_keywords.clear();
+    config.placeholder_keywords.clear();
+
+    let cases = [
+        (
+            "alchemy-api-key",
+            Pattern,
+            "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d",
+            "ALCHEMY_API_KEY=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d",
+        ),
+        (
+            "generic-secret",
+            Entropy,
+            "Xk9Lm2Pq7Rs4Tv8Wy1Zb3Cd6Ef0Gh5Ij",
+            "secret=Xk9Lm2Pq7Rs4Tv8Wy1Zb3Cd6Ef0Gh5Ij",
+        ),
+        (
+            "url-credentials",
+            Pattern,
+            "hunter2hunter2",
+            "postgres://user:hunter2hunter2@db",
+        ),
+        (
+            "twilio-auth-token",
+            Pattern,
+            "0123456789abcdef0123456789abcdef",
+            "TWILIO_AUTH_TOKEN=0123456789abcdef0123456789abcdef",
+        ),
+    ];
+
+    for (detector_id, channel, credential, candidate_line) in cases {
+        let source = format!("first\n{candidate_line}\nthird");
+        let context = keyhog_scanner::testing::ml_context_for_candidate(
+            &source,
+            2,
+            Some("src/feature-parity.rs"),
+            5,
+        );
+        let expected = detector_feats(credential, &context, detector_id, channel);
+        let actual = keyhog_scanner::testing::queued_ml_features(
+            &source,
+            2,
+            Some("src/feature-parity.rs"),
+            credential,
+            5,
+            &config,
+            detector_id,
+            channel == Entropy,
+        );
+        assert_eq!(
+            actual.as_slice(),
+            expected.as_slice(),
+            "compiled runtime ML features drifted from the training oracle for {detector_id}"
+        );
+    }
+}
+
+#[test]
 fn ml_score_is_deterministic_bounded_and_zero_on_empty() {
     // Empty text short-circuits to exactly 0.0.
     assert_eq!(keyhog_scanner::testing::ml_score("", ""), 0.0);
