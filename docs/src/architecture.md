@@ -216,6 +216,14 @@ compatibility helpers without a compiled scanner inspect `DetectorSpec`
 directly. Generic assignment processing resolves its entropy-policy owner and
 canonical-policy owner from one normalized key lookup.
 
+The same construction step compiles hot scalar execution facts such as generic
+classification, minimum length and confidence, severity, structural password
+slots, exact detector keywords, and public-identifier assignment markers.
+Emission paths address that cache-local record by detector index. Once all
+matchers and policies are built, `CompiledScanner` drops `DetectorSpec` itself;
+the flexible structure remains a configuration and introspection schema, not a
+second runtime policy owner.
+
 **The rule.** Emission paths produce `CandidateMatch` values and typed signals;
 `adjudicate_match` owns the ordered suppression verdict. Path owners may compute
 context-specific facts (entropy shape, generic bridge boundaries, named

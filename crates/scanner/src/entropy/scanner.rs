@@ -25,7 +25,6 @@ use keyhog_core::DetectorSpec;
 /// exposed.
 #[derive(Clone, Copy)]
 pub(crate) struct ActiveDetectorPolicy<'a> {
-    detectors: &'a [DetectorSpec],
     index: &'a crate::generic_keyword_owner::GenericOwningDetectorIndex,
     compiled: &'a crate::entropy::policy::CompiledEntropyPolicies,
     key_material: &'a crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicies,
@@ -33,22 +32,15 @@ pub(crate) struct ActiveDetectorPolicy<'a> {
 
 impl<'a> ActiveDetectorPolicy<'a> {
     pub(crate) fn new(
-        detectors: &'a [DetectorSpec],
         index: &'a crate::generic_keyword_owner::GenericOwningDetectorIndex,
         compiled: &'a crate::entropy::policy::CompiledEntropyPolicies,
         key_material: &'a crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicies,
     ) -> Self {
         Self {
-            detectors,
             index,
             compiled,
             key_material,
         }
-    }
-
-    fn spec_for_keyword(self, keyword: &str) -> Option<&'a DetectorSpec> {
-        active_policy_detector_index(self.index, keyword)
-            .and_then(|index| self.detectors.get(index))
     }
 
     fn compiled_for_keyword(
@@ -56,19 +48,6 @@ impl<'a> ActiveDetectorPolicy<'a> {
         keyword: &str,
     ) -> Option<&'a crate::entropy::policy::CompiledEntropyPolicy> {
         active_policy_detector_index(self.index, keyword).and_then(|index| self.compiled.get(index))
-    }
-
-    fn spec_for_role(self, role: keyhog_core::EntropyDetectionRole) -> Option<&'a DetectorSpec> {
-        let index = match role {
-            keyhog_core::EntropyDetectionRole::KeywordFree => self.index.keyword_free_owner_index(),
-            keyhog_core::EntropyDetectionRole::IsolatedBare => {
-                self.index.isolated_bare_owner_index()
-            }
-            keyhog_core::EntropyDetectionRole::UnclaimedKeyword => {
-                self.index.unclaimed_keyword_owner_index()
-            }
-        }?;
-        self.detectors.get(index)
     }
 
     fn compiled_for_role(
@@ -149,7 +128,7 @@ fn get_spec_for_keyword<'a>(
     keyword: &str,
 ) -> Option<&'a DetectorSpec> {
     match active_policy {
-        Some(policy) => policy.spec_for_keyword(keyword),
+        Some(_) => None,
         None => embedded_spec_for_keyword(keyword),
     }
 }
@@ -166,7 +145,7 @@ fn get_spec_for_role<'a>(
     role: keyhog_core::EntropyDetectionRole,
 ) -> Option<&'a DetectorSpec> {
     match active_policy {
-        Some(policy) => policy.spec_for_role(role),
+        Some(_) => None,
         None => embedded_spec_for_role(role),
     }
 }

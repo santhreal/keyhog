@@ -6,6 +6,11 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Detector class, minimum length/confidence, severity, structural-password-slot,
+  keywords, and public-identifier marker policy now compile into cache-local
+  execution records. Named, generic, and entropy emitters no longer read those
+  fields from `DetectorSpec`; `CompiledScanner` drops the flexible detector
+  schema after construction instead of retaining a duplicate runtime owner.
 - Canonical and transport-decoded hexadecimal key-material rules now compile
   from every active detector TOML into detector-indexed immutable programs.
   Named, generic, and entropy producers no longer walk detector schema vectors

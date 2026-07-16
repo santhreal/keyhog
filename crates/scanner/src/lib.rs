@@ -93,6 +93,8 @@ pub mod decode;
 /// (binary asset magic bytes, protobuf wire) so decode-through feeds scoring.
 pub(crate) mod decode_structure;
 pub(crate) mod detector_catalog;
+/// Cache-local detector facts used by candidate execution and emission.
+pub(crate) mod detector_execution_policy;
 /// Canonical detector-id strings and scanner-side detector-family predicates.
 pub(crate) mod detector_ids;
 /// Compiled canonical/decoded key-material policy from detector TOMLs.

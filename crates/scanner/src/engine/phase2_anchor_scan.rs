@@ -40,7 +40,7 @@ impl CompiledScanner {
         scan_state: &mut ScanState,
         deadline: Option<std::time::Instant>,
     ) {
-        let detector = &self.detectors[entry.detector_index];
+        let execution_policy = self.detector_execution_policies.get(entry.detector_index);
         let search_text: &str = &preprocessed.text;
         let bytes_total = search_text.len();
         // Per-pattern signal cache: constant across this pattern's matches but
@@ -166,11 +166,15 @@ impl CompiledScanner {
             };
 
             let &(keyword_nearby, sensitive_file) = signals.get_or_init(|| {
-                super::scan_filters::compute_pattern_signals(entry, detector, chunk, preprocessed)
+                super::scan_filters::compute_pattern_signals(
+                    entry,
+                    execution_policy,
+                    chunk,
+                    preprocessed,
+                )
             });
             self.process_match(
                 entry,
-                detector,
                 search_text,
                 preprocessed,
                 line_offsets,

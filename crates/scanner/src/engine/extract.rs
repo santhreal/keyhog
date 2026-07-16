@@ -14,7 +14,7 @@
 
 use super::CompiledScanner;
 use crate::types::*;
-use keyhog_core::{Chunk, DetectorSpec};
+use keyhog_core::Chunk;
 
 impl CompiledScanner {
     #[allow(clippy::too_many_arguments)]
@@ -30,12 +30,12 @@ impl CompiledScanner {
         cursor_range: Option<(usize, usize)>,
         deadline: Option<std::time::Instant>,
     ) {
-        let detector = &self.detectors[entry.detector_index];
+        let execution_policy = self.detector_execution_policies.get(entry.detector_index);
 
         if let Some(group) = entry.group {
             self.extract_grouped_matches(
                 entry,
-                detector,
+                execution_policy,
                 group,
                 preprocessed,
                 line_offsets,
@@ -50,7 +50,7 @@ impl CompiledScanner {
         }
         self.extract_plain_matches(
             entry,
-            detector,
+            execution_policy,
             preprocessed,
             line_offsets,
             code_lines,
@@ -66,7 +66,7 @@ impl CompiledScanner {
     fn extract_grouped_matches(
         &self,
         entry: &CompiledPattern,
-        detector: &DetectorSpec,
+        execution_policy: &crate::detector_execution_policy::CompiledDetectorExecutionPolicy,
         group: usize,
         preprocessed: &ScannerPreprocessedText<'_>,
         line_offsets: &[usize],
@@ -199,11 +199,15 @@ impl CompiledScanner {
             let credential = &search_text[credential_range.0..credential_range.1];
 
             let &(keyword_nearby, sensitive_file) = signals.get_or_init(|| {
-                super::scan_filters::compute_pattern_signals(entry, detector, chunk, preprocessed)
+                super::scan_filters::compute_pattern_signals(
+                    entry,
+                    execution_policy,
+                    chunk,
+                    preprocessed,
+                )
             });
             self.process_match(
                 entry,
-                detector,
                 search_text,
                 preprocessed,
                 line_offsets,
@@ -227,7 +231,7 @@ impl CompiledScanner {
     fn extract_plain_matches(
         &self,
         entry: &CompiledPattern,
-        detector: &DetectorSpec,
+        execution_policy: &crate::detector_execution_policy::CompiledDetectorExecutionPolicy,
         preprocessed: &ScannerPreprocessedText<'_>,
         line_offsets: &[usize],
         code_lines: &[&str],
@@ -319,11 +323,15 @@ impl CompiledScanner {
                 continue;
             }
             let &(keyword_nearby, sensitive_file) = signals.get_or_init(|| {
-                super::scan_filters::compute_pattern_signals(entry, detector, chunk, preprocessed)
+                super::scan_filters::compute_pattern_signals(
+                    entry,
+                    execution_policy,
+                    chunk,
+                    preprocessed,
+                )
             });
             self.process_match(
                 entry,
-                detector,
                 search_text,
                 preprocessed,
                 line_offsets,

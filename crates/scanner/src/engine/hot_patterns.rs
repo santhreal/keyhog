@@ -139,16 +139,15 @@ impl CompiledScanner {
                 };
 
                 let entry = &self.ac_map[ac_map_index];
-                let detector = &self.detectors[entry.detector_index];
+                let execution_policy = self.detector_execution_policies.get(entry.detector_index);
                 let (keyword_nearby, sensitive_file) = super::scan_filters::compute_pattern_signals(
                     entry,
-                    detector,
+                    execution_policy,
                     chunk,
                     preprocessed,
                 );
                 self.process_match(
                     entry,
-                    detector,
                     text,
                     preprocessed,
                     line_offsets,

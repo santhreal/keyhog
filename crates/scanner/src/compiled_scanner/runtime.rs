@@ -185,7 +185,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
 
     /// Number of loaded detectors.
     pub(crate) fn detector_count(&self) -> usize {
-        self.detectors.len()
+        self.metadata_by_index.len()
     }
 
     /// Pre-interned `(detector_id, detector_name, service)` triple for the

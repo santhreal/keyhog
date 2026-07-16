@@ -11,7 +11,7 @@ use crate::confidence::policy::MlScoreResult;
 use crate::context;
 use crate::pipeline::*;
 use crate::types::*;
-use keyhog_core::{Chunk, DetectorSpec};
+use keyhog_core::Chunk;
 use std::collections::HashMap;
 
 impl CompiledScanner {
@@ -46,7 +46,6 @@ impl CompiledScanner {
     pub(super) fn process_match(
         &self,
         entry: &CompiledPattern,
-        detector: &DetectorSpec,
         data: &str,
         preprocessed: &ScannerPreprocessedText<'_>,
         line_offsets: &[usize],
@@ -63,13 +62,12 @@ impl CompiledScanner {
         let (credential, match_end) =
             extend_known_prefix_credential(data, credential, credential_end);
         let line = match_line_number(preprocessed, line_offsets, credential_start);
-        // Resolve the detector class from the active TOML once for this
-        // candidate. Detector IDs are reporting identities, not policy.
-        let is_generic = self.detector_is_generic_by_index[entry.detector_index];
+        let execution_policy = self.detector_execution_policies.get(entry.detector_index);
+        let is_generic = execution_policy.is_generic;
 
         let process_signals = crate::adjudicate::ProcessCandidateSignals::from_match(
             is_generic,
-            detector.min_len,
+            execution_policy.min_len,
             self.credential_shape_by_detector_index
                 .get(entry.detector_index)
                 .and_then(Option::as_ref),
@@ -136,7 +134,7 @@ impl CompiledScanner {
                 self.detector_suppression_by_index.get(entry.detector_index),
                 !is_generic,
                 weak_anchor,
-                detector.structural_password_slot,
+                execution_policy.structural_password_slot,
                 allow_decoded_hex_key_material,
             );
         let match_ctx = crate::adjudicate::MatchCtx::for_named_detector(named_suppression_ctx);
@@ -308,7 +306,7 @@ impl CompiledScanner {
         );
 
         let min_confidence_floor = crate::adjudicate::detector_min_confidence_floor(
-            detector.min_confidence,
+            execution_policy.min_confidence,
             self.config.min_confidence,
         );
 
@@ -318,7 +316,7 @@ impl CompiledScanner {
                     chunk.metadata.path.as_deref(),
                     credential,
                     crate::adjudicate::ReportAdjudicationPolicy {
-                        detector_id: detector.id.as_ref(),
+                        detector_id: self.metadata_by_index[entry.detector_index].0.as_ref(),
                         code_context: inferred_context,
                         confidence: policy_conf,
                         min_confidence_floor,
@@ -336,7 +334,7 @@ impl CompiledScanner {
                 let source_offset =
                     preprocessed.source_offset_for_match(&chunk.data, credential_start, credential);
                 let raw_match = build_raw_match(
-                    detector,
+                    execution_policy.severity,
                     self.interned_detector_metadata(entry.detector_index),
                     chunk,
                     credential,
@@ -372,7 +370,7 @@ impl CompiledScanner {
                     crate::ml_scorer::MlCandidateChannel::Pattern,
                 );
                 let raw_match = build_raw_match(
-                    detector,
+                    execution_policy.severity,
                     self.interned_detector_metadata(entry.detector_index),
                     chunk,
                     credential,

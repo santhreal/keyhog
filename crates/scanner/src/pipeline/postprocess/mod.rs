@@ -18,7 +18,7 @@ fn source_adjusted_severity(source_type: &str, severity: Severity) -> Severity {
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_raw_match(
-    detector: &keyhog_core::DetectorSpec,
+    detector_severity: Severity,
     // Pre-interned (detector_id, detector_name, service) for this detector,
     // cloned by index from `CompiledScanner::metadata_by_index` instead of
     // re-hashed per match (PERF-locality_intern-1). Byte-identical to the
@@ -54,7 +54,7 @@ pub(crate) fn build_raw_match(
     let severity = if pattern_client_safe {
         keyhog_core::Severity::ClientSafe
     } else {
-        source_adjusted_severity(&chunk.metadata.source_type, detector.severity)
+        source_adjusted_severity(&chunk.metadata.source_type, detector_severity)
     };
     RawMatch {
         detector_id,

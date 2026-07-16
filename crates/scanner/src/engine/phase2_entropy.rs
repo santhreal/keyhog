@@ -99,7 +99,6 @@ impl CompiledScanner {
                 &keyword_assignment_lines,
                 &self.config,
                 Some(crate::entropy::scanner::ActiveDetectorPolicy::new(
-                    &self.detectors,
                     &self.generic_owning_detector,
                     &self.entropy_policies,
                     &self.detector_key_material_policies,
@@ -171,7 +170,6 @@ impl CompiledScanner {
                 Some(&skip_lines),
                 allow_canonical_lift,
                 Some(crate::entropy::scanner::ActiveDetectorPolicy::new(
-                    &self.detectors,
                     &self.generic_owning_detector,
                     &self.entropy_policies,
                     &self.detector_key_material_policies,
@@ -186,7 +184,8 @@ impl CompiledScanner {
                 &self.generic_owning_detector,
                 &entropy_match.keyword,
             );
-            let policy_detector = policy_detector_index.and_then(|index| self.detectors.get(index));
+            let execution_policy =
+                policy_detector_index.map(|index| self.detector_execution_policies.get(index));
             let compiled_policy =
                 policy_detector_index.and_then(|index| self.entropy_policies.get(index));
             let canonical_detector_index = self
@@ -243,9 +242,7 @@ impl CompiledScanner {
                 source_entropy_requires_same_line_credential,
                 bpe_bound,
                 compiled_policy,
-                policy_detector.map_or(&[], |detector| {
-                    detector.public_identifier_assignment_markers.as_slice()
-                }),
+                execution_policy,
             ) {
                 let entropy_ctx = crate::adjudicate::MatchCtx::for_entropy_fallback(
                     crate::adjudicate::EntropyFallbackSignal::ValueShape(shape_stage),
@@ -328,7 +325,7 @@ impl CompiledScanner {
             // identically). The shape gates above remain cheap, recall-safe
             // pre-filters.
             let min_confidence_floor = crate::adjudicate::detector_min_confidence_floor(
-                policy_detector.and_then(|detector| detector.min_confidence),
+                execution_policy.and_then(|policy| policy.min_confidence),
                 self.config.min_confidence,
             );
             #[cfg(feature = "ml")]

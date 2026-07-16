@@ -262,10 +262,11 @@ impl CompiledScanner {
                     continue;
                 };
                 let owning_detector_index = owner_resolution.owning_index;
-                let owning_detector = &self.detectors[owning_detector_index];
+                let execution_policy = self.detector_execution_policies.get(owning_detector_index);
+                let metadata = &self.metadata_by_index[owning_detector_index];
                 let Some(owning_policy) = self.entropy_policies.get(owning_detector_index) else {
                     tracing::error!(
-                        detector_id = owning_detector.id.as_str(),
+                        detector_id = metadata.0.as_ref(),
                         "generic assignment owner has no compiled entropy policy; dropping candidate"
                     );
                     continue;
@@ -420,7 +421,7 @@ impl CompiledScanner {
                 // generic fallback's shape penalties active; the encoded-text
                 // lift is the one extra raw signal this path contributes.
                 let min_confidence_floor = crate::adjudicate::detector_min_confidence_floor(
-                    owning_detector.min_confidence,
+                    execution_policy.min_confidence,
                     self.config.min_confidence,
                 );
                 // Defect #80: this branch hard-coded `offset: 0` for every
@@ -444,7 +445,6 @@ impl CompiledScanner {
                     continue;
                 };
                 let line_number = absolute_line(chunk.metadata.base_line, mapped_line);
-                let metadata = &self.metadata_by_index[owning_detector_index];
                 let build_raw = |scan_state: &mut ScanState, confidence| {
                     crate::pipeline::build_synthetic_raw_match(
                         (
@@ -452,7 +452,7 @@ impl CompiledScanner {
                             Arc::clone(&metadata.1),
                             Arc::clone(&metadata.2),
                         ),
-                        owning_detector.severity,
+                        execution_policy.severity,
                         chunk,
                         value,
                         absolute_offset,
@@ -507,7 +507,7 @@ impl CompiledScanner {
                     chunk.metadata.path.as_deref(),
                     value,
                     crate::adjudicate::ReportAdjudicationPolicy {
-                        detector_id: owning_detector.id.as_str(),
+                        detector_id: metadata.0.as_ref(),
                         code_context: context,
                         confidence: policy_conf,
                         min_confidence_floor,

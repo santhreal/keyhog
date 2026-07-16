@@ -193,7 +193,7 @@ use crate::compiled_scanner::{GpuBackendAcquisitionFailure, GpuBackendPeers};
 use crate::pipeline::*;
 use crate::types::*;
 use aho_corasick::AhoCorasick;
-use keyhog_core::{Chunk, DetectorSpec, RawMatch};
+use keyhog_core::{Chunk, RawMatch};
 use std::sync::Arc;
 use std::sync::OnceLock;
 
@@ -258,10 +258,11 @@ pub struct CompiledScanner {
     /// field). The strings are byte-identical to `static_intern.lookup(...)`
     /// because they ARE its arena entries (see `perf_locality_intern.rs`).
     pub(crate) metadata_by_index: Vec<(Arc<str>, Arc<str>, Arc<str>)>,
-    /// Detector-local generic/service class compiled from TOML `service` once.
-    /// Match processing indexes this primitive instead of parsing detector IDs
-    /// or comparing service strings for every candidate.
-    pub(crate) detector_is_generic_by_index: Box<[bool]>,
+    /// Cache-local scalar and marker policy compiled from each detector TOML.
+    /// Named, generic, and entropy emitters consume this instead of reading the
+    /// flexible detector schema per candidate.
+    pub(crate) detector_execution_policies:
+        crate::detector_execution_policy::CompiledDetectorExecutionPolicies,
     /// Detector-wide weak-anchor mode compiled from explicit detector and
     /// detector TOML fields. The per-match path combines this with the matched
     /// `CompiledPattern::weak_anchor` bit, never regex-text inference.
@@ -336,7 +337,6 @@ pub struct CompiledScanner {
     pub(crate) prefix_propagation: CsrU32,
     pub(crate) phase2_patterns: Vec<(CompiledPattern, Vec<String>)>,
     pub(crate) companions: Vec<Vec<CompiledCompanion>>,
-    pub(crate) detectors: Vec<DetectorSpec>,
     /// Detector-owned credential shape rules, indexed by detector index.
     /// These come from Tier-B data so per-detector length contracts do not
     /// live as hardcoded adjudicator branches.

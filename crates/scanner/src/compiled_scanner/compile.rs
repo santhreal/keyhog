@@ -386,10 +386,10 @@ impl CompiledScanner {
                 )
             })
             .collect();
-        let detector_is_generic_by_index: Box<[bool]> = detectors
-            .iter()
-            .map(|detector| detector.service == "generic")
-            .collect();
+        let detector_execution_policies =
+            crate::detector_execution_policy::CompiledDetectorExecutionPolicies::compile(
+                &detectors,
+            );
 
         // Pre-resolve the detector-wide weak-anchor base once. The per-pattern
         // bit is compiled beside its regex, so mixed detectors protect only the
@@ -559,7 +559,7 @@ impl CompiledScanner {
             autoroute_gpu_shared_cold_ns: std::sync::atomic::AtomicU64::new(0),
             static_intern,
             metadata_by_index,
-            detector_is_generic_by_index,
+            detector_execution_policies,
             detector_weak_anchor_base_by_index,
             detector_suppression_by_index,
             detector_key_material_policies,
@@ -584,7 +584,6 @@ impl CompiledScanner {
             prefix_propagation,
             phase2_patterns: state.phase2_patterns,
             companions: state.companions,
-            detectors,
             credential_shape_by_detector_index,
             same_prefix_patterns,
             phase2_keyword_ac,

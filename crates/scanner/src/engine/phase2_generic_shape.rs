@@ -77,7 +77,7 @@ impl CompiledScanner {
             self.config.entropy_threshold,
         ) else {
             tracing::error!(
-                detector_id = self.detectors[floor_detector_index].id.as_str(),
+                detector_id = self.metadata_by_index[floor_detector_index].0.as_ref(),
                 "generic assignment floor owner has no compiled detector-local policy"
             );
             return Some(GenericValueShapeStage::EntropyPolicyUnavailable);

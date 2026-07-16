@@ -3549,7 +3549,7 @@ pub mod entropy_scanner {
             crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicies::compile(
                 &detectors,
             );
-        let policy = ActiveDetectorPolicy::new(&detectors, &index, &compiled, &key_material);
+        let policy = ActiveDetectorPolicy::new(&index, &compiled, &key_material);
         let secret_keywords = vec![keyword.to_string()];
         crate::entropy::scanner::find_entropy_secrets_with_precomputed_keywords_and_policy(
             &[line],
@@ -3639,7 +3639,7 @@ pub mod entropy_scanner {
             crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicies::compile(
                 &detectors,
             );
-        let policy = ActiveDetectorPolicy::new(&detectors, &index, &compiled, &key_material);
+        let policy = ActiveDetectorPolicy::new(&index, &compiled, &key_material);
         crate::entropy::scanner::find_entropy_secrets_with_precomputed_keywords_and_policy(
             &[secret],
             &[0],
@@ -4989,12 +4989,12 @@ pub(crate) fn hot_pattern_rows(
         .iter()
         .map(|slot| {
             let entry = &scanner.ac_map[slot.ac_map_index];
-            let detector = &scanner.detectors[entry.detector_index];
+            let metadata = &scanner.metadata_by_index[entry.detector_index];
             (
                 slot.prefix.to_vec(),
-                detector.id.clone(),
-                detector.name.clone(),
-                detector.service.clone(),
+                metadata.0.to_string(),
+                metadata.1.to_string(),
+                metadata.2.to_string(),
             )
         })
         .collect()
