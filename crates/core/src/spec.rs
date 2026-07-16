@@ -226,6 +226,11 @@ pub struct DetectorSpec {
     /// declare it.
     #[serde(default)]
     pub max_len: Option<usize>,
+    /// Own the structural `<vendor>_(key|secret|token)` assignment arm when no
+    /// exact detector keyword claims it. At most one phase-2 generic detector
+    /// may declare this capability; omission disables unlisted vendor suffixes.
+    #[serde(default)]
+    pub generic_vendor_suffix_fallback: bool,
     /// Per-detector path-exclusion regexes (betterleaks-style allowlist): a match
     /// whose FILE PATH matches any of these is suppressed. Owned per detector.
     #[serde(default)]

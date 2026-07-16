@@ -60,6 +60,26 @@ fn active_entropy_owner_must_declare_fallback_metadata() {
 }
 
 #[test]
+fn vendor_suffix_fallback_is_restricted_to_generic_phase2_detectors() {
+    let mut detector = detector_with_pattern("token_([A-Z0-9]{12})");
+    detector.generic_vendor_suffix_fallback = true;
+    let issues = validate_detector(&detector);
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message)
+            if message.contains("generic_vendor_suffix_fallback is only valid")
+    )));
+
+    detector.kind = keyhog_core::DetectorKind::Phase2Generic;
+    detector.service = "generic".into();
+    assert!(!validate_detector(&detector).iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message)
+            if message.contains("generic_vendor_suffix_fallback is only valid")
+    )));
+}
+
+#[test]
 fn sensitive_path_entropy_threshold_cannot_exceed_detector_threshold() {
     let mut detector = detector_with_pattern("token=([A-Za-z0-9]+)");
     detector.entropy_very_high = Some(5.0);

@@ -255,6 +255,56 @@ fn every_bare_credential_keyword_reaches_an_active_generic_owner() {
 }
 
 #[test]
+fn custom_phase2_corpus_does_not_invent_a_generic_secret_fallback() {
+    let mut detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");
+    detectors.retain(|detector| detector.id == "generic-password");
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    config.entropy_enabled = false;
+    let scanner = CompiledScanner::compile(detectors)
+        .expect("compile explicit generic-password-only corpus")
+        .with_config(config);
+    let unknown = "Zq8Lm4Np7Rt2Vx9Ks5Hd3Bc6";
+    let matches = scan(
+        &scanner,
+        &format!("password={HIGH_ENTROPY_VALUE}\nunknown_vendor_key={unknown}\n"),
+    );
+
+    assert!(
+        matches.iter().any(|finding| {
+            finding.detector_id.as_ref() == "generic-password"
+                && finding.credential.as_ref() == HIGH_ENTROPY_VALUE
+        }),
+        "the declared generic-password keyword must remain active: {matches:#?}"
+    );
+    assert!(
+        matches
+            .iter()
+            .all(|finding| finding.credential.as_ref() != unknown),
+        "an unowned vendor suffix must not inherit a synthetic generic-secret policy: {matches:#?}"
+    );
+}
+
+#[test]
+fn multiple_vendor_suffix_owners_fail_scanner_construction() {
+    let mut detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");
+    let password = detectors
+        .iter_mut()
+        .find(|detector| detector.id == "generic-password")
+        .expect("shipped generic-password detector");
+    password.generic_vendor_suffix_fallback = true;
+
+    let error = match CompiledScanner::compile(detectors) {
+        Ok(_) => panic!("multiple structural vendor owners must not compile"),
+        Err(error) => error.to_string(),
+    };
+    assert!(
+        error.contains("multiple detectors declare generic_vendor_suffix_fallback"),
+        "construction error must identify the conflicting detector-owned capability: {error}"
+    );
+}
+
+#[test]
 fn all_three_separator_spellings_of_a_compound_keyword_bridge() {
     let s = default_scanner();
     // underscore / hyphen / dot, the three real-world spellings the Tier-B

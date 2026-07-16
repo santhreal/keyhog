@@ -457,6 +457,9 @@ macro_rules! knob_changes_digest {
 
 knob_changes_digest!(spec_hash_binds_kind, |d| d.kind =
     DetectorKind::Phase2Generic);
+knob_changes_digest!(spec_hash_binds_vendor_suffix_fallback, |d| d
+    .generic_vendor_suffix_fallback =
+    true);
 knob_changes_digest!(spec_hash_binds_min_confidence, |d| d.min_confidence =
     Some(0.42));
 knob_changes_digest!(spec_hash_binds_entropy_floor, |d| d.entropy_floor =

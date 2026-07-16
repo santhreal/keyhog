@@ -13,9 +13,8 @@ use self::keywords::{
 use self::line_mapping::line_at_index;
 pub(crate) use self::metrics::{generic_profile_dump, generic_profile_reset};
 pub(crate) use self::pattern::{
-    build_generic_re, compile_generic_re, compile_generic_re_with_max, generic_keyword_alternation,
-    generic_keyword_alternation_from, GENERIC_ASSIGNMENT_MAX_LEN_DEFAULT,
-    GENERIC_RE_VENDOR_SUFFIX_ARM,
+    build_generic_re, compile_generic_re_with_max, generic_keyword_alternation,
+    generic_keyword_alternation_from_with_vendor_fallback, GENERIC_RE_VENDOR_SUFFIX_ARM,
 };
 
 thread_local! {
@@ -239,56 +238,53 @@ impl CompiledScanner {
                 // stricter. This bridge must not pre-resolve against a global
                 // threshold because detector-local calibration can differ.
                 let entropy = crate::pipeline::match_entropy(value.as_bytes());
-                // O(1) compiled lookup of the owning generic detector (or the
-                // GENERIC_SECRET fallback), replacing a per-candidate linear
-                // `self.detectors.iter().find(...)` scan over every detector.
+                // O(1) compiled lookup of the owning generic detector replaces
+                // a per-candidate linear scan over every detector.
                 // `generic_owning_detector` preserves the exact original
                 // first-match-by-exact-or-normalized-keyword semantics.
-                let owning_detector_index = self.generic_owning_detector.owning_index(keyword);
-                let owning_detector = owning_detector_index.map(|index| &self.detectors[index]);
+                let Some(owning_detector_index) =
+                    self.generic_owning_detector.owning_index(keyword)
+                else {
+                    tracing::error!(
+                        keyword,
+                        "compiled generic assignment matched without a detector owner; dropping candidate"
+                    );
+                    continue;
+                };
+                let owning_detector = &self.detectors[owning_detector_index];
+                let (Some(owning_detector_min_len), Some(owning_detector_max_len)) =
+                    (owning_detector.min_len, owning_detector.max_len)
+                else {
+                    tracing::error!(
+                        detector_id = owning_detector.id.as_str(),
+                        "compiled phase-2 detector is missing required length policy; dropping candidate"
+                    );
+                    continue;
+                };
                 let canonical_detector = self
                     .generic_owning_detector
                     .canonical_index(keyword)
                     .and_then(|index| self.detectors.get(index))
-                    .or(owning_detector);
+                    .unwrap_or(owning_detector);
                 // A complete pure-hex value admitted by the detector that
                 // declares its canonical policy is key material rather than a
                 // digest. Missing detector policy fails closed. Ordinary
                 // keyword policy ownership remains separate for entropy/BPE.
-                let allow_canonical_hex_key = canonical_detector.is_some_and(|detector| {
+                let allow_canonical_hex_key = {
                     if transport_decoded {
-                        detector.allows_decoded_hex_key_material(value)
+                        canonical_detector.allows_decoded_hex_key_material(value)
                     } else {
-                        detector.allows_canonical_hex_key_material(keyword_match.as_str(), value)
+                        canonical_detector
+                            .allows_canonical_hex_key_material(keyword_match.as_str(), value)
                     }
-                });
+                };
                 let allow_encoded_text_secret =
                     is_strong_keyword_anchored_encoded_text_secret(keyword_match.as_str(), value)
                         || crate::decode_structure::decodes_to_printable_text(value);
-                let allow_decoded_hex_key_material = owning_detector.is_some_and(|detector| {
-                    detector.allows_decoded_hex_key_material_len(
+                let allow_decoded_hex_key_material = owning_detector
+                    .allows_decoded_hex_key_material_len(
                         crate::decode_structure::evidence(value).decoded_hex_text_len(),
-                    )
-                });
-
-                let owning_detector_min_len = owning_detector
-                    .and_then(|d| d.min_len)
-                    .map_or(8, |min_len| min_len);
-                let owning_detector_max_len = owning_detector
-                    .and_then(|detector| detector.max_len)
-                    .unwrap_or(GENERIC_ASSIGNMENT_MAX_LEN_DEFAULT); // LAW10: documented numeric default for omitted per-detector max_len
-                let owning_detector_id = owning_detector
-                    .map(|d| d.id.as_str())
-                    .map_or(crate::detector_ids::GENERIC_SECRET, |id| id);
-                let owning_detector_name = owning_detector
-                    .map(|d| d.name.as_str())
-                    .map_or("Generic Secret (Key=Value)", |name| name);
-                let owning_detector_service = owning_detector
-                    .map(|d| d.service.as_str())
-                    .map_or("generic", |service| service);
-                let owning_detector_severity = owning_detector
-                    .map(|d| d.severity)
-                    .map_or(keyhog_core::Severity::Medium, |severity| severity);
+                    );
 
                 // KH-L-0412: the generic-bridge shape gauntlet was the last
                 // SILENT suppression path. Record the firing gate's name so a
@@ -379,8 +375,8 @@ impl CompiledScanner {
                     && !allow_canonical_hex_key
                     && !allow_encoded_text_secret
                 {
-                    owning_detector_index
-                        .and_then(|index| self.entropy_policies.get(index))
+                    self.entropy_policies
+                        .get(owning_detector_index)
                         .and_then(|policy| {
                             policy.bpe_bound(
                                 self.config.entropy_bpe_max_bytes_per_token,
@@ -416,8 +412,9 @@ impl CompiledScanner {
                     continue;
                 }
 
-                if let Some(stage_id) = owning_detector_index
-                    .and_then(|index| self.detector_suppression_by_index.get(index))
+                if let Some(stage_id) = self
+                    .detector_suppression_by_index
+                    .get(owning_detector_index)
                     .and_then(|policy| policy.full_stage(chunk.metadata.path.as_deref(), value))
                 {
                     crate::adjudicate::record_suppression(
@@ -471,14 +468,14 @@ impl CompiledScanner {
                 // generic fallback's shape penalties active; the encoded-text
                 // lift is the one extra raw signal this path contributes.
                 let min_confidence_floor = crate::adjudicate::detector_min_confidence_floor(
-                    owning_detector.and_then(|detector| detector.min_confidence),
+                    owning_detector.min_confidence,
                     self.config.min_confidence,
                 );
                 let Some(report_conf) = crate::adjudicate::finalize_report_candidate(
                     chunk.metadata.path.as_deref(),
                     value,
                     crate::adjudicate::ReportAdjudicationPolicy {
-                        detector_id: owning_detector_id,
+                        detector_id: owning_detector.id.as_str(),
                         code_context: context,
                         confidence: policy_conf,
                         min_confidence_floor,
@@ -515,11 +512,11 @@ impl CompiledScanner {
                 };
                 let raw = crate::pipeline::build_synthetic_raw_match(
                     (
-                        Arc::from(owning_detector_id),
-                        Arc::from(owning_detector_name),
-                        Arc::from(owning_detector_service),
+                        Arc::from(owning_detector.id.as_str()),
+                        Arc::from(owning_detector.name.as_str()),
+                        Arc::from(owning_detector.service.as_str()),
                     ),
-                    owning_detector_severity,
+                    owning_detector.severity,
                     chunk,
                     value,
                     absolute_offset,

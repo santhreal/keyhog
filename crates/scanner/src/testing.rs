@@ -1004,7 +1004,7 @@ pub fn symbolic_credential_entropy_floor() -> f64 {
 /// The shipped detector-owned generic-keyword bridge regex, built from the
 /// derived assignment vocabulary and detector maximum; `Err` iff the resulting
 /// expression fails to compile.
-pub fn build_generic_re_for_test() -> Result<regex::Regex, regex::Error> {
+pub fn build_generic_re_for_test() -> Result<regex::Regex, String> {
     crate::engine::phase2_generic::build_generic_re()
 }
 
@@ -1012,7 +1012,7 @@ pub fn build_generic_re_for_test() -> Result<regex::Regex, regex::Error> {
 /// test can prove a malformed alternation is a hard `Err` (never a silent `Ok`
 /// with the bridge disabled).
 pub fn compile_generic_re_for_test(alternation: &str) -> Result<regex::Regex, regex::Error> {
-    crate::engine::phase2_generic::compile_generic_re(alternation)
+    crate::engine::phase2_generic::compile_generic_re_with_max(alternation, 8)
 }
 
 /// The group-1 keyword alternation string that the generic bridge uses (derived

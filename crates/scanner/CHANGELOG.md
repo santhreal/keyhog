@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Remove scanner-side generic-assignment identity and length defaults. Every
+  phase-2 candidate must resolve to a compiled detector owner with declared
+  `min_len` and `max_len`; an incomplete owner fails scanner construction or
+  is surfaced and dropped instead of inheriting synthetic scanner policy.
 - Score the ML pending queue directly instead of allocating a borrowed
   candidate vector and then copying the queue into a second vector. Pending
   matches now borrow their zeroizing `RawMatch` credential instead of retaining

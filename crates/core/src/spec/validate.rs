@@ -281,6 +281,14 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
             "max_len is only valid for kind = \"phase2-generic\" detectors".to_string(),
         ));
     }
+    if spec.generic_vendor_suffix_fallback
+        && (spec.kind != crate::DetectorKind::Phase2Generic || spec.service != "generic")
+    {
+        issues.push(QualityIssue::Error(
+            "generic_vendor_suffix_fallback is only valid for a generic phase-2 detector"
+                .to_string(),
+        ));
+    }
     if let Some(mc) = spec.min_confidence {
         if !(0.0..=1.0).contains(&mc) {
             issues.push(QualityIssue::Error(format!(

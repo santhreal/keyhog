@@ -394,21 +394,39 @@ impl CompiledScanner {
             .map_err(crate::error::ScanError::Config)?;
         let generic_named_assignment_keywords =
             crate::generic_keyword_owner::build_generic_named_assignment_keywords(&detectors);
-        let generic_assignment_max_len = detectors
+        let mut generic_assignment_max_len = None;
+        for detector in detectors
             .iter()
             .filter(|detector| detector.kind == keyhog_core::DetectorKind::Phase2Generic)
-            .map(|detector| {
-                detector
-                    .max_len
-                    .unwrap_or(crate::engine::phase2_generic::GENERIC_ASSIGNMENT_MAX_LEN_DEFAULT)
-                // LAW10: documented numeric default when this detector omits max_len
-            })
-            .max();
+        {
+            let max_len = detector.max_len.ok_or_else(|| {
+                crate::error::ScanError::Config(format!(
+                    "phase-2 detector {:?} omits max_len; declare it in the detector TOML",
+                    detector.id
+                ))
+            })?;
+            generic_assignment_max_len = Some(
+                generic_assignment_max_len.map_or(max_len, |current: usize| current.max(max_len)),
+            );
+        }
         let generic_assignment_re = if let Some(max_len) = generic_assignment_max_len {
             let keywords = crate::assignment_keywords::derive_assignment_keywords(&detectors)
                 .map_err(crate::error::ScanError::Config)?;
-            let alternation =
-                crate::engine::phase2_generic::generic_keyword_alternation_from(&keywords);
+            let vendor_fallback_owners = detectors
+                .iter()
+                .filter(|detector| detector.generic_vendor_suffix_fallback)
+                .count();
+            if vendor_fallback_owners > 1 {
+                return Err(crate::error::ScanError::Config(
+                    "multiple detectors declare generic_vendor_suffix_fallback; exactly one detector may own the structural vendor-suffix arm"
+                        .to_string(),
+                ));
+            }
+            let include_vendor_fallback = vendor_fallback_owners == 1;
+            let alternation = crate::engine::phase2_generic::generic_keyword_alternation_from_with_vendor_fallback(
+                &keywords,
+                include_vendor_fallback,
+            );
             Some(
                 crate::engine::phase2_generic::compile_generic_re_with_max(
                     &alternation,

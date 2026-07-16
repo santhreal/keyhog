@@ -26,8 +26,8 @@ use std::sync::Arc;
 /// (smallest) detector index for that key (insertion in ascending spec order +
 /// `or_insert` gives first-wins). A query returns the smaller of the two hits,
 /// so the earliest detector wins across BOTH conditions exactly as the linear
-/// `find` did. `generic_secret_index` is the cached `GENERIC_SECRET` fallback
-/// (formerly a second linear `find`).
+/// `find` did. Structural vendor suffixes use the one detector that explicitly
+/// declares `generic_vendor_suffix_fallback`.
 ///
 /// Entropy policy uses separate maps. Phase-2 generic detectors participate by
 /// default, regex detectors opt in through `entropy_policy_priority`, and the
@@ -46,6 +46,7 @@ pub(crate) struct GenericOwningDetectorIndex {
     by_id: HashMap<String, usize>,
     generic_secret_index: Option<usize>,
     generic_keyword_secret_index: Option<usize>,
+    vendor_suffix_fallback_index: Option<usize>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -83,6 +84,7 @@ impl GenericOwningDetectorIndex {
         let mut by_id = HashMap::new();
         let mut generic_secret_index = None;
         let mut generic_keyword_secret_index = None;
+        let mut vendor_suffix_fallback_index = None;
         for (index, detector) in detectors.iter().enumerate() {
             if generic_secret_index.is_none() && detector.id == crate::detector_ids::GENERIC_SECRET
             {
@@ -95,6 +97,9 @@ impl GenericOwningDetectorIndex {
             }
             if detector.service == "generic" {
                 by_id.entry(detector.id.clone()).or_insert(index);
+            }
+            if vendor_suffix_fallback_index.is_none() && detector.generic_vendor_suffix_fallback {
+                vendor_suffix_fallback_index = Some(index);
             }
             // Phase-2 generic detectors own their entropy keywords by default.
             // Regex detectors opt in with an explicit TOML priority. Overlap
@@ -159,15 +164,13 @@ impl GenericOwningDetectorIndex {
             by_id,
             generic_secret_index,
             generic_keyword_secret_index,
+            vendor_suffix_fallback_index,
         }
     }
 
     /// The owning generic detector's index for a matched assignment `keyword`
-    /// (need not be pre-lowercased), or the `GENERIC_SECRET` fallback index when
-    /// no generic detector claims the keyword. `None` only when neither a
-    /// keyword owner nor a `GENERIC_SECRET` detector is loaded, the caller then
-    /// applies its literal defaults, identical to the old `find(...).or_else(..)`
-    /// returning `None`.
+    /// (need not be pre-lowercased), or the detector-declared vendor-suffix
+    /// fallback. `None` means the active corpus claims neither form.
     pub(crate) fn owning_index(&self, keyword: &str) -> Option<usize> {
         let kw_lower = keyword.to_ascii_lowercase();
         let exact_hit = self.exact.get(&kw_lower).copied();
@@ -177,7 +180,7 @@ impl GenericOwningDetectorIndex {
             (Some(a), Some(b)) => Some(a.min(b)),
             (a, b) => a.or(b),
         };
-        keyword_owner.or(self.generic_secret_index)
+        keyword_owner.or(self.vendor_suffix_fallback_index)
     }
 
     /// Generic detector that explicitly claims `keyword`, without applying the

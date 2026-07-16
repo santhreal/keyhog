@@ -225,6 +225,9 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
             if d.private_key_block {
                 entries.push(format!("pkb:{}", d.id));
             }
+            if d.generic_vendor_suffix_fallback {
+                entries.push(format!("gvsf:{}", d.id));
+            }
             if let Some(shape) = &d.credential_shape {
                 // `CredentialShape` derives `Debug` over its four `Option` fields;
                 // its `{:?}` is total and deterministic within a build, and any

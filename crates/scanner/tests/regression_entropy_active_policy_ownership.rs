@@ -240,6 +240,20 @@ fn entropy_only_owner(bpe_enabled: bool) -> DetectorSpec {
     owner
 }
 
+#[test]
+fn phase2_owner_without_max_len_fails_scanner_construction() {
+    let mut owner = detector("incomplete-phase2-owner", &["secret"], 8);
+    owner.max_len = None;
+    let error = match CompiledScanner::compile(vec![owner]) {
+        Ok(_) => panic!("an incomplete phase-2 owner must not compile"),
+        Err(error) => error.to_string(),
+    };
+    assert!(
+        error.contains("max_len") && error.contains("incomplete-phase2-owner"),
+        "construction error must name the detector and missing field: {error}"
+    );
+}
+
 fn full_scan_findings(bpe_enabled: bool, backend: ScanBackend) -> Vec<(String, String, usize)> {
     let detectors = vec![
         entropy_only_owner(bpe_enabled),

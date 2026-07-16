@@ -1,9 +1,5 @@
 //! Construction of the generic assignment bridge regex.
 
-/// Compatibility ceiling for custom phase-2 generic detectors that predate the
-/// detector-owned `max_len` field.
-pub(crate) const GENERIC_ASSIGNMENT_MAX_LEN_DEFAULT: usize = 128;
-
 const GENERIC_VALUE_CHARS: &str = r"a-zA-Z0-9/+=_.:!@#$%^&*-";
 
 /// Structural group-1 arm for bounded vendor-prefixed key names.
@@ -16,24 +12,32 @@ pub(crate) fn generic_keyword_alternation() -> String {
 }
 
 pub(crate) fn generic_keyword_alternation_from(keywords: &[String]) -> String {
+    generic_keyword_alternation_from_with_vendor_fallback(keywords, true)
+}
+
+pub(crate) fn generic_keyword_alternation_from_with_vendor_fallback(
+    keywords: &[String],
+    include_vendor_fallback: bool,
+) -> String {
     let mut literals: Vec<&str> = keywords.iter().map(String::as_str).collect();
     literals.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
     let mut alternation = String::new();
-    for literal in literals {
+    for (index, literal) in literals.into_iter().enumerate() {
+        if index != 0 {
+            alternation.push('|');
+        }
         alternation.push_str(&regex::escape(literal));
-        alternation.push('|');
     }
-    alternation.push_str(GENERIC_RE_VENDOR_SUFFIX_ARM);
+    if include_vendor_fallback {
+        if !alternation.is_empty() {
+            alternation.push('|');
+        }
+        alternation.push_str(GENERIC_RE_VENDOR_SUFFIX_ARM);
+    }
     alternation
 }
 
 /// Compile the bridge from a pre-built group-1 alternation.
-pub(crate) fn compile_generic_re(
-    alternation: &str,
-) -> std::result::Result<regex::Regex, regex::Error> {
-    compile_generic_re_with_max(alternation, GENERIC_ASSIGNMENT_MAX_LEN_DEFAULT)
-}
-
 pub(crate) fn compile_generic_re_with_max(
     alternation: &str,
     max_len: usize,
@@ -45,22 +49,29 @@ pub(crate) fn compile_generic_re_with_max(
 }
 
 /// Compile the bridge from the live derived vocabulary.
-pub(crate) fn build_generic_re() -> std::result::Result<regex::Regex, regex::Error> {
-    let detectors = match keyhog_core::load_embedded_detectors_or_fail() {
-        Ok(detectors) => detectors,
-        Err(error) => panic!(
-            "embedded detector corpus is corrupt: {error}. Cannot compile the detector-owned generic assignment bridge"
-        ),
-    };
-    let max_len = detectors
+pub(crate) fn build_generic_re() -> Result<regex::Regex, String> {
+    let detectors = keyhog_core::load_embedded_detectors_or_fail().map_err(|error| {
+        format!(
+            "embedded detector corpus is corrupt: {error}; cannot compile the detector-owned generic assignment bridge"
+        )
+    })?;
+    let mut max_len = None;
+    for detector in detectors
         .iter()
         .filter(|detector| detector.kind == keyhog_core::DetectorKind::Phase2Generic)
-        .map(|detector| {
-            detector
-                .max_len
-                .unwrap_or(GENERIC_ASSIGNMENT_MAX_LEN_DEFAULT) // LAW10: documented numeric default for an omitted max_len
-        })
-        .max()
-        .unwrap_or(GENERIC_ASSIGNMENT_MAX_LEN_DEFAULT); // LAW10: documented numeric default when the optional generic-detector set is empty
+    {
+        let detector_max_len = detector.max_len.ok_or_else(|| {
+            format!(
+                "phase-2 detector {:?} omits max_len; fix its detector TOML",
+                detector.id
+            )
+        })?;
+        max_len = Some(max_len.map_or(detector_max_len, |current: usize| {
+            current.max(detector_max_len)
+        }));
+    }
+    let max_len = max_len
+        .ok_or_else(|| "embedded detector corpus has no phase-2 generic detector".to_string())?;
     compile_generic_re_with_max(&generic_keyword_alternation(), max_len)
+        .map_err(|error| format!("invalid generic assignment bridge: {error}"))
 }
