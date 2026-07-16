@@ -376,6 +376,15 @@ impl CompiledScanner {
                     continue;
                 }
 
+                let checksum_decision = self.detector_plans.validate_any(value);
+                if checksum_decision.is_invalid() {
+                    crate::adjudicate::record_checksum_invalid_suppression(
+                        chunk.metadata.path.as_deref(),
+                        value,
+                    );
+                    continue;
+                }
+
                 // Context suppression: test files get lower confidence. On the
                 // byte-identical common path, reuse the lines and documentation
                 // flags already computed by the phase-2 caller; recomputing
@@ -493,6 +502,7 @@ impl CompiledScanner {
                         true,
                         allow_canonical_hex_key,
                         allow_encoded_text_secret,
+                        checksum_decision,
                         ml_mode,
                     );
                     if profile_enabled {
@@ -515,6 +525,7 @@ impl CompiledScanner {
                         is_generic_detector: true,
                         allow_encoded_text_lift: allow_encoded_text_secret,
                         allow_canonical_hex_key,
+                        checksum: checksum_decision,
                         calibration: self.config.calibration.as_deref(),
                     },
                 ) else {

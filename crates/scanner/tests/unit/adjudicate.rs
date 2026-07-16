@@ -503,6 +503,9 @@ fn final_report_candidate_returns_adjudicator_reported_confidence() {
                 is_generic_detector: false,
                 allow_encoded_text_lift: false,
                 allow_canonical_hex_key: false,
+                checksum: crate::checksum::ChecksumConfidenceDecision::for_credential(
+                    "dd_api_key_12345678901234567890123456789012",
+                ),
                 calibration: None,
             },
         ),

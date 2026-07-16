@@ -102,6 +102,9 @@ pub(crate) struct MlPendingMatch {
     pub(crate) allow_canonical_hex_key: bool,
     /// Preserve detector-owned encoded-text evidence in the common finalizer.
     pub(crate) allow_encoded_text_lift: bool,
+    /// Offline validator verdict computed once before queueing. ML batching
+    /// must not rediscover detector policy or rerun validation.
+    pub(crate) checksum: crate::checksum::ChecksumConfidenceDecision,
     /// Compiled detector-owned scoring behavior. The inactive state is removed
     /// before queueing, so every pending match has an executable policy.
     pub(crate) ml_mode: crate::detector_ml_policy::ActiveMlMode,
@@ -120,6 +123,7 @@ impl MlPendingMatch {
         is_generic_detector: bool,
         allow_canonical_hex_key: bool,
         allow_encoded_text_lift: bool,
+        checksum: crate::checksum::ChecksumConfidenceDecision,
         ml_mode: crate::detector_ml_policy::ActiveMlMode,
     ) -> Self {
         Self {
@@ -133,6 +137,7 @@ impl MlPendingMatch {
             is_generic_detector,
             allow_canonical_hex_key,
             allow_encoded_text_lift,
+            checksum,
             ml_mode,
         }
     }
@@ -144,6 +149,7 @@ impl MlPendingMatch {
         ml_weight: f64,
         min_confidence_floor: f64,
         allow_canonical_hex_key: bool,
+        checksum: crate::checksum::ChecksumConfidenceDecision,
         ml_mode: crate::detector_ml_policy::ActiveMlMode,
     ) -> Self {
         Self {
@@ -157,6 +163,7 @@ impl MlPendingMatch {
             is_generic_detector: true,
             allow_canonical_hex_key,
             allow_encoded_text_lift: false,
+            checksum,
             ml_mode,
         }
     }
@@ -370,6 +377,7 @@ impl ScanState {
         is_generic_detector: bool,
         allow_canonical_hex_key: bool,
         allow_encoded_text_lift: bool,
+        checksum: crate::checksum::ChecksumConfidenceDecision,
         ml_mode: crate::detector_ml_policy::ActiveMlMode,
     ) {
         self.ml_pending.push(MlPendingMatch::detector_candidate(
@@ -383,6 +391,7 @@ impl ScanState {
             is_generic_detector,
             allow_canonical_hex_key,
             allow_encoded_text_lift,
+            checksum,
             ml_mode,
         ));
     }
@@ -396,6 +405,7 @@ impl ScanState {
         ml_weight: f64,
         min_confidence_floor: f64,
         allow_canonical_hex_key: bool,
+        checksum: crate::checksum::ChecksumConfidenceDecision,
         ml_mode: crate::detector_ml_policy::ActiveMlMode,
     ) {
         self.ml_pending.push(MlPendingMatch::entropy_candidate(
@@ -405,6 +415,7 @@ impl ScanState {
             ml_weight,
             min_confidence_floor,
             allow_canonical_hex_key,
+            checksum,
             ml_mode,
         ));
     }

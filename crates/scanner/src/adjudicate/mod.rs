@@ -123,12 +123,6 @@ impl ProcessCandidateSignals {
         }
     }
 
-    pub(crate) fn from_checksum_policy(credential: &str) -> Self {
-        Self::from_checksum_invalid(
-            crate::confidence::policy::checksum_policy_for(credential).is_invalid(),
-        )
-    }
-
     pub(crate) fn from_process_entropy_shape(
         is_generic: bool,
         is_weakly_anchored: bool,
@@ -239,6 +233,7 @@ pub(crate) struct ReportAdjudicationPolicy<'a> {
     pub(crate) is_generic_detector: bool,
     pub(crate) allow_encoded_text_lift: bool,
     pub(crate) allow_canonical_hex_key: bool,
+    pub(crate) checksum: crate::checksum::ChecksumConfidenceDecision,
     pub(crate) calibration: Option<&'a keyhog_core::Calibration>,
 }
 
@@ -450,6 +445,7 @@ pub(crate) fn finalize_report_candidate(
             penalize_test_paths: policy.penalize_test_paths,
             allow_encoded_text_lift: policy.allow_encoded_text_lift,
             allow_canonical_hex_key: policy.allow_canonical_hex_key,
+            checksum: policy.checksum,
             calibration: policy.calibration,
         },
     ) else {

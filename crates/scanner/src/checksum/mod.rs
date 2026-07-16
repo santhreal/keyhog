@@ -1,21 +1,13 @@
 //! Checksum-aware credential validation.
 //!
-//! Modern API tokens embed self-verifying checksums that let us eliminate
-//! false positives without network requests. This module implements
-//! validators for several well-documented token families.
+//! Modern API tokens expose offline evidence that can eliminate false positives
+//! without network requests. Individual detector TOMLs own the validator type,
+//! prefixes, layout parameters, and confidence floor; this module supplies the
+//! shared compiled primitives.
 
-pub(crate) mod github;
-pub(crate) mod gitlab;
-pub(crate) mod npm;
-pub(crate) mod prefixes;
-pub(crate) mod slack;
-pub(crate) mod stripe;
+mod compiled;
 
-use github::{GithubClassicPatValidator, GithubFineGrainedPatValidator};
-use gitlab::GitlabTokenValidator;
-use npm::{NpmTokenValidator, PypiTokenValidator};
-use slack::SlackTokenValidator;
-use stripe::StripeTokenValidator;
+pub(crate) use compiled::CompiledDetectorValidators;
 
 use std::sync::LazyLock;
 
@@ -35,54 +27,31 @@ pub enum ChecksumResult {
     NotApplicable,
 }
 
-/// A validator that can check whether a credential's embedded checksum is correct.
-pub(crate) trait ChecksumValidator: Send + Sync {
-    /// Validate the checksum embedded in `credential`.
-    ///
-    /// Returns [`ChecksumResult::NotApplicable`] when the credential does not
-    /// match the token family this validator understands.
-    fn validate(&self, credential: &str) -> ChecksumResult;
-}
-
-static VALIDATORS: LazyLock<Vec<Box<dyn ChecksumValidator>>> = LazyLock::new(|| {
-    vec![
-        Box::new(GithubClassicPatValidator),
-        Box::new(GithubFineGrainedPatValidator),
-        Box::new(NpmTokenValidator),
-        Box::new(SlackTokenValidator),
-        Box::new(PypiTokenValidator),
-        Box::new(StripeTokenValidator),
-        Box::new(GitlabTokenValidator),
-    ]
+static VALIDATOR_CATALOG: LazyLock<compiled::CompiledValidatorCatalog> = LazyLock::new(|| {
+    match compiled::CompiledValidatorCatalog::compile(keyhog_core::embedded_detector_specs()) {
+        Ok(catalog) => catalog,
+        Err(error) => panic!(
+            "embedded detector validators failed to compile: {error}. Fix the owning detector TOML"
+        ),
+    }
 });
 
-/// Run the credential through all registered checksum validators.
-///
-/// The first validator that returns a claimed verdict wins.
-/// If none claims the token, [`ChecksumResult::NotApplicable`] is returned.
+/// Validate a credential against the compiled embedded detector catalog.
+/// Custom scanners use their own compiled plans and never consult this catalog.
 pub fn validate_checksum(credential: &str) -> ChecksumResult {
-    for validator in VALIDATORS.iter() {
-        match validator.validate(credential) {
-            ChecksumResult::NotApplicable => continue,
-            result => return result,
-        }
-    }
-    ChecksumResult::NotApplicable
+    VALIDATOR_CATALOG.validate_any(credential).result()
 }
 
-/// True when extending `original` to `extended` turned a `Valid` checksum into a
-/// non-`Valid` one, a boundary extension that corrupted a complete,
-/// checksum-valid token by grabbing an adjacent byte. The credential-boundary
-/// extender in `engine::scan_filters` reverts to `original` in that case so the
-/// canonical, checksum-valid token still surfaces.
-///
-/// Lives here in the checksum-validity owner so engine emission paths ask a
-/// named checksum question rather than owning raw `validate_checksum` calls (the
-/// `engine_match_policy_checksum_owner` architecture gate keeps confidence AND
-/// validity primitives out of `src/engine/`).
-pub(crate) fn extension_downgrades_checksum(original: &str, extended: &str) -> bool {
-    validate_checksum(original) == ChecksumResult::Valid
-        && validate_checksum(extended) != ChecksumResult::Valid
+#[inline]
+pub(crate) fn validate_for_detector(
+    detector_id: &str,
+    credential: &str,
+) -> ChecksumConfidenceDecision {
+    VALIDATOR_CATALOG.validate_for_detector(detector_id, credential)
+}
+
+pub(crate) fn detector_declared_prefixes() -> Vec<&'static str> {
+    VALIDATOR_CATALOG.prefixes()
 }
 
 /// Compute the standard CRC32 checksum of `data`.
@@ -131,25 +100,40 @@ pub(crate) fn base62_encode_u32(mut value: u32, width: usize) -> String {
     rev.into_iter().collect()
 }
 
-/// Confidence floor applied to a credential whose embedded checksum is `Valid`.
-///
-/// A matching CRC is cryptographic proof the token is well-formed, so a
-/// confirmed token must clear the high-precision (`--precision`) 0.85 bar. The
-/// floor is the single value behind that guarantee; keep it above
-/// [`ScannerConfig::HIGH_PRECISION_MIN_CONFIDENCE`](crate::ScannerConfig::HIGH_PRECISION_MIN_CONFIDENCE).
+/// Compatibility floor used only by callers that construct a `Valid` decision
+/// without a detector declaration. Production detector plans carry the owning
+/// TOML's explicit `confidence_floor` instead.
 pub const CHECKSUM_VALID_FLOOR: f64 = 0.9;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct ChecksumConfidenceDecision {
     result: ChecksumResult,
+    valid_confidence_floor: Option<f64>,
+    claimed_family: bool,
 }
 
 impl ChecksumConfidenceDecision {
     #[inline]
-    pub(crate) fn for_credential(credential: &str) -> Self {
+    pub(crate) const fn new(result: ChecksumResult, valid_confidence_floor: Option<f64>) -> Self {
         Self {
-            result: validate_checksum(credential),
+            result,
+            valid_confidence_floor,
+            claimed_family: true,
         }
+    }
+
+    #[inline]
+    pub(crate) const fn not_applicable() -> Self {
+        Self {
+            result: ChecksumResult::NotApplicable,
+            valid_confidence_floor: None,
+            claimed_family: false,
+        }
+    }
+
+    #[inline]
+    pub(crate) fn for_credential(credential: &str) -> Self {
+        VALIDATOR_CATALOG.validate_any(credential)
     }
 
     #[inline]
@@ -160,6 +144,21 @@ impl ChecksumConfidenceDecision {
     #[inline]
     pub(crate) fn result(self) -> ChecksumResult {
         self.result
+    }
+
+    #[inline]
+    pub(crate) fn valid_confidence_floor(self) -> Option<f64> {
+        self.valid_confidence_floor
+    }
+
+    #[inline]
+    pub(crate) fn claims_family(self) -> bool {
+        self.claimed_family
+    }
+
+    #[inline]
+    pub(crate) fn is_proven_valid(self) -> bool {
+        matches!(self.result, ChecksumResult::Valid)
     }
 }
 
@@ -180,8 +179,4 @@ impl ChecksumConfidenceDecision {
 #[inline]
 pub fn checksum_adjusted_confidence(confidence: f64, credential: &str) -> Option<f64> {
     crate::confidence::policy::apply_checksum_confidence(confidence, credential)
-}
-
-pub(crate) fn warm_runtime_regexes() {
-    slack::warm_runtime_regexes();
 }

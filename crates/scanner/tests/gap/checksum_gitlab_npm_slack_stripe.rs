@@ -431,7 +431,10 @@ fn slack_xoxb_min_segments_valid() {
         "1".repeat(10),
         "a".repeat(15)
     );
-    assert_eq!(SlackTokenValidator.validate(&token), ChecksumResult::Valid);
+    assert_eq!(
+        SlackTokenValidator.validate(&token),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 #[test]
@@ -445,7 +448,10 @@ fn slack_xoxb_max_segments_valid() {
     );
     // verify the alnum segment is exactly 40
     assert_eq!(token.rsplit('-').next().unwrap().len(), 40);
-    assert_eq!(SlackTokenValidator.validate(&token), ChecksumResult::Valid);
+    assert_eq!(
+        SlackTokenValidator.validate(&token),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 #[test]
@@ -454,7 +460,10 @@ fn slack_xoxb_mixed_case_alnum_segment_valid() {
         "xoxb-{}-{}-{}",
         "123456789012", "210987654321", "AbCdEf0123456789Xyz"
     );
-    assert_eq!(SlackTokenValidator.validate(&token), ChecksumResult::Valid);
+    assert_eq!(
+        SlackTokenValidator.validate(&token),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 // ---- xoxb- bot: Invalid (regex violations) ----
@@ -582,7 +591,10 @@ fn slack_xoxp_without_optional_group_min_valid() {
         "1".repeat(10),
         "a".repeat(24)
     );
-    assert_eq!(SlackTokenValidator.validate(&token), ChecksumResult::Valid);
+    assert_eq!(
+        SlackTokenValidator.validate(&token),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 #[test]
@@ -595,7 +607,10 @@ fn slack_xoxp_with_optional_group_valid() {
         "1".repeat(12),
         "a".repeat(30)
     );
-    assert_eq!(SlackTokenValidator.validate(&token), ChecksumResult::Valid);
+    assert_eq!(
+        SlackTokenValidator.validate(&token),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 #[test]
@@ -608,7 +623,10 @@ fn slack_xoxp_optional_group_min_10_digits_valid() {
         "2".repeat(10),
         "b".repeat(24)
     );
-    assert_eq!(SlackTokenValidator.validate(&token), ChecksumResult::Valid);
+    assert_eq!(
+        SlackTokenValidator.validate(&token),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 #[test]
@@ -620,7 +638,10 @@ fn slack_xoxp_optional_group_max_13_digits_valid() {
         "2".repeat(13),
         "b".repeat(24)
     );
-    assert_eq!(SlackTokenValidator.validate(&token), ChecksumResult::Valid);
+    assert_eq!(
+        SlackTokenValidator.validate(&token),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 #[test]
@@ -631,7 +652,10 @@ fn slack_xoxp_secret_max_40_valid() {
         "1".repeat(10),
         "z".repeat(40)
     );
-    assert_eq!(SlackTokenValidator.validate(&token), ChecksumResult::Valid);
+    assert_eq!(
+        SlackTokenValidator.validate(&token),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 // ---- xoxp- user: Invalid ----
@@ -742,11 +766,8 @@ fn slack_validator_id_is_slack_bot_token() {
 // ══════════════════════════════ Stripe ═══════════════════════════════════
 
 #[test]
-fn stripe_all_six_prefixes_valid_at_24() {
-    // Every documented prefix with a 24-char alnum body -> Valid.
-    for prefix in [
-        "sk_live_", "sk_test_", "pk_live_", "pk_test_", "rk_live_", "rk_test_",
-    ] {
+fn stripe_all_detector_owned_prefixes_valid_at_24() {
+    for prefix in ["sk_live_", "sk_test_", "rk_live_", "rk_test_"] {
         let token = format!("{prefix}{}", "A".repeat(24));
         assert_eq!(
             StripeTokenValidator.validate(&token),
@@ -815,8 +836,8 @@ fn stripe_body_with_underscore_invalid() {
 
 #[test]
 fn stripe_mixed_alnum_body_valid() {
-    let token = format!("pk_test_{}", "aB0cD1eF2gH3iJ4kL5mN6oP7");
-    assert_eq!(token.len(), "pk_test_".len() + 24);
+    let token = format!("rk_test_{}", "aB0cD1eF2gH3iJ4kL5mN6oP7");
+    assert_eq!(token.len(), "rk_test_".len() + 24);
     assert_eq!(
         StripeTokenValidator.validate(&token),
         ChecksumResult::StructurallyValid
@@ -906,9 +927,7 @@ fn aggregator_gitlab_glpat_valid_routes_through() {
 
 use proptest::prelude::*;
 
-const STRIPE_PREFIXES: &[&str] = &[
-    "sk_live_", "sk_test_", "pk_live_", "pk_test_", "rk_live_", "rk_test_",
-];
+const STRIPE_PREFIXES: &[&str] = &["sk_live_", "sk_test_", "rk_live_", "rk_test_"];
 const UNKNOWN_STRIPE_PREFIXES: &[&str] = &[
     "wk_live_", "sk_prod_", "ak_live_", "sk_dev_", "tk_test_", "sklive_",
 ];

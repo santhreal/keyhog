@@ -204,11 +204,13 @@ pub(crate) fn extend_known_prefix_credential<'a>(
     data: &'a str,
     credential: &'a str,
     match_end: usize,
-) -> (&'a str, usize) {
+    validate: impl Fn(&str, bool) -> crate::checksum::ChecksumConfidenceDecision,
+) -> (&'a str, usize, crate::checksum::ChecksumConfidenceDecision) {
     let original = credential;
     let original_end = match_end;
-    let (credential, match_end) = if crate::confidence::known_prefix_confidence_floor(credential)
-        .is_some()
+    let original_validation = validate(original, true);
+    let (credential, match_end) = if original_validation.claims_family()
+        || crate::confidence::known_prefix_confidence_floor(credential).is_some()
     {
         let bytes = data.as_bytes();
         let mut end = match_end;
@@ -250,16 +252,18 @@ pub(crate) fn extend_known_prefix_credential<'a>(
     // was being appended to a valid pypi token). Cheap: the length guard keeps
     // the checksum-validity comparison off the hot path until an extension
     // actually changed the credential. The comparison itself lives in the
-    // checksum module (`extension_downgrades_checksum`) so this engine emission
-    // path asks a named checksum question instead of owning raw checksum
-    // primitives (the `engine_match_policy_checksum_owner` gate).
-    if credential.len() != original.len()
-        && crate::checksum::extension_downgrades_checksum(original, credential)
-    {
-        return (original, original_end);
+    // Both decisions come from the active detector's already-compiled validator
+    // set. Return the surviving decision with the slice so suppression and final
+    // confidence never repeat validation.
+    if credential.len() != original.len() {
+        let extended_validation = validate(credential, false);
+        if original_validation.is_proven_valid() && !extended_validation.is_proven_valid() {
+            return (original, original_end, original_validation);
+        }
+        return (credential, match_end, extended_validation);
     }
 
-    (credential, match_end)
+    (credential, match_end, original_validation)
 }
 
 /// Swallow up to two trailing `=` when the captured body is base64-shaped.

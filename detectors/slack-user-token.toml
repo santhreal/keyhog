@@ -9,6 +9,7 @@ name = "Slack User Token"
 service = "slack"
 severity = "critical"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
+validators = [{ type = "pattern-shape", prefixes = ["xoxp-"], allow_overlong = false }]
 # "user" removed: extremely over-broad (fires the detector on ANY text containing
 # "user") and redundant, both regexes require the unambiguous `xoxp-` prefix
 # (keyword "xoxp"), so "user" only forced wasted scan passes. Recall-neutral.
@@ -16,12 +17,8 @@ keywords = ["xoxp-", "slack"]
 simdsieve_prefixes = ["xoxp-"]
 
 [[detector.patterns]]
-regex = 'xoxp-[0-9]{10,13}-[0-9]{10,13}-[0-9]{10,13}-[a-f0-9]{32}'
-description = "Slack user token (xoxp-)"
-
-[[detector.patterns]]
-regex = 'xoxp-[0-9]{10,15}-[0-9]{10,15}-[a-zA-Z0-9]{24,34}'
-description = "Slack user token (3-segment variant)"
+regex = 'xoxp-[0-9]{10,15}-[0-9]{10,15}(?:-[0-9]{10,13})?-[a-zA-Z0-9]{24,40}'
+description = "Slack user token (xoxp- with optional numeric segment)"
 
 
 [detector.verify]

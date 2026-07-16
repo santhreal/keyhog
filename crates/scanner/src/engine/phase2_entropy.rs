@@ -289,6 +289,14 @@ impl CompiledScanner {
                 continue;
             };
             let line_number = absolute_line(chunk.metadata.base_line, mapped_line);
+            let checksum_decision = self.detector_plans.validate_any(&entropy_match.value);
+            if checksum_decision.is_invalid() {
+                crate::adjudicate::record_checksum_invalid_suppression(
+                    chunk.metadata.path.as_deref(),
+                    &entropy_match.value,
+                );
+                continue;
+            }
             let build_raw_match = |scan_state: &mut ScanState, report_conf| {
                 // Clone metadata only for candidates that need an owned RawMatch.
                 let detector_id = Arc::clone(&metadata.0);
@@ -359,6 +367,7 @@ impl CompiledScanner {
                     policy.effective_weight(&self.config),
                     min_confidence_floor,
                     detector_owned_canonical_hex_key,
+                    checksum_decision,
                     mode,
                 );
                 continue;
@@ -380,6 +389,7 @@ impl CompiledScanner {
                     is_generic_detector: true,
                     allow_encoded_text_lift: false,
                     allow_canonical_hex_key: detector_owned_canonical_hex_key,
+                    checksum: checksum_decision,
                     calibration: self.config.calibration.as_deref(),
                 },
             ) else {

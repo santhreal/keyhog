@@ -9,6 +9,7 @@ name = "GitLab Personal Access Token"
 service = "gitlab"
 severity = "critical"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
+validators = [{ type = "pattern-shape", prefixes = ["glpat-"], allow_overlong = true }]
 keywords = ["glpat-", "gitlab"]
 
 [[detector.patterns]]
@@ -17,8 +18,8 @@ keywords = ["glpat-", "gitlab"]
 # mirror-pos-0000033.ini: `glpat-_fOrNLbqhvJPZGZDzQ9P`). The previous
 # `[a-zA-Z0-9\-]` class rejected underscores and dropped these tokens
 # to entropy fallback.
-regex = 'glpat-[a-zA-Z0-9_\-]{20,64}'
-description = "GitLab personal access token (glpat- prefix, 20-64 base64url chars)"
+regex = 'glpat-[a-zA-Z0-9_.\-]{20,64}'
+description = "GitLab personal access token (glpat- prefix, 20-64 routable-token chars)"
 
 [detector.verify]
 method = "GET"

@@ -31,9 +31,13 @@ pub(crate) fn apply_checksum_decision_confidence(
 ) -> Option<f64> {
     match decision.result() {
         crate::checksum::ChecksumResult::Invalid => None,
-        crate::checksum::ChecksumResult::Valid => {
-            Some(confidence.max(crate::checksum::CHECKSUM_VALID_FLOOR))
-        }
+        crate::checksum::ChecksumResult::Valid => Some(
+            confidence.max(
+                decision
+                    .valid_confidence_floor()
+                    .unwrap_or(crate::checksum::CHECKSUM_VALID_FLOOR),
+            ),
+        ),
         crate::checksum::ChecksumResult::StructurallyValid => Some(confidence),
         crate::checksum::ChecksumResult::NotApplicable => Some(confidence),
     }
@@ -242,6 +246,7 @@ pub(crate) struct ReportConfidencePolicy<'a> {
     pub(crate) penalize_test_paths: bool,
     pub(crate) allow_encoded_text_lift: bool,
     pub(crate) allow_canonical_hex_key: bool,
+    pub(crate) checksum: CredentialChecksumPolicy,
     pub(crate) calibration: Option<&'a keyhog_core::Calibration>,
 }
 
@@ -279,7 +284,8 @@ pub(crate) fn finalize_report_confidence(
         policy.detector_id,
         policy.calibration,
     );
-    apply_checksum_confidence(confidence, policy.credential).map(canonicalize_report_confidence)
+    apply_checksum_decision_confidence(confidence, policy.checksum)
+        .map(canonicalize_report_confidence)
 }
 
 #[cfg(feature = "ml")]

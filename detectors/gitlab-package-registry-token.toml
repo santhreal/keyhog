@@ -9,18 +9,19 @@ name = "GitLab Package Registry Token"
 service = "gitlab-package-registry"
 severity = "high"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
+validators = [{ type = "pattern-shape", prefixes = ["gldt-", "glcbt-"], allow_overlong = true }]
 keywords = ["gldt-", "glcbt-", "CI_JOB_TOKEN", "CI_DEPLOY_TOKEN"]
 
 [[detector.patterns]]
-regex = "gldt-[a-zA-Z0-9_-]{20,}"
+regex = "gldt-[a-zA-Z0-9_.-]{20,64}"
 description = "GitLab Deploy Token for Package Registry"
 
 [[detector.patterns]]
-regex = "glcbt-[a-zA-Z0-9_-]{20,}"
+regex = "glcbt-[a-zA-Z0-9_.-]{16,64}"
 description = "GitLab CI Job Token for Package Registry"
 
 [[detector.patterns]]
-regex = "(?:CI_JOB_TOKEN|CI_DEPLOY_TOKEN|GITLAB_DEPLOY_TOKEN)[=:\\s\"'']+(gldt-[a-zA-Z0-9_-]{20,}|glcbt-[a-zA-Z0-9_-]{20,})"
+regex = "(?:CI_JOB_TOKEN|CI_DEPLOY_TOKEN|GITLAB_DEPLOY_TOKEN)[=:\\s\"'']+(gldt-[a-zA-Z0-9_.-]{20,64}|glcbt-[a-zA-Z0-9_.-]{16,64})"
 description = "GitLab Package Registry token in environment variable"
 group = 1
 

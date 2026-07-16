@@ -1488,12 +1488,11 @@ pub const TUNING_LOCALIZER_DEFAULT: bool =
 pub const TUNING_GPU_RECALL_FLOOR_DEFAULT: bool =
     crate::scanner_config::ScannerTuningConfig::GPU_RECALL_FLOOR_DEFAULT;
 
-/// GitLab structural-checksum verdict for `credential`, as a stable string
+/// GitLab detector-owned structural-validator verdict for `credential`, as a stable string
 /// (`"valid"` / `"structurally-valid"` / `"invalid"` / `"not-applicable"`). Lets
 /// a gap test pin the classic (20) and routable (16) body-length floors.
 pub fn gitlab_checksum_verdict_for_test(credential: &str) -> &'static str {
-    use crate::checksum::ChecksumValidator;
-    match crate::checksum::gitlab::GitlabTokenValidator.validate(credential) {
+    match crate::checksum::validate_checksum(credential) {
         crate::checksum::ChecksumResult::Valid => "valid",
         crate::checksum::ChecksumResult::StructurallyValid => "structurally-valid",
         crate::checksum::ChecksumResult::Invalid => "invalid",
@@ -1501,14 +1500,10 @@ pub fn gitlab_checksum_verdict_for_test(credential: &str) -> &'static str {
     }
 }
 
-/// Every single-owner checksum prefix (`crate::checksum::prefixes`) the
-/// validators strip, exposed so the `checksum_prefixes_are_backed_by_their_detector`
-/// guard (an external test crate) can bind each to its authoritative detector
-/// TOML and prove the validator literal never drifts from the pattern that
-/// surfaces the credential. The prefix→detector binding lives in the test
-/// (detector-id strings belong only to `detector_ids.rs` in src).
+/// Every detector-declared offline-validator prefix, exposed for behavioral
+/// corpus tests. Values come from the embedded TOMLs, not a second Rust table.
 pub fn checksum_prefixes() -> Vec<&'static str> {
-    crate::checksum::prefixes::all_checksum_prefixes()
+    crate::checksum::detector_declared_prefixes()
 }
 
 /// SIMD prefilter hot-pattern `(prefix bytes, detector id)` bindings, exposed so
@@ -1551,8 +1546,9 @@ pub fn jwt_header_prefix() -> &'static str {
 /// npm checksum verdict for `credential`, as a stable string. Lets a gap test
 /// pin the 36-char body length gate and the Valid path end to end.
 pub fn npm_checksum_verdict_for_test(credential: &str) -> &'static str {
-    use crate::checksum::ChecksumValidator;
-    match crate::checksum::npm::NpmTokenValidator.validate(credential) {
+    match crate::checksum::validate_for_detector(crate::detector_ids::NPM_ACCESS_TOKEN, credential)
+        .result()
+    {
         crate::checksum::ChecksumResult::Valid => "valid",
         crate::checksum::ChecksumResult::StructurallyValid => "structurally-valid",
         crate::checksum::ChecksumResult::Invalid => "invalid",
@@ -1567,12 +1563,10 @@ pub fn npm_expected_checksum_for_test(entropy: &str) -> String {
     crate::checksum::base62_encode_u32(crate::checksum::crc32(entropy.as_bytes()), 6)
 }
 
-/// Slack structural-checksum verdict for `credential`, as a stable string. Lets
-/// a gap test pin both bot-token shapes (3-segment and 2-segment) and the user
-/// token shape through the shared `compile_slack_re` regexes.
+/// Slack detector-owned structural-validator verdict for `credential`, as a
+/// stable string. Both bot and user shapes come from their detector patterns.
 pub fn slack_checksum_verdict_for_test(credential: &str) -> &'static str {
-    use crate::checksum::ChecksumValidator;
-    match crate::checksum::slack::SlackTokenValidator.validate(credential) {
+    match crate::checksum::validate_checksum(credential) {
         crate::checksum::ChecksumResult::Valid => "valid",
         crate::checksum::ChecksumResult::StructurallyValid => "structurally-valid",
         crate::checksum::ChecksumResult::Invalid => "invalid",
@@ -1583,8 +1577,12 @@ pub fn slack_checksum_verdict_for_test(credential: &str) -> &'static str {
 /// GitHub classic-PAT structural+checksum verdict for `credential`, as a stable
 /// string. Lets a gap test pin the 36-char body gate and the 30/6 split.
 pub fn github_classic_checksum_verdict_for_test(credential: &str) -> &'static str {
-    use crate::checksum::ChecksumValidator;
-    match crate::checksum::github::GithubClassicPatValidator.validate(credential) {
+    match crate::checksum::validate_for_detector(
+        crate::detector_ids::GITHUB_CLASSIC_PAT,
+        credential,
+    )
+    .result()
+    {
         crate::checksum::ChecksumResult::Valid => "valid",
         crate::checksum::ChecksumResult::StructurallyValid => "structurally-valid",
         crate::checksum::ChecksumResult::Invalid => "invalid",
@@ -1595,8 +1593,12 @@ pub fn github_classic_checksum_verdict_for_test(credential: &str) -> &'static st
 /// GitHub fine-grained-PAT structural+checksum verdict for `credential`, as a
 /// stable string.
 pub fn github_fine_grained_checksum_verdict_for_test(credential: &str) -> &'static str {
-    use crate::checksum::ChecksumValidator;
-    match crate::checksum::github::GithubFineGrainedPatValidator.validate(credential) {
+    match crate::checksum::validate_for_detector(
+        crate::detector_ids::GITHUB_PAT_FINE_GRAINED,
+        credential,
+    )
+    .result()
+    {
         crate::checksum::ChecksumResult::Valid => "valid",
         crate::checksum::ChecksumResult::StructurallyValid => "structurally-valid",
         crate::checksum::ChecksumResult::Invalid => "invalid",
@@ -1866,6 +1868,7 @@ pub mod confidence {
                 penalize_test_paths,
                 allow_encoded_text_lift,
                 allow_canonical_hex_key: false,
+                checksum: crate::checksum::ChecksumConfidenceDecision::for_credential(credential),
                 calibration: None,
             },
         )
@@ -3939,7 +3942,7 @@ pub mod checksum {
     }
 
     macro_rules! checksum_validator_wrapper {
-        ($name:ident, $inner:path, $validator_id:expr) => {
+        ($name:ident, $validator_id:expr) => {
             pub struct $name;
 
             impl ChecksumValidator for $name {
@@ -3948,8 +3951,7 @@ pub mod checksum {
                 }
 
                 fn validate(&self, credential: &str) -> ChecksumResult {
-                    let inner = $inner;
-                    crate::checksum::ChecksumValidator::validate(&inner, credential)
+                    crate::checksum::validate_for_detector($validator_id, credential).result()
                 }
             }
 
@@ -3967,39 +3969,57 @@ pub mod checksum {
 
     checksum_validator_wrapper!(
         GithubClassicPatValidator,
-        crate::checksum::github::GithubClassicPatValidator,
         crate::detector_ids::GITHUB_CLASSIC_PAT
     );
     checksum_validator_wrapper!(
         GithubFineGrainedPatValidator,
-        crate::checksum::github::GithubFineGrainedPatValidator,
         crate::detector_ids::GITHUB_PAT_FINE_GRAINED
     );
-    checksum_validator_wrapper!(
-        GitlabTokenValidator,
-        crate::checksum::gitlab::GitlabTokenValidator,
-        crate::detector_ids::GITLAB_PERSONAL_ACCESS_TOKEN
-    );
-    checksum_validator_wrapper!(
-        NpmTokenValidator,
-        crate::checksum::npm::NpmTokenValidator,
-        crate::detector_ids::NPM_ACCESS_TOKEN
-    );
-    checksum_validator_wrapper!(
-        PypiTokenValidator,
-        crate::checksum::npm::PypiTokenValidator,
-        crate::detector_ids::PYPI_API_TOKEN
-    );
-    checksum_validator_wrapper!(
-        SlackTokenValidator,
-        crate::checksum::slack::SlackTokenValidator,
-        crate::detector_ids::SLACK_BOT_TOKEN
-    );
-    checksum_validator_wrapper!(
-        StripeTokenValidator,
-        crate::checksum::stripe::StripeTokenValidator,
-        crate::detector_ids::STRIPE_SECRET_KEY
-    );
+    pub struct GitlabTokenValidator;
+
+    impl ChecksumValidator for GitlabTokenValidator {
+        fn validator_id(&self) -> &str {
+            crate::detector_ids::GITLAB_PERSONAL_ACCESS_TOKEN
+        }
+
+        fn validate(&self, credential: &str) -> ChecksumResult {
+            crate::checksum::validate_checksum(credential)
+        }
+    }
+
+    impl GitlabTokenValidator {
+        pub fn validator_id(&self) -> &str {
+            <Self as ChecksumValidator>::validator_id(self)
+        }
+
+        pub fn validate(&self, credential: &str) -> ChecksumResult {
+            <Self as ChecksumValidator>::validate(self, credential)
+        }
+    }
+    checksum_validator_wrapper!(NpmTokenValidator, crate::detector_ids::NPM_ACCESS_TOKEN);
+    checksum_validator_wrapper!(PypiTokenValidator, crate::detector_ids::PYPI_API_TOKEN);
+    pub struct SlackTokenValidator;
+
+    impl ChecksumValidator for SlackTokenValidator {
+        fn validator_id(&self) -> &str {
+            crate::detector_ids::SLACK_BOT_TOKEN
+        }
+
+        fn validate(&self, credential: &str) -> ChecksumResult {
+            crate::checksum::validate_checksum(credential)
+        }
+    }
+
+    impl SlackTokenValidator {
+        pub fn validator_id(&self) -> &str {
+            <Self as ChecksumValidator>::validator_id(self)
+        }
+
+        pub fn validate(&self, credential: &str) -> ChecksumResult {
+            <Self as ChecksumValidator>::validate(self, credential)
+        }
+    }
+    checksum_validator_wrapper!(StripeTokenValidator, crate::detector_ids::STRIPE_SECRET_KEY);
 }
 
 #[cfg(test)]
@@ -4713,7 +4733,16 @@ pub(crate) mod scan_filters {
         credential: &'a str,
         match_end: usize,
     ) -> (&'a str, usize) {
-        crate::engine::scan_filters::extend_known_prefix_credential(data, credential, match_end)
+        let (credential, match_end, _) =
+            crate::engine::scan_filters::extend_known_prefix_credential(
+                data,
+                credential,
+                match_end,
+                |candidate, _| {
+                    crate::checksum::ChecksumConfidenceDecision::for_credential(candidate)
+                },
+            );
+        (credential, match_end)
     }
 }
 

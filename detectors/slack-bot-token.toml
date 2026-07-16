@@ -9,6 +9,7 @@ name = "Slack Bot Token"
 service = "slack"
 severity = "critical"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
+validators = [{ type = "pattern-shape", prefixes = ["xoxb-"], allow_overlong = false }]
 # "bot" removed: over-broad (robot/bottom/bottle/abbot all contain it) and
 # redundant: every regex requires the unambiguous `xoxb-` prefix (keyword
 # "xoxb"), so "bot" only forced wasted scan passes. Recall-neutral.
@@ -16,11 +17,11 @@ keywords = ["xoxb-", "slack"]
 simdsieve_prefixes = ["xoxb-"]
 
 [[detector.patterns]]
-regex = 'xoxb-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24,32}'
+regex = 'xoxb-[0-9]{10,15}-[0-9]{10,15}-[a-zA-Z0-9]{15,40}'
 description = "Slack bot token (3-segment)"
 
 [[detector.patterns]]
-regex = 'xoxb-[0-9]{10,13}-[0-9A-Za-z]{15,36}'
+regex = 'xoxb-[0-9]{10,15}-[0-9A-Za-z]{15,40}'
 description = "Slack bot token (2-segment or mixed)"
 
 [detector.verify]

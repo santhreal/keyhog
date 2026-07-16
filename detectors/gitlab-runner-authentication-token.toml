@@ -10,14 +10,14 @@ name = "GitLab Runner Authentication Token"
 service = "gitlab"
 severity = "high"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
+validators = [{ type = "pattern-shape", prefixes = ["glrt-"], allow_overlong = true }]
 keywords = ["glrt-", "gitlab", "CI_SERVER_URL", "runner"]
 
 [[detector.patterns]]
-# Standard runner auth token: glrt- then exactly 20 base64url chars
-# (gitleaks `gitlab-runner-authentication-token` shape). The glrt- literal
-# is a strong AC prefilter prefix.
-regex = 'glrt-[0-9a-zA-Z_\-]{20}'
-description = "GitLab runner authentication token (glrt- prefix, 20 chars)"
+# Standard and versioned runner auth tokens use the same base64url family.
+# Keep the supported 16-64-byte band beside its structural validator.
+regex = 'glrt-[0-9a-zA-Z_.\-]{16,64}'
+description = "GitLab runner authentication token (glrt- prefix, 16-64 chars)"
 
 [[detector.patterns]]
 # Routable runner auth token: glrt-t<digit>_<27-300 chars>.<9 lower-hex/alnum>

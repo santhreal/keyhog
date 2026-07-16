@@ -9,6 +9,7 @@ name = "GitHub Fine-Grained PAT"
 service = "github"
 severity = "critical"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
+validators = [{ type = "github-fine-grained-crc32", prefixes = ["github_pat_"], left_len = 22, right_len = 59, checksum_len = 6, confidence_floor = 0.9 }]
 keywords = ["github_pat_"]
 
 [[detector.patterns]]

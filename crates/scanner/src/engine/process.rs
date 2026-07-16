@@ -56,8 +56,14 @@ impl CompiledScanner {
         keyword_nearby: bool,
         sensitive_file: bool,
     ) {
-        let (credential, match_end) =
-            extend_known_prefix_credential(data, credential, credential_end);
+        let (credential, match_end, checksum_decision) = extend_known_prefix_credential(
+            data,
+            credential,
+            credential_end,
+            |candidate, pattern_proven| {
+                detector_plan.validators.validate(candidate, pattern_proven)
+            },
+        );
         let line = match_line_number(preprocessed, line_offsets, credential_start);
         let execution_policy = &detector_plan.execution;
         let is_generic = execution_policy.is_generic;
@@ -237,7 +243,9 @@ impl CompiledScanner {
         // confidence policy owner makes the drop/floor rule shared with hot,
         // generic, entropy, and ML emitters.
         let checksum_ctx = crate::adjudicate::MatchCtx::for_process_signals(
-            crate::adjudicate::ProcessCandidateSignals::from_checksum_policy(credential),
+            crate::adjudicate::ProcessCandidateSignals::from_checksum_invalid(
+                checksum_decision.is_invalid(),
+            ),
         );
         if crate::adjudicate::record_suppression(
             chunk.metadata.path.as_deref(),
@@ -312,6 +320,7 @@ impl CompiledScanner {
                         is_generic_detector: is_generic,
                         allow_encoded_text_lift: false,
                         allow_canonical_hex_key: allow_decoded_hex_key_material,
+                        checksum: checksum_decision,
                         calibration: self.config.calibration.as_deref(),
                     },
                 ) else {
@@ -379,6 +388,7 @@ impl CompiledScanner {
                     is_generic,
                     allow_decoded_hex_key_material,
                     false,
+                    checksum_decision,
                     mode,
                 );
                 crate::telemetry::record_match_found();

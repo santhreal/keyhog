@@ -48,6 +48,7 @@ impl CompiledScanner {
                 is_generic_detector: pending.is_generic_detector,
                 allow_encoded_text_lift: pending.allow_encoded_text_lift,
                 allow_canonical_hex_key: pending.allow_canonical_hex_key,
+                checksum: pending.checksum,
                 calibration: self.config.calibration.as_deref(),
             },
         ) else {

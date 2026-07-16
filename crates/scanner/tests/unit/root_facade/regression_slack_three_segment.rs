@@ -26,7 +26,6 @@
 
 use keyhog_scanner::testing::checksum::{
     checksum_adjusted_confidence, validate_checksum, ChecksumResult, SlackTokenValidator,
-    CHECKSUM_VALID_FLOOR,
 };
 
 // A real-world 2-segment / "mixed" Slack bot token: prefix + one 10-digit
@@ -42,7 +41,7 @@ fn two_segment_bot_token_is_valid() {
     // absent), which made the engine drop a real bot token.
     assert_eq!(
         SlackTokenValidator.validate(TWO_SEGMENT_BOT),
-        ChecksumResult::Valid,
+        ChecksumResult::StructurallyValid,
         "legitimate 2-segment bot token {TWO_SEGMENT_BOT:?} must validate"
     );
 }
@@ -50,22 +49,23 @@ fn two_segment_bot_token_is_valid() {
 #[test]
 fn two_segment_bot_token_routes_valid_through_registry() {
     // Same verdict through the public aggregator the engine actually calls.
-    assert_eq!(validate_checksum(TWO_SEGMENT_BOT), ChecksumResult::Valid);
+    assert_eq!(
+        validate_checksum(TWO_SEGMENT_BOT),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 #[test]
 fn two_segment_bot_token_is_kept_not_dropped_by_confidence_gate() {
     // `checksum_adjusted_confidence` is the single policy the emission paths
-    // use. Pre-fix it returned `None` (DROP) for this token; post-fix it floors
-    // the confidence at CHECKSUM_VALID_FLOOR (KEEP).
+    // use. Slack publishes no offline checksum, so a structural match keeps
+    // the original score without claiming proof.
     let scored = checksum_adjusted_confidence(0.70, TWO_SEGMENT_BOT);
     assert_eq!(
         scored,
-        Some(CHECKSUM_VALID_FLOOR),
-        "a confirmed 2-segment bot token must be kept and floored, not dropped"
+        Some(0.70),
+        "a structurally valid 2-segment bot token must be kept, not dropped"
     );
-    // CHECKSUM_VALID_FLOOR clears the high-precision bar; sanity-pin its value.
-    assert_eq!(CHECKSUM_VALID_FLOOR, 0.9);
 }
 
 #[test]
@@ -78,7 +78,10 @@ fn two_segment_bot_min_secret_15_chars_valid() {
         "a".repeat(15)
     );
     assert_eq!(token.rsplit('-').next().unwrap().len(), 15);
-    assert_eq!(SlackTokenValidator.validate(&token), ChecksumResult::Valid);
+    assert_eq!(
+        SlackTokenValidator.validate(&token),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 #[test]
@@ -91,7 +94,10 @@ fn two_segment_bot_max_secret_36_chars_valid() {
         "B".repeat(36)
     );
     assert_eq!(token.rsplit('-').next().unwrap().len(), 36);
-    assert_eq!(SlackTokenValidator.validate(&token), ChecksumResult::Valid);
+    assert_eq!(
+        SlackTokenValidator.validate(&token),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 #[test]
@@ -105,7 +111,10 @@ fn two_segment_bot_all_digit_secret_valid() {
         "1234567890",
         "1".repeat(15)
     );
-    assert_eq!(SlackTokenValidator.validate(&token), ChecksumResult::Valid);
+    assert_eq!(
+        SlackTokenValidator.validate(&token),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 // ─────────────── property-style sweep over the legitimate family ────────────
@@ -129,14 +138,11 @@ fn two_segment_bot_family_all_valid() {
             let token = format!("{}-{}-{}", concat!("xox", "b"), num, secret);
             assert_eq!(
                 SlackTokenValidator.validate(&token),
-                ChecksumResult::Valid,
-                "2-segment bot token (num_len={num_len}, sec_len={sec_len}) must be Valid: {token}"
+                ChecksumResult::StructurallyValid,
+                "2-segment bot token (num_len={num_len}, sec_len={sec_len}) must be structurally valid: {token}"
             );
             // And the gate keeps it.
-            assert_eq!(
-                checksum_adjusted_confidence(0.5, &token),
-                Some(CHECKSUM_VALID_FLOOR),
-            );
+            assert_eq!(checksum_adjusted_confidence(0.5, &token), Some(0.5),);
         }
     }
 }
@@ -145,7 +151,10 @@ fn two_segment_bot_family_all_valid() {
 fn three_segment_bot_token_still_valid() {
     // The canonical 3-segment form must keep working after widening to optional.
     let token = concat!("xox", "b-1234567890-1234567890-abcdefghijklmnopqrstuvwx");
-    assert_eq!(SlackTokenValidator.validate(token), ChecksumResult::Valid);
+    assert_eq!(
+        SlackTokenValidator.validate(token),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 // ─────────────────────── negative twins (precision) ────────────────────────
@@ -263,7 +272,10 @@ fn user_three_segment_variant_still_valid() {
     // xoxp-{10-15}-{10-15}-{24-34 alnum}. Already Valid; lock it.
     let token = concat!("xox", "p-1234567890-1234567890-abcdefghijklmnopqrstuvwx");
     assert_eq!(token.rsplit('-').next().unwrap().len(), 24);
-    assert_eq!(SlackTokenValidator.validate(token), ChecksumResult::Valid);
+    assert_eq!(
+        SlackTokenValidator.validate(token),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 #[test]
@@ -273,7 +285,10 @@ fn user_four_segment_with_optional_group_still_valid() {
         "xox",
         "p-1234567890-1234567890-1234567890-abcdef1234567890abcdef1234567890"
     );
-    assert_eq!(SlackTokenValidator.validate(token), ChecksumResult::Valid);
+    assert_eq!(
+        SlackTokenValidator.validate(token),
+        ChecksumResult::StructurallyValid
+    );
 }
 
 #[test]

@@ -437,7 +437,6 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
             let _ = generic_assignment_re.find(WARM_SAMPLE); // LAW10: warm-up result is intentionally discarded; this eagerly initializes the exact regex used by later scans
         }
         crate::multiline::warm_runtime_regexes();
-        crate::checksum::warm_runtime_regexes();
     }
 
     /// Iterator over the FINAL regex source strings (post anchoring /

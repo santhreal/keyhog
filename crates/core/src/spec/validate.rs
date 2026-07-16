@@ -63,6 +63,7 @@ pub fn validate_detector(spec: &DetectorSpec) -> Vec<QualityIssue> {
     validate_pattern_groups(spec, &mut issues, &mut regex_cache);
     validate_keywords(spec, &mut issues);
     validate_simdsieve_prefixes(spec, &mut issues);
+    validate_offline_validators(spec, &mut issues);
     validate_pattern_specificity(spec, &mut issues, &mut regex_cache);
     validate_companions(spec, &mut issues, &mut regex_cache);
     validate_verify_spec(spec, &mut issues);
@@ -73,6 +74,86 @@ pub fn validate_detector(spec: &DetectorSpec) -> Vec<QualityIssue> {
     validate_credential_shape(spec, &mut issues);
     validate_detector_allowlists(spec, &mut issues);
     issues
+}
+
+fn validate_offline_validators(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
+    let mut claimed_prefixes = std::collections::HashSet::new();
+    for (index, validator) in spec.validators.iter().enumerate() {
+        let prefixes = validator.prefixes();
+        if prefixes.is_empty() {
+            issues.push(QualityIssue::Error(format!(
+                "validators[{index}].prefixes must not be empty"
+            )));
+        }
+        for prefix in prefixes {
+            if prefix.is_empty() || !prefix.is_ascii() {
+                issues.push(QualityIssue::Error(format!(
+                    "validators[{index}] prefix {prefix:?} must be non-empty ASCII"
+                )));
+            }
+            if !claimed_prefixes.insert(prefix) {
+                issues.push(QualityIssue::Error(format!(
+                    "detector validators claim prefix {prefix:?} more than once"
+                )));
+            }
+        }
+
+        if let Some(floor) = validator.confidence_floor() {
+            if !floor.is_finite() || !(0.0..=1.0).contains(&floor) {
+                issues.push(QualityIssue::Error(format!(
+                    "validators[{index}].confidence_floor must be finite and in [0.0, 1.0], found {floor}"
+                )));
+            }
+        }
+
+        match validator {
+            crate::DetectorValidatorSpec::Crc32Base62 {
+                entropy_len,
+                checksum_len,
+                ..
+            } => {
+                if *entropy_len == 0 || *checksum_len == 0 {
+                    issues.push(QualityIssue::Error(format!(
+                        "validators[{index}] CRC32 entropy_len and checksum_len must both be greater than zero"
+                    )));
+                }
+            }
+            crate::DetectorValidatorSpec::GithubFineGrainedCrc32 {
+                left_len,
+                right_len,
+                checksum_len,
+                ..
+            } => {
+                if *left_len == 0 || *checksum_len == 0 || *right_len <= *checksum_len {
+                    issues.push(QualityIssue::Error(format!(
+                        "validators[{index}] fine-grained lengths require left_len > 0 and right_len > checksum_len > 0"
+                    )));
+                }
+            }
+            crate::DetectorValidatorSpec::Base64Payload {
+                min_encoded_len,
+                max_encoded_len,
+                min_decoded_len,
+                ..
+            } => {
+                if *min_encoded_len == 0
+                    || *max_encoded_len < *min_encoded_len
+                    || *min_decoded_len == 0
+                {
+                    issues.push(QualityIssue::Error(format!(
+                        "validators[{index}] base64 lengths require 0 < min_encoded_len <= max_encoded_len and min_decoded_len > 0"
+                    )));
+                }
+            }
+            crate::DetectorValidatorSpec::PatternShape { .. } => {
+                if spec.patterns.is_empty() {
+                    issues.push(QualityIssue::Error(format!(
+                        "validators[{index}] pattern-shape requires at least one detector pattern"
+                    )));
+                }
+            }
+        }
+    }
 }
 
 fn validate_identity(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {

@@ -82,6 +82,12 @@ pub struct DetectorSpec {
     /// TOML detectors must declare it. Programmatic `DetectorSpec::default()`
     /// disables both model paths until the caller chooses a policy.
     pub ml: DetectorMlPolicySpec,
+    /// Detector-owned offline validation policy. Each entry declares both the
+    /// validator primitive and every detector-specific parameter it needs.
+    /// Shared scanner code supplies the primitive implementations, but it must
+    /// not own token prefixes, field widths, confidence floors, or shape rules.
+    #[serde(default)]
+    pub validators: Vec<DetectorValidatorSpec>,
     /// List of regex patterns to match. Defaults to empty so a
     /// `kind = "phase2-generic"` detector can omit it when it has no structured
     /// envelope; a `kind = "regex"` detector with no patterns is rejected by
@@ -367,6 +373,91 @@ pub struct DetectorMlPolicySpec {
     /// Number of source lines on each side of the candidate supplied to feature
     /// extraction. Zero intentionally restricts inference to the candidate line.
     pub context_radius_lines: usize,
+}
+
+/// Exact base64 dialect accepted by a detector-owned offline validator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DetectorBase64Alphabet {
+    Standard,
+    StandardNoPad,
+    UrlSafe,
+    UrlSafeNoPad,
+}
+
+/// An offline validator declared by one detector.
+///
+/// The enum is deliberately closed and typed: malformed combinations are
+/// rejected while loading detector TOML instead of becoming runtime defaults.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum DetectorValidatorSpec {
+    /// CRC32 over a fixed entropy body, encoded as a fixed-width base62 suffix.
+    Crc32Base62 {
+        prefixes: Vec<String>,
+        entropy_len: usize,
+        checksum_len: usize,
+        reject_overlong: bool,
+        confidence_floor: f64,
+    },
+    /// GitHub fine-grained PAT CRC32 layout with two underscore-separated
+    /// segments and compatibility for the two formats GitHub has emitted.
+    GithubFineGrainedCrc32 {
+        prefixes: Vec<String>,
+        left_len: usize,
+        right_len: usize,
+        checksum_len: usize,
+        confidence_floor: f64,
+    },
+    /// A base64 payload whose successful decode is offline authenticity
+    /// evidence, such as the macaroon carried by a PyPI API token.
+    Base64Payload {
+        prefixes: Vec<String>,
+        alphabet: DetectorBase64Alphabet,
+        min_encoded_len: usize,
+        max_encoded_len: usize,
+        min_decoded_len: usize,
+        confidence_floor: f64,
+    },
+    /// The detector's own patterns are the complete structural contract. The
+    /// scanner compiles anchored copies once for generic/public validation;
+    /// named matches reuse the already-proven pattern result without rerunning
+    /// a second regex.
+    PatternShape {
+        prefixes: Vec<String>,
+        /// Whether a candidate that begins with a complete declared pattern but
+        /// continues with provider-token bytes is an unknown future shape
+        /// (`true`) or malformed (`false`).
+        allow_overlong: bool,
+    },
+}
+
+impl DetectorValidatorSpec {
+    /// Literal prefixes claimed by this validator.
+    pub fn prefixes(&self) -> &[String] {
+        match self {
+            Self::Crc32Base62 { prefixes, .. }
+            | Self::GithubFineGrainedCrc32 { prefixes, .. }
+            | Self::Base64Payload { prefixes, .. }
+            | Self::PatternShape { prefixes, .. } => prefixes,
+        }
+    }
+
+    /// Confidence floor earned by positive offline proof, when applicable.
+    pub fn confidence_floor(&self) -> Option<f64> {
+        match self {
+            Self::Crc32Base62 {
+                confidence_floor, ..
+            }
+            | Self::GithubFineGrainedCrc32 {
+                confidence_floor, ..
+            }
+            | Self::Base64Payload {
+                confidence_floor, ..
+            } => Some(*confidence_floor),
+            Self::PatternShape { .. } => None,
+        }
+    }
 }
 
 /// Strict candidate-plausibility policy owned by one detector TOML.

@@ -4,7 +4,8 @@
 //! `compile_slack_re` helper (previously two duplicated `match Regex::new {…}`
 //! blocks). Pin the verdicts that helper's regexes produce, in particular that
 //! BOTH bot shapes the detector emits (3-segment and the older 2-segment) are
-//! Valid, the contract the widened regex exists to preserve.
+//! structurally valid. Slack publishes no offline checksum, so these shapes
+//! must never receive checksum-proof confidence.
 
 use keyhog_scanner::testing::slack_checksum_verdict_for_test;
 
@@ -13,7 +14,7 @@ fn bot_token_three_segment_is_valid() {
     // xoxb-{10-15 digits}-{10-15 digits}-{15-40 alnum}
     assert_eq!(
         slack_checksum_verdict_for_test("xoxb-1234567890-0987654321-abcdefghijklmnop"),
-        "valid"
+        "structurally-valid"
     );
 }
 
@@ -22,7 +23,7 @@ fn bot_token_two_segment_is_valid() {
     // xoxb-{10-15 digits}-{15-40 alnum} (older installs; second numeric optional)
     assert_eq!(
         slack_checksum_verdict_for_test("xoxb-1234567890-abcdefghijklmnop"),
-        "valid"
+        "structurally-valid"
     );
 }
 
@@ -40,7 +41,7 @@ fn user_token_is_valid_and_malformed_is_invalid() {
     // xoxp-{10-15 d}-{10-15 d}(-{10-13 d})?-{24-40 alnum}
     assert_eq!(
         slack_checksum_verdict_for_test("xoxp-1234567890-0987654321-abcdefghijklmnopqrstuvwx"),
-        "valid"
+        "structurally-valid"
     );
     // Missing the required second numeric segment.
     assert_eq!(
@@ -80,7 +81,7 @@ proptest! {
         secret in "[a-zA-Z][a-zA-Z0-9]{14,39}",
     ) {
         let tok = format!("xoxb-{n1}-{n2}-{secret}");
-        prop_assert_eq!(verdict(&tok), "valid");
+        prop_assert_eq!(verdict(&tok), "structurally-valid");
     }
 
     /// Older 2-segment bot token: `xoxb-{10-15 d}-{15-40 alnum}` (numeric group
@@ -91,7 +92,7 @@ proptest! {
         secret in "[a-zA-Z][a-zA-Z0-9]{14,39}",
     ) {
         let tok = format!("xoxb-{n1}-{secret}");
-        prop_assert_eq!(verdict(&tok), "valid");
+        prop_assert_eq!(verdict(&tok), "structurally-valid");
     }
 
     /// A first numeric segment shorter than 10 digits is a structural reject.
@@ -127,7 +128,7 @@ proptest! {
             Some(m) => format!("xoxp-{d1}-{d2}-{m}-{secret}"),
             None => format!("xoxp-{d1}-{d2}-{secret}"),
         };
-        prop_assert_eq!(verdict(&tok), "valid");
+        prop_assert_eq!(verdict(&tok), "structurally-valid");
     }
 
     /// A user token missing the required second numeric segment is a reject.

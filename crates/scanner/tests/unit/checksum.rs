@@ -152,7 +152,7 @@ fn slack_valid_and_invalid_variants() {
 
 #[test]
 fn pypi_valid_and_invalid_variants() {
-    let blob = base64::engine::general_purpose::URL_SAFE.encode(vec![0u8; 120]);
+    let blob = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(vec![0u8; 75]);
     let token = format!("pypi-{blob}");
     assert_eq!(PypiTokenValidator.validate(&token), ChecksumResult::Valid);
     assert_eq!(
@@ -178,9 +178,9 @@ fn registry_routes_and_rejects() {
     assert_eq!(validate_checksum(&npm), ChecksumResult::Valid);
 
     let slack = concat!("xox", "b-1234567890-1234567890-abcdefghijklmnopqrstuvwx");
-    assert_eq!(validate_checksum(slack), ChecksumResult::Valid);
+    assert_eq!(validate_checksum(slack), ChecksumResult::StructurallyValid);
 
-    let blob = base64::engine::general_purpose::STANDARD.encode(vec![0u8; 120]);
+    let blob = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(vec![0u8; 75]);
     let pypi = format!("pypi-{blob}");
     assert_eq!(validate_checksum(&pypi), ChecksumResult::Valid);
 

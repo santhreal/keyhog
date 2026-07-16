@@ -311,14 +311,14 @@ fn stripe_boundary_23_char_body_is_invalid() {
 #[test]
 fn stripe_boundary_128_char_body_is_valid() {
     let body: String = std::iter::repeat('a').take(128).collect();
-    let token = format!("pk_live_{body}");
+    let token = format!("sk_live_{body}");
     assert_eq!(validate_checksum(&token), ChecksumResult::StructurallyValid);
 }
 
 #[test]
 fn stripe_boundary_129_char_body_is_invalid() {
     let body: String = std::iter::repeat('a').take(129).collect();
-    let token = format!("pk_live_{body}");
+    let token = format!("sk_live_{body}");
     assert_eq!(validate_checksum(&token), ChecksumResult::Invalid);
 }
 
@@ -332,16 +332,16 @@ fn stripe_non_alnum_body_is_invalid() {
 fn slack_well_formed_bot_token_is_valid() {
     // Matches ^xoxb-[0-9]{10,15}-[0-9]{10,15}-[a-zA-Z0-9]{15,40}$
     let token = "xoxb-1234567890-1234567890-abcdefghijklmnopqrst";
-    assert_eq!(validate_checksum(token), ChecksumResult::Valid);
-    // And a valid slack token at low confidence is floored to 0.9.
-    assert_eq!(checksum_adjusted_confidence(0.1, token), Some(0.9));
+    assert_eq!(validate_checksum(token), ChecksumResult::StructurallyValid);
+    // Slack has no public checksum proof, so confidence passes through.
+    assert_eq!(checksum_adjusted_confidence(0.1, token), Some(0.1));
 }
 
 #[test]
 fn slack_well_formed_user_token_is_valid() {
     // ^xoxp-[0-9]{10,15}-[0-9]{10,15}(?:-[0-9]{10,13})?-[a-zA-Z0-9]{24,40}$
     let token = "xoxp-1234567890-1234567890-abcdefghijklmnopqrstuvwx";
-    assert_eq!(validate_checksum(token), ChecksumResult::Valid);
+    assert_eq!(validate_checksum(token), ChecksumResult::StructurallyValid);
 }
 
 #[test]
@@ -391,9 +391,9 @@ fn gitlab_glpat_bad_charset_is_invalid() {
 
 #[test]
 fn pypi_well_formed_macaroon_is_valid() {
-    // pypi- + base64 of >= 32 bytes -> Valid. 48 'A's of STANDARD base64
-    // decode to 36 bytes (48/4*3), > 20 chars and >= 32 bytes.
-    let payload = "A".repeat(48);
+    // The detector owns the real 100..=128 encoded-byte band. One hundred
+    // STANDARD base64 characters decode to 75 bytes.
+    let payload = "A".repeat(100);
     let token = format!("pypi-{payload}");
     assert_eq!(validate_checksum(&token), ChecksumResult::Valid);
     assert_eq!(checksum_adjusted_confidence(0.0, &token), Some(0.9));
@@ -811,11 +811,11 @@ fn whitespace_padded_valid_token_loses_validation() {
 
 #[test]
 fn first_matching_validator_wins_no_double_adjudication() {
-    // validate_checksum returns on the first Valid/Invalid. A valid slack bot
-    // token is adjudicated by the slack validator alone -> Valid -> floored.
+    // Slack is structurally adjudicated exactly once, but no public checksum
+    // exists, so its input confidence must not be promoted to proof.
     let token = "xoxb-1234567890-1234567890-abcdefghijklmnopqrst";
-    assert_eq!(validate_checksum(token), ChecksumResult::Valid);
-    assert_eq!(checksum_adjusted_confidence(0.0, token), Some(0.9));
+    assert_eq!(validate_checksum(token), ChecksumResult::StructurallyValid);
+    assert_eq!(checksum_adjusted_confidence(0.0, token), Some(0.0));
 }
 
 // ===========================================================================

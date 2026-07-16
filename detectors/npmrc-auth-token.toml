@@ -17,6 +17,11 @@ name = "npm Registry Auth Token (.npmrc)"
 service = "npm"
 severity = "high"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
+validators = [
+  { type = "crc32-base62", prefixes = ["npm_"], entropy_len = 30, checksum_len = 6, reject_overlong = false, confidence_floor = 0.9 },
+  { type = "crc32-base62", prefixes = ["ghp_"], entropy_len = 30, checksum_len = 6, reject_overlong = true, confidence_floor = 0.9 },
+  { type = "pattern-shape", prefixes = ["glpat-"], allow_overlong = true },
+]
 keywords = ["_authToken"]
 # Structural slot: the `_authToken=` anchor is decisive even when the token body
 # is a low-entropy legacy value the generic model scores below the global floor.

@@ -159,9 +159,9 @@ fn pypi_short_payload_invalid() {
 
 #[test]
 fn pypi_decodes_to_long_blob_valid() {
-    // base64 of 48 'A' bytes (>= 32 decoded bytes), >= 20 payload chars.
+    // 75 bytes encode to the detector-owned 100-character minimum.
     use base64::Engine;
-    let payload = base64::engine::general_purpose::STANDARD.encode([0x41u8; 48]);
+    let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode([0x41u8; 75]);
     let token = format!("pypi-{}", payload);
     let v = PypiTokenValidator;
     assert_eq!(v.validate(&token), ChecksumResult::Valid);
@@ -266,7 +266,7 @@ fn slack_bot_three_segment_valid() {
     let v = SlackTokenValidator;
     // xoxb-{digits}-{digits}-{alnum 24..}
     let token = "xoxb-1234567890-0987654321-abcdefghijABCDEFGHIJ1234";
-    assert_eq!(v.validate(token), ChecksumResult::Valid);
+    assert_eq!(v.validate(token), ChecksumResult::StructurallyValid);
     assert_eq!(v.validator_id(), "slack-bot-token");
 }
 

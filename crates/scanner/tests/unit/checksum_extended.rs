@@ -120,11 +120,11 @@ fn stripe_sk_live_over_max_length_invalid() {
 }
 
 #[test]
-fn stripe_pk_live_structurally_valid() {
+fn stripe_pk_live_is_not_owned_by_secret_key_detector() {
     let token = "pk_live_".to_string() + &"B".repeat(30);
     assert_eq!(
         StripeTokenValidator.validate(&token),
-        ChecksumResult::StructurallyValid
+        ChecksumResult::NotApplicable
     );
 }
 
@@ -238,33 +238,33 @@ fn pypi_exactly_20_char_base64_is_invalid_too_short_decoded() {
 #[test]
 fn pypi_long_valid_base64_is_valid() {
     use base64::Engine;
-    let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(vec![0u8; 64]);
+    let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(vec![0u8; 75]);
     let token = format!("pypi-{b64}");
     assert_eq!(PypiTokenValidator.validate(&token), ChecksumResult::Valid);
 }
 
 #[test]
-fn pypi_url_safe_padded_base64_is_valid() {
+fn pypi_url_safe_padded_base64_is_invalid_for_declared_dialect() {
     use base64::Engine;
-    let b64 = base64::engine::general_purpose::URL_SAFE.encode(vec![0xfb; 64]);
+    let b64 = base64::engine::general_purpose::URL_SAFE.encode(vec![0xfb; 76]);
     assert!(
         b64.contains('-') && b64.ends_with('='),
         "fixture must exercise URL-safe padded routing, got {b64}"
     );
     let token = format!("pypi-{b64}");
-    assert_eq!(PypiTokenValidator.validate(&token), ChecksumResult::Valid);
+    assert_eq!(PypiTokenValidator.validate(&token), ChecksumResult::Invalid);
 }
 
 #[test]
-fn pypi_standard_padded_base64_is_valid() {
+fn pypi_standard_padded_base64_is_invalid_for_declared_dialect() {
     use base64::Engine;
-    let b64 = base64::engine::general_purpose::STANDARD.encode(vec![0xff; 64]);
+    let b64 = base64::engine::general_purpose::STANDARD.encode(vec![0xff; 76]);
     assert!(
         b64.contains('/') && b64.ends_with('='),
         "fixture must exercise standard padded routing, got {b64}"
     );
     let token = format!("pypi-{b64}");
-    assert_eq!(PypiTokenValidator.validate(&token), ChecksumResult::Valid);
+    assert_eq!(PypiTokenValidator.validate(&token), ChecksumResult::Invalid);
 }
 
 #[test]
