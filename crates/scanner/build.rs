@@ -60,9 +60,13 @@ fn main() -> io::Result<()> {
     let real_precision = json_f64(&card, "/metrics/real_heldout/real_precision")?;
     let real_recall = json_f64(&card, "/metrics/real_heldout/real_recall")?;
     let real_floor_recall = json_f64(&card, "/metrics/real_heldout/recall_at_0_40_floor")?;
+    let differential_status = json_str(
+        &card,
+        "/metrics/real_heldout/six_scanner_differential/status",
+    )?;
     let (zero_recall_detectors, positive_detectors) = detector_recall_gaps(&card)?;
     let summary = format!(
-        "recorded {recorded_date}; features {feature_count}; synthetic F1 {} / P {} / R {}; real F1 {} / P {} / R {} / recall@0.40 {}; zero-recall detectors {zero_recall_detectors}/{positive_detectors}",
+        "recorded {recorded_date}; features {feature_count}; synthetic F1 {} / P {} / R {}; real F1 {} / P {} / R {} / recall@0.40 {}; zero-recall detectors {zero_recall_detectors}/{positive_detectors}; six-scanner differential {differential_status}",
         metric(synthetic_f1),
         metric(synthetic_precision),
         metric(synthetic_recall),

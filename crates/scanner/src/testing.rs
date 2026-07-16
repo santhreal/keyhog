@@ -4276,6 +4276,45 @@ pub fn complete_ml_batch_scores(
     crate::ml_scorer::complete_batch_scores_with_config(scores, candidates, config)
 }
 
+#[cfg(feature = "ml")]
+pub fn ml_score_with_config_uncached(
+    text: &str,
+    context: &str,
+    known_prefixes: &[String],
+    secret_keywords: &[String],
+    test_keywords: &[String],
+    placeholder_keywords: &[String],
+) -> f64 {
+    let features = crate::ml_scorer::compute_features_with_config(
+        text,
+        context,
+        known_prefixes,
+        secret_keywords,
+        test_keywords,
+        placeholder_keywords,
+    );
+    crate::ml_scorer::score_features(&features)
+}
+
+#[cfg(feature = "ml")]
+pub fn ml_score_cache_key(
+    text: &str,
+    context: &str,
+    known_prefixes: &[String],
+    secret_keywords: &[String],
+    test_keywords: &[String],
+    placeholder_keywords: &[String],
+) -> u64 {
+    crate::ml_scorer::score_cache_key(
+        text,
+        context,
+        known_prefixes,
+        secret_keywords,
+        test_keywords,
+        placeholder_keywords,
+    )
+}
+
 /// Capture the coalesced GPU region-presence batch for `chunks`: `(haystack bytes
 /// the GPU DFA scans, region start offsets, borrowed-single-chunk-fast-path?)`.
 /// Lets a differential test prove the borrowed-single-chunk path and the

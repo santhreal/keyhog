@@ -53,9 +53,15 @@ fn ml_model_card_matches_embedded_weights_and_version_surface() {
         card_src,
         "scanner must embed the checked-in model card JSON byte-for-byte"
     );
+    let differential_status = card
+        .pointer("/metrics/real_heldout/six_scanner_differential/status")
+        .and_then(|value| value.as_str())
+        .expect("model card must name the six-scanner differential status");
     assert!(
         model_card_summary().contains("synthetic F1")
-            && model_card_summary().contains("real recall@0.40"),
+            && model_card_summary().contains("recall@0.40")
+            && model_card_summary()
+                .contains(&format!("six-scanner differential {differential_status}")),
         "version output summary must include the model-card quality gates: {}",
         model_card_summary()
     );
@@ -69,6 +75,7 @@ fn ml_model_card_matches_embedded_weights_and_version_surface() {
         "/metrics/synthetic_heldout/precision",
         "/metrics/synthetic_heldout/recall",
         "/metrics/real_heldout/recall_at_0_40_floor",
+        "/metrics/real_heldout/six_scanner_differential/status",
     ] {
         assert!(
             card.pointer(pointer).is_some(),

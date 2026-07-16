@@ -128,17 +128,18 @@ pub(crate) fn score_with_config(
             RefCell::new(std::collections::HashMap::with_capacity(64));
     }
 
-    // FNV-1a content key over text + separator + context, folded through the
-    // shared allocation-free `util_hash::FnvHasher` (MC-12). The `&[0]`
-    // separator round reproduces the previous inline `hash ^= 0; *= prime`
-    // exactly, so the key is byte-identical to the old hand-rolled loop.
-    let cache_key = {
-        let mut h = crate::util_hash::FnvHasher::new();
-        h.write(text.as_bytes());
-        h.write(&[0]); // separator
-        h.write(context.as_bytes());
-        h.finish()
-    };
+    // The score depends on the four configured feature vocabularies as well as
+    // text and context. Length-prefix every field so embedded NULs or list
+    // boundaries cannot alias another input, and include every vocabulary so
+    // scanners with different resolved configs never reuse each other's score.
+    let cache_key = score_cache_key(
+        text,
+        context,
+        known_prefixes,
+        secret_keywords,
+        test_keywords,
+        placeholder_keywords,
+    );
 
     // Shared bounded-cache idiom (`util_hash::memoize_by_hash`) instead of a
     // hand-rolled get / compute / clear-at-cap / insert. This is the migration
@@ -157,6 +158,37 @@ pub(crate) fn score_with_config(
         );
         forward_pass(&features) as f64
     })
+}
+
+pub(crate) fn score_cache_key(
+    text: &str,
+    context: &str,
+    known_prefixes: &[String],
+    secret_keywords: &[String],
+    test_keywords: &[String],
+    placeholder_keywords: &[String],
+) -> u64 {
+    fn write_field(hasher: &mut crate::util_hash::FnvHasher, value: &[u8]) {
+        hasher.write(&(value.len() as u64).to_le_bytes());
+        hasher.write(value);
+    }
+
+    let mut hasher = crate::util_hash::FnvHasher::new();
+    hasher.write(b"keyhog-ml-score-v2");
+    write_field(&mut hasher, text.as_bytes());
+    write_field(&mut hasher, context.as_bytes());
+    for values in [
+        known_prefixes,
+        secret_keywords,
+        test_keywords,
+        placeholder_keywords,
+    ] {
+        hasher.write(&(values.len() as u64).to_le_bytes());
+        for value in values {
+            write_field(&mut hasher, value.as_bytes());
+        }
+    }
+    hasher.finish()
 }
 
 /// Score model inputs on the CPU through the same feature path used by GPU batches.

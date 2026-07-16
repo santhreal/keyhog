@@ -20,6 +20,57 @@ fn test_score(text: &str, context: &str) -> f64 {
 }
 
 #[test]
+fn score_cache_isolated_by_feature_vocabulary() {
+    let config = ScanConfig::default();
+    let text = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij";
+    let context = "GITHUB_TOKEN=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij";
+    let empty_features =
+        keyhog_scanner::ml_scorer::compute_features_with_config(text, context, &[], &[], &[], &[]);
+    let configured_features = keyhog_scanner::ml_scorer::compute_features_with_config(
+        text,
+        context,
+        &config.known_prefixes,
+        &config.secret_keywords,
+        &config.test_keywords,
+        &config.placeholder_keywords,
+    );
+    assert_ne!(empty_features, configured_features);
+    assert_ne!(
+        keyhog_scanner::testing::ml_score_cache_key(text, context, &[], &[], &[], &[]),
+        keyhog_scanner::testing::ml_score_cache_key(
+            text,
+            context,
+            &config.known_prefixes,
+            &config.secret_keywords,
+            &config.test_keywords,
+            &config.placeholder_keywords,
+        )
+    );
+
+    let empty_expected =
+        keyhog_scanner::testing::ml_score_with_config_uncached(text, context, &[], &[], &[], &[]);
+    let empty_cached = score_with_config(text, context, &[], &[], &[], &[]);
+    let configured_expected = keyhog_scanner::testing::ml_score_with_config_uncached(
+        text,
+        context,
+        &config.known_prefixes,
+        &config.secret_keywords,
+        &config.test_keywords,
+        &config.placeholder_keywords,
+    );
+    let configured_cached = score_with_config(
+        text,
+        context,
+        &config.known_prefixes,
+        &config.secret_keywords,
+        &config.test_keywords,
+        &config.placeholder_keywords,
+    );
+    assert_eq!(empty_cached.to_bits(), empty_expected.to_bits());
+    assert_eq!(configured_cached.to_bits(), configured_expected.to_bits());
+}
+
+#[test]
 fn real_secret_scores_high() {
     let text = concat!("gh", "p_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij");
     let context = "GITHUB_TOKEN=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij";

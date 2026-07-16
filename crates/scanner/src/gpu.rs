@@ -5,8 +5,8 @@
 //! available or for batches smaller than the crossover threshold.
 //!
 //! Architecture mirrors ml_scorer.rs exactly:
-//! - Gate: Linear(42→6) + softmax
-//! - 6 experts: Linear(42→32)+ReLU → Linear(32→16)+ReLU → Linear(16→1)
+//! - Gate: Linear(55→6) + softmax
+//! - 6 experts: Linear(55→32)+ReLU → Linear(32→16)+ReLU → Linear(16→1)
 //! - Output: sigmoid(weighted sum of expert logits)
 //!
 //! ## Feature-gating in the lean build

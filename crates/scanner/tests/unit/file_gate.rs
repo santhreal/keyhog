@@ -1543,7 +1543,7 @@ fn ml_scorer_gives_real_token_nonzero_deterministic_probability() {
 #[test]
 fn ml_scorer_error() {
     assert!(!model_version().is_empty());
-    assert!(model_card_summary().contains("real recall@0.40"));
+    assert!(model_card_summary().contains("recall@0.40"));
     assert!(model_card_json().contains("\"model_version\""));
 }
 

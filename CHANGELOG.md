@@ -6,6 +6,11 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- ML score memoization now binds the complete resolved feature vocabulary as
+  well as candidate text and context, preventing one scanner configuration
+  from reusing another configuration's confidence. Model diagnostics now expose
+  the six-scanner differential status, including the current `unavailable`
+  state, and GPU model documentation matches the shipped 55-feature network.
 - The scalar-only `--no-default-features` scanner now compiles and retains the
   isolated-bare candidate predicate; its wrappers no longer reference an
   implementation hidden behind acceleration feature gates. The scalar test
