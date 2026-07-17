@@ -3256,6 +3256,19 @@ pub(crate) fn compile_state_ac_literals(
 }
 
 #[cfg(test)]
+pub(crate) fn compile_state_phase2_regexes(
+    detectors: &[keyhog_core::DetectorSpec],
+) -> crate::error::Result<Vec<String>> {
+    crate::compiler::build_compile_state(detectors).map(|state| {
+        state
+            .phase2_patterns
+            .into_iter()
+            .map(|(pattern, _)| pattern.regex.as_str().to_string())
+            .collect()
+    })
+}
+
+#[cfg(test)]
 pub(crate) fn compile_state_is_ok(detectors: &[keyhog_core::DetectorSpec]) -> bool {
     crate::compiler::build_compile_state(detectors).is_ok()
 }

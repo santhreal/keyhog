@@ -2,8 +2,8 @@
 # Format: UUID-like string, free keys end with ':fx' (e.g., 279a2e9d-83b3-c416-7e2d-f721593e42a0:fx)
 # Verify: GET /v2/usage with DeepL-Auth-Key header returns 200 if valid
 # Prefix: none for free keys. The `:fx` suffix is the route marker; it is
-# intentionally below the phase-2 keyword floor, so the exact `uuid:fx` pattern
-# runs as a bounded always-active regex instead of requiring a DeepL context word.
+# declared on the bare pattern below, so every backend prefilters that exact
+# `uuid:fx` route without requiring a DeepL context word.
 
 [detector]
 id = "deepl-api-key"

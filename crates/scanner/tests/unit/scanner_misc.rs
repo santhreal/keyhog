@@ -8,7 +8,9 @@ use keyhog_scanner::telemetry::{
 use keyhog_scanner::testing::decode_chunk;
 use keyhog_scanner::testing::jwt::{analyze, looks_like_jwt};
 use keyhog_scanner::testing::{build_ac_pattern_set, extract_literal_prefix, is_escaped_literal};
-use keyhog_scanner::testing::{compile_state_ac_literals, compile_state_is_ok};
+use keyhog_scanner::testing::{
+    compile_state_ac_literals, compile_state_is_ok, compile_state_phase2_regexes,
+};
 use keyhog_scanner::types::ScannerConfig;
 use keyhog_scanner::{testing::BigramBloom, ScanError};
 
@@ -62,6 +64,34 @@ fn build_compile_state_collects_literals_for_detector() {
     assert!(
         !set.is_match("the quick brown fox"),
         "compiled AC set must not match unrelated text"
+    );
+}
+
+#[test]
+fn detector_required_literals_own_base_and_homoglyph_routes() {
+    let detectors = vec![DetectorSpec {
+        id: "declared-route".into(),
+        name: "Declared route".into(),
+        service: "test".into(),
+        severity: Severity::High,
+        patterns: vec![PatternSpec {
+            regex: r"token_[A-Z0-9]{8}:tail".into(),
+            required_literals: vec![":tail".into()],
+            ..PatternSpec::default()
+        }],
+        ..DetectorSpec::default()
+    }];
+
+    let ac_literals = compile_state_ac_literals(&detectors).expect("compile declared route");
+    assert!(
+        !ac_literals.is_empty() && ac_literals.iter().all(|literal| literal == ":tail"),
+        "detector-required literals must replace inferred prefixes for every compiled variant: {ac_literals:?}"
+    );
+    assert!(
+        compile_state_phase2_regexes(&detectors)
+            .expect("inspect declared route")
+            .is_empty(),
+        "a homoglyph variant must retain the detector-required AC route instead of becoming always-active phase two"
     );
 }
 

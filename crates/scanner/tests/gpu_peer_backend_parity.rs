@@ -1,7 +1,10 @@
 #![cfg(feature = "gpu")]
 
+mod support;
+
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
+use support::paths::detector_dir;
 
 fn canonical(matches: &[keyhog_core::RawMatch]) -> Vec<(String, Option<usize>, usize, String)> {
     let mut rows: Vec<_> = matches
@@ -17,6 +20,12 @@ fn canonical(matches: &[keyhog_core::RawMatch]) -> Vec<(String, Option<usize>, u
         .collect();
     rows.sort_unstable();
     rows
+}
+
+fn canonical_chunks(
+    matches: &[Vec<keyhog_core::RawMatch>],
+) -> Vec<(String, Option<usize>, usize, String)> {
+    canonical(&matches.iter().flatten().cloned().collect::<Vec<_>>())
 }
 
 #[test]
@@ -95,52 +104,54 @@ fn every_acquired_gpu_peer_matches_the_cpu_reference() {
 
 #[test]
 fn detector_required_literals_preserve_every_backend_finding() {
-    let detectors = vec![
-        DetectorSpec {
-            id: "required-infix-fx".into(),
-            name: "Required infix fx".into(),
-            service: "test".into(),
-            severity: Severity::High,
-            patterns: vec![PatternSpec {
-                regex: r"([a-f0-9]{8}:fx)".into(),
-                group: Some(1),
-                required_literals: vec![":fx".into()],
-                ..PatternSpec::default()
-            }],
-            ..DetectorSpec::default()
+    let mut detectors = keyhog_core::load_detectors(&detector_dir())
+        .expect("load production detector TOMLs")
+        .into_iter()
+        .filter(|detector| matches!(detector.id.as_str(), "deepl-api-key" | "url-credentials"))
+        .collect::<Vec<_>>();
+    detectors.sort_unstable_by(|left, right| left.id.cmp(&right.id));
+    assert_eq!(
+        detectors
+            .iter()
+            .map(|detector| detector.id.as_str())
+            .collect::<Vec<_>>(),
+        ["deepl-api-key", "url-credentials"],
+        "the backend parity contract must execute both shipped TOML owners"
+    );
+    let scanner = CompiledScanner::compile(detectors).expect("compile required-literal scanner");
+    let chunks = [
+        Chunk {
+            data: "7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d:fx".into(),
+            metadata: ChunkMetadata {
+                path: Some("bare-deepl.txt".into()),
+                ..ChunkMetadata::default()
+            },
         },
-        DetectorSpec {
-            id: "required-infix-url".into(),
-            name: "Required infix URL".into(),
-            service: "test".into(),
-            severity: Severity::High,
-            patterns: vec![PatternSpec {
-                regex: r"(?i)[a-z][a-z0-9+.-]*://[^/@\s:]*:([^/@\s<>]{6,128})@[a-z0-9._-]".into(),
-                group: Some(1),
-                required_literals: vec!["://".into()],
-                ..PatternSpec::default()
-            }],
-            ..DetectorSpec::default()
+        Chunk {
+            data: "proxy=https://deploy:Qw9KmPq2@host.example/".into(),
+            metadata: ChunkMetadata {
+                path: Some("url-userinfo.txt".into()),
+                ..ChunkMetadata::default()
+            },
+        },
+        Chunk {
+            data: "near misses: 7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d and https://username:password@repo.example.org".into(),
+            metadata: ChunkMetadata {
+                path: Some("negative-boundaries.txt".into()),
+                ..ChunkMetadata::default()
+            },
         },
     ];
-    let scanner = CompiledScanner::compile(detectors).expect("compile required-literal scanner");
-    let chunks = [Chunk {
-        data: "deepl=0123abcd:fx\nproxy=https://deploy:Qw9KmPq2@host.example/".into(),
-        metadata: ChunkMetadata {
-            path: Some("required-literals.txt".into()),
-            ..ChunkMetadata::default()
-        },
-    }];
     let reference =
-        canonical(&scanner.scan_coalesced_with_backend(&chunks, ScanBackend::CpuFallback)[0]);
+        canonical_chunks(&scanner.scan_coalesced_with_backend(&chunks, ScanBackend::CpuFallback));
     assert_eq!(
         reference
             .iter()
             .map(|row| (row.0.as_str(), row.3.as_str()))
             .collect::<Vec<_>>(),
         [
-            ("required-infix-fx", "0123abcd:fx"),
-            ("required-infix-url", "Qw9KmPq2"),
+            ("deepl-api-key", "7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d:fx"),
+            ("url-credentials", "Qw9KmPq2"),
         ]
     );
 
@@ -155,7 +166,7 @@ fn detector_required_literals_preserve_every_backend_finding() {
     for backend in backends {
         let findings = scanner.scan_coalesced_with_backend(&chunks, backend);
         assert_eq!(
-            canonical(&findings[0]),
+            canonical_chunks(&findings),
             reference,
             "{} diverged for detector-owned required literals",
             backend.label()

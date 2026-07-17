@@ -82,21 +82,50 @@ pub(crate) fn append_hyperscan_unsupported_patterns(
     }
 }
 
+/// The one routing decision produced for a compiled detector pattern.
+/// Detector-declared literals are authoritative; compiler-derived prefixes and
+/// inner literals are used only when the detector omits that policy.
+enum PatternRoute {
+    DetectorRequired(Vec<String>),
+    LiteralPrefix(Vec<String>),
+    InferredInner(Vec<String>),
+    Phase2 {
+        keywords: Vec<String>,
+        warn_missing_anchor: bool,
+    },
+}
+
+impl PatternRoute {
+    fn ac_literals(&self) -> Option<&[String]> {
+        match self {
+            Self::DetectorRequired(literals)
+            | Self::LiteralPrefix(literals)
+            | Self::InferredInner(literals) => Some(literals),
+            Self::Phase2 { .. } => None,
+        }
+    }
+}
+
 /// Everything the serial assembly phase needs for one compiled pattern, all
-/// derived inside the parallel compile map: the compiled pattern, its literal
-/// prefixes, any homoglyph phase-2 variants (each a freshly compiled regex),
-/// its inner literals (only when there is no usable prefix), and whether it has
-/// neither a literal nor a keyword (a quality warning). Deriving these in the
-/// `par_iter` instead of the serial assembly loop is what keeps cold-compile
-/// wall-clock flat as the corpus grows, the AST parsing and homoglyph DFA
-/// compilation are the cost, and they are independent per pattern.
+/// derived inside the parallel compile map. The typed route prevents detector
+/// declarations, inferred prefixes, inferred inner literals, and phase two
+/// from becoming competing owners.
 struct PatternArtifacts {
     compiled: CompiledPattern,
-    prefixes: Vec<String>,
-    required_literals: Vec<String>,
-    homoglyph_phase2: Vec<(CompiledPattern, Vec<String>)>,
-    inner_literals: Vec<String>,
-    no_literal_no_keyword: bool,
+    route: PatternRoute,
+    homoglyph_variants: Vec<CompiledPattern>,
+}
+
+fn append_ac_pattern(
+    ac_literals: &mut Vec<String>,
+    ac_map: &mut Vec<CompiledPattern>,
+    literals: &[String],
+    pattern: &CompiledPattern,
+) {
+    for literal in literals {
+        ac_literals.push(literal.clone());
+        ac_map.push(pattern.clone());
+    }
 }
 
 /// Minimum byte length of a literal prefix before it is worth generating a
@@ -165,7 +194,7 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
                 // substituted back into the FULL regex so the variant still
                 // requires the rest of the pattern to match (a bare prefix
                 // anchor would turn every detector into "fires on `<prefix>*`").
-                let mut homoglyph_phase2 = Vec::new();
+                let mut homoglyph_variants = Vec::new();
                 for prefix in &prefixes {
                     if prefix.len() < MIN_HOMOGLYPH_PREFIX_LEN {
                         continue;
@@ -189,44 +218,40 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
                             index: pattern_index,
                             source,
                         })?;
-                    homoglyph_phase2.push((
-                        CompiledPattern {
-                            detector_index,
-                            regex: LazyRegex::plain_compiled(
-                                full_homoglyph_regex,
-                                compiled_homoglyph_regex,
-                            ),
-                            group: pattern.group,
-                            client_safe: pattern.client_safe,
-                            weak_anchor: pattern.weak_anchor,
-                            match_proves_keyword_nearby: false,
-                            homoglyph_variant: true,
-                        },
-                        Vec::new(),
-                    ));
+                    homoglyph_variants.push(CompiledPattern {
+                        detector_index,
+                        regex: LazyRegex::plain_compiled(
+                            full_homoglyph_regex,
+                            compiled_homoglyph_regex,
+                        ),
+                        group: pattern.group,
+                        client_safe: pattern.client_safe,
+                        weak_anchor: pattern.weak_anchor,
+                        match_proves_keyword_nearby: false,
+                        homoglyph_variant: true,
+                    });
                 }
 
-                // Inner-literal fallback is only needed when no usable prefix
-                // exists; keep it lazy so prefix-bearing patterns skip the
-                // second AST walk (preserves the original control flow).
-                let inner_literals = if prefixes.is_empty() && pattern.required_literals.is_empty()
-                {
-                    extract_inner_literals(&pattern.regex)
+                let route = if !pattern.required_literals.is_empty() {
+                    PatternRoute::DetectorRequired(pattern.required_literals.clone())
+                } else if !prefixes.is_empty() {
+                    PatternRoute::LiteralPrefix(prefixes)
                 } else {
-                    Vec::new()
+                    let inner_literals = extract_inner_literals(&pattern.regex);
+                    if inner_literals.is_empty() {
+                        PatternRoute::Phase2 {
+                            keywords: detector.keywords.clone(),
+                            warn_missing_anchor: detector.keywords.is_empty(),
+                        }
+                    } else {
+                        PatternRoute::InferredInner(inner_literals)
+                    }
                 };
-                let no_literal_no_keyword = prefixes.is_empty()
-                    && pattern.required_literals.is_empty()
-                    && inner_literals.is_empty()
-                    && detector.keywords.is_empty();
 
                 artifacts.push(PatternArtifacts {
                     compiled,
-                    prefixes,
-                    required_literals: pattern.required_literals.clone(),
-                    homoglyph_phase2,
-                    inner_literals,
-                    no_literal_no_keyword,
+                    route,
+                    homoglyph_variants,
                 });
             }
             Ok((artifacts, companions))
@@ -241,9 +266,8 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
     let mut quality_warnings = Vec::new();
 
     // Phase 2 is now a pure drain of the parallel-derived artifacts. Every
-    // push preserves the original detector-then-pattern order (and, within a
-    // pattern, homoglyph variants before the prefix/inner/phase-2 routing), so
-    // the compiled scanner is byte-for-byte identical to the serial build.
+    // push preserves deterministic detector-then-pattern order and keeps every
+    // variant on the pattern's single selected route.
     for (result, detector) in compiled_results.into_iter().zip(detectors.iter()) {
         let (artifacts, detector_companions) = result?;
         companions.push(detector_companions);
@@ -251,43 +275,32 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
         for (pattern_index, artifact) in artifacts.into_iter().enumerate() {
             let PatternArtifacts {
                 compiled,
-                prefixes,
-                required_literals,
-                homoglyph_phase2,
-                inner_literals,
-                no_literal_no_keyword,
+                route,
+                homoglyph_variants,
             } = artifact;
 
-            for homoglyph in homoglyph_phase2 {
-                phase2_patterns.push(homoglyph);
+            for homoglyph in homoglyph_variants {
+                if let PatternRoute::DetectorRequired(literals) = &route {
+                    append_ac_pattern(&mut ac_literals, &mut ac_map, literals, &homoglyph);
+                } else {
+                    phase2_patterns.push((homoglyph, Vec::new()));
+                }
             }
 
-            if !prefixes.is_empty() {
-                for prefix in prefixes {
-                    ac_literals.push(prefix);
-                    ac_map.push(compiled.clone());
-                }
-            } else if !required_literals.is_empty() {
-                for literal in required_literals {
-                    ac_literals.push(literal);
-                    ac_map.push(compiled.clone());
-                }
-            } else if !inner_literals.is_empty() {
-                // No leading literal, but an inner literal (e.g. `_AKIA` in
-                // `[a-zA-Z0-9]{20}_AKIA[A-Z0-9]{16}`) moves the detector out of
-                // the O(m x n) phase-2 loop into the O(n) AC prefilter path.
-                for lit in inner_literals {
-                    ac_literals.push(lit);
-                    ac_map.push(compiled.clone());
-                }
-            } else {
-                if no_literal_no_keyword {
+            if let Some(literals) = route.ac_literals() {
+                append_ac_pattern(&mut ac_literals, &mut ac_map, literals, &compiled);
+            } else if let PatternRoute::Phase2 {
+                keywords,
+                warn_missing_anchor,
+            } = route
+            {
+                if warn_missing_anchor {
                     quality_warnings.push(format!(
                         "Detector {} pattern {pattern_index} has no literal prefix and no keywords.",
                         detector.id
                     ));
                 }
-                phase2_patterns.push((compiled, detector.keywords.clone()));
+                phase2_patterns.push((compiled, keywords));
             }
         }
     }
