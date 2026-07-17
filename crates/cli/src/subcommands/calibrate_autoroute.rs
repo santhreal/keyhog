@@ -15,7 +15,7 @@
 //! and reuses its compiled scanner plus initialized backend peers across the
 //! workload ladder. Every representative still enters through the canonical
 //! source and measured-router paths. Rebuilding the full scanner in a fresh
-//! child process for all 368 representatives made install calibration take
+//! child process for every representative made install calibration take
 //! hours while measuring startup work that is not part of the route decision.
 
 use crate::args::{CalibrateAutorouteArgs, ScanArgs};
@@ -215,8 +215,28 @@ fn core_workload_plan() -> Vec<Workload> {
             decode_heavy: false,
         },
         Workload::File {
+            label: "4 MiB + 1 byte workload",
+            bytes: 4 * 1024 * 1024 + 1,
+            decode_heavy: false,
+        },
+        Workload::File {
+            label: "8 MiB - 1 byte workload",
+            bytes: 8 * 1024 * 1024 - 1,
+            decode_heavy: false,
+        },
+        Workload::File {
             label: "8 MiB workload",
             bytes: 8 * 1024 * 1024,
+            decode_heavy: false,
+        },
+        Workload::File {
+            label: "8 MiB + 1 byte workload",
+            bytes: 8 * 1024 * 1024 + 1,
+            decode_heavy: false,
+        },
+        Workload::File {
+            label: "16 MiB - 1 byte workload",
+            bytes: 16 * 1024 * 1024 - 1,
             decode_heavy: false,
         },
         Workload::File {

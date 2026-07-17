@@ -3,7 +3,10 @@
 use std::collections::{BTreeSet, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::super::evidence::{gpu_cold_warm_route_evidence, AutorouteDecision};
+use super::super::evidence::{
+    gpu_cold_warm_route_evidence, AutorouteCalibrationPoint, AutorouteDecision,
+    MAX_AUTOROUTE_MEASURED_POINTS,
+};
 use super::super::workload::{
     autoroute_stable_bucket, render_workload_key, validate_workload_source_mixture,
     workload_evidence_digest, WorkloadKey,
@@ -121,14 +124,24 @@ pub(super) fn validate_decision_workload_binding(
     key: &WorkloadKey,
     decision: &AutorouteDecision,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let sample_chunks = u64::try_from(decision.sample_chunks)
+    for point in &decision.calibration_points {
+        validate_point_workload_binding(key, point)?;
+    }
+    Ok(())
+}
+
+fn validate_point_workload_binding(
+    key: &WorkloadKey,
+    point: &AutorouteCalibrationPoint,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let sample_chunks = u64::try_from(point.sample_chunks)
         .map_err(|_| "cache decision sample chunk count exceeds the supported u64 range")?;
     if autoroute_stable_bucket(sample_chunks) != key.chunks_bucket
-        || autoroute_stable_bucket(decision.sample_bytes) != key.bytes_bucket
+        || autoroute_stable_bucket(point.sample_bytes) != key.bytes_bucket
     {
         return Err(format!(
             "cache decision sample evidence ({sample_chunks} chunks, {} bytes) does not match workload bands (chunks_log2={}, bytes_log2={})",
-            decision.sample_bytes, key.chunks_bucket, key.bytes_bucket
+            point.sample_bytes, key.chunks_bucket, key.bytes_bucket
         )
         .into());
     }
@@ -147,8 +160,16 @@ fn validate_decision_route_evidence_at(
     current_unix_ms: u128,
     expected_backends: &BTreeSet<String>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    if decision.sample_chunks == 0 || decision.sample_bytes == 0 {
-        return Err("cache decision is missing calibration sample evidence".into());
+    if decision.calibration_points.is_empty() {
+        return Err("cache decision contains no measured calibration points".into());
+    }
+    if decision.calibration_points.len() > MAX_AUTOROUTE_MEASURED_POINTS {
+        return Err(format!(
+            "autoroute decision contains {} calibration points; maximum is {}",
+            decision.calibration_points.len(),
+            MAX_AUTOROUTE_MEASURED_POINTS
+        )
+        .into());
     }
     let Some(selected_backend) = decision.backend() else {
         return Err(format!(
@@ -165,23 +186,65 @@ fn validate_decision_route_evidence_at(
         )
         .into());
     }
-    if decision.trials != AUTOROUTE_CALIBRATION_TRIALS {
+    let mut measured_points = HashSet::with_capacity(decision.calibration_points.len());
+    for point in &decision.calibration_points {
+        if !measured_points.insert((point.sample_bytes, point.sample_chunks)) {
+            return Err(format!(
+                "autoroute decision contains duplicate calibration evidence for {} bytes and {} chunks",
+                point.sample_bytes, point.sample_chunks
+            )
+            .into());
+        }
+        validate_point_route_evidence_at(
+            point,
+            selected_backend,
+            current_unix_ms,
+            expected_backends,
+        )?;
+    }
+    let Some(resolved) = decision.resolved_routing_backend() else {
+        return Err(
+            "cache decision changes fastest one-shot backend across measured points".into(),
+        );
+    };
+    if selected_backend != resolved {
+        if decision.has_separated_fastest_route() {
+            return Err("selected backend is not the fastest persisted timing evidence".into());
+        }
+        return Err("selected backend does not match measured-median resolution among statistically non-dominated routes".into());
+    }
+    if decision.resolved_persistent_backend().is_none() {
+        return Err("cache decision changes fastest daemon backend across measured points".into());
+    }
+    Ok(())
+}
+
+fn validate_point_route_evidence_at(
+    point: &AutorouteCalibrationPoint,
+    selected_backend: keyhog_scanner::ScanBackend,
+    current_unix_ms: u128,
+    expected_backends: &BTreeSet<String>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    if point.sample_chunks == 0 || point.sample_bytes == 0 {
+        return Err("cache decision is missing calibration sample evidence".into());
+    }
+    if point.trials != AUTOROUTE_CALIBRATION_TRIALS {
         return Err(format!(
             "cache decision records {} calibration trials; expected exactly {AUTOROUTE_CALIBRATION_TRIALS}",
-            decision.trials
+            point.trials
         )
         .into());
     }
-    if decision.timing_for_backend(selected_backend).is_none() {
+    if point.timing_for_backend(selected_backend).is_none() {
         return Err("selected backend is missing timing evidence".into());
     }
-    if !decision
+    if !point
         .simd_timing
         .is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS)
     {
         return Err("cache decision has invalid SIMD timing evidence".into());
     }
-    let Some(cpu_timing) = decision.cpu_timing.as_ref() else {
+    let Some(cpu_timing) = point.cpu_timing.as_ref() else {
         return Err(
             "cache decision has incomplete candidate coverage: scalar CPU timing evidence is missing"
                 .into(),
@@ -191,8 +254,8 @@ fn validate_decision_route_evidence_at(
         return Err("cache decision has invalid CPU timing evidence".into());
     }
     for (driver, timing) in [
-        ("CUDA", decision.gpu_cuda_timing.as_ref()),
-        ("WGPU", decision.gpu_wgpu_timing.as_ref()),
+        ("CUDA", point.gpu_cuda_timing.as_ref()),
+        ("WGPU", point.gpu_wgpu_timing.as_ref()),
     ] {
         if timing.is_some_and(|timing| !timing.is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS)) {
             return Err(format!("cache decision has invalid {driver} timing evidence").into());
@@ -207,15 +270,15 @@ fn validate_decision_route_evidence_at(
         (keyhog_scanner::ScanBackend::SimdCpu, true),
         (
             keyhog_scanner::ScanBackend::CpuFallback,
-            decision.cpu_timing.is_some(),
+            point.cpu_timing.is_some(),
         ),
         (
             keyhog_scanner::ScanBackend::GpuCuda,
-            decision.gpu_cuda_timing.is_some(),
+            point.gpu_cuda_timing.is_some(),
         ),
         (
             keyhog_scanner::ScanBackend::GpuWgpu,
-            decision.gpu_wgpu_timing.is_some(),
+            point.gpu_wgpu_timing.is_some(),
         ),
     ]
     .into_iter()
@@ -229,13 +292,13 @@ fn validate_decision_route_evidence_at(
         )
         .into());
     }
-    let receipt_backends = decision
+    let receipt_backends = point
         .candidate_receipts
         .iter()
         .map(|receipt| receipt.backend.clone())
         .collect::<BTreeSet<_>>();
     if &receipt_backends != expected_backends
-        || receipt_backends.len() != decision.candidate_receipts.len()
+        || receipt_backends.len() != point.candidate_receipts.len()
     {
         return Err(format!(
             "cache decision receipt set does not match eligible backend census (expected {:?}, found {:?})",
@@ -243,9 +306,9 @@ fn validate_decision_route_evidence_at(
         )
         .into());
     }
-    let mut seen_receipts = HashSet::with_capacity(decision.candidate_receipts.len());
+    let mut seen_receipts = HashSet::with_capacity(point.candidate_receipts.len());
     let mut reference_digest = None;
-    for receipt in &decision.candidate_receipts {
+    for receipt in &point.candidate_receipts {
         let Some(backend) = keyhog_scanner::hw_probe::parse_backend_str(&receipt.backend) else {
             return Err(format!(
                 "cache decision has a candidate receipt for unsupported backend {:?}",
@@ -294,7 +357,7 @@ fn validate_decision_route_evidence_at(
             None => reference_digest = Some(receipt.correctness_digest),
             _ => {}
         }
-        let Some(timing) = decision.timing_for_backend(backend) else {
+        let Some(timing) = point.timing_for_backend(backend) else {
             return Err(format!(
                 "cache decision candidate receipt for {} has no timing evidence",
                 receipt.backend
@@ -311,32 +374,23 @@ fn validate_decision_route_evidence_at(
             .into());
         }
     }
-    if decision.calibrated_at_unix_ms == 0 {
+    if point.calibrated_at_unix_ms == 0 {
         return Err("cache decision is missing a calibration timestamp".into());
     }
-    if decision.calibrated_at_unix_ms > current_unix_ms {
+    if point.calibrated_at_unix_ms > current_unix_ms {
         return Err(format!(
             "cache decision calibration timestamp {} is {} ms in the future relative to the system clock at {}; correct the system clock and re-run calibration",
-            decision.calibrated_at_unix_ms,
-            decision.calibrated_at_unix_ms - current_unix_ms,
+            point.calibrated_at_unix_ms,
+            point.calibrated_at_unix_ms - current_unix_ms,
             current_unix_ms
         )
         .into());
     }
-    let Some(selected_timing) = decision.timing_for_backend(selected_backend) else {
+    let Some(selected_timing) = point.timing_for_backend(selected_backend) else {
         return Err("selected backend is missing timing evidence".into());
     };
     if !selected_timing.is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS) {
         return Err("selected backend timing evidence is invalid".into());
-    }
-    let Some(resolved) = decision.resolved_routing_backend() else {
-        return Err("cache decision has no route timing evidence".into());
-    };
-    if selected_backend != resolved {
-        if decision.has_separated_fastest_route() {
-            return Err("selected backend is not the fastest persisted timing evidence".into());
-        }
-        return Err("selected backend does not match measured-median resolution among statistically non-dominated routes".into());
     }
     Ok(())
 }

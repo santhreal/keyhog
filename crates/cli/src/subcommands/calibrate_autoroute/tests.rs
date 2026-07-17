@@ -144,8 +144,8 @@ fn plain_route_probe_has_sparse_real_phase2_work_without_changing_size() {
 #[test]
 fn workload_plan_matches_the_installer_ladder() {
     let plan = core_workload_plan();
-    // 1 stdin + 27 single-file + every fused count for full-size and extracted payloads.
-    assert_eq!(plan.len(), 92);
+    // 1 stdin + 31 single-file + every fused count for full-size and extracted payloads.
+    assert_eq!(plan.len(), 96);
     let labels: Vec<&str> = plan.iter().map(Workload::label).collect();
     assert!(labels.contains(&"stdin 64 KiB workload"));
     assert!(labels.contains(&"1 B workload"));
@@ -199,11 +199,15 @@ fn workload_plan_matches_the_installer_ladder() {
             1024 * 1024,
             2 * 1024 * 1024,
             4 * 1024 * 1024,
+            4 * 1024 * 1024 + 1,
+            8 * 1024 * 1024 - 1,
             8 * 1024 * 1024,
+            8 * 1024 * 1024 + 1,
+            16 * 1024 * 1024 - 1,
             16 * 1024 * 1024,
             32 * 1024 * 1024,
         ],
-        "plain probes must represent every power-of-two file-size band through 32 MiB"
+        "plain probes must represent every power-of-two band plus both sides of the measured 8 MiB crossover"
     );
 
     let tree_counts: Vec<usize> = plan

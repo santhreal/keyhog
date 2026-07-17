@@ -99,16 +99,20 @@ keyhog calibrate-autoroute
 
 This drives the core stdin + filesystem workload ladder across every scan
 preset. Plain single-file probes cover every power-of-two size band from 1 byte
-through 32 MiB. File-tree probes cover every chunk-count band through the
-default 32-chunk fused batch. Tar-member probes cover the same count ladder for
-payload-derived extracted filesystem chunks. Decode-heavy probes cover the
-decoder path. Empty input has no routing work and is not counted as a calibrated
-workload; daemon and watch paths return the exact empty result without consulting
-the cache. Each preset uses one compiled production scanner. Immutable detector,
-GPU literal, and GPU phase-two program artifacts are reused. Workload-shaped
-resident GPU state is reset before each representative. The measured shared
-literal and backend-shaped phase-two preparation costs are added to every
-matching one-shot GPU observation. Candidate
+through 32 MiB, with additional 4 MiB + 1, 8 MiB - 1, 8 MiB + 1, and
+16 MiB - 1 probes retaining raw evidence on both sides of the required 8 MiB
+crossover. A coarse size class is reusable only when every retained point
+selects the same fastest-correct one-shot and daemon backends; disagreement
+rejects calibration and requires the class to be split. File-tree probes cover
+every chunk-count band through the default 32-chunk fused batch. Tar-member
+probes cover the same count ladder for payload-derived extracted filesystem
+chunks. Decode-heavy probes cover the decoder path. Empty input has no routing
+work and is not counted as a calibrated workload; daemon and watch paths return
+the exact empty result without consulting the cache. Each preset uses one
+compiled production scanner. Immutable detector, GPU literal, and GPU phase-two
+program artifacts are reused. Workload-shaped resident GPU state is reset before
+each representative. The measured shared literal and backend-shaped phase-two
+preparation costs are added to every matching one-shot GPU observation. Candidate
 order rotates across workload bands rather than giving one backend the same
 thermal position in every probe. The final count is the number of probes run,
 not the number of unique persisted route classes. Multiple representatives can share one
@@ -355,19 +359,20 @@ meanings:
 
 | Field | Meaning |
 |---|---|
-| `calibrated_at_unix_ms` | Persisted Unix timestamp from the calibration run. A future value invalidates the complete cache. |
-| `calibration_age_ms` | Age derived at inspection time from `inspected_at_unix_ms`; it is visible evidence, not an expiry policy. |
+| `calibrated_at_unix_ms` | Oldest persisted Unix timestamp among the decision's measured points. A future value on any point invalidates the complete cache. |
+| `calibration_age_ms` | Age of that oldest point, derived at inspection time from `inspected_at_unix_ms`; it is visible evidence, not an expiry policy. |
 | `backend` | Cold-aware backend for an in-process one-shot scan. |
-| `simd_ms`, `cpu_ms` | Median trial time for that CPU route. Every calibrated multi-backend decision contains both CPU timings. |
-| `gpu_cuda_ms`, `gpu_wgpu_ms` | Per-driver one-shot representative: the greater of the real first dispatch and that driver's warm-trial median. |
-| `gpu_cuda_warm_ms`, `gpu_wgpu_warm_ms` | Per-driver warm median used by a ready daemon; `null` when that driver was not eligible. |
-| `confidence_separated` | Whether the one-shot winner's 95% interval is entirely below every competitor. |
+| `calibration_points` | Number of exact byte/chunk representatives retained for this workload class. |
+| `sample_bytes_min`, `sample_bytes_max`, `sample_chunks_min`, `sample_chunks_max` | Exact measured envelope covered by the class. |
+| `measured_points` | Complete point-by-point projection: sample identity, timestamp, one-shot and daemon winners, confidence status, every backend timing, and every parity receipt. Use this array to diagnose crossover behavior. |
+| `sample_bytes`, `sample_chunks`, `simd_ms`, `cpu_ms`, `gpu_cuda_ms`, `gpu_wgpu_ms`, `gpu_cuda_warm_ms`, `gpu_wgpu_warm_ms` | Concise summary for the first point after sorting by bytes then chunks. `measured_points` is authoritative when the class retains more than one point. |
+| `confidence_separated` | Whether the one-shot winner's 95% interval is entirely below every competitor at every measured point. |
 | `selection_basis` | `separated-95pct-confidence`, or `lowest-measured-median-among-overlapping-confidence`. |
-| `selected_margin_ns` | One-shot representative-time margin to the next candidate; `null` when there is no competitor. |
+| `selected_margin_ns` | Smallest one-shot representative-time margin to the next candidate across all measured points; `null` when there is no competitor. |
 | `daemon_backend` | Backend derived for a ready persistent daemon from warm GPU evidence. |
-| `daemon_confidence_separated`, `daemon_selection_basis`, `daemon_selected_margin_ns` | Daemon-route counterparts of the one-shot confidence, basis, and margin fields. |
+| `daemon_confidence_separated`, `daemon_selection_basis`, `daemon_selected_margin_ns` | Daemon-route counterparts, also aggregated conservatively across every measured point. |
 | `source_mixture` | Structured source-class components used by the workload identity: canonical family digest, full-size versus payload provenance, reduced chunk/payload ratios, and maximum source-span bucket. JSON consumers should use these fields instead of parsing the human-readable `workload` string. |
-| `candidate_receipts` | One receipt per backend named by the config's `eligible_backends`, containing its canonical backend identity, secret-safe correctness digest, complete trial count, and evidence digest over those fields plus the exact timing vector. The receipt and timing sets must both equal the eligible census. Every result digest must equal the SIMD reference and every evidence digest must recompute exactly or the cache is rejected. |
+| `candidate_receipts` | Concise summary of the first measured point's receipts. Every point in `measured_points` carries its own complete receipt set. Each set must equal the eligible census, every result digest must equal its point's SIMD reference, and every evidence digest must recompute exactly or the cache is rejected. |
 
 ## Single-backend builds
 

@@ -138,8 +138,14 @@ pub(crate) struct AutorouteDecisionInspection {
     pub(crate) calibration_age_ms: u128,
     /// Cold-aware backend for an in-process one-shot scan.
     pub(crate) backend: String,
+    pub(crate) calibration_points: usize,
     pub(crate) sample_bytes: u64,
     pub(crate) sample_chunks: usize,
+    pub(crate) sample_bytes_min: u64,
+    pub(crate) sample_bytes_max: u64,
+    pub(crate) sample_chunks_min: usize,
+    pub(crate) sample_chunks_max: usize,
+    pub(crate) measured_points: Vec<AutorouteCalibrationPointInspection>,
     pub(crate) candidate_receipts: Vec<AutorouteCandidateReceiptInspection>,
     pub(crate) simd_ms: u128,
     pub(crate) cpu_ms: Option<u128>,
@@ -158,6 +164,24 @@ pub(crate) struct AutorouteDecisionInspection {
     pub(crate) daemon_confidence_separated: bool,
     pub(crate) daemon_selection_basis: &'static str,
     pub(crate) daemon_selected_margin_ns: Option<u128>,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct AutorouteCalibrationPointInspection {
+    pub(crate) sample_bytes: u64,
+    pub(crate) sample_chunks: usize,
+    pub(crate) calibrated_at_unix_ms: u128,
+    pub(crate) one_shot_backend: String,
+    pub(crate) daemon_backend: String,
+    pub(crate) one_shot_confidence_separated: bool,
+    pub(crate) daemon_confidence_separated: bool,
+    pub(crate) simd_ms: u128,
+    pub(crate) cpu_ms: Option<u128>,
+    pub(crate) gpu_cuda_ms: Option<u128>,
+    pub(crate) gpu_cuda_warm_ms: Option<u128>,
+    pub(crate) gpu_wgpu_ms: Option<u128>,
+    pub(crate) gpu_wgpu_warm_ms: Option<u128>,
+    pub(crate) candidate_receipts: Vec<AutorouteCandidateReceiptInspection>,
 }
 
 #[derive(Debug, Serialize)]
@@ -330,6 +354,92 @@ fn inspect_autoroute_cache_for_build(
             };
             let confidence_separated = decision.has_separated_fastest_route();
             let daemon_confidence_separated = decision.has_separated_fastest_persistent_route();
+            let primary = decision.primary_point();
+            let sample_bytes_min = decision
+                .calibration_points
+                .iter()
+                .map(|point| point.sample_bytes)
+                .min()
+                .unwrap_or(primary.sample_bytes);
+            let sample_bytes_max = decision
+                .calibration_points
+                .iter()
+                .map(|point| point.sample_bytes)
+                .max()
+                .unwrap_or(primary.sample_bytes);
+            let sample_chunks_min = decision
+                .calibration_points
+                .iter()
+                .map(|point| point.sample_chunks)
+                .min()
+                .unwrap_or(primary.sample_chunks);
+            let sample_chunks_max = decision
+                .calibration_points
+                .iter()
+                .map(|point| point.sample_chunks)
+                .max()
+                .unwrap_or(primary.sample_chunks);
+            let calibrated_at_unix_ms = decision
+                .calibration_points
+                .iter()
+                .map(|point| point.calibrated_at_unix_ms)
+                .min()
+                .unwrap_or(primary.calibrated_at_unix_ms);
+            let measured_points = decision
+                .calibration_points
+                .iter()
+                .map(|point| {
+                    let one_shot_backend = point
+                        .resolve_measured_backend(false)
+                        .expect("validated point has a one-shot route");
+                    let daemon_backend = point
+                        .resolve_measured_backend(true)
+                        .expect("validated point has a daemon route");
+                    let gpu_projection = |backend| {
+                        point
+                            .gpu_cold_warm_route_for(backend)
+                            .map(|(_, warm, route_ns)| (route_ns / 1_000_000, warm.median_ms()))
+                    };
+                    let gpu_cuda = gpu_projection(keyhog_scanner::ScanBackend::GpuCuda);
+                    let gpu_wgpu = gpu_projection(keyhog_scanner::ScanBackend::GpuWgpu);
+                    AutorouteCalibrationPointInspection {
+                        sample_bytes: point.sample_bytes,
+                        sample_chunks: point.sample_chunks,
+                        calibrated_at_unix_ms: point.calibrated_at_unix_ms,
+                        one_shot_backend: one_shot_backend.label().to_string(),
+                        daemon_backend: daemon_backend.label().to_string(),
+                        one_shot_confidence_separated: point
+                            .selected_backend_has_non_overlapping_confidence_for(
+                                one_shot_backend,
+                                false,
+                            ),
+                        daemon_confidence_separated: point
+                            .selected_backend_has_non_overlapping_confidence_for(
+                                daemon_backend,
+                                true,
+                            ),
+                        simd_ms: point.simd_timing.median_ms(),
+                        cpu_ms: point
+                            .cpu_timing
+                            .as_ref()
+                            .map(super::super::evidence::BackendTimingEvidence::median_ms),
+                        gpu_cuda_ms: gpu_cuda.map(|(one_shot_ms, _)| one_shot_ms),
+                        gpu_cuda_warm_ms: gpu_cuda.map(|(_, warm_ms)| warm_ms),
+                        gpu_wgpu_ms: gpu_wgpu.map(|(one_shot_ms, _)| one_shot_ms),
+                        gpu_wgpu_warm_ms: gpu_wgpu.map(|(_, warm_ms)| warm_ms),
+                        candidate_receipts: point
+                            .candidate_receipts
+                            .iter()
+                            .map(|receipt| AutorouteCandidateReceiptInspection {
+                                backend: receipt.backend.clone(),
+                                correctness_digest: format!("{:016x}", receipt.correctness_digest),
+                                completed_trials: receipt.completed_trials,
+                                evidence_digest: format!("{:016x}", receipt.evidence_digest),
+                            })
+                            .collect(),
+                    }
+                })
+                .collect();
             decisions.push(AutorouteDecisionInspection {
                 workload: render_workload_key(key),
                 source_mixture: key
@@ -344,12 +454,18 @@ fn inspect_autoroute_cache_for_build(
                         max_span_bucket: entry.max_span_bucket,
                     })
                     .collect(),
-                calibrated_at_unix_ms: decision.calibrated_at_unix_ms,
-                calibration_age_ms: inspected_at_unix_ms - decision.calibrated_at_unix_ms,
+                calibrated_at_unix_ms,
+                calibration_age_ms: inspected_at_unix_ms - calibrated_at_unix_ms,
                 backend: decision.backend.clone(),
-                sample_bytes: decision.sample_bytes,
-                sample_chunks: decision.sample_chunks,
-                candidate_receipts: decision
+                calibration_points: decision.calibration_points.len(),
+                sample_bytes: primary.sample_bytes,
+                sample_chunks: primary.sample_chunks,
+                sample_bytes_min,
+                sample_bytes_max,
+                sample_chunks_min,
+                sample_chunks_max,
+                measured_points,
+                candidate_receipts: primary
                     .candidate_receipts
                     .iter()
                     .map(|receipt| AutorouteCandidateReceiptInspection {

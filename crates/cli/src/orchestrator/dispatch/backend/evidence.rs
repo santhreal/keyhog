@@ -14,6 +14,8 @@ pub(super) use timing::{BackendTimingEvidence, TimingConfidenceInterval};
 
 use super::{AUTOROUTE_CALIBRATION_TRIALS, AUTOROUTE_GPU_WARM_TRIALS};
 
+pub(super) const MAX_AUTOROUTE_MEASURED_POINTS: usize = 64;
+
 pub(super) fn selected_backend_margin_ns(
     selected: ScanBackend,
     candidates: &[(ScanBackend, u128)],
@@ -48,18 +50,7 @@ pub(super) fn gpu_cold_warm_route_evidence(
     Some((cold_ns, warm_timing, route_ns))
 }
 
-/// A calibrated routing decision for one workload bucket.
-///
-/// PRIMARY EVIDENCE ONLY: the persisted state is the measured timing evidence
-/// (`simd_timing`, `cpu_timing`, and per-driver GPU timing) plus `backend`,
-/// calibration sample, per-candidate parity receipts, timestamp, and trial
-/// count. Per-backend median-ms (`simd_ms()`/…), the GPU cold/warm/route triple
-/// (`gpu_cold_warm_route()`), and the selected-backend margin
-/// (`selected_margin_ns()`) are derived on demand through the accessors below
-/// rather than stored a second time. This is the one-place invariant: a
-/// cache can never hold a derived value inconsistent with its own evidence,
-/// because there is no stored copy to drift, which is why the old
-/// `validate_decision_route_evidence` cross-field-mismatch checks no longer exist.
+/// Parity and timing binding for one measured backend candidate.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct BackendParityReceipt {
@@ -116,10 +107,27 @@ impl BackendParityReceipt {
     }
 }
 
+/// One workload-class route backed by every retained measured point.
+///
+/// The persisted state contains only primary measurements and receipts.
+/// Medians, confidence, margins, and runtime-class winners are derived across
+/// `calibration_points`, so no separately stored summary can drift.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct AutorouteDecision {
     pub(super) backend: String,
+    pub(super) calibration_points: Vec<AutorouteCalibrationPoint>,
+}
+
+/// One measured point inside a coarse workload class.
+///
+/// Autoroute may reuse a class only when every retained point resolves the same
+/// one-shot and daemon winners. Keeping the raw per-backend trials and parity
+/// receipts makes that agreement reproducible instead of reducing a size band
+/// to one optimistic representative.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct AutorouteCalibrationPoint {
     pub(super) sample_bytes: u64,
     pub(super) sample_chunks: usize,
     pub(super) candidate_receipts: Vec<BackendParityReceipt>,
@@ -131,218 +139,13 @@ pub(super) struct AutorouteDecision {
     pub(super) trials: usize,
 }
 
-impl AutorouteDecision {
-    fn candidate_receipts(
-        correctness_digest: u64,
-        simd_timing: &BackendTimingEvidence,
-        cpu_timing: Option<&BackendTimingEvidence>,
-        gpu_cuda_timing: Option<&BackendTimingEvidence>,
-        gpu_wgpu_timing: Option<&BackendTimingEvidence>,
-    ) -> Vec<BackendParityReceipt> {
-        [
-            (ScanBackend::SimdCpu, Some(simd_timing)),
-            (ScanBackend::CpuFallback, cpu_timing),
-            (ScanBackend::GpuCuda, gpu_cuda_timing),
-            (ScanBackend::GpuWgpu, gpu_wgpu_timing),
-        ]
-        .into_iter()
-        .filter_map(|(backend, timing)| {
-            timing.map(|timing| BackendParityReceipt::new(backend, correctness_digest, timing))
-        })
-        .collect()
-    }
-
-    #[cfg(test)]
-    pub(super) fn new(
-        backend: ScanBackend,
-        sample_bytes: u64,
-        sample_chunks: usize,
-        simd_ms: u128,
-        cpu_ms: Option<u128>,
-        gpu_ms: Option<u128>,
-    ) -> Self {
-        let simd_timing = BackendTimingEvidence::constant_ms(simd_ms, AUTOROUTE_CALIBRATION_TRIALS);
-        // Production calibration always measures scalar CPU. Test fixtures
-        // therefore default an omitted explicit value to the SIMD duration;
-        // missing-candidate tests remove the field after construction.
-        let cpu_duration_ms = match cpu_ms {
-            Some(duration_ms) => duration_ms,
-            None => simd_ms,
-        };
-        let cpu_timing = Some(BackendTimingEvidence::constant_ms(
-            cpu_duration_ms,
-            AUTOROUTE_CALIBRATION_TRIALS,
-        ));
-        let gpu_wgpu_timing =
-            gpu_ms.map(|ms| BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS));
-        let candidate_receipts = Self::candidate_receipts(
-            0xA11D_0B57_A11D_0B57,
-            &simd_timing,
-            cpu_timing.as_ref(),
-            None,
-            gpu_wgpu_timing.as_ref(),
-        );
-        Self {
-            backend: backend.label().to_string(),
-            sample_bytes,
-            sample_chunks,
-            candidate_receipts,
-            calibrated_at_unix_ms: 1,
-            simd_timing,
-            cpu_timing,
-            gpu_cuda_timing: None,
-            gpu_wgpu_timing,
-            trials: AUTOROUTE_CALIBRATION_TRIALS,
-        }
-    }
-
-    #[cfg(test)]
-    pub(super) fn from_timing_evidence(
-        backend: ScanBackend,
-        sample_bytes: u64,
-        sample_chunks: usize,
-        correctness_digest: u64,
-        calibrated_at_unix_ms: u128,
-        simd_timing: BackendTimingEvidence,
-        cpu_timing: Option<BackendTimingEvidence>,
-        gpu_timing: Option<BackendTimingEvidence>,
-    ) -> Self {
-        let candidate_receipts = Self::candidate_receipts(
-            correctness_digest,
-            &simd_timing,
-            cpu_timing.as_ref(),
-            None,
-            gpu_timing.as_ref(),
-        );
-        Self {
-            backend: backend.label().to_string(),
-            sample_bytes,
-            sample_chunks,
-            candidate_receipts,
-            calibrated_at_unix_ms,
-            simd_timing,
-            cpu_timing,
-            gpu_cuda_timing: None,
-            gpu_wgpu_timing: gpu_timing,
-            trials: AUTOROUTE_CALIBRATION_TRIALS,
-        }
-    }
-
-    pub(super) fn from_peer_timing_evidence(
-        backend: ScanBackend,
-        sample_bytes: u64,
-        sample_chunks: usize,
-        correctness_digest: u64,
-        calibrated_at_unix_ms: u128,
-        simd_timing: BackendTimingEvidence,
-        cpu_timing: Option<BackendTimingEvidence>,
-        gpu_cuda_timing: Option<BackendTimingEvidence>,
-        gpu_wgpu_timing: Option<BackendTimingEvidence>,
-    ) -> Self {
-        let candidate_receipts = Self::candidate_receipts(
-            correctness_digest,
-            &simd_timing,
-            cpu_timing.as_ref(),
-            gpu_cuda_timing.as_ref(),
-            gpu_wgpu_timing.as_ref(),
-        );
-        Self {
-            backend: backend.label().to_string(),
-            sample_bytes,
-            sample_chunks,
-            candidate_receipts,
-            calibrated_at_unix_ms,
-            simd_timing,
-            cpu_timing,
-            gpu_cuda_timing,
-            gpu_wgpu_timing,
-            trials: AUTOROUTE_CALIBRATION_TRIALS,
-        }
-    }
-
-    pub(super) fn backend(&self) -> Option<ScanBackend> {
-        keyhog_scanner::hw_probe::parse_backend_str(&self.backend)
-    }
-
-    // ── Derived evidence accessors (see the struct doc: primary-evidence-only) ──
-    // Each is a pure function of the persisted timing set, computed on demand so
-    // no stored copy can drift. These replace the former denormalized fields.
-
-    /// Representative SIMD route time in ms (median of measured trials).
-    pub(super) fn simd_ms(&self) -> u128 {
-        self.simd_timing.median_ms()
-    }
-
-    /// Representative CPU-fallback route time in ms, if CPU was measured.
-    pub(super) fn cpu_ms(&self) -> Option<u128> {
-        self.cpu_timing
-            .as_ref()
-            .map(BackendTimingEvidence::median_ms)
-    }
-
-    /// Representative one-shot GPU route time in ms, including the measured
-    /// first-dispatch lower bound.
-    #[cfg(test)]
-    pub(super) fn gpu_ms(&self) -> Option<u128> {
-        self.gpu_route_ns().map(|route_ns| route_ns / 1_000_000)
-    }
-
-    /// The GPU cold-start ns, warm timing evidence, and routing ns, all derived
-    /// from the selected driver's persisted timing through the single owner
-    /// [`gpu_cold_warm_route_evidence`]. `None` when there is no GPU timing or it
-    /// cannot produce valid cold/warm evidence (too few warm trials).
-    #[cfg(test)]
-    pub(super) fn gpu_cold_warm_route(&self) -> Option<(u128, BackendTimingEvidence, u128)> {
-        let backend = self.backend()?.is_gpu().then_some(self.backend()?)?;
-        self.timing_for_backend(backend)
-            .and_then(gpu_cold_warm_route_evidence)
-    }
-
+impl AutorouteCalibrationPoint {
     pub(super) fn gpu_cold_warm_route_for(
         &self,
         backend: ScanBackend,
     ) -> Option<(u128, BackendTimingEvidence, u128)> {
         self.timing_for_backend(backend)
             .and_then(gpu_cold_warm_route_evidence)
-    }
-
-    /// GPU cold-start ns, derived (see [`Self::gpu_cold_warm_route`]).
-    #[cfg(test)]
-    pub(super) fn gpu_cold_ns(&self) -> Option<u128> {
-        self.gpu_cold_warm_route().map(|(cold_ns, _, _)| cold_ns)
-    }
-
-    /// GPU warm median-ms, derived.
-    #[cfg(test)]
-    pub(super) fn gpu_warm_ms(&self) -> Option<u128> {
-        self.gpu_cold_warm_route()
-            .map(|(_, warm_timing, _)| warm_timing.median_ms())
-    }
-
-    /// GPU routing ns (the cold-vs-warm route cost the router compares), derived.
-    #[cfg(test)]
-    pub(super) fn gpu_route_ns(&self) -> Option<u128> {
-        self.gpu_cold_warm_route().map(|(_, _, route_ns)| route_ns)
-    }
-
-    /// The ns margin by which the persisted (resolved) backend beat the next
-    /// candidate route, derived from the timing evidence via the SAME
-    /// [`selected_backend_margin_ns`] / candidate set calibration selected it
-    /// with. `None` when the backend is unparseable or there is no competing
-    /// route to measure against.
-    pub(super) fn selected_margin_ns(&self) -> Option<u128> {
-        let backend = self.backend()?;
-        let candidates = self.route_candidates();
-        selected_backend_margin_ns(backend, &candidates)
-    }
-
-    /// The ns margin by which the derived persistent-daemon route beat the next
-    /// candidate, using warm GPU evidence. `None` when no route or competitor
-    /// exists.
-    pub(super) fn persistent_selected_margin_ns(&self) -> Option<u128> {
-        let backend = self.resolved_persistent_backend()?;
-        let candidates = self.persistent_route_candidates();
-        selected_backend_margin_ns(backend, &candidates)
     }
 
     pub(super) fn timing_for_backend(
@@ -358,22 +161,7 @@ impl AutorouteDecision {
         }
     }
 
-    pub(super) fn route_candidates(&self) -> Vec<(ScanBackend, u128)> {
-        self.route_candidates_for_runtime(false)
-    }
-
-    fn persistent_route_candidates(&self) -> Vec<(ScanBackend, u128)> {
-        self.route_candidates_for_runtime(true)
-    }
-
-    pub(super) fn selected_backend_has_non_overlapping_confidence(
-        &self,
-        selected: ScanBackend,
-    ) -> bool {
-        self.selected_backend_has_non_overlapping_confidence_for(selected, false)
-    }
-
-    fn selected_backend_has_non_overlapping_confidence_for(
+    pub(super) fn selected_backend_has_non_overlapping_confidence_for(
         &self,
         selected: ScanBackend,
         persistent_runtime: bool,
@@ -392,58 +180,17 @@ impl AutorouteDecision {
             .all(|(_, competitor_interval)| selected_interval.high_ns < competitor_interval.low_ns)
     }
 
-    /// The single deterministic source of truth for which backend a persisted
-    /// timing set routes to. Calibration SELECTS this; validation REQUIRES the
-    /// persisted `backend` to equal it. It is a pure function of the measured
-    /// timing evidence (each executable GPU driver has its own label and timing),
-    /// so a cache that names any other backend is rejected as
-    /// tampered or non-deterministic.
-    ///
-    /// Policy:
-    /// - If one backend is provably fastest (its 95% CI lies entirely below
-    ///   every competitor's), that backend wins.
-    /// - Otherwise confidence overlap is explicitly inconclusive, not proof of
-    ///   equivalence. Choose the lowest measured median among the statistically
-    ///   non-dominated candidates. Engagement overhead breaks only an exact
-    ///   median tie, never an overlap whose measured medians differ.
-    pub(super) fn resolved_routing_backend(&self) -> Option<ScanBackend> {
-        self.resolve_measured_backend(false)
+    pub(super) fn resolve_measured_backend(&self, persistent_runtime: bool) -> Option<ScanBackend> {
+        self.statistically_non_dominated_routes(persistent_runtime)
+            .into_iter()
+            .filter_map(|backend| {
+                self.route_median_ns(backend, persistent_runtime)
+                    .map(|median_ns| (backend, median_ns))
+            })
+            .min_by_key(|(backend, median_ns)| (*median_ns, backend_overhead_rank(*backend)))
+            .map(|(backend, _)| backend)
     }
 
-    /// Fastest-correct backend once a long-lived daemon has initialized its
-    /// accelerator state. The persisted trials contain both the real first GPU
-    /// dispatch and the warm trials; daemon routing uses only the warm interval,
-    /// while one-shot routing conservatively includes cold cost.
-    pub(super) fn resolved_persistent_backend(&self) -> Option<ScanBackend> {
-        self.resolve_measured_backend(true)
-    }
-
-    /// True iff exactly one route is provably fastest. Equivalently, the
-    /// resolved winner is separated from every competitor, its 95% CI lies
-    /// entirely below theirs. When false, confidence intervals overlap and the
-    /// measured-median selection rule is operator-visible as inconclusive.
-    pub(super) fn has_separated_fastest_route(&self) -> bool {
-        self.resolved_routing_backend()
-            .is_some_and(|winner| self.selected_backend_has_non_overlapping_confidence(winner))
-    }
-
-    /// Persistent-daemon counterpart of [`Self::has_separated_fastest_route`],
-    /// evaluated with warm GPU evidence.
-    pub(super) fn has_separated_fastest_persistent_route(&self) -> bool {
-        self.resolved_persistent_backend().is_some_and(|winner| {
-            self.selected_backend_has_non_overlapping_confidence_for(winner, true)
-        })
-    }
-
-    /// The set of routes that are not provably beaten by any competitor; that
-    /// is, no other route's 95% CI lies entirely below this route's CI.
-    /// Routing is
-    /// decided from confidence intervals, never a single `best_ns` trial, so a
-    /// lucky outlier on a noisy backend can never win over a steadily-faster one.
-    ///
-    /// - Exactly one member  → that route is provably fastest.
-    /// - Two or more members → confidence is inconclusive; measured medians
-    ///   decide, with overhead used only for an exact median tie.
     fn statistically_non_dominated_routes(&self, persistent_runtime: bool) -> Vec<ScanBackend> {
         let intervals = self.route_confidence_intervals_for(persistent_runtime);
         intervals
@@ -455,17 +202,6 @@ impl AutorouteDecision {
             })
             .map(|(backend, _)| *backend)
             .collect()
-    }
-
-    fn resolve_measured_backend(&self, persistent_runtime: bool) -> Option<ScanBackend> {
-        self.statistically_non_dominated_routes(persistent_runtime)
-            .into_iter()
-            .filter_map(|backend| {
-                self.route_median_ns(backend, persistent_runtime)
-                    .map(|median_ns| (backend, median_ns))
-            })
-            .min_by_key(|(backend, median_ns)| (*median_ns, backend_overhead_rank(*backend)))
-            .map(|(backend, _)| backend)
     }
 
     fn route_median_ns(&self, backend: ScanBackend, persistent_runtime: bool) -> Option<u128> {
@@ -538,6 +274,401 @@ impl AutorouteDecision {
             }
         }
         candidates
+    }
+}
+
+impl AutorouteDecision {
+    fn candidate_receipts(
+        correctness_digest: u64,
+        simd_timing: &BackendTimingEvidence,
+        cpu_timing: Option<&BackendTimingEvidence>,
+        gpu_cuda_timing: Option<&BackendTimingEvidence>,
+        gpu_wgpu_timing: Option<&BackendTimingEvidence>,
+    ) -> Vec<BackendParityReceipt> {
+        [
+            (ScanBackend::SimdCpu, Some(simd_timing)),
+            (ScanBackend::CpuFallback, cpu_timing),
+            (ScanBackend::GpuCuda, gpu_cuda_timing),
+            (ScanBackend::GpuWgpu, gpu_wgpu_timing),
+        ]
+        .into_iter()
+        .filter_map(|(backend, timing)| {
+            timing.map(|timing| BackendParityReceipt::new(backend, correctness_digest, timing))
+        })
+        .collect()
+    }
+
+    #[cfg(test)]
+    pub(super) fn new(
+        backend: ScanBackend,
+        sample_bytes: u64,
+        sample_chunks: usize,
+        simd_ms: u128,
+        cpu_ms: Option<u128>,
+        gpu_ms: Option<u128>,
+    ) -> Self {
+        let simd_timing = BackendTimingEvidence::constant_ms(simd_ms, AUTOROUTE_CALIBRATION_TRIALS);
+        // Production calibration always measures scalar CPU. Test fixtures
+        // therefore default an omitted explicit value to the SIMD duration;
+        // missing-candidate tests remove the field after construction.
+        let cpu_duration_ms = match cpu_ms {
+            Some(duration_ms) => duration_ms,
+            None => simd_ms,
+        };
+        let cpu_timing = Some(BackendTimingEvidence::constant_ms(
+            cpu_duration_ms,
+            AUTOROUTE_CALIBRATION_TRIALS,
+        ));
+        let gpu_wgpu_timing =
+            gpu_ms.map(|ms| BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS));
+        let candidate_receipts = Self::candidate_receipts(
+            0xA11D_0B57_A11D_0B57,
+            &simd_timing,
+            cpu_timing.as_ref(),
+            None,
+            gpu_wgpu_timing.as_ref(),
+        );
+        Self {
+            backend: backend.label().to_string(),
+            calibration_points: vec![AutorouteCalibrationPoint {
+                sample_bytes,
+                sample_chunks,
+                candidate_receipts,
+                calibrated_at_unix_ms: 1,
+                simd_timing,
+                cpu_timing,
+                gpu_cuda_timing: None,
+                gpu_wgpu_timing,
+                trials: AUTOROUTE_CALIBRATION_TRIALS,
+            }],
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn from_timing_evidence(
+        backend: ScanBackend,
+        sample_bytes: u64,
+        sample_chunks: usize,
+        correctness_digest: u64,
+        calibrated_at_unix_ms: u128,
+        simd_timing: BackendTimingEvidence,
+        cpu_timing: Option<BackendTimingEvidence>,
+        gpu_timing: Option<BackendTimingEvidence>,
+    ) -> Self {
+        let candidate_receipts = Self::candidate_receipts(
+            correctness_digest,
+            &simd_timing,
+            cpu_timing.as_ref(),
+            None,
+            gpu_timing.as_ref(),
+        );
+        Self {
+            backend: backend.label().to_string(),
+            calibration_points: vec![AutorouteCalibrationPoint {
+                sample_bytes,
+                sample_chunks,
+                candidate_receipts,
+                calibrated_at_unix_ms,
+                simd_timing,
+                cpu_timing,
+                gpu_cuda_timing: None,
+                gpu_wgpu_timing: gpu_timing,
+                trials: AUTOROUTE_CALIBRATION_TRIALS,
+            }],
+        }
+    }
+
+    pub(super) fn from_peer_timing_evidence(
+        backend: ScanBackend,
+        sample_bytes: u64,
+        sample_chunks: usize,
+        correctness_digest: u64,
+        calibrated_at_unix_ms: u128,
+        simd_timing: BackendTimingEvidence,
+        cpu_timing: Option<BackendTimingEvidence>,
+        gpu_cuda_timing: Option<BackendTimingEvidence>,
+        gpu_wgpu_timing: Option<BackendTimingEvidence>,
+    ) -> Self {
+        let candidate_receipts = Self::candidate_receipts(
+            correctness_digest,
+            &simd_timing,
+            cpu_timing.as_ref(),
+            gpu_cuda_timing.as_ref(),
+            gpu_wgpu_timing.as_ref(),
+        );
+        Self {
+            backend: backend.label().to_string(),
+            calibration_points: vec![AutorouteCalibrationPoint {
+                sample_bytes,
+                sample_chunks,
+                candidate_receipts,
+                calibrated_at_unix_ms,
+                simd_timing,
+                cpu_timing,
+                gpu_cuda_timing,
+                gpu_wgpu_timing,
+                trials: AUTOROUTE_CALIBRATION_TRIALS,
+            }],
+        }
+    }
+
+    pub(super) fn contains_sample(&self, sample_bytes: u64, sample_chunks: usize) -> bool {
+        self.calibration_points
+            .iter()
+            .any(|point| point.sample_bytes == sample_bytes && point.sample_chunks == sample_chunks)
+    }
+
+    pub(super) fn merge_calibration_point(
+        &mut self,
+        point: AutorouteDecision,
+    ) -> Result<(), String> {
+        if point.calibration_points.len() != 1 {
+            return Err("cannot merge a nested autoroute calibration envelope".into());
+        }
+        let declared_one_shot = point
+            .backend()
+            .ok_or_else(|| "new workload point declares an unsupported backend".to_string())?;
+        let point = point
+            .calibration_points
+            .into_iter()
+            .next()
+            .expect("length checked");
+        if self.contains_sample(point.sample_bytes, point.sample_chunks) {
+            return Ok(());
+        }
+        if self.calibration_points.len() >= MAX_AUTOROUTE_MEASURED_POINTS {
+            return Err(format!(
+                "autoroute workload class already contains the maximum {MAX_AUTOROUTE_MEASURED_POINTS} measured calibration points; split the workload identity before adding more evidence"
+            ));
+        }
+        let expected_one_shot = self.resolved_routing_backend().ok_or_else(|| {
+            "existing workload evidence does not resolve one one-shot backend across its measured points"
+                .to_string()
+        })?;
+        let measured_one_shot = point.resolve_measured_backend(false).ok_or_else(|| {
+            "new workload point does not resolve one one-shot backend".to_string()
+        })?;
+        if declared_one_shot != measured_one_shot {
+            return Err(format!(
+                "new workload point declares {} but its timing evidence resolves {}; recalibrate the point",
+                declared_one_shot.label(),
+                measured_one_shot.label()
+            ));
+        }
+        let expected_daemon = self.resolved_persistent_backend().ok_or_else(|| {
+            "existing workload evidence does not resolve one daemon backend across its measured points"
+                .to_string()
+        })?;
+        let measured_daemon = point
+            .resolve_measured_backend(true)
+            .ok_or_else(|| "new workload point does not resolve one daemon backend".to_string())?;
+        if expected_one_shot != measured_one_shot || expected_daemon != measured_daemon {
+            return Err(format!(
+                "workload class changes fastest backend across measured points: existing one-shot={} daemon={}, new {}-byte/{}-chunk point one-shot={} daemon={}; split the workload identity at this crossover and recalibrate",
+                expected_one_shot.label(),
+                expected_daemon.label(),
+                point.sample_bytes,
+                point.sample_chunks,
+                measured_one_shot.label(),
+                measured_daemon.label(),
+            ));
+        }
+        self.calibration_points.push(point);
+        self.calibration_points
+            .sort_unstable_by_key(|point| (point.sample_bytes, point.sample_chunks));
+        Ok(())
+    }
+
+    pub(super) fn backend(&self) -> Option<ScanBackend> {
+        keyhog_scanner::hw_probe::parse_backend_str(&self.backend)
+    }
+
+    pub(super) fn primary_point(&self) -> &AutorouteCalibrationPoint {
+        self.calibration_points
+            .first()
+            .expect("autoroute decisions are constructed and validated with evidence")
+    }
+
+    #[cfg(test)]
+    pub(super) fn primary_point_mut(&mut self) -> &mut AutorouteCalibrationPoint {
+        self.calibration_points
+            .first_mut()
+            .expect("test autoroute decision must contain evidence")
+    }
+
+    // Derived evidence is computed on demand, never persisted a second time.
+
+    /// Representative SIMD route time in ms (median of measured trials).
+    pub(super) fn simd_ms(&self) -> u128 {
+        self.primary_point().simd_timing.median_ms()
+    }
+
+    /// Representative CPU-fallback route time in ms, if CPU was measured.
+    pub(super) fn cpu_ms(&self) -> Option<u128> {
+        self.primary_point()
+            .cpu_timing
+            .as_ref()
+            .map(BackendTimingEvidence::median_ms)
+    }
+
+    /// Representative one-shot GPU route time in ms, including the measured
+    /// first-dispatch lower bound.
+    #[cfg(test)]
+    pub(super) fn gpu_ms(&self) -> Option<u128> {
+        self.gpu_route_ns().map(|route_ns| route_ns / 1_000_000)
+    }
+
+    /// The GPU cold-start ns, warm timing evidence, and routing ns, all derived
+    /// from the selected driver's persisted timing through the single owner
+    /// [`gpu_cold_warm_route_evidence`]. `None` when there is no GPU timing or it
+    /// cannot produce valid cold/warm evidence (too few warm trials).
+    #[cfg(test)]
+    pub(super) fn gpu_cold_warm_route(&self) -> Option<(u128, BackendTimingEvidence, u128)> {
+        let backend = self.backend()?.is_gpu().then_some(self.backend()?)?;
+        self.primary_point()
+            .timing_for_backend(backend)
+            .and_then(gpu_cold_warm_route_evidence)
+    }
+
+    pub(super) fn gpu_cold_warm_route_for(
+        &self,
+        backend: ScanBackend,
+    ) -> Option<(u128, BackendTimingEvidence, u128)> {
+        self.primary_point()
+            .timing_for_backend(backend)
+            .and_then(gpu_cold_warm_route_evidence)
+    }
+
+    /// GPU cold-start ns, derived (see [`Self::gpu_cold_warm_route`]).
+    #[cfg(test)]
+    pub(super) fn gpu_cold_ns(&self) -> Option<u128> {
+        self.gpu_cold_warm_route().map(|(cold_ns, _, _)| cold_ns)
+    }
+
+    /// GPU warm median-ms, derived.
+    #[cfg(test)]
+    pub(super) fn gpu_warm_ms(&self) -> Option<u128> {
+        self.gpu_cold_warm_route()
+            .map(|(_, warm_timing, _)| warm_timing.median_ms())
+    }
+
+    /// GPU routing ns (the cold-vs-warm route cost the router compares), derived.
+    #[cfg(test)]
+    pub(super) fn gpu_route_ns(&self) -> Option<u128> {
+        self.gpu_cold_warm_route().map(|(_, _, route_ns)| route_ns)
+    }
+
+    /// The ns margin by which the persisted (resolved) backend beat the next
+    /// candidate route, derived from the timing evidence via the SAME
+    /// [`selected_backend_margin_ns`] / candidate set calibration selected it
+    /// with. `None` when the backend is unparseable or there is no competing
+    /// route to measure against.
+    pub(super) fn selected_margin_ns(&self) -> Option<u128> {
+        let backend = self.backend()?;
+        self.calibration_points
+            .iter()
+            .map(|point| {
+                selected_backend_margin_ns(backend, &point.route_candidates_for_runtime(false))
+            })
+            .collect::<Option<Vec<_>>>()?
+            .into_iter()
+            .min()
+    }
+
+    /// The ns margin by which the derived persistent-daemon route beat the next
+    /// candidate, using warm GPU evidence. `None` when no route or competitor
+    /// exists.
+    pub(super) fn persistent_selected_margin_ns(&self) -> Option<u128> {
+        let backend = self.resolved_persistent_backend()?;
+        self.calibration_points
+            .iter()
+            .map(|point| {
+                selected_backend_margin_ns(backend, &point.route_candidates_for_runtime(true))
+            })
+            .collect::<Option<Vec<_>>>()?
+            .into_iter()
+            .min()
+    }
+
+    pub(super) fn timing_for_backend(
+        &self,
+        backend: ScanBackend,
+    ) -> Option<&BackendTimingEvidence> {
+        self.primary_point().timing_for_backend(backend)
+    }
+
+    pub(super) fn selected_backend_has_non_overlapping_confidence(
+        &self,
+        selected: ScanBackend,
+    ) -> bool {
+        self.selected_backend_has_non_overlapping_confidence_for(selected, false)
+    }
+
+    fn selected_backend_has_non_overlapping_confidence_for(
+        &self,
+        selected: ScanBackend,
+        persistent_runtime: bool,
+    ) -> bool {
+        self.calibration_points.iter().all(|point| {
+            point.selected_backend_has_non_overlapping_confidence_for(selected, persistent_runtime)
+        })
+    }
+
+    /// The single deterministic source of truth for which backend a persisted
+    /// timing set routes to. Calibration SELECTS this; validation REQUIRES the
+    /// persisted `backend` to equal it. It is a pure function of the measured
+    /// timing evidence (each executable GPU driver has its own label and timing),
+    /// so a cache that names any other backend is rejected as
+    /// tampered or non-deterministic.
+    ///
+    /// Policy:
+    /// - If one backend is provably fastest (its 95% CI lies entirely below
+    ///   every competitor's), that backend wins.
+    /// - Otherwise confidence overlap is explicitly inconclusive, not proof of
+    ///   equivalence. Choose the lowest measured median among the statistically
+    ///   non-dominated candidates. Engagement overhead breaks only an exact
+    ///   median tie, never an overlap whose measured medians differ.
+    pub(super) fn resolved_routing_backend(&self) -> Option<ScanBackend> {
+        let selected = self
+            .calibration_points
+            .first()?
+            .resolve_measured_backend(false)?;
+        self.calibration_points
+            .iter()
+            .all(|point| point.resolve_measured_backend(false) == Some(selected))
+            .then_some(selected)
+    }
+
+    /// Fastest-correct backend once a long-lived daemon has initialized its
+    /// accelerator state. The persisted trials contain both the real first GPU
+    /// dispatch and the warm trials; daemon routing uses only the warm interval,
+    /// while one-shot routing conservatively includes cold cost.
+    pub(super) fn resolved_persistent_backend(&self) -> Option<ScanBackend> {
+        let selected = self
+            .calibration_points
+            .first()?
+            .resolve_measured_backend(true)?;
+        self.calibration_points
+            .iter()
+            .all(|point| point.resolve_measured_backend(true) == Some(selected))
+            .then_some(selected)
+    }
+
+    /// True iff exactly one route is provably fastest. Equivalently, the
+    /// resolved winner is separated from every competitor, its 95% CI lies
+    /// entirely below theirs. When false, confidence intervals overlap and the
+    /// measured-median selection rule is operator-visible as inconclusive.
+    pub(super) fn has_separated_fastest_route(&self) -> bool {
+        self.resolved_routing_backend()
+            .is_some_and(|winner| self.selected_backend_has_non_overlapping_confidence(winner))
+    }
+
+    /// Persistent-daemon counterpart of [`Self::has_separated_fastest_route`],
+    /// evaluated with warm GPU evidence.
+    pub(super) fn has_separated_fastest_persistent_route(&self) -> bool {
+        self.resolved_persistent_backend().is_some_and(|winner| {
+            self.selected_backend_has_non_overlapping_confidence_for(winner, true)
+        })
     }
 }
 

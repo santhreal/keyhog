@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Retain every exact calibration representative inside one canonical workload
+  evidence envelope. A route class is reusable only when all points agree on
+  the fastest-correct one-shot and daemon backends; inspection exposes each
+  point's timings, confidence, and parity receipts, and calibration now probes
+  both sides of the required 8 MiB crossover.
 - Show the detector-owned keyword-free operator entropy margin in `explain`.
 - Derive autoroute readiness and repair commands once from cache inspection,
   expose the repair command in `backend --autoroute --json`, and make `doctor`

@@ -1611,7 +1611,10 @@ fn mismatched_sample_evidence_never_clobbers_or_replays() {
 
     let mut cache: AutorouteCache =
         serde_json::from_slice(&original).expect("deserialize valid sample-bound cache");
-    cache.configs[0].decisions[0].decision.sample_bytes = 4 * 1024 * 1024;
+    cache.configs[0].decisions[0]
+        .decision
+        .primary_point_mut()
+        .sample_bytes = 4 * 1024 * 1024;
     std::fs::write(
         &path,
         serde_json::to_vec_pretty(&cache).expect("serialize tampered sample binding"),
@@ -1680,10 +1683,19 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
     let host = test_host(Some("NVIDIA GeForce RTX 5090"));
     let key = test_workload_key();
     let mut decisions = HashMap::new();
-    decisions.insert(
-        key.clone(),
-        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, Some(40)),
-    );
+    let mut size_envelope =
+        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, Some(40));
+    size_envelope
+        .merge_calibration_point(AutorouteDecision::new(
+            ScanBackend::SimdCpu,
+            12 * 1024 * 1024,
+            1,
+            13,
+            None,
+            Some(41),
+        ))
+        .expect("same-winner size evidence forms one persisted envelope");
+    decisions.insert(key.clone(), size_envelope);
 
     save_autoroute_cache(
         &path,
@@ -1739,6 +1751,24 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
     let inspection = inspect_autoroute_cache(Some(&path));
     assert_eq!(inspection.error, None);
     assert_eq!(inspection.configs.len(), 1);
+    assert_eq!(inspection.configs[0].decisions[0].calibration_points, 2);
+    assert_eq!(inspection.configs[0].decisions[0].measured_points.len(), 2);
+    assert_eq!(
+        inspection.configs[0].decisions[0]
+            .measured_points
+            .iter()
+            .map(|point| point.sample_bytes)
+            .collect::<Vec<_>>(),
+        vec![8 * 1024 * 1024, 12 * 1024 * 1024]
+    );
+    assert_eq!(
+        inspection.configs[0].decisions[0].sample_bytes_min,
+        8 * 1024 * 1024
+    );
+    assert_eq!(
+        inspection.configs[0].decisions[0].sample_bytes_max,
+        12 * 1024 * 1024
+    );
     assert_eq!(
         inspection.configs[0].hyperscan_runtime_identity,
         host.hyperscan_runtime_identity
@@ -3033,16 +3063,82 @@ fn calibration_mode_remeasures_loaded_cache_decisions_before_reuse() {
     };
 
     assert_eq!(
-        router.reusable_decision_backend(&key),
+        router.reusable_decision_backend(&key, 8 * 1024 * 1024, 1),
         None,
         "calibration mode must not reuse a persisted cache row before this run remeasures the bucket"
     );
     router.measured_this_run.insert(key.clone());
     assert_eq!(
-        router.reusable_decision_backend(&key),
+        router.reusable_decision_backend(&key, 8 * 1024 * 1024, 1),
         Some(ScanBackend::CpuFallback),
         "once the bucket is measured during this calibration run, duplicate batches may reuse the new in-memory decision"
     );
+    assert_eq!(
+        router.reusable_decision_backend(&key, 12 * 1024 * 1024, 1),
+        None,
+        "another exact size inside the same coarse class must be measured, not hidden behind the first point"
+    );
+}
+
+#[test]
+fn calibration_envelope_retains_agreeing_points_and_rejects_a_crossover() {
+    let mut stable =
+        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 8, Some(12), None);
+    stable
+        .merge_calibration_point(AutorouteDecision::new(
+            ScanBackend::SimdCpu,
+            12 * 1024 * 1024,
+            1,
+            9,
+            Some(13),
+            None,
+        ))
+        .expect("agreeing points form one reproducible workload envelope");
+    assert_eq!(stable.calibration_points.len(), 2);
+    assert!(stable.contains_sample(8 * 1024 * 1024, 1));
+    assert!(stable.contains_sample(12 * 1024 * 1024, 1));
+    assert_eq!(
+        stable.resolved_routing_backend(),
+        Some(ScanBackend::SimdCpu)
+    );
+
+    let overlapping_simd = BackendTimingEvidence::from_trial_ns(vec![
+        7_000_000, 8_000_000, 8_000_000, 8_000_000, 8_000_000, 8_000_000, 9_000_000,
+    ])
+    .expect("valid SIMD confidence fixture");
+    let overlapping_cpu = BackendTimingEvidence::from_trial_ns(vec![
+        1_000_000, 12_000_000, 12_000_000, 12_000_000, 12_000_000, 12_000_000, 20_000_000,
+    ])
+    .expect("valid CPU confidence fixture");
+    stable
+        .merge_calibration_point(AutorouteDecision::from_timing_evidence(
+            ScanBackend::SimdCpu,
+            14 * 1024 * 1024,
+            1,
+            0xA11D_0B57_A11D_0B57,
+            1,
+            overlapping_simd,
+            Some(overlapping_cpu),
+            None,
+        ))
+        .expect("an overlapping point with the same measured winner remains valid evidence");
+    assert!(
+        !stable.has_separated_fastest_route(),
+        "class confidence is separated only when every retained point is separated"
+    );
+
+    let error = stable
+        .merge_calibration_point(AutorouteDecision::new(
+            ScanBackend::CpuFallback,
+            16 * 1024 * 1024 - 1,
+            1,
+            20,
+            Some(5),
+            None,
+        ))
+        .expect_err("a measured winner change must split the workload identity");
+    assert!(error.contains("changes fastest backend across measured points"));
+    assert!(error.contains("split the workload identity"));
 }
 
 #[test]
@@ -3564,8 +3660,9 @@ fn autoroute_cache_rejects_selected_backend_without_timing_evidence() {
     );
     // Drop the CpuFallback timing and its receipt so the selected backend has
     // no evidence while the remaining SIMD timing/receipt pair stays coherent.
-    bad.cpu_timing = None;
-    bad.candidate_receipts
+    bad.primary_point_mut().cpu_timing = None;
+    bad.primary_point_mut()
+        .candidate_receipts
         .retain(|receipt| receipt.backend != ScanBackend::CpuFallback.label());
     write_tampered_decision_cache(
         &path,
@@ -3600,8 +3697,9 @@ fn autoroute_cache_rejects_missing_unselected_scalar_cpu_candidate() {
     let key = test_workload_key();
     let mut bad =
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 10, Some(12), None);
-    bad.cpu_timing = None;
-    bad.candidate_receipts
+    bad.primary_point_mut().cpu_timing = None;
+    bad.primary_point_mut()
+        .candidate_receipts
         .retain(|receipt| receipt.backend != ScanBackend::CpuFallback.label());
     write_tampered_decision_cache(
         &path,
@@ -3636,8 +3734,8 @@ fn autoroute_cache_rejects_missing_calibration_sample_evidence() {
     let host = test_host(None);
     let key = test_workload_key();
     let mut bad = AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None);
-    bad.sample_bytes = 0;
-    bad.sample_chunks = 0;
+    bad.primary_point_mut().sample_bytes = 0;
+    bad.primary_point_mut().sample_chunks = 0;
     write_tampered_decision_cache(
         &path,
         digest,
@@ -3660,6 +3758,37 @@ fn autoroute_cache_rejects_missing_calibration_sample_evidence() {
 }
 
 #[test]
+fn autoroute_cache_rejects_an_empty_calibration_envelope() {
+    let path = std::env::temp_dir().join(format!(
+        "keyhog_autoroute_empty_envelope_{}.json",
+        std::process::id()
+    ));
+    let host = test_host(None);
+    let mut bad = AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None);
+    bad.calibration_points.clear();
+    write_tampered_decision_cache(
+        &path,
+        0x1234_5678_9ABC_DEF0,
+        0xA55A_D00D_CAFE_BEEF,
+        &host,
+        test_workload_key(),
+        bad,
+        "contains no measured calibration points",
+    );
+    let error = load_autoroute_cache(
+        &path,
+        0x1234_5678_9ABC_DEF0,
+        test_rules_digest(),
+        0xA55A_D00D_CAFE_BEEF,
+        &host,
+    )
+    .expect_err("an empty evidence envelope must never become a route")
+    .to_string();
+    assert!(error.contains("contains no measured calibration points"));
+    std::fs::remove_file(&path).ok();
+}
+
+#[test]
 fn autoroute_cache_rejects_future_calibration_timestamps_everywhere() {
     let dir = tempfile::TempDir::new().expect("autoroute future-timestamp tempdir");
     let path = dir.path().join("autoroute.json");
@@ -3668,7 +3797,7 @@ fn autoroute_cache_rejects_future_calibration_timestamps_everywhere() {
     let host = test_host(None);
     let key = test_workload_key();
     let mut bad = AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None);
-    bad.calibrated_at_unix_ms = u128::MAX;
+    bad.primary_point_mut().calibrated_at_unix_ms = u128::MAX;
     write_tampered_decision_cache(
         &path,
         digest,
@@ -3714,7 +3843,7 @@ fn autoroute_inspection_reports_exact_persisted_timestamp_and_derived_age() {
     let host = test_host(None);
     let key = test_workload_key();
     let decision = AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None);
-    assert_eq!(decision.calibrated_at_unix_ms, 1);
+    assert_eq!(decision.primary_point().calibrated_at_unix_ms, 1);
     let mut decisions = HashMap::new();
     decisions.insert(key.clone(), decision);
     save_autoroute_cache(
@@ -3728,7 +3857,7 @@ fn autoroute_inspection_reports_exact_persisted_timestamp_and_derived_age() {
     .expect("valid historical evidence must remain accepted without an arbitrary expiry");
     let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host)
         .expect("age alone must not invalidate otherwise matching route evidence");
-    assert_eq!(loaded[&key].calibrated_at_unix_ms, 1);
+    assert_eq!(loaded[&key].primary_point().calibrated_at_unix_ms, 1);
 
     let inspection = inspect_autoroute_cache(Some(&path));
     assert_eq!(
@@ -3796,7 +3925,7 @@ fn autoroute_cache_rejects_zero_duration_timing_evidence() {
     let mut bad = AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None);
     // Zero-duration SIMD timing is rejected by the kept `is_valid_for_trials`
     // invariant; v21 removed the redundant `simd_ms` field (derived from timing).
-    bad.simd_timing =
+    bad.primary_point_mut().simd_timing =
         super::evidence::BackendTimingEvidence::constant_ms(0, AUTOROUTE_CALIBRATION_TRIALS);
     write_tampered_decision_cache(
         &path,
@@ -3828,7 +3957,7 @@ fn autoroute_cache_rejects_noncanonical_trial_count_on_load_and_inspection() {
     let host = test_host(None);
     let key = test_workload_key();
     let mut bad = AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None);
-    bad.trials = AUTOROUTE_CALIBRATION_TRIALS + 1;
+    bad.primary_point_mut().trials = AUTOROUTE_CALIBRATION_TRIALS + 1;
     write_tampered_decision_cache(
         &path,
         digest,
@@ -3869,15 +3998,20 @@ fn autoroute_cache_rejects_extra_backend_trials_on_load_and_inspection() {
         Some(30),
     );
     let mut simd = base.clone();
-    simd.simd_timing.trials_ns.push(10_000_000);
+    simd.primary_point_mut()
+        .simd_timing
+        .trials_ns
+        .push(10_000_000);
     let mut cpu = base.clone();
-    cpu.cpu_timing
+    cpu.primary_point_mut()
+        .cpu_timing
         .as_mut()
         .expect("CPU evidence")
         .trials_ns
         .push(20_000_000);
     let mut gpu = base;
-    gpu.gpu_wgpu_timing
+    gpu.primary_point_mut()
+        .gpu_wgpu_timing
         .as_mut()
         .expect("GPU evidence")
         .trials_ns
@@ -3941,8 +4075,8 @@ fn autoroute_cache_rejects_non_primary_timing_summary_fields() {
         &std::fs::read(&path).expect("tampered cache fixture must be readable"),
     )
     .expect("tampered cache fixture must be JSON");
-    cache_json["configs"][0]["decisions"][0]["decision"]["simd_timing"]["mean_ns"] =
-        serde_json::json!(1);
+    cache_json["configs"][0]["decisions"][0]["decision"]["calibration_points"][0]["simd_timing"]
+        ["mean_ns"] = serde_json::json!(1);
     std::fs::write(
         &path,
         serde_json::to_vec_pretty(&cache_json).expect("tampered cache JSON must serialize"),
@@ -4450,7 +4584,7 @@ fn autoroute_cache_rejects_missing_correctness_digest() {
     let host = test_host(None);
     let key = test_workload_key();
     let mut bad = AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None);
-    bad.candidate_receipts[0].correctness_digest = 0;
+    bad.primary_point_mut().candidate_receipts[0].correctness_digest = 0;
     write_tampered_decision_cache(
         &path,
         digest,
@@ -4491,7 +4625,7 @@ fn autoroute_cache_binds_every_timing_row_to_one_parity_receipt() {
         Some(7),
         None,
     );
-    missing.candidate_receipts.pop();
+    missing.primary_point_mut().candidate_receipts.pop();
     write_tampered_decision_cache(
         &path,
         digest,
@@ -4510,7 +4644,7 @@ fn autoroute_cache_binds_every_timing_row_to_one_parity_receipt() {
         Some(7),
         None,
     );
-    divergent.candidate_receipts[1].correctness_digest ^= 1;
+    divergent.primary_point_mut().candidate_receipts[1].correctness_digest ^= 1;
     write_tampered_decision_cache(
         &path,
         digest,
@@ -4529,7 +4663,12 @@ fn autoroute_cache_binds_every_timing_row_to_one_parity_receipt() {
         Some(7),
         None,
     );
-    timing_mutation.cpu_timing.as_mut().unwrap().trials_ns[0] += 1;
+    timing_mutation
+        .primary_point_mut()
+        .cpu_timing
+        .as_mut()
+        .unwrap()
+        .trials_ns[0] += 1;
     write_tampered_decision_cache(
         &path,
         digest,
@@ -4559,11 +4698,12 @@ fn autoroute_cache_requires_every_live_gpu_candidate_timing_and_receipt() {
     for backend in [ScanBackend::GpuCuda, ScanBackend::GpuWgpu] {
         let mut missing = complete.clone();
         match backend {
-            ScanBackend::GpuCuda => missing.gpu_cuda_timing = None,
-            ScanBackend::GpuWgpu => missing.gpu_wgpu_timing = None,
+            ScanBackend::GpuCuda => missing.primary_point_mut().gpu_cuda_timing = None,
+            ScanBackend::GpuWgpu => missing.primary_point_mut().gpu_wgpu_timing = None,
             _ => unreachable!("fixed GPU peer fixture"),
         }
         missing
+            .primary_point_mut()
             .candidate_receipts
             .retain(|receipt| receipt.backend != backend.label());
         let path = dir.path().join(format!("{}.json", backend.label()));
@@ -4691,6 +4831,7 @@ fn derived_accessors_match_the_persisted_timing_evidence() {
     // GPU cold / warm / route derive from the driver timing through the single owner
     // `gpu_cold_warm_route_evidence`, so the accessors equal a fresh derivation.
     let gpu_timing = decision
+        .primary_point()
         .gpu_wgpu_timing
         .as_ref()
         .expect("WGPU timing present");
@@ -5428,7 +5569,7 @@ fn live_calibration_measures_both_gpu_driver_peers() {
         Some(&admission_plan),
     )
     .expect("calibrate every scanner-owned eligible peer");
-    assert!(decision.gpu_cuda_timing.is_some());
-    assert!(decision.gpu_wgpu_timing.is_some());
+    assert!(decision.primary_point().gpu_cuda_timing.is_some());
+    assert!(decision.primary_point().gpu_wgpu_timing.is_some());
     assert!(decision.backend().is_some());
 }

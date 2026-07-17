@@ -106,7 +106,7 @@ pub(crate) type AutorouteMeasurementObserver = Arc<Mutex<BTreeSet<(String, Strin
 // the top, per-resolved-config routing decisions under `configs` keyed by
 // config_digest, merge-on-save. Old single-config (v19 and earlier) caches are
 // rejected on the version gate and recalibrated.
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 36;
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 37;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_GPU_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 
@@ -596,7 +596,12 @@ impl MeasuredBackendRouter {
             self.decode_workload_plan,
         )
         .map_err(AutorouteRoutingError::incomplete_workload_evidence)?;
-        if let Some(backend) = self.reusable_decision_backend(&key) {
+        let (sample_bytes, sample_chunks) = if self.calibration_mode {
+            (calibration::calibration_sample_bytes(batch)?, batch.len())
+        } else {
+            (0, 0)
+        };
+        if let Some(backend) = self.reusable_decision_backend(&key, sample_bytes, sample_chunks) {
             return Ok(BackendSelection {
                 backend,
                 phase1_plan: Some(phase1_plan),
@@ -645,8 +650,20 @@ impl MeasuredBackendRouter {
                 ));
             }
         };
-        self.decisions.insert(key.clone(), decision);
-        self.measured_this_run.insert(key);
+        if self.measured_this_run.contains(&key) {
+            self.decisions
+                .get_mut(&key)
+                .ok_or_else(|| {
+                    AutorouteRoutingError::calibration_not_persisted(
+                        "autoroute measured-point state lost its workload decision",
+                    )
+                })?
+                .merge_calibration_point(decision)
+                .map_err(AutorouteRoutingError::calibration_not_persisted)?;
+        } else {
+            self.decisions.insert(key.clone(), decision);
+            self.measured_this_run.insert(key);
+        }
         self.cache_dirty = true;
         Ok(BackendSelection {
             backend,
@@ -654,11 +671,20 @@ impl MeasuredBackendRouter {
         })
     }
 
-    fn reusable_decision_backend(&self, key: &WorkloadKey) -> Option<ScanBackend> {
+    fn reusable_decision_backend(
+        &self,
+        key: &WorkloadKey,
+        sample_bytes: u64,
+        sample_chunks: usize,
+    ) -> Option<ScanBackend> {
         if self.calibration_mode && !self.measured_this_run.contains(key) {
             return None;
         }
-        self.decisions.get(key).and_then(AutorouteDecision::backend)
+        let decision = self.decisions.get(key)?;
+        if self.calibration_mode && !decision.contains_sample(sample_bytes, sample_chunks) {
+            return None;
+        }
+        decision.backend()
     }
 
     pub(super) fn commit(&mut self) -> Result<(), AutorouteRoutingError> {
