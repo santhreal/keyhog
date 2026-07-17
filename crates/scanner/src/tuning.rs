@@ -242,7 +242,7 @@ impl ScannerTuning {
             .resolve(ScannerTuningConfig::HOMOGLYPH_GATE_DEFAULT)
     }
 
-    // ── Homoglyph ASCII-skip (measurement only) ────────────────────────────
+    // ── Homoglyph inert-variant skip ───────────────────────────────────────
 
     /// Override the homoglyph ASCII-skip (test/diagnostic). `Some(true)` forces
     /// it on, `Some(false)` off, `None` = compiled default. The differential gate
@@ -251,6 +251,11 @@ impl ScannerTuning {
     pub(crate) fn set_homoglyph_ascii_skip(&self, mode: Option<bool>) {
         self.homoglyph_ascii_skip
             .store(BoolOverride::from_option(mode).as_byte(), Relaxed);
+    }
+
+    pub(crate) fn homoglyph_ascii_skip_enabled(&self) -> bool {
+        BoolOverride::from_raw(self.homoglyph_ascii_skip.load(Relaxed))
+            .resolve(ScannerTuningConfig::HOMOGLYPH_ASCII_SKIP_DEFAULT)
     }
 
     // ── Diagnostic extraction-order reversal ───────────────────────────────

@@ -36,28 +36,6 @@ fn hs_prefilter_engages(
     fallback_hs && (chunk_len <= hs_prefilter_max_len || chunk_is_ascii)
 }
 
-/// ONE PLACE for the homoglyph-variant skip decision, applied identically on the
-/// HS path and the RegexSet path (they MUST agree or `backend_parity_matrix`
-/// fails). The ~2.8k homoglyph prefix variants exist to catch unicode look-alikes
-/// in SOURCE text; they are inert, and so can be skipped, whenever a homoglyph
-/// cannot represent a real credential in THIS chunk:
-///   * pure-ASCII chunk: a look-alike prefix cannot appear in ASCII bytes, and any
-///     hit on the ASCII ORIGINAL is already produced by the base pattern (the
-///     invariant `homoglyph_ascii_skip_parity_default` proves);
-///   * DECODED sub-chunk (`profile::in_decode`): a base64/hex/url payload, a
-///     non-ASCII run there is binary noise, and any homoglyph-variant hit is
-///     structurally a non-credential (a real secret is ASCII/UTF-8 text, caught by
-///     the base pattern in the lean DB), so the variants are inert regardless of
-///     `is_ascii()`. This is what widens the ASCII-only skip to non-ASCII decoded
-///     blobs, which otherwise pay the full 2794-pattern DB on every decode rescan.
-/// Gated by the `homoglyph_ascii_skip` tuning knob (default on) (one switch).
-/// Replaces four divergent inline copies of this predicate (HS/RegexSet ×
-/// mark/any-match).
-#[inline]
-fn homoglyph_skip_applies(chunk_is_ascii: bool, homoglyph_ascii_skip: bool) -> bool {
-    homoglyph_ascii_skip && (chunk_is_ascii || super::profile::in_decode())
-}
-
 impl Phase2AlwaysActivePrefilter {
     /// Patterns per RegexSet batch. A single set over all ~2.7k always-active
     /// patterns blows the compiled-program size limit; batching keeps each

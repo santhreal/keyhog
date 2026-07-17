@@ -19,7 +19,7 @@ use super::support;
 use support::paths::{corpus_dir, corpus_files, detector_dir};
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
-use keyhog_scanner::{CompiledScanner, ScanBackend};
+use keyhog_scanner::{CompiledScanner, ScanBackend, ScannerConfig};
 use std::sync::OnceLock;
 
 struct Lcg(u64);
@@ -152,15 +152,21 @@ fn scanner() -> &'static CompiledScanner {
                 "homoglyph parity detector subset missing shipped detector {id}"
             );
         }
-        CompiledScanner::compile(detectors).expect("compile")
+        // Keep normalization off so the non-ASCII twin below reaches the
+        // generated homoglyph regex instead of being rewritten to its base.
+        let mut config = ScannerConfig::default();
+        config.unicode_normalization = false;
+        CompiledScanner::compile(detectors)
+            .expect("compile")
+            .with_config(config)
     })
 }
 
 /// Scan `chunk` with the homoglyph ASCII-skip OFF (fold; the recall baseline) and
 /// ON (the optimization), returning `(skip_on, fold_off)`.
 fn scan_both(scanner: &CompiledScanner, chunk: &Chunk) -> (Vec<Key>, Vec<Key>) {
-    // The homoglyph ASCII-skip lever lives in the legacy RegexSet prefilter path;
-    // force HS off so the lever is actually exercised (HS bypasses it).
+    // Force HS off so the portable prefilter plus shared anchor extraction path
+    // owns the comparison; the HS-specific twin below proves its lean database.
     keyhog_scanner::testing::set_phase2_hs(&scanner, Some(false));
     keyhog_scanner::testing::set_homoglyph_ascii_skip(&scanner, Some(false));
     scanner.clear_fragment_cache();
@@ -316,16 +322,18 @@ fn homoglyph_ascii_skip_parity_hs_backend() {
     );
 }
 
-/// The skip is gated on `chunk.is_ascii()`, so a chunk containing an actual
-/// non-ASCII homoglyph must run the variant unchanged, the optimization never
-/// touches the case homoglyph detection exists for.
+/// With normalization disabled, a chunk containing an actual non-ASCII
+/// homoglyph must run the generated variant unchanged. Equality alone is not
+/// enough: both sides must retain the exact Stripe finding.
 #[test]
 fn homoglyph_variant_unaffected_on_non_ascii() {
     let _telemetry_guard = super::super::telemetry_serial::lock();
     let scanner = scanner();
     scanner.clear_fragment_cache();
-    // "аpi_key" with a Cyrillic 'а' (U+0430) (a non-ASCII chunk).
-    let input = "\u{0430}pi_key = \"AbCdEf0123456789xyzABCD\"\n".as_bytes();
+    // Stripe `sk_live_` with Cyrillic small dze `ѕ` (U+0455) for the leading s.
+    let credential = "\u{0455}k_live_0123456789abcdefABCDEFxy";
+    let input = format!("STRIPE_SECRET_KEY={credential}\n");
+    let input = input.as_bytes();
     assert!(!input.is_ascii());
     let chunk = chunk_of(input, "nonascii");
     let (on, off) = scan_both(&scanner, &chunk);
@@ -334,5 +342,10 @@ fn homoglyph_variant_unaffected_on_non_ascii() {
         off,
         "skip must be a no-op on a non-ASCII chunk: {}",
         report(&on, &off, input)
+    );
+    assert!(
+        on.iter()
+            .any(|(detector, value, _)| detector == "stripe-secret-key" && value == credential),
+        "non-ASCII homoglyph variant did not preserve the exact Stripe finding: {on:?}"
     );
 }

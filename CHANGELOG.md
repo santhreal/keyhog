@@ -41,6 +41,11 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   paths consume the same set, so neither rescans patterns already owned by an
   active localizer; disabling the localizer gate keeps those patterns in the
   residual instead of silently dropping them.
+- The proven homoglyph inert-variant skip now covers keyword-triggered and
+  anchor-localized phase-two extraction as well as always-active prefiltering.
+  ASCII source no longer runs duplicate whole-chunk homoglyph regexes, while
+  non-ASCII scan text retains the complete variant path and normalized source
+  remains covered by each variant's base pattern.
 - Isolated entropy admission now skips lines already owned by stronger findings,
   proves detector-owned short symbolic shapes before Shannon scoring, and rejects
   pronounceable digit-bearing source identifiers when the owning TOML enables

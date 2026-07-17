@@ -410,6 +410,14 @@ pub(crate) struct Phase2AlwaysActivePrefilter {
 /// `decode_focus_parity` gate validates it is sufficient.
 pub(crate) const DECODE_FOCUS_MARGIN: usize = 64;
 
+/// Whether homoglyph variants are inert for this chunk. Pure-ASCII source is
+/// covered by each variant's base pattern; decoded non-ASCII bytes are not
+/// credential homoglyphs. Every phase-two owner uses this single predicate.
+#[inline]
+pub(crate) fn homoglyph_skip_applies(chunk_is_ascii: bool, enabled: bool) -> bool {
+    enabled && (chunk_is_ascii || super::profile::in_decode())
+}
+
 // NOTE: there is intentionally NO confirmed-pass equivalent of this focus. A
 // decode sub-chunk splices the decoded text in place of the encoded blob, which
 // (a) changes the byte adjacencies at the junction and (b) creates new token

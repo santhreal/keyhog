@@ -154,6 +154,11 @@ impl CompiledScanner {
             Some((fs, fe)) => &preprocessed.text[fs..fe],
             None => &preprocessed.text,
         };
+        let scan_text_is_ascii = scan_text.is_ascii();
+        let skip_homoglyph = homoglyph_skip_applies(
+            scan_text_is_ascii,
+            self.tuning.homoglyph_ascii_skip_enabled(),
+        );
         let shift = focus.map_or(0u32, |(fs, _)| fs as u32);
         // `cursor_range` for whole-chunk phase-2 extraction: restrict match
         // STARTS to the focus window (matches still extend right freely).
@@ -167,10 +172,12 @@ impl CompiledScanner {
             phase2_always_active_gpu_evidence,
             route,
             |this, scratch| {
+                let pattern_is_live =
+                    |pat: usize| !skip_homoglyph || !this.phase2_patterns[pat].0.homoglyph_variant;
                 let active_keyword_anchors = scratch
                     .active
                     .iter()
-                    .filter(|&&pat| anchor_idx.is_eligible(pat))
+                    .filter(|&&pat| anchor_idx.is_eligible(pat) && pattern_is_live(pat))
                     .count();
                 let localize_keyword_anchors =
                     active_keyword_anchors > KEYWORD_ANCHOR_WHOLE_CHUNK_CUTOFF;
@@ -182,6 +189,7 @@ impl CompiledScanner {
                             anchor_idx.collect_candidates(
                                 scan_text,
                                 |pat| scratch.is_active(pat),
+                                pattern_is_live,
                                 &mut cands,
                             );
                         } else if phase2_always_active_gpu_evidence
@@ -189,7 +197,11 @@ impl CompiledScanner {
                         {
                             cands.clear();
                         } else {
-                            anchor_idx.collect_always_active_candidates(scan_text, &mut cands);
+                            anchor_idx.collect_always_active_candidates(
+                                scan_text,
+                                pattern_is_live,
+                                &mut cands,
+                            );
                         }
                     }
                     // Candidate positions are relative to `scan_text`; lift them back
@@ -219,21 +231,23 @@ impl CompiledScanner {
                     );
                 });
 
-                // Localized homoglyph path (ASCII chunks): the prefilter skipped
-                // the plain (homoglyph) patterns, so verify them here from the
-                // folded-literal AC candidate positions via `extract_anchored`
-                // (O(match) each, dense over-marking from a short literal is a
-                // cheap quick-fail, not a whole-chunk scan). Plain patterns with
-                // no folded literal run whole-chunk (they are few).
+                // Localized plain-pattern path (ASCII chunks): verify live
+                // patterns from folded-literal AC positions. Inert generated
+                // homoglyph variants are excluded by the shared predicate; plain
+                // fallbacks without a folded literal still run whole-chunk.
                 if self.tuning.homoglyph_gate_enabled()
-                    && scan_text.is_ascii()
+                    && scan_text_is_ascii
                     && anchor_idx.has_plain_localizer(route.phase2_localizer)
                 {
                     ANCHOR_CANDIDATES.with(|cell| {
                         let mut cands = cell.borrow_mut();
                         {
                             let _g = super::profile::span(super::profile::P::Phase2SharedAc);
-                            anchor_idx.collect_plain_candidates(scan_text, &mut cands);
+                            anchor_idx.collect_plain_candidates(
+                                scan_text,
+                                pattern_is_live,
+                                &mut cands,
+                            );
                         }
                         if shift != 0 {
                             for c in cands.iter_mut() {
@@ -265,6 +279,9 @@ impl CompiledScanner {
                             }
                             let pat = idx as usize;
                             let (entry, _) = &this.phase2_patterns[pat];
+                            if !pattern_is_live(pat) {
+                                continue;
+                            }
                             let t0 = if prof { Some(Instant::now()) } else { None };
                             this.extract_matches_inner(
                                 entry,
@@ -299,6 +316,9 @@ impl CompiledScanner {
                         break;
                     }
                     let (entry, _) = &this.phase2_patterns[index];
+                    if !pattern_is_live(index) {
+                        continue;
+                    }
                     let t0 = if prof { Some(Instant::now()) } else { None };
                     this.extract_matches_inner(
                         entry,

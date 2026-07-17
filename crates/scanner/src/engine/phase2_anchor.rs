@@ -336,6 +336,7 @@ impl Phase2AnchorIndex {
         &self,
         text: &str,
         is_active: impl Fn(usize) -> bool,
+        is_allowed: impl Fn(usize) -> bool,
         out: &mut Vec<(u32, u32)>,
     ) {
         out.clear();
@@ -355,7 +356,7 @@ impl Phase2AnchorIndex {
             if let Some(pats) = self.literal_patterns.get(lit_id) {
                 for &pat in pats {
                     let p = pat as usize;
-                    if self.is_always_active_eligible(p) || is_active(p) {
+                    if is_allowed(p) && (self.is_always_active_eligible(p) || is_active(p)) {
                         out.push((pat, pos));
                     }
                 }
@@ -365,7 +366,12 @@ impl Phase2AnchorIndex {
         out.dedup();
     }
 
-    pub(crate) fn collect_always_active_candidates(&self, text: &str, out: &mut Vec<(u32, u32)>) {
+    pub(crate) fn collect_always_active_candidates(
+        &self,
+        text: &str,
+        is_allowed: impl Fn(usize) -> bool,
+        out: &mut Vec<(u32, u32)>,
+    ) {
         out.clear();
         let Some(ac) = &self.always_anchor_ac else {
             return;
@@ -382,7 +388,9 @@ impl Phase2AnchorIndex {
             let pos = m.start() as u32;
             if let Some(pats) = self.always_literal_patterns.get(lit_id) {
                 for &pat in pats {
-                    out.push((pat, pos));
+                    if is_allowed(pat as usize) {
+                        out.push((pat, pos));
+                    }
                 }
             }
         }
@@ -422,7 +430,12 @@ impl Phase2AnchorIndex {
     /// case-sensitive folded-literal AC over a pure-ASCII `text`. Plain patterns
     /// are always-active, so every AC hit is a candidate (no `is_active` gate).
     /// Sorted + deduped so each `(pat, pos)` is verified once.
-    pub(crate) fn collect_plain_candidates(&self, text: &str, out: &mut Vec<(u32, u32)>) {
+    pub(crate) fn collect_plain_candidates(
+        &self,
+        text: &str,
+        is_allowed: impl Fn(usize) -> bool,
+        out: &mut Vec<(u32, u32)>,
+    ) {
         out.clear();
         let Some(ac) = &self.plain_anchor_ac else {
             return;
@@ -439,7 +452,9 @@ impl Phase2AnchorIndex {
             let pos = m.start() as u32;
             if let Some(pats) = self.plain_literal_patterns.get(lit_id) {
                 for &pat in pats {
-                    out.push((pat, pos));
+                    if is_allowed(pat as usize) {
+                        out.push((pat, pos));
+                    }
                 }
             }
         }
