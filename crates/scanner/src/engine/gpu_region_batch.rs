@@ -31,7 +31,7 @@ thread_local! {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum RegionPresenceBatchMode {
     BorrowedSingleChunk,
-    FoldedScratch,
+    RawScratch,
     ShardedScratch,
     Windowed,
 }
@@ -40,7 +40,7 @@ impl RegionPresenceBatchMode {
     pub(super) fn label(self) -> &'static str {
         match self {
             Self::BorrowedSingleChunk => "borrowed-single-chunk",
-            Self::FoldedScratch => "folded-scratch",
+            Self::RawScratch => "raw-scratch",
             Self::ShardedScratch => "sharded-scratch",
             Self::Windowed => "windowed",
         }
@@ -383,46 +383,15 @@ pub(super) fn for_each_region_presence_window(
     let mut dispatches = 0usize;
     let mut coalesced_bytes = 0usize;
     let mut max_dispatch_bytes = 0usize;
-    REGION_PRESENCE_BATCH_SCRATCH
-        .try_with(|cell| {
-            let mut scratch = cell.try_borrow_mut().map_err(|_| {
-                "GPU region-presence window scratch already borrowed on this thread; recursive GPU dispatch is unsupported".to_string()
-            })?;
-            let mut zero_on_drop = ZeroRegionPresenceScratch::new(&mut scratch);
-            for range in ranges {
-                let window = &bytes[range.clone()];
-                dispatches += 1;
-                coalesced_bytes = coalesced_bytes.checked_add(window.len()).ok_or_else(|| {
-                    "GPU region-presence window accounting overflows host usize".to_string()
-                })?;
-                max_dispatch_bytes = max_dispatch_bytes.max(window.len());
-                if !crate::ascii_ci::has_ascii_uppercase(window) {
-                    f(window, range)?;
-                    continue;
-                }
-                let scratch = zero_on_drop.as_mut();
-                scratch.haystack.fill(0);
-                scratch.haystack.clear();
-                scratch
-                    .haystack
-                    .try_reserve(window.len())
-                    .map_err(|error| format!("GPU region-presence window reserve failed: {error}"))?;
-                crate::ascii_ci::write_ascii_lowercase_into(
-                    &mut scratch.haystack.spare_capacity_mut()[..window.len()],
-                    window,
-                );
-                // SAFETY: the reserved spare-capacity prefix was initialized
-                // exactly once by `write_ascii_lowercase_into` above.
-                unsafe {
-                    scratch.haystack.set_len(window.len());
-                }
-                f(&scratch.haystack, range)?;
-            }
-            Ok::<(), String>(())
-        })
-        .map_err(|_| {
-            "GPU region-presence window scratch unavailable during thread shutdown".to_string()
-        })??;
+    for range in ranges {
+        let window = &bytes[range.clone()];
+        dispatches += 1;
+        coalesced_bytes = coalesced_bytes.checked_add(window.len()).ok_or_else(|| {
+            "GPU region-presence window accounting overflows host usize".to_string()
+        })?;
+        max_dispatch_bytes = max_dispatch_bytes.max(window.len());
+        f(window, range)?;
+    }
     Ok(RegionPresenceBatchSummary {
         dispatches,
         coalesced_bytes,
@@ -449,26 +418,15 @@ pub(super) fn build_region_presence_batch(
         .region_starts
         .try_reserve(chunks.len())
         .map_err(|error| format!("coalesced GPU region-start reserve failed: {error}"))?;
-    let spare = &mut scratch.haystack.spare_capacity_mut()[..total];
-    let mut offset = 0usize;
     for (idx, chunk) in chunks.iter().enumerate() {
-        scratch.region_starts.push(offset as u32);
+        scratch.region_starts.push(scratch.haystack.len() as u32);
         let bytes = chunk.data.as_bytes();
-        let end = offset + bytes.len();
-        crate::ascii_ci::write_ascii_lowercase_into(&mut spare[offset..end], bytes);
-        offset = end;
+        scratch.haystack.extend_from_slice(bytes);
         if idx + 1 != chunks.len() {
-            spare[offset].write(0);
-            offset += 1;
+            scratch.haystack.push(0);
         }
     }
-    debug_assert_eq!(offset, total);
-    // SAFETY: total capacity was reserved above, each chunk slice and separator
-    // slot in `spare[..total]` was initialized exactly once, and all fallible
-    // checks run before writes begin.
-    unsafe {
-        scratch.haystack.set_len(total);
-    }
+    debug_assert_eq!(scratch.haystack.len(), total);
     Ok(())
 }
 
@@ -487,7 +445,7 @@ fn for_each_region_presence_batch_with_limit(
             dispatches: 0,
             coalesced_bytes: 0,
             max_dispatch_bytes: 0,
-            mode: RegionPresenceBatchMode::FoldedScratch,
+            mode: RegionPresenceBatchMode::RawScratch,
         });
     }
     if byte_limit == 0 || byte_limit > REGION_PRESENCE_BATCH_BYTE_LIMIT {
@@ -503,25 +461,23 @@ fn for_each_region_presence_batch_with_limit(
         };
         if let [chunk] = chunks {
             let bytes = chunk.data.as_bytes();
-            if !crate::ascii_ci::has_ascii_uppercase(bytes) {
-                f(
-                    bytes,
-                    &[0],
-                    RegionPresenceBatchMode::BorrowedSingleChunk,
-                    &shard,
-                )?;
-                return Ok(RegionPresenceBatchSummary {
-                    dispatches: 1,
-                    coalesced_bytes: total,
-                    max_dispatch_bytes: total,
-                    mode: RegionPresenceBatchMode::BorrowedSingleChunk,
-                });
-            }
+            f(
+                bytes,
+                &[0],
+                RegionPresenceBatchMode::BorrowedSingleChunk,
+                &shard,
+            )?;
+            return Ok(RegionPresenceBatchSummary {
+                dispatches: 1,
+                coalesced_bytes: total,
+                max_dispatch_bytes: total,
+                mode: RegionPresenceBatchMode::BorrowedSingleChunk,
+            });
         }
         return dispatch_region_presence_shards(
             chunks,
             std::iter::once(Ok(shard)),
-            RegionPresenceBatchMode::FoldedScratch,
+            RegionPresenceBatchMode::RawScratch,
             &mut f,
         );
     }
@@ -571,21 +527,19 @@ fn dispatch_region_presence_shards(
                 let shard_chunks = &chunks[shard.chunks.clone()];
                 if let [chunk] = shard_chunks {
                     let bytes = chunk.data.as_bytes();
-                    if !crate::ascii_ci::has_ascii_uppercase(bytes) {
-                        f(
-                            bytes,
-                            &[0],
-                            RegionPresenceBatchMode::BorrowedSingleChunk,
-                            &shard,
-                        )?;
-                        continue;
-                    }
+                    f(
+                        bytes,
+                        &[0],
+                        RegionPresenceBatchMode::BorrowedSingleChunk,
+                        &shard,
+                    )?;
+                    continue;
                 }
                 build_region_presence_batch(shard_chunks, zero_on_drop.as_mut())?;
                 f(
                     zero_on_drop.haystack(),
                     zero_on_drop.region_starts(),
-                    RegionPresenceBatchMode::FoldedScratch,
+                    RegionPresenceBatchMode::RawScratch,
                     &shard,
                 )?;
             }
@@ -623,11 +577,8 @@ pub(super) fn for_each_region_presence_batch(
 /// Capture what [`with_region_presence_batch`] hands its callback for `chunks`:
 /// the exact haystack bytes the GPU region-presence DFA will scan, the region
 /// start offsets, and whether the borrowed-single-chunk fast path ran (`true`) or
-/// the folded-scratch path (`false`). The single owner both paths flow through, so
-/// a differential test can prove they present BYTE-IDENTICAL input for the same
-/// case-folded content, a stray NUL separator or a lowercasing divergence between
-/// the paths would make the GPU DFA see different bytes and emit different presence
-/// bits (a silent GPU/CPU parity break). Exposed to `crate::testing` for that test.
+/// the raw coalescing path (`false`). VYRE owns ASCII case-insensitive matching,
+/// so both paths preserve source bytes and positioned offsets exactly.
 pub(crate) fn region_presence_batch_capture(
     chunks: &[keyhog_core::Chunk],
 ) -> std::result::Result<(Vec<u8>, Vec<u32>, bool), String> {
@@ -646,14 +597,12 @@ pub(super) fn with_region_presence_batch<R>(
 ) -> std::result::Result<R, String> {
     if let [chunk] = chunks {
         let bytes = chunk.data.as_bytes();
-        if !crate::ascii_ci::has_ascii_uppercase(bytes) {
-            let region_starts = [0u32];
-            return f(
-                bytes,
-                &region_starts,
-                RegionPresenceBatchMode::BorrowedSingleChunk,
-            );
-        }
+        let region_starts = [0u32];
+        return f(
+            bytes,
+            &region_starts,
+            RegionPresenceBatchMode::BorrowedSingleChunk,
+        );
     }
 
     REGION_PRESENCE_BATCH_SCRATCH
@@ -668,7 +617,7 @@ pub(super) fn with_region_presence_batch<R>(
             f(
                 zero_on_drop.haystack(),
                 zero_on_drop.region_starts(),
-                RegionPresenceBatchMode::FoldedScratch,
+                RegionPresenceBatchMode::RawScratch,
             )
         })
         .map_err(|_| {

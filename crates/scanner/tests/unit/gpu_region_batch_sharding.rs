@@ -64,11 +64,11 @@ fn hyperscan_hits(chunks: &[keyhog_core::Chunk]) -> Vec<Hit> {
 }
 
 #[cfg(feature = "simd")]
-fn sharded_gpu_view_hits(
+fn sharded_gpu_semantics_hits(
     chunks: &[keyhog_core::Chunk],
     byte_limit: usize,
 ) -> (Vec<Hit>, RegionPresenceBatchSummary, Vec<&'static str>) {
-    let regex = regex::bytes::Regex::new("secret").expect("folded GPU-view regex");
+    let regex = regex::bytes::Regex::new("(?i)secret").expect("case-insensitive GPU oracle");
     let mut hits = Vec::new();
     let mut backend_ids = Vec::new();
     let selected_backend = "gpu-cuda";
@@ -95,7 +95,7 @@ fn sharded_gpu_view_hits(
             Ok(())
         },
     )
-    .expect("bounded sharded GPU view");
+    .expect("bounded sharded GPU input");
     (hits, summary, backend_ids)
 }
 
@@ -103,7 +103,7 @@ fn sharded_gpu_view_hits(
 fn assert_backend_parity(chunks: &[keyhog_core::Chunk], byte_limit: usize, dispatches: usize) {
     let cpu = cpu_hits(chunks);
     let hyperscan = hyperscan_hits(chunks);
-    let (gpu, summary, backend_ids) = sharded_gpu_view_hits(chunks, byte_limit);
+    let (gpu, summary, backend_ids) = sharded_gpu_semantics_hits(chunks, byte_limit);
 
     assert_eq!(hyperscan, cpu, "Hyperscan must match the CPU oracle");
     assert_eq!(gpu, cpu, "sharded GPU rows changed order or multiplicity");
@@ -119,8 +119,8 @@ fn canonicalize_production_results(results: &mut [Vec<keyhog_core::RawMatch>]) {
 }
 
 #[test]
-fn single_lowercase_chunk_keeps_the_borrowed_fast_path() {
-    let chunks = [chunk_with_hits(32, false)];
+fn single_chunk_keeps_the_borrowed_raw_fast_path_regardless_of_case() {
+    let chunks = [chunk_with_hits(32, true)];
     let source = chunks[0].data.as_bytes().as_ptr();
     let mut observed = std::ptr::null();
     let summary =
@@ -458,14 +458,14 @@ fn oversized_literal_presence_windows_are_bounded_and_overlap_seams() {
         ranges.push(range);
         found |= window
             .windows(LITERAL_LEN)
-            .any(|candidate| candidate == b"secret");
+            .any(|candidate| candidate.eq_ignore_ascii_case(b"secret"));
         Ok(())
     })
     .expect("oversized literal-presence windows");
 
     assert!(
         found,
-        "the folded seam literal must survive physical windowing"
+        "the case-insensitive seam literal must survive raw physical windowing"
     );
     assert_eq!(ranges, [0..64, 59..72]);
     assert_eq!(summary.dispatches, 2);
@@ -536,12 +536,10 @@ fn window_plan_contains_every_literal_interval_across_ten_thousand_cases() {
         for (offset, byte) in source[start..end].iter_mut().enumerate() {
             *byte = if offset % 2 == 0 { b'A' } else { b'a' };
         }
-        let mut folded = source.clone();
-        folded.make_ascii_lowercase();
         let scalar = [literal.as_slice(), absent.as_slice()].map(|needle| {
-            folded
+            source
                 .windows(needle.len())
-                .any(|candidate| candidate == needle)
+                .any(|candidate| candidate.eq_ignore_ascii_case(needle))
         });
         let mut reduced = [false; 2];
         let mut ranges = Vec::new();
@@ -553,7 +551,7 @@ fn window_plan_contains_every_literal_interval_across_ten_thousand_cases() {
             {
                 reduced[bit] |= window
                     .windows(needle.len())
-                    .any(|candidate| candidate == needle);
+                    .any(|candidate| candidate.eq_ignore_ascii_case(needle));
             }
             Ok(())
         })
@@ -567,7 +565,7 @@ fn window_plan_contains_every_literal_interval_across_ten_thousand_cases() {
         assert!(ranges.iter().all(|range| range.len() <= LIMIT));
         assert_eq!(
             reduced, scalar,
-            "case {case}: OR-reduced folded window presence diverged from unsplit scalar presence"
+            "case {case}: OR-reduced raw window presence diverged from case-insensitive scalar presence"
         );
     }
 }

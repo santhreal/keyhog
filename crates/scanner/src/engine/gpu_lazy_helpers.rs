@@ -56,11 +56,11 @@ pub(super) fn compile_gpu_literal_set(
     let matcher = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         match super::gpu_cache::gpu_matcher_cache_dir() {
             Ok(cache_dir) => vyre_libs::scan::cached_load_or_compile(&cache_dir, &cache_key, || {
-                vyre_libs::scan::GpuLiteralSet::compile(&literal_refs)
+                vyre_libs::scan::GpuLiteralSet::compile_case_insensitive(&literal_refs)
             }),
             Err(error) => {
                 report_gpu_matcher_cache_unavailable(&error);
-                vyre_libs::scan::GpuLiteralSet::compile(&literal_refs)
+                vyre_libs::scan::GpuLiteralSet::compile_case_insensitive(&literal_refs)
             }
         }
     }))

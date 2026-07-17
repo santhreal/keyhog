@@ -54,7 +54,7 @@ fn gpu_literal_artifacts_round_trip_through_vyre_bytes() {
         .as_ref()
         .expect("detector literals should produce a main GPU artifact");
     assert!(
-        literal.cache_key.starts_with("lit-"),
+        literal.cache_key.starts_with("lit-ci-"),
         "main artifact cache key must match the runtime lazy matcher prefix, got {}",
         literal.cache_key
     );
@@ -65,8 +65,19 @@ fn gpu_literal_artifacts_round_trip_through_vyre_bytes() {
         "main artifact bytes must include VYRE wire header"
     );
     assert_eq!(&literal.bytes[..4], &GpuLiteralSet::WIRE_MAGIC);
-    GpuLiteralSet::from_bytes(&literal.bytes)
+    let reloaded = GpuLiteralSet::from_bytes(&literal.bytes)
         .expect("main GPU artifact bytes must reload through VYRE");
+    assert!(
+        reloaded.case_insensitive,
+        "the serialized runtime matcher must retain VYRE's case-insensitive program"
+    );
+    assert!(
+        reloaded
+            .reference_scan(b"prefix akia0123456789abcdef suffix")
+            .iter()
+            .any(|matched| matched.pattern_id == 0),
+        "raw lowercase source must trigger the canonical uppercase detector literal"
+    );
 
     assert!(
         artifacts.positioned_literal.is_none(),

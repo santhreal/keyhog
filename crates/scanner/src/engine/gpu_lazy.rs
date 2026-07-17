@@ -33,7 +33,7 @@ impl CompiledScanner {
                 let Some(literals) = &self.gpu_literals else {
                     return None;
                 };
-                let matcher = match compile_gpu_literal_set(literals, "lit") {
+                let matcher = match compile_gpu_literal_set(literals, "lit-ci") {
                     Ok(matcher) => Some(matcher),
                     Err(error) => {
                         report_gpu_literal_matcher_unavailable(&error);

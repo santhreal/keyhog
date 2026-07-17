@@ -344,7 +344,7 @@ impl CompiledScanner {
             let mut region_dispatches = 0usize;
             let mut region_coalesced_bytes = 0usize;
             let mut region_max_dispatch_bytes = 0usize;
-            let mut region_batch_mode = RegionPresenceBatchMode::FoldedScratch;
+            let mut region_batch_mode = RegionPresenceBatchMode::RawScratch;
             let mut cursor = 0usize;
             while cursor < chunks.len() {
                 let oversized = chunks[cursor].data.len() > byte_limit;

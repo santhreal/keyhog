@@ -4360,10 +4360,9 @@ pub fn ml_score_cache_key(
 
 /// Capture the coalesced GPU region-presence batch for `chunks`: `(haystack bytes
 /// the GPU DFA scans, region start offsets, borrowed-single-chunk-fast-path?)`.
-/// Lets a differential test prove the borrowed-single-chunk path and the
-/// folded-scratch path present byte-identical input for the same case-folded
-/// content (GPU/CPU parity: a divergence there would silently corrupt presence
-/// bits). Delegates to the single `engine::gpu_region_batch` owner. Gated to the
+/// Lets behavioral tests prove both borrowed and coalesced paths preserve raw
+/// bytes and positioned offsets now that VYRE owns case-insensitive matching.
+/// Delegates to the single `engine::gpu_region_batch` owner. Gated to the
 /// `gpu` feature because that owner (and the whole region-presence batch path)
 /// only exists in the GPU build; the `ci-lean`/`portable` binaries have no GPU
 /// region path to differentially test.
@@ -4596,14 +4595,6 @@ pub(crate) fn memoize_by_hash<T: Copy>(
 
 #[cfg(test)]
 pub(crate) mod ascii_ci {
-    pub(crate) fn extend_ascii_lowercase_from(dst: &mut Vec<u8>, src: &[u8]) {
-        crate::ascii_ci::extend_ascii_lowercase_from(dst, src)
-    }
-
-    pub(crate) fn has_ascii_uppercase(src: &[u8]) -> bool {
-        crate::ascii_ci::has_ascii_uppercase(src)
-    }
-
     pub(crate) fn ci_find(haystack: &[u8], needle_lower: &[u8]) -> bool {
         crate::ascii_ci::ci_find(haystack, needle_lower)
     }

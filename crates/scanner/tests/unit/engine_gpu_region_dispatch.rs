@@ -6,7 +6,7 @@ use super::super::gpu_region_batch::{
 use super::*;
 
 #[test]
-fn region_presence_batch_lowercases_separates_and_clears_scratch() {
+fn region_presence_batch_preserves_raw_bytes_separates_and_clears_scratch() {
     let chunks = [
         keyhog_core::Chunk::from("GhP_TOKEN"),
         keyhog_core::Chunk::from("Zz9"),
@@ -16,7 +16,7 @@ fn region_presence_batch_lowercases_separates_and_clears_scratch() {
     {
         let mut guard = ZeroRegionPresenceScratch::new(&mut scratch);
         build_region_presence_batch(&chunks, guard.as_mut()).expect("batch");
-        assert_eq!(guard.haystack(), b"ghp_token\0zz9");
+        assert_eq!(guard.haystack(), b"GhP_TOKEN\0Zz9");
         assert_eq!(guard.region_starts(), &[0, 10]);
     }
 
@@ -24,7 +24,7 @@ fn region_presence_batch_lowercases_separates_and_clears_scratch() {
 }
 
 #[test]
-fn region_presence_batch_borrows_single_chunk_when_folded_source_is_identical() {
+fn region_presence_batch_borrows_single_chunk() {
     let chunks = [keyhog_core::Chunk::from("ghp_lowercase_token_123")];
     let source_ptr = chunks[0].data.as_bytes().as_ptr();
 
@@ -39,18 +39,18 @@ fn region_presence_batch_borrows_single_chunk_when_folded_source_is_identical() 
 }
 
 #[test]
-fn region_presence_batch_uses_folded_scratch_when_case_fold_changes_bytes() {
+fn region_presence_batch_borrows_uppercase_single_chunk_without_rewriting() {
     let chunks = [keyhog_core::Chunk::from("GhP_TOKEN")];
     let source_ptr = chunks[0].data.as_bytes().as_ptr();
 
     with_region_presence_batch(&chunks, |haystack, region_starts, mode| {
-        assert_eq!(mode, RegionPresenceBatchMode::FoldedScratch);
-        assert_eq!(haystack, b"ghp_token");
-        assert_ne!(haystack.as_ptr(), source_ptr);
+        assert_eq!(mode, RegionPresenceBatchMode::BorrowedSingleChunk);
+        assert_eq!(haystack, b"GhP_TOKEN");
+        assert_eq!(haystack.as_ptr(), source_ptr);
         assert_eq!(region_starts, &[0]);
         Ok(())
     })
-    .expect("folded single-chunk batch");
+    .expect("borrowed uppercase single-chunk batch");
 }
 
 #[test]

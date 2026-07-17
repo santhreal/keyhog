@@ -79,8 +79,8 @@ fn fused_match_overflow_replays_once_with_the_exact_device_count() {
     )
     .expect_err("hostile density must not allocate beyond the replay budget");
     assert!(
-        error.contains("exact GPU match count 1048577")
-            && error.contains("bounded dense-replay cap 1048576"),
+        error.contains("exact GPU match count 2097153")
+            && error.contains("bounded dense-replay cap 2097152"),
         "unexpected bounded replay error: {error}"
     );
     assert!(

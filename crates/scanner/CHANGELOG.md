@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Compile the fused literal matcher with VYRE's native ASCII-insensitive DFA
+  and preserve raw source bytes through borrowed, coalesced, and windowed GPU
+  dispatches, removing KeyHog's duplicate host lowercase pass and its single-
+  chunk/window copies.
 - Replay a dense VYRE resident fused literal scan once at the exact device
   match count instead of failing autoroute calibration at the fixed 65,536-hit
   readback ceiling; partial positioned evidence remains impossible.

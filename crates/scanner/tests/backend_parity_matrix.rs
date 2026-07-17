@@ -55,21 +55,22 @@ struct Fixture {
 ///   1. Pure clean text (zero findings - backend must agree on "nothing")
 ///   2. AKIA + ghp_ literal-prefix path (the GPU literal-set hot path)
 ///   3. Stripe sk_live_ + ASIA mixed
-///   4. Multi-chunk same-file (tests chunk-id propagation)
-///   5. Unicode + non-ASCII surrounding (tests byte-offset accounting)
-///   6. False-prefix storm (many literal-prefix hits, few real matches -
+///   4. Mixed-case CodeSandbox prefix (native VYRE ASCII-insensitive path)
+///   5. Multi-chunk same-file (tests chunk-id propagation)
+///   6. Unicode + non-ASCII surrounding (tests byte-offset accounting)
+///   7. False-prefix storm (many literal-prefix hits, few real matches -
 ///      catches GPU bitmap-vs-locations regressions)
-///   7. HS-only companion detector (`twilio-auth-token`, NO GPU literal prefix -
+///   8. HS-only companion detector (`twilio-auth-token`, NO GPU literal prefix -
 ///      the no-literal / regex-only class the GPU region-presence trigger path
 ///      can under-admit vs SimdCpu's Hyperscan union; M-02 test-depth gap)
-///   8. Two complete password assignments within the fragment proximity window;
+///   9. Two complete password assignments within the fragment proximity window;
 ///      they must remain independent and backend-identical, never be glued by a
 ///      no-hit-only reassembly side channel.
-///   9. A prefixless mixed-alnum API-key assignment at the generic/entropy
+///  10. A prefixless mixed-alnum API-key assignment at the generic/entropy
 ///      boundary, including detector identity and source offset.
-///  10. A generated JavaScript template interpolation prefix that every backend
+///  11. A generated JavaScript template interpolation prefix that every backend
 ///      must classify as source syntax, never a generic secret.
-///  11. The public Azurite connection-string key split across adjacent Python
+///  12. The public Azurite connection-string key split across adjacent Python
 ///      literals; structured recovery must not turn published fixture data into
 ///      a backend-specific finding.
 fn build_fixtures() -> Vec<Fixture> {
@@ -96,6 +97,13 @@ fn build_fixtures() -> Vec<Fixture> {
                 "auth: \"sk_live_4eC39HqLyjWDarjtT1zdp7dc\"\n\
                  alt:  \"ASIA1234567890ABCDEF\"\n",
                 "fixtures/stripe_asia.yml",
+            )],
+        },
+        Fixture {
+            name: "codesandbox_mixed_case_prefix",
+            chunks: vec![make_chunk(
+                "CODESANDBOX_TOKEN=CSB_API_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5\n",
+                "fixtures/codesandbox.env",
             )],
         },
         Fixture {
@@ -290,6 +298,15 @@ fn backend_parity_matrix_all_fixtures_all_backends() {
         let reference_results =
             scanner.scan_coalesced_with_backend(&fixture.chunks, ScanBackend::SimdCpu);
         let reference_keys = collect_keys(&reference_results);
+        if fixture.name == "codesandbox_mixed_case_prefix" {
+            assert!(
+                reference_keys.iter().any(|(detector, credential, _, _, _)| {
+                    detector == "codesandbox-api-token"
+                        && credential == "CSB_API_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+                }),
+                "the mixed-case fixture must produce the exact CodeSandbox finding before backend parity can prove anything"
+            );
+        }
         assert!(
             reference_keys
                 .iter()

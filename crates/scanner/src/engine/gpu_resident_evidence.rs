@@ -13,10 +13,10 @@ use zeroize::Zeroize;
 /// exactly, rebuilt at that count, and replayed once without exposing a partial
 /// position set.
 const GPU_FUSED_MATCH_CAP: u32 = 1 << 16;
-/// Bound the rare dense replay to a 12 MiB resident/readback match buffer.
+/// Bound the rare dense replay to a 24 MiB resident/readback match buffer.
 /// Inputs above it stay on the existing exact CPU recovery path instead of
 /// turning hostile literal density into an unbounded device allocation.
-const GPU_FUSED_MATCH_REPLAY_CAP: u32 = 1 << 20;
+const GPU_FUSED_MATCH_REPLAY_CAP: u32 = 1 << 21;
 
 pub(crate) struct GpuResidentLiteralState {
     pipeline: vyre_libs::scan::ResidentFusedRegionScan,

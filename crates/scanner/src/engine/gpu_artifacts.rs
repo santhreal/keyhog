@@ -105,7 +105,7 @@ fn compile_gpu_literal_artifact_plan(detectors: &[DetectorSpec]) -> Result<GpuLi
 
     Ok(GpuLiteralArtifacts {
         literal: serialize_literal_rows(
-            "lit",
+            "lit-ci",
             build_gpu_literals(
                 &state.ac_literals,
                 &phase2_keywords,
@@ -129,7 +129,7 @@ fn serialize_literal_rows(
     let cache_key = gpu_cache::gpu_matcher_cache_key_with_prefix(cache_prefix, &literal_refs);
     let pattern_count = literal_refs.len();
     let matcher = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        GpuLiteralSet::compile(&literal_refs)
+        GpuLiteralSet::compile_case_insensitive(&literal_refs)
     }))
     .map_err(|panic| {
         let detail = super::gpu_lazy_helpers::catch_unwind_panic_detail(panic);

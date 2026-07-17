@@ -54,19 +54,10 @@ fn build_gpu_literal_rows<'a>(
     literals: impl Iterator<Item = &'a String>,
     label: &'static str,
 ) -> Option<std::sync::Arc<Vec<Vec<u8>>>> {
-    // ASCII-lowercase every literal for the GPU automaton. The SIMD path
-    // compiles Hyperscan with `PatternFlags::CASELESS` unconditionally
-    // (simd.rs), so detection is case-INSENSITIVE for every pattern. The GPU
-    // AC / literal-set DFA matches bytes exactly, so a lowercase literal prefix
-    // (e.g. `csb_`) never fires on an uppercase occurrence (`CSB_...`) and the
-    // GPU path silently drops matches SIMD finds - the PERF-07 gpu_parity
-    // violation, proven on drivers/gpu/drm/amd/include/soc21_enum.h (SIMD 4
-    // findings, GPU 0). The GPU phase-1 paths lowercase the coalesced haystack
-    // to the same fold before matching; lowercasing the literal set here is the
-    // other half of that case-insensitive contract. ASCII fold is position-
-    // preserving (1 byte -> 1 byte, only A-Z affected), so match offsets map
-    // back unchanged and phase 2 re-confirms on the original mixed-case bytes
-    // with the caseless regex.
+    // VYRE compiles this set case-insensitively, matching Hyperscan's CASELESS
+    // detector and keyword semantics without rewriting source bytes. Preserve
+    // canonical literal bytes here so serialized artifacts and positioned
+    // evidence describe the actual compiled detector plan.
     let mut rows = Vec::new();
     for literal in literals {
         if literal.is_empty() {
@@ -85,7 +76,7 @@ prefix entry). Use --require-gpu when GPU acceleration is mandatory."
             }
             return None;
         }
-        rows.push(literal.to_ascii_lowercase().into_bytes());
+        rows.push(literal.as_bytes().to_vec());
     }
     if rows.is_empty() {
         None
