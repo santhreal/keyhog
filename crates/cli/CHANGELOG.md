@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Persist the resolved GPU batch-input byte cap in autoroute host identity and
+  inspection, so a device-limit or configured-cap change cannot replay timing
+  evidence measured with a different dispatch topology.
 - Bind autoroute host identity to the live linked Hyperscan/Vectorscan runtime
   version, so a runtime replacement invalidates SIMD timing evidence and
   requires recalibration instead of replaying a stale winner.

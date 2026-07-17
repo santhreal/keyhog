@@ -20,6 +20,7 @@ pub(super) struct AutorouteHostProfile {
     pub(super) gpu_name: Option<String>,
     pub(super) gpu_runtime_backend: Option<String>,
     pub(super) gpu_driver_runtime_identity: Option<String>,
+    pub(super) gpu_batch_input_limit_bytes: Option<u64>,
     pub(super) gpu_is_software: bool,
     pub(super) total_memory_mb: Option<u64>,
     /// Canonical measured-candidate labels for this resolved configuration.
@@ -104,6 +105,8 @@ impl AutorouteHostProfile {
             gpu_driver_runtime_identity: (gpu_participates && acquired_peer_present)
                 .then(|| gpu_peer_identity.map(str::to_string))
                 .flatten(),
+            gpu_batch_input_limit_bytes: (gpu_participates && acquired_peer_present)
+                .then(|| keyhog_scanner::gpu_batch_input_limit() as u64),
             gpu_is_software: gpu_participates && caps.gpu_is_software && !acquired_peer_present,
             total_memory_mb: caps.total_memory_mb,
             eligible_backends,
@@ -161,6 +164,14 @@ impl AutorouteHostProfile {
         if hardware_gpu_present != gpu_candidate_present {
             return Err("GPU identity and eligible backend census disagree");
         }
+        match (gpu_candidate_present, self.gpu_batch_input_limit_bytes) {
+            (true, Some(limit)) if limit > 0 => {}
+            (true, _) => return Err("GPU batch input limit identity is unavailable"),
+            (false, None) => {}
+            (false, Some(_)) => {
+                return Err("GPU batch input limit is present without an eligible GPU backend")
+            }
+        }
         Ok(())
     }
 
@@ -214,7 +225,7 @@ pub(super) fn render_host_profile(host: &AutorouteHostProfile) -> String {
         "scalar"
     };
     format!(
-        "{}/{} {} | {}p/{}l cores | {} | hyperscan={} | hyperscan_runtime={} | gpu={} | gpu_peers={} | gpu_driver={} | candidates={}",
+        "{}/{} {} | {}p/{}l cores | {} | hyperscan={} | hyperscan_runtime={} | gpu={} | gpu_peers={} | gpu_driver={} | gpu_batch_input_limit={} | candidates={}",
         host.os,
         host.arch,
         host.cpu_model.as_deref().unwrap_or("unknown-cpu"), // LAW10: display-only host label; recall-safe
@@ -232,6 +243,8 @@ pub(super) fn render_host_profile(host: &AutorouteHostProfile) -> String {
         host.gpu_driver_runtime_identity
             .as_deref()
             .unwrap_or("none"), // LAW10: display-only host label; recall-safe
+        host.gpu_batch_input_limit_bytes
+            .map_or_else(|| "none".to_string(), |bytes| bytes.to_string()),
         host.eligible_backends.join(","),
     )
 }
@@ -258,6 +271,10 @@ pub(super) fn host_identity_digest(host: &AutorouteHostProfile) -> String {
         .field_option_str(
             "gpu_driver_runtime_identity",
             host.gpu_driver_runtime_identity.as_deref(),
+        )
+        .field_option_u64(
+            "gpu_batch_input_limit_bytes",
+            host.gpu_batch_input_limit_bytes,
         )
         .field_bool("gpu_is_software", host.gpu_is_software)
         .field_option_u64("total_memory_mb", host.total_memory_mb)

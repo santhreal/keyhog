@@ -288,6 +288,7 @@ mod tests {
             gpu_name: None,
             gpu_runtime_backend: None,
             gpu_driver_runtime_identity: None,
+            gpu_batch_input_limit_bytes: None,
             gpu_is_software: false,
             total_memory_mb: Some(65_536),
             eligible_backends: vec![
@@ -303,6 +304,7 @@ mod tests {
         let identity = format!("gpu-wgpu-region-presence:{runtime}:{device}");
         host.gpu_runtime_backend = Some(identity.clone());
         host.gpu_driver_runtime_identity = Some(identity);
+        host.gpu_batch_input_limit_bytes = Some(512 * 1024 * 1024);
         host.eligible_backends = vec![
             ScanBackend::CpuFallback.label().to_string(),
             ScanBackend::GpuWgpu.label().to_string(),

@@ -194,9 +194,9 @@ which backend is fastest:
   instruction support, the live linked Hyperscan/Vectorscan runtime version
   when SIMD is eligible and, when the scanner can use a physical GPU, the GPU
   device, every acquired runtime backend and version, driver/runtime identity,
-  and the exact sorted eligible-backend census for that resolved config. A
-  missing or changed required field invalidates the evidence and requires
-  recalibration.
+  resolved batch-input byte cap, and the exact sorted eligible-backend census
+  for that resolved config. A missing or changed required field invalidates the
+  evidence and requires recalibration.
 - SIMD is admitted only when the scanner's live Hyperscan/Vectorscan database
   initialized successfully. A binary built with the SIMD feature but unable to
   construct its database records a CPU-fallback-only census, so old SIMD

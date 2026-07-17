@@ -235,6 +235,7 @@ fn test_host(gpu_name: Option<&str>) -> AutorouteHostProfile {
             .map(|name| format!("gpu-wgpu-region-presence:wgpu@0.6.4:{name}:535.00")),
         gpu_driver_runtime_identity: gpu_name
             .map(|name| format!("gpu-wgpu-region-presence:wgpu@0.6.4:{name}:535.00")),
+        gpu_batch_input_limit_bytes: gpu_name.map(|_| 512 * 1024 * 1024),
         gpu_is_software: false,
         total_memory_mb: Some(65_536),
         eligible_backends: test_eligible_backends(gpu_name.map(|_| ScanBackend::GpuWgpu)),
@@ -493,6 +494,10 @@ fn gpu_excluded_calibration_collapses_an_already_acquired_peer() {
     assert_eq!(
         portable.gpu_driver_runtime_identity, None,
         "GPU-excluded calibration records no GPU driver identity"
+    );
+    assert_eq!(
+        portable.gpu_batch_input_limit_bytes, None,
+        "GPU-excluded calibration records no irrelevant accelerator dispatch cap"
     );
     assert!(
         !portable.gpu_is_software,
@@ -1706,6 +1711,7 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
             && serialized.contains("\"hyperscan_runtime_identity\"")
             && serialized.contains("\"gpu_runtime_backend\"")
             && serialized.contains("\"gpu_driver_runtime_identity\"")
+            && serialized.contains("\"gpu_batch_input_limit_bytes\"")
             && serialized.contains("\"decode_kind_mask\"")
             && serialized.contains("\"decode_candidate_count_bucket\"")
             && serialized.contains("\"decode_candidate_bytes_bucket\"")
@@ -1729,6 +1735,17 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
     let loaded =
         load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host).unwrap();
     assert_eq!(loaded, decisions);
+    let inspection = inspect_autoroute_cache(Some(&path));
+    assert_eq!(inspection.error, None);
+    assert_eq!(inspection.configs.len(), 1);
+    assert_eq!(
+        inspection.configs[0].hyperscan_runtime_identity,
+        host.hyperscan_runtime_identity
+    );
+    assert_eq!(
+        inspection.configs[0].gpu_batch_input_limit_bytes, host.gpu_batch_input_limit_bytes,
+        "inspection must expose the exact cap that shaped GPU dispatch during calibration"
+    );
 
     let mut replacement = HashMap::new();
     replacement.insert(
@@ -1821,6 +1838,24 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
     assert_eq!(
         load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host)
             .expect("the original linked-runtime identity must still replay"),
+        replacement,
+    );
+    let mut other_gpu_batch_limit = host.clone();
+    other_gpu_batch_limit.gpu_batch_input_limit_bytes = Some(256 * 1024 * 1024);
+    assert!(
+        load_autoroute_cache(
+            &path,
+            digest,
+            test_rules_digest(),
+            config_digest,
+            &other_gpu_batch_limit,
+        )
+        .is_err(),
+        "cache must reject timing evidence measured with a different resolved GPU batch cap"
+    );
+    assert_eq!(
+        load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host)
+            .expect("the original GPU batch-cap identity must still replay"),
         replacement,
     );
     let mut other_gpu_runtime = host.clone();
