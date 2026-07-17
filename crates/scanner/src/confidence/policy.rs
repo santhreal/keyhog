@@ -71,6 +71,7 @@ pub(crate) struct MatchHeuristicConfidencePolicy {
     pub(crate) has_literal_prefix: bool,
     pub(crate) has_context_anchor: bool,
     pub(crate) entropy: f64,
+    pub(crate) entropy_threshold: f64,
     pub(crate) keyword_nearby: bool,
     pub(crate) sensitive_file: bool,
     pub(crate) match_length: usize,
@@ -83,6 +84,7 @@ pub(crate) struct CandidateMatchScorePolicy<'a> {
     pub(crate) has_literal_prefix: bool,
     pub(crate) has_context_anchor: bool,
     pub(crate) entropy: f64,
+    pub(crate) entropy_threshold: f64,
     pub(crate) keyword_nearby: bool,
     pub(crate) sensitive_file: bool,
     pub(crate) match_length: usize,
@@ -102,8 +104,8 @@ pub(crate) struct CandidateMatchScorePolicy<'a> {
 }
 
 pub(crate) fn match_heuristic_confidence(policy: MatchHeuristicConfidencePolicy) -> f64 {
-    let raw_confidence =
-        crate::confidence::compute_confidence(&crate::confidence::ConfidenceSignals {
+    let raw_confidence = crate::confidence::compute_confidence_with_threshold(
+        &crate::confidence::ConfidenceSignals {
             has_literal_prefix: policy.has_literal_prefix,
             has_context_anchor: policy.has_context_anchor,
             entropy: policy.entropy,
@@ -111,7 +113,9 @@ pub(crate) fn match_heuristic_confidence(policy: MatchHeuristicConfidencePolicy)
             sensitive_file: policy.sensitive_file,
             match_length: policy.match_length,
             has_companion: policy.has_companion,
-        });
+        },
+        policy.entropy_threshold,
+    );
     pre_ml_heuristic_confidence(
         raw_confidence,
         policy.code_context,
@@ -181,6 +185,7 @@ pub(crate) fn candidate_match_score(policy: CandidateMatchScorePolicy<'_>) -> Ml
         has_literal_prefix: policy.has_literal_prefix,
         has_context_anchor: policy.has_context_anchor,
         entropy: policy.entropy,
+        entropy_threshold: policy.entropy_threshold,
         keyword_nearby: policy.keyword_nearby,
         sensitive_file: policy.sensitive_file,
         match_length: policy.match_length,

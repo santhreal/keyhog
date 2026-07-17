@@ -1899,6 +1899,7 @@ pub mod confidence {
     #[cfg(test)]
     pub(crate) fn match_heuristic_confidence(
         signals: &crate::confidence::ConfidenceSignals,
+        entropy_threshold: f64,
         code_context: crate::context::CodeContext,
         penalize_test_paths: bool,
     ) -> f64 {
@@ -1907,6 +1908,7 @@ pub mod confidence {
                 has_literal_prefix: signals.has_literal_prefix,
                 has_context_anchor: signals.has_context_anchor,
                 entropy: signals.entropy,
+                entropy_threshold,
                 keyword_nearby: signals.keyword_nearby,
                 sensitive_file: signals.sensitive_file,
                 match_length: signals.match_length,

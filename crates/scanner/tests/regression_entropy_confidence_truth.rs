@@ -19,6 +19,7 @@
 //! Positive, negative-twin, boundary, and adversarial cases are all present so a
 //! drift in either the weights, the tier cutoffs, or the penalty gate fails here.
 
+use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
 use keyhog_scanner::entropy::{
     normalized_entropy, shannon_entropy, HIGH_ENTROPY_THRESHOLD, LOW_ENTROPY_THRESHOLD,
     VERY_HIGH_ENTROPY_THRESHOLD,
@@ -27,6 +28,7 @@ use keyhog_scanner::testing::confidence::{
     compute_confidence, unique_byte_count, ConfidenceSignals,
 };
 use keyhog_scanner::testing::entropy_fast::shannon_entropy_simd;
+use keyhog_scanner::{CompiledScanner, ScannerConfig};
 
 /// Tolerance for entropy values that are exact in theory but pass through an
 /// `f64::log2` reduction; every asserted value below is an integer or a
@@ -310,6 +312,63 @@ fn confidence_just_below_moderate_adds_no_entropy_weight() {
     assert!(
         s.abs() < EPS,
         "entropy just below 3.0 must add nothing, got {s}"
+    );
+}
+
+#[test]
+fn production_named_confidence_uses_the_resolved_scan_entropy_threshold() {
+    const ID: &str = "custom-unanchored-token";
+    const CREDENTIAL: &str = "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0";
+    let entropy = shannon_entropy(CREDENTIAL.as_bytes());
+    assert!(entropy > 3.0, "fixture must clear the moderate tier");
+
+    let confidence = |entropy_threshold: f64| {
+        let detector = DetectorSpec {
+            id: ID.into(),
+            name: "Custom Unanchored Token".into(),
+            service: "custom".into(),
+            severity: Severity::High,
+            patterns: vec![PatternSpec {
+                regex: r"\b[A-Za-z0-9]{40}\b".into(),
+                ..Default::default()
+            }],
+            min_confidence: Some(0.0),
+            ..Default::default()
+        };
+        let mut config = ScannerConfig::default();
+        config.entropy_threshold = entropy_threshold;
+        config.min_confidence = 0.0;
+        config.ml_enabled = false;
+        let scanner = CompiledScanner::compile(vec![detector])
+            .expect("compile focused named detector")
+            .with_config(config);
+        let chunk = Chunk {
+            data: format!("{CREDENTIAL}\n").into(),
+            metadata: ChunkMetadata {
+                source_type: "filesystem".into(),
+                path: Some("notes/plain.txt".into()),
+                ..Default::default()
+            },
+        };
+        scanner
+            .scan(&chunk)
+            .into_iter()
+            .find(|finding| {
+                finding.detector_id.as_ref() == ID && finding.credential.as_ref() == CREDENTIAL
+            })
+            .and_then(|finding| finding.confidence)
+            .expect("focused named detector emits exact credential")
+    };
+
+    let partial_tier = confidence(entropy - 0.5);
+    let moderate_tier = confidence(entropy + 0.5);
+    assert!(
+        (partial_tier - 0.096).abs() < EPS,
+        "partial entropy weight plus ordinary unknown-context adjustment must be exact: {partial_tier}"
+    );
+    assert!(
+        (moderate_tier - 0.04).abs() < EPS,
+        "moderate entropy weight plus ordinary unknown-context adjustment must be exact: {moderate_tier}"
     );
 }
 

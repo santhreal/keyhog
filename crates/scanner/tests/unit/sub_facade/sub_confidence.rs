@@ -343,14 +343,15 @@ fn match_heuristic_confidence_owns_raw_signal_scoring_and_context_adjustment() {
         match_length: 40,
         has_companion: true,
     };
-    let all_signals_test_path = match_heuristic_confidence(&signals, CodeContext::TestCode, true);
+    let all_signals_test_path =
+        match_heuristic_confidence(&signals, 4.5, CodeContext::TestCode, true);
     assert!(
         (all_signals_test_path - CodeContext::TestCode.confidence_multiplier()).abs() < 1e-9,
         "all raw signals should score 1.0 before the test-code multiplier, got {all_signals_test_path}"
     );
 
     let all_signals_test_opt_out =
-        match_heuristic_confidence(&signals, CodeContext::TestCode, false);
+        match_heuristic_confidence(&signals, 4.5, CodeContext::TestCode, false);
     assert!((all_signals_test_opt_out - 1.0).abs() < 1e-9);
 }
 

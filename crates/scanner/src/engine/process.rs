@@ -277,6 +277,7 @@ impl CompiledScanner {
                 has_literal_prefix: entry.regex.has_literal_prefix(),
                 has_context_anchor: entry.group.is_some(),
                 entropy,
+                entropy_threshold: self.config.entropy_threshold,
                 keyword_nearby,
                 sensitive_file,
                 match_length: credential.len(),

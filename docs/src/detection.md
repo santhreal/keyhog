@@ -201,9 +201,13 @@ These settings do not all use one generic “last value wins” rule:
   value below the keyword detector's low band loosens that keyword path, while
   values between the low and high bands leave its low floor in place. The
   isolated path keeps its mixed-alphanumeric floor unless the scan threshold
-  exceeds the high band. These rules preserve the different evidence carried
-  by an assignment key, an isolated opaque token, and an unanchored generic
-  value. The owning `entropy_high` and `entropy_very_high` values also define
+  exceeds the high band. Named-detector heuristic confidence uses the resolved
+  scan threshold as its partial entropy tier and the scoring margin above it as
+  its full tier; changing the setting can therefore change a named finding's
+  confidence without changing whether its regex matched. These rules preserve
+  the different evidence carried by an assignment key, an isolated opaque
+  token, and an unanchored generic value. The owning `entropy_high` and
+  `entropy_very_high` values also define
   the partial and full heuristic-confidence tiers for emitted entropy
   fallbacks. Detector ML policy then composes with that heuristic; an
   authoritative ML mode may replace it, while disabled, lift, and blend modes

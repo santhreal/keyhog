@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Apply the resolved scan `entropy_threshold` to named-detector heuristic
+  confidence instead of silently scoring those findings at the compiled default.
+
 - Score entropy fallback findings from the owning detector TOML's compiled
   `entropy_high` and `entropy_very_high` tiers instead of scanner-global tiers.
 
