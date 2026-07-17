@@ -58,6 +58,7 @@ pub mod regression_merkle_spec_hash;
 pub mod regression_oob_multistep_fail_closed;
 pub mod regression_org_split_merkle_and_allowlist_api;
 pub mod regression_path_normalize;
+pub mod regression_pattern_required_literals;
 pub mod regression_redaction_mask;
 pub mod regression_redaction_policy;
 pub mod regression_redaction_zeroization;

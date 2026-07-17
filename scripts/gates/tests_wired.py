@@ -161,7 +161,9 @@ def top_level_test_files(crate: str) -> list[str]:
     return sorted(
         stem
         for r in rels
-        if r.count("/") == depth and r.endswith(".rs")
+        if r.count("/") == depth
+        and r.endswith(".rs")
+        and (REPO / r).is_file()
         for stem in [r.rsplit("/", 1)[-1][: -len(".rs")]]
         if stem != AGGREGATOR
     )
