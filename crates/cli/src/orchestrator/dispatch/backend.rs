@@ -106,7 +106,7 @@ pub(crate) type AutorouteMeasurementObserver = Arc<Mutex<BTreeSet<(String, Strin
 // the top, per-resolved-config routing decisions under `configs` keyed by
 // config_digest, merge-on-save. Old single-config (v19 and earlier) caches are
 // rejected on the version gate and recalibrated.
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 37;
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 38;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_GPU_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 
@@ -470,7 +470,7 @@ impl CachedBackendRouter {
             self.decode_workload_plan,
         )
         .map_err(AutorouteRoutingError::incomplete_workload_evidence)?;
-        let backend = resolve_persisted_backend(
+        let route = resolve_persisted_route(
             &self.decisions,
             key,
             self.runtime_class,
@@ -478,9 +478,9 @@ impl CachedBackendRouter {
             &self.cache_load_error,
         )?;
         Ok(BackendSelection {
-            backend,
+            backend: route.backend,
             phase1_plan: Some(phase1_plan),
-            execution_route: scanner.default_execution_route(),
+            execution_route: route.execution_route(),
         })
     }
 }
@@ -490,21 +490,21 @@ impl CachedBackendRouter {
 /// [`CachedBackendRouter::choose`] and the non-calibration branch of
 /// [`MeasuredBackendRouter::choose`], neither router may infer a backend from
 /// neighbouring measurements.
-fn resolve_persisted_backend(
+fn resolve_persisted_route(
     decisions: &HashMap<WorkloadKey, AutorouteDecision>,
     key: WorkloadKey,
     runtime_class: AutorouteRuntimeClass,
     cache_path: &Option<PathBuf>,
     cache_load_error: &Option<String>,
-) -> Result<ScanBackend, AutorouteRoutingError> {
-    let backend = decisions
+) -> Result<evidence::MeasuredRoute, AutorouteRoutingError> {
+    let route = decisions
         .get(&key)
         .and_then(|decision| match runtime_class {
-            AutorouteRuntimeClass::OneShot => decision.backend(),
-            AutorouteRuntimeClass::PersistentDaemon => decision.resolved_persistent_backend(),
+            AutorouteRuntimeClass::OneShot => decision.measured_route(),
+            AutorouteRuntimeClass::PersistentDaemon => decision.resolved_persistent_route(),
         });
-    match backend {
-        Some(backend) => Ok(backend),
+    match route {
+        Some(route) => Ok(route),
         None => Err(AutorouteRoutingError::missing_decision(
             key,
             decisions,
@@ -607,11 +607,11 @@ impl MeasuredBackendRouter {
         } else {
             (0, 0)
         };
-        if let Some(backend) = self.reusable_decision_backend(&key, sample_bytes, sample_chunks) {
+        if let Some(route) = self.reusable_decision_route(&key, sample_bytes, sample_chunks) {
             return Ok(BackendSelection {
-                backend,
+                backend: route.backend,
                 phase1_plan: Some(phase1_plan),
-                execution_route: scanner.default_execution_route(),
+                execution_route: route.execution_route(),
             });
         }
 
@@ -619,7 +619,7 @@ impl MeasuredBackendRouter {
             // Not calibrating: behave like the cache-only router. Every miss is
             // an invalid autoroute state; neighbouring measurements are not
             // evidence for this workload identity.
-            let backend = resolve_persisted_backend(
+            let route = resolve_persisted_route(
                 &self.decisions,
                 key,
                 AutorouteRuntimeClass::OneShot,
@@ -627,9 +627,9 @@ impl MeasuredBackendRouter {
                 &self.cache_load_error,
             )?;
             return Ok(BackendSelection {
-                backend,
+                backend: route.backend,
                 phase1_plan: Some(phase1_plan),
-                execution_route: scanner.default_execution_route(),
+                execution_route: route.execution_route(),
             });
         }
         self.host_profile
@@ -650,8 +650,8 @@ impl MeasuredBackendRouter {
             &live_eligible_backends,
             Some(&phase1_plan),
         )?;
-        let backend = match decision.backend() {
-            Some(backend) => backend,
+        let route = match decision.measured_route() {
+            Some(route) => route,
             None => {
                 return Err(AutorouteRoutingError::calibration_not_persisted(
                     "calibration produced an unsupported backend label",
@@ -674,18 +674,18 @@ impl MeasuredBackendRouter {
         }
         self.cache_dirty = true;
         Ok(BackendSelection {
-            backend,
+            backend: route.backend,
             phase1_plan: Some(phase1_plan),
-            execution_route: scanner.default_execution_route(),
+            execution_route: route.execution_route(),
         })
     }
 
-    fn reusable_decision_backend(
+    fn reusable_decision_route(
         &self,
         key: &WorkloadKey,
         sample_bytes: u64,
         sample_chunks: usize,
-    ) -> Option<ScanBackend> {
+    ) -> Option<evidence::MeasuredRoute> {
         if self.calibration_mode && !self.measured_this_run.contains(key) {
             return None;
         }
@@ -693,7 +693,7 @@ impl MeasuredBackendRouter {
         if self.calibration_mode && !decision.contains_sample(sample_bytes, sample_chunks) {
             return None;
         }
-        decision.backend()
+        decision.measured_route()
     }
 
     pub(super) fn commit(&mut self) -> Result<(), AutorouteRoutingError> {

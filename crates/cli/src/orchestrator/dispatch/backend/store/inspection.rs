@@ -138,6 +138,7 @@ pub(crate) struct AutorouteDecisionInspection {
     pub(crate) calibration_age_ms: u128,
     /// Cold-aware backend for an in-process one-shot scan.
     pub(crate) backend: String,
+    pub(crate) phase2_localizer: bool,
     pub(crate) calibration_points: usize,
     pub(crate) sample_bytes: u64,
     pub(crate) sample_chunks: usize,
@@ -153,6 +154,12 @@ pub(crate) struct AutorouteDecisionInspection {
     pub(crate) gpu_cuda_warm_ms: Option<u128>,
     pub(crate) gpu_wgpu_ms: Option<u128>,
     pub(crate) gpu_wgpu_warm_ms: Option<u128>,
+    pub(crate) simd_localizer_ms: Option<u128>,
+    pub(crate) cpu_localizer_ms: Option<u128>,
+    pub(crate) gpu_cuda_localizer_ms: Option<u128>,
+    pub(crate) gpu_cuda_localizer_warm_ms: Option<u128>,
+    pub(crate) gpu_wgpu_localizer_ms: Option<u128>,
+    pub(crate) gpu_wgpu_localizer_warm_ms: Option<u128>,
     /// Whether the one-shot route's 95% confidence interval is entirely below
     /// every competitor. When false, medians decide among non-dominated routes.
     pub(crate) confidence_separated: bool,
@@ -161,6 +168,7 @@ pub(crate) struct AutorouteDecisionInspection {
     pub(crate) selected_margin_ns: Option<u128>,
     /// Warm backend derived for a preinitialized persistent daemon.
     pub(crate) daemon_backend: String,
+    pub(crate) daemon_phase2_localizer: bool,
     pub(crate) daemon_confidence_separated: bool,
     pub(crate) daemon_selection_basis: &'static str,
     pub(crate) daemon_selected_margin_ns: Option<u128>,
@@ -172,7 +180,9 @@ pub(crate) struct AutorouteCalibrationPointInspection {
     pub(crate) sample_chunks: usize,
     pub(crate) calibrated_at_unix_ms: u128,
     pub(crate) one_shot_backend: String,
+    pub(crate) one_shot_phase2_localizer: bool,
     pub(crate) daemon_backend: String,
+    pub(crate) daemon_phase2_localizer: bool,
     pub(crate) one_shot_confidence_separated: bool,
     pub(crate) daemon_confidence_separated: bool,
     pub(crate) simd_ms: u128,
@@ -181,6 +191,12 @@ pub(crate) struct AutorouteCalibrationPointInspection {
     pub(crate) gpu_cuda_warm_ms: Option<u128>,
     pub(crate) gpu_wgpu_ms: Option<u128>,
     pub(crate) gpu_wgpu_warm_ms: Option<u128>,
+    pub(crate) simd_localizer_ms: Option<u128>,
+    pub(crate) cpu_localizer_ms: Option<u128>,
+    pub(crate) gpu_cuda_localizer_ms: Option<u128>,
+    pub(crate) gpu_cuda_localizer_warm_ms: Option<u128>,
+    pub(crate) gpu_wgpu_localizer_ms: Option<u128>,
+    pub(crate) gpu_wgpu_localizer_warm_ms: Option<u128>,
     pub(crate) candidate_receipts: Vec<AutorouteCandidateReceiptInspection>,
 }
 
@@ -196,6 +212,7 @@ pub(crate) struct AutorouteSourceMixtureInspection {
 #[derive(Debug, Serialize)]
 pub(crate) struct AutorouteCandidateReceiptInspection {
     pub(crate) backend: String,
+    pub(crate) phase2_localizer: bool,
     pub(crate) correctness_digest: String,
     pub(crate) completed_trials: usize,
     pub(crate) evidence_digest: String,
@@ -343,7 +360,7 @@ fn inspect_autoroute_cache_for_build(
         for row in &config.decisions {
             let key = &row.workload;
             let decision = &row.decision;
-            let Some(daemon_backend) = decision.resolved_persistent_backend() else {
+            let Some(daemon_route) = decision.resolved_persistent_route() else {
                 out.error = Some(
                     "autoroute cache decision has no persistent-daemon route evidence; \
                      re-run calibration"
@@ -389,35 +406,46 @@ fn inspect_autoroute_cache_for_build(
                 .calibration_points
                 .iter()
                 .map(|point| {
-                    let one_shot_backend = point
-                        .resolve_measured_backend(false)
+                    let one_shot_route = point
+                        .resolve_measured_route(false)
                         .expect("validated point has a one-shot route");
-                    let daemon_backend = point
-                        .resolve_measured_backend(true)
+                    let daemon_route = point
+                        .resolve_measured_route(true)
                         .expect("validated point has a daemon route");
-                    let gpu_projection = |backend| {
+                    let measured_route =
+                        |backend, phase2_localizer| super::super::evidence::MeasuredRoute {
+                            backend,
+                            phase2_localizer,
+                        };
+                    let gpu_projection = |backend, phase2_localizer| {
                         point
-                            .gpu_cold_warm_route_for(backend)
+                            .gpu_cold_warm_route_for_measured(measured_route(
+                                backend,
+                                phase2_localizer,
+                            ))
                             .map(|(_, warm, route_ns)| (route_ns / 1_000_000, warm.median_ms()))
                     };
-                    let gpu_cuda = gpu_projection(keyhog_scanner::ScanBackend::GpuCuda);
-                    let gpu_wgpu = gpu_projection(keyhog_scanner::ScanBackend::GpuWgpu);
+                    let gpu_cuda = gpu_projection(keyhog_scanner::ScanBackend::GpuCuda, false);
+                    let gpu_wgpu = gpu_projection(keyhog_scanner::ScanBackend::GpuWgpu, false);
+                    let gpu_cuda_localizer =
+                        gpu_projection(keyhog_scanner::ScanBackend::GpuCuda, true);
+                    let gpu_wgpu_localizer =
+                        gpu_projection(keyhog_scanner::ScanBackend::GpuWgpu, true);
                     AutorouteCalibrationPointInspection {
                         sample_bytes: point.sample_bytes,
                         sample_chunks: point.sample_chunks,
                         calibrated_at_unix_ms: point.calibrated_at_unix_ms,
-                        one_shot_backend: one_shot_backend.label().to_string(),
-                        daemon_backend: daemon_backend.label().to_string(),
+                        one_shot_backend: one_shot_route.backend.label().to_string(),
+                        one_shot_phase2_localizer: one_shot_route.phase2_localizer,
+                        daemon_backend: daemon_route.backend.label().to_string(),
+                        daemon_phase2_localizer: daemon_route.phase2_localizer,
                         one_shot_confidence_separated: point
-                            .selected_backend_has_non_overlapping_confidence_for(
-                                one_shot_backend,
+                            .selected_route_has_non_overlapping_confidence_for(
+                                one_shot_route,
                                 false,
                             ),
                         daemon_confidence_separated: point
-                            .selected_backend_has_non_overlapping_confidence_for(
-                                daemon_backend,
-                                true,
-                            ),
+                            .selected_route_has_non_overlapping_confidence_for(daemon_route, true),
                         simd_ms: point.simd_timing.median_ms(),
                         cpu_ms: point
                             .cpu_timing
@@ -427,11 +455,26 @@ fn inspect_autoroute_cache_for_build(
                         gpu_cuda_warm_ms: gpu_cuda.map(|(_, warm_ms)| warm_ms),
                         gpu_wgpu_ms: gpu_wgpu.map(|(one_shot_ms, _)| one_shot_ms),
                         gpu_wgpu_warm_ms: gpu_wgpu.map(|(_, warm_ms)| warm_ms),
+                        simd_localizer_ms: point
+                            .simd_localizer_timing
+                            .as_ref()
+                            .map(super::super::evidence::BackendTimingEvidence::median_ms),
+                        cpu_localizer_ms: point
+                            .cpu_localizer_timing
+                            .as_ref()
+                            .map(super::super::evidence::BackendTimingEvidence::median_ms),
+                        gpu_cuda_localizer_ms: gpu_cuda_localizer
+                            .map(|(one_shot_ms, _)| one_shot_ms),
+                        gpu_cuda_localizer_warm_ms: gpu_cuda_localizer.map(|(_, warm_ms)| warm_ms),
+                        gpu_wgpu_localizer_ms: gpu_wgpu_localizer
+                            .map(|(one_shot_ms, _)| one_shot_ms),
+                        gpu_wgpu_localizer_warm_ms: gpu_wgpu_localizer.map(|(_, warm_ms)| warm_ms),
                         candidate_receipts: point
                             .candidate_receipts
                             .iter()
                             .map(|receipt| AutorouteCandidateReceiptInspection {
                                 backend: receipt.backend.clone(),
+                                phase2_localizer: receipt.phase2_localizer,
                                 correctness_digest: format!("{:016x}", receipt.correctness_digest),
                                 completed_trials: receipt.completed_trials,
                                 evidence_digest: format!("{:016x}", receipt.evidence_digest),
@@ -457,6 +500,7 @@ fn inspect_autoroute_cache_for_build(
                 calibrated_at_unix_ms,
                 calibration_age_ms: inspected_at_unix_ms - calibrated_at_unix_ms,
                 backend: decision.backend.clone(),
+                phase2_localizer: decision.phase2_localizer,
                 calibration_points: decision.calibration_points.len(),
                 sample_bytes: primary.sample_bytes,
                 sample_chunks: primary.sample_chunks,
@@ -470,6 +514,7 @@ fn inspect_autoroute_cache_for_build(
                     .iter()
                     .map(|receipt| AutorouteCandidateReceiptInspection {
                         backend: receipt.backend.clone(),
+                        phase2_localizer: receipt.phase2_localizer,
                         correctness_digest: format!("{:016x}", receipt.correctness_digest),
                         completed_trials: receipt.completed_trials,
                         evidence_digest: format!("{:016x}", receipt.evidence_digest),
@@ -489,10 +534,43 @@ fn inspect_autoroute_cache_for_build(
                 gpu_wgpu_warm_ms: decision
                     .gpu_cold_warm_route_for(keyhog_scanner::ScanBackend::GpuWgpu)
                     .map(|(_, warm, _)| warm.median_ms()),
+                simd_localizer_ms: primary
+                    .simd_localizer_timing
+                    .as_ref()
+                    .map(super::super::evidence::BackendTimingEvidence::median_ms),
+                cpu_localizer_ms: primary
+                    .cpu_localizer_timing
+                    .as_ref()
+                    .map(super::super::evidence::BackendTimingEvidence::median_ms),
+                gpu_cuda_localizer_ms: primary
+                    .gpu_cold_warm_route_for_measured(super::super::evidence::MeasuredRoute {
+                        backend: keyhog_scanner::ScanBackend::GpuCuda,
+                        phase2_localizer: true,
+                    })
+                    .map(|(_, _, route_ns)| route_ns / 1_000_000),
+                gpu_cuda_localizer_warm_ms: primary
+                    .gpu_cold_warm_route_for_measured(super::super::evidence::MeasuredRoute {
+                        backend: keyhog_scanner::ScanBackend::GpuCuda,
+                        phase2_localizer: true,
+                    })
+                    .map(|(_, warm, _)| warm.median_ms()),
+                gpu_wgpu_localizer_ms: primary
+                    .gpu_cold_warm_route_for_measured(super::super::evidence::MeasuredRoute {
+                        backend: keyhog_scanner::ScanBackend::GpuWgpu,
+                        phase2_localizer: true,
+                    })
+                    .map(|(_, _, route_ns)| route_ns / 1_000_000),
+                gpu_wgpu_localizer_warm_ms: primary
+                    .gpu_cold_warm_route_for_measured(super::super::evidence::MeasuredRoute {
+                        backend: keyhog_scanner::ScanBackend::GpuWgpu,
+                        phase2_localizer: true,
+                    })
+                    .map(|(_, warm, _)| warm.median_ms()),
                 confidence_separated,
                 selection_basis: selection_basis(confidence_separated),
                 selected_margin_ns: decision.selected_margin_ns(),
-                daemon_backend: daemon_backend.label().to_string(),
+                daemon_backend: daemon_route.backend.label().to_string(),
+                daemon_phase2_localizer: daemon_route.phase2_localizer,
                 daemon_confidence_separated,
                 daemon_selection_basis: selection_basis(daemon_confidence_separated),
                 daemon_selected_margin_ns: decision.persistent_selected_margin_ns(),

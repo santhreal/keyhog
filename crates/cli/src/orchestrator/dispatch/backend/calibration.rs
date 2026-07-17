@@ -19,7 +19,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use super::evidence::{
     canonical_match_digest, canonical_matches, canonical_matches_equal_reference,
     differing_canonical_match_fields, gpu_cold_warm_route_evidence, AutorouteDecision,
-    BackendTimingEvidence, CanonicalMatch,
+    BackendTimingEvidence, CanonicalMatch, MeasuredRoute,
 };
 use super::{is_gpu_backend, AutorouteRoutingError, AUTOROUTE_CALIBRATION_TRIALS};
 
@@ -32,10 +32,15 @@ pub(super) fn calibrate_fastest_correct_backend(
 ) -> Result<AutorouteDecision, AutorouteRoutingError> {
     let sample_bytes = calibration_sample_bytes(sample)?;
 
-    let reference_matches = establish_reference_simd(scanner, sample, admission_plan);
+    let reference_route = MeasuredRoute {
+        backend: ScanBackend::SimdCpu,
+        phase2_localizer: false,
+    };
+    let reference_matches =
+        establish_reference_simd(scanner, sample, admission_plan, reference_route);
     let reference_key = canonical_matches(&reference_matches);
 
-    let mut candidate_backends = eligible_backend_labels
+    let candidate_backends = eligible_backend_labels
         .iter()
         .map(|label| {
             keyhog_scanner::hw_probe::parse_backend_str(label).ok_or_else(|| {
@@ -52,15 +57,29 @@ pub(super) fn calibrate_fastest_correct_backend(
             .map_err(AutorouteRoutingError::calibration_not_persisted)?;
     }
 
+    let mut candidate_routes = candidate_backends
+        .into_iter()
+        .flat_map(|backend| {
+            [false, true].map(|phase2_localizer| MeasuredRoute {
+                backend,
+                phase2_localizer,
+            })
+        })
+        .collect::<Vec<_>>();
     let rotation =
-        calibration_candidate_rotation(sample_bytes, sample.len(), candidate_backends.len());
-    candidate_backends.rotate_left(rotation);
+        calibration_candidate_rotation(sample_bytes, sample.len(), candidate_routes.len());
+    candidate_routes.rotate_left(rotation);
 
     let mut simd_timing = None;
     let mut cpu_timing = None;
     let mut gpu_cuda_timing = None;
     let mut gpu_wgpu_timing = None;
-    for backend in candidate_backends {
+    let mut simd_localizer_timing = None;
+    let mut cpu_localizer_timing = None;
+    let mut gpu_cuda_localizer_timing = None;
+    let mut gpu_wgpu_localizer_timing = None;
+    for route in candidate_routes {
+        let backend = route.backend;
         if is_gpu_backend(backend) {
             tracing::debug!(
                 target: "keyhog::routing",
@@ -72,7 +91,7 @@ pub(super) fn calibrate_fastest_correct_backend(
                 .map_err(AutorouteRoutingError::calibration_not_persisted)?;
         }
         let mut measured =
-            measure_candidate_backend(scanner, sample, backend, &reference_key, admission_plan)?;
+            measure_candidate_backend(scanner, sample, route, &reference_key, admission_plan)?;
         if is_gpu_backend(backend) {
             let backend_cold_ns = scanner
                 .autoroute_calibration_gpu_backend_cold_ns(backend)
@@ -93,11 +112,15 @@ pub(super) fn calibrate_fastest_correct_backend(
                 ));
             }
         }
-        match backend {
-            ScanBackend::SimdCpu => simd_timing = Some(measured),
-            ScanBackend::CpuFallback => cpu_timing = Some(measured),
-            ScanBackend::GpuCuda => gpu_cuda_timing = Some(measured),
-            ScanBackend::GpuWgpu => gpu_wgpu_timing = Some(measured),
+        match (backend, route.phase2_localizer) {
+            (ScanBackend::SimdCpu, false) => simd_timing = Some(measured),
+            (ScanBackend::CpuFallback, false) => cpu_timing = Some(measured),
+            (ScanBackend::GpuCuda, false) => gpu_cuda_timing = Some(measured),
+            (ScanBackend::GpuWgpu, false) => gpu_wgpu_timing = Some(measured),
+            (ScanBackend::SimdCpu, true) => simd_localizer_timing = Some(measured),
+            (ScanBackend::CpuFallback, true) => cpu_localizer_timing = Some(measured),
+            (ScanBackend::GpuCuda, true) => gpu_cuda_localizer_timing = Some(measured),
+            (ScanBackend::GpuWgpu, true) => gpu_wgpu_localizer_timing = Some(measured),
             _ => {
                 return Err(AutorouteRoutingError::candidate_backend_rejected(
                     backend,
@@ -140,8 +163,12 @@ pub(super) fn calibrate_fastest_correct_backend(
         cpu_timing,
         gpu_cuda_timing,
         gpu_wgpu_timing,
+        simd_localizer_timing,
+        cpu_localizer_timing,
+        gpu_cuda_localizer_timing,
+        gpu_wgpu_localizer_timing,
     );
-    let Some(resolved) = decision.resolved_routing_backend() else {
+    let Some(resolved) = decision.resolved_routing_route() else {
         return Err(AutorouteRoutingError::calibration_not_persisted(
             "calibration produced no route timing evidence to resolve a backend from",
         ));
@@ -149,11 +176,13 @@ pub(super) fn calibrate_fastest_correct_backend(
     // Persist the resolved backend; the selected-backend margin is DERIVED from
     // it + the timing evidence on demand (`AutorouteDecision::selected_margin_ns`),
     // not stored (so it can never disagree with the persisted evidence).
-    decision.backend = resolved.label().to_string();
+    decision.backend = resolved.backend.label().to_string();
+    decision.phase2_localizer = resolved.phase2_localizer;
 
     tracing::info!(
         target: "keyhog::routing",
-        backend = resolved.label(),
+        backend = resolved.backend.label(),
+        phase2_localizer = resolved.phase2_localizer,
         sample_chunks = sample.len(),
         sample_bytes,
         simd_ms = decision.simd_ms(),
@@ -194,12 +223,13 @@ fn establish_reference_simd(
     scanner: &CompiledScanner,
     sample: &[Chunk],
     admission_plan: Option<&Phase1AdmissionPlan>,
+    route: MeasuredRoute,
 ) -> Vec<Vec<keyhog_core::RawMatch>> {
     // Establish the canonical finding set outside the rotated timed plan. SIMD
     // is still the correctness reference, but no longer receives the same
     // first thermal position in every workload.
     scanner.clear_fragment_cache();
-    let reference = scan_calibration_backend(scanner, sample, ScanBackend::SimdCpu, admission_plan);
+    let reference = scan_calibration_backend(scanner, sample, route, admission_plan);
     scanner.clear_fragment_cache();
     reference
 }
@@ -215,19 +245,21 @@ pub(super) fn calibration_mismatch_field_names(
 fn measure_candidate_backend(
     scanner: &CompiledScanner,
     sample: &[Chunk],
-    backend: ScanBackend,
+    route: MeasuredRoute,
     reference_key: &[CanonicalMatch<'_>],
     admission_plan: Option<&Phase1AdmissionPlan>,
 ) -> Result<BackendTimingEvidence, AutorouteRoutingError> {
+    let backend = route.backend;
     let mut durations = Vec::with_capacity(AUTOROUTE_CALIBRATION_TRIALS);
     // GPU routing evidence deliberately stores the first real dispatch as its
     // cold trial followed by warm trials. Discarding that call and labelling the
     // second one "cold" makes one-shot routing evidence optimistically false.
-    // The reference SIMD scan above is already a checked warmup for the SIMD
-    // candidate. The scalar CPU candidate keeps its dedicated warmup because it
-    // uses a different dispatch implementation. GPU keeps its first real
-    // dispatch because that call is the persisted cold observation.
-    let records_warmup = backend == ScanBackend::CpuFallback;
+    // CPU and SIMD candidates measure steady scanner execution after one
+    // untimed route-specific warmup. This is required now that one backend has
+    // two localizer variants: warming only the reference variant would bias the
+    // route decision. GPU keeps its first real dispatch because that call is
+    // the persisted cold observation used by one-shot routing.
+    let records_warmup = !backend.is_gpu();
     let calls = AUTOROUTE_CALIBRATION_TRIALS + usize::from(records_warmup);
     for trial_idx in 0..calls {
         scanner.clear_fragment_cache();
@@ -237,7 +269,7 @@ fn measure_candidate_backend(
             None
         };
         let (matches, dur) =
-            timed(|| scan_calibration_backend(scanner, sample, backend, admission_plan));
+            timed(|| scan_calibration_backend(scanner, sample, route, admission_plan));
         if let Some(before) = gpu_degrade_count_before {
             let after = scanner.runtime_status().gpu_degrade_count;
             if after != before {
@@ -365,10 +397,15 @@ pub(super) fn calibration_candidate_parity_result(
 fn scan_calibration_backend(
     scanner: &CompiledScanner,
     sample: &[Chunk],
-    backend: ScanBackend,
+    route: MeasuredRoute,
     admission_plan: Option<&Phase1AdmissionPlan>,
 ) -> Vec<Vec<keyhog_core::RawMatch>> {
-    scanner.scan_coalesced_with_backend_and_admission(sample, backend, admission_plan)
+    scanner.scan_coalesced_with_backend_admission_and_route(
+        sample,
+        route.backend,
+        admission_plan,
+        route.execution_route(),
+    )
 }
 
 fn timed<T>(f: impl FnOnce() -> T) -> (T, Duration) {

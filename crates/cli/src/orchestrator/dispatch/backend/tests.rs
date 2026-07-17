@@ -761,6 +761,10 @@ fn valid_decision_for_host(host: &AutorouteHostProfile) -> AutorouteDecision {
         Some(timing(20)),
         has(ScanBackend::GpuCuda).then(|| timing(30)),
         has(ScanBackend::GpuWgpu).then(|| timing(40)),
+        Some(timing(12)),
+        Some(timing(20)),
+        has(ScanBackend::GpuCuda).then(|| timing(30)),
+        has(ScanBackend::GpuWgpu).then(|| timing(40)),
     )
 }
 
@@ -1427,7 +1431,7 @@ fn exact_source_mixtures_survive_cache_replay_and_inspection() {
     );
     let unmeasured_key = workload_key(&mixture(30), 902).expect("30:2 workload classifies");
     assert!(
-        resolve_persisted_backend(
+        resolve_persisted_route(
             &loaded,
             unmeasured_key,
             AutorouteRuntimeClass::OneShot,
@@ -1683,17 +1687,29 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
     let host = test_host(Some("NVIDIA GeForce RTX 5090"));
     let key = test_workload_key();
     let mut decisions = HashMap::new();
-    let mut size_envelope =
-        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, Some(40));
-    size_envelope
-        .merge_calibration_point(AutorouteDecision::new(
+    let timing = |ms| BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS);
+    let localizer_winner = |sample_bytes, simd_ms, localizer_ms, gpu_ms| {
+        let mut decision = AutorouteDecision::from_peer_timing_evidence(
             ScanBackend::SimdCpu,
-            12 * 1024 * 1024,
+            sample_bytes,
             1,
-            13,
+            0xA11D_0B57_A11D_0B57,
+            1,
+            timing(simd_ms),
+            Some(timing(simd_ms + 8)),
             None,
-            Some(41),
-        ))
+            Some(timing(gpu_ms)),
+            Some(timing(localizer_ms)),
+            Some(timing(localizer_ms + 8)),
+            None,
+            Some(timing(gpu_ms + 1)),
+        );
+        decision.phase2_localizer = true;
+        decision
+    };
+    let mut size_envelope = localizer_winner(8 * 1024 * 1024, 12, 7, 40);
+    size_envelope
+        .merge_calibration_point(localizer_winner(12 * 1024 * 1024, 13, 8, 41))
         .expect("same-winner size evidence forms one persisted envelope");
     decisions.insert(key.clone(), size_envelope);
 
@@ -1731,6 +1747,7 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
             && serialized.contains("\"decode_unknown\"")
             && !serialized.contains("\"decode_density_bucket\"")
             && serialized.contains("\"candidate_receipts\"")
+            && serialized.contains("\"phase2_localizer\": true")
             && serialized.contains("\"correctness_digest\"")
             && serialized.contains("\"completed_trials\"")
             && serialized.contains("\"evidence_digest\"")
@@ -1748,10 +1765,25 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
     let loaded =
         load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host).unwrap();
     assert_eq!(loaded, decisions);
+    let replayed = resolve_persisted_route(
+        &loaded,
+        key.clone(),
+        AutorouteRuntimeClass::OneShot,
+        &Some(path.clone()),
+        &None,
+    )
+    .expect("persisted localizer route replays");
+    assert_eq!(replayed.backend, ScanBackend::SimdCpu);
+    assert!(replayed.phase2_localizer);
     let inspection = inspect_autoroute_cache(Some(&path));
     assert_eq!(inspection.error, None);
     assert_eq!(inspection.configs.len(), 1);
     assert_eq!(inspection.configs[0].decisions[0].calibration_points, 2);
+    assert!(inspection.configs[0].decisions[0].phase2_localizer);
+    assert!(inspection.configs[0].decisions[0]
+        .measured_points
+        .iter()
+        .all(|point| point.one_shot_phase2_localizer));
     assert_eq!(inspection.configs[0].decisions[0].measured_points.len(), 2);
     assert_eq!(
         inspection.configs[0].decisions[0]
@@ -3063,18 +3095,20 @@ fn calibration_mode_remeasures_loaded_cache_decisions_before_reuse() {
     };
 
     assert_eq!(
-        router.reusable_decision_backend(&key, 8 * 1024 * 1024, 1),
+        router.reusable_decision_route(&key, 8 * 1024 * 1024, 1),
         None,
         "calibration mode must not reuse a persisted cache row before this run remeasures the bucket"
     );
     router.measured_this_run.insert(key.clone());
     assert_eq!(
-        router.reusable_decision_backend(&key, 8 * 1024 * 1024, 1),
+        router
+            .reusable_decision_route(&key, 8 * 1024 * 1024, 1)
+            .map(|route| route.backend),
         Some(ScanBackend::CpuFallback),
         "once the bucket is measured during this calibration run, duplicate batches may reuse the new in-memory decision"
     );
     assert_eq!(
-        router.reusable_decision_backend(&key, 12 * 1024 * 1024, 1),
+        router.reusable_decision_route(&key, 12 * 1024 * 1024, 1),
         None,
         "another exact size inside the same coarse class must be measured, not hidden behind the first point"
     );
@@ -3671,14 +3705,14 @@ fn autoroute_cache_rejects_selected_backend_without_timing_evidence() {
         &host,
         key.clone(),
         bad,
-        "selected backend is missing timing evidence",
+        "selected execution route is missing timing evidence",
     );
     let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host);
     assert!(
         loaded
             .expect_err("selected backend without evidence must be rejected")
             .to_string()
-            .contains("selected backend is missing timing evidence"),
+            .contains("selected execution route is missing timing evidence"),
         "selected backend timing evidence is part of the autoroute trust contract"
     );
 
@@ -4853,7 +4887,7 @@ fn derived_accessors_match_the_persisted_timing_evidence() {
 }
 
 #[test]
-fn autoroute_cache_rejects_selected_backend_that_is_not_fastest() {
+fn autoroute_cache_rejects_selected_route_that_is_not_fastest() {
     let path = std::env::temp_dir().join(format!(
         "keyhog_autoroute_selected_not_fastest_{}.json",
         std::process::id()
@@ -4869,22 +4903,22 @@ fn autoroute_cache_rejects_selected_backend_that_is_not_fastest() {
         &host,
         key.clone(),
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, Some(10), None),
-        "selected backend is not the fastest persisted timing evidence",
+        "selected route is not the fastest persisted timing evidence",
     );
     let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host);
     assert!(
         loaded
-            .expect_err("selected backend must match persisted fastest route")
+            .expect_err("selected route must match persisted fastest route")
             .to_string()
-            .contains("selected backend is not the fastest persisted timing evidence"),
-        "autoroute cache load must not trust a backend label that contradicts persisted timing evidence"
+            .contains("selected route is not the fastest persisted timing evidence"),
+        "autoroute cache load must not trust a route label that contradicts persisted timing evidence"
     );
 
     std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
 }
 
 #[test]
-fn autoroute_cache_rejects_selected_backend_beaten_by_separated_confidence() {
+fn autoroute_cache_rejects_selected_route_beaten_by_separated_confidence() {
     let path = std::env::temp_dir().join(format!(
         "keyhog_autoroute_selected_overlap_{}.json",
         std::process::id()
@@ -4923,7 +4957,7 @@ fn autoroute_cache_rejects_selected_backend_beaten_by_separated_confidence() {
         &host,
         key.clone(),
         bad,
-        "selected backend is not the fastest persisted timing evidence",
+        "selected route is not the fastest persisted timing evidence",
     );
     let inspection = inspect_autoroute_cache(Some(&path));
     assert!(
@@ -4945,7 +4979,7 @@ fn autoroute_cache_rejects_selected_backend_beaten_by_separated_confidence() {
         loaded
             .expect_err("a lucky-outlier backend must be rejected for the CI-faster route")
             .to_string()
-            .contains("selected backend is not the fastest persisted timing evidence"),
+            .contains("selected route is not the fastest persisted timing evidence"),
         "autoroute cache load must route by confidence interval, not a single best_ns trial"
     );
 
@@ -5035,7 +5069,7 @@ fn persisted_router_rejects_agreeing_neighbours_without_exact_evidence() {
         ..base.clone()
     };
 
-    let error = resolve_persisted_backend(
+    let error = resolve_persisted_route(
         &decisions,
         requested,
         AutorouteRuntimeClass::OneShot,
@@ -5114,6 +5148,10 @@ fn daemon_warm_routes_come_only_from_persisted_selected_backends() {
             7,
             1,
             timing(30),
+            Some(timing(40)),
+            Some(timing(8)),
+            Some(timing(16)),
+            Some(timing(30)),
             Some(timing(40)),
             Some(timing(8)),
             Some(timing(16)),
@@ -5480,6 +5518,10 @@ fn cuda_and_wgpu_are_independent_measured_candidates() {
         Some(timing(40)),
         Some(timing(10)),
         Some(timing(15)),
+        Some(timing(30)),
+        Some(timing(40)),
+        Some(timing(10)),
+        Some(timing(15)),
     );
     assert_eq!(
         cuda_wins.resolved_routing_backend(),
@@ -5508,6 +5550,10 @@ fn cuda_and_wgpu_are_independent_measured_candidates() {
         Some(timing(40)),
         Some(timing(16)),
         Some(timing(9)),
+        Some(timing(30)),
+        Some(timing(40)),
+        Some(timing(16)),
+        Some(timing(9)),
     );
     assert_eq!(
         wgpu_wins.resolved_routing_backend(),
@@ -5515,9 +5561,43 @@ fn cuda_and_wgpu_are_independent_measured_candidates() {
     );
 
     let json = serde_json::to_value(&wgpu_wins).expect("serialize peer evidence");
-    assert!(json.get("gpu_cuda_timing").is_some());
-    assert!(json.get("gpu_wgpu_timing").is_some());
-    assert!(json.get("gpu_timing").is_none());
+    let point = &json["calibration_points"][0];
+    assert!(point.get("gpu_cuda_timing").is_some());
+    assert!(point.get("gpu_wgpu_timing").is_some());
+    assert!(point.get("gpu_cuda_localizer_timing").is_some());
+    assert!(point.get("gpu_wgpu_localizer_timing").is_some());
+    assert!(point.get("gpu_timing").is_none());
+}
+
+#[test]
+fn phase2_localizer_is_an_independent_measured_route_candidate() {
+    let timing = |ms| BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS);
+    let decision = AutorouteDecision::from_peer_timing_evidence(
+        ScanBackend::SimdCpu,
+        8 * 1024 * 1024,
+        8,
+        7,
+        1,
+        timing(30),
+        Some(timing(45)),
+        None,
+        None,
+        Some(timing(8)),
+        Some(timing(20)),
+        None,
+        None,
+    );
+
+    let route = decision
+        .resolved_routing_route()
+        .expect("route evidence resolves");
+    assert_eq!(route.backend, ScanBackend::SimdCpu);
+    assert!(route.phase2_localizer);
+    assert_eq!(
+        decision.primary_point().candidate_receipts.len(),
+        4,
+        "both localizer variants need independent parity receipts for each eligible backend"
+    );
 }
 
 #[cfg(feature = "default")]

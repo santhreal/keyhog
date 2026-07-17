@@ -316,8 +316,9 @@ fn run_autoroute_inspection(
                 .iter()
                 .map(|receipt| {
                     format!(
-                        "{}:result={}/trials={}/receipt={}",
+                        "{}+phase2-localizer={}:result={}/trials={}/receipt={}",
                         receipt.backend,
+                        receipt.phase2_localizer,
                         receipt.correctness_digest,
                         receipt.completed_trials,
                         receipt.evidence_digest
@@ -345,6 +346,25 @@ fn run_autoroute_inspection(
                 .gpu_wgpu_warm_ms
                 .map(|ms| format!(" wgpu-warm={ms}ms"))
                 .unwrap_or_default(); // LAW10: display-only optional timing; finding still printed; recall-safe
+            let mut localizer_timings = Vec::new();
+            if let Some(ms) = decision.simd_localizer_ms {
+                localizer_timings.push(format!("simd={ms}ms"));
+            }
+            if let Some(ms) = decision.cpu_localizer_ms {
+                localizer_timings.push(format!("cpu={ms}ms"));
+            }
+            if let Some(ms) = decision.gpu_cuda_localizer_ms {
+                localizer_timings.push(format!("cuda-one-shot={ms}ms"));
+            }
+            if let Some(ms) = decision.gpu_cuda_localizer_warm_ms {
+                localizer_timings.push(format!("cuda-warm={ms}ms"));
+            }
+            if let Some(ms) = decision.gpu_wgpu_localizer_ms {
+                localizer_timings.push(format!("wgpu-one-shot={ms}ms"));
+            }
+            if let Some(ms) = decision.gpu_wgpu_localizer_warm_ms {
+                localizer_timings.push(format!("wgpu-warm={ms}ms"));
+            }
             let margin = decision
                 .selected_margin_ns
                 .map(|ns| format!(" margin={}µs", ns / 1_000))
@@ -361,8 +381,9 @@ fn run_autoroute_inspection(
             );
             println!("        parity:      {parity_receipts}");
             println!(
-                "        one-shot -> {}  {}[{} B / {} chunk(s); simd={}ms{}{}{}{}{}{}; basis={}]{}",
+                "        one-shot -> {}+phase2-localizer={}  {}[{} B / {} chunk(s); simd={}ms{}{}{}{}{}{}; basis={}]{}",
                 decision.backend,
+                decision.phase2_localizer,
                 p.dim,
                 decision.sample_bytes,
                 decision.sample_chunks,
@@ -377,12 +398,17 @@ fn run_autoroute_inspection(
                 p.reset
             );
             println!(
-                "        daemon   -> {}  {}[warm GPU evidence{}; basis={}]{}",
+                "        daemon   -> {}+phase2-localizer={}  {}[warm GPU evidence{}; basis={}]{}",
                 decision.daemon_backend,
+                decision.daemon_phase2_localizer,
                 p.dim,
                 daemon_margin,
                 decision.daemon_selection_basis,
                 p.reset
+            );
+            println!(
+                "        localizer-on timings: {}",
+                localizer_timings.join(" ")
             );
         }
     }

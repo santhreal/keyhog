@@ -4,7 +4,7 @@ use std::collections::{BTreeSet, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::super::evidence::{
-    gpu_cold_warm_route_evidence, AutorouteCalibrationPoint, AutorouteDecision,
+    gpu_cold_warm_route_evidence, AutorouteCalibrationPoint, AutorouteDecision, MeasuredRoute,
     MAX_AUTOROUTE_MEASURED_POINTS,
 };
 use super::super::workload::{
@@ -171,18 +171,18 @@ fn validate_decision_route_evidence_at(
         )
         .into());
     }
-    let Some(selected_backend) = decision.backend() else {
+    let Some(selected_route) = decision.measured_route() else {
         return Err(format!(
             "cache contains unsupported backend decision {:?}",
             decision.backend
         )
         .into());
     };
-    if decision.backend != selected_backend.label() {
+    if decision.backend != selected_route.backend.label() {
         return Err(format!(
             "cache contains non-canonical backend label {:?}; expected {:?}",
             decision.backend,
-            selected_backend.label()
+            selected_route.backend.label()
         )
         .into());
     }
@@ -197,31 +197,29 @@ fn validate_decision_route_evidence_at(
         }
         validate_point_route_evidence_at(
             point,
-            selected_backend,
+            selected_route,
             current_unix_ms,
             expected_backends,
         )?;
     }
-    let Some(resolved) = decision.resolved_routing_backend() else {
-        return Err(
-            "cache decision changes fastest one-shot backend across measured points".into(),
-        );
+    let Some(resolved) = decision.resolved_routing_route() else {
+        return Err("cache decision changes fastest one-shot route across measured points".into());
     };
-    if selected_backend != resolved {
+    if selected_route != resolved {
         if decision.has_separated_fastest_route() {
-            return Err("selected backend is not the fastest persisted timing evidence".into());
+            return Err("selected route is not the fastest persisted timing evidence".into());
         }
-        return Err("selected backend does not match measured-median resolution among statistically non-dominated routes".into());
+        return Err("selected route does not match measured-median resolution among statistically non-dominated routes".into());
     }
     if decision.resolved_persistent_backend().is_none() {
-        return Err("cache decision changes fastest daemon backend across measured points".into());
+        return Err("cache decision changes fastest daemon route across measured points".into());
     }
     Ok(())
 }
 
 fn validate_point_route_evidence_at(
     point: &AutorouteCalibrationPoint,
-    selected_backend: keyhog_scanner::ScanBackend,
+    selected_route: MeasuredRoute,
     current_unix_ms: u128,
     expected_backends: &BTreeSet<String>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -235,8 +233,8 @@ fn validate_point_route_evidence_at(
         )
         .into());
     }
-    if point.timing_for_backend(selected_backend).is_none() {
-        return Err("selected backend is missing timing evidence".into());
+    if point.timing_for_route(selected_route).is_none() {
+        return Err("selected execution route is missing timing evidence".into());
     }
     if !point
         .simd_timing
@@ -253,56 +251,98 @@ fn validate_point_route_evidence_at(
     if !cpu_timing.is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS) {
         return Err("cache decision has invalid CPU timing evidence".into());
     }
-    for (driver, timing) in [
-        ("CUDA", point.gpu_cuda_timing.as_ref()),
-        ("WGPU", point.gpu_wgpu_timing.as_ref()),
+    for (route_label, timing, gpu) in [
+        (
+            "SIMD localizer",
+            point.simd_localizer_timing.as_ref(),
+            false,
+        ),
+        ("CPU localizer", point.cpu_localizer_timing.as_ref(), false),
+        ("CUDA", point.gpu_cuda_timing.as_ref(), true),
+        ("WGPU", point.gpu_wgpu_timing.as_ref(), true),
+        (
+            "CUDA localizer",
+            point.gpu_cuda_localizer_timing.as_ref(),
+            true,
+        ),
+        (
+            "WGPU localizer",
+            point.gpu_wgpu_localizer_timing.as_ref(),
+            true,
+        ),
     ] {
         if timing.is_some_and(|timing| !timing.is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS)) {
-            return Err(format!("cache decision has invalid {driver} timing evidence").into());
+            return Err(format!("cache decision has invalid {route_label} timing evidence").into());
         }
-        if timing.is_some_and(|timing| gpu_cold_warm_route_evidence(timing).is_none()) {
-            return Err(
-                format!("cache decision has invalid {driver} cold/warm timing evidence").into(),
-            );
+        if gpu && timing.is_some_and(|timing| gpu_cold_warm_route_evidence(timing).is_none()) {
+            return Err(format!(
+                "cache decision has invalid {route_label} cold/warm timing evidence"
+            )
+            .into());
         }
     }
-    let timing_backends = [
-        (keyhog_scanner::ScanBackend::SimdCpu, true),
+    let timing_routes = [
+        (keyhog_scanner::ScanBackend::SimdCpu, false, true),
         (
             keyhog_scanner::ScanBackend::CpuFallback,
+            false,
             point.cpu_timing.is_some(),
         ),
         (
             keyhog_scanner::ScanBackend::GpuCuda,
+            false,
             point.gpu_cuda_timing.is_some(),
         ),
         (
             keyhog_scanner::ScanBackend::GpuWgpu,
+            false,
             point.gpu_wgpu_timing.is_some(),
+        ),
+        (
+            keyhog_scanner::ScanBackend::SimdCpu,
+            true,
+            point.simd_localizer_timing.is_some(),
+        ),
+        (
+            keyhog_scanner::ScanBackend::CpuFallback,
+            true,
+            point.cpu_localizer_timing.is_some(),
+        ),
+        (
+            keyhog_scanner::ScanBackend::GpuCuda,
+            true,
+            point.gpu_cuda_localizer_timing.is_some(),
+        ),
+        (
+            keyhog_scanner::ScanBackend::GpuWgpu,
+            true,
+            point.gpu_wgpu_localizer_timing.is_some(),
         ),
     ]
     .into_iter()
-    .filter(|(_, present)| *present)
-    .map(|(backend, _)| backend.label().to_string())
+    .filter(|(_, _, present)| *present)
+    .map(|(backend, localizer, _)| (backend.label().to_string(), localizer))
     .collect::<BTreeSet<_>>();
-    if &timing_backends != expected_backends {
+    let expected_routes = expected_backends
+        .iter()
+        .flat_map(|backend| [(backend.clone(), false), (backend.clone(), true)])
+        .collect::<BTreeSet<_>>();
+    if timing_routes != expected_routes {
         return Err(format!(
             "cache decision timing set does not match eligible backend census (expected {:?}, found {:?})",
-            expected_backends, timing_backends
+            expected_routes, timing_routes
         )
         .into());
     }
-    let receipt_backends = point
+    let receipt_routes = point
         .candidate_receipts
         .iter()
-        .map(|receipt| receipt.backend.clone())
+        .map(|receipt| (receipt.backend.clone(), receipt.phase2_localizer))
         .collect::<BTreeSet<_>>();
-    if &receipt_backends != expected_backends
-        || receipt_backends.len() != point.candidate_receipts.len()
-    {
+    if receipt_routes != expected_routes || receipt_routes.len() != point.candidate_receipts.len() {
         return Err(format!(
             "cache decision receipt set does not match eligible backend census (expected {:?}, found {:?})",
-            expected_backends, receipt_backends
+            expected_routes, receipt_routes
         )
         .into());
     }
@@ -325,7 +365,7 @@ fn validate_point_route_evidence_at(
             )
             .into());
         }
-        if !seen_receipts.insert(receipt.backend.as_str()) {
+        if !seen_receipts.insert((receipt.backend.as_str(), receipt.phase2_localizer)) {
             return Err(format!(
                 "cache decision has duplicate candidate receipt for {}",
                 receipt.backend
@@ -357,7 +397,11 @@ fn validate_point_route_evidence_at(
             None => reference_digest = Some(receipt.correctness_digest),
             _ => {}
         }
-        let Some(timing) = point.timing_for_backend(backend) else {
+        let route = MeasuredRoute {
+            backend,
+            phase2_localizer: receipt.phase2_localizer,
+        };
+        let Some(timing) = point.timing_for_route(route) else {
             return Err(format!(
                 "cache decision candidate receipt for {} has no timing evidence",
                 receipt.backend
@@ -365,7 +409,7 @@ fn validate_point_route_evidence_at(
             .into());
         };
         if receipt.evidence_digest == 0
-            || receipt.evidence_digest != receipt.expected_evidence_digest(backend, timing)
+            || receipt.evidence_digest != receipt.expected_evidence_digest(route, timing)
         {
             return Err(format!(
                 "cache decision candidate receipt for {} does not match its timing evidence",
@@ -386,11 +430,11 @@ fn validate_point_route_evidence_at(
         )
         .into());
     }
-    let Some(selected_timing) = point.timing_for_backend(selected_backend) else {
-        return Err("selected backend is missing timing evidence".into());
+    let Some(selected_timing) = point.timing_for_route(selected_route) else {
+        return Err("selected execution route is missing timing evidence".into());
     };
     if !selected_timing.is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS) {
-        return Err("selected backend timing evidence is invalid".into());
+        return Err("selected execution-route timing evidence is invalid".into());
     }
     Ok(())
 }

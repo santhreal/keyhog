@@ -99,10 +99,11 @@ contract:
 
 ### Autoroute
 
-KeyHog autoroute measures every eligible backend and persists the fastest
-parity-checked choice for the exact binary, host, resolved policy, and workload
-class. It is not a hardware heuristic or fallback hierarchy: a missing or stale
-decision fails closed instead of silently choosing CPU, SIMD, or GPU.
+KeyHog autoroute measures every eligible backend with phase-two localization on
+and off, then persists the fastest parity-checked route for the exact binary,
+host, resolved policy, and workload class. It is not a hardware heuristic or
+fallback hierarchy: a missing or stale decision fails closed instead of
+silently choosing CPU, SIMD, GPU, or a scanner tuning path.
 
 Install performs the visible calibration. To recalibrate an installed binary,
 run `keyhog calibrate-autoroute`; inspect evidence with

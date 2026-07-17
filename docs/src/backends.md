@@ -74,6 +74,10 @@ only the differing fields and occurrence counts. They never emit raw
 values or deterministic value fingerprints. Normal automatic scans do not
 benchmark or silently replace a rejected backend.
 
+Each backend is measured with phase-two plain-pattern localization disabled and
+enabled. The persisted route owns both choices, so concurrent scans never mutate
+scanner-global tuning and decode or recovery replays retain the selected route.
+
 Among parity-correct candidates, routing uses representative measured medians,
 never a lucky fastest trial. A fully separated 95% confidence interval is the
 strongest result. Overlapping intervals are disclosed as inconclusive rather
@@ -87,7 +91,7 @@ compares the complete `RawMatch` values returned by that production scanner
 path. CLI allowlists and rules, severity and confidence floors, cross-source
 deduplication, optional verification, and reporting run after backend selection.
 The same detector TOML corpus and resolved configuration digest identify every
-route.
+backend-plus-localizer route.
 
 ## Why size alone is insufficient
 
