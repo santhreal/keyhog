@@ -10,18 +10,12 @@ pub(super) struct Phase2GpuDfaShard {
 }
 
 impl Phase2GpuDfaShard {
-    /// `marked`, when `Some`, receives per-region the phase-2 pattern indices that
-    /// the GPU regex-DFA matched (the SAME indices `scratch.mark` uses on the CPU
-    /// path). This is the step-1 seam that lets the caller use the GPU-marked active
-    /// set to bypass the CPU always-active RegexSet for covered patterns, inert
-    /// (behavior-identical) while callers pass `None`.
     pub(super) fn scan_admission_into(
         &self,
         backend: &dyn vyre::VyreBackend,
         scratch: &mut Phase2GpuDfaScratch,
         haystack_len: u32,
         admitted: &mut [bool],
-        mut marked: Option<&mut [Vec<usize>]>,
     ) -> std::result::Result<bool, String> {
         use vyre_libs::scan::dispatch_io;
 
@@ -74,26 +68,18 @@ impl Phase2GpuDfaShard {
 
         let mut unattributed_matches = 0usize;
         for m in &scratch.matches {
-            let Some(&phase2_index) = self.phase2_indices.get(m.pattern_id as usize) else {
+            if self.phase2_indices.get(m.pattern_id as usize).is_none() {
                 return Err(format!(
                     "phase-2 GPU regex-DFA reported pattern id {} outside shard size {}",
                     m.pattern_id,
                     self.phase2_indices.len()
                 ));
-            };
+            }
             if let Some(region) =
                 match_region(&scratch.region_starts, scratch.haystack_len, m.start, m.end)
             {
                 if let Some(slot) = admitted.get_mut(region) {
                     *slot = true;
-                }
-                // Step-1 marking: record WHICH phase-2 pattern hit in this region so
-                // the caller can substitute the GPU-marked active set for the CPU
-                // always-active RegexSet (recall-identical for covered patterns).
-                if let Some(marks) = marked.as_deref_mut() {
-                    if let Some(region_marks) = marks.get_mut(region) {
-                        region_marks.push(phase2_index);
-                    }
                 }
             } else {
                 unattributed_matches = unattributed_matches.saturating_add(1);

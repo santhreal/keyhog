@@ -28,6 +28,24 @@ pub(crate) use crate::tuning::*;
 
 pub(crate) const MIN_PREFIX_BYTES: usize = 3;
 
+/// GPU evidence for the two disjoint always-active phase-2 families. An outer
+/// `Option` at call sites means fused anchor evidence is unavailable; the
+/// prefixless completeness bit independently prevents partial proof from
+/// becoming a skip.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct Phase2AlwaysActiveGpuEvidence {
+    pub(crate) prefixless_admitted: bool,
+    pub(crate) prefixless_complete: bool,
+    pub(crate) anchor_present: bool,
+}
+
+impl Phase2AlwaysActiveGpuEvidence {
+    #[inline]
+    pub(crate) const fn absence_proven(self) -> bool {
+        self.prefixless_complete && !self.prefixless_admitted && !self.anchor_present
+    }
+}
+
 /// Per-pattern phase-2 profiler (measurement only). Enabled by the unified
 /// scanner profiler (`keyhog scan --profile`) so profiling has one runtime owner.
 /// Accumulates wall time per phase-2 pattern to identify the detectors that

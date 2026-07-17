@@ -30,6 +30,7 @@ fn every_acquired_gpu_peer_matches_the_cpu_reference() {
             regex: "KHGPUPEER_[A-Za-z0-9]{20}".into(),
             description: None,
             group: None,
+            required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
         }],
@@ -88,6 +89,76 @@ fn every_acquired_gpu_peer_matches_the_cpu_reference() {
             reference,
             "{} findings diverged from CPU",
             candidate.backend.label()
+        );
+    }
+}
+
+#[test]
+fn detector_required_literals_preserve_every_backend_finding() {
+    let detectors = vec![
+        DetectorSpec {
+            id: "required-infix-fx".into(),
+            name: "Required infix fx".into(),
+            service: "test".into(),
+            severity: Severity::High,
+            patterns: vec![PatternSpec {
+                regex: r"([a-f0-9]{8}:fx)".into(),
+                group: Some(1),
+                required_literals: vec![":fx".into()],
+                ..PatternSpec::default()
+            }],
+            ..DetectorSpec::default()
+        },
+        DetectorSpec {
+            id: "required-infix-url".into(),
+            name: "Required infix URL".into(),
+            service: "test".into(),
+            severity: Severity::High,
+            patterns: vec![PatternSpec {
+                regex: r"(?i)[a-z][a-z0-9+.-]*://[^/@\s:]*:([^/@\s<>]{6,128})@[a-z0-9._-]".into(),
+                group: Some(1),
+                required_literals: vec!["://".into()],
+                ..PatternSpec::default()
+            }],
+            ..DetectorSpec::default()
+        },
+    ];
+    let scanner = CompiledScanner::compile(detectors).expect("compile required-literal scanner");
+    let chunks = [Chunk {
+        data: "deepl=0123abcd:fx\nproxy=https://deploy:Qw9KmPq2@host.example/".into(),
+        metadata: ChunkMetadata {
+            path: Some("required-literals.txt".into()),
+            ..ChunkMetadata::default()
+        },
+    }];
+    let reference =
+        canonical(&scanner.scan_coalesced_with_backend(&chunks, ScanBackend::CpuFallback)[0]);
+    assert_eq!(
+        reference
+            .iter()
+            .map(|row| (row.0.as_str(), row.3.as_str()))
+            .collect::<Vec<_>>(),
+        [
+            ("required-infix-fx", "0123abcd:fx"),
+            ("required-infix-url", "Qw9KmPq2"),
+        ]
+    );
+
+    let mut backends = vec![ScanBackend::SimdCpu];
+    backends.extend(
+        scanner
+            .gpu_backend_candidates()
+            .into_iter()
+            .filter(|candidate| candidate.acquired)
+            .map(|candidate| candidate.backend),
+    );
+    for backend in backends {
+        let findings = scanner.scan_coalesced_with_backend(&chunks, backend);
+        assert_eq!(
+            canonical(&findings[0]),
+            reference,
+            "{} diverged for detector-owned required literals",
+            backend.label()
         );
     }
 }

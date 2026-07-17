@@ -715,18 +715,10 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         if admission != Phase1Admission::Admitted {
             if self.should_scan_no_hit_chunk(chunk) {
                 let prepared = self.prepare_chunk(chunk);
-                let triggered = if prepared.preprocessed.text.as_bytes() == chunk.data.as_bytes() {
-                    Vec::new()
-                } else {
-                    self.collect_triggered_patterns_for_backend(
-                        &prepared.preprocessed.text,
-                        selected_backend,
-                    )
-                };
                 let mut matches = self.scan_prepared_with_triggered(
                     prepared,
                     selected_backend,
-                    &triggered,
+                    &[],
                     deadline,
                     None,
                     None,

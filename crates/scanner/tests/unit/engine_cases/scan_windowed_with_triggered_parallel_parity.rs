@@ -15,6 +15,7 @@ fn detector() -> DetectorSpec {
             regex: "tok_live_[A-Za-z0-9]{32}".into(),
             description: None,
             group: None,
+            required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
         }],

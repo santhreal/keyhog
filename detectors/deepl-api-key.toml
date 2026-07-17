@@ -26,6 +26,7 @@ group = 1
 
 [[detector.patterns]]
 regex = '''(?:^|[^A-Za-z0-9_-])([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}:fx)(?:$|[^A-Za-z0-9_-])'''
+required_literals = [":fx"]
 description = "Bare DeepL free API key shape"
 group = 1
 

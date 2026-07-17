@@ -13,6 +13,7 @@ fn detector() -> DetectorSpec {
             regex: "tok_[A-Za-z0-9]{3}".into(),
             description: None,
             group: None,
+            required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
         }],
@@ -44,7 +45,7 @@ fn phase2_short_trigger_rows_preserve_chunk_count_and_scan_missing_rows() {
     ];
 
     let results =
-        scan_coalesced_phase2_with_admission_for_test(&scanner, &chunks, vec![None], None);
+        scan_coalesced_phase2_with_admission_for_test(&scanner, &chunks, vec![None], None, None);
 
     assert_eq!(
         results.len(),

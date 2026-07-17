@@ -12,6 +12,7 @@ fn hex32_detector() -> DetectorSpec {
             regex: r#"HEX32_API_KEY[=:\s"']+([a-f0-9]{32})"#.into(),
             description: Some("test-only 32-hex token".into()),
             group: Some(1),
+            required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
         }],

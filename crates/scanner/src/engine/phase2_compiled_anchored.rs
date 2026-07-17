@@ -20,6 +20,7 @@ impl CompiledScanner {
         data: &str,
         match_text: &str,
         phase2_keyword_hints: Option<&[u32]>,
+        phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence>,
         f: impl FnOnce(&Self, &ActivePatternsScratch) -> R,
     ) -> R {
         ACTIVE_PATTERNS_POOL.with(|cell| {
@@ -27,7 +28,14 @@ impl CompiledScanner {
             scratch.begin(self.phase2_patterns.len());
             // anchor_mode = true: this method only runs on the shared-anchor
             // path, where eligible always-active patterns are gated by the AC.
-            self.populate_active_phase2(data, match_text, &mut scratch, true, phase2_keyword_hints);
+            self.populate_active_phase2(
+                data,
+                match_text,
+                &mut scratch,
+                true,
+                phase2_keyword_hints,
+                phase2_always_active_gpu_evidence.is_some_and(|evidence| evidence.absence_proven()),
+            );
             if self.tuning.phase2_reverse_enabled() {
                 scratch.active.reverse();
             }
@@ -135,7 +143,7 @@ impl CompiledScanner {
         // full raw plus normalized text so in-window matches stay byte-identical.
         focus: Option<(usize, usize)>,
         phase2_keyword_hints: Option<&[u32]>,
-        phase2_always_anchor_present: Option<bool>,
+        phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence>,
     ) {
         let prof = phase2_pattern_prof_enabled();
         // Text the AC candidate scan and the always-active prefilter run on.
@@ -153,6 +161,7 @@ impl CompiledScanner {
             &preprocessed.text,
             scan_text,
             phase2_keyword_hints,
+            phase2_always_active_gpu_evidence,
             |this, scratch| {
                 let active_keyword_anchors = scratch
                     .active
@@ -171,7 +180,9 @@ impl CompiledScanner {
                                 |pat| scratch.is_active(pat),
                                 &mut cands,
                             );
-                        } else if phase2_always_anchor_present == Some(false) {
+                        } else if phase2_always_active_gpu_evidence
+                            .is_some_and(|evidence| !evidence.anchor_present)
+                        {
                             cands.clear();
                         } else {
                             anchor_idx.collect_always_active_candidates(scan_text, &mut cands);

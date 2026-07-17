@@ -577,18 +577,23 @@ impl CompiledScanner {
             }
             let mut phase2_gpu_row_needed = Vec::with_capacity(chunks.len());
             let phase2_gpu_byte_limit = region_presence_batch_byte_limit(backend.id());
-            let mut phase2_gpu_excluded_oversized = false;
+            let mut phase2_gpu_excluded_oversized = 0usize;
+            let mut phase2_gpu_excluded_non_ascii = 0usize;
             for (idx, chunk) in chunks.iter().enumerate() {
                 let row_has_trigger = triggers
                     .get(idx)
                     .and_then(|trigger| trigger.as_ref())
                     .is_some_and(|bits| bits.iter().any(|&word| word != 0));
-                if row_has_trigger {
-                    phase2_gpu_row_needed.push(true);
+                if chunk.data.len() > phase2_gpu_byte_limit {
+                    phase2_gpu_excluded_oversized += 1;
+                    phase2_gpu_row_needed.push(false);
                     continue;
                 }
-                if chunk.data.len() > phase2_gpu_byte_limit {
-                    phase2_gpu_excluded_oversized = true;
+                // The GPU catalog's proof is ASCII-specific. Raw non-ASCII
+                // rows may normalize before phase 2 and therefore remain under
+                // the canonical CPU admission owner.
+                if !chunk.data.is_ascii() {
+                    phase2_gpu_excluded_non_ascii += 1;
                     phase2_gpu_row_needed.push(false);
                     continue;
                 }
@@ -598,23 +603,25 @@ impl CompiledScanner {
                 // rows; this just avoids a redundant GPU admission dispatch.
                 let decode_only_row = self.chunk_needs_decode_postprocess(chunk)
                     && !self.should_scan_no_hit_chunk(chunk);
-                phase2_gpu_row_needed.push(!decode_only_row);
+                phase2_gpu_row_needed.push(row_has_trigger || !decode_only_row);
             }
             let phase2_gpu_workload =
-                build_phase2_gpu_admission_workload_filtered(chunks, &triggers, |idx, _| {
+                build_phase2_gpu_admission_workload_filtered(chunks, |idx, _| {
                     phase2_gpu_row_needed[idx]
                 });
             let phase2_dispatch_profile = super::profile::span(super::profile::P::BackendDispatch);
             let t_phase2_gpu = std::time::Instant::now();
             let mut phase2_gpu_empty_complete = false;
+            let mut phase2_gpu_coverage = None;
             let phase2_gpu_admission = match phase2_gpu_workload {
                 Phase2GpuAdmissionWorkload::Empty => {
-                    phase2_gpu_empty_complete = !phase2_gpu_excluded_oversized;
+                    phase2_gpu_empty_complete = chunks.is_empty();
                     None
                 }
                 Phase2GpuAdmissionWorkload::Full { chunks: gpu_chunks } => {
                     match self.phase2_gpu_dfa_catalog(Some(backend.id())) {
                         Some(catalog) => {
+                            phase2_gpu_coverage = Some(catalog.coverage());
                             match scan_phase2_gpu_chunks_sharded(catalog, &**backend, gpu_chunks) {
                                 Ok(admission) => Some(admission),
                                 Err(error) => {
@@ -633,15 +640,15 @@ impl CompiledScanner {
                     full_len,
                 } => match self.phase2_gpu_dfa_catalog(Some(backend.id())) {
                     Some(catalog) => {
+                        phase2_gpu_coverage = Some(catalog.coverage());
                         match scan_phase2_gpu_refs_sharded(
                             catalog,
                             &**backend,
                             gpu_chunks.as_slice(),
                         ) {
                             Ok(admission) => {
-                                let mut admission =
+                                let admission =
                                     expand_phase2_gpu_admission(admission, &indices, full_len);
-                                admission.complete &= !phase2_gpu_excluded_oversized;
                                 Some(admission)
                             }
                             Err(error) => {
@@ -673,13 +680,20 @@ impl CompiledScanner {
             let phase2_gpu_complete = phase2_gpu_empty_complete
                 || phase2_gpu_admission
                     .as_ref()
-                    .is_some_and(|admission| admission.complete);
+                    .is_some_and(|admission| admission.complete.iter().all(|&value| value));
+            let phase2_gpu_complete_rows =
+                phase2_gpu_admission.as_ref().map_or(0usize, |admission| {
+                    admission.complete.iter().filter(|&&value| value).count()
+                });
             let results = self.scan_coalesced_phase2_with_admission(
                 chunks,
                 triggers,
                 phase2_gpu_admission
                     .as_ref()
                     .map(|admission| admission.admitted.as_slice()),
+                phase2_gpu_admission
+                    .as_ref()
+                    .map(|admission| admission.complete.as_slice()),
                 Some(phase2_keyword_hints.as_slice()),
                 Some(phase2_always_anchor_presence.as_slice()),
                 confirmed_anchor_literal_matches.as_deref(),
@@ -708,7 +722,7 @@ impl CompiledScanner {
                     .map_or(0usize, |rows| rows.iter().map(Vec::len).sum());
                 let generic_keyword_gpu_complete = generic_keyword_positions.is_some();
                 eprintln!(
-                    "perf-trace {}: chunks={} source_bytes={} coalesced_bytes={} max_dispatch_bytes={} dispatches={} batch_mode={} matcher={:.3}s coalesce={:.6}s coalesce_mib_s={:.3} dispatch={:.3}s derive={:.6}s floor={:.3}s phase2_gpu={:.3}s phase2={:.3}s gpu_presence_bits={} underfire_recovered={} trigger_bits={} phase2_gpu_admitted={} phase2_gpu_matches={} phase2_gpu_complete={} phase2_always_anchor_chunks={} confirmed_anchor_gpu_complete={} confirmed_anchor_candidate_rows={} confirmed_anchor_candidates={} generic_keyword_gpu_complete={} generic_keyword_candidate_rows={} generic_keyword_candidates={} full_recall_floor={}",
+                    "perf-trace {}: chunks={} source_bytes={} coalesced_bytes={} max_dispatch_bytes={} dispatches={} batch_mode={} matcher={:.3}s coalesce={:.6}s coalesce_mib_s={:.3} dispatch={:.3}s derive={:.6}s floor={:.3}s phase2_gpu={:.3}s phase2={:.3}s gpu_presence_bits={} underfire_recovered={} trigger_bits={} phase2_gpu_admitted={} phase2_gpu_matches={} phase2_gpu_complete={} phase2_gpu_complete_rows={} phase2_gpu_excluded_oversized={} phase2_gpu_excluded_non_ascii={} phase2_gpu_ascii_patterns={} phase2_gpu_uncovered_ascii_patterns={} phase2_gpu_excluded_redundant_patterns={} phase2_gpu_shards={} phase2_always_anchor_chunks={} confirmed_anchor_gpu_complete={} confirmed_anchor_candidate_rows={} confirmed_anchor_candidates={} generic_keyword_gpu_complete={} generic_keyword_candidate_rows={} generic_keyword_candidates={} full_recall_floor={}",
                     route.label(),
                     chunks.len(),
                     region_source_bytes,
@@ -730,6 +744,14 @@ impl CompiledScanner {
                     phase2_gpu_admitted,
                     phase2_gpu_matches,
                     phase2_gpu_complete,
+                    phase2_gpu_complete_rows,
+                    phase2_gpu_excluded_oversized,
+                    phase2_gpu_excluded_non_ascii,
+                    phase2_gpu_coverage.map_or(0, |coverage| coverage.covered_ascii_patterns),
+                    phase2_gpu_coverage.map_or(0, |coverage| coverage.uncovered_ascii_patterns),
+                    phase2_gpu_coverage
+                        .map_or(0, |coverage| coverage.excluded_ascii_redundant_patterns),
+                    phase2_gpu_coverage.map_or(0, |coverage| coverage.shards),
                     phase2_always_anchor_chunks,
                     confirmed_anchor_gpu_complete,
                     confirmed_anchor_candidate_rows,

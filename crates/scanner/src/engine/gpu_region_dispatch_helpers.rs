@@ -36,11 +36,11 @@ pub(super) fn append_phase2_gpu_admission(
     mut shard: Phase2GpuDfaAdmission,
     expected_rows: usize,
 ) -> std::result::Result<(), String> {
-    if shard.admitted.len() != expected_rows || shard.marked.len() != expected_rows {
+    if shard.admitted.len() != expected_rows || shard.complete.len() != expected_rows {
         return Err(format!(
-            "phase-2 GPU admission shard returned admitted={} and marked={} row(s), need {expected_rows}",
+            "phase-2 GPU admission shard returned admitted={} and complete={} row(s), need {expected_rows}",
             shard.admitted.len(),
-            shard.marked.len()
+            shard.complete.len()
         ));
     }
     merged
@@ -48,12 +48,11 @@ pub(super) fn append_phase2_gpu_admission(
         .try_reserve(shard.admitted.len())
         .map_err(|error| format!("phase-2 GPU admitted-row merge reserve failed: {error}"))?;
     merged
-        .marked
-        .try_reserve(shard.marked.len())
-        .map_err(|error| format!("phase-2 GPU marked-row merge reserve failed: {error}"))?;
+        .complete
+        .try_reserve(shard.complete.len())
+        .map_err(|error| format!("phase-2 GPU complete-row merge reserve failed: {error}"))?;
     merged.admitted.append(&mut shard.admitted);
-    merged.marked.append(&mut shard.marked);
-    merged.complete &= shard.complete;
+    merged.complete.append(&mut shard.complete);
     merged.matches_seen = merged
         .matches_seen
         .checked_add(shard.matches_seen)
@@ -73,18 +72,17 @@ pub(super) fn scan_phase2_gpu_chunks_sharded(
     let shards = region_presence_shards(chunks, byte_limit)?;
     let mut merged = Phase2GpuDfaAdmission {
         admitted: Vec::new(),
-        complete: true,
+        complete: Vec::new(),
         matches_seen: 0,
-        marked: Vec::new(),
     };
     merged
         .admitted
         .try_reserve(chunks.len())
         .map_err(|error| format!("phase-2 GPU admitted-row reserve failed: {error}"))?;
     merged
-        .marked
+        .complete
         .try_reserve(chunks.len())
-        .map_err(|error| format!("phase-2 GPU marked-row reserve failed: {error}"))?;
+        .map_err(|error| format!("phase-2 GPU complete-row reserve failed: {error}"))?;
     for shard in shards {
         let shard = shard?;
         let rows = shard.chunks.len();
@@ -106,18 +104,17 @@ pub(super) fn scan_phase2_gpu_refs_sharded(
     let shards = region_presence_ref_shards(chunks, byte_limit)?;
     let mut merged = Phase2GpuDfaAdmission {
         admitted: Vec::new(),
-        complete: true,
+        complete: Vec::new(),
         matches_seen: 0,
-        marked: Vec::new(),
     };
     merged
         .admitted
         .try_reserve(chunks.len())
         .map_err(|error| format!("phase-2 GPU admitted-row reserve failed: {error}"))?;
     merged
-        .marked
+        .complete
         .try_reserve(chunks.len())
-        .map_err(|error| format!("phase-2 GPU marked-row reserve failed: {error}"))?;
+        .map_err(|error| format!("phase-2 GPU complete-row reserve failed: {error}"))?;
     for shard in shards {
         let shard = shard?;
         let rows = shard.chunks.len();

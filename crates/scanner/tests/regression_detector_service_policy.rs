@@ -12,6 +12,7 @@ fn scanner_for(service: &str) -> CompiledScanner {
         patterns: vec![PatternSpec {
             regex: "opaque=([a]{24})".into(),
             group: Some(1),
+            required_literals: Vec::new(),
             ..PatternSpec::default()
         }],
         keywords: vec!["opaque".into()],
@@ -78,6 +79,7 @@ fn active_resolution_uses_custom_typed_plan_and_rejects_unknown_identity() {
         patterns: vec![PatternSpec {
             regex: "opaque=([A-Za-z0-9]{24})".into(),
             group: Some(1),
+            required_literals: Vec::new(),
             ..PatternSpec::default()
         }],
         keywords: vec!["opaque".into()],

@@ -6,6 +6,17 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Detector patterns can declare AST-proven `required_literals` beside their
+  regex. KeyHog compiles those literals into every backend's shared candidate
+  plan and rejects optional or branch-incomplete declarations. The DeepL and
+  URL credential detectors now own their three-byte routing infixes, making
+  the GPU ASCII prefixless catalog complete without a fixed pattern budget.
+- GPU scans now compose complete prefixless evidence with fused anchor absence
+  for every eligible ASCII row, including rows with phase-one triggers. Proven
+  rows bypass the redundant Hyperscan always-active prefilter while keyword,
+  generic, entropy, ML, recovery, normalized, and incomplete paths retain their
+  canonical behavior; normalization invalidates raw GPU evidence and recomputes
+  phase-one admission before extraction.
 - Isolated entropy admission now skips lines already owned by stronger findings,
   proves detector-owned short symbolic shapes before Shannon scoring, and rejects
   pronounceable digit-bearing source identifiers when the owning TOML enables

@@ -1,3 +1,4 @@
+use super::phase2::Phase2AlwaysActiveGpuEvidence;
 #[cfg(any(feature = "simd", feature = "gpu", test))]
 use super::windowed_support::window_ranges;
 use super::windowed_support::{
@@ -68,7 +69,7 @@ impl CompiledScanner {
         triggered_patterns: &[u64],
         deadline: Option<std::time::Instant>,
         phase2_keyword_hints: Option<&[u32]>,
-        phase2_always_anchor_present: Option<bool>,
+        phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence>,
         confirmed_anchor_literal_matches: Option<&[(u32, u32)]>,
         generic_keyword_positions: Option<&[u32]>,
     ) -> Vec<RawMatch> {
@@ -131,7 +132,7 @@ impl CompiledScanner {
                         triggered_patterns,
                         deadline,
                         phase2_keyword_hints,
-                        phase2_always_anchor_present,
+                        phase2_always_active_gpu_evidence,
                         confirmed_anchor_matches,
                         generic_positions,
                     );

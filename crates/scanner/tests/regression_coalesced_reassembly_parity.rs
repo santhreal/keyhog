@@ -46,6 +46,7 @@ fn reassembly_scanner() -> CompiledScanner {
             regex: "abcde[0-9A-Z]{15}".into(),
             description: None,
             group: None,
+            required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
         }],

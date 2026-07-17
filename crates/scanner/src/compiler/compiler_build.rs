@@ -93,6 +93,7 @@ pub(crate) fn append_hyperscan_unsupported_patterns(
 struct PatternArtifacts {
     compiled: CompiledPattern,
     prefixes: Vec<String>,
+    required_literals: Vec<String>,
     homoglyph_phase2: Vec<(CompiledPattern, Vec<String>)>,
     inner_literals: Vec<String>,
     no_literal_no_keyword: bool,
@@ -208,18 +209,21 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
                 // Inner-literal fallback is only needed when no usable prefix
                 // exists; keep it lazy so prefix-bearing patterns skip the
                 // second AST walk (preserves the original control flow).
-                let inner_literals = if prefixes.is_empty() {
+                let inner_literals = if prefixes.is_empty() && pattern.required_literals.is_empty()
+                {
                     extract_inner_literals(&pattern.regex)
                 } else {
                     Vec::new()
                 };
                 let no_literal_no_keyword = prefixes.is_empty()
+                    && pattern.required_literals.is_empty()
                     && inner_literals.is_empty()
                     && detector.keywords.is_empty();
 
                 artifacts.push(PatternArtifacts {
                     compiled,
                     prefixes,
+                    required_literals: pattern.required_literals.clone(),
                     homoglyph_phase2,
                     inner_literals,
                     no_literal_no_keyword,
@@ -248,6 +252,7 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
             let PatternArtifacts {
                 compiled,
                 prefixes,
+                required_literals,
                 homoglyph_phase2,
                 inner_literals,
                 no_literal_no_keyword,
@@ -260,6 +265,11 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
             if !prefixes.is_empty() {
                 for prefix in prefixes {
                     ac_literals.push(prefix);
+                    ac_map.push(compiled.clone());
+                }
+            } else if !required_literals.is_empty() {
+                for literal in required_literals {
+                    ac_literals.push(literal);
                     ac_map.push(compiled.clone());
                 }
             } else if !inner_literals.is_empty() {

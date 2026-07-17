@@ -25,6 +25,14 @@ pub enum ScanError {
         captures_len: usize,
     },
     #[error(
+        "detector {detector_id} pattern {index} has invalid compiled policy: {reason}. Fix: correct the detector TOML pattern policy"
+    )]
+    DetectorPatternPolicy {
+        detector_id: String,
+        index: usize,
+        reason: String,
+    },
+    #[error(
         "failed to compile scanner regex set: {0}. Fix: simplify the detector regex set or remove the invalid pattern"
     )]
     RegexSetCompile(#[from] regex::Error),

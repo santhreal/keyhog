@@ -952,6 +952,11 @@ pub struct PatternSpec {
     pub description: Option<String>,
     /// Optional capture group index containing the secret.
     pub group: Option<usize>,
+    /// ASCII literals used only for candidate routing. Every full regex match
+    /// must contain at least one declared literal; detector validation proves
+    /// that OR-condition from the regex AST before the corpus can load.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub required_literals: Vec<String>,
     /// When true, a match against THIS pattern downgrades the
     /// finding to `Severity::ClientSafe` (regardless of the detector's
     /// nominal severity). Used by services that intentionally ship
@@ -978,6 +983,97 @@ pub struct PatternSpec {
     /// applies the same policy to every pattern.
     #[serde(default)]
     pub weak_anchor: bool,
+}
+
+impl PatternSpec {
+    /// Validate that the declared routing literals are a necessary OR-condition
+    /// of every regex match. The proof is conservative: declarations that span
+    /// optional or structurally ambiguous AST nodes are rejected.
+    pub fn validate_required_literals(&self) -> Result<(), String> {
+        use regex_syntax::ast::{parse::Parser, Ast, RepetitionKind, RepetitionRange};
+
+        if self.required_literals.is_empty() {
+            return Ok(());
+        }
+        if self
+            .required_literals
+            .iter()
+            .any(|literal| literal.is_empty() || !literal.is_ascii())
+        {
+            return Err("must contain only non-empty ASCII strings".into());
+        }
+        let mut literals = self
+            .required_literals
+            .iter()
+            .map(|literal| literal.to_ascii_lowercase())
+            .collect::<Vec<_>>();
+        literals.sort_unstable();
+        if literals.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Err("contains a duplicate ASCII-insensitive literal".into());
+        }
+
+        fn repetition_min(kind: &RepetitionKind) -> u32 {
+            match kind {
+                RepetitionKind::ZeroOrOne | RepetitionKind::ZeroOrMore => 0,
+                RepetitionKind::OneOrMore => 1,
+                RepetitionKind::Range(RepetitionRange::Exactly(min))
+                | RepetitionKind::Range(RepetitionRange::AtLeast(min))
+                | RepetitionKind::Range(RepetitionRange::Bounded(min, _)) => *min,
+            }
+        }
+
+        fn guarantees(ast: &Ast, literals: &[String]) -> bool {
+            fn run_contains(run: &str, literals: &[String]) -> bool {
+                let folded = run.to_ascii_lowercase();
+                literals.iter().any(|literal| folded.contains(literal))
+            }
+
+            match ast {
+                Ast::Literal(literal) => run_contains(&literal.c.to_string(), literals),
+                Ast::Group(group) => guarantees(&group.ast, literals),
+                Ast::Alternation(alternation) => {
+                    !alternation.asts.is_empty()
+                        && alternation
+                            .asts
+                            .iter()
+                            .all(|branch| guarantees(branch, literals))
+                }
+                Ast::Repetition(repetition) => {
+                    repetition_min(&repetition.op.kind) > 0 && guarantees(&repetition.ast, literals)
+                }
+                Ast::Concat(concat) => {
+                    let mut run = String::new();
+                    for node in &concat.asts {
+                        if let Ast::Literal(literal) = node {
+                            run.push(literal.c);
+                            continue;
+                        }
+                        if run_contains(&run, literals) || guarantees(node, literals) {
+                            return true;
+                        }
+                        run.clear();
+                    }
+                    run_contains(&run, literals)
+                }
+                Ast::Empty(_)
+                | Ast::Dot(_)
+                | Ast::Assertion(_)
+                | Ast::ClassUnicode(_)
+                | Ast::ClassPerl(_)
+                | Ast::ClassBracketed(_)
+                | Ast::Flags(_) => false,
+            }
+        }
+
+        let ast = Parser::new()
+            .parse(&self.regex)
+            .map_err(|error| format!("cannot prove literals against invalid regex: {error}"))?;
+        if guarantees(&ast, &literals) {
+            Ok(())
+        } else {
+            Err("is not a proven necessary OR-condition of every regex match".into())
+        }
+    }
 }
 
 /// Secondary pattern used to confirm a primary match or provide extra context.

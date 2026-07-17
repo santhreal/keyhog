@@ -2,13 +2,10 @@
 
 pub(crate) struct Phase2GpuDfaAdmission {
     pub(crate) admitted: Vec<bool>,
-    pub(crate) complete: bool,
+    /// Per-region proof that a negative admission bit covered every
+    /// prefixless always-active pattern relevant to that region's byte class.
+    pub(crate) complete: Vec<bool>,
     pub(crate) matches_seen: usize,
-    /// Per-region (index-aligned with `admitted`) the deduped phase-2 pattern
-    /// indices the GPU regex-DFA matched. Authoritative as the always-active
-    /// active set ONLY when `complete` (GPU covered every always-active pattern);
-    /// otherwise the CPU RegexSet remains authoritative and this is advisory.
-    pub(crate) marked: Vec<Vec<usize>>,
 }
 
 pub(in crate::engine) enum Phase2GpuAdmissionWorkload<'a> {
@@ -21,10 +18,6 @@ pub(in crate::engine) enum Phase2GpuAdmissionWorkload<'a> {
         chunks: Vec<&'a keyhog_core::Chunk>,
         full_len: usize,
     },
-}
-
-fn trigger_has_bits(trigger: Option<&[u64]>) -> bool {
-    trigger.is_some_and(|bits| bits.iter().any(|&word| word != 0))
 }
 
 pub(in crate::engine) fn validate_phase2_gpu_trigger_rows(
@@ -42,31 +35,20 @@ pub(in crate::engine) fn validate_phase2_gpu_trigger_rows(
 #[cfg(test)]
 pub(in crate::engine) fn build_phase2_gpu_admission_workload<'a>(
     chunks: &'a [keyhog_core::Chunk],
-    triggers: &[Option<Vec<u64>>],
 ) -> Phase2GpuAdmissionWorkload<'a> {
-    build_phase2_gpu_admission_workload_filtered(chunks, triggers, |_, _| true)
+    build_phase2_gpu_admission_workload_filtered(chunks, |_, _| true)
 }
 
 pub(in crate::engine) fn build_phase2_gpu_admission_workload_filtered<'a>(
     chunks: &'a [keyhog_core::Chunk],
-    triggers: &[Option<Vec<u64>>],
-    include_no_trigger_chunk: impl Fn(usize, &'a keyhog_core::Chunk) -> bool,
+    include_chunk: impl Fn(usize, &'a keyhog_core::Chunk) -> bool,
 ) -> Phase2GpuAdmissionWorkload<'a> {
-    let mut first_triggered_index = None;
     let mut first_excluded_index = None;
     let mut indices = Vec::new();
     let mut selected_chunks = Vec::new();
 
     for (idx, chunk) in chunks.iter().enumerate() {
-        let has_trigger = trigger_has_bits(
-            triggers
-                .get(idx)
-                .and_then(|trigger| trigger.as_ref().map(Vec::as_slice)),
-        );
-        if has_trigger && first_triggered_index.is_none() {
-            first_triggered_index = Some(idx);
-        }
-        if !has_trigger && include_no_trigger_chunk(idx, chunk) {
+        if include_chunk(idx, chunk) {
             if first_excluded_index.is_none() {
                 continue;
             }
@@ -87,8 +69,6 @@ pub(in crate::engine) fn build_phase2_gpu_admission_workload_filtered<'a>(
         }
     }
 
-    debug_assert!(first_triggered_index.is_none() || first_excluded_index.is_some());
-
     match (first_excluded_index, indices.is_empty()) {
         (None, _) => Phase2GpuAdmissionWorkload::Full { chunks },
         (Some(_), true) => Phase2GpuAdmissionWorkload::Empty,
@@ -106,8 +86,9 @@ pub(in crate::engine) fn expand_phase2_gpu_admission(
     full_len: usize,
 ) -> Phase2GpuDfaAdmission {
     let mut admitted = vec![false; full_len];
-    let mut marked: Vec<Vec<usize>> = vec![Vec::new(); full_len];
-    let length_mismatch = subset.admitted.len() != workload_indices.len();
+    let mut complete = vec![false; full_len];
+    let length_mismatch = subset.admitted.len() != workload_indices.len()
+        || subset.complete.len() != workload_indices.len();
     for (&is_admitted, &full_idx) in subset.admitted.iter().zip(workload_indices.iter()) {
         if is_admitted {
             if let Some(slot) = admitted.get_mut(full_idx) {
@@ -115,11 +96,11 @@ pub(in crate::engine) fn expand_phase2_gpu_admission(
             }
         }
     }
-    // Remap the subset's per-region marks onto their full-batch region indices,
-    // index-aligned with `admitted` above (same subset→full mapping).
-    for (region_marks, &full_idx) in subset.marked.into_iter().zip(workload_indices.iter()) {
-        if let Some(slot) = marked.get_mut(full_idx) {
-            *slot = region_marks;
+    for (&is_complete, &full_idx) in subset.complete.iter().zip(workload_indices.iter()) {
+        if is_complete {
+            if let Some(slot) = complete.get_mut(full_idx) {
+                *slot = true;
+            }
         }
     }
     if length_mismatch {
@@ -132,8 +113,11 @@ pub(in crate::engine) fn expand_phase2_gpu_admission(
     }
     Phase2GpuDfaAdmission {
         admitted,
-        complete: subset.complete && !length_mismatch,
+        complete: if length_mismatch {
+            vec![false; full_len]
+        } else {
+            complete
+        },
         matches_seen: subset.matches_seen,
-        marked,
     }
 }

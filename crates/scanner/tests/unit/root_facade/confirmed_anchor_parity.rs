@@ -128,6 +128,7 @@ fn boundary_scanner() -> CompiledScanner {
             regex: r#"\bAGORA_APP_ID[=\s"']+([a-f0-9]{32})"#.to_string(),
             description: Some("Boundary-sensitive assignment".to_string()),
             group: Some(1),
+            required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
         }],

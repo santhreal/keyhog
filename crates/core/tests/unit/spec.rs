@@ -110,6 +110,7 @@ fn pattern_spec_with_group() {
         regex: "API_KEY=(.*)".to_string(),
         description: Some("capture group test".to_string()),
         group: Some(1),
+        required_literals: Vec::new(),
         ..Default::default()
     };
     assert_eq!(pattern.group, Some(1));

@@ -25,11 +25,6 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
         "/src/engine/phase2_gpu_dfa/batch.rs"
     ))
     .expect("phase2 gpu dfa batch readable");
-    let gpu_dfa_candidates_src = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/engine/phase2_gpu_dfa/candidates.rs"
-    ))
-    .expect("phase2 gpu dfa candidates readable");
     let gpu_dfa_lowering_src = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/engine/phase2_gpu_dfa/lowering.rs"
@@ -105,15 +100,6 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
         "region dispatch must wire phase-2 GPU regex-DFA admission visibly, with CPU admission authoritative on failure"
     );
     assert!(
-        dispatch_src.contains("build_phase2_gpu_admission_workload")
-            && dispatch_src.contains("Phase2GpuAdmissionWorkload::Full")
-            && dispatch_src.contains("scan_admission_chunks")
-            && dispatch_src.contains("Phase2GpuAdmissionWorkload::Subset")
-            && dispatch_src.contains("scan_admission_refs")
-            && !dispatch_src.contains("catalog.scan_admission(&**backend, chunks)"),
-        "phase-2 GPU DFA admission must reuse the original chunk slice for all-no-trigger batches and allocate subset refs only for mixed batches; chunks with phase-1 trigger bits already enter the shared phase-2 tail"
-    );
-    assert!(
         dispatch_src.contains("validate_phase2_gpu_trigger_rows")
             && gpu_dfa_workload_src.contains("refusing to run mismatched phase-2 admission"),
         "region dispatch must fail loud before phase-2 if trigger row count drifts from chunk count"
@@ -130,11 +116,6 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
             && gpu_dfa_src.contains("Some(\"cuda\") => Self::CudaCompatible"),
         "phase-2 GPU regex-DFA cache must be keyed by backend program shape, not first backend to touch the scanner"
     );
-    let phase2_scan_admission = gpu_dfa_src
-        .split("fn scan_admission_with_scratch")
-        .nth(1)
-        .and_then(|tail| tail.split("fn prefixless_always_active_candidates").next())
-        .expect("phase-2 GPU DFA batch admission owner present");
     let phase2_shard_dispatch = gpu_dfa_shard_src
         .split("fn scan_admission_into")
         .nth(1)
@@ -149,22 +130,13 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
             && gpu_dfa_src.contains("with_phase2_gpu_dfa_scratch")
             && !gpu_dfa_src.contains("thread_local!")
             && !gpu_dfa_src.contains("fn scan_admission_into")
-            && !gpu_dfa_src.contains("fn prioritized_phase2_gpu_dfa_candidates")
+            && !gpu_dfa_src.contains("fn ascii_no_trigger_phase2_gpu_dfa_candidates")
             && !gpu_dfa_src.contains("gate_prefix_literals")
             && !gpu_dfa_src.contains("fn build_shard")
             && !gpu_dfa_src.contains("build_regex_dfa_unanchored")
             && !gpu_dfa_src.contains("fn trigger_has_bits")
             && !gpu_dfa_src.contains("fn expand_phase2_gpu_admission"),
         "phase-2 GPU DFA catalog/admission policy must delegate candidate selection, lowering, upload-batch scratch, shard dispatch/readback, and workload shaping to their owners"
-    );
-    assert!(
-        gpu_dfa_candidates_src.contains("prefixless_always_active_candidates")
-            && gpu_dfa_candidates_src.contains("prioritized_phase2_gpu_dfa_candidates")
-            && !gpu_dfa_candidates_src.contains("valid_phase2_gpu_dfa_candidates")
-            && !gpu_dfa_candidates_src.contains("phase2_patterns.get(idx)")
-            && gpu_dfa_candidates_src.contains("gate_prefix_literals")
-            && gpu_dfa_candidates_src.contains("HashSet"),
-        "phase-2 GPU DFA candidate discovery and prioritization must live in engine/phase2_gpu_dfa/candidates.rs and consume construction-owned indices directly"
     );
     assert!(
         gpu_dfa_lowering_src.contains("build_shards_recursive")
@@ -175,41 +147,10 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
         "phase-2 GPU DFA regex source lowering and shard construction must live in engine/phase2_gpu_dfa/lowering.rs"
     );
     assert!(
-        gpu_dfa_workload_src.contains("validate_phase2_gpu_trigger_rows")
-            && gpu_dfa_workload_src.contains("build_phase2_gpu_admission_workload")
-            && gpu_dfa_workload_src.contains("Phase2GpuAdmissionWorkload::Full")
-            && gpu_dfa_workload_src.contains("Phase2GpuAdmissionWorkload::Subset")
-            && gpu_dfa_workload_src.contains("Phase2GpuAdmissionWorkload::Empty")
-            && gpu_dfa_workload_src.contains("first_triggered_index")
-            && !gpu_dfa_workload_src.contains(".filter(|(idx, _chunk)|")
-            && !gpu_dfa_workload_src.contains(".count();")
-            && gpu_dfa_workload_src.contains("expand_phase2_gpu_admission")
-            && gpu_dfa_workload_src.contains("trigger_has_bits")
-            && gpu_dfa_workload_src.contains("length_mismatch"),
-        "phase-2 GPU DFA trigger-row validation, one-pass no-hit workload shaping, full-batch reuse, and full-batch expansion must live in engine/phase2_gpu_dfa/workload.rs"
-    );
-    assert!(
-        !dispatch_src.contains("admitted: vec![false; full_len]")
-            && dispatch_src.contains("phase2_gpu_empty_complete"),
-        "all-triggered phase-2 GPU DFA workload must not allocate a full false admission bitmap"
-    );
-    assert!(
         !gpu_dfa_src.contains("pack_haystack_u32_into")
             && !gpu_dfa_batch_src.contains("pack_haystack_u32_into")
             && !gpu_dfa_shard_src.contains("pack_haystack_u32_into"),
         "phase-2 GPU DFA admission must build the packed upload buffer directly, not coalesce raw bytes and then pack them again"
-    );
-    assert!(
-        gpu_dfa_batch_src.contains("build_packed_region_batch_refs")
-            && gpu_dfa_batch_src.contains("haystack_padded_u32_byte_len")
-            && gpu_dfa_batch_src.contains(".haystack_bytes")
-            && gpu_dfa_batch_src.contains(".extend_from_slice(chunk.data.as_bytes())")
-            && phase2_scan_admission.contains("scratch.haystack_len")
-            && phase2_scan_admission.contains("let shard_incomplete")
-            && phase2_scan_admission.contains("complete = false")
-            && !phase2_shard_dispatch.contains("pack_haystack_u32_into")
-            && !phase2_shard_dispatch.contains("scan_guard("),
-        "phase-2 GPU DFA shard dispatch must reuse the directly built batch-packed haystack bytes and propagate incomplete shard evidence"
     );
     assert!(
         phase2_shard_dispatch.contains("unattributed_matches")

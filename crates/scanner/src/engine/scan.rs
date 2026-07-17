@@ -53,8 +53,7 @@ impl CompiledScanner {
             return Vec::new();
         }
         let t1 = prof.then(std::time::Instant::now);
-        let triggered =
-            self.collect_triggered_patterns_for_backend(&prepared.preprocessed.text, backend);
+        let triggered = self.collect_triggered_patterns_for_backend(&chunk.data, backend);
         if let Some(t) = t1 {
             SCAN_PHASE1_NS.fetch_add(
                 t.elapsed().as_nanos() as u64,

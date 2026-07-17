@@ -12,6 +12,7 @@ fn partial_alternation_detector() -> DetectorSpec {
             regex: "(AKIA|[A-Z0-9]{4})TESTSECRET".into(),
             description: None,
             group: None,
+            required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
         }],

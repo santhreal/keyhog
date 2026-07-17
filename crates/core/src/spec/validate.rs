@@ -60,6 +60,7 @@ pub fn validate_detector(spec: &DetectorSpec) -> Vec<QualityIssue> {
     validate_identity(spec, &mut issues);
     validate_patterns_present(spec, &mut issues);
     validate_regexes(spec, &mut issues, &mut regex_cache);
+    validate_required_literals(spec, &mut issues);
     validate_pattern_groups(spec, &mut issues, &mut regex_cache);
     validate_keywords(spec, &mut issues);
     validate_simdsieve_prefixes(spec, &mut issues);
@@ -74,6 +75,16 @@ pub fn validate_detector(spec: &DetectorSpec) -> Vec<QualityIssue> {
     validate_credential_shape(spec, &mut issues);
     validate_detector_allowlists(spec, &mut issues);
     issues
+}
+
+fn validate_required_literals(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
+    for (index, pattern) in spec.patterns.iter().enumerate() {
+        if let Err(reason) = pattern.validate_required_literals() {
+            issues.push(QualityIssue::Error(format!(
+                "patterns[{index}].required_literals: {reason}"
+            )));
+        }
+    }
 }
 
 fn validate_offline_validators(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {

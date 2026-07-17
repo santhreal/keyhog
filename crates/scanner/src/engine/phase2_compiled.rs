@@ -23,7 +23,7 @@ impl CompiledScanner {
         scan_state: &mut ScanState,
         deadline: Option<std::time::Instant>,
         phase2_keyword_hints: Option<&[u32]>,
-        phase2_always_anchor_present: Option<bool>,
+        phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence>,
     ) {
         if let Some(deadline) = deadline {
             if std::time::Instant::now() >= deadline {
@@ -51,7 +51,7 @@ impl CompiledScanner {
                     deadline,
                     None,
                     phase2_keyword_hints,
-                    phase2_always_anchor_present,
+                    phase2_always_active_gpu_evidence,
                 );
                 return;
             }
@@ -69,6 +69,7 @@ impl CompiledScanner {
                 scan_state,
                 deadline,
                 phase2_keyword_hints,
+                phase2_always_active_gpu_evidence,
             );
             return;
         }
@@ -77,6 +78,7 @@ impl CompiledScanner {
             &preprocessed.text,
             &preprocessed.text,
             phase2_keyword_hints,
+            phase2_always_active_gpu_evidence,
             |this, active_patterns| {
                 // `active_patterns` is the SPARSE list of active phase-2 indices,
                 // so we touch only the patterns that can fire on this chunk rather
@@ -124,7 +126,7 @@ impl CompiledScanner {
         deadline: Option<std::time::Instant>,
         focus: (usize, usize),
         phase2_keyword_hints: Option<&[u32]>,
-        phase2_always_anchor_present: Option<bool>,
+        phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence>,
     ) {
         if let Some(deadline) = deadline {
             if std::time::Instant::now() >= deadline {
@@ -157,7 +159,7 @@ impl CompiledScanner {
                 scan_state,
                 deadline,
                 phase2_keyword_hints,
-                phase2_always_anchor_present,
+                phase2_always_active_gpu_evidence,
             );
             return;
         }
@@ -181,7 +183,7 @@ impl CompiledScanner {
                     deadline,
                     focus,
                     phase2_keyword_hints,
-                    phase2_always_anchor_present,
+                    phase2_always_active_gpu_evidence,
                 );
                 return;
             }
@@ -196,6 +198,7 @@ impl CompiledScanner {
             &preprocessed.text,
             match_text,
             phase2_keyword_hints,
+            phase2_always_active_gpu_evidence,
             |this, active_patterns| {
                 for (tested, &index) in active_patterns.iter().enumerate() {
                     if let Some(deadline) = deadline {
@@ -243,6 +246,7 @@ impl CompiledScanner {
         data: &str,
         match_text: &str,
         phase2_keyword_hints: Option<&[u32]>,
+        phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence>,
         f: impl FnOnce(&Self, &[usize]) -> R,
     ) -> R {
         ACTIVE_PATTERNS_POOL.with(|cell| {
@@ -256,6 +260,7 @@ impl CompiledScanner {
                 &mut scratch,
                 false,
                 phase2_keyword_hints,
+                phase2_always_active_gpu_evidence.is_some_and(|evidence| evidence.absence_proven()),
             );
             if self.tuning.phase2_reverse_enabled() {
                 scratch.active.reverse();
@@ -332,7 +337,7 @@ impl CompiledScanner {
             None => ACTIVE_PATTERNS_POOL.with(|cell| {
                 let mut scratch = cell.borrow_mut();
                 scratch.begin(self.phase2_patterns.len());
-                self.populate_active_phase2(data, data, &mut scratch, false, None);
+                self.populate_active_phase2(data, data, &mut scratch, false, None, false);
                 !scratch.active.is_empty()
             }),
         }
@@ -363,6 +368,7 @@ impl CompiledScanner {
         scratch: &mut ActivePatternsScratch,
         anchor_mode: bool,
         phase2_keyword_hints: Option<&[u32]>,
+        always_active_absence_proven: bool,
     ) {
         if let Some(keyword_ac) = &self.phase2_keyword_ac {
             let prof = phase2_pattern_prof_enabled();
@@ -392,20 +398,22 @@ impl CompiledScanner {
                 // The anchorless always-active RegexSet, the detectors that run
                 // on EVERY chunk. This span is the cost the old vague label hid.
                 let _g = super::profile::span(super::profile::P::Phase2Prefilter);
-                match &self.phase2_always_active_prefilter {
-                    Some(prefilter) => prefilter.mark_matches(
-                        &self.phase2_patterns,
-                        match_text,
-                        scratch,
-                        localize_plain,
-                        &tuning,
-                    ),
-                    None => {
-                        for &index in &self.phase2_always_active_indices {
-                            if anchor_mode && self.anchor_always_active_eligible(index) {
-                                continue;
+                if !always_active_absence_proven {
+                    match &self.phase2_always_active_prefilter {
+                        Some(prefilter) => prefilter.mark_matches(
+                            &self.phase2_patterns,
+                            match_text,
+                            scratch,
+                            localize_plain,
+                            &tuning,
+                        ),
+                        None => {
+                            for &index in &self.phase2_always_active_indices {
+                                if anchor_mode && self.anchor_always_active_eligible(index) {
+                                    continue;
+                                }
+                                scratch.mark(index);
                             }
-                            scratch.mark(index);
                         }
                     }
                 }
@@ -445,8 +453,10 @@ impl CompiledScanner {
         } else {
             // No keyword prefilter compiled - every phase-2 pattern is
             // considered active.
-            for index in 0..self.phase2_patterns.len() {
-                scratch.mark(index);
+            if !always_active_absence_proven {
+                for index in 0..self.phase2_patterns.len() {
+                    scratch.mark(index);
+                }
             }
         }
     }
@@ -512,12 +522,14 @@ impl CompiledScanner {
         scan_state: &mut ScanState,
         deadline: Option<std::time::Instant>,
         phase2_keyword_hints: Option<&[u32]>,
+        phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence>,
     ) {
         let prof = phase2_pattern_prof_enabled();
         self.with_active_phase2_patterns(
             &preprocessed.text,
             &preprocessed.text,
             phase2_keyword_hints,
+            phase2_always_active_gpu_evidence,
             |this, active_set| {
                 // `active_set` is the sparse list of active phase-2 indices, so
                 // we iterate only the patterns that can fire - no second

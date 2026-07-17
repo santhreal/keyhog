@@ -30,26 +30,20 @@ fn test_pattern_with_shape(
 fn replay_catalog_admission(
     catalog: &Phase2GpuDfaCatalog,
     chunks: &[keyhog_core::Chunk],
-) -> (Vec<bool>, Vec<Vec<usize>>) {
+) -> Vec<bool> {
     let mut scratch = Phase2GpuDfaScratch::default();
     build_packed_region_batch(chunks, &mut scratch).expect("region batch");
     let mut admitted = vec![false; chunks.len()];
-    let mut marked: Vec<Vec<usize>> = vec![Vec::new(); chunks.len()];
     for shard in &catalog.shards {
-        replay_shard_admission(shard, &scratch, &mut admitted, &mut marked);
+        replay_shard_admission(shard, &scratch, &mut admitted);
     }
-    for region in &mut marked {
-        region.sort_unstable();
-        region.dedup();
-    }
-    (admitted, marked)
+    admitted
 }
 
 fn replay_shard_admission(
     shard: &Phase2GpuDfaShard,
     scratch: &Phase2GpuDfaScratch,
     admitted: &mut [bool],
-    marked: &mut [Vec<usize>],
 ) {
     let dfa = &shard.pipeline.dfa;
     let mut state = 0u32;
@@ -78,14 +72,6 @@ fn replay_shard_admission(
             ) {
                 if let Some(slot) = admitted.get_mut(region) {
                     *slot = true;
-                }
-                // Mirror the live path (`scan_admission_into`): record the
-                // phase-2 index that hit in this region, so a GPU-less replay
-                // test can verify the marking's index-mapping/attribution.
-                if let Some(&phase2_index) = shard.phase2_indices.get(pattern_id as usize) {
-                    if let Some(region_marks) = marked.get_mut(region) {
-                        region_marks.push(phase2_index);
-                    }
                 }
             }
         }
@@ -209,7 +195,7 @@ fn catalog_preparation_cost_is_recorded_once_and_reused() {
 }
 
 #[test]
-fn gpu_dfa_candidate_selection_prefers_base_detector_breadth() {
+fn gpu_dfa_ascii_plan_excludes_only_redundant_homoglyph_variants() {
     let patterns = vec![
         (
             test_pattern_with_shape("glyph0[0-9]{2}", false, 0, true),
@@ -235,14 +221,9 @@ fn gpu_dfa_candidate_selection_prefers_base_detector_breadth() {
     let candidates = [0, 1, 2, 3, 4];
 
     assert_eq!(
-            prioritized_phase2_gpu_dfa_candidates(&patterns, &candidates, 3),
-            vec![1, 3, 4],
-            "bounded GPU DFA admission must spend slots on base detector regexes before generated homoglyph variants"
-        );
-    assert_eq!(
-        prioritized_phase2_gpu_dfa_candidates(&patterns, &candidates, 5),
-        vec![1, 3, 4, 0, 2],
-        "homoglyph variants stay eligible after the base-pattern breadth pass"
+        ascii_phase2_gpu_dfa_candidates(&patterns, &candidates),
+        vec![1, 3, 4],
+        "ASCII admission keeps every base regex in stable order and excludes generated homoglyph shadows"
     );
 }
 
@@ -262,7 +243,7 @@ fn gpu_dfa_candidate_selection_fails_loud_on_corrupt_indices() {
     let candidates = [usize::MAX, 1, 9, 0];
 
     // LAW10: intentional should-panic probe for corrupt construction-owned phase-2 indices; test-only no runtime effect in production.
-    prioritized_phase2_gpu_dfa_candidates(&patterns, &candidates, 8);
+    ascii_phase2_gpu_dfa_candidates(&patterns, &candidates);
 }
 
 #[test]
@@ -288,6 +269,7 @@ fn replayed_gpu_dfa_admission_matches_cpu_regex_case_policy() {
     let catalog = Phase2GpuDfaCatalog::build_from_selected_candidates(
         &patterns,
         1,
+        0,
         &[0],
         Phase2GpuDfaProgramKind::CudaCompatible,
     )
@@ -297,7 +279,7 @@ fn replayed_gpu_dfa_admission_matches_cpu_regex_case_policy() {
         keyhog_core::Chunk::from("prefix abc34 suffix"),
         keyhog_core::Chunk::from("prefix xyz99 suffix"),
     ];
-    let (gpu_admitted, gpu_marked) = replay_catalog_admission(&catalog, &chunks);
+    let gpu_admitted = replay_catalog_admission(&catalog, &chunks);
     let cpu_admitted: Vec<bool> = chunks
         .iter()
         .map(|chunk| patterns[0].0.regex.get().is_match(&chunk.data))
@@ -308,9 +290,6 @@ fn replayed_gpu_dfa_admission_matches_cpu_regex_case_policy() {
         "GPU regex-DFA admission must mirror the detector LazyRegex case policy"
     );
     assert_eq!(gpu_admitted, vec![true, true, false]);
-    // Marking (step-1a): each admitted region records the phase-2 index (0) that
-    // matched (the active set that will replace the CPU always-active RegexSet).
-    assert_eq!(gpu_marked, vec![vec![0usize], vec![0usize], vec![]]);
 }
 
 #[test]
@@ -319,6 +298,7 @@ fn replayed_gpu_dfa_admission_keeps_plain_patterns_case_sensitive() {
     let catalog = Phase2GpuDfaCatalog::build_from_selected_candidates(
         &patterns,
         1,
+        0,
         &[0],
         Phase2GpuDfaProgramKind::CudaCompatible,
     )
@@ -327,7 +307,7 @@ fn replayed_gpu_dfa_admission_keeps_plain_patterns_case_sensitive() {
         keyhog_core::Chunk::from("prefix ABC12 suffix"),
         keyhog_core::Chunk::from("prefix abc34 suffix"),
     ];
-    let (gpu_admitted, gpu_marked) = replay_catalog_admission(&catalog, &chunks);
+    let gpu_admitted = replay_catalog_admission(&catalog, &chunks);
     let cpu_admitted: Vec<bool> = chunks
         .iter()
         .map(|chunk| patterns[0].0.regex.get().is_match(&chunk.data))
@@ -338,12 +318,10 @@ fn replayed_gpu_dfa_admission_keeps_plain_patterns_case_sensitive() {
         "plain phase-2 variants must not become case-insensitive in the GPU DFA catalog"
     );
     assert_eq!(gpu_admitted, vec![false, true]);
-    // Marking mirrors admission: only the matched region records the phase-2 index.
-    assert_eq!(gpu_marked, vec![vec![], vec![0usize]]);
 }
 
 #[test]
-fn embedded_detector_set_builds_real_gpu_dfa_catalog_slice() {
+fn embedded_detector_set_has_complete_ascii_prefixless_catalog() {
     let detectors = keyhog_core::load_embedded_detectors_or_fail()
         .expect("embedded detector corpus must parse");
     let scanner = CompiledScanner::compile_with_gpu_policy(detectors, GpuInitPolicy::ForceDisabled)
@@ -354,44 +332,69 @@ fn embedded_detector_set_builds_real_gpu_dfa_catalog_slice() {
     );
     assert!(
         !candidates.is_empty(),
-        "embedded detector corpus must include prefixless always-active phase-2 candidates \
-             for KH-VYRE-5 GPU regex-DFA coverage"
+        "generated homoglyph shadows remain represented in phase two"
     );
-    let selected = prioritized_phase2_gpu_dfa_candidates(
-        &scanner.phase2_patterns,
-        &candidates,
-        PHASE2_GPU_DFA_MAX_CANDIDATES,
-    );
+    let selected = ascii_phase2_gpu_dfa_candidates(&scanner.phase2_patterns, &candidates);
+    assert!(selected
+        .iter()
+        .all(|&idx| !scanner.phase2_patterns[idx].0.homoglyph_variant));
     assert_eq!(
-            selected.len(),
-            candidates.len().min(PHASE2_GPU_DFA_MAX_CANDIDATES),
-            "production GPU DFA selection must fill the configured shard budget when the embedded corpus has enough candidates"
+        selected.len(),
+        candidates
+            .iter()
+            .filter(|&&idx| !scanner.phase2_patterns[idx].0.homoglyph_variant)
+            .count()
+    );
+    for &idx in &selected {
+        let mut shards = Vec::new();
+        let mut uncovered = 0;
+        build_shards_recursive(
+            &scanner.phase2_patterns,
+            &[idx],
+            false,
+            &mut shards,
+            &mut uncovered,
         );
-    let selected_len = selected.len().min(8);
+        assert_eq!(uncovered, 0, "phase-2 pattern {idx} did not lower");
+        assert_eq!(shards.len(), 1);
+    }
     let catalog = Phase2GpuDfaCatalog::build_from_selected_candidates(
         &scanner.phase2_patterns,
-        candidates.len(),
-        &selected[..selected_len],
+        selected.len(),
+        candidates.len().saturating_sub(selected.len()),
+        &selected,
         Phase2GpuDfaProgramKind::CudaCompatible,
     )
-    .expect(
-        "selected embedded prefixless phase-2 candidates must lower to at least one GPU DFA shard",
-    );
+    .expect("the complete embedded ASCII no-trigger plan must produce a catalog receipt");
     let covered: usize = catalog
         .shards
         .iter()
         .map(|shard| shard.phase2_indices.len())
         .sum();
-    assert!(
-        covered > 0,
-        "selected embedded prefixless phase-2 candidates produced no GPU DFA coverage"
+    assert_eq!(catalog.uncovered_ascii_patterns, 0);
+    assert_eq!(covered, selected.len());
+    assert_eq!(
+        catalog.excluded_ascii_redundant_patterns,
+        candidates.len().saturating_sub(selected.len())
     );
     assert!(
-            covered <= selected_len,
-            "GPU DFA catalog covered more patterns than selected: covered={covered}, selected={selected_len}"
-        );
-    assert!(
-        catalog.uncovered_patterns + covered >= candidates.len(),
-        "uncovered/covered accounting must include the full embedded prefixless candidate set"
+        catalog.shards.len() <= selected.len(),
+        "recursive lowering may split shards for state bounds but cannot require more work than one shard per selected pattern"
     );
+}
+
+#[test]
+fn empty_ascii_plan_is_complete_without_a_dispatch_catalog() {
+    let catalog = Phase2GpuDfaCatalog::build_from_selected_candidates(
+        &[],
+        0,
+        7,
+        &[],
+        Phase2GpuDfaProgramKind::CudaCompatible,
+    )
+    .expect("an empty ASCII plan is a complete negative proof");
+
+    assert!(catalog.shards.is_empty());
+    assert_eq!(catalog.uncovered_ascii_patterns, 0);
+    assert_eq!(catalog.excluded_ascii_redundant_patterns, 7);
 }

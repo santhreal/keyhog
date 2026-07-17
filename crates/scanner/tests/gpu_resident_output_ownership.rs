@@ -28,6 +28,7 @@ fn resident_gpu_readback_reuse_preserves_owned_results_and_parity() {
             regex: "KHRESIDENT_[A-Za-z0-9]{20}".into(),
             description: None,
             group: None,
+            required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
         }],

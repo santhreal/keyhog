@@ -457,6 +457,7 @@ pub(crate) fn scan_engine_self_test() -> Result<bool> {
             regex: "KHDOCTOR_[A-Za-z0-9]{12}".into(),
             description: None,
             group: None,
+            required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
         }],

@@ -418,6 +418,7 @@ fn entropy_only_owner(bpe_enabled: bool) -> DetectorSpec {
     owner.patterns = vec![PatternSpec {
         regex: "custom_owner_pattern_that_cannot_match_([0-9]{99})".to_string(),
         group: Some(1),
+        required_literals: Vec::new(),
         ..Default::default()
     }];
     owner.entropy_policy_priority = Some(100);

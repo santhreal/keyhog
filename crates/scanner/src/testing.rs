@@ -1650,13 +1650,18 @@ pub fn scan_coalesced_phase2_with_admission_for_test(
     chunks: &[keyhog_core::Chunk],
     triggers: Vec<Option<Vec<u64>>>,
     phase2_admission: Option<&[bool]>,
+    phase2_admission_complete: Option<&[bool]>,
 ) -> Vec<Vec<keyhog_core::RawMatch>> {
+    let negative_keyword_hints =
+        phase2_admission_complete.map(|_| vec![Vec::<u32>::new(); chunks.len()]);
+    let negative_anchor_presence = phase2_admission_complete.map(|_| vec![false; chunks.len()]);
     scanner.scan_coalesced_phase2_with_admission(
         chunks,
         triggers,
         phase2_admission,
-        None,
-        None,
+        phase2_admission_complete,
+        negative_keyword_hints.as_deref(),
+        negative_anchor_presence.as_deref(),
         None,
         None,
     )

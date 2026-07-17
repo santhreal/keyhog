@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Compile AST-proven per-pattern `required_literals` from detector TOML into
+  the shared scalar, Hyperscan, CUDA, and WGPU trigger plan. DeepL `:fx` and URL
+  `://` ownership remove the last two ASCII always-active regexes, replacing a
+  fixed 64-of-2,754 GPU phase-two budget with a complete ASCII prefixless plan.
+- Compose per-row prefixless completeness with fused anchor absence for every
+  eligible ASCII row, including phase-one-triggered rows, and bypass the
+  redundant Hyperscan always-active prefilter only when both proofs hold.
+  Generic, entropy, multiline, decode, normalized-text, ML, recovery, oversized,
+  non-ASCII, and incomplete work retains its canonical owner. Normalized rows
+  discard raw GPU hints and positions and recompute phase-one admission.
 - Keep fused GPU literal accounting feature-correct so portable scanner builds
   compile without referencing GPU-only positioned-evidence fields.
 - Make Amazon Music, Checkmarx, Huawei Cloud, and Vonage Video confidential

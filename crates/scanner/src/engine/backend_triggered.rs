@@ -1,3 +1,4 @@
+use super::phase2::Phase2AlwaysActiveGpuEvidence;
 use super::*;
 use crate::context;
 use crate::hw_probe::ScanBackend;
@@ -11,7 +12,7 @@ impl CompiledScanner {
         triggered_patterns: &[u64],
         deadline: Option<std::time::Instant>,
         phase2_keyword_hints: Option<&[u32]>,
-        phase2_always_anchor_present: Option<bool>,
+        phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence>,
         confirmed_anchor_literal_matches: Option<&[(u32, u32)]>,
         generic_keyword_positions: Option<&[u32]>,
     ) -> Vec<RawMatch> {
@@ -21,7 +22,7 @@ impl CompiledScanner {
             triggered_patterns,
             deadline,
             phase2_keyword_hints,
-            phase2_always_anchor_present,
+            phase2_always_active_gpu_evidence,
             confirmed_anchor_literal_matches,
             generic_keyword_positions,
         );
@@ -47,7 +48,7 @@ impl CompiledScanner {
         triggered_patterns: &[u64],
         deadline: Option<std::time::Instant>,
         phase2_keyword_hints: Option<&[u32]>,
-        phase2_always_anchor_present: Option<bool>,
+        phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence>,
         confirmed_anchor_literal_matches: Option<&[(u32, u32)]>,
         generic_keyword_positions: Option<&[u32]>,
     ) -> ScanState {
@@ -81,17 +82,34 @@ impl CompiledScanner {
             return scan_state;
         }
 
+        let raw_text_unchanged =
+            prepared.preprocessed.text.as_bytes() == prepared.chunk.data.as_bytes();
+        let normalized_triggered;
+        let triggered_patterns = if raw_text_unchanged {
+            triggered_patterns
+        } else {
+            normalized_triggered = {
+                let mut normalized = self.collect_triggered_patterns_for_backend(
+                    &prepared.preprocessed.text,
+                    ScanBackend::CpuFallback,
+                );
+                for (word, raw_word) in normalized.iter_mut().zip(triggered_patterns) {
+                    *word |= *raw_word;
+                }
+                normalized
+            };
+            normalized_triggered.as_slice()
+        };
         let expanded_patterns = self.expand_triggered_patterns(triggered_patterns);
-        // GPU presence rows are produced from raw chunk bytes. A negative
-        // always-anchor row is only a sound skip proof when phase-2 scans the
-        // same bytes; unicode/multiline preprocessing can introduce ASCII
-        // anchor text that the raw GPU literal pass could not have seen.
-        let phase2_always_anchor_present = phase2_always_anchor_present
-            .filter(|_| prepared.preprocessed.text.as_bytes() == prepared.chunk.data.as_bytes());
-        let confirmed_anchor_literal_matches = confirmed_anchor_literal_matches
-            .filter(|_| prepared.preprocessed.text.as_bytes() == prepared.chunk.data.as_bytes());
-        let generic_keyword_positions = generic_keyword_positions
-            .filter(|_| prepared.preprocessed.text.as_bytes() == prepared.chunk.data.as_bytes());
+        // Producer trigger bits and GPU evidence describe raw bytes. When
+        // preprocessing changes those bytes, union fresh canonical phase-one
+        // triggers and discard every raw position or absence claim.
+        let phase2_keyword_hints = phase2_keyword_hints.filter(|_| raw_text_unchanged);
+        let phase2_always_active_gpu_evidence =
+            phase2_always_active_gpu_evidence.filter(|_| raw_text_unchanged);
+        let confirmed_anchor_literal_matches =
+            confirmed_anchor_literal_matches.filter(|_| raw_text_unchanged);
+        let generic_keyword_positions = generic_keyword_positions.filter(|_| raw_text_unchanged);
 
         // No-trigger fast path: when no AC pattern fired, the entire
         // confirmed-pattern extraction pipeline is dead work. Skip
@@ -180,7 +198,7 @@ impl CompiledScanner {
                 deadline,
                 span,
                 phase2_keyword_hints,
-                phase2_always_anchor_present,
+                phase2_always_active_gpu_evidence,
             ),
             None => self.scan_phase2_patterns(
                 &prepared.preprocessed,
@@ -191,7 +209,7 @@ impl CompiledScanner {
                 &mut scan_state,
                 deadline,
                 phase2_keyword_hints,
-                phase2_always_anchor_present,
+                phase2_always_active_gpu_evidence,
             ),
         }
         if crate::deadline::expired(deadline) {

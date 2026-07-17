@@ -1,75 +1,100 @@
-//! Static fail-closed guard: the coalesced no-hit admission gate must consult the
-//! real active phase-2 set, so a chunk that fires no Hyperscan literal but does
-//! activate an anchorless / keyword-less fallback detector (asana-pat and ~3100
-//! similar, issue #69) is still driven through phase 2, regardless of whether the
-//! triggers were produced by the CPU Hyperscan prefilter or the GPU region route.
-//!
-//! Both producers feed the SHARED `scan_coalesced_phase2`, whose no-hit branch
-//! calls `should_scan_no_hit_chunk`, which in turn calls the real
-//! `has_active_phase2_patterns_for_chunk` prefilter. The old per-backend
-//! `gpu_phase2.rs` gate was unified into this shared tail; this guard tracks the
-//! invariant at its new home so a refactor can't silently drop the recall gate
-//! (Law 10). Behavioural proof of backend-invariance lives in
-//! `gpu_region_overfire_validation.rs` / `backend_parity_coalesced_vs_individual.rs`.
+use keyhog_core::{Chunk, DetectorSpec, PatternSpec, Severity};
+use keyhog_scanner::testing::scan_coalesced_phase2_with_admission_for_test;
+use keyhog_scanner::{CompiledScanner, ScannerConfig};
 
-use std::fs;
-use std::path::PathBuf;
-
-fn scanner_source(path: &str) -> String {
-    let mut full = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    full.push("src");
-    full.push(path);
-    fs::read_to_string(full).expect("read scanner source")
+fn prefixless_detector() -> DetectorSpec {
+    DetectorSpec {
+        id: "phase2-prefixless-fixture".into(),
+        name: "Phase Two Prefixless Fixture".into(),
+        service: "test".into(),
+        severity: Severity::High,
+        patterns: vec![PatternSpec {
+            regex: r"(?:^|[^A-Za-z0-9_-])([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}:fx)(?:$|[^A-Za-z0-9_-])".into(),
+            description: None,
+            group: Some(1),
+            required_literals: Vec::new(),
+            client_safe: false,
+            weak_anchor: false,
+        }],
+        ..Default::default()
+    }
 }
 
 #[test]
-fn no_hit_admission_consults_active_phase2_set() {
-    let scan = scanner_source("engine/scan_coalesced.rs");
+fn missing_gpu_completeness_keeps_cpu_phase2_admission_authoritative() {
+    let scanner = CompiledScanner::compile(vec![prefixless_detector()]).expect("compile detector");
+    let credential = "01234567-89ab-cdef-0123-456789abcdef:fx";
+    let chunks = [Chunk::from(format!("value = {credential}"))];
+    let admitted = [false];
 
-    // The shared no-hit admission gate must consult the real active phase-2 set
-    // through the raw-or-normalized text helper FIRST (the exact, cheap
-    // necessary condition for an anchorless match).
-    assert!(
-        scan.contains("fn no_hit_text_admits(&self, chunk: &keyhog_core::Chunk, text: &str)")
-            && scan.contains("if self.no_hit_text_admits(chunk, raw_text)")
-            && scan.contains("self.no_hit_text_admits(chunk, normalized)")
-            && scan.contains("self.has_active_phase2_patterns_for_chunk(text)"),
-        "should_scan_no_hit_chunk must probe the active phase-2 set to preserve \
-         prefixless / keyword-less detector recall on raw and normalized no-literal chunks"
+    let results = scan_coalesced_phase2_with_admission_for_test(
+        &scanner,
+        &chunks,
+        vec![Some(vec![1])],
+        Some(&admitted),
+        None,
     );
 
-    // The shared coalesced phase-2 tail, fed by BOTH the CPU Hyperscan prefilter
-    // and the GPU region route (must route no-trigger chunks through that gate).
-    assert!(
-        scan.contains("scan_coalesced_phase2_with_admission")
-            && scan.contains("admitted_by_phase2_gpu")
-            && scan.contains("admitted_by_phase2_keyword_hint")
-            && scan.contains("admitted_by_phase2_always_anchor")
-            && scan.contains("admitted_by_generic_keyword_hint")
-            && scan.contains("&& !self.should_scan_no_hit_chunk(chunk)"),
-        "GPU phase-2 regex-DFA admission may only force a no-hit chunk into the \
-         shared tail; a GPU miss with no other producer hint must still consult \
-         CPU admission"
+    let found = results[0]
+        .iter()
+        .find(|finding| finding.detector_id.as_ref() == "phase2-prefixless-fixture")
+        .expect("an incomplete triggered GPU row must consult the CPU phase-two owner");
+    assert_eq!(found.credential.as_ref(), credential);
+}
+
+#[test]
+fn complete_phase2_negative_does_not_bypass_generic_assignment_detection() {
+    let detectors = keyhog_core::load_embedded_detectors_or_fail()
+        .expect("embedded detector corpus must parse");
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    let scanner = CompiledScanner::compile(detectors)
+        .expect("compile embedded detectors")
+        .with_config(config);
+    let credential = "ufnlbbavawsdeecn";
+    let chunks = [Chunk::from(format!("password={credential}\n"))];
+    let admitted = [false];
+    let complete = [true];
+
+    let results = scan_coalesced_phase2_with_admission_for_test(
+        &scanner,
+        &chunks,
+        vec![None],
+        Some(&admitted),
+        Some(&complete),
     );
 
-    // The active-set probe must stay shared with the production phase-2 scanner.
-    // The phase-2 scan impl was split out of the old fallback module into
-    // `phase2_compiled.rs` under the 500-LOC ceiling (Law 5); the probe now
-    // lives there, still `pub(crate)` and still the one the no-hit gate calls.
-    let phase2 = scanner_source("engine/phase2_compiled.rs");
-    assert!(
-        phase2.contains("pub(crate) fn has_active_phase2_patterns_for_chunk"),
-        "phase-2 active-set probe must stay shared with the production phase-2 scanner"
-    );
+    let found = results[0]
+        .iter()
+        .find(|finding| finding.credential.as_ref() == credential)
+        .expect("a complete phase-two negative may skip only duplicate phase-two admission");
+    assert_eq!(found.detector_id.as_ref(), "generic-password");
+}
 
-    let gpu_dfa = scanner_source("engine/phase2_gpu_dfa.rs");
-    let gpu_candidates = scanner_source("engine/phase2_gpu_dfa/candidates.rs");
-    let gpu_lowering = scanner_source("engine/phase2_gpu_dfa/lowering.rs");
-    assert!(
-        gpu_lowering.contains("build_regex_dfa_unanchored")
-            && gpu_candidates.contains("gate_prefix_literals")
-            && gpu_dfa.contains("CPU admission remains authoritative"),
-        "phase-2 GPU admission must be a real VYRE regex-DFA path for prefixless \
-         always-active patterns, with CPU admission authoritative for uncovered/error cases"
-    );
+#[test]
+fn normalized_required_literal_reenters_phase_one_before_phase_two_admission() {
+    let detector = DetectorSpec {
+        id: "normalized-required-literal".into(),
+        name: "Normalized Required Literal".into(),
+        service: "test".into(),
+        severity: Severity::High,
+        patterns: vec![PatternSpec {
+            regex: r"([a-f0-9]{8}:fx)".into(),
+            group: Some(1),
+            required_literals: vec![":fx".into()],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let scanner = CompiledScanner::compile(vec![detector]).expect("compile detector");
+    let chunks = [Chunk::from("value=0123abcd:\u{ff46}\u{ff58}")];
+
+    let results =
+        scan_coalesced_phase2_with_admission_for_test(&scanner, &chunks, vec![None], None, None);
+
+    let found = results[0]
+        .iter()
+        .find(|finding| finding.detector_id.as_ref() == "normalized-required-literal")
+        .expect("normalized text must rerun phase-one routing before no-hit rejection");
+    assert_eq!(found.credential.as_ref(), "0123abcd:fx");
 }

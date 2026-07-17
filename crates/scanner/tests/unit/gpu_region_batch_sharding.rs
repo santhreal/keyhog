@@ -214,6 +214,7 @@ fn production_wgpu_shards_the_8mib_overlapped_workload_with_cpu_parity() {
             regex: "KHGPUWG_[A-Za-z0-9]{24}".into(),
             description: None,
             group: None,
+            required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
         }],
@@ -305,6 +306,7 @@ fn production_cuda_windows_seam_tail_and_mixed_rows_with_cpu_parity() {
             regex: "KHCUDAX_[A-Za-z0-9]{8}".into(),
             description: None,
             group: None,
+            required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
         }],
@@ -361,23 +363,21 @@ fn production_cuda_windows_seam_tail_and_mixed_rows_with_cpu_parity() {
 }
 
 #[test]
-fn phase2_shard_merge_preserves_rows_marks_and_match_multiplicity() {
+fn phase2_shard_merge_preserves_row_proofs_and_match_multiplicity() {
     use super::super::gpu_region_dispatch::append_phase2_gpu_admission;
     use super::super::phase2_gpu_dfa::Phase2GpuDfaAdmission;
 
     let mut merged = Phase2GpuDfaAdmission {
         admitted: Vec::new(),
-        complete: true,
+        complete: Vec::new(),
         matches_seen: 0,
-        marked: Vec::new(),
     };
     append_phase2_gpu_admission(
         &mut merged,
         Phase2GpuDfaAdmission {
             admitted: vec![true, false],
-            complete: true,
+            complete: vec![true, true],
             matches_seen: 3,
-            marked: vec![vec![7, 9], Vec::new()],
         },
         2,
     )
@@ -386,21 +386,16 @@ fn phase2_shard_merge_preserves_rows_marks_and_match_multiplicity() {
         &mut merged,
         Phase2GpuDfaAdmission {
             admitted: vec![false, true, true],
-            complete: false,
+            complete: vec![false, true, false],
             matches_seen: 4,
-            marked: vec![Vec::new(), vec![2], vec![2, 8]],
         },
         3,
     )
     .expect("second phase-2 shard");
 
     assert_eq!(merged.admitted, [true, false, false, true, true]);
-    assert_eq!(
-        merged.marked,
-        [vec![7, 9], vec![], vec![], vec![2], vec![2, 8]]
-    );
+    assert_eq!(merged.complete, [true, true, false, true, false]);
     assert_eq!(merged.matches_seen, 7);
-    assert!(!merged.complete);
 }
 
 #[test]

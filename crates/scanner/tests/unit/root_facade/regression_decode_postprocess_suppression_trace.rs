@@ -41,6 +41,7 @@ fn detector() -> DetectorSpec {
             regex: format!("({})", regex::escape(REVERSED_EXAMPLE_CREDENTIAL)),
             description: Some("reverse placeholder fixture".into()),
             group: Some(1),
+            required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
         }],

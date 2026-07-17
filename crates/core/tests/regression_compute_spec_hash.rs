@@ -379,6 +379,7 @@ fn spec_hash_binds_pattern_order_within_a_detector() {
     original.patterns.push(PatternSpec {
         regex: "second-[A-Z0-9]{8}".to_string(),
         group: Some(0),
+        required_literals: Vec::new(),
         ..Default::default()
     });
     let mut reordered = original.clone();

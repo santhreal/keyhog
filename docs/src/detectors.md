@@ -181,6 +181,11 @@ keywords because their assignment/context bridge is the candidate source.
 - `group` - which capture group is the credential. `0` = whole match,
   `1` = first captured group, etc.
 - `description` - what shape this captures (env var, header, URL, …).
+- `required_literals` - optional detector-owned routing literals. Every regex
+  match must contain at least one listed ASCII literal. Corpus loading proves
+  that OR-condition from the regex AST, then scalar, Hyperscan, CUDA, and WGPU
+  compile the same literals into their candidate plan. Invalid, optional, or
+  branch-incomplete declarations reject the detector instead of risking recall.
 - `client_safe` - optional bool, default `false`. When `true`, any
   match against this pattern collapses to `Severity::ClientSafe`
   regardless of the detector's nominal severity. Use for patterns

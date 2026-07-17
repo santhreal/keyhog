@@ -17,6 +17,7 @@ fn scan_simd_cpu_empty_chunk() {
             regex: "xyz_marker".into(),
             description: None,
             group: None,
+            required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
         }],

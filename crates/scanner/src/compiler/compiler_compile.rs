@@ -224,6 +224,12 @@ pub(crate) fn compile_pattern(
     detector_id: &str,
     detector_keywords: &[String],
 ) -> Result<CompiledPattern> {
+    spec.validate_required_literals()
+        .map_err(|reason| ScanError::DetectorPatternPolicy {
+            detector_id: detector_id.to_string(),
+            index: pattern_index,
+            reason,
+        })?;
     let regex = shared_regex(spec.regex.as_str()).map_err(|source| ScanError::RegexCompile {
         detector_id: detector_id.to_string(),
         index: pattern_index,

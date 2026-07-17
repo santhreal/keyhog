@@ -906,6 +906,7 @@ fn pure_character_class_with_group_is_accepted() {
     d.patterns = vec![PatternSpec {
         regex: "[A-Za-z0-9]{32}".into(),
         group: Some(0),
+        required_literals: Vec::new(),
         ..Default::default()
     }];
     let issues = validate_detector(&d);

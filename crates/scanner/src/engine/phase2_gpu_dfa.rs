@@ -13,9 +13,7 @@ use self::batch::{
     build_packed_region_batch, build_packed_region_batch_refs, with_phase2_gpu_dfa_scratch,
     Phase2GpuDfaScratch,
 };
-use self::candidates::{
-    prefixless_always_active_candidates, prioritized_phase2_gpu_dfa_candidates,
-};
+use self::candidates::{ascii_phase2_gpu_dfa_candidates, prefixless_always_active_candidates};
 use self::lowering::build_shards_recursive;
 #[cfg(test)]
 use self::lowering::regex_dfa_source_for_pattern;
@@ -41,13 +39,6 @@ mod workload;
 const PHASE2_GPU_DFA_MAX_MATCHES: u32 = 1 << 20;
 const PHASE2_GPU_DFA_MAX_STATES: usize = 16_384;
 const PHASE2_GPU_DFA_TARGET_SHARD_PATTERNS: usize = 16;
-// Normal scans build this catalog lazily; autoroute calibration prepares it and
-// accounts for that cold cost explicitly. Keep breadth bounded by shard count;
-// selection quality comes from detector-breadth ordering, not from letting
-// first-use regex-DFA compilation consume the operator's scan.
-const PHASE2_GPU_DFA_MAX_SHARDS: usize = 4;
-const PHASE2_GPU_DFA_MAX_CANDIDATES: usize =
-    PHASE2_GPU_DFA_TARGET_SHARD_PATTERNS * PHASE2_GPU_DFA_MAX_SHARDS;
 
 fn report_phase2_gpu_catalog_loss(reason: impl std::fmt::Display) {
     let reason = reason.to_string();
@@ -63,7 +54,16 @@ fn report_phase2_gpu_catalog_loss(reason: impl std::fmt::Display) {
 #[derive(Debug)]
 pub(crate) struct Phase2GpuDfaCatalog {
     shards: Vec<Phase2GpuDfaShard>,
-    uncovered_patterns: usize,
+    uncovered_ascii_patterns: usize,
+    excluded_ascii_redundant_patterns: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct Phase2GpuDfaCoverage {
+    pub(crate) covered_ascii_patterns: usize,
+    pub(crate) uncovered_ascii_patterns: usize,
+    pub(crate) excluded_ascii_redundant_patterns: usize,
+    pub(crate) shards: usize,
 }
 
 #[derive(Debug, Default)]
@@ -101,6 +101,19 @@ impl Phase2GpuDfaProgramKind {
 }
 
 impl Phase2GpuDfaCatalog {
+    pub(crate) fn coverage(&self) -> Phase2GpuDfaCoverage {
+        Phase2GpuDfaCoverage {
+            covered_ascii_patterns: self
+                .shards
+                .iter()
+                .map(|shard| shard.phase2_indices.len())
+                .sum(),
+            uncovered_ascii_patterns: self.uncovered_ascii_patterns,
+            excluded_ascii_redundant_patterns: self.excluded_ascii_redundant_patterns,
+            shards: self.shards.len(),
+        }
+    }
+
     fn build(
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
         always_active_indices: &[usize],
@@ -108,14 +121,11 @@ impl Phase2GpuDfaCatalog {
     ) -> Option<Self> {
         let all_candidates =
             prefixless_always_active_candidates(phase2_patterns, always_active_indices);
-        let candidates = prioritized_phase2_gpu_dfa_candidates(
-            phase2_patterns,
-            &all_candidates,
-            PHASE2_GPU_DFA_MAX_CANDIDATES,
-        );
+        let candidates = ascii_phase2_gpu_dfa_candidates(phase2_patterns, &all_candidates);
         Self::build_from_selected_candidates(
             phase2_patterns,
-            all_candidates.len(),
+            candidates.len(),
+            all_candidates.len().saturating_sub(candidates.len()),
             &candidates,
             program_kind,
         )
@@ -123,74 +133,67 @@ impl Phase2GpuDfaCatalog {
 
     fn build_from_selected_candidates(
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
-        all_candidate_count: usize,
+        ascii_candidate_count: usize,
+        excluded_ascii_redundant_patterns: usize,
         candidates: &[usize],
         program_kind: Phase2GpuDfaProgramKind,
     ) -> Option<Self> {
         if candidates.is_empty() {
-            return None;
+            return (ascii_candidate_count == 0).then_some(Self {
+                shards: Vec::new(),
+                uncovered_ascii_patterns: 0,
+                excluded_ascii_redundant_patterns,
+            });
         }
 
         let use_subgroup_coalesce = program_kind.use_subgroup_coalesce();
         let mut shards = Vec::new();
-        let mut uncovered_patterns = all_candidate_count.saturating_sub(candidates.len());
-        if uncovered_patterns > 0 {
-            tracing::warn!(
-                target: "keyhog::gpu",
-                selected = candidates.len(),
-                uncovered = uncovered_patterns,
-                candidate_budget = PHASE2_GPU_DFA_MAX_CANDIDATES,
-                "phase-2 GPU regex-DFA admission candidate budget reached; GPU hits can admit selected prefixless patterns, misses still consult CPU admission"
-            );
-            report_phase2_gpu_catalog_loss(format!(
-                "candidate budget reached: selected {} of {} prefixless always-active pattern(s)",
-                candidates.len(),
-                all_candidate_count
-            ));
-        }
+        let mut uncovered_ascii_patterns = ascii_candidate_count.saturating_sub(candidates.len());
         for chunk in candidates.chunks(PHASE2_GPU_DFA_TARGET_SHARD_PATTERNS) {
             build_shards_recursive(
                 phase2_patterns,
                 chunk,
                 use_subgroup_coalesce,
                 &mut shards,
-                &mut uncovered_patterns,
+                &mut uncovered_ascii_patterns,
             );
         }
         let covered_patterns: usize = shards.iter().map(|shard| shard.phase2_indices.len()).sum();
         if shards.is_empty() {
             tracing::warn!(
                 target: "keyhog::gpu",
-                candidates = all_candidate_count,
-                "phase-2 GPU regex-DFA admission has no lowerable prefixless always-active pattern; CPU admission remains authoritative"
+                candidates = ascii_candidate_count,
+                "phase-2 GPU regex-DFA admission has no lowerable ASCII prefixless always-active pattern; CPU admission remains authoritative"
             );
             report_phase2_gpu_catalog_loss(format!(
-                "no lowerable prefixless always-active pattern among {all_candidate_count} candidate(s)"
+                "no lowerable ASCII prefixless always-active pattern among {ascii_candidate_count} candidate(s)"
             ));
             return None;
         }
-        if uncovered_patterns > 0 {
+        if uncovered_ascii_patterns > 0 {
             tracing::warn!(
                 target: "keyhog::gpu",
                 covered = covered_patterns,
-                uncovered = uncovered_patterns,
-                "phase-2 GPU regex-DFA admission has uncovered prefixless pattern(s); GPU hits can admit chunks, misses still consult CPU admission"
+                uncovered = uncovered_ascii_patterns,
+                "phase-2 GPU regex-DFA admission has uncovered ASCII prefixless pattern(s); GPU hits can admit chunks, misses still consult CPU admission"
             );
             report_phase2_gpu_catalog_loss(format!(
-                "{uncovered_patterns} prefixless always-active pattern(s) uncovered after lowering"
+                "{uncovered_ascii_patterns} ASCII prefixless always-active pattern(s) uncovered after lowering"
             ));
         }
         tracing::debug!(
             target: "keyhog::gpu",
             shards = shards.len(),
             covered = covered_patterns,
-            uncovered = uncovered_patterns,
+            uncovered_ascii = uncovered_ascii_patterns,
+            excluded_ascii_redundant = excluded_ascii_redundant_patterns,
             program = program_kind.label(),
-            "phase-2 GPU regex-DFA admission catalog built"
+            "phase-2 GPU regex-DFA ASCII admission catalog built"
         );
         Some(Self {
             shards,
-            uncovered_patterns,
+            uncovered_ascii_patterns,
+            excluded_ascii_redundant_patterns,
         })
     }
 
@@ -226,9 +229,8 @@ impl Phase2GpuDfaCatalog {
         if chunk_count == 0 || self.shards.is_empty() {
             return Ok(Phase2GpuDfaAdmission {
                 admitted: vec![false; chunk_count],
-                complete: true,
+                complete: vec![true; chunk_count],
                 matches_seen: 0,
-                marked: vec![Vec::new(); chunk_count],
             });
         }
         with_phase2_gpu_dfa_scratch(|scratch| {
@@ -260,37 +262,20 @@ impl Phase2GpuDfaCatalog {
         }
 
         let mut admitted = vec![false; chunk_count];
-        let mut complete = self.uncovered_patterns == 0;
+        let mut complete = vec![self.uncovered_ascii_patterns == 0; chunk_count];
         let mut matches_seen = 0usize;
-        // Step-1 marking accumulator: per-region (== per-chunk in the coalesced
-        // batch) phase-2 pattern indices the GPU regex-DFA matched, unioned across
-        // shards. Only meaningful when `complete` (GPU covered every always-active
-        // pattern) (then the caller can substitute this for the CPU RegexSet mark).
-        let mut marked: Vec<Vec<usize>> = vec![Vec::new(); chunk_count];
         for shard in &self.shards {
-            let shard_incomplete = shard.scan_admission_into(
-                backend,
-                scratch,
-                haystack_len,
-                &mut admitted,
-                Some(&mut marked),
-            )?;
+            let shard_incomplete =
+                shard.scan_admission_into(backend, scratch, haystack_len, &mut admitted)?;
             matches_seen = matches_seen.saturating_add(scratch.matches.len());
             if shard_incomplete {
-                complete = false;
+                complete.fill(false);
             }
-        }
-        // Dedup each region's marks (a pattern can match multiple times per region;
-        // the active set is a membership set, mirroring `scratch.mark`'s idempotence).
-        for region in &mut marked {
-            region.sort_unstable();
-            region.dedup();
         }
         Ok(Phase2GpuDfaAdmission {
             admitted,
             complete,
             matches_seen,
-            marked,
         })
     }
 }

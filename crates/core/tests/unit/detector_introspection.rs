@@ -15,6 +15,7 @@ fn introspection_uses_the_declared_spec_and_redacts_test_credentials() {
             regex: "fx_[A-Za-z0-9]{20}".to_string(),
             description: Some("fixture pattern".to_string()),
             group: Some(0),
+            required_literals: Vec::new(),
             client_safe: true,
             weak_anchor: false,
         }],

@@ -2,6 +2,7 @@
 // admission gate) on the shared phase-2 tail. SIMD and GPU use it after their
 // trigger pass. Portable builds use it before their phase-2 tail so no-hit
 // chunks are not dropped before anchorless detection.
+use super::phase2::Phase2AlwaysActiveGpuEvidence;
 use super::scan_filters::*;
 use super::*;
 
@@ -302,8 +303,16 @@ impl CompiledScanner {
     /// No-hit chunk admission: should a chunk that produced no phase-1 trigger
     /// still be driven through the phase-2 / generic / entropy tail?
     pub(crate) fn should_scan_no_hit_chunk(&self, chunk: &keyhog_core::Chunk) -> bool {
+        self.should_scan_no_hit_chunk_with_phase2_absence_proof(chunk, false)
+    }
+
+    fn should_scan_no_hit_chunk_with_phase2_absence_proof(
+        &self,
+        chunk: &keyhog_core::Chunk,
+        raw_phase2_absence_proven: bool,
+    ) -> bool {
         let raw_text = chunk.data.as_ref();
-        if self.no_hit_text_admits(chunk, raw_text) {
+        if self.no_hit_text_admits(chunk, raw_text, raw_phase2_absence_proven) {
             return true;
         }
 
@@ -315,11 +324,24 @@ impl CompiledScanner {
 
         let prepared = self.prepare_chunk(chunk);
         let normalized = prepared.preprocessed.text.as_ref();
-        normalized.as_bytes() != raw_text.as_bytes() && self.no_hit_text_admits(chunk, normalized)
+        if normalized.as_bytes() == raw_text.as_bytes() {
+            return false;
+        }
+        let normalized_triggers = self.collect_triggered_patterns_for_backend(
+            normalized,
+            crate::hw_probe::ScanBackend::SimdCpu,
+        );
+        normalized_triggers.iter().any(|&word| word != 0)
+            || self.no_hit_text_admits(chunk, normalized, false)
     }
 
-    fn no_hit_text_admits(&self, _chunk: &keyhog_core::Chunk, text: &str) -> bool {
-        if self.has_active_phase2_patterns_for_chunk(text) {
+    fn no_hit_text_admits(
+        &self,
+        _chunk: &keyhog_core::Chunk,
+        text: &str,
+        phase2_absence_proven: bool,
+    ) -> bool {
+        if !phase2_absence_proven && self.has_active_phase2_patterns_for_chunk(text) {
             return true;
         }
         let data = text.as_bytes();
@@ -391,7 +413,9 @@ impl CompiledScanner {
         chunks: &[keyhog_core::Chunk],
         triggers: Vec<Option<Vec<u64>>>,
     ) -> Vec<Vec<keyhog_core::RawMatch>> {
-        self.scan_coalesced_phase2_with_admission(chunks, triggers, None, None, None, None, None)
+        self.scan_coalesced_phase2_with_admission(
+            chunks, triggers, None, None, None, None, None, None,
+        )
     }
 
     #[cfg(feature = "simd")]
@@ -432,15 +456,18 @@ impl CompiledScanner {
     }
 
     /// [`scan_coalesced_phase2`](Self::scan_coalesced_phase2) with an optional
-    /// producer-side phase-2 admission bitmap. A `true` bit only admits a
-    /// no-trigger chunk to the shared tail; a `false` bit is never trusted as a
-    /// skip proof because GPU regex-DFA coverage may be partial or capped.
+    /// producer-side phase-2 admission bitmap. A complete negative prefixless
+    /// row composed with complete fused-anchor absence skips the redundant CPU
+    /// always-active prefilter and extraction. Keyword-triggered phase two,
+    /// generic, entropy, multiline, decode, normalized text, ML, and recovery
+    /// remain under their canonical owners.
     #[cfg(feature = "simd")]
     pub(crate) fn scan_coalesced_phase2_with_admission(
         &self,
         chunks: &[keyhog_core::Chunk],
         triggers: Vec<Option<Vec<u64>>>,
         phase2_admission: Option<&[bool]>,
+        phase2_admission_complete: Option<&[bool]>,
         phase2_keyword_hints: Option<&[Vec<u32>]>,
         phase2_always_anchor_presence: Option<&[bool]>,
         confirmed_anchor_literal_matches: Option<&[Vec<(u32, u32)>]>,
@@ -469,6 +496,20 @@ impl CompiledScanner {
                         .map(Vec::as_slice);
                     let always_anchor_present = phase2_always_anchor_presence
                         .and_then(|rows| rows.get(chunk_index).copied());
+                    let admitted_by_phase2_gpu = phase2_admission
+                        .and_then(|admission| admission.get(chunk_index))
+                        .copied()
+                        .unwrap_or(false);
+                    let phase2_gpu_complete = phase2_admission_complete
+                        .and_then(|complete| complete.get(chunk_index))
+                        .copied()
+                        .unwrap_or(false);
+                    let phase2_always_active_gpu_evidence =
+                        always_anchor_present.map(|anchor_present| Phase2AlwaysActiveGpuEvidence {
+                            prefixless_admitted: admitted_by_phase2_gpu,
+                            prefixless_complete: phase2_gpu_complete,
+                            anchor_present,
+                        });
                     let confirmed_anchor_matches = confirmed_anchor_literal_matches
                         .and_then(|rows| rows.get(chunk_index))
                         .map(Vec::as_slice);
@@ -482,7 +523,7 @@ impl CompiledScanner {
                                 &triggered,
                                 None,
                                 keyword_hints,
-                                always_anchor_present,
+                                phase2_always_active_gpu_evidence,
                                 confirmed_anchor_matches,
                                 generic_keyword_positions,
                             );
@@ -499,7 +540,7 @@ impl CompiledScanner {
                                 &triggered,
                                 None,
                                 keyword_hints,
-                                always_anchor_present,
+                                phase2_always_active_gpu_evidence,
                                 confirmed_anchor_matches,
                                 generic_keyword_positions,
                             );
@@ -510,11 +551,11 @@ impl CompiledScanner {
                             };
                         }
                     }
-                    let admitted_by_phase2_gpu =
-                        match phase2_admission.and_then(|admission| admission.get(chunk_index)) {
-                            Some(&admitted) => admitted,
-                            None => false, // LAW10: recall_preserving; absent GPU admission never skips CPU admission.
-                        };
+                    let raw_phase2_absence_proven = phase2_always_active_gpu_evidence
+                        .is_some_and(|evidence| evidence.absence_proven())
+                        && phase2_keyword_hints
+                            .and_then(|rows| rows.get(chunk_index))
+                            .is_some();
                     let admitted_by_phase2_keyword_hint =
                         keyword_hints.is_some_and(|hints| !hints.is_empty());
                     let admitted_by_phase2_always_anchor = always_anchor_present.unwrap_or(false); // LAW10: absent GPU row does not skip; CPU no-hit admission remains authoritative.
@@ -524,7 +565,10 @@ impl CompiledScanner {
                         && !admitted_by_phase2_keyword_hint
                         && !admitted_by_phase2_always_anchor
                         && !admitted_by_generic_keyword_hint
-                        && !self.should_scan_no_hit_chunk(chunk)
+                        && !self.should_scan_no_hit_chunk_with_phase2_absence_proof(
+                            chunk,
+                            raw_phase2_absence_proven,
+                        )
                     {
                         if let Some(matches) = self.decode_only_coalesced_matches(chunk) {
                             return CoalescedChunkOutput {
@@ -541,22 +585,13 @@ impl CompiledScanner {
                     }
 
                     let prepared = self.prepare_chunk(chunk);
-                    let triggered =
-                        if prepared.preprocessed.text.as_bytes() == chunk.data.as_bytes() {
-                            Vec::new()
-                        } else {
-                            self.collect_triggered_patterns_for_backend(
-                                &prepared.preprocessed.text,
-                                ScanBackend::SimdCpu,
-                            )
-                        };
                     let state = self.scan_prepared_state_with_triggered(
                         prepared,
                         ScanBackend::SimdCpu,
-                        &triggered,
+                        &[],
                         None,
                         keyword_hints,
-                        always_anchor_present,
+                        phase2_always_active_gpu_evidence,
                         confirmed_anchor_matches,
                         generic_keyword_positions,
                     );

@@ -221,6 +221,7 @@ fn gpu_region_presence_self_test_impl(
             regex: "KHGPUSELFTEST_[A-Za-z0-9]{12}".into(),
             description: None,
             group: None,
+            required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
         }],
