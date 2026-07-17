@@ -41,8 +41,13 @@ pub(crate) struct Phase2AlwaysActiveGpuEvidence {
 
 impl Phase2AlwaysActiveGpuEvidence {
     #[inline]
+    pub(crate) const fn prefixless_absence_proven(self) -> bool {
+        self.prefixless_complete && !self.prefixless_admitted
+    }
+
+    #[inline]
     pub(crate) const fn absence_proven(self) -> bool {
-        self.prefixless_complete && !self.prefixless_admitted && !self.anchor_present
+        self.prefixless_absence_proven() && !self.anchor_present
     }
 }
 

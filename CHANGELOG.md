@@ -46,6 +46,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   ASCII source no longer runs duplicate whole-chunk homoglyph regexes, while
   non-ASCII scan text retains the complete variant path and normalized source
   remains covered by each variant's base pattern.
+- A complete negative GPU prefixless-pattern receipt now suppresses the
+  redundant folded plain-pattern anchor pass. Routes using that localizer no
+  longer traverse the full input again after VYRE proves the family absent.
 - Isolated entropy admission now skips lines already owned by stronger findings,
   proves detector-owned short symbolic shapes before Shannon scoring, and rejects
   pronounceable digit-bearing source identifiers when the owning TOML enables

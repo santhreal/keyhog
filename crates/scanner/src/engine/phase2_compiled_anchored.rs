@@ -234,10 +234,14 @@ impl CompiledScanner {
                 // Localized plain-pattern path (ASCII chunks): verify live
                 // patterns from folded-literal AC positions. Inert generated
                 // homoglyph variants are excluded by the shared predicate; plain
-                // fallbacks without a folded literal still run whole-chunk.
+                // fallbacks without a folded literal still run whole-chunk. A
+                // complete negative GPU prefixless receipt already covers every
+                // live member of this family, so it suppresses the second pass.
                 if self.tuning.homoglyph_gate_enabled()
                     && scan_text_is_ascii
                     && anchor_idx.has_plain_localizer(route.phase2_localizer)
+                    && !phase2_always_active_gpu_evidence
+                        .is_some_and(Phase2AlwaysActiveGpuEvidence::prefixless_absence_proven)
                 {
                     ANCHOR_CANDIDATES.with(|cell| {
                         let mut cands = cell.borrow_mut();
