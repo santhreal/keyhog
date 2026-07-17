@@ -102,19 +102,17 @@ fn resolution_prefers_specific_detector_over_generic_for_known_prefix() {
     );
 }
 
-// Validates the post-ML confidence-floor logic; meaningful only with the `ml`
-// feature on. Under `--no-default-features` the matcher's checksum gate fires
-// first and rejects the synthetic CRC32-invalid `ghp_aaaa…` credential before
-// any ML/penalty path runs, so the assertion has no test surface to evaluate.
-#[cfg(feature = "ml")]
+// Detector-owned checksum proof is applied after the shared scoring penalties.
+// The repetitive body exercises the penalty while the corrupted twin proves
+// that the confidence floor cannot bypass the same detector's validator.
 #[test]
-fn known_prefix_survives_ml_and_context_penalties() {
-    // Simulate a credential that would normally be crushed by post-ML penalties
+fn checksum_valid_known_prefix_survives_post_scoring_penalties() {
+    // Simulate a credential that would normally be crushed by post-scoring penalties
     // because it has a repetitive (30×'a') body. Known prefixes should still
     // survive because the floor is applied after all penalties. The trailing 6
     // chars are the base62 CRC32 of the 30-'a' body, so the token is checksum-
     // VALID (a fabricated `ghp_` is now correctly dropped before scoring) while
-    // the repeat-run body still exercises the post-ML penalty path under test.
+    // the repeat-run body still exercises the post-scoring penalty path.
     let credential = concat!("gh", "p_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1yLcDB");
     let detector = DetectorSpec {
         kind: Default::default(),
@@ -124,6 +122,13 @@ fn known_prefix_survives_ml_and_context_penalties() {
         name: "GitHub Classic PAT".into(),
         service: "github".into(),
         severity: Severity::Critical,
+        validators: vec![keyhog_core::DetectorValidatorSpec::Crc32Base62 {
+            prefixes: vec!["ghp_".into()],
+            entropy_len: 30,
+            checksum_len: 6,
+            reject_overlong: true,
+            confidence_floor: 0.9,
+        }],
         patterns: vec![PatternSpec {
             regex: r"ghp_[a-zA-Z0-9]{36}".into(),
             description: None,
@@ -148,8 +153,17 @@ fn known_prefix_survives_ml_and_context_penalties() {
     );
     if let Some(m) = matches.iter().find(|m| m.credential.as_ref() == credential) {
         assert!(
-            m.confidence.unwrap_or(0.0) >= 0.8,
-            "known-prefix confidence must never drop below 0.8"
+            m.confidence.unwrap_or(0.0) >= 0.9,
+            "detector-owned checksum proof must retain its declared 0.9 floor"
         );
     }
+
+    let invalid = format!("{}A", &credential[..credential.len() - 1]);
+    let invalid_matches = scanner.scan(&make_chunk(&format!("GITHUB_TOKEN={invalid}\n")));
+    assert!(
+        invalid_matches
+            .iter()
+            .all(|matched| matched.credential.as_ref() != invalid.as_str()),
+        "the same detector must reject a checksum-corrupted twin"
+    );
 }
