@@ -6,6 +6,13 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Isolated entropy admission now skips lines already owned by stronger findings,
+  proves detector-owned short symbolic shapes before Shannon scoring, and rejects
+  pronounceable digit-bearing source identifiers when the owning TOML enables
+  identifier suppression. The generic isolated owner now explicitly admits
+  16-byte mixed symbolic credentials, including detector-owned minimum symbol
+  count and underscore policy, while preserving its TOML-owned entropy floor
+  and backend-identical findings.
 - Automatic GPU runtime faults now cross a fallible scanner boundary: normal
   one-shot, fused, and daemon scans visibly replay the same stable batch through
   the scalar reference path and report recovered chunks and bytes. Calibration,

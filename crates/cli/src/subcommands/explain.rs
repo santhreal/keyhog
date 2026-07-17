@@ -320,6 +320,14 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
             policy.isolated_symbolic_min_len
         );
         println!(
+            "    isolated_symbolic_min_symbols: {}",
+            policy.isolated_symbolic_min_symbols
+        );
+        println!(
+            "    isolated_symbolic_requires_non_underscore: {}",
+            policy.isolated_symbolic_requires_non_underscore
+        );
+        println!(
             "    isolated_colon_left_min_len: {} bytes",
             policy.isolated_colon_left_min_len
         );

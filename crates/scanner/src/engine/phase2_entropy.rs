@@ -93,30 +93,7 @@ impl CompiledScanner {
                     Some(*policy),
                 )
             });
-        #[cfg(feature = "simd")]
-        let lower_dash_app_password_candidate = path_entropy_appropriate
-            && crate::entropy::scanner::has_lower_dash_app_password_candidate_with_precomputed_keywords_and_policy(
-                &keyword_assignment_lines,
-                &self.config,
-                Some(crate::entropy::scanner::ActiveDetectorPolicy::new(
-                    &self.generic_owning_detector,
-                    &self.detector_plans,
-                )),
-            );
         if !path_entropy_appropriate && !isolated_bare_candidate {
-            return;
-        }
-
-        // Avoid the full Shannon sweep unless a run proof or isolated candidate
-        // already exists.
-        #[cfg(feature = "simd")]
-        if !isolated_bare_candidate
-            && !lower_dash_app_password_candidate
-            && !super::scan_filters::has_high_entropy_run_at_least(
-                preprocessed.text.as_bytes(),
-                self.config.min_secret_len,
-            )
-        {
             return;
         }
 
@@ -140,6 +117,45 @@ impl CompiledScanner {
                 skip_lines.insert(line_idx);
             }
         });
+
+        // Admission must examine the same unclaimed lines the entropy emitter
+        // can actually use. A strong named finding on one long random token used
+        // to force a full-chunk Shannon sweep even though that line was excluded
+        // from emission below. Ignoring already-owned lines is output-equivalent
+        // and removes the dominant clean/sparse-corpus tail cost.
+        #[cfg(feature = "simd")]
+        let lower_dash_app_password_candidate = path_entropy_appropriate
+            && crate::entropy::scanner::has_lower_dash_app_password_candidate_with_precomputed_keywords_and_policy(
+                &keyword_assignment_lines,
+                &self.config,
+                Some(crate::entropy::scanner::ActiveDetectorPolicy::new(
+                    &self.generic_owning_detector,
+                    &self.detector_plans,
+                )),
+                &skip_lines,
+            );
+        #[cfg(feature = "simd")]
+        let has_unclaimed_entropy_run = if skip_lines.is_empty() {
+            super::scan_filters::has_high_entropy_run_at_least(
+                preprocessed.text.as_bytes(),
+                self.config.min_secret_len,
+            )
+        } else {
+            entropy_lines.iter().enumerate().any(|(line_index, line)| {
+                !skip_lines.contains(&line_index)
+                    && super::scan_filters::has_high_entropy_run_at_least(
+                        line.as_bytes(),
+                        self.config.min_secret_len,
+                    )
+            })
+        };
+        #[cfg(feature = "simd")]
+        if !isolated_bare_candidate
+            && !lower_dash_app_password_candidate
+            && !has_unclaimed_entropy_run
+        {
+            return;
+        }
 
         let sensitive_path = chunk
             .metadata

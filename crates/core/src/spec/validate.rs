@@ -494,6 +494,10 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
                 plausibility.isolated_symbolic_min_len,
             ),
             (
+                "plausibility.isolated_symbolic_min_symbols",
+                plausibility.isolated_symbolic_min_symbols,
+            ),
+            (
                 "plausibility.isolated_colon_left_min_len",
                 plausibility.isolated_colon_left_min_len,
             ),

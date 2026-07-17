@@ -527,6 +527,8 @@ knob_changes_digest!(spec_hash_binds_plausibility_policy, |d| d.plausibility =
         mixed_alnum_min_len: 21,
         isolated_mixed_entropy_floor: 3.7,
         isolated_symbolic_min_len: 19,
+        isolated_symbolic_min_symbols: 3,
+        isolated_symbolic_requires_non_underscore: true,
         isolated_colon_left_min_len: 21,
         isolated_colon_right_min_len: 17,
         leading_slash_base64_entropy_floor: 4.9,
@@ -535,6 +537,52 @@ knob_changes_digest!(spec_hash_binds_plausibility_policy, |d| d.plausibility =
         reject_program_identifiers: true,
         reject_dash_segmented_alnum: true,
     }));
+
+#[test]
+fn spec_hash_binds_isolated_symbolic_shape_policy_fields() {
+    let mut base = knob_base();
+    base.plausibility = Some(DetectorPlausibilityPolicySpec {
+        mixed_alnum_floor: 3.7,
+        symbolic_entropy_floor: 3.6,
+        second_half_entropy_floor: 2.6,
+        mixed_alnum_min_len: 21,
+        isolated_mixed_entropy_floor: 3.7,
+        isolated_symbolic_min_len: 19,
+        isolated_symbolic_min_symbols: 2,
+        isolated_symbolic_requires_non_underscore: true,
+        isolated_colon_left_min_len: 21,
+        isolated_colon_right_min_len: 17,
+        leading_slash_base64_entropy_floor: 4.9,
+        reject_repeated_blocks: true,
+        allow_alphabetic_credential: true,
+        reject_program_identifiers: true,
+        reject_dash_segmented_alnum: true,
+    });
+
+    let mut count_changed = base.clone();
+    count_changed
+        .plausibility
+        .as_mut()
+        .expect("plausibility baseline")
+        .isolated_symbolic_min_symbols = 3;
+    assert_ne!(
+        compute_spec_hash(std::slice::from_ref(&base)),
+        compute_spec_hash(std::slice::from_ref(&count_changed)),
+        "changing the detector-owned symbolic count must invalidate scan identity"
+    );
+
+    let mut underscore_changed = base.clone();
+    underscore_changed
+        .plausibility
+        .as_mut()
+        .expect("plausibility baseline")
+        .isolated_symbolic_requires_non_underscore = false;
+    assert_ne!(
+        compute_spec_hash(std::slice::from_ref(&base)),
+        compute_spec_hash(std::slice::from_ref(&underscore_changed)),
+        "changing underscore admission must invalidate scan identity"
+    );
+}
 knob_changes_digest!(spec_hash_binds_entropy_policy_priority, |d| d
     .entropy_policy_priority =
     Some(80));

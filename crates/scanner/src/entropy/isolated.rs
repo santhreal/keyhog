@@ -12,6 +12,8 @@ struct IsolatedCandidatePolicy {
     mixed_min_len: usize,
     symbolic_entropy_floor: f64,
     symbolic_min_len: usize,
+    symbolic_min_symbols: usize,
+    symbolic_requires_non_underscore: bool,
     colon_left_min_len: usize,
     colon_right_min_len: usize,
 }
@@ -23,6 +25,8 @@ impl IsolatedCandidatePolicy {
             mixed_min_len: policy.keyword_free_min_len,
             symbolic_entropy_floor: policy.symbolic_entropy_floor,
             symbolic_min_len: policy.isolated_symbolic_min_len,
+            symbolic_min_symbols: policy.isolated_symbolic_min_symbols,
+            symbolic_requires_non_underscore: policy.isolated_symbolic_requires_non_underscore,
             colon_left_min_len: policy.isolated_colon_left_min_len,
             colon_right_min_len: policy.isolated_colon_right_min_len,
         }
@@ -55,6 +59,9 @@ impl IsolatedCandidatePolicy {
                     ),
                     symbolic_entropy_floor: plausibility.symbolic_entropy_floor,
                     symbolic_min_len: plausibility.isolated_symbolic_min_len,
+                    symbolic_min_symbols: plausibility.isolated_symbolic_min_symbols,
+                    symbolic_requires_non_underscore: plausibility
+                        .isolated_symbolic_requires_non_underscore,
                     colon_left_min_len: plausibility.isolated_colon_left_min_len,
                     colon_right_min_len: plausibility.isolated_colon_right_min_len,
                 }
@@ -151,6 +158,10 @@ fn line_has_isolated_bare_secret_candidate(
         isolated_special_shape_min_len(entropy_shape.as_ref(), plausibility_policy.as_ref());
     if !found && min_len > special_min_len {
         visit_isolated_bare_candidates(line, special_min_len, candidate_policy, |candidate, _| {
+            if !isolated_special_shape_possible(candidate, entropy_shape.as_ref(), candidate_policy)
+            {
+                return;
+            }
             let entropy = shannon_entropy(candidate.as_bytes());
             if isolated_special_shape_floor_met(
                 candidate,
@@ -277,10 +288,67 @@ fn isolated_special_shape_floor_met(
     entropy_shape: Option<&keyhog_core::EntropyShapeSpec>,
     candidate_policy: IsolatedCandidatePolicy,
 ) -> bool {
-    lower_dash_app_password_floor_met_with_policy(candidate, entropy, entropy_shape)
-        || (entropy >= candidate_policy.symbolic_entropy_floor
-            && candidate.len() >= candidate_policy.symbolic_min_len
-            && symbolic_alpha_only_opaque_candidate(candidate, candidate_policy.symbolic_min_len))
+    if lower_dash_app_password_layout_matches(candidate, entropy_shape) {
+        return lower_dash_app_password_floor_met_with_policy(candidate, entropy, entropy_shape);
+    }
+    entropy >= candidate_policy.symbolic_entropy_floor
+        && symbolic_special_shape_candidate(candidate, candidate_policy)
+}
+
+fn isolated_special_shape_possible(
+    candidate: &str,
+    entropy_shape: Option<&keyhog_core::EntropyShapeSpec>,
+    candidate_policy: IsolatedCandidatePolicy,
+) -> bool {
+    if lower_dash_app_password_layout_matches(candidate, entropy_shape) {
+        return lower_dash_app_password_shape_matches(candidate, entropy_shape);
+    }
+    symbolic_special_shape_candidate(candidate, candidate_policy)
+}
+
+fn symbolic_special_shape_candidate(
+    candidate: &str,
+    candidate_policy: IsolatedCandidatePolicy,
+) -> bool {
+    if candidate.len() < candidate_policy.symbolic_min_len || candidate.contains("://") {
+        return false;
+    }
+    let mut has_alpha = false;
+    let mut has_digit = false;
+    let mut symbols = 0usize;
+    let mut has_non_underscore_symbol = false;
+    for byte in candidate.bytes() {
+        if byte.is_ascii_alphabetic() {
+            has_alpha = true;
+        } else if byte.is_ascii_digit() {
+            has_digit = true;
+        } else if matches!(
+            byte,
+            b'-' | b'_'
+                | b'+'
+                | b'/'
+                | b'='
+                | b'.'
+                | b'!'
+                | b'@'
+                | b'#'
+                | b'$'
+                | b'%'
+                | b'^'
+                | b'&'
+                | b'*'
+        ) {
+            symbols += 1;
+            has_non_underscore_symbol |= byte != b'_';
+        } else {
+            return false;
+        }
+    }
+    has_alpha
+        && symbols >= candidate_policy.symbolic_min_symbols
+        && (!candidate_policy.symbolic_requires_non_underscore || has_non_underscore_symbol)
+        && (has_digit
+            || symbolic_alpha_only_opaque_candidate(candidate, candidate_policy.symbolic_min_len))
 }
 
 pub(super) fn isolated_special_shape_floor_met_with_policy(
@@ -302,32 +370,33 @@ pub(crate) fn lower_dash_app_password_floor_met_with_policy(
     entropy: f64,
     entropy_shape: Option<&keyhog_core::EntropyShapeSpec>,
 ) -> bool {
-    let Some(keyhog_core::EntropyShapeSpec::LowerDashAppPassword {
-        entropy_floor,
-        group_count: expected_group_count,
-        group_length,
-        ..
-    }) = entropy_shape
-    else {
+    let Some(entropy_floor) = lower_dash_app_password_declared_floor(entropy_shape) else {
         return false;
     };
-    let Some(expected_len) = expected_group_count
-        .checked_mul(*group_length)
-        .and_then(|length| length.checked_add(expected_group_count.saturating_sub(1)))
+    entropy >= entropy_floor && lower_dash_app_password_shape_matches(candidate, entropy_shape)
+}
+
+fn lower_dash_app_password_declared_floor(
+    entropy_shape: Option<&keyhog_core::EntropyShapeSpec>,
+) -> Option<f64> {
+    let Some(keyhog_core::EntropyShapeSpec::LowerDashAppPassword { entropy_floor, .. }) =
+        entropy_shape
     else {
-        return false;
+        return None;
     };
-    if entropy < *entropy_floor || candidate.len() != expected_len {
+    Some(*entropy_floor)
+}
+
+fn lower_dash_app_password_shape_matches(
+    candidate: &str,
+    entropy_shape: Option<&keyhog_core::EntropyShapeSpec>,
+) -> bool {
+    if !lower_dash_app_password_layout_matches(candidate, entropy_shape) {
         return false;
     }
 
     let mut has_non_hex = false;
-    let mut actual_group_count = 0usize;
     for group in candidate.split('-') {
-        actual_group_count += 1;
-        if group.len() != *group_length {
-            return false;
-        }
         let mut has_alpha = false;
         let mut has_digit = false;
         for b in group.bytes() {
@@ -343,7 +412,38 @@ pub(crate) fn lower_dash_app_password_floor_met_with_policy(
         }
     }
 
-    actual_group_count == *expected_group_count && has_non_hex
+    has_non_hex
+}
+
+fn lower_dash_app_password_layout_matches(
+    candidate: &str,
+    entropy_shape: Option<&keyhog_core::EntropyShapeSpec>,
+) -> bool {
+    let Some(keyhog_core::EntropyShapeSpec::LowerDashAppPassword {
+        group_count,
+        group_length,
+        ..
+    }) = entropy_shape
+    else {
+        return false;
+    };
+    let Some(expected_len) = group_count
+        .checked_mul(*group_length)
+        .and_then(|length| length.checked_add(group_count.saturating_sub(1)))
+    else {
+        return false;
+    };
+    if candidate.len() != expected_len {
+        return false;
+    }
+    let mut actual_groups = 0usize;
+    for group in candidate.split('-') {
+        if group.len() != *group_length {
+            return false;
+        }
+        actual_groups += 1;
+    }
+    actual_groups == *group_count
 }
 
 pub(crate) fn mixed_contiguous_token_floor_met(
@@ -434,15 +534,22 @@ pub(super) fn collect_isolated_bare_candidates_inner(
             special_min_len,
             candidate_policy,
             |candidate, candidate_offset| {
-                let entropy = shannon_entropy(candidate.as_bytes());
-                if candidate.len() < context.min_len
-                    && isolated_special_shape_floor_met(
+                if candidate.len() >= context.min_len
+                    || !isolated_special_shape_possible(
                         candidate,
-                        entropy,
                         context.entropy_shape.as_ref(),
                         candidate_policy,
                     )
                 {
+                    return;
+                }
+                let entropy = shannon_entropy(candidate.as_bytes());
+                if isolated_special_shape_floor_met(
+                    candidate,
+                    entropy,
+                    context.entropy_shape.as_ref(),
+                    candidate_policy,
+                ) {
                     emit_candidate(candidate, candidate_offset);
                 }
             },
@@ -772,6 +879,8 @@ mod threshold_tests {
             mixed_min_len: 20,
             symbolic_entropy_floor: 3.5,
             symbolic_min_len: 18,
+            symbolic_min_symbols: 2,
+            symbolic_requires_non_underscore: true,
             colon_left_min_len: 20,
             colon_right_min_len: 16,
         };

@@ -477,6 +477,10 @@ pub struct DetectorPlausibilityPolicySpec {
     pub isolated_mixed_entropy_floor: f64,
     /// Minimum byte length for isolated symbolic opaque-token shapes.
     pub isolated_symbolic_min_len: usize,
+    /// Minimum number of symbol bytes in an isolated symbolic shape.
+    pub isolated_symbolic_min_symbols: usize,
+    /// Require at least one symbolic byte other than underscore.
+    pub isolated_symbolic_requires_non_underscore: bool,
     /// Minimum byte length for the left component of `opaque:opaque` tokens.
     pub isolated_colon_left_min_len: usize,
     /// Minimum byte length for the right component of `opaque:opaque` tokens.

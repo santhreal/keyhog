@@ -40,6 +40,8 @@ fn detector(id: &str, keywords: &[&str], min_len: usize) -> DetectorSpec {
             mixed_alnum_min_len: 20,
             isolated_mixed_entropy_floor: 3.65,
             isolated_symbolic_min_len: 18,
+            isolated_symbolic_min_symbols: 2,
+            isolated_symbolic_requires_non_underscore: true,
             isolated_colon_left_min_len: 20,
             isolated_colon_right_min_len: 16,
             leading_slash_base64_entropy_floor: 4.8,
@@ -198,6 +200,8 @@ fn scan_with_plausibility_policy(
         mixed_alnum_min_len: mixed_min_len,
         isolated_mixed_entropy_floor: 3.65,
         isolated_symbolic_min_len: 18,
+        isolated_symbolic_min_symbols: 2,
+        isolated_symbolic_requires_non_underscore: true,
         isolated_colon_left_min_len: 20,
         isolated_colon_right_min_len: 16,
         leading_slash_base64_entropy_floor: 4.8,
@@ -244,6 +248,29 @@ fn scan_isolated_with_policy(
     colon_right_min_len: usize,
     leading_slash_base64_entropy_floor: f64,
 ) -> Vec<String> {
+    scan_isolated_with_symbol_policy(
+        value,
+        mixed_entropy_floor,
+        symbolic_min_len,
+        2,
+        true,
+        colon_left_min_len,
+        colon_right_min_len,
+        leading_slash_base64_entropy_floor,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn scan_isolated_with_symbol_policy(
+    value: &str,
+    mixed_entropy_floor: f64,
+    symbolic_min_len: usize,
+    symbolic_min_symbols: usize,
+    symbolic_requires_non_underscore: bool,
+    colon_left_min_len: usize,
+    colon_right_min_len: usize,
+    leading_slash_base64_entropy_floor: f64,
+) -> Vec<String> {
     let mut owner = detector("isolated-policy-owner", &["secret"], 8);
     owner.entropy_roles = vec![EntropyDetectionRole::IsolatedBare];
     let policy = owner
@@ -252,6 +279,8 @@ fn scan_isolated_with_policy(
         .expect("test entropy owner must declare plausibility");
     policy.isolated_mixed_entropy_floor = mixed_entropy_floor;
     policy.isolated_symbolic_min_len = symbolic_min_len;
+    policy.isolated_symbolic_min_symbols = symbolic_min_symbols;
+    policy.isolated_symbolic_requires_non_underscore = symbolic_requires_non_underscore;
     policy.isolated_colon_left_min_len = colon_left_min_len;
     policy.isolated_colon_right_min_len = colon_right_min_len;
     policy.leading_slash_base64_entropy_floor = leading_slash_base64_entropy_floor;
@@ -289,6 +318,30 @@ fn isolated_candidate_floors_are_owned_by_the_active_detector() {
         scan_isolated_with_policy(symbolic, 3.65, 18, 20, 16, 4.8).contains(&symbolic.to_string())
     );
     assert!(scan_isolated_with_policy(symbolic, 3.65, 19, 20, 16, 4.8).is_empty());
+
+    let mixed_symbolic = "BadCbc0#-DE&1$FA";
+    assert!(
+        scan_isolated_with_policy(mixed_symbolic, 3.65, 16, 20, 16, 4.8)
+            .contains(&mixed_symbolic.to_string())
+    );
+    assert!(scan_isolated_with_policy(mixed_symbolic, 3.65, 17, 20, 16, 4.8).is_empty());
+    assert!(
+        scan_isolated_with_symbol_policy(mixed_symbolic, 3.65, 16, 4, true, 20, 16, 4.8)
+            .contains(&mixed_symbolic.to_string())
+    );
+    assert!(
+        scan_isolated_with_symbol_policy(mixed_symbolic, 3.65, 16, 5, true, 20, 16, 4.8).is_empty()
+    );
+
+    let underscore_symbolic = "Ab1_Cd2_Ef3_Gh45";
+    assert!(
+        scan_isolated_with_symbol_policy(underscore_symbolic, 8.0, 16, 2, true, 20, 16, 4.8)
+            .is_empty()
+    );
+    assert!(
+        scan_isolated_with_symbol_policy(underscore_symbolic, 8.0, 16, 2, false, 20, 16, 4.8)
+            .contains(&underscore_symbolic.to_string())
+    );
 
     let colon = "abcdefghij0123456789:klmnopqr01234567";
     assert!(scan_isolated_with_policy(colon, 3.65, 18, 20, 16, 4.8).contains(&colon.to_string()));

@@ -142,7 +142,7 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
             }
             if let Some(policy) = d.plausibility {
                 entries.push(format!(
-                    "plausibility:{}:{:016x}:{:016x}:{:016x}:{}:{:016x}:{}:{}:{}:{:016x}:{}:{}:{}:{}",
+                    "plausibility:{}:{:016x}:{:016x}:{:016x}:{}:{:016x}:{}:{}:{}:{}:{}:{:016x}:{}:{}:{}:{}",
                     d.id,
                     policy.mixed_alnum_floor.to_bits(),
                     policy.symbolic_entropy_floor.to_bits(),
@@ -150,6 +150,8 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
                     policy.mixed_alnum_min_len,
                     policy.isolated_mixed_entropy_floor.to_bits(),
                     policy.isolated_symbolic_min_len,
+                    policy.isolated_symbolic_min_symbols,
+                    policy.isolated_symbolic_requires_non_underscore,
                     policy.isolated_colon_left_min_len,
                     policy.isolated_colon_right_min_len,
                     policy.leading_slash_base64_entropy_floor.to_bits(),

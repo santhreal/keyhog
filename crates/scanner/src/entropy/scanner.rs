@@ -621,18 +621,21 @@ fn scan_keyword_free_candidates(
             compiled_keyword_secret.copied(),
         )
     });
+    let isolated_admission_lengths = isolated_token_context.as_ref().map(|context| {
+        (
+            context.min_len,
+            super::isolated::isolated_special_shape_min_len(
+                context.entropy_shape.as_ref(),
+                context.plausibility_policy.as_ref(),
+            ),
+        )
+    });
+    let dogfood_enabled = crate::telemetry::is_dogfood_enabled();
     for (line_idx, line) in lines.iter().enumerate() {
         if let Some(skip) = skip_lines {
             if skip.contains(&line_idx) {
                 continue;
             }
-        }
-        // Single innocuous check for both paths (was called twice, once per
-        // collect function). This is the single biggest per-line CPU saving
-        // in the keyword-free scan: `is_likely_innocuous_line` does trim +
-        // URI checks + import-prefix scan + hash-label scan + 40-hex check.
-        if is_likely_innocuous_line(line) {
-            continue;
         }
         // Single-pass byte scan using a 256-entry lookup table for fast
         // classification. Tracks three necessary conditions simultaneously:
@@ -681,33 +684,17 @@ fn scan_keyword_free_candidates(
         // Isolated-bare path: needs a non-whitespace run ≥ isolated_min_len.
         // Use max_nonws_run (not max_entropy_run) because isolated_bare_candidate
         // accepts tokens with non-entropy bytes like `()`: the byte set is
-        // wider than is_entropy_candidate_byte. But also require
-        // max_entropy_run ≥ isolated_min_len as a fast skip for lines where
-        // even the longest entropy run is too short, since the isolated-bare
-        // path's `isolated_bare_candidate` requires alpha+digit or symbolic
-        // opacity, which implies entropy bytes.
-        if let Some(isolated_token_context) = isolated_token_context.as_ref() {
-            let isolated_min_len = isolated_token_context.min_len;
-            let special_shape_min_len = super::isolated::isolated_special_shape_min_len(
-                isolated_token_context.entropy_shape.as_ref(),
-                isolated_token_context.plausibility_policy.as_ref(),
-            );
-            let special_shape_may_cross_minimum =
-                isolated_min_len > special_shape_min_len && max_nonws_run >= special_shape_min_len;
-            if isolated_bare_enabled
-                && (max_nonws_run >= isolated_min_len || special_shape_may_cross_minimum)
-            {
-                collect_isolated_bare_candidates_inner(
-                    line,
-                    line_idx,
-                    line_offsets[line_idx],
-                    isolated_token_context,
-                    seen,
-                    matches,
-                    placeholder_keywords,
-                );
-            }
-        }
+        // wider than is_entropy_candidate_byte. The below-normal-minimum
+        // exception is narrower: every detector-owned lower-dash or symbolic
+        // special-shape byte belongs to BYTE_CLASS, so its full minimum must be
+        // one contiguous entropy run before the candidate visitor can matter.
+        let isolated_admit =
+            isolated_admission_lengths.is_some_and(|(isolated_min_len, special_shape_min_len)| {
+                let special_shape_may_cross_minimum = isolated_min_len > special_shape_min_len
+                    && max_entropy_run >= special_shape_min_len;
+                isolated_bare_enabled
+                    && (max_nonws_run >= isolated_min_len || special_shape_may_cross_minimum)
+            });
         // Keyword-free path: `extract_candidates` + `push_candidate` checks
         // `cleaned.len() < keyword_free_min_len`. A candidate of length ≥
         // keyword_free_min_len that is a plausible secret consists entirely of
@@ -723,11 +710,32 @@ fn scan_keyword_free_candidates(
         // (dogfood disabled) where suppression events are not recorded.
         let keyword_free_admit = if keyword_free_context.is_none() {
             false
-        } else if crate::telemetry::is_dogfood_enabled() {
+        } else if dogfood_enabled {
             has_trigger
         } else {
             has_trigger && keyword_free_min_len.is_some_and(|minimum| max_entropy_run >= minimum)
         };
+        if !isolated_admit && !keyword_free_admit {
+            continue;
+        }
+        // Innocuous classification is more expensive than the byte admission
+        // proof above. Run it only for a line that can reach either emitter.
+        if is_likely_innocuous_line(line) {
+            continue;
+        }
+        if isolated_admit {
+            if let Some(isolated_token_context) = isolated_token_context.as_ref() {
+                collect_isolated_bare_candidates_inner(
+                    line,
+                    line_idx,
+                    line_offsets[line_idx],
+                    isolated_token_context,
+                    seen,
+                    matches,
+                    placeholder_keywords,
+                );
+            }
+        }
         if let Some(keyword_free_context) =
             keyword_free_context.as_ref().filter(|_| keyword_free_admit)
         {
@@ -754,8 +762,12 @@ pub(crate) fn has_lower_dash_app_password_candidate_with_precomputed_keywords_an
     keyword_lines: &[(usize, &str)],
     config: &crate::ScannerConfig,
     active_policy: Option<ActiveDetectorPolicy<'_>>,
+    excluded_lines: &std::collections::HashSet<usize>,
 ) -> bool {
-    for (_, keyword_line) in keyword_lines {
+    for (line_index, keyword_line) in keyword_lines {
+        if excluded_lines.contains(line_index) {
+            continue;
+        }
         if is_likely_innocuous_line(keyword_line) {
             continue;
         }

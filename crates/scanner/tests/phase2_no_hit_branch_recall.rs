@@ -399,7 +399,12 @@ fn isolated_short_dash_entropy_secret_enters_direct_scan_prefilter_recovery() {
 #[cfg(feature = "entropy")]
 #[test]
 fn multiline_symbolic_isolated_candidate_enters_coalesced_no_hit_branch() {
-    let scanner = compile_scanner_with_config(ScannerConfig::default());
+    // This contract owns reconstruction and no-hit routing, not fixture-path
+    // confidence suppression.
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    config.penalize_test_paths = false;
+    let scanner = compile_scanner_with_config(config);
     let secret = "BadCbc0#-DE&1$FA";
     let chunk = make_chunk(&format!("`{secret}`\\\n\n"), "notes/multiline-symbolic.txt");
 

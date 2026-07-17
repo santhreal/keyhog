@@ -366,6 +366,8 @@ fn dogfood_records_engine_probabilistic_gate_drop() {
             mixed_alnum_min_len: 20,
             isolated_mixed_entropy_floor: 3.65,
             isolated_symbolic_min_len: 18,
+            isolated_symbolic_min_symbols: 2,
+            isolated_symbolic_requires_non_underscore: true,
             isolated_colon_left_min_len: 20,
             isolated_colon_right_min_len: 16,
             leading_slash_base64_entropy_floor: 4.8,

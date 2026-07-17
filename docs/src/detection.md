@@ -124,6 +124,12 @@ model's fixed vocabulary, remain global.
 | `plausibility.symbolic_entropy_floor` | Raises the minimum entropy for symbol-bearing credential assignments | Preserves more anchored symbolic passwords |
 | `plausibility.second_half_entropy_floor` | Rejects candidates with a less-random tail | Preserves more credentials whose entropy is front-loaded |
 | `plausibility.mixed_alnum_min_len` | Requires a longer mixed alpha-numeric credential before the carve-out applies | Lets shorter anchored mixed tokens use the detector's mixed floor |
+| `plausibility.isolated_mixed_entropy_floor` | Raises the floor for isolated contiguous or underscore-delimited mixed tokens | Preserves more low-randomness isolated mixed tokens |
+| `plausibility.isolated_symbolic_min_len` | Requires a longer isolated symbol-rich credential for the short-candidate exception | Admits shorter symbol-rich candidates; exact declared lower-dash layouts still use their own shape rules |
+| `plausibility.isolated_symbolic_min_symbols` | Requires more symbol bytes in the isolated symbolic exception | Admits candidates with fewer symbol bytes after the other gates pass |
+| `plausibility.isolated_symbolic_requires_non_underscore` | Prevents underscore-only mixed tokens from bypassing their mixed entropy floor through the symbolic exception | Allows underscore to satisfy the symbolic exception by itself |
+| `plausibility.isolated_colon_left_min_len` / `isolated_colon_right_min_len` | Requires longer sides around an isolated `opaque:opaque` separator | Admits shorter colon-separated opaque pairs |
+| `plausibility.leading_slash_base64_entropy_floor` | Raises the floor for unanchored slash-led base64 | Preserves more slash-led base64 candidates |
 | `plausibility.reject_repeated_blocks` | Rejects periodic mask values, including truncated repetitions | Allows that shape to continue through the remaining detector gates |
 | `plausibility.allow_alphabetic_credential` | Admits anchored all-letter passwords/tokens after other gates | Requires alphabetic-only values to clear the ordinary entropy path |
 | `plausibility.reject_program_identifiers` | Rejects source-language identifier shapes | Allows identifier-shaped values through the remaining gates |
@@ -214,6 +220,14 @@ These settings do not all use one generic “last value wins” rule:
   recovery; the anchored `bluesky-app-password` regex remains the source of the
   named Bluesky finding. A custom corpus without the shape has no isolated
   exception, rather than inheriting an embedded detector policy.
+- **Isolated symbolic credentials:** the detector's
+  `plausibility.isolated_symbolic_min_len`,
+  `plausibility.isolated_symbolic_min_symbols`, and
+  `plausibility.isolated_symbolic_requires_non_underscore` fields control the
+  shorter symbol-rich exception. Contiguous and underscore-delimited mixed
+  tokens stay under `plausibility.isolated_mixed_entropy_floor` when the owner
+  requires a non-underscore symbol, and an exact declared lower-dash layout
+  must satisfy its `entropy_shapes` policy instead of bypassing it as symbolic.
 
 Token efficiency can carry more of the precision burden for a detector whose
 assignment key or regex already creates the candidate. That is the practical

@@ -449,10 +449,24 @@ fn passes_secret_shape_checks(value: &str, context: PlausibilityContext) -> bool
     // a camelCase / PascalCase shape (at least one internal
     // uppercase boundary). Real secrets virtually always include
     // digits or special characters.
-    if context.reject_program_identifiers
-        && crate::suppression::shape::looks_like_program_identifier(value)
-    {
-        return false;
+    if context.reject_program_identifiers {
+        if crate::suppression::shape::looks_like_program_identifier(value) {
+            return false;
+        }
+        // Digits deliberately exclude a value from the narrow lexical helper
+        // above, but detector-owned identifier rejection must still recognize
+        // pronounceable CamelCase symbols such as `ClientSecretConfigValue2`.
+        // Keep underscore-bearing mixed tokens on their existing policy path;
+        // their shape is also common for real generated credentials.
+        if !value.contains('_')
+            && value.bytes().any(|byte| byte.is_ascii_digit())
+            && crate::suppression::shape::looks_like_source_symbol_identifier_with_randomness(
+                value,
+                &crate::suppression::token_randomness::TokenRandomness::for_candidate(value),
+            )
+        {
+            return false;
+        }
     }
 
     // Dash-segmented-alnum decoy shapes. License/product serials

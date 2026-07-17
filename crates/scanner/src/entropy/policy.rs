@@ -96,6 +96,8 @@ pub(crate) struct CompiledEntropyPolicy {
     pub(crate) mixed_alnum_min_len: usize,
     pub(crate) isolated_mixed_entropy_floor: f64,
     pub(crate) isolated_symbolic_min_len: usize,
+    pub(crate) isolated_symbolic_min_symbols: usize,
+    pub(crate) isolated_symbolic_requires_non_underscore: bool,
     pub(crate) isolated_colon_left_min_len: usize,
     pub(crate) isolated_colon_right_min_len: usize,
     pub(crate) leading_slash_base64_entropy_floor: f64,
@@ -192,6 +194,9 @@ impl CompiledEntropyPolicy {
             mixed_alnum_min_len: plausibility.mixed_alnum_min_len,
             isolated_mixed_entropy_floor: plausibility.isolated_mixed_entropy_floor,
             isolated_symbolic_min_len: plausibility.isolated_symbolic_min_len,
+            isolated_symbolic_min_symbols: plausibility.isolated_symbolic_min_symbols,
+            isolated_symbolic_requires_non_underscore: plausibility
+                .isolated_symbolic_requires_non_underscore,
             isolated_colon_left_min_len: plausibility.isolated_colon_left_min_len,
             isolated_colon_right_min_len: plausibility.isolated_colon_right_min_len,
             leading_slash_base64_entropy_floor: plausibility.leading_slash_base64_entropy_floor,

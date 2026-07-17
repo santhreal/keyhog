@@ -149,6 +149,8 @@ fn plausibility_policy_fields_reject_invalid_ranges() {
         mixed_alnum_min_len: 0,
         isolated_mixed_entropy_floor: 9.0,
         isolated_symbolic_min_len: 0,
+        isolated_symbolic_min_symbols: 0,
+        isolated_symbolic_requires_non_underscore: true,
         isolated_colon_left_min_len: 0,
         isolated_colon_right_min_len: 0,
         leading_slash_base64_entropy_floor: f64::NAN,
@@ -169,6 +171,10 @@ fn plausibility_policy_fields_reject_invalid_ranges() {
     assert!(issues.iter().any(|issue| matches!(
         issue,
         QualityIssue::Error(message) if message.contains("mixed_alnum_min_len")
+    )));
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("isolated_symbolic_min_symbols")
     )));
 }
 
