@@ -292,26 +292,25 @@ pub fn is_entropy_appropriate_with_content(
     text: &str,
     secret_keywords: &[String],
 ) -> bool {
-    let lines: Vec<&str> = text.lines().collect();
-    is_entropy_appropriate_with_content_lines(path, allow_source_files, &lines, secret_keywords)
+    if is_entropy_appropriate(path, allow_source_files) {
+        return true;
+    }
+    let has_secret_keyword_line =
+        content_has_secret_keyword_line(path, allow_source_files, text.lines(), secret_keywords);
+    is_entropy_appropriate_inner(path, allow_source_files, has_secret_keyword_line)
 }
 
-pub(crate) fn is_entropy_appropriate_with_content_lines(
+fn content_has_secret_keyword_line<'a>(
     path: Option<&str>,
     allow_source_files: bool,
-    lines: &[&str],
+    mut lines: impl Iterator<Item = &'a str>,
     secret_keywords: &[String],
 ) -> bool {
-    let source_path = crate::decode::caesar::is_program_source_code_path(path);
-    let has_secret_keyword_line = if source_path && !allow_source_files {
-        lines
-            .iter()
-            .copied()
-            .any(keywords::line_has_credential_assignment_surface)
+    if crate::decode::caesar::is_program_source_code_path(path) && !allow_source_files {
+        lines.any(keywords::line_has_credential_assignment_surface)
     } else {
-        !keywords::find_keyword_assignment_lines(lines, secret_keywords).is_empty()
-    };
-    is_entropy_appropriate_inner(path, allow_source_files, has_secret_keyword_line)
+        lines.any(|line| keywords::is_keyword_assignment_line(line, secret_keywords))
+    }
 }
 
 pub(crate) fn is_entropy_appropriate_inner(

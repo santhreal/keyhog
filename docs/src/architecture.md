@@ -134,8 +134,9 @@ phase-two patterns, generic assignments, and enabled entropy analysis. This
 proof uses the active corpus's compiled generic-keyword stems and the owning
 detector's `keyword_free_min_len` plus effective Shannon floor; it does not
 substitute the embedded corpus or a scanner-wide run length for a focused
-custom corpus. The proof is identical
-for portable CPU, Hyperscan, CUDA, and WGPU routes. Large
+custom corpus. Chunk size never disables an active detector path; overlapping
+source and scanner windows bound work instead. Portable CPU, Hyperscan, CUDA,
+and WGPU share this proof. Large
 filesystem scans may instead use the fused reader/scanner pipeline so I/O and
 scanning overlap; `crates/cli/src/orchestrator/dispatch.rs` and
 `dispatch/fused.rs` own that execution choice. Both paths feed the same scanner

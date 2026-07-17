@@ -1,28 +1,16 @@
 //! Boundary lock: the coalesced batch producer must agree with the per-chunk
-//! path on a LARGE (>32 KiB) no-trigger chunk whose only secret is an anchorless
-//! high-entropy token.
-//!
-//! WHY THIS EXISTS (the gap the existing parity locks miss). `scan_coalesced`
-//! routes no-trigger chunks through `scan_coalesced_phase2_with_admission`
-//! (`engine/scan_coalesced.rs`): a chunk with no phase-1 trigger only reaches the
-//! entropy/generic sweep if `should_scan_no_hit_chunk` admits it, and that
-//! predicate's `no_hit_text_admits` gates the entropy/generic checks behind
-//! `small_chunk = text.len() <= NO_HIT_ENTROPY_ADMISSION_MAX_BYTES` (32 KiB). The
-//! per-chunk path (`scan`) has NO such size gate, any alphabet-screen-passing
-//! chunk runs the full entropy sweep regardless of size. So a >32 KiB no-trigger
-//! chunk carrying an anchorless entropy token is exactly where the two paths
-//! COULD diverge (coalesced silently dropping a finding the per-chunk path keeps).
+//! path on a large no-trigger chunk whose only secret is an anchorless
+//! high-entropy token. Chunk size is not detection policy: source and scanner
+//! windows bound work, while every window still executes the active detector
+//! plan completely.
 //!
 //! The existing coalesced≡per-chunk locks
 //! (`lane6_full_corpus_property_invariants::coalesced_equals_per_chunk_for_single_chunk`
 //! 10k cases, `scanner_invariants_full_corpus_proptest`) only feed SMALL inputs
 //! (≤3072 bytes), so they never cross the 32 KiB boundary. This test pins the
-//! boundary explicitly: measured on the shipped binary, both pipelines surface
-//! the same `entropy-token` on a 40 KiB chunk, the coalesced admission gate
-//! admits the large chunk (chunk windowing / the always-active phase-2 pre-check
-//! fire before the size gate), so parity holds. A future change that made the
-//! `small_chunk` gate authoritative for the whole chunk would drop the token on
-//! the coalesced path and turn this red, a real Law-10 recall divergence between
+//! boundary explicitly: both pipelines must surface the same `entropy-token` on
+//! a 40 KiB chunk. A future size cutoff would drop the token and turn this red,
+//! a real recall divergence between
 //! `--backend simd` (per-chunk) and `--backend gpu-wgpu` / `--batch-pipeline`
 //! (coalesced), which is exactly the M-02 parity surface.
 //!
@@ -68,8 +56,7 @@ fn entropy_token() -> String {
 
 /// A >32 KiB chunk: benign prose (passes the alphabet screen, carries no detector
 /// trigger and no secret keyword) with one bare entropy token on its own line in
-/// the middle. Larger than `NO_HIT_ENTROPY_ADMISSION_MAX_BYTES` (32 KiB) so it
-/// exercises the coalesced no-hit admission size boundary.
+/// the middle. Its size crosses the removed scanner-global admission cutoff.
 fn large_no_hit_chunk_with_entropy_token(token: &str) -> Chunk {
     const PROSE: &str =
         "the quick brown fox jumps over the lazy dog while walking through the forest path today morning. ";
@@ -84,7 +71,7 @@ fn large_no_hit_chunk_with_entropy_token(token: &str) -> Chunk {
     body.insert_str(line_start, &format!("{token}\n"));
     assert!(
         body.len() > 32 * 1024,
-        "chunk must exceed the 32 KiB small_chunk admission boundary, got {}",
+        "chunk must exceed the former 32 KiB admission cutoff, got {}",
         body.len()
     );
     Chunk {
@@ -142,10 +129,9 @@ fn coalesced_matches_per_chunk_on_large_no_hit_entropy_chunk() {
     );
 
     // PARITY: the coalesced admission gate drops/adds NOTHING vs the per-chunk
-    // entropy sweep at the >32 KiB boundary.
+    // entropy sweep on the large input.
     assert_eq!(
         per_chunk, coalesced,
-        "coalesced batch producer diverged from per-chunk on a >32 KiB no-trigger \
-         entropy chunk, the small_chunk admission gate silently dropped/added a finding"
+        "coalesced batch producer diverged from per-chunk on a >32 KiB no-trigger entropy chunk"
     );
 }

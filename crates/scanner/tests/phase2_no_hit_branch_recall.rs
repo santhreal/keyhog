@@ -308,6 +308,42 @@ fn detector_owned_keyword_free_minimum_enters_coalesced_no_hit_path() {
 
 #[cfg(feature = "entropy")]
 #[test]
+fn detector_owned_keyword_free_candidate_survives_large_no_hit_chunk() {
+    let secret = "Kp4Qx7Rm2Sn5Tb8Vw3Yz";
+    let mut config = ScannerConfig::default();
+    config.entropy_in_source_files = true;
+    config.entropy_threshold = 3.0;
+    config.min_confidence = 0.0;
+    config.ml_enabled = false;
+    let scanner = compile_keyword_free_boundary_scanner(config, "not-present");
+    let mut body = String::with_capacity(1024 * 1024 + 128 * 1024);
+    while body.len() <= 1024 * 1024 + 64 * 1024 {
+        body.push_str("ordinary prose with spaces and no detector anchor\n");
+    }
+    body.push_str(&format!("opaque_value=\"{secret}\"\n"));
+    assert!(body.len() > 1024 * 1024);
+    let chunk = make_chunk(&body, "config/large-keyword-free-boundary.env");
+
+    let portable = scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback);
+    scanner.clear_fragment_cache();
+    let coalesced = scanner.scan_coalesced(std::slice::from_ref(&chunk));
+    for findings in [&portable, &coalesced[0]] {
+        assert!(
+            findings.iter().any(|finding| {
+                finding.detector_id.as_ref() == "entropy-generic"
+                    && finding.credential.as_ref() == secret
+            }),
+            "chunk size must not override the active detector's keyword-free policy; matches={:?}",
+            findings
+                .iter()
+                .map(|finding| (finding.detector_id.as_ref(), finding.credential.as_ref()))
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
+#[cfg(feature = "entropy")]
+#[test]
 fn active_detector_keyword_enters_coalesced_no_hit_path() {
     let secret = "Ab3$kLm9";
     let mut config = ScannerConfig::default();

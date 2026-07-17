@@ -424,16 +424,4 @@ mod max_inner_loop_iters_tests {
         );
         assert_eq!(super::boundary::MAX_BOUNDARY_SEAM_BYTES, 128 * 1024);
     }
-
-    /// The no-phase-1-hit keyword-free entropy admission cap is exactly the bare
-    /// `32 * 1024` the three admission sites used to inline. Pinning it locks the
-    /// recall/perf boundary in ONE place: a no-hit chunk larger than this with a
-    /// bare anchorless high-entropy secret is not admitted to the entropy path.
-    #[test]
-    fn no_hit_entropy_admission_cap_is_thirty_two_kib() {
-        assert_eq!(
-            super::scan_coalesced::NO_HIT_ENTROPY_ADMISSION_MAX_BYTES,
-            32 * 1024
-        );
-    }
 }

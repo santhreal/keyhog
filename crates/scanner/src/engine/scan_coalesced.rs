@@ -10,16 +10,6 @@ use super::*;
 #[cfg(feature = "simd")]
 use std::cell::RefCell;
 
-/// Upper size bound for admitting a no-phase-1-hit chunk to the keyword-free
-/// entropy fallback. A no-hit chunk larger than this that carries a bare
-/// high-entropy secret with no keyword/assignment anchor is NOT admitted to the
-/// entropy path, the bound caps the cost of the entropy scan on chunks that
-/// produced no literal trigger. Raising it trades scan time for recall on large
-/// anchorless blobs. Recall-affecting; kept beside the other engine thresholds
-/// (`MAX_INNER_LOOP_ITERS`, `BIGRAM_BLOOM_MIN_CHUNK_BYTES`).
-#[cfg(any(feature = "entropy", test))]
-pub(crate) const NO_HIT_ENTROPY_ADMISSION_MAX_BYTES: usize = 32 * 1024;
-
 // The trigger-buffer pool is only used in the Hyperscan-prefilter scratch path
 // of `scan_coalesced`. The pool's win is reuse of buffers that stay inside the
 // pool; extending it to per-chunk trigger builders regressed long-lines benches.
@@ -414,13 +404,14 @@ impl CompiledScanner {
             return true;
         }
         let data = text.as_bytes();
-        #[cfg(feature = "entropy")]
-        let small_chunk = text.len() <= NO_HIT_ENTROPY_ADMISSION_MAX_BYTES;
         let keyword_admits = self
             .generic_keyword_stems
             .as_ref()
             .is_some_and(|stems| stems.is_match(data))
             || has_secret_keyword_fast(data);
+        if keyword_admits {
+            return true;
+        }
         #[cfg(feature = "entropy")]
         let isolated_bare_owner_index = self.generic_owning_detector.isolated_bare_owner_index();
         #[cfg(feature = "entropy")]
@@ -445,13 +436,8 @@ impl CompiledScanner {
             });
         #[cfg(feature = "multiline")]
         if crate::multiline::has_concatenation_indicators(text) {
-            if keyword_admits {
-                return true;
-            }
             #[cfg(feature = "entropy")]
-            if let Some(policy) =
-                isolated_bare_policy.filter(|_| small_chunk && self.config.entropy_enabled)
-            {
+            if let Some(policy) = isolated_bare_policy.filter(|_| self.config.entropy_enabled) {
                 if crate::entropy::scanner::has_isolated_bare_secret_candidate_with_policy(
                     text,
                     self.config.entropy_threshold,
@@ -464,15 +450,15 @@ impl CompiledScanner {
             }
         }
         #[cfg(feature = "entropy")]
-        let entropy_admits = small_chunk
-            && self.config.entropy_enabled
-            && ((crate::entropy::is_entropy_appropriate_with_content(
-                _chunk.metadata.path.as_deref(),
-                self.config.entropy_in_source_files,
-                text,
-                &self.config.secret_keywords,
-            ) && keyword_free_min_len
-                .is_some_and(|minimum| has_high_entropy_run_at_least(data, minimum)))
+        let entropy_admits = self.config.entropy_enabled
+            && ((keyword_free_min_len
+                .is_some_and(|minimum| has_high_entropy_run_at_least(data, minimum))
+                && crate::entropy::is_entropy_appropriate_with_content(
+                    _chunk.metadata.path.as_deref(),
+                    self.config.entropy_in_source_files,
+                    text,
+                    &self.config.secret_keywords,
+                ))
                 || isolated_bare_policy.is_some_and(|policy| {
                     crate::entropy::scanner::has_isolated_bare_secret_candidate_with_policy(
                         text,
@@ -484,11 +470,11 @@ impl CompiledScanner {
                 }));
         #[cfg(feature = "entropy")]
         {
-            keyword_admits || entropy_admits
+            entropy_admits
         }
         #[cfg(not(feature = "entropy"))]
         {
-            keyword_admits
+            false
         }
     }
 

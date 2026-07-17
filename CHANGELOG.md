@@ -40,6 +40,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   and the `keyword-free` owner's length plus effective Shannon floor. Focused
   custom detector corpora no longer inherit the embedded keyword vocabulary or
   a scanner-owned 32-byte entropy-run floor before their policy can execute.
+  Large bounded scanner windows no longer disable anchor-free detection at an
+  unrelated 32 KiB cutoff, and cheap keyword/run evidence now precedes line
+  eligibility checks, which stream without allocating a line vector.
 - Automatic GPU runtime faults now cross a fallible scanner boundary: normal
   one-shot, fused, and daemon scans visibly replay the same stable batch through
   the scalar reference path and report recovered chunks and bytes. Calibration,
