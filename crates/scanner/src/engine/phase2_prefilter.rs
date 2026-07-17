@@ -620,18 +620,19 @@ impl Phase2AlwaysActivePrefilter {
         // below is real work, not no-candidate overhead.
         record_mark_perpattern_work();
         // SIMD fast path: one Hyperscan scan replaces the whole-chunk RegexSet
-        // batch loop below (the measured #1 scan cost). `localize_plain` is a
-        // RegexSet-batch optimization (skip plain batches the shared-anchor AC
-        // covers); the HS path marks the full matching set instead, a sound
-        // SUPERSET (eligible patterns still route through the AC+verify path,
-        // non-eligible through whole-chunk extraction), proven findings-identical.
+        // batch loop below. When the plain localizer owns those candidates, its
+        // AC plus anchored verification replaces the plain batches, so running
+        // the full HS marking database as well would duplicate the dominant work.
         #[cfg(feature = "simd")]
-        if hs_prefilter_engages(
-            tuning.fallback_hs,
-            match_text.len(),
-            tuning.hs_prefilter_max_len,
-            match_text.is_ascii(),
-        ) {
+        let hs_owns_marking = !localize_plain
+            && hs_prefilter_engages(
+                tuning.fallback_hs,
+                match_text.len(),
+                tuning.hs_prefilter_max_len,
+                match_text.is_ascii(),
+            );
+        #[cfg(feature = "simd")]
+        if hs_owns_marking {
             // HS engages on (chunks ≤ the size gate) OR (ASCII chunks of ANY size).
             // On ASCII the RegexSet ASCII-fold is match-equivalent, so HS is
             // findings-IDENTICAL and ~2× faster on large chunks (the >8MB ASCII
@@ -640,13 +641,12 @@ impl Phase2AlwaysActivePrefilter {
             // + a supplemental unicode set was recall-safe but 2.75× slower than the
             // RegexSet (see hs_prefilter_engages / HS_PREFILTER_MAX_LEN_DEFAULT).
             if let Some(hs) = self.hs(phase2_patterns) {
-                let _ = localize_plain; // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
-                                        // Homoglyph skip for the HS path: the homoglyph variants are inert on
-                                        // a pure-ASCII chunk (base AC covers the ASCII original) AND on any
-                                        // decoded sub-chunk (a homoglyph in decoded binary is a non-credential),
-                                        // so the lean sub-DB marks the identical CREDENTIAL set ~100× cheaper.
-                                        // SAME `homoglyph_skip_applies` owner the RegexSet path below uses, so
-                                        // both engines stay findings-consistent (backend_parity_matrix).
+                // Homoglyph skip for the HS path: the homoglyph variants are inert on
+                // a pure-ASCII chunk (base AC covers the ASCII original) AND on any
+                // decoded sub-chunk (a homoglyph in decoded binary is a non-credential),
+                // so the lean sub-DB marks the identical CREDENTIAL set ~100× cheaper.
+                // SAME `homoglyph_skip_applies` owner the RegexSet path below uses, so
+                // both engines stay findings-consistent (backend_parity_matrix).
                 let skip_homoglyph =
                     homoglyph_skip_applies(match_text, tuning.homoglyph_ascii_skip);
                 match hs.mark(match_text, scratch, skip_homoglyph) {

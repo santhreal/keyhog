@@ -13,6 +13,7 @@ keywords = ["GOVTECH", "TECH.GOV.SG", "SG-API", "developer.tech.gov.sg"]
 
 [[detector.patterns]]
 regex = "(?:GOVTECH|SG|singapore)[_.-]?(?:API[_-]?KEY|api_key)[\\s\"''=:]+([a-zA-Z0-9]{32,64})"
+required_literals = ["GOVTECH", "SG", "SINGAPORE"]
 description = "Singapore GovTech API key with context anchor"
 group = 1
 

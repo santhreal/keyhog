@@ -202,17 +202,20 @@ fn scan_both(scanner: &CompiledScanner, chunk: &Chunk) -> (Vec<Key>, Vec<Key>) {
     // back-to-back would let the first scan's reassembly state perturb the
     // second (a test-only hazard, in production each chunk is scanned once and
     // the cache evolves identically for a fixed anchor setting).
-    // Shipping config: shared-anchor localization ON + homoglyph ASCII-gate ON.
+    // Optimized plan: shared anchors, plain localization, and ASCII gate on.
     keyhog_scanner::testing::set_phase2_anchor_mode(&scanner, Some(true));
+    keyhog_scanner::testing::set_phase2_localizer_mode(&scanner, Some(true));
     keyhog_scanner::testing::set_phase2_homoglyph_gate(&scanner, Some(true));
     scanner.clear_fragment_cache();
     let optimized = vec![scanner.scan_with_backend(chunk, ScanBackend::CpuFallback)];
     // Fully-unoptimized baseline: every phase-2 pattern runs the legacy
     // whole-chunk path, including every homoglyph variant on every chunk.
     keyhog_scanner::testing::set_phase2_anchor_mode(&scanner, Some(false));
+    keyhog_scanner::testing::set_phase2_localizer_mode(&scanner, Some(false));
     keyhog_scanner::testing::set_phase2_homoglyph_gate(&scanner, Some(false));
     scanner.clear_fragment_cache();
     let baseline = vec![scanner.scan_with_backend(chunk, ScanBackend::CpuFallback)];
+    keyhog_scanner::testing::set_phase2_localizer_mode(&scanner, None);
     (canonical(&optimized), canonical(&baseline))
 }
 

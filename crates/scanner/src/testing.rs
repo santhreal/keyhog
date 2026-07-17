@@ -3375,6 +3375,14 @@ pub(crate) fn set_phase2_anchor_mode(scanner: &crate::engine::CompiledScanner, m
 }
 
 #[cfg(test)]
+pub(crate) fn set_phase2_localizer_mode(
+    scanner: &crate::engine::CompiledScanner,
+    mode: Option<bool>,
+) {
+    scanner.tuning().set_phase2_localizer(mode);
+}
+
+#[cfg(test)]
 pub(crate) fn set_phase2_homoglyph_gate(
     scanner: &crate::engine::CompiledScanner,
     mode: Option<bool>,

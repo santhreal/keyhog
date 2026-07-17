@@ -368,6 +368,10 @@ printed by `keyhog config --effective`. They do not have CLI flags because
 per-run hidden recall changes would invalidate installer calibration.
 `hs_shard_target` controls Hyperscan patterns-per-shard during compile; changing
 it affects compile/cache shape and autoroute identity but not detector recall.
+`fallback_localizer` moves plain phase-two candidates to one ASCII anchor index;
+when enabled, those candidates are not rescanned by the full Hyperscan marking
+database. It is workload-dependent and therefore creates a distinct autoroute
+configuration that must be calibrated before automatic use.
 `gpu_recall_floor` forces the GPU region-presence path to compute the full CPU
 trigger net during parity/debug scans and report any GPU under-fire it recovers.
 `gpu_moe_timeout_ms` bounds one GPU MoE confidence readback; on timeout KeyHog

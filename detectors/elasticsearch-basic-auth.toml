@@ -13,14 +13,24 @@ keywords = ["ELASTICSEARCH_API_KEY", "ELASTIC_API_KEY", "ES_API_KEY", "elasticse
 
 [[detector.patterns]]
 regex = "(?:ELASTICSEARCH[_-]?API[_-]?KEY|ELASTIC[_-]?API[_-]?KEY|ES[_-]?API[_-]?KEY|elasticsearch[_-]?api[_-]?key|elastic[_-]?api[_-]?key)[=:\\s\"'']+([a-zA-Z0-9_-]{48,})"
+required_literals = ["ELASTICSEARCH", "ELASTIC", "ES"]
 description = "Elasticsearch API key with context anchor (48+ chars)"
 group = 1
 
 [[detector.patterns]]
 regex = "(?:ELASTICSEARCH[_-]?API[_-]?KEY|ELASTIC[_-]?API[_-]?KEY|ES[_-]?API[_-]?KEY|elasticsearch[_-]?api[_-]?key|elastic[_-]?api[_-]?key)[=:\\s\"'']+([A-Za-z0-9+/]{40,}={0,2})"
+required_literals = ["ELASTICSEARCH", "ELASTIC", "ES"]
 description = "Elasticsearch API key (base64 encoded) with context anchor"
 group = 1
 
 [[detector.tests]]
 test_positive = "ELASTICSEARCH_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
 test_negative = "ELASTICSEARCH_API_KEY=short"
+
+[[detector.tests]]
+test_positive = "ELASTIC-API-KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+test_negative = "ELASTIC-API-KEY=short"
+
+[[detector.tests]]
+test_positive = "ES_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+test_negative = "ES_API_KEY=short"

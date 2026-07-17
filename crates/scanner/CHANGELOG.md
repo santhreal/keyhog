@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Route the profiled Elasticsearch, ip-api, 8x8, Carbon Black, GovTech,
+  SimpleAnalytics, SentinelOne, and MX API patterns through detector-owned
+  required anchors instead of scanning them as always-active phase-two regexes
+  on every chunk; when the plain-pattern localizer owns ASCII candidates, skip
+  the redundant full Hyperscan marking pass.
+
 - Require one compiled detector plan throughout isolated-bare admission and
   entropy-fallback adjudication; remove optional scanner-default policy plus
   duplicate entropy-shape and execution-policy inputs.

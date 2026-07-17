@@ -19,6 +19,7 @@ allowlist_values = ["^0{20,32}$"]
 
 [[detector.patterns]]
 regex = "(?:CARBON[_\\s]*BLACK|carbon[_\\s]*black|CB|vmware_cb)[_\\s]*(?:API[_\\s]*)?KEY[=:\\s\"'']+([A-F0-9]{20,32})"
+required_literals = ["CARBON", "CB"]
 description = "Carbon Black API key with context anchor"
 group = 1
 

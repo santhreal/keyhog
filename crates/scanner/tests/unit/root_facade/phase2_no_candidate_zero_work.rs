@@ -168,28 +168,16 @@ fn always_active_finding_survives_the_gate() {
 }
 
 #[test]
-fn anchored_always_active_deepl_free_key_survives_hs_admission() {
+fn deepl_free_key_survives_production_scan() {
     let _guard = COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let scanner = scanner();
     let text = "7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d:fx\n";
-    let prefilter = scanner
-        .phase2_always_active_prefilter
-        .as_ref()
-        .expect("embedded detectors must build the always-active phase-2 prefilter");
-    keyhog_scanner::testing::set_phase2_hs(&scanner, Some(true));
-    let tuning = scanner.tuning().resolve();
-    let admitted = prefilter.any_active_match(&scanner.phase2_patterns, text, &tuning);
     let keys = finding_keys(&scanner, text, "deepl.txt");
-    keyhog_scanner::testing::set_phase2_hs(&scanner, None);
-    assert!(
-        admitted,
-        "anchored DeepL uuid:fx always-active pattern must be admitted by the HS-backed prefilter"
-    );
     assert!(
         keys.iter().any(|(det, credential, _)| {
             det == "deepl-api-key" && credential == "7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d:fx"
         }),
-        "anchored DeepL uuid:fx finding must survive HS-backed admission; got {keys:?}"
+        "DeepL uuid:fx finding must survive production routing; got {keys:?}"
     );
 }
 

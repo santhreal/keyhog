@@ -16,6 +16,8 @@
 //! crossover measurement: it adds GPU-specific timers and counters, so the
 //! speed gate is enforced only by the normal untraced, unprofiled run.
 //! Full-result parity and zero GPU degradation remain mandatory in every mode.
+//! `KH_BENCH_PHASE2_LOCALIZER=1|0` compares the two resolved phase-two plans;
+//! the selected value is printed with the complete tuning identity.
 //!
 //! Selection uses rotating candidate order. The selected exact GPU peer then
 //! receives fresh alternating held-out pairs against Hyperscan. The release
@@ -510,8 +512,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let detector_spec_digest = hex::encode(keyhog_core::compute_spec_hash(&detectors));
     let binary_sha256 = running_binary_sha256()?;
     let confirmed_suffix_gate = env_optional_bool("KH_BENCH_CONFIRMED_SUFFIX_GATE")?;
+    let fallback_localizer = env_optional_bool("KH_BENCH_PHASE2_LOCALIZER")?;
     let tuning = ScannerTuningConfig {
         confirmed_suffix_gate,
+        fallback_localizer,
         ..ScannerTuningConfig::default()
     };
     let effective_tuning = tuning.effective();

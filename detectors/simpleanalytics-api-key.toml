@@ -13,6 +13,7 @@ keywords = ["SA_API_KEY", "SIMPLE_ANALYTICS_KEY", "simpleanalytics"]
 
 [[detector.patterns]]
 regex = "(?:SA[_\\-\\s]?API[_\\-\\s]?KEY|SIMPLE[_\\-\\s]?ANALYTICS[_\\-\\s]?API[_\\-\\s]?KEY|simpleanalytics[_\\-\\s]?key)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+required_literals = ["SA", "SIMPLE"]
 description = "SimpleAnalytics API key in UUID format with context anchor"
 group = 1
 
