@@ -5,6 +5,20 @@ struct HistoricalGpuArtifact {
     production_comparable: Option<bool>,
 }
 
+#[derive(serde::Deserialize)]
+struct CurrentGpuArtifact {
+    schema_version: u32,
+    production_comparable: bool,
+    crossover_passed: bool,
+    git_hash: String,
+    selected_gpu_driver_version: String,
+    source_bytes: usize,
+    held_out_pairs: usize,
+    full_result_parity: bool,
+    gpu_degraded: bool,
+    ratio_ci95_high: f64,
+}
+
 /// Evaluate a `u64` constant from `hw_probe/thresholds.rs` by name.
 ///
 /// The thresholds are `pub(crate)`, so they are invisible to this external
@@ -89,6 +103,25 @@ fn historical_gpu_artifacts_cannot_support_current_crossover_claims() {
             "{name} must never be accepted as current production crossover evidence"
         );
     }
+}
+
+#[test]
+fn canonical_gpu_artifact_proves_the_checked_8mib_crossover() {
+    let artifact: CurrentGpuArtifact = toml::from_str(include_str!(
+        "../../../../../benchmarks/baselines/gpu_8mib_crossover_rtx5090.toml"
+    ))
+    .expect("canonical RTX 5090 crossover artifact must parse");
+
+    assert_eq!(artifact.schema_version, 2);
+    assert_eq!(artifact.source_bytes, 8 * 1024 * 1024);
+    assert_eq!(artifact.held_out_pairs, 100);
+    assert!(artifact.production_comparable);
+    assert!(artifact.crossover_passed);
+    assert!(artifact.full_result_parity);
+    assert!(!artifact.gpu_degraded);
+    assert!(artifact.ratio_ci95_high < 1.0);
+    assert_eq!(artifact.selected_gpu_driver_version, "0.6.5");
+    assert_eq!(artifact.git_hash.len(), 40);
 }
 
 #[test]

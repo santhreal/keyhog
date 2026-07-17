@@ -1,0 +1,1014 @@
+schema_version = 2
+measured_at_utc = "2026-07-17T03:27:19.030140529+00:00"
+production_comparable = true
+crossover_passed = true
+git_hash = "6bc82fc6df7465661ec237e30f98babbae209d84"
+binary_sha256 = "23eb73f28541842e270b96888a7a31beb72e846c2cff4b0cb3b21bfc66c6e2c0"
+detector_spec_blake3 = "c6efd6cdbee38a929a71e64f5c9dde54929254467a838f13eb4f2a3ca7b5a649"
+scanner_detector_digest = "2e8c8936f62ebe84"
+resolved_tuning = "ResolvedScannerTuningConfig { fallback_hs: true, hs_prefilter_max_len: 4096, hs_shard_target: 320, fallback_anchor: true, homoglyph_gate: true, homoglyph_ascii_skip: true, fallback_reverse: false, prefilter_truncate: true, fallback_prefix_gate: false, decode_focus: true, confirmed_suffix_gate: true, no_candidate_gate: true, fallback_localizer: false, gpu_recall_floor: false, gpu_moe_timeout_ms: 30000 }"
+compiled_features = "simd=true,gpu=true,decode=true,entropy=true"
+command = "/mnt/FlareTraining/santh-archive/cargo-target/release/deps/gpu_vs_hs_8mib-af88a0fbccd101fc --bench"
+os = "linux"
+arch = "x86_64"
+cpu_model = "AMD Ryzen 9 9950X 16-Core Processor"
+physical_cores = 16
+logical_cores = 22
+total_memory_mb = 94140
+simd_features = "AVX-512"
+selected_gpu_backend = "gpu-cuda-region-presence"
+selected_gpu_driver = "cuda"
+selected_gpu_driver_version = "0.6.5"
+selected_gpu_device = "NVIDIA GeForce RTX 5090:ordinal=0:cc=12.0:vram=33644412928"
+selected_gpu_runtime = "nvidia-kernel:NVRM version: NVIDIA UNIX Open Kernel Module for x86_64 570.211.01 Release Build (dvs-builder@U22-I3-AM27-29-5) Tue Nov 25 16:23:07 UTC 2025 GCC version: gcc version 13.3.0 (Ubuntu 13.3.0-6ubuntu2~24.04.1)"
+source_bytes = 8388608
+scanned_bytes = 9437184
+chunk_bytes = 1048576
+overlap_bytes = 131072
+chunks = 9
+detectors = 923
+selection_rounds = 20
+held_out_pairs = 100
+full_result_parity = true
+gpu_degraded = false
+ratio_geometric_mean = 0.9541606107342971
+ratio_ci95_low = 0.9383002787782482
+ratio_ci95_high = 0.9702890339778
+
+[[gpu_peers]]
+backend = "gpu-cuda-region-presence"
+acquired = true
+driver = "cuda"
+driver_version = "0.6.5"
+device = "NVIDIA GeForce RTX 5090:ordinal=0:cc=12.0:vram=33644412928"
+runtime = "nvidia-kernel:NVRM version: NVIDIA UNIX Open Kernel Module for x86_64 570.211.01 Release Build (dvs-builder@U22-I3-AM27-29-5) Tue Nov 25 16:23:07 UTC 2025 GCC version: gcc version 13.3.0 (Ubuntu 13.3.0-6ubuntu2~24.04.1)"
+acquisition_error = "none"
+
+[[gpu_peers]]
+backend = "gpu-wgpu-region-presence"
+acquired = true
+driver = "wgpu"
+driver_version = "0.6.5"
+device = "NVIDIA GeForce RTX 5090:vendor=10de:device=2b85"
+runtime = "Vulkan:NVIDIA:570.211.01"
+acquisition_error = "none"
+
+[[selection_samples]]
+backend = "simd-regex"
+round = 0
+order = 0
+nanoseconds = 45865132
+
+[[selection_samples]]
+backend = "gpu-cuda-region-presence"
+round = 0
+order = 1
+nanoseconds = 45205689
+
+[[selection_samples]]
+backend = "gpu-wgpu-region-presence"
+round = 0
+order = 2
+nanoseconds = 45437326
+
+[[selection_samples]]
+backend = "gpu-cuda-region-presence"
+round = 1
+order = 0
+nanoseconds = 46581363
+
+[[selection_samples]]
+backend = "gpu-wgpu-region-presence"
+round = 1
+order = 1
+nanoseconds = 45590906
+
+[[selection_samples]]
+backend = "simd-regex"
+round = 1
+order = 2
+nanoseconds = 43546573
+
+[[selection_samples]]
+backend = "gpu-wgpu-region-presence"
+round = 2
+order = 0
+nanoseconds = 45439160
+
+[[selection_samples]]
+backend = "simd-regex"
+round = 2
+order = 1
+nanoseconds = 47563754
+
+[[selection_samples]]
+backend = "gpu-cuda-region-presence"
+round = 2
+order = 2
+nanoseconds = 45877265
+
+[[selection_samples]]
+backend = "simd-regex"
+round = 3
+order = 0
+nanoseconds = 45960122
+
+[[selection_samples]]
+backend = "gpu-cuda-region-presence"
+round = 3
+order = 1
+nanoseconds = 46549663
+
+[[selection_samples]]
+backend = "gpu-wgpu-region-presence"
+round = 3
+order = 2
+nanoseconds = 49127120
+
+[[selection_samples]]
+backend = "gpu-cuda-region-presence"
+round = 4
+order = 0
+nanoseconds = 49328650
+
+[[selection_samples]]
+backend = "gpu-wgpu-region-presence"
+round = 4
+order = 1
+nanoseconds = 46934087
+
+[[selection_samples]]
+backend = "simd-regex"
+round = 4
+order = 2
+nanoseconds = 51430231
+
+[[selection_samples]]
+backend = "gpu-wgpu-region-presence"
+round = 5
+order = 0
+nanoseconds = 44712380
+
+[[selection_samples]]
+backend = "simd-regex"
+round = 5
+order = 1
+nanoseconds = 46211084
+
+[[selection_samples]]
+backend = "gpu-cuda-region-presence"
+round = 5
+order = 2
+nanoseconds = 45834885
+
+[[selection_samples]]
+backend = "simd-regex"
+round = 6
+order = 0
+nanoseconds = 47307341
+
+[[selection_samples]]
+backend = "gpu-cuda-region-presence"
+round = 6
+order = 1
+nanoseconds = 44983111
+
+[[selection_samples]]
+backend = "gpu-wgpu-region-presence"
+round = 6
+order = 2
+nanoseconds = 44709113
+
+[[selection_samples]]
+backend = "gpu-cuda-region-presence"
+round = 7
+order = 0
+nanoseconds = 40152746
+
+[[selection_samples]]
+backend = "gpu-wgpu-region-presence"
+round = 7
+order = 1
+nanoseconds = 45438148
+
+[[selection_samples]]
+backend = "simd-regex"
+round = 7
+order = 2
+nanoseconds = 47235395
+
+[[selection_samples]]
+backend = "gpu-wgpu-region-presence"
+round = 8
+order = 0
+nanoseconds = 46335269
+
+[[selection_samples]]
+backend = "simd-regex"
+round = 8
+order = 1
+nanoseconds = 47504963
+
+[[selection_samples]]
+backend = "gpu-cuda-region-presence"
+round = 8
+order = 2
+nanoseconds = 43607417
+
+[[selection_samples]]
+backend = "simd-regex"
+round = 9
+order = 0
+nanoseconds = 47840165
+
+[[selection_samples]]
+backend = "gpu-cuda-region-presence"
+round = 9
+order = 1
+nanoseconds = 41417991
+
+[[selection_samples]]
+backend = "gpu-wgpu-region-presence"
+round = 9
+order = 2
+nanoseconds = 49746257
+
+[[selection_samples]]
+backend = "gpu-cuda-region-presence"
+round = 10
+order = 0
+nanoseconds = 48841452
+
+[[selection_samples]]
+backend = "gpu-wgpu-region-presence"
+round = 10
+order = 1
+nanoseconds = 44123429
+
+[[selection_samples]]
+backend = "simd-regex"
+round = 10
+order = 2
+nanoseconds = 46100497
+
+[[selection_samples]]
+backend = "gpu-wgpu-region-presence"
+round = 11
+order = 0
+nanoseconds = 54266076
+
+[[selection_samples]]
+backend = "simd-regex"
+round = 11
+order = 1
+nanoseconds = 48808580
+
+[[selection_samples]]
+backend = "gpu-cuda-region-presence"
+round = 11
+order = 2
+nanoseconds = 41583874
+
+[[selection_samples]]
+backend = "simd-regex"
+round = 12
+order = 0
+nanoseconds = 49629257
+
+[[selection_samples]]
+backend = "gpu-cuda-region-presence"
+round = 12
+order = 1
+nanoseconds = 46925862
+
+[[selection_samples]]
+backend = "gpu-wgpu-region-presence"
+round = 12
+order = 2
+nanoseconds = 48417734
+
+[[selection_samples]]
+backend = "gpu-cuda-region-presence"
+round = 13
+order = 0
+nanoseconds = 47705150
+
+[[selection_samples]]
+backend = "gpu-wgpu-region-presence"
+round = 13
+order = 1
+nanoseconds = 45569235
+
+[[selection_samples]]
+backend = "simd-regex"
+round = 13
+order = 2
+nanoseconds = 45119738
+
+[[selection_samples]]
+backend = "gpu-wgpu-region-presence"
+round = 14
+order = 0
+nanoseconds = 58343380
+
+[[selection_samples]]
+backend = "simd-regex"
+round = 14
+order = 1
+nanoseconds = 46555874
+
+[[selection_samples]]
+backend = "gpu-cuda-region-presence"
+round = 14
+order = 2
+nanoseconds = 43053784
+
+[[selection_samples]]
+backend = "simd-regex"
+round = 15
+order = 0
+nanoseconds = 48969904
+
+[[selection_samples]]
+backend = "gpu-cuda-region-presence"
+round = 15
+order = 1
+nanoseconds = 45262016
+
+[[selection_samples]]
+backend = "gpu-wgpu-region-presence"
+round = 15
+order = 2
+nanoseconds = 46129702
+
+[[selection_samples]]
+backend = "gpu-cuda-region-presence"
+round = 16
+order = 0
+nanoseconds = 51044334
+
+[[selection_samples]]
+backend = "gpu-wgpu-region-presence"
+round = 16
+order = 1
+nanoseconds = 46224049
+
+[[selection_samples]]
+backend = "simd-regex"
+round = 16
+order = 2
+nanoseconds = 46831434
+
+[[selection_samples]]
+backend = "gpu-wgpu-region-presence"
+round = 17
+order = 0
+nanoseconds = 44623212
+
+[[selection_samples]]
+backend = "simd-regex"
+round = 17
+order = 1
+nanoseconds = 49668371
+
+[[selection_samples]]
+backend = "gpu-cuda-region-presence"
+round = 17
+order = 2
+nanoseconds = 45427718
+
+[[selection_samples]]
+backend = "simd-regex"
+round = 18
+order = 0
+nanoseconds = 45776295
+
+[[selection_samples]]
+backend = "gpu-cuda-region-presence"
+round = 18
+order = 1
+nanoseconds = 46644351
+
+[[selection_samples]]
+backend = "gpu-wgpu-region-presence"
+round = 18
+order = 2
+nanoseconds = 42529456
+
+[[selection_samples]]
+backend = "gpu-cuda-region-presence"
+round = 19
+order = 0
+nanoseconds = 54781467
+
+[[selection_samples]]
+backend = "gpu-wgpu-region-presence"
+round = 19
+order = 1
+nanoseconds = 46979292
+
+[[selection_samples]]
+backend = "simd-regex"
+round = 19
+order = 2
+nanoseconds = 49778608
+
+[[held_out_samples]]
+pair = 0
+order = "hs-gpu"
+hyperscan_nanoseconds = 44881789
+gpu_nanoseconds = 45380389
+
+[[held_out_samples]]
+pair = 1
+order = "gpu-hs"
+hyperscan_nanoseconds = 45391740
+gpu_nanoseconds = 45607937
+
+[[held_out_samples]]
+pair = 2
+order = "hs-gpu"
+hyperscan_nanoseconds = 48330750
+gpu_nanoseconds = 43675996
+
+[[held_out_samples]]
+pair = 3
+order = "gpu-hs"
+hyperscan_nanoseconds = 45590404
+gpu_nanoseconds = 44334968
+
+[[held_out_samples]]
+pair = 4
+order = "hs-gpu"
+hyperscan_nanoseconds = 48355406
+gpu_nanoseconds = 39787267
+
+[[held_out_samples]]
+pair = 5
+order = "gpu-hs"
+hyperscan_nanoseconds = 46149849
+gpu_nanoseconds = 47705050
+
+[[held_out_samples]]
+pair = 6
+order = "hs-gpu"
+hyperscan_nanoseconds = 46784305
+gpu_nanoseconds = 47366422
+
+[[held_out_samples]]
+pair = 7
+order = "gpu-hs"
+hyperscan_nanoseconds = 47939823
+gpu_nanoseconds = 41500868
+
+[[held_out_samples]]
+pair = 8
+order = "hs-gpu"
+hyperscan_nanoseconds = 45870522
+gpu_nanoseconds = 46430027
+
+[[held_out_samples]]
+pair = 9
+order = "gpu-hs"
+hyperscan_nanoseconds = 46983110
+gpu_nanoseconds = 44827437
+
+[[held_out_samples]]
+pair = 10
+order = "hs-gpu"
+hyperscan_nanoseconds = 47362725
+gpu_nanoseconds = 45053363
+
+[[held_out_samples]]
+pair = 11
+order = "gpu-hs"
+hyperscan_nanoseconds = 50117758
+gpu_nanoseconds = 45950363
+
+[[held_out_samples]]
+pair = 12
+order = "hs-gpu"
+hyperscan_nanoseconds = 46322594
+gpu_nanoseconds = 46376386
+
+[[held_out_samples]]
+pair = 13
+order = "gpu-hs"
+hyperscan_nanoseconds = 56963780
+gpu_nanoseconds = 43670155
+
+[[held_out_samples]]
+pair = 14
+order = "hs-gpu"
+hyperscan_nanoseconds = 51954289
+gpu_nanoseconds = 45080924
+
+[[held_out_samples]]
+pair = 15
+order = "gpu-hs"
+hyperscan_nanoseconds = 48137345
+gpu_nanoseconds = 43657311
+
+[[held_out_samples]]
+pair = 16
+order = "hs-gpu"
+hyperscan_nanoseconds = 50974281
+gpu_nanoseconds = 48410500
+
+[[held_out_samples]]
+pair = 17
+order = "gpu-hs"
+hyperscan_nanoseconds = 46784616
+gpu_nanoseconds = 55045775
+
+[[held_out_samples]]
+pair = 18
+order = "hs-gpu"
+hyperscan_nanoseconds = 45327960
+gpu_nanoseconds = 49103536
+
+[[held_out_samples]]
+pair = 19
+order = "gpu-hs"
+hyperscan_nanoseconds = 43497070
+gpu_nanoseconds = 44177702
+
+[[held_out_samples]]
+pair = 20
+order = "hs-gpu"
+hyperscan_nanoseconds = 43714039
+gpu_nanoseconds = 47892253
+
+[[held_out_samples]]
+pair = 21
+order = "gpu-hs"
+hyperscan_nanoseconds = 45562121
+gpu_nanoseconds = 50195164
+
+[[held_out_samples]]
+pair = 22
+order = "hs-gpu"
+hyperscan_nanoseconds = 44920893
+gpu_nanoseconds = 44328977
+
+[[held_out_samples]]
+pair = 23
+order = "gpu-hs"
+hyperscan_nanoseconds = 42808111
+gpu_nanoseconds = 47991150
+
+[[held_out_samples]]
+pair = 24
+order = "hs-gpu"
+hyperscan_nanoseconds = 49568262
+gpu_nanoseconds = 52106546
+
+[[held_out_samples]]
+pair = 25
+order = "gpu-hs"
+hyperscan_nanoseconds = 49411637
+gpu_nanoseconds = 47026923
+
+[[held_out_samples]]
+pair = 26
+order = "hs-gpu"
+hyperscan_nanoseconds = 45196162
+gpu_nanoseconds = 41375050
+
+[[held_out_samples]]
+pair = 27
+order = "gpu-hs"
+hyperscan_nanoseconds = 49599851
+gpu_nanoseconds = 50223847
+
+[[held_out_samples]]
+pair = 28
+order = "hs-gpu"
+hyperscan_nanoseconds = 44401013
+gpu_nanoseconds = 39788470
+
+[[held_out_samples]]
+pair = 29
+order = "gpu-hs"
+hyperscan_nanoseconds = 47586126
+gpu_nanoseconds = 41716082
+
+[[held_out_samples]]
+pair = 30
+order = "hs-gpu"
+hyperscan_nanoseconds = 49425233
+gpu_nanoseconds = 43937931
+
+[[held_out_samples]]
+pair = 31
+order = "gpu-hs"
+hyperscan_nanoseconds = 47832680
+gpu_nanoseconds = 44557789
+
+[[held_out_samples]]
+pair = 32
+order = "hs-gpu"
+hyperscan_nanoseconds = 49323991
+gpu_nanoseconds = 48191828
+
+[[held_out_samples]]
+pair = 33
+order = "gpu-hs"
+hyperscan_nanoseconds = 48012580
+gpu_nanoseconds = 46739961
+
+[[held_out_samples]]
+pair = 34
+order = "hs-gpu"
+hyperscan_nanoseconds = 59328276
+gpu_nanoseconds = 42397788
+
+[[held_out_samples]]
+pair = 35
+order = "gpu-hs"
+hyperscan_nanoseconds = 46633691
+gpu_nanoseconds = 44409830
+
+[[held_out_samples]]
+pair = 36
+order = "hs-gpu"
+hyperscan_nanoseconds = 47533306
+gpu_nanoseconds = 44578097
+
+[[held_out_samples]]
+pair = 37
+order = "gpu-hs"
+hyperscan_nanoseconds = 46947543
+gpu_nanoseconds = 48504617
+
+[[held_out_samples]]
+pair = 38
+order = "hs-gpu"
+hyperscan_nanoseconds = 47136238
+gpu_nanoseconds = 44067425
+
+[[held_out_samples]]
+pair = 39
+order = "gpu-hs"
+hyperscan_nanoseconds = 47723144
+gpu_nanoseconds = 44383981
+
+[[held_out_samples]]
+pair = 40
+order = "hs-gpu"
+hyperscan_nanoseconds = 52605236
+gpu_nanoseconds = 45975961
+
+[[held_out_samples]]
+pair = 41
+order = "gpu-hs"
+hyperscan_nanoseconds = 49841216
+gpu_nanoseconds = 47228843
+
+[[held_out_samples]]
+pair = 42
+order = "hs-gpu"
+hyperscan_nanoseconds = 46904471
+gpu_nanoseconds = 44820163
+
+[[held_out_samples]]
+pair = 43
+order = "gpu-hs"
+hyperscan_nanoseconds = 46450516
+gpu_nanoseconds = 45633937
+
+[[held_out_samples]]
+pair = 44
+order = "hs-gpu"
+hyperscan_nanoseconds = 46801898
+gpu_nanoseconds = 46467809
+
+[[held_out_samples]]
+pair = 45
+order = "gpu-hs"
+hyperscan_nanoseconds = 54119109
+gpu_nanoseconds = 45013016
+
+[[held_out_samples]]
+pair = 46
+order = "hs-gpu"
+hyperscan_nanoseconds = 46146563
+gpu_nanoseconds = 45704640
+
+[[held_out_samples]]
+pair = 47
+order = "gpu-hs"
+hyperscan_nanoseconds = 49931155
+gpu_nanoseconds = 43623838
+
+[[held_out_samples]]
+pair = 48
+order = "hs-gpu"
+hyperscan_nanoseconds = 47252808
+gpu_nanoseconds = 44899262
+
+[[held_out_samples]]
+pair = 49
+order = "gpu-hs"
+hyperscan_nanoseconds = 47613498
+gpu_nanoseconds = 42781451
+
+[[held_out_samples]]
+pair = 50
+order = "hs-gpu"
+hyperscan_nanoseconds = 47165262
+gpu_nanoseconds = 46558019
+
+[[held_out_samples]]
+pair = 51
+order = "gpu-hs"
+hyperscan_nanoseconds = 48775167
+gpu_nanoseconds = 43243391
+
+[[held_out_samples]]
+pair = 52
+order = "hs-gpu"
+hyperscan_nanoseconds = 48165999
+gpu_nanoseconds = 44801087
+
+[[held_out_samples]]
+pair = 53
+order = "gpu-hs"
+hyperscan_nanoseconds = 51513939
+gpu_nanoseconds = 45412770
+
+[[held_out_samples]]
+pair = 54
+order = "hs-gpu"
+hyperscan_nanoseconds = 49379045
+gpu_nanoseconds = 47077257
+
+[[held_out_samples]]
+pair = 55
+order = "gpu-hs"
+hyperscan_nanoseconds = 47026301
+gpu_nanoseconds = 43665907
+
+[[held_out_samples]]
+pair = 56
+order = "hs-gpu"
+hyperscan_nanoseconds = 51706121
+gpu_nanoseconds = 43261436
+
+[[held_out_samples]]
+pair = 57
+order = "gpu-hs"
+hyperscan_nanoseconds = 47378695
+gpu_nanoseconds = 49535520
+
+[[held_out_samples]]
+pair = 58
+order = "hs-gpu"
+hyperscan_nanoseconds = 48269604
+gpu_nanoseconds = 45438769
+
+[[held_out_samples]]
+pair = 59
+order = "gpu-hs"
+hyperscan_nanoseconds = 49133663
+gpu_nanoseconds = 46066052
+
+[[held_out_samples]]
+pair = 60
+order = "hs-gpu"
+hyperscan_nanoseconds = 49146577
+gpu_nanoseconds = 46554902
+
+[[held_out_samples]]
+pair = 61
+order = "gpu-hs"
+hyperscan_nanoseconds = 53164880
+gpu_nanoseconds = 45951105
+
+[[held_out_samples]]
+pair = 62
+order = "hs-gpu"
+hyperscan_nanoseconds = 50357830
+gpu_nanoseconds = 51237478
+
+[[held_out_samples]]
+pair = 63
+order = "gpu-hs"
+hyperscan_nanoseconds = 45471631
+gpu_nanoseconds = 46820924
+
+[[held_out_samples]]
+pair = 64
+order = "hs-gpu"
+hyperscan_nanoseconds = 48495179
+gpu_nanoseconds = 46465304
+
+[[held_out_samples]]
+pair = 65
+order = "gpu-hs"
+hyperscan_nanoseconds = 46969764
+gpu_nanoseconds = 47265843
+
+[[held_out_samples]]
+pair = 66
+order = "hs-gpu"
+hyperscan_nanoseconds = 47240235
+gpu_nanoseconds = 45926128
+
+[[held_out_samples]]
+pair = 67
+order = "gpu-hs"
+hyperscan_nanoseconds = 48758856
+gpu_nanoseconds = 45808757
+
+[[held_out_samples]]
+pair = 68
+order = "hs-gpu"
+hyperscan_nanoseconds = 53691453
+gpu_nanoseconds = 48581412
+
+[[held_out_samples]]
+pair = 69
+order = "gpu-hs"
+hyperscan_nanoseconds = 46563319
+gpu_nanoseconds = 46901035
+
+[[held_out_samples]]
+pair = 70
+order = "hs-gpu"
+hyperscan_nanoseconds = 46742857
+gpu_nanoseconds = 51583030
+
+[[held_out_samples]]
+pair = 71
+order = "gpu-hs"
+hyperscan_nanoseconds = 51717793
+gpu_nanoseconds = 51931837
+
+[[held_out_samples]]
+pair = 72
+order = "hs-gpu"
+hyperscan_nanoseconds = 47130287
+gpu_nanoseconds = 48610727
+
+[[held_out_samples]]
+pair = 73
+order = "gpu-hs"
+hyperscan_nanoseconds = 49751848
+gpu_nanoseconds = 49063360
+
+[[held_out_samples]]
+pair = 74
+order = "hs-gpu"
+hyperscan_nanoseconds = 48285474
+gpu_nanoseconds = 45107595
+
+[[held_out_samples]]
+pair = 75
+order = "gpu-hs"
+hyperscan_nanoseconds = 50576643
+gpu_nanoseconds = 43835818
+
+[[held_out_samples]]
+pair = 76
+order = "hs-gpu"
+hyperscan_nanoseconds = 48038528
+gpu_nanoseconds = 42206928
+
+[[held_out_samples]]
+pair = 77
+order = "gpu-hs"
+hyperscan_nanoseconds = 45108747
+gpu_nanoseconds = 55850162
+
+[[held_out_samples]]
+pair = 78
+order = "hs-gpu"
+hyperscan_nanoseconds = 46090387
+gpu_nanoseconds = 46574500
+
+[[held_out_samples]]
+pair = 79
+order = "gpu-hs"
+hyperscan_nanoseconds = 44920553
+gpu_nanoseconds = 45448147
+
+[[held_out_samples]]
+pair = 80
+order = "hs-gpu"
+hyperscan_nanoseconds = 46775278
+gpu_nanoseconds = 44574781
+
+[[held_out_samples]]
+pair = 81
+order = "gpu-hs"
+hyperscan_nanoseconds = 49294125
+gpu_nanoseconds = 44912407
+
+[[held_out_samples]]
+pair = 82
+order = "hs-gpu"
+hyperscan_nanoseconds = 47982012
+gpu_nanoseconds = 46929218
+
+[[held_out_samples]]
+pair = 83
+order = "gpu-hs"
+hyperscan_nanoseconds = 45916390
+gpu_nanoseconds = 44521500
+
+[[held_out_samples]]
+pair = 84
+order = "hs-gpu"
+hyperscan_nanoseconds = 49073820
+gpu_nanoseconds = 44188192
+
+[[held_out_samples]]
+pair = 85
+order = "gpu-hs"
+hyperscan_nanoseconds = 46878924
+gpu_nanoseconds = 43082608
+
+[[held_out_samples]]
+pair = 86
+order = "hs-gpu"
+hyperscan_nanoseconds = 50729451
+gpu_nanoseconds = 44202759
+
+[[held_out_samples]]
+pair = 87
+order = "gpu-hs"
+hyperscan_nanoseconds = 45931878
+gpu_nanoseconds = 46246973
+
+[[held_out_samples]]
+pair = 88
+order = "hs-gpu"
+hyperscan_nanoseconds = 47479856
+gpu_nanoseconds = 43907834
+
+[[held_out_samples]]
+pair = 89
+order = "gpu-hs"
+hyperscan_nanoseconds = 46190255
+gpu_nanoseconds = 44831695
+
+[[held_out_samples]]
+pair = 90
+order = "hs-gpu"
+hyperscan_nanoseconds = 48419447
+gpu_nanoseconds = 44847154
+
+[[held_out_samples]]
+pair = 91
+order = "gpu-hs"
+hyperscan_nanoseconds = 47848821
+gpu_nanoseconds = 45174151
+
+[[held_out_samples]]
+pair = 92
+order = "hs-gpu"
+hyperscan_nanoseconds = 48551456
+gpu_nanoseconds = 44842796
+
+[[held_out_samples]]
+pair = 93
+order = "gpu-hs"
+hyperscan_nanoseconds = 48836463
+gpu_nanoseconds = 48442550
+
+[[held_out_samples]]
+pair = 94
+order = "hs-gpu"
+hyperscan_nanoseconds = 46412565
+gpu_nanoseconds = 49638154
+
+[[held_out_samples]]
+pair = 95
+order = "gpu-hs"
+hyperscan_nanoseconds = 46927545
+gpu_nanoseconds = 45759333
+
+[[held_out_samples]]
+pair = 96
+order = "hs-gpu"
+hyperscan_nanoseconds = 47411227
+gpu_nanoseconds = 46167893
+
+[[held_out_samples]]
+pair = 97
+order = "gpu-hs"
+hyperscan_nanoseconds = 49171544
+gpu_nanoseconds = 47009069
+
+[[held_out_samples]]
+pair = 98
+order = "hs-gpu"
+hyperscan_nanoseconds = 52539392
+gpu_nanoseconds = 43626143
+
+[[held_out_samples]]
+pair = 99
+order = "gpu-hs"
+hyperscan_nanoseconds = 53671235
+gpu_nanoseconds = 47752750
