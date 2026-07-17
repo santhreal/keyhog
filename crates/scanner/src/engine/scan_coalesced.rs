@@ -416,13 +416,33 @@ impl CompiledScanner {
         let data = text.as_bytes();
         #[cfg(feature = "entropy")]
         let small_chunk = text.len() <= NO_HIT_ENTROPY_ADMISSION_MAX_BYTES;
-        let keyword_admits = has_generic_assignment_keyword(data) || has_secret_keyword_fast(data);
+        let keyword_admits = self
+            .generic_keyword_stems
+            .as_ref()
+            .is_some_and(|stems| stems.is_match(data))
+            || has_secret_keyword_fast(data);
         #[cfg(feature = "entropy")]
         let isolated_bare_owner_index = self.generic_owning_detector.isolated_bare_owner_index();
         #[cfg(feature = "entropy")]
         let isolated_bare_policy = isolated_bare_owner_index
             .and_then(|index| self.detector_plans.get(index).entropy.as_ref())
             .copied();
+        #[cfg(feature = "entropy")]
+        let keyword_free_min_len = self
+            .generic_owning_detector
+            .keyword_free_owner_index()
+            .and_then(|index| self.detector_plans.get(index).entropy.as_ref())
+            .and_then(|policy| {
+                let sensitive_path = _chunk
+                    .metadata
+                    .path
+                    .as_deref()
+                    .is_some_and(crate::confidence::is_sensitive_path);
+                policy.keyword_free_admission_run_min_len(
+                    self.config.entropy_threshold,
+                    sensitive_path,
+                )
+            });
         #[cfg(feature = "multiline")]
         if crate::multiline::has_concatenation_indicators(text) {
             if keyword_admits {
@@ -451,7 +471,8 @@ impl CompiledScanner {
                 self.config.entropy_in_source_files,
                 text,
                 &self.config.secret_keywords,
-            ) && has_high_entropy_run_fast(data))
+            ) && keyword_free_min_len
+                .is_some_and(|minimum| has_high_entropy_run_at_least(data, minimum)))
                 || isolated_bare_policy.is_some_and(|policy| {
                     crate::entropy::scanner::has_isolated_bare_secret_candidate_with_policy(
                         text,

@@ -44,6 +44,16 @@ impl GenericKeywordStemSet {
     pub(crate) fn literals(&self) -> impl ExactSizeIterator<Item = &str> {
         self.stems.iter().map(AsRef::as_ref)
     }
+
+    #[inline]
+    pub(crate) fn is_match(&self, bytes: &[u8]) -> bool {
+        for (index, &byte) in bytes.iter().enumerate() {
+            if self.has_first[byte as usize] && generic_stem_matches_at(bytes, index, self) {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 /// Canonical detector-corpus inputs for generic assignment extraction and its

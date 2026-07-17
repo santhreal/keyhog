@@ -36,6 +36,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   16-byte mixed symbolic credentials, including detector-owned minimum symbol
   count and underscore policy, while preserving its TOML-owned entropy floor
   and backend-identical findings.
+- No-hit routing now consumes the active corpus's compiled generic-keyword stems
+  and the `keyword-free` owner's length plus effective Shannon floor. Focused
+  custom detector corpora no longer inherit the embedded keyword vocabulary or
+  a scanner-owned 32-byte entropy-run floor before their policy can execute.
 - Automatic GPU runtime faults now cross a fallible scanner boundary: normal
   one-shot, fused, and daemon scans visibly replay the same stable batch through
   the scalar reference path and report recovered chunks and bytes. Calibration,

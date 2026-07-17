@@ -131,7 +131,11 @@ skipped, and diff paths cannot silently drift when the report contract grows.
 The accelerated batch path is **two-phase and coalesced**. A file with no
 phase-one hit stops only when the shared no-hit admission proof also rules out
 phase-two patterns, generic assignments, and enabled entropy analysis. This
-proof is identical for portable CPU, Hyperscan, CUDA, and WGPU routes. Large
+proof uses the active corpus's compiled generic-keyword stems and the owning
+detector's `keyword_free_min_len` plus effective Shannon floor; it does not
+substitute the embedded corpus or a scanner-wide run length for a focused
+custom corpus. The proof is identical
+for portable CPU, Hyperscan, CUDA, and WGPU routes. Large
 filesystem scans may instead use the fused reader/scanner pipeline so I/O and
 scanning overlap; `crates/cli/src/orchestrator/dispatch.rs` and
 `dispatch/fused.rs` own that execution choice. Both paths feed the same scanner

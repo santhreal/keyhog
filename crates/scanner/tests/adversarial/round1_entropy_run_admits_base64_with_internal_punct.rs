@@ -5,11 +5,11 @@
 //! entropy fallback - 12+ FNs in the SecretBench mirror.
 //!
 //! Investigator finding (generic-high-entropy-string cause #8): pre-fix
-//! `has_high_entropy_run_fast` in scan_filters.rs only counted
+//! the entropy-run predicate in scan_filters.rs only counted
 //! `is_ascii_alphanumeric()` bytes. The fix extends the alphabet to the
 //! full base64/base64url alphabet plus `=` padding.
 //!
-//! `has_high_entropy_run_fast` is `pub(super)` so we cannot call it
+//! `has_high_entropy_run_at_least` is `pub(super)` so we cannot call it
 //! directly. Instead exercise the property end-to-end through the real
 //! scanner: a chunk whose ONLY high-entropy-shaped credential is a
 //! base64 token with internal `+`/`/` must still produce a finding for

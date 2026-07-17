@@ -9,13 +9,11 @@
 //! (`api_key`/`api-key`/`api.key`) in ONE place, and adds the prefilter-only `pass`
 //! stem.
 //!
-//! Three phase-2 consumers share the derived list unchanged (still
-//! `&'static [String]`): the `ascii_case_insensitive` Aho-Corasick chunk prefilter
-//! (`scan_filters::has_generic_assignment_keyword`), the no-hit prefilter stem set
-//! (`phase2_generic::keywords::generic_keyword_prefilter_stems`), and the entropy
-//! keyword-anchor contains-check (`phase2_entropy::helpers`). Widening a generic
-//! detector's `keywords` now widens the prefilter automatically, no second list to
-//! keep in sync.
+//! Embedded helpers share the static derived list; each `CompiledScanner` builds
+//! its generic assignment regex and no-hit stem set from the active corpus via
+//! `GenericAssignmentKeywordPlan`. Widening a generic detector's `keywords`
+//! therefore widens every production prefilter without a second list or an
+//! embedded-corpus override for replacement detectors.
 
 use keyhog_core::DetectorSpec;
 use std::sync::LazyLock;
@@ -45,8 +43,8 @@ static ASSIGNMENT_KEYWORDS: LazyLock<Vec<String>> = LazyLock::new(|| {
     }
 });
 
-/// The generic credential-assignment keywords (lowercase, first-seen order). All
-/// three consumers fold case, so the entries are matched case-insensitively.
+/// The embedded generic credential-assignment keywords (lowercase, first-seen
+/// order). Runtime scanners compile their own projection from the active corpus.
 pub(crate) fn assignment_keywords() -> &'static [String] {
     &ASSIGNMENT_KEYWORDS
 }

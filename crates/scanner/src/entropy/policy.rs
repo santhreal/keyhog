@@ -128,6 +128,26 @@ impl CompiledEntropyPolicy {
 
     #[inline]
     #[cfg(feature = "entropy")]
+    pub(crate) fn keyword_free_admission_run_min_len(
+        &self,
+        operator_floor: f64,
+        sensitive_path: bool,
+    ) -> Option<usize> {
+        let detector_floor = if sensitive_path {
+            self.sensitive_path_entropy_very_high
+        } else {
+            self.entropy_very_high
+        };
+        let effective_floor = self.keyword_free_effective_floor(detector_floor, operator_floor)?;
+        // A value with fewer than 2^floor distinct bytes cannot reach the
+        // requested Shannon entropy. The integral power is a conservative
+        // necessary bound that avoids per-chunk floating-point exponentiation.
+        let entropy_min_len = 1usize << (effective_floor.floor() as u32).min(8);
+        Some(self.keyword_free_min_len.max(entropy_min_len))
+    }
+
+    #[inline]
+    #[cfg(feature = "entropy")]
     pub(crate) fn bpe_bound(&self, operator_override: Option<f64>) -> Option<f64> {
         let detector_bound = self.bpe_max_bytes_per_token?;
         Some(match operator_override {

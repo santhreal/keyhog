@@ -43,6 +43,24 @@ fn compile_portable_entropy_scanner(config: ScannerConfig) -> CompiledScanner {
         .with_config(config)
 }
 
+#[cfg(feature = "entropy")]
+fn compile_keyword_free_boundary_scanner(config: ScannerConfig, keyword: &str) -> CompiledScanner {
+    let mut detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
+    detectors.retain(|detector| detector.id == "generic-secret");
+    assert_eq!(detectors.len(), 1, "keyword-free entropy fixture owner");
+    let owner = &mut detectors[0];
+    owner.patterns.clear();
+    owner.keywords = vec![keyword.to_string()];
+    owner.entropy_high = Some(4.0);
+    owner.entropy_very_high = Some(4.0);
+    owner.sensitive_path_entropy_very_high = Some(4.0);
+    owner.bpe_enabled = Some(false);
+    owner.bpe_max_bytes_per_token = None;
+    CompiledScanner::compile(detectors)
+        .expect("compile detector-owned keyword-free boundary")
+        .with_config(config)
+}
+
 #[cfg(not(feature = "simd"))]
 fn compile_portable_phase2_scanner(config: ScannerConfig) -> CompiledScanner {
     let mut detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
@@ -116,8 +134,8 @@ fn kubernetes_bootstrap_token_fires_in_coalesced_no_hit_branch() {
     // Single-secret chunk: only a kubernetes bootstrap token, no other
     // detector's literal prefix (no ghp_, sk-, AKIA, etc.). The phase 1
     // literal-set walk will find ZERO hits, routing this through the
-    // no-hit branch of scan_coalesced. The keyword "TOKEN" passes
-    // has_generic_assignment_keyword which gates the phase-2 path.
+    // no-hit branch of scan_coalesced. The active compiled generic-keyword stem
+    // set admits the detector-owned "token" anchor.
     let chunk = make_chunk(
         "KUBERNETES_BOOTSTRAP_TOKEN=k3m9zq.4r8w2nq3p6vt5b1z\n",
         "k8s-bootstrap.env",
@@ -149,8 +167,8 @@ fn kubernetes_bootstrap_token_canonical_kubeadm_join_fires() {
 
     // Canonical kubeadm-join command from the detector's contract.
     // No literal-prefix detector matches; only the bootstrap regex
-    // can extract the token. Word "token" appears (twice) so the
-    // has_generic_assignment_keyword gate passes.
+    // can extract the token. Word "token" appears twice, so the active compiled
+    // generic-keyword stem set admits the phase-2 path.
     let chunk = make_chunk(
         "kubeadm join 10.0.0.1:6443 --token k3m9zq.4r8w2nq3p6vt5b1z \
          --discovery-token-ca-cert-hash sha256:abc\n",
@@ -231,6 +249,98 @@ fn bare_entropy_secret_enters_portable_per_chunk_no_hit_path() {
                 && finding.credential.as_ref().contains(BARE_ENTROPY_SECRET)
         }),
         "portable CPU fallback must not skip anchorless entropy findings: {matches:?}"
+    );
+}
+
+#[cfg(feature = "entropy")]
+#[test]
+fn detector_owned_keyword_free_minimum_enters_coalesced_no_hit_path() {
+    let secret = "Kp4Qx7Rm2Sn5Tb8Vw3Yz";
+    assert_eq!(secret.len(), 20);
+    let mut config = ScannerConfig::default();
+    config.entropy_in_source_files = true;
+    config.entropy_threshold = 3.0;
+    config.min_confidence = 0.0;
+    config.ml_enabled = false;
+    let scanner = compile_keyword_free_boundary_scanner(config, "not-present");
+    let chunk = make_chunk(
+        &format!("opaque_value=\"{secret}\"\n"),
+        "config/keyword-free-boundary.env",
+    );
+
+    let portable = scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback);
+    scanner.clear_fragment_cache();
+    let results = scanner.scan_coalesced(std::slice::from_ref(&chunk));
+    assert!(
+        results[0].iter().any(|finding| {
+            finding.detector_id.as_ref() == "entropy-generic"
+                && finding.credential.as_ref() == secret
+        }),
+        "the active detector TOML keyword_free_min_len must own no-hit admission; matches={:?}",
+        results[0]
+            .iter()
+            .map(|finding| (finding.detector_id.as_ref(), finding.credential.as_ref()))
+            .collect::<Vec<_>>()
+    );
+    let finding_key = |finding: &keyhog_core::RawMatch| {
+        (
+            finding.detector_id.to_string(),
+            finding.credential.to_string(),
+            finding.location.offset,
+        )
+    };
+    assert_eq!(
+        portable.iter().map(finding_key).collect::<Vec<_>>(),
+        results[0].iter().map(finding_key).collect::<Vec<_>>(),
+        "portable CPU and the coalesced route must execute the same detector-owned admission"
+    );
+
+    scanner.clear_fragment_cache();
+    let below_minimum = make_chunk(
+        &format!("opaque_value=\"{}\"\n", &secret[..secret.len() - 1]),
+        "config/keyword-free-boundary.env",
+    );
+    assert!(
+        scanner.scan_coalesced(&[below_minimum])[0].is_empty(),
+        "a candidate one byte below the detector TOML minimum must remain rejected"
+    );
+}
+
+#[cfg(feature = "entropy")]
+#[test]
+fn active_detector_keyword_enters_coalesced_no_hit_path() {
+    let secret = "Ab3$kLm9";
+    let mut config = ScannerConfig::default();
+    config.entropy_in_source_files = true;
+    config.entropy_threshold = 3.0;
+    config.min_confidence = 0.0;
+    config.ml_enabled = false;
+    let scanner = compile_keyword_free_boundary_scanner(config, "customcred");
+    let chunk = make_chunk(
+        &format!("CUSTOMCRED=\"{secret}\"\n"),
+        "config/custom-keyword.env",
+    );
+
+    let results = scanner.scan_coalesced(std::slice::from_ref(&chunk));
+    assert!(
+        results[0]
+            .iter()
+            .any(|finding| finding.credential.as_ref() == secret),
+        "no-hit admission must use the active corpus keyword plan; matches={:?}",
+        results[0]
+            .iter()
+            .map(|finding| (finding.detector_id.as_ref(), finding.credential.as_ref()))
+            .collect::<Vec<_>>()
+    );
+
+    scanner.clear_fragment_cache();
+    let unowned = make_chunk(
+        &format!("ORDINARY=\"{secret}\"\n"),
+        "config/custom-keyword.env",
+    );
+    assert!(
+        scanner.scan_coalesced(&[unowned])[0].is_empty(),
+        "an unowned short assignment must not inherit the active detector keyword"
     );
 }
 

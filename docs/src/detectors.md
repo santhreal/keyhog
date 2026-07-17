@@ -339,7 +339,7 @@ policy view. `keyhog detectors --format json` exposes them under each detector's
 scanner uses.
 
 ### Candidate Lengths
-*   **`keyword_free_min_len`** (integer): Per-detector minimum length for an anchor-free (keyword-free or isolated) candidate. Active entropy owners must declare it; omission fails compilation instead of selecting a scanner constant.
+*   **`keyword_free_min_len`** (integer): Per-detector minimum length for an anchor-free (keyword-free or isolated) candidate. Active entropy owners must declare it; omission fails compilation instead of selecting a scanner constant. The backend-neutral no-hit router combines the active role owner's value with a conservative necessary length derived from that owner's effective Shannon floor, so replacement detector corpora keep their own boundary without widening the shipped hot path to candidates that cannot reach its entropy threshold.
 *   **`min_len`** (integer, optional): Per-detector minimum candidate length in UTF-8 bytes for any candidate this detector emits. Falls back to no detector-specific floor beyond the path-wide default if unset.
 *   **`max_len`** (integer, required for every entropy-policy owner): Inclusive maximum byte length for one generic assignment value. This includes regex detectors that explicitly claim generic keywords with `entropy_policy_priority`. The candidate generator is compiled from the largest ceiling in the loaded detector corpus, then the owning detector rejects an overlength value whole; it never reports a truncated prefix. It must be at least 8 and no smaller than `min_len`. Omission fails scanner construction. Regex-backed patterns keep their own explicit repetition bounds.
 

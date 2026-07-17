@@ -48,70 +48,11 @@ pub(super) fn has_secret_keyword_fast(data: &[u8]) -> bool {
     AC.as_ref().is_none_or(|ac| ac.find(data).is_some())
 }
 
-/// Check for generic `secret=`, `password:`, `token=` etc. keywords.
-/// Broader than `has_secret_keyword_fast` (which is for multiline only).
-///
-/// Same single-pass AC strategy as `has_secret_keyword_fast`, but with the
-/// case-insensitive variants folded into one automaton - `aho-corasick`'s
-/// `ascii_case_insensitive` builder option matches both `secret` and
-/// `SECRET` from a single literal at scan-time, halving the pattern count.
-///
-//
-// Consumed by the backend-neutral `should_scan_no_hit_chunk` contract.
-pub(super) fn has_generic_assignment_keyword(data: &[u8]) -> bool {
-    use aho_corasick::AhoCorasick;
-    use std::sync::LazyLock;
-    // See `has_secret_keyword_fast` for the rationale; same fail-closed
-    // (`true` on init failure) so the prefilter never causes an FN by
-    // dropping a chunk, and the same loud one-shot warning (Law 10) so the
-    // degradation is never silent.
-    static AC: LazyLock<Option<AhoCorasick>> = LazyLock::new(|| {
-        match AhoCorasick::builder().ascii_case_insensitive(true).build(
-            crate::assignment_keywords::assignment_keywords()
-                .iter()
-                .map(String::as_str),
-        ) {
-            Ok(ac) => Some(ac),
-            Err(e) => {
-                crate::prefilter_degrade::warn_prefilter_disabled(
-                    "generic-assignment keyword gate (has_generic_assignment_keyword)",
-                    &e,
-                );
-                None
-            }
-        }
-    });
-    AC.as_ref().is_none_or(|ac| ac.find(data).is_some())
-}
-
 /// Single-pass scan for a contiguous run of credential-value bytes (including
 /// common token separators and symbolic password punctuation).
-/// of length >= `DEFAULT_ENTROPY_RUN_BYTES`. The keyword-gated fallback drop in
-/// `scan_coalesced` (no-HS-hit branch) historically required the chunk
-/// to contain a generic-assignment / secret keyword before routing
-/// through `scan_inner`: chunks of pure entropy with NO keyword anchor
-/// (the `generic-high-entropy-string` corpus shape) silently bailed,
-/// pinning that category's recall at 0.36 on the SecretBench mirror.
-///
-/// `DEFAULT_ENTROPY_RUN_BYTES` is set to 32 chars so the gate stays cheap and
-/// rarely trips on natural code: function/class names cap around 24
-/// chars, UUIDs are 36 chars *with dashes* (longest base62 run = 12),
-/// and the longest English word is 28 chars. Real secrets at this
-/// threshold are credentials (32-char hex APIs, 40-char base62 tokens,
-/// symbolic passwords, 64-char SHA hex, base64 blobs). Hash/UUID-shaped FPs
-/// are still suppressed downstream by the bare/prefixed hash gates and
-/// `is_uuid_v4_shape`, so trip-firing the gate does NOT add FPs - it just
-/// admits the chunk to the entropy fallback for inspection.
-//
-// Used by the no-trigger admission gate and the entropy fallback's cheap
-// precheck.
-#[cfg(any(feature = "entropy", test))]
-pub(super) fn has_high_entropy_run_fast(data: &[u8]) -> bool {
-    has_high_entropy_run_at_least(data, DEFAULT_ENTROPY_RUN_BYTES)
-}
-
-#[cfg(any(feature = "entropy", test))]
-pub(super) const DEFAULT_ENTROPY_RUN_BYTES: usize = 32;
+/// The caller supplies the owning compiled detector's minimum. This predicate
+/// is an admission proof only; exact entropy, shape, and suppression decisions
+/// remain in the detector-owned phase-two plan.
 
 #[cfg(any(feature = "entropy", test))]
 pub(super) fn has_high_entropy_run_at_least(data: &[u8], min_run: usize) -> bool {
@@ -331,14 +272,10 @@ pub(super) fn compute_pattern_signals(
     (kw, sf)
 }
 
-// Behavioral lock for the two recall-critical no-hit prefilters
-// (`has_secret_keyword_fast`, `has_generic_assignment_keyword`). They gate which
-// no-phase-1-trigger chunks are still routed into phase-2 reassembly/extraction,
-// so a silent drop from either list is a direct false-negative. These pin the
-// exact triggering contract, every curated vendor prefix, the deliberately-
-// EXCLUDED short prefixes, the case-sensitivity CONTRAST between the two gates,
-// and the fail-open (never-drop) boundaries, white-box because both functions
-// are `pub(super)`.
+// Behavioral lock for the vendor-prefix prefilter and the detector-minimum
+// entropy-run primitive. Active generic-keyword routing is covered end to end by
+// `phase2_no_hit_branch_recall`; these white-box tests pin the private byte
+// predicates without widening the engine surface.
 #[cfg(test)]
 #[path = "../../tests/unit/engine_scan_filters.rs"]
 mod tests;
