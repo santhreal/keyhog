@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Evaluate the bare-`auth` generic bridge and its repeated-block suppression
+  through the active detector's compiled plausibility policy instead of
+  scanner-owned fallback constants, with the adversarial property suite wired.
+
 - Refuse release-comparable 8 MiB crossover evidence from a dirty source tree
   and record source cleanliness in schema-v4 benchmark artifacts.
 

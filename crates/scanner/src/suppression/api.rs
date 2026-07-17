@@ -29,6 +29,7 @@ pub(crate) struct KnownExampleSuppressionCtx<'a> {
     allow_canonical_hex_key: bool,
     allow_base64_blob_shape: bool,
     allow_encoded_text_secret: bool,
+    reject_repeated_blocks: bool,
 }
 
 impl<'a> KnownExampleSuppressionCtx<'a> {
@@ -45,6 +46,7 @@ impl<'a> KnownExampleSuppressionCtx<'a> {
             allow_canonical_hex_key: false,
             allow_base64_blob_shape: false,
             allow_encoded_text_secret: false,
+            reject_repeated_blocks: true,
         }
     }
 
@@ -65,7 +67,13 @@ impl<'a> KnownExampleSuppressionCtx<'a> {
             allow_canonical_hex_key,
             allow_base64_blob_shape,
             allow_encoded_text_secret,
+            reject_repeated_blocks: true,
         }
+    }
+
+    pub(crate) fn with_repeated_block_policy(mut self, reject: bool) -> Self {
+        self.reject_repeated_blocks = reject;
+        self
     }
 }
 
@@ -80,6 +88,7 @@ pub(crate) fn suppress_known_example_credential_stage(
         ctx.source_type,
         false,
         false,
+        ctx.reject_repeated_blocks,
         ctx.entropy,
         ctx.allow_canonical_hex_key,
         ctx.allow_base64_blob_shape,
@@ -498,6 +507,7 @@ pub(crate) fn suppress_named_detector_finding_stage(
         source_type,
         false,
         bypass_shape_gates,
+        true,
         None,
         allow_canonical_hex_key,
         false,

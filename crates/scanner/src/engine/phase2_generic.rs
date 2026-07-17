@@ -221,10 +221,35 @@ impl CompiledScanner {
                     continue;
                 }
                 let value = value_match.as_str();
+                // Resolve the detector before any detector-specific value gate.
+                // The bare-auth bridge must use the same compiled TOML policy as
+                // the entropy, shape, and BPE stages below.
+                let Some(owner_resolution) = self.generic_owning_detector.resolve(keyword) else {
+                    tracing::error!(
+                        keyword,
+                        "compiled generic assignment matched without a detector owner; dropping candidate"
+                    );
+                    continue;
+                };
+                let owning_detector_index = owner_resolution.owning_index;
+                let detector_plan = self.detector_plans.get(owning_detector_index);
+                let execution_policy = &detector_plan.execution;
+                let metadata = &detector_plan.metadata;
+                let Some(owning_policy) = detector_plan.entropy.as_ref() else {
+                    tracing::error!(
+                        detector_id = metadata.0.as_ref(),
+                        "generic assignment owner has no compiled entropy policy; dropping candidate"
+                    );
+                    continue;
+                };
                 let preprocessed_offset = line_offset + value_match.start();
                 let transport_decoded =
                     preprocessed.transport_decoded_for_offset(preprocessed_offset);
-                if crate::adjudicate::generic_bridge_bare_auth_rejected(keyword, value) {
+                if crate::adjudicate::generic_bridge_bare_auth_rejected(
+                    keyword,
+                    value,
+                    owning_policy,
+                ) {
                     let generic_ctx = crate::adjudicate::MatchCtx::for_generic_bridge(
                         crate::adjudicate::GenericBridgeSignal::BareAuthUnstructured,
                     );
@@ -248,28 +273,6 @@ impl CompiledScanner {
                 // stricter. This bridge must not pre-resolve against a global
                 // threshold because detector-local calibration can differ.
                 let entropy = crate::pipeline::match_entropy(value.as_bytes());
-                // O(1) compiled lookup of the owning generic detector replaces
-                // a per-candidate linear scan over every detector.
-                // `generic_owning_detector` preserves the exact original
-                // first-match-by-exact-or-normalized-keyword semantics.
-                let Some(owner_resolution) = self.generic_owning_detector.resolve(keyword) else {
-                    tracing::error!(
-                        keyword,
-                        "compiled generic assignment matched without a detector owner; dropping candidate"
-                    );
-                    continue;
-                };
-                let owning_detector_index = owner_resolution.owning_index;
-                let detector_plan = self.detector_plans.get(owning_detector_index);
-                let execution_policy = &detector_plan.execution;
-                let metadata = &detector_plan.metadata;
-                let Some(owning_policy) = detector_plan.entropy.as_ref() else {
-                    tracing::error!(
-                        detector_id = metadata.0.as_ref(),
-                        "generic assignment owner has no compiled entropy policy; dropping candidate"
-                    );
-                    continue;
-                };
                 let owning_detector_max_len = owning_policy.max_len;
                 let canonical_key_material_policy =
                     self.detector_plans.get(owner_resolution.canonical_index);

@@ -109,6 +109,7 @@ pub(super) fn suppression_stage_inner(
     source_type: Option<&str>,
     skip_b64_decode_recheck: bool,
     bypass_shape_gates: bool,
+    reject_repeated_blocks: bool,
     entropy_hint: Option<f64>,
     // Bridge-path-only exemption (KH-L-0110): the caller has proven this is a
     // COMPLETE, delimiter-terminated pure-hex value of canonical key length
@@ -186,7 +187,7 @@ pub(super) fn suppression_stage_inner(
     if !bypass_shape_gates && suppresses_repetitive_run {
         return suppress("repetitive_run");
     }
-    if !bypass_shape_gates && has_repeated_block_mask(credential) {
+    if !bypass_shape_gates && reject_repeated_blocks && has_repeated_block_mask(credential) {
         return suppress("repeated_block_mask");
     }
     // Entirely filler symbols
@@ -524,6 +525,7 @@ pub(super) fn suppression_stage_inner(
                     source_type,
                     true,
                     bypass_shape_gates,
+                    reject_repeated_blocks,
                     None,
                     allow_canonical_hex_key,
                     false,

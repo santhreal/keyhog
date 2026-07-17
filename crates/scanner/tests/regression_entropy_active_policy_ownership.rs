@@ -309,6 +309,148 @@ fn full_scan_plausibility_findings(
     findings
 }
 
+fn full_scan_bare_auth_findings(
+    value: &str,
+    symbolic_floor: f64,
+    second_half_floor: f64,
+    reject_repeated_blocks: bool,
+    backend: ScanBackend,
+) -> Vec<(String, String, usize)> {
+    let mut owner = plausibility_owner(symbolic_floor, second_half_floor, 8, false);
+    owner.keywords = vec!["auth".into()];
+    owner
+        .plausibility
+        .as_mut()
+        .expect("bare-auth owner declares plausibility")
+        .reject_repeated_blocks = reject_repeated_blocks;
+    let mut config = ScannerConfig::default();
+    config.entropy_enabled = true;
+    config.entropy_in_source_files = true;
+    config.min_confidence = 0.0;
+    let scanner = CompiledScanner::compile(vec![owner, entropy_only_owner(false)])
+        .expect("compile bare-auth detector policy corpus")
+        .with_config(config);
+    assert!(
+        scanner.warm_backend(backend),
+        "backend {} must be usable for bare-auth policy coverage",
+        backend.label()
+    );
+    let chunk = Chunk {
+        data: format!("auth = \"{value}\"").into(),
+        metadata: ChunkMetadata {
+            path: Some("policy_probe.rs".into()),
+            ..Default::default()
+        },
+    };
+    let mut findings = scanner
+        .scan_chunks_with_backend(std::slice::from_ref(&chunk), backend)
+        .into_iter()
+        .flatten()
+        .filter(|finding| finding.credential.as_ref() == value)
+        .map(|finding| {
+            (
+                finding.detector_id.to_string(),
+                finding.credential.to_string(),
+                finding.location.offset,
+            )
+        })
+        .collect::<Vec<_>>();
+    findings.sort_unstable();
+    findings
+}
+
+#[test]
+fn bare_auth_bridge_uses_the_active_detector_symbolic_floor() {
+    let value = "1E1B3b4Ho$U4kYBi";
+    let entropy = keyhog_scanner::entropy::shannon_entropy(value.as_bytes());
+    assert!(entropy > 3.5 && entropy < 4.5, "fixture entropy: {entropy}");
+    assert!(
+        full_scan_bare_auth_findings(value, 4.5, 0.0, true, ScanBackend::CpuFallback).is_empty()
+    );
+    assert_eq!(
+        full_scan_bare_auth_findings(value, 3.5, 0.0, true, ScanBackend::CpuFallback),
+        vec![("plausibility-owner".into(), value.into(), 8)]
+    );
+    let alphanumeric = full_scan_bare_auth_findings(
+        "A1b2C3d4E5f6G7h8",
+        0.0,
+        0.0,
+        false,
+        ScanBackend::CpuFallback,
+    );
+    assert!(
+        alphanumeric
+            .iter()
+            .all(|finding| finding.0 != "plausibility-owner"),
+        "mixed-alphanumeric policy cannot bypass bare auth's structural symbol requirement"
+    );
+}
+
+#[test]
+fn bare_auth_owner_without_plausibility_policy_fails_construction() {
+    let mut owner = plausibility_owner(0.0, 0.0, 8, false);
+    owner.keywords = vec!["auth".into()];
+    owner.plausibility = None;
+    let error = match CompiledScanner::compile(vec![owner, entropy_only_owner(false)]) {
+        Ok(_) => panic!("a bare-auth owner without compiled plausibility policy must not compile"),
+        Err(error) => error.to_string(),
+    };
+    assert!(
+        error.contains("plausibility-owner") && error.contains("omits [detector.plausibility]"),
+        "construction error must identify the missing owner policy: {error}"
+    );
+}
+
+#[test]
+fn bare_auth_bridge_uses_tail_and_repetition_policy_from_the_same_owner() {
+    // Low-randomness without a filler run or repeated-block mask, so the
+    // detector-owned second-half floor is the only changing decision.
+    let tailed = "1E1B3b4Ho$U4kYBiabacabadabacabae";
+    assert!(
+        full_scan_bare_auth_findings(tailed, 0.0, 2.5, false, ScanBackend::CpuFallback).is_empty(),
+        "the detector-owned second-half floor must reject a low-randomness tail"
+    );
+    assert!(
+        !full_scan_bare_auth_findings(tailed, 0.0, 0.0, false, ScanBackend::CpuFallback).is_empty(),
+        "lowering only the detector-owned tail floor must admit the same value"
+    );
+
+    let repeated = "Ab1$Cd2%Ab1$Cd2%Ab1$Cd2%";
+    assert!(
+        full_scan_bare_auth_findings(repeated, 0.0, 0.0, true, ScanBackend::CpuFallback).is_empty(),
+        "the detector-owned repeated-block gate must reject the periodic value"
+    );
+    assert!(
+        !full_scan_bare_auth_findings(repeated, 0.0, 0.0, false, ScanBackend::CpuFallback)
+            .is_empty(),
+        "disabling only the detector-owned repeated-block gate must admit the same value"
+    );
+}
+
+#[cfg(feature = "gpu")]
+#[test]
+fn bare_auth_detector_policy_is_exact_on_every_accelerated_backend() {
+    let value = "1E1B3b4Ho$U4kYBi";
+    let expected = full_scan_bare_auth_findings(value, 3.5, 0.0, true, ScanBackend::CpuFallback);
+    for backend in [
+        ScanBackend::SimdCpu,
+        ScanBackend::GpuCuda,
+        ScanBackend::GpuWgpu,
+    ] {
+        assert_eq!(
+            full_scan_bare_auth_findings(value, 3.5, 0.0, true, backend),
+            expected,
+            "{} must preserve the active detector's bare-auth policy",
+            backend.label()
+        );
+        assert!(
+            full_scan_bare_auth_findings(value, 4.5, 0.0, true, backend).is_empty(),
+            "{} must reject above the active detector's bare-auth boundary",
+            backend.label()
+        );
+    }
+}
+
 #[test]
 fn source_symbol_policy_reaches_every_full_backend_plan() {
     let value = "ClientSecretConfigValue2";

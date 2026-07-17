@@ -345,7 +345,8 @@ impl CompiledScanner {
             allow_canonical_hex_key,
             allow_ambiguous_base64_candidate,
             allow_encoded_text_secret,
-        );
+        )
+        .with_repeated_block_policy(owning_policy.reject_repeated_blocks);
         if let Some(stage_id) =
             crate::suppression::api::suppress_known_example_credential_stage(value, example_ctx)
         {

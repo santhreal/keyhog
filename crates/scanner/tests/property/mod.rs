@@ -1,3 +1,4 @@
+pub mod bare_auth_value_allowed_proptest;
 pub mod char_diversity_bounded_zero_to_one;
 pub mod compute_confidence_always_in_unit_interval;
 pub mod decode;

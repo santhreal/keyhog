@@ -29,8 +29,12 @@ pub(crate) fn generic_bridge_keyword_boundary_rejected(
         && !keyword_has_word_boundary(line, keyword_start)
 }
 
-pub(crate) fn generic_bridge_bare_auth_rejected(keyword: &str, value: &str) -> bool {
-    keyword.eq_ignore_ascii_case("auth") && !bare_auth_value_allowed(value)
+pub(crate) fn generic_bridge_bare_auth_rejected(
+    keyword: &str,
+    value: &str,
+    policy: &crate::entropy::policy::CompiledEntropyPolicy,
+) -> bool {
+    keyword.eq_ignore_ascii_case("auth") && !bare_auth_value_allowed(value, policy)
 }
 
 pub(crate) fn generic_bridge_canonical_hex_placeholder_stage(
@@ -78,8 +82,11 @@ pub(crate) fn keyword_has_word_boundary(line: &str, keyword_start: usize) -> boo
     prev.is_ascii_lowercase() && keyword_first.is_ascii_uppercase()
 }
 
-pub(crate) fn bare_auth_value_allowed(value: &str) -> bool {
-    let context = PlausibilityContext::new(true, false);
+pub(crate) fn bare_auth_value_allowed(
+    value: &str,
+    policy: &crate::entropy::policy::CompiledEntropyPolicy,
+) -> bool {
+    let context = PlausibilityContext::new(true, false).with_compiled_policy(Some(policy));
     crate::suppression::shape::is_structured_dotted_token(value)
         || (!value.contains('.')
             && value.bytes().any(|byte| !byte.is_ascii_alphanumeric())

@@ -122,7 +122,7 @@ model's fixed vocabulary, remain global.
 | `[[detector.entropy_shapes]]` | A lower declared shape floor admits more matching isolated credentials | A higher floor narrows the exception; omission is invalid for an active entropy owner |
 | `entropy_floor` | A higher applicable length-bucket floor suppresses more low-entropy candidates for that detector | A lower floor preserves more human-chosen or structured credentials |
 | `plausibility.mixed_alnum_floor` | Rejects more identifier-like alphanumeric runs | Preserves more low-randomness mixed-alphanumeric values |
-| `plausibility.symbolic_entropy_floor` | Raises the minimum entropy for symbol-bearing credential assignments | Preserves more anchored symbolic passwords |
+| `plausibility.symbolic_entropy_floor` | Raises the minimum entropy for symbol-bearing credential assignments, including the bare `auth=` bridge | Preserves more anchored symbolic passwords through the same compiled detector policy |
 | `plausibility.second_half_entropy_floor` | Rejects candidates with a less-random tail | Preserves more credentials whose entropy is front-loaded |
 | `plausibility.mixed_alnum_min_len` | Requires a longer mixed alpha-numeric credential before the carve-out applies | Lets shorter anchored mixed tokens use the detector's mixed floor |
 | `plausibility.isolated_mixed_entropy_floor` | Raises the floor for isolated contiguous or underscore-delimited mixed tokens | Preserves more low-randomness isolated mixed tokens |
@@ -131,7 +131,7 @@ model's fixed vocabulary, remain global.
 | `plausibility.isolated_symbolic_requires_non_underscore` | Prevents underscore-only mixed tokens from bypassing their mixed entropy floor through the symbolic exception | Allows underscore to satisfy the symbolic exception by itself |
 | `plausibility.isolated_colon_left_min_len` / `isolated_colon_right_min_len` | Requires longer sides around an isolated `opaque:opaque` separator | Admits shorter colon-separated opaque pairs |
 | `plausibility.leading_slash_base64_entropy_floor` | Raises the floor for unanchored slash-led base64 | Preserves more slash-led base64 candidates |
-| `plausibility.reject_repeated_blocks` | Rejects periodic mask values, including truncated repetitions | Allows that shape to continue through the remaining detector gates |
+| `plausibility.reject_repeated_blocks` | Rejects periodic mask values, including truncated repetitions in the bare `auth=` bridge | Allows that shape to continue through the remaining detector gates |
 | `plausibility.allow_alphabetic_credential` | Admits anchored all-letter passwords/tokens after other gates | Requires alphabetic-only values to clear the ordinary entropy path |
 | `plausibility.reject_program_identifiers` | Rejects pure source-language identifier shapes | Allows pure identifier-shaped values through the remaining gates |
 | `plausibility.reject_source_symbol_identifiers` | Rejects digit-bearing mixed alphanumeric source-symbol shapes independently of the pure-identifier gate | Allows those mixed values to follow the detector's `mixed_alnum_floor` and `mixed_alnum_min_len` policy |

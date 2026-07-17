@@ -2710,13 +2710,19 @@ pub fn looks_like_bare_hex_digest_for_test(value: &str) -> bool {
     crate::suppression::shape::looks_like_bare_hex_digest(value)
 }
 
-/// Test seam for [`crate::adjudicate::generic::bare_auth_value_allowed`], decides
-/// whether a bare `auth = <value>` match carries enough signal to keep. Allows a
-/// structured dotted token (JWT/Discord) OR a dot-free value that has at least one
-/// non-alphanumeric byte AND passes the secret-strength checks; a plain word or a
-/// pure-alphanumeric identifier is rejected as a false positive.
+/// Test seam for [`crate::adjudicate::generic::bare_auth_value_allowed`], using
+/// the shipped `generic-api-key` detector policy. Production passes the active
+/// custom-corpus owner instead. A structured dotted token or a dot-free symbolic
+/// value that clears that policy is allowed; plain identifiers are rejected.
 pub fn bare_auth_value_allowed_for_test(value: &str) -> bool {
-    crate::adjudicate::generic::bare_auth_value_allowed(value)
+    static POLICY: std::sync::LazyLock<crate::entropy::policy::CompiledEntropyPolicy> =
+        std::sync::LazyLock::new(|| {
+            let detector = keyhog_core::detector_spec_by_id("generic-api-key")
+                .expect("embedded generic-api-key detector must load");
+            crate::entropy::policy::CompiledEntropyPolicy::compile(detector)
+                .expect("embedded generic-api-key entropy policy must compile")
+        });
+    crate::adjudicate::generic::bare_auth_value_allowed(value, &POLICY)
 }
 
 /// Test seam for [`crate::suppression::shape::is_structured_dotted_token`], the
