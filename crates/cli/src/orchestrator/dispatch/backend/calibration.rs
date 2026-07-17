@@ -19,7 +19,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use super::evidence::{
     canonical_match_digest, canonical_matches, canonical_matches_equal_reference,
     differing_canonical_match_fields, gpu_cold_warm_route_evidence, AutorouteDecision,
-    BackendTimingEvidence, CanonicalMatch, MeasuredRoute,
+    BackendTimingEvidence, CanonicalMatch, MeasuredRoute, RouteTimingEvidence,
 };
 use super::{is_gpu_backend, AutorouteRoutingError, AUTOROUTE_CALIBRATION_TRIALS};
 
@@ -34,7 +34,8 @@ pub(super) fn calibrate_fastest_correct_backend(
 
     let reference_route = MeasuredRoute {
         backend: ScanBackend::SimdCpu,
-        phase2_localizer: false,
+        phase2_plain_localizer: false,
+        phase2_keyword_localizer: false,
     };
     let reference_matches =
         establish_reference_simd(scanner, sample, admission_plan, reference_route);
@@ -60,24 +61,22 @@ pub(super) fn calibrate_fastest_correct_backend(
     let mut candidate_routes = candidate_backends
         .into_iter()
         .flat_map(|backend| {
-            [false, true].map(|phase2_localizer| MeasuredRoute {
-                backend,
-                phase2_localizer,
-            })
+            [false, true]
+                .into_iter()
+                .flat_map(move |phase2_plain_localizer| {
+                    [false, true].map(move |phase2_keyword_localizer| MeasuredRoute {
+                        backend,
+                        phase2_plain_localizer,
+                        phase2_keyword_localizer,
+                    })
+                })
         })
         .collect::<Vec<_>>();
     let rotation =
         calibration_candidate_rotation(sample_bytes, sample.len(), candidate_routes.len());
     candidate_routes.rotate_left(rotation);
 
-    let mut simd_timing = None;
-    let mut cpu_timing = None;
-    let mut gpu_cuda_timing = None;
-    let mut gpu_wgpu_timing = None;
-    let mut simd_localizer_timing = None;
-    let mut cpu_localizer_timing = None;
-    let mut gpu_cuda_localizer_timing = None;
-    let mut gpu_wgpu_localizer_timing = None;
+    let mut route_timings = Vec::with_capacity(candidate_routes.len());
     for route in candidate_routes {
         let backend = route.backend;
         if is_gpu_backend(backend) {
@@ -112,28 +111,16 @@ pub(super) fn calibrate_fastest_correct_backend(
                 ));
             }
         }
-        match (backend, route.phase2_localizer) {
-            (ScanBackend::SimdCpu, false) => simd_timing = Some(measured),
-            (ScanBackend::CpuFallback, false) => cpu_timing = Some(measured),
-            (ScanBackend::GpuCuda, false) => gpu_cuda_timing = Some(measured),
-            (ScanBackend::GpuWgpu, false) => gpu_wgpu_timing = Some(measured),
-            (ScanBackend::SimdCpu, true) => simd_localizer_timing = Some(measured),
-            (ScanBackend::CpuFallback, true) => cpu_localizer_timing = Some(measured),
-            (ScanBackend::GpuCuda, true) => gpu_cuda_localizer_timing = Some(measured),
-            (ScanBackend::GpuWgpu, true) => gpu_wgpu_localizer_timing = Some(measured),
-            _ => {
-                return Err(AutorouteRoutingError::candidate_backend_rejected(
-                    backend,
-                    "calibration candidate enumeration returned an unsupported route",
-                ));
-            }
-        }
+        route_timings.push(RouteTimingEvidence::new(route, measured));
     }
-    let simd_timing = simd_timing.ok_or_else(|| {
-        AutorouteRoutingError::calibration_not_persisted(
+    let reference_present = route_timings
+        .iter()
+        .any(|entry| entry.measured_route() == Some(reference_route));
+    if !reference_present {
+        return Err(AutorouteRoutingError::calibration_not_persisted(
             "calibration candidate plan omitted the SIMD reference backend",
-        )
-    })?;
+        ));
+    }
 
     let calibrated_at_unix_ms = current_unix_time_ms().map_err(|error| {
         AutorouteRoutingError::calibration_not_persisted(format!(
@@ -159,14 +146,7 @@ pub(super) fn calibrate_fastest_correct_backend(
         sample.len(),
         correctness_digest,
         calibrated_at_unix_ms,
-        simd_timing,
-        cpu_timing,
-        gpu_cuda_timing,
-        gpu_wgpu_timing,
-        simd_localizer_timing,
-        cpu_localizer_timing,
-        gpu_cuda_localizer_timing,
-        gpu_wgpu_localizer_timing,
+        route_timings,
     );
     let Some(resolved) = decision.resolved_routing_route() else {
         return Err(AutorouteRoutingError::calibration_not_persisted(
@@ -177,19 +157,21 @@ pub(super) fn calibrate_fastest_correct_backend(
     // it + the timing evidence on demand (`AutorouteDecision::selected_margin_ns`),
     // not stored (so it can never disagree with the persisted evidence).
     decision.backend = resolved.backend.label().to_string();
-    decision.phase2_localizer = resolved.phase2_localizer;
+    decision.phase2_plain_localizer = resolved.phase2_plain_localizer;
+    decision.phase2_keyword_localizer = resolved.phase2_keyword_localizer;
 
     tracing::info!(
         target: "keyhog::routing",
         backend = resolved.backend.label(),
-        phase2_localizer = resolved.phase2_localizer,
+        phase2_plain_localizer = resolved.phase2_plain_localizer,
+        phase2_keyword_localizer = resolved.phase2_keyword_localizer,
         sample_chunks = sample.len(),
         sample_bytes,
-        simd_ms = decision.simd_ms(),
-        cpu_ms = decision.cpu_ms(),
+        simd_baseline_ms = decision.simd_baseline_ms(),
+        cpu_baseline_ms = decision.cpu_baseline_ms(),
         gpu_considered = gpu_candidate_allowed,
-        cuda_ms = decision.timing_for_backend(ScanBackend::GpuCuda).map(BackendTimingEvidence::median_ms),
-        wgpu_ms = decision.timing_for_backend(ScanBackend::GpuWgpu).map(BackendTimingEvidence::median_ms),
+        cuda_baseline_ms = decision.baseline_timing_for_backend(ScanBackend::GpuCuda).map(BackendTimingEvidence::median_ms),
+        wgpu_baseline_ms = decision.baseline_timing_for_backend(ScanBackend::GpuWgpu).map(BackendTimingEvidence::median_ms),
         trials = AUTOROUTE_CALIBRATION_TRIALS,
         "autoroute calibrated backend decision"
     );

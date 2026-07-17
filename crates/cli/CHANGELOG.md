@@ -2,10 +2,10 @@
 
 ## Unreleased
 
-- Measure phase-two localization on and off for every eligible backend, persist
-  the fastest correct backend-plus-localizer route in cache schema 38, and
-  carry it beside admission evidence through one-shot, fused, daemon, and
-  automatic-recovery dispatch.
+- Measure every plain-pattern and keyword-anchor localization combination for
+  every eligible backend, persist the fastest correct execution plan in cache
+  schema 39, and carry both choices beside admission evidence through one-shot,
+  fused, daemon, and automatic-recovery dispatch.
 
 - Retain every exact calibration representative inside one canonical workload
   evidence envelope. A route class is reusable only when all points agree on

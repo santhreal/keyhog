@@ -236,96 +236,79 @@ fn validate_point_route_evidence_at(
     if point.timing_for_route(selected_route).is_none() {
         return Err("selected execution route is missing timing evidence".into());
     }
-    if !point
-        .simd_timing
-        .is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS)
-    {
-        return Err("cache decision has invalid SIMD timing evidence".into());
-    }
-    let Some(cpu_timing) = point.cpu_timing.as_ref() else {
-        return Err(
-            "cache decision has incomplete candidate coverage: scalar CPU timing evidence is missing"
-                .into(),
-        );
-    };
-    if !cpu_timing.is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS) {
-        return Err("cache decision has invalid CPU timing evidence".into());
-    }
-    for (route_label, timing, gpu) in [
-        (
-            "SIMD localizer",
-            point.simd_localizer_timing.as_ref(),
-            false,
-        ),
-        ("CPU localizer", point.cpu_localizer_timing.as_ref(), false),
-        ("CUDA", point.gpu_cuda_timing.as_ref(), true),
-        ("WGPU", point.gpu_wgpu_timing.as_ref(), true),
-        (
-            "CUDA localizer",
-            point.gpu_cuda_localizer_timing.as_ref(),
-            true,
-        ),
-        (
-            "WGPU localizer",
-            point.gpu_wgpu_localizer_timing.as_ref(),
-            true,
-        ),
-    ] {
-        if timing.is_some_and(|timing| !timing.is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS)) {
-            return Err(format!("cache decision has invalid {route_label} timing evidence").into());
-        }
-        if gpu && timing.is_some_and(|timing| gpu_cold_warm_route_evidence(timing).is_none()) {
+    let mut timing_routes = BTreeSet::new();
+    let mut previous_timing_route = None;
+    for entry in &point.route_timings {
+        let Some(route) = entry.measured_route() else {
             return Err(format!(
-                "cache decision has invalid {route_label} cold/warm timing evidence"
+                "cache decision has timing evidence for unsupported backend {:?}",
+                entry.backend
+            )
+            .into());
+        };
+        if entry.backend != route.backend.label()
+            || !expected_backends.contains(entry.backend.as_str())
+        {
+            return Err(format!(
+                "cache decision has unexpected or non-canonical timing evidence for {:?}",
+                entry.backend
+            )
+            .into());
+        }
+        let timing_route = (
+            entry.backend.clone(),
+            entry.phase2_plain_localizer,
+            entry.phase2_keyword_localizer,
+        );
+        if !timing_routes.insert(timing_route.clone()) {
+            return Err(format!(
+                "cache decision has duplicate timing evidence for {} plain_localizer={} keyword_localizer={}",
+                entry.backend,
+                entry.phase2_plain_localizer,
+                entry.phase2_keyword_localizer
+            )
+            .into());
+        }
+        if previous_timing_route
+            .as_ref()
+            .is_some_and(|previous| previous >= &timing_route)
+        {
+            return Err(format!(
+                "cache decision route timings are not in canonical backend/plain/keyword order at {:?}",
+                timing_route
+            )
+            .into());
+        }
+        previous_timing_route = Some(timing_route.clone());
+        if !entry
+            .timing
+            .is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS)
+        {
+            return Err(format!(
+                "cache decision has invalid timing evidence for {} plain_localizer={} keyword_localizer={}",
+                entry.backend,
+                entry.phase2_plain_localizer,
+                entry.phase2_keyword_localizer
+            )
+            .into());
+        }
+        if route.backend.is_gpu() && gpu_cold_warm_route_evidence(&entry.timing).is_none() {
+            return Err(format!(
+                "cache decision has invalid cold/warm timing evidence for {} plain_localizer={} keyword_localizer={}",
+                entry.backend,
+                entry.phase2_plain_localizer,
+                entry.phase2_keyword_localizer
             )
             .into());
         }
     }
-    let timing_routes = [
-        (keyhog_scanner::ScanBackend::SimdCpu, false, true),
-        (
-            keyhog_scanner::ScanBackend::CpuFallback,
-            false,
-            point.cpu_timing.is_some(),
-        ),
-        (
-            keyhog_scanner::ScanBackend::GpuCuda,
-            false,
-            point.gpu_cuda_timing.is_some(),
-        ),
-        (
-            keyhog_scanner::ScanBackend::GpuWgpu,
-            false,
-            point.gpu_wgpu_timing.is_some(),
-        ),
-        (
-            keyhog_scanner::ScanBackend::SimdCpu,
-            true,
-            point.simd_localizer_timing.is_some(),
-        ),
-        (
-            keyhog_scanner::ScanBackend::CpuFallback,
-            true,
-            point.cpu_localizer_timing.is_some(),
-        ),
-        (
-            keyhog_scanner::ScanBackend::GpuCuda,
-            true,
-            point.gpu_cuda_localizer_timing.is_some(),
-        ),
-        (
-            keyhog_scanner::ScanBackend::GpuWgpu,
-            true,
-            point.gpu_wgpu_localizer_timing.is_some(),
-        ),
-    ]
-    .into_iter()
-    .filter(|(_, _, present)| *present)
-    .map(|(backend, localizer, _)| (backend.label().to_string(), localizer))
-    .collect::<BTreeSet<_>>();
     let expected_routes = expected_backends
         .iter()
-        .flat_map(|backend| [(backend.clone(), false), (backend.clone(), true)])
+        .flat_map(|backend| {
+            [false, true].into_iter().flat_map(move |plain| {
+                [false, true].map(move |keyword| (backend.clone(), plain, keyword))
+            })
+        })
         .collect::<BTreeSet<_>>();
     if timing_routes != expected_routes {
         return Err(format!(
@@ -337,7 +320,13 @@ fn validate_point_route_evidence_at(
     let receipt_routes = point
         .candidate_receipts
         .iter()
-        .map(|receipt| (receipt.backend.clone(), receipt.phase2_localizer))
+        .map(|receipt| {
+            (
+                receipt.backend.clone(),
+                receipt.phase2_plain_localizer,
+                receipt.phase2_keyword_localizer,
+            )
+        })
         .collect::<BTreeSet<_>>();
     if receipt_routes != expected_routes || receipt_routes.len() != point.candidate_receipts.len() {
         return Err(format!(
@@ -347,6 +336,7 @@ fn validate_point_route_evidence_at(
         .into());
     }
     let mut seen_receipts = HashSet::with_capacity(point.candidate_receipts.len());
+    let mut previous_receipt_route = None;
     let mut reference_digest = None;
     for receipt in &point.candidate_receipts {
         let Some(backend) = keyhog_scanner::hw_probe::parse_backend_str(&receipt.backend) else {
@@ -365,13 +355,29 @@ fn validate_point_route_evidence_at(
             )
             .into());
         }
-        if !seen_receipts.insert((receipt.backend.as_str(), receipt.phase2_localizer)) {
+        let receipt_route = (
+            receipt.backend.as_str(),
+            receipt.phase2_plain_localizer,
+            receipt.phase2_keyword_localizer,
+        );
+        if !seen_receipts.insert(receipt_route) {
             return Err(format!(
                 "cache decision has duplicate candidate receipt for {}",
                 receipt.backend
             )
             .into());
         }
+        if previous_receipt_route
+            .as_ref()
+            .is_some_and(|previous| previous >= &receipt_route)
+        {
+            return Err(format!(
+                "cache decision candidate receipts are not in canonical backend/plain/keyword order at {:?}",
+                receipt_route
+            )
+            .into());
+        }
+        previous_receipt_route = Some(receipt_route);
         if receipt.correctness_digest == 0 {
             return Err(format!(
                 "cache decision candidate receipt for {} is missing correctness digest",
@@ -399,7 +405,8 @@ fn validate_point_route_evidence_at(
         }
         let route = MeasuredRoute {
             backend,
-            phase2_localizer: receipt.phase2_localizer,
+            phase2_plain_localizer: receipt.phase2_plain_localizer,
+            phase2_keyword_localizer: receipt.phase2_keyword_localizer,
         };
         let Some(timing) = point.timing_for_route(route) else {
             return Err(format!(

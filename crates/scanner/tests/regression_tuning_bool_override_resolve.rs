@@ -11,7 +11,7 @@
 //! fresh local config, so the assertions are deterministic and env-independent.
 
 use keyhog_scanner::testing::{
-    tuning_phase2_localizer_roundtrip_for_test as localizer, TUNING_LOCALIZER_DEFAULT,
+    tuning_phase2_plain_localizer_roundtrip_for_test as localizer, TUNING_LOCALIZER_DEFAULT,
 };
 // The GPU recall-floor roundtrip helper exercises `gpu_recall_floor_enabled`,
 // a `#[cfg(feature = "gpu")]` reader (the recall floor is a GPU-region-presence

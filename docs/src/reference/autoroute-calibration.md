@@ -7,8 +7,9 @@
 > [Confidence calibration](./confidence-calibration.md).
 
 KeyHog uses measured evidence to select an execution route for a calibrated
-workload key: Hyperscan/SIMD, scalar CPU, CUDA, or WGPU, each measured with the
-phase-two plain-pattern localizer disabled and enabled. It does
+workload key: Hyperscan/SIMD, scalar CPU, CUDA, or WGPU, each measured with all
+four combinations of phase-two plain-pattern and keyword-anchor localization.
+It does
 not guess from a device name or a hard-coded size threshold. Autoroute is *not*
 a fallback hierarchy: during calibration KeyHog measures every eligible
 execution class exposed by that scanner, rejects candidates whose complete
@@ -337,8 +338,8 @@ These show every persisted config and host generation, its workload buckets,
 representative median route times, whether confidence was separated, the
 selection basis, and the resolved one-shot and daemon backends. Each
 generation's `eligible_backends` array defines the complete backend set. Every
-decision must contain both localizer variants for every eligible backend and
-prove each variant correct. Removing a candidate timing and its receipt together
+decision must contain all four localization plans for every eligible backend and
+prove each plan correct. Removing a candidate timing and its receipt together
 still invalidates the cache because validation compares the full Cartesian route
 set with this live config identity.
 When a scan hits `exit 2`, you can
@@ -363,18 +364,18 @@ meanings:
 |---|---|
 | `calibrated_at_unix_ms` | Oldest persisted Unix timestamp among the decision's measured points. A future value on any point invalidates the complete cache. |
 | `calibration_age_ms` | Age of that oldest point, derived at inspection time from `inspected_at_unix_ms`; it is visible evidence, not an expiry policy. |
-| `backend`, `phase2_localizer` | Cold-aware backend and phase-two localization choice for an in-process one-shot scan. |
+| `backend`, `phase2_plain_localizer`, `phase2_keyword_localizer` | Cold-aware backend and both phase-two localization choices for an in-process one-shot scan. |
 | `calibration_points` | Number of exact byte/chunk representatives retained for this workload class. |
 | `sample_bytes_min`, `sample_bytes_max`, `sample_chunks_min`, `sample_chunks_max` | Exact measured envelope covered by the class. |
-| `measured_points` | Complete point-by-point projection: sample identity, timestamp, one-shot and daemon backend-plus-localizer winners, confidence status, every route timing, and every parity receipt. Use this array to diagnose crossover behavior. |
-| `sample_bytes`, `sample_chunks`, `simd_ms`, `cpu_ms`, `gpu_cuda_ms`, `gpu_wgpu_ms`, `gpu_cuda_warm_ms`, `gpu_wgpu_warm_ms`, and the corresponding `*_localizer_*` fields | Concise summary for the first point after sorting by bytes then chunks. `measured_points` is authoritative when the class retains more than one point. |
+| `measured_points` | Complete point-by-point projection: sample identity, timestamp, one-shot and daemon execution-plan winners, confidence status, every route timing, and every parity receipt. Use this array to diagnose crossover behavior. |
+| `sample_bytes`, `sample_chunks`, `route_timings` | Concise sample identity plus the complete generic route-timing array for the first point after sorting by bytes then chunks. Each timing identifies the backend, both localization choices, one-shot time, and warm time when applicable. `measured_points` is authoritative when the class retains more than one point. |
 | `confidence_separated` | Whether the one-shot winner's 95% interval is entirely below every competitor at every measured point. |
 | `selection_basis` | `separated-95pct-confidence`, or `lowest-measured-median-among-overlapping-confidence`. |
 | `selected_margin_ns` | Smallest one-shot representative-time margin to the next candidate across all measured points; `null` when there is no competitor. |
-| `daemon_backend`, `daemon_phase2_localizer` | Backend and phase-two localization choice derived for a ready persistent daemon from warm GPU evidence. |
+| `daemon_backend`, `daemon_phase2_plain_localizer`, `daemon_phase2_keyword_localizer` | Backend and both phase-two localization choices derived for a ready persistent daemon from warm evidence. |
 | `daemon_confidence_separated`, `daemon_selection_basis`, `daemon_selected_margin_ns` | Daemon-route counterparts, also aggregated conservatively across every measured point. |
 | `source_mixture` | Structured source-class components used by the workload identity: canonical family digest, full-size versus payload provenance, reduced chunk/payload ratios, and maximum source-span bucket. JSON consumers should use these fields instead of parsing the human-readable `workload` string. |
-| `candidate_receipts` | Concise summary of the first measured point's receipts. Every receipt identifies both backend and `phase2_localizer`. Every point carries the complete two-variants-per-backend set; every result digest must equal its point's SIMD/localizer-off reference, and every evidence digest must recompute exactly or the cache is rejected. |
+| `candidate_receipts` | Concise summary of the first measured point's receipts. Every receipt identifies the backend plus both localization choices. Every point carries the complete four-plans-per-backend set; every result digest must equal its point's SIMD/both-off reference, and every evidence digest must recompute exactly or the cache is rejected. |
 
 ## Single-backend builds
 

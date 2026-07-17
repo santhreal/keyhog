@@ -106,7 +106,7 @@ pub(crate) type AutorouteMeasurementObserver = Arc<Mutex<BTreeSet<(String, Strin
 // the top, per-resolved-config routing decisions under `configs` keyed by
 // config_digest, merge-on-save. Old single-config (v19 and earlier) caches are
 // rejected on the version gate and recalibrated.
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 38;
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 39;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_GPU_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 

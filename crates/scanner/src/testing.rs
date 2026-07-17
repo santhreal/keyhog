@@ -1425,13 +1425,13 @@ pub fn hot_pattern_detector_ids_for_test() -> &'static [&'static str] {
 /// `None` ⇒ the compiled default, `Some(true)` ⇒ true, `Some(false)` ⇒ false.
 /// Uses a FRESH local config and sets the override EXPLICITLY, so the result is
 /// deterministic and independent of any process env seeding.
-pub fn tuning_phase2_localizer_roundtrip_for_test(mode: Option<bool>) -> bool {
+pub fn tuning_phase2_plain_localizer_roundtrip_for_test(mode: Option<bool>) -> bool {
     let cfg = crate::tuning::ScannerTuning::default();
-    cfg.set_phase2_localizer(mode);
-    cfg.phase2_localizer_enabled()
+    cfg.set_phase2_plain_localizer(mode);
+    cfg.phase2_plain_localizer_enabled()
 }
 
-/// As [`tuning_phase2_localizer_roundtrip_for_test`] for the GPU region-presence
+/// As [`tuning_phase2_plain_localizer_roundtrip_for_test`] for the GPU region-presence
 /// CPU recall floor override. Gated to `gpu`: it exercises the reader
 /// `gpu_recall_floor_enabled`, which is itself `#[cfg(feature = "gpu")]` (the
 /// GPU region-presence recall floor is a GPU-path-only knob), so the roundtrip

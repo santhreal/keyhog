@@ -181,7 +181,10 @@ pub struct ResolvedScannerTuningConfig {
 /// mutating scanner-global state or racing concurrent requests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ScanExecutionRoute {
-    pub phase2_localizer: bool,
+    /// Localize eligible folded plain patterns before residual extraction.
+    pub phase2_plain_localizer: bool,
+    /// Localize eligible keyword-anchored patterns before residual extraction.
+    pub phase2_keyword_localizer: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

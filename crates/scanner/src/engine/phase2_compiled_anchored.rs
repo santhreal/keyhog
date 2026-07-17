@@ -8,8 +8,6 @@ use super::phase2::*;
 use super::*;
 use std::time::Instant;
 
-const KEYWORD_ANCHOR_WHOLE_CHUNK_CUTOFF: usize = 2;
-
 impl CompiledScanner {
     /// As `with_active_phase2_patterns`, but hands the closure the full
     /// `ActivePatternsScratch` (not just the sparse list) so it can also test
@@ -174,13 +172,7 @@ impl CompiledScanner {
             |this, scratch| {
                 let pattern_is_live =
                     |pat: usize| !skip_homoglyph || !this.phase2_patterns[pat].0.homoglyph_variant;
-                let active_keyword_anchors = scratch
-                    .active
-                    .iter()
-                    .filter(|&&pat| anchor_idx.is_eligible(pat) && pattern_is_live(pat))
-                    .count();
-                let localize_keyword_anchors =
-                    active_keyword_anchors > KEYWORD_ANCHOR_WHOLE_CHUNK_CUTOFF;
+                let localize_keyword_anchors = route.phase2_keyword_localizer;
                 ANCHOR_CANDIDATES.with(|cell| {
                     let mut cands = cell.borrow_mut();
                     {
@@ -239,7 +231,7 @@ impl CompiledScanner {
                 // live member of this family, so it suppresses the second pass.
                 if self.tuning.homoglyph_gate_enabled()
                     && scan_text_is_ascii
-                    && anchor_idx.has_plain_localizer(route.phase2_localizer)
+                    && anchor_idx.has_plain_localizer(route.phase2_plain_localizer)
                     && !phase2_always_active_gpu_evidence
                         .is_some_and(Phase2AlwaysActiveGpuEvidence::prefixless_absence_proven)
                 {

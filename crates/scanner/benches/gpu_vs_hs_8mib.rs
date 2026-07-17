@@ -20,10 +20,10 @@
 //! `--profile` keeps selection and held-out timing unprofiled, then records one
 //! isolated production scan for each Hyperscan route and the selected GPU route.
 //! Full-result parity and zero GPU degradation remain mandatory in every mode.
-//! Both phase-two localizer modes are independent candidates for every backend.
-//! `KH_BENCH_PHASE2_LOCALIZER=1|0` restricts diagnostic runs to one mode; the
-//! release gate refuses that restriction and always selects both sides from the
-//! complete backend-plus-localizer route set.
+//! Plain-pattern and keyword-anchor localization are independent candidates for
+//! every backend. `KH_BENCH_PHASE2_PLAIN_LOCALIZER=1|0` and
+//! `KH_BENCH_PHASE2_KEYWORD_LOCALIZER=1|0` restrict diagnostic runs; the release
+//! gate refuses either restriction and measures all four plans for every peer.
 //!
 //! Selection uses rotating candidate order. The selected exact GPU route then
 //! receives fresh rotating held-out comparisons against every Hyperscan route.
@@ -57,7 +57,8 @@ const RELEASE_SELECTION_ROUNDS: usize = 20;
 #[derive(serde::Serialize)]
 struct TimingSampleArtifact {
     backend: String,
-    phase2_localizer: bool,
+    phase2_plain_localizer: bool,
+    phase2_keyword_localizer: bool,
     round: usize,
     order: usize,
     nanoseconds: u128,
@@ -68,8 +69,10 @@ struct TimingPairArtifact {
     pair: usize,
     order: String,
     hyperscan_backend: String,
-    hyperscan_phase2_localizer: bool,
-    gpu_phase2_localizer: bool,
+    hyperscan_phase2_plain_localizer: bool,
+    hyperscan_phase2_keyword_localizer: bool,
+    gpu_phase2_plain_localizer: bool,
+    gpu_phase2_keyword_localizer: bool,
     hyperscan_nanoseconds: u128,
     gpu_nanoseconds: u128,
 }
@@ -77,7 +80,8 @@ struct TimingPairArtifact {
 #[derive(serde::Serialize)]
 struct HyperscanComparisonArtifact {
     backend: String,
-    phase2_localizer: bool,
+    phase2_plain_localizer: bool,
+    phase2_keyword_localizer: bool,
     hyperscan_median_nanoseconds: u128,
     gpu_median_nanoseconds: u128,
     ratio_geometric_mean: f64,
@@ -120,10 +124,12 @@ struct CrossoverArtifact {
     total_memory_mb: Option<u64>,
     simd_features: String,
     fastest_hyperscan_backend: String,
-    fastest_hyperscan_phase2_localizer: bool,
+    fastest_hyperscan_phase2_plain_localizer: bool,
+    fastest_hyperscan_phase2_keyword_localizer: bool,
     hyperscan_reference: String,
     selected_gpu_backend: String,
-    selected_gpu_phase2_localizer: bool,
+    selected_gpu_phase2_plain_localizer: bool,
+    selected_gpu_phase2_keyword_localizer: bool,
     selected_gpu_driver: String,
     selected_gpu_driver_version: String,
     selected_gpu_device: String,
@@ -151,21 +157,24 @@ struct CrossoverArtifact {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct BenchRoute {
     backend: ScanBackend,
-    phase2_localizer: bool,
+    phase2_plain_localizer: bool,
+    phase2_keyword_localizer: bool,
 }
 
 impl BenchRoute {
     fn label(self) -> String {
         format!(
-            "{}+phase2-localizer={}",
+            "{}+plain-localizer={}+keyword-localizer={}",
             self.backend.label(),
-            self.phase2_localizer
+            self.phase2_plain_localizer,
+            self.phase2_keyword_localizer
         )
     }
 
     fn execution_route(self) -> ScanExecutionRoute {
         ScanExecutionRoute {
-            phase2_localizer: self.phase2_localizer,
+            phase2_plain_localizer: self.phase2_plain_localizer,
+            phase2_keyword_localizer: self.phase2_keyword_localizer,
         }
     }
 }
@@ -541,11 +550,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .into());
     }
-    let forced_localizer = env_optional_bool("KH_BENCH_PHASE2_LOCALIZER")?;
-    if release_gate && forced_localizer.is_some() {
+    let forced_plain_localizer = env_optional_bool("KH_BENCH_PHASE2_PLAIN_LOCALIZER")?;
+    let forced_keyword_localizer = env_optional_bool("KH_BENCH_PHASE2_KEYWORD_LOCALIZER")?;
+    if release_gate && (forced_plain_localizer.is_some() || forced_keyword_localizer.is_some()) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "the 8 MiB release gate must measure both phase-two localizer modes; unset KH_BENCH_PHASE2_LOCALIZER",
+            "the 8 MiB release gate must measure all plain-pattern and keyword-anchor localization plans; unset KH_BENCH_PHASE2_PLAIN_LOCALIZER and KH_BENCH_PHASE2_KEYWORD_LOCALIZER",
         )
         .into());
     }
@@ -653,11 +663,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
 
-        let localizer_modes = forced_localizer.map_or_else(|| vec![false, true], |mode| vec![mode]);
+        let plain_localizer_modes =
+            forced_plain_localizer.map_or_else(|| vec![false, true], |mode| vec![mode]);
+        let keyword_localizer_modes =
+            forced_keyword_localizer.map_or_else(|| vec![false, true], |mode| vec![mode]);
         let route_capacity = gpu_backends
             .len()
             .checked_add(1)
-            .and_then(|backends| backends.checked_mul(localizer_modes.len()))
+            .and_then(|backends| backends.checked_mul(plain_localizer_modes.len()))
+            .and_then(|routes| routes.checked_mul(keyword_localizer_modes.len()))
             .ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::InvalidInput,
@@ -665,21 +679,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
             })?;
         let mut candidate_routes = Vec::with_capacity(route_capacity);
-        for phase2_localizer in localizer_modes {
-            candidate_routes.push(BenchRoute {
-                backend: ScanBackend::SimdCpu,
-                phase2_localizer,
-            });
-            candidate_routes.extend(gpu_backends.iter().copied().map(|backend| BenchRoute {
-                backend,
-                phase2_localizer,
-            }));
+        for phase2_plain_localizer in plain_localizer_modes {
+            for &phase2_keyword_localizer in &keyword_localizer_modes {
+                candidate_routes.push(BenchRoute {
+                    backend: ScanBackend::SimdCpu,
+                    phase2_plain_localizer,
+                    phase2_keyword_localizer,
+                });
+                candidate_routes.extend(gpu_backends.iter().copied().map(|backend| BenchRoute {
+                    backend,
+                    phase2_plain_localizer,
+                    phase2_keyword_localizer,
+                }));
+            }
         }
 
         scanner.clear_fragment_cache();
         let reference_route = BenchRoute {
             backend: ScanBackend::SimdCpu,
-            phase2_localizer: false,
+            phase2_plain_localizer: false,
+            phase2_keyword_localizer: false,
         };
         let mut reference = scanner.scan_coalesced_with_backend_admission_and_route(
             &chunks,
@@ -753,8 +772,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(enabled) = confirmed_suffix_gate {
             println!("confirmed_suffix_gate={enabled}");
         }
-        if let Some(enabled) = forced_localizer {
-            println!("diagnostic_phase2_localizer_filter={enabled}");
+        if let Some(enabled) = forced_plain_localizer {
+            println!("diagnostic_phase2_plain_localizer_filter={enabled}");
+        }
+        if let Some(enabled) = forced_keyword_localizer {
+            println!("diagnostic_phase2_keyword_localizer_filter={enabled}");
         }
 
         let candidate_order = candidate_routes;
@@ -809,7 +831,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 );
                 artifact_selection_samples.push(TimingSampleArtifact {
                     backend: route.backend.label().to_owned(),
-                    phase2_localizer: route.phase2_localizer,
+                    phase2_plain_localizer: route.phase2_plain_localizer,
+                    phase2_keyword_localizer: route.phase2_keyword_localizer,
                     round,
                     order: offset,
                     nanoseconds: elapsed.as_nanos(),
@@ -925,8 +948,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     pair,
                     order: order_label.clone(),
                     hyperscan_backend: route.backend.label().to_owned(),
-                    hyperscan_phase2_localizer: route.phase2_localizer,
-                    gpu_phase2_localizer: selected_gpu.phase2_localizer,
+                    hyperscan_phase2_plain_localizer: route.phase2_plain_localizer,
+                    hyperscan_phase2_keyword_localizer: route.phase2_keyword_localizer,
+                    gpu_phase2_plain_localizer: selected_gpu.phase2_plain_localizer,
+                    gpu_phase2_keyword_localizer: selected_gpu.phase2_keyword_localizer,
                     hyperscan_nanoseconds: elapsed.as_nanos(),
                     gpu_nanoseconds: gpu_elapsed.as_nanos(),
                 });
@@ -1063,7 +1088,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 && iters >= RELEASE_HELD_OUT_PAIRS
                 && selection_rounds >= RELEASE_SELECTION_ROUNDS;
             let artifact = CrossoverArtifact {
-                schema_version: 6,
+                schema_version: 7,
                 measured_at_utc: chrono::Utc::now().to_rfc3339(),
                 diagnostic,
                 production_comparable,
@@ -1095,10 +1120,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 total_memory_mb: hardware.total_memory_mb,
                 simd_features: simd_features.to_owned(),
                 fastest_hyperscan_backend: fastest_hyperscan.backend.label().to_owned(),
-                fastest_hyperscan_phase2_localizer: fastest_hyperscan.phase2_localizer,
+                fastest_hyperscan_phase2_plain_localizer: fastest_hyperscan.phase2_plain_localizer,
+                fastest_hyperscan_phase2_keyword_localizer: fastest_hyperscan
+                    .phase2_keyword_localizer,
                 hyperscan_reference: "per-pair-fastest-parity-correct-route".to_owned(),
                 selected_gpu_backend: selected_gpu.backend.label().to_owned(),
-                selected_gpu_phase2_localizer: selected_gpu.phase2_localizer,
+                selected_gpu_phase2_plain_localizer: selected_gpu.phase2_plain_localizer,
+                selected_gpu_phase2_keyword_localizer: selected_gpu.phase2_keyword_localizer,
                 selected_gpu_driver: selected_driver.to_owned(),
                 selected_gpu_driver_version: selected_driver_version.to_owned(),
                 selected_gpu_device: selected_device.clone(),
@@ -1147,7 +1175,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .map(
                         |(route, hs_median, comparison)| HyperscanComparisonArtifact {
                             backend: route.backend.label().to_owned(),
-                            phase2_localizer: route.phase2_localizer,
+                            phase2_plain_localizer: route.phase2_plain_localizer,
+                            phase2_keyword_localizer: route.phase2_keyword_localizer,
                             hyperscan_median_nanoseconds: hs_median.as_nanos(),
                             gpu_median_nanoseconds: gpu_median.as_nanos(),
                             ratio_geometric_mean: comparison.geometric_mean_ratio,

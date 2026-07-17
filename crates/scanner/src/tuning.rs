@@ -90,7 +90,7 @@ pub(crate) struct ScannerTuning {
     /// changes no finding.
     no_candidate_gate: AtomicU8,
     /// Override for phase-2 plain-pattern localization.
-    phase2_localizer: AtomicU8,
+    phase2_plain_localizer: AtomicU8,
     /// Override for the GPU region-presence full CPU recall floor.
     gpu_recall_floor: AtomicU8,
     /// Override for GPU MoE readback timeout (`0` = compiled default).
@@ -118,7 +118,7 @@ impl ScannerTuning {
             decode_focus: AtomicU8::new(BoolOverride::Default.as_byte()),
             confirmed_suffix_gate: AtomicU8::new(BoolOverride::Default.as_byte()),
             no_candidate_gate: AtomicU8::new(BoolOverride::Default.as_byte()),
-            phase2_localizer: AtomicU8::new(BoolOverride::Default.as_byte()),
+            phase2_plain_localizer: AtomicU8::new(BoolOverride::Default.as_byte()),
             gpu_recall_floor: AtomicU8::new(BoolOverride::Default.as_byte()),
             gpu_moe_timeout_ms: AtomicU64::new(0),
         }
@@ -137,7 +137,7 @@ impl ScannerTuning {
         self.set_decode_focus(config.decode_focus);
         self.set_confirmed_suffix_gate(config.confirmed_suffix_gate);
         self.set_no_candidate_gate(config.no_candidate_gate);
-        self.set_phase2_localizer(config.fallback_localizer);
+        self.set_phase2_plain_localizer(config.fallback_localizer);
         self.set_gpu_recall_floor(config.gpu_recall_floor);
         self.set_gpu_moe_timeout_ms(config.gpu_moe_timeout_ms);
     }
@@ -179,7 +179,7 @@ impl ScannerTuning {
                 .resolve(ScannerTuningConfig::CONFIRMED_SUFFIX_GATE_DEFAULT),
             no_candidate_gate: BoolOverride::from_raw(self.no_candidate_gate.load(Relaxed))
                 .resolve(ScannerTuningConfig::NO_CANDIDATE_GATE_DEFAULT),
-            fallback_localizer: BoolOverride::from_raw(self.phase2_localizer.load(Relaxed))
+            fallback_localizer: BoolOverride::from_raw(self.phase2_plain_localizer.load(Relaxed))
                 .resolve(ScannerTuningConfig::FALLBACK_LOCALIZER_DEFAULT),
             gpu_recall_floor: BoolOverride::from_raw(self.gpu_recall_floor.load(Relaxed))
                 .resolve(ScannerTuningConfig::GPU_RECALL_FLOOR_DEFAULT),
@@ -348,8 +348,8 @@ impl ScannerTuning {
     // ── Phase-2 plain-pattern localizer ───────────────────────────────────
 
     /// Override phase-2 plain-pattern localization (test/diagnostic).
-    pub(crate) fn set_phase2_localizer(&self, mode: Option<bool>) {
-        self.phase2_localizer
+    pub(crate) fn set_phase2_plain_localizer(&self, mode: Option<bool>) {
+        self.phase2_plain_localizer
             .store(BoolOverride::from_option(mode).as_byte(), Relaxed);
     }
 
@@ -357,8 +357,8 @@ impl ScannerTuning {
     /// OFF: the localizer's per-chunk AC overhead is a net end-to-end loss on
     /// decode-recursion-heavy inputs, while the plain-pattern RegexSet path is
     /// the better shipped default.
-    pub(crate) fn phase2_localizer_enabled(&self) -> bool {
-        BoolOverride::from_raw(self.phase2_localizer.load(Relaxed))
+    pub(crate) fn phase2_plain_localizer_enabled(&self) -> bool {
+        BoolOverride::from_raw(self.phase2_plain_localizer.load(Relaxed))
             .resolve(ScannerTuningConfig::FALLBACK_LOCALIZER_DEFAULT)
     }
 

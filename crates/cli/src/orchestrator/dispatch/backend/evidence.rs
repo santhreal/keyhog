@@ -19,13 +19,15 @@ pub(super) const MAX_AUTOROUTE_MEASURED_POINTS: usize = 64;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct MeasuredRoute {
     pub(super) backend: ScanBackend,
-    pub(super) phase2_localizer: bool,
+    pub(super) phase2_plain_localizer: bool,
+    pub(super) phase2_keyword_localizer: bool,
 }
 
 impl MeasuredRoute {
     pub(super) fn execution_route(self) -> keyhog_scanner::ScanExecutionRoute {
         keyhog_scanner::ScanExecutionRoute {
-            phase2_localizer: self.phase2_localizer,
+            phase2_plain_localizer: self.phase2_plain_localizer,
+            phase2_keyword_localizer: self.phase2_keyword_localizer,
         }
     }
 }
@@ -66,7 +68,8 @@ pub(super) fn gpu_cold_warm_route_evidence(
 #[serde(deny_unknown_fields)]
 pub(super) struct BackendParityReceipt {
     pub(super) backend: String,
-    pub(super) phase2_localizer: bool,
+    pub(super) phase2_plain_localizer: bool,
+    pub(super) phase2_keyword_localizer: bool,
     pub(super) correctness_digest: u64,
     pub(super) completed_trials: usize,
     pub(super) evidence_digest: u64,
@@ -79,7 +82,8 @@ impl BackendParityReceipt {
             Self::evidence_digest_for(route, correctness_digest, completed_trials, timing);
         Self {
             backend: route.backend.label().to_string(),
-            phase2_localizer: route.phase2_localizer,
+            phase2_plain_localizer: route.phase2_plain_localizer,
+            phase2_keyword_localizer: route.phase2_keyword_localizer,
             correctness_digest,
             completed_trials,
             evidence_digest,
@@ -108,7 +112,8 @@ impl BackendParityReceipt {
         let mut hasher = crate::stable_hash::StableHasher::new("autoroute-parity-receipt");
         hasher
             .field_str("backend", route.backend.label())
-            .field_bool("phase2_localizer", route.phase2_localizer)
+            .field_bool("phase2_plain_localizer", route.phase2_plain_localizer)
+            .field_bool("phase2_keyword_localizer", route.phase2_keyword_localizer)
             .field_u64("correctness_digest", correctness_digest)
             .field_usize("completed_trials", completed_trials)
             .field_usize("timing.trials_ns.len", timing.trials_ns.len());
@@ -130,8 +135,38 @@ impl BackendParityReceipt {
 #[serde(deny_unknown_fields)]
 pub(super) struct AutorouteDecision {
     pub(super) backend: String,
-    pub(super) phase2_localizer: bool,
+    pub(super) phase2_plain_localizer: bool,
+    pub(super) phase2_keyword_localizer: bool,
     pub(super) calibration_points: Vec<AutorouteCalibrationPoint>,
+}
+
+/// Timing evidence for one exact backend and phase-two execution plan.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct RouteTimingEvidence {
+    pub(super) backend: String,
+    pub(super) phase2_plain_localizer: bool,
+    pub(super) phase2_keyword_localizer: bool,
+    pub(super) timing: BackendTimingEvidence,
+}
+
+impl RouteTimingEvidence {
+    pub(super) fn new(route: MeasuredRoute, timing: BackendTimingEvidence) -> Self {
+        Self {
+            backend: route.backend.label().to_string(),
+            phase2_plain_localizer: route.phase2_plain_localizer,
+            phase2_keyword_localizer: route.phase2_keyword_localizer,
+            timing,
+        }
+    }
+
+    pub(super) fn measured_route(&self) -> Option<MeasuredRoute> {
+        Some(MeasuredRoute {
+            backend: keyhog_scanner::hw_probe::parse_backend_str(&self.backend)?,
+            phase2_plain_localizer: self.phase2_plain_localizer,
+            phase2_keyword_localizer: self.phase2_keyword_localizer,
+        })
+    }
 }
 
 /// One measured point inside a coarse workload class.
@@ -147,64 +182,34 @@ pub(super) struct AutorouteCalibrationPoint {
     pub(super) sample_chunks: usize,
     pub(super) candidate_receipts: Vec<BackendParityReceipt>,
     pub(super) calibrated_at_unix_ms: u128,
-    pub(super) simd_timing: BackendTimingEvidence,
-    pub(super) cpu_timing: Option<BackendTimingEvidence>,
-    pub(super) gpu_cuda_timing: Option<BackendTimingEvidence>,
-    pub(super) gpu_wgpu_timing: Option<BackendTimingEvidence>,
-    pub(super) simd_localizer_timing: Option<BackendTimingEvidence>,
-    pub(super) cpu_localizer_timing: Option<BackendTimingEvidence>,
-    pub(super) gpu_cuda_localizer_timing: Option<BackendTimingEvidence>,
-    pub(super) gpu_wgpu_localizer_timing: Option<BackendTimingEvidence>,
+    pub(super) route_timings: Vec<RouteTimingEvidence>,
     pub(super) trials: usize,
 }
 
 impl AutorouteCalibrationPoint {
     fn measured_routes(&self) -> Vec<MeasuredRoute> {
-        let mut routes = Vec::with_capacity(8);
-        for backend in [
-            ScanBackend::SimdCpu,
-            ScanBackend::CpuFallback,
-            ScanBackend::GpuCuda,
-            ScanBackend::GpuWgpu,
-        ] {
-            for phase2_localizer in [false, true] {
-                let route = MeasuredRoute {
-                    backend,
-                    phase2_localizer,
-                };
-                if self.timing_for_route(route).is_some() {
-                    routes.push(route);
-                }
-            }
-        }
-        routes
+        self.route_timings
+            .iter()
+            .filter_map(RouteTimingEvidence::measured_route)
+            .collect()
     }
 
     pub(super) fn timing_for_route(&self, route: MeasuredRoute) -> Option<&BackendTimingEvidence> {
-        match (route.backend, route.phase2_localizer) {
-            (ScanBackend::SimdCpu, false) => Some(&self.simd_timing),
-            (ScanBackend::CpuFallback, false) => self.cpu_timing.as_ref(),
-            (ScanBackend::GpuCuda, false) => self.gpu_cuda_timing.as_ref(),
-            (ScanBackend::GpuWgpu, false) => self.gpu_wgpu_timing.as_ref(),
-            (ScanBackend::SimdCpu, true) => self.simd_localizer_timing.as_ref(),
-            (ScanBackend::CpuFallback, true) => self.cpu_localizer_timing.as_ref(),
-            (ScanBackend::GpuCuda, true) => self.gpu_cuda_localizer_timing.as_ref(),
-            (ScanBackend::GpuWgpu, true) => self.gpu_wgpu_localizer_timing.as_ref(),
-            _ => None,
-        }
+        self.route_timings
+            .iter()
+            .find(|entry| entry.measured_route() == Some(route))
+            .map(|entry| &entry.timing)
     }
 
-    pub(super) fn timing_for_backend(
+    pub(super) fn baseline_timing_for_backend(
         &self,
         backend: ScanBackend,
     ) -> Option<&BackendTimingEvidence> {
-        match backend {
-            ScanBackend::SimdCpu => Some(&self.simd_timing),
-            ScanBackend::CpuFallback => self.cpu_timing.as_ref(),
-            ScanBackend::GpuCuda => self.gpu_cuda_timing.as_ref(),
-            ScanBackend::GpuWgpu => self.gpu_wgpu_timing.as_ref(),
-            _ => None,
-        }
+        self.timing_for_route(MeasuredRoute {
+            backend,
+            phase2_plain_localizer: false,
+            phase2_keyword_localizer: false,
+        })
     }
 
     pub(super) fn gpu_cold_warm_route_for_measured(
@@ -246,7 +251,8 @@ impl AutorouteCalibrationPoint {
                 (
                     *median_ns,
                     backend_overhead_rank(route.backend),
-                    route.phase2_localizer,
+                    route.phase2_plain_localizer,
+                    route.phase2_keyword_localizer,
                 )
             })
             .map(|(route, _)| route)
@@ -286,7 +292,7 @@ impl AutorouteCalibrationPoint {
         &self,
         persistent_runtime: bool,
     ) -> Vec<(MeasuredRoute, TimingConfidenceInterval)> {
-        let mut intervals = Vec::with_capacity(8);
+        let mut intervals = Vec::with_capacity(self.route_timings.len());
         for route in self.measured_routes() {
             if route.backend.is_gpu() {
                 let Some((cold_ns, warm_timing, _route_ns)) =
@@ -327,78 +333,66 @@ impl AutorouteCalibrationPoint {
 impl AutorouteDecision {
     fn candidate_receipts(
         correctness_digest: u64,
-        simd_timing: &BackendTimingEvidence,
-        cpu_timing: Option<&BackendTimingEvidence>,
-        gpu_cuda_timing: Option<&BackendTimingEvidence>,
-        gpu_wgpu_timing: Option<&BackendTimingEvidence>,
-        simd_localizer_timing: Option<&BackendTimingEvidence>,
-        cpu_localizer_timing: Option<&BackendTimingEvidence>,
-        gpu_cuda_localizer_timing: Option<&BackendTimingEvidence>,
-        gpu_wgpu_localizer_timing: Option<&BackendTimingEvidence>,
+        route_timings: &[RouteTimingEvidence],
     ) -> Vec<BackendParityReceipt> {
-        [
+        route_timings
+            .iter()
+            .filter_map(|entry| {
+                Some(BackendParityReceipt::new(
+                    entry.measured_route()?,
+                    correctness_digest,
+                    &entry.timing,
+                ))
+            })
+            .collect()
+    }
+
+    fn canonicalize_route_timings(route_timings: &mut [RouteTimingEvidence]) {
+        route_timings.sort_unstable_by(|left, right| {
             (
-                MeasuredRoute {
-                    backend: ScanBackend::SimdCpu,
-                    phase2_localizer: false,
-                },
-                Some(simd_timing),
-            ),
-            (
-                MeasuredRoute {
-                    backend: ScanBackend::CpuFallback,
-                    phase2_localizer: false,
-                },
-                cpu_timing,
-            ),
-            (
-                MeasuredRoute {
-                    backend: ScanBackend::GpuCuda,
-                    phase2_localizer: false,
-                },
-                gpu_cuda_timing,
-            ),
-            (
-                MeasuredRoute {
-                    backend: ScanBackend::GpuWgpu,
-                    phase2_localizer: false,
-                },
-                gpu_wgpu_timing,
-            ),
-            (
-                MeasuredRoute {
-                    backend: ScanBackend::SimdCpu,
-                    phase2_localizer: true,
-                },
-                simd_localizer_timing,
-            ),
-            (
-                MeasuredRoute {
-                    backend: ScanBackend::CpuFallback,
-                    phase2_localizer: true,
-                },
-                cpu_localizer_timing,
-            ),
-            (
-                MeasuredRoute {
-                    backend: ScanBackend::GpuCuda,
-                    phase2_localizer: true,
-                },
-                gpu_cuda_localizer_timing,
-            ),
-            (
-                MeasuredRoute {
-                    backend: ScanBackend::GpuWgpu,
-                    phase2_localizer: true,
-                },
-                gpu_wgpu_localizer_timing,
-            ),
-        ]
-        .into_iter()
-        .filter_map(|(route, timing)| {
-            timing.map(|timing| BackendParityReceipt::new(route, correctness_digest, timing))
-        })
-        .collect()
+                left.backend.as_str(),
+                left.phase2_plain_localizer,
+                left.phase2_keyword_localizer,
+            )
+                .cmp(&(
+                    right.backend.as_str(),
+                    right.phase2_plain_localizer,
+                    right.phase2_keyword_localizer,
+                ))
+        });
+    }
+
+    #[cfg(test)]
+    fn test_route_timings(
+        backends: impl IntoIterator<Item = (ScanBackend, Option<BackendTimingEvidence>)>,
+    ) -> Vec<RouteTimingEvidence> {
+        let mut routes = Vec::new();
+        for (backend, timing) in backends {
+            let Some(base) = timing else {
+                continue;
+            };
+            for phase2_plain_localizer in [false, true] {
+                for phase2_keyword_localizer in [false, true] {
+                    let timing = if phase2_plain_localizer || phase2_keyword_localizer {
+                        BackendTimingEvidence::constant_ms(
+                            base.median_ms().saturating_add(1_000),
+                            AUTOROUTE_CALIBRATION_TRIALS,
+                        )
+                    } else {
+                        base.clone()
+                    };
+                    routes.push(RouteTimingEvidence::new(
+                        MeasuredRoute {
+                            backend,
+                            phase2_plain_localizer,
+                            phase2_keyword_localizer,
+                        },
+                        timing,
+                    ));
+                }
+            }
+        }
+        routes
     }
 
     #[cfg(test)]
@@ -424,42 +418,24 @@ impl AutorouteDecision {
         ));
         let gpu_wgpu_timing =
             gpu_ms.map(|ms| BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS));
-        let slower = |timing: &BackendTimingEvidence| {
-            BackendTimingEvidence::constant_ms(
-                timing.median_ms().saturating_add(1_000),
-                AUTOROUTE_CALIBRATION_TRIALS,
-            )
-        };
-        let simd_localizer_timing = Some(slower(&simd_timing));
-        let cpu_localizer_timing = cpu_timing.as_ref().map(slower);
-        let gpu_wgpu_localizer_timing = gpu_wgpu_timing.as_ref().map(slower);
-        let candidate_receipts = Self::candidate_receipts(
-            0xA11D_0B57_A11D_0B57,
-            &simd_timing,
-            cpu_timing.as_ref(),
-            None,
-            gpu_wgpu_timing.as_ref(),
-            simd_localizer_timing.as_ref(),
-            cpu_localizer_timing.as_ref(),
-            None,
-            gpu_wgpu_localizer_timing.as_ref(),
-        );
+        let mut route_timings = Self::test_route_timings([
+            (ScanBackend::SimdCpu, Some(simd_timing)),
+            (ScanBackend::CpuFallback, cpu_timing),
+            (ScanBackend::GpuCuda, None),
+            (ScanBackend::GpuWgpu, gpu_wgpu_timing),
+        ]);
+        Self::canonicalize_route_timings(&mut route_timings);
+        let candidate_receipts = Self::candidate_receipts(0xA11D_0B57_A11D_0B57, &route_timings);
         Self {
             backend: backend.label().to_string(),
-            phase2_localizer: false,
+            phase2_plain_localizer: false,
+            phase2_keyword_localizer: false,
             calibration_points: vec![AutorouteCalibrationPoint {
                 sample_bytes,
                 sample_chunks,
                 candidate_receipts,
                 calibrated_at_unix_ms: 1,
-                simd_timing,
-                cpu_timing,
-                gpu_cuda_timing: None,
-                gpu_wgpu_timing,
-                simd_localizer_timing,
-                cpu_localizer_timing,
-                gpu_cuda_localizer_timing: None,
-                gpu_wgpu_localizer_timing,
+                route_timings,
                 trials: AUTOROUTE_CALIBRATION_TRIALS,
             }],
         }
@@ -476,42 +452,24 @@ impl AutorouteDecision {
         cpu_timing: Option<BackendTimingEvidence>,
         gpu_timing: Option<BackendTimingEvidence>,
     ) -> Self {
-        let slower = |timing: &BackendTimingEvidence| {
-            BackendTimingEvidence::constant_ms(
-                timing.median_ms().saturating_add(1_000),
-                AUTOROUTE_CALIBRATION_TRIALS,
-            )
-        };
-        let simd_localizer_timing = Some(slower(&simd_timing));
-        let cpu_localizer_timing = cpu_timing.as_ref().map(slower);
-        let gpu_localizer_timing = gpu_timing.as_ref().map(slower);
-        let candidate_receipts = Self::candidate_receipts(
-            correctness_digest,
-            &simd_timing,
-            cpu_timing.as_ref(),
-            None,
-            gpu_timing.as_ref(),
-            simd_localizer_timing.as_ref(),
-            cpu_localizer_timing.as_ref(),
-            None,
-            gpu_localizer_timing.as_ref(),
-        );
+        let mut route_timings = Self::test_route_timings([
+            (ScanBackend::SimdCpu, Some(simd_timing)),
+            (ScanBackend::CpuFallback, cpu_timing),
+            (ScanBackend::GpuCuda, None),
+            (ScanBackend::GpuWgpu, gpu_timing),
+        ]);
+        Self::canonicalize_route_timings(&mut route_timings);
+        let candidate_receipts = Self::candidate_receipts(correctness_digest, &route_timings);
         Self {
             backend: backend.label().to_string(),
-            phase2_localizer: false,
+            phase2_plain_localizer: false,
+            phase2_keyword_localizer: false,
             calibration_points: vec![AutorouteCalibrationPoint {
                 sample_bytes,
                 sample_chunks,
                 candidate_receipts,
                 calibrated_at_unix_ms,
-                simd_timing,
-                cpu_timing,
-                gpu_cuda_timing: None,
-                gpu_wgpu_timing: gpu_timing,
-                simd_localizer_timing,
-                cpu_localizer_timing,
-                gpu_cuda_localizer_timing: None,
-                gpu_wgpu_localizer_timing: gpu_localizer_timing,
+                route_timings,
                 trials: AUTOROUTE_CALIBRATION_TRIALS,
             }],
         }
@@ -523,42 +481,20 @@ impl AutorouteDecision {
         sample_chunks: usize,
         correctness_digest: u64,
         calibrated_at_unix_ms: u128,
-        simd_timing: BackendTimingEvidence,
-        cpu_timing: Option<BackendTimingEvidence>,
-        gpu_cuda_timing: Option<BackendTimingEvidence>,
-        gpu_wgpu_timing: Option<BackendTimingEvidence>,
-        simd_localizer_timing: Option<BackendTimingEvidence>,
-        cpu_localizer_timing: Option<BackendTimingEvidence>,
-        gpu_cuda_localizer_timing: Option<BackendTimingEvidence>,
-        gpu_wgpu_localizer_timing: Option<BackendTimingEvidence>,
+        mut route_timings: Vec<RouteTimingEvidence>,
     ) -> Self {
-        let candidate_receipts = Self::candidate_receipts(
-            correctness_digest,
-            &simd_timing,
-            cpu_timing.as_ref(),
-            gpu_cuda_timing.as_ref(),
-            gpu_wgpu_timing.as_ref(),
-            simd_localizer_timing.as_ref(),
-            cpu_localizer_timing.as_ref(),
-            gpu_cuda_localizer_timing.as_ref(),
-            gpu_wgpu_localizer_timing.as_ref(),
-        );
+        Self::canonicalize_route_timings(&mut route_timings);
+        let candidate_receipts = Self::candidate_receipts(correctness_digest, &route_timings);
         Self {
             backend: backend.label().to_string(),
-            phase2_localizer: false,
+            phase2_plain_localizer: false,
+            phase2_keyword_localizer: false,
             calibration_points: vec![AutorouteCalibrationPoint {
                 sample_bytes,
                 sample_chunks,
                 candidate_receipts,
                 calibrated_at_unix_ms,
-                simd_timing,
-                cpu_timing,
-                gpu_cuda_timing,
-                gpu_wgpu_timing,
-                simd_localizer_timing,
-                cpu_localizer_timing,
-                gpu_cuda_localizer_timing,
-                gpu_wgpu_localizer_timing,
+                route_timings,
                 trials: AUTOROUTE_CALIBRATION_TRIALS,
             }],
         }
@@ -638,7 +574,8 @@ impl AutorouteDecision {
     pub(super) fn measured_route(&self) -> Option<MeasuredRoute> {
         Some(MeasuredRoute {
             backend: self.backend()?,
-            phase2_localizer: self.phase2_localizer,
+            phase2_plain_localizer: self.phase2_plain_localizer,
+            phase2_keyword_localizer: self.phase2_keyword_localizer,
         })
     }
 
@@ -657,16 +594,18 @@ impl AutorouteDecision {
 
     // Derived evidence is computed on demand, never persisted a second time.
 
-    /// Representative SIMD route time in ms (median of measured trials).
-    pub(super) fn simd_ms(&self) -> u128 {
-        self.primary_point().simd_timing.median_ms()
+    /// SIMD `(plain=false, keyword=false)` baseline in ms.
+    pub(super) fn simd_baseline_ms(&self) -> u128 {
+        self.primary_point()
+            .baseline_timing_for_backend(ScanBackend::SimdCpu)
+            .expect("validated calibration contains the SIMD reference route")
+            .median_ms()
     }
 
-    /// Representative CPU-fallback route time in ms, if CPU was measured.
-    pub(super) fn cpu_ms(&self) -> Option<u128> {
+    /// CPU-fallback `(plain=false, keyword=false)` baseline in ms, if measured.
+    pub(super) fn cpu_baseline_ms(&self) -> Option<u128> {
         self.primary_point()
-            .cpu_timing
-            .as_ref()
+            .baseline_timing_for_backend(ScanBackend::CpuFallback)
             .map(BackendTimingEvidence::median_ms)
     }
 
@@ -683,18 +622,10 @@ impl AutorouteDecision {
     /// cannot produce valid cold/warm evidence (too few warm trials).
     #[cfg(test)]
     pub(super) fn gpu_cold_warm_route(&self) -> Option<(u128, BackendTimingEvidence, u128)> {
-        let backend = self.backend()?.is_gpu().then_some(self.backend()?)?;
+        let route = self.measured_route()?;
+        route.backend.is_gpu().then_some(())?;
         self.primary_point()
-            .timing_for_backend(backend)
-            .and_then(gpu_cold_warm_route_evidence)
-    }
-
-    pub(super) fn gpu_cold_warm_route_for(
-        &self,
-        backend: ScanBackend,
-    ) -> Option<(u128, BackendTimingEvidence, u128)> {
-        self.primary_point()
-            .timing_for_backend(backend)
+            .timing_for_route(route)
             .and_then(gpu_cold_warm_route_evidence)
     }
 
@@ -747,11 +678,11 @@ impl AutorouteDecision {
             .min()
     }
 
-    pub(super) fn timing_for_backend(
+    pub(super) fn baseline_timing_for_backend(
         &self,
         backend: ScanBackend,
     ) -> Option<&BackendTimingEvidence> {
-        self.primary_point().timing_for_backend(backend)
+        self.primary_point().baseline_timing_for_backend(backend)
     }
 
     #[cfg(test)]
@@ -859,8 +790,9 @@ fn backend_overhead_rank(backend: ScanBackend) -> u8 {
 
 fn render_measured_route(route: MeasuredRoute) -> String {
     format!(
-        "{}+phase2-localizer={}",
+        "{}+phase2-plain-localizer={}+phase2-keyword-localizer={}",
         route.backend.label(),
-        route.phase2_localizer
+        route.phase2_plain_localizer,
+        route.phase2_keyword_localizer,
     )
 }

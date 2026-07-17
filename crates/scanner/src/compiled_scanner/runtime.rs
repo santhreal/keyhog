@@ -37,7 +37,8 @@ impl CompiledScanner {
     #[must_use]
     pub fn default_execution_route(&self) -> crate::ScanExecutionRoute {
         crate::ScanExecutionRoute {
-            phase2_localizer: self.tuning.phase2_localizer_enabled(),
+            phase2_plain_localizer: self.tuning.phase2_plain_localizer_enabled(),
+            phase2_keyword_localizer: true,
         }
     }
 

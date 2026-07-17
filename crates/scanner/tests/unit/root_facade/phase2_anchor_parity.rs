@@ -196,10 +196,8 @@ fn scanner() -> &'static CompiledScanner {
 }
 
 struct PathResults {
-    localized_hs: Vec<Key>,
-    anchor_hs: Vec<Key>,
+    localized: Vec<(String, Vec<Key>)>,
     requested_localizer_gate_off: Vec<Key>,
-    localized_portable: Vec<Key>,
     whole: Vec<Key>,
 }
 
@@ -209,30 +207,32 @@ fn scan_paths(scanner: &CompiledScanner, chunk: &Chunk) -> PathResults {
     // back-to-back would let the first scan's reassembly state perturb the
     // second (a test-only hazard, in production each chunk is scanned once and
     // the cache evolves identically for a fixed anchor setting).
-    // Optimized plan through the residual Hyperscan engine.
     keyhog_scanner::testing::set_phase2_anchor_mode(&scanner, Some(true));
     keyhog_scanner::testing::set_phase2_homoglyph_gate(&scanner, Some(true));
-    keyhog_scanner::testing::set_phase2_hs(&scanner, Some(true));
-    scanner.clear_fragment_cache();
-    let optimized_hs = scanner.scan_coalesced_with_backend_admission_and_route(
-        std::slice::from_ref(chunk),
-        ScanBackend::CpuFallback,
-        None,
-        ScanExecutionRoute {
-            phase2_localizer: true,
-        },
-    );
-    // Main-anchor residual only: case-sensitive patterns remain in the
-    // prefilter because the optional plain localizer is off.
-    scanner.clear_fragment_cache();
-    let anchor_hs = scanner.scan_coalesced_with_backend_admission_and_route(
-        std::slice::from_ref(chunk),
-        ScanBackend::CpuFallback,
-        None,
-        ScanExecutionRoute {
-            phase2_localizer: false,
-        },
-    );
+    let mut localized = Vec::with_capacity(8);
+    for (engine, phase2_hs) in [("hyperscan", true), ("portable", false)] {
+        keyhog_scanner::testing::set_phase2_hs(&scanner, Some(phase2_hs));
+        for phase2_plain_localizer in [false, true] {
+            for phase2_keyword_localizer in [false, true] {
+                scanner.clear_fragment_cache();
+                let matches = scanner.scan_coalesced_with_backend_admission_and_route(
+                    std::slice::from_ref(chunk),
+                    ScanBackend::CpuFallback,
+                    None,
+                    ScanExecutionRoute {
+                        phase2_plain_localizer,
+                        phase2_keyword_localizer,
+                    },
+                );
+                localized.push((
+                    format!(
+                        "{engine} plain={phase2_plain_localizer} keyword={phase2_keyword_localizer}"
+                    ),
+                    canonical(&matches),
+                ));
+            }
+        }
+    }
     // A route request cannot remove plain patterns when the runtime gate that
     // executes the plain localizer is disabled.
     keyhog_scanner::testing::set_phase2_homoglyph_gate(&scanner, Some(false));
@@ -242,19 +242,8 @@ fn scan_paths(scanner: &CompiledScanner, chunk: &Chunk) -> PathResults {
         ScanBackend::CpuFallback,
         None,
         ScanExecutionRoute {
-            phase2_localizer: true,
-        },
-    );
-    // The same residual ownership plan through the portable RegexSet engine.
-    keyhog_scanner::testing::set_phase2_homoglyph_gate(&scanner, Some(true));
-    keyhog_scanner::testing::set_phase2_hs(&scanner, Some(false));
-    scanner.clear_fragment_cache();
-    let optimized_portable = scanner.scan_coalesced_with_backend_admission_and_route(
-        std::slice::from_ref(chunk),
-        ScanBackend::CpuFallback,
-        None,
-        ScanExecutionRoute {
-            phase2_localizer: true,
+            phase2_plain_localizer: true,
+            phase2_keyword_localizer: true,
         },
     );
     // Fully-unoptimized baseline: every phase-2 pattern runs the legacy
@@ -267,16 +256,29 @@ fn scan_paths(scanner: &CompiledScanner, chunk: &Chunk) -> PathResults {
         ScanBackend::CpuFallback,
         None,
         ScanExecutionRoute {
-            phase2_localizer: false,
+            phase2_plain_localizer: false,
+            phase2_keyword_localizer: false,
         },
     );
-    assert!(!scanner.default_execution_route().phase2_localizer);
+    assert!(!scanner.default_execution_route().phase2_plain_localizer);
+    assert!(scanner.default_execution_route().phase2_keyword_localizer);
     PathResults {
-        localized_hs: canonical(&optimized_hs),
-        anchor_hs: canonical(&anchor_hs),
+        localized,
         requested_localizer_gate_off: canonical(&requested_localizer_gate_off),
-        localized_portable: canonical(&optimized_portable),
         whole: canonical(&baseline),
+    }
+}
+
+fn assert_paths_equal(paths: &PathResults, input: &[u8], label: &str) {
+    for (route, actual) in &paths.localized {
+        if actual != &paths.whole {
+            report_divergence(actual, &paths.whole, input);
+            panic!("PARITY VIOLATION on {label}: {route} != whole-chunk phase-2");
+        }
+    }
+    if paths.requested_localizer_gate_off != paths.whole {
+        report_divergence(&paths.requested_localizer_gate_off, &paths.whole, input);
+        panic!("PARITY VIOLATION on {label}: disabled plain-localizer gate dropped a finding");
     }
 }
 
@@ -285,22 +287,7 @@ fn assert_corpus(scanner: &CompiledScanner, files: &[Vec<u8>], tag: &str) -> usi
     for (i, f) in files.iter().enumerate() {
         let chunk = chunk_of(f, &format!("{tag}-{i}"));
         let paths = scan_paths(scanner, &chunk);
-        if paths.localized_hs != paths.whole {
-            report_divergence(&paths.localized_hs, &paths.whole, f);
-            panic!("PARITY VIOLATION on {tag}-{i}: anchored HS != whole-chunk phase-2");
-        }
-        if paths.anchor_hs != paths.whole {
-            report_divergence(&paths.anchor_hs, &paths.whole, f);
-            panic!("PARITY VIOLATION on {tag}-{i}: anchor-only HS != whole-chunk phase-2");
-        }
-        if paths.requested_localizer_gate_off != paths.whole {
-            report_divergence(&paths.requested_localizer_gate_off, &paths.whole, f);
-            panic!("PARITY VIOLATION on {tag}-{i}: disabled localizer gate dropped a finding");
-        }
-        if paths.localized_portable != paths.whole {
-            report_divergence(&paths.localized_portable, &paths.whole, f);
-            panic!("PARITY VIOLATION on {tag}-{i}: anchored portable != whole-chunk phase-2");
-        }
+        assert_paths_equal(&paths, f, &format!("{tag}-{i}"));
         checked += 1;
     }
     checked
@@ -343,22 +330,7 @@ fn synthetic(scanner: &CompiledScanner, n: usize) -> usize {
         let bytes = gen_chunk(&mut rng);
         let chunk = chunk_of(&bytes, &format!("syn-{i}"));
         let paths = scan_paths(scanner, &chunk);
-        if paths.localized_hs != paths.whole {
-            report_divergence(&paths.localized_hs, &paths.whole, &bytes);
-            panic!("PARITY VIOLATION on synthetic input #{i}: residual HS");
-        }
-        if paths.anchor_hs != paths.whole {
-            report_divergence(&paths.anchor_hs, &paths.whole, &bytes);
-            panic!("PARITY VIOLATION on synthetic input #{i}: anchor-only HS");
-        }
-        if paths.requested_localizer_gate_off != paths.whole {
-            report_divergence(&paths.requested_localizer_gate_off, &paths.whole, &bytes);
-            panic!("PARITY VIOLATION on synthetic input #{i}: disabled localizer gate");
-        }
-        if paths.localized_portable != paths.whole {
-            report_divergence(&paths.localized_portable, &paths.whole, &bytes);
-            panic!("PARITY VIOLATION on synthetic input #{i}: residual portable");
-        }
+        assert_paths_equal(&paths, &bytes, &format!("synthetic input #{i}"));
         checked += 1;
     }
     checked

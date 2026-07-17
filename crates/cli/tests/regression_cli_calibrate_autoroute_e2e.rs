@@ -14,7 +14,7 @@
 //! field (works on every platform's cache-dir convention).
 //!
 //! Pinned facts (read from source, asserted exactly):
-//!   * `AUTOROUTE_CACHE_VERSION = 34` (backend.rs), the schema version an
+//!   * `AUTOROUTE_CACHE_VERSION = 39` (backend.rs), the schema version an
 //!     inspected valid cache reports and an incompatible one is rejected against.
 //!   * `AUTOROUTE_CACHE_FILE_BYTES = 8 * 1024 * 1024` in the cache codec, the read
 //!     cap; a file one byte over is reported "unreadable".
@@ -27,7 +27,7 @@ use std::process::Command;
 use tempfile::TempDir;
 
 /// Schema version this build's cache reports and requires.
-const EXPECTED_CACHE_VERSION: u64 = 34;
+const EXPECTED_CACHE_VERSION: u64 = 39;
 /// Read cap for the cache file (kept in sync with the cache codec).
 const CACHE_FILE_CAP_BYTES: usize = 8 * 1024 * 1024;
 
@@ -216,7 +216,7 @@ fn autoroute_json_wrong_schema_version_reports_incompatible() {
         .and_then(serde_json::Value::as_str)
         .expect("error string present");
     assert!(
-        error.contains("cache schema version 3 is incompatible")
+        error.contains("unsupported autoroute cache version 3")
             && error.contains(&format!("expects {EXPECTED_CACHE_VERSION}")),
         "error names both the stale version and the expected {EXPECTED_CACHE_VERSION}; error={error}"
     );
@@ -324,8 +324,9 @@ fn autoroute_human_wrong_version_prints_repair_command() {
         "section header printed; stdout={stdout}"
     );
     assert!(
-        stdout.contains("incompatible"),
-        "human status surfaces the incompatible-version reason; stdout={stdout}"
+        stdout.contains("unsupported autoroute cache version 7")
+            && stdout.contains(&format!("expects {EXPECTED_CACHE_VERSION}")),
+        "human status names the stale and required schema versions; stdout={stdout}"
     );
     assert!(
         stdout.contains("keyhog calibrate-autoroute"),

@@ -508,7 +508,7 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
         cache = cache_note,
     );
     println!(
-        "  cache route summary: one-shot GPU {one_shot_gpu}/{persisted_decisions}, daemon GPU {daemon_gpu}/{persisted_decisions}; VYRE GPU backend-plus-localizer receipts {vyre_gpu_receipts}"
+        "  cache route summary: one-shot GPU {one_shot_gpu}/{persisted_decisions}, daemon GPU {daemon_gpu}/{persisted_decisions}; VYRE GPU execution-plan receipts {vyre_gpu_receipts}"
     );
     Ok(ExitCode::SUCCESS)
 }

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Replace the ambiguous phase-two localizer route bit with explicit
+  plain-pattern and keyword-anchor choices. Autoroute now calibrates, persists,
+  validates, inspects, and benchmarks all four plans per eligible backend;
+  cache schema 39 and crossover schema 7 reject the incomplete older evidence.
+
 - Apply the resolved scan `entropy_threshold` to named-detector heuristic
   confidence instead of silently scoring those findings at the compiled default.
 
@@ -31,20 +36,20 @@
   outside the profile tree.
 
 - Keep crossover selection and held-out timing free of profile instrumentation,
-  then emit isolated scanner profiles for every Hyperscan localizer route and
+  then emit isolated scanner profiles for every Hyperscan localization plan and
   the selected exact GPU route instead of one misleading aggregate report.
   Successful coalesced CPU, Hyperscan, and GPU scans now share one logical-input
   accounting boundary, including exact-once accounting after GPU recovery.
 
-- Make the official 8 MiB crossover gate select a GPU route from both phase-two
-  localizer modes, then compare it in fresh held-out trials against every
-  parity-correct Hyperscan localizer route. The release verdict uses the fastest
-  Hyperscan observation in each paired trial; schema-v6 evidence records the
+- Make the official 8 MiB crossover gate select a GPU route from all phase-two
+  localization plans, then compare it in fresh held-out trials against every
+  parity-correct Hyperscan plan. The release verdict uses the fastest Hyperscan
+  observation in each paired trial; schema-v7 evidence records the
   full comparison set, and release runs cannot force one diagnostic mode.
 
 - Add an explicit unprofiled `--diagnostic` crossover mode. It can measure the
   exact 8 MiB route set from a dirty shared tree but can never set
-  `production_comparable` or `crossover_passed` in schema-v6 evidence.
+  `production_comparable` or `crossover_passed` in schema-v7 evidence.
 
 - Carry phase-two plain-pattern localization as an immutable per-request
   execution route through CPU, Hyperscan, CUDA, WGPU, windowing, decode,
@@ -66,7 +71,7 @@
   scanner-owned fallback constants, with the adversarial property suite wired.
 
 - Refuse release-comparable 8 MiB crossover evidence unless both the build and
-  publication worktrees are clean at the recorded commit. Schema-v5 artifacts
+  publication worktrees are clean at the recorded commit. Schema-v7 artifacts
   record both states, so a binary compiled from dirty source cannot become
   release evidence after the worktree is cleaned without rebuilding.
 

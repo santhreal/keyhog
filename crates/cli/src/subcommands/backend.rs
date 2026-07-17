@@ -316,9 +316,10 @@ fn run_autoroute_inspection(
                 .iter()
                 .map(|receipt| {
                     format!(
-                        "{}+phase2-localizer={}:result={}/trials={}/receipt={}",
+                        "{}+plain-localizer={}+keyword-localizer={}:result={}/trials={}/receipt={}",
                         receipt.backend,
-                        receipt.phase2_localizer,
+                        receipt.phase2_plain_localizer,
+                        receipt.phase2_keyword_localizer,
                         receipt.correctness_digest,
                         receipt.completed_trials,
                         receipt.evidence_digest
@@ -326,45 +327,24 @@ fn run_autoroute_inspection(
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
-            let cpu = decision
-                .cpu_ms
-                .map(|ms| format!(" cpu={ms}ms"))
-                .unwrap_or_default(); // LAW10: display-only optional timing; finding still printed; recall-safe
-            let cuda = decision
-                .gpu_cuda_ms
-                .map(|ms| format!(" cuda-one-shot={ms}ms"))
-                .unwrap_or_default(); // LAW10: display-only optional timing; finding still printed; recall-safe
-            let cuda_warm = decision
-                .gpu_cuda_warm_ms
-                .map(|ms| format!(" cuda-warm={ms}ms"))
-                .unwrap_or_default(); // LAW10: display-only optional timing; finding still printed; recall-safe
-            let wgpu = decision
-                .gpu_wgpu_ms
-                .map(|ms| format!(" wgpu-one-shot={ms}ms"))
-                .unwrap_or_default(); // LAW10: display-only optional timing; finding still printed; recall-safe
-            let wgpu_warm = decision
-                .gpu_wgpu_warm_ms
-                .map(|ms| format!(" wgpu-warm={ms}ms"))
-                .unwrap_or_default(); // LAW10: display-only optional timing; finding still printed; recall-safe
-            let mut localizer_timings = Vec::new();
-            if let Some(ms) = decision.simd_localizer_ms {
-                localizer_timings.push(format!("simd={ms}ms"));
-            }
-            if let Some(ms) = decision.cpu_localizer_ms {
-                localizer_timings.push(format!("cpu={ms}ms"));
-            }
-            if let Some(ms) = decision.gpu_cuda_localizer_ms {
-                localizer_timings.push(format!("cuda-one-shot={ms}ms"));
-            }
-            if let Some(ms) = decision.gpu_cuda_localizer_warm_ms {
-                localizer_timings.push(format!("cuda-warm={ms}ms"));
-            }
-            if let Some(ms) = decision.gpu_wgpu_localizer_ms {
-                localizer_timings.push(format!("wgpu-one-shot={ms}ms"));
-            }
-            if let Some(ms) = decision.gpu_wgpu_localizer_warm_ms {
-                localizer_timings.push(format!("wgpu-warm={ms}ms"));
-            }
+            let route_timings = decision
+                .route_timings
+                .iter()
+                .map(|timing| {
+                    let warm = timing
+                        .warm_ms
+                        .map(|ms| format!("/warm={ms}ms"))
+                        .unwrap_or_default();
+                    format!(
+                        "{}[plain={},keyword={}]={}ms{warm}",
+                        timing.backend,
+                        timing.phase2_plain_localizer,
+                        timing.phase2_keyword_localizer,
+                        timing.one_shot_ms
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
             let margin = decision
                 .selected_margin_ns
                 .map(|ns| format!(" margin={}µs", ns / 1_000))
@@ -381,35 +361,28 @@ fn run_autoroute_inspection(
             );
             println!("        parity:      {parity_receipts}");
             println!(
-                "        one-shot -> {}+phase2-localizer={}  {}[{} B / {} chunk(s); simd={}ms{}{}{}{}{}{}; basis={}]{}",
+                "        one-shot -> {}+plain-localizer={}+keyword-localizer={}  {}[{} B / {} chunk(s);{} basis={}]{}",
                 decision.backend,
-                decision.phase2_localizer,
+                decision.phase2_plain_localizer,
+                decision.phase2_keyword_localizer,
                 p.dim,
                 decision.sample_bytes,
                 decision.sample_chunks,
-                decision.simd_ms,
-                cpu,
-                cuda,
-                cuda_warm,
-                wgpu,
-                wgpu_warm,
                 margin,
                 decision.selection_basis,
                 p.reset
             );
             println!(
-                "        daemon   -> {}+phase2-localizer={}  {}[warm GPU evidence{}; basis={}]{}",
+                "        daemon   -> {}+plain-localizer={}+keyword-localizer={}  {}[warm evidence{}; basis={}]{}",
                 decision.daemon_backend,
-                decision.daemon_phase2_localizer,
+                decision.daemon_phase2_plain_localizer,
+                decision.daemon_phase2_keyword_localizer,
                 p.dim,
                 daemon_margin,
                 decision.daemon_selection_basis,
                 p.reset
             );
-            println!(
-                "        localizer-on timings: {}",
-                localizer_timings.join(" ")
-            );
+            println!("        route timings: {route_timings}");
         }
     }
     Ok(exit)

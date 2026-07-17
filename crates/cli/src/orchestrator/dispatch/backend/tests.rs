@@ -1,5 +1,6 @@
 use super::evidence::{
-    canonical_matches, canonical_matches_equal_reference, AutorouteDecision, BackendTimingEvidence,
+    canonical_matches, canonical_matches_equal_reference, AutorouteCalibrationPoint,
+    AutorouteDecision, BackendTimingEvidence, MeasuredRoute, RouteTimingEvidence,
 };
 use super::host::AutorouteHostProfile;
 use super::store::{
@@ -16,6 +17,83 @@ use super::workload::{
     SourceMixtureKey, WorkloadKey,
 };
 use super::*;
+
+fn route_timings(
+    simd: BackendTimingEvidence,
+    cpu: Option<BackendTimingEvidence>,
+    cuda: Option<BackendTimingEvidence>,
+    wgpu: Option<BackendTimingEvidence>,
+    simd_plain: Option<BackendTimingEvidence>,
+    cpu_plain: Option<BackendTimingEvidence>,
+    cuda_plain: Option<BackendTimingEvidence>,
+    wgpu_plain: Option<BackendTimingEvidence>,
+) -> Vec<RouteTimingEvidence> {
+    let mut routes = Vec::new();
+    for (backend, base, plain) in [
+        (ScanBackend::SimdCpu, Some(simd), simd_plain),
+        (ScanBackend::CpuFallback, cpu, cpu_plain),
+        (ScanBackend::GpuCuda, cuda, cuda_plain),
+        (ScanBackend::GpuWgpu, wgpu, wgpu_plain),
+    ] {
+        let Some(base) = base else {
+            continue;
+        };
+        let plain = plain.unwrap_or_else(|| {
+            BackendTimingEvidence::constant_ms(
+                base.median_ms().saturating_add(1_000),
+                AUTOROUTE_CALIBRATION_TRIALS,
+            )
+        });
+        for (phase2_plain_localizer, phase2_keyword_localizer, timing) in [
+            (false, false, base.clone()),
+            (true, false, plain.clone()),
+            (
+                false,
+                true,
+                BackendTimingEvidence::constant_ms(
+                    base.median_ms().saturating_add(2_000),
+                    AUTOROUTE_CALIBRATION_TRIALS,
+                ),
+            ),
+            (
+                true,
+                true,
+                BackendTimingEvidence::constant_ms(
+                    plain.median_ms().saturating_add(2_000),
+                    AUTOROUTE_CALIBRATION_TRIALS,
+                ),
+            ),
+        ] {
+            routes.push(RouteTimingEvidence::new(
+                MeasuredRoute {
+                    backend,
+                    phase2_plain_localizer,
+                    phase2_keyword_localizer,
+                },
+                timing,
+            ));
+        }
+    }
+    routes
+}
+
+fn route_timing_mut(
+    point: &mut AutorouteCalibrationPoint,
+    backend: ScanBackend,
+    phase2_plain_localizer: bool,
+    phase2_keyword_localizer: bool,
+) -> &mut BackendTimingEvidence {
+    &mut point
+        .route_timings
+        .iter_mut()
+        .find(|entry| {
+            entry.backend == backend.label()
+                && entry.phase2_plain_localizer == phase2_plain_localizer
+                && entry.phase2_keyword_localizer == phase2_keyword_localizer
+        })
+        .expect("test route timing exists")
+        .timing
+}
 
 fn test_decode_workload_plan() -> keyhog_scanner::decode::DecodeWorkloadPlan {
     keyhog_scanner::decode::DecodeWorkloadPlan::from_limits(1, usize::MAX)
@@ -757,14 +835,16 @@ fn valid_decision_for_host(host: &AutorouteHostProfile) -> AutorouteDecision {
         1,
         0xA11D_0B57_A11D_0B57,
         1,
-        timing(12),
-        Some(timing(20)),
-        has(ScanBackend::GpuCuda).then(|| timing(30)),
-        has(ScanBackend::GpuWgpu).then(|| timing(40)),
-        Some(timing(12)),
-        Some(timing(20)),
-        has(ScanBackend::GpuCuda).then(|| timing(30)),
-        has(ScanBackend::GpuWgpu).then(|| timing(40)),
+        route_timings(
+            timing(12),
+            Some(timing(20)),
+            has(ScanBackend::GpuCuda).then(|| timing(30)),
+            has(ScanBackend::GpuWgpu).then(|| timing(40)),
+            Some(timing(12)),
+            Some(timing(20)),
+            has(ScanBackend::GpuCuda).then(|| timing(30)),
+            has(ScanBackend::GpuWgpu).then(|| timing(40)),
+        ),
     )
 }
 
@@ -1695,16 +1775,18 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
             1,
             0xA11D_0B57_A11D_0B57,
             1,
-            timing(simd_ms),
-            Some(timing(simd_ms + 8)),
-            None,
-            Some(timing(gpu_ms)),
-            Some(timing(localizer_ms)),
-            Some(timing(localizer_ms + 8)),
-            None,
-            Some(timing(gpu_ms + 1)),
+            route_timings(
+                timing(simd_ms),
+                Some(timing(simd_ms + 8)),
+                None,
+                Some(timing(gpu_ms)),
+                Some(timing(localizer_ms)),
+                Some(timing(localizer_ms + 8)),
+                None,
+                Some(timing(gpu_ms + 1)),
+            ),
         );
-        decision.phase2_localizer = true;
+        decision.phase2_plain_localizer = true;
         decision
     };
     let mut size_envelope = localizer_winner(8 * 1024 * 1024, 12, 7, 40);
@@ -1747,12 +1829,14 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
             && serialized.contains("\"decode_unknown\"")
             && !serialized.contains("\"decode_density_bucket\"")
             && serialized.contains("\"candidate_receipts\"")
-            && serialized.contains("\"phase2_localizer\": true")
+            && serialized.contains("\"phase2_plain_localizer\": true")
+            && serialized.contains("\"phase2_keyword_localizer\": false")
             && serialized.contains("\"correctness_digest\"")
             && serialized.contains("\"completed_trials\"")
             && serialized.contains("\"evidence_digest\"")
             && serialized.contains("\"calibrated_at_unix_ms\"")
-            && serialized.contains("\"simd_timing\"")
+            && serialized.contains("\"route_timings\"")
+            && !serialized.contains("\"simd_timing\"")
             && serialized.contains("\"trials_ns\"")
             && !serialized.contains("\"confidence_interval_95_ns\"")
             && !serialized.contains("\"best_ns\"")
@@ -1772,18 +1856,29 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
         &Some(path.clone()),
         &None,
     )
-    .expect("persisted localizer route replays");
+    .expect("persisted localization plan replays");
     assert_eq!(replayed.backend, ScanBackend::SimdCpu);
-    assert!(replayed.phase2_localizer);
+    assert!(replayed.phase2_plain_localizer);
+    assert!(!replayed.phase2_keyword_localizer);
     let inspection = inspect_autoroute_cache(Some(&path));
     assert_eq!(inspection.error, None);
     assert_eq!(inspection.configs.len(), 1);
     assert_eq!(inspection.configs[0].decisions[0].calibration_points, 2);
-    assert!(inspection.configs[0].decisions[0].phase2_localizer);
+    assert!(inspection.configs[0].decisions[0].phase2_plain_localizer);
+    assert!(!inspection.configs[0].decisions[0].phase2_keyword_localizer);
     assert!(inspection.configs[0].decisions[0]
         .measured_points
         .iter()
-        .all(|point| point.one_shot_phase2_localizer));
+        .all(|point| point.one_shot_phase2_plain_localizer));
+    assert!(inspection.configs[0].decisions[0]
+        .measured_points
+        .iter()
+        .all(|point| !point.one_shot_phase2_keyword_localizer));
+    let expected_route_timings = inspection.configs[0].eligible_backends.len() * 4;
+    assert!(inspection.configs[0].decisions[0]
+        .measured_points
+        .iter()
+        .all(|point| point.route_timings.len() == expected_route_timings));
     assert_eq!(inspection.configs[0].decisions[0].measured_points.len(), 2);
     assert_eq!(
         inspection.configs[0].decisions[0]
@@ -2336,7 +2431,7 @@ fn overlapping_confidence_selects_fastest_measured_median_not_backend_rank() {
         !decision.has_separated_fastest_route(),
         "fixture must retain overlapping 95% confidence intervals"
     );
-    assert_eq!(decision.simd_ms(), 20);
+    assert_eq!(decision.simd_baseline_ms(), 20);
     assert_eq!(decision.gpu_ms(), Some(19));
     assert_eq!(
         decision.resolved_routing_backend(),
@@ -3694,7 +3789,9 @@ fn autoroute_cache_rejects_selected_backend_without_timing_evidence() {
     );
     // Drop the CpuFallback timing and its receipt so the selected backend has
     // no evidence while the remaining SIMD timing/receipt pair stays coherent.
-    bad.primary_point_mut().cpu_timing = None;
+    bad.primary_point_mut()
+        .route_timings
+        .retain(|entry| entry.backend != ScanBackend::CpuFallback.label());
     bad.primary_point_mut()
         .candidate_receipts
         .retain(|receipt| receipt.backend != ScanBackend::CpuFallback.label());
@@ -3731,7 +3828,9 @@ fn autoroute_cache_rejects_missing_unselected_scalar_cpu_candidate() {
     let key = test_workload_key();
     let mut bad =
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 10, Some(12), None);
-    bad.primary_point_mut().cpu_timing = None;
+    bad.primary_point_mut()
+        .route_timings
+        .retain(|entry| entry.backend != ScanBackend::CpuFallback.label());
     bad.primary_point_mut()
         .candidate_receipts
         .retain(|receipt| receipt.backend != ScanBackend::CpuFallback.label());
@@ -3742,7 +3841,7 @@ fn autoroute_cache_rejects_missing_unselected_scalar_cpu_candidate() {
         &host,
         key,
         bad,
-        "incomplete candidate coverage: scalar CPU timing evidence is missing",
+        "timing set does not match eligible backend census",
     );
 
     let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host);
@@ -3750,7 +3849,7 @@ fn autoroute_cache_rejects_missing_unselected_scalar_cpu_candidate() {
     assert!(
         error
             .to_string()
-            .contains("incomplete candidate coverage: scalar CPU timing evidence is missing"),
+            .contains("timing set does not match eligible backend census"),
         "unexpected validation error: {error}"
     );
 
@@ -3957,10 +4056,8 @@ fn autoroute_cache_rejects_zero_duration_timing_evidence() {
     let host = test_host(None);
     let key = test_workload_key();
     let mut bad = AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None);
-    // Zero-duration SIMD timing is rejected by the kept `is_valid_for_trials`
-    // invariant; v21 removed the redundant `simd_ms` field (derived from timing).
-    bad.primary_point_mut().simd_timing =
-        super::evidence::BackendTimingEvidence::constant_ms(0, AUTOROUTE_CALIBRATION_TRIALS);
+    *route_timing_mut(bad.primary_point_mut(), ScanBackend::SimdCpu, false, false) =
+        BackendTimingEvidence::constant_ms(0, AUTOROUTE_CALIBRATION_TRIALS);
     write_tampered_decision_cache(
         &path,
         digest,
@@ -3968,14 +4065,14 @@ fn autoroute_cache_rejects_zero_duration_timing_evidence() {
         &host,
         key.clone(),
         bad,
-        "invalid SIMD timing evidence",
+        "invalid timing evidence for simd-regex plain_localizer=false keyword_localizer=false",
     );
     let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host);
     assert!(
         loaded
             .expect_err("zero-duration timing evidence must be rejected")
             .to_string()
-            .contains("invalid SIMD timing evidence"),
+            .contains("invalid timing evidence for simd-regex plain_localizer=false keyword_localizer=false"),
         "autoroute cache load must not trust physically impossible zero-duration timing evidence"
     );
 
@@ -4021,7 +4118,7 @@ fn autoroute_cache_rejects_extra_backend_trials_on_load_and_inspection() {
     let dir = tempfile::TempDir::new().expect("autoroute extra-trials tempdir");
     let digest = 0x1234_5678_9ABC_DEF0u64;
     let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
-    let host = test_host(None);
+    let host = test_host(Some("NVIDIA GeForce RTX 5090"));
     let key = test_workload_key();
     let base = AutorouteDecision::new(
         ScanBackend::SimdCpu,
@@ -4032,29 +4129,31 @@ fn autoroute_cache_rejects_extra_backend_trials_on_load_and_inspection() {
         Some(30),
     );
     let mut simd = base.clone();
-    simd.primary_point_mut()
-        .simd_timing
+    route_timing_mut(simd.primary_point_mut(), ScanBackend::SimdCpu, false, false)
         .trials_ns
         .push(10_000_000);
     let mut cpu = base.clone();
-    cpu.primary_point_mut()
-        .cpu_timing
-        .as_mut()
-        .expect("CPU evidence")
-        .trials_ns
-        .push(20_000_000);
+    route_timing_mut(
+        cpu.primary_point_mut(),
+        ScanBackend::CpuFallback,
+        false,
+        false,
+    )
+    .trials_ns
+    .push(20_000_000);
     let mut gpu = base;
-    gpu.primary_point_mut()
-        .gpu_wgpu_timing
-        .as_mut()
-        .expect("GPU evidence")
+    route_timing_mut(gpu.primary_point_mut(), ScanBackend::GpuWgpu, false, false)
         .trials_ns
         .push(30_000_000);
 
     for (label, bad, expected_error) in [
-        ("simd", simd, "invalid SIMD timing evidence"),
-        ("cpu", cpu, "invalid CPU timing evidence"),
-        ("gpu", gpu, "invalid WGPU timing evidence"),
+        ("simd", simd, "invalid timing evidence for simd-regex"),
+        ("cpu", cpu, "invalid timing evidence for cpu-fallback"),
+        (
+            "gpu",
+            gpu,
+            "invalid timing evidence for gpu-wgpu-region-presence",
+        ),
     ] {
         let path = dir.path().join(format!("{label}.json"));
         write_tampered_decision_cache(
@@ -4109,8 +4208,8 @@ fn autoroute_cache_rejects_non_primary_timing_summary_fields() {
         &std::fs::read(&path).expect("tampered cache fixture must be readable"),
     )
     .expect("tampered cache fixture must be JSON");
-    cache_json["configs"][0]["decisions"][0]["decision"]["calibration_points"][0]["simd_timing"]
-        ["mean_ns"] = serde_json::json!(1);
+    cache_json["configs"][0]["decisions"][0]["decision"]["calibration_points"][0]
+        ["route_timings"][0]["timing"]["mean_ns"] = serde_json::json!(1);
     std::fs::write(
         &path,
         serde_json::to_vec_pretty(&cache_json).expect("tampered cache JSON must serialize"),
@@ -4697,12 +4796,13 @@ fn autoroute_cache_binds_every_timing_row_to_one_parity_receipt() {
         Some(7),
         None,
     );
-    timing_mutation
-        .primary_point_mut()
-        .cpu_timing
-        .as_mut()
-        .unwrap()
-        .trials_ns[0] += 1;
+    route_timing_mut(
+        timing_mutation.primary_point_mut(),
+        ScanBackend::CpuFallback,
+        false,
+        false,
+    )
+    .trials_ns[0] += 1;
     write_tampered_decision_cache(
         &path,
         digest,
@@ -4711,6 +4811,50 @@ fn autoroute_cache_binds_every_timing_row_to_one_parity_receipt() {
         key.clone(),
         timing_mutation,
         "does not match its timing evidence",
+    );
+
+    let mut reordered_timings = AutorouteDecision::new(
+        ScanBackend::CpuFallback,
+        8 * 1024 * 1024,
+        1,
+        12,
+        Some(7),
+        None,
+    );
+    reordered_timings
+        .primary_point_mut()
+        .route_timings
+        .swap(0, 1);
+    write_tampered_decision_cache(
+        &path,
+        digest,
+        config_digest,
+        &host,
+        key.clone(),
+        reordered_timings,
+        "route timings are not in canonical backend/plain/keyword order",
+    );
+
+    let mut reordered_receipts = AutorouteDecision::new(
+        ScanBackend::CpuFallback,
+        8 * 1024 * 1024,
+        1,
+        12,
+        Some(7),
+        None,
+    );
+    reordered_receipts
+        .primary_point_mut()
+        .candidate_receipts
+        .swap(0, 1);
+    write_tampered_decision_cache(
+        &path,
+        digest,
+        config_digest,
+        &host,
+        key.clone(),
+        reordered_receipts,
+        "candidate receipts are not in canonical backend/plain/keyword order",
     );
 
     std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
@@ -4731,11 +4875,10 @@ fn autoroute_cache_requires_every_live_gpu_candidate_timing_and_receipt() {
 
     for backend in [ScanBackend::GpuCuda, ScanBackend::GpuWgpu] {
         let mut missing = complete.clone();
-        match backend {
-            ScanBackend::GpuCuda => missing.primary_point_mut().gpu_cuda_timing = None,
-            ScanBackend::GpuWgpu => missing.primary_point_mut().gpu_wgpu_timing = None,
-            _ => unreachable!("fixed GPU peer fixture"),
-        }
+        missing
+            .primary_point_mut()
+            .route_timings
+            .retain(|entry| entry.backend != backend.label());
         missing
             .primary_point_mut()
             .candidate_receipts
@@ -4858,16 +5001,15 @@ fn derived_accessors_match_the_persisted_timing_evidence() {
     );
 
     // Per-backend ms derives from the (constant) timing built for each input.
-    assert_eq!(decision.simd_ms(), 12);
-    assert_eq!(decision.cpu_ms(), Some(9));
+    assert_eq!(decision.simd_baseline_ms(), 12);
+    assert_eq!(decision.cpu_baseline_ms(), Some(9));
     assert_eq!(decision.gpu_ms(), Some(20));
 
     // GPU cold / warm / route derive from the driver timing through the single owner
     // `gpu_cold_warm_route_evidence`, so the accessors equal a fresh derivation.
     let gpu_timing = decision
         .primary_point()
-        .gpu_wgpu_timing
-        .as_ref()
+        .baseline_timing_for_backend(ScanBackend::GpuWgpu)
         .expect("WGPU timing present");
     let (cold_ns, warm_timing, route_ns) =
         super::evidence::gpu_cold_warm_route_evidence(gpu_timing)
@@ -5147,14 +5289,16 @@ fn daemon_warm_routes_come_only_from_persisted_selected_backends() {
             1,
             7,
             1,
-            timing(30),
-            Some(timing(40)),
-            Some(timing(8)),
-            Some(timing(16)),
-            Some(timing(30)),
-            Some(timing(40)),
-            Some(timing(8)),
-            Some(timing(16)),
+            route_timings(
+                timing(30),
+                Some(timing(40)),
+                Some(timing(8)),
+                Some(timing(16)),
+                Some(timing(30)),
+                Some(timing(40)),
+                Some(timing(8)),
+                Some(timing(16)),
+            ),
         ),
     );
     let router = CachedBackendRouter {
@@ -5514,14 +5658,16 @@ fn cuda_and_wgpu_are_independent_measured_candidates() {
         1,
         7,
         1,
-        timing(30),
-        Some(timing(40)),
-        Some(timing(10)),
-        Some(timing(15)),
-        Some(timing(30)),
-        Some(timing(40)),
-        Some(timing(10)),
-        Some(timing(15)),
+        route_timings(
+            timing(30),
+            Some(timing(40)),
+            Some(timing(10)),
+            Some(timing(15)),
+            Some(timing(30)),
+            Some(timing(40)),
+            Some(timing(10)),
+            Some(timing(15)),
+        ),
     );
     assert_eq!(
         cuda_wins.resolved_routing_backend(),
@@ -5529,13 +5675,13 @@ fn cuda_and_wgpu_are_independent_measured_candidates() {
     );
     assert_eq!(
         cuda_wins
-            .timing_for_backend(ScanBackend::GpuCuda)
+            .baseline_timing_for_backend(ScanBackend::GpuCuda)
             .map(BackendTimingEvidence::median_ms),
         Some(10)
     );
     assert_eq!(
         cuda_wins
-            .timing_for_backend(ScanBackend::GpuWgpu)
+            .baseline_timing_for_backend(ScanBackend::GpuWgpu)
             .map(BackendTimingEvidence::median_ms),
         Some(15)
     );
@@ -5546,14 +5692,16 @@ fn cuda_and_wgpu_are_independent_measured_candidates() {
         1,
         7,
         1,
-        timing(30),
-        Some(timing(40)),
-        Some(timing(16)),
-        Some(timing(9)),
-        Some(timing(30)),
-        Some(timing(40)),
-        Some(timing(16)),
-        Some(timing(9)),
+        route_timings(
+            timing(30),
+            Some(timing(40)),
+            Some(timing(16)),
+            Some(timing(9)),
+            Some(timing(30)),
+            Some(timing(40)),
+            Some(timing(16)),
+            Some(timing(9)),
+        ),
     );
     assert_eq!(
         wgpu_wins.resolved_routing_backend(),
@@ -5562,15 +5710,25 @@ fn cuda_and_wgpu_are_independent_measured_candidates() {
 
     let json = serde_json::to_value(&wgpu_wins).expect("serialize peer evidence");
     let point = &json["calibration_points"][0];
-    assert!(point.get("gpu_cuda_timing").is_some());
-    assert!(point.get("gpu_wgpu_timing").is_some());
-    assert!(point.get("gpu_cuda_localizer_timing").is_some());
-    assert!(point.get("gpu_wgpu_localizer_timing").is_some());
+    let timings = point["route_timings"]
+        .as_array()
+        .expect("generic route timing array");
+    assert_eq!(timings.len(), 16);
+    assert!(timings.iter().any(|entry| {
+        entry["backend"] == ScanBackend::GpuCuda.label()
+            && entry["phase2_plain_localizer"] == true
+            && entry["phase2_keyword_localizer"] == true
+    }));
+    assert!(timings.iter().any(|entry| {
+        entry["backend"] == ScanBackend::GpuWgpu.label()
+            && entry["phase2_plain_localizer"] == false
+            && entry["phase2_keyword_localizer"] == true
+    }));
     assert!(point.get("gpu_timing").is_none());
 }
 
 #[test]
-fn phase2_localizer_is_an_independent_measured_route_candidate() {
+fn phase2_plain_localizer_is_an_independent_measured_route_candidate() {
     let timing = |ms| BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS);
     let decision = AutorouteDecision::from_peer_timing_evidence(
         ScanBackend::SimdCpu,
@@ -5578,26 +5736,64 @@ fn phase2_localizer_is_an_independent_measured_route_candidate() {
         8,
         7,
         1,
-        timing(30),
-        Some(timing(45)),
-        None,
-        None,
-        Some(timing(8)),
-        Some(timing(20)),
-        None,
-        None,
+        route_timings(
+            timing(30),
+            Some(timing(45)),
+            None,
+            None,
+            Some(timing(8)),
+            Some(timing(20)),
+            None,
+            None,
+        ),
     );
 
     let route = decision
         .resolved_routing_route()
         .expect("route evidence resolves");
     assert_eq!(route.backend, ScanBackend::SimdCpu);
-    assert!(route.phase2_localizer);
+    assert!(route.phase2_plain_localizer);
     assert_eq!(
         decision.primary_point().candidate_receipts.len(),
-        4,
-        "both localizer variants need independent parity receipts for each eligible backend"
+        8,
+        "all four localization plans need independent parity receipts for each eligible backend"
     );
+}
+
+#[test]
+fn phase2_keyword_localizer_is_an_independent_measured_route_candidate() {
+    let timing = |ms| BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS);
+    let mut timings = route_timings(
+        timing(30),
+        Some(timing(45)),
+        None,
+        None,
+        Some(timing(40)),
+        Some(timing(50)),
+        None,
+        None,
+    );
+    let keyword_route = MeasuredRoute {
+        backend: ScanBackend::SimdCpu,
+        phase2_plain_localizer: false,
+        phase2_keyword_localizer: true,
+    };
+    timings
+        .iter_mut()
+        .find(|entry| entry.measured_route() == Some(keyword_route))
+        .expect("keyword-localizer route timing")
+        .timing = timing(8);
+    let decision = AutorouteDecision::from_peer_timing_evidence(
+        ScanBackend::SimdCpu,
+        8 * 1024 * 1024,
+        8,
+        7,
+        1,
+        timings,
+    );
+
+    assert_eq!(decision.resolved_routing_route(), Some(keyword_route));
+    assert_eq!(decision.primary_point().candidate_receipts.len(), 8);
 }
 
 #[cfg(feature = "default")]
@@ -5649,7 +5845,13 @@ fn live_calibration_measures_both_gpu_driver_peers() {
         Some(&admission_plan),
     )
     .expect("calibrate every scanner-owned eligible peer");
-    assert!(decision.primary_point().gpu_cuda_timing.is_some());
-    assert!(decision.primary_point().gpu_wgpu_timing.is_some());
+    assert!(decision
+        .primary_point()
+        .baseline_timing_for_backend(ScanBackend::GpuCuda)
+        .is_some());
+    assert!(decision
+        .primary_point()
+        .baseline_timing_for_backend(ScanBackend::GpuWgpu)
+        .is_some());
     assert!(decision.backend().is_some());
 }

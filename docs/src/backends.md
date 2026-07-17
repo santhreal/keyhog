@@ -91,7 +91,7 @@ compares the complete `RawMatch` values returned by that production scanner
 path. CLI allowlists and rules, severity and confidence floors, cross-source
 deduplication, optional verification, and reporting run after backend selection.
 The same detector TOML corpus and resolved configuration digest identify every
-backend-plus-localizer route.
+backend and localization plan.
 
 ## Why size alone is insufficient
 
@@ -117,34 +117,41 @@ marked `production_comparable = false` and must not support a crossover claim.
 
 The checked benchmark now sends identical 1 MiB windows with 128 KiB overlap
 through the explicit production execution-route entry point for Hyperscan and
-every acquired CUDA or WGPU peer, with phase-two localization both off and on.
+every acquired CUDA or WGPU peer, with all four combinations of plain-pattern
+and keyword-anchor localization.
 It requires sorted full-match parity from every route, rejects GPU degradation,
 and rotates candidate order during selection. The selected measured-correct GPU
 route then runs in fresh rotating held-out trials against every parity-correct
-Hyperscan localizer route. Selection samples cannot enter any final interval.
+Hyperscan execution plan. Selection samples cannot enter any final interval.
 The gate passes only when the paired GPU/per-pair-fastest-Hyperscan ratio's 95%
 confidence upper bound is below 1.0 at 8 MiB. Each paired trial uses the fastest
-Hyperscan observation across the eligible localizer routes, then computes one
+Hyperscan observation across the eligible localization plans, then computes one
 confidence interval against that CPU envelope. A slower CPU tuning choice
-therefore cannot make the GPU result look favorable. A forced localizer mode,
-profiling, or perf tracing retains parity and degradation checks but cannot pass
-the release speed gate.
+therefore cannot make the GPU result look favorable. A forced plain or keyword
+localizer filter, profiling, or perf tracing retains parity and degradation
+checks but cannot pass the release speed gate.
 
-Schema 6 records the selected GPU backend and localizer, the fastest observed
-Hyperscan localizer, every route-selection sample, and a separate held-out
-confidence interval for each Hyperscan localizer. `crossover_passed` is based on
-the paired fastest-Hyperscan envelope, not whichever CPU route looks favorable.
+Schema 7 records the selected GPU backend and both localization choices, the
+fastest observed Hyperscan plan, every route-selection sample, and a separate
+held-out confidence interval for each Hyperscan plan. `crossover_passed` is
+based on the paired fastest-Hyperscan envelope, not whichever CPU route looks
+favorable.
 Use `--diagnostic` for an unprofiled 8 MiB measurement from a dirty development
 tree. That mode retains exact parity and degradation checks but records
 `diagnostic = true`, `production_comparable = false`, and cannot pass the
 release gate.
 
+Diagnostic runs may isolate either route dimension with
+`KH_BENCH_PHASE2_PLAIN_LOCALIZER=0|1` or
+`KH_BENCH_PHASE2_KEYWORD_LOCALIZER=0|1`. Setting either variable makes the run
+ineligible for release evidence; an unrestricted run measures all four plans.
+
 Use `--profile` to attribute scanner stages to exact routes. Candidate selection
 and held-out trials remain unprofiled; after timing, the benchmark runs one
-isolated scan for each Hyperscan localizer route and the selected GPU route.
-Profile labels include the backend and localizer value, so costs from different
-execution plans are never merged into one report. Profile runs cannot pass the
-release gate.
+isolated scan for each Hyperscan localization plan and the selected GPU route.
+Profile labels include the backend and both localization values, so costs from
+different execution plans are never merged into one report. Profile runs cannot
+pass the release gate.
 
 The checked artifact at
 `benchmarks/baselines/gpu_8mib_crossover_rtx5090.toml` retains the last measured

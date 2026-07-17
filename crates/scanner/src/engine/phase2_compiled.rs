@@ -410,9 +410,9 @@ impl CompiledScanner {
                 && self
                     .phase2_anchor_index
                     .as_ref()
-                    .is_some_and(|a| a.has_plain_localizer(route.phase2_localizer));
+                    .is_some_and(|a| a.has_plain_localizer(route.phase2_plain_localizer));
             let mut tuning = self.tuning.resolve();
-            tuning.fallback_localizer = route.phase2_localizer;
+            tuning.fallback_localizer = route.phase2_plain_localizer;
             let t0 = if prof { Some(Instant::now()) } else { None };
             {
                 // The anchorless always-active RegexSet, the detectors that run
