@@ -2,8 +2,7 @@
 
 ## Objective
 
-- Improve recall/precision across all detection vectors while keeping the scanner fast and coherent, then continue the same pass until no gap class is left unaddressed.
-- Treat every vector as active: speed, research parity, capability breadth, innovation, insufficiency, generalization, deduplication, architecture, wiring, coherence, utilization, testing, dogfooding, introspection, and security audit.
+- Ship one coherent, detector-owned KeyHog: exact, fastest-correct, proof-routed, recoverable, and product-true.
 
 ## Non-negotiables
 
@@ -27,6 +26,6 @@
 - Keep work on the main branch.
 - Maintain alignment with `AGENTS.md` and global workspace instructions.
 
-## Documentation style
+## Fleet rules
 
-- Follow the canonical documentation-style rules in `AGENTS.md`; do not duplicate them here.
+See `AGENTS.md` § Fleet rules (backlog, git, prose, one-line comments).

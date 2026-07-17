@@ -40,8 +40,8 @@
 - A missing, stale, invalid, or incomplete autoroute decision is an invalid autoroute state. Do not silently run SIMD/CPU/GPU as a substitute. Surface the state in the operator-visible result and exit/status semantics.
 - `--backend` is a diagnostic and benchmark override only. It does not prove autoroute correctness.
 
-## Documentation style
+## Fleet rules
 
-- Do not use the Unicode em dash character. Rewrite the sentence or use parentheses instead of mechanically substituting another separator.
-- Keep README, specification, comments, commit messages, and user-facing text direct. Cut filler, hype, throat-clearing, and explanations that do not change operator understanding.
-- Do not use vague quality superlatives in docs, comments, commits, identifiers, filenames, or agent output. Name the concrete standard, matrix, workflow, or depth instead.
+- **Backlog:** One gitignored `BACKLOG.md` per project. Review-only; no parallel plans or pre-seed. README/SPEC/CHANGELOG stay committed. Rows: `number | affected files | problem | acceptance criteria`. `in-progress` while active; delete row when criteria met.
+- **Git:** Stage only your paths; additive git only. Never `git add -A` on large trees or clobber parallel edits.
+- **Prose:** Concise. No em dashes, filler, hype, "legendary", or AI attribution. Capabilities live in README/SPEC. In code, almost always one line of comment is enough.
