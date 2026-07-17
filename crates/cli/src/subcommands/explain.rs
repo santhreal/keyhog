@@ -145,6 +145,14 @@ fn print_explanation(d: &DetectorSpec) {
         if let Some(desc) = &p.description {
             println!("        {}description: {desc}{}", style.dim, style.reset);
         }
+        if !p.required_literals.is_empty() {
+            println!(
+                "        {}required_literals [detector TOML]: {}{}",
+                style.dim,
+                p.required_literals.join(", "),
+                style.reset
+            );
+        }
     }
 
     if !d.keywords.is_empty() {
@@ -241,12 +249,10 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
         d.ml.weight,
         d.ml.context_radius_lines
     );
-    let mut declared = 1usize;
     macro_rules! optional_policy {
         ($name:literal, $value:expr, $unit:literal) => {
             if let Some(value) = $value {
                 println!("    {}: {}{}", $name, value, $unit);
-                declared += 1;
             }
         };
     }
@@ -262,7 +268,6 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
             metadata.name,
             metadata.service
         );
-        declared += 1;
     }
     if !d.entropy_roles.is_empty() {
         println!(
@@ -273,7 +278,6 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
                 .collect::<Vec<_>>()
                 .join(", ")
         );
-        declared += 1;
     }
     for shape in &d.entropy_shapes {
         match shape {
@@ -286,7 +290,6 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
                 "    entropy_shape: kind=lower-dash-app-password entropy_floor={entropy_floor} group_count={group_count} group_length={group_length} special_min_length={special_min_length}"
             ),
         }
-        declared += 1;
     }
     optional_policy!(
         "sensitive_path_entropy_very_high",
@@ -355,7 +358,6 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
             "    reject_dash_segmented_alnum: {}",
             policy.reject_dash_segmented_alnum
         );
-        declared += 1;
     }
     optional_policy!("entropy_policy_priority", d.entropy_policy_priority, "");
     optional_policy!(
@@ -373,7 +375,6 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
             "    simdsieve_prefixes: {}",
             d.simdsieve_prefixes.join(", ")
         );
-        declared += 1;
     }
 
     if !d.decoded_hex_key_material_lengths.is_empty() {
@@ -384,7 +385,6 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
             .collect::<Vec<_>>()
             .join(", ");
         println!("    decoded_hex_key_material_lengths: {lengths}");
-        declared += 1;
     }
     for policy in &d.canonical_hex_key_material {
         let lengths = policy
@@ -408,7 +408,6 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
             "    canonical_hex_key_material: lengths=[{lengths}] keywords=[{}]{suffixes}{excluded}",
             policy.keywords.join(", ")
         );
-        declared += 1;
     }
 
     for bucket in &d.entropy_floor {
@@ -419,26 +418,21 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
             ),
             None => println!("    entropy_floor: {} bits/byte (remainder)", bucket.floor),
         }
-        declared += 1;
     }
     if !d.stopwords.is_empty() {
         println!("    stopwords: {}", d.stopwords.join(", "));
-        declared += 1;
     }
     if !d.public_identifier_assignment_markers.is_empty() {
         println!(
             "    public_identifier_assignment_markers: {}",
             d.public_identifier_assignment_markers.join(", ")
         );
-        declared += 1;
     }
     for path in &d.allowlist_paths {
         println!("    allowlist_path: {path}");
-        declared += 1;
     }
     for value in &d.allowlist_values {
         println!("    allowlist_value: {value}");
-        declared += 1;
     }
     for (name, enabled) in [
         ("structural_password_slot", d.structural_password_slot),
@@ -447,13 +441,11 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
     ] {
         if enabled {
             println!("    {name}: true");
-            declared += 1;
         }
     }
     for (index, pattern) in d.patterns.iter().enumerate() {
         if pattern.weak_anchor {
             println!("    pattern[{index}].weak_anchor: true");
-            declared += 1;
         }
     }
     if let Some(shape) = &d.credential_shape {
@@ -469,20 +461,11 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
         if let Some(length) = shape.body_max_length {
             println!("    credential_shape.body_max_length: {length} bytes");
         }
-        declared += 1;
     }
-
-    if declared == 0 {
-        println!(
-            "    {}declared detector fields: none{}",
-            style.dim, style.reset
-        );
-    } else {
-        println!(
-            "    {}declared policy owner: [detector] in the loaded detector TOML{}",
-            style.dim, style.reset
-        );
-    }
+    println!(
+        "    {}declared policy owner: [detector] in the loaded detector TOML{}",
+        style.dim, style.reset
+    );
     println!(
         "    {}unset optional fields: field defaults or scan policy resolve at scan time; use `config --effective` for scan-fallback/scan-override{}",
         style.dim, style.reset

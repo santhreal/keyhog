@@ -98,7 +98,7 @@ fn explain_generic_api_key_prints_transport_and_direct_hex_policy() {
 }
 
 #[test]
-fn explain_distinguishes_absent_detector_policy_from_resolved_scan_fallback() {
+fn explain_distinguishes_declared_detector_policy_from_resolved_scan_fallback() {
     let output = explain("123formbuilder-api-key");
 
     assert_eq!(
@@ -109,8 +109,10 @@ fn explain_distinguishes_absent_detector_policy_from_resolved_scan_fallback() {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("declared detector fields: none"),
-        "explain must identify an empty detector-local policy without inventing defaults:\n{stdout}"
+        stdout
+            .contains("ml: match_mode=lift entropy_mode=disabled weight=1 context_radius_lines=5")
+            && stdout.contains("declared policy owner: [detector] in the loaded detector TOML"),
+        "explain must identify the explicit detector-local policy and its owner:\n{stdout}"
     );
     assert!(
         stdout.contains(
@@ -138,6 +140,24 @@ fn explain_password_reports_explicit_bpe_disablement() {
         !stdout.contains("bpe_max_bytes_per_token:"),
         "disabled policy must not retain a magic BPE ceiling:\n{stdout}"
     );
+}
+
+#[test]
+fn explain_prints_pattern_required_literals_with_detector_toml_ownership() {
+    for (detector_id, literal) in [("deepl-api-key", ":fx"), ("url-credentials", "://")] {
+        let output = explain(detector_id);
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "explain failed for {detector_id}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains(&format!("required_literals [detector TOML]: {literal}")),
+            "{detector_id} must expose its detector-owned routing literal:\n{stdout}"
+        );
+    }
 }
 
 #[test]
