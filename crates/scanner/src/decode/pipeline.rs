@@ -209,10 +209,12 @@ mod splice;
 pub(crate) use extractor::with_extracted_value_spans;
 pub(crate) use extractor::{extract_profile_dump, extract_profile_reset};
 pub(super) use extractor::{hash_fast, ExtractedValue};
+#[cfg(feature = "decode")]
+pub(crate) use registry::default_decoder_names;
 pub use registry::register_decoder;
 #[cfg(feature = "decode")]
 pub(crate) use registry::{decoder_admission, decoder_admission_sketch};
-pub(crate) use registry::{decoder_profile_dump, decoder_profile_reset, default_decoder_names};
+pub(crate) use registry::{decoder_profile_dump, decoder_profile_reset};
 #[cfg(test)]
 pub(crate) use registry::{register_thread_decoder, ScopedDecoderRegistration};
 pub(crate) use splice::{bytecount_newlines, splice_decoded_payload_at};

@@ -86,7 +86,7 @@ pub mod engine_gpu_routing_cases;
 pub mod engine_windowed_ceiling;
 pub mod entropy;
 pub mod entropy_cargo_toml_not_appropriate;
-#[cfg(any(feature = "entropy", feature = "simd", feature = "gpu"))]
+#[cfg(feature = "entropy")]
 pub mod entropy_contiguous_floor;
 pub mod entropy_credentials_env_exact_or_config;
 pub mod entropy_dash_segmented_decoy;
@@ -97,7 +97,7 @@ pub mod entropy_fast;
 pub mod entropy_fast_extended;
 pub mod entropy_fast_x86_tier;
 pub mod entropy_hex_digest_context_gate;
-#[cfg(any(feature = "entropy", feature = "simd", feature = "gpu"))]
+#[cfg(feature = "entropy")]
 pub mod entropy_isolated_floors;
 pub mod entropy_jwt_shape_rejected;
 pub mod entropy_keywords_identifier;
@@ -111,7 +111,7 @@ pub mod entropy_shannon_cache_matches_uncached;
 pub mod entropy_symbolic_password_context_relaxation;
 pub mod entropy_uniqueness_entropy_checks;
 pub mod false_positive_integrity_disclaimer;
-#[cfg(feature = "multiline")]
+#[cfg(all(feature = "ml", feature = "multiline"))]
 pub mod file_gate;
 pub mod flaw_investigation;
 pub mod gates;
@@ -128,7 +128,7 @@ pub mod hw_probe;
 pub mod hw_probe_cases;
 pub mod inline_migrated;
 pub mod is_sequential_placeholder_robustness;
-#[cfg(any(feature = "entropy", feature = "simd", feature = "gpu"))]
+#[cfg(feature = "entropy")]
 pub mod isolated_bare_shape_gates;
 pub mod jwt_analysis;
 pub mod low_alnum_ratio_char_units;

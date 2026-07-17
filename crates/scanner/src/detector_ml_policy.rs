@@ -28,6 +28,7 @@ impl ActiveMlMode {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct CompiledDetectorMlPolicy {
     pub(crate) match_mode: Option<ActiveMlMode>,
+    #[cfg(feature = "entropy")]
     pub(crate) entropy_mode: Option<ActiveMlMode>,
     pub(crate) weight: f64,
     pub(crate) context_radius_lines: usize,
@@ -39,6 +40,7 @@ impl CompiledDetectorMlPolicy {
         let policy: DetectorMlPolicySpec = detector.ml;
         Self {
             match_mode: ActiveMlMode::compile(policy.match_mode),
+            #[cfg(feature = "entropy")]
             entropy_mode: ActiveMlMode::compile(policy.entropy_mode),
             weight: policy.weight,
             context_radius_lines: policy.context_radius_lines,

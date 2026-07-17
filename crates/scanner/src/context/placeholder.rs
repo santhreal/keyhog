@@ -119,6 +119,7 @@ pub(crate) fn is_sequential_placeholder(credential: &str) -> bool {
 /// contract fixtures legitimately use sequential filler tokens
 /// (`sdk_key="abcdefghijklmnopqrstuvwx123456"`). Reuses the same adjacent-step
 /// counter + ratio threshold as the hex-sequence gate (ONE PLACE).
+#[cfg(any(feature = "entropy", test))]
 pub(crate) fn is_monotonic_sequence_placeholder(credential: &str) -> bool {
     let body = credential_body_without_known_prefix(credential);
     if body.len() < 8 {
@@ -134,11 +135,13 @@ pub(crate) fn is_monotonic_sequence_placeholder(credential: &str) -> bool {
 /// Adjacent bytes ascend by one code unit (`1`→`2`, `a`→`b`). `wrapping_add`
 /// makes `0xff`→`0x00` non-special (it simply won't count as a step for the
 /// realistic ASCII bodies this gates).
+#[cfg(any(feature = "entropy", test))]
 fn ascii_forward_step(previous: u8, next: u8) -> bool {
     next == previous.wrapping_add(1)
 }
 
 /// Adjacent bytes descend by one code unit (`8`→`7`, `d`→`c`).
+#[cfg(any(feature = "entropy", test))]
 fn ascii_reverse_step(previous: u8, next: u8) -> bool {
     previous == next.wrapping_add(1)
 }

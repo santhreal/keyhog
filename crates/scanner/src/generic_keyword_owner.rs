@@ -9,7 +9,8 @@ use crate::engine::phase2_generic::keywords::{
     normalize_assignment_keyword, normalized_assignment_keyword_has_secret_suffix,
 };
 use keyhog_core::{DetectorKind, DetectorSpec};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Compiled generic-assignment keyword → owning generic `Phase2Generic`
@@ -28,6 +29,7 @@ use std::sync::Arc;
 pub(crate) struct GenericOwningDetectorIndex {
     policy_exact: HashMap<String, PolicyOwner>,
     policy_normalized: HashMap<String, PolicyOwner>,
+    #[cfg(feature = "entropy")]
     policy_keywords: Vec<String>,
     canonical_exact: HashMap<String, usize>,
     canonical_normalized: HashMap<String, usize>,
@@ -106,6 +108,7 @@ impl GenericOwningDetectorIndex {
         }
         let mut policy_exact = HashMap::new();
         let mut policy_normalized = HashMap::new();
+        #[cfg(feature = "entropy")]
         let mut policy_keywords = BTreeSet::new();
         let mut canonical_exact = HashMap::new();
         let mut canonical_normalized = HashMap::new();
@@ -157,6 +160,7 @@ impl GenericOwningDetectorIndex {
                 };
                 for keyword in &detector.keywords {
                     let kw_lower = keyword.to_ascii_lowercase();
+                    #[cfg(feature = "entropy")]
                     policy_keywords.insert(kw_lower.clone());
                     if let Some(norm) = normalize_assignment_keyword(&kw_lower) {
                         insert_policy_owner(&mut policy_normalized, norm, owner);
@@ -190,6 +194,7 @@ impl GenericOwningDetectorIndex {
         Ok(Self {
             policy_exact,
             policy_normalized,
+            #[cfg(feature = "entropy")]
             policy_keywords: policy_keywords.into_iter().collect(),
             canonical_exact,
             canonical_normalized,
@@ -242,6 +247,7 @@ impl GenericOwningDetectorIndex {
     /// owners. The entropy line finder consumes this alongside Tier-A scan
     /// keywords so a custom detector TOML works without duplicating its anchor
     /// in scanner configuration.
+    #[cfg(feature = "entropy")]
     pub(crate) fn policy_keywords(&self) -> &[String] {
         &self.policy_keywords
     }

@@ -127,6 +127,7 @@ pub(crate) fn looks_like_vendored_minified_path(path: Option<&str>) -> bool {
     false
 }
 
+#[cfg(any(feature = "entropy", test))]
 pub(crate) fn path_is_ci_workflow_file(path: Option<&str>) -> bool {
     let Some(p) = path else {
         return false;
@@ -162,6 +163,7 @@ pub(crate) fn path_is_ci_workflow_file(path: Option<&str>) -> bool {
         || crate::platform_compat::path_basename(p).eq_ignore_ascii_case("Jenkinsfile")
 }
 
+#[cfg(any(feature = "entropy", test))]
 pub(crate) fn path_is_i18n_file(path: Option<&str>) -> bool {
     let Some(p) = path else {
         return false;
@@ -197,6 +199,7 @@ pub(crate) fn looks_like_raw_base64_file_path(path: Option<&str>) -> bool {
     raw_base64_path_match(path, true)
 }
 
+#[cfg(any(feature = "entropy", test))]
 pub(crate) fn looks_like_entropy_raw_base64_file_path(path: Option<&str>) -> bool {
     raw_base64_path_match(path, false)
 }

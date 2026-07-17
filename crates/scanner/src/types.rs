@@ -515,6 +515,7 @@ pub(crate) struct CompiledCompanion {
     pub(crate) required: bool,
 }
 
+#[cfg(feature = "entropy")]
 pub(crate) use crate::scan_state::RawMatchPriority;
 pub(crate) use crate::scan_state::ScanState;
 pub use crate::scanner_config::{ScannerConfig, ScannerTuningConfig};

@@ -20,6 +20,7 @@ pub(crate) enum StageId {
     BareAuthUnstructured,
     GenericValueShape(GenericValueShapeStage),
     GenericBelowMinConfidence,
+    #[cfg(feature = "entropy")]
     EntropyNamedDetectorOwnedAssignment,
     EntropyPolicyUnavailable,
     EntropyValueShape(EntropyShapeStage),
@@ -46,6 +47,7 @@ impl StageId {
             Self::BareAuthUnstructured => "bare_auth_unstructured",
             Self::GenericValueShape(stage) => stage.as_str(),
             Self::GenericBelowMinConfidence => "generic_below_min_confidence",
+            #[cfg(feature = "entropy")]
             Self::EntropyNamedDetectorOwnedAssignment => "entropy_named_detector_owned_assignment",
             Self::EntropyPolicyUnavailable => "entropy_policy_unavailable",
             Self::EntropyValueShape(stage) => stage.as_str(),

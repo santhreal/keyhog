@@ -14,6 +14,7 @@ pub(crate) struct CompiledDetectorExecutionPolicy {
     pub(crate) severity: Severity,
     pub(crate) structural_password_slot: bool,
     keywords: Box<[Box<[u8]>]>,
+    #[cfg(any(feature = "entropy", test))]
     public_identifier_assignment_markers: Box<[Box<[u8]>]>,
 }
 
@@ -33,6 +34,7 @@ impl CompiledDetectorExecutionPolicy {
                 .iter()
                 .map(|keyword| keyword.as_bytes().into())
                 .collect(),
+            #[cfg(any(feature = "entropy", test))]
             public_identifier_assignment_markers: detector
                 .public_identifier_assignment_markers
                 .iter()
@@ -44,6 +46,7 @@ impl CompiledDetectorExecutionPolicy {
     /// True when the candidate's source line carries one of this detector's
     /// declared public-identifier assignment markers.
     #[inline]
+    #[cfg(any(feature = "entropy", test))]
     pub(crate) fn line_has_public_identifier_assignment(&self, line: &[u8]) -> bool {
         self.public_identifier_assignment_markers
             .iter()

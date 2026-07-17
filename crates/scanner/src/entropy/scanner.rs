@@ -1,13 +1,13 @@
 use super::isolated::{
     collect_isolated_bare_candidates_inner, isolated_bare_keyword_context_with_shape,
 };
-#[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
+#[cfg(feature = "entropy")]
 pub(crate) use super::isolated::{
     colon_separated_opaque_candidate, lower_dash_app_password_floor_met_with_policy,
     mixed_contiguous_token_floor_met, mixed_separator_token_floor_met,
     symbolic_alpha_only_opaque_candidate, symbolic_isolated_bare_candidate,
 };
-#[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
+#[cfg(feature = "entropy")]
 pub(crate) use super::isolated::{
     has_isolated_bare_secret_candidate_with_lines_and_policy,
     has_isolated_bare_secret_candidate_with_policy,
@@ -758,6 +758,7 @@ fn scan_keyword_free_candidates(
 /// prefilter can decide whether phase 2 runs at all, so consulting embedded
 /// defaults here would be a silent policy override rather than an optimization.
 #[cfg(feature = "simd")]
+#[cfg(feature = "entropy")]
 pub(crate) fn has_lower_dash_app_password_candidate_with_precomputed_keywords_and_policy(
     keyword_lines: &[(usize, &str)],
     config: &crate::ScannerConfig,
@@ -931,6 +932,7 @@ pub(crate) fn candidate_is_plausible(
 }
 
 #[cfg(feature = "simd")]
+#[cfg(feature = "entropy")]
 fn candidate_is_plausible_with_policy(
     candidate: &str,
     entropy: f64,

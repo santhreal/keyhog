@@ -10,7 +10,7 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 pub(crate) use crate::engine::scan_chunk_boundaries;
 #[cfg(all(test, feature = "simd"))]
 pub(crate) use crate::simd::backend::HsScanner;
-#[cfg(test)]
+#[cfg(all(test, feature = "simd"))]
 pub(crate) const REGEX_SIZE_LIMIT_BYTES: usize = crate::types::REGEX_SIZE_LIMIT_BYTES;
 
 pub fn pattern_regex_strs(scanner: &crate::CompiledScanner) -> Vec<&str> {
@@ -2192,6 +2192,7 @@ pub mod fragment_cache {
             Self(crate::fragment_cache::FragmentCache::new(capacity))
         }
 
+        #[cfg(feature = "multiline")]
         pub(super) fn inner(&self) -> &crate::fragment_cache::FragmentCache {
             &self.0
         }
@@ -3375,7 +3376,7 @@ pub fn telemetry_scan_counts() -> (usize, usize) {
     crate::telemetry::global_scan_counts()
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "simd"))]
 pub(crate) fn set_hs_prefilter_max_len(
     scanner: &crate::engine::CompiledScanner,
     threshold: Option<usize>,
@@ -3706,7 +3707,7 @@ pub mod entropy_scanner {
 /// a high-entropy token that carries NO surrounding secret keyword, so each has a
 /// carefully-tuned entropy + shape threshold. Exposed so the thresholds can be
 /// pinned at their boundaries against silent recall regression.
-#[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
+#[cfg(feature = "entropy")]
 pub mod entropy_isolated {
     /// `entropy >= 3.65`, `len >= 20`, contains `_`, every non-`_` byte is
     /// ASCII-alphanumeric, and the token has upper + lower + digit.
@@ -4038,7 +4039,7 @@ pub mod checksum {
 #[cfg(test)]
 pub(crate) const NUM_FEATURES: usize = crate::ml_scorer::NUM_FEATURES;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "ml"))]
 pub(crate) fn compute_features_public(text: &str, context: &str) -> [f32; NUM_FEATURES] {
     crate::ml_scorer::compute_features_public(text, context)
 }

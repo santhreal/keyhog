@@ -148,6 +148,7 @@ impl CompiledScanner {
     }
 
     #[inline]
+    #[cfg(feature = "decode")]
     pub(crate) fn live_cpu_backend(&self) -> ScanBackend {
         if self.simd_backend_usable() {
             ScanBackend::SimdCpu

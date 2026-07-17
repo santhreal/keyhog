@@ -1,6 +1,7 @@
 //! End-to-end split-string concatenation through the compiled scanner
 //! (not just the multiline preprocessor unit tests).
 
+#[cfg(feature = "multiline")]
 use super::support::*;
 
 #[test]

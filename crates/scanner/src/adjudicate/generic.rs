@@ -106,6 +106,7 @@ pub(crate) enum GenericValueShapeStage {
     /// Word-like non-secret by tiktoken cl100k_base bytes-per-token, the BPE
     /// "rare-not-random" gate, the principled superset of the heuristic word-like
     /// stages above (catches dotted API paths / prose the heuristics miss).
+    #[cfg(feature = "entropy")]
     WordLikeLowBpe,
     SchemePrefixedUri,
     PunctuationDecoratedIdentifier,
@@ -139,6 +140,7 @@ impl GenericValueShapeStage {
             Self::PureIdentifierNoDigit => "pure_identifier_no_digit",
             Self::PureIdentifier => "pure_identifier",
             Self::WordSeparatedIdentifier => "word_separated_identifier",
+            #[cfg(feature = "entropy")]
             Self::WordLikeLowBpe => "generic_word_like_low_bpe",
             Self::SchemePrefixedUri => "scheme_prefixed_uri",
             Self::PunctuationDecoratedIdentifier => "punctuation_decorated_identifier",

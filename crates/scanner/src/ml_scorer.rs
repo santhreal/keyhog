@@ -28,20 +28,20 @@ use std::cell::RefCell;
 
 pub(crate) mod ml_features;
 pub(crate) mod service_vocab;
-#[cfg(test)]
+#[cfg(all(test, feature = "ml"))]
 pub(crate) use ml_features::compute_features_public;
 pub use ml_features::compute_features_with_config;
 pub(crate) use ml_features::NUM_FEATURES;
 pub use ml_features::{compute_features_for_detector_with_config, MlCandidateChannel};
 
 /// Borrowed model input that lets batch inference consume its owning queue directly.
-#[cfg(any(feature = "ml", test))]
+#[cfg(feature = "ml")]
 pub(crate) trait MlScoreInput: Sync {
     fn ml_text(&self) -> &str;
     fn ml_features(&self, config: &crate::types::ScannerConfig) -> [f32; NUM_FEATURES];
 }
 
-#[cfg(any(feature = "ml", test))]
+#[cfg(feature = "ml")]
 impl MlScoreInput for (&str, &str) {
     #[inline]
     fn ml_text(&self) -> &str {

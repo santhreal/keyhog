@@ -25,6 +25,7 @@ pub(crate) mod fast_neon;
 #[cfg(target_arch = "x86_64")]
 pub(crate) mod fast_x86;
 
+#[cfg(feature = "entropy")]
 pub(crate) use scanner::KEYWORD_FREE_LABEL;
 pub use scanner::{find_entropy_secrets, find_entropy_secrets_with_threshold};
 

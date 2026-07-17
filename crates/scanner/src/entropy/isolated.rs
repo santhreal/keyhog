@@ -1,4 +1,6 @@
-use super::keywords::{is_likely_innocuous_line, KeywordContext};
+#[cfg(feature = "entropy")]
+use super::keywords::is_likely_innocuous_line;
+use super::keywords::KeywordContext;
 use super::plausibility::is_isolated_bare_secret_plausible;
 use super::{
     operator_entropy_override, shannon_entropy, EntropyMatch, FIRST_SOURCE_LINE_NUMBER,
@@ -75,6 +77,7 @@ impl IsolatedCandidatePolicy {
     }
 }
 
+#[cfg(feature = "entropy")]
 pub(crate) fn has_isolated_bare_secret_candidate_with_policy(
     text: &str,
     entropy_threshold: f64,
@@ -102,6 +105,7 @@ pub(crate) fn has_isolated_bare_secret_candidate_with_policy(
     })
 }
 
+#[cfg(feature = "entropy")]
 pub(crate) fn has_isolated_bare_secret_candidate_with_lines_and_policy(
     lines: &[&str],
     entropy_threshold: f64,
@@ -127,6 +131,7 @@ pub(crate) fn has_isolated_bare_secret_candidate_with_lines_and_policy(
 /// Per-line predicate shared by the `&str` and `&[&str]` entry points so the
 /// innocuous-line skip + candidate-visit logic has one definition. `threshold`
 /// is already resolved by [`isolated_bare_entropy_threshold`] at the caller.
+#[cfg(feature = "entropy")]
 fn line_has_isolated_bare_secret_candidate(
     line: &str,
     threshold: f64,
@@ -557,6 +562,7 @@ pub(super) fn collect_isolated_bare_candidates_inner(
     }
 }
 
+#[cfg(feature = "entropy")]
 fn isolated_bare_secret_entropy(
     candidate: &str,
     threshold: f64,

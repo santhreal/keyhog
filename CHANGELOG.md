@@ -60,6 +60,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   isolated-bare candidate predicate; its wrappers no longer reference an
   implementation hidden behind acceleration feature gates. The scalar test
   target also no longer imports ML- or SimdSieve-only adjudication hooks.
+- Scanner symbols and test seams now follow the feature that owns their
+  behavior. Minimal, ML-only, SIMD-only, GPU-peer, default, and all-feature
+  library test builds no longer hide incomplete ownership behind unused-code
+  warnings or blanket lint suppression.
 - Detector metadata, execution facts, canonical/decoded key-material rules,
   entropy floors/policy, ML policy, credential shape, suppression, weak-anchor
   state, and companions now share one detector-indexed compiled plan. Scan

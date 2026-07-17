@@ -142,6 +142,7 @@ impl MlPendingMatch {
         }
     }
 
+    #[cfg(feature = "entropy")]
     pub(crate) fn entropy_candidate(
         raw_match: keyhog_core::RawMatch,
         heuristic_conf: f64,
@@ -174,6 +175,7 @@ impl MlPendingMatch {
 /// Hot emitters can decide whether a candidate can enter the capped match heap
 /// before constructing the owned `RawMatch`, avoiding detector metadata
 /// refcount bumps for candidates that would be immediately discarded.
+#[cfg(any(feature = "entropy", test))]
 pub(crate) struct RawMatchPriority<'a> {
     pub(crate) confidence: Option<f64>,
     pub(crate) severity: keyhog_core::Severity,
@@ -183,6 +185,7 @@ pub(crate) struct RawMatchPriority<'a> {
     pub(crate) line: Option<usize>,
 }
 
+#[cfg(any(feature = "entropy", test))]
 impl RawMatchPriority<'_> {
     fn cmp_raw_match(&self, other: &keyhog_core::RawMatch) -> std::cmp::Ordering {
         let self_conf = self.confidence.unwrap_or(0.0); // LAW10: absent confidence => 0.0 for capped-heap ordering only; finding remains eligible
@@ -271,6 +274,7 @@ impl OwnedMatchIdentity {
 }
 
 impl OwnedMatchIdentity {
+    #[cfg(any(feature = "entropy", test))]
     fn from_priority(priority: &RawMatchPriority<'_>) -> Self {
         Self {
             detector_id: Arc::from(priority.detector_id),
@@ -396,7 +400,7 @@ impl ScanState {
         ));
     }
 
-    #[cfg(feature = "ml")]
+    #[cfg(all(feature = "ml", feature = "entropy"))]
     pub(crate) fn push_entropy_ml_pending(
         &mut self,
         raw_match: keyhog_core::RawMatch,
@@ -420,7 +424,7 @@ impl ScanState {
         ));
     }
 
-    #[cfg(feature = "ml")]
+    #[cfg(all(feature = "ml", feature = "entropy"))]
     pub(crate) fn for_each_pre_entropy_pending_ml_line<F>(&self, mut visit: F)
     where
         F: FnMut(Option<usize>),
@@ -485,6 +489,7 @@ impl ScanState {
         true
     }
 
+    #[cfg(any(feature = "entropy", test))]
     fn claimed_priority_would_replace(
         &self,
         identity: &OwnedMatchIdentity,
@@ -496,6 +501,7 @@ impl ScanState {
             .is_none_or(|existing| !priority.cmp_raw_match(existing).is_gt())
     }
 
+    #[cfg(any(feature = "entropy", test))]
     pub(crate) fn push_match_lazy<F>(
         &mut self,
         priority: RawMatchPriority<'_>,

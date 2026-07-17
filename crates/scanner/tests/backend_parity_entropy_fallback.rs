@@ -59,9 +59,13 @@ fn entropy_fallback_parity_high_entropy_no_literal_prefix() {
         "entropy_case.js",
     );
 
-    let mut backends = vec![ScanBackend::CpuFallback];
-    #[cfg(feature = "gpu")]
-    backends.extend([ScanBackend::GpuWgpu]);
+    let backends = std::iter::once(ScanBackend::CpuFallback)
+        .chain(
+            cfg!(feature = "gpu")
+                .then_some(ScanBackend::GpuWgpu)
+                .into_iter(),
+        )
+        .collect::<Vec<_>>();
 
     scanner.clear_fragment_cache();
     let simd_results = scanner.scan_chunks_with_backend(&[fixture.clone()], ScanBackend::SimdCpu);

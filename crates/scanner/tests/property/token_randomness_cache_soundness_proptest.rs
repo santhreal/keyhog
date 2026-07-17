@@ -21,7 +21,7 @@
 //!   * MIN_ALPHA fail-safe, fewer than MIN_ALPHA alphabetic chars ⇒ NOT random;
 //!   * total (never panics on arbitrary/empty/unicode input).
 
-#![cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
+#![cfg(feature = "entropy")]
 
 use keyhog_scanner::testing::entropy_isolated::{
     has_low_letter_diversity, is_confident_dictionary_word, is_random_token,

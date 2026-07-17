@@ -8,6 +8,7 @@ pub(crate) mod generic;
 mod stage;
 
 use crate::suppression::NamedDetectorSuppressionCtx;
+#[cfg(any(feature = "decode", feature = "ml"))]
 use keyhog_core::RawMatch;
 
 #[cfg(feature = "entropy")]
@@ -300,6 +301,7 @@ impl<'a> MatchCtx<'a> {
         }
     }
 
+    #[cfg(feature = "entropy")]
     pub(crate) const fn for_entropy_fallback(signal: EntropyFallbackSignal) -> Self {
         Self {
             explicit_stage: None,
@@ -484,6 +486,7 @@ fn record_suppression_telemetry(path: Option<&str>, credential: &str, stage_id: 
     crate::telemetry::record_shape_suppression(path, credential, reason);
 }
 
+#[cfg(feature = "ml")]
 pub(crate) fn finalize_report_raw_match(
     mut raw_match: RawMatch,
     policy: ReportAdjudicationPolicy<'_>,
@@ -504,6 +507,7 @@ pub(crate) fn record_example_suppression(
     crate::telemetry::record_example_suppression(detector, path, credential, reason);
 }
 
+#[cfg(feature = "decode")]
 pub(crate) fn record_match_example_suppression(
     m: &RawMatch,
     fallback_path: Option<&str>,

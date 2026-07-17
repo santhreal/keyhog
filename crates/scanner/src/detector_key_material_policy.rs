@@ -89,6 +89,7 @@ impl CompiledDetectorKeyMaterialPolicy {
     /// Named-regex processing no longer retains the assignment key, so this is
     /// the same length-only evidence that path historically consumed.
     #[inline]
+    #[cfg(feature = "entropy")]
     pub(crate) fn allows_canonical_hex_len(&self, value_len: usize) -> bool {
         self.canonical_hex_rules
             .iter()

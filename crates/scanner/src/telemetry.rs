@@ -14,6 +14,7 @@
 //! the lightest container. Long-lived daemon workers use [`ScanTelemetry`]
 //! scopes so concurrent client scans do not share counts/events.
 
+#[cfg(feature = "decode")]
 use keyhog_core::ChunkMetadata;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -198,6 +199,7 @@ struct StaticRecoveryTelemetry {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum EmittedDogfoodKey {
     Suppression(String),
+    #[cfg(feature = "decode")]
     StaticRecovery {
         source_type: Arc<str>,
         path: Option<Arc<str>>,
@@ -653,6 +655,7 @@ pub(crate) fn record_shape_suppression(path: Option<&str>, credential: &str, rea
 
 /// Record a static-recovery rejection in the dogfood trace. Deduplication keeps
 /// repeated references to the same rejected expression from producing noise.
+#[cfg(feature = "decode")]
 pub(crate) fn record_static_recovery_rejection(
     metadata: &ChunkMetadata,
     expression_offset: usize,
@@ -697,6 +700,7 @@ pub(crate) fn record_static_recovery_rejection(
     );
 }
 
+#[cfg(feature = "decode")]
 fn static_recovery_event(
     metadata: &ChunkMetadata,
     expression_offset: usize,
@@ -710,6 +714,7 @@ fn static_recovery_event(
     }
 }
 
+#[cfg(feature = "decode")]
 fn mark_static_recovery_event_emitted(
     emitted_events: &Mutex<HashSet<EmittedDogfoodKey>>,
     detail_events_dropped: &AtomicUsize,
@@ -877,6 +882,7 @@ pub fn boundary_result_cardinality_mismatch_count() -> usize {
 
 /// Record that source line attribution fell back because a synthetic multiline
 /// mapping could not find its line in the original line-offset table.
+#[cfg(feature = "multiline")]
 pub(crate) fn record_line_offset_mapping_mismatch() {
     let _receipt = record_scanner_coverage_gap(ScannerCoverageGapEvent::LineOffsetMappingMismatch);
 }

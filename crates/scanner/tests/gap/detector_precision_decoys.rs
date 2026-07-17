@@ -1031,7 +1031,7 @@ proptest! {
 // guaranteed fail-safe direction, which is the load-bearing safety contract.
 // No proptest for this predicate before.
 
-#[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
+#[cfg(feature = "entropy")]
 mod random_token_floor_tests {
     use super::*;
     use keyhog_scanner::testing::entropy_isolated::is_random_token;

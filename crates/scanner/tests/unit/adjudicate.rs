@@ -1,9 +1,11 @@
+#[cfg(feature = "entropy")]
+use crate::adjudicate::EntropyFallbackSignal;
 #[cfg(feature = "simdsieve")]
 use crate::adjudicate::HotPatternSignal;
 use crate::adjudicate::{
-    adjudicate_match, CandidateMatch, EntropyFallbackSignal, EntropyGenerationSignal,
-    EntropyShapeStage, FinalEmitSignals, GenericBridgeSignal, GenericValueShapeStage, MatchCtx,
-    ProcessCandidateSignals, ReportAdjudicationPolicy, StageId, Verdict,
+    adjudicate_match, CandidateMatch, EntropyGenerationSignal, EntropyShapeStage, FinalEmitSignals,
+    GenericBridgeSignal, GenericValueShapeStage, MatchCtx, ProcessCandidateSignals,
+    ReportAdjudicationPolicy, StageId, Verdict,
 };
 use crate::context::CodeContext;
 use crate::suppression::NamedDetectorSuppressionCtx;
@@ -354,6 +356,7 @@ fn explicit_stage_reports_generic_below_min_confidence() {
 }
 
 #[test]
+#[cfg(feature = "entropy")]
 fn explicit_stage_reports_entropy_named_detector_owned_assignment() {
     let credential = "segment_write_key";
     let ctx = MatchCtx::for_entropy_fallback(EntropyFallbackSignal::NamedDetectorOwnedAssignment);
@@ -369,6 +372,7 @@ fn explicit_stage_reports_entropy_named_detector_owned_assignment() {
 }
 
 #[test]
+#[cfg(feature = "entropy")]
 fn explicit_stage_reports_entropy_value_shape_reason() {
     let credential = "Yml0Y29pbgABAgMEBQYHCAkKCwwND/7+/f38+/r5+Pf=";
     let shape_stage = EntropyShapeStage::RandomBase64Blob;

@@ -37,28 +37,8 @@ pub use policy::*;
 mod self_test;
 pub use self_test::*;
 
-/// Score multiple (credential, context) pairs in a single batch.
-///
-/// Uses GPU compute shaders when available and the batch is large enough.
-/// Falls back to CPU for small batches or when no GPU is present.
-/// Score a batch of `(text, context)` candidates, using GPU when available.
-///
-/// # Examples
-///
-/// ```rust,ignore
-/// use keyhog_scanner::gpu::batch_ml_inference;
-/// use keyhog_scanner::ScannerConfig;
-/// let config = ScannerConfig::default();
-/// let scores = batch_ml_inference(&[("demo_ABC12345", "API_KEY=")], &config);
-/// assert_eq!(scores.len(), 1);
-/// ```
-///
-/// Callers pass `(&str, &str)` so a hot-path scan with N matches no longer
-/// allocates 2N owned strings just to enter ML scoring. The MlPendingMatch
-/// `String` fields stay live for the duration of the call - the borrow is
-/// safe.
 /// Split timers: accumulated wall time in feature extraction vs MoE scoring
-/// across all `batch_ml_inference` calls. Only the SCORING fraction is
+/// across all batch ML inference calls. Only the SCORING fraction is
 /// GPU-offloadable; feature extraction is inherent per-candidate CPU work. This
 /// is the data that decides whether moving the MoE to a unified GPU batch is
 /// worth the recall cost of reordering finalization.
@@ -94,7 +74,7 @@ pub(crate) fn ml_split_profile_reset() {
     MOE_SCORE_NS.store(0, Relaxed);
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "ml", feature = "multiline"))]
 pub(crate) fn batch_ml_inference<T: crate::ml_scorer::MlScoreInput>(
     candidates: &[T],
     config: &crate::types::ScannerConfig,
@@ -108,7 +88,7 @@ pub(crate) fn batch_ml_inference<T: crate::ml_scorer::MlScoreInput>(
     )
 }
 
-#[cfg(any(feature = "ml", test))]
+#[cfg(feature = "ml")]
 pub(crate) fn batch_ml_inference_with_timeout<T: crate::ml_scorer::MlScoreInput>(
     candidates: &[T],
     config: &crate::types::ScannerConfig,

@@ -11,7 +11,10 @@
 //! detector ID + expected substring of the matched credential - a function
 //! returning `Vec::new()` will fail.
 
-use super::corpus_support::{production_scanner, scan_corpus};
+#[cfg(feature = "multiline")]
+use super::corpus_support::production_scanner;
+use super::corpus_support::scan_corpus;
+#[cfg(feature = "multiline")]
 use keyhog_core::{Chunk, ChunkMetadata};
 
 fn scan_fixture(rel: &str) -> Vec<keyhog_core::RawMatch> {

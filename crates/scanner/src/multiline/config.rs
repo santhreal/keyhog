@@ -23,6 +23,7 @@ use crate::types::source_offset_from_mapping;
 #[cfg(feature = "multiline")]
 pub(crate) use crate::types::LineMapping;
 
+#[cfg(feature = "multiline")]
 pub(super) fn source_line_offset_or_record_gap(
     source_line_offsets: &[usize],
     zero_based_line_index: usize,

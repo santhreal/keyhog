@@ -1,3 +1,4 @@
+#[cfg(any(feature = "simd", feature = "gpu", test))]
 use super::phase2::Phase2AlwaysActiveGpuEvidence;
 #[cfg(any(feature = "simd", feature = "gpu", test))]
 use super::windowed_support::window_ranges;

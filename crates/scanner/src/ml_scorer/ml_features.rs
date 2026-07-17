@@ -189,7 +189,7 @@ static ML_FEATURE_MARKERS: std::sync::LazyLock<MlFeatureMarkers> = std::sync::La
 });
 
 /// Entry point for feature-extraction unit tests.
-#[cfg(test)]
+#[cfg(all(test, feature = "ml"))]
 pub(crate) fn compute_features_public(text: &str, context: &str) -> [f32; NUM_FEATURES] {
     if text.is_empty() {
         return [0.0f32; NUM_FEATURES];

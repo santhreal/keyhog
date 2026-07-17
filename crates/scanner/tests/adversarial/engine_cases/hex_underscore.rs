@@ -1,14 +1,18 @@
 //! Hex literals with `_` readability separators must decode and surface
 //! credentials. Negative twin uses the same encoding shape on a fake body.
 
+#[cfg(feature = "decode")]
 use super::support::*;
 
 /// `VALID_CREDENTIAL` as contiguous lowercase hex (56 nibbles).
+#[cfg(feature = "decode")]
 const VALID_HEX: &str = "544553544b45595f614b377850396d5132774535725438795531694f";
 
 /// `FAKE_CREDENTIAL` as contiguous lowercase hex.
+#[cfg(feature = "decode")]
 const FAKE_HEX: &str = "544553544b45595f3131313131313131313131313131313131";
 
+#[cfg(feature = "decode")]
 fn underscored(hex: &str) -> String {
     hex.as_bytes()
         .chunks(4)

@@ -11,7 +11,9 @@ use crate::decode::url::{
 };
 #[cfg(feature = "decode")]
 use crate::decode::DecodeAdmission;
-use crate::decode::{DecodeAdmissionSketch, Decoder};
+#[cfg(any(feature = "decode", test))]
+use crate::decode::DecodeAdmissionSketch;
+use crate::decode::Decoder;
 use parking_lot::RwLock;
 #[cfg(test)]
 use std::cell::RefCell;
@@ -154,6 +156,7 @@ fn default_decoders() -> Vec<Arc<dyn Decoder>> {
 /// `reverse` and `caesar` decoders deliberately run last, after the structural
 /// decoders), and is pinned by `decoder_registry_default_order` so a reorder
 /// or addition can't silently shift the pipeline.
+#[cfg(feature = "decode")]
 pub(crate) fn default_decoder_names() -> Vec<&'static str> {
     default_decoders().iter().map(|d| d.name()).collect()
 }
@@ -186,6 +189,7 @@ pub(crate) fn decoder_admission(chunk: &keyhog_core::Chunk) -> DecodeAdmission {
     aggregate
 }
 
+#[cfg(any(feature = "decode", test))]
 pub(crate) fn decoder_admission_sketch(chunk: &keyhog_core::Chunk) -> DecodeAdmissionSketch {
     let decoders = active_decoders();
     super::extractor::clear_shared_candidates();

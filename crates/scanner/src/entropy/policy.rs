@@ -84,7 +84,9 @@ impl CompiledEntropyFloorPolicy {
 pub(crate) struct CompiledEntropyPolicy {
     pub(crate) entropy_high: f64,
     pub(crate) entropy_low: f64,
+    #[cfg(feature = "entropy")]
     pub(crate) entropy_very_high: f64,
+    #[cfg(feature = "entropy")]
     pub(crate) sensitive_path_entropy_very_high: f64,
     pub(crate) mixed_alnum_floor: f64,
     pub(crate) symbolic_entropy_floor: f64,
@@ -104,13 +106,16 @@ pub(crate) struct CompiledEntropyPolicy {
     pub(crate) keyword_free_min_len: usize,
     pub(crate) min_len: usize,
     pub(crate) max_len: usize,
+    #[cfg(feature = "entropy")]
     pub(crate) bpe_enabled: bool,
+    #[cfg(feature = "entropy")]
     pub(crate) bpe_max_bytes_per_token: Option<f64>,
     pub(crate) entropy_shape: Option<EntropyShapeSpec>,
 }
 
 impl CompiledEntropyPolicy {
     #[inline]
+    #[cfg(feature = "entropy")]
     pub(crate) fn bpe_bound(
         &self,
         scan_fallback: f64,
@@ -164,6 +169,40 @@ impl CompiledEntropyPolicy {
         } else {
             None
         };
+        let entropy_very_high =
+            Self::required(detector, "entropy_very_high", detector.entropy_very_high)?;
+        let sensitive_path_entropy_very_high = Self::required(
+            detector,
+            "sensitive_path_entropy_very_high",
+            detector.sensitive_path_entropy_very_high,
+        )?;
+        if !entropy_very_high.is_finite() || entropy_very_high <= 0.0 {
+            return Err(format!(
+                "detector {:?} entropy_very_high must be finite and greater than zero",
+                detector.id
+            ));
+        }
+        if !sensitive_path_entropy_very_high.is_finite()
+            || sensitive_path_entropy_very_high <= 0.0
+            || sensitive_path_entropy_very_high > entropy_very_high
+        {
+            return Err(format!(
+                "detector {:?} sensitive_path_entropy_very_high must be finite, greater than zero, and no higher than entropy_very_high",
+                detector.id
+            ));
+        }
+        if bpe_enabled != bpe_max_bytes_per_token.is_some() {
+            return Err(format!(
+                "detector {:?} must declare a positive BPE bound exactly when BPE is enabled",
+                detector.id
+            ));
+        }
+        if bpe_max_bytes_per_token.is_some_and(|bound| !bound.is_finite() || bound <= 0.0) {
+            return Err(format!(
+                "detector {:?} BPE bound must be finite and greater than zero",
+                detector.id
+            ));
+        }
         let entropy_shape = detector.lower_dash_entropy_shape().ok_or_else(|| {
             format!(
                 "detector {:?} owns entropy detection but omits [[detector.entropy_shapes]]; declare its isolated-candidate policy in the detector TOML",
@@ -174,16 +213,10 @@ impl CompiledEntropyPolicy {
         Ok(Self {
             entropy_high: Self::required(detector, "entropy_high", detector.entropy_high)?,
             entropy_low: Self::required(detector, "entropy_low", detector.entropy_low)?,
-            entropy_very_high: Self::required(
-                detector,
-                "entropy_very_high",
-                detector.entropy_very_high,
-            )?,
-            sensitive_path_entropy_very_high: Self::required(
-                detector,
-                "sensitive_path_entropy_very_high",
-                detector.sensitive_path_entropy_very_high,
-            )?,
+            #[cfg(feature = "entropy")]
+            entropy_very_high,
+            #[cfg(feature = "entropy")]
+            sensitive_path_entropy_very_high,
             mixed_alnum_floor: plausibility.mixed_alnum_floor,
             symbolic_entropy_floor: plausibility.symbolic_entropy_floor,
             second_half_entropy_floor: plausibility.second_half_entropy_floor,
@@ -207,7 +240,9 @@ impl CompiledEntropyPolicy {
             )?,
             min_len: Self::required(detector, "min_len", detector.min_len)?,
             max_len: Self::required(detector, "max_len", detector.max_len)?,
+            #[cfg(feature = "entropy")]
             bpe_enabled,
+            #[cfg(feature = "entropy")]
             bpe_max_bytes_per_token,
             entropy_shape: Some(entropy_shape),
         })

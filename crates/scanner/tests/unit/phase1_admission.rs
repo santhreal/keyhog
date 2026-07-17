@@ -177,11 +177,10 @@ fn phase1_admission_classes_preserve_backend_findings_at_eight_mib() {
         reference,
         "Hyperscan/SIMD must preserve scalar findings across phase-one admission classes"
     );
-    let direct_reference =
-        canonical(&[scanner.scan_with_backend(&batch[2], ScanBackend::CpuFallback)]);
-
     #[cfg(feature = "gpu")]
     {
+        let direct_reference =
+            canonical(&[scanner.scan_with_backend(&batch[2], ScanBackend::CpuFallback)]);
         let candidates = scanner.gpu_backend_candidates();
         let hardware = keyhog_scanner::hw_probe::probe_hardware();
         let wgpu_acquired = candidates

@@ -2,6 +2,7 @@
 // admission gate) on the shared phase-2 tail. SIMD and GPU use it after their
 // trigger pass. Portable builds use it before their phase-2 tail so no-hit
 // chunks are not dropped before anchorless detection.
+#[cfg(feature = "simd")]
 use super::phase2::Phase2AlwaysActiveGpuEvidence;
 use super::scan_filters::*;
 use super::*;

@@ -16,10 +16,14 @@ use keyhog_scanner::ScanBackend;
 use support::compile_full_detector_scanner;
 
 fn backends() -> Vec<ScanBackend> {
-    let mut backends = vec![ScanBackend::SimdCpu, ScanBackend::CpuFallback];
-    #[cfg(feature = "gpu")]
-    backends.extend([ScanBackend::GpuWgpu]);
-    backends
+    [ScanBackend::SimdCpu, ScanBackend::CpuFallback]
+        .into_iter()
+        .chain(
+            cfg!(feature = "gpu")
+                .then_some(ScanBackend::GpuWgpu)
+                .into_iter(),
+        )
+        .collect()
 }
 
 fn make_chunk(text: &str, path: &str, base_offset: usize) -> Chunk {

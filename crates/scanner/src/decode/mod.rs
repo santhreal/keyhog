@@ -47,14 +47,17 @@ pub(crate) fn unicode_escape_decode(input: &str) -> Result<String, ()> {
     unicode_escape::unicode_escape_decode(input)
 }
 
+#[cfg(feature = "decode")]
 pub(crate) fn quoted_printable_decode(input: &str) -> Result<String, ()> {
     url::quoted_printable_decode(input)
 }
 
+#[cfg(feature = "decode")]
 pub(crate) fn mime_encoded_word_decode(input: &str) -> Result<String, ()> {
     url::mime_encoded_word_decode(input)
 }
 
+#[cfg(feature = "decode")]
 pub(crate) fn octal_escape_decode(input: &str) -> Result<String, ()> {
     url::octal_escape_decode(input)
 }
