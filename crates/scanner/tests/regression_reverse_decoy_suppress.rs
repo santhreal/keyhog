@@ -20,6 +20,8 @@
 //! are pure scalar CPU code with NO accelerator (Hyperscan/SIMD/GPU) dependency,
 //! so every contract below holds identically on any host.
 
+#![cfg(feature = "decode")]
+
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::testing::{decode_chunk, looks_reversible_for_test, reverse_str_for_test};
 

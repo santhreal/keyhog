@@ -18,6 +18,8 @@
 //! assert the exact reassembled value; integration tests drive the real
 //! `preprocess_multiline` join path.
 
+#![cfg(feature = "multiline")]
+
 use keyhog_scanner::testing::fragment_cache::FragmentCache;
 use keyhog_scanner::testing::multiline::{
     extract_dot_concatenation_for_test, extract_plus_concatenation_for_test, preprocess_multiline,

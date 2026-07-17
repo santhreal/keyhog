@@ -20,9 +20,9 @@
 //! The test surface used is `keyhog_scanner::testing::multiline::*` and
 //! `keyhog_scanner::testing::fragment_cache::*`.
 
-use keyhog_scanner::testing::fragment_cache::{
-    FragmentCache, ReassembledCandidate, SecretFragment,
-};
+#[cfg(feature = "simd")]
+use keyhog_scanner::testing::fragment_cache::ReassembledCandidate;
+use keyhog_scanner::testing::fragment_cache::{FragmentCache, SecretFragment};
 use keyhog_scanner::testing::multiline::{
     preprocess_multiline, LineMapping, MultilineConfig, PreprocessedText,
 };
@@ -803,6 +803,7 @@ fn fragment_cache_duplicate_fragment_not_inserted_twice() {
     );
 }
 
+#[cfg(feature = "simd")]
 #[test]
 fn fragment_cache_stamped_anchor_is_prefix_fragment_path_and_line() {
     // record_and_reassemble_stamped: anchor (f1) is the prefix fragment of each
@@ -822,6 +823,7 @@ fn fragment_cache_stamped_anchor_is_prefix_fragment_path_and_line() {
     assert!(lines.contains(&7));
 }
 
+#[cfg(feature = "simd")]
 #[test]
 fn fragment_cache_stamped_cross_file_no_join() {
     let cache = FragmentCache::new(100);

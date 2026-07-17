@@ -2982,7 +2982,6 @@ pub fn detector_weak_anchor_for_test(spec: &keyhog_core::DetectorSpec) -> bool {
     crate::suppression::detector_weak_anchor(spec)
 }
 
-#[cfg(any(feature = "simdsieve", test))]
 pub fn known_example_suppressed(
     credential: &str,
     path: Option<&str>,
@@ -3000,7 +2999,6 @@ pub fn known_example_suppressed(
     }
 }
 
-#[cfg(any(feature = "simdsieve", test))]
 pub fn known_example_suppressed_with_source(
     credential: &str,
     path: Option<&str>,

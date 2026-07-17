@@ -1031,44 +1031,48 @@ proptest! {
 // guaranteed fail-safe direction, which is the load-bearing safety contract.
 // No proptest for this predicate before.
 
-use keyhog_scanner::testing::entropy_isolated::is_random_token;
+#[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
+mod random_token_floor_tests {
+    use super::*;
+    use keyhog_scanner::testing::entropy_isolated::is_random_token;
 
-proptest! {
-    #![proptest_config(ProptestConfig::with_cases(2_000))]
+    proptest! {
+            #![proptest_config(ProptestConfig::with_cases(2_000))]
 
-    /// Fewer than 6 alphabetic chars ⇒ the bigram statistic is None ⇒ never
-    /// random, for any digit padding around the (≤5) letters.
-    #[test]
-    fn under_min_alpha_is_never_random(
-        letters in "[a-z]{0,5}",
-        pad in "[0-9]{0,20}",
-    ) {
-        let value = format!("{pad}{letters}{pad}"); // total letters == letters.len() ≤ 5
-        prop_assert!(!is_random_token(&value), "{value:?} has <6 alphabetic chars");
-    }
+        /// Fewer than 6 alphabetic chars ⇒ the bigram statistic is None ⇒ never
+        /// random, for any digit padding around the (≤5) letters.
+        #[test]
+        fn under_min_alpha_is_never_random(
+            letters in "[a-z]{0,5}",
+            pad in "[0-9]{0,20}",
+        ) {
+            let value = format!("{pad}{letters}{pad}"); // total letters == letters.len() ≤ 5
+            prop_assert!(!is_random_token(&value), "{value:?} has <6 alphabetic chars");
+        }
 
-    /// Letters never adjacent (each separated by a digit) ⇒ pairs==0 ⇒ None ⇒
-    /// never random, even with many (>=6) alphabetic chars total.
-    #[test]
-    fn no_adjacent_letter_pair_is_never_random(
-        letters in prop::collection::vec("[a-z]", 6..=20),
-    ) {
-        let value = letters.join("7"); // single letters glued by a digit
-        prop_assert!(!is_random_token(&value), "{value:?} has no adjacent letter pair");
-    }
+        /// Letters never adjacent (each separated by a digit) ⇒ pairs==0 ⇒ None ⇒
+        /// never random, even with many (>=6) alphabetic chars total.
+        #[test]
+        fn no_adjacent_letter_pair_is_never_random(
+            letters in prop::collection::vec("[a-z]", 6..=20),
+        ) {
+            let value = letters.join("7"); // single letters glued by a digit
+            prop_assert!(!is_random_token(&value), "{value:?} has no adjacent letter pair");
+        }
 
-    /// Fewer than 3 distinct letters ⇒ never random regardless of length or
-    /// bigram improbability (a repetitive / alternating MASK, not a random token).
-    #[test]
-    fn under_min_distinct_letters_is_never_random(
-        a in "[a-z]",
-        b in "[a-z]",
-        reps in 4usize..40,
-    ) {
-        let one = a.repeat(reps); // 1 distinct letter
-        prop_assert!(!is_random_token(&one), "{one:?} has 1 distinct letter");
-        let alt = format!("{a}{b}").repeat(reps); // ≤2 distinct letters
-        prop_assert!(!is_random_token(&alt), "{alt:?} has ≤2 distinct letters");
+        /// Fewer than 3 distinct letters ⇒ never random regardless of length or
+        /// bigram improbability (a repetitive / alternating MASK, not a random token).
+        #[test]
+        fn under_min_distinct_letters_is_never_random(
+            a in "[a-z]",
+            b in "[a-z]",
+            reps in 4usize..40,
+        ) {
+            let one = a.repeat(reps); // 1 distinct letter
+            prop_assert!(!is_random_token(&one), "{one:?} has 1 distinct letter");
+            let alt = format!("{a}{b}").repeat(reps); // ≤2 distinct letters
+            prop_assert!(!is_random_token(&alt), "{alt:?} has ≤2 distinct letters");
+        }
     }
 }
 

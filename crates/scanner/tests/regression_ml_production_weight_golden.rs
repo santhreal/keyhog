@@ -22,6 +22,8 @@
 //! --test regression_ml_production_weight_golden -- --ignored --nocapture` or
 //! read the panic message) and paste the emitted `GOLDEN_BITS` array below.
 
+#![cfg(feature = "ml")]
+
 use keyhog_scanner::testing::ml_score_for_detector;
 
 /// (candidate value, surrounding context) pairs spanning the score range and

@@ -23,6 +23,8 @@
 //!        required-companion, structural-password-slot, phase2, entropy-channel
 //!   [51..54]=entropy family: generic, password, token, API key
 
+#![cfg(feature = "ml")]
+
 const EPS: f32 = 1e-6;
 
 fn feats(text: &str, ctx: &str) -> [f32; 55] {

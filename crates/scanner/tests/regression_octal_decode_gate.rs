@@ -12,6 +12,8 @@
 //! decoder name), so it is immune to the in-flight decoder-registry rename
 //! churn in the decode subsystem.
 
+#![cfg(feature = "decode")]
+
 use keyhog_scanner::testing::has_decodable_payload_for_test as gate;
 
 #[test]

@@ -10,6 +10,8 @@
 //! admission gate (`MIN_REVERSE_PREFIX_LEN`) is a recall or precision bug, so
 //! each is locked to its computed value here.
 
+#![cfg(feature = "decode")]
+
 use keyhog_scanner::decode::{
     base64_decode, find_base64_strings, find_hex_strings, hex_decode, is_base64_candidate_byte,
     z85_decode,

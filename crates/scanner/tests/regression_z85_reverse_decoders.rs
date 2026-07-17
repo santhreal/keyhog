@@ -9,6 +9,8 @@
 //! Z85 alphabet reference: ZeroMQ RFC 32
 //! `0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.-:+=^!/*?&<>()[]{}@%$#`
 
+#![cfg(feature = "decode")]
+
 use keyhog_scanner::decode::z85_decode;
 use keyhog_scanner::testing::{looks_reversible_for_test, reverse_str_for_test};
 

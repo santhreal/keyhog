@@ -13,6 +13,8 @@
 //! always has the CPU path available, so every contract below is fully
 //! host-independent (no Hyperscan/SIMD/GPU assumption).
 
+#![cfg(feature = "decode")]
+
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::testing::{
     decode_chunk, default_decoder_names_for_test, looks_reversible_for_test, reverse_str_for_test,

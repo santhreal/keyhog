@@ -71,8 +71,10 @@ pub mod github_checksum_token_structure;
 pub mod gitlab_checksum_body_length_floors;
 pub mod gpu_integrity_failure_reasons;
 pub mod gpu_moe_readback_bounded;
+#[cfg(feature = "simd")]
 pub mod gpu_no_hit_phase2_admission;
 pub mod gpu_per_chunk_dispatch_failure;
+#[cfg(feature = "simd")]
 pub mod gpu_phase2_empty_hit_fast_path;
 pub mod gpu_phase2_unions_cpu_ac_roots;
 pub mod gpu_region_presence_anchorless_gap_surfaced;
@@ -153,6 +155,7 @@ pub mod scan_filters_grouped;
 pub mod scanner_src_files_exceed_standard_500_loc;
 pub mod selected_gpu_backend_executes_or_fails;
 pub mod shared_assign_regex_contract;
+#[cfg(feature = "simd")]
 pub mod simd_no_hit_multiline_fast_path;
 #[cfg(feature = "multiline")]
 pub mod single_line_implicit_concat_not_appended;

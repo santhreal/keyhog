@@ -18,6 +18,8 @@
 //! `account = (u48 & 0x7fff_ffff_ff80) >> 7`, zero-padded). Nothing here touches
 //! an accelerator; the decode is pure arithmetic and host-independent.
 
+#![cfg(feature = "decode")]
+
 use std::collections::HashSet;
 
 use keyhog_core::{

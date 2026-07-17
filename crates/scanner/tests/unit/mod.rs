@@ -135,6 +135,7 @@ pub mod low_alnum_ratio_char_units;
 #[cfg(feature = "simd")]
 pub mod mark_stats;
 pub mod ml_features_extraction;
+#[cfg(feature = "ml")]
 pub mod ml_scorer;
 pub mod ml_weights_parse;
 #[cfg(feature = "multiline")]

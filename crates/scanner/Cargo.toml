@@ -23,7 +23,8 @@ status = "alpha"
 # dispatch stack (no adapter probe) while keeping Hyperscan + simdsieve + all
 # ML/decode/multiline data paths, so detection recall is identical. To also drop
 # the libhs link entirely, omit `simd`/`simdsieve` (e.g. `--no-default-features
-# --features ml,entropy,decode,multiline`); `entropy` is required to compile.
+# --features ml,entropy,decode,multiline`). A minimal build compiles with every
+# optional subsystem absent; each added feature owns and executes its own tests.
 default = ["ml", "entropy", "decode", "multiline", "simdsieve", "simd", "gpu"]
 # Lean CI aggregator build: every default detection/data feature (Hyperscan +
 # SIMD prefilter + ML/decode/multiline) EXCEPT the GPU dispatch stack. The
@@ -46,13 +47,14 @@ simdsieve = ["dep:simdsieve"]  # SIMD-accelerated prefilter for top 8 patterns (
 # `vyre`/`vyre_libs` stay on either way because their CPU primitives are woven
 # into the scan types.
 #
-# `gpu` IMPLIES `simd`: the region-presence producer shares the coalesced
-# phase-2 validation tail with SIMD (see scan_coalesced.rs
-# `scan_coalesced_phase2`). A gpu-without-simd build would compile the trigger
-# producer without the validation path KeyHog ships, so the combination is
-# disallowed at the feature level rather than silently degraded.
+# `gpu` IMPLIES `simd` and `ml`: the region-presence producer shares the
+# coalesced phase-2 validation tail with SIMD, while the WGPU context also owns
+# the GPU MoE parity gate. A GPU build without either dependency would expose a
+# partial accelerator surface, so the unsupported combinations are rejected by
+# the feature graph instead of failing inside the implementation.
 gpu = [
     "simd",
+    "ml",
     "dep:wgpu",
     "dep:pollster",
     "dep:bytemuck",
@@ -259,10 +261,12 @@ path = "tests/property/identifier_and_markup_shape_proptest.rs"
 [[test]]
 name = "decode_dos_bounds_proptest"
 path = "tests/property/decode_dos_bounds_proptest.rs"
+required-features = ["decode"]
 
 [[test]]
 name = "inflate_bomb_bound_proptest"
 path = "tests/property/inflate_bomb_bound_proptest.rs"
+required-features = ["decode"]
 
 [[test]]
 name = "caesar_prefix_ac_equivalence_proptest"
@@ -295,10 +299,12 @@ path = "tests/gap/gpu_integrity_failure_reasons.rs"
 [[test]]
 name = "gap_selected_gpu_backend_executes_or_fails"
 path = "tests/gap/selected_gpu_backend_executes_or_fails.rs"
+required-features = ["gpu"]
 
 [[test]]
 name = "gap_gpu_no_hit_phase2_admission"
 path = "tests/gap/gpu_no_hit_phase2_admission.rs"
+required-features = ["simd"]
 
 [[test]]
 name = "gap_gpu_per_chunk_dispatch_failure"
@@ -307,6 +313,7 @@ path = "tests/gap/gpu_per_chunk_dispatch_failure.rs"
 [[test]]
 name = "gap_gpu_phase2_empty_hit_fast_path"
 path = "tests/gap/gpu_phase2_empty_hit_fast_path.rs"
+required-features = ["simd"]
 
 [[test]]
 name = "gap_gpu_phase2_unions_cpu_ac_roots"
@@ -315,6 +322,7 @@ path = "tests/gap/gpu_phase2_unions_cpu_ac_roots.rs"
 [[test]]
 name = "gap_gpu_require_policy_fails_not_skips"
 path = "tests/gap/gpu_require_policy_fails_not_skips.rs"
+required-features = ["gpu"]
 
 [[test]]
 name = "gap_gpu_shader_sigmoid_contract"

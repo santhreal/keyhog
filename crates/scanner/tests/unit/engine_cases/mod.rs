@@ -27,6 +27,7 @@ mod scan_simd_cpu_empty_chunk;
 mod scan_skips_detectors_directory_path;
 mod scan_skips_keyhogignore_path;
 mod scan_windowed_overlap_dedups_end_to_end;
+#[cfg(any(feature = "simd", feature = "gpu"))]
 mod scan_windowed_with_triggered_parallel_parity;
 mod warm_backend_cpu_always_true;
 mod window_chunk_preserves_path;

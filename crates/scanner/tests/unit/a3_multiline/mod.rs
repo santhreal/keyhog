@@ -25,6 +25,7 @@ mod phantom_append_single_line_trailing_newline;
 mod plus_concat_disabled;
 mod python_implicit_concat;
 mod same_file_three_way_join;
+#[cfg(feature = "simd")]
 mod stamped_reassembly_anchor_path_line;
 mod structural_var_ref_concat;
 mod template_literal_join;

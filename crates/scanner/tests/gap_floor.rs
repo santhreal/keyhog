@@ -177,6 +177,7 @@ mod multiline_fragment_prefix_extraction;
 mod multiline_large_file_keyword_gate;
 #[path = "gap/multiline_preprocess_join_contract.rs"]
 mod multiline_preprocess_join_contract;
+#[cfg(feature = "multiline")]
 #[path = "gap/multiline_reassembly.rs"]
 mod multiline_reassembly;
 #[path = "gap/multiline_structural_template_resolve.rs"]
@@ -279,8 +280,10 @@ mod scan_filters_grouped;
 mod scanner_src_files_exceed_standard_500_loc;
 #[path = "gap/shared_assign_regex_contract.rs"]
 mod shared_assign_regex_contract;
+#[cfg(feature = "simd")]
 #[path = "gap/simd_no_hit_multiline_fast_path.rs"]
 mod simd_no_hit_multiline_fast_path;
+#[cfg(feature = "multiline")]
 #[path = "gap/single_line_implicit_concat_not_appended.rs"]
 mod single_line_implicit_concat_not_appended;
 #[path = "gap/slack_checksum_token_shapes.rs"]

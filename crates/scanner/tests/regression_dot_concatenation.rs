@@ -25,6 +25,8 @@
 //! assert an overloaded `.` is NOT turned into a join; the e2e tests drive the
 //! real `CompiledScanner::scan` path so a dot-split AWS key actually surfaces.
 
+#![cfg(feature = "multiline")]
+
 mod support;
 use support::paths::detector_dir;
 

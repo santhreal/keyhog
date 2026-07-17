@@ -23,6 +23,8 @@
 //!     round-trip parity the evasion decoders rely on.
 //!   * Invalid inputs fail closed to the exact `Err(())` / rejection.
 
+#![cfg(feature = "decode")]
+
 use keyhog_scanner::decode::{
     base64_decode, find_base64_strings, find_hex_strings, hex_decode, is_base64_candidate_byte,
     z85_decode,

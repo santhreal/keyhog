@@ -26,6 +26,8 @@
 //! Every assertion pins a concrete value (exact `bool` / exact needle presence),
 //! never `is_empty()` / `is_some()`.
 
+#![cfg(feature = "decode")]
+
 mod support;
 use support::paths::detector_dir;
 

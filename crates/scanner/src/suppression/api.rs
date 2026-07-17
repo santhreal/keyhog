@@ -32,7 +32,6 @@ pub(crate) struct KnownExampleSuppressionCtx<'a> {
 }
 
 impl<'a> KnownExampleSuppressionCtx<'a> {
-    #[cfg(any(feature = "simdsieve", test))]
     pub(crate) fn new(
         path: Option<&'a str>,
         context: context::CodeContext,
