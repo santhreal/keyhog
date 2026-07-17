@@ -13,7 +13,7 @@ detector_id = "github-pat-fine-grained"
 service = "github"
 severity = "critical"
 # README claim (top-level scalar, see every_contract_readme_claim_present):
-readme_claim = "GitHub CRC32"
+readme_claim = "GitHub PATs (with CRC32 checksum)"
 
 # ---- POSITIVES (recall) ---------------------------------------------
 

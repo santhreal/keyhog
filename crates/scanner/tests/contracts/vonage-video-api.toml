@@ -4,23 +4,35 @@ service = "vonage"
 severity = "critical"
 
 [[positive]]
-text = """VONAGE_API_KEY=54689afc
-VONAGE_API_SECRET=0123456789abcdef"""
-credential = "54689afc"
-reason = "Video API key with secret companion in env-var form."
+text = "VONAGE_API_KEY=54689afc\nVONAGE_API_SECRET=0123456789abcdef"
+credential = "0123456789abcdef"
+reason = "Video API secret is the finding and the API key is companion context."
 
 [[positive]]
-text = "vonage_api_key = 'a1b2c3d4'"
-credential = "a1b2c3d4"
-reason = "Single-quoted assignment with vonage anchor."
+text = "vonage_api_secret = 'A1b2C3d4E5f6G7h8'"
+credential = "A1b2C3d4E5f6G7h8"
+reason = "Standalone mixed-case alphanumeric Video API secret."
 
 [[negative]]
-text = "VONAGE_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
-reason = "Placeholder body (suppression gate strips it)."
+text = "VONAGE_API_KEY=54689afc"
+reason = "An account API key alone is an identifier, not the confidential secret."
 
 [[negative]]
-text = "54689afc"
-reason = "Bare 8-hex string without VONAGE_API_KEY anchor."
+text = "VONAGE_API_SECRET=0123456789abcde"
+reason = "Secret below the exact 16-character shape."
+
+[[negative]]
+text = "VONAGE_API_SECRET=0123456789abcdef0"
+reason = "Secret above the exact 16-character shape."
+
+[[negative]]
+text = "0123456789abcdef"
+reason = "Bare 16-character value without a Vonage secret anchor."
+
+[[evasion]]
+text = "# VONAGE_API_KEY=54689afc\n# VONAGE_API_SECRET=0123456789abcdef"
+credential = "0123456789abcdef"
+reason = "Commented configuration still exposes the confidential secret."
 
 [perf]
 fixture_bytes = 4096
@@ -31,13 +43,4 @@ note = "Standard single-file budget."
 fixture_bytes = 1048576
 min_findings = 1
 max_seconds = 2.0
-note = "1 MiB filler + planted Vonage Video API key."
-
-# ---- EVASION (adversarial) -----------------------------------------
-
-[[evasion]]
-text = """# vonage video creds, rotate:
-#   VONAGE_API_KEY=54689afc
-#   VONAGE_API_SECRET=0123456789abcdef"""
-credential = "54689afc"
-reason = "Commented-out config dump; VONAGE_API_KEY keyword + 8-hex key intact inside the comment (the SECRET companion boosts but is not required)."
+note = "1 MiB filler plus a planted Vonage Video API secret."

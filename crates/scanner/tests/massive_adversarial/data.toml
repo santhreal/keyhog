@@ -8090,6 +8090,7 @@ credential = 'hotjar_client_id_high_entropy_secret_123'
 [[case]]
 detector_id = "huawei-cloud-api-credentials"
 suite = 41
+expected_finding = false # standalone AK is an access-key identifier, not the confidential SK
 
 [[case.assertion]]
 kind = "fires"
@@ -10515,6 +10516,7 @@ credential = 'amzn1.application-oa2-client.Kp4Qx7Rm2Sn5Tb8Vw3Yz'
 [[case]]
 detector_id = "amazon-music-api-credentials"
 suite = 65
+expected_finding = false # Amazon documents the standalone client identifier as non-secret
 
 [[case.assertion]]
 kind = "fires"
@@ -18091,6 +18093,7 @@ credential = 'cu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Q'
 [[case]]
 detector_id = "checkmarx-api-credentials"
 suite = 75
+expected_finding = false # standalone OAuth client ID is companion context
 
 [[case.assertion]]
 kind = "fires"
@@ -33813,73 +33816,73 @@ suite = 96
 [[case.assertion]]
 kind = "fires"
 name = "normal"
-text = 'HUAWEICLOUDAK=GR6FV9QT0XGHN4KNOALV'
-credential = 'GR6FV9QT0XGHN4KNOALV'
+text = 'HUAWEICLOUDSK=9zYwf1uabSQY0JTnFqbUqG7vcfqYBaTdXde2GUcq'
+credential = '9zYwf1uabSQY0JTnFqbUqG7vcfqYBaTdXde2GUcq'
 
 [[case.assertion]]
 kind = "silent"
 name = "prefix"
-text = 'dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx'
+text = 'dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwsp"
-text = 'HUAWEICLOUDAK=GR6FV9QT0X\u{200B}GHN4KNOALV'
-credential = 'GR6FV9QT0XGHN4KNOALV'
+text = 'HUAWEICLOUDSK=9zYwf1uabSQY0JTnFqbU\u{200B}qG7vcfqYBaTdXde2GUcq'
+credential = '9zYwf1uabSQY0JTnFqbUqG7vcfqYBaTdXde2GUcq'
 
 [[case.assertion]]
 kind = "fires"
 name = "hyphen"
-text = 'HUAWEICLOUDAK=GR6FV9QT0X\u{00AD}GHN4KNOALV'
-credential = 'GR6FV9QT0XGHN4KNOALV'
+text = 'HUAWEICLOUDSK=9zYwf1uabSQY0JTnFqbU\u{00AD}qG7vcfqYBaTdXde2GUcq'
+credential = '9zYwf1uabSQY0JTnFqbUqG7vcfqYBaTdXde2GUcq'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwnj"
-text = 'HUAWEICLOUDAK=GR6FV9QT0X\u{200C}GHN4KNOALV'
-credential = 'GR6FV9QT0XGHN4KNOALV'
+text = 'HUAWEICLOUDSK=9zYwf1uabSQY0JTnFqbU\u{200C}qG7vcfqYBaTdXde2GUcq'
+credential = '9zYwf1uabSQY0JTnFqbUqG7vcfqYBaTdXde2GUcq'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwj"
-text = 'HUAWEICLOUDAK=GR6FV9QT0X\u{200D}GHN4KNOALV'
-credential = 'GR6FV9QT0XGHN4KNOALV'
+text = 'HUAWEICLOUDSK=9zYwf1uabSQY0JTnFqbU\u{200D}qG7vcfqYBaTdXde2GUcq'
+credential = '9zYwf1uabSQY0JTnFqbUqG7vcfqYBaTdXde2GUcq'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwnbsp"
-text = 'HUAWEICLOUDAK=GR6FV9QT0X\u{FEFF}GHN4KNOALV'
-credential = 'GR6FV9QT0XGHN4KNOALV'
+text = 'HUAWEICLOUDSK=9zYwf1uabSQY0JTnFqbU\u{FEFF}qG7vcfqYBaTdXde2GUcq'
+credential = '9zYwf1uabSQY0JTnFqbUqG7vcfqYBaTdXde2GUcq'
 
 [[case.assertion]]
 kind = "fires"
 name = "joiner"
-text = 'HUAWEICLOUDAK=GR6FV9QT0X\u{2060}GHN4KNOALV'
-credential = 'GR6FV9QT0XGHN4KNOALV'
+text = 'HUAWEICLOUDSK=9zYwf1uabSQY0JTnFqbU\u{2060}qG7vcfqYBaTdXde2GUcq'
+credential = '9zYwf1uabSQY0JTnFqbUqG7vcfqYBaTdXde2GUcq'
 
 [[case.assertion]]
 kind = "fires"
 name = "mongolian"
-text = 'HUAWEICLOUDAK=GR6FV9QT0X\u{180E}GHN4KNOALV'
-credential = 'GR6FV9QT0XGHN4KNOALV'
+text = 'HUAWEICLOUDSK=9zYwf1uabSQY0JTnFqbU\u{180E}qG7vcfqYBaTdXde2GUcq'
+credential = '9zYwf1uabSQY0JTnFqbUqG7vcfqYBaTdXde2GUcq'
 
 [[case.assertion]]
 kind = "fires"
 name = "rtl"
-text = 'HUAWEICLOUDAK=GR6FV9QT0X\u{202E}GHN4KNOALV'
-credential = 'GR6FV9QT0XGHN4KNOALV'
+text = 'HUAWEICLOUDSK=9zYwf1uabSQY0JTnFqbU\u{202E}qG7vcfqYBaTdXde2GUcq'
+credential = '9zYwf1uabSQY0JTnFqbUqG7vcfqYBaTdXde2GUcq'
 
 [[case.assertion]]
 kind = "fires"
 name = "dir"
-text = 'HUAWEICLOUDAK=GR6FV9QT0X\u{202C}GHN4KNOALV'
-credential = 'GR6FV9QT0XGHN4KNOALV'
+text = 'HUAWEICLOUDSK=9zYwf1uabSQY0JTnFqbU\u{202C}qG7vcfqYBaTdXde2GUcq'
+credential = '9zYwf1uabSQY0JTnFqbUqG7vcfqYBaTdXde2GUcq'
 
 [[case.assertion]]
 kind = "fires"
 name = "lrm"
-text = 'HUAWEICLOUDAK=GR6FV9QT0X\u{200E}GHN4KNOALV'
-credential = 'GR6FV9QT0XGHN4KNOALV'
+text = 'HUAWEICLOUDSK=9zYwf1uabSQY0JTnFqbU\u{200E}qG7vcfqYBaTdXde2GUcq'
+credential = '9zYwf1uabSQY0JTnFqbUqG7vcfqYBaTdXde2GUcq'
 
 [[case]]
 detector_id = "hubitat-api-credentials"
@@ -66969,3 +66972,66 @@ kind = "fires"
 name = "lrm"
 text = 'ZSCALERID=tNQHjfW1z0Nh\u{200E}sUM9rf5jQ2MF'
 credential = 'tNQHjfW1z0NhsUM9rf5jQ2MF'
+
+[[case]]
+detector_id = "amazon-music-api-credentials"
+suite = 117
+
+[[case.assertion]]
+kind = "fires"
+name = "secret-primary"
+text = 'AMAZON_MUSIC_CLIENT_SECRET=Kp4Qx7Rm2Sn5Tb8Vw3Yz'
+credential = 'Kp4Qx7Rm2Sn5Tb8Vw3Yz'
+
+[[case.assertion]]
+kind = "fires"
+name = "secret-zwsp"
+text = 'AMAZON_MUSIC_CLIENT_SECRET=Kp4Qx7Rm2S\u{200B}n5Tb8Vw3Yz'
+credential = 'Kp4Qx7Rm2Sn5Tb8Vw3Yz'
+
+[[case.assertion]]
+kind = "silent"
+name = "public-client-id"
+text = 'AMAZON_MUSIC_CLIENT_ID=amzn1.application-oa2-client.7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d'
+
+[[case]]
+detector_id = "checkmarx-api-credentials"
+suite = 117
+
+[[case.assertion]]
+kind = "fires"
+name = "secret-primary"
+text = 'CX_CLIENT_SECRET=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Q'
+credential = 'Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Q'
+
+[[case.assertion]]
+kind = "fires"
+name = "secret-joiner"
+text = 'CX_CLIENT_SECRET=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4\u{2060}Qx7Rm2Sn5Tb8Vw3YzKp4Q'
+credential = 'Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Q'
+
+[[case.assertion]]
+kind = "silent"
+name = "public-client-id"
+text = 'CX_CLIENT_ID=release-scanner'
+
+[[case]]
+detector_id = "huawei-cloud-api-credentials"
+suite = 117
+
+[[case.assertion]]
+kind = "fires"
+name = "secret-primary"
+text = 'HW_SECRET_KEY=9zYwf1uabSQY0JTnFqbUqG7vcfqYBaTdXde2GUcq'
+credential = '9zYwf1uabSQY0JTnFqbUqG7vcfqYBaTdXde2GUcq'
+
+[[case.assertion]]
+kind = "fires"
+name = "secret-rtl"
+text = 'HW_SECRET_KEY=9zYwf1uabSQY0JTnFqbU\u{202E}qG7vcfqYBaTdXde2GUcq'
+credential = '9zYwf1uabSQY0JTnFqbUqG7vcfqYBaTdXde2GUcq'
+
+[[case.assertion]]
+kind = "silent"
+name = "public-access-key-id"
+text = 'HW_ACCESS_KEY=HCY8BGCN1YM5ZWYOK1MH'

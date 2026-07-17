@@ -270,15 +270,19 @@ fn corrected_primary_role_regressions_have_exact_backend_parity() {
     );
     let corrected: std::collections::BTreeSet<&str> = [
         "alertmanager-credentials",
+        "amazon-music-api-credentials",
         "basic-auth-credentials",
         "bearer-authorization",
+        "checkmarx-api-credentials",
         "cli-password-flag",
         "goto-connect-api-credentials",
+        "huawei-cloud-api-credentials",
         "rapyd-api-credentials",
         "saltstack-credentials",
         "sql-password",
         "twilio-api-key",
         "url-credentials",
+        "vonage-video-api",
     ]
     .into_iter()
     .collect();
@@ -323,8 +327,8 @@ fn corrected_primary_role_regressions_have_exact_backend_parity() {
         checked += 1;
     }
     assert_eq!(
-        checked, 11,
-        "the ten corrected detectors own eleven inline positives"
+        checked, 17,
+        "the fourteen corrected detectors own seventeen inline positives"
     );
 }
 

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Make Amazon Music, Checkmarx, Huawei Cloud, and Vonage Video confidential
+  secrets the detector-owned primaries. Their client IDs, access-key IDs, and
+  API keys are exact optional companions and no longer emit standalone secret
+  findings; verification now receives the corrected primary and companion
+  roles.
 - Compile generic execution and final resolution from detector `kind` and the
   active typed plan rather than reporting service names or detector-ID length.
   Anchored detectors that report `service = "generic"` remain named, unknown

@@ -1,46 +1,38 @@
-# Docs: https://api.support.vonage.com/hc/en-us/articles/10670829386396-How-to-find-my-Video-API-Authentication-Credentials
+# Docs: https://api.support.vonage.com/hc/en-us/articles/11002799982492-How-to-obtain-my-account-level-Video-API-key-and-API-secret
 # Format: API Key is an 8-character alphanumeric string, API Secret is a 16-character alphanumeric string
-# Verify: https://api.support.vonage.com/hc/en-us/articles/10670829386396
+# Verify: GET /v2/project/{api_key}/archive with API key and API secret
 # Prefix: none (requires context anchoring)
 
 [detector]
 id = "vonage-video-api"
-name = "Vonage Video API Key"
+name = "Vonage Video API Secret"
 service = "vonage"
 severity = "critical"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
 keywords = ["VONAGE_API_KEY", "VONAGE_API_SECRET", "vonage", "api_key", "api_secret", "video"]
 
 [[detector.patterns]]
-regex = "(?:VONAGE_API_KEY|vonage_api_key)[\"\\'\\s]*[=:]\\s*[\"\\']?([a-f0-9]{8})[\"\\']?"
-description = "Vonage Video API Key (8 hex characters) with context anchor"
+regex = '''(?i)VONAGE[_.-]API[_.-]SECRET["'\s]*[=:]\s*["']?([a-z0-9]{16})(?:[^a-z0-9]|$)'''
+description = "Vonage Video API secret with context anchor"
 group = 1
 
 [[detector.companions]]
-name = "vonage_api_secret"
-# Original anchored form: capture group is auto-detected by the scanner
-# (compiler.rs:369), so `{{companion.vonage_api_secret}}` resolves to just
-# the 16-hex secret value, not the surrounding `VONAGE_API_SECRET=...`
-# declaration. Without the anchor we'd false-fire on every random 16-hex
-# string in scope.
-regex = "(?:VONAGE_API_SECRET|vonage_api_secret)[\"\\'\\s]*[=:]\\s*[\"\\']?([a-f0-9]{16})[\"\\']?"
+name = "vonage_api_key"
+regex = '''(?i)VONAGE[_.-]API[_.-]KEY["'\s]*[=:]\s*["']?([a-z0-9]{8})(?:[^a-z0-9]|$)'''
 within_lines = 5
 [detector.verify]
 method = "GET"
-# Earlier this used single-brace `{match}` which interpolate.rs ignored;
-# the URL went out as a literal `{match}` segment. `{{match}}` is the
-# correct token.
-url = "https://api.opentok.com/v2/project/{{match}}/archive"
+url = "https://api.opentok.com/v2/project/{{companion.vonage_api_key}}/archive"
 allowed_domains = ["opentok.com"]
 
 [detector.verify.auth]
 type = "basic"
-username = "match"
-password = "companion.vonage_api_secret"
+username = "companion.vonage_api_key"
+password = "match"
 
 [detector.verify.success]
 status = 200
 
 [[detector.tests]]
 test_positive = "VONAGE_API_KEY=54689afc\nVONAGE_API_SECRET=0123456789abcdef"
-test_negative = "VONAGE_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+test_negative = "VONAGE_API_KEY=54689afc"

@@ -4,18 +4,18 @@ service = "vonage"
 severity = "critical"
 
 [positive_with_companion]
-text = "vonage_api_key  '\"'    :                                                                                               00920fb6\nvonage_api_secret  ' \"   \"      \"                  \"    '  \" =                                              0957adf99d85b5f6"
+text = "VONAGE_API_KEY=00920fb6\nVONAGE_API_SECRET=0957adf99d85b5f6"
 expected_findings = ["vonage-video-api"]
-expected_companions = { vonage_api_secret = "0957adf99d85b5f6" }
-reason = "Primary paired with companion(s) vonage_api_secret."
+expected_companions = { vonage_api_key = "00920fb6" }
+reason = "Secret primary carries the exact nearby Video API key."
 
 [positive_primary_only]
-text = "vonage_api_key  '\"'    :                                                                                               00920fb6"
+text = "VONAGE_API_SECRET=0957adf99d85b5f6"
 expected_findings = ["vonage-video-api"]
 must_not_verify = true
-reason = "Primary found without companion vonage_api_secret; verification must NOT proceed."
+reason = "Secret remains reportable while verification waits for the API-key companion."
 
 [negative_companion_lookalike]
-text = "vonage_api_secret  ' \"   \"      \"                  \"    '  \" =                                              0957adf99d85b5f6"
+text = "VONAGE_API_KEY=00920fb6"
 expected_findings = []
-reason = "Companion lookalike(s) without primary."
+reason = "The API key alone is companion context, not a secret finding."
