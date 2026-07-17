@@ -2,7 +2,7 @@
 
 ## Objective
 
-- Ship KeyHog as one detector-owned, fastest-correct, self-recovering system whose architecture, behavior, evidence, and docs agree exactly.
+- Ship KeyHog as one detector-owned, fastest-correct system with exact recovery and no drift across architecture, behavior, evidence, or docs.
 
 ## Non-negotiables
 
