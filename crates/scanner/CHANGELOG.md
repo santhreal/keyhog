@@ -8,6 +8,10 @@
   Hyperscan observation in each paired trial; schema-v6 evidence records the
   full comparison set, and release runs cannot force one diagnostic mode.
 
+- Add an explicit unprofiled `--diagnostic` crossover mode. It can measure the
+  exact 8 MiB route set from a dirty shared tree but can never set
+  `production_comparable` or `crossover_passed` in schema-v6 evidence.
+
 - Carry phase-two plain-pattern localization as an immutable per-request
   execution route through CPU, Hyperscan, CUDA, WGPU, windowing, decode,
   fragment recovery, and boundary reassembly. Concurrent autoroute requests no

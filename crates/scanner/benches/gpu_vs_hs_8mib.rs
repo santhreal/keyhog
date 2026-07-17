@@ -15,6 +15,8 @@
 //! dispatch telemetry on stderr. Trace instrumentation is intentionally not a
 //! crossover measurement: it adds GPU-specific timers and counters, so the
 //! speed gate is enforced only by the normal untraced, unprofiled run.
+//! `--diagnostic` keeps timing unprofiled but makes the run ineligible for a
+//! release verdict, allowing measurements from an explicitly dirty worktree.
 //! Full-result parity and zero GPU degradation remain mandatory in every mode.
 //! Both phase-two localizer modes are independent candidates for every backend.
 //! `KH_BENCH_PHASE2_LOCALIZER=1|0` restricts diagnostic runs to one mode; the
@@ -96,6 +98,7 @@ struct GpuPeerArtifact {
 struct CrossoverArtifact {
     schema_version: u32,
     measured_at_utc: String,
+    diagnostic: bool,
     production_comparable: bool,
     crossover_passed: bool,
     git_hash: String,
@@ -503,6 +506,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
     let perf_trace = args.iter().any(|arg| arg == "--perf-trace");
     let profile = args.iter().any(|arg| arg == "--profile");
+    let diagnostic = args.iter().any(|arg| arg == "--diagnostic");
     set_perf_trace_enabled(perf_trace);
     set_profile_enabled(profile);
 
@@ -523,7 +527,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let selection_rounds =
         env_positive_usize("KH_BENCH_SELECTION_ROUNDS", RELEASE_SELECTION_ROUNDS)?;
-    let release_gate = size_mib == 8 && !perf_trace && !profile;
+    let release_gate = size_mib == 8 && !perf_trace && !profile && !diagnostic;
     if release_gate
         && (iters < RELEASE_HELD_OUT_PAIRS || selection_rounds < RELEASE_SELECTION_ROUNDS)
     {
@@ -1039,6 +1043,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let artifact = CrossoverArtifact {
                 schema_version: 6,
                 measured_at_utc: chrono::Utc::now().to_rfc3339(),
+                diagnostic,
                 production_comparable,
                 crossover_passed: production_comparable && interval.high_ratio < 1.0,
                 git_hash: keyhog_core::git_hash().to_owned(),
@@ -1140,6 +1145,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if perf_trace || profile {
             println!(
                 "crossover gate not enforced with profiling or perf tracing enabled; parity and no-degradation checks remain mandatory"
+            );
+        } else if diagnostic {
+            println!(
+                "crossover gate not enforced in explicit diagnostic mode; timing, parity, and no-degradation evidence is not release-comparable"
             );
         } else if size_mib != 8 {
             println!(

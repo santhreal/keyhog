@@ -134,6 +134,10 @@ Schema 6 records the selected GPU backend and localizer, the fastest observed
 Hyperscan localizer, every route-selection sample, and a separate held-out
 confidence interval for each Hyperscan localizer. `crossover_passed` is based on
 the paired fastest-Hyperscan envelope, not whichever CPU route looks favorable.
+Use `--diagnostic` for an unprofiled 8 MiB measurement from a dirty development
+tree. That mode retains exact parity and degradation checks but records
+`diagnostic = true`, `production_comparable = false`, and cannot pass the
+release gate.
 
 The checked artifact at
 `benchmarks/baselines/gpu_8mib_crossover_rtx5090.toml` retains the last measured
