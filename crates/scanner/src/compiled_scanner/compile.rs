@@ -35,6 +35,8 @@ impl CompiledScanner {
         #[cfg(not(feature = "simd"))]
         let _tuning_config = tuning_config;
         let state = build_compile_state(&detectors)?;
+        let detector_digest =
+            super::detector_digest::from_spec_hash(keyhog_core::compute_spec_hash(&detectors));
         validate_compiled_pattern_detector_indices(
             &state.ac_map,
             &state.phase2_patterns,
@@ -471,6 +473,7 @@ impl CompiledScanner {
             .collect();
 
         let scanner = Self {
+            detector_digest,
             ac,
             gpu_backends,
             gpu_acquisition_failures,

@@ -105,6 +105,8 @@ impl GpuBackendCandidateStatus {
 pub struct CompiledScannerRuntime {
     pub detector_count: usize,
     pub pattern_count: usize,
+    /// Versioned 64-bit projection of the canonical 256-bit scan-execution
+    /// hash. Autoroute also persists the complete hash as its rules identity.
     pub detector_digest: u64,
     /// Backend used by the no-backend library APIs. CLI calibrated routing is a
     /// separate persisted per-workload decision and is never inferred here.

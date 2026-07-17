@@ -228,6 +228,10 @@ pub(crate) use phase1_admission::Phase1Admission;
 pub use phase1_admission::{Phase1AdmissionPlan, Phase1AdmissionSummary};
 
 pub struct CompiledScanner {
+    /// Versioned projection of the canonical validated scan-execution hash.
+    /// Autoroute and runtime receipts consume this stored identity so every
+    /// execution-affecting detector policy change invalidates stale evidence.
+    pub(crate) detector_digest: u64,
     pub(crate) fragment_cache: crate::fragment_cache::FragmentCache,
     pub(crate) ac: Option<AhoCorasick>,
     pub(crate) gpu_backends: GpuBackendPeers,

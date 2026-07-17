@@ -511,8 +511,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
     }
 
     pub(crate) fn detector_digest(&self) -> u64 {
-        let patterns = self.pattern_regex_strs();
-        detector_digest::from_pattern_sources(&patterns)
+        self.detector_digest
     }
 
     /// Every compiled GPU driver peer and its acquisition result.

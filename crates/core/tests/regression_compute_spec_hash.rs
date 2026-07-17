@@ -23,9 +23,10 @@
 
 use keyhog_core::compute_spec_hash;
 use keyhog_core::{
-    CanonicalHexKeyMaterialSpec, CompanionSpec, CredentialShape, DetectorKind,
-    DetectorPlausibilityPolicySpec, DetectorSpec, EntropyDetectionRole, EntropyFallbackMetadata,
-    EntropyFloorBucket, EntropyShapeSpec, PatternSpec, Severity, VerifySpec,
+    CanonicalHexKeyMaterialSpec, CompanionSpec, CredentialShape, DetectorBase64Alphabet,
+    DetectorKind, DetectorPlausibilityPolicySpec, DetectorSpec, DetectorValidatorSpec,
+    EntropyDetectionRole, EntropyFallbackMetadata, EntropyFloorBucket, EntropyShapeSpec,
+    PatternSpec, Severity, VerifySpec,
 };
 
 /// Fully-populated single-pattern detector. `name`/`service` are set equal to
@@ -781,4 +782,112 @@ fn spec_hash_bare_detector_preimage_survives_knob_migration() {
         *blake3::hash(b"id:x\nservice:x:x\nsev:x:High\n").as_bytes(),
         "a detector with service x must hash BLAKE3(\"id:x\\nservice:x:x\\nsev:x:High\\n\")"
     );
+}
+
+#[test]
+fn spec_hash_covers_detector_owned_required_literals() {
+    let base = det("d", Severity::High, "ghp_[0-9A-Za-z]{36}", &["ghp_"]);
+    let mut routed = base.clone();
+    routed.patterns[0].required_literals = vec!["ghp_".into()];
+    assert_ne!(
+        compute_spec_hash(std::slice::from_ref(&base)),
+        compute_spec_hash(std::slice::from_ref(&routed)),
+        "a routing-literal change recompiles backend candidate programs and must invalidate their identity"
+    );
+}
+
+#[test]
+fn spec_hash_covers_complete_detector_validator_program() {
+    let mut strict = det("d", Severity::High, "ghp_[0-9A-Za-z]{36}", &["ghp_"]);
+    strict.validators = vec![DetectorValidatorSpec::PatternShape {
+        prefixes: vec!["ghp_".into()],
+        allow_overlong: false,
+    }];
+    let mut overlong = strict.clone();
+    overlong.validators = vec![DetectorValidatorSpec::PatternShape {
+        prefixes: vec!["ghp_".into()],
+        allow_overlong: true,
+    }];
+    let mut other_prefix = strict.clone();
+    other_prefix.validators = vec![DetectorValidatorSpec::PatternShape {
+        prefixes: vec!["github_pat_".into()],
+        allow_overlong: false,
+    }];
+    assert_ne!(
+        compute_spec_hash(std::slice::from_ref(&strict)),
+        compute_spec_hash(std::slice::from_ref(&overlong)),
+        "validator policy changes must invalidate cached scanner and autoroute evidence"
+    );
+    assert_ne!(
+        compute_spec_hash(std::slice::from_ref(&strict)),
+        compute_spec_hash(std::slice::from_ref(&other_prefix)),
+        "validator prefix changes must invalidate cached scanner and autoroute evidence"
+    );
+}
+
+#[test]
+fn spec_hash_distinguishes_every_detector_validator_primitive() {
+    fn digest(validator: DetectorValidatorSpec) -> [u8; 32] {
+        let mut detector = det("d", Severity::High, "token_[0-9A-Za-z]{36}", &["token_"]);
+        detector.validators = vec![validator];
+        compute_spec_hash(&[detector])
+    }
+
+    let crc = digest(DetectorValidatorSpec::Crc32Base62 {
+        prefixes: vec!["token_".into()],
+        entropy_len: 30,
+        checksum_len: 6,
+        reject_overlong: true,
+        confidence_floor: 0.97,
+    });
+    let crc_width_changed = digest(DetectorValidatorSpec::Crc32Base62 {
+        prefixes: vec!["token_".into()],
+        entropy_len: 29,
+        checksum_len: 7,
+        reject_overlong: true,
+        confidence_floor: 0.97,
+    });
+    assert_ne!(crc, crc_width_changed);
+
+    let fine_grained = digest(DetectorValidatorSpec::GithubFineGrainedCrc32 {
+        prefixes: vec!["github_pat_".into()],
+        left_len: 22,
+        right_len: 59,
+        checksum_len: 6,
+        confidence_floor: 0.98,
+    });
+    let fine_grained_policy_changed = digest(DetectorValidatorSpec::GithubFineGrainedCrc32 {
+        prefixes: vec!["github_pat_".into()],
+        left_len: 22,
+        right_len: 58,
+        checksum_len: 6,
+        confidence_floor: 0.97,
+    });
+    assert_ne!(fine_grained, fine_grained_policy_changed);
+
+    let base64 = digest(DetectorValidatorSpec::Base64Payload {
+        prefixes: vec!["pypi-".into()],
+        alphabet: DetectorBase64Alphabet::UrlSafeNoPad,
+        min_encoded_len: 40,
+        max_encoded_len: 120,
+        min_decoded_len: 24,
+        confidence_floor: 0.96,
+    });
+    let base64_dialect_changed = digest(DetectorValidatorSpec::Base64Payload {
+        prefixes: vec!["pypi-".into()],
+        alphabet: DetectorBase64Alphabet::StandardNoPad,
+        min_encoded_len: 40,
+        max_encoded_len: 120,
+        min_decoded_len: 24,
+        confidence_floor: 0.96,
+    });
+    assert_ne!(base64, base64_dialect_changed);
+
+    let pattern_shape = digest(DetectorValidatorSpec::PatternShape {
+        prefixes: vec!["token_".into()],
+        allow_overlong: false,
+    });
+    assert_ne!(crc, fine_grained);
+    assert_ne!(crc, base64);
+    assert_ne!(crc, pattern_shape);
 }

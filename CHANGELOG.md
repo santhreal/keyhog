@@ -18,6 +18,11 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   phase-2 regex set. Coalesced SIMD scans preserve exact scalar findings, and
   offline GPU artifact compilation no longer builds an irrelevant Hyperscan
   database.
+- Scanner and autoroute detector identity now derives once from the canonical
+  validated scan-execution specification instead of only final regex sources. The
+  digest covers detector-owned routing literals and complete offline validator
+  programs, so those policy changes invalidate stale scan and calibration
+  evidence while detector ordering and inline fixtures do not.
 - GPU scans now compose complete prefixless evidence with fused anchor absence
   for every eligible ASCII row, including rows with phase-one triggers. Proven
   rows bypass the redundant Hyperscan always-active prefilter while keyword,

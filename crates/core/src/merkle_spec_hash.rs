@@ -1,6 +1,6 @@
 //! Detector-spec hash digest for merkle cache invalidation.
 
-use crate::spec::{DetectorKind, DetectorSpec};
+use crate::spec::{CompanionSpec, DetectorKind, DetectorSpec, PatternSpec};
 
 /// Compute a stable BLAKE3 digest over the canonical detector set so a
 /// later scan can detect that detectors changed.
@@ -8,6 +8,7 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
     let mut keys: Vec<String> = detectors
         .iter()
         .flat_map(|d| {
+            assert_scan_hash_field_inventory_is_exhaustive(d);
             let mut entries =
                 Vec::with_capacity(2 + d.patterns.len() + d.companions.len() + d.keywords.len());
             entries.push(format!("id:{}", d.id));
@@ -18,6 +19,7 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
             // changed (Law 10 silent staleness).
             entries.push(format!("sev:{}:{:?}", d.id, d.severity));
             for (index, p) in d.patterns.iter().enumerate() {
+                assert_pattern_hash_field_inventory_is_exhaustive(p);
                 let mut pattern_entry = format!(
                     // `cs:` folds `client_safe` in: toggling it downgrades every
                     // match of this pattern to `Severity::ClientSafe` (gated by
@@ -34,8 +36,18 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
                     pattern_entry.push_str("|wa:true");
                 }
                 entries.push(pattern_entry);
+                for (literal_index, literal) in p.required_literals.iter().enumerate() {
+                    entries.push(format!(
+                        "required-literal-hex:{}:{}:{}:{}",
+                        d.id,
+                        index,
+                        literal_index,
+                        crate::hex_encode(literal.as_bytes())
+                    ));
+                }
             }
             for (index, c) in d.companions.iter().enumerate() {
+                assert_companion_hash_field_inventory_is_exhaustive(c);
                 entries.push(format!(
                     "c:{}:{}:{}|{}|w:{}|r:{}",
                     d.id, index, c.name, c.regex, c.within_lines, c.required
@@ -262,6 +274,83 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
                     d.ml.context_radius_lines
                 ));
             }
+            for (validator_index, validator) in d.validators.iter().enumerate() {
+                match validator {
+                    crate::DetectorValidatorSpec::Crc32Base62 {
+                        prefixes: _,
+                        entropy_len,
+                        checksum_len,
+                        reject_overlong,
+                        confidence_floor,
+                    } => entries.push(format!(
+                        "validator:{}:{}:crc32-base62:{}:{}:{}:{:016x}",
+                        d.id,
+                        validator_index,
+                        entropy_len,
+                        checksum_len,
+                        reject_overlong,
+                        confidence_floor.to_bits()
+                    )),
+                    crate::DetectorValidatorSpec::GithubFineGrainedCrc32 {
+                        prefixes: _,
+                        left_len,
+                        right_len,
+                        checksum_len,
+                        confidence_floor,
+                    } => entries.push(format!(
+                        "validator:{}:{}:github-fine-grained-crc32:{}:{}:{}:{:016x}",
+                        d.id,
+                        validator_index,
+                        left_len,
+                        right_len,
+                        checksum_len,
+                        confidence_floor.to_bits()
+                    )),
+                    crate::DetectorValidatorSpec::Base64Payload {
+                        prefixes: _,
+                        alphabet,
+                        min_encoded_len,
+                        max_encoded_len,
+                        min_decoded_len,
+                        confidence_floor,
+                    } => {
+                        let alphabet = match alphabet {
+                            crate::DetectorBase64Alphabet::Standard => "standard",
+                            crate::DetectorBase64Alphabet::StandardNoPad => "standard-no-pad",
+                            crate::DetectorBase64Alphabet::UrlSafe => "url-safe",
+                            crate::DetectorBase64Alphabet::UrlSafeNoPad => "url-safe-no-pad",
+                        };
+                        entries.push(format!(
+                            "validator:{}:{}:base64-payload:{}:{}:{}:{}:{:016x}",
+                            d.id,
+                            validator_index,
+                            alphabet,
+                            min_encoded_len,
+                            max_encoded_len,
+                            min_decoded_len,
+                            confidence_floor.to_bits()
+                        ));
+                    }
+                    crate::DetectorValidatorSpec::PatternShape {
+                        prefixes: _,
+                        allow_overlong,
+                    } => {
+                        entries.push(format!(
+                            "validator:{}:{}:pattern-shape:{}",
+                            d.id, validator_index, allow_overlong
+                        ));
+                    }
+                }
+                for (prefix_index, prefix) in validator.prefixes().iter().enumerate() {
+                    entries.push(format!(
+                        "validator-prefix-hex:{}:{}:{}:{}",
+                        d.id,
+                        validator_index,
+                        prefix_index,
+                        crate::hex_encode(prefix.as_bytes())
+                    ));
+                }
+            }
             if let Some(shape) = &d.credential_shape {
                 // `CredentialShape` derives `Debug` over its four `Option` fields;
                 // its `{:?}` is total and deterministic within a build, and any
@@ -278,6 +367,79 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
         hasher.update(b"\n");
     }
     *hasher.finalize().as_bytes()
+}
+
+/// Compile-time detector-schema inventory for the scan-execution hash.
+///
+/// A new `DetectorSpec` field must make this destructure fail to compile until
+/// its scan/runtime effect is hashed above or its exclusion is documented next
+/// to `name`, `verify`, and `tests`.
+#[inline(always)]
+fn assert_scan_hash_field_inventory_is_exhaustive(detector: &DetectorSpec) {
+    let DetectorSpec {
+        id: _,
+        name: _,
+        service: _,
+        severity: _,
+        kind: _,
+        ml: _,
+        validators: _,
+        patterns: _,
+        companions: _,
+        verify: _,
+        keywords: _,
+        simdsieve_prefixes: _,
+        min_confidence: _,
+        entropy_floor: _,
+        entropy_high: _,
+        entropy_low: _,
+        entropy_very_high: _,
+        entropy_fallback: _,
+        entropy_roles: _,
+        sensitive_path_entropy_very_high: _,
+        entropy_shapes: _,
+        plausibility: _,
+        entropy_policy_priority: _,
+        bpe_max_bytes_per_token: _,
+        bpe_enabled: _,
+        decoded_hex_key_material_lengths: _,
+        canonical_hex_key_material: _,
+        keyword_free_min_len: _,
+        min_len: _,
+        max_len: _,
+        generic_vendor_suffix_fallback: _,
+        allowlist_paths: _,
+        allowlist_values: _,
+        stopwords: _,
+        public_identifier_assignment_markers: _,
+        structural_password_slot: _,
+        weak_anchor: _,
+        private_key_block: _,
+        credential_shape: _,
+        tests: _,
+    } = detector;
+}
+
+#[inline(always)]
+fn assert_pattern_hash_field_inventory_is_exhaustive(pattern: &PatternSpec) {
+    let PatternSpec {
+        regex: _,
+        description: _,
+        group: _,
+        required_literals: _,
+        client_safe: _,
+        weak_anchor: _,
+    } = pattern;
+}
+
+#[inline(always)]
+fn assert_companion_hash_field_inventory_is_exhaustive(companion: &CompanionSpec) {
+    let CompanionSpec {
+        name: _,
+        regex: _,
+        within_lines: _,
+        required: _,
+    } = companion;
 }
 
 // `hex_encode` lives in `finding.rs` (the single canonical lower-case-hex of a
