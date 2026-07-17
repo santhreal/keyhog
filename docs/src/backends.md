@@ -120,17 +120,18 @@ The gate passes only when the paired GPU/Hyperscan ratio's 95% confidence upper
 bound is below 1.0 at 8 MiB. Profiling and perf tracing retain parity and
 degradation checks but cannot pass the speed gate.
 
-The canonical checked result is
-`benchmarks/baselines/gpu_8mib_crossover_rtx5090.toml`. On its recorded RTX
-5090 host, VYRE 0.6.5 CUDA produced the same 143 findings with no degradation,
-then measured a 24.5886 ms held-out median against Hyperscan's 69.5641 ms. The
-paired GPU/Hyperscan geometric-mean ratio was 0.3530 with a 95% confidence
-interval of 0.3482 to 0.3579 across 100 held-out pairs. This is evidence for the
-recorded host and workload, not a portable route decision. A new crossover claim
-requires a `production_comparable = true` artifact from the corrected route with
-exact binary, detector, configuration, host, runtime, workload, result count,
-peer, and trial identity. Autoroute still requires calibration on the deployment
-host for the exact workload class.
+The checked artifact at
+`benchmarks/baselines/gpu_8mib_crossover_rtx5090.toml` retains the last measured
+timing and parity distribution, but it is historical rather than release
+evidence because that run did not attest a clean source tree. It recorded 143
+identical findings with no degradation, a 24.5886 ms VYRE CUDA median versus
+69.5641 ms for Hyperscan, and a paired ratio confidence interval of 0.3482 to
+0.3579 across 100 held-out pairs. Those measurements cannot prove the current
+release binary is reproducible from the recorded commit. A new crossover claim
+requires `source_tree_state = "clean"` and `production_comparable = true` from the
+corrected route with exact binary, detector, configuration, host, runtime,
+workload, result count, peer, and trial identity. Autoroute still requires
+calibration on the deployment host for the exact workload class.
 
 ## When automatic routing refuses to scan
 

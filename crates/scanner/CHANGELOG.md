@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Refuse release-comparable 8 MiB crossover evidence from a dirty source tree
+  and record source cleanliness in schema-v4 benchmark artifacts.
+
 - Compile the keyword-free operator entropy margin from the owning detector
   TOML instead of applying a scanner-owned `+ 1.0` threshold adjustment.
 

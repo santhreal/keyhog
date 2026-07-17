@@ -1,8 +1,10 @@
 schema_version = 2
 measured_at_utc = "2026-07-14T06:54:12.181134951+00:00"
-production_comparable = true
-crossover_passed = true
+production_comparable = false
+crossover_passed = false
 git_hash = "5a2ab2be9a50b22c3bb717f74cc5d73309848618"
+source_tree_state = "unattested"
+notes = "Historical timing and parity result only. The run did not attest a clean source tree, so it cannot support a release crossover claim."
 binary_sha256 = "c792a939e790ebc2c16e53f5596a640664a0b2d975d70cc4832f2853b43ec32c"
 detector_spec_blake3 = "b0c79e0f4e73777b34a99596bd047b8e485ec00e5dd94beb4a979ee452e52223"
 scanner_detector_digest = "df561964d260033f"

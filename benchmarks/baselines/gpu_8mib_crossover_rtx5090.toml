@@ -1,8 +1,10 @@
-schema_version = 3
+schema_version = 4
 measured_at_utc = "2026-07-17T09:23:35.705547767+00:00"
-production_comparable = true
-crossover_passed = true
+production_comparable = false
+crossover_passed = false
 git_hash = "85e62590a64128ae036bed96185cd20205fa1295"
+source_tree_state = "unattested"
+notes = "Historical timing and parity result only. The run did not attest a clean source tree, so its binary cannot be reproduced from git_hash alone and it cannot support a release crossover claim."
 binary_sha256 = "6a8a94d22676d09ec6f3b91b4ad654a578d6cf6479739509bd87bdcd53eaf0c4"
 detector_spec_blake3 = "9d52b2f3059ea2738bcb0551ac163f6b285ad0a754e3cdb1d77d5e43bb0a6437"
 scanner_detector_digest = "7a64e3ff38f49c4d"

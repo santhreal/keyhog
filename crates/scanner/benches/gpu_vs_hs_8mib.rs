@@ -34,6 +34,7 @@ use std::env;
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::time::{Duration, Instant};
 
 const MIB: usize = 1024 * 1024;
@@ -78,6 +79,7 @@ struct CrossoverArtifact {
     production_comparable: bool,
     crossover_passed: bool,
     git_hash: String,
+    source_tree_state: String,
     binary_sha256: String,
     detector_spec_blake3: String,
     scanner_detector_digest: String,
@@ -147,6 +149,63 @@ fn running_binary_sha256() -> Result<String, io::Error> {
         hasher.update(&buffer[..read]);
     }
     Ok(hex::encode(hasher.finalize()))
+}
+
+fn source_tree_is_clean(workspace_root: &Path) -> Result<bool, io::Error> {
+    let output = Command::new("git")
+        .args(["status", "--porcelain=v1", "--untracked-files=all"])
+        .current_dir(workspace_root)
+        .output()
+        .map_err(|source| {
+            io::Error::new(
+                source.kind(),
+                format!(
+                    "cannot inspect benchmark source state in {}: {source}",
+                    workspace_root.display()
+                ),
+            )
+        })?;
+    if !output.status.success() {
+        return Err(io::Error::other(format!(
+            "git status failed while identifying benchmark source state in {}: {}",
+            workspace_root.display(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    Ok(output.stdout.is_empty())
+}
+
+fn current_source_tree_head(workspace_root: &Path) -> Result<String, io::Error> {
+    let output = Command::new("git")
+        .args(["rev-parse", "--verify", "HEAD"])
+        .current_dir(workspace_root)
+        .output()
+        .map_err(|source| {
+            io::Error::new(
+                source.kind(),
+                format!(
+                    "cannot resolve benchmark source commit in {}: {source}",
+                    workspace_root.display()
+                ),
+            )
+        })?;
+    if !output.status.success() {
+        return Err(io::Error::other(format!(
+            "git rev-parse failed while identifying benchmark source in {}: {}",
+            workspace_root.display(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    let head = String::from_utf8(output.stdout)
+        .map_err(|source| io::Error::new(io::ErrorKind::InvalidData, source))?;
+    let head = head.trim();
+    if head.len() != 40 || !head.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("git returned invalid benchmark source commit {head:?}"),
+        ));
+    }
+    Ok(head.to_owned())
 }
 
 fn host_cpu_model() -> Result<String, io::Error> {
@@ -420,6 +479,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             format!(
                 "the 8 MiB release gate requires at least {RELEASE_HELD_OUT_PAIRS} held-out pairs and {RELEASE_SELECTION_ROUNDS} selection rounds; received {iters} and {selection_rounds}"
             ),
+        )
+        .into());
+    }
+    let workspace_root = workspace_root();
+    let source_tree_head = current_source_tree_head(&workspace_root)?;
+    if source_tree_head != keyhog_core::git_hash() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "benchmark binary was built from {}, but the source tree is at {}; rebuild before measuring",
+                keyhog_core::git_hash(),
+                source_tree_head
+            ),
+        )
+        .into());
+    }
+    let source_tree_clean = source_tree_is_clean(&workspace_root)?;
+    println!("source_tree_clean={source_tree_clean}");
+    if release_gate && !source_tree_clean {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "the 8 MiB release gate requires a clean source tree; commit the intended source and remove unrelated generated files before publishing crossover evidence",
         )
         .into());
     }
@@ -717,6 +798,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
         if let Some(path) = env::var_os("KH_BENCH_ARTIFACT") {
+            let publish_tree_head = current_source_tree_head(&workspace_root)?;
+            let publish_tree_clean = source_tree_is_clean(&workspace_root)?;
+            if publish_tree_head != source_tree_head || publish_tree_clean != source_tree_clean {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "benchmark source state changed during measurement; refusing to publish mixed-source evidence",
+                )
+                .into());
+            }
             let selected_peer = gpu_candidates
                 .iter()
                 .find(|candidate| candidate.backend == selected_gpu && candidate.is_eligible())
@@ -751,14 +841,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
             })?;
             let production_comparable = release_gate
+                && source_tree_clean
                 && iters >= RELEASE_HELD_OUT_PAIRS
                 && selection_rounds >= RELEASE_SELECTION_ROUNDS;
             let artifact = CrossoverArtifact {
-                schema_version: 3,
+                schema_version: 4,
                 measured_at_utc: chrono::Utc::now().to_rfc3339(),
                 production_comparable,
                 crossover_passed: production_comparable && interval.high_ratio < 1.0,
                 git_hash: keyhog_core::git_hash().to_owned(),
+                source_tree_state: if source_tree_clean {
+                    "clean".to_owned()
+                } else {
+                    "dirty".to_owned()
+                },
                 binary_sha256,
                 detector_spec_blake3: detector_spec_digest,
                 scanner_detector_digest: format!("{:016x}", runtime.detector_digest),

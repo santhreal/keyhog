@@ -11,6 +11,7 @@ struct CurrentGpuArtifact {
     production_comparable: bool,
     crossover_passed: bool,
     git_hash: String,
+    source_tree_state: String,
     selected_gpu_driver_version: String,
     source_bytes: usize,
     reference_findings: usize,
@@ -90,6 +91,12 @@ fn historical_gpu_artifacts_cannot_support_current_crossover_claims() {
                 "../../../../../benchmarks/baselines/gpu_8mib_crossover_rtx5090_2026-07-10.toml"
             ),
         ),
+        (
+            "unattested production-window crossover",
+            include_str!(
+                "../../../../../benchmarks/baselines/gpu_8mib_crossover_rtx5090_2026-07-13.toml"
+            ),
+        ),
     ] {
         let artifact: HistoricalGpuArtifact =
             toml::from_str(raw).unwrap_or_else(|error| panic!("parse {name}: {error}"));
@@ -107,17 +114,18 @@ fn historical_gpu_artifacts_cannot_support_current_crossover_claims() {
 }
 
 #[test]
-fn canonical_gpu_artifact_proves_the_checked_8mib_crossover() {
+fn canonical_gpu_artifact_cannot_claim_release_evidence_without_clean_source() {
     let artifact: CurrentGpuArtifact = toml::from_str(include_str!(
         "../../../../../benchmarks/baselines/gpu_8mib_crossover_rtx5090.toml"
     ))
     .expect("canonical RTX 5090 crossover artifact must parse");
 
-    assert_eq!(artifact.schema_version, 3);
+    assert_eq!(artifact.schema_version, 4);
     assert_eq!(artifact.source_bytes, 8 * 1024 * 1024);
     assert_eq!(artifact.held_out_pairs, 100);
-    assert!(artifact.production_comparable);
-    assert!(artifact.crossover_passed);
+    assert_eq!(artifact.source_tree_state, "unattested");
+    assert!(!artifact.production_comparable);
+    assert!(!artifact.crossover_passed);
     assert!(artifact.full_result_parity);
     assert_eq!(artifact.reference_findings, 143);
     assert!(!artifact.gpu_degraded);
