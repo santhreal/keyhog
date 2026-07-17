@@ -91,6 +91,22 @@ pub const fn simd_backend_compiled() -> bool {
     cfg!(feature = "simd")
 }
 
+/// Runtime identity of the dynamically linked Hyperscan/Vectorscan library.
+///
+/// Autoroute persistence must bind SIMD measurements to the library that
+/// actually executed them, not only to the fact that SIMD support compiled.
+#[must_use]
+pub fn hyperscan_runtime_identity() -> Option<String> {
+    #[cfg(feature = "simd")]
+    {
+        Some(hyperscan::version().to_string())
+    }
+    #[cfg(not(feature = "simd"))]
+    {
+        None
+    }
+}
+
 /// True when this scanner crate was compiled with the GPU backend stack.
 /// Autoroute host identity and persisted build evidence use this dependency-owned
 /// fact so a GPU-selected calibration can never be stored without GPU identity.

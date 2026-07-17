@@ -16,6 +16,7 @@ pub(super) struct AutorouteHostProfile {
     pub(super) has_avx512: bool,
     pub(super) has_neon: bool,
     pub(super) hyperscan_available: bool,
+    pub(super) hyperscan_runtime_identity: Option<String>,
     pub(super) gpu_name: Option<String>,
     pub(super) gpu_runtime_backend: Option<String>,
     pub(super) gpu_driver_runtime_identity: Option<String>,
@@ -30,6 +31,9 @@ pub(super) struct AutorouteHostProfile {
 impl AutorouteHostProfile {
     pub(super) fn with_live_hyperscan(mut self, available: bool) -> Self {
         self.hyperscan_available = available;
+        self.hyperscan_runtime_identity = available
+            .then(keyhog_scanner::hw_probe::hyperscan_runtime_identity)
+            .flatten();
         self
     }
 
@@ -85,6 +89,10 @@ impl AutorouteHostProfile {
             has_avx512: caps.has_avx512,
             has_neon: caps.has_neon,
             hyperscan_available: caps.hyperscan_available,
+            hyperscan_runtime_identity: caps
+                .hyperscan_available
+                .then(keyhog_scanner::hw_probe::hyperscan_runtime_identity)
+                .flatten(),
             gpu_name: gpu_device_identity,
             gpu_runtime_backend: (gpu_participates && acquired_peer_present)
                 .then(|| gpu_peer_identity.map(str::to_string))
@@ -117,6 +125,13 @@ impl AutorouteHostProfile {
             _ => return Err("system memory size is unavailable"),
         }
         self.require_exact_candidate_census()?;
+        if self.hyperscan_available {
+            if !field_is_present_nonblank(&self.hyperscan_runtime_identity) {
+                return Err("Hyperscan runtime identity is unavailable");
+            }
+        } else if self.hyperscan_runtime_identity.is_some() {
+            return Err("Hyperscan runtime identity is present while the backend is unavailable");
+        }
         // A Some("") / Some("  ") field is a PROBE BUG, distinct from an honest
         // None (no device): present-but-blank never validates.
         let gpu_name_present = field_is_present_nonblank(&self.gpu_name);
@@ -199,7 +214,7 @@ pub(super) fn render_host_profile(host: &AutorouteHostProfile) -> String {
         "scalar"
     };
     format!(
-        "{}/{} {} | {}p/{}l cores | {} | hyperscan={} | gpu={} | gpu_peers={} | gpu_driver={} | candidates={}",
+        "{}/{} {} | {}p/{}l cores | {} | hyperscan={} | hyperscan_runtime={} | gpu={} | gpu_peers={} | gpu_driver={} | candidates={}",
         host.os,
         host.arch,
         host.cpu_model.as_deref().unwrap_or("unknown-cpu"), // LAW10: display-only host label; recall-safe
@@ -211,6 +226,7 @@ pub(super) fn render_host_profile(host: &AutorouteHostProfile) -> String {
         } else {
             "no"
         },
+        host.hyperscan_runtime_identity.as_deref().unwrap_or("none"),
         host.gpu_name.as_deref().unwrap_or("none"), // LAW10: display-only host label; recall-safe
         host.gpu_runtime_backend.as_deref().unwrap_or("none"), // LAW10: display-only host label; recall-safe
         host.gpu_driver_runtime_identity
@@ -233,6 +249,10 @@ pub(super) fn host_identity_digest(host: &AutorouteHostProfile) -> String {
         .field_bool("has_avx512", host.has_avx512)
         .field_bool("has_neon", host.has_neon)
         .field_bool("hyperscan_available", host.hyperscan_available)
+        .field_option_str(
+            "hyperscan_runtime_identity",
+            host.hyperscan_runtime_identity.as_deref(),
+        )
         .field_option_str("gpu_name", host.gpu_name.as_deref())
         .field_option_str("gpu_runtime_backend", host.gpu_runtime_backend.as_deref())
         .field_option_str(

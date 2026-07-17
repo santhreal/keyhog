@@ -284,6 +284,7 @@ mod tests {
             has_avx512: false,
             has_neon: false,
             hyperscan_available: true,
+            hyperscan_runtime_identity: Some("hyperscan-test-runtime-5.4.2".to_string()),
             gpu_name: None,
             gpu_runtime_backend: None,
             gpu_driver_runtime_identity: None,

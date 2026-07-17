@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Bind autoroute host identity to the live linked Hyperscan/Vectorscan runtime
+  version, so a runtime replacement invalidates SIMD timing evidence and
+  requires recalibration instead of replaying a stale winner.
 - Split contiguous filesystem batches at safe source-family and size-provenance
   boundaries, extend the split to tracked and untracked git-diff inputs, and
   calibrate every default fused count for extracted tar members. Empty stdin is

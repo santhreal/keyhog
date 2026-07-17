@@ -229,6 +229,7 @@ fn test_host(gpu_name: Option<&str>) -> AutorouteHostProfile {
         has_avx512: false,
         has_neon: false,
         hyperscan_available: true,
+        hyperscan_runtime_identity: Some("hyperscan-test-runtime-5.4.2".to_string()),
         gpu_name: gpu_name.map(str::to_string),
         gpu_runtime_backend: gpu_name
             .map(|name| format!("gpu-wgpu-region-presence:wgpu@0.6.4:{name}:535.00")),
@@ -238,6 +239,38 @@ fn test_host(gpu_name: Option<&str>) -> AutorouteHostProfile {
         total_memory_mb: Some(65_536),
         eligible_backends: test_eligible_backends(gpu_name.map(|_| ScanBackend::GpuWgpu)),
     }
+}
+
+#[test]
+fn hyperscan_runtime_change_invalidates_autoroute_host_identity() {
+    let original = test_host(None);
+    let mut upgraded = original.clone();
+    upgraded.hyperscan_runtime_identity = Some("hyperscan-test-runtime-5.4.3".to_string());
+
+    assert_ne!(
+        host_identity_digest(&original),
+        host_identity_digest(&upgraded),
+        "changing only the live Hyperscan/Vectorscan runtime must invalidate persisted SIMD evidence"
+    );
+    assert_ne!(original, upgraded);
+}
+
+#[test]
+fn hyperscan_runtime_identity_must_match_backend_availability() {
+    let mut missing = test_host(None);
+    missing.hyperscan_runtime_identity = None;
+    assert_eq!(
+        missing.require_exact_identity(),
+        Err("Hyperscan runtime identity is unavailable")
+    );
+
+    let mut impossible = test_host(None);
+    impossible.hyperscan_available = false;
+    impossible.eligible_backends = vec![ScanBackend::CpuFallback.label().to_string()];
+    assert_eq!(
+        impossible.require_exact_identity(),
+        Err("Hyperscan runtime identity is present while the backend is unavailable")
+    );
 }
 
 fn test_workload_key() -> WorkloadKey {
@@ -1670,6 +1703,7 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
             && serialized.contains("\"physical_cores\"")
             && serialized.contains("\"logical_cores\"")
             && serialized.contains("\"total_memory_mb\"")
+            && serialized.contains("\"hyperscan_runtime_identity\"")
             && serialized.contains("\"gpu_runtime_backend\"")
             && serialized.contains("\"gpu_driver_runtime_identity\"")
             && serialized.contains("\"decode_kind_mask\"")
@@ -1769,6 +1803,25 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
     assert!(
         wrong_host.is_err(),
         "cache must reject a different host profile"
+    );
+    let mut other_hyperscan_runtime = host.clone();
+    other_hyperscan_runtime.hyperscan_runtime_identity =
+        Some("hyperscan-test-runtime-5.4.3".to_string());
+    assert!(
+        load_autoroute_cache(
+            &path,
+            digest,
+            test_rules_digest(),
+            config_digest,
+            &other_hyperscan_runtime,
+        )
+        .is_err(),
+        "cache must reject timing evidence from a different Hyperscan/Vectorscan runtime"
+    );
+    assert_eq!(
+        load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host)
+            .expect("the original linked-runtime identity must still replay"),
+        replacement,
     );
     let mut other_gpu_runtime = host.clone();
     other_gpu_runtime.gpu_driver_runtime_identity =
@@ -2478,9 +2531,9 @@ fn autoroute_cache_save_reports_when_it_replaces_outdated_evidence() {
 
     match outcome {
         AutorouteCacheSaveOutcome::Replaced { reason } => {
-            let expected = format!("schema {AUTOROUTE_CACHE_VERSION}");
             assert!(
-                reason.contains("schema 1") && reason.contains(&expected),
+                reason.contains("version 1")
+                    && reason.contains(&format!("expects {AUTOROUTE_CACHE_VERSION}")),
                 "replacement disposition must explain both schema identities: {reason}"
             );
         }

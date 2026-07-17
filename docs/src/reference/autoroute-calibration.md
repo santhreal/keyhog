@@ -191,7 +191,8 @@ which backend is fastest:
   capability set cannot reuse the evidence, including dirty/profile/native-link
   builds that happen to share a package version and Git hash.
 - Host identity includes OS/architecture, CPU model and topology, memory, CPU
-  instruction support and, when the scanner can use a physical GPU, the GPU
+  instruction support, the live linked Hyperscan/Vectorscan runtime version
+  when SIMD is eligible and, when the scanner can use a physical GPU, the GPU
   device, every acquired runtime backend and version, driver/runtime identity,
   and the exact sorted eligible-backend census for that resolved config. A
   missing or changed required field invalidates the evidence and requires
