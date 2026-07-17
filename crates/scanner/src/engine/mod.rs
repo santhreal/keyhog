@@ -321,10 +321,10 @@ pub struct CompiledScanner {
     #[cfg(feature = "gpu")]
     pub(crate) generic_keyword_literal_count: usize,
     pub(crate) phase2_always_active_indices: Vec<usize>,
-    /// Combined-RegexSet prefilter over `phase2_always_active_indices`. When
-    /// present, the per-chunk phase-2 capture scan runs one linear set pass instead of
-    /// every always-active pattern's regex over the whole chunk. `None` falls
-    /// back to running them all (recall-identical, just slower).
+    /// Always-active prefilter with full, anchor-residual, and
+    /// anchor-plus-plain-residual scopes. Each scope has lazy Hyperscan and
+    /// portable engines so extraction never scans a pattern already owned by
+    /// an active localizer.
     pub(crate) phase2_always_active_prefilter: Option<phase2::Phase2AlwaysActivePrefilter>,
     /// Shared-anchor localization index over the phase-2 set. When present,
     /// eligible phase-2 patterns are verified anchored at candidate positions

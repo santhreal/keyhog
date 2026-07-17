@@ -424,6 +424,7 @@ impl CompiledScanner {
                             &self.phase2_patterns,
                             match_text,
                             scratch,
+                            anchor_mode,
                             localize_plain,
                             &tuning,
                         ),

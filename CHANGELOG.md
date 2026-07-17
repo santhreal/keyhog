@@ -36,6 +36,11 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   generic, entropy, ML, recovery, normalized, and incomplete paths retain their
   canonical behavior; normalization invalidates raw GPU evidence and recomputes
   phase-one admission before extraction.
+- Anchored phase-two scans now compile exact full, anchor-residual, and
+  anchor-plus-plain-residual ownership sets. Hyperscan and portable RegexSet
+  paths consume the same set, so neither rescans patterns already owned by an
+  active localizer; disabling the localizer gate keeps those patterns in the
+  residual instead of silently dropping them.
 - Isolated entropy admission now skips lines already owned by stronger findings,
   proves detector-owned short symbolic shapes before Shannon scoring, and rejects
   pronounceable digit-bearing source identifiers when the owning TOML enables

@@ -1,8 +1,4 @@
-//! Hyperscan-backed always-active phase-2 prefilter engine (`Phase2HsEngine`).
-//! Extracted from `phase2.rs`; simd-only (the whole module is cfg-gated). Holds
-//! the compiled HS database for the always-active phase-2 set and marks matches
-//! into the caller's scratch. Pure move, no behaviour change. The module is
-//! gated `#[cfg(feature = "simd")]` at its `mod` declaration in `engine/mod.rs`.
+//! Hyperscan engine for one always-active phase-2 ownership scope.
 
 use super::phase2::ActivePatternsScratch;
 use super::*;
@@ -12,20 +8,14 @@ use std::time::Instant;
 /// Hyperscan-backed always-active prefilter engine. See the `hs` field on
 /// [`Phase2AlwaysActivePrefilter`].
 ///
-/// Holds TWO compiled sub-databases:
-///   * `full`: every always-active pattern (incl. the ~2.8k homoglyph variants).
-///     Used on non-ASCII chunks, where a unicode look-alike prefix can genuinely
-///     appear and only the homoglyph variant catches it.
-///   * `ascii_lean`: the NON-homoglyph subset only. On a pure-ASCII chunk the
+/// Holds up to two compiled sub-databases:
+///   * `full`: every pattern in the selected ownership scope.
+///   * `ascii_lean`: that scope's non-homoglyph subset. On a pure-ASCII chunk the
 ///     homoglyph variants are inert: their look-alike prefixes cannot appear in
 ///     ASCII bytes, and any match on the ASCII ORIGINAL is already produced by the
 ///     base pattern via the AC/confirmed path, the exact invariant the RegexSet
 ///     path's `homoglyph_ascii_skip` (and its `homoglyph_ascii_skip_parity_default`
-///     gate) rely on. The full DB is 99.9% homoglyph variants whose char classes
-///     include the ASCII original (`[AА]` matches ASCII 'A'), so HS's literal
-///     prefilter still activates their expensive NFAs on ASCII, measured 100-215×
-///     slower than the lean DB (`hs_homoglyph_ascii_skip_prize`). `None` when there
-///     are no homoglyph variants to drop (then `full` is used for ASCII too).
+///     gate) rely on. `None` when the scope has no homoglyph variants to drop.
 pub(crate) struct Phase2HsEngine {
     full: HsSubEngine,
     ascii_lean: Option<HsSubEngine>,
@@ -182,10 +172,8 @@ impl HsSubEngine {
 }
 
 impl Phase2HsEngine {
-    /// Compile the full DB over all `always_active` patterns and, when there are
-    /// homoglyph variants to skip, the lean ASCII DB over the non-homoglyph subset.
-    /// Returns `None` (caller keeps the RegexSet path) if the full DB has no
-    /// surviving pattern.
+    /// Compile the selected ownership scope and, when useful, its non-homoglyph
+    /// ASCII subset. Returns `None` when no pattern survives compilation.
     pub(crate) fn build(
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
         always_active: &[usize],
@@ -219,7 +207,7 @@ impl Phase2HsEngine {
         }
     }
 
-    /// Mark every always-active pattern that can match `match_text`. One SIMD
+    /// Mark every pattern in this ownership scope that can match `match_text`. One SIMD
     /// scan marks the HS-covered patterns; the loud host path marks the few
     /// HS-incompatible ones. The marked set is a sound superset of the matching
     /// patterns (extraction filters), identical to the RegexSet path.

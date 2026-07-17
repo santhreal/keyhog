@@ -8,6 +8,13 @@ use crate::scanner_config::ResolvedRuntimeTuningConfig;
 use aho_corasick::AhoCorasick;
 use std::sync::atomic::Ordering::Relaxed;
 
+#[derive(Clone, Copy)]
+enum PrefilterScope {
+    Full,
+    AnchorResidual,
+    LocalizedResidual,
+}
+
 /// ONE PLACE for the always-active prefilter's HS-vs-RegexSet engine gate (the
 /// hot-path decision in [`Phase2AlwaysActivePrefilter::mark_matches`]). HS engages
 /// when it is enabled AND the chunk is EITHER within the size gate OR pure ASCII of
@@ -47,8 +54,8 @@ fn hs_prefilter_engages(
 /// Replaces four divergent inline copies of this predicate (HS/RegexSet ×
 /// mark/any-match).
 #[inline]
-fn homoglyph_skip_applies(match_text: &str, homoglyph_ascii_skip: bool) -> bool {
-    homoglyph_ascii_skip && (match_text.is_ascii() || super::profile::in_decode())
+fn homoglyph_skip_applies(chunk_is_ascii: bool, homoglyph_ascii_skip: bool) -> bool {
+    homoglyph_ascii_skip && (chunk_is_ascii || super::profile::in_decode())
 }
 
 impl Phase2AlwaysActivePrefilter {
@@ -70,6 +77,7 @@ impl Phase2AlwaysActivePrefilter {
     pub(crate) fn build(
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
         always_active_indices: &[usize],
+        anchor_index: Option<&super::phase2_anchor::Phase2AnchorIndex>,
     ) -> Option<Self> {
         if always_active_indices.is_empty() {
             return None;
@@ -80,12 +88,32 @@ impl Phase2AlwaysActivePrefilter {
                 .all(|&index| index < phase2_patterns.len()),
             "compiled scanner invariant violation: phase-2 always-active index out of range"
         );
+        let anchor_residual_indices = always_active_indices
+            .iter()
+            .copied()
+            .filter(|&index| {
+                !anchor_index.is_some_and(|anchors| anchors.is_always_active_eligible(index))
+            })
+            .collect::<Vec<_>>();
+        let localized_residual_indices = anchor_residual_indices
+            .iter()
+            .copied()
+            .filter(|&index| phase2_patterns[index].0.regex.is_case_insensitive())
+            .collect::<Vec<_>>();
         Some(Self {
             valid_always_active_indices: always_active_indices.to_vec(),
+            anchor_residual_indices,
+            localized_residual_indices,
             portable: std::sync::OnceLock::new(),
+            portable_anchor_residual: std::sync::OnceLock::new(),
+            portable_localized_residual: std::sync::OnceLock::new(),
             combined_gate: std::sync::OnceLock::new(),
             #[cfg(feature = "simd")]
             hs: std::sync::OnceLock::new(),
+            #[cfg(feature = "simd")]
+            hs_anchor_residual: std::sync::OnceLock::new(),
+            #[cfg(feature = "simd")]
+            hs_localized_residual: std::sync::OnceLock::new(),
         })
     }
 
@@ -100,35 +128,51 @@ impl Phase2AlwaysActivePrefilter {
             .as_ref()
     }
 
-    fn portable<'a>(
+    fn indices_for(&self, scope: PrefilterScope) -> &[usize] {
+        match scope {
+            PrefilterScope::Full => &self.valid_always_active_indices,
+            PrefilterScope::AnchorResidual => &self.anchor_residual_indices,
+            PrefilterScope::LocalizedResidual => &self.localized_residual_indices,
+        }
+    }
+
+    fn portable_for<'a>(
         &'a self,
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
+        scope: PrefilterScope,
     ) -> &'a PortablePrefilter {
-        self.portable
-            .get_or_init(|| self.compile_portable(phase2_patterns))
+        let slot = match scope {
+            PrefilterScope::Full => &self.portable,
+            PrefilterScope::AnchorResidual => &self.portable_anchor_residual,
+            PrefilterScope::LocalizedResidual => &self.portable_localized_residual,
+        };
+        slot.get_or_init(|| Self::compile_portable(phase2_patterns, self.indices_for(scope)))
     }
 
     #[cfg(feature = "simd")]
-    fn hs<'a>(
+    fn hs_for<'a>(
         &'a self,
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
+        scope: PrefilterScope,
     ) -> Option<&'a Phase2HsEngine> {
-        self.hs
-            .get_or_init(|| {
-                Phase2HsEngine::build(phase2_patterns, &self.valid_always_active_indices)
-            })
+        let slot = match scope {
+            PrefilterScope::Full => &self.hs,
+            PrefilterScope::AnchorResidual => &self.hs_anchor_residual,
+            PrefilterScope::LocalizedResidual => &self.hs_localized_residual,
+        };
+        slot.get_or_init(|| Phase2HsEngine::build(phase2_patterns, self.indices_for(scope)))
             .as_ref()
     }
 
     fn compile_portable(
-        &self,
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
+        indices: &[usize],
     ) -> PortablePrefilter {
         // Keep batches homogeneous by case flags and homoglyph-variant status.
         let mut ci: Vec<usize> = Vec::new();
         let mut plain_homoglyph: Vec<usize> = Vec::new();
         let mut plain_other: Vec<usize> = Vec::new();
-        for &index in &self.valid_always_active_indices {
+        for &index in indices {
             let (pattern, _) = &phase2_patterns[index];
             if pattern.regex.is_case_insensitive() {
                 ci.push(index);
@@ -573,6 +617,8 @@ impl Phase2AlwaysActivePrefilter {
     /// `match_text` MUST be the text the per-pattern extraction runs on
     /// (`preprocessed.text`) for the prefilter to stay sound under unicode
     /// normalization.
+    /// `anchor_mode`: the main required-prefix localizer owns its eligible
+    /// always-active patterns, so this prefilter marks only its residual set.
     /// `localize_plain`: the caller (the shared-anchor path) handles the plain
     /// (homoglyph) patterns on pure-ASCII chunks via the localized AC, so they
     /// are SKIPPED here (no whole-chunk RegexSet pass). When false, plain
@@ -583,10 +629,19 @@ impl Phase2AlwaysActivePrefilter {
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
         match_text: &str,
         scratch: &mut ActivePatternsScratch,
+        anchor_mode: bool,
         localize_plain: bool,
         tuning: &ResolvedRuntimeTuningConfig,
     ) {
         record_mark_call();
+        let ascii = match_text.is_ascii();
+        let scope = if !anchor_mode {
+            PrefilterScope::Full
+        } else if localize_plain && tuning.homoglyph_gate && ascii {
+            PrefilterScope::LocalizedResidual
+        } else {
+            PrefilterScope::AnchorResidual
+        };
         // SWE-101 no-candidate gate (the user's #1 issue: "phase-2 must NEVER
         // eat runtime, not 0.000000001s"). The per-pattern body below, the HS
         // `scan_each` enumeration + its HS-incompatible whole-chunk-regex loop, or
@@ -607,10 +662,10 @@ impl Phase2AlwaysActivePrefilter {
         // body (never a silent skip (Law 10)).
         if tuning.no_candidate_gate {
             if let Some(gate) = self.combined_gate(phase2_patterns) {
-                if match_text.is_ascii() && !gate.anchor_present(match_text) {
+                if ascii && !gate.anchor_present(match_text) {
                     // No anchorable pattern can fire; mark only the non-anchorable
                     // patterns that actually match (precise, recall-identical).
-                    gate.mark_non_anchorable(match_text, scratch);
+                    gate.mark_non_anchorable(match_text, scratch, self.indices_for(scope));
                     record_mark_gate_skip();
                     return;
                 }
@@ -620,17 +675,16 @@ impl Phase2AlwaysActivePrefilter {
         // below is real work, not no-candidate overhead.
         record_mark_perpattern_work();
         // SIMD fast path: one Hyperscan scan replaces the whole-chunk RegexSet
-        // batch loop below. When the plain localizer owns those candidates, its
-        // AC plus anchored verification replaces the plain batches, so running
-        // the full HS marking database as well would duplicate the dominant work.
+        // batch loop below. The selected scope excludes every pattern already
+        // owned by the active anchor localizers, so no HS database rescans work
+        // that anchored verification will execute.
         #[cfg(feature = "simd")]
-        let hs_owns_marking = !localize_plain
-            && hs_prefilter_engages(
-                tuning.fallback_hs,
-                match_text.len(),
-                tuning.hs_prefilter_max_len,
-                match_text.is_ascii(),
-            );
+        let hs_owns_marking = hs_prefilter_engages(
+            tuning.fallback_hs,
+            match_text.len(),
+            tuning.hs_prefilter_max_len,
+            ascii,
+        );
         #[cfg(feature = "simd")]
         if hs_owns_marking {
             // HS engages on (chunks ≤ the size gate) OR (ASCII chunks of ANY size).
@@ -640,15 +694,14 @@ impl Phase2AlwaysActivePrefilter {
             // under-marks the unicode `.`/`\w`/`\s` patterns there, and forcing HS
             // + a supplemental unicode set was recall-safe but 2.75× slower than the
             // RegexSet (see hs_prefilter_engages / HS_PREFILTER_MAX_LEN_DEFAULT).
-            if let Some(hs) = self.hs(phase2_patterns) {
+            if let Some(hs) = self.hs_for(phase2_patterns, scope) {
                 // Homoglyph skip for the HS path: the homoglyph variants are inert on
                 // a pure-ASCII chunk (base AC covers the ASCII original) AND on any
                 // decoded sub-chunk (a homoglyph in decoded binary is a non-credential),
                 // so the lean sub-DB marks the identical CREDENTIAL set ~100× cheaper.
                 // SAME `homoglyph_skip_applies` owner the RegexSet path below uses, so
                 // both engines stay findings-consistent (backend_parity_matrix).
-                let skip_homoglyph =
-                    homoglyph_skip_applies(match_text, tuning.homoglyph_ascii_skip);
+                let skip_homoglyph = homoglyph_skip_applies(ascii, tuning.homoglyph_ascii_skip);
                 match hs.mark(match_text, scratch, skip_homoglyph) {
                     Ok(()) => {
                         // Per-pattern work served by the HS SIMD fast path.
@@ -669,8 +722,8 @@ impl Phase2AlwaysActivePrefilter {
         // size gate, or this is a non-`simd` build. The profiler reads this split
         // to attribute the `phase2:prefilter` cost between the two paths.
         record_mark_regexset_served();
-        let portable = self.portable(phase2_patterns);
-        let use_ascii = tuning.homoglyph_gate && match_text.is_ascii();
+        let portable = self.portable_for(phase2_patterns, scope);
+        let use_ascii = tuning.homoglyph_gate && ascii;
 
         // Prefix-literal skip gate (KH decode-recursion lever). A `gateable`
         // batch's patterns ALL provably require one of their prefix literals; if
@@ -682,7 +735,6 @@ impl Phase2AlwaysActivePrefilter {
         // low-density source). `present == true` means "run gateable batches as
         // before" (recall is identical, only dead work is removed).
         let gate_on = tuning.fallback_prefix_gate;
-        let ascii = match_text.is_ascii();
         // ci batches run `set` on every chunk, but the combined AC gate is an
         // ASCII case-insensitive automaton. On non-ASCII chunks the regex crate's
         // Unicode case folding is broader, so the ci batches must run.
@@ -728,12 +780,8 @@ impl Phase2AlwaysActivePrefilter {
             // `homoglyph_skip_applies` also skips the batch on decoded sub-chunks
             // (binary noise → homoglyph hits are non-credentials), matching the HS path.
             if batch.homoglyph_skippable
-                && homoglyph_skip_applies(match_text, tuning.homoglyph_ascii_skip)
+                && homoglyph_skip_applies(ascii, tuning.homoglyph_ascii_skip)
             {
-                continue;
-            }
-            // Or: the caller's localizer covers this plain batch.
-            if is_plain && localize_plain && use_ascii {
                 continue;
             }
             // Skip a gateable batch whose required prefix literals are all absent.
@@ -799,6 +847,7 @@ impl Phase2AlwaysActivePrefilter {
         match_text: &str,
         tuning: &ResolvedRuntimeTuningConfig,
     ) -> bool {
+        let ascii = match_text.is_ascii();
         // Same no-candidate gate as `mark_matches`: on a pure-ASCII no-anchor chunk
         // no anchorable pattern can fire, so the active set is non-empty iff some
         // non-anchorable pattern matches, checked precisely with each pattern's
@@ -808,20 +857,19 @@ impl Phase2AlwaysActivePrefilter {
         // the full ~2,700-pattern HS/RegexSet scan.
         if tuning.no_candidate_gate {
             if let Some(gate) = self.combined_gate(phase2_patterns) {
-                if match_text.is_ascii() && !gate.anchor_present(match_text) {
+                if ascii && !gate.anchor_present(match_text) {
                     return gate.any_non_anchorable_match(match_text);
                 }
             }
         }
         #[cfg(feature = "simd")]
         if tuning.fallback_hs && match_text.len() <= tuning.hs_prefilter_max_len {
-            if let Some(hs) = self.hs(phase2_patterns) {
+            if let Some(hs) = self.hs_for(phase2_patterns, PrefilterScope::Full) {
                 // Same `homoglyph_skip_applies` owner as `mark_matches` and the
                 // RegexSet admission path below: on ASCII (and on decoded sub-chunks)
                 // the lean sub-DB answers the identical "any always-active credential
                 // match?" question ~100× cheaper.
-                let skip_homoglyph =
-                    homoglyph_skip_applies(match_text, tuning.homoglyph_ascii_skip);
+                let skip_homoglyph = homoglyph_skip_applies(ascii, tuning.homoglyph_ascii_skip);
                 match hs.any_match(match_text, skip_homoglyph) {
                     Ok(hit) => return hit,
                     Err(error) => {
@@ -833,7 +881,7 @@ impl Phase2AlwaysActivePrefilter {
                 }
             }
         }
-        let portable = self.portable(phase2_patterns);
+        let portable = self.portable_for(phase2_patterns, PrefilterScope::Full);
         // Patterns whose batch failed to compile run unconditionally on the full
         // marking path, so a chunk that reaches this point must be admitted.
         // Keep this AFTER the combined no-candidate gate and the successful HS
@@ -846,11 +894,10 @@ impl Phase2AlwaysActivePrefilter {
         // set is non-empty iff some batch's set matches. `is_match` early-exits
         // at the first matching pattern within the batch.
         let truncate = tuning.prefilter_truncate;
-        let ascii = match_text.is_ascii();
         let use_ascii = tuning.homoglyph_gate && ascii;
         for batch in &portable.batches {
             if batch.homoglyph_skippable
-                && homoglyph_skip_applies(match_text, tuning.homoglyph_ascii_skip)
+                && homoglyph_skip_applies(ascii, tuning.homoglyph_ascii_skip)
             {
                 continue;
             }

@@ -346,9 +346,10 @@ impl CombinedNoCandidateGate {
         &self,
         match_text: &str,
         scratch: &mut ActivePatternsScratch,
+        allowed_indices: &[usize],
     ) {
         for (idx, re) in &self.non_anchorable {
-            if re.get().is_match(match_text) {
+            if allowed_indices.binary_search(idx).is_ok() && re.get().is_match(match_text) {
                 scratch.mark(*idx);
             }
         }
@@ -367,39 +368,39 @@ impl CombinedNoCandidateGate {
 }
 
 pub(crate) struct Phase2AlwaysActivePrefilter {
-    /// Valid always-active phase-2 indices. Invalid indices are counted and
-    /// warned during construction; portable RegexSet construction consumes this
-    /// clean list lazily on the first RegexSet fallback use.
+    /// Every valid always-active phase-2 index. Used by the legacy whole-chunk
+    /// path and the admission proof, where no anchor localizer owns extraction.
     pub(crate) valid_always_active_indices: Vec<usize>,
-    /// Heavy portable RegexSet batches/gates. Lazily initialized so the HS path
-    /// and no-candidate skip path do not pay RegexSet construction for scans
-    /// that never need it.
+    /// Always-active indices not owned by the main required-prefix localizer.
+    /// This is the only prefilter scope needed by the anchored extraction path
+    /// when the optional plain-pattern localizer is disabled.
+    pub(crate) anchor_residual_indices: Vec<usize>,
+    /// Anchor residual further restricted to case-insensitive patterns. On an
+    /// ASCII chunk with the plain-pattern localizer enabled, every remaining
+    /// case-sensitive pattern is extracted by that localizer, so only this set
+    /// may be marked by the prefilter.
+    pub(crate) localized_residual_indices: Vec<usize>,
+    /// Heavy portable RegexSet batches/gates for the full legacy scope.
     pub(crate) portable: OnceLock<PortablePrefilter>,
+    /// Portable batches for the anchor-owned residual scope.
+    pub(crate) portable_anchor_residual: OnceLock<PortablePrefilter>,
+    /// Portable batches for the anchor plus plain-localizer residual scope.
+    pub(crate) portable_localized_residual: OnceLock<PortablePrefilter>,
     /// SWE-101 combined no-candidate gate, the ONE fast combined prefilter that
     /// gates the expensive per-pattern marking. See [`CombinedNoCandidateGate`].
     /// Lazily initialized so scanner construction stores only validated routing
     /// indices; a scan that disables the gate or never reaches phase-2 does not
     /// compile its Aho-Corasick state.
     pub(crate) combined_gate: OnceLock<Option<CombinedNoCandidateGate>>,
-    /// Hyperscan-backed engine over the SAME always-active patterns. Lazily
-    /// initialized so scanner construction and no-candidate chunks do not compile
-    /// the one-shard ~2k-pattern HS database. When present and enabled
-    /// (`phase2_hs_enabled`), `mark_matches` uses it instead of the
-    /// `regex::RegexSet` batches above: one SIMD multi-pattern scan with
-    /// `SINGLEMATCH` (fire-once = "does P match") replaces the ~2,679-pattern
-    /// whole-chunk RegexSet pass, the measured #1 scan cost (`phase2:prefilter`),
-    /// ~1000x faster (`phase2_prefilter_hs_vs_regexset`) and findings-identical
-    /// (`phase2_prefilter_hs_findings_parity`). `None` when the `simd` feature
-    /// is off or HS failed to compile (then the RegexSet batches are the path).
-    ///
-    /// The engine holds TWO sub-databases (`Phase2HsEngine::{full, ascii_lean}`):
-    /// on a pure-ASCII chunk with `homoglyph_ascii_skip` on, `mark_matches` passes
-    /// `skip_homoglyph_ascii=true` and marking routes through the lean sub-DB that
-    /// EXCLUDES the ~2.8k inert homoglyph variants, the same skip the RegexSet
-    /// path already applies, extended to HS (measured 100-215× cheaper on ASCII,
-    /// recall-neutral: `hs_homoglyph_ascii_skip_drops_only_homoglyph_variants`).
+    /// Lazy Hyperscan engine for the full legacy/admission scope.
     #[cfg(feature = "simd")]
     pub(crate) hs: OnceLock<Option<Phase2HsEngine>>,
+    /// Hyperscan engine over only patterns not owned by the main anchor path.
+    #[cfg(feature = "simd")]
+    pub(crate) hs_anchor_residual: OnceLock<Option<Phase2HsEngine>>,
+    /// Hyperscan engine over only patterns not owned by either ASCII localizer.
+    #[cfg(feature = "simd")]
+    pub(crate) hs_localized_residual: OnceLock<Option<Phase2HsEngine>>,
 }
 
 /// Bytes of already-scanned parent context kept on each side of the decoded span

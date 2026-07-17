@@ -277,17 +277,14 @@ impl CompiledScanner {
                 .fold(0, |longest, literal| longest.max(literal.len()))
         });
 
-        // Combined-RegexSet prefilter over EVERY always-active phase-2 pattern. The
-        // plain (homoglyph-variant) batches carry a fast ASCII-folded alternate
-        // RegexSet (the homoglyph regex with non-ASCII stripped); on a pure-ASCII
-        // chunk it is match-equivalent to the slow unicode-class form, so the
-        // prefilter marks the IDENTICAL set in the IDENTICAL order, recall and
-        // active-set order unchanged, but far faster (the homoglyph unicode
-        // RegexSet was measured at ~90% of phase-2 time). `None` on build
-        // failure runs them all (recall-safe).
+        // Compile one ownership plan for the always-active phase-2 set. The full
+        // scope serves legacy extraction and admission; anchored extraction uses
+        // residual scopes that omit patterns already owned by its localizers.
+        // Hyperscan and portable RegexSet engines consume the same scopes lazily.
         let phase2_always_active_prefilter = phase2::Phase2AlwaysActivePrefilter::build(
             &state.phase2_patterns,
             &phase2_always_active_indices,
+            phase2_anchor_index.as_ref(),
         );
         tracing::debug!(
             eligible = phase2_anchor_index

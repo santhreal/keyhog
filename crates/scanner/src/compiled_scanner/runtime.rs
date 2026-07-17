@@ -269,12 +269,26 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         // Warm: one call to initialise any thread-local state before timing.
         let mut scratch = phase2::ActivePatternsScratch::new();
         scratch.begin(self.phase2_patterns.len());
-        prefilter.mark_matches(&self.phase2_patterns, text, &mut scratch, false, &tuning);
+        prefilter.mark_matches(
+            &self.phase2_patterns,
+            text,
+            &mut scratch,
+            false,
+            false,
+            &tuning,
+        );
         // Timed loop.
         let t0 = std::time::Instant::now();
         for _ in 0..n_calls {
             scratch.begin(self.phase2_patterns.len());
-            prefilter.mark_matches(&self.phase2_patterns, text, &mut scratch, false, &tuning);
+            prefilter.mark_matches(
+                &self.phase2_patterns,
+                text,
+                &mut scratch,
+                false,
+                false,
+                &tuning,
+            );
         }
         let elapsed_ns = t0.elapsed().as_nanos() as f64;
         elapsed_ns / n_calls as f64
