@@ -933,8 +933,9 @@ fn candidate_plausibility_rejection_stage_with_policy(
     let keyword_free_min_len = compiled.keyword_free_min_len;
     let credential_context_min_len = compiled.min_len;
 
-    if crate::suppression::shape::is_structured_dotted_token(candidate) {
-        if candidate.len() < keyword_free_min_len.min(context.min_len) {
+    let structured_dotted = crate::suppression::shape::is_structured_dotted_token(candidate);
+    if structured_dotted {
+        if candidate.len() < compiled.structured_dotted_min_len {
             return Some(StageId::EntropyValueShape(
                 EntropyShapeStage::StructuredDottedTooShort,
             ));
@@ -983,7 +984,7 @@ fn candidate_plausibility_rejection_stage_with_policy(
                 EntropyShapeStage::SecretPlausibilityRejected,
             ));
     }
-    if candidate.len() < keyword_free_min_len.min(context.min_len) {
+    if !structured_dotted && candidate.len() < keyword_free_min_len.min(context.min_len) {
         return Some(StageId::EntropyValueShape(
             EntropyShapeStage::KeywordFreeTooShort,
         ));

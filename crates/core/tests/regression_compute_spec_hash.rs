@@ -526,6 +526,12 @@ knob_changes_digest!(spec_hash_binds_plausibility_policy, |d| d.plausibility =
         mixed_alnum_floor: 3.7,
         symbolic_entropy_floor: 3.6,
         second_half_entropy_floor: 2.6,
+        second_half_min_len: 17,
+        unique_chars_min_len: 17,
+        min_unique_chars: 8,
+        unanchored_hex_max_len: 10,
+        identical_char_max_len: 4,
+        structured_dotted_min_len: 40,
         mixed_alnum_min_len: 21,
         isolated_mixed_entropy_floor: 3.7,
         isolated_symbolic_min_len: 19,
@@ -534,6 +540,7 @@ knob_changes_digest!(spec_hash_binds_plausibility_policy, |d| d.plausibility =
         isolated_colon_left_min_len: 21,
         isolated_colon_right_min_len: 17,
         leading_slash_base64_entropy_floor: 4.9,
+        leading_slash_base64_min_len: 40,
         keyword_free_operator_margin: None,
         reject_repeated_blocks: true,
         allow_alphabetic_credential: true,
@@ -549,6 +556,12 @@ fn spec_hash_binds_isolated_symbolic_shape_policy_fields() {
         mixed_alnum_floor: 3.7,
         symbolic_entropy_floor: 3.6,
         second_half_entropy_floor: 2.6,
+        second_half_min_len: 17,
+        unique_chars_min_len: 17,
+        min_unique_chars: 8,
+        unanchored_hex_max_len: 10,
+        identical_char_max_len: 4,
+        structured_dotted_min_len: 40,
         mixed_alnum_min_len: 21,
         isolated_mixed_entropy_floor: 3.7,
         isolated_symbolic_min_len: 19,
@@ -557,6 +570,7 @@ fn spec_hash_binds_isolated_symbolic_shape_policy_fields() {
         isolated_colon_left_min_len: 21,
         isolated_colon_right_min_len: 17,
         leading_slash_base64_entropy_floor: 4.9,
+        leading_slash_base64_min_len: 40,
         keyword_free_operator_margin: None,
         reject_repeated_blocks: true,
         allow_alphabetic_credential: true,
@@ -607,6 +621,42 @@ fn spec_hash_binds_isolated_symbolic_shape_policy_fields() {
         compute_spec_hash(std::slice::from_ref(&margin_changed)),
         "changing keyword-free operator composition must invalidate scan identity"
     );
+}
+
+#[test]
+fn spec_hash_binds_detector_owned_plausibility_boundaries() {
+    let mut base = knob_base();
+    base.plausibility = keyhog_core::detector_spec_by_id("generic-secret")
+        .expect("embedded generic entropy owner")
+        .plausibility;
+    let baseline = compute_spec_hash(std::slice::from_ref(&base));
+    let mutations: &[(&str, fn(&mut DetectorPlausibilityPolicySpec))] = &[
+        ("second_half_min_len", |p| p.second_half_min_len += 1),
+        ("unique_chars_min_len", |p| p.unique_chars_min_len += 1),
+        ("min_unique_chars", |p| p.min_unique_chars += 1),
+        ("unanchored_hex_max_len", |p| p.unanchored_hex_max_len += 1),
+        ("identical_char_max_len", |p| p.identical_char_max_len += 1),
+        ("structured_dotted_min_len", |p| {
+            p.structured_dotted_min_len += 1
+        }),
+        ("leading_slash_base64_min_len", |p| {
+            p.leading_slash_base64_min_len += 1
+        }),
+    ];
+    for &(name, mutate) in mutations {
+        let mut changed = base.clone();
+        mutate(
+            changed
+                .plausibility
+                .as_mut()
+                .expect("plausibility baseline"),
+        );
+        assert_ne!(
+            baseline,
+            compute_spec_hash(std::slice::from_ref(&changed)),
+            "changing detector-owned {name} must invalidate scan and autoroute identity"
+        );
+    }
 }
 knob_changes_digest!(spec_hash_binds_entropy_policy_priority, |d| d
     .entropy_policy_priority =

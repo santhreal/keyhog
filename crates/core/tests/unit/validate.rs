@@ -145,6 +145,12 @@ fn plausibility_policy_fields_reject_invalid_ranges() {
         mixed_alnum_floor: 4.0,
         symbolic_entropy_floor: 9.0,
         second_half_entropy_floor: f64::NAN,
+        second_half_min_len: 0,
+        unique_chars_min_len: 0,
+        min_unique_chars: 0,
+        unanchored_hex_max_len: 0,
+        identical_char_max_len: 0,
+        structured_dotted_min_len: 0,
         mixed_alnum_min_len: 0,
         isolated_mixed_entropy_floor: 9.0,
         isolated_symbolic_min_len: 0,
@@ -153,6 +159,7 @@ fn plausibility_policy_fields_reject_invalid_ranges() {
         isolated_colon_left_min_len: 0,
         isolated_colon_right_min_len: 0,
         leading_slash_base64_entropy_floor: f64::NAN,
+        leading_slash_base64_min_len: 0,
         keyword_free_operator_margin: None,
         reject_repeated_blocks: true,
         allow_alphabetic_credential: true,
@@ -176,6 +183,35 @@ fn plausibility_policy_fields_reject_invalid_ranges() {
     assert!(issues.iter().any(|issue| matches!(
         issue,
         QualityIssue::Error(message) if message.contains("isolated_symbolic_min_symbols")
+    )));
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("second_half_min_len")
+    )));
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("leading_slash_base64_min_len")
+    )));
+}
+
+#[test]
+fn plausibility_diversity_requirement_must_fit_its_activation_boundary() {
+    let mut spec = keyhog_core::detector_spec_by_id("generic-secret")
+        .expect("embedded generic entropy owner")
+        .clone();
+    let policy = spec
+        .plausibility
+        .as_mut()
+        .expect("valid entropy owner declares plausibility");
+    policy.unique_chars_min_len = 7;
+    policy.min_unique_chars = 8;
+
+    let issues = validate_detector(&spec);
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message)
+            if message.contains("min_unique_chars")
+                && message.contains("unique_chars_min_len")
     )));
 }
 

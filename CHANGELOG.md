@@ -6,6 +6,13 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Entropy plausibility no longer owns hidden length or diversity thresholds in
+  scanner code. Active entropy detectors now declare tail-check, distinct-byte,
+  unanchored-hex, repeated-character, structured-dotted, and slash-base64
+  boundaries in their TOML, and the canonical detector digest binds every value.
+  The universal sealed-secret ciphertext cutoff is now typed Tier-B data rather
+  than a scanner literal. Generic credential context no longer implicitly lifts
+  canonical 32-hex values without an exact detector-owned key-material rule.
 - Detector patterns can declare AST-proven `required_literals` beside their
   regex. KeyHog compiles those literals into every backend's shared candidate
   plan and rejects optional or branch-incomplete declarations. The DeepL and

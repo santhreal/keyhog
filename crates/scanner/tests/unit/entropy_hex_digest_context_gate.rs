@@ -3,10 +3,8 @@
 //!
 //! Pure-hex strings at canonical lengths (32/40/64/128 chars) are usually file/
 //! commit/image digests, not credentials. In keyword-free context, they're
-//! rejected to avoid FPs on `sha256: <hex>`. In credential context, only the
-//! narrow key-material lengths are admitted; sha1/git-sha hex40 and generic
-//! sha256 hex64 remain suppressed unless the model-authoritative lift and a
-//! crypto-key anchor release them later.
+//! rejected to avoid FPs on `sha256: <hex>`. Credential context alone is not an
+//! override; only an exact compiled detector key-material policy admits one.
 
 use keyhog_scanner::testing::entropy_keywords::{
     is_candidate_plausible_in_context, is_secret_plausible_in_context,
@@ -133,17 +131,22 @@ fn hex_with_non_hex_char_not_pure_hex() {
 }
 
 #[test]
-fn hex_32_char_canonical_with_context_accepted() {
-    // Hex32 under credential context is the bounded key-material recall carve-out.
+fn hex_32_char_canonical_with_context_requires_detector_policy() {
     let md5 = "d41d8cd98f00b204e9800998ecf8427e";
     assert_eq!(md5.len(), 32);
     assert!(md5.chars().all(|c| c.is_ascii_hexdigit()));
     let placeholder_keywords = vec![];
-    assert!(is_candidate_plausible_in_context(
+    assert!(!is_candidate_plausible_in_context(
         md5,
         &placeholder_keywords,
         true,
         false
+    ));
+    assert!(is_candidate_plausible_in_context(
+        md5,
+        &placeholder_keywords,
+        true,
+        true
     ));
 }
 
@@ -198,7 +201,6 @@ fn hex_boundary_33_char_not_rejected_by_hex_gate() {
 
 #[test]
 fn context_gate_only_applies_to_pure_hex_canonical_lengths() {
-    // The gate is: "!is_credential_context && [32,40,64,128].contains(len) && all_hex"
-    // Verify all three conditions are necessary. If any is false, the gate doesn't apply.
+    // The gate is canonical digest shape without an exact detector-owned lift.
     // Already covered by tests above.
 }

@@ -84,7 +84,7 @@ entropy_low = 3.0
 entropy_high = 4.5
 entropy_very_high = 5.8
 sensitive_path_entropy_very_high = 5.8
-plausibility = { mixed_alnum_floor = 4.0, symbolic_entropy_floor = 3.5, second_half_entropy_floor = 2.5, mixed_alnum_min_len = 20, isolated_mixed_entropy_floor = 3.65, isolated_symbolic_min_len = 18, isolated_symbolic_min_symbols = 2, isolated_symbolic_requires_non_underscore = true, isolated_colon_left_min_len = 20, isolated_colon_right_min_len = 16, leading_slash_base64_entropy_floor = 4.8, reject_repeated_blocks = true, allow_alphabetic_credential = true, reject_program_identifiers = true, reject_source_symbol_identifiers = true, reject_dash_segmented_alnum = true }
+plausibility = { mixed_alnum_floor = 4.0, symbolic_entropy_floor = 3.5, second_half_entropy_floor = 2.5, second_half_min_len = 17, unique_chars_min_len = 17, min_unique_chars = 8, unanchored_hex_max_len = 10, identical_char_max_len = 4, structured_dotted_min_len = 40, mixed_alnum_min_len = 20, isolated_mixed_entropy_floor = 3.65, isolated_symbolic_min_len = 18, isolated_symbolic_min_symbols = 2, isolated_symbolic_requires_non_underscore = true, isolated_colon_left_min_len = 20, isolated_colon_right_min_len = 16, leading_slash_base64_entropy_floor = 4.8, leading_slash_base64_min_len = 40, reject_repeated_blocks = true, allow_alphabetic_credential = true, reject_program_identifiers = true, reject_source_symbol_identifiers = true, reject_dash_segmented_alnum = true }
 entropy_policy_priority = 0
 bpe_enabled = false
 entropy_floor = [{ floor = 0.0 }]

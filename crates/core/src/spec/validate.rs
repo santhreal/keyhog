@@ -500,6 +500,30 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
         }
         for (name, length) in [
             (
+                "plausibility.second_half_min_len",
+                plausibility.second_half_min_len,
+            ),
+            (
+                "plausibility.unique_chars_min_len",
+                plausibility.unique_chars_min_len,
+            ),
+            (
+                "plausibility.min_unique_chars",
+                plausibility.min_unique_chars,
+            ),
+            (
+                "plausibility.unanchored_hex_max_len",
+                plausibility.unanchored_hex_max_len,
+            ),
+            (
+                "plausibility.identical_char_max_len",
+                plausibility.identical_char_max_len,
+            ),
+            (
+                "plausibility.structured_dotted_min_len",
+                plausibility.structured_dotted_min_len,
+            ),
+            (
                 "plausibility.isolated_symbolic_min_len",
                 plausibility.isolated_symbolic_min_len,
             ),
@@ -515,12 +539,22 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
                 "plausibility.isolated_colon_right_min_len",
                 plausibility.isolated_colon_right_min_len,
             ),
+            (
+                "plausibility.leading_slash_base64_min_len",
+                plausibility.leading_slash_base64_min_len,
+            ),
         ] {
             if length == 0 {
                 issues.push(QualityIssue::Error(format!(
                     "{name} must be greater than zero"
                 )));
             }
+        }
+        if plausibility.min_unique_chars > plausibility.unique_chars_min_len {
+            issues.push(QualityIssue::Error(format!(
+                "plausibility.min_unique_chars ({}) must not exceed plausibility.unique_chars_min_len ({})",
+                plausibility.min_unique_chars, plausibility.unique_chars_min_len
+            )));
         }
     }
     if let (Some(very_high), Some(sensitive)) = (

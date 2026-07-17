@@ -179,6 +179,17 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
                         margin.to_bits()
                     ));
                 }
+                entries.push(format!(
+                    "plausibility-shape:{}:{}:{}:{}:{}:{}:{}:{}",
+                    d.id,
+                    policy.second_half_min_len,
+                    policy.unique_chars_min_len,
+                    policy.min_unique_chars,
+                    policy.unanchored_hex_max_len,
+                    policy.identical_char_max_len,
+                    policy.structured_dotted_min_len,
+                    policy.leading_slash_base64_min_len,
+                ));
             }
             if let Some(v) = d.entropy_policy_priority {
                 entries.push(format!("entropy-policy-priority:{}:{v}", d.id));

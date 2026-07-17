@@ -1,4 +1,4 @@
-//! Gap test: the universal-rejection prefix gate's exact reject/accept table.
+//! Behavioral coverage for the universal-rejection rule set's exact table.
 //!
 //! `matches_universal_rejection` is the first gate in the entropy plausibility
 //! checks, it drops candidates that are obviously not free-standing secrets:
@@ -32,6 +32,7 @@ const REJECTED: &[&str] = &[
     "vault:v1/secret",                            // vault path
     "AQICAHhabc",                                 // AWS KMS ciphertext blob
     "CiQAoabc",                                   // GCP KMS ciphertext blob
+    "data:image/png;base64,iVBORw0KGgo",          // embedded image payload
     "C:\\Users\\me",                              // Windows drive path (backslash)
     "D:/data/key",                                // Windows drive path (forward slash)
     "```json",                                    // markdown code fence
@@ -44,6 +45,7 @@ const ACCEPTED: &[&str] = &[
     "ghp_16C7e42F292c6912E7710c838347Ae178B4a", // GitHub PAT, no reject prefix
     "eyJonly.onedot",       // eyJ but only ONE dot -> not a JWT
     "Agshort",              // `Ag` but length <= 40 -> not sealed
+    "Agxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", // exact 40-byte boundary
 ];
 
 #[test]
@@ -61,7 +63,7 @@ fn plausible_secrets_and_near_misses_are_not_rejected() {
     for &value in ACCEPTED {
         assert!(
             !rejects(value),
-            "{value:?} must NOT be rejected (it carries no universal-rejection prefix)"
+            "{value:?} must NOT be universally rejected"
         );
     }
 }
@@ -99,6 +101,7 @@ const SUFFIX_STABLE_REJECTED: &[&str] = &[
     "vault:v1/secret",
     "AQICAHhabc",
     "CiQAoabc",
+    "data:image/png;base64,iVBORw0KGgo",
     "```json",
     "---",
     "===",

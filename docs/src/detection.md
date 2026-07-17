@@ -110,6 +110,12 @@ explain/contract surfaces rather than adding a detector-specific literal in
 scanner code. Only true shared invariants, such as parser safety caps or a
 model's fixed vocabulary, remain global.
 
+Global structural non-secrets are typed Tier-B data in
+`rules/entropy-universal-rejections.toml`. Plain prefixes and explicit
+prefix-plus-length rules, including the `Ag` Sealed Secrets ciphertext boundary,
+apply uniformly before detector plausibility. They are corpus-global structural
+invariants, not a second source of per-detector tuning.
+
 | Detector TOML field | If increased / enabled | If decreased / disabled |
 |---|---|---|
 | `entropy_low` | Requires more Shannon entropy for keyword-anchored generic values; fewer low-randomness passwords/tokens survive | Admits more values when the assignment key supplies evidence; shape, BPE, context, and confidence gates still apply |
@@ -124,6 +130,12 @@ model's fixed vocabulary, remain global.
 | `plausibility.mixed_alnum_floor` | Rejects more identifier-like alphanumeric runs | Preserves more low-randomness mixed-alphanumeric values |
 | `plausibility.symbolic_entropy_floor` | Raises the minimum entropy for symbol-bearing credential assignments, including the bare `auth=` bridge | Preserves more anchored symbolic passwords through the same compiled detector policy |
 | `plausibility.second_half_entropy_floor` | Rejects candidates with a less-random tail | Preserves more credentials whose entropy is front-loaded |
+| `plausibility.second_half_min_len` | Applies the tail-entropy check to shorter values | Restricts the tail check to longer values |
+| `plausibility.unique_chars_min_len` | Applies distinct-character requirements to shorter values | Restricts the diversity check to longer values |
+| `plausibility.min_unique_chars` | Requires more distinct characters once the diversity check applies | Preserves lower-diversity credentials |
+| `plausibility.unanchored_hex_max_len` | Allows longer unanchored all-hex values before treating them as non-secret key material | Rejects shorter unanchored all-hex values |
+| `plausibility.identical_char_max_len` | Allows longer single-character repetitions | Rejects shorter single-character repetitions |
+| `plausibility.structured_dotted_min_len` | Requires a longer isolated structured dotted token | Admits shorter structured dotted tokens after the other gates pass |
 | `plausibility.mixed_alnum_min_len` | Requires a longer mixed alpha-numeric credential before the carve-out applies | Lets shorter anchored mixed tokens use the detector's mixed floor |
 | `plausibility.isolated_mixed_entropy_floor` | Raises the floor for isolated contiguous or underscore-delimited mixed tokens | Preserves more low-randomness isolated mixed tokens |
 | `plausibility.isolated_symbolic_min_len` | Requires a longer isolated symbol-rich credential for the short-candidate exception | Admits shorter symbol-rich candidates; exact declared lower-dash layouts still use their own shape rules |
@@ -131,6 +143,7 @@ model's fixed vocabulary, remain global.
 | `plausibility.isolated_symbolic_requires_non_underscore` | Prevents underscore-only mixed tokens from bypassing their mixed entropy floor through the symbolic exception | Allows underscore to satisfy the symbolic exception by itself |
 | `plausibility.isolated_colon_left_min_len` / `isolated_colon_right_min_len` | Requires longer sides around an isolated `opaque:opaque` separator | Admits shorter colon-separated opaque pairs |
 | `plausibility.leading_slash_base64_entropy_floor` | Raises the floor for unanchored slash-led base64 | Preserves more slash-led base64 candidates |
+| `plausibility.leading_slash_base64_min_len` | Requires a longer unanchored slash-led base64 candidate | Admits shorter candidates after alphabet, padding, entropy, and shape checks pass |
 | `plausibility.reject_repeated_blocks` | Rejects periodic mask values, including truncated repetitions in the bare `auth=` bridge | Allows that shape to continue through the remaining detector gates |
 | `plausibility.allow_alphabetic_credential` | Admits anchored all-letter passwords/tokens after other gates | Requires alphabetic-only values to clear the ordinary entropy path |
 | `plausibility.reject_program_identifiers` | Rejects pure source-language identifier shapes | Allows pure identifier-shaped values through the remaining gates |

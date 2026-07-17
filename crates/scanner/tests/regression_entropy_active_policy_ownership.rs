@@ -37,6 +37,12 @@ fn detector(id: &str, keywords: &[&str], min_len: usize) -> DetectorSpec {
             mixed_alnum_floor: 0.0,
             symbolic_entropy_floor: 3.5,
             second_half_entropy_floor: 2.5,
+            second_half_min_len: 17,
+            unique_chars_min_len: 17,
+            min_unique_chars: 8,
+            unanchored_hex_max_len: 10,
+            identical_char_max_len: 4,
+            structured_dotted_min_len: 40,
             mixed_alnum_min_len: 20,
             isolated_mixed_entropy_floor: 3.65,
             isolated_symbolic_min_len: 18,
@@ -45,6 +51,7 @@ fn detector(id: &str, keywords: &[&str], min_len: usize) -> DetectorSpec {
             isolated_colon_left_min_len: 20,
             isolated_colon_right_min_len: 16,
             leading_slash_base64_entropy_floor: 4.8,
+            leading_slash_base64_min_len: 40,
             keyword_free_operator_margin: None,
             reject_repeated_blocks: true,
             allow_alphabetic_credential: true,
@@ -200,10 +207,18 @@ fn plausibility_owner(
 ) -> DetectorSpec {
     let mut owner = detector("plausibility-owner", &["custom_secret"], 8);
     owner.entropy_high = Some(8.0);
+    owner.entropy_very_high = Some(8.0);
+    owner.sensitive_path_entropy_very_high = Some(8.0);
     owner.plausibility = Some(DetectorPlausibilityPolicySpec {
         mixed_alnum_floor: 0.0,
         symbolic_entropy_floor: symbolic_floor,
         second_half_entropy_floor: second_half_floor,
+        second_half_min_len: 17,
+        unique_chars_min_len: 17,
+        min_unique_chars: 8,
+        unanchored_hex_max_len: 10,
+        identical_char_max_len: 4,
+        structured_dotted_min_len: 40,
         mixed_alnum_min_len: mixed_min_len,
         isolated_mixed_entropy_floor: 3.65,
         isolated_symbolic_min_len: 18,
@@ -212,6 +227,7 @@ fn plausibility_owner(
         isolated_colon_left_min_len: 20,
         isolated_colon_right_min_len: 16,
         leading_slash_base64_entropy_floor: 4.8,
+        leading_slash_base64_min_len: 40,
         keyword_free_operator_margin: None,
         reject_repeated_blocks: true,
         allow_alphabetic_credential: true,
@@ -235,6 +251,10 @@ fn scan_with_plausibility_policy(
         mixed_min_len,
         reject_source_symbol_identifiers,
     );
+    scan_assignment_with_owner(value, owner)
+}
+
+fn scan_assignment_with_owner(value: &str, owner: DetectorSpec) -> Vec<String> {
     active_policy_match_values(
         vec![owner, detector("generic-secret", &["secret"], 8)],
         "custom_secret",
@@ -270,6 +290,36 @@ fn custom_source_symbol_rejection_controls_assignment_admission() {
     let value = "ClientSecretConfigValue2";
     assert!(scan_with_plausibility_policy(value, 0.0, 0.0, 8, true).is_empty());
     assert!(scan_with_plausibility_policy(value, 0.0, 0.0, 8, false).contains(&value.to_string()));
+}
+
+#[test]
+fn custom_tail_and_diversity_boundaries_control_assignment_admission() {
+    let tail_heavy = "A1b2C3d4E5f6G7h8aaaaaaaaaaaaaaaa";
+    let mut strict_tail = plausibility_owner(0.0, 2.5, 8, false);
+    assert!(scan_assignment_with_owner(tail_heavy, strict_tail.clone()).is_empty());
+    strict_tail
+        .plausibility
+        .as_mut()
+        .expect("test owner declares plausibility")
+        .second_half_min_len = tail_heavy.len() + 1;
+    assert!(scan_assignment_with_owner(tail_heavy, strict_tail).contains(&tail_heavy.to_string()));
+
+    let nine_distinct = "A1A2A3A4A5A6A7A8A";
+    let mut strict_diversity = plausibility_owner(0.0, 0.0, 8, false);
+    let policy = strict_diversity
+        .plausibility
+        .as_mut()
+        .expect("test owner declares plausibility");
+    policy.reject_repeated_blocks = false;
+    policy.min_unique_chars = 10;
+    assert!(scan_assignment_with_owner(nine_distinct, strict_diversity.clone()).is_empty());
+    strict_diversity
+        .plausibility
+        .as_mut()
+        .expect("test owner declares plausibility")
+        .min_unique_chars = 9;
+    assert!(scan_assignment_with_owner(nine_distinct, strict_diversity)
+        .contains(&nine_distinct.to_string()));
 }
 
 fn full_scan_plausibility_findings(
@@ -519,22 +569,41 @@ fn scan_isolated_with_symbol_policy(
     colon_right_min_len: usize,
     leading_slash_base64_entropy_floor: f64,
 ) -> Vec<String> {
+    scan_isolated_with_policy_mutation(value, |policy| {
+        policy.isolated_mixed_entropy_floor = mixed_entropy_floor;
+        policy.isolated_symbolic_min_len = symbolic_min_len;
+        policy.isolated_symbolic_min_symbols = symbolic_min_symbols;
+        policy.isolated_symbolic_requires_non_underscore = symbolic_requires_non_underscore;
+        policy.isolated_colon_left_min_len = colon_left_min_len;
+        policy.isolated_colon_right_min_len = colon_right_min_len;
+        policy.leading_slash_base64_entropy_floor = leading_slash_base64_entropy_floor;
+    })
+}
+
+fn scan_isolated_with_policy_mutation(
+    value: &str,
+    mutate: impl FnOnce(&mut DetectorPlausibilityPolicySpec),
+) -> Vec<String> {
+    scan_isolated_with_policy_mutation_and_threshold(value, 4.0, mutate)
+}
+
+fn scan_isolated_with_policy_mutation_and_threshold(
+    value: &str,
+    entropy_threshold: f64,
+    mutate: impl FnOnce(&mut DetectorPlausibilityPolicySpec),
+) -> Vec<String> {
     let mut owner = detector("isolated-policy-owner", &["secret"], 8);
     owner.entropy_roles = vec![EntropyDetectionRole::IsolatedBare];
+    owner.entropy_high = Some(entropy_threshold);
     let policy = owner
         .plausibility
         .as_mut()
         .expect("test entropy owner must declare plausibility");
-    policy.isolated_mixed_entropy_floor = mixed_entropy_floor;
-    policy.isolated_symbolic_min_len = symbolic_min_len;
-    policy.isolated_symbolic_min_symbols = symbolic_min_symbols;
-    policy.isolated_symbolic_requires_non_underscore = symbolic_requires_non_underscore;
-    policy.isolated_colon_left_min_len = colon_left_min_len;
-    policy.isolated_colon_right_min_len = colon_right_min_len;
-    policy.leading_slash_base64_entropy_floor = leading_slash_base64_entropy_floor;
+    mutate(policy);
     let mut config = ScannerConfig::default();
     config.entropy_enabled = true;
     config.entropy_in_source_files = true;
+    config.entropy_threshold = entropy_threshold;
     config.min_confidence = 0.0;
     let scanner = CompiledScanner::compile(vec![owner])
         .expect("compile isolated detector-policy corpus")
@@ -553,6 +622,81 @@ fn scan_isolated_with_symbol_policy(
         .filter(|finding| finding.credential.as_ref() == value)
         .map(|finding| finding.credential.to_string())
         .collect()
+}
+
+#[cfg(feature = "gpu")]
+#[test]
+fn isolated_shape_boundaries_are_exact_on_every_accelerated_backend() {
+    let value = "a3f8b2c9d1e07546ABCD";
+    let chunk = Chunk {
+        data: value.to_string().into(),
+        metadata: ChunkMetadata {
+            source_type: "isolated-policy-parity".into(),
+            path: Some("probe.txt".into()),
+            ..Default::default()
+        },
+    };
+    let compile = |unanchored_hex_max_len| {
+        let mut detectors = keyhog_core::embedded_detector_specs().to_vec();
+        let owner = detectors
+            .iter_mut()
+            .find(|detector| detector.id == "generic-keyword-secret")
+            .expect("embedded isolated-bare owner");
+        owner
+            .plausibility
+            .as_mut()
+            .expect("isolated-bare owner declares plausibility")
+            .unanchored_hex_max_len = unanchored_hex_max_len;
+        let mut config = ScannerConfig::default();
+        config.entropy_enabled = true;
+        config.entropy_in_source_files = true;
+        config.entropy_threshold = 3.0;
+        config.min_confidence = 0.0;
+        CompiledScanner::compile(detectors)
+            .expect("compile embedded detector-policy parity corpus")
+            .with_config(config)
+    };
+    let admitted = compile(value.len());
+    let rejected = compile(value.len() - 1);
+    let exact = |scanner: &CompiledScanner, backend| {
+        scanner
+            .scan_with_backend(&chunk, backend)
+            .into_iter()
+            .filter(|finding| finding.credential.as_ref() == value)
+            .map(|finding| {
+                (
+                    finding.detector_id.to_string(),
+                    finding.credential.to_string(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let expected = exact(&admitted, ScanBackend::CpuFallback);
+    assert_eq!(expected, vec![("entropy-token".into(), value.into())]);
+
+    for backend in [
+        ScanBackend::SimdCpu,
+        ScanBackend::GpuCuda,
+        ScanBackend::GpuWgpu,
+    ] {
+        assert!(
+            admitted.warm_backend(backend),
+            "{} must be usable on a GPU parity host",
+            backend.label()
+        );
+        assert!(rejected.warm_backend(backend));
+        assert_eq!(
+            exact(&admitted, backend),
+            expected,
+            "{} must preserve detector-owned unanchored-hex admission",
+            backend.label()
+        );
+        assert!(
+            exact(&rejected, backend).is_empty(),
+            "{} must preserve the detector-owned rejection boundary",
+            backend.label()
+        );
+    }
 }
 
 #[test]
@@ -601,6 +745,47 @@ fn isolated_candidate_floors_are_owned_by_the_active_detector() {
             .contains(&slash_base64.to_string())
     );
     assert!(scan_isolated_with_policy(slash_base64, 3.65, 18, 20, 16, 5.3).is_empty());
+}
+
+#[test]
+fn isolated_length_boundaries_are_owned_by_the_active_detector() {
+    let dotted = "MTIzNDU2Nzg5MDEyMzQ1Njc4.Oabc12.xYz0123456789abcDEFghijk_lmnop";
+    let dotted_len = dotted.len();
+    assert!(scan_isolated_with_policy_mutation(dotted, |policy| {
+        policy.structured_dotted_min_len = dotted_len;
+    })
+    .contains(&dotted.to_string()));
+    assert!(scan_isolated_with_policy_mutation(dotted, |policy| {
+        policy.structured_dotted_min_len = dotted_len + 1;
+    })
+    .is_empty());
+
+    let slash_base64 = "/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789+/AbCdEfGh==";
+    let slash_len = slash_base64.len();
+    assert!(scan_isolated_with_policy_mutation(slash_base64, |policy| {
+        policy.leading_slash_base64_entropy_floor = 5.2;
+        policy.leading_slash_base64_min_len = slash_len;
+    })
+    .contains(&slash_base64.to_string()));
+    assert!(scan_isolated_with_policy_mutation(slash_base64, |policy| {
+        policy.leading_slash_base64_entropy_floor = 5.2;
+        policy.leading_slash_base64_min_len = slash_len + 1;
+    })
+    .is_empty());
+
+    let unanchored_hex = "a3f8b2c9d1e07546ABCD";
+    assert!(
+        scan_isolated_with_policy_mutation_and_threshold(unanchored_hex, 3.0, |policy| policy
+            .unanchored_hex_max_len =
+            unanchored_hex.len(),)
+        .contains(&unanchored_hex.to_string())
+    );
+    assert!(
+        scan_isolated_with_policy_mutation_and_threshold(unanchored_hex, 3.0, |policy| policy
+            .unanchored_hex_max_len =
+            unanchored_hex.len() - 1,)
+        .is_empty()
+    );
 }
 
 #[test]
@@ -772,6 +957,7 @@ fn full_scan_keyword_free_values(
         .expect("keyword-free owner declares plausibility")
         .keyword_free_operator_margin = Some(keyword_free_operator_margin);
     keyword_free_owner.entropy_very_high = Some(entropy_very_high);
+    keyword_free_owner.entropy_high = Some(entropy_very_high.min(4.5));
     let embedded_policy = keyhog_core::detector_spec_by_id("generic-secret")
         .expect("embedded generic-secret policy must load");
     let embedded_discount = embedded_policy

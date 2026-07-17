@@ -470,6 +470,18 @@ pub struct DetectorPlausibilityPolicySpec {
     pub symbolic_entropy_floor: f64,
     /// Minimum entropy in the second half of a long value.
     pub second_half_entropy_floor: f64,
+    /// Minimum byte length at which second-half entropy is required.
+    pub second_half_min_len: usize,
+    /// Minimum byte length at which distinct-character diversity is required.
+    pub unique_chars_min_len: usize,
+    /// Minimum distinct characters required at and above `unique_chars_min_len`.
+    pub min_unique_chars: usize,
+    /// Longest unanchored all-hex value that is not rejected as key material.
+    pub unanchored_hex_max_len: usize,
+    /// Longest single-character repetition that is not rejected.
+    pub identical_char_max_len: usize,
+    /// Minimum byte length for an isolated structured dotted token.
+    pub structured_dotted_min_len: usize,
     /// Minimum byte length for the mixed alphabetic/numeric carve-out.
     pub mixed_alnum_min_len: usize,
     /// Shannon floor for isolated mixed-case alphanumeric tokens, with or
@@ -487,6 +499,8 @@ pub struct DetectorPlausibilityPolicySpec {
     pub isolated_colon_right_min_len: usize,
     /// Shannon floor for an unanchored leading-slash base64 token.
     pub leading_slash_base64_entropy_floor: f64,
+    /// Minimum byte length for an unanchored leading-slash base64 token.
+    pub leading_slash_base64_min_len: usize,
     /// Margin added to the Tier-A entropy threshold before comparing an
     /// unanchored keyword-free candidate. Required only for the detector that
     /// claims the `keyword-free` entropy role.

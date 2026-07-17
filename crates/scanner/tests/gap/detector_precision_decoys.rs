@@ -529,6 +529,12 @@ fn repeated_block_rejection_is_detector_owned() {
         mixed_alnum_floor: 4.0,
         symbolic_entropy_floor: 3.5,
         second_half_entropy_floor: 2.5,
+        second_half_min_len: 17,
+        unique_chars_min_len: 17,
+        min_unique_chars: 8,
+        unanchored_hex_max_len: 10,
+        identical_char_max_len: 4,
+        structured_dotted_min_len: 40,
         mixed_alnum_min_len: 20,
         isolated_mixed_entropy_floor: 3.65,
         isolated_symbolic_min_len: 18,
@@ -537,6 +543,7 @@ fn repeated_block_rejection_is_detector_owned() {
         isolated_colon_left_min_len: 20,
         isolated_colon_right_min_len: 16,
         leading_slash_base64_entropy_floor: 4.8,
+        leading_slash_base64_min_len: 40,
         keyword_free_operator_margin: None,
         reject_repeated_blocks: true,
         allow_alphabetic_credential: true,
@@ -566,6 +573,12 @@ fn plausibility_shape_switches_are_detector_owned() {
         mixed_alnum_floor: 4.0,
         symbolic_entropy_floor: 3.5,
         second_half_entropy_floor: 2.5,
+        second_half_min_len: 17,
+        unique_chars_min_len: 17,
+        min_unique_chars: 8,
+        unanchored_hex_max_len: 10,
+        identical_char_max_len: 4,
+        structured_dotted_min_len: 40,
         mixed_alnum_min_len: 20,
         isolated_mixed_entropy_floor: 3.65,
         isolated_symbolic_min_len: 18,
@@ -574,6 +587,7 @@ fn plausibility_shape_switches_are_detector_owned() {
         isolated_colon_left_min_len: 20,
         isolated_colon_right_min_len: 16,
         leading_slash_base64_entropy_floor: 4.8,
+        leading_slash_base64_min_len: 40,
         keyword_free_operator_margin: None,
         reject_repeated_blocks: true,
         allow_alphabetic_credential: true,
@@ -608,6 +622,22 @@ fn plausibility_shape_switches_are_detector_owned() {
         DetectorPlausibilityPolicySpec {
             reject_dash_segmented_alnum: false,
             ..policy
+        }
+    ));
+    let repeated_char = "AAAAAAAAAAAAAAAAA";
+    let repeated_char_policy = DetectorPlausibilityPolicySpec {
+        reject_repeated_blocks: false,
+        unique_chars_min_len: repeated_char.len() + 1,
+        second_half_min_len: repeated_char.len() + 1,
+        ..policy
+    };
+    assert!(!passes(repeated_char, true, repeated_char_policy));
+    assert!(passes(
+        repeated_char,
+        true,
+        DetectorPlausibilityPolicySpec {
+            identical_char_max_len: repeated_char.len(),
+            ..repeated_char_policy
         }
     ));
 }

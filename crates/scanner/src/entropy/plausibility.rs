@@ -2,29 +2,83 @@ use std::sync::LazyLock;
 
 use super::shannon_entropy;
 
-/// Tier-B "universal rejection" value prefixes, the single owner
-/// (`rules/universal-rejection-prefixes.toml`; were inline `starts_with` terms in
-/// [`matches_universal_rejection`]). A value beginning with any of these is a
-/// structural non-secret or an encrypted/wrapped blob, never a plaintext secret.
-/// Fails closed on an invalid/empty list.
-static UNIVERSAL_REJECTION_PREFIXES: LazyLock<Vec<String>> = LazyLock::new(|| {
-    #[derive(serde::Deserialize)]
-    struct Prefixes {
-        prefixes: Vec<String>,
-    }
-    let raw = include_str!("../../../../rules/universal-rejection-prefixes.toml");
-    match toml::from_str::<Prefixes>(raw) {
-        Ok(parsed) if !parsed.prefixes.is_empty() => parsed.prefixes,
-        Ok(_) => panic!(
-            "rules/universal-rejection-prefixes.toml is empty; it must list the \
-             universal-rejection value prefixes."
-        ),
-        Err(error) => panic!(
-            "rules/universal-rejection-prefixes.toml is invalid: {error}. \
-             Fix the bundled Tier-B universal-rejection prefix list."
-        ),
-    }
+/// Tier-B structural non-secret rules compiled once from the single data owner.
+static UNIVERSAL_REJECTIONS: LazyLock<UniversalRejectionRules> = LazyLock::new(|| {
+    UniversalRejectionRules::parse(include_str!(
+        "../../../../rules/entropy-universal-rejections.toml"
+    ))
+    .unwrap_or_else(|error| {
+        panic!(
+            "rules/entropy-universal-rejections.toml is invalid: {error}. Fix the bundled \
+             Tier-B universal-rejection policy."
+        )
+    })
 });
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UniversalRejectionRules {
+    prefixes: Box<[String]>,
+    prefix_min_lengths: Box<[PrefixMinLengthRule]>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PrefixMinLengthRule {
+    prefix: String,
+    min_length_exclusive: usize,
+}
+
+impl UniversalRejectionRules {
+    fn parse(raw: &str) -> Result<Self, String> {
+        let parsed: Self = toml::from_str(raw).map_err(|error| error.to_string())?;
+        if parsed.prefixes.is_empty() {
+            return Err("prefixes must not be empty".into());
+        }
+        let mut seen = std::collections::HashSet::new();
+        for prefix in &parsed.prefixes {
+            if prefix.is_empty() {
+                return Err("prefixes must not contain an empty value".into());
+            }
+            if !seen.insert(prefix.as_str()) {
+                return Err(format!("duplicate prefix {prefix:?}"));
+            }
+        }
+        for rule in &parsed.prefix_min_lengths {
+            if rule.prefix.is_empty() {
+                return Err("prefix_min_lengths must not contain an empty prefix".into());
+            }
+            if rule.min_length_exclusive <= rule.prefix.len() {
+                return Err(format!(
+                    "prefix_min_lengths entry {:?} must set min_length_exclusive above its prefix length",
+                    rule.prefix
+                ));
+            }
+            if seen.contains(rule.prefix.as_str()) {
+                return Err(format!(
+                    "prefix_min_lengths entry {:?} is unreachable because prefixes already rejects it",
+                    rule.prefix
+                ));
+            }
+            if !seen.insert(rule.prefix.as_str()) {
+                return Err(format!(
+                    "duplicate universal-rejection prefix {:?}",
+                    rule.prefix
+                ));
+            }
+        }
+        Ok(parsed)
+    }
+
+    fn rejects(&self, value: &str) -> bool {
+        self.prefixes
+            .iter()
+            .any(|prefix| value.starts_with(prefix.as_str()))
+            || self.prefix_min_lengths.iter().any(|rule| {
+                value.len() > rule.min_length_exclusive && value.starts_with(&rule.prefix)
+            })
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct PlausibilityContext {
@@ -34,6 +88,12 @@ pub(crate) struct PlausibilityContext {
     mixed_alnum_floor: f64,
     symbolic_entropy_floor: f64,
     second_half_entropy_floor: f64,
+    second_half_min_len: usize,
+    unique_chars_min_len: usize,
+    min_unique_chars: usize,
+    unanchored_hex_max_len: usize,
+    identical_char_max_len: usize,
+    structured_dotted_min_len: usize,
     reject_repeated_blocks: bool,
     allow_alphabetic_credential: bool,
     reject_program_identifiers: bool,
@@ -41,6 +101,7 @@ pub(crate) struct PlausibilityContext {
     reject_dash_segmented_alnum: bool,
     mixed_alnum_min_len: usize,
     leading_slash_base64_entropy_floor: f64,
+    leading_slash_base64_min_len: usize,
     entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
 }
 
@@ -57,6 +118,12 @@ impl PlausibilityContext {
             mixed_alnum_floor: policy.mixed_alnum_floor,
             symbolic_entropy_floor: policy.symbolic_entropy_floor,
             second_half_entropy_floor: policy.second_half_entropy_floor,
+            second_half_min_len: policy.second_half_min_len,
+            unique_chars_min_len: policy.unique_chars_min_len,
+            min_unique_chars: policy.min_unique_chars,
+            unanchored_hex_max_len: policy.unanchored_hex_max_len,
+            identical_char_max_len: policy.identical_char_max_len,
+            structured_dotted_min_len: policy.structured_dotted_min_len,
             reject_repeated_blocks: policy.reject_repeated_blocks,
             allow_alphabetic_credential: policy.allow_alphabetic_credential,
             reject_program_identifiers: policy.reject_program_identifiers,
@@ -64,6 +131,7 @@ impl PlausibilityContext {
             reject_dash_segmented_alnum: policy.reject_dash_segmented_alnum,
             mixed_alnum_min_len: policy.mixed_alnum_min_len,
             leading_slash_base64_entropy_floor: policy.leading_slash_base64_entropy_floor,
+            leading_slash_base64_min_len: policy.leading_slash_base64_min_len,
             entropy_shape: policy.entropy_shape,
         }
     }
@@ -82,26 +150,14 @@ fn is_known_non_secret(value: &str, context: PlausibilityContext) -> bool {
         return true;
     }
 
-    // Pure-hex canonical lengths are usually file/commit/image digests. A
-    // credential keyword only earns the narrow key-material carve-out; it does
-    // not make sha1/git-sha (40) or sha512 (128) secrets. Hex64 can be extracted
-    // only when the owning detector's exact canonical-hex policy is active;
-    // downstream gates retain that same evidence instead of reclassifying the
-    // key as a digest.
-    let hex_len = value.len();
+    // Pure-hex canonical lengths are usually file/commit/image digests. Only
+    // the owning detector's exact keyword-and-length policy can classify one as
+    // key material; generic credential context is not sufficient evidence.
     if crate::suppression::shape::looks_like_entropy_canonical_hex_digest(value) {
-        if !context.is_credential_context {
-            return true;
-        }
-        if hex_len == 40 || hex_len == 128 {
-            return true;
-        }
-        if hex_len == 64 && !context.allow_canonical_hex_key {
-            return true;
-        }
+        return !context.allow_canonical_hex_key;
     }
 
-    value.starts_with("data:image/")
+    false
 }
 
 fn passes_plausibility_checks(
@@ -128,16 +184,12 @@ pub(crate) fn matches_universal_rejection(value: &str) -> bool {
     // Prefix rejections live in the Tier-B list (order-independent: any match
     // rejects, exactly as the former `||` chain). Compound rejections that need
     // more than a prefix stay in code below.
-    if UNIVERSAL_REJECTION_PREFIXES
-        .iter()
-        .any(|prefix| value.starts_with(prefix.as_str()))
-    {
+    if UNIVERSAL_REJECTIONS.rejects(value) {
         return true;
     }
     value.contains("://")
         || (crate::jwt::has_jwt_header_prefix(value) && crate::jwt::looks_like_jwt(value))
         || crate::credential_shapes::is_pem_block(value)
-        || (value.starts_with("Ag") && value.len() > 40)
         || (value.len() > 2
             && value.as_bytes()[1] == b':'
             && value.as_bytes()[0].is_ascii_alphabetic()
@@ -244,11 +296,9 @@ pub(crate) fn is_isolated_bare_secret_plausible(
         return is_isolated_leading_slash_base64_secret(value, placeholder_keywords, context);
     }
     if value.contains('.') {
-        if value.len() >= 40
-            && !is_placeholder_ci(value, placeholder_keywords)
-            && crate::suppression::shape::is_structured_dotted_token(value)
-        {
-            return true;
+        if crate::suppression::shape::is_structured_dotted_token(value) {
+            return value.len() >= context.structured_dotted_min_len
+                && !is_placeholder_ci(value, placeholder_keywords);
         }
         if crate::jwt::has_jwt_header_prefix(value) {
             return false;
@@ -286,7 +336,7 @@ fn is_isolated_leading_slash_base64_secret(
     let Some(body) = value.strip_prefix('/') else {
         return false;
     };
-    if value.len() < 40
+    if value.len() < context.leading_slash_base64_min_len
         || is_placeholder_ci(value, placeholder_keywords)
         || has_low_alnum_ratio(value)
     {
@@ -335,22 +385,26 @@ fn passes_secret_shape_checks(value: &str, context: PlausibilityContext) -> bool
     // driven by exactly this gate firing in credential context.
     if !context.is_credential_context
         && value.chars().all(|ch| ch.is_ascii_hexdigit())
-        && value.len() > 10
+        && value.len() > context.unanchored_hex_max_len
     {
         return false;
     }
-    if value.len() > 4 {
+    if value.len() > context.identical_char_max_len {
         if let Some(first) = value.chars().next() {
             if value.chars().all(|ch| ch == first) {
                 return false;
             }
         }
     }
-    if value.len() > 16 && unique_char_count(value) < 8 {
+    if value.len() >= context.unique_chars_min_len
+        && unique_char_count(value) < context.min_unique_chars
+    {
         return false;
     }
     let second_half_entropy_floor = context.second_half_entropy_floor;
-    if value.len() > 16 && second_half_entropy(value) < second_half_entropy_floor {
+    if value.len() >= context.second_half_min_len
+        && second_half_entropy(value) < second_half_entropy_floor
+    {
         return false;
     }
     // Defect #81: entropy-api-key was firing on Java/Go camelCase and

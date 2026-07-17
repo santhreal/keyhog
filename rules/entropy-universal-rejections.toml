@@ -1,0 +1,31 @@
+# Tier-B universal rejection policy for the entropy plausibility gate.
+# These are structural non-secrets or encrypted/wrapped blobs, never plaintext
+# credentials. Detection-family tuning belongs in detector TOML instead.
+
+prefixes = [
+    "/",
+    "./",
+    "../",
+    "{{",
+    "${",
+    "(?",
+    "^",
+    "ssh-",
+    "ecdsa-",
+    "$ANSIBLE_VAULT",
+    "ENC[",
+    "age1",
+    "vault:",
+    "AQI",
+    "CiQ",
+    "data:image/",
+    "```",
+    "---",
+    "===",
+]
+
+[[prefix_min_lengths]]
+# Bitnami Sealed Secrets ciphertext uses an `Ag` prefix. Short `Ag`-prefixed
+# credentials remain eligible; only the ciphertext-length shape rejects.
+prefix = "Ag"
+min_length_exclusive = 40

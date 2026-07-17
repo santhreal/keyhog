@@ -56,7 +56,7 @@ pub mod entropy_keyword_anchor_lazy_lowercase;
 pub mod entropy_keyword_only_requires_keyword_line;
 pub mod entropy_keywords_inline_tests_in_src;
 pub mod entropy_unique_byte_count_dedup;
-pub mod entropy_universal_rejection_prefix_gate_exact;
+pub mod entropy_universal_rejection_rules_exact;
 pub mod entropy_xml_close_tag_search;
 pub mod file_gate_matrix_scanner_adversarial_unmarked;
 pub mod file_gate_matrix_scanner_missing_submodule_rows;
