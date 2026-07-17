@@ -16,13 +16,15 @@
 //! crossover measurement: it adds GPU-specific timers and counters, so the
 //! speed gate is enforced only by the normal untraced, unprofiled run.
 //! Full-result parity and zero GPU degradation remain mandatory in every mode.
-//! `KH_BENCH_PHASE2_LOCALIZER=1|0` compares the two resolved phase-two plans;
-//! the selected value is printed with the complete tuning identity.
+//! Both phase-two localizer modes are independent candidates for every backend.
+//! `KH_BENCH_PHASE2_LOCALIZER=1|0` restricts diagnostic runs to one mode; the
+//! release gate refuses that restriction and always selects both sides from the
+//! complete backend-plus-localizer route set.
 //!
-//! Selection uses rotating candidate order. The selected exact GPU peer then
-//! receives fresh alternating held-out pairs against Hyperscan. The release
-//! gate requires the paired GPU/Hyperscan ratio's 95% confidence upper bound
-//! to remain below 1.0.
+//! Selection uses rotating candidate order. The selected exact GPU route then
+//! receives fresh rotating held-out comparisons against every Hyperscan route.
+//! The release gate pairs GPU time with the fastest Hyperscan observation in
+//! each trial and requires that ratio's 95% confidence upper bound below 1.0.
 
 use keyhog_core::{
     load_detectors,
@@ -30,7 +32,8 @@ use keyhog_core::{
     Chunk, ChunkMetadata, RawMatch,
 };
 use keyhog_scanner::{
-    set_perf_trace_enabled, set_profile_enabled, CompiledScanner, ScanBackend, ScannerTuningConfig,
+    set_perf_trace_enabled, set_profile_enabled, CompiledScanner, ScanBackend, ScanExecutionRoute,
+    ScannerTuningConfig,
 };
 use std::env;
 use std::fs;
@@ -50,6 +53,7 @@ const RELEASE_SELECTION_ROUNDS: usize = 20;
 #[derive(serde::Serialize)]
 struct TimingSampleArtifact {
     backend: String,
+    phase2_localizer: bool,
     round: usize,
     order: usize,
     nanoseconds: u128,
@@ -59,8 +63,22 @@ struct TimingSampleArtifact {
 struct TimingPairArtifact {
     pair: usize,
     order: String,
+    hyperscan_backend: String,
+    hyperscan_phase2_localizer: bool,
+    gpu_phase2_localizer: bool,
     hyperscan_nanoseconds: u128,
     gpu_nanoseconds: u128,
+}
+
+#[derive(serde::Serialize)]
+struct HyperscanComparisonArtifact {
+    backend: String,
+    phase2_localizer: bool,
+    hyperscan_median_nanoseconds: u128,
+    gpu_median_nanoseconds: u128,
+    ratio_geometric_mean: f64,
+    ratio_ci95_low: f64,
+    ratio_ci95_high: f64,
 }
 
 #[derive(serde::Serialize)]
@@ -96,7 +114,11 @@ struct CrossoverArtifact {
     logical_cores: usize,
     total_memory_mb: Option<u64>,
     simd_features: String,
+    fastest_hyperscan_backend: String,
+    fastest_hyperscan_phase2_localizer: bool,
+    hyperscan_reference: String,
     selected_gpu_backend: String,
+    selected_gpu_phase2_localizer: bool,
     selected_gpu_driver: String,
     selected_gpu_driver_version: String,
     selected_gpu_device: String,
@@ -116,8 +138,31 @@ struct CrossoverArtifact {
     ratio_geometric_mean: f64,
     ratio_ci95_low: f64,
     ratio_ci95_high: f64,
+    hyperscan_route_comparisons: Vec<HyperscanComparisonArtifact>,
     selection_samples: Vec<TimingSampleArtifact>,
     held_out_samples: Vec<TimingPairArtifact>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct BenchRoute {
+    backend: ScanBackend,
+    phase2_localizer: bool,
+}
+
+impl BenchRoute {
+    fn label(self) -> String {
+        format!(
+            "{}+phase2-localizer={}",
+            self.backend.label(),
+            self.phase2_localizer
+        )
+    }
+
+    fn execution_route(self) -> ScanExecutionRoute {
+        ScanExecutionRoute {
+            phase2_localizer: self.phase2_localizer,
+        }
+    }
 }
 
 fn detectors_dir() -> PathBuf {
@@ -371,12 +416,17 @@ fn scan_backend_checked(
     label: &str,
     scanner: &CompiledScanner,
     chunks: &[Chunk],
-    backend: ScanBackend,
+    route: BenchRoute,
     expected: &[Vec<RawMatch>],
 ) -> (Duration, Vec<Vec<RawMatch>>) {
     scanner.clear_fragment_cache();
     let started = Instant::now();
-    let mut results = scanner.scan_coalesced_with_backend(chunks, backend);
+    let mut results = scanner.scan_coalesced_with_backend_admission_and_route(
+        chunks,
+        route.backend,
+        None,
+        route.execution_route(),
+    );
     let elapsed = started.elapsed();
     canonicalize_results(&mut results);
     if results != expected {
@@ -485,6 +535,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .into());
     }
+    let forced_localizer = env_optional_bool("KH_BENCH_PHASE2_LOCALIZER")?;
+    if release_gate && forced_localizer.is_some() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "the 8 MiB release gate must measure both phase-two localizer modes; unset KH_BENCH_PHASE2_LOCALIZER",
+        )
+        .into());
+    }
     let workspace_root = workspace_root();
     let build_source_tree_state = env!("KEYHOG_BUILD_SOURCE_TREE_STATE");
     let source_tree_head = current_source_tree_head(&workspace_root)?;
@@ -526,10 +584,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let detector_spec_digest = hex::encode(keyhog_core::compute_spec_hash(&detectors));
     let binary_sha256 = running_binary_sha256()?;
     let confirmed_suffix_gate = env_optional_bool("KH_BENCH_CONFIRMED_SUFFIX_GATE")?;
-    let fallback_localizer = env_optional_bool("KH_BENCH_PHASE2_LOCALIZER")?;
     let tuning = ScannerTuningConfig {
         confirmed_suffix_gate,
-        fallback_localizer,
         ..ScannerTuningConfig::default()
     };
     let effective_tuning = tuning.effective();
@@ -591,24 +647,58 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
 
+        let localizer_modes = forced_localizer.map_or_else(|| vec![false, true], |mode| vec![mode]);
+        let route_capacity = gpu_backends
+            .len()
+            .checked_add(1)
+            .and_then(|backends| backends.checked_mul(localizer_modes.len()))
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "benchmark route-candidate count overflows host usize",
+                )
+            })?;
+        let mut candidate_routes = Vec::with_capacity(route_capacity);
+        for phase2_localizer in localizer_modes {
+            candidate_routes.push(BenchRoute {
+                backend: ScanBackend::SimdCpu,
+                phase2_localizer,
+            });
+            candidate_routes.extend(gpu_backends.iter().copied().map(|backend| BenchRoute {
+                backend,
+                phase2_localizer,
+            }));
+        }
+
         scanner.clear_fragment_cache();
-        let mut reference = scanner.scan_coalesced_with_backend(&chunks, ScanBackend::SimdCpu);
+        let reference_route = BenchRoute {
+            backend: ScanBackend::SimdCpu,
+            phase2_localizer: false,
+        };
+        let mut reference = scanner.scan_coalesced_with_backend_admission_and_route(
+            &chunks,
+            reference_route.backend,
+            None,
+            reference_route.execution_route(),
+        );
         canonicalize_results(&mut reference);
-        for &backend in &gpu_backends {
+        for &route in &candidate_routes {
             let degrade_before = scanner.gpu_degrade_count();
             scan_backend_checked(
-                &format!("{} warm parity", backend.label()),
+                &format!("{} warm parity", route.label()),
                 &scanner,
                 &chunks,
-                backend,
+                route,
                 &reference,
             );
-            assert_eq!(
-                scanner.gpu_degrade_count(),
-                degrade_before,
-                "{} degraded during warm parity; refusing fallback evidence",
-                backend.label()
-            );
+            if route.backend.is_gpu() {
+                assert_eq!(
+                    scanner.gpu_degrade_count(),
+                    degrade_before,
+                    "{} degraded during warm parity; refusing fallback evidence",
+                    route.label()
+                );
+            }
         }
 
         let gpu_peer_labels = gpu_backends
@@ -657,14 +747,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(enabled) = confirmed_suffix_gate {
             println!("confirmed_suffix_gate={enabled}");
         }
+        if let Some(enabled) = forced_localizer {
+            println!("diagnostic_phase2_localizer_filter={enabled}");
+        }
 
-        let mut candidate_order = Vec::with_capacity(gpu_backends.len() + 1);
-        candidate_order.push(ScanBackend::SimdCpu);
-        candidate_order.extend(gpu_backends.iter().copied());
-        let mut selection_samples: Vec<(ScanBackend, Vec<Duration>)> = candidate_order
+        let candidate_order = candidate_routes;
+        let mut selection_samples: Vec<(BenchRoute, Vec<Duration>)> = candidate_order
             .iter()
             .copied()
-            .map(|backend| (backend, Vec::with_capacity(selection_rounds)))
+            .map(|route| (route, Vec::with_capacity(selection_rounds)))
             .collect();
         let mut artifact_selection_samples = Vec::new();
         artifact_selection_samples
@@ -689,126 +780,204 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         for round in 0..selection_rounds {
             for offset in 0..candidate_order.len() {
-                let backend = candidate_order[(round + offset) % candidate_order.len()];
+                let route = candidate_order[(round + offset) % candidate_order.len()];
                 let degrade_before = scanner.gpu_degrade_count();
+                let route_label = route.label();
                 let (elapsed, _) =
-                    scan_backend_checked(backend.label(), &scanner, &chunks, backend, &reference);
-                if backend.is_gpu() {
+                    scan_backend_checked(&route_label, &scanner, &chunks, route, &reference);
+                if route.backend.is_gpu() {
                     assert_eq!(
                         scanner.gpu_degrade_count(),
                         degrade_before,
                         "{} degraded during selection; refusing fallback timing",
-                        backend.label()
+                        route_label
                     );
                 }
                 selection_samples
                     .iter_mut()
-                    .find(|(candidate, _)| *candidate == backend)
-                    .expect("selection backend owns a sample vector")
+                    .find(|(candidate, _)| *candidate == route)
+                    .expect("selection route owns a sample vector")
                     .1
                     .push(elapsed);
                 println!(
-                    "selection-sample round={round} order={offset} backend={} ns={}",
-                    backend.label(),
+                    "selection-sample round={round} order={offset} route={} ns={}",
+                    route_label,
                     elapsed.as_nanos(),
                 );
                 artifact_selection_samples.push(TimingSampleArtifact {
-                    backend: backend.label().to_owned(),
+                    backend: route.backend.label().to_owned(),
+                    phase2_localizer: route.phase2_localizer,
                     round,
                     order: offset,
                     nanoseconds: elapsed.as_nanos(),
                 });
             }
         }
-        for (backend, samples) in &selection_samples {
+        for (route, samples) in &selection_samples {
             let selected_median = median_duration(samples).expect("selection samples");
             report(
-                &format!("{} selection", backend.label()),
+                &format!("{} selection", route.label()),
                 selected_median,
                 scanned_bytes,
                 hit_count(&reference),
             );
         }
+        let hyperscan_routes = selection_samples
+            .iter()
+            .filter(|(route, _)| route.backend == ScanBackend::SimdCpu)
+            .map(|(route, _)| *route)
+            .collect::<Vec<_>>();
+        let selection_hyperscan = selection_samples
+            .iter()
+            .filter(|(route, _)| route.backend == ScanBackend::SimdCpu)
+            .min_by_key(|(_, samples)| median_duration(samples).expect("selection samples"))
+            .map(|(route, _)| *route)
+            .expect("Hyperscan has route-selection evidence");
         let selected_gpu = selection_samples
             .iter()
-            .filter(|(backend, _)| backend.is_gpu())
+            .filter(|(route, _)| route.backend.is_gpu())
             .min_by_key(|(_, samples)| median_duration(samples).expect("selection samples"))
-            .map(|(backend, _)| *backend)
+            .map(|(route, _)| *route)
             .expect("an acquired GPU peer has selection evidence");
         println!(
-            "held-out GPU peer selected from selection-only evidence: {}",
-            selected_gpu.label()
+            "held-out routes selected from selection-only evidence: hyperscan={} gpu={}",
+            selection_hyperscan.label(),
+            selected_gpu.label(),
         );
 
-        let mut held_out_hs = Vec::with_capacity(iters);
+        let mut held_out_hs = hyperscan_routes
+            .iter()
+            .copied()
+            .map(|route| (route, Vec::with_capacity(iters)))
+            .collect::<Vec<_>>();
         let mut held_out_gpu = Vec::with_capacity(iters);
-        let mut artifact_held_out = Vec::with_capacity(iters);
+        let held_out_evidence_capacity =
+            iters.checked_mul(hyperscan_routes.len()).ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "benchmark held-out evidence count overflows host usize",
+                )
+            })?;
+        let mut artifact_held_out = Vec::new();
+        artifact_held_out
+            .try_reserve(held_out_evidence_capacity)
+            .map_err(|source| {
+                io::Error::new(
+                    io::ErrorKind::OutOfMemory,
+                    format!("cannot reserve held-out benchmark evidence: {source}"),
+                )
+            })?;
+        let mut held_out_routes = hyperscan_routes.clone();
+        held_out_routes.push(selected_gpu);
         for pair in 0..iters {
-            let order = if pair % 2 == 0 {
-                [ScanBackend::SimdCpu, selected_gpu]
-            } else {
-                [selected_gpu, ScanBackend::SimdCpu]
-            };
-            let order_label = if pair % 2 == 0 { "hs-gpu" } else { "gpu-hs" };
-            let mut pair_hs = None;
+            let mut order = held_out_routes.clone();
+            let order_len = order.len();
+            order.rotate_left(pair % order_len);
+            let order_label = order
+                .iter()
+                .copied()
+                .map(BenchRoute::label)
+                .collect::<Vec<_>>()
+                .join(",");
+            let mut pair_hs = Vec::with_capacity(hyperscan_routes.len());
             let mut pair_gpu = None;
-            for backend in order {
+            for route in order {
                 let degrade_before = scanner.gpu_degrade_count();
                 let (elapsed, _) = scan_backend_checked(
-                    &format!("{} held-out pair {pair}", backend.label()),
+                    &format!("{} held-out pair {pair}", route.label()),
                     &scanner,
                     &chunks,
-                    backend,
+                    route,
                     &reference,
                 );
-                if backend.is_gpu() {
+                if route.backend.is_gpu() {
                     assert_eq!(
                         scanner.gpu_degrade_count(),
                         degrade_before,
                         "{} degraded during held-out pair {pair}; refusing fallback timing",
-                        backend.label()
+                        route.label()
                     );
                     held_out_gpu.push(elapsed);
                     pair_gpu = Some(elapsed);
                 } else {
-                    held_out_hs.push(elapsed);
-                    pair_hs = Some(elapsed);
+                    pair_hs.push((route, elapsed));
                 }
             }
-            println!(
-                "held-out-pair pair={pair} order={order_label} hs_ns={} gpu_backend={} gpu_ns={}",
-                pair_hs.expect("pair includes Hyperscan").as_nanos(),
-                selected_gpu.label(),
-                pair_gpu.expect("pair includes selected GPU").as_nanos(),
-            );
-            artifact_held_out.push(TimingPairArtifact {
-                pair,
-                order: order_label.to_owned(),
-                hyperscan_nanoseconds: pair_hs.expect("pair includes Hyperscan").as_nanos(),
-                gpu_nanoseconds: pair_gpu.expect("pair includes selected GPU").as_nanos(),
-            });
+            let gpu_elapsed = pair_gpu.expect("held-out rotation includes selected GPU");
+            for (route, elapsed) in pair_hs {
+                held_out_hs
+                    .iter_mut()
+                    .find(|(candidate, _)| *candidate == route)
+                    .expect("held-out Hyperscan route owns a sample vector")
+                    .1
+                    .push(elapsed);
+                println!(
+                    "held-out-pair pair={pair} order={order_label} hs_route={} hs_ns={} gpu_route={} gpu_ns={}",
+                    route.label(),
+                    elapsed.as_nanos(),
+                    selected_gpu.label(),
+                    gpu_elapsed.as_nanos(),
+                );
+                artifact_held_out.push(TimingPairArtifact {
+                    pair,
+                    order: order_label.clone(),
+                    hyperscan_backend: route.backend.label().to_owned(),
+                    hyperscan_phase2_localizer: route.phase2_localizer,
+                    gpu_phase2_localizer: selected_gpu.phase2_localizer,
+                    hyperscan_nanoseconds: elapsed.as_nanos(),
+                    gpu_nanoseconds: gpu_elapsed.as_nanos(),
+                });
+            }
         }
         if profile {
             scanner.dump_profile_reports("gpu-vs-hs-paired");
         }
-        let hs_median = median_duration(&held_out_hs).expect("held-out Hyperscan samples");
         let gpu_median = median_duration(&held_out_gpu).expect("held-out GPU samples");
-        report(
-            "SimdCpu held-out",
-            hs_median,
-            scanned_bytes,
-            hit_count(&reference),
-        );
         report(
             &format!("{} held-out", selected_gpu.label()),
             gpu_median,
             scanned_bytes,
             hit_count(&reference),
         );
-        let interval = paired_ratio_confidence_95(&held_out_hs, &held_out_gpu)
-            .expect("held-out paired timing evidence must contain at least two positive pairs");
+        let mut hyperscan_comparisons = Vec::with_capacity(held_out_hs.len());
+        for (route, samples) in &held_out_hs {
+            let hs_median = median_duration(samples).expect("held-out Hyperscan samples");
+            report(
+                &format!("{} held-out", route.label()),
+                hs_median,
+                scanned_bytes,
+                hit_count(&reference),
+            );
+            let interval = paired_ratio_confidence_95(samples, &held_out_gpu)
+                .expect("held-out paired timing evidence must contain at least two positive pairs");
+            println!(
+                "paired GPU/Hyperscan route={} ratio geometric_mean={:.4} ci95=[{:.4}, {:.4}] pairs={}",
+                route.label(),
+                interval.geometric_mean_ratio,
+                interval.low_ratio,
+                interval.high_ratio,
+                interval.sample_count,
+            );
+            hyperscan_comparisons.push((*route, hs_median, interval));
+        }
+        let (fastest_hyperscan, _, _) = hyperscan_comparisons
+            .iter()
+            .copied()
+            .min_by_key(|(_, median, _)| *median)
+            .expect("at least one held-out Hyperscan comparison exists");
+        let held_out_fastest_hs = (0..iters)
+            .map(|pair| {
+                held_out_hs
+                    .iter()
+                    .map(|(_, samples)| samples[pair])
+                    .min()
+                    .expect("at least one held-out Hyperscan route exists")
+            })
+            .collect::<Vec<_>>();
+        let interval = paired_ratio_confidence_95(&held_out_fastest_hs, &held_out_gpu)
+            .expect("per-pair fastest Hyperscan evidence must contain two positive pairs");
         println!(
-            "paired GPU/Hyperscan ratio geometric_mean={:.4} ci95=[{:.4}, {:.4}] pairs={}",
+            "paired GPU/per-pair-fastest-Hyperscan ratio geometric_mean={:.4} ci95=[{:.4}, {:.4}] pairs={}",
             interval.geometric_mean_ratio,
             interval.low_ratio,
             interval.high_ratio,
@@ -829,7 +998,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             let selected_peer = gpu_candidates
                 .iter()
-                .find(|candidate| candidate.backend == selected_gpu && candidate.is_eligible())
+                .find(|candidate| {
+                    candidate.backend == selected_gpu.backend && candidate.is_eligible()
+                })
                 .ok_or_else(|| {
                     io::Error::new(
                         io::ErrorKind::InvalidData,
@@ -866,7 +1037,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 && iters >= RELEASE_HELD_OUT_PAIRS
                 && selection_rounds >= RELEASE_SELECTION_ROUNDS;
             let artifact = CrossoverArtifact {
-                schema_version: 5,
+                schema_version: 6,
                 measured_at_utc: chrono::Utc::now().to_rfc3339(),
                 production_comparable,
                 crossover_passed: production_comparable && interval.high_ratio < 1.0,
@@ -896,7 +1067,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 logical_cores: hardware.logical_cores,
                 total_memory_mb: hardware.total_memory_mb,
                 simd_features: simd_features.to_owned(),
-                selected_gpu_backend: selected_gpu.label().to_owned(),
+                fastest_hyperscan_backend: fastest_hyperscan.backend.label().to_owned(),
+                fastest_hyperscan_phase2_localizer: fastest_hyperscan.phase2_localizer,
+                hyperscan_reference: "per-pair-fastest-parity-correct-route".to_owned(),
+                selected_gpu_backend: selected_gpu.backend.label().to_owned(),
+                selected_gpu_phase2_localizer: selected_gpu.phase2_localizer,
                 selected_gpu_driver: selected_driver.to_owned(),
                 selected_gpu_driver_version: selected_driver_version.to_owned(),
                 selected_gpu_device: selected_device.clone(),
@@ -940,6 +1115,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ratio_geometric_mean: interval.geometric_mean_ratio,
                 ratio_ci95_low: interval.low_ratio,
                 ratio_ci95_high: interval.high_ratio,
+                hyperscan_route_comparisons: hyperscan_comparisons
+                    .iter()
+                    .map(
+                        |(route, hs_median, comparison)| HyperscanComparisonArtifact {
+                            backend: route.backend.label().to_owned(),
+                            phase2_localizer: route.phase2_localizer,
+                            hyperscan_median_nanoseconds: hs_median.as_nanos(),
+                            gpu_median_nanoseconds: gpu_median.as_nanos(),
+                            ratio_geometric_mean: comparison.geometric_mean_ratio,
+                            ratio_ci95_low: comparison.low_ratio,
+                            ratio_ci95_high: comparison.high_ratio,
+                        },
+                    )
+                    .collect(),
                 selection_samples: artifact_selection_samples,
                 held_out_samples: artifact_held_out,
             };
@@ -959,7 +1148,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             assert!(
                 interval.high_ratio < 1.0,
-                "8 MiB crossover missed: selected exact GPU peer {} has paired GPU/Hyperscan 95% CI upper bound {:.4}, which does not prove it faster than Hyperscan",
+                "8 MiB crossover missed: selected exact GPU route {} has paired GPU/per-pair-fastest-Hyperscan 95% CI upper bound {:.4}, which does not prove it faster than every parity-correct Hyperscan route",
                 selected_gpu.label(),
                 interval.high_ratio,
             );

@@ -116,13 +116,24 @@ point instead of the faster production coalesced Hyperscan path. The artifact is
 marked `production_comparable = false` and must not support a crossover claim.
 
 The checked benchmark now sends identical 1 MiB windows with 128 KiB overlap
-through `scan_coalesced_with_backend` for Hyperscan and every acquired CUDA or
-WGPU peer. It requires sorted full-match parity from each peer, rejects GPU
-degradation, and rotates candidate order during peer selection. The selected
-exact GPU peer then runs in fresh alternating held-out pairs against Hyperscan.
-The gate passes only when the paired GPU/Hyperscan ratio's 95% confidence upper
-bound is below 1.0 at 8 MiB. Profiling and perf tracing retain parity and
-degradation checks but cannot pass the speed gate.
+through the explicit production execution-route entry point for Hyperscan and
+every acquired CUDA or WGPU peer, with phase-two localization both off and on.
+It requires sorted full-match parity from every route, rejects GPU degradation,
+and rotates candidate order during selection. The selected measured-correct GPU
+route then runs in fresh rotating held-out trials against every parity-correct
+Hyperscan localizer route. Selection samples cannot enter any final interval.
+The gate passes only when the paired GPU/per-pair-fastest-Hyperscan ratio's 95%
+confidence upper bound is below 1.0 at 8 MiB. Each paired trial uses the fastest
+Hyperscan observation across the eligible localizer routes, then computes one
+confidence interval against that CPU envelope. A slower CPU tuning choice
+therefore cannot make the GPU result look favorable. A forced localizer mode,
+profiling, or perf tracing retains parity and degradation checks but cannot pass
+the release speed gate.
+
+Schema 6 records the selected GPU backend and localizer, the fastest observed
+Hyperscan localizer, every route-selection sample, and a separate held-out
+confidence interval for each Hyperscan localizer. `crossover_passed` is based on
+the paired fastest-Hyperscan envelope, not whichever CPU route looks favorable.
 
 The checked artifact at
 `benchmarks/baselines/gpu_8mib_crossover_rtx5090.toml` retains the last measured

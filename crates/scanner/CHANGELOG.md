@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Make the official 8 MiB crossover gate select a GPU route from both phase-two
+  localizer modes, then compare it in fresh held-out trials against every
+  parity-correct Hyperscan localizer route. The release verdict uses the fastest
+  Hyperscan observation in each paired trial; schema-v6 evidence records the
+  full comparison set, and release runs cannot force one diagnostic mode.
+
 - Carry phase-two plain-pattern localization as an immutable per-request
   execution route through CPU, Hyperscan, CUDA, WGPU, windowing, decode,
   fragment recovery, and boundary reassembly. Concurrent autoroute requests no
