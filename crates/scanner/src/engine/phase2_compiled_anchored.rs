@@ -231,50 +231,59 @@ impl CompiledScanner {
                 {
                     ANCHOR_CANDIDATES.with(|cell| {
                         let mut cands = cell.borrow_mut();
-                        anchor_idx.collect_plain_candidates(scan_text, &mut cands);
+                        {
+                            let _g = super::profile::span(super::profile::P::Phase2SharedAc);
+                            anchor_idx.collect_plain_candidates(scan_text, &mut cands);
+                        }
                         if shift != 0 {
                             for c in cands.iter_mut() {
                                 c.1 += shift;
                             }
                         }
-                        this.verify_anchored_candidates(
-                            anchor_idx,
-                            &cands[..],
-                            preprocessed,
-                            line_offsets,
-                            code_lines,
-                            documentation_lines,
-                            chunk,
-                            scan_state,
-                            cursor,
-                            deadline,
-                            prof,
-                        );
-                    });
-                    for &idx in anchor_idx.plain_always_mark() {
-                        if crate::deadline::expired(deadline) {
-                            break;
-                        }
-                        let pat = idx as usize;
-                        let (entry, _) = &this.phase2_patterns[pat];
-                        let t0 = if prof { Some(Instant::now()) } else { None };
-                        this.extract_matches_inner(
-                            entry,
-                            preprocessed,
-                            line_offsets,
-                            code_lines,
-                            documentation_lines,
-                            chunk,
-                            scan_state,
-                            cursor,
-                            deadline,
-                        );
-                        if let Some(t0) = t0 {
-                            phase2_pattern_prof_record(
-                                this.phase2_patterns.len(),
-                                pat,
-                                t0.elapsed().as_nanos() as u64,
+                        {
+                            let _g = super::profile::span(super::profile::P::Phase2AnchoredVerify);
+                            this.verify_anchored_candidates(
+                                anchor_idx,
+                                &cands[..],
+                                preprocessed,
+                                line_offsets,
+                                code_lines,
+                                documentation_lines,
+                                chunk,
+                                scan_state,
+                                cursor,
+                                deadline,
+                                prof,
                             );
+                        }
+                    });
+                    {
+                        let _g = super::profile::span(super::profile::P::Phase2WholeChunk);
+                        for &idx in anchor_idx.plain_always_mark() {
+                            if crate::deadline::expired(deadline) {
+                                break;
+                            }
+                            let pat = idx as usize;
+                            let (entry, _) = &this.phase2_patterns[pat];
+                            let t0 = if prof { Some(Instant::now()) } else { None };
+                            this.extract_matches_inner(
+                                entry,
+                                preprocessed,
+                                line_offsets,
+                                code_lines,
+                                documentation_lines,
+                                chunk,
+                                scan_state,
+                                cursor,
+                                deadline,
+                            );
+                            if let Some(t0) = t0 {
+                                phase2_pattern_prof_record(
+                                    this.phase2_patterns.len(),
+                                    pat,
+                                    t0.elapsed().as_nanos() as u64,
+                                );
+                            }
                         }
                     }
                 }

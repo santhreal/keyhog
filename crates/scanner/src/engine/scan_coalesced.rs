@@ -289,7 +289,10 @@ impl CompiledScanner {
             for chunk in chunks {
                 crate::telemetry::record_file_scanned(chunk.data.len());
             }
-            let triggers = self.compute_coalesced_triggers(chunks, prefilter, admission_plan);
+            let triggers = {
+                let _g = profile::span(profile::P::Phase1Triggers);
+                self.compute_coalesced_triggers(chunks, prefilter, admission_plan)
+            };
             return self.scan_coalesced_phase2(chunks, triggers, route);
         }
     }

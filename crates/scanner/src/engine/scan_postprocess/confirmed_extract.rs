@@ -274,15 +274,12 @@ impl CompiledScanner {
         if detector_by_id.is_empty() {
             return None;
         }
-        let offsets: std::collections::HashSet<(usize, usize)> = scan_state
-            .matches
-            .iter()
-            .filter_map(|m| {
-                detector_by_id
-                    .get(m.detector_id.as_ref())
-                    .map(|&detector_index| (detector_index, m.location.offset))
-            })
-            .collect();
+        let mut offsets = std::collections::HashSet::new();
+        scan_state.for_each_produced_match(|m| {
+            if let Some(&detector_index) = detector_by_id.get(m.detector_id.as_ref()) {
+                offsets.insert((detector_index, m.location.offset));
+            }
+        });
         (!offsets.is_empty()).then_some(offsets)
     }
 

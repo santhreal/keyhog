@@ -436,6 +436,24 @@ impl ScanState {
         }
     }
 
+    /// Visit every candidate already produced by a pre-ML scanner stage.
+    /// Confirmed extraction uses this after the hot-prefix lane, when a valid
+    /// hot finding may live in either the final heap or the ML queue. Keeping
+    /// both stores behind this boundary prevents a queued candidate from being
+    /// extracted and featurized a second time before batch inference.
+    pub(crate) fn for_each_produced_match<F>(&self, mut visit: F)
+    where
+        F: FnMut(&keyhog_core::RawMatch),
+    {
+        for found in &self.matches {
+            visit(found);
+        }
+        #[cfg(feature = "ml")]
+        for pending in &self.ml_pending {
+            visit(&pending.raw_match);
+        }
+    }
+
     /// Push a match to the state, maintaining priority and capacity.
     /// High-confidence secrets will displace lower-confidence findings.
     pub(crate) fn push_match(&mut self, m: keyhog_core::RawMatch, limit: usize) -> bool {

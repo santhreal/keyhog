@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Let confirmed extraction see hot-prefix findings that are awaiting batch ML,
+  not only findings already in the final heap. This prevents the same canonical
+  hot candidate from being regex-extracted and ML-featurized twice while
+  preserving one final candidate identity.
+
+- Attribute the coalesced Hyperscan trigger scan to phase one in the unified
+  profiler, so isolated backend-route profiles include the CPU accelerator work
+  that precedes the shared extraction tail. Attribute the phase-two plain
+  localizer's candidate collection, verification, and anchorless extraction to
+  their existing profiler stages instead of leaving that route's dominant work
+  outside the profile tree.
+
 - Keep crossover selection and held-out timing free of profile instrumentation,
   then emit isolated scanner profiles for every Hyperscan localizer route and
   the selected exact GPU route instead of one misleading aggregate report.
