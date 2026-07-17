@@ -16,8 +16,10 @@
   through the active detector's compiled plausibility policy instead of
   scanner-owned fallback constants, with the adversarial property suite wired.
 
-- Refuse release-comparable 8 MiB crossover evidence from a dirty source tree
-  and record source cleanliness in schema-v4 benchmark artifacts.
+- Refuse release-comparable 8 MiB crossover evidence unless both the build and
+  publication worktrees are clean at the recorded commit. Schema-v5 artifacts
+  record both states, so a binary compiled from dirty source cannot become
+  release evidence after the worktree is cleaned without rebuilding.
 
 - Compile the keyword-free operator entropy margin from the owning detector
   TOML instead of applying a scanner-owned `+ 1.0` threshold adjustment.

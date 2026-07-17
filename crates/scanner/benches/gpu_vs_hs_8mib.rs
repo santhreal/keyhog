@@ -81,6 +81,7 @@ struct CrossoverArtifact {
     production_comparable: bool,
     crossover_passed: bool,
     git_hash: String,
+    build_source_tree_state: String,
     source_tree_state: String,
     binary_sha256: String,
     detector_spec_blake3: String,
@@ -153,7 +154,7 @@ fn running_binary_sha256() -> Result<String, io::Error> {
     Ok(hex::encode(hasher.finalize()))
 }
 
-fn source_tree_is_clean(workspace_root: &Path) -> Result<bool, io::Error> {
+fn source_tree_status(workspace_root: &Path) -> Result<Vec<u8>, io::Error> {
     let output = Command::new("git")
         .args(["status", "--porcelain=v1", "--untracked-files=all"])
         .current_dir(workspace_root)
@@ -174,7 +175,7 @@ fn source_tree_is_clean(workspace_root: &Path) -> Result<bool, io::Error> {
             String::from_utf8_lossy(&output.stderr).trim()
         )));
     }
-    Ok(output.stdout.is_empty())
+    Ok(output.stdout)
 }
 
 fn current_source_tree_head(workspace_root: &Path) -> Result<String, io::Error> {
@@ -485,6 +486,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .into());
     }
     let workspace_root = workspace_root();
+    let build_source_tree_state = env!("KEYHOG_BUILD_SOURCE_TREE_STATE");
     let source_tree_head = current_source_tree_head(&workspace_root)?;
     if source_tree_head != keyhog_core::git_hash() {
         return Err(io::Error::new(
@@ -497,8 +499,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .into());
     }
-    let source_tree_clean = source_tree_is_clean(&workspace_root)?;
-    println!("source_tree_clean={source_tree_clean}");
+    let initial_source_tree_status = source_tree_status(&workspace_root)?;
+    let source_tree_clean = initial_source_tree_status.is_empty();
+    println!(
+        "build_source_tree_state={build_source_tree_state} source_tree_clean={source_tree_clean}"
+    );
+    if release_gate && build_source_tree_state != "clean" {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "the 8 MiB release gate requires a binary compiled from a clean source tree, but this binary was stamped {build_source_tree_state:?}; clean the tree and rebuild before measuring"
+            ),
+        )
+        .into());
+    }
     if release_gate && !source_tree_clean {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -803,8 +817,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if let Some(path) = env::var_os("KH_BENCH_ARTIFACT") {
             let publish_tree_head = current_source_tree_head(&workspace_root)?;
-            let publish_tree_clean = source_tree_is_clean(&workspace_root)?;
-            if publish_tree_head != source_tree_head || publish_tree_clean != source_tree_clean {
+            let publish_tree_status = source_tree_status(&workspace_root)?;
+            if publish_tree_head != source_tree_head
+                || publish_tree_status != initial_source_tree_status
+            {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
                     "benchmark source state changed during measurement; refusing to publish mixed-source evidence",
@@ -845,15 +861,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
             })?;
             let production_comparable = release_gate
+                && build_source_tree_state == "clean"
                 && source_tree_clean
                 && iters >= RELEASE_HELD_OUT_PAIRS
                 && selection_rounds >= RELEASE_SELECTION_ROUNDS;
             let artifact = CrossoverArtifact {
-                schema_version: 4,
+                schema_version: 5,
                 measured_at_utc: chrono::Utc::now().to_rfc3339(),
                 production_comparable,
                 crossover_passed: production_comparable && interval.high_ratio < 1.0,
                 git_hash: keyhog_core::git_hash().to_owned(),
+                build_source_tree_state: build_source_tree_state.to_owned(),
                 source_tree_state: if source_tree_clean {
                     "clean".to_owned()
                 } else {

@@ -1,11 +1,20 @@
 use std::env;
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 fn main() -> io::Result<()> {
     println!("cargo:rerun-if-changed=src/weights.bin");
     println!("cargo:rerun-if-changed=src/model_card.json");
+
+    let manifest_dir = env::var_os("CARGO_MANIFEST_DIR").ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            "CARGO_MANIFEST_DIR is not set. Fix: run the build through Cargo",
+        )
+    })?;
+    stamp_source_tree_state(Path::new(&manifest_dir))?;
 
     let out_dir = env::var_os("OUT_DIR").ok_or_else(|| {
         io::Error::new(
@@ -87,6 +96,85 @@ fn main() -> io::Result<()> {
             rust_string(&summary),
         ),
     )?;
+    Ok(())
+}
+
+fn stamp_source_tree_state(manifest_dir: &Path) -> io::Result<()> {
+    let workspace_root = manifest_dir
+        .parent()
+        .and_then(Path::parent)
+        .unwrap_or(manifest_dir);
+    let listed = git_output(
+        workspace_root,
+        &[
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "-z",
+        ],
+    );
+    let state = match listed {
+        Ok(paths) => {
+            emit_source_watchers(workspace_root, &paths)?;
+            match git_output(
+                workspace_root,
+                &["status", "--porcelain=v1", "--untracked-files=all"],
+            ) {
+                Ok(status) if status.is_empty() => "clean",
+                Ok(_) => "dirty",
+                Err(_) => "unknown",
+            }
+        }
+        Err(_) => "unknown",
+    };
+    println!("cargo:rustc-env=KEYHOG_BUILD_SOURCE_TREE_STATE={state}");
+    Ok(())
+}
+
+fn git_output(workspace_root: &Path, args: &[&str]) -> io::Result<Vec<u8>> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(workspace_root)
+        .args(args)
+        .output()
+        .map_err(|error| {
+            io::Error::new(
+                error.kind(),
+                format!("cannot run git for build source identity: {error}"),
+            )
+        })?;
+    if !output.status.success() {
+        return Err(io::Error::other(format!(
+            "git {} failed while recording build source identity: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    Ok(output.stdout)
+}
+
+fn emit_source_watchers(workspace_root: &Path, nul_paths: &[u8]) -> io::Result<()> {
+    let mut directories = std::collections::BTreeSet::<PathBuf>::new();
+    directories.insert(workspace_root.to_path_buf());
+    for raw in nul_paths
+        .split(|byte| *byte == 0)
+        .filter(|path| !path.is_empty())
+    {
+        let relative = std::str::from_utf8(raw).map_err(|error| {
+            invalid_data(format!(
+                "git returned a non-UTF-8 source path while recording build identity: {error}"
+            ))
+        })?;
+        let path = workspace_root.join(relative);
+        println!("cargo:rerun-if-changed={}", path.display());
+        if let Some(parent) = path.parent() {
+            directories.insert(parent.to_path_buf());
+        }
+    }
+    for directory in directories {
+        println!("cargo:rerun-if-changed={}", directory.display());
+    }
     Ok(())
 }
 

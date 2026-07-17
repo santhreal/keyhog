@@ -128,10 +128,13 @@ identical findings with no degradation, a 24.5886 ms VYRE CUDA median versus
 69.5641 ms for Hyperscan, and a paired ratio confidence interval of 0.3482 to
 0.3579 across 100 held-out pairs. Those measurements cannot prove the current
 release binary is reproducible from the recorded commit. A new crossover claim
-requires `source_tree_state = "clean"` and `production_comparable = true` from the
-corrected route with exact binary, detector, configuration, host, runtime,
-workload, result count, peer, and trial identity. Autoroute still requires
-calibration on the deployment host for the exact workload class.
+requires `build_source_tree_state = "clean"`, `source_tree_state = "clean"`, and
+`production_comparable = true` from the corrected route with exact binary,
+detector, configuration, host, runtime, workload, result count, peer, and trial
+identity. The build script watches the tracked and non-ignored source inventory,
+so cleaning a tree after compiling dirty source forces a rebuild before the
+artifact can qualify. Autoroute still requires calibration on the deployment
+host for the exact workload class.
 
 ## When automatic routing refuses to scan
 
