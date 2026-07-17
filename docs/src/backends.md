@@ -139,6 +139,13 @@ tree. That mode retains exact parity and degradation checks but records
 `diagnostic = true`, `production_comparable = false`, and cannot pass the
 release gate.
 
+Use `--profile` to attribute scanner stages to exact routes. Candidate selection
+and held-out trials remain unprofiled; after timing, the benchmark runs one
+isolated scan for each Hyperscan localizer route and the selected GPU route.
+Profile labels include the backend and localizer value, so costs from different
+execution plans are never merged into one report. Profile runs cannot pass the
+release gate.
+
 The checked artifact at
 `benchmarks/baselines/gpu_8mib_crossover_rtx5090.toml` retains the last measured
 timing and parity distribution, but it is historical rather than release

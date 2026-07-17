@@ -170,38 +170,45 @@ impl CompiledScanner {
         plan: Option<&super::Phase1AdmissionPlan>,
         route: crate::ScanExecutionRoute,
     ) -> crate::error::Result<Vec<Vec<keyhog_core::RawMatch>>> {
-        if backend == crate::hw_probe::ScanBackend::SimdCpu {
+        let result = if backend == crate::hw_probe::ScanBackend::SimdCpu {
             self.require_selected_backend_stack(backend);
-            return Ok(self.scan_coalesced_simd(
+            Ok(self.scan_coalesced_simd(
                 chunks,
                 plan.filter(|plan| plan.matches_chunks(chunks)),
                 route,
-            ));
-        }
-        if backend.is_gpu() {
+            ))
+        } else if backend.is_gpu() {
             #[cfg(feature = "gpu")]
             {
-                return self
-                    .try_scan_coalesced_gpu_region_presence(chunks, backend, route)
+                self.try_scan_coalesced_gpu_region_presence(chunks, backend, route)
                     .map_err(|error| {
                         self.record_gpu_runtime_fault(error.reason());
                         crate::error::ScanError::Gpu(error.to_string())
-                    });
+                    })
             }
             #[cfg(not(feature = "gpu"))]
             {
-                return Err(crate::error::ScanError::Gpu(format!(
+                Err(crate::error::ScanError::Gpu(format!(
                     "{} selected but this scanner build has no GPU support",
                     backend.label()
-                )));
+                )))
             }
+        } else {
+            Ok(self.scan_chunks_with_backend_internal_admission_and_route(
+                chunks,
+                backend,
+                plan.filter(|plan| plan.matches_chunks(chunks)),
+                route,
+            ))
+        };
+        // Count logical input only after a complete route succeeds. A failed GPU
+        // attempt followed by visible CPU replay therefore records the input
+        // once, while every successful coalesced backend reports the same bytes.
+        if result.is_ok() {
+            profile::add_bytes(chunks.iter().map(|chunk| chunk.data.len() as u64).sum());
+            profile::add_files(chunks.len() as u64);
         }
-        Ok(self.scan_chunks_with_backend_internal_admission_and_route(
-            chunks,
-            backend,
-            plan.filter(|plan| plan.matches_chunks(chunks)),
-            route,
-        ))
+        result
     }
 
     /// Deterministic portable reference scan over several chunks.
@@ -276,11 +283,9 @@ impl CompiledScanner {
                 return results;
             };
 
-            // The ordinary batch API records these before per-chunk dispatch.
-            // Coalesced SIMD bypasses `scan_inner`, so it must own the same
-            // operator-visible file/byte accounting exactly once.
-            profile::add_bytes(chunks.iter().map(|chunk| chunk.data.len() as u64).sum());
-            profile::add_files(chunks.len() as u64);
+            // Coalesced SIMD bypasses `scan_inner`, so it owns the same scanner
+            // telemetry events. Logical profiler input is recorded once by the
+            // shared successful coalesced-dispatch boundary above.
             for chunk in chunks {
                 crate::telemetry::record_file_scanned(chunk.data.len());
             }

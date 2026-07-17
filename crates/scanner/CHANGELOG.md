@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Keep crossover selection and held-out timing free of profile instrumentation,
+  then emit isolated scanner profiles for every Hyperscan localizer route and
+  the selected exact GPU route instead of one misleading aggregate report.
+  Successful coalesced CPU, Hyperscan, and GPU scans now share one logical-input
+  accounting boundary, including exact-once accounting after GPU recovery.
+
 - Make the official 8 MiB crossover gate select a GPU route from both phase-two
   localizer modes, then compare it in fresh held-out trials against every
   parity-correct Hyperscan localizer route. The release verdict uses the fastest

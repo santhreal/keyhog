@@ -17,6 +17,8 @@
 //! speed gate is enforced only by the normal untraced, unprofiled run.
 //! `--diagnostic` keeps timing unprofiled but makes the run ineligible for a
 //! release verdict, allowing measurements from an explicitly dirty worktree.
+//! `--profile` keeps selection and held-out timing unprofiled, then records one
+//! isolated production scan for each Hyperscan route and the selected GPU route.
 //! Full-result parity and zero GPU degradation remain mandatory in every mode.
 //! Both phase-two localizer modes are independent candidates for every backend.
 //! `KH_BENCH_PHASE2_LOCALIZER=1|0` restricts diagnostic runs to one mode; the
@@ -508,7 +510,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let profile = args.iter().any(|arg| arg == "--profile");
     let diagnostic = args.iter().any(|arg| arg == "--diagnostic");
     set_perf_trace_enabled(perf_trace);
-    set_profile_enabled(profile);
+    set_profile_enabled(false);
 
     let size_mib = env_positive_usize("KH_BENCH_SIZE_MIB", 8)?;
     let size = size_mib.checked_mul(MIB).ok_or_else(|| {
@@ -779,9 +781,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     format!("cannot reserve benchmark selection evidence: {source}"),
                 )
             })?;
-        if profile {
-            scanner.reset_profile_reports();
-        }
         for round in 0..selection_rounds {
             for offset in 0..candidate_order.len() {
                 let route = candidate_order[(round + offset) % candidate_order.len()];
@@ -934,7 +933,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         if profile {
-            scanner.dump_profile_reports("gpu-vs-hs-paired");
+            set_profile_enabled(true);
+            let mut profile_routes = hyperscan_routes.clone();
+            profile_routes.push(selected_gpu);
+            for route in profile_routes {
+                scanner.reset_profile_reports();
+                let degrade_before = scanner.gpu_degrade_count();
+                scan_backend_checked(
+                    &format!("{} isolated profile", route.label()),
+                    &scanner,
+                    &chunks,
+                    route,
+                    &reference,
+                );
+                if route.backend.is_gpu() {
+                    assert_eq!(
+                        scanner.gpu_degrade_count(),
+                        degrade_before,
+                        "{} degraded during isolated profiling; refusing fallback evidence",
+                        route.label()
+                    );
+                }
+                scanner.dump_profile_reports(&format!("gpu-vs-hs:{}", route.label()));
+            }
+            set_profile_enabled(false);
         }
         let gpu_median = median_duration(&held_out_gpu).expect("held-out GPU samples");
         report(
