@@ -6,16 +6,16 @@ use std::sync::LazyLock;
 /// Keeping this beside the generated assignment regex prevents custom or
 /// reduced detector corpora from being filtered by the embedded corpus.
 pub(crate) struct GenericKeywordStemSet {
-    stems: Vec<Box<[u8]>>,
+    stems: Vec<Box<str>>,
     by_first: [Vec<usize>; 256],
     has_first: [bool; 256],
 }
 
 impl GenericKeywordStemSet {
     pub(crate) fn compile<'a>(keywords: impl IntoIterator<Item = &'a str>) -> Self {
-        let mut stems = Vec::<Box<[u8]>>::new();
+        let mut stems = Vec::<Box<str>>::new();
         for keyword in keywords {
-            let stem = generic_keyword_prefilter_stem(keyword).as_bytes();
+            let stem = generic_keyword_prefilter_stem(keyword);
             if !stems.iter().any(|existing| existing.as_ref() == stem) {
                 stems.push(stem.into());
             }
@@ -23,7 +23,7 @@ impl GenericKeywordStemSet {
         let mut by_first: [Vec<usize>; 256] = std::array::from_fn(|_| Vec::new());
         let mut has_first = [false; 256];
         for (idx, stem) in stems.iter().enumerate() {
-            if let Some(&first) = stem.first() {
+            if let Some(&first) = stem.as_bytes().first() {
                 let lower = first.to_ascii_lowercase();
                 let upper = first.to_ascii_uppercase();
                 by_first[lower as usize].push(idx);
@@ -40,31 +40,63 @@ impl GenericKeywordStemSet {
             has_first,
         }
     }
+
+    pub(crate) fn literals(&self) -> impl ExactSizeIterator<Item = &str> {
+        self.stems.iter().map(AsRef::as_ref)
+    }
 }
 
-/// Compact keyword spellings into the minimal safe prefilter stems used by the
-/// generic assignment bridge.
-///
-/// The extraction regex still decides whether a line has a valid assignment
-/// keyword. This prefilter only decides which lines are worth sending to that
-/// regex, so each returned stem must be a recall-preserving substring of one or
-/// more regex arms. Unknown added keywords keep their exact spelling, which
-/// prevents a keyword-list expansion from becoming invisible to the prefilter.
-pub(crate) fn generic_keyword_prefilter_stems() -> Vec<&'static str> {
-    let mut stems = Vec::new();
-    for keyword in crate::assignment_keywords::assignment_keywords()
-        .iter()
-        .map(String::as_str)
-        // Local vendor-prefixed `<name>_key=` support needs a bare `key`
-        // prefilter stem; do not widen the shared no-hit admission gate.
-        .chain(std::iter::once("key"))
-    {
-        let stem = generic_keyword_prefilter_stem(keyword);
-        if !stems.contains(&stem) {
-            stems.push(stem);
+/// Canonical detector-corpus inputs for generic assignment extraction and its
+/// CPU/GPU line prefilters. Compiling these together prevents a custom detector
+/// keyword from reaching the regex while remaining absent from VYRE evidence.
+pub(crate) struct GenericAssignmentKeywordPlan {
+    keywords: Vec<String>,
+    include_vendor_fallback: bool,
+    stems: GenericKeywordStemSet,
+}
+
+impl GenericAssignmentKeywordPlan {
+    pub(crate) fn compile(detectors: &[keyhog_core::DetectorSpec]) -> Result<Self, String> {
+        let keywords = crate::assignment_keywords::derive_assignment_keywords(detectors)?;
+        let vendor_fallback_owners = detectors
+            .iter()
+            .filter(|detector| detector.generic_vendor_suffix_fallback)
+            .count();
+        if vendor_fallback_owners > 1 {
+            return Err(
+                "multiple detectors declare generic_vendor_suffix_fallback; exactly one detector may own the structural vendor-suffix arm"
+                    .to_string(),
+            );
         }
+        let include_vendor_fallback = vendor_fallback_owners == 1;
+        let stems = GenericKeywordStemSet::compile(
+            keywords
+                .iter()
+                .map(String::as_str)
+                .chain(include_vendor_fallback.then_some("key")),
+        );
+        Ok(Self {
+            keywords,
+            include_vendor_fallback,
+            stems,
+        })
     }
-    stems
+
+    pub(crate) fn keywords(&self) -> &[String] {
+        &self.keywords
+    }
+
+    pub(crate) fn include_vendor_fallback(&self) -> bool {
+        self.include_vendor_fallback
+    }
+
+    pub(crate) fn stem_literals(&self) -> impl ExactSizeIterator<Item = &str> {
+        self.stems.literals()
+    }
+
+    pub(crate) fn into_stems(self) -> GenericKeywordStemSet {
+        self.stems
+    }
 }
 
 /// Collect zero-based line indexes whose text contains any generic assignment
@@ -135,7 +167,7 @@ pub(crate) fn collect_generic_keyword_lines_from_positions(
 #[inline]
 fn generic_stem_matches_at(bytes: &[u8], start: usize, stem_set: &GenericKeywordStemSet) -> bool {
     for &stem_idx in &stem_set.by_first[bytes[start] as usize] {
-        let stem = stem_set.stems[stem_idx].as_ref();
+        let stem = stem_set.stems[stem_idx].as_bytes();
         let end = start + stem.len();
         if end <= bytes.len() && bytes[start..end].eq_ignore_ascii_case(stem) {
             return true;

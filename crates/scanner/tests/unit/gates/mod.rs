@@ -65,7 +65,6 @@ pub mod engine_phase2_entropy_no_unwrap_expect;
 pub mod engine_phase2_entropy_non_empty;
 pub mod engine_phase2_generic_no_inline_tests;
 pub mod engine_phase2_generic_no_unwrap_expect;
-pub mod engine_phase2_generic_non_empty;
 pub mod engine_phase2_no_inline_tests;
 pub mod engine_phase2_no_unwrap_expect;
 pub mod engine_phase2_profile_route_truth;

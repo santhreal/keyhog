@@ -379,6 +379,7 @@ fn dogfood_records_engine_probabilistic_gate_drop() {
             reject_repeated_blocks: true,
             allow_alphabetic_credential: true,
             reject_program_identifiers: true,
+            reject_source_symbol_identifiers: true,
             reject_dash_segmented_alnum: true,
         }),
         bpe_enabled: Some(false),

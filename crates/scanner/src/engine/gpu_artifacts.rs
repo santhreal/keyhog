@@ -93,10 +93,15 @@ fn compile_gpu_literal_artifact_plan(detectors: &[DetectorSpec]) -> Result<GpuLi
     let confirmed_anchor_literals = confirmed_anchor_index
         .as_ref()
         .map_or(&[] as &[String], |index| index.anchor_literals());
-    let generic_keyword_literals = phase2_generic::keywords::generic_keyword_prefilter_stems()
-        .into_iter()
-        .map(str::to_owned)
-        .collect::<Vec<_>>();
+    let generic_keyword_literals = if detectors.iter().any(DetectorSpec::owns_entropy_policy) {
+        phase2_generic::keywords::GenericAssignmentKeywordPlan::compile(detectors)
+            .map_err(crate::error::ScanError::Config)?
+            .stem_literals()
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
 
     Ok(GpuLiteralArtifacts {
         literal: serialize_literal_rows(

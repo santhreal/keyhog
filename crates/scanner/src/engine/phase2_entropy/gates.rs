@@ -192,7 +192,8 @@ pub(crate) fn entropy_match_suppression_stage(
     {
         return Some(EntropyShapeStage::SourceCodeExpression);
     }
-    if crate::decode::caesar::is_program_source_code_path(chunk.metadata.path.as_deref())
+    if compiled_policy.is_some_and(|policy| policy.reject_source_symbol_identifiers)
+        && crate::decode::caesar::is_program_source_code_path(chunk.metadata.path.as_deref())
         && crate::suppression::shape::looks_like_source_symbol_identifier_with_randomness(
             &entropy_match.value,
             &randomness,

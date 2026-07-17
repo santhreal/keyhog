@@ -164,12 +164,6 @@ impl CompiledScanner {
             .is_some_and(crate::confidence::is_sensitive_path);
         let keyword_free_threshold = self.keyword_free_entropy_threshold(sensitive_path);
 
-        // When detector-owned entropy ML is enabled, narrowly accepted
-        // credential-anchored hex keys may enter the owning detector's model mode.
-        #[cfg(feature = "ml")]
-        let allow_canonical_lift = self.config.ml_enabled && self.config.entropy_ml_authoritative;
-        #[cfg(not(feature = "ml"))]
-        let allow_canonical_lift = false;
         let entropy_matches =
             crate::entropy::scanner::find_entropy_secrets_with_precomputed_keywords_and_policy(
                 &entropy_lines,
@@ -183,7 +177,6 @@ impl CompiledScanner {
                 &self.config.test_keywords,
                 &self.config.placeholder_keywords,
                 Some(&skip_lines),
-                allow_canonical_lift,
                 Some(crate::entropy::scanner::ActiveDetectorPolicy::new(
                     &self.generic_owning_detector,
                     &self.detector_plans,
@@ -217,10 +210,7 @@ impl CompiledScanner {
             let bpe_bound = if detector_owned_canonical_hex_key {
                 None
             } else if let Some(policy) = compiled_policy {
-                policy.bpe_bound(
-                    self.config.entropy_bpe_max_bytes_per_token,
-                    self.config.entropy_bpe_max_bytes_per_token_override,
-                )
+                policy.bpe_bound(self.config.entropy_bpe_max_bytes_per_token_override)
             } else {
                 None
             };

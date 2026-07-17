@@ -1,5 +1,12 @@
 use super::*;
 
+fn compiled_policy(id: &str) -> crate::entropy::policy::CompiledEntropyPolicy {
+    let detector = keyhog_core::detector_spec_by_id(id)
+        .unwrap_or_else(|| panic!("embedded detector {id:?} must exist"));
+    crate::entropy::policy::CompiledEntropyPolicy::compile(detector)
+        .unwrap_or_else(|error| panic!("embedded detector {id:?} must compile: {error}"))
+}
+
 /// The full word-like FALSE-POSITIVE taxonomy the entropy/generic detectors
 /// flood on real CredData + source trees: dotted .NET P/Invoke, Java/Go, and
 /// namespace paths, XML namespace declarations, English prose, long
@@ -138,64 +145,49 @@ fn unicode_efficiency_uses_utf8_bytes_not_scalar_count() {
 }
 
 #[test]
-fn detector_policy_precedes_scan_fallback_without_affecting_other_detectors() {
+fn detector_policy_precedes_operator_default_without_affecting_other_detectors() {
     let candidate = "PInvoke.User32.WindowMessage.WM_SYSCOLORCHANGE";
-    let strict = keyhog_core::DetectorSpec {
-        bpe_max_bytes_per_token: Some(2.2),
-        ..Default::default()
-    };
-    let permissive = keyhog_core::DetectorSpec {
-        bpe_max_bytes_per_token: Some(99.0),
-        ..Default::default()
-    };
-    let strict_bound = max_bytes_per_token_for_detector(Some(&strict), 99.0, None);
-    let permissive_bound = max_bytes_per_token_for_detector(Some(&permissive), 2.2, None);
+    let mut strict_spec = keyhog_core::detector_spec_by_id(crate::detector_ids::GENERIC_API_KEY)
+        .expect("generic-api-key detector exists")
+        .clone();
+    strict_spec.bpe_max_bytes_per_token = Some(2.2);
+    let strict = crate::entropy::policy::CompiledEntropyPolicy::compile(&strict_spec)
+        .expect("strict detector policy compiles");
+    let mut permissive_spec = strict_spec.clone();
+    permissive_spec.bpe_max_bytes_per_token = Some(99.0);
+    let permissive = crate::entropy::policy::CompiledEntropyPolicy::compile(&permissive_spec)
+        .expect("permissive detector policy compiles");
+    let strict_bound = strict.bpe_bound(None).expect("BPE enabled");
+    let permissive_bound = permissive.bpe_bound(None).expect("BPE enabled");
     assert!(is_word_like_low_bpe(candidate, strict_bound));
     assert!(!is_word_like_low_bpe(candidate, permissive_bound));
     assert_eq!(permissive_bound, 99.0);
-    assert_eq!(max_bytes_per_token_for_detector(None, 2.2, None), 2.2);
-
-    let inherited = keyhog_core::DetectorSpec::default();
     assert_eq!(
-        max_bytes_per_token_for_detector(Some(&inherited), 1.9, None),
-        1.9
-    );
-    assert_eq!(
-        max_bytes_per_token_for_detector(Some(&strict), 2.2, Some(7.5)),
-        7.5,
+        strict.bpe_bound(Some(7.5)),
+        Some(7.5),
         "an explicit Tier-A scan setting must override detector TOML"
     );
 }
 
 #[test]
 fn detector_can_disable_token_efficiency_without_a_magic_ceiling() {
-    let disabled = keyhog_core::DetectorSpec {
-        bpe_enabled: Some(false),
-        ..Default::default()
-    };
-    assert!(!enabled_for_detector(Some(&disabled)));
-    assert!(enabled_for_detector(None));
-    assert!(enabled_for_detector(Some(
-        &keyhog_core::DetectorSpec::default()
-    )));
+    let disabled = compiled_policy(crate::detector_ids::GENERIC_PASSWORD);
+    assert_eq!(disabled.bpe_bound(None), None);
 }
 
 #[test]
 fn shipped_opaque_and_password_policies_make_different_bpe_decisions() {
     let word_like = "correcthorsebatterystaple";
-    let api_key = keyhog_core::detector_spec_by_id(crate::detector_ids::GENERIC_API_KEY)
-        .expect("generic-api-key detector exists");
-    let password = keyhog_core::detector_spec_by_id(crate::detector_ids::GENERIC_PASSWORD)
-        .expect("generic-password detector exists");
-    let api_bound = max_bytes_per_token_for_detector(Some(api_key), 2.2, None);
+    let api_key = compiled_policy(crate::detector_ids::GENERIC_API_KEY);
+    let password = compiled_policy(crate::detector_ids::GENERIC_PASSWORD);
+    let api_bound = api_key.bpe_bound(None).expect("API-key BPE enabled");
 
-    assert!(enabled_for_detector(Some(api_key)));
     assert!(
         is_word_like_low_bpe(word_like, api_bound),
         "opaque API-key policy should reject a language-compressible value"
     );
     assert!(
-        !enabled_for_detector(Some(password)),
+        password.bpe_bound(None).is_none(),
         "password policy must skip BPE so human-chosen passphrases reach downstream evidence"
     );
 }

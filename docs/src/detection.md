@@ -132,7 +132,8 @@ model's fixed vocabulary, remain global.
 | `plausibility.leading_slash_base64_entropy_floor` | Raises the floor for unanchored slash-led base64 | Preserves more slash-led base64 candidates |
 | `plausibility.reject_repeated_blocks` | Rejects periodic mask values, including truncated repetitions | Allows that shape to continue through the remaining detector gates |
 | `plausibility.allow_alphabetic_credential` | Admits anchored all-letter passwords/tokens after other gates | Requires alphabetic-only values to clear the ordinary entropy path |
-| `plausibility.reject_program_identifiers` | Rejects source-language identifier shapes | Allows identifier-shaped values through the remaining gates |
+| `plausibility.reject_program_identifiers` | Rejects pure source-language identifier shapes | Allows pure identifier-shaped values through the remaining gates |
+| `plausibility.reject_source_symbol_identifiers` | Rejects digit-bearing mixed alphanumeric source-symbol shapes independently of the pure-identifier gate | Allows those mixed values to follow the detector's `mixed_alnum_floor` and `mixed_alnum_min_len` policy |
 | `plausibility.reject_dash_segmented_alnum` | Rejects serial/product-key-like dash groups | Allows dash-segmented alphanumeric values through the remaining gates |
 | `entropy_policy_priority` | Wins more overlapping generic keyword-policy claims | Yields shared keywords to a more specific detector; unique keywords are unchanged |
 | `bpe_max_bytes_per_token` | A higher ceiling is looser: fewer compressible/word-like candidates are rejected | A lower ceiling is stricter: more language-like values are rejected, with corresponding recall risk |

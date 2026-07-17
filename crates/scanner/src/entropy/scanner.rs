@@ -12,11 +12,7 @@ pub(crate) use super::isolated::{
     has_isolated_bare_secret_candidate_with_lines_and_policy,
     has_isolated_bare_secret_candidate_with_policy,
 };
-use super::{
-    keywords::*, shannon_entropy, EntropyMatch, FIRST_SOURCE_LINE_NUMBER, HIGH_ENTROPY_THRESHOLD,
-    KEYWORD_FREE_MIN_LEN, LOW_ENTROPY_THRESHOLD, VERY_HIGH_ENTROPY_THRESHOLD,
-};
-use keyhog_core::DetectorSpec;
+use super::{keywords::*, shannon_entropy, EntropyMatch, FIRST_SOURCE_LINE_NUMBER};
 
 /// Borrowed view of the detector corpus that actually compiled for this scan.
 /// Production phase-2 paths pass this view so custom detector directories and
@@ -82,8 +78,8 @@ impl<'a> ActiveDetectorPolicy<'a> {
 
 /// Resolve entropy policy from the compiled corpus. Synthetic paths have exact
 /// owners, detector-declared keyword claims come next, and an unclaimed Tier-A
-/// keyword retains the API-key compatibility policy before the generic-secret
-/// fallback. This is the single resolver shared by generation and emission.
+/// keyword resolves to the detector that explicitly owns the unclaimed-keyword
+/// role. This is the single resolver shared by generation and emission.
 pub(crate) fn active_policy_detector_index(
     index: &crate::generic_keyword_owner::GenericOwningDetectorIndex,
     keyword: &str,
@@ -99,52 +95,60 @@ pub(crate) fn active_policy_detector_index(
         .or_else(|| index.unclaimed_keyword_owner_index())
 }
 
-fn embedded_spec_for_role(
-    role: keyhog_core::EntropyDetectionRole,
-) -> Option<&'static DetectorSpec> {
-    keyhog_core::embedded_detector_specs()
-        .iter()
-        .find(|detector| detector.entropy_roles.contains(&role))
+struct EmbeddedEntropyPolicies {
+    index: crate::generic_keyword_owner::GenericOwningDetectorIndex,
+    entropy: Box<[Option<crate::entropy::policy::CompiledEntropyPolicy>]>,
+    key_material: Box<[crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy]>,
 }
 
-fn embedded_spec_for_keyword(keyword: &str) -> Option<&'static DetectorSpec> {
-    static INDEX: std::sync::LazyLock<crate::generic_keyword_owner::GenericOwningDetectorIndex> =
+fn embedded_entropy_policies() -> &'static EmbeddedEntropyPolicies {
+    static POLICIES: std::sync::LazyLock<EmbeddedEntropyPolicies> =
         std::sync::LazyLock::new(|| {
-            crate::generic_keyword_owner::GenericOwningDetectorIndex::build(
-                keyhog_core::embedded_detector_specs(),
-            )
-            .unwrap_or_else(|error| {
-                panic!("embedded detector entropy ownership is invalid: {error}")
-            })
+            let detectors = keyhog_core::embedded_detector_specs();
+            let index =
+                match crate::generic_keyword_owner::GenericOwningDetectorIndex::build(detectors) {
+                    Ok(index) => index,
+                    Err(error) => {
+                        panic!("embedded detector entropy ownership is invalid: {error}")
+                    }
+                };
+            let entropy = detectors
+                .iter()
+                .map(
+                    |detector| match crate::entropy::policy::compile_entropy_policy(detector) {
+                        Ok(policy) => policy,
+                        Err(error) => {
+                            panic!("embedded detector entropy policy is invalid: {error}")
+                        }
+                    },
+                )
+                .collect();
+            let key_material = detectors
+                .iter()
+                .map(
+                    crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy::compile,
+                )
+                .collect();
+            EmbeddedEntropyPolicies {
+                index,
+                entropy,
+                key_material,
+            }
         });
-    active_policy_detector_index(&INDEX, keyword)
-        .and_then(|index| keyhog_core::embedded_detector_specs().get(index))
-}
-
-fn get_spec_for_keyword<'a>(
-    active_policy: Option<ActiveDetectorPolicy<'a>>,
-    keyword: &str,
-) -> Option<&'a DetectorSpec> {
-    match active_policy {
-        Some(_) => None,
-        None => embedded_spec_for_keyword(keyword),
-    }
+    &POLICIES
 }
 
 fn get_compiled_policy_for_keyword<'a>(
     active_policy: Option<ActiveDetectorPolicy<'a>>,
     keyword: &str,
 ) -> Option<&'a crate::entropy::policy::CompiledEntropyPolicy> {
-    active_policy.and_then(|policy| policy.compiled_for_keyword(keyword))
-}
-
-fn get_spec_for_role<'a>(
-    active_policy: Option<ActiveDetectorPolicy<'a>>,
-    role: keyhog_core::EntropyDetectionRole,
-) -> Option<&'a DetectorSpec> {
     match active_policy {
-        Some(_) => None,
-        None => embedded_spec_for_role(role),
+        Some(policy) => policy.compiled_for_keyword(keyword),
+        None => {
+            let policies = embedded_entropy_policies();
+            active_policy_detector_index(&policies.index, keyword)
+                .and_then(|index| policies.entropy.get(index)?.as_ref())
+        }
     }
 }
 
@@ -152,54 +156,64 @@ fn get_compiled_policy_for_role<'a>(
     active_policy: Option<ActiveDetectorPolicy<'a>>,
     role: keyhog_core::EntropyDetectionRole,
 ) -> Option<&'a crate::entropy::policy::CompiledEntropyPolicy> {
-    active_policy.and_then(|policy| policy.compiled_for_role(role))
+    match active_policy {
+        Some(policy) => policy.compiled_for_role(role),
+        None => {
+            let policies = embedded_entropy_policies();
+            let index = match role {
+                keyhog_core::EntropyDetectionRole::KeywordFree => {
+                    policies.index.keyword_free_owner_index()
+                }
+                keyhog_core::EntropyDetectionRole::IsolatedBare => {
+                    policies.index.isolated_bare_owner_index()
+                }
+                keyhog_core::EntropyDetectionRole::UnclaimedKeyword => {
+                    policies.index.unclaimed_keyword_owner_index()
+                }
+            }?;
+            policies.entropy.get(index)?.as_ref()
+        }
+    }
+}
+
+fn get_key_material_policy_for_keyword<'a>(
+    active_policy: Option<ActiveDetectorPolicy<'a>>,
+    keyword: &str,
+) -> Option<&'a crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy> {
+    match active_policy {
+        Some(policy) => policy.key_material_for_keyword(keyword),
+        None => {
+            let policies = embedded_entropy_policies();
+            let index = policies
+                .index
+                .canonical_index(keyword)
+                .or_else(|| active_policy_detector_index(&policies.index, keyword))?;
+            policies.key_material.get(index)
+        }
+    }
 }
 
 use crate::adjudicate::{EntropyShapeStage, StageId};
 use crate::entropy::plausibility::{is_secret_plausible, PlausibilityContext};
 
-pub(crate) const CREDENTIAL_CONTEXT_MIN_LEN: usize = 8;
 pub(crate) const KEYWORD_FREE_LABEL: &str = "none (high-entropy)";
 
-/// Test-only constructor for a credential-anchor [`KeywordContext`] using the
-/// production tuning constants (the low-entropy floor and the credential-context
-/// minimum length). Exposed (doc-hidden, via `testing::entropy_scanner`) so the
-/// canonical-shape tests in `tests/unit/inline_migrated/` can build the same
-/// context the scanner uses, without leaking the private length constant.
+/// Build the same detector-owned credential context used by production.
 #[doc(hidden)]
 pub(crate) fn credential_keyword_context(keyword: &str) -> KeywordContext {
-    credential_keyword_context_with_lift(keyword, false)
-}
-
-/// Lift-aware sibling of [`credential_keyword_context`]: builds the same
-/// production credential anchor. The historical `allow_canonical_lift` flag is
-/// accepted for API compatibility but detector policy remains authoritative.
-/// Exposed (doc-hidden, via `testing::entropy_scanner`)
-/// so unit tests can drive `candidate_is_plausible` through both the strict gate
-/// and the model-arbitrated key-material lift.
-#[doc(hidden)]
-pub(crate) fn credential_keyword_context_with_lift(
-    keyword: &str,
-    _allow_canonical_lift: bool,
-) -> KeywordContext {
-    let spec = get_spec_for_keyword(None, keyword);
-    let entropy_low = spec
-        .and_then(|s| s.entropy_low)
-        .map_or(LOW_ENTROPY_THRESHOLD, |threshold| threshold);
-    let min_len = spec
-        .and_then(|s| s.min_len)
-        .map_or(CREDENTIAL_CONTEXT_MIN_LEN, |min_len| min_len);
+    let policy = match get_compiled_policy_for_keyword(None, keyword) {
+        Some(policy) => policy,
+        None => panic!(
+            "embedded detector entropy policy is unavailable for keyword {keyword:?}; fix the owning detector TOML"
+        ),
+    };
     KeywordContext {
         keyword: keyword.to_string(),
-        threshold: entropy_low,
-        min_len,
+        threshold: policy.entropy_low,
+        min_len: policy.min_len,
         is_credential_context: true,
-        // This constructor is used only by the testing facade, where the
-        // historical lift switch remains useful for unit-gate coverage. The
-        // production policy-aware context below always sets this false.
-        allow_canonical_shapes: _allow_canonical_lift,
-        entropy_shape: spec.and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape),
-        plausibility_policy: None,
+        entropy_shape: policy.entropy_shape,
+        plausibility_policy: Some(*policy),
     }
 }
 
@@ -213,10 +227,13 @@ pub fn find_entropy_secrets(
     test_keywords: &[String],
     placeholder_keywords: &[String],
 ) -> Vec<EntropyMatch> {
-    let spec = get_spec_for_role(None, keyhog_core::EntropyDetectionRole::KeywordFree);
-    let entropy_very_high = spec
-        .and_then(|s| s.entropy_very_high)
-        .map_or(VERY_HIGH_ENTROPY_THRESHOLD, |threshold| threshold);
+    let entropy_very_high =
+        match get_compiled_policy_for_role(None, keyhog_core::EntropyDetectionRole::KeywordFree) {
+            Some(policy) => policy.entropy_very_high,
+            None => panic!(
+                "embedded keyword-free entropy policy is unavailable; fix the owning detector TOML"
+            ),
+        };
     find_entropy_secrets_with_threshold(
         text,
         min_length,
@@ -242,46 +259,9 @@ pub fn find_entropy_secrets_with_threshold(
     placeholder_keywords: &[String],
     skip_lines: Option<&std::collections::HashSet<usize>>,
 ) -> Vec<EntropyMatch> {
-    // Stable public signature retained for callers that pass the historical
-    // model-authority switch. Detector TOML remains authoritative in every
-    // mode, so this compatibility entry point uses the same policy path.
-    find_entropy_secrets_with_canonical_lift(
-        text,
-        min_length,
-        context_lines,
-        entropy_threshold,
-        keyword_free_threshold,
-        secret_keywords,
-        test_keywords,
-        placeholder_keywords,
-        skip_lines,
-        false,
-    )
-}
-
-/// Policy-aware entropy generation. The historical `allow_canonical_lift`
-/// switch remains in the signature for compatibility, but cannot create or
-/// widen canonical hex admission. Only the active detector's
-/// `canonical_hex_key_material` declaration can release digest-shaped values;
-/// UUIDs and serials remain suppressed in this generic path. The keyword-free
-/// candidate path never has detector-owned key evidence and therefore never
-/// lifts canonical shapes.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn find_entropy_secrets_with_canonical_lift(
-    text: &str,
-    min_length: usize,
-    context_lines: usize,
-    entropy_threshold: f64,
-    keyword_free_threshold: f64,
-    secret_keywords: &[String],
-    test_keywords: &[String],
-    placeholder_keywords: &[String],
-    skip_lines: Option<&std::collections::HashSet<usize>>,
-    allow_canonical_lift: bool,
-) -> Vec<EntropyMatch> {
     let lines: Vec<&str> = text.lines().collect();
     let line_offsets = crate::pipeline::compute_line_offsets(text);
-    find_entropy_secrets_with_canonical_lift_and_lines(
+    find_entropy_secrets_with_lines(
         &lines,
         &line_offsets,
         min_length,
@@ -292,12 +272,11 @@ pub(crate) fn find_entropy_secrets_with_canonical_lift(
         test_keywords,
         placeholder_keywords,
         skip_lines,
-        allow_canonical_lift,
     )
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn find_entropy_secrets_with_canonical_lift_and_lines(
+pub(crate) fn find_entropy_secrets_with_lines(
     lines: &[&str],
     line_offsets: &[usize],
     min_length: usize,
@@ -308,7 +287,6 @@ pub(crate) fn find_entropy_secrets_with_canonical_lift_and_lines(
     test_keywords: &[String],
     placeholder_keywords: &[String],
     skip_lines: Option<&std::collections::HashSet<usize>>,
-    allow_canonical_lift: bool,
 ) -> Vec<EntropyMatch> {
     // The explicit `keyword_free_threshold` is authoritative here, do NOT
     // re-derive it from the generic-secret spec. Callers resolve the relevant
@@ -333,11 +311,10 @@ pub(crate) fn find_entropy_secrets_with_canonical_lift_and_lines(
         test_keywords,
         placeholder_keywords,
         skip_lines,
-        allow_canonical_lift,
     )
 }
 
-/// Same as [`find_entropy_secrets_with_canonical_lift_and_lines`] but accepts
+/// Same as [`find_entropy_secrets_with_lines`] but accepts
 /// pre-computed keyword assignment lines, avoiding the O(lines × keywords)
 /// `find_keyword_assignment_lines` scan when the caller already has the result.
 /// This is the primary entry point for `scan_entropy_fallback`, which computes
@@ -356,7 +333,6 @@ pub(crate) fn find_entropy_secrets_with_precomputed_keywords(
     test_keywords: &[String],
     placeholder_keywords: &[String],
     skip_lines: Option<&std::collections::HashSet<usize>>,
-    allow_canonical_lift: bool,
 ) -> Vec<EntropyMatch> {
     find_entropy_secrets_with_precomputed_keywords_and_policy(
         lines,
@@ -370,7 +346,6 @@ pub(crate) fn find_entropy_secrets_with_precomputed_keywords(
         test_keywords,
         placeholder_keywords,
         skip_lines,
-        allow_canonical_lift,
         None,
     )
 }
@@ -391,7 +366,6 @@ pub(crate) fn find_entropy_secrets_with_precomputed_keywords_and_policy(
     test_keywords: &[String],
     placeholder_keywords: &[String],
     skip_lines: Option<&std::collections::HashSet<usize>>,
-    allow_canonical_lift: bool,
     active_policy: Option<ActiveDetectorPolicy<'_>>,
 ) -> Vec<EntropyMatch> {
     assert!(
@@ -414,7 +388,6 @@ pub(crate) fn find_entropy_secrets_with_precomputed_keywords_and_policy(
         test_keywords,
         placeholder_keywords,
         skip_lines,
-        allow_canonical_lift,
         active_policy,
     );
     scan_keyword_free_candidates(
@@ -445,7 +418,6 @@ fn scan_keyword_contexts(
     _test_keywords: &[String],
     placeholder_keywords: &[String],
     skip_lines: Option<&std::collections::HashSet<usize>>,
-    allow_canonical_lift: bool,
     active_policy: Option<ActiveDetectorPolicy<'_>>,
 ) {
     for (keyword_line_index, keyword_line) in keyword_lines {
@@ -454,7 +426,6 @@ fn scan_keyword_contexts(
             min_length,
             entropy_threshold,
             secret_keywords,
-            allow_canonical_lift,
             active_policy,
         ) else {
             continue;
@@ -554,50 +525,23 @@ fn scan_keyword_free_candidates(
     skip_lines: Option<&std::collections::HashSet<usize>>,
     active_policy: Option<ActiveDetectorPolicy<'_>>,
 ) {
-    let spec = get_spec_for_role(
-        active_policy,
-        keyhog_core::EntropyDetectionRole::KeywordFree,
-    );
     let compiled_secret = get_compiled_policy_for_role(
         active_policy,
         keyhog_core::EntropyDetectionRole::KeywordFree,
     );
-    let keyword_free_min_len = compiled_secret
-        .map(|policy| policy.keyword_free_min_len)
-        .or_else(|| {
-            active_policy.is_none().then(|| {
-                spec.and_then(|s| s.keyword_free_min_len)
-                    .unwrap_or(KEYWORD_FREE_MIN_LEN)
-            })
-        });
-    let generic_keyword_secret_spec = get_spec_for_role(
-        active_policy,
-        keyhog_core::EntropyDetectionRole::IsolatedBare,
-    );
+    let keyword_free_min_len = compiled_secret.map(|policy| policy.keyword_free_min_len);
     let compiled_keyword_secret = get_compiled_policy_for_role(
         active_policy,
         keyhog_core::EntropyDetectionRole::IsolatedBare,
     );
     let keyword_free_enabled = keyword_free_threshold.is_some() && keyword_free_min_len.is_some();
-    let generic_keyword_secret_min_len = compiled_keyword_secret
-        .map(|policy| policy.keyword_free_min_len)
-        .or_else(|| {
-            active_policy.is_none().then(|| {
-                generic_keyword_secret_spec
-                    .and_then(|s| s.keyword_free_min_len)
-                    .unwrap_or(KEYWORD_FREE_MIN_LEN)
-            })
-        });
+    let generic_keyword_secret_min_len =
+        compiled_keyword_secret.map(|policy| policy.keyword_free_min_len);
     let isolated_bare_enabled = generic_keyword_secret_min_len.is_some();
     if !keyword_free_enabled && !isolated_bare_enabled {
         return;
     }
-    let isolated_shape = compiled_keyword_secret
-        .and_then(|policy| policy.entropy_shape)
-        .or_else(|| {
-            generic_keyword_secret_spec
-                .and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape)
-        });
+    let isolated_shape = compiled_keyword_secret.and_then(|policy| policy.entropy_shape);
     let keyword_free_context = keyword_free_threshold
         .filter(|_| keyword_free_enabled)
         .zip(keyword_free_min_len)
@@ -606,11 +550,7 @@ fn scan_keyword_free_candidates(
             threshold: threshold.max(entropy_threshold + 1.0),
             min_len,
             is_credential_context: false,
-            // Keyword-free candidates have no anchor, so canonical shapes stay strict.
-            allow_canonical_shapes: false,
-            entropy_shape: compiled_secret
-                .and_then(|policy| policy.entropy_shape)
-                .or_else(|| spec.and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape)),
+            entropy_shape: compiled_secret.and_then(|policy| policy.entropy_shape),
             plausibility_policy: compiled_secret.copied(),
         });
     let isolated_token_context = generic_keyword_secret_min_len.map(|min_len| {
@@ -777,22 +717,18 @@ pub(crate) fn has_lower_dash_app_password_candidate_with_precomputed_keywords_an
             config.min_secret_len,
             config.entropy_threshold,
             &config.secret_keywords,
-            false,
             active_policy,
         ) else {
             continue;
         };
-        let detector = get_spec_for_keyword(active_policy, &context.keyword);
         let key_material_policy =
-            active_policy.and_then(|policy| policy.key_material_for_keyword(&context.keyword));
+            get_key_material_policy_for_keyword(active_policy, &context.keyword);
         for candidate in extract_candidates(
             keyword_line,
             &context.keyword,
             context.min_len,
             &config.placeholder_keywords,
             context.is_credential_context,
-            false,
-            detector,
             get_compiled_policy_for_keyword(active_policy, &context.keyword),
             key_material_policy,
         ) {
@@ -854,9 +790,7 @@ fn collect_line_candidates_inner(
     placeholder_keywords: &[String],
     active_policy: Option<ActiveDetectorPolicy<'_>>,
 ) {
-    let detector = get_spec_for_keyword(active_policy, &context.keyword);
-    let key_material_policy =
-        active_policy.and_then(|policy| policy.key_material_for_keyword(&context.keyword));
+    let key_material_policy = get_key_material_policy_for_keyword(active_policy, &context.keyword);
     let candidates = if crate::telemetry::is_dogfood_enabled() {
         let extracted = extract_candidates_with_rejections(
             line,
@@ -864,8 +798,6 @@ fn collect_line_candidates_inner(
             context.min_len,
             placeholder_keywords,
             context.is_credential_context,
-            context.allow_canonical_shapes,
-            detector,
             get_compiled_policy_for_keyword(active_policy, &context.keyword),
             key_material_policy,
         );
@@ -883,8 +815,6 @@ fn collect_line_candidates_inner(
             context.min_len,
             placeholder_keywords,
             context.is_credential_context,
-            context.allow_canonical_shapes,
-            detector,
             get_compiled_policy_for_keyword(active_policy, &context.keyword),
             key_material_policy,
         )
@@ -972,27 +902,12 @@ fn candidate_plausibility_rejection_stage_with_policy(
     placeholder_keywords: &[String],
     active_policy: Option<ActiveDetectorPolicy<'_>>,
 ) -> Option<StageId> {
-    let spec = get_spec_for_keyword(active_policy, &context.keyword);
-    let key_material_policy =
-        active_policy.and_then(|policy| policy.key_material_for_keyword(&context.keyword));
-    let compiled = get_compiled_policy_for_keyword(active_policy, &context.keyword);
-    if active_policy.is_some() && compiled.is_none() {
+    let key_material_policy = get_key_material_policy_for_keyword(active_policy, &context.keyword);
+    let Some(compiled) = get_compiled_policy_for_keyword(active_policy, &context.keyword) else {
         return Some(StageId::EntropyPolicyUnavailable);
-    }
-    let keyword_free_min_len = compiled.map_or_else(
-        || {
-            spec.and_then(|s| s.keyword_free_min_len)
-                .unwrap_or(KEYWORD_FREE_MIN_LEN)
-        },
-        |policy| policy.keyword_free_min_len,
-    );
-    let credential_context_min_len = compiled.map_or_else(
-        || {
-            spec.and_then(|s| s.min_len)
-                .unwrap_or(CREDENTIAL_CONTEXT_MIN_LEN)
-        },
-        |policy| policy.min_len,
-    );
+    };
+    let keyword_free_min_len = compiled.keyword_free_min_len;
+    let credential_context_min_len = compiled.min_len;
 
     if crate::suppression::shape::is_structured_dotted_token(candidate) {
         if candidate.len() < keyword_free_min_len.min(context.min_len) {
@@ -1024,19 +939,10 @@ fn candidate_plausibility_rejection_stage_with_policy(
         // Canonical pure-hex admission is detector-owned. Model authority may
         // arbitrate an admitted candidate, but cannot manufacture a missing
         // detector policy or widen its declared lengths/keywords.
-        let detector_owned_lift = key_material_policy.map_or_else(
-            || {
-                spec.is_some_and(|detector| {
-                    detector.allows_canonical_hex_key_material(&context.keyword, candidate)
-                })
-            },
-            |policy| policy.allows_canonical_hex(&context.keyword, candidate),
-        );
-        let compatibility_lift = active_policy.is_none()
-            && context.allow_canonical_shapes
-            && canonical_shape_lift_allowed(candidate, &context.keyword);
-        let canonical_lift = detector_owned_lift || compatibility_lift;
-        if !canonical_lift && is_canonical_non_secret_shape(candidate) {
+        let detector_owned_admission = key_material_policy
+            .is_some_and(|policy| policy.allows_canonical_hex(&context.keyword, candidate));
+        let canonical_policy_admission = detector_owned_admission;
+        if !canonical_policy_admission && is_canonical_non_secret_shape(candidate) {
             return Some(StageId::EntropyValueShape(
                 EntropyShapeStage::CanonicalNonSecretShape,
             ));
@@ -1046,8 +952,8 @@ fn candidate_plausibility_rejection_stage_with_policy(
                 EntropyShapeStage::CredentialContextTooShort,
             ));
         }
-        let plausibility_context =
-            PlausibilityContext::new(true, canonical_lift).with_detector_policy(spec, compiled);
+        let plausibility_context = PlausibilityContext::new(true, canonical_policy_admission)
+            .with_compiled_policy(Some(compiled));
         return (!is_secret_plausible(candidate, placeholder_keywords, plausibility_context))
             .then_some(StageId::EntropyValueShape(
                 EntropyShapeStage::SecretPlausibilityRejected,
@@ -1059,7 +965,7 @@ fn candidate_plausibility_rejection_stage_with_policy(
         ));
     }
     let plausibility_context = PlausibilityContext::new(context.is_credential_context, false)
-        .with_detector_policy(spec, compiled);
+        .with_compiled_policy(Some(compiled));
     if !is_secret_plausible(candidate, placeholder_keywords, plausibility_context) {
         return Some(StageId::EntropyValueShape(
             EntropyShapeStage::SecretPlausibilityRejected,
@@ -1077,147 +983,25 @@ pub(crate) fn is_canonical_non_secret_shape(value: &str) -> bool {
     crate::suppression::shape::looks_like_entropy_canonical_non_secret_shape(value)
 }
 
-/// Historical compatibility predicate used only by migration tests. Runtime
-/// admission never calls this global keyword classifier; it uses the active
-/// detector's `canonical_hex_key_material` policy instead.
-pub(crate) fn canonical_shape_lift_allowed(value: &str, keyword: &str) -> bool {
-    if crate::suppression::shape::looks_like_entropy_uuid_shape(value) {
-        // A UUID remains an identifier even beside a generic credential word.
-        // Providers that issue UUID-bodied credentials must declare that exact
-        // syntax in their detector TOML; the generic entropy bridge cannot
-        // distinguish those credentials from resource IDs, Kubernetes UIDs,
-        // and ordinary application identifiers.
-        return false;
-    }
-    if !value.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return false;
-    }
-    match value.len() {
-        // 32-hex key material is a documented recall surface under explicit
-        // key-material anchors (`api_key`, `access_key`, ...), but broad
-        // `token=` remains too weak and stays suppressed.
-        32 => keyword_is_key_material(keyword),
-        // 64-hex is sha256-shaped unless the keyword explicitly names key
-        // material. `secret=` / `api_key=` are too broad and stay suppressed.
-        64 => keyword_is_crypto_key_material(keyword),
-        // 40 is sha1/git-commit SHA. 128 is sha512. Both stay canonical
-        // non-secret shapes even under the model-authoritative lift.
-        _ => false,
-    }
-}
-
-pub(crate) fn keyword_is_crypto_key_material(keyword: &str) -> bool {
-    [
-        "encryptionkey",
-        "masterkey",
-        "signingkey",
-        "privatekey",
-        "secretkey",
-        "sessionkey",
-        "hmacsecret",
-        "hmacsalt",
-        "hmacseed",
-        "passwordsalt",
-        "salt",
-        "nonce",
-        "seed",
-    ]
-    .iter()
-    .any(|needle| compact_keyword_contains(keyword, needle.as_bytes()))
-}
-
-pub(crate) fn keyword_is_key_material(keyword: &str) -> bool {
-    [
-        "apikey",
-        "accesskey",
-        "authkey",
-        "privatekey",
-        "signingkey",
-        "encryptionkey",
-        "masterkey",
-        "secretkey",
-        "sessionkey",
-        "hmacsalt",
-        "hmacseed",
-        "passwordsalt",
-        "salt",
-        "nonce",
-        "seed",
-    ]
-    .iter()
-    .any(|needle| compact_keyword_contains(keyword, needle.as_bytes()))
-}
-
-/// True iff `needle` (already separator-free and ASCII-lowercase, as every
-/// key-material literal above is) appears as a contiguous substring of `keyword`
-/// once `keyword` is compacted the same way the literals were authored: `_`/`-`/
-/// `.` dropped and ASCII-lowercased. Byte-identical to the old
-/// `compact_keyword(keyword).contains(needle)` but with NO per-call `String`
-/// allocation (Law 7: this runs per canonical-lift candidate). Mirrors the
-/// compact-keyword matcher family in `engine::phase2_generic::keywords`
-/// (`compact_keyword_eq`/`_ends_with`); see the backlog DEDUP task to hoist that
-/// family to a shared low layer: `entropy` must not import `engine`.
-fn compact_keyword_contains(keyword: &str, needle: &[u8]) -> bool {
-    if needle.is_empty() {
-        return true;
-    }
-    let bytes = keyword.as_bytes();
-    let len = bytes.len();
-    let mut start = 0;
-    while start < len {
-        if matches!(bytes[start], b'_' | b'-' | b'.') {
-            start += 1;
-            continue;
-        }
-        // Attempt to match `needle` beginning at this compacted character,
-        // skipping separators between matched bytes exactly as the compacted
-        // string would have collapsed them.
-        let mut ki = start;
-        let mut ni = 0;
-        while ni < needle.len() && ki < len {
-            let byte = bytes[ki];
-            if matches!(byte, b'_' | b'-' | b'.') {
-                ki += 1;
-                continue;
-            }
-            if byte.to_ascii_lowercase() != needle[ni] {
-                break;
-            }
-            ki += 1;
-            ni += 1;
-        }
-        if ni == needle.len() {
-            return true;
-        }
-        start += 1;
-    }
-    false
-}
-
+/// Resolve a testing context through the embedded compiled detector policy.
 pub(crate) fn keyword_context(
     keyword_line: &str,
     min_length: usize,
     entropy_threshold: f64,
     secret_keywords: &[String],
-    allow_canonical_lift: bool,
 ) -> KeywordContext {
-    keyword_context_with_policy(
+    match keyword_context_with_policy(
         keyword_line,
         min_length,
         entropy_threshold,
         secret_keywords,
-        allow_canonical_lift,
         None,
-    )
-    .unwrap_or_else(|| KeywordContext {
-        keyword: "unknown".to_string(),
-        threshold: LOW_ENTROPY_THRESHOLD,
-        min_len: min_length.max(CREDENTIAL_CONTEXT_MIN_LEN),
-        is_credential_context: false,
-        allow_canonical_shapes: allow_canonical_lift,
-        entropy_shape: None,
-        plausibility_policy: None,
-    })
+    ) {
+        Some(context) => context,
+        None => panic!(
+            "embedded detector entropy policy is unavailable for the supplied keyword context; fix the owning detector TOML"
+        ),
+    }
 }
 
 fn keyword_context_with_policy(
@@ -1225,21 +1009,17 @@ fn keyword_context_with_policy(
     min_length: usize,
     entropy_threshold: f64,
     secret_keywords: &[String],
-    _allow_canonical_lift: bool,
     active_policy: Option<ActiveDetectorPolicy<'_>>,
 ) -> Option<KeywordContext> {
     let line_bytes = keyword_line.as_bytes();
     let exact_assignment_keyword =
         crate::entropy::keywords::assignment_keyword_for_line(keyword_line);
-    let keyword = exact_assignment_keyword
-        .as_deref()
-        .or_else(|| {
-            secret_keywords
-                .iter()
-                .find(|keyword| crate::ascii_ci::ci_find_nonempty(line_bytes, keyword.as_bytes()))
-                .map(|keyword| keyword.as_str())
-        })
-        .unwrap_or("unknown"); // LAW10: absent path/field => display placeholder; reporting-only, recall-safe
+    let keyword = exact_assignment_keyword.as_deref().or_else(|| {
+        secret_keywords
+            .iter()
+            .find(|keyword| crate::ascii_ci::ci_find_nonempty(line_bytes, keyword.as_bytes()))
+            .map(|keyword| keyword.as_str())
+    })?;
     let is_exact_credential_context = exact_assignment_keyword
         .as_deref()
         .is_some_and(crate::entropy::keywords::normalized_assignment_keyword_is_credential);
@@ -1254,32 +1034,10 @@ fn keyword_context_with_policy(
                 crate::ascii_ci::ci_find_nonempty(line_bytes, credential_keyword.as_bytes())
             });
 
-    let spec = get_spec_for_keyword(active_policy, keyword);
-    let compiled = get_compiled_policy_for_keyword(active_policy, keyword);
-    if active_policy.is_some() && compiled.is_none() {
-        return None;
-    }
-    let entropy_low = compiled.map_or_else(
-        || {
-            spec.and_then(|s| s.entropy_low)
-                .unwrap_or(LOW_ENTROPY_THRESHOLD)
-        },
-        |policy| policy.entropy_low,
-    );
-    let min_len = compiled.map_or_else(
-        || {
-            spec.and_then(|s| s.min_len)
-                .unwrap_or(CREDENTIAL_CONTEXT_MIN_LEN)
-        },
-        |policy| policy.min_len,
-    );
-    let entropy_high = compiled.map_or_else(
-        || {
-            spec.and_then(|s| s.entropy_high)
-                .unwrap_or(HIGH_ENTROPY_THRESHOLD)
-        },
-        |policy| policy.entropy_high,
-    );
+    let compiled = get_compiled_policy_for_keyword(active_policy, keyword)?;
+    let entropy_low = compiled.entropy_low;
+    let min_len = compiled.min_len;
+    let entropy_high = compiled.entropy_high;
 
     // Keyword-anchored floor policy (a NAMED, tested rule, not a silent clamp).
     // Inside a credential-keyword context the keyword IS the positive evidence,
@@ -1306,12 +1064,7 @@ fn keyword_context_with_policy(
             min_length
         },
         is_credential_context,
-        // Canonical pure-hex admission is detector-owned. The legacy model
-        // authority flag cannot widen a missing or narrower TOML policy.
-        allow_canonical_shapes: false,
-        entropy_shape: compiled
-            .and_then(|policy| policy.entropy_shape)
-            .or_else(|| spec.and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape)),
-        plausibility_policy: compiled.copied(),
+        entropy_shape: compiled.entropy_shape,
+        plausibility_policy: Some(*compiled),
     })
 }

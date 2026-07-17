@@ -273,10 +273,6 @@ pub struct CompiledScanner {
     /// `generic_assignment_re`. It must never read the embedded global corpus
     /// when this scanner was constructed from custom detectors.
     pub(crate) generic_keyword_stems: Option<phase2_generic::keywords::GenericKeywordStemSet>,
-    /// GPU generic-keyword positions are produced from the embedded literal
-    /// program. They are valid only when this scanner's derived vocabulary is
-    /// exactly the embedded vocabulary.
-    pub(crate) generic_gpu_positions_compatible: bool,
     /// Compiled generic-assignment keyword → owning generic `Phase2Generic`
     /// detector index. Replaces the per-candidate linear `detectors.iter()
     /// .find(...)` scan in the generic value-shape path with an O(1) lookup that

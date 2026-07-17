@@ -540,6 +540,7 @@ fn repeated_block_rejection_is_detector_owned() {
         reject_repeated_blocks: true,
         allow_alphabetic_credential: true,
         reject_program_identifiers: true,
+        reject_source_symbol_identifiers: true,
         reject_dash_segmented_alnum: true,
     };
     assert!(!passes_secret_strength_checks_with_plausibility_policy(
@@ -575,6 +576,7 @@ fn plausibility_shape_switches_are_detector_owned() {
         reject_repeated_blocks: true,
         allow_alphabetic_credential: true,
         reject_program_identifiers: true,
+        reject_source_symbol_identifiers: true,
         reject_dash_segmented_alnum: true,
     };
     let alphabetic = "ufnlbbavawsdeecn";

@@ -34,10 +34,9 @@ impl IsolatedCandidatePolicy {
         }
     }
 
-    /// Compatibility entropy entry points do not carry a compiled scanner, but
-    /// they still resolve the same embedded detector TOML instead of owning a
-    /// second set of scanner constants. An invalid embedded owner is a build
-    /// invariant and must fail loudly rather than changing detection silently.
+    /// Convenience entropy entry points do not carry a compiled scanner, so
+    /// they compile the same embedded detector policy once instead of reading
+    /// flexible schema fields or owning scanner constants.
     fn from_embedded_detector() -> Self {
         static POLICY: std::sync::LazyLock<IsolatedCandidatePolicy> =
             std::sync::LazyLock::new(|| {
@@ -51,29 +50,23 @@ impl IsolatedCandidatePolicy {
                     .expect(
                         "embedded detector corpus must declare one isolated-bare entropy owner",
                     );
-                let plausibility = detector.plausibility.expect(
-                    "embedded isolated-bare entropy owner must declare plausibility policy",
-                );
-                IsolatedCandidatePolicy {
-                    mixed_entropy_floor: plausibility.isolated_mixed_entropy_floor,
-                    mixed_min_len: detector.keyword_free_min_len.expect(
-                        "embedded isolated-bare entropy owner must declare keyword_free_min_len",
-                    ),
-                    symbolic_entropy_floor: plausibility.symbolic_entropy_floor,
-                    symbolic_min_len: plausibility.isolated_symbolic_min_len,
-                    symbolic_min_symbols: plausibility.isolated_symbolic_min_symbols,
-                    symbolic_requires_non_underscore: plausibility
-                        .isolated_symbolic_requires_non_underscore,
-                    colon_left_min_len: plausibility.isolated_colon_left_min_len,
-                    colon_right_min_len: plausibility.isolated_colon_right_min_len,
-                }
+                let compiled = match super::policy::CompiledEntropyPolicy::compile(detector) {
+                    Ok(policy) => policy,
+                    Err(error) => {
+                        panic!("embedded isolated-bare entropy policy is invalid: {error}")
+                    }
+                };
+                IsolatedCandidatePolicy::from_compiled(&compiled)
             });
         *POLICY
     }
 
     #[inline]
     fn resolve(policy: Option<&super::policy::CompiledEntropyPolicy>) -> Self {
-        policy.map_or_else(Self::from_embedded_detector, Self::from_compiled)
+        match policy {
+            Some(policy) => Self::from_compiled(policy),
+            None => Self::from_embedded_detector(),
+        }
     }
 }
 
@@ -239,7 +232,6 @@ pub(super) fn isolated_bare_keyword_context_with_shape(
         threshold: isolated_bare_entropy_threshold(entropy_threshold, candidate_policy),
         min_len: min_len.max(1),
         is_credential_context: false,
-        allow_canonical_shapes: false,
         entropy_shape,
         plausibility_policy,
     }

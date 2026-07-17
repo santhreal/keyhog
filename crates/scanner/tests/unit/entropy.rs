@@ -1129,6 +1129,6 @@ fn generic_detectors_declare_valid_per_detector_entropy_floors() {
     // An unknown id must not acquire another detector's policy.
     assert!(
         keyhog_core::detector_spec_by_id("definitely-not-a-detector-xyz").is_none(),
-        "an unknown id must resolve no spec so the gate uses its constant fallback"
+        "an unknown id must resolve no detector policy"
     );
 }

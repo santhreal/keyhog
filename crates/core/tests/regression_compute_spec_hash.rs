@@ -537,6 +537,7 @@ knob_changes_digest!(spec_hash_binds_plausibility_policy, |d| d.plausibility =
         reject_repeated_blocks: true,
         allow_alphabetic_credential: true,
         reject_program_identifiers: true,
+        reject_source_symbol_identifiers: true,
         reject_dash_segmented_alnum: true,
     }));
 
@@ -558,6 +559,7 @@ fn spec_hash_binds_isolated_symbolic_shape_policy_fields() {
         reject_repeated_blocks: true,
         allow_alphabetic_credential: true,
         reject_program_identifiers: true,
+        reject_source_symbol_identifiers: true,
         reject_dash_segmented_alnum: true,
     });
 

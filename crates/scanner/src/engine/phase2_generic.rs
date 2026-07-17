@@ -88,9 +88,7 @@ impl CompiledScanner {
         lines_with_keyword.clear();
         let profile_enabled = super::profile::enabled();
         let prefilter_start = profile_enabled.then(std::time::Instant::now);
-        if let Some(positions) =
-            generic_keyword_positions.filter(|_| self.generic_gpu_positions_compatible)
-        {
+        if let Some(positions) = generic_keyword_positions {
             collect_generic_keyword_lines_from_positions(
                 line_offsets,
                 positions,
@@ -337,10 +335,7 @@ impl CompiledScanner {
                         return None;
                     }
                     owning_policy
-                        .bpe_bound(
-                            self.config.entropy_bpe_max_bytes_per_token,
-                            self.config.entropy_bpe_max_bytes_per_token_override,
-                        )
+                        .bpe_bound(self.config.entropy_bpe_max_bytes_per_token_override)
                         .filter(|bound| crate::entropy::bpe::is_word_like_low_bpe(value, *bound))
                         .map(|_| crate::adjudicate::GenericValueShapeStage::WordLikeLowBpe)
                 });

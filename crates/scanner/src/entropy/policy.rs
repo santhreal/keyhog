@@ -66,7 +66,10 @@ impl CompiledEntropyFloorPolicy {
         let bucket = self
             .max_lengths
             .partition_point(|max_len| credential_len > *max_len);
-        let base = self.floors.get(bucket).copied().unwrap_or(self.catch_all);
+        let base = match self.floors.get(bucket) {
+            Some(floor) => *floor,
+            None => self.catch_all,
+        };
         if operator_threshold.is_finite() && operator_threshold > self.entropy_high {
             base.max(operator_threshold)
         } else {
@@ -84,7 +87,6 @@ impl CompiledEntropyFloorPolicy {
 pub(crate) struct CompiledEntropyPolicy {
     pub(crate) entropy_high: f64,
     pub(crate) entropy_low: f64,
-    #[cfg(feature = "entropy")]
     pub(crate) entropy_very_high: f64,
     #[cfg(feature = "entropy")]
     pub(crate) sensitive_path_entropy_very_high: f64,
@@ -94,6 +96,7 @@ pub(crate) struct CompiledEntropyPolicy {
     pub(crate) reject_repeated_blocks: bool,
     pub(crate) allow_alphabetic_credential: bool,
     pub(crate) reject_program_identifiers: bool,
+    pub(crate) reject_source_symbol_identifiers: bool,
     pub(crate) reject_dash_segmented_alnum: bool,
     pub(crate) mixed_alnum_min_len: usize,
     pub(crate) isolated_mixed_entropy_floor: f64,
@@ -107,8 +110,6 @@ pub(crate) struct CompiledEntropyPolicy {
     pub(crate) min_len: usize,
     pub(crate) max_len: usize,
     #[cfg(feature = "entropy")]
-    pub(crate) bpe_enabled: bool,
-    #[cfg(feature = "entropy")]
     pub(crate) bpe_max_bytes_per_token: Option<f64>,
     pub(crate) entropy_shape: Option<EntropyShapeSpec>,
 }
@@ -116,15 +117,11 @@ pub(crate) struct CompiledEntropyPolicy {
 impl CompiledEntropyPolicy {
     #[inline]
     #[cfg(feature = "entropy")]
-    pub(crate) fn bpe_bound(
-        &self,
-        scan_fallback: f64,
-        operator_override: Option<f64>,
-    ) -> Option<f64> {
-        self.bpe_enabled.then(|| {
-            operator_override
-                .or(self.bpe_max_bytes_per_token)
-                .unwrap_or(scan_fallback)
+    pub(crate) fn bpe_bound(&self, operator_override: Option<f64>) -> Option<f64> {
+        let detector_bound = self.bpe_max_bytes_per_token?;
+        Some(match operator_override {
+            Some(bound) => bound,
+            None => detector_bound,
         })
     }
 
@@ -213,7 +210,6 @@ impl CompiledEntropyPolicy {
         Ok(Self {
             entropy_high: Self::required(detector, "entropy_high", detector.entropy_high)?,
             entropy_low: Self::required(detector, "entropy_low", detector.entropy_low)?,
-            #[cfg(feature = "entropy")]
             entropy_very_high,
             #[cfg(feature = "entropy")]
             sensitive_path_entropy_very_high,
@@ -223,6 +219,7 @@ impl CompiledEntropyPolicy {
             reject_repeated_blocks: plausibility.reject_repeated_blocks,
             allow_alphabetic_credential: plausibility.allow_alphabetic_credential,
             reject_program_identifiers: plausibility.reject_program_identifiers,
+            reject_source_symbol_identifiers: plausibility.reject_source_symbol_identifiers,
             reject_dash_segmented_alnum: plausibility.reject_dash_segmented_alnum,
             mixed_alnum_min_len: plausibility.mixed_alnum_min_len,
             isolated_mixed_entropy_floor: plausibility.isolated_mixed_entropy_floor,
@@ -240,8 +237,6 @@ impl CompiledEntropyPolicy {
             )?,
             min_len: Self::required(detector, "min_len", detector.min_len)?,
             max_len: Self::required(detector, "max_len", detector.max_len)?,
-            #[cfg(feature = "entropy")]
-            bpe_enabled,
             #[cfg(feature = "entropy")]
             bpe_max_bytes_per_token,
             entropy_shape: Some(entropy_shape),

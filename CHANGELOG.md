@@ -93,9 +93,23 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   generic, structural, phase-2, and entropy-family facts once with each loaded
   detector. Candidate feature extraction consumes that compact policy instead
   of traversing detector schema collections on every queued match.
-- Isolated-bare entropy compatibility APIs now resolve their base entropy,
-  mixed, symbolic, and colon-shape policy from the embedded detector owner
-  instead of retaining a second scanner-side copy of those detector values.
+- Isolated-bare entropy convenience APIs now compile their base entropy, mixed,
+  symbolic, and colon-shape policy from the embedded detector owner instead of
+  retaining a second scanner-side copy or reading optional schema fields.
+- Keyword-context and keyword-free entropy APIs now compile their embedded
+  detector policy through the same typed policy compiler used by production
+  scanners. Candidate extraction and plausibility no longer re-read flexible
+  detector specs or substitute scanner-owned thresholds, lengths, shapes, or
+  canonical-hex rules when policy is absent. Exact detector-owned canonical-hex
+  admission now outranks generic source-symbol and mixed-token heuristics and
+  does not depend on ML authority.
+- Detector plausibility policy now distinguishes pure program identifiers from
+  digit-bearing source-symbol identifiers, so each detector TOML owns whether
+  that precision gate composes with its mixed-alphanumeric admission policy.
+- Generic assignment regexes, CPU stem prefilters, and fused VYRE positioned
+  literals now compile from one active detector-corpus keyword plan. Custom
+  detector keywords no longer rely on embedded literals or disappear when GPU
+  phase-two evidence proves an unrelated lane absent.
 - SIMD/GPU coalesced scans now aggregate pending ML candidates across chunks
   before one CPU or GPU MoE submission, while returning finalized findings to
   their originating chunk caps and locations. CPU scoring also resolves the

@@ -153,7 +153,7 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
             }
             if let Some(policy) = d.plausibility {
                 entries.push(format!(
-                    "plausibility:{}:{:016x}:{:016x}:{:016x}:{}:{:016x}:{}:{}:{}:{}:{}:{:016x}:{}:{}:{}:{}",
+                    "plausibility:{}:{:016x}:{:016x}:{:016x}:{}:{:016x}:{}:{}:{}:{}:{}:{:016x}:{}:{}:{}:{}:{}",
                     d.id,
                     policy.mixed_alnum_floor.to_bits(),
                     policy.symbolic_entropy_floor.to_bits(),
@@ -169,6 +169,7 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
                     policy.reject_repeated_blocks,
                     policy.allow_alphabetic_credential,
                     policy.reject_program_identifiers,
+                    policy.reject_source_symbol_identifiers,
                     policy.reject_dash_segmented_alnum,
                 ));
             }

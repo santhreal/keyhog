@@ -39,9 +39,10 @@
   partial result.
 - Compile each scanner's generic-assignment line prefilter from the exact
   detector corpus that produced its assignment regex. Custom detector corpora
-  no longer lose candidates to the embedded corpus's global keyword stems, and
-  embedded GPU keyword positions are consumed only for a vocabulary-compatible
-  scanner.
+  no longer lose candidates to the embedded corpus's global keyword stems. The
+  same active keyword plan now produces the fused VYRE positioned literals, so
+  custom detector assignments stay GPU-accelerated without a compatibility
+  flag or embedded-vocabulary fallback.
 - Replace regex-text weak-anchor inference with explicit detector and
   pattern-local TOML policy. Confidence floors no longer disable structural
   protection, and the suppression path no longer reclassifies service/generic
@@ -194,7 +195,7 @@
   expensive entropy computation. The prefilter is conditionally disabled
   when dogfood telemetry is active to preserve suppression-event recording.
 - Promote `debug_assert!` to `assert!` for the line-offset invariant in
-  `find_entropy_secrets_with_canonical_lift_and_lines` and
+  `find_entropy_secrets_with_lines` and
   `find_entropy_secrets_with_precomputed_keywords_and_policy`. The
   fail-closed behavior must hold in release builds, not only debug.
 - Fix pre-existing build errors in `gpu_region_dispatch.rs`: add missing

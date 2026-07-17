@@ -1,36 +1,20 @@
 //! Entropy keyword-context parsing, candidate cleaning, and value extraction.
 //!
-//! Per-detector entropy gates: the extraction helpers thread the classified
-//! active generic detector spec into the [`PlausibilityContext`], so
-//! `passes_secret_strength_checks` consumes that scan's `entropy_high` and
-//! compiled `plausibility` block without re-reading the embedded registry.
+//! Per-detector entropy gates: extraction receives the owning detector's
+//! compiled policies, so candidate work never re-reads `DetectorSpec` or
+//! substitutes scanner-owned tuning.
 
 use std::sync::LazyLock;
 
 use super::plausibility::{is_candidate_plausible, is_secret_plausible, PlausibilityContext};
 use crate::adjudicate::{EntropyShapeStage, StageId};
 use crate::engine::phase2_generic::keywords::normalize_assignment_keyword;
-use keyhog_core::DetectorSpec;
 
 pub(crate) struct KeywordContext {
     pub(crate) keyword: String,
     pub(crate) threshold: f64,
     pub(crate) min_len: usize,
     pub(crate) is_credential_context: bool,
-    /// Model-authoritative key-material lift. When `true`, a strong credential
-    /// anchor may generate narrowly accepted canonical hex key shapes for MoE
-    /// arbitration instead of dropping them at the generation source. UUIDs
-    /// never use this generic bridge; provider detector TOMLs own them.
-    ///
-    /// Set ONLY when the MoE is the runtime precision authority
-    /// (`ml_enabled && entropy_ml_authoritative`) AND the line is in credential
-    /// context (a strong keyword anchor is positive evidence). Left `false`
-    /// everywhere else, so the non-ML path's behaviour, and the SecretBench
-    /// mirror precision (where `TOKEN=<32-hex>` is planted in BOTH the positive
-    /// and the sha256/git-sha/k8s-uid negative classes), is byte-identical:
-    /// no model, no lift. The keyword-FREE path keeps the strict gate
-    /// unconditionally (no anchor ⇒ no evidence ⇒ no lift).
-    pub(crate) allow_canonical_shapes: bool,
     pub(crate) entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
     pub(crate) plausibility_policy: Option<super::policy::CompiledEntropyPolicy>,
 }
@@ -140,14 +124,6 @@ pub(super) fn extract_candidates(
     min_length: usize,
     placeholder_keywords: &[String],
     is_credential_context: bool,
-    // Historical model-authority flag retained in the internal signature;
-    // detector-owned canonical policy is checked per candidate below.
-    _allow_canonical_shapes: bool,
-    // Per-detector entropy-gate resolution: the classified generic detector id
-    // (`generic-secret`/`generic-api-key`/…) whose `DetectorSpec` overrides the
-    // `HIGH_ENTROPY_THRESHOLD` / `MIXED_ALNUM_TOKEN_THRESHOLD` gate floors in
-    // `passes_secret_strength_checks`. `None` falls back to the module constants.
-    detector: Option<&DetectorSpec>,
     compiled_policy: Option<&crate::entropy::policy::CompiledEntropyPolicy>,
     key_material_policy: Option<
         &crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy,
@@ -159,9 +135,7 @@ pub(super) fn extract_candidates(
         min_length,
         placeholder_keywords,
         is_credential_context,
-        _allow_canonical_shapes,
         false,
-        detector,
         compiled_policy,
         key_material_policy,
     )
@@ -184,8 +158,6 @@ pub(super) fn extract_candidates_with_rejections(
     min_length: usize,
     placeholder_keywords: &[String],
     is_credential_context: bool,
-    _allow_canonical_shapes: bool,
-    detector: Option<&DetectorSpec>,
     compiled_policy: Option<&crate::entropy::policy::CompiledEntropyPolicy>,
     key_material_policy: Option<
         &crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy,
@@ -197,9 +169,7 @@ pub(super) fn extract_candidates_with_rejections(
         min_length,
         placeholder_keywords,
         is_credential_context,
-        _allow_canonical_shapes,
         true,
-        detector,
         compiled_policy,
         key_material_policy,
     )
@@ -211,9 +181,7 @@ fn extract_candidates_internal(
     min_length: usize,
     placeholder_keywords: &[String],
     is_credential_context: bool,
-    _allow_canonical_shapes: bool,
     trace_rejections: bool,
-    detector: Option<&DetectorSpec>,
     compiled_policy: Option<&crate::entropy::policy::CompiledEntropyPolicy>,
     key_material_policy: Option<
         &crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy,
@@ -251,16 +219,11 @@ fn extract_candidates_internal(
         }
         let structured_dotted = allow_structured_dotted
             && crate::suppression::shape::is_structured_dotted_token(cleaned);
-        let detector_owned_canonical_hex_key = key_material_policy.map_or_else(
-            || {
-                detector
-                    .is_some_and(|spec| spec.allows_canonical_hex_key_material(keyword, cleaned))
-            },
-            |policy| policy.allows_canonical_hex(keyword, cleaned),
-        );
+        let detector_owned_canonical_hex_key =
+            key_material_policy.is_some_and(|policy| policy.allows_canonical_hex(keyword, cleaned));
         let plausibility_context =
             PlausibilityContext::new(is_credential_context, detector_owned_canonical_hex_key)
-                .with_detector_policy(detector, compiled_policy);
+                .with_compiled_policy(compiled_policy);
         let plausible = structured_dotted
             || if strict {
                 is_secret_plausible(cleaned, placeholder_keywords, plausibility_context)

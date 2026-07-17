@@ -355,6 +355,10 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
             policy.reject_program_identifiers
         );
         println!(
+            "    reject_source_symbol_identifiers: {}",
+            policy.reject_source_symbol_identifiers
+        );
+        println!(
             "    reject_dash_segmented_alnum: {}",
             policy.reject_dash_segmented_alnum
         );
@@ -393,17 +397,19 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
             .map(usize::to_string)
             .collect::<Vec<_>>()
             .join(", ");
-        let suffixes = (!policy.suffixes.is_empty())
-            .then(|| format!(" suffixes=[{}]", policy.suffixes.join(", ")))
-            .unwrap_or_default();
-        let excluded = (!policy.excluded_keywords.is_empty())
-            .then(|| {
-                format!(
-                    " excluded_keywords=[{}]",
-                    policy.excluded_keywords.join(", ")
-                )
-            })
-            .unwrap_or_default();
+        let suffixes = if policy.suffixes.is_empty() {
+            String::new()
+        } else {
+            format!(" suffixes=[{}]", policy.suffixes.join(", "))
+        };
+        let excluded = if policy.excluded_keywords.is_empty() {
+            String::new()
+        } else {
+            format!(
+                " excluded_keywords=[{}]",
+                policy.excluded_keywords.join(", ")
+            )
+        };
         println!(
             "    canonical_hex_key_material: lengths=[{lengths}] keywords=[{}]{suffixes}{excluded}",
             policy.keywords.join(", ")

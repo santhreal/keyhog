@@ -140,8 +140,7 @@ impl CompiledScanner {
             let generic_position_end = confirmed_position_end + self.generic_keyword_literal_count;
             let mut confirmed_anchor_literal_matches = (self.confirmed_anchor_literal_count > 0)
                 .then(|| vec![Vec::<(u32, u32)>::new(); chunks.len()]);
-            let mut generic_keyword_positions = (self.generic_keyword_literal_count > 0
-                && self.generic_gpu_positions_compatible)
+            let mut generic_keyword_positions = (self.generic_keyword_literal_count > 0)
                 .then(|| vec![Vec::<u32>::new(); chunks.len()]);
             triggers.try_reserve(chunks.len()).map_err(|error| {
                 super::gpu_forced::SelectedGpuDispatchError::new(format!(
@@ -275,16 +274,28 @@ impl CompiledScanner {
                                             .to_string()
                                     })?;
                                 let region_start = region_starts[region];
-                                let local_start = literal_match
+                                let relative_start = literal_match
                                     .start
                                     .checked_sub(region_start)
-                                    .and_then(|start| usize::try_from(start).ok())
-                                    .and_then(|start| start.checked_add(logical_byte_base))
-                                    .and_then(|start| u32::try_from(start).ok())
                                     .ok_or_else(|| {
-                                        "resident fused positioned match offset exceeds the u32 chunk ABI"
+                                        "resident fused positioned match starts before its attributed region"
                                             .to_string()
                                     })?;
+                                let relative_start =
+                                    usize::try_from(relative_start).map_err(|_| {
+                                        "resident fused positioned match offset exceeds host usize"
+                                            .to_string()
+                                    })?;
+                                let local_start = relative_start
+                                    .checked_add(logical_byte_base)
+                                    .ok_or_else(|| {
+                                        "resident fused positioned logical offset overflows host usize"
+                                            .to_string()
+                                    })?;
+                                let local_start = u32::try_from(local_start).map_err(|_| {
+                                    "resident fused positioned match offset exceeds the u32 chunk ABI"
+                                        .to_string()
+                                })?;
                                 if pattern_id < confirmed_position_end {
                                     let rows = confirmed_anchor_literal_matches.as_mut().ok_or_else(|| {
                                         "resident fused confirmed-anchor match has no compiled output owner"

@@ -186,7 +186,7 @@ impl CompiledScanner {
         use rayon::prelude::*;
 
         #[cfg(not(feature = "simd"))]
-        let _ = admission_plan;
+        let _admission_plan = admission_plan;
 
         #[cfg(not(feature = "simd"))]
         {
@@ -252,9 +252,12 @@ impl CompiledScanner {
             .enumerate()
             .map(|(chunk_index, chunk)| {
                 let data = chunk.data.as_bytes();
-                let admission = admission_plan
+                let admission = match admission_plan
                     .and_then(|plan| plan.admission_for(chunk_index))
-                    .unwrap_or_else(|| self.phase1_admission(data));
+                {
+                    Some(admission) => admission,
+                    None => self.phase1_admission(data),
+                };
                 if admission != super::Phase1Admission::Admitted {
                     return None;
                 }
@@ -498,14 +501,20 @@ impl CompiledScanner {
                         .map(Vec::as_slice);
                     let always_anchor_present = phase2_always_anchor_presence
                         .and_then(|rows| rows.get(chunk_index).copied());
-                    let admitted_by_phase2_gpu = phase2_admission
+                    let admitted_by_phase2_gpu = match phase2_admission
                         .and_then(|admission| admission.get(chunk_index))
                         .copied()
-                        .unwrap_or(false);
-                    let phase2_gpu_complete = phase2_admission_complete
+                    {
+                        Some(admitted) => admitted,
+                        None => false,
+                    };
+                    let phase2_gpu_complete = match phase2_admission_complete
                         .and_then(|complete| complete.get(chunk_index))
                         .copied()
-                        .unwrap_or(false);
+                    {
+                        Some(complete) => complete,
+                        None => false,
+                    };
                     let phase2_always_active_gpu_evidence =
                         always_anchor_present.map(|anchor_present| Phase2AlwaysActiveGpuEvidence {
                             prefixless_admitted: admitted_by_phase2_gpu,
@@ -560,13 +569,24 @@ impl CompiledScanner {
                             .is_some();
                     let admitted_by_phase2_keyword_hint =
                         keyword_hints.is_some_and(|hints| !hints.is_empty());
-                    let admitted_by_phase2_always_anchor = always_anchor_present.unwrap_or(false); // LAW10: absent GPU row does not skip; CPU no-hit admission remains authoritative.
+                    let admitted_by_phase2_always_anchor = match always_anchor_present {
+                        Some(present) => present,
+                        None => false,
+                    };
                     let admitted_by_generic_keyword_hint =
                         generic_keyword_positions.is_some_and(|positions| !positions.is_empty());
+                    // An absent positioned row is not evidence that the active
+                    // detector corpus has no generic assignment keyword. When
+                    // a producer cannot supply the compiled plan's positioned
+                    // rows, run the shared stem prefilter instead of composing
+                    // that gap with unrelated complete phase-2 absence.
+                    let generic_assignment_absence_proven =
+                        self.generic_assignment_re.is_none() || generic_keyword_positions.is_some();
                     if !admitted_by_phase2_gpu
                         && !admitted_by_phase2_keyword_hint
                         && !admitted_by_phase2_always_anchor
                         && !admitted_by_generic_keyword_hint
+                        && generic_assignment_absence_proven
                         && !self.should_scan_no_hit_chunk_with_phase2_absence_proof(
                             chunk,
                             raw_phase2_absence_proven,

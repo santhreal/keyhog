@@ -31,14 +31,15 @@ pub use scanner::{find_entropy_secrets, find_entropy_secrets_with_threshold};
 
 /// Threshold for keyword-context entropy detection.
 ///
-/// This is the single-owner default for the per-detector `DetectorSpec::entropy_low` field,
-/// applied only when a detector leaves that field unset (not a global gate applied uniformly).
+/// Preserved as the public baseline for callers that explicitly request the
+/// historical generic threshold. Shipped entropy owners declare and compile
+/// their own `DetectorSpec::entropy_low` value.
 pub const LOW_ENTROPY_THRESHOLD: f64 = 3.0;
 
 /// Default threshold for keyword-independent entropy detection.
 ///
-/// This is the single-owner default for the per-detector `DetectorSpec::entropy_high` field,
-/// applied only when a detector leaves that field unset (not a global gate applied uniformly).
+/// This remains the global operator-override and confidence baseline. Shipped
+/// entropy owners declare and compile their own `DetectorSpec::entropy_high`.
 pub const HIGH_ENTROPY_THRESHOLD: f64 = 4.5;
 
 /// Floor for mixed alpha+digit tokens that carry stronger evidence than a
@@ -46,25 +47,16 @@ pub const HIGH_ENTROPY_THRESHOLD: f64 = 4.5;
 /// credential/auth anchor owns the quoted value. Kept below the global 4.5
 /// floor but above low-entropy identifiers.
 ///
-/// Programmatic fallback for callers without an active detector policy. Shipped
-/// entropy owners use `DetectorSpec::plausibility.mixed_alnum_floor` instead.
+/// Baseline for detector-neutral plausibility primitives. Shipped entropy
+/// owners use their compiled `DetectorSpec::plausibility.mixed_alnum_floor`.
 pub(crate) const MIXED_ALNUM_TOKEN_THRESHOLD: f64 = 4.0;
 
 pub(crate) const ISOLATED_BARE_ENTROPY_LABEL: &str = "none (isolated-token)";
 
-/// Minimum length for an anchor-free (keyword-free / isolated) entropy token.
-/// Single owner for the 20-char floor referenced by the keyword-free candidate
-/// path (`scanner`) and the isolated-token mixed/colon shape floors
-/// (`isolated`), which previously pasted the bare literal `20` in each predicate.
-///
-/// This is the single-owner default for the per-detector `DetectorSpec::keyword_free_min_len` field,
-/// applied only when a detector leaves that field unset (not a global gate applied uniformly).
-pub(crate) const KEYWORD_FREE_MIN_LEN: usize = 20;
-
 /// Threshold for keyword-independent entropy detection.
 ///
-/// This is the single-owner default for the per-detector `DetectorSpec::entropy_very_high` field,
-/// applied only when a detector leaves that field unset (not a global gate applied uniformly).
+/// This remains the detector-neutral confidence and ML feature tier. Shipped
+/// entropy owners declare and compile their own `DetectorSpec::entropy_very_high`.
 pub const VERY_HIGH_ENTROPY_THRESHOLD: f64 = 5.8;
 
 /// One-based offset added to a zero-based `text.lines()` index to produce the

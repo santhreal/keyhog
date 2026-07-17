@@ -188,6 +188,30 @@ impl CompiledScanner {
         // seeds the sparse active set without scanning the full phase-2 table.
         let phase2_always_active_indices = phase2_always_active_indices(&state.phase2_patterns);
 
+        let mut generic_assignment_max_len = None;
+        for detector in detectors
+            .iter()
+            .filter(|detector| detector.owns_entropy_policy())
+        {
+            let max_len = detector.max_len.ok_or_else(|| {
+                crate::error::ScanError::Config(format!(
+                    "generic entropy owner {:?} omits max_len; declare it in the detector TOML",
+                    detector.id
+                ))
+            })?;
+            generic_assignment_max_len = Some(
+                generic_assignment_max_len.map_or(max_len, |current: usize| current.max(max_len)),
+            );
+        }
+        let generic_keyword_plan = generic_assignment_max_len
+            .map(|_| {
+                crate::engine::phase2_generic::keywords::GenericAssignmentKeywordPlan::compile(
+                    &detectors,
+                )
+                .map_err(crate::error::ScanError::Config)
+            })
+            .transpose()?;
+
         // Three independent Aho-Corasick indices over the canonical compile
         // state. They share no mutable state and each is a pure function
         // of `state`, so they build concurrently on the rayon pool instead of
@@ -222,11 +246,10 @@ impl CompiledScanner {
         #[cfg(feature = "gpu")]
         let confirmed_anchor_literal_count = confirmed_anchor_literals.len();
         #[cfg(feature = "gpu")]
-        let generic_keyword_literals =
-            crate::engine::phase2_generic::keywords::generic_keyword_prefilter_stems()
-                .into_iter()
-                .map(str::to_owned)
-                .collect::<Vec<_>>();
+        let generic_keyword_literals = match generic_keyword_plan.as_ref() {
+            Some(plan) => plan.stem_literals().map(str::to_owned).collect::<Vec<_>>(),
+            None => Vec::new(),
+        };
         #[cfg(feature = "gpu")]
         let generic_keyword_literal_count = generic_keyword_literals.len();
         let gated = ac_suffix_gate.iter().filter(|g| !g.is_empty()).count();
@@ -381,52 +404,14 @@ impl CompiledScanner {
         }
         let generic_named_assignment_keywords =
             crate::generic_keyword_owner::build_generic_named_assignment_keywords(&detectors);
-        let mut generic_assignment_max_len = None;
-        for detector in detectors
-            .iter()
-            .filter(|detector| detector.owns_entropy_policy())
+        let (generic_assignment_re, generic_keyword_stems) = if let (Some(max_len), Some(plan)) =
+            (generic_assignment_max_len, generic_keyword_plan)
         {
-            let max_len = detector.max_len.ok_or_else(|| {
-                crate::error::ScanError::Config(format!(
-                    "generic entropy owner {:?} omits max_len; declare it in the detector TOML",
-                    detector.id
-                ))
-            })?;
-            generic_assignment_max_len = Some(
-                generic_assignment_max_len.map_or(max_len, |current: usize| current.max(max_len)),
-            );
-        }
-        let mut generic_keyword_stems = None;
-        let mut generic_gpu_positions_compatible = false;
-        let generic_assignment_re = if let Some(max_len) = generic_assignment_max_len {
-            let keywords = crate::assignment_keywords::derive_assignment_keywords(&detectors)
-                .map_err(crate::error::ScanError::Config)?;
-            let vendor_fallback_owners = detectors
-                .iter()
-                .filter(|detector| detector.generic_vendor_suffix_fallback)
-                .count();
-            if vendor_fallback_owners > 1 {
-                return Err(crate::error::ScanError::Config(
-                    "multiple detectors declare generic_vendor_suffix_fallback; exactly one detector may own the structural vendor-suffix arm"
-                        .to_string(),
-                ));
-            }
-            let include_vendor_fallback = vendor_fallback_owners == 1;
-            generic_gpu_positions_compatible =
-                keywords.as_slice() == crate::assignment_keywords::assignment_keywords();
-            generic_keyword_stems = Some(
-                crate::engine::phase2_generic::keywords::GenericKeywordStemSet::compile(
-                    keywords
-                        .iter()
-                        .map(String::as_str)
-                        .chain(include_vendor_fallback.then_some("key")),
-                ),
-            );
             let alternation = crate::engine::phase2_generic::generic_keyword_alternation_from_with_vendor_fallback(
-                &keywords,
-                include_vendor_fallback,
+                plan.keywords(),
+                plan.include_vendor_fallback(),
             );
-            Some(
+            let generic_assignment_re =
                 crate::engine::phase2_generic::compile_generic_re_with_max(
                     &alternation,
                     max_len,
@@ -435,10 +420,10 @@ impl CompiledScanner {
                     crate::error::ScanError::Config(format!(
                         "cannot compile the detector-owned generic assignment bridge: {error}. Fix the phase-2 generic detector keywords and max_len values"
                     ))
-                })?,
-            )
+                })?;
+            (Some(generic_assignment_re), Some(plan.into_stems()))
         } else {
-            None
+            (None, None)
         };
         let generic_owning_detector =
             crate::generic_keyword_owner::GenericOwningDetectorIndex::build(&detectors)
@@ -493,7 +478,6 @@ impl CompiledScanner {
             generic_named_assignment_keywords,
             generic_assignment_re,
             generic_keyword_stems,
-            generic_gpu_positions_compatible,
             generic_owning_detector,
             #[cfg(feature = "gpu")]
             ac_match_upper_bounds,

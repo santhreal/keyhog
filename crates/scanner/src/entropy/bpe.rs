@@ -74,39 +74,6 @@ pub(crate) fn is_word_like_low_bpe(s: &str, max_bytes_per_token: f64) -> bool {
     bytes_per_token(s) > max_bytes_per_token
 }
 
-/// Resolve the token-efficiency ceiling for one detector. Detector TOML owns
-/// detector-specific policy over the compiled fallback, while an explicitly
-/// configured Tier-A scan value has final precedence. The explicit value is an
-/// `Option` rather than a magic comparison with the compiled default, so an
-/// operator explicitly choosing the default value still overrides a tuned
-/// detector. Resolution happens once before tokenization and contains no hidden
-/// detector-id table.
-#[inline]
-#[cfg(test)]
-pub(crate) fn max_bytes_per_token_for_detector(
-    detector: Option<&keyhog_core::DetectorSpec>,
-    scan_fallback: f64,
-    scan_override: Option<f64>,
-) -> f64 {
-    match scan_override {
-        Some(bound) => bound,
-        None => detector
-            .and_then(|spec| spec.bpe_max_bytes_per_token)
-            .map_or(scan_fallback, |bound| bound),
-    }
-}
-
-/// Whether one detector opts into token-efficiency suppression. Absence keeps
-/// the compatible enabled default. An explicit `false` skips tokenizer work
-/// entirely instead of relying on a magic oversized ceiling.
-#[inline]
-#[cfg(test)]
-pub(crate) fn enabled_for_detector(detector: Option<&keyhog_core::DetectorSpec>) -> bool {
-    detector
-        .and_then(|spec| spec.bpe_enabled)
-        .map_or(true, |enabled| enabled)
-}
-
 #[cfg(test)]
 #[path = "../../tests/unit/entropy_bpe.rs"]
 mod tests;

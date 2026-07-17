@@ -493,6 +493,8 @@ pub struct DetectorPlausibilityPolicySpec {
     pub allow_alphabetic_credential: bool,
     /// Reject source-language identifier shapes.
     pub reject_program_identifiers: bool,
+    /// Reject mixed alphanumeric source-symbol shapes that include digits.
+    pub reject_source_symbol_identifiers: bool,
     /// Reject dash-segmented product serial and identifier shapes.
     pub reject_dash_segmented_alnum: bool,
 }

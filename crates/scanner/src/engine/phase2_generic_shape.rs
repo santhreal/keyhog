@@ -65,12 +65,15 @@ impl CompiledScanner {
         // predicate), NOT generic-secret's confidence-boost `entropy_high`: those
         // are two distinct thresholds and must not be conflated (a marshalled-binary
         // blob is a blob regardless of the generic-secret confidence floor).
-        let floor_detector_index = if self.config.generic_keyword_low_entropy {
+        let configured_floor_owner = if self.config.generic_keyword_low_entropy {
             self.generic_owning_detector.isolated_bare_owner_index()
         } else {
             self.generic_owning_detector.keyword_free_owner_index()
-        }
-        .unwrap_or(owning_detector_index);
+        };
+        let floor_detector_index = match configured_floor_owner {
+            Some(index) => index,
+            None => owning_detector_index,
+        };
         let Some(entropy_floor) = self
             .detector_plans
             .get(floor_detector_index)
@@ -125,7 +128,8 @@ impl CompiledScanner {
         {
             return Some(GenericValueShapeStage::SourceCodeExpression);
         }
-        if crate::decode::caesar::is_source_code_path(chunk.metadata.path.as_deref())
+        if owning_policy.reject_source_symbol_identifiers
+            && crate::decode::caesar::is_source_code_path(chunk.metadata.path.as_deref())
             && crate::suppression::shape::looks_like_source_symbol_identifier_with_randomness(
                 value,
                 &randomness,
@@ -161,7 +165,13 @@ impl CompiledScanner {
         // only as a coincidence; a 14-char value with two upper-case
         // clusters and a digit triplet is overwhelmingly a type
         // identifier.
-        if keep_identifier_gate_with_randomness(value, &randomness)
+        let type_name_policy_enabled = if value.bytes().any(|byte| byte.is_ascii_digit()) {
+            owning_policy.reject_source_symbol_identifiers
+        } else {
+            owning_policy.reject_program_identifiers
+        };
+        if type_name_policy_enabled
+            && keep_identifier_gate_with_randomness(value, &randomness)
             && value.len() >= min_len
             && value.len() <= 40
             && value.as_bytes()[0].is_ascii_uppercase()
@@ -197,7 +207,8 @@ impl CompiledScanner {
             let has_digit = value.chars().any(|c| c.is_ascii_digit());
             let has_upper = value.chars().any(|c| c.is_ascii_uppercase());
             let has_lower = value.chars().any(|c| c.is_ascii_lowercase());
-            if keep_identifier_gate_with_randomness(value, &randomness)
+            if owning_policy.reject_program_identifiers
+                && keep_identifier_gate_with_randomness(value, &randomness)
                 && !(has_digit && (has_upper || has_lower))
             {
                 return Some(GenericValueShapeStage::PureIdentifierNoDigit);
@@ -209,7 +220,8 @@ impl CompiledScanner {
         // config field), `curlx_strdup` (C single-underscore fn).
         // The `chars().all alphanumeric+_` branch above only covers
         // underscore separators; this extends coverage to hyphens.
-        if keep_identifier_gate_with_randomness(value, &randomness)
+        if owning_policy.reject_program_identifiers
+            && keep_identifier_gate_with_randomness(value, &randomness)
             && crate::suppression::shape::looks_like_pure_identifier(value)
         {
             return Some(GenericValueShapeStage::PureIdentifier);
@@ -217,7 +229,8 @@ impl CompiledScanner {
         // Word-separated identifier with embedded digits. The stricter
         // context-aware gate owns the acronym/product-key carve-out and the
         // random lowercase-password lift in `token_randomness`.
-        if keep_word_separated_gate_with_randomness(value, &randomness)
+        if owning_policy.reject_program_identifiers
+            && keep_word_separated_gate_with_randomness(value, &randomness)
             && crate::suppression::shape::looks_like_word_separated_identifier(value)
         {
             return Some(GenericValueShapeStage::WordSeparatedIdentifier);

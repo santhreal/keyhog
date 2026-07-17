@@ -156,6 +156,7 @@ fn plausibility_policy_fields_reject_invalid_ranges() {
         reject_repeated_blocks: true,
         allow_alphabetic_credential: true,
         reject_program_identifiers: true,
+        reject_source_symbol_identifiers: true,
         reject_dash_segmented_alnum: true,
     });
     let issues = validate_detector(&detector);

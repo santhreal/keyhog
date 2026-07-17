@@ -48,15 +48,14 @@ pub(crate) const LEADING_SLASH_BASE64_ENTROPY_FLOOR: f64 = 4.8;
 /// the floor in [`passes_secret_shape_checks`].
 pub(crate) const SECOND_HALF_ENTROPY_FLOOR: f64 = 2.5;
 
-/// Minimum length for the mixed-alphanumeric credential carve-out. Detector
-/// TOMLs may tune this per family; the constant is only the typed-schema
-/// fallback for legacy programmatic specs.
+/// Detector-neutral minimum for direct plausibility primitives. Entropy scan
+/// paths replace it with the owning detector's compiled TOML policy.
 pub(crate) const MIXED_ALNUM_MIN_LEN: usize = 20;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct PlausibilityContext {
     pub(crate) is_credential_context: bool,
-    pub(crate) allow_canonical_shapes: bool,
+    pub(crate) allow_canonical_hex_key: bool,
     entropy_high: f64,
     mixed_alnum_floor: f64,
     symbolic_entropy_floor: f64,
@@ -64,6 +63,7 @@ pub(crate) struct PlausibilityContext {
     reject_repeated_blocks: bool,
     allow_alphabetic_credential: bool,
     reject_program_identifiers: bool,
+    reject_source_symbol_identifiers: bool,
     reject_dash_segmented_alnum: bool,
     mixed_alnum_min_len: usize,
     leading_slash_base64_entropy_floor: f64,
@@ -77,10 +77,10 @@ impl Default for PlausibilityContext {
 }
 
 impl PlausibilityContext {
-    pub(crate) const fn new(is_credential_context: bool, allow_canonical_shapes: bool) -> Self {
+    pub(crate) const fn new(is_credential_context: bool, allow_canonical_hex_key: bool) -> Self {
         Self {
             is_credential_context,
-            allow_canonical_shapes,
+            allow_canonical_hex_key,
             entropy_high: HIGH_ENTROPY_THRESHOLD,
             mixed_alnum_floor: MIXED_ALNUM_TOKEN_THRESHOLD,
             symbolic_entropy_floor: SYMBOLIC_CREDENTIAL_ENTROPY_FLOOR,
@@ -88,6 +88,7 @@ impl PlausibilityContext {
             reject_repeated_blocks: true,
             allow_alphabetic_credential: true,
             reject_program_identifiers: true,
+            reject_source_symbol_identifiers: true,
             reject_dash_segmented_alnum: true,
             mixed_alnum_min_len: MIXED_ALNUM_MIN_LEN,
             leading_slash_base64_entropy_floor: LEADING_SLASH_BASE64_ENTROPY_FLOOR,
@@ -95,39 +96,21 @@ impl PlausibilityContext {
         }
     }
 
-    pub(crate) fn with_detector(mut self, detector: Option<&keyhog_core::DetectorSpec>) -> Self {
-        if let Some(detector) = detector {
-            self.entropy_high = detector.entropy_high.unwrap_or(self.entropy_high);
-            if let Some(policy) = detector.plausibility {
-                self.mixed_alnum_floor = policy.mixed_alnum_floor;
-                self.symbolic_entropy_floor = policy.symbolic_entropy_floor;
-                self.second_half_entropy_floor = policy.second_half_entropy_floor;
-                self.reject_repeated_blocks = policy.reject_repeated_blocks;
-                self.allow_alphabetic_credential = policy.allow_alphabetic_credential;
-                self.reject_program_identifiers = policy.reject_program_identifiers;
-                self.reject_dash_segmented_alnum = policy.reject_dash_segmented_alnum;
-                self.mixed_alnum_min_len = policy.mixed_alnum_min_len;
-                self.leading_slash_base64_entropy_floor = policy.leading_slash_base64_entropy_floor;
-            }
-        }
-        self.entropy_shape = detector.and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape);
-        self
-    }
-
-    /// Apply the compiled detector policy when a scanner supplied one; inspect
-    /// the schema only for compatibility callers that do not own compiled
-    /// scanner state. This avoids assigning the same fields twice per active
-    /// entropy candidate (`DetectorSpec`, then compiled overwrite).
-    #[inline]
-    pub(crate) fn with_detector_policy(
-        self,
-        detector: Option<&keyhog_core::DetectorSpec>,
-        compiled: Option<&crate::entropy::policy::CompiledEntropyPolicy>,
+    pub(crate) fn with_plausibility_policy(
+        mut self,
+        policy: keyhog_core::DetectorPlausibilityPolicySpec,
     ) -> Self {
-        match compiled {
-            Some(policy) => self.with_compiled_policy(Some(policy)),
-            None => self.with_detector(detector),
-        }
+        self.mixed_alnum_floor = policy.mixed_alnum_floor;
+        self.symbolic_entropy_floor = policy.symbolic_entropy_floor;
+        self.second_half_entropy_floor = policy.second_half_entropy_floor;
+        self.reject_repeated_blocks = policy.reject_repeated_blocks;
+        self.allow_alphabetic_credential = policy.allow_alphabetic_credential;
+        self.reject_program_identifiers = policy.reject_program_identifiers;
+        self.reject_source_symbol_identifiers = policy.reject_source_symbol_identifiers;
+        self.reject_dash_segmented_alnum = policy.reject_dash_segmented_alnum;
+        self.mixed_alnum_min_len = policy.mixed_alnum_min_len;
+        self.leading_slash_base64_entropy_floor = policy.leading_slash_base64_entropy_floor;
+        self
     }
 
     #[inline]
@@ -143,6 +126,7 @@ impl PlausibilityContext {
             self.reject_repeated_blocks = policy.reject_repeated_blocks;
             self.allow_alphabetic_credential = policy.allow_alphabetic_credential;
             self.reject_program_identifiers = policy.reject_program_identifiers;
+            self.reject_source_symbol_identifiers = policy.reject_source_symbol_identifiers;
             self.reject_dash_segmented_alnum = policy.reject_dash_segmented_alnum;
             self.mixed_alnum_min_len = policy.mixed_alnum_min_len;
             self.leading_slash_base64_entropy_floor = policy.leading_slash_base64_entropy_floor;
@@ -168,9 +152,9 @@ fn is_known_non_secret(value: &str, context: PlausibilityContext) -> bool {
     // Pure-hex canonical lengths are usually file/commit/image digests. A
     // credential keyword only earns the narrow key-material carve-out; it does
     // not make sha1/git-sha (40) or sha512 (128) secrets. Hex64 can be extracted
-    // only when either the model-authoritative lift or the owning detector's
-    // exact canonical-hex policy is active; downstream gates retain that same
-    // evidence instead of reclassifying the key as a digest.
+    // only when the owning detector's exact canonical-hex policy is active;
+    // downstream gates retain that same evidence instead of reclassifying the
+    // key as a digest.
     let hex_len = value.len();
     if crate::suppression::shape::looks_like_entropy_canonical_hex_digest(value) {
         if !context.is_credential_context {
@@ -179,7 +163,7 @@ fn is_known_non_secret(value: &str, context: PlausibilityContext) -> bool {
         if hex_len == 40 || hex_len == 128 {
             return true;
         }
-        if hex_len == 64 && !context.allow_canonical_shapes {
+        if hex_len == 64 && !context.allow_canonical_hex_key {
             return true;
         }
     }
@@ -255,6 +239,9 @@ pub(crate) fn has_low_alnum_ratio(value: &str) -> bool {
 pub(crate) fn passes_secret_strength_checks(value: &str, context: PlausibilityContext) -> bool {
     if !passes_secret_shape_checks(value, context) {
         return false;
+    }
+    if context.allow_canonical_hex_key {
+        return true;
     }
 
     // Symbolic-charset / credential-anchored entropy relaxation.
@@ -449,7 +436,10 @@ fn passes_secret_shape_checks(value: &str, context: PlausibilityContext) -> bool
     // a camelCase / PascalCase shape (at least one internal
     // uppercase boundary). Real secrets virtually always include
     // digits or special characters.
-    if context.reject_program_identifiers {
+    // An exact detector-owned canonical-hex rule is stronger evidence than
+    // lexical source-symbol shape; otherwise the generic identifier guard
+    // silently cancels the detector TOML declaration it was given.
+    if context.reject_program_identifiers && !context.allow_canonical_hex_key {
         if crate::suppression::shape::looks_like_program_identifier(value) {
             return false;
         }
@@ -458,7 +448,8 @@ fn passes_secret_shape_checks(value: &str, context: PlausibilityContext) -> bool
         // pronounceable CamelCase symbols such as `ClientSecretConfigValue2`.
         // Keep underscore-bearing mixed tokens on their existing policy path;
         // their shape is also common for real generated credentials.
-        if !value.contains('_')
+        if context.reject_source_symbol_identifiers
+            && !value.contains('_')
             && value.bytes().any(|byte| byte.is_ascii_digit())
             && crate::suppression::shape::looks_like_source_symbol_identifier_with_randomness(
                 value,

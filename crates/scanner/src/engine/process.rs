@@ -200,10 +200,7 @@ impl CompiledScanner {
         #[cfg(feature = "entropy")]
         let bpe_bound = if is_generic {
             detector_plan.entropy.as_ref().and_then(|policy| {
-                policy.bpe_bound(
-                    self.config.entropy_bpe_max_bytes_per_token,
-                    self.config.entropy_bpe_max_bytes_per_token_override,
-                )
+                policy.bpe_bound(self.config.entropy_bpe_max_bytes_per_token_override)
             })
         } else {
             None

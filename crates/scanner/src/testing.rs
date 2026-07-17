@@ -1046,16 +1046,6 @@ pub fn assignment_keywords_for_test() -> &'static [String] {
     crate::assignment_keywords::assignment_keywords()
 }
 
-/// `keyword_is_key_material`: the broad key-material gate (32-hex lift family).
-pub fn keyword_is_key_material_for_test(keyword: &str) -> bool {
-    crate::entropy::scanner::keyword_is_key_material(keyword)
-}
-
-/// `keyword_is_crypto_key_material`: the strict crypto-key gate (64-hex lift).
-pub fn keyword_is_crypto_key_material_for_test(keyword: &str) -> bool {
-    crate::entropy::scanner::keyword_is_crypto_key_material(keyword)
-}
-
 /// The resolved entropy threshold that `keyword_context` derives for a line
 /// the observable half of the shared `operator_entropy_override` owner (returned
 /// as a bare `f64` so the private `KeywordContext` stays crate-internal).
@@ -1064,22 +1054,19 @@ pub fn keyword_context_threshold_for_test(
     min_length: usize,
     entropy_threshold: f64,
     secret_keywords: &[String],
-    allow_canonical_lift: bool,
 ) -> f64 {
     crate::entropy::scanner::keyword_context(
         keyword_line,
         min_length,
         entropy_threshold,
         secret_keywords,
-        allow_canonical_lift,
     )
     .threshold
 }
 
-/// The unified credential-context minimum length (`CREDENTIAL_CONTEXT_MIN_LEN`),
-/// shared by the extraction floor and the too-short suppression gate.
+/// The detector-owned minimum length used by the embedded API-key entropy policy.
 pub fn credential_context_min_len() -> usize {
-    crate::entropy::scanner::CREDENTIAL_CONTEXT_MIN_LEN
+    crate::entropy::scanner::credential_keyword_context("api_key").min_len
 }
 
 /// True iff `candidate` is rejected by the credential-context too-short gate
@@ -1097,7 +1084,6 @@ pub fn credential_context_too_short_rejection_for_test(
         threshold: 0.0,
         min_len,
         is_credential_context: true,
-        allow_canonical_shapes: false,
         entropy_shape: None,
         plausibility_policy: None,
     };
@@ -1151,14 +1137,14 @@ pub fn telemetry_coverage_gap_all_completeness() -> (usize, bool) {
     (E::ALL.len(), all_present)
 }
 
-/// Drive `find_entropy_secrets_with_canonical_lift_and_lines` with a `line_offsets`
+/// Drive `find_entropy_secrets_with_lines` with a `line_offsets`
 /// slice shorter than `lines`: the desynced pair that must FAIL CLOSED (panic at
 /// the boundary assert) rather than index out of bounds. Used by a `#[should_panic]`
 /// external test.
 pub fn trigger_desynced_line_offsets_for_test() {
     let lines = ["alpha", "beta", "gamma"];
     let line_offsets = [0usize]; // shorter than lines: invariant violated
-    crate::entropy::scanner::find_entropy_secrets_with_canonical_lift_and_lines(
+    crate::entropy::scanner::find_entropy_secrets_with_lines(
         &lines,
         &line_offsets,
         8,
@@ -1169,7 +1155,6 @@ pub fn trigger_desynced_line_offsets_for_test() {
         &[],
         &[],
         None,
-        false,
     );
 }
 
@@ -3555,19 +3540,6 @@ pub mod entropy_scanner {
         KeywordContext::from_inner(crate::entropy::scanner::credential_keyword_context(keyword))
     }
 
-    #[cfg(test)]
-    pub(crate) fn credential_keyword_context_with_lift(
-        keyword: &str,
-        allow_canonical_lift: bool,
-    ) -> KeywordContext {
-        KeywordContext::from_inner(
-            crate::entropy::scanner::credential_keyword_context_with_lift(
-                keyword,
-                allow_canonical_lift,
-            ),
-        )
-    }
-
     pub fn candidate_is_plausible(
         candidate: &str,
         entropy: f64,
@@ -3610,7 +3582,6 @@ pub mod entropy_scanner {
             &[],
             &[],
             None,
-            false,
             Some(policy),
         )
         .into_iter()
@@ -3646,14 +3617,6 @@ pub mod entropy_scanner {
             placeholder_keywords,
         )
         .map(|stage| stage.as_str())
-    }
-
-    /// True iff the model-authoritative canonical-shape lift releases this exact
-    /// `value` shape under this exact `keyword`. Exposed so the compact-keyword
-    /// matcher (the zero-alloc key-material substring check) is pinned through
-    /// its real entry point.
-    pub fn canonical_shape_lift_allowed(value: &str, keyword: &str) -> bool {
-        crate::entropy::scanner::canonical_shape_lift_allowed(value, keyword)
     }
 
     pub fn is_canonical_non_secret_shape(value: &str) -> bool {
@@ -3694,7 +3657,6 @@ pub mod entropy_scanner {
             &[],
             &[],
             None,
-            false,
             Some(policy),
         )
         .into_iter()
@@ -3839,11 +3801,9 @@ pub mod entropy_keywords {
         is_credential_context: bool,
         policy: keyhog_core::DetectorPlausibilityPolicySpec,
     ) -> bool {
-        let mut detector = keyhog_core::DetectorSpec::default();
-        detector.plausibility = Some(policy);
         crate::entropy::plausibility::passes_secret_strength_checks(
             value,
-            PlausibilityContext::new(is_credential_context, false).with_detector(Some(&detector)),
+            PlausibilityContext::new(is_credential_context, false).with_plausibility_policy(policy),
         )
     }
 

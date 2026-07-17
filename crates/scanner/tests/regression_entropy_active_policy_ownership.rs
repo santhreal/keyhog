@@ -48,6 +48,7 @@ fn detector(id: &str, keywords: &[&str], min_len: usize) -> DetectorSpec {
             reject_repeated_blocks: true,
             allow_alphabetic_credential: true,
             reject_program_identifiers: true,
+            reject_source_symbol_identifiers: true,
             reject_dash_segmented_alnum: true,
         }),
         keyword_free_min_len: Some(20),
@@ -185,12 +186,12 @@ fn active_entropy_owner_without_metadata_fails_compilation() {
     );
 }
 
-fn scan_with_plausibility_policy(
-    value: &str,
+fn plausibility_owner(
     symbolic_floor: f64,
     second_half_floor: f64,
     mixed_min_len: usize,
-) -> Vec<String> {
+    reject_source_symbol_identifiers: bool,
+) -> DetectorSpec {
     let mut owner = detector("plausibility-owner", &["custom_secret"], 8);
     owner.entropy_high = Some(8.0);
     owner.plausibility = Some(DetectorPlausibilityPolicySpec {
@@ -208,8 +209,25 @@ fn scan_with_plausibility_policy(
         reject_repeated_blocks: true,
         allow_alphabetic_credential: true,
         reject_program_identifiers: true,
+        reject_source_symbol_identifiers,
         reject_dash_segmented_alnum: true,
     });
+    owner
+}
+
+fn scan_with_plausibility_policy(
+    value: &str,
+    symbolic_floor: f64,
+    second_half_floor: f64,
+    mixed_min_len: usize,
+    reject_source_symbol_identifiers: bool,
+) -> Vec<String> {
+    let owner = plausibility_owner(
+        symbolic_floor,
+        second_half_floor,
+        mixed_min_len,
+        reject_source_symbol_identifiers,
+    );
     active_policy_match_values(
         vec![owner, detector("generic-secret", &["secret"], 8)],
         "custom_secret",
@@ -222,22 +240,103 @@ fn custom_symbolic_plausibility_floor_controls_assignment_admission() {
     let value = "1E1B3b4Ho$U4kYBi";
     let entropy = keyhog_scanner::entropy::shannon_entropy(value.as_bytes());
     assert!(entropy > 3.5 && entropy < 4.5, "fixture entropy: {entropy}");
-    assert!(!scan_with_plausibility_policy(value, 4.5, 0.0, 8).contains(&value.to_string()));
-    assert!(scan_with_plausibility_policy(value, 3.5, 0.0, 8).contains(&value.to_string()));
+    assert!(!scan_with_plausibility_policy(value, 4.5, 0.0, 8, false).contains(&value.to_string()));
+    assert!(scan_with_plausibility_policy(value, 3.5, 0.0, 8, false).contains(&value.to_string()));
 }
 
 #[test]
 fn custom_tail_entropy_floor_controls_assignment_admission() {
     let value = "A1b2C3d4E5f6G7h8aaaaaaaaaaaaaaaa";
-    assert!(!scan_with_plausibility_policy(value, 0.0, 2.5, 8).contains(&value.to_string()));
-    assert!(scan_with_plausibility_policy(value, 0.0, 0.0, 8).contains(&value.to_string()));
+    assert!(!scan_with_plausibility_policy(value, 0.0, 2.5, 8, false).contains(&value.to_string()));
+    assert!(scan_with_plausibility_policy(value, 0.0, 0.0, 8, false).contains(&value.to_string()));
 }
 
 #[test]
 fn custom_mixed_alnum_min_len_controls_assignment_admission() {
     let value = "A1b2C3d4E5f6G7h8";
-    assert!(!scan_with_plausibility_policy(value, 0.0, 0.0, 20).contains(&value.to_string()));
-    assert!(scan_with_plausibility_policy(value, 0.0, 0.0, 8).contains(&value.to_string()));
+    assert!(!scan_with_plausibility_policy(value, 0.0, 0.0, 20, false).contains(&value.to_string()));
+    assert!(scan_with_plausibility_policy(value, 0.0, 0.0, 8, false).contains(&value.to_string()));
+}
+
+#[test]
+fn custom_source_symbol_rejection_controls_assignment_admission() {
+    let value = "ClientSecretConfigValue2";
+    assert!(scan_with_plausibility_policy(value, 0.0, 0.0, 8, true).is_empty());
+    assert!(scan_with_plausibility_policy(value, 0.0, 0.0, 8, false).contains(&value.to_string()));
+}
+
+fn full_scan_plausibility_findings(
+    value: &str,
+    reject_source_symbol_identifiers: bool,
+    backend: ScanBackend,
+) -> Vec<(String, String, usize)> {
+    let owner = plausibility_owner(0.0, 0.0, 8, reject_source_symbol_identifiers);
+    let mut config = ScannerConfig::default();
+    config.entropy_enabled = true;
+    config.entropy_in_source_files = true;
+    config.min_confidence = 0.0;
+    let scanner = CompiledScanner::compile(vec![owner, detector("generic-secret", &["secret"], 8)])
+        .expect("compile source-symbol policy corpus")
+        .with_config(config);
+    let chunk = Chunk {
+        data: format!("custom_secret = \"{value}\"").into(),
+        metadata: ChunkMetadata {
+            path: Some("policy_probe.rs".into()),
+            ..Default::default()
+        },
+    };
+    let mut findings = scanner
+        .scan_chunks_with_backend(std::slice::from_ref(&chunk), backend)
+        .into_iter()
+        .flatten()
+        .filter(|finding| finding.credential.as_ref() == value)
+        .map(|finding| {
+            (
+                finding.detector_id.to_string(),
+                finding.credential.to_string(),
+                finding.location.offset,
+            )
+        })
+        .collect::<Vec<_>>();
+    findings.sort_unstable();
+    findings
+}
+
+#[test]
+fn source_symbol_policy_reaches_every_full_backend_plan() {
+    let value = "ClientSecretConfigValue2";
+    assert!(full_scan_plausibility_findings(value, true, ScanBackend::CpuFallback).is_empty());
+    let admitted = full_scan_plausibility_findings(value, false, ScanBackend::CpuFallback);
+    assert_eq!(
+        admitted,
+        vec![("plausibility-owner".to_string(), value.to_string(), 17,)]
+    );
+
+    let probe = CompiledScanner::compile(vec![
+        plausibility_owner(0.0, 0.0, 8, false),
+        detector("generic-secret", &["secret"], 8),
+    ])
+    .expect("compile source-symbol backend probe");
+    if probe.warm_backend(ScanBackend::SimdCpu) {
+        assert_eq!(
+            admitted,
+            full_scan_plausibility_findings(value, false, ScanBackend::SimdCpu)
+        );
+    }
+    #[cfg(feature = "gpu")]
+    for backend in [ScanBackend::GpuCuda, ScanBackend::GpuWgpu] {
+        assert!(
+            probe.warm_backend(backend),
+            "{} must be usable on a GPU parity host",
+            backend.label()
+        );
+        assert_eq!(
+            admitted,
+            full_scan_plausibility_findings(value, false, backend),
+            "{} must preserve detector-owned source-symbol policy",
+            backend.label()
+        );
+    }
 }
 
 fn scan_isolated_with_policy(
@@ -787,15 +886,17 @@ fn custom_owner_bpe_policy_reaches_the_full_scan() {
         );
     }
     #[cfg(feature = "gpu")]
-    {
+    for backend in [ScanBackend::GpuCuda, ScanBackend::GpuWgpu] {
         assert!(
-            probe.warm_backend(ScanBackend::GpuWgpu),
-            "GPU-enabled parity runs require a usable accelerator"
+            probe.warm_backend(backend),
+            "{} must be usable on a GPU parity host",
+            backend.label()
         );
         assert_eq!(
             disabled,
-            full_scan_findings(false, ScanBackend::GpuWgpu),
-            "CPU and GPU must preserve the exact detector, credential, and offset"
+            full_scan_findings(false, backend),
+            "CPU and {} must preserve the exact detector, credential, and offset",
+            backend.label()
         );
     }
 }
