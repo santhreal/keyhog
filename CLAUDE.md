@@ -2,7 +2,7 @@
 
 ## Objective
 
-- Ship one coherent, detector-owned KeyHog: exact, fastest-correct, proof-routed, recoverable, and product-true.
+- Ship a coherent, detector-owned KeyHog that is exact, fastest-correct, self-recovering, and release-true.
 
 ## Non-negotiables
 
