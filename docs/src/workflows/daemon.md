@@ -54,6 +54,12 @@ to run `keyhog backend --self-test`, repair the driver/runtime, or start with
 `--backend simd` or `--backend cpu`. An invalid backend value or unrelated
 daemon configuration error remains exit `2`.
 
+After readiness, an automatically routed GPU fault does not kill the service or
+drop the request. The daemon warns, replays that request's stable text or file
+chunks through the CPU reference path, records recovered bytes, and keeps other
+requests alive. A forced GPU daemon remains an explicit contract and returns a
+request error instead of substituting another backend.
+
 `daemon status` connects to an existing service. It reports uptime, completed
 scan attempts, active scans, detector count, backend policy, and identity
 staleness. `scans served` includes attempts that returned a daemon error, so it
@@ -233,12 +239,13 @@ operator-correctable path errors normally exit `2`. This includes forced
 `--daemon=on` without a usable service, `status` or `stop` without a service,
 an incompatible forced request, and invalid startup configuration. Low-level
 operating-system I/O failures outside the operator-input classes exit `3`.
-Daemon GPU validation, initialization, and warmup failures exit `12`. A GPU
-dispatch failure after readiness also terminates the daemon with `12`; it never
-serves CPU/SIMD results for that request.
+Daemon GPU validation, initialization, and warmup failures exit `12`. A forced
+GPU dispatch failure after readiness returns a request error. An autorouted
+dispatch fault completes against the same stable request through the visible
+recovery contract when full coverage is possible.
 If an `auto` request fails inside the daemon, KeyHog reports the error and
 retries in process; the retry then owns its normal exit semantics, including
-`12` if its selected or required GPU cannot run.
+automatic backend recovery or `12` when GPU was explicitly required.
 
 A fatal listener accept or connection-handler spawn error prints a failure,
 stops the service, removes the daemon socket, and makes `daemon start` exit `3`.

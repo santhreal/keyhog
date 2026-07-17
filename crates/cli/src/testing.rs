@@ -400,11 +400,18 @@ pub trait CliTestApi {
     /// scans WITHOUT autoroute calibration (the `keyhog watch --backend` fix).
     fn forced_backend_runtime_detector_ids(&self, backend: &str, body: &str)
         -> Result<Vec<String>>;
-    fn recover_disabled_gpu_batch_for_test(
+    fn disabled_gpu_dispatch_for_test(
         &self,
         body: &str,
+        recover_automatic_gpu_faults: bool,
         _guard: &ScanRuntimeGuard,
     ) -> Result<Vec<String>>;
+    fn automatic_gpu_recovery_allowed_for_test(
+        &self,
+        explicit_backend: Option<keyhog_scanner::ScanBackend>,
+        calibration_mode: bool,
+        gpu_runtime_policy: keyhog_scanner::gpu::GpuRuntimePolicy,
+    ) -> bool;
     fn allowlist_root_for_test(&self, path: &Path) -> PathBuf;
     fn backend_requires_coalesced_batch_pipeline_for_test(
         &self,
@@ -1199,9 +1206,10 @@ impl CliTestApi for TestApi {
             .map(|m| m.detector_id.as_ref().to_string())
             .collect())
     }
-    fn recover_disabled_gpu_batch_for_test(
+    fn disabled_gpu_dispatch_for_test(
         &self,
         body: &str,
+        recover_automatic_gpu_faults: bool,
         _guard: &ScanRuntimeGuard,
     ) -> Result<Vec<String>> {
         crate::reset_scan_runtime_state();
@@ -1218,25 +1226,34 @@ impl CliTestApi for TestApi {
                 ..Default::default()
             },
         }];
-        let error = match scanner.try_scan_coalesced_with_backend_and_admission(
-            &chunks,
-            keyhog_scanner::ScanBackend::GpuWgpu,
-            None,
-        ) {
-            Ok(_) => anyhow::bail!("disabled GPU unexpectedly completed dispatch"),
-            Err(error) => error,
-        };
-        let per_chunk = crate::orchestrator::recover_automatic_gpu_batch(
+        let outcome = crate::orchestrator::scan_selected_batch(
             &scanner,
             &chunks,
             keyhog_scanner::ScanBackend::GpuWgpu,
-            &error,
-        );
-        Ok(per_chunk
+            None,
+            recover_automatic_gpu_faults,
+        )?;
+        if recover_automatic_gpu_faults && !outcome.recovered {
+            anyhow::bail!("disabled GPU unexpectedly completed without recovery");
+        }
+        Ok(outcome
+            .per_chunk
             .into_iter()
             .flatten()
             .map(|finding| finding.detector_id.as_ref().to_string())
             .collect())
+    }
+    fn automatic_gpu_recovery_allowed_for_test(
+        &self,
+        explicit_backend: Option<keyhog_scanner::ScanBackend>,
+        calibration_mode: bool,
+        gpu_runtime_policy: keyhog_scanner::gpu::GpuRuntimePolicy,
+    ) -> bool {
+        crate::orchestrator::automatic_gpu_recovery_allowed(
+            explicit_backend,
+            calibration_mode,
+            gpu_runtime_policy,
+        )
     }
     fn allowlist_root_for_test(&self, path: &Path) -> PathBuf {
         crate::orchestrator::allowlist_root_for_test(path)

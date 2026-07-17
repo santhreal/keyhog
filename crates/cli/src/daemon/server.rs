@@ -510,6 +510,11 @@ async fn scan_text(
     let scanner = state.scanner.clone();
     let router = state.router.clone();
     let backend_override = state.backend_override;
+    let recover_automatic_gpu_faults = crate::orchestrator::automatic_gpu_recovery_allowed(
+        backend_override,
+        false,
+        keyhog_scanner::gpu::gpu_runtime_policy(),
+    );
     let fragment_scan_lock = state.fragment_scan_lock.clone();
     let chunk_path = path.clone();
     let telemetry = Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
@@ -541,13 +546,22 @@ async fn scan_text(
                     backend_override,
                     std::slice::from_ref(&chunk),
                 )?;
-                let matches = scanner.scan_with_backend_and_admission_plan(
-                    &chunk,
+                let batch = std::slice::from_ref(&chunk);
+                let outcome = crate::orchestrator::scan_selected_batch(
+                    scanner.as_ref(),
+                    batch,
                     selection.backend,
                     selection.phase1_plan.as_ref(),
-                );
+                    recover_automatic_gpu_faults,
+                )
+                .with_context(|| {
+                    format!(
+                        "selected backend {} failed during daemon text dispatch",
+                        selection.backend.label()
+                    )
+                })?;
                 scanner.clear_fragment_cache();
-                Ok(matches)
+                Ok(outcome.per_chunk.into_iter().flatten().collect())
             },
         )?;
         let telemetry = telemetry.drain();
@@ -621,6 +635,11 @@ async fn scan_path(
     let scanner = state.scanner.clone();
     let router = state.router.clone();
     let backend_override = state.backend_override;
+    let recover_automatic_gpu_faults = crate::orchestrator::automatic_gpu_recovery_allowed(
+        backend_override,
+        false,
+        keyhog_scanner::gpu::gpu_runtime_policy(),
+    );
     let fragment_scan_lock = state.fragment_scan_lock.clone();
     let resolved_owned = resolved.clone();
     let telemetry = Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
@@ -646,49 +665,21 @@ async fn scan_path(
                 scanner.clear_fragment_cache();
                 let selection =
                     router.choose_with_plan(scanner.as_ref(), backend_override, &chunks)?;
-                let degrade_before = selection
-                    .backend
-                    .is_gpu()
-                    .then(|| scanner.gpu_degrade_count());
-                let (mut per_chunk, replayed) = match scanner
-                    .try_scan_coalesced_with_backend_and_admission(
-                        &chunks,
-                        selection.backend,
-                        selection.phase1_plan.as_ref(),
-                    ) {
-                    Ok(per_chunk) => (per_chunk, false),
-                    Err(error) if selection.backend.is_gpu() && backend_override.is_none() => {
-                        (
-                            crate::orchestrator::recover_automatic_gpu_batch(
-                                scanner.as_ref(),
-                                &chunks,
-                                selection.backend,
-                                &error,
-                            ),
-                            true,
-                        )
-                    }
-                    Err(error) => {
-                        anyhow::bail!(
-                            "selected backend {} failed during daemon dispatch: {error}",
-                            selection.backend.label()
-                        )
-                    }
-                };
-                if let Some(before) = degrade_before {
-                    let after = scanner.gpu_degrade_count();
-                    if !replayed && after != before {
-                        if backend_override.is_none() {
-                            crate::orchestrator::record_completed_gpu_recovery(&chunks);
-                        } else {
-                            anyhow::bail!(
-                                "selected backend {} degraded during daemon dispatch (GPU degradation counter {before} -> {after}); explicit backend requests cannot be substituted",
-                                selection.backend.label()
-                            );
-                        }
-                    }
-                }
+                let outcome = crate::orchestrator::scan_selected_batch(
+                    scanner.as_ref(),
+                    &chunks,
+                    selection.backend,
+                    selection.phase1_plan.as_ref(),
+                    recover_automatic_gpu_faults,
+                )
+                .with_context(|| {
+                    format!(
+                        "selected backend {} failed during daemon dispatch",
+                        selection.backend.label()
+                    )
+                })?;
                 scanner.clear_fragment_cache();
+                let mut per_chunk = outcome.per_chunk;
                 crate::inline_suppression::attach_inline_suppression_context(
                     &chunks,
                     &mut per_chunk,

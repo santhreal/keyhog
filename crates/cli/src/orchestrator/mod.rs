@@ -3,7 +3,7 @@
 mod allowlist;
 mod dispatch;
 pub(crate) use dispatch::{
-    record_completed_gpu_recovery, recover_automatic_gpu_batch, COALESCED_CHUNK_SCAN_CEILING_BYTES,
+    automatic_gpu_recovery_allowed, scan_selected_batch, COALESCED_CHUNK_SCAN_CEILING_BYTES,
     COALESCED_CHUNK_SCAN_CEILING_MB,
 };
 mod postprocess;
@@ -82,17 +82,6 @@ const DAEMON_GPU_REMEDIATION: &str =
 
 fn daemon_gpu_failure(diagnostic: impl std::fmt::Display) -> anyhow::Error {
     GpuUnavailableError::new(format!("{diagnostic} {DAEMON_GPU_REMEDIATION}")).into()
-}
-
-fn selected_gpu_degradation_failure(
-    backend: keyhog_scanner::ScanBackend,
-    before: u64,
-    after: u64,
-) -> anyhow::Error {
-    anyhow::anyhow!(
-        "selected backend {} degraded during dispatch (GPU degradation counter {before} -> {after}); refusing to report a successful scan. Run `keyhog backend --self-test`, recalibrate autoroute, or choose an explicit CPU backend",
-        backend.label()
-    )
 }
 
 pub(crate) fn daemon_gpu_preflight_failure(diagnostic: String) -> anyhow::Error {
@@ -324,6 +313,10 @@ pub(crate) struct DefaultScanRuntime {
     /// calibration). When `Some`, the per-file scan never consults the autoroute
     /// cache, so the runtime works on an uncalibrated binary.
     backend_override: Option<keyhog_scanner::ScanBackend>,
+    /// True only for an unforced production autoroute under the automatic GPU
+    /// policy. Explicit, required, and calibration dispatches are hard
+    /// contracts and must surface an accelerator fault instead of replaying it.
+    recover_automatic_gpu_faults: bool,
     /// Resolved suppression filter. `None` for the daemon runtime (which does its
     /// own client-side finalize via `into_parts`); `Some` for `keyhog watch`,
     /// installed by [`setup_default_scan_runtime`].
@@ -347,6 +340,11 @@ impl DefaultScanRuntime {
             detector_count: detectors.len(),
             worker_threads: rayon::current_num_threads(),
             backend_override: None,
+            recover_automatic_gpu_faults: automatic_gpu_recovery_allowed(
+                None,
+                false,
+                keyhog_scanner::gpu::gpu_runtime_policy(),
+            ),
             filter: None,
         }
     }
@@ -394,6 +392,11 @@ impl DefaultScanRuntime {
         backend: Option<keyhog_scanner::ScanBackend>,
     ) -> Self {
         self.backend_override = backend;
+        self.recover_automatic_gpu_faults = automatic_gpu_recovery_allowed(
+            backend,
+            false,
+            keyhog_scanner::gpu::gpu_runtime_policy(),
+        );
         self
     }
 
@@ -535,19 +538,21 @@ impl DefaultScanRuntime {
             std::slice::from_ref(chunk),
         )?;
         let backend = selection.backend;
-        let degrade_before = backend.is_gpu().then(|| self.scanner.gpu_degrade_count());
-        let findings = self.scanner.scan_with_backend_and_admission_plan(
-            chunk,
+        let batch = std::slice::from_ref(chunk);
+        let outcome = scan_selected_batch(
+            self.scanner.as_ref(),
+            batch,
             backend,
             selection.phase1_plan.as_ref(),
-        );
-        if let Some(before) = degrade_before {
-            let after = self.scanner.gpu_degrade_count();
-            if after != before {
-                return Err(selected_gpu_degradation_failure(backend, before, after));
-            }
-        }
-        Ok(findings)
+            self.recover_automatic_gpu_faults,
+        )
+        .with_context(|| {
+            format!(
+                "selected backend {} failed during single-chunk dispatch",
+                backend.label()
+            )
+        })?;
+        Ok(outcome.per_chunk.into_iter().flatten().collect())
     }
 
     pub(crate) fn clear_fragment_cache(&self) {
