@@ -661,8 +661,7 @@ pub struct CanonicalHexKeyMaterialSpec {
 impl DetectorSpec {
     /// Whether this detector supplies policy to the generic entropy engine.
     pub fn owns_entropy_policy(&self) -> bool {
-        self.service == "generic"
-            && (self.kind == DetectorKind::Phase2Generic || self.entropy_policy_priority.is_some())
+        self.kind == DetectorKind::Phase2Generic || self.entropy_policy_priority.is_some()
     }
 
     /// Return the detector-owned lower-dash isolated shape, if declared.

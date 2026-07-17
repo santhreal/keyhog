@@ -1,5 +1,6 @@
 # Docs: https://api.slack.com/authentication/token-types
-# Format: xoxb-{10-13 digits}-{10-13 digits}-{24-34 alphanumeric}
+# Accepted contract: xoxb-{10-15 digits}-{10-15 digits}-{15-40 alphanumeric},
+# plus the older xoxb-{10-15 digits}-{15-40 alphanumeric} form.
 # Verify: POST to slack.com/api/auth.test with Bearer token
 # Prefix: xoxb-
 

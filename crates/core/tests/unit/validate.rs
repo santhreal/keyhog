@@ -25,24 +25,24 @@ fn detector_with_pattern(regex: &str) -> DetectorSpec {
 }
 
 #[test]
-fn entropy_policy_priority_is_restricted_to_generic_detectors() {
+fn entropy_policy_priority_owns_policy_independently_of_reporting_service() {
     let mut detector = detector_with_pattern("token_([A-Z0-9]{12})");
     detector.entropy_policy_priority = Some(10);
     let issues = validate_detector(&detector);
     assert!(issues.iter().any(|issue| matches!(
         issue,
         QualityIssue::Error(message)
-            if message.contains("entropy_policy_priority is only valid")
+            if message.contains("active entropy owner must declare entropy_fallback")
     )));
 
     detector.service = "generic".into();
     assert!(
-        !validate_detector(&detector).iter().any(|issue| matches!(
+        validate_detector(&detector).iter().any(|issue| matches!(
             issue,
             QualityIssue::Error(message)
-                if message.contains("entropy_policy_priority is only valid")
+                if message.contains("active entropy owner must declare entropy_fallback")
         )),
-        "a generic regex detector may explicitly opt into entropy-policy ownership"
+        "reporting service must not change explicit entropy-policy ownership"
     );
 }
 
@@ -99,7 +99,6 @@ fn vendor_suffix_fallback_is_restricted_to_generic_phase2_detectors() {
     )));
 
     detector.kind = keyhog_core::DetectorKind::Phase2Generic;
-    detector.service = "generic".into();
     assert!(!validate_detector(&detector).iter().any(|issue| matches!(
         issue,
         QualityIssue::Error(message)
@@ -202,7 +201,7 @@ fn entropy_fallback_metadata_requires_entropy_identity_and_labels() {
     )));
     assert!(issues.iter().any(|issue| matches!(
         issue,
-        QualityIssue::Error(message) if message.contains("only valid for service")
+        QualityIssue::Error(message) if message.contains("requires an active detector-owned entropy policy")
     )));
 }
 
@@ -242,7 +241,7 @@ fn entropy_shape_policy_rejects_invalid_bounds_and_duplicate_kinds() {
     )));
     assert!(issues.iter().any(|issue| matches!(
         issue,
-        QualityIssue::Error(message) if message.contains("entropy_shapes are only valid for service")
+        QualityIssue::Error(message) if message.contains("entropy_shapes require an active")
     )));
 }
 
@@ -291,13 +290,13 @@ fn phase2_generic_max_len_must_be_positive_and_not_below_min_len() {
 }
 
 #[test]
-fn regex_detector_rejects_phase2_only_max_len() {
+fn regex_detector_without_entropy_ownership_rejects_max_len() {
     let mut detector = detector_with_pattern("token=([A-Za-z0-9]+)");
     detector.max_len = Some(80);
     let issues = validate_detector(&detector);
     assert!(issues.iter().any(|issue| matches!(
         issue,
-        QualityIssue::Error(message) if message.contains("only valid for kind = \"phase2-generic\"")
+        QualityIssue::Error(message) if message.contains("only valid for detectors that own generic entropy policy")
     )));
 }
 

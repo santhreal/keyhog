@@ -67,10 +67,8 @@ const MIN_ACTIVE_SERVICE_NAME_LEN: usize = 3;
 /// role-words start (`x-api-key` spans 9 stems, `authorization` 10).
 pub(crate) const GENERIC_STEM_SPREAD_LIMIT: usize = 3;
 
-/// Preserve the shipped model's exact vocabulary contract until the service
-/// context feature is retrained with detector-local vocabulary policy.
-fn is_generic_family(detector_id: &str) -> bool {
-    crate::detector_ids::is_generic_or_entropy_detector(detector_id)
+fn is_generic_family(detector: &keyhog_core::DetectorSpec) -> bool {
+    detector.owns_entropy_policy()
 }
 
 /// The id's first `-`-separated token: `gitlab-pipeline-trigger-token` →
@@ -90,7 +88,7 @@ pub(crate) fn build_service_vocabulary(specs: &[keyhog_core::DetectorSpec]) -> V
     let mut stems_by_keyword: BTreeMap<String, BTreeSet<&str>> = BTreeMap::new();
 
     for spec in specs {
-        if is_generic_family(&spec.id) {
+        if is_generic_family(spec) {
             for keyword in &spec.keywords {
                 generic_words.insert(keyword.to_ascii_lowercase());
             }

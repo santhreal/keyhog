@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Compile generic execution and final resolution from detector `kind` and the
+  active typed plan rather than reporting service names or detector-ID length.
+  Anchored detectors that report `service = "generic"` remain named, unknown
+  active-plan identities fail visibly, equal generic ownership is stable across
+  corpus order, and duplicate vendor-suffix owners are rejected.
+- Treat SaltStack and Alertmanager usernames, GoTo client IDs, and Rapyd access
+  keys as optional detector-owned companions. Only their password, client
+  secret, or secret key is a primary finding, and companion evidence can no
+  longer be erased by the generic identifier shortcut.
+- Run the 10,667-case detector adversarial corpus and its handwritten boundary
+  suite through a standalone Cargo target. Slack fixtures now exercise
+  non-placeholder identifiers and exact declared segment boundaries.
 - Upgrade the exact VYRE dependency set to 0.6.5 and replace the resident
   presence-only dispatch with one fused presence-and-position dispatch. The
   detector-derived matcher now supplies complete confirmed-anchor and generic

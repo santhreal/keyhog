@@ -321,9 +321,11 @@ fn adv_stripe_secret_key_chunk_boundary_must_not_fire_near_miss() {
 
 #[test]
 fn adv_slack_bot_token_chunk_boundary_must_not_fire_near_miss() {
+    // The final segment is 14 characters, one below the detector-owned and
+    // validator-owned 15-character minimum.
     assert_detector_silent_across_chunk_boundary(
         "slack-bot-token",
-        "xoxb-123456789012-345678901234-a1b2c3d4e5f6g7h8i9j0k",
+        "xoxb-123456789012-345678901234-a1b2c3d4e5f6g7",
     );
 }
 

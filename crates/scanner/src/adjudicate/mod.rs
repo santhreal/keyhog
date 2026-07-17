@@ -227,7 +227,7 @@ pub(crate) struct ReportAdjudicationPolicy<'a> {
     pub(crate) penalize_test_paths: bool,
     pub(crate) file_path: Option<&'a str>,
     pub(crate) is_named_detector: bool,
-    /// Compiled from the active detector's TOML `service = "generic"`, or
+    /// Compiled from the active detector's TOML `kind = "phase2-generic"`, or
     /// known directly from the synthetic entropy producer. Finalization must
     /// not infer detector behavior from an ID prefix.
     pub(crate) is_generic_detector: bool,

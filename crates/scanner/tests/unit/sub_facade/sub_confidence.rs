@@ -485,7 +485,7 @@ fn ml_empty_candidate_batch_policy_changes_only_empty_texts() {
 #[cfg(feature = "ml")]
 fn probabilistic_promise_override_slams_generic_unpromising_values() {
     assert_eq!(
-        probabilistic_promise_confidence_override("aaaaaaaaaaaaaaaa", false),
+        probabilistic_promise_confidence_override("aaaaaaaaaaaaaaaa", false, false),
         Some(0.1)
     );
 }
@@ -494,7 +494,11 @@ fn probabilistic_promise_override_slams_generic_unpromising_values() {
 #[cfg(feature = "ml")]
 fn probabilistic_promise_override_keeps_named_structured_values() {
     assert_eq!(
-        probabilistic_promise_confidence_override("1f48cec7-bbee-4eb7-8e35-3bc1e7a0f2c2", true),
+        probabilistic_promise_confidence_override(
+            "1f48cec7-bbee-4eb7-8e35-3bc1e7a0f2c2",
+            true,
+            false,
+        ),
         None
     );
 }
@@ -503,8 +507,17 @@ fn probabilistic_promise_override_keeps_named_structured_values() {
 #[cfg(feature = "ml")]
 fn probabilistic_promise_override_still_slams_named_unpromising_identifier_shapes() {
     assert_eq!(
-        probabilistic_promise_confidence_override("aaaaaaaaaaaaaaaa", true),
+        probabilistic_promise_confidence_override("aaaaaaaaaaaaaaaa", true, false),
         Some(0.1)
+    );
+}
+
+#[test]
+#[cfg(feature = "ml")]
+fn probabilistic_promise_override_keeps_named_companion_proof() {
+    assert_eq!(
+        probabilistic_promise_confidence_override("aaaaaaaaaaaaaaaa", true, true),
+        None
     );
 }
 

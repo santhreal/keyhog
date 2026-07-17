@@ -26,10 +26,12 @@
 mod support;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use support::paths::detector_dir;
 
 use keyhog_core::{Chunk, ChunkMetadata, DetectorFile};
-use keyhog_scanner::CompiledScanner;
+use keyhog_scanner::telemetry::{self, ScanTelemetry};
+use keyhog_scanner::{CompiledScanner, ScanBackend};
 
 /// One inline self-test fixture extracted from a detector TOML.
 struct InlineCase {
@@ -88,8 +90,11 @@ fn make_chunk(text: &str) -> Chunk {
     Chunk {
         data: text.into(),
         metadata: ChunkMetadata {
-            source_type: "inline-test".into(),
-            path: Some("inline_test.txt".into()),
+            // Inline cases specify detector syntax, not test-file policy. A
+            // `test_` basename would lower confidence and could hide both a
+            // broken positive and an over-broad negative behind path scoring.
+            source_type: "filesystem".into(),
+            path: Some("application.conf".into()),
             ..Default::default()
         },
     }
@@ -165,10 +170,22 @@ fn every_inline_positive_fires_its_own_detector() {
             .iter()
             .any(|m| m.detector_id.as_ref() == case.detector_id);
         if !fired {
-            let saw: Vec<&str> = matches.iter().map(|m| m.detector_id.as_ref()).collect();
+            let ids: Vec<&str> = matches.iter().map(|m| m.detector_id.as_ref()).collect();
+            let trace = Arc::new(ScanTelemetry::new());
+            trace.enable_dogfood();
+            scanner.clear_fragment_cache();
+            telemetry::with_scan_telemetry(&trace, || {
+                let _ = scanner.scan(&make_chunk(positive));
+            });
+            let suppressions = trace.drain().dogfood_events;
             failures.push(format!(
-                "{} ({}): inline test_positive {:?} did NOT fire detector {:?}; scanner saw {:?}",
-                case.detector_id, case.toml_file, positive, case.detector_id, saw
+                "{} ({}): inline test_positive {:?} did not fire detector {:?}; scanner saw {:?}; suppression trace {:?}",
+                case.detector_id,
+                case.toml_file,
+                positive,
+                case.detector_id,
+                ids,
+                suppressions,
             ));
         }
         checked += 1;
@@ -183,6 +200,131 @@ fn every_inline_positive_fires_its_own_detector() {
     assert!(
         checked >= 11,
         "expected >= 11 inline positive cases, ran {checked}"
+    );
+}
+
+#[test]
+fn anchored_generic_service_detectors_remain_named_through_resolution() {
+    let cases = load_inline_cases();
+    let detectors = keyhog_core::embedded_detector_specs().to_vec();
+    let scanner = CompiledScanner::compile(detectors.clone()).expect("compile embedded detectors");
+    let anchored_generic_ids: std::collections::BTreeSet<&str> = detectors
+        .iter()
+        .filter(|detector| {
+            detector.service == "generic" && detector.kind == keyhog_core::DetectorKind::Regex
+        })
+        .map(|detector| detector.id.as_str())
+        .collect();
+    assert_eq!(anchored_generic_ids.len(), 5);
+
+    let mut checked = 0usize;
+    for case in cases {
+        if !anchored_generic_ids.contains(case.detector_id.as_str()) {
+            continue;
+        }
+        let Some(positive) = &case.positive else {
+            continue;
+        };
+        scanner.clear_fragment_cache();
+        let raw = scanner.scan(&make_chunk(positive));
+        let active = scanner
+            .try_resolve_matches(raw.clone())
+            .expect("active compiled plan must classify every finding");
+        let embedded = keyhog_scanner::resolution::try_resolve_matches(raw)
+            .expect("embedded plan must classify every finding");
+        for (surface, resolved) in [("active", active), ("embedded", embedded)] {
+            assert!(
+                resolved
+                    .iter()
+                    .any(|matched| matched.detector_id.as_ref() == case.detector_id),
+                "{surface} resolution dropped anchored generic-service detector {} for {:?}; retained {:?}",
+                case.detector_id,
+                positive,
+                resolved
+                    .iter()
+                    .map(|matched| matched.detector_id.as_ref())
+                    .collect::<Vec<_>>()
+            );
+        }
+        checked += 1;
+    }
+    assert_eq!(
+        checked, 5,
+        "each anchored generic-service detector has one inline positive"
+    );
+}
+
+#[test]
+fn corrected_primary_role_regressions_have_exact_backend_parity() {
+    let scanner = scanner();
+    let acquired_gpu_backends: Vec<_> = scanner
+        .gpu_backend_candidates()
+        .into_iter()
+        .filter(|candidate| candidate.acquired)
+        .map(|candidate| candidate.backend)
+        .collect();
+    assert!(
+        !keyhog_scanner::hw_probe::probe_hardware().gpu_available
+            || !acquired_gpu_backends.is_empty(),
+        "physical GPU probe succeeded but no compiled GPU peer was acquired"
+    );
+    let corrected: std::collections::BTreeSet<&str> = [
+        "alertmanager-credentials",
+        "basic-auth-credentials",
+        "bearer-authorization",
+        "cli-password-flag",
+        "goto-connect-api-credentials",
+        "rapyd-api-credentials",
+        "saltstack-credentials",
+        "sql-password",
+        "twilio-api-key",
+        "url-credentials",
+    ]
+    .into_iter()
+    .collect();
+    let mut checked = 0usize;
+    for case in load_inline_cases() {
+        if !corrected.contains(case.detector_id.as_str()) {
+            continue;
+        }
+        let Some(positive) = case.positive else {
+            continue;
+        };
+        let chunk = make_chunk(&positive);
+        scanner.clear_fragment_cache();
+        let mut cpu = scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback);
+        scanner.clear_fragment_cache();
+        let mut simd = scanner.scan_with_backend(&chunk, ScanBackend::SimdCpu);
+        cpu.sort();
+        simd.sort();
+        assert_eq!(cpu, simd, "CPU/SIMD finding drift for {}", case.detector_id);
+        for backend in &acquired_gpu_backends {
+            scanner.clear_fragment_cache();
+            let mut gpu = scanner.scan_with_backend(&chunk, *backend);
+            gpu.sort();
+            assert_eq!(
+                cpu,
+                gpu,
+                "CPU/{} finding drift for {}",
+                backend.label(),
+                case.detector_id
+            );
+        }
+        let resolved = scanner
+            .try_resolve_matches(cpu)
+            .expect("active plan resolves corrected inline findings");
+        assert!(
+            resolved
+                .iter()
+                .any(|matched| matched.detector_id.as_ref() == case.detector_id),
+            "{} lost its own positive during final resolution",
+            case.detector_id
+        );
+        checked += 1;
+    }
+    assert_eq!(
+        checked, 11,
+        "the ten corrected detectors own eleven inline positives"
     );
 }
 

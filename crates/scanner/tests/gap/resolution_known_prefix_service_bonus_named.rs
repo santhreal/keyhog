@@ -1,7 +1,7 @@
 //! Gap test: `resolution::match_priority` weights are all named constants.
 //!
 //! Every priority component in `match_priority` already used a named weight
-//! (`NAMED_DETECTOR_PRIORITY`, `CONFIDENCE_WEIGHT`, `DETECTOR_ID_LENGTH_WEIGHT`,
+//! (`NAMED_DETECTOR_PRIORITY`, `CONFIDENCE_WEIGHT`, and
 //! `CREDENTIAL_LENGTH_WEIGHT`) except the known-prefix / service-anchored bonus,
 //! which was a bare `priority += 5.0;` magic literal. It is now
 //! `KNOWN_PREFIX_SERVICE_BONUS: f64 = 5.0`.
@@ -54,6 +54,20 @@ fn generic_detector_does_not_receive_the_known_prefix_bonus() {
     assert!(
         delta.abs() < EPSILON,
         "generic (non-service-anchored) detector must not receive the bonus; got delta {delta}"
+    );
+}
+
+#[test]
+fn detector_id_spelling_does_not_change_priority() {
+    let short = match_priority_for_test("vendor-a", NO_PREFIX_CRED, CONF);
+    let long = match_priority_for_test(
+        "vendor-a-much-longer-reporting-identifier",
+        NO_PREFIX_CRED,
+        CONF,
+    );
+    assert!(
+        (short - long).abs() < EPSILON,
+        "detector-id length is not evidence of match specificity: {short} vs {long}"
     );
 }
 

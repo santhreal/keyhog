@@ -88,9 +88,11 @@ corpora remain separate because one compact pair cannot prove those contracts.
 as `detector_id` and in CLI output as the third column.
 
 `detector.kind` - optional execution class. Omission or `"regex"` selects the
-normal regex detector contract. `"phase2-generic"` selects a scanner-owned
-generic discovery mechanism whose policy remains in this TOML; it may have no
-`patterns`, but must declare the mechanism-specific fields validation requires.
+normal anchored-regex contract. `"phase2-generic"` selects the shared generic
+discovery engine with every detector-specific decision owned by this TOML; it
+may have no `patterns`, but must declare the mechanism-specific fields
+validation requires. `service` is report taxonomy and never selects either
+execution class.
 
 `detector.ml` - model policy compiled with the detector. `match_mode` controls
 regex and generic-assignment candidates; `entropy_mode` controls synthetic
@@ -104,7 +106,7 @@ extraction. Normal scans use these detector values. An explicitly supplied
 `--ml-weight` is a scan-wide diagnostic or benchmark override. Detectors that
 do not own entropy policy set `entropy_mode = "disabled"`.
 The model input also carries detector facts from this same TOML: exact service
-context, generic/phase-2 ownership, weak-anchor and structural-password-slot
+context, entropy-policy/phase-2 ownership, weak-anchor and structural-password-slot
 classification, verification, required companions, and the pattern or entropy
 candidate channel. Entropy candidates additionally carry a one-hot family read
 from this detector's `entropy_fallback.class`, so API keys, passwords, tokens,
@@ -244,7 +246,7 @@ The available per-detector tuning fields are:
 *   **`entropy_low`** (float, required for active entropy owners): Per-detector keyword-context entropy threshold.
 *   **`entropy_very_high`** (float, required for active entropy owners): Per-detector very-high entropy threshold for keyword-free or isolated tokens.
 *   **`sensitive_path_entropy_very_high`** (float, required for active entropy owners): Per-detector keyword-free threshold for clearly sensitive paths. It must not exceed `entropy_very_high`; omission is invalid rather than an undocumented scanner-wide discount.
-*   **`entropy_fallback`** (table, required for active entropy owners): Identity metadata for synthetic entropy findings owned by this detector. `class` is one of `generic`, `password`, `token`, or `api-key`; `id` must use the `entropy-` namespace; and `name`/`service` must be non-empty. The owning detector itself must use `service = "generic"`, while the emitted metadata service may name a custom family. Both regex-kind detectors that set `entropy_policy_priority` and phase-2 generic owners must declare this block. Omitting it is a compile error, never a compatibility identity.
+*   **`entropy_fallback`** (table, required for active entropy owners): Identity metadata for synthetic entropy findings owned by this detector. `class` is one of `generic`, `password`, `token`, or `api-key`; `id` must use the `entropy-` namespace; and `name`/`service` must be non-empty. Both regex-kind detectors that set `entropy_policy_priority` and phase-2 generic owners must declare this block. The primary detector's reporting `service` may name any taxonomy and does not grant or deny entropy ownership. Omitting the block is a compile error, never a compatibility identity.
 *   **`entropy_roles`** (string array): Corpus-level entry roles owned by this detector. `keyword-free` owns anchor-free high-entropy candidates, `isolated-bare` owns detector-shaped bare candidates, and `unclaimed-keyword` owns configured credential keywords not claimed by another detector. A role may have only one owner in a compiled corpus. Omission disables that entry path for a focused custom corpus; the scanner never substitutes a built-in detector ID or global policy.
 *   **`entropy_shapes`** (array of tables, required for active entropy owners): Typed isolated-shape policy owned by this detector. The current `kind = "lower-dash-app-password"` entry declares `entropy_floor`, `group_count`, `group_length`, and `special_min_length`; its exact candidate length is derived as `group_count * group_length + group_count - 1`.
 *   **`plausibility`** (inline table, required for active entropy owners): Complete strict candidate-shape policy. It contains `mixed_alnum_floor`, `symbolic_entropy_floor`, `second_half_entropy_floor`, `mixed_alnum_min_len`, `isolated_mixed_entropy_floor`, `isolated_symbolic_min_len`, `isolated_symbolic_min_symbols`, `isolated_symbolic_requires_non_underscore`, `isolated_colon_left_min_len`, `isolated_colon_right_min_len`, `leading_slash_base64_entropy_floor`, `reject_repeated_blocks`, `allow_alphabetic_credential`, `reject_program_identifiers`, and `reject_dash_segmented_alnum`. `isolated_mixed_entropy_floor` governs contiguous or underscore-delimited mixed tokens. The three isolated-symbolic fields govern the shorter symbol-rich exception's byte length, minimum symbol count, and whether one symbol must differ from underscore. An exact lower-dash layout declared by `entropy_shapes` cannot bypass its shape-specific entropy and group rules through the symbolic exception. The colon fields govern the two sides of `opaque:opaque`; the base64 field governs unanchored slash-led base64. Every value is required so a detector never inherits an invisible family decision from scanner code.
@@ -255,9 +257,10 @@ The available per-detector tuning fields are:
     generic keyword claims. Higher values own entropy, length, canonical-shape,
     and BPE policy for the shared keyword. Phase-2 generic detectors
     participate at priority zero when omitted. Regex detectors do not
-    participate unless they set this field. It is valid only with
-    `service = "generic"`. This makes the primary precedence explicit in
-    detector TOML. Equal priorities use compiled order as a deterministic tie.
+    participate unless they set this field. This makes the primary precedence
+    explicit in detector TOML without overloading reporting service. Equal
+    priorities use stable detector identity, so corpus order cannot change the
+    owner.
 
 ### BPE token efficiency
 *   **`bpe_enabled`** (bool, optional): Detector-local token-efficiency switch.
@@ -330,7 +333,7 @@ scanner uses.
 ### Candidate Lengths
 *   **`keyword_free_min_len`** (integer): Per-detector minimum length for an anchor-free (keyword-free or isolated) candidate. Active entropy owners must declare it; omission fails compilation instead of selecting a scanner constant.
 *   **`min_len`** (integer, optional): Per-detector minimum candidate length in UTF-8 bytes for any candidate this detector emits. Falls back to no detector-specific floor beyond the path-wide default if unset.
-*   **`max_len`** (integer, required for every generic entropy-policy owner): Inclusive maximum byte length for one generic assignment value. This includes regex detectors that claim generic keywords with `entropy_policy_priority`, such as `generic-password`. The candidate generator is compiled from the largest ceiling in the loaded detector corpus, then the owning detector rejects an overlength value whole; it never reports a truncated prefix. It must be at least 8 and no smaller than `min_len`. Omission fails scanner construction. Regex-backed patterns keep their own explicit repetition bounds.
+*   **`max_len`** (integer, required for every entropy-policy owner): Inclusive maximum byte length for one generic assignment value. This includes regex detectors that explicitly claim generic keywords with `entropy_policy_priority`. The candidate generator is compiled from the largest ceiling in the loaded detector corpus, then the owning detector rejects an overlength value whole; it never reports a truncated prefix. It must be at least 8 and no smaller than `min_len`. Omission fails scanner construction. Regex-backed patterns keep their own explicit repetition bounds.
 
 The generic assignment bridge exists only when the loaded corpus contains at
 least one `phase2-generic` detector. A focused custom corpus without one compiles

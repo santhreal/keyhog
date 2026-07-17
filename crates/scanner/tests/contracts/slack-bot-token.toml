@@ -25,9 +25,9 @@ credential = "xoxb-1234567890-1234567890-AbCdEfGhIjKlMnOpQrStUvWx"
 reason = "env-var assignment, no quotes."
 
 [[positive]]
-text = "token: \"xoxb-9999999999-9999999999-ZzZzZzZzZzZzZzZzZzZzZzZz\""
-credential = "xoxb-9999999999-9999999999-ZzZzZzZzZzZzZzZzZzZzZzZz"
-reason = "YAML-style quoted token field."
+text = "token: \"xoxb-7384414077861-52721895621-Zq7Lm2Np9Rv4Tx8Bc5Df1Gh6\""
+credential = "xoxb-7384414077861-52721895621-Zq7Lm2Np9Rv4Tx8Bc5Df1Gh6"
+reason = "YAML-style quoted token with non-placeholder numeric identifiers."
 
 [[positive]]
 text = "Authorization: Bearer xoxb-1234567890-1234567890-AbCdEfGhIjKlMnOpQrStUvWx"

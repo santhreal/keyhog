@@ -180,12 +180,11 @@ fn generic_secret_detector() -> DetectorSpec {
 }
 
 #[test]
-fn owning_index_earliest_detector_wins_across_exact_and_normalized() {
+fn owning_index_stable_identity_wins_across_exact_and_normalized() {
     // Detector 0 owns "api_token"; detector 1 owns the literal "api-token".
     // Both normalize to "api_token". A query that hits detector 1 EXACTLY and
-    // detector 0 via NORMALIZATION must resolve to the EARLIER detector (0),
-    // exactly like the old linear `find` returning the first match by either
-    // condition.
+    // detector 0 via NORMALIZATION resolves to the stable lower detector id,
+    // independent of corpus order.
     let detectors = vec![
         generic_detector("api-a", &["api_token"]),
         generic_detector("api-b", &["api-token"]),
@@ -196,7 +195,7 @@ fn owning_index_earliest_detector_wins_across_exact_and_normalized() {
     assert_eq!(
         index.resolve("API-TOKEN").map(|owner| owner.owning_index),
         Some(0),
-        "exact hit on detector 1 + normalized hit on detector 0 -> earliest (0) wins"
+        "exact and normalized claims use stable detector identity"
     );
     assert_eq!(
         index.resolve("api_token").map(|owner| owner.owning_index),
@@ -215,6 +214,60 @@ fn owning_index_earliest_detector_wins_across_exact_and_normalized() {
         Some(2),
         "unclaimed entropy keywords resolve through the detector-declared role"
     );
+
+    let reversed = vec![
+        generic_detector("api-b", &["api-token"]),
+        generic_detector("api-a", &["api_token"]),
+        generic_secret_detector(),
+    ];
+    let reversed_index =
+        GenericOwningDetectorIndex::build(&reversed).expect("unique entropy roles");
+    assert_eq!(
+        reversed_index
+            .resolve("API-TOKEN")
+            .map(|owner| owner.owning_index),
+        Some(1),
+        "api-a remains the owner after reversing corpus order"
+    );
+}
+
+#[test]
+fn canonical_owner_is_stable_across_corpus_order() {
+    let canonical = |id: &str, keyword: &str| {
+        let mut detector = generic_detector(id, &[keyword]);
+        detector.canonical_hex_key_material = vec![keyhog_core::CanonicalHexKeyMaterialSpec {
+            lengths: vec![32],
+            keywords: vec![keyword.to_string()],
+            suffixes: Vec::new(),
+            excluded_keywords: Vec::new(),
+        }];
+        detector
+    };
+    let first = vec![
+        canonical("owner-b", "api-key"),
+        canonical("owner-a", "api_key"),
+    ];
+    let first_index = GenericOwningDetectorIndex::build(&first).expect("canonical owners compile");
+    assert_eq!(first_index.canonical_index("API.KEY"), Some(1));
+
+    let reversed = vec![
+        canonical("owner-a", "api_key"),
+        canonical("owner-b", "api-key"),
+    ];
+    let reversed_index =
+        GenericOwningDetectorIndex::build(&reversed).expect("canonical owners compile");
+    assert_eq!(reversed_index.canonical_index("API.KEY"), Some(0));
+}
+
+#[test]
+fn duplicate_vendor_suffix_fallback_is_rejected() {
+    let mut first = generic_detector("owner-a", &["secret"]);
+    first.generic_vendor_suffix_fallback = true;
+    let mut second = generic_detector("owner-b", &["token"]);
+    second.generic_vendor_suffix_fallback = true;
+    let error = GenericOwningDetectorIndex::build(&[first, second])
+        .expect_err("one fallback cannot have two owners");
+    assert!(error.contains("claimed by both \"owner-a\" and \"owner-b\""));
 }
 
 #[test]
@@ -316,10 +369,9 @@ fn owning_index_is_none_without_a_match_or_generic_secret() {
 }
 
 #[test]
-fn owning_index_ignores_non_generic_service_detectors() {
-    // A named (service != "generic") detector must not claim its assignment
-    // keyword through the generic owner index, even if its kind is
-    // Phase2Generic; the keyword falls through to GENERIC_SECRET.
+fn owning_index_uses_typed_phase2_ownership_not_reporting_service() {
+    // A Phase2Generic detector owns its declared assignment policy regardless
+    // of the reporting taxonomy attached to the finding.
     let named = DetectorSpec {
         id: "stripe".to_string(),
         name: "Stripe".to_string(),
@@ -332,6 +384,6 @@ fn owning_index_ignores_non_generic_service_detectors() {
     let index = GenericOwningDetectorIndex::build(&detectors).expect("unique entropy roles");
     assert_eq!(
         index.resolve("stripe_key").map(|owner| owner.owning_index),
-        Some(1)
+        Some(0)
     );
 }

@@ -68,7 +68,7 @@ impl CompiledDetectorMlFeatures {
             None => CompiledEntropyFeatureClass::None,
         };
         Self {
-            generic_detector: detector.service.eq_ignore_ascii_case("generic"),
+            generic_detector: detector.owns_entropy_policy(),
             // Preserve the feature contract of the currently embedded model.
             // Exact per-pattern provenance requires a matching corpus/model
             // migration before this input can safely change semantics.

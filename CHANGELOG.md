@@ -48,7 +48,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   paths resolve a detector once instead of coordinating parallel vectors, and
   the superseded batch policy containers have been removed. Missing interned
   primary or entropy-fallback identity now fails scanner construction instead
-  of silently allocating replacement metadata.
+  of silently allocating replacement metadata. Final match resolution now
+  consumes that active plan as well, so reporting `service = "generic"` no
+  longer turns an anchored regex detector into a generic fallback and custom
+  corpora cannot inherit embedded private-key classification.
 - Detector class, minimum length/confidence, severity, structural-password-slot,
   keywords, and public-identifier marker policy now compile into cache-local
   execution records. Named, generic, and entropy emitters no longer read those
@@ -74,10 +77,26 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   symbolic and colon-component length floors, and slash-led base64 entropy
   floor. Scanner construction compiles those values once and the production
   entropy path consumes the compiled owner policy instead of scanner constants.
-- Generic and service-anchored match policy now compiles from each active
-  detector's TOML `service` field and travels through batched ML finalization.
-  Match processing and resolution no longer reinterpret custom detector IDs to
-  choose plausibility, suppression, confidence-floor, or priority behavior.
+- Generic fallback execution now compiles from the detector TOML's typed
+  `kind = "phase2-generic"`; the `service` field remains reporting taxonomy.
+  Anchored Basic, Bearer, CLI-password, SQL-password, and URL-credential
+  detectors therefore no longer inherit an unavailable entropy policy merely
+  because their service is generic. The generic password bridge now declares
+  its phase explicitly. Entropy-policy ownership, canonical keyword ownership,
+  ML owner features, and final resolution use the same typed class; equal
+  generic keyword claims now resolve by stable detector identity instead of
+  corpus load order, and duplicate vendor-suffix fallback owners are rejected.
+- SaltStack and Alertmanager now emit only the secret-bearing password, GoTo
+  Connect emits only the client secret, and Rapyd emits only the secret key.
+  Their usernames, client IDs, and access keys are optional companion context;
+  each public identifier alone produces no finding.
+- A successfully matched companion now remains positive evidence during ML
+  admission, preventing required-companion detectors such as Twilio API keys
+  from being demoted by the generic identifier-shape shortcut.
+- The 10,667-case detector adversarial corpus and its handwritten boundary
+  suite now run as a Cargo test target instead of remaining an orphaned data
+  file. Slack fixtures now use non-placeholder identifiers and exact declared
+  segment boundaries.
 - Made weak-anchor detection policy explicit per detector pattern instead of
   inferring it from regex syntax, detector-ID families, or `min_confidence`.
 - Detector-local entropy floors are compiled into detector-indexed lookup

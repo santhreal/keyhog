@@ -260,20 +260,11 @@ pub(crate) struct DefaultScanFilter {
     signatures: std::collections::HashSet<Arc<str>>,
     disabled_detectors: std::collections::HashSet<String>,
     detector_min_confidence: std::collections::HashMap<String, f64>,
-    private_key_block_detectors: std::collections::HashSet<String>,
     test_fixture_suppressions: crate::test_fixture_suppressions::TestFixtureSuppressions,
     no_suppress_test_fixtures: bool,
     min_confidence: f64,
     min_severity: Option<keyhog_core::Severity>,
     allowlist: keyhog_core::Allowlist,
-}
-
-fn private_key_block_detector_ids(detectors: &[DetectorSpec]) -> std::collections::HashSet<String> {
-    detectors
-        .iter()
-        .filter(|detector| detector.private_key_block)
-        .map(|detector| detector.id.clone())
-        .collect()
 }
 
 /// Compose detector-declared confidence floors with operator overrides and
@@ -370,12 +361,12 @@ impl DefaultScanRuntime {
             );
         };
         let filter = postprocess::MatchFilter {
+            scanner: &self.scanner,
             signatures: &f.signatures,
             disabled_detectors: &f.disabled_detectors,
             test_fixture_suppressions: &f.test_fixture_suppressions,
             no_suppress_test_fixtures: f.no_suppress_test_fixtures,
             detector_min_confidence: &f.detector_min_confidence,
-            private_key_block_detectors: &f.private_key_block_detectors,
             min_confidence: f.min_confidence,
             min_severity: f.min_severity,
         };
@@ -795,7 +786,6 @@ fn setup_default_scan_runtime_with_rayon_policy(
             signatures,
             disabled_detectors,
             detector_min_confidence,
-            private_key_block_detectors: private_key_block_detector_ids(&detectors),
             test_fixture_suppressions,
             no_suppress_test_fixtures: effective_config.report.no_suppress_test_fixtures,
             min_confidence: effective_config.min_confidence,
@@ -873,10 +863,6 @@ pub(crate) struct ScanOrchestrator {
     /// a finding from `<id>` below this threshold is dropped, overriding the
     /// global `--min-confidence`. Empty when no per-detector overrides are set.
     pub(crate) detector_min_confidence: std::collections::HashMap<String, f64>,
-    /// Active detector ids whose TOMLs declare `private_key_block = true`.
-    /// Match resolution consumes this set directly; custom detector policy must
-    /// never be replaced by an embedded registry lookup.
-    pub(crate) private_key_block_detectors: std::collections::HashSet<String>,
     /// Fully resolved scan policy used by the engine and post-processing.
     pub(crate) effective_config: ResolvedScanConfig,
     /// Optional receipt sink for the calibration command's exact persisted
@@ -1101,8 +1087,6 @@ impl ScanOrchestrator {
         } else {
             crate::test_fixture_suppressions::TestFixtureSuppressions::bundled()
         };
-        let private_key_block_detectors = private_key_block_detector_ids(&detectors);
-
         Ok(Self {
             args,
             detectors,
@@ -1113,7 +1097,6 @@ impl ScanOrchestrator {
             test_fixture_suppressions,
             disabled_detectors,
             detector_min_confidence,
-            private_key_block_detectors,
             effective_config,
             autoroute_measurement_observer: None,
         })
@@ -1224,7 +1207,6 @@ impl ScanOrchestrator {
         let fused_depth = args.fused_depth;
         let detector_spec_hash = keyhog_core::compute_spec_hash(&detectors);
         let detector_rules_digest = keyhog_core::hex_encode(&detector_spec_hash);
-        let private_key_block_detectors = private_key_block_detector_ids(&detectors);
         Self {
             args,
             detectors,
@@ -1235,7 +1217,6 @@ impl ScanOrchestrator {
             test_fixture_suppressions,
             disabled_detectors: std::collections::HashSet::new(),
             detector_min_confidence: std::collections::HashMap::new(),
-            private_key_block_detectors,
             autoroute_measurement_observer: None,
             effective_config: ResolvedScanConfig {
                 backend_override: Some(keyhog_scanner::ScanBackend::SimdCpu),

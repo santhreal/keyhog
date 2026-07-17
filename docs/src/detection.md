@@ -144,7 +144,7 @@ model's fixed vocabulary, remain global.
 | `allowlist_paths`, `allowlist_values`, `stopwords` | Adds detector-specific path, value-regex, or literal exclusions | Removing an exclusion makes that detector consider the matching path/value again; it does not affect other detectors |
 | `public_identifier_assignment_markers` | Classifies detector-local assignment-key fragments as public identifiers instead of credentials | Omission disables this suppression for that detector; there is no scanner-global blockchain/network marker list |
 | `min_confidence` | Raises this detector's reporting floor | Lowers this detector's reporting floor; an operator override can still replace it |
-| detector/pattern `weak_anchor` | Keeps generic shape/entropy gates active for a whole service detector or an individual pattern; requires the owning detector's `entropy_high` and `entropy_floor` | Trusts unmarked patterns; use only when those patterns prove the credential shape |
+| detector/pattern `weak_anchor` | Keeps generic shape/entropy gates active for a whole detector or an individual pattern; requires the owning detector's `entropy_high` and `entropy_floor` | Trusts unmarked patterns; use only when those patterns prove the credential shape |
 | `structural_password_slot` | Applies password-slot placeholder policy to a free-form value captured from a syntactic credential slot | Leaves that detector outside the structural-password family |
 | `private_key_block` | Makes the detector's enclosing key block suppress less-specific findings nested inside it | Treats the match as an ordinary, non-enclosing finding |
 | `[detector.credential_shape]` | Declares exact prefix/length/shape constraints that a captured credential must satisfy | Omitting it leaves that detector without an additional credential-shape constraint |
@@ -155,9 +155,14 @@ These settings do not all use one generic “last value wins” rule:
 
 - **Generic keyword ownership:** the highest `entropy_policy_priority` among
   detectors claiming the normalized assignment keyword owns entropy and BPE
-  policy. Equal priorities use compiled detector order only as a deterministic
-  tie-break. Custom detector policy keywords join entropy discovery directly;
+  policy. Equal priorities use stable detector identity, independent of corpus
+  order. Custom detector policy keywords join entropy discovery directly;
   they do not need to be repeated in `[scan].secret_keywords`.
+- **Final match resolution:** the active compiled plan classifies named,
+  phase-2 generic, entropy, and enclosing private-key findings. The reporting
+  `service` string and detector-ID length do not change specificity. Unknown
+  finding identities fail checked resolution instead of inheriting embedded or
+  service-name behavior.
 - **Entropy entry roles:** `entropy_roles` selects the detector that owns each
   corpus-level entry path. A compiled corpus may have at most one owner for
   each role. Missing roles remain disabled, and duplicate owners fail scanner

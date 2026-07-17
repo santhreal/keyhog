@@ -7,10 +7,10 @@
 //!     so the portable reference and SimdCpu paths both reach it.
 //!   * jwt-token, my token was the canonical RFC-7519 / jwt.io EXAMPLE, which is
 //!     correctly suppressed (`rfc7519_example_n`). A real JWT fires.
-//!   * twilio-api-key, spec has a `required=true` companion + SK is deliberately
-//!     below the AC-prefilter floor (documented in the .toml).
+//!   * twilio-api-key has a `required=true` companion; that companion is now
+//!     preserved as positive confidence evidence after matching.
 //! The tests below are green guards for backend-independent behavior;
-//! only two genuinely-unexplained cases remain as `#[ignore]` UNCONFIRMED
+//! only one genuinely-unexplained case remains as an `#[ignore]` UNCONFIRMED
 //! candidates (silent even under ideal conditions, likely spec nuances I have
 //! not yet isolated, given the 4/5 false-positive rate above, NOT confirmed
 //! bugs). ML-independent; run without `ml` while the embedded weights are
@@ -124,15 +124,7 @@ fn sanity_api_token_fires_with_keyword_context() {
     );
 }
 
-// ── UNCONFIRMED candidates (silent even under ideal conditions) ───────────────
-// These are #[ignore] and honestly labeled: given the 4/5 false-positive rate on
-// my earlier "confirmed bugs," these are most likely spec nuances (a required
-// companion, an entropy/placeholder suppression, an exact-length mismatch) I
-// have not yet isolated: NOT verified bugs. They reproduce the silence so a
-// scanner-internals owner can adjudicate; delete or convert to green on verdict.
-
 #[test]
-#[ignore = "UNCONFIRMED, twilio-api-key silent on auto path even with required companion; likely spec nuance, needs adjudication"]
 fn twilio_api_key_candidate() {
     let ids = fired_ids_auto(
         "TWILIO_API_KEY=SKf77dea48db85fef690ffcbfc3fc3a4e6\n\
@@ -144,6 +136,9 @@ fn twilio_api_key_candidate() {
     );
 }
 
+// ── UNCONFIRMED candidate (silent even under ideal conditions) ────────────────
+// This remains ignored and honestly labeled until its detector contract is
+// adjudicated; it is not counted as a confirmed product defect.
 #[test]
 #[ignore = "UNCONFIRMED, telegram-bot-token silent on auto path with keyword+shape-valid token; needs adjudication"]
 fn telegram_bot_token_candidate() {

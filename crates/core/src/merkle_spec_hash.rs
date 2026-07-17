@@ -61,10 +61,9 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
             // `{:016x}`), never a lossy decimal render, so two distinct floors
             // never collide and `-0.0`/`0.0` stay distinguishable.
             //
-            // `service` participates in generic-keyword ownership and therefore
-            // changes which detector claims a candidate. Bind it to the id so a
-            // service swap cannot leave a stale merkle skip. Keep the empty
-            // default omitted to preserve the historical all-default pre-image.
+            // `service` is report identity. Bind it to the id so a service swap
+            // cannot reuse cached findings carrying stale public metadata. It
+            // does not select detector execution policy.
             if !d.service.is_empty() {
                 entries.push(format!("service:{}:{}", d.id, d.service));
             }

@@ -5,7 +5,10 @@ fn compiled_execution_policy_matches_every_embedded_detector() {
 
     for (index, detector) in detectors.iter().enumerate() {
         let policy = &compiled.get(index).execution;
-        assert_eq!(policy.is_generic, detector.service == "generic");
+        assert_eq!(
+            policy.is_generic,
+            detector.kind == keyhog_core::DetectorKind::Phase2Generic
+        );
         assert_eq!(policy.min_len, detector.min_len);
         assert_eq!(policy.min_confidence, detector.min_confidence);
         assert_eq!(policy.severity, detector.severity);

@@ -21,8 +21,8 @@ use std::sync::Arc;
 /// Exact and normalized assignment keys resolve through the same detector-owned
 /// priority table used by entropy policy. Phase-2 generic detectors participate
 /// by default, regex detectors opt in through `entropy_policy_priority`, and the
-/// highest priority wins an overlap. Compiled order breaks an equal-priority
-/// tie deterministically. Structural vendor suffixes use the one detector that
+/// highest priority wins an overlap. Stable detector identity breaks an
+/// equal-priority tie. Structural vendor suffixes use the one detector that
 /// explicitly declares `generic_vendor_suffix_fallback`.
 #[derive(Debug, Default)]
 pub(crate) struct GenericOwningDetectorIndex {
@@ -31,6 +31,7 @@ pub(crate) struct GenericOwningDetectorIndex {
     policy_keywords: Vec<String>,
     canonical_exact: HashMap<String, usize>,
     canonical_normalized: HashMap<String, usize>,
+    stable_rank: Box<[usize]>,
     keyword_free_owner_index: Option<usize>,
     isolated_bare_owner_index: Option<usize>,
     unclaimed_keyword_owner_index: Option<usize>,
@@ -41,6 +42,7 @@ pub(crate) struct GenericOwningDetectorIndex {
 struct PolicyOwner {
     index: usize,
     priority: u16,
+    stable_rank: usize,
 }
 
 /// Generic assignment ownership resolved from one lowercase/normalized key
@@ -61,9 +63,28 @@ fn insert_policy_owner(
     owners
         .entry(keyword)
         .and_modify(|current| {
-            if candidate.priority > current.priority
-                || (candidate.priority == current.priority && candidate.index < current.index)
-            {
+            if policy_owner_precedes(candidate, *current) {
+                *current = candidate;
+            }
+        })
+        .or_insert(candidate);
+}
+
+fn policy_owner_precedes(candidate: PolicyOwner, current: PolicyOwner) -> bool {
+    candidate.priority > current.priority
+        || (candidate.priority == current.priority && candidate.stable_rank < current.stable_rank)
+}
+
+fn insert_stable_index(
+    owners: &mut HashMap<String, usize>,
+    keyword: String,
+    candidate: usize,
+    stable_rank: &[usize],
+) {
+    owners
+        .entry(keyword)
+        .and_modify(|current| {
+            if stable_rank[candidate] < stable_rank[*current] {
                 *current = candidate;
             }
         })
@@ -72,6 +93,17 @@ fn insert_policy_owner(
 
 impl GenericOwningDetectorIndex {
     pub(crate) fn build(detectors: &[DetectorSpec]) -> Result<Self, String> {
+        let mut stable_order: Vec<usize> = (0..detectors.len()).collect();
+        stable_order.sort_unstable_by(|left, right| {
+            detectors[*left]
+                .id
+                .cmp(&detectors[*right].id)
+                .then_with(|| left.cmp(right))
+        });
+        let mut stable_rank = vec![0usize; detectors.len()];
+        for (rank, index) in stable_order.into_iter().enumerate() {
+            stable_rank[index] = rank;
+        }
         let mut policy_exact = HashMap::new();
         let mut policy_normalized = HashMap::new();
         let mut policy_keywords = BTreeSet::new();
@@ -80,7 +112,7 @@ impl GenericOwningDetectorIndex {
         let mut keyword_free_owner_index: Option<usize> = None;
         let mut isolated_bare_owner_index: Option<usize> = None;
         let mut unclaimed_keyword_owner_index: Option<usize> = None;
-        let mut vendor_suffix_fallback_index = None;
+        let mut vendor_suffix_fallback_index: Option<usize> = None;
         for (index, detector) in detectors.iter().enumerate() {
             for role in &detector.entropy_roles {
                 let slot = match role {
@@ -100,15 +132,20 @@ impl GenericOwningDetectorIndex {
                 }
                 *slot = Some(index);
             }
-            if vendor_suffix_fallback_index.is_none() && detector.generic_vendor_suffix_fallback {
+            if detector.generic_vendor_suffix_fallback {
+                if let Some(previous) = vendor_suffix_fallback_index {
+                    return Err(format!(
+                        "generic vendor-suffix fallback is claimed by both {:?} and {:?}; exactly one detector TOML may own it",
+                        detectors[previous].id, detector.id
+                    ));
+                }
                 vendor_suffix_fallback_index = Some(index);
             }
             // Phase-2 generic detectors own their entropy keywords by default.
             // Regex detectors opt in with an explicit TOML priority. Overlap
             // resolution uses that priority as its primary ordering.
-            if detector.service == "generic"
-                && (detector.kind == DetectorKind::Phase2Generic
-                    || detector.entropy_policy_priority.is_some())
+            if detector.kind == DetectorKind::Phase2Generic
+                || detector.entropy_policy_priority.is_some()
             {
                 let owner = PolicyOwner {
                     index,
@@ -116,6 +153,7 @@ impl GenericOwningDetectorIndex {
                         Some(priority) => priority,
                         None => 0,
                     },
+                    stable_rank: stable_rank[index],
                 };
                 for keyword in &detector.keywords {
                     let kw_lower = keyword.to_ascii_lowercase();
@@ -130,16 +168,20 @@ impl GenericOwningDetectorIndex {
             // priority. A detector that declares an exact canonical keyword
             // owns that shape even when a broader keyword detector wins the
             // ordinary low-entropy policy for the same assignment.
-            if detector.service == "generic"
-                && detector.kind == DetectorKind::Phase2Generic
+            if detector.kind == DetectorKind::Phase2Generic
                 && !detector.canonical_hex_key_material.is_empty()
             {
                 for policy in &detector.canonical_hex_key_material {
                     for keyword in &policy.keywords {
                         let kw_lower = keyword.to_ascii_lowercase();
-                        canonical_exact.entry(kw_lower).or_insert(index);
+                        insert_stable_index(&mut canonical_exact, kw_lower, index, &stable_rank);
                         if let Some(normalized) = normalize_assignment_keyword(keyword) {
-                            canonical_normalized.entry(normalized).or_insert(index);
+                            insert_stable_index(
+                                &mut canonical_normalized,
+                                normalized,
+                                index,
+                                &stable_rank,
+                            );
                         }
                     }
                 }
@@ -151,6 +193,7 @@ impl GenericOwningDetectorIndex {
             policy_keywords: policy_keywords.into_iter().collect(),
             canonical_exact,
             canonical_normalized,
+            stable_rank: stable_rank.into_boxed_slice(),
             keyword_free_owner_index,
             isolated_bare_owner_index,
             unclaimed_keyword_owner_index,
@@ -190,14 +233,7 @@ impl GenericOwningDetectorIndex {
         let exact_hit = self.policy_exact.get(lower).copied();
         let norm_hit = normalized.and_then(|norm| self.policy_normalized.get(norm).copied());
         match (exact_hit, norm_hit) {
-            (Some(a), Some(b)) => Some(
-                if a.priority > b.priority || (a.priority == b.priority && a.index < b.index) {
-                    a
-                } else {
-                    b
-                }
-                .index,
-            ),
+            (Some(a), Some(b)) => Some(if policy_owner_precedes(a, b) { a } else { b }.index),
             (a, b) => a.or(b).map(|owner| owner.index),
         }
     }
@@ -221,10 +257,18 @@ impl GenericOwningDetectorIndex {
     }
 
     fn canonical_index_from(&self, lower: &str, normalized: Option<&str>) -> Option<usize> {
-        self.canonical_exact
-            .get(lower)
-            .copied()
-            .or_else(|| normalized.and_then(|key| self.canonical_normalized.get(key).copied()))
+        let exact = self.canonical_exact.get(lower).copied();
+        let normalized = normalized.and_then(|key| self.canonical_normalized.get(key).copied());
+        match (exact, normalized) {
+            (Some(left), Some(right)) => {
+                Some(if self.stable_rank[left] <= self.stable_rank[right] {
+                    left
+                } else {
+                    right
+                })
+            }
+            (left, right) => left.or(right),
+        }
     }
 
     /// Detector that explicitly owns anchor-free entropy candidates.
@@ -254,7 +298,7 @@ const MIN_SERVICE_NAME_LEN: usize = 3;
 pub(crate) fn build_generic_named_assignment_keywords(detectors: &[DetectorSpec]) -> Vec<Arc<str>> {
     let mut owned = BTreeSet::<String>::new();
     for detector in detectors {
-        if detector.service == "generic" {
+        if detector.kind == DetectorKind::Phase2Generic {
             continue;
         }
         let Some(service) = normalize_assignment_keyword(&detector.service) else {

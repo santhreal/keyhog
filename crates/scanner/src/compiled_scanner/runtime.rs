@@ -188,6 +188,16 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         self.detector_plans.len()
     }
 
+    /// Resolve overlapping findings with the exact detector corpus compiled
+    /// into this scanner. Reporting service names never select execution or
+    /// resolution semantics, and an unknown finding identity is an error.
+    pub fn try_resolve_matches(
+        &self,
+        matches: Vec<keyhog_core::RawMatch>,
+    ) -> std::result::Result<Vec<keyhog_core::RawMatch>, String> {
+        crate::resolution::try_resolve_matches_with_compiled_plan(matches, &self.detector_plans)
+    }
+
     /// Pre-interned `(detector_id, detector_name, service)` triple for the
     /// detector at `detector_index`. Three `Arc::clone`s, zero hashing, the
     /// hot-path replacement for three `ScanState::intern_metadata` calls on
@@ -383,7 +393,13 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
                 .metadata
                 .0
                 .as_ref();
-            let generic_entropy = crate::detector_ids::is_generic_or_entropy_detector(id);
+            let generic_entropy = matches!(
+                self.detector_plans.resolution_class(id),
+                Some(
+                    crate::detector_plan::DetectorResolutionClass::Generic
+                        | crate::detector_plan::DetectorResolutionClass::Entropy
+                )
+            );
             let homoglyph = pattern.homoglyph_variant;
             match (generic_entropy, homoglyph) {
                 (true, false) => b.generic_entropy_real += 1,

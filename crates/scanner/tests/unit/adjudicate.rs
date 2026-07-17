@@ -16,8 +16,8 @@ fn adjudicate_process_signal(
     start: usize,
     end: usize,
 ) -> Verdict {
-    let is_generic_detector =
-        keyhog_core::detector_spec_by_id(detector_id).is_some_and(|spec| spec.service == "generic");
+    let is_generic_detector = keyhog_core::detector_spec_by_id(detector_id)
+        .is_some_and(|spec| spec.kind == keyhog_core::DetectorKind::Phase2Generic);
     let signals = ProcessCandidateSignals::from_match(
         is_generic_detector,
         keyhog_core::detector_spec_by_id(detector_id).and_then(|spec| spec.min_len),
@@ -41,8 +41,8 @@ fn adjudicate_final_emit(
     min_confidence_floor: f64,
     penalize_test_paths: bool,
 ) -> Verdict {
-    let is_generic_detector =
-        keyhog_core::detector_spec_by_id(detector_id).is_some_and(|spec| spec.service == "generic");
+    let is_generic_detector = keyhog_core::detector_spec_by_id(detector_id)
+        .is_some_and(|spec| spec.kind == keyhog_core::DetectorKind::Phase2Generic);
     let ctx = MatchCtx::for_final_emit(FinalEmitSignals::new(
         is_generic_detector,
         code_context,

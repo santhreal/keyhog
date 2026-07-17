@@ -386,11 +386,9 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
             "max_len is only valid for detectors that own generic entropy policy".to_string(),
         ));
     }
-    if spec.generic_vendor_suffix_fallback
-        && (spec.kind != crate::DetectorKind::Phase2Generic || spec.service != "generic")
-    {
+    if spec.generic_vendor_suffix_fallback && spec.kind != crate::DetectorKind::Phase2Generic {
         issues.push(QualityIssue::Error(
-            "generic_vendor_suffix_fallback is only valid for a generic phase-2 detector"
+            "generic_vendor_suffix_fallback is only valid for a phase2-generic detector"
                 .to_string(),
         ));
     }
@@ -413,12 +411,6 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
     if spec.bpe_enabled == Some(false) && spec.bpe_max_bytes_per_token.is_some() {
         issues.push(QualityIssue::Error(
             "bpe_enabled = false conflicts with bpe_max_bytes_per_token; remove the ceiling when token efficiency is disabled"
-                .into(),
-        ));
-    }
-    if spec.entropy_policy_priority.is_some() && spec.service != "generic" {
-        issues.push(QualityIssue::Error(
-            "entropy_policy_priority is only valid for service = \"generic\" detectors; provider detectors use their own regex evidence"
                 .into(),
         ));
     }
@@ -597,9 +589,9 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
         ));
     }
     if let Some(metadata) = &spec.entropy_fallback {
-        if spec.service != "generic" {
+        if !entropy_owner {
             issues.push(QualityIssue::Error(
-                "entropy_fallback is only valid for service = \"generic\" detectors".into(),
+                "entropy_fallback requires an active detector-owned entropy policy".into(),
             ));
         }
         if !metadata.id.strip_prefix("entropy-").is_some_and(|suffix| {
@@ -625,9 +617,9 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
         }
     }
     let mut lower_dash_shape_seen = false;
-    if !spec.entropy_shapes.is_empty() && spec.service != "generic" {
+    if !spec.entropy_shapes.is_empty() && !entropy_owner {
         issues.push(QualityIssue::Error(
-            "entropy_shapes are only valid for service = \"generic\" detectors".into(),
+            "entropy_shapes require an active detector-owned entropy policy".into(),
         ));
     }
     for (index, shape) in spec.entropy_shapes.iter().enumerate() {

@@ -131,8 +131,9 @@ pub(crate) const NAMED_DETECTOR_ANCHOR_FLOOR: f64 = 0.55;
 /// required keyword **context anchor** (capture group), a distinctive **literal
 /// prefix** (`cs_`, `pl_`, `tk_`, `sk-`, `ghp_`), or a distinctive **required
 /// literal infix** (terraform `\.atlasv1\.`, whose regex opens with a class and
-/// captures the whole match so it carries neither of the other two). All three
-/// are folded into the single `has_anchor` argument by the caller.
+/// captures the whole match so it carries neither of the other two), or an
+/// independently matched companion. These signals are folded into the single
+/// `has_anchor` argument by the caller.
 ///
 /// `compute_confidence` is a *normalized* weighted sum: it divides the earned
 /// signal weight by the full signal set (literal prefix, context anchor,
@@ -194,7 +195,7 @@ pub(crate) fn candidate_match_score(policy: CandidateMatchScorePolicy<'_>) -> Ml
     // tokens with no surrounding keyword), OR a distinctive required literal
     // infix (`has_distinctive_inner_literal`: terraform `\.atlasv1\.`, whose
     // regex opens with a class and captures the whole match so it carries
-    // neither of the other two). Applied before the ML branch so it propagates
+    // neither of the other two), OR a matched companion. Applied before the ML branch so it propagates
     // through both the heuristic-only `Final` path and the `Pending` path,
     // where the compiled detector-owned model mode determines its contribution.
     let heuristic_conf = apply_named_detector_anchor_floor(
@@ -202,7 +203,8 @@ pub(crate) fn candidate_match_score(policy: CandidateMatchScorePolicy<'_>) -> Ml
         policy.is_named_detector,
         policy.has_context_anchor
             || policy.has_literal_prefix
-            || policy.has_distinctive_inner_literal,
+            || policy.has_distinctive_inner_literal
+            || policy.has_companion,
     );
 
     #[cfg(not(feature = "ml"))]
@@ -216,9 +218,11 @@ pub(crate) fn candidate_match_score(policy: CandidateMatchScorePolicy<'_>) -> Ml
         let Some(mode) = policy.ml_mode else {
             return MlScoreResult::Final(heuristic_conf);
         };
-        if let Some(confidence) =
-            probabilistic_promise_confidence_override(policy.credential, policy.is_named_detector)
-        {
+        if let Some(confidence) = probabilistic_promise_confidence_override(
+            policy.credential,
+            policy.is_named_detector,
+            policy.has_companion,
+        ) {
             MlScoreResult::Final(confidence)
         } else {
             MlScoreResult::Pending {
@@ -372,6 +376,7 @@ pub(crate) fn apply_empty_candidate_score_policy<'a>(
 pub(crate) fn probabilistic_promise_confidence_override(
     credential: &str,
     is_named_detector: bool,
+    has_companion: bool,
 ) -> Option<f64> {
     if crate::probabilistic_gate::ProbabilisticGate::looks_promising(credential) {
         return None;
@@ -379,7 +384,9 @@ pub(crate) fn probabilistic_promise_confidence_override(
     let identifier_shaped =
         crate::suppression::shape::looks_like_word_separated_identifier(credential)
             || crate::suppression::shape::looks_like_pure_identifier(credential);
-    (!is_named_detector || identifier_shaped).then_some(0.1)
+    // A matched companion is independent detector-owned evidence. Do not let
+    // the generic identifier shortcut erase a required-companion proof.
+    (!is_named_detector || (identifier_shaped && !has_companion)).then_some(0.1)
 }
 
 #[cfg(feature = "entropy")]

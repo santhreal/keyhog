@@ -9994,8 +9994,8 @@ suite = 64
 [[case.assertion]]
 kind = "fires"
 name = "normal"
-text = 'ALERTMANAGER_USER=admin_user_kp4qx7rm2sn'
-credential = 'admin_user_kp4qx7rm2sn'
+text = 'ALERTMANAGER_PASSWORD=Kr6vtSWYiEiFtyZ57KOOJcBN9fbInvPq'
+credential = 'Kr6vtSWYiEiFtyZ57KOOJcBN9fbInvPq'
 
 [[case.assertion]]
 kind = "silent"
@@ -10005,62 +10005,62 @@ text = 'dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxxxx'
 [[case.assertion]]
 kind = "fires"
 name = "zwsp"
-text = 'ALERTMANAGER_USER=admin_user_\u{200B}kp4qx7rm2sn'
-credential = 'admin_user_kp4qx7rm2sn'
+text = 'ALERTMANAGER_PASSWORD=Kr6vtSWYiEiFtyZ5\u{200B}7KOOJcBN9fbInvPq'
+credential = 'Kr6vtSWYiEiFtyZ57KOOJcBN9fbInvPq'
 
 [[case.assertion]]
 kind = "fires"
 name = "hyphen"
-text = 'ALERTMANAGER_USER=admin_user_\u{00AD}kp4qx7rm2sn'
-credential = 'admin_user_kp4qx7rm2sn'
+text = 'ALERTMANAGER_PASSWORD=Kr6vtSWYiEiFtyZ5\u{00AD}7KOOJcBN9fbInvPq'
+credential = 'Kr6vtSWYiEiFtyZ57KOOJcBN9fbInvPq'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwnj"
-text = 'ALERTMANAGER_USER=admin_user_\u{200C}kp4qx7rm2sn'
-credential = 'admin_user_kp4qx7rm2sn'
+text = 'ALERTMANAGER_PASSWORD=Kr6vtSWYiEiFtyZ5\u{200C}7KOOJcBN9fbInvPq'
+credential = 'Kr6vtSWYiEiFtyZ57KOOJcBN9fbInvPq'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwj"
-text = 'ALERTMANAGER_USER=admin_user_\u{200D}kp4qx7rm2sn'
-credential = 'admin_user_kp4qx7rm2sn'
+text = 'ALERTMANAGER_PASSWORD=Kr6vtSWYiEiFtyZ5\u{200D}7KOOJcBN9fbInvPq'
+credential = 'Kr6vtSWYiEiFtyZ57KOOJcBN9fbInvPq'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwnbsp"
-text = 'ALERTMANAGER_USER=admin_user_\u{FEFF}kp4qx7rm2sn'
-credential = 'admin_user_kp4qx7rm2sn'
+text = 'ALERTMANAGER_PASSWORD=Kr6vtSWYiEiFtyZ5\u{FEFF}7KOOJcBN9fbInvPq'
+credential = 'Kr6vtSWYiEiFtyZ57KOOJcBN9fbInvPq'
 
 [[case.assertion]]
 kind = "fires"
 name = "joiner"
-text = 'ALERTMANAGER_USER=admin_user_\u{2060}kp4qx7rm2sn'
-credential = 'admin_user_kp4qx7rm2sn'
+text = 'ALERTMANAGER_PASSWORD=Kr6vtSWYiEiFtyZ5\u{2060}7KOOJcBN9fbInvPq'
+credential = 'Kr6vtSWYiEiFtyZ57KOOJcBN9fbInvPq'
 
 [[case.assertion]]
 kind = "fires"
 name = "mongolian"
-text = 'ALERTMANAGER_USER=admin_user_\u{180E}kp4qx7rm2sn'
-credential = 'admin_user_kp4qx7rm2sn'
+text = 'ALERTMANAGER_PASSWORD=Kr6vtSWYiEiFtyZ5\u{180E}7KOOJcBN9fbInvPq'
+credential = 'Kr6vtSWYiEiFtyZ57KOOJcBN9fbInvPq'
 
 [[case.assertion]]
 kind = "fires"
 name = "rtl"
-text = 'ALERTMANAGER_USER=admin_user_\u{202E}kp4qx7rm2sn'
-credential = 'admin_user_kp4qx7rm2sn'
+text = 'ALERTMANAGER_PASSWORD=Kr6vtSWYiEiFtyZ5\u{202E}7KOOJcBN9fbInvPq'
+credential = 'Kr6vtSWYiEiFtyZ57KOOJcBN9fbInvPq'
 
 [[case.assertion]]
 kind = "fires"
 name = "dir"
-text = 'ALERTMANAGER_USER=admin_user_\u{202C}kp4qx7rm2sn'
-credential = 'admin_user_kp4qx7rm2sn'
+text = 'ALERTMANAGER_PASSWORD=Kr6vtSWYiEiFtyZ5\u{202C}7KOOJcBN9fbInvPq'
+credential = 'Kr6vtSWYiEiFtyZ57KOOJcBN9fbInvPq'
 
 [[case.assertion]]
 kind = "fires"
 name = "lrm"
-text = 'ALERTMANAGER_USER=admin_user_\u{200E}kp4qx7rm2sn'
-credential = 'admin_user_kp4qx7rm2sn'
+text = 'ALERTMANAGER_PASSWORD=Kr6vtSWYiEiFtyZ5\u{200E}7KOOJcBN9fbInvPq'
+credential = 'Kr6vtSWYiEiFtyZ57KOOJcBN9fbInvPq'
 
 [[case]]
 detector_id = "algolia-admin-api-key"
@@ -31424,8 +31424,8 @@ suite = 92
 [[case.assertion]]
 kind = "fires"
 name = "normal"
-text = 'gotoconnectclientid=uwtOQIbhxpxmFoKM1Ue8'
-credential = 'uwtOQIbhxpxmFoKM1Ue8'
+text = 'gotoconnectclientsecret=SuQuuxx8Mf8HsnQ-IopwByhBoWeESbtTbI'
+credential = 'SuQuuxx8Mf8HsnQ-IopwByhBoWeESbtTbI'
 
 [[case.assertion]]
 kind = "silent"
@@ -31435,62 +31435,62 @@ text = 'dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxx'
 [[case.assertion]]
 kind = "fires"
 name = "zwsp"
-text = 'gotoconnectclientid=uwtOQIbhxp\u{200B}xmFoKM1Ue8'
-credential = 'uwtOQIbhxpxmFoKM1Ue8'
+text = 'gotoconnectclientsecret=SuQuuxx8Mf8HsnQ-Iopw\u{200B}ByhBoWeESbtTbI'
+credential = 'SuQuuxx8Mf8HsnQ-IopwByhBoWeESbtTbI'
 
 [[case.assertion]]
 kind = "fires"
 name = "hyphen"
-text = 'gotoconnectclientid=uwtOQIbhxp\u{00AD}xmFoKM1Ue8'
-credential = 'uwtOQIbhxpxmFoKM1Ue8'
+text = 'gotoconnectclientsecret=SuQuuxx8Mf8HsnQ-Iopw\u{00AD}ByhBoWeESbtTbI'
+credential = 'SuQuuxx8Mf8HsnQ-IopwByhBoWeESbtTbI'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwnj"
-text = 'gotoconnectclientid=uwtOQIbhxp\u{200C}xmFoKM1Ue8'
-credential = 'uwtOQIbhxpxmFoKM1Ue8'
+text = 'gotoconnectclientsecret=SuQuuxx8Mf8HsnQ-Iopw\u{200C}ByhBoWeESbtTbI'
+credential = 'SuQuuxx8Mf8HsnQ-IopwByhBoWeESbtTbI'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwj"
-text = 'gotoconnectclientid=uwtOQIbhxp\u{200D}xmFoKM1Ue8'
-credential = 'uwtOQIbhxpxmFoKM1Ue8'
+text = 'gotoconnectclientsecret=SuQuuxx8Mf8HsnQ-Iopw\u{200D}ByhBoWeESbtTbI'
+credential = 'SuQuuxx8Mf8HsnQ-IopwByhBoWeESbtTbI'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwnbsp"
-text = 'gotoconnectclientid=uwtOQIbhxp\u{FEFF}xmFoKM1Ue8'
-credential = 'uwtOQIbhxpxmFoKM1Ue8'
+text = 'gotoconnectclientsecret=SuQuuxx8Mf8HsnQ-Iopw\u{FEFF}ByhBoWeESbtTbI'
+credential = 'SuQuuxx8Mf8HsnQ-IopwByhBoWeESbtTbI'
 
 [[case.assertion]]
 kind = "fires"
 name = "joiner"
-text = 'gotoconnectclientid=uwtOQIbhxp\u{2060}xmFoKM1Ue8'
-credential = 'uwtOQIbhxpxmFoKM1Ue8'
+text = 'gotoconnectclientsecret=SuQuuxx8Mf8HsnQ-Iopw\u{2060}ByhBoWeESbtTbI'
+credential = 'SuQuuxx8Mf8HsnQ-IopwByhBoWeESbtTbI'
 
 [[case.assertion]]
 kind = "fires"
 name = "mongolian"
-text = 'gotoconnectclientid=uwtOQIbhxp\u{180E}xmFoKM1Ue8'
-credential = 'uwtOQIbhxpxmFoKM1Ue8'
+text = 'gotoconnectclientsecret=SuQuuxx8Mf8HsnQ-Iopw\u{180E}ByhBoWeESbtTbI'
+credential = 'SuQuuxx8Mf8HsnQ-IopwByhBoWeESbtTbI'
 
 [[case.assertion]]
 kind = "fires"
 name = "rtl"
-text = 'gotoconnectclientid=uwtOQIbhxp\u{202E}xmFoKM1Ue8'
-credential = 'uwtOQIbhxpxmFoKM1Ue8'
+text = 'gotoconnectclientsecret=SuQuuxx8Mf8HsnQ-Iopw\u{202E}ByhBoWeESbtTbI'
+credential = 'SuQuuxx8Mf8HsnQ-IopwByhBoWeESbtTbI'
 
 [[case.assertion]]
 kind = "fires"
 name = "dir"
-text = 'gotoconnectclientid=uwtOQIbhxp\u{202C}xmFoKM1Ue8'
-credential = 'uwtOQIbhxpxmFoKM1Ue8'
+text = 'gotoconnectclientsecret=SuQuuxx8Mf8HsnQ-Iopw\u{202C}ByhBoWeESbtTbI'
+credential = 'SuQuuxx8Mf8HsnQ-IopwByhBoWeESbtTbI'
 
 [[case.assertion]]
 kind = "fires"
 name = "lrm"
-text = 'gotoconnectclientid=uwtOQIbhxp\u{200E}xmFoKM1Ue8'
-credential = 'uwtOQIbhxpxmFoKM1Ue8'
+text = 'gotoconnectclientsecret=SuQuuxx8Mf8HsnQ-Iopw\u{200E}ByhBoWeESbtTbI'
+credential = 'SuQuuxx8Mf8HsnQ-IopwByhBoWeESbtTbI'
 
 [[case]]
 detector_id = "graph-deploy-key"
@@ -52544,8 +52544,8 @@ suite = 121
 [[case.assertion]]
 kind = "fires"
 name = "normal"
-text = 'RAPYD_API_KEY=799d33f560acc53abefd6d1c'
-credential = '799d33f560acc53abefd6d1c'
+text = 'RAPYD_SECRET_KEY=71a7fcfca44e9d5a60decd648ff5ca3aba7559f21ae1aa2043aa43c9bddae55'
+credential = '71a7fcfca44e9d5a60decd648ff5ca3aba7559f21ae1aa2043aa43c9bddae55'
 
 [[case.assertion]]
 kind = "silent"
@@ -52555,62 +52555,62 @@ text = 'dummy_prefix_0 =xxxxxxxxxxxxxxxxxxxxxxxx'
 [[case.assertion]]
 kind = "fires"
 name = "zwsp"
-text = 'RAPYD_API_KEY=799d33f560ac\u{200B}c53abefd6d1c'
-credential = '799d33f560acc53abefd6d1c'
+text = 'RAPYD_SECRET_KEY=71a7fcfca44e9d5a60decd648ff5ca3a\u{200B}ba7559f21ae1aa2043aa43c9bddae55'
+credential = '71a7fcfca44e9d5a60decd648ff5ca3aba7559f21ae1aa2043aa43c9bddae55'
 
 [[case.assertion]]
 kind = "fires"
 name = "hyphen"
-text = 'RAPYD_API_KEY=799d33f560ac\u{00AD}c53abefd6d1c'
-credential = '799d33f560acc53abefd6d1c'
+text = 'RAPYD_SECRET_KEY=71a7fcfca44e9d5a60decd648ff5ca3a\u{00AD}ba7559f21ae1aa2043aa43c9bddae55'
+credential = '71a7fcfca44e9d5a60decd648ff5ca3aba7559f21ae1aa2043aa43c9bddae55'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwnj"
-text = 'RAPYD_API_KEY=799d33f560ac\u{200C}c53abefd6d1c'
-credential = '799d33f560acc53abefd6d1c'
+text = 'RAPYD_SECRET_KEY=71a7fcfca44e9d5a60decd648ff5ca3a\u{200C}ba7559f21ae1aa2043aa43c9bddae55'
+credential = '71a7fcfca44e9d5a60decd648ff5ca3aba7559f21ae1aa2043aa43c9bddae55'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwj"
-text = 'RAPYD_API_KEY=799d33f560ac\u{200D}c53abefd6d1c'
-credential = '799d33f560acc53abefd6d1c'
+text = 'RAPYD_SECRET_KEY=71a7fcfca44e9d5a60decd648ff5ca3a\u{200D}ba7559f21ae1aa2043aa43c9bddae55'
+credential = '71a7fcfca44e9d5a60decd648ff5ca3aba7559f21ae1aa2043aa43c9bddae55'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwnbsp"
-text = 'RAPYD_API_KEY=799d33f560ac\u{FEFF}c53abefd6d1c'
-credential = '799d33f560acc53abefd6d1c'
+text = 'RAPYD_SECRET_KEY=71a7fcfca44e9d5a60decd648ff5ca3a\u{FEFF}ba7559f21ae1aa2043aa43c9bddae55'
+credential = '71a7fcfca44e9d5a60decd648ff5ca3aba7559f21ae1aa2043aa43c9bddae55'
 
 [[case.assertion]]
 kind = "fires"
 name = "joiner"
-text = 'RAPYD_API_KEY=799d33f560ac\u{2060}c53abefd6d1c'
-credential = '799d33f560acc53abefd6d1c'
+text = 'RAPYD_SECRET_KEY=71a7fcfca44e9d5a60decd648ff5ca3a\u{2060}ba7559f21ae1aa2043aa43c9bddae55'
+credential = '71a7fcfca44e9d5a60decd648ff5ca3aba7559f21ae1aa2043aa43c9bddae55'
 
 [[case.assertion]]
 kind = "fires"
 name = "mongolian"
-text = 'RAPYD_API_KEY=799d33f560ac\u{180E}c53abefd6d1c'
-credential = '799d33f560acc53abefd6d1c'
+text = 'RAPYD_SECRET_KEY=71a7fcfca44e9d5a60decd648ff5ca3a\u{180E}ba7559f21ae1aa2043aa43c9bddae55'
+credential = '71a7fcfca44e9d5a60decd648ff5ca3aba7559f21ae1aa2043aa43c9bddae55'
 
 [[case.assertion]]
 kind = "fires"
 name = "rtl"
-text = 'RAPYD_API_KEY=799d33f560ac\u{202E}c53abefd6d1c'
-credential = '799d33f560acc53abefd6d1c'
+text = 'RAPYD_SECRET_KEY=71a7fcfca44e9d5a60decd648ff5ca3a\u{202E}ba7559f21ae1aa2043aa43c9bddae55'
+credential = '71a7fcfca44e9d5a60decd648ff5ca3aba7559f21ae1aa2043aa43c9bddae55'
 
 [[case.assertion]]
 kind = "fires"
 name = "dir"
-text = 'RAPYD_API_KEY=799d33f560ac\u{202C}c53abefd6d1c'
-credential = '799d33f560acc53abefd6d1c'
+text = 'RAPYD_SECRET_KEY=71a7fcfca44e9d5a60decd648ff5ca3a\u{202C}ba7559f21ae1aa2043aa43c9bddae55'
+credential = '71a7fcfca44e9d5a60decd648ff5ca3aba7559f21ae1aa2043aa43c9bddae55'
 
 [[case.assertion]]
 kind = "fires"
 name = "lrm"
-text = 'RAPYD_API_KEY=799d33f560ac\u{200E}c53abefd6d1c'
-credential = '799d33f560acc53abefd6d1c'
+text = 'RAPYD_SECRET_KEY=71a7fcfca44e9d5a60decd648ff5ca3a\u{200E}ba7559f21ae1aa2043aa43c9bddae55'
+credential = '71a7fcfca44e9d5a60decd648ff5ca3aba7559f21ae1aa2043aa43c9bddae55'
 
 [[case]]
 detector_id = "raygun-api-key"
@@ -54644,8 +54644,8 @@ suite = 124
 [[case.assertion]]
 kind = "fires"
 name = "normal"
-text = 'SALT_API_USERNAME=saltadmin'
-credential = 'saltadmin'
+text = 'SALT_API_PASSWORD=Xy9KmPq2LvWnB7tR'
+credential = 'Xy9KmPq2LvWnB7tR'
 
 [[case.assertion]]
 kind = "silent"
@@ -54655,62 +54655,62 @@ text = 'dummy_prefix_0 =xxxxxxxxx'
 [[case.assertion]]
 kind = "fires"
 name = "zwsp"
-text = 'SALT_API_USERNAME=salt\u{200B}admin'
-credential = 'saltadmin'
+text = 'SALT_API_PASSWORD=Xy9Km\u{200B}Pq2LvWnB7tR'
+credential = 'Xy9KmPq2LvWnB7tR'
 
 [[case.assertion]]
 kind = "fires"
 name = "hyphen"
-text = 'SALT_API_USERNAME=salt\u{00AD}admin'
-credential = 'saltadmin'
+text = 'SALT_API_PASSWORD=Xy9Km\u{00AD}Pq2LvWnB7tR'
+credential = 'Xy9KmPq2LvWnB7tR'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwnj"
-text = 'SALT_API_USERNAME=salt\u{200C}admin'
-credential = 'saltadmin'
+text = 'SALT_API_PASSWORD=Xy9Km\u{200C}Pq2LvWnB7tR'
+credential = 'Xy9KmPq2LvWnB7tR'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwj"
-text = 'SALT_API_USERNAME=salt\u{200D}admin'
-credential = 'saltadmin'
+text = 'SALT_API_PASSWORD=Xy9Km\u{200D}Pq2LvWnB7tR'
+credential = 'Xy9KmPq2LvWnB7tR'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwnbsp"
-text = 'SALT_API_USERNAME=salt\u{FEFF}admin'
-credential = 'saltadmin'
+text = 'SALT_API_PASSWORD=Xy9Km\u{FEFF}Pq2LvWnB7tR'
+credential = 'Xy9KmPq2LvWnB7tR'
 
 [[case.assertion]]
 kind = "fires"
 name = "joiner"
-text = 'SALT_API_USERNAME=salt\u{2060}admin'
-credential = 'saltadmin'
+text = 'SALT_API_PASSWORD=Xy9Km\u{2060}Pq2LvWnB7tR'
+credential = 'Xy9KmPq2LvWnB7tR'
 
 [[case.assertion]]
 kind = "fires"
 name = "mongolian"
-text = 'SALT_API_USERNAME=salt\u{180E}admin'
-credential = 'saltadmin'
+text = 'SALT_API_PASSWORD=Xy9Km\u{180E}Pq2LvWnB7tR'
+credential = 'Xy9KmPq2LvWnB7tR'
 
 [[case.assertion]]
 kind = "fires"
 name = "rtl"
-text = 'SALT_API_USERNAME=salt\u{202E}admin'
-credential = 'saltadmin'
+text = 'SALT_API_PASSWORD=Xy9Km\u{202E}Pq2LvWnB7tR'
+credential = 'Xy9KmPq2LvWnB7tR'
 
 [[case.assertion]]
 kind = "fires"
 name = "dir"
-text = 'SALT_API_USERNAME=salt\u{202C}admin'
-credential = 'saltadmin'
+text = 'SALT_API_PASSWORD=Xy9Km\u{202C}Pq2LvWnB7tR'
+credential = 'Xy9KmPq2LvWnB7tR'
 
 [[case.assertion]]
 kind = "fires"
 name = "lrm"
-text = 'SALT_API_USERNAME=salt\u{200E}admin'
-credential = 'saltadmin'
+text = 'SALT_API_PASSWORD=Xy9Km\u{200E}Pq2LvWnB7tR'
+credential = 'Xy9KmPq2LvWnB7tR'
 
 [[case]]
 detector_id = "sanity-api-token"

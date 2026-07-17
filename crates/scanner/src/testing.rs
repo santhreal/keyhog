@@ -1985,10 +1985,12 @@ pub mod confidence {
     pub(crate) fn probabilistic_promise_confidence_override(
         credential: &str,
         is_named_detector: bool,
+        has_companion: bool,
     ) -> Option<f64> {
         crate::confidence::policy::probabilistic_promise_confidence_override(
             credential,
             is_named_detector,
+            has_companion,
         )
     }
 }
@@ -3021,7 +3023,8 @@ pub fn named_detector_suppressed(
 ) -> bool {
     let detector = keyhog_core::detector_spec_by_id(detector_id);
     let structural_password_slot = detector.is_some_and(|spec| spec.structural_password_slot);
-    let service_anchored = detector.is_none_or(|spec| spec.service != "generic");
+    let service_anchored =
+        detector.is_none_or(|spec| spec.kind != keyhog_core::DetectorKind::Phase2Generic);
     crate::suppression::api::suppress_named_detector_finding(
         credential,
         crate::suppression::api::NamedDetectorSuppressionCtx::with_weak_anchor(

@@ -20,7 +20,10 @@ pub(crate) struct CompiledDetectorExecutionPolicy {
 impl CompiledDetectorExecutionPolicy {
     pub(crate) fn compile(detector: &DetectorSpec) -> Self {
         Self {
-            is_generic: detector.service == "generic",
+            // Service is reporting taxonomy, not execution semantics. Anchored
+            // HTTP/SQL/URL detectors legitimately report service = "generic"
+            // but must not inherit the phase-2 entropy/suppression contract.
+            is_generic: detector.kind == keyhog_core::DetectorKind::Phase2Generic,
             min_len: detector.min_len,
             min_confidence: detector.min_confidence,
             severity: detector.severity,

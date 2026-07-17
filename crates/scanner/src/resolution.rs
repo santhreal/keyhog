@@ -12,7 +12,6 @@ const PRIORITY_EPSILON: f64 = 1e-9;
 const ENTROPY_MATCH_PRIORITY: f64 = 0.0;
 const NAMED_DETECTOR_PRIORITY: f64 = 10.0;
 const CONFIDENCE_WEIGHT: f64 = 5.0;
-const DETECTOR_ID_LENGTH_WEIGHT: f64 = 0.1;
 const MAX_CREDENTIAL_PRIORITY_LENGTH: usize = 200;
 const CREDENTIAL_LENGTH_WEIGHT: f64 = 0.01;
 const KNOWN_PREFIX_SERVICE_BONUS: f64 = 5.0;
@@ -34,57 +33,89 @@ pub fn resolve_matches(matches: Vec<RawMatch>) -> Vec<RawMatch> {
 /// Checked match resolution for operator paths that must report rule failures
 /// instead of aborting through the compatibility API.
 pub fn try_resolve_matches(mut matches: Vec<RawMatch>) -> Result<Vec<RawMatch>, String> {
-    try_resolve_matches_with_policy(&mut matches, None)?;
+    try_resolve_matches_with_policy(
+        &mut matches,
+        ResolutionPolicy::Embedded {
+            private_key_block_detectors: None,
+        },
+    )?;
     Ok(matches)
 }
 
-/// Resolve matches using the private-key-block family declared by the active
-/// detector corpus. Custom detector directories call this path so resolution
-/// never re-reads embedded classification policy by detector id.
+/// Compatibility resolver with a caller-supplied private-key-block family.
+/// Production scanners use their complete compiled detector plan instead.
 pub fn try_resolve_matches_with_private_key_blocks(
     mut matches: Vec<RawMatch>,
     private_key_block_detectors: &HashSet<String>,
 ) -> Result<Vec<RawMatch>, String> {
-    try_resolve_matches_with_policy(&mut matches, Some(private_key_block_detectors))?;
+    try_resolve_matches_with_policy(
+        &mut matches,
+        ResolutionPolicy::Embedded {
+            private_key_block_detectors: Some(private_key_block_detectors),
+        },
+    )?;
     Ok(matches)
+}
+
+pub(crate) fn try_resolve_matches_with_compiled_plan(
+    mut matches: Vec<RawMatch>,
+    detector_plans: &crate::detector_plan::CompiledDetectorPlans,
+) -> Result<Vec<RawMatch>, String> {
+    try_resolve_matches_with_policy(&mut matches, ResolutionPolicy::Active(detector_plans))?;
+    Ok(matches)
+}
+
+#[derive(Clone, Copy)]
+enum ResolutionPolicy<'a> {
+    Embedded {
+        private_key_block_detectors: Option<&'a HashSet<String>>,
+    },
+    Active(&'a crate::detector_plan::CompiledDetectorPlans),
+}
+
+impl ResolutionPolicy<'_> {
+    fn validate(self, matches: &[RawMatch]) -> Result<(), String> {
+        let Self::Active(plans) = self else {
+            return Ok(());
+        };
+        for matched in matches {
+            if plans
+                .resolution_class(matched.detector_id.as_ref())
+                .is_none()
+            {
+                return Err(format!(
+                    "finding references detector id {:?}, which is absent from the active compiled detector plan",
+                    matched.detector_id
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 fn try_resolve_matches_with_policy(
     matches: &mut Vec<RawMatch>,
-    private_key_block_detectors: Option<&HashSet<String>>,
+    policy: ResolutionPolicy<'_>,
 ) -> Result<(), String> {
+    policy.validate(matches)?;
     if matches.len() <= SINGLE_MATCH_COUNT {
         return Ok(());
     }
     let source_families = SourceFamilyIndex::new(matches);
-    suppress_matches_nested_in_private_key_blocks(
-        matches,
-        private_key_block_detectors,
-        &source_families,
-    );
-    suppress_entropy_duplicates_near_named_detectors(
-        matches,
-        private_key_block_detectors,
-        &source_families,
-    );
-    *matches = resolve_match_groups(
-        std::mem::take(matches),
-        private_key_block_detectors,
-        &source_families,
-    );
+    suppress_matches_nested_in_private_key_blocks(matches, policy, &source_families);
+    suppress_entropy_duplicates_near_named_detectors(matches, policy, &source_families);
+    *matches = resolve_match_groups(std::mem::take(matches), policy, &source_families);
     Ok(())
 }
 
 fn suppress_matches_nested_in_private_key_blocks(
     matches: &mut Vec<RawMatch>,
-    private_key_block_detectors: Option<&HashSet<String>>,
+    policy: ResolutionPolicy<'_>,
     source_families: &SourceFamilyIndex,
 ) {
     let private_key_spans: Vec<(MatchOrigin, usize, usize)> = matches
         .iter()
-        .filter(|m| {
-            is_private_key_block_detector(m.detector_id.as_ref(), private_key_block_detectors)
-        })
+        .filter(|m| is_private_key_block_detector(m.detector_id.as_ref(), policy))
         .filter_map(|matched| match_span(matched, source_families))
         .collect();
     if private_key_spans.is_empty() {
@@ -104,7 +135,7 @@ fn suppress_matches_nested_in_private_key_blocks(
 
     let mut retain = Vec::with_capacity(matches.len());
     for m in matches.iter() {
-        if is_private_key_block_detector(m.detector_id.as_ref(), private_key_block_detectors) {
+        if is_private_key_block_detector(m.detector_id.as_ref(), policy) {
             retain.push(true);
             continue;
         }
@@ -284,7 +315,7 @@ fn span_contains(
 
 fn suppress_entropy_duplicates_near_named_detectors(
     matches: &mut Vec<RawMatch>,
-    private_key_block_detectors: Option<&HashSet<String>>,
+    policy: ResolutionPolicy<'_>,
     source_families: &SourceFamilyIndex,
 ) {
     #[derive(Default)]
@@ -301,7 +332,7 @@ fn suppress_entropy_duplicates_near_named_detectors(
     let mut named_lines: HashMap<MatchOrigin, HashMap<usize, PendingNamedEvidence>> =
         HashMap::new();
     for m in matches.iter() {
-        if !match_is_service_specific(m, private_key_block_detectors) {
+        if !match_is_service_specific(m, policy) {
             continue;
         }
         if let Some(line) = m.location.line {
@@ -375,19 +406,42 @@ fn suppress_entropy_duplicates_near_named_detectors(
     });
 }
 
-fn is_private_key_block_detector(detector_id: &str, active: Option<&HashSet<String>>) -> bool {
-    match active {
-        Some(detectors) => detectors.contains(detector_id),
-        None => crate::detector_ids::is_private_key_block_detector(detector_id),
+fn is_private_key_block_detector(detector_id: &str, policy: ResolutionPolicy<'_>) -> bool {
+    match policy {
+        ResolutionPolicy::Active(plans) => matches!(
+            plans.resolution_class(detector_id),
+            Some(crate::detector_plan::DetectorResolutionClass::PrivateKeyBlock)
+        ),
+        ResolutionPolicy::Embedded {
+            private_key_block_detectors,
+        } => private_key_block_detectors.map_or_else(
+            || crate::detector_ids::is_private_key_block_detector(detector_id),
+            |detectors| detectors.contains(detector_id),
+        ),
     }
 }
 
-fn match_is_service_specific(
-    matched: &RawMatch,
-    private_key_block_detectors: Option<&HashSet<String>>,
-) -> bool {
-    matched.service.as_ref() != "generic"
-        && !is_private_key_block_detector(matched.detector_id.as_ref(), private_key_block_detectors)
+fn match_is_service_specific(matched: &RawMatch, policy: ResolutionPolicy<'_>) -> bool {
+    match policy {
+        ResolutionPolicy::Active(plans) => matches!(
+            plans.resolution_class(matched.detector_id.as_ref()),
+            Some(crate::detector_plan::DetectorResolutionClass::Named)
+        ),
+        ResolutionPolicy::Embedded { .. } => {
+            if is_private_key_block_detector(matched.detector_id.as_ref(), policy)
+                || crate::detector_ids::is_entropy_detector(matched.detector_id.as_ref())
+            {
+                return false;
+            }
+            keyhog_core::detector_spec_by_id(matched.detector_id.as_ref()).map_or_else(
+                || {
+                    matched.service.as_ref() != "generic"
+                        && !crate::detector_ids::is_generic_detector(matched.detector_id.as_ref())
+                },
+                |_| crate::detector_ids::is_service_anchored_detector(matched.detector_id.as_ref()),
+            )
+        }
+    }
 }
 
 /// Compatibility probe retained for the public testing seam. Production
@@ -399,7 +453,7 @@ pub(crate) fn is_service_specific_detector(detector_id: &str) -> bool {
 
 fn resolve_match_groups(
     mut matches: Vec<RawMatch>,
-    private_key_block_detectors: Option<&HashSet<String>>,
+    policy: ResolutionPolicy<'_>,
     source_families: &SourceFamilyIndex,
 ) -> Vec<RawMatch> {
     // A line is only an attribution boundary. Within it, direct containment or
@@ -429,7 +483,7 @@ fn resolve_match_groups(
                 .cmp(&match_offsets(b))
                 .then_with(|| a.cmp(b))
         });
-        resolved.extend(resolve_direct_conflicts(group, private_key_block_detectors));
+        resolved.extend(resolve_direct_conflicts(group, policy));
     }
     resolved
 }
@@ -608,17 +662,14 @@ fn priorities_tie(left: f64, right: f64) -> bool {
     left.total_cmp(&right).is_eq() || (left - right).abs() < PRIORITY_EPSILON
 }
 
-fn resolve_direct_conflicts(
-    group: Vec<RawMatch>,
-    private_key_block_detectors: Option<&HashSet<String>>,
-) -> Vec<RawMatch> {
+fn resolve_direct_conflicts(group: Vec<RawMatch>, policy: ResolutionPolicy<'_>) -> Vec<RawMatch> {
     if group.len() <= SINGLE_MATCH_COUNT {
         return group;
     }
     let intervals: Vec<MatchInterval> = group.iter().map(MatchInterval::from_match).collect();
     let priorities: Vec<f64> = group
         .iter()
-        .map(|matched| match_priority_with_policy(matched, private_key_block_detectors))
+        .map(|matched| match_priority_with_policy(matched, policy))
         .collect();
     let mut prioritized: Vec<(f64, usize)> =
         priorities.iter().copied().zip(0..group.len()).collect();
@@ -668,13 +719,15 @@ fn resolve_direct_conflicts(
 
 /// Compute the resolver priority used to break ties between overlapping matches.
 pub(crate) fn match_priority(m: &RawMatch) -> f64 {
-    match_priority_with_policy(m, None)
+    match_priority_with_policy(
+        m,
+        ResolutionPolicy::Embedded {
+            private_key_block_detectors: None,
+        },
+    )
 }
 
-fn match_priority_with_policy(
-    m: &RawMatch,
-    private_key_block_detectors: Option<&HashSet<String>>,
-) -> f64 {
+fn match_priority_with_policy(m: &RawMatch, policy: ResolutionPolicy<'_>) -> f64 {
     let mut priority = ENTROPY_MATCH_PRIORITY;
 
     // Service-specific detectors beat generic/entropy fallbacks. A
@@ -682,7 +735,7 @@ fn match_priority_with_policy(
     // must not outrank a lower-confidence database-URL detector on the same
     // line; the URL detector carries the service contract and fuller
     // credential boundary.
-    let service_specific = match_is_service_specific(m, private_key_block_detectors);
+    let service_specific = match_is_service_specific(m, policy);
     if service_specific {
         priority += NAMED_DETECTOR_PRIORITY;
     }
@@ -691,9 +744,6 @@ fn match_priority_with_policy(
     if let Some(conf) = m.confidence {
         priority += conf * CONFIDENCE_WEIGHT;
     }
-
-    // Longer detector ID prefix in the credential = more specific match.
-    priority += (m.detector_id.len() as f64) * DETECTOR_ID_LENGTH_WEIGHT;
 
     // Credential length matters: longer credentials are more specific matches.
     priority +=

@@ -85,9 +85,16 @@ pub(crate) fn is_generic_or_entropy_detector(detector_id: &str) -> bool {
 
 #[inline]
 pub(crate) fn is_service_anchored_detector(detector_id: &str) -> bool {
-    !is_generic_detector(detector_id)
-        && !is_entropy_detector(detector_id)
-        && !is_private_key_fallback(detector_id)
+    keyhog_core::detector_spec_by_id(detector_id).map_or_else(
+        || {
+            !is_generic_detector(detector_id)
+                && !is_entropy_detector(detector_id)
+                && !is_private_key_fallback(detector_id)
+        },
+        |detector| {
+            detector.kind != keyhog_core::DetectorKind::Phase2Generic && !detector.private_key_block
+        },
+    )
 }
 
 /// The "private-key block" family: detectors whose match SPAN is an enclosing
@@ -250,7 +257,7 @@ mod detector_id_corpus_guard {
         assert!(!is_entropy_detector(GENERIC_SECRET));
         assert!(!is_entropy_detector(GITHUB_CLASSIC_PAT));
 
-        // Service-anchored: real services yes; generic/entropy/private-key no.
+        // Named execution class: reporting service does not select it.
         assert!(is_service_anchored_detector(GITHUB_CLASSIC_PAT));
         assert!(is_service_anchored_detector(STRIPE_SECRET_KEY));
         assert!(is_service_anchored_detector(SLACK_BOT_TOKEN));
@@ -258,6 +265,7 @@ mod detector_id_corpus_guard {
         assert!(!is_service_anchored_detector(GENERIC_SECRET));
         assert!(!is_service_anchored_detector(ENTROPY));
         assert!(!is_service_anchored_detector(PRIVATE_KEY));
+        assert!(is_service_anchored_detector("bearer-authorization"));
 
         // Private-key fallback
         assert!(is_private_key_fallback(PRIVATE_KEY));

@@ -4,9 +4,18 @@
 //! execution decision is reached through this single detector-indexed owner.
 
 use keyhog_core::DetectorSpec;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 pub(crate) type CompiledDetectorMetadata = (Arc<str>, Arc<str>, Arc<str>);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DetectorResolutionClass {
+    Named,
+    Generic,
+    Entropy,
+    PrivateKeyBlock,
+}
 
 #[derive(Debug)]
 pub(crate) struct CompiledDetectorPlan {
@@ -48,6 +57,7 @@ impl CompiledDetectorPlan {
 #[derive(Debug)]
 pub(crate) struct CompiledDetectorPlans {
     by_detector_index: Box<[CompiledDetectorPlan]>,
+    resolution_class_by_id: HashMap<Arc<str>, DetectorResolutionClass>,
     validator_refs: Box<[ValidatorRef]>,
     validator_ref_offsets: [usize; 257],
 }
@@ -121,6 +131,24 @@ impl CompiledDetectorPlans {
                     })
                 })
                 .collect::<Result<Box<[_]>, String>>()?;
+        let mut resolution_class_by_id = HashMap::with_capacity(detectors.len() * 2);
+        for (detector, plan) in detectors.iter().zip(by_detector_index.iter()) {
+            let class = if detector.private_key_block {
+                DetectorResolutionClass::PrivateKeyBlock
+            } else if detector.kind == keyhog_core::DetectorKind::Phase2Generic {
+                DetectorResolutionClass::Generic
+            } else {
+                DetectorResolutionClass::Named
+            };
+            insert_resolution_class(&mut resolution_class_by_id, plan.metadata.0.clone(), class)?;
+            if let Some(metadata) = &plan.entropy_metadata {
+                insert_resolution_class(
+                    &mut resolution_class_by_id,
+                    metadata.0.clone(),
+                    DetectorResolutionClass::Entropy,
+                )?;
+            }
+        }
         let mut validator_refs: [Vec<ValidatorRef>; 256] = std::array::from_fn(|_| Vec::new());
         for (detector_index, plan) in by_detector_index.iter().enumerate() {
             for (validator_index, prefix) in plan.validators.indexed_prefixes() {
@@ -145,6 +173,7 @@ impl CompiledDetectorPlans {
         validator_ref_offsets[256] = flat_validator_refs.len();
         Ok(Self {
             by_detector_index,
+            resolution_class_by_id,
             validator_refs: flat_validator_refs.into_boxed_slice(),
             validator_ref_offsets,
         })
@@ -158,6 +187,11 @@ impl CompiledDetectorPlans {
     #[inline]
     pub(crate) fn len(&self) -> usize {
         self.by_detector_index.len()
+    }
+
+    #[inline]
+    pub(crate) fn resolution_class(&self, detector_id: &str) -> Option<DetectorResolutionClass> {
+        self.resolution_class_by_id.get(detector_id).copied()
     }
 
     /// Resolve a generic candidate against detector-declared validators. Named
@@ -196,6 +230,19 @@ impl CompiledDetectorPlans {
             .or(invalid)
             .unwrap_or_else(crate::checksum::ChecksumConfidenceDecision::not_applicable)
     }
+}
+
+fn insert_resolution_class(
+    classes: &mut HashMap<Arc<str>, DetectorResolutionClass>,
+    detector_id: Arc<str>,
+    class: DetectorResolutionClass,
+) -> Result<(), String> {
+    if let Some(existing) = classes.insert(detector_id.clone(), class) {
+        return Err(format!(
+            "compiled detector identity {detector_id:?} has conflicting resolution classes {existing:?} and {class:?}"
+        ));
+    }
+    Ok(())
 }
 
 fn compile_metadata(

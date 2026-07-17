@@ -198,13 +198,13 @@ pub(crate) fn skipped_findings_from_deduped(
 /// allowlist, per-detector / global confidence floors, severity, match
 /// resolution, inline suppression) (they can no longer drift).
 pub(crate) struct MatchFilter<'a> {
+    pub(crate) scanner: &'a keyhog_scanner::CompiledScanner,
     pub(crate) signatures: &'a std::collections::HashSet<std::sync::Arc<str>>,
     pub(crate) disabled_detectors: &'a std::collections::HashSet<String>,
     pub(crate) test_fixture_suppressions:
         &'a crate::test_fixture_suppressions::TestFixtureSuppressions,
     pub(crate) no_suppress_test_fixtures: bool,
     pub(crate) detector_min_confidence: &'a std::collections::HashMap<String, f64>,
-    pub(crate) private_key_block_detectors: &'a std::collections::HashSet<String>,
     pub(crate) min_confidence: f64,
     pub(crate) min_severity: Option<keyhog_core::Severity>,
 }
@@ -290,12 +290,11 @@ pub(crate) fn filter_and_resolve_matches(
         })
         .collect::<Vec<_>>();
 
-    filtered = keyhog_scanner::resolution::try_resolve_matches_with_private_key_blocks(
-        filtered,
-        filter.private_key_block_detectors,
-    )
-    .map_err(anyhow::Error::msg)
-    .context("failed to resolve matches; fix the detector definitions")?;
+    filtered = filter
+        .scanner
+        .try_resolve_matches(filtered)
+        .map_err(anyhow::Error::msg)
+        .context("failed to resolve matches; fix the detector definitions")?;
     Ok(crate::inline_suppression::filter_inline_suppressions(
         filtered,
     ))
@@ -310,12 +309,12 @@ impl ScanOrchestrator {
         // Build the shared filter from the orchestrator's resolved config and
         // delegate to the ONE PLACE `keyhog watch` also uses.
         let filter = MatchFilter {
+            scanner: &self.scanner,
             signatures: &self.signatures,
             disabled_detectors: &self.disabled_detectors,
             test_fixture_suppressions: &self.test_fixture_suppressions,
             no_suppress_test_fixtures: self.effective_config.report.no_suppress_test_fixtures,
             detector_min_confidence: &self.detector_min_confidence,
-            private_key_block_detectors: &self.private_key_block_detectors,
             min_confidence: self.effective_config.min_confidence,
             min_severity: self
                 .effective_config

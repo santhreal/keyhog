@@ -440,6 +440,33 @@ fn detector_conditioning_comes_from_the_active_toml_and_channel() {
     assert_eq!(alchemy[49], 0.0, "Alchemy is a regex detector");
     assert_eq!(alchemy[50], 0.0, "the producer was the pattern channel");
 
+    let bearer = detector_feats(
+        "a3f9c1e07b42d85f6098ac1de2f3b4c5d6e7f809",
+        "Authorization: Bearer a3f9...",
+        "bearer-authorization",
+        Pattern,
+    );
+    assert_eq!(
+        bearer[44], 0.0,
+        "a generic reporting service does not make an anchored regex an entropy owner"
+    );
+    assert_eq!(bearer[49], 0.0, "Bearer is an anchored regex detector");
+
+    let generic_password = detector_feats(
+        "Kp4Qx7Rm2Sn5Tb8Vw3Yz",
+        "password=Kp4Qx7Rm2Sn5Tb8Vw3Yz",
+        "generic-password",
+        Pattern,
+    );
+    assert_eq!(
+        generic_password[44], 1.0,
+        "generic-password owns entropy policy"
+    );
+    assert_eq!(
+        generic_password[49], 1.0,
+        "generic-password is phase2-generic"
+    );
+
     let wrong_service = detector_feats(
         "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d",
         "GITHUB_TOKEN=7b3e...",
