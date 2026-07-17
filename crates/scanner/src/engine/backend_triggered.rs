@@ -408,11 +408,18 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
     /// the appended rows own positioned phase-two evidence.
     #[inline]
     pub(crate) fn gpu_literal_count(&self) -> usize {
-        self.ac_map.len()
-            + self.phase2_keyword_count
-            + self.phase2_always_anchor_literal_count
-            + self.confirmed_anchor_literal_count
-            + self.generic_keyword_literal_count
+        let shared_literal_count =
+            self.ac_map.len() + self.phase2_keyword_count + self.phase2_always_anchor_literal_count;
+        #[cfg(feature = "gpu")]
+        {
+            shared_literal_count
+                + self.confirmed_anchor_literal_count
+                + self.generic_keyword_literal_count
+        }
+        #[cfg(not(feature = "gpu"))]
+        {
+            shared_literal_count
+        }
     }
 
     pub(crate) fn gpu_presence_stray_tail_bits(&self, presence: &[u32]) -> Option<(usize, u32)> {

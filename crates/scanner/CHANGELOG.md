@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep fused GPU literal accounting feature-correct so portable scanner builds
+  compile without referencing GPU-only positioned-evidence fields.
 - Make Amazon Music, Checkmarx, Huawei Cloud, and Vonage Video confidential
   secrets the detector-owned primaries. Their client IDs, access-key IDs, and
   API keys are exact optional companions and no longer emit standalone secret
