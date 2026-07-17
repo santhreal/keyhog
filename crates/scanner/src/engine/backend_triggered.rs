@@ -298,7 +298,7 @@ impl CompiledScanner {
             text.as_bytes(),
         ) {
             Ok(presence) => {
-                let expected_presence_words = self.gpu_presence_literal_count().div_ceil(32).max(1);
+                let expected_presence_words = self.gpu_literal_count().div_ceil(32).max(1);
                 if presence.len() != expected_presence_words {
                     return dispatch_failure(format!(
                         "per-chunk GPU presence readback length mismatch: got {} u32 word(s), need {}",
@@ -309,7 +309,7 @@ impl CompiledScanner {
                 if let Some((word_idx, stray_bits)) = self.gpu_presence_stray_tail_bits(&presence) {
                     return dispatch_failure(format!(
                         "per-chunk GPU presence readback has out-of-range detector bit(s): word {word_idx} bits 0x{stray_bits:08x} beyond {} literal(s)",
-                        self.gpu_presence_literal_count()
+                        self.gpu_literal_count()
                     ));
                 }
                 // Union with AC triggers so the GPU literal matcher is never
@@ -403,18 +403,20 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         triggered_patterns
     }
 
-    /// Build the keyhog trigger bitmap from a GPU literal-set PRESENCE bitmap
-    /// (`scan_presence`): word `w`, bit `b` set means literal pattern `w*32+b`
-    /// occurred. Maps each set bit through `mark_triggered_pattern`: the compact
-    /// per-pattern counterpart of consuming per-hit match triples (the triple path
-    /// was removed; see `collect_triggered_patterns_gpu`).
+    /// Number of rows in the fused GPU literal matcher. Presence bits exist for
+    /// every row, but only the leading trigger segments may activate detectors;
+    /// the appended rows own positioned phase-two evidence.
     #[inline]
-    pub(crate) fn gpu_presence_literal_count(&self) -> usize {
-        self.ac_map.len() + self.phase2_keyword_count + self.phase2_always_anchor_literal_count
+    pub(crate) fn gpu_literal_count(&self) -> usize {
+        self.ac_map.len()
+            + self.phase2_keyword_count
+            + self.phase2_always_anchor_literal_count
+            + self.confirmed_anchor_literal_count
+            + self.generic_keyword_literal_count
     }
 
     pub(crate) fn gpu_presence_stray_tail_bits(&self, presence: &[u32]) -> Option<(usize, u32)> {
-        let literal_count = self.gpu_presence_literal_count();
+        let literal_count = self.gpu_literal_count();
         let used_tail_bits = literal_count % 32;
         if literal_count != 0 && used_tail_bits == 0 {
             return None;

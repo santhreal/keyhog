@@ -27,7 +27,7 @@ use crate::engine::{
 };
 #[cfg(feature = "gpu")]
 use crate::engine::{
-    regex_match_byte_upper_bound, GpuResidentPresenceSlot, Phase2GpuDfaCatalogCache,
+    regex_match_byte_upper_bound, GpuResidentLiteralSlot, Phase2GpuDfaCatalogCache,
 };
 use crate::error::Result;
 use crate::types::*;

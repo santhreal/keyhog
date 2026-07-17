@@ -32,25 +32,17 @@ pub(crate) fn build_gpu_literals(
     ac_literals: &[String],
     phase2_keywords: &[String],
     phase2_always_anchor_literals: &[String],
+    confirmed_anchor_literals: &[String],
+    generic_keyword_literals: &[String],
 ) -> Option<std::sync::Arc<Vec<Vec<u8>>>> {
     build_gpu_literal_rows(
         ac_literals
             .iter()
             .chain(phase2_keywords)
-            .chain(phase2_always_anchor_literals),
-        "GPU literal set",
-    )
-}
-
-pub(crate) fn build_gpu_position_literals(
-    confirmed_anchor_literals: &[String],
-    generic_keyword_literals: &[String],
-) -> Option<std::sync::Arc<Vec<Vec<u8>>>> {
-    build_gpu_literal_rows(
-        confirmed_anchor_literals
-            .iter()
+            .chain(phase2_always_anchor_literals)
+            .chain(confirmed_anchor_literals)
             .chain(generic_keyword_literals),
-        "GPU positioned literal set",
+        "GPU fused literal set",
     )
 }
 

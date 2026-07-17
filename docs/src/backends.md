@@ -33,20 +33,27 @@ startup eligibility in-band, but a process that must contain a later driver or
 dispatch failure should run the CLI as a subprocess. The no-backend portable
 CPU methods do not acquire an accelerator.
 
-The GPU trigger matcher keeps its immutable VYRE tables resident after the
-first successful batch. Backend-shaped phase-two DFA catalogs are also immutable
+The GPU literal matcher keeps its immutable VYRE tables resident after the
+first successful batch. One dispatch returns both region presence and complete
+positions for the shared confirmed-anchor and generic-keyword localizers.
+Backend-shaped phase-two DFA catalogs are also immutable
 for the compiled detector set and are reused across scans. Haystack and region
 capacity grow in bounded bands from the actual workload. KeyHog serializes each
 resident session so concurrent
 requests cannot interleave uploads against the same device buffers. Preparation,
-growth, dispatch, and readback errors remain selected-GPU failures. Teardown
+growth, match-output overflow, dispatch, and readback errors remain selected-GPU failures. Teardown
 cleanup errors are logged. There is no per-batch pipeline or CPU substitution.
+Each physical dispatch accepts at most 65,536 positioned literal matches, which
+bounds resident readback to 768 KiB. Exceeding that cap returns no partial
+evidence: automatic routing visibly replays the stable bytes, while an explicit
+or required GPU route fails its backend contract.
 
 A coalesced request above the smaller of the live VRAM/config budget and the
 selected backend's hard ceiling is split between source chunks. An individually
 oversized chunk is scanned through physical windows whose overlap covers the
-longest compiled GPU literal. Window presence rows are OR-reduced into one
-logical source row before phase-two hints are derived. A complete region-presence
+longest compiled GPU literal. Window presence rows are OR-reduced and position
+rows are offset-adjusted and deduplicated into one logical source row before
+phase-two evidence is consumed. A complete region-presence
 request above 4,096 physical dispatches fails visibly before execution instead
 of amplifying chunk count or custom-detector overlap without bound.
 Prefixless phase-two GPU regex admission stays on whole chunks because regex

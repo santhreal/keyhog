@@ -66,32 +66,15 @@ fn gpu_literal_artifacts_round_trip_through_vyre_bytes() {
     GpuLiteralSet::from_bytes(&literal.bytes)
         .expect("main GPU artifact bytes must reload through VYRE");
 
-    let positioned = artifacts
-        .positioned_literal
-        .as_ref()
-        .expect("generic stems and confirmed anchors should produce a positioned GPU artifact");
     assert!(
-        positioned.cache_key.starts_with("pos-lit-"),
-        "positioned artifact cache key must match the runtime lazy matcher prefix, got {}",
-        positioned.cache_key
+        artifacts.positioned_literal.is_none(),
+        "positioned rows must live in the single fused runtime artifact"
     );
-    assert_eq!(positioned.wire_magic, GpuLiteralSet::WIRE_MAGIC);
-    assert_eq!(positioned.wire_version, GpuLiteralSet::WIRE_VERSION);
-    assert!(
-        positioned.bytes.len() >= GpuLiteralSet::WIRE_MAGIC.len(),
-        "positioned artifact bytes must include VYRE wire header"
-    );
-    assert_eq!(&positioned.bytes[..4], &GpuLiteralSet::WIRE_MAGIC);
-    GpuLiteralSet::from_bytes(&positioned.bytes)
-        .expect("positioned GPU artifact bytes must reload through VYRE");
 
     assert!(
         literal.pattern_count >= detectors.len(),
         "main artifact must include detector literal rows, got {}",
         literal.pattern_count
     );
-    assert!(
-        positioned.pattern_count >= 1,
-        "positioned artifact must include at least one positioned row"
-    );
+    assert!(literal.pattern_count > detectors.len());
 }

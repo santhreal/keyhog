@@ -9,8 +9,8 @@ use super::{gpu_cache, phase2_anchor, phase2_generic, scan_postprocess};
 #[cfg(feature = "simd")]
 use crate::compiler::append_hyperscan_unsupported_patterns;
 use crate::compiler::{
-    build_compile_state, build_gpu_literals, build_gpu_position_literals, build_phase2_keyword_ac,
-    phase2_always_active_indices, validate_compiled_pattern_detector_indices,
+    build_compile_state, build_gpu_literals, build_phase2_keyword_ac, phase2_always_active_indices,
+    validate_compiled_pattern_detector_indices,
 };
 use crate::error::{Result, ScanError};
 use crate::scanner_config::ScannerTuningConfig;
@@ -36,9 +36,10 @@ pub struct GpuLiteralArtifact {
 /// The runtime GPU presence matcher artifacts derivable without a GPU device.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct GpuLiteralArtifacts {
-    /// Main phase-1 region-presence matcher.
+    /// Fused region-presence and positioned-evidence matcher.
     pub literal: Option<GpuLiteralArtifact>,
-    /// Positioned matcher used by localized post-phase-1 accelerators.
+    /// Legacy separate positioned matcher. New artifacts leave this absent
+    /// because positioned evidence is compiled into `literal`.
     pub positioned_literal: Option<GpuLiteralArtifact>,
 }
 
@@ -107,12 +108,11 @@ pub fn compile_gpu_literal_artifacts(
                 &state.ac_literals,
                 &phase2_keywords,
                 phase2_always_anchor_literals,
+                confirmed_anchor_literals,
+                &generic_keyword_literals,
             ),
         )?,
-        positioned_literal: serialize_literal_rows(
-            "pos-lit",
-            build_gpu_position_literals(confirmed_anchor_literals, &generic_keyword_literals),
-        )?,
+        positioned_literal: None,
     })
 }
 
@@ -166,8 +166,8 @@ fn serialize_literal_rows(
     // serialized blob: a 4-byte magic followed by a little-endian u32 version
     // (`vyre_foundation::serial::envelope` layout). Read the stamped values
     // straight out of `bytes`: that is the single source of truth for what
-    // this artifact actually carries and cannot drift from VYRE's (private)
-    // wire constants, which 0.6.4 exposes no public accessor for.
+    // this artifact actually carries and cannot drift from VYRE's private wire
+    // constants.
     let (wire_magic, wire_version) = literal_set_wire_header(&bytes).ok_or_else(|| {
         ScanError::Gpu(format!(
             "GPU literal artifact for cache prefix {cache_prefix} serialized to {} bytes, too short for VYRE's 8-byte wire envelope header. Fix: upgrade VYRE or rebuild the artifact with a compatible KeyHog binary.",

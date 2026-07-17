@@ -61,15 +61,15 @@ fn coalesced_gpu_uses_region_presence_not_per_rule_catalog() {
     .expect("gpu_region_batch.rs readable");
     let resident_src = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/src/engine/gpu_resident_presence.rs"
+        "/src/engine/gpu_resident_evidence.rs"
     ))
-    .expect("gpu_resident_presence.rs readable");
+    .expect("gpu_resident_evidence.rs readable");
 
     assert!(
-        dispatch_src.contains("scan_gpu_literal_presence_by_region_resident")
-            && resident_src.contains("prepare_resident_presence")
+        dispatch_src.contains("scan_gpu_literal_evidence_by_region_resident")
+            && resident_src.contains("prepare_resident_fused_scan")
             && resident_src.contains(".scan_into("),
-        "coalesced GPU trigger production must use VYRE's resident batched region-presence API"
+        "coalesced GPU trigger production must use VYRE's resident fused evidence API"
     );
     assert!(
         !dispatch_src.contains("catalog.scan(") && !dispatch_src.contains("megakernel_catalog("),

@@ -1,7 +1,7 @@
 # VYRE integration
 
-KeyHog pins the five VYRE runtime crates to exact crates.io version `=0.6.4`
-(vyre v0.6.4). The pin is shared by every workspace crate and recorded in
+KeyHog pins the five VYRE runtime crates to exact crates.io version `=0.6.5`
+(VYRE v0.6.5). The pin is shared by every workspace crate and recorded in
 `Cargo.lock`; KeyHog does not carry a vendored VYRE tree or resolve VYRE through
 machine-local paths.
 
@@ -15,8 +15,8 @@ pipeline.
 
 | VYRE capability | KeyHog owner | Production use |
 |---|---|---|
-| GPU literal-set region presence | `keyhog-scanner::engine::gpu_region_dispatch` | Produces one candidate-detector bitmap per input region. Dispatches honor the smaller of the live VRAM/config budget and the backend ceiling. Oversized batches shard between chunks. Oversized individual chunks use overlap-preserving physical windows whose presence rows reduce into one logical row on the selected WGPU or CUDA peer. |
-| GPU literal artifacts and cache | `keyhog-scanner::engine::{gpu_artifacts,gpu_cache}` | Compiles detector-derived literal rows. The local key combines a program-kind prefix with a SHA-256 hash of KeyHog's cache-format version and the exact length-delimited ordered rows. VYRE rejects incompatible wire envelopes when loading. |
+| GPU fused literal evidence | `keyhog-scanner::engine::{gpu_region_dispatch,gpu_resident_evidence}` | One resident dispatch produces the candidate-detector bitmap and complete positions for detector-derived confirmed anchors and generic assignment stems. Dispatches honor the smaller of the live VRAM/config budget and the backend ceiling. Oversized batches shard between chunks. Oversized individual chunks use overlap-preserving physical windows whose presence and position rows reduce into one logical row on the selected WGPU or CUDA peer. The 65,536-record, 768 KiB position buffer is a resource bound: overflow is a visible dispatch failure, never a partial position set. |
+| GPU literal artifacts and cache | `keyhog-scanner::engine::{gpu_artifacts,gpu_cache}` | Compiles one ordered detector-derived matcher containing trigger and positioned-evidence segments. The local key combines a program-kind prefix with a SHA-256 hash of KeyHog's cache-format version and the exact length-delimited rows. VYRE rejects incompatible wire envelopes when loading. |
 | GPU regex-DFA admission | `keyhog-scanner::engine::phase2_gpu_dfa` | Narrows eligible prefixless phase-two work; host extraction remains authoritative. |
 | Declarative rule evaluation | `keyhog-core::rule_filter` | Evaluates `.keyhogignore.toml` rules through the shared rule representation. |
 
@@ -27,8 +27,9 @@ KeyHog's Aho-Corasick trigger path plus Rust-regex extraction.
 
 ## Backend and parity contract
 
-The GPU path produces phase-one candidate triggers and can provide phase-two
-admission rows. Host extraction remains authoritative. GPU and CPU routes use
+The GPU path produces phase-one candidate triggers, optional phase-two
+admission rows, and complete literal positions that replace equivalent host
+localization passes. Host regex extraction remains authoritative. GPU and CPU routes use
 the same decode, built-in suppression, confidence, and scanner postprocessing.
 Release parity canonicalizes results before comparing the chunk-indexed match
 multiset, including every finding field and multiplicity. It does not compare

@@ -4,14 +4,14 @@
 //!
 //! Every scan is the same pipeline. The ONLY thing that varies is *phase 1*
 //! (which detectors could fire where), produced on the CPU by Hyperscan or on
-//! the GPU by VYRE's literal region-presence backend. Everything downstream is
+//! the GPU by VYRE's fused literal-evidence backend. Everything downstream is
 //! shared:
 //!
 //! ```text
 //!   files ─▶ phase 1: trigger production         (swappable backend)
 //!           ├─ CPU: compute_coalesced_triggers   (Hyperscan prefilter)   scan_coalesced.rs
-//!           └─ GPU: scan_coalesced_gpu_region_presence (batched region-presence) gpu_region_dispatch.rs
-//!                       │  one bitmap per chunk: "which detectors may match here"
+//!           └─ GPU: scan_coalesced_gpu_region_presence (fused presence + positions) gpu_region_dispatch.rs
+//!                       │  one bitmap per chunk plus optional localization evidence
 //!                       ▼
 //!           phase 2: scan_coalesced_phase2       (THE shared tail)        scan_coalesced.rs
 //!             • windowing (scan_windowed / triggered windows)               windowed.rs
@@ -21,7 +21,7 @@
 //!             • cross-chunk boundary reassembly (scan_chunk_boundaries)    boundary.rs
 //! ```
 //!
-//! There is exactly ONE production on-GPU trigger producer: the region-presence
+//! There is exactly ONE production on-GPU literal producer: the fused resident
 //! dispatch in [`gpu_region_dispatch`]. Selecting an exact GPU backend
 //! (`--backend gpu-cuda` or `--backend gpu-wgpu`)
 //! routes the batch path through it. The no-backend library API is the portable
@@ -81,9 +81,9 @@ mod gpu_region_dispatch;
 #[cfg(feature = "gpu")]
 mod gpu_region_dispatch_helpers;
 #[cfg(feature = "gpu")]
-mod gpu_resident_presence;
+mod gpu_resident_evidence;
 #[cfg(feature = "gpu")]
-pub(crate) use gpu_resident_presence::GpuResidentPresenceSlot;
+pub(crate) use gpu_resident_evidence::GpuResidentLiteralSlot;
 mod gpu_stack;
 mod hot_patterns;
 pub(crate) mod phase2;
@@ -237,11 +237,11 @@ pub struct CompiledScanner {
     pub(crate) gpu_max_literal_len: usize,
     pub(crate) gpu_matcher: OnceLock<Option<vyre_libs::scan::GpuLiteralSet>>,
     #[cfg(feature = "gpu")]
-    pub(crate) gpu_resident_presence_cuda:
-        std::sync::Mutex<gpu_resident_presence::GpuResidentPresenceSlot>,
+    pub(crate) gpu_resident_literal_cuda:
+        std::sync::Mutex<gpu_resident_evidence::GpuResidentLiteralSlot>,
     #[cfg(feature = "gpu")]
-    pub(crate) gpu_resident_presence_wgpu:
-        std::sync::Mutex<gpu_resident_presence::GpuResidentPresenceSlot>,
+    pub(crate) gpu_resident_literal_wgpu:
+        std::sync::Mutex<gpu_resident_evidence::GpuResidentLiteralSlot>,
     pub(crate) gpu_last_degrade_reason: std::sync::Mutex<Option<String>>,
     pub(crate) gpu_degrade_count: std::sync::atomic::AtomicU64,
     /// One-time backend-neutral GPU literal-program preparation measured by
@@ -312,6 +312,14 @@ pub struct CompiledScanner {
     /// phase-2 anchor AC; an all-zero row segment proves that AC has no possible
     /// candidates for the chunk.
     pub(crate) phase2_always_anchor_literal_count: usize,
+    /// Confirmed shared-anchor rows appended to the fused GPU literal matcher.
+    /// Their positioned matches replace the CPU anchor-index text walk.
+    #[cfg(feature = "gpu")]
+    pub(crate) confirmed_anchor_literal_count: usize,
+    /// Generic assignment prefilter stems appended after confirmed anchors in
+    /// the fused GPU matcher. Their positions replace the CPU stem text walk.
+    #[cfg(feature = "gpu")]
+    pub(crate) generic_keyword_literal_count: usize,
     pub(crate) phase2_always_active_indices: Vec<usize>,
     /// Combined-RegexSet prefilter over `phase2_always_active_indices`. When
     /// present, the per-chunk phase-2 capture scan runs one linear set pass instead of

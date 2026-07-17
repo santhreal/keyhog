@@ -7,7 +7,7 @@
 //! its production coalesced trigger pass and real Rayon parallelism instead of
 //! handicapping it behind one oversized sequential chunk. `SimdCpu`
 //! runs the Hyperscan literal prefilter; each GPU peer routes the batch through VYRE
-//! `ResidentPresencePipeline`. Timing includes each
+//! `ResidentFusedRegionScan`. Timing includes each
 //! backend's production batching, scheduling, phase 2, and post-processing.
 //!
 //! Pass `-- --perf-trace` to get the region-presence phase breakdown

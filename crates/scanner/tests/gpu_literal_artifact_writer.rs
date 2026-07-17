@@ -53,8 +53,8 @@ description = "Artifact writer smoke token"
     assert!(
         artifacts
             .iter()
-            .any(|entry| entry["kind"] == "positioned_literal"),
-        "manifest must include the positioned literal artifact: {manifest}"
+            .all(|entry| entry["kind"] != "positioned_literal"),
+        "manifest must not emit the superseded second matcher artifact: {manifest}"
     );
 
     for entry in artifacts {

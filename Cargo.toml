@@ -119,19 +119,18 @@ mimalloc = { version = "=0.1.52", default-features = false }
 
 # Performance libraries
 simdsieve = "=0.1.1"
-# VYRE 0.6.4 is published to crates.io and carries the megakernel + segmentation
-# APIs KeyHog imports (`vyre_driver_wgpu::megakernel::segmentation`,
-# `vyre_libs::scan::build_regex_dfa_unanchored`, etc.). KeyHog consumes the five
+# VYRE 0.6.5 is published to crates.io and carries the fused resident literal,
+# megakernel, and segmentation APIs KeyHog imports. KeyHog consumes the five
 # runtime VYRE crates through exact registry pins only: no path overrides, no
 # Santh NFS dependency, and no repository `vendor/` tree.
 # CUDA and WGPU are peers inside keyhog-scanner's default `gpu` feature. CUDA
 # uses dynamic loading, so one Linux binary probes both at runtime without a
 # build-time toolkit or a separate CUDA artifact.
-vyre = "=0.6.4"
-vyre_libs = { package = "vyre-libs", version = "=0.6.4" }
-vyre-driver-wgpu = { package = "vyre-driver-wgpu", version = "=0.6.4" }
-vyre-driver-cuda = { package = "vyre-driver-cuda", version = "=0.6.4" }
-vyre-runtime = "=0.6.4"
+vyre = "=0.6.5"
+vyre_libs = { package = "vyre-libs", version = "=0.6.5" }
+vyre-driver-wgpu = { package = "vyre-driver-wgpu", version = "=0.6.5" }
+vyre-driver-cuda = { package = "vyre-driver-cuda", version = "=0.6.5" }
+vyre-runtime = "=0.6.5"
 wgpu = "=25.0.2"
 pollster = "=0.4.0"
 bytemuck = { version = "=1.25.0", features = ["derive"] }

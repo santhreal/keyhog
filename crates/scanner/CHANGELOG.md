@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Upgrade the exact VYRE dependency set to 0.6.5 and replace the resident
+  presence-only dispatch with one fused presence-and-position dispatch. The
+  detector-derived matcher now supplies complete confirmed-anchor and generic
+  keyword positions to the shared phase-two tail without a second GPU pass;
+  match-output overflow remains a visible recoverable GPU fault rather than a
+  partial result.
 - Compile each scanner's generic-assignment line prefilter from the exact
   detector corpus that produced its assignment regex. Custom detector corpora
   no longer lose candidates to the embedded corpus's global keyword stems, and

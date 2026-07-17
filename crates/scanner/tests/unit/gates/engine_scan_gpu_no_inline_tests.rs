@@ -13,7 +13,7 @@ const GPU_SCAN_SRCS: &[&str] = &[
     "gpu_region_batch.rs",
     "gpu_region_dispatch.rs",
     "gpu_region_dispatch_helpers.rs",
-    "gpu_resident_presence.rs",
+    "gpu_resident_evidence.rs",
 ];
 
 const INLINE_TEST_ALLOWLIST: &[&str] = &["gpu_region_dispatch.rs"];

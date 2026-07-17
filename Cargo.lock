@@ -5302,9 +5302,9 @@ checksum = "5c3082ca00d5a5ef149bb8b555a72ae84c9c59f7250f013ac822ac2e49b19c64"
 
 [[package]]
 name = "vyre"
-version = "0.6.4"
+version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3bb35dd976ac13b1fb2bca21865df3fb6394e3166af76087ac6a4c145febdbb7"
+checksum = "c2b13cd4505f332276e286509e812003919b0c785ea7a85c12ed54f83eb02a5d"
 dependencies = [
  "blake3",
  "vyre-driver",
@@ -5314,9 +5314,9 @@ dependencies = [
 
 [[package]]
 name = "vyre-driver"
-version = "0.6.4"
+version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a9691533b0468def17bcd991ce3a0a9961029fad159d18a653673cceacfa73bd"
+checksum = "e4873b84985c891063d65c33a54d70a42e055a1c280942fa0cb8d2e2055a940d"
 dependencies = [
  "arc-swap",
  "blake3",
@@ -5340,9 +5340,9 @@ dependencies = [
 
 [[package]]
 name = "vyre-driver-cuda"
-version = "0.6.4"
+version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3fe5dea392754ee58ead280b523bec6f0356b50d8c38b34736eb0de33b8204a"
+checksum = "36d39ad2af504ee59af789fce5c0a7146d0867e1016c23f550f68dcb40c433d0"
 dependencies = [
  "blake3",
  "bytemuck",
@@ -5364,9 +5364,9 @@ dependencies = [
 
 [[package]]
 name = "vyre-driver-wgpu"
-version = "0.6.4"
+version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20efe40186f1dd975b8161636f059fdb3381d1bfe92b8c6dbc21b0616ac3b7c6"
+checksum = "25f32b84f3eb240d4624e1aa469a147eff3b80cc4612bde55d1aae28608d4494"
 dependencies = [
  "arc-swap",
  "bincode",
@@ -5400,9 +5400,9 @@ dependencies = [
 
 [[package]]
 name = "vyre-emit-naga"
-version = "0.6.4"
+version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fabd720579e404fca4b6c904970d45d09e35e96ba6d5d29e1eb75ced1a961636"
+checksum = "4d386617eebadc5c23c64c89c983914b33d1b9e494207a93564dca33101b9b99"
 dependencies = [
  "blake3",
  "inventory",
@@ -5420,9 +5420,9 @@ dependencies = [
 
 [[package]]
 name = "vyre-emit-ptx"
-version = "0.6.4"
+version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ff136d978215ab2e6bd44c0a8063fb54a16ed120fbf5934441316b45f7a5f6b"
+checksum = "4288d1b29bb488f5bb98ec7063ff9bf98a10e683b9825d9b3104d800749e46df"
 dependencies = [
  "rustc-hash 2.1.2",
  "serde",
@@ -5434,9 +5434,9 @@ dependencies = [
 
 [[package]]
 name = "vyre-foundation"
-version = "0.6.4"
+version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25d2ac28c1d06dfd12f1280c0af4527f93829162dd6b852ce002d1c47c7c128d"
+checksum = "6ea5454b7e24b2a8634f2f1e1e669118fd3cf3244f4b8a8640d134c2914059dc"
 dependencies = [
  "arrayvec",
  "blake3",
@@ -5463,9 +5463,9 @@ dependencies = [
 
 [[package]]
 name = "vyre-harness"
-version = "0.6.4"
+version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b92e7c26ac97c3967a3d5ea4d13cdb35c3fa027c425bba320f3ea9a0ee9742e3"
+checksum = "6916a01f04c31afebfe9019bf0b670bc57fa5b49eb8d3e66e9e4045036df4039"
 dependencies = [
  "inventory",
  "vyre",
@@ -5474,9 +5474,9 @@ dependencies = [
 
 [[package]]
 name = "vyre-libs"
-version = "0.6.4"
+version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "451f6208ea320e55a07023d8d2e17c738a7db7324def370b425e675af70c7f75"
+checksum = "fc01479c6badca80689fc6022c93206bb060106addcc2ea230b752eec529a54a"
 dependencies = [
  "blake3",
  "bytemuck",
@@ -5502,9 +5502,9 @@ dependencies = [
 
 [[package]]
 name = "vyre-lower"
-version = "0.6.4"
+version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9df079c22e8db5385e396e015007d50aff05c7aed5ee74fb326a9a9d749d9d24"
+checksum = "1a9a824adf18aedc263e1853c0152c9d399a82a1939483bc4095000d2167af93"
 dependencies = [
  "im",
  "rustc-hash 2.1.2",
@@ -5516,9 +5516,9 @@ dependencies = [
 
 [[package]]
 name = "vyre-macros"
-version = "0.6.4"
+version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f726eecd558504bd3ad4ed4d273498dfb989e27867cd764c4f30864c2dd0bb82"
+checksum = "db16dc2ef415b51b3acb5011c05947177caf1d6b2ac947bd1afdfa0218f0e787"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5527,9 +5527,9 @@ dependencies = [
 
 [[package]]
 name = "vyre-primitives"
-version = "0.6.4"
+version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "636fe74461faca234ec87bfc1e46d5a9aace26d64817b6992f008d98eda29c82"
+checksum = "a36c5e33fe1ce14fd1b28ef25353a05d9476bf26165a57d40d75085dfadf852a"
 dependencies = [
  "bytemuck",
  "inventory",
@@ -5539,9 +5539,9 @@ dependencies = [
 
 [[package]]
 name = "vyre-runtime"
-version = "0.6.4"
+version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a93bcae7a629e65867c67871f405b2868cd7167733039d7bf573faf3ab523167"
+checksum = "da910641ec7e78985dfec03c097d24a1438f638caeabef8a5d099dc61a7e8097"
 dependencies = [
  "arc-swap",
  "blake3",
@@ -5559,9 +5559,9 @@ dependencies = [
 
 [[package]]
 name = "vyre-self-substrate"
-version = "0.6.4"
+version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a07640ee3c917e7ce0ee32c0ee74e7052e342ac4bba11a9af9663f4793958027"
+checksum = "9180d7e348ebd0ff9b0f5e22b1baaed69c2eed30563d228538d8c1c97ab4e55e"
 dependencies = [
  "rustc-hash 2.1.2",
  "tracing",
@@ -5571,9 +5571,9 @@ dependencies = [
 
 [[package]]
 name = "vyre-spec"
-version = "0.6.4"
+version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a330bc9bf8ea9eebf641918e9eee4803953858581f69262bc717593b3e5195df"
+checksum = "5506c987faf2cafcab1dda8af1c3a389c02131376e8fde23c823f357ebde4a2b"
 dependencies = [
  "serde",
  "smallvec",

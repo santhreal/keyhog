@@ -352,7 +352,9 @@ attributed back to the original source.
    `cpu-fallback` uses the pure-Rust trigger path. One pass returns which
    detector IDs have a candidate match.
 
-   GPU-capable builds add VYRE's region-presence literal-set backend. There is
+   GPU-capable builds add VYRE's resident fused literal-evidence backend. Its
+   single dispatch returns region presence plus detector-derived localization
+   positions; the shared host regexes still decide every finding. There is
    no universal model-name or byte threshold at which KeyHog silently switches
    to it. `--backend auto` requires an exact persisted calibration decision for
    the current binary, detector/config digest, host/device/driver, workload

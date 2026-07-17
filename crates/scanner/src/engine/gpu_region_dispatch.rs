@@ -1,16 +1,15 @@
 //! Live wiring of the coalesced GPU literal-region trigger path.
 //!
-//! Trigger production is the ONLY thing this path changes. It builds the rule
-//! matcher from `ac_map` once, dispatches the chunk batch in the fewest bounded
-//! GPU launches, and turns the resulting per-region presence rows into the SAME
-//! per-chunk `Option<Vec<u64>>` trigger bitmap the Hyperscan prefilter produces
-//! - then hands it to the SHARED `scan_coalesced_phase2`. So windowing,
-//! confirmed extraction, fallback, generic, entropy, ML, suppression, dedup,
-//! cross-file reassembly and cross-chunk boundary scan are byte-for-byte the
-//! coalesced CPU path: the GPU only replaces phase 1.
+//! One resident VYRE dispatch produces detector presence plus positions for the
+//! shared confirmed-anchor and generic-keyword localizers. Presence becomes the
+//! same per-chunk trigger bitmap the Hyperscan prefilter produces; positions are
+//! optional evidence consumed by the same phase-two implementations that would
+//! otherwise collect them on the CPU. Regex extraction, entropy, ML,
+//! suppression, deduplication, recovery, and boundary scans retain one owner.
 //!
-//! Recall + precision: GPU presence only admits candidate detector bits. Phase 2
-//! still validates every candidate with the real detector regex. The full CPU
+//! Recall + precision: GPU presence only admits candidate detector bits and GPU
+//! positions only replace equivalent CPU localization. Phase 2 still validates
+//! every candidate with the real detector regex. The full CPU
 //! Hyperscan trigger floor is not part of the default fast path; it is enabled
 //! only for explicit parity/debug runs.
 
@@ -109,7 +108,7 @@ impl CompiledScanner {
                     route.label()
                 ));
             };
-            let Some(resident_slot) = self.gpu_resident_presence_slot(route) else {
+            let Some(resident_slot) = self.gpu_resident_literal_slot(route) else {
                 return dispatch_failure(format!(
                     "{} has no scanner-owned resident pipeline slot",
                     route.label()
@@ -117,7 +116,7 @@ impl CompiledScanner {
             };
 
             let words = self.ac_map.len().div_ceil(64).max(1);
-            let gpu_literal_count = self.gpu_presence_literal_count();
+            let gpu_literal_count = self.gpu_literal_count();
             let presence_words = gpu_literal_count.div_ceil(32).max(1);
             let region_source_bytes = chunks.iter().try_fold(0usize, |total, chunk| {
                 total.checked_add(chunk.data.len()).ok_or_else(|| {
@@ -134,6 +133,16 @@ impl CompiledScanner {
             let mut triggers: Vec<Option<Vec<u64>>> = Vec::new();
             let mut phase2_keyword_hints: Vec<Vec<u32>> = Vec::new();
             let mut phase2_always_anchor_presence: Vec<bool> = Vec::new();
+            let positioned_base = self.ac_map.len()
+                + self.phase2_keyword_count
+                + self.phase2_always_anchor_literal_count;
+            let confirmed_position_end = positioned_base + self.confirmed_anchor_literal_count;
+            let generic_position_end = confirmed_position_end + self.generic_keyword_literal_count;
+            let mut confirmed_anchor_literal_matches = (self.confirmed_anchor_literal_count > 0)
+                .then(|| vec![Vec::<(u32, u32)>::new(); chunks.len()]);
+            let mut generic_keyword_positions = (self.generic_keyword_literal_count > 0
+                && self.generic_gpu_positions_compatible)
+                .then(|| vec![Vec::<u32>::new(); chunks.len()]);
             triggers.try_reserve(chunks.len()).map_err(|error| {
                 super::gpu_forced::SelectedGpuDispatchError::new(format!(
                     "GPU region-presence trigger-row reserve failed: {error}"
@@ -156,12 +165,22 @@ impl CompiledScanner {
             let mut gpu_presence_bits = 0usize;
             let mut logical_derive_s = std::time::Duration::ZERO;
             let mut derive_presence_row = |row: &[u32]| -> std::result::Result<(), String> {
+                let whole_presence_words = positioned_base / 32;
+                let tail_presence_bits = positioned_base % 32;
+                let whole_bits = row
+                    .iter()
+                    .take(whole_presence_words)
+                    .map(|word| word.count_ones() as usize)
+                    .sum::<usize>();
+                let tail_bits = if tail_presence_bits == 0 {
+                    0
+                } else {
+                    row.get(whole_presence_words).map_or(0, |word| {
+                        (word & ((1u32 << tail_presence_bits) - 1)).count_ones() as usize
+                    })
+                };
                 gpu_presence_bits = gpu_presence_bits
-                    .checked_add(
-                        row.iter()
-                            .map(|word| word.count_ones() as usize)
-                            .sum::<usize>(),
-                    )
+                    .checked_add(whole_bits + tail_bits)
                     .ok_or_else(|| {
                         "region-presence reduced bit count overflows host usize".to_string()
                     })?;
@@ -176,6 +195,7 @@ impl CompiledScanner {
                                          region_starts: &[u32],
                                          logical_start: usize,
                                          rows: usize,
+                                         logical_byte_base: usize,
                                          consume: &mut dyn FnMut(
                 &[u32],
             )
@@ -193,13 +213,13 @@ impl CompiledScanner {
                 })?;
                 let mut derive_s = std::time::Duration::ZERO;
                 let result =
-                    super::gpu_resident_presence::scan_gpu_literal_presence_by_region_resident(
+                    super::gpu_resident_evidence::scan_gpu_literal_evidence_by_region_resident(
                         resident_slot,
                         matcher,
                         backend,
                         haystack,
                         region_starts,
-                        |presence| {
+                        |presence, literal_matches| {
                             let t_derive = std::time::Instant::now();
                             if presence.len() != expected_presence_words {
                                 return Err(format!(
@@ -225,6 +245,76 @@ impl CompiledScanner {
                                         ));
                                 }
                                 consume(row)?;
+                            }
+                            for literal_match in literal_matches {
+                                let pattern_id = literal_match.pattern_id as usize;
+                                if pattern_id >= gpu_literal_count {
+                                    return Err(format!(
+                                        "resident fused literal match returned out-of-range pattern id {pattern_id} for {gpu_literal_count} compiled literal(s)"
+                                    ));
+                                }
+                                if pattern_id < positioned_base {
+                                    continue;
+                                }
+                                let Some(region) = super::phase2_gpu_dfa::match_region(
+                                    region_starts,
+                                    haystack.len(),
+                                    literal_match.start,
+                                    literal_match.end,
+                                ) else {
+                                    return Err(format!(
+                                        "resident fused literal match ({}, {}, {}) does not belong to one complete input region",
+                                        literal_match.pattern_id,
+                                        literal_match.start,
+                                        literal_match.end,
+                                    ));
+                                };
+                                let row_idx =
+                                    logical_start.checked_add(region).ok_or_else(|| {
+                                        "resident fused positioned row index overflows host usize"
+                                            .to_string()
+                                    })?;
+                                let region_start = region_starts[region];
+                                let local_start = literal_match
+                                    .start
+                                    .checked_sub(region_start)
+                                    .and_then(|start| usize::try_from(start).ok())
+                                    .and_then(|start| start.checked_add(logical_byte_base))
+                                    .and_then(|start| u32::try_from(start).ok())
+                                    .ok_or_else(|| {
+                                        "resident fused positioned match offset exceeds the u32 chunk ABI"
+                                            .to_string()
+                                    })?;
+                                if pattern_id < confirmed_position_end {
+                                    let rows = confirmed_anchor_literal_matches.as_mut().ok_or_else(|| {
+                                        "resident fused confirmed-anchor match has no compiled output owner"
+                                            .to_string()
+                                    })?;
+                                    let literal_id = u32::try_from(pattern_id - positioned_base)
+                                        .map_err(|_| {
+                                            "resident fused confirmed-anchor literal id exceeds the u32 scanner ABI"
+                                                .to_string()
+                                        })?;
+                                    let row_count = rows.len();
+                                    rows.get_mut(row_idx)
+                                        .ok_or_else(|| {
+                                            format!(
+                                                "resident fused confirmed-anchor row {row_idx} exceeds {row_count} logical chunk row(s)"
+                                            )
+                                        })?
+                                        .push((literal_id, local_start));
+                                } else if pattern_id < generic_position_end {
+                                    if let Some(rows) = generic_keyword_positions.as_mut() {
+                                        let row_count = rows.len();
+                                        rows.get_mut(row_idx)
+                                            .ok_or_else(|| {
+                                                format!(
+                                                    "resident fused generic-keyword row {row_idx} exceeds {row_count} logical chunk row(s)"
+                                                )
+                                            })?
+                                            .push(local_start);
+                                    }
+                                }
                             }
                             derive_s = t_derive.elapsed();
                             Ok(())
@@ -260,14 +350,21 @@ impl CompiledScanner {
                         chunks[cursor].data.as_bytes(),
                         byte_limit,
                         self.gpu_max_literal_len,
-                        |haystack, _range| {
+                        |haystack, range| {
                             let mut reduce = |row: &[u32]| -> std::result::Result<(), String> {
                                 for (target, &word) in reduced.iter_mut().zip(row) {
                                     *target |= word;
                                 }
                                 Ok(())
                             };
-                            dispatch_presence(haystack, &[0], logical_row, 1, &mut reduce)
+                            dispatch_presence(
+                                haystack,
+                                &[0],
+                                logical_row,
+                                1,
+                                range.start,
+                                &mut reduce,
+                            )
                         },
                     );
                     if summary.is_ok() {
@@ -298,6 +395,7 @@ impl CompiledScanner {
                                     region_starts,
                                     logical_start,
                                     shard.chunks.len(),
+                                    0,
                                     &mut derive_presence_row,
                                 )
                             },
@@ -347,6 +445,18 @@ impl CompiledScanner {
             }
             drop(dispatch_presence);
             drop(derive_presence_row);
+            if let Some(rows) = confirmed_anchor_literal_matches.as_mut() {
+                for row in rows {
+                    row.sort_unstable();
+                    row.dedup();
+                }
+            }
+            if let Some(rows) = generic_keyword_positions.as_mut() {
+                for row in rows {
+                    row.sort_unstable();
+                    row.dedup();
+                }
+            }
             derive_s_total += logical_derive_s;
             if region_dispatches != planned_dispatches {
                 drop(region_dispatch_profile);
@@ -372,9 +482,6 @@ impl CompiledScanner {
                 .saturating_sub(dis_s)
                 .saturating_sub(derive_s_total);
             drop(region_dispatch_profile);
-            let confirmed_anchor_literal_matches: Option<Vec<Vec<(u32, u32)>>> = None;
-            let generic_keyword_positions: Option<Vec<Vec<u32>>> = None;
-
             let t_floor = std::time::Instant::now();
             let full_recall_floor = self.tuning.gpu_recall_floor_enabled();
             let cpu_triggers = if full_recall_floor {

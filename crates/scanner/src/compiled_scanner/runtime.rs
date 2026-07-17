@@ -84,7 +84,7 @@ impl CompiledScanner {
     pub fn reset_autoroute_calibration_gpu_workload(&self) -> std::result::Result<(), String> {
         #[cfg(feature = "gpu")]
         {
-            self.reset_gpu_resident_presence_for_calibration()?;
+            self.reset_gpu_resident_literal_for_calibration()?;
         }
         Ok(())
     }

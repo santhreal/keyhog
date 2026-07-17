@@ -1,9 +1,8 @@
 //! GPU region-presence bit partition contracts.
 //!
-//! Runtime GPU presence rows contain only phase-1 detector literals, phase-2
-//! keyword literals, and always-active anchor literals. Positioned confirmed
-//! anchors and generic keywords live in a separate GPU matcher and must remain
-//! out of this bitmap.
+//! Runtime fused GPU rows contain phase-1 detector literals, phase-2 keyword
+//! and anchor literals, then positioned confirmed anchors and generic stems.
+//! Only the owning segment may affect each derived evidence type.
 
 use crate::engine::CompiledScanner;
 use crate::GpuInitPolicy;
@@ -82,7 +81,7 @@ fn appended_gpu_presence_bits_become_phase2_keyword_hints_only() {
         "fixture needs at least one always-active anchor literal"
     );
 
-    let mut row = vec![0u32; scanner.gpu_presence_literal_count().div_ceil(32).max(1)];
+    let mut row = vec![0u32; scanner.gpu_literal_count().div_ceil(32).max(1)];
     let phase2_literal_idx = scanner.ac_map.len();
     row[phase2_literal_idx / 32] |= 1u32 << (phase2_literal_idx % 32);
 
@@ -107,7 +106,7 @@ fn appended_gpu_presence_bits_become_phase2_keyword_hints_only() {
 #[test]
 fn appended_gpu_presence_anchor_bits_are_absence_proofs_only() {
     let scanner = scanner_with_detector_and_phase2_keyword_and_anchor();
-    let mut row = vec![0u32; scanner.gpu_presence_literal_count().div_ceil(32).max(1)];
+    let mut row = vec![0u32; scanner.gpu_literal_count().div_ceil(32).max(1)];
     let anchor_literal_idx = scanner.ac_map.len() + scanner.phase2_keyword_count;
     row[anchor_literal_idx / 32] |= 1u32 << (anchor_literal_idx % 32);
 
@@ -126,23 +125,27 @@ fn appended_gpu_presence_anchor_bits_are_absence_proofs_only() {
 }
 
 #[test]
-fn positioned_confirmed_anchor_bits_are_not_presence_bits() {
+fn positioned_confirmed_anchor_bits_are_valid_but_do_not_trigger_detectors() {
     let scanner = scanner_with_detector_and_phase2_keyword_and_anchor();
     assert_eq!(
-        scanner.gpu_presence_literal_count(),
+        scanner.gpu_literal_count(),
         scanner.ac_map.len()
             + scanner.phase2_keyword_count
             + scanner.phase2_always_anchor_literal_count
+            + scanner.confirmed_anchor_literal_count
+            + scanner.generic_keyword_literal_count
     );
-    let mut row = vec![0u32; scanner.gpu_presence_literal_count().div_ceil(32).max(1)];
-    let confirmed_anchor_literal_idx = scanner.gpu_presence_literal_count();
+    let mut row = vec![0u32; scanner.gpu_literal_count().div_ceil(32).max(1)];
+    let confirmed_anchor_literal_idx = scanner.ac_map.len()
+        + scanner.phase2_keyword_count
+        + scanner.phase2_always_anchor_literal_count;
     row[confirmed_anchor_literal_idx / 32] |= 1u32 << (confirmed_anchor_literal_idx % 32);
 
     assert!(scanner
         .phase2_keyword_hints_from_gpu_presence(&row)
         .is_empty());
     assert!(!scanner.phase2_always_anchor_present_from_gpu_presence(&row));
-    assert!(scanner.gpu_presence_stray_tail_bits(&row).is_some());
+    assert!(scanner.gpu_presence_stray_tail_bits(&row).is_none());
     assert!(
         scanner
             .triggered_patterns_from_gpu_presence(&row)
@@ -153,23 +156,28 @@ fn positioned_confirmed_anchor_bits_are_not_presence_bits() {
 }
 
 #[test]
-fn positioned_generic_keyword_bits_are_not_presence_bits() {
+fn positioned_generic_keyword_bits_are_valid_but_do_not_trigger_detectors() {
     let scanner = scanner_with_detector_and_phase2_keyword_and_anchor();
     assert_eq!(
-        scanner.gpu_presence_literal_count(),
+        scanner.gpu_literal_count(),
         scanner.ac_map.len()
             + scanner.phase2_keyword_count
             + scanner.phase2_always_anchor_literal_count
+            + scanner.confirmed_anchor_literal_count
+            + scanner.generic_keyword_literal_count
     );
-    let mut row = vec![0u32; scanner.gpu_presence_literal_count().div_ceil(32).max(1)];
-    let generic_keyword_literal_idx = scanner.gpu_presence_literal_count();
+    let mut row = vec![0u32; scanner.gpu_literal_count().div_ceil(32).max(1)];
+    let generic_keyword_literal_idx = scanner.ac_map.len()
+        + scanner.phase2_keyword_count
+        + scanner.phase2_always_anchor_literal_count
+        + scanner.confirmed_anchor_literal_count;
     row[generic_keyword_literal_idx / 32] |= 1u32 << (generic_keyword_literal_idx % 32);
 
     assert!(scanner
         .phase2_keyword_hints_from_gpu_presence(&row)
         .is_empty());
     assert!(!scanner.phase2_always_anchor_present_from_gpu_presence(&row));
-    assert!(scanner.gpu_presence_stray_tail_bits(&row).is_some());
+    assert!(scanner.gpu_presence_stray_tail_bits(&row).is_none());
     assert!(
         scanner
             .triggered_patterns_from_gpu_presence(&row)

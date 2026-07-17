@@ -96,8 +96,9 @@ method-level version of steps 2-4.
 2. **Phase 1: trigger production** (which detectors *could* fire, and where).
    Swappable backend: scalar CPU literal/regex, SIMD Hyperscan
    (`engine/backend_triggered.rs`, `engine/scan_coalesced.rs`), or the GPU
-   batched literal region-presence route (`engine/gpu_region_dispatch.rs`).
-   It produces one "which detectors may match here" bitmap per chunk. The fast
+   fused resident literal-evidence route (`engine/gpu_region_dispatch.rs`).
+   It produces one "which detectors may match here" bitmap plus optional
+   confirmed-anchor and generic-keyword positions per chunk. The fast
    prefilters (`simdsieve`, `bigram_bloom`, `alphabet_filter`, `prefix_trie`)
    live at `crates/scanner/src/`; detector-to-matcher construction lives in
    `compiled_scanner/compile.rs`, `compiler.rs`, and `compiler/`.

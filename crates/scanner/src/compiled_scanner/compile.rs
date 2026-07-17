@@ -229,6 +229,20 @@ impl CompiledScanner {
         let phase2_always_anchor_literal_count = phase2_anchor_index
             .as_ref()
             .map_or(0, |index| index.always_anchor_literals().len());
+        #[cfg(feature = "gpu")]
+        let confirmed_anchor_literals = confirmed_anchor_index
+            .as_ref()
+            .map_or(&[] as &[String], |index| index.anchor_literals());
+        #[cfg(feature = "gpu")]
+        let confirmed_anchor_literal_count = confirmed_anchor_literals.len();
+        #[cfg(feature = "gpu")]
+        let generic_keyword_literals =
+            crate::engine::phase2_generic::keywords::generic_keyword_prefilter_stems()
+                .into_iter()
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+        #[cfg(feature = "gpu")]
+        let generic_keyword_literal_count = generic_keyword_literals.len();
         let gated = ac_suffix_gate.iter().filter(|g| !g.is_empty()).count();
         #[cfg(feature = "gpu")]
         let gpu_literals = if gpu_backends.availability().any() {
@@ -239,6 +253,8 @@ impl CompiledScanner {
                 &state.ac_literals,
                 &phase2_keywords,
                 phase2_always_anchor_literals,
+                confirmed_anchor_literals,
+                &generic_keyword_literals,
             )
         } else {
             None
@@ -479,9 +495,9 @@ impl CompiledScanner {
             gpu_max_literal_len,
             gpu_matcher: OnceLock::new(),
             #[cfg(feature = "gpu")]
-            gpu_resident_presence_cuda: std::sync::Mutex::new(GpuResidentPresenceSlot::Empty),
+            gpu_resident_literal_cuda: std::sync::Mutex::new(GpuResidentLiteralSlot::Empty),
             #[cfg(feature = "gpu")]
-            gpu_resident_presence_wgpu: std::sync::Mutex::new(GpuResidentPresenceSlot::Empty),
+            gpu_resident_literal_wgpu: std::sync::Mutex::new(GpuResidentLiteralSlot::Empty),
             gpu_last_degrade_reason: std::sync::Mutex::new(None),
             gpu_degrade_count: std::sync::atomic::AtomicU64::new(0),
             autoroute_gpu_shared_cold_ns: std::sync::atomic::AtomicU64::new(0),
@@ -507,6 +523,10 @@ impl CompiledScanner {
             phase2_keyword_to_patterns,
             phase2_keyword_count,
             phase2_always_anchor_literal_count,
+            #[cfg(feature = "gpu")]
+            confirmed_anchor_literal_count,
+            #[cfg(feature = "gpu")]
+            generic_keyword_literal_count,
             phase2_always_active_indices,
             phase2_always_active_prefilter,
             phase2_anchor_index,
