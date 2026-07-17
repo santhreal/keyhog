@@ -220,6 +220,12 @@ fn run_autoroute_inspection(
             if let Some(reason) = &inspection.identity_mismatch_reason {
                 println!("                   {reason}");
             }
+            println!(
+                "  repair:          `{}`",
+                health
+                    .required_repair_command()
+                    .map_err(anyhow::Error::msg)?
+            );
         }
         None => {}
     }

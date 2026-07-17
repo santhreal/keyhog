@@ -387,6 +387,20 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
             "autoroute calibration probes succeeded, but no persisted cache was found during readback"
         );
     }
+    let readiness = inspection.readiness();
+    match readiness {
+        crate::orchestrator::AutorouteReadiness::Ready => {}
+        crate::orchestrator::AutorouteReadiness::Direct => anyhow::bail!(
+            "autoroute calibration is not applicable because this build has one direct backend"
+        ),
+        _ => anyhow::bail!(
+            "autoroute calibration probes succeeded, but persisted cache readback is {}; repair: `{}`",
+            readiness.as_str(),
+            readiness
+                .required_repair_command()
+                .map_err(anyhow::Error::msg)?
+        ),
+    }
     let measured_route_classes = measured_route_classes
         .lock()
         .map_err(|_| {

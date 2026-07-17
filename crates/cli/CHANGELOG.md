@@ -5,6 +5,8 @@
 - Derive autoroute readiness and repair commands once from cache inspection,
   expose the repair command in `backend --autoroute --json`, and make `doctor`
   report scalar-only builds as direct-route ready instead of uncalibrated.
+  Calibration now succeeds only when persisted readback is `ready` for the
+  running build.
 - Persist the resolved GPU batch-input byte cap in autoroute host identity and
   inspection, so a device-limit or configured-cap change cannot replay timing
   evidence measured with a different dispatch topology.
