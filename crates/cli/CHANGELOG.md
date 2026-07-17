@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Show the detector-owned keyword-free operator entropy margin in `explain`.
 - Derive autoroute readiness and repair commands once from cache inspection,
   expose the repair command in `backend --autoroute --json`, and make `doctor`
   report scalar-only builds as direct-route ready instead of uncalibrated.

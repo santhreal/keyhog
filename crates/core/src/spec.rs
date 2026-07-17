@@ -487,6 +487,11 @@ pub struct DetectorPlausibilityPolicySpec {
     pub isolated_colon_right_min_len: usize,
     /// Shannon floor for an unanchored leading-slash base64 token.
     pub leading_slash_base64_entropy_floor: f64,
+    /// Margin added to the Tier-A entropy threshold before comparing an
+    /// unanchored keyword-free candidate. Required only for the detector that
+    /// claims the `keyword-free` entropy role.
+    #[serde(default)]
+    pub keyword_free_operator_margin: Option<f64>,
     /// Reject periodic values, including a truncated final repetition.
     pub reject_repeated_blocks: bool,
     /// Admit an anchored alphabetic value after the other shape gates pass.

@@ -45,6 +45,7 @@ fn detector(id: &str, keywords: &[&str], min_len: usize) -> DetectorSpec {
             isolated_colon_left_min_len: 20,
             isolated_colon_right_min_len: 16,
             leading_slash_base64_entropy_floor: 4.8,
+            keyword_free_operator_margin: None,
             reject_repeated_blocks: true,
             allow_alphabetic_credential: true,
             reject_program_identifiers: true,
@@ -80,6 +81,11 @@ fn scan_with_owner_min_len(min_len: usize) -> Vec<String> {
 fn full_scan_with_public_identifier_marker(marker_enabled: bool) -> Vec<String> {
     let mut owner = detector("public-marker-owner", &["secret"], 8);
     owner.entropy_roles = vec![EntropyDetectionRole::KeywordFree];
+    owner
+        .plausibility
+        .as_mut()
+        .expect("keyword-free owner declares plausibility")
+        .keyword_free_operator_margin = Some(1.0);
     owner.bpe_enabled = Some(false);
     owner.sensitive_path_entropy_very_high = Some(5.5);
     if marker_enabled {
@@ -206,6 +212,7 @@ fn plausibility_owner(
         isolated_colon_left_min_len: 20,
         isolated_colon_right_min_len: 16,
         leading_slash_base64_entropy_floor: 4.8,
+        keyword_free_operator_margin: None,
         reject_repeated_blocks: true,
         allow_alphabetic_credential: true,
         reject_program_identifiers: true,
@@ -611,11 +618,17 @@ fn full_scan_findings(bpe_enabled: bool, backend: ScanBackend) -> Vec<(String, S
 
 fn full_scan_keyword_free_values(
     entropy_very_high: f64,
+    keyword_free_operator_margin: f64,
     path: &str,
     backend: ScanBackend,
 ) -> Vec<String> {
     let mut keyword_free_owner = detector("custom-keyword-free-owner", &["secret"], 8);
     keyword_free_owner.entropy_roles = vec![EntropyDetectionRole::KeywordFree];
+    keyword_free_owner
+        .plausibility
+        .as_mut()
+        .expect("keyword-free owner declares plausibility")
+        .keyword_free_operator_margin = Some(keyword_free_operator_margin);
     keyword_free_owner.entropy_very_high = Some(entropy_very_high);
     let embedded_policy = keyhog_core::detector_spec_by_id("generic-secret")
         .expect("embedded generic-secret policy must load");
@@ -660,22 +673,100 @@ fn full_scan_keyword_free_values(
 }
 
 #[test]
+fn keyword_free_margin_contract_rejects_incomplete_custom_corpora() {
+    let mut missing = detector("missing-keyword-free-margin", &["secret"], 8);
+    missing.entropy_roles = vec![EntropyDetectionRole::KeywordFree];
+    let missing_error = CompiledScanner::compile(vec![missing])
+        .err()
+        .expect("a keyword-free owner without its margin must fail compilation")
+        .to_string();
+    assert!(
+        missing_error.contains("claims entropy role `keyword-free`")
+            && missing_error.contains("omits plausibility.keyword_free_operator_margin"),
+        "unexpected missing-margin error: {missing_error}"
+    );
+
+    let mut misplaced = detector("misplaced-keyword-free-margin", &["secret"], 8);
+    misplaced
+        .plausibility
+        .as_mut()
+        .expect("entropy owner declares plausibility")
+        .keyword_free_operator_margin = Some(1.0);
+    let misplaced_error = CompiledScanner::compile(vec![misplaced])
+        .err()
+        .expect("a non-role owner with the margin must fail compilation")
+        .to_string();
+    assert!(
+        misplaced_error.contains("declares plausibility.keyword_free_operator_margin")
+            && misplaced_error.contains("without claiming entropy role `keyword-free`"),
+        "unexpected misplaced-margin error: {misplaced_error}"
+    );
+
+    let mut invalid = detector("invalid-keyword-free-margin", &["secret"], 8);
+    invalid.entropy_roles = vec![EntropyDetectionRole::KeywordFree];
+    invalid
+        .plausibility
+        .as_mut()
+        .expect("keyword-free owner declares plausibility")
+        .keyword_free_operator_margin = Some(8.001);
+    let invalid_error = CompiledScanner::compile(vec![invalid])
+        .err()
+        .expect("an out-of-domain keyword-free margin must fail compilation")
+        .to_string();
+    assert!(
+        invalid_error.contains("must be finite and in [0.0, 8.0]"),
+        "unexpected invalid-margin error: {invalid_error}"
+    );
+}
+
+#[test]
 fn keyword_free_full_scan_uses_detector_owned_very_high_boundary() {
     let entropy = keyhog_scanner::entropy::shannon_entropy(KEYWORD_FREE_VALUE.as_bytes());
     assert!(
         (entropy - 48_f64.log2()).abs() < 1e-12,
         "the boundary fixture must contain 48 equiprobable bytes"
     );
-    let admitted = full_scan_keyword_free_values(entropy, "payload.yaml", ScanBackend::CpuFallback);
+    let admitted =
+        full_scan_keyword_free_values(entropy, 1.0, "payload.yaml", ScanBackend::CpuFallback);
     assert!(
         admitted.iter().any(|value| value == KEYWORD_FREE_VALUE),
         "a candidate exactly at the detector TOML threshold must be admitted: {admitted:?}"
     );
     assert!(
-        !full_scan_keyword_free_values(entropy + 0.001, "payload.yaml", ScanBackend::CpuFallback,)
+        !full_scan_keyword_free_values(
+            entropy + 0.001,
+            1.0,
+            "payload.yaml",
+            ScanBackend::CpuFallback,
+        )
+        .iter()
+        .any(|value| value == KEYWORD_FREE_VALUE),
+        "raising only the detector TOML threshold above the candidate must suppress it"
+    );
+}
+
+#[test]
+fn keyword_free_full_scan_composes_the_detector_owned_operator_margin_exactly() {
+    let entropy = keyhog_scanner::entropy::shannon_entropy(KEYWORD_FREE_VALUE.as_bytes());
+    let operator_floor = ScannerConfig::default().entropy_threshold;
+    let exact_margin = entropy - operator_floor;
+
+    assert!(
+        full_scan_keyword_free_values(4.0, exact_margin, "payload.yaml", ScanBackend::CpuFallback,)
             .iter()
             .any(|value| value == KEYWORD_FREE_VALUE),
-        "raising only the detector TOML threshold above the candidate must suppress it"
+        "the exact detector-owned operator-margin boundary must admit the candidate"
+    );
+    assert!(
+        !full_scan_keyword_free_values(
+            4.0,
+            exact_margin + 0.001,
+            "payload.yaml",
+            ScanBackend::CpuFallback,
+        )
+        .iter()
+        .any(|value| value == KEYWORD_FREE_VALUE),
+        "raising only the detector-owned margin above the candidate must suppress it"
     );
 }
 
@@ -693,6 +784,7 @@ fn sensitive_path_discount_is_relative_to_detector_owned_threshold() {
     assert!(
         full_scan_keyword_free_values(
             entropy + sensitive_discount,
+            1.0,
             "secrets.yaml",
             ScanBackend::CpuFallback,
         )
@@ -703,6 +795,7 @@ fn sensitive_path_discount_is_relative_to_detector_owned_threshold() {
     assert!(
         !full_scan_keyword_free_values(
             entropy + sensitive_discount + 0.001,
+            1.0,
             "secrets.yaml",
             ScanBackend::CpuFallback,
         )
@@ -716,6 +809,11 @@ fn sensitive_path_discount_is_relative_to_detector_owned_threshold() {
 fn entropy_fallback_identity_comes_from_active_detector_policy() {
     let mut keyword_free_owner = detector("custom-keyword-free-owner", &["secret"], 8);
     keyword_free_owner.entropy_roles = vec![EntropyDetectionRole::KeywordFree];
+    keyword_free_owner
+        .plausibility
+        .as_mut()
+        .expect("keyword-free owner declares plausibility")
+        .keyword_free_operator_margin = Some(1.0);
     keyword_free_owner.entropy_fallback = Some(EntropyFallbackMetadata {
         class: EntropyFallbackClass::Generic,
         id: "entropy-custom-policy".into(),
@@ -821,6 +919,7 @@ fn lower_dash_entropy_exception_is_owned_by_the_active_detector_shape_policy() {
 #[test]
 fn detector_owned_very_high_boundary_is_exact_on_every_accelerated_backend() {
     let entropy = keyhog_scanner::entropy::shannon_entropy(KEYWORD_FREE_VALUE.as_bytes());
+    let exact_margin = entropy - ScannerConfig::default().entropy_threshold;
     let generic_secret = keyhog_core::detector_spec_by_id("generic-secret")
         .expect("embedded generic-secret policy must load");
     let sensitive_discount = generic_secret
@@ -834,24 +933,43 @@ fn detector_owned_very_high_boundary_is_exact_on_every_accelerated_backend() {
         ScanBackend::GpuCuda,
         ScanBackend::GpuWgpu,
     ] {
-        let normal = full_scan_keyword_free_values(entropy, "payload.yaml", backend);
+        let normal = full_scan_keyword_free_values(entropy, 1.0, "payload.yaml", backend);
         assert!(
             normal.iter().any(|value| value == KEYWORD_FREE_VALUE),
             "{} must admit the exact detector-owned boundary: {normal:?}",
             backend.label()
         );
         assert!(
-            !full_scan_keyword_free_values(entropy + 0.001, "payload.yaml", backend)
+            !full_scan_keyword_free_values(entropy + 0.001, 1.0, "payload.yaml", backend)
                 .iter()
                 .any(|value| value == KEYWORD_FREE_VALUE),
             "{} must reject above the detector-owned boundary",
             backend.label()
         );
         assert!(
-            full_scan_keyword_free_values(entropy + sensitive_discount, "secrets.yaml", backend,)
+            full_scan_keyword_free_values(
+                entropy + sensitive_discount,
+                1.0,
+                "secrets.yaml",
+                backend,
+            )
+            .iter()
+            .any(|value| value == KEYWORD_FREE_VALUE),
+            "{} must preserve the detector-relative sensitive-path discount",
+            backend.label()
+        );
+        assert!(
+            full_scan_keyword_free_values(4.0, exact_margin, "payload.yaml", backend)
                 .iter()
                 .any(|value| value == KEYWORD_FREE_VALUE),
-            "{} must preserve the detector-relative sensitive-path discount",
+            "{} must admit the exact detector-owned margin boundary",
+            backend.label()
+        );
+        assert!(
+            !full_scan_keyword_free_values(4.0, exact_margin + 0.001, "payload.yaml", backend)
+                .iter()
+                .any(|value| value == KEYWORD_FREE_VALUE),
+            "{} must reject above the detector-owned margin boundary",
             backend.label()
         );
     }

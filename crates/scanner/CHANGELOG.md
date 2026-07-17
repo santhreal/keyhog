@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Compile the keyword-free operator entropy margin from the owning detector
+  TOML instead of applying a scanner-owned `+ 1.0` threshold adjustment.
+
 - Bind the canonical 8 MiB crossover artifact to its exact parity result count,
   and keep the backend guide synchronized with the current checked RTX 5090
   evidence instead of the superseded near-parity run.

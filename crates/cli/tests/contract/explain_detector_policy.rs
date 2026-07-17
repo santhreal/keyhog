@@ -62,6 +62,8 @@ fn explain_generic_secret_prints_detector_owned_entropy_and_bpe_policy() {
         "isolated_colon_left_min_len: 20 bytes".to_string(),
         "isolated_colon_right_min_len: 16 bytes".to_string(),
         "leading_slash_base64_entropy_floor: 4.8 bits/byte".to_string(),
+        "keyword_free_operator_margin: +1 bits/byte over the resolved Tier-A entropy threshold"
+            .to_string(),
         "reject_source_symbol_identifiers: true".to_string(),
         format!("bpe_max_bytes_per_token: {bpe_ceiling} UTF-8 bytes/token"),
         "max_len: 512 bytes".to_string(),

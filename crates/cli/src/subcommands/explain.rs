@@ -310,6 +310,11 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
             "    second_half_entropy_floor: {} bits/byte",
             policy.second_half_entropy_floor
         );
+        if let Some(margin) = policy.keyword_free_operator_margin {
+            println!(
+                "    keyword_free_operator_margin: +{margin} bits/byte over the resolved Tier-A entropy threshold"
+            );
+        }
         println!(
             "    mixed_alnum_min_len: {} bytes",
             policy.mixed_alnum_min_len

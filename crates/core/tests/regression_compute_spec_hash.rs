@@ -534,6 +534,7 @@ knob_changes_digest!(spec_hash_binds_plausibility_policy, |d| d.plausibility =
         isolated_colon_left_min_len: 21,
         isolated_colon_right_min_len: 17,
         leading_slash_base64_entropy_floor: 4.9,
+        keyword_free_operator_margin: None,
         reject_repeated_blocks: true,
         allow_alphabetic_credential: true,
         reject_program_identifiers: true,
@@ -556,6 +557,7 @@ fn spec_hash_binds_isolated_symbolic_shape_policy_fields() {
         isolated_colon_left_min_len: 21,
         isolated_colon_right_min_len: 17,
         leading_slash_base64_entropy_floor: 4.9,
+        keyword_free_operator_margin: None,
         reject_repeated_blocks: true,
         allow_alphabetic_credential: true,
         reject_program_identifiers: true,
@@ -585,6 +587,25 @@ fn spec_hash_binds_isolated_symbolic_shape_policy_fields() {
         compute_spec_hash(std::slice::from_ref(&base)),
         compute_spec_hash(std::slice::from_ref(&underscore_changed)),
         "changing underscore admission must invalidate scan identity"
+    );
+
+    let mut margin_base = base.clone();
+    margin_base.entropy_roles = vec![EntropyDetectionRole::KeywordFree];
+    margin_base
+        .plausibility
+        .as_mut()
+        .expect("plausibility baseline")
+        .keyword_free_operator_margin = Some(1.0);
+    let mut margin_changed = margin_base.clone();
+    margin_changed
+        .plausibility
+        .as_mut()
+        .expect("plausibility baseline")
+        .keyword_free_operator_margin = Some(1.25);
+    assert_ne!(
+        compute_spec_hash(std::slice::from_ref(&margin_base)),
+        compute_spec_hash(std::slice::from_ref(&margin_changed)),
+        "changing keyword-free operator composition must invalidate scan identity"
     );
 }
 knob_changes_digest!(spec_hash_binds_entropy_policy_priority, |d| d

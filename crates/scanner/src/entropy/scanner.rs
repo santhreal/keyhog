@@ -253,7 +253,9 @@ pub fn find_entropy_secrets(
     )
 }
 
-/// Find entropy-based matches with an explicit keyword-free threshold override.
+/// Find entropy-based matches with an explicit detector floor for keyword-free
+/// admission. The embedded role owner's compiled policy still composes that
+/// floor with `entropy_threshold` and its detector-owned operator margin.
 pub fn find_entropy_secrets_with_threshold(
     text: &str,
     min_length: usize,
@@ -294,12 +296,12 @@ pub(crate) fn find_entropy_secrets_with_lines(
     placeholder_keywords: &[String],
     skip_lines: Option<&std::collections::HashSet<usize>>,
 ) -> Vec<EntropyMatch> {
-    // The explicit `keyword_free_threshold` is authoritative here, do NOT
-    // re-derive it from the generic-secret spec. Callers resolve the relevant
-    // corpus first: the convenience entry reads the embedded detector, while
-    // production reads the compiled detector and applies its detector-relative
-    // sensitive-path discount. Re-reading policy here would silently clobber
-    // both custom corpora and the recall adjustment.
+    // The explicit `keyword_free_threshold` is the authoritative detector-floor
+    // component; do not re-derive it here. The compiled role owner still applies
+    // its TOML-owned operator margin when building the keyword-free context.
+    // Callers resolve the relevant corpus first: the convenience entry reads
+    // the embedded detector, while production reads the compiled detector and
+    // applies its detector-relative sensitive-path discount.
     assert!(
         line_offsets.len() >= lines.len(),
         "entropy line offsets must cover every split line"
@@ -541,11 +543,15 @@ fn scan_keyword_free_candidates(
         keyhog_core::EntropyDetectionRole::KeywordFree,
     );
     let keyword_free_min_len = compiled_secret.map(|policy| policy.keyword_free_min_len);
+    let keyword_free_operator_margin =
+        compiled_secret.and_then(|policy| policy.keyword_free_operator_margin);
     let compiled_keyword_secret = get_compiled_policy_for_role(
         active_policy,
         keyhog_core::EntropyDetectionRole::IsolatedBare,
     );
-    let keyword_free_enabled = keyword_free_threshold.is_some() && keyword_free_min_len.is_some();
+    let keyword_free_enabled = keyword_free_threshold.is_some()
+        && keyword_free_min_len.is_some()
+        && keyword_free_operator_margin.is_some();
     let generic_keyword_secret_min_len =
         compiled_keyword_secret.map(|policy| policy.keyword_free_min_len);
     let isolated_bare_enabled = generic_keyword_secret_min_len.is_some();
@@ -556,13 +562,16 @@ fn scan_keyword_free_candidates(
     let keyword_free_context = keyword_free_threshold
         .filter(|_| keyword_free_enabled)
         .zip(keyword_free_min_len)
-        .map(|(threshold, min_len)| KeywordContext {
-            keyword: KEYWORD_FREE_LABEL.to_string(),
-            threshold: threshold.max(entropy_threshold + 1.0),
-            min_len,
-            is_credential_context: false,
-            entropy_shape: compiled_secret.and_then(|policy| policy.entropy_shape),
-            plausibility_policy: compiled_secret.copied(),
+        .and_then(|(threshold, min_len)| {
+            let compiled = compiled_secret?;
+            Some(KeywordContext {
+                keyword: KEYWORD_FREE_LABEL.to_string(),
+                threshold: compiled.keyword_free_effective_floor(threshold, entropy_threshold)?,
+                min_len,
+                is_credential_context: false,
+                entropy_shape: compiled.entropy_shape,
+                plausibility_policy: Some(*compiled),
+            })
         });
     let isolated_token_context = generic_keyword_secret_min_len.map(|min_len| {
         isolated_bare_keyword_context_with_shape(

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add detector-owned `plausibility.keyword_free_operator_margin`, validate it
+  only for the `keyword-free` entropy role, and bind it into detector identity.
+
 - Add an opt-in source ordering contract for contiguous chunk identities so
   dispatchers can split routing batches without assuming concrete source types.
 

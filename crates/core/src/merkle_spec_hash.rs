@@ -172,6 +172,13 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
                     policy.reject_source_symbol_identifiers,
                     policy.reject_dash_segmented_alnum,
                 ));
+                if let Some(margin) = policy.keyword_free_operator_margin {
+                    entries.push(format!(
+                        "keyword-free-operator-margin:{}:{:016x}",
+                        d.id,
+                        margin.to_bits()
+                    ));
+                }
             }
             if let Some(v) = d.entropy_policy_priority {
                 entries.push(format!("entropy-policy-priority:{}:{v}", d.id));

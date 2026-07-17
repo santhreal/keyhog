@@ -116,6 +116,7 @@ model's fixed vocabulary, remain global.
 | `entropy_high` | Tightens keyword-independent generic admission | Admits more opaque candidates without strong assignment context |
 | `entropy_very_high` | Tightens isolated, anchor-free token admission | Expands the no-keyword search and therefore its false-positive surface |
 | `sensitive_path_entropy_very_high` | Raises the keyword-free bar even in sensitive files | Lowers the explicit sensitive-path bar for that detector, improving recall in `.env`/secret manifests |
+| `plausibility.keyword_free_operator_margin` | Raises the detector-owned margin composed with the Tier-A entropy threshold | Lowers that explicit margin for the `keyword-free` role owner; no other detector may declare it |
 | `[detector.entropy_fallback]` | Changes the emitted synthetic entropy finding identity and semantic class for that detector | Omitting it for an active entropy owner fails compilation; there is no scanner-global compatibility identity |
 | `entropy_roles` | Claims one or more corpus entry paths: `keyword-free`, `isolated-bare`, or `unclaimed-keyword` | Omitting a role disables that path in a focused custom corpus; no built-in owner or threshold is substituted |
 | `[[detector.entropy_shapes]]` | A lower declared shape floor admits more matching isolated credentials | A higher floor narrows the exception; omission is invalid for an active entropy owner |

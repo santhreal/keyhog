@@ -106,6 +106,7 @@ pub(crate) struct CompiledEntropyPolicy {
     pub(crate) isolated_colon_left_min_len: usize,
     pub(crate) isolated_colon_right_min_len: usize,
     pub(crate) leading_slash_base64_entropy_floor: f64,
+    pub(crate) keyword_free_operator_margin: Option<f64>,
     pub(crate) keyword_free_min_len: usize,
     pub(crate) min_len: usize,
     pub(crate) max_len: usize,
@@ -115,6 +116,16 @@ pub(crate) struct CompiledEntropyPolicy {
 }
 
 impl CompiledEntropyPolicy {
+    #[inline]
+    pub(crate) fn keyword_free_effective_floor(
+        &self,
+        detector_floor: f64,
+        operator_floor: f64,
+    ) -> Option<f64> {
+        self.keyword_free_operator_margin
+            .map(|margin| detector_floor.max(operator_floor + margin))
+    }
+
     #[inline]
     #[cfg(feature = "entropy")]
     pub(crate) fn bpe_bound(&self, operator_override: Option<f64>) -> Option<f64> {
@@ -188,6 +199,31 @@ impl CompiledEntropyPolicy {
                 detector.id
             ));
         }
+        let owns_keyword_free = detector
+            .entropy_roles
+            .contains(&keyhog_core::EntropyDetectionRole::KeywordFree);
+        let keyword_free_operator_margin = plausibility.keyword_free_operator_margin;
+        match (owns_keyword_free, keyword_free_operator_margin) {
+            (true, None) => {
+                return Err(format!(
+                    "detector {:?} claims entropy role `keyword-free` but omits plausibility.keyword_free_operator_margin",
+                    detector.id
+                ));
+            }
+            (false, Some(_)) => {
+                return Err(format!(
+                    "detector {:?} declares plausibility.keyword_free_operator_margin without claiming entropy role `keyword-free`",
+                    detector.id
+                ));
+            }
+            (_, Some(margin)) if !margin.is_finite() || !(0.0..=8.0).contains(&margin) => {
+                return Err(format!(
+                    "detector {:?} plausibility.keyword_free_operator_margin must be finite and in [0.0, 8.0]",
+                    detector.id
+                ));
+            }
+            _ => {}
+        }
         if bpe_enabled != bpe_max_bytes_per_token.is_some() {
             return Err(format!(
                 "detector {:?} must declare a positive BPE bound exactly when BPE is enabled",
@@ -230,6 +266,7 @@ impl CompiledEntropyPolicy {
             isolated_colon_left_min_len: plausibility.isolated_colon_left_min_len,
             isolated_colon_right_min_len: plausibility.isolated_colon_right_min_len,
             leading_slash_base64_entropy_floor: plausibility.leading_slash_base64_entropy_floor,
+            keyword_free_operator_margin,
             keyword_free_min_len: Self::required(
                 detector,
                 "keyword_free_min_len",

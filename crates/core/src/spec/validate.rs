@@ -486,6 +486,13 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
                 )));
             }
         }
+        if let Some(margin) = plausibility.keyword_free_operator_margin {
+            if !margin.is_finite() || !(0.0..=8.0).contains(&margin) {
+                issues.push(QualityIssue::Error(format!(
+                    "plausibility.keyword_free_operator_margin must be finite and in [0.0, 8.0], found {margin}"
+                )));
+            }
+        }
         if plausibility.mixed_alnum_min_len == 0 {
             issues.push(QualityIssue::Error(
                 "plausibility.mixed_alnum_min_len must be greater than zero".into(),
@@ -593,6 +600,23 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
                     .into(),
             ));
         }
+    }
+    let owns_keyword_free = spec
+        .entropy_roles
+        .contains(&crate::EntropyDetectionRole::KeywordFree);
+    let keyword_free_operator_margin = spec
+        .plausibility
+        .and_then(|policy| policy.keyword_free_operator_margin);
+    match (owns_keyword_free, keyword_free_operator_margin) {
+        (true, None) => issues.push(QualityIssue::Error(
+            "the detector claiming entropy role `keyword-free` must declare plausibility.keyword_free_operator_margin"
+                .into(),
+        )),
+        (false, Some(_)) => issues.push(QualityIssue::Error(
+            "plausibility.keyword_free_operator_margin is valid only on the detector claiming entropy role `keyword-free`"
+                .into(),
+        )),
+        _ => {}
     }
     if entropy_owner && spec.entropy_fallback.is_none() {
         issues.push(QualityIssue::Error(

@@ -153,6 +153,7 @@ fn plausibility_policy_fields_reject_invalid_ranges() {
         isolated_colon_left_min_len: 0,
         isolated_colon_right_min_len: 0,
         leading_slash_base64_entropy_floor: f64::NAN,
+        keyword_free_operator_margin: None,
         reject_repeated_blocks: true,
         allow_alphabetic_credential: true,
         reject_program_identifiers: true,
@@ -176,6 +177,59 @@ fn plausibility_policy_fields_reject_invalid_ranges() {
         issue,
         QualityIssue::Error(message) if message.contains("isolated_symbolic_min_symbols")
     )));
+}
+
+#[test]
+fn keyword_free_operator_margin_is_required_and_exclusive_to_its_role_owner() {
+    let mut owner = keyhog_core::detector_spec_by_id("generic-secret")
+        .expect("embedded keyword-free owner must load")
+        .clone();
+    owner
+        .plausibility
+        .as_mut()
+        .expect("keyword-free owner must declare plausibility")
+        .keyword_free_operator_margin = None;
+    let missing = validate_detector(&owner);
+    assert!(missing.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message)
+            if message == "the detector claiming entropy role `keyword-free` must declare plausibility.keyword_free_operator_margin"
+    )), "missing owner error: {missing:#?}");
+
+    let mut non_owner = keyhog_core::detector_spec_by_id("generic-password")
+        .expect("embedded non-owner must load")
+        .clone();
+    non_owner
+        .plausibility
+        .as_mut()
+        .expect("generic password must declare plausibility")
+        .keyword_free_operator_margin = Some(1.0);
+    let misplaced = validate_detector(&non_owner);
+    assert!(misplaced.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message)
+            if message == "plausibility.keyword_free_operator_margin is valid only on the detector claiming entropy role `keyword-free`"
+    )), "misplaced owner error: {misplaced:#?}");
+}
+
+#[test]
+fn keyword_free_operator_margin_rejects_nonfinite_and_out_of_domain_values() {
+    for invalid in [f64::NAN, f64::INFINITY, -0.001, 8.001] {
+        let mut owner = keyhog_core::detector_spec_by_id("generic-secret")
+            .expect("embedded keyword-free owner must load")
+            .clone();
+        owner
+            .plausibility
+            .as_mut()
+            .expect("keyword-free owner must declare plausibility")
+            .keyword_free_operator_margin = Some(invalid);
+        let issues = validate_detector(&owner);
+        assert!(issues.iter().any(|issue| matches!(
+            issue,
+            QualityIssue::Error(message)
+                if message.starts_with("plausibility.keyword_free_operator_margin must be finite and in [0.0, 8.0]")
+        )), "invalid margin {invalid:?} was accepted: {issues:#?}");
+    }
 }
 
 #[test]
