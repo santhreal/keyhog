@@ -48,7 +48,7 @@ use self::store::{
     autoroute_cache_file_presence, load_autoroute_cache, save_autoroute_cache,
     AutorouteCacheSaveOutcome,
 };
-pub(crate) use self::store::{inspect_autoroute_cache, AutorouteCacheInspection};
+pub(crate) use self::store::{inspect_autoroute_cache, AutorouteReadiness};
 pub(crate) use self::workload::source_route_class;
 use self::workload::{
     differing_workload_dimensions, render_workload_key, workload_key, WorkloadClassificationError,

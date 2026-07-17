@@ -312,7 +312,7 @@ keyhog backend --autoroute          # concise human-readable summary
 keyhog backend --autoroute --verbose # every workload receipt
 keyhog backend --autoroute --json    # machine-readable
 keyhog backend --autoroute --autoroute-cache /absolute/custom/autoroute.json
-keyhog doctor                       # reports calibrated / not calibrated / STALE
+keyhog doctor                       # reports the same readiness and repair action
 ```
 
 The inspection command is also a health gate. A single-backend build reports
@@ -320,8 +320,10 @@ The inspection command is also a health gate. A single-backend build reports
 For a multi-backend build, `health: ready` exits `0`; `calibration_required`,
 `disabled`, `stale`, and `invalid` exit `4` so automation cannot mistake an
 unusable autoroute state for a healthy host. JSON includes the same `health`
-value, and the scan command continues to use exit `2` for a missing exact
-workload decision.
+value plus `repair_command`: `null` for `direct` or `ready`, the canonical
+calibration command for absent, stale, or invalid evidence, and an explicit
+cache-path command when persistence is disabled. The scan command continues to
+use exit `2` for a missing exact workload decision.
 
 Pass `--autoroute-cache` when the scan uses a non-default cache path through
 the matching scan flag or `[system].autoroute_cache`.

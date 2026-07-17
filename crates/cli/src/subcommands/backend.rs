@@ -118,12 +118,16 @@ fn run_autoroute_inspection(
     let path = crate::autoroute_cache_path::resolve_autoroute_cache_path(autoroute_cache)
         .map_err(|message| anyhow::anyhow!(message))?;
     let inspection = crate::orchestrator::inspect_autoroute_cache(path.as_deref());
-    let health = autoroute_inspection_health(&inspection);
+    let health = inspection.readiness();
     let exit = autoroute_inspection_exit_code(health);
 
     if json {
         let mut value = serde_json::to_value(&inspection)?;
         value["health"] = serde_json::Value::String(health.as_str().to_string());
+        value["repair_command"] = health
+            .repair_command()
+            .map(|command| serde_json::Value::String(command.to_string()))
+            .unwrap_or(serde_json::Value::Null);
         println!("{}", serde_json::to_string_pretty(&value)?);
         return Ok(exit);
     }
@@ -155,10 +159,12 @@ fn run_autoroute_inspection(
             return Ok(exit);
         }
         println!(
-            "Run `keyhog calibrate-autoroute` to (re)build the cache in place, or \
-             `install.sh --calibrate` (Unix) / `install.ps1 -Calibrate` (Windows), or scan \
-             with an explicit `--backend`."
+            "Repair: `{}`.",
+            health
+                .required_repair_command()
+                .map_err(anyhow::Error::msg)?
         );
+        println!("An explicit `--backend` is a diagnostic override, not autoroute evidence.");
         return Ok(exit);
     }
 
@@ -183,9 +189,11 @@ fn run_autoroute_inspection(
         );
         println!();
         println!(
-            "No autoroute cache here yet: auto scans fail closed until calibrated. Run \
-             `keyhog calibrate-autoroute` to prime it in place, or `install.sh --calibrate` \
-             (Unix) / `install.ps1 -Calibrate` (Windows), or scan with an explicit `--backend`."
+            "No autoroute cache exists here yet, so automatic scans reject unproved routes. \
+             Repair: `{}`. An explicit `--backend` is a diagnostic override, not autoroute evidence.",
+            health
+                .required_repair_command()
+                .map_err(anyhow::Error::msg)?
         );
         return Ok(exit);
     }
@@ -375,65 +383,15 @@ fn run_autoroute_inspection(
     Ok(exit)
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum AutorouteInspectionHealth {
-    Direct,
-    Ready,
-    CalibrationRequired,
-    Disabled,
-    Stale,
-    Invalid,
-}
+fn autoroute_inspection_exit_code(health: crate::orchestrator::AutorouteReadiness) -> ExitCode {
+    use crate::orchestrator::AutorouteReadiness;
 
-impl AutorouteInspectionHealth {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Direct => "direct",
-            Self::Ready => "ready",
-            Self::CalibrationRequired => "calibration_required",
-            Self::Disabled => "disabled",
-            Self::Stale => "stale",
-            Self::Invalid => "invalid",
-        }
-    }
-}
-
-fn autoroute_inspection_health(
-    inspection: &crate::orchestrator::AutorouteCacheInspection,
-) -> AutorouteInspectionHealth {
-    if !inspection.calibration_required {
-        return AutorouteInspectionHealth::Direct;
-    }
-    if inspection
-        .error
-        .as_deref()
-        .is_some_and(|error| error.contains("disabled"))
-    {
-        return AutorouteInspectionHealth::Disabled;
-    }
-    if !inspection.present && inspection.error.is_none() {
-        return AutorouteInspectionHealth::CalibrationRequired;
-    }
-    if inspection.error.is_some() {
-        return AutorouteInspectionHealth::Invalid;
-    }
-    if inspection.identity_matches_build == Some(false) {
-        return AutorouteInspectionHealth::Stale;
-    }
-    if inspection.present && inspection.identity_matches_build == Some(true) {
-        AutorouteInspectionHealth::Ready
-    } else {
-        AutorouteInspectionHealth::Invalid
-    }
-}
-
-fn autoroute_inspection_exit_code(health: AutorouteInspectionHealth) -> ExitCode {
     match health {
-        AutorouteInspectionHealth::Direct | AutorouteInspectionHealth::Ready => ExitCode::SUCCESS,
-        AutorouteInspectionHealth::CalibrationRequired
-        | AutorouteInspectionHealth::Disabled
-        | AutorouteInspectionHealth::Stale
-        | AutorouteInspectionHealth::Invalid => ExitCode::from(EXIT_HEALTH_FAILURE),
+        AutorouteReadiness::Direct | AutorouteReadiness::Ready => ExitCode::SUCCESS,
+        AutorouteReadiness::CalibrationRequired
+        | AutorouteReadiness::Disabled
+        | AutorouteReadiness::Stale
+        | AutorouteReadiness::Invalid => ExitCode::from(EXIT_HEALTH_FAILURE),
     }
 }
 

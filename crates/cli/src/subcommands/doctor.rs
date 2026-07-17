@@ -193,39 +193,74 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
     // cache and FAILS CLOSED (exit 2) on a workload it has no decision for
     // Law 10: never guess a substitute. Surface whether this binary+host is
     // calibrated so a user understands an "autoroute calibration required" scan
-    // error. This is informational and never marks the install unhealthy: an
-    // uncalibrated cache is the expected pre-`--calibrate` state (and single-
-    // backend / portable builds never fail closed, so they need no decision). A
-    // STALE cache, one written by a different build, is a WARN (exit stays 0),
-    // because auto scans reject it until re-calibrated while explicit `--backend`
-    // still works. Reuses the same inspection primitive as `backend --autoroute`.
+    // error. Readiness and repair come from the same typed contract as
+    // `backend --autoroute`; doctor only decides how that state affects its
+    // aggregate health report.
     println!("\n{bold}autoroute{reset}");
     let autoroute_cache = crate::autoroute_cache_path::resolve_autoroute_cache_path(None)
         .ok() // LAW10: reporting-only doctor cache-path resolve; display default, recall-safe
         .flatten();
     let autoroute = crate::orchestrator::inspect_autoroute_cache(autoroute_cache.as_deref());
-    if let Some(error) = &autoroute.error {
-        warned = true;
-        println!("  calibration    {yellow}unusable{reset}  {dim}{error}{reset}");
-        println!(
-            "                 {dim}auto scans fail closed until re-calibrated; explicit `--backend` still works{reset}"
-        );
-    } else if !autoroute.present {
-        println!(
-            "  calibration    {dim}not calibrated: run `keyhog calibrate-autoroute` (or `install.sh --calibrate` / `install.ps1 -Calibrate`), or scan with an explicit `--backend`{reset}"
-        );
-    } else {
-        let decisions: usize = autoroute.configs.iter().map(|c| c.decision_count).sum();
-        if autoroute.identity_matches_build == Some(false) {
-            warned = true;
-            println!(
-                "  calibration    {yellow}STALE{reset}  {dim}cache is for a different build; auto scans will reject it, re-run `keyhog calibrate-autoroute` or `install.sh --calibrate`{reset}"
-            );
-        } else {
+    let readiness = autoroute.readiness();
+    match readiness {
+        crate::orchestrator::AutorouteReadiness::Direct => {
+            if let Some(backend) = autoroute.direct_backend {
+                println!(
+                    "  calibration    {green}not required{reset}  {dim}automatic scans route directly to {backend}{reset}"
+                );
+            } else {
+                healthy = false;
+                println!(
+                    "  calibration    {red}INVALID{reset}  {dim}single-backend inspection omitted its direct route{reset}"
+                );
+            }
+        }
+        crate::orchestrator::AutorouteReadiness::Ready => {
+            let decisions: usize = autoroute.configs.iter().map(|c| c.decision_count).sum();
             println!(
                 "  calibration    {green}{} config(s), {} decision(s){reset}  {dim}`keyhog backend --autoroute` for detail{reset}",
                 autoroute.configs.len(),
                 decisions
+            );
+        }
+        crate::orchestrator::AutorouteReadiness::CalibrationRequired => println!(
+            "  calibration    {dim}not calibrated; repair: `{}`{reset}",
+            readiness
+                .required_repair_command()
+                .map_err(anyhow::Error::msg)?
+        ),
+        crate::orchestrator::AutorouteReadiness::Disabled => {
+            warned = true;
+            println!(
+                "  calibration    {yellow}DISABLED{reset}  {dim}automatic routing needs a writable cache; repair: `{}`{reset}",
+                readiness
+                    .required_repair_command()
+                    .map_err(anyhow::Error::msg)?
+            );
+        }
+        crate::orchestrator::AutorouteReadiness::Stale => {
+            warned = true;
+            println!(
+                "  calibration    {yellow}STALE{reset}  {dim}cache is for a different build; repair: `{}`{reset}",
+                readiness
+                    .required_repair_command()
+                    .map_err(anyhow::Error::msg)?
+            );
+        }
+        crate::orchestrator::AutorouteReadiness::Invalid => {
+            warned = true;
+            if let Some(error) = &autoroute.error {
+                println!("  calibration    {yellow}INVALID{reset}  {dim}{error}{reset}");
+            } else {
+                println!(
+                    "  calibration    {yellow}INVALID{reset}  {dim}cache readiness is incomplete{reset}"
+                );
+            }
+            println!(
+                "                 {dim}repair: `{}`; explicit `--backend` is diagnostic only{reset}",
+                readiness
+                    .required_repair_command()
+                    .map_err(anyhow::Error::msg)?
             );
         }
     }

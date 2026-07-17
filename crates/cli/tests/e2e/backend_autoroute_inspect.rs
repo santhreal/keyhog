@@ -94,6 +94,15 @@ fn backend_autoroute_json_is_valid_and_marks_absence() {
         }),
         "JSON must expose the same health state used for its process exit; json={value}"
     );
+    assert_eq!(
+        value["repair_command"],
+        if keyhog_scanner::hw_probe::multiple_backends_compiled() {
+            serde_json::json!("keyhog calibrate-autoroute")
+        } else {
+            serde_json::Value::Null
+        },
+        "JSON repair must follow the same readiness state; json={value}"
+    );
     assert!(
         value["configs"]
             .as_array()
@@ -128,6 +137,10 @@ fn backend_autoroute_disabled_cache_reports_compiled_route_contract() {
         assert_eq!(value["calibration_required"], serde_json::json!(true));
         assert_eq!(value["direct_backend"], serde_json::Value::Null);
         assert_eq!(value["health"], serde_json::json!("disabled"));
+        assert_eq!(
+            value["repair_command"],
+            serde_json::json!("keyhog calibrate-autoroute --autoroute-cache <PATH>")
+        );
         assert!(value["error"]
             .as_str()
             .is_some_and(|error| error.contains("explicit --backend")));
@@ -135,6 +148,7 @@ fn backend_autoroute_disabled_cache_reports_compiled_route_contract() {
         assert_eq!(value["calibration_required"], serde_json::json!(false));
         assert_eq!(value["direct_backend"], serde_json::json!("cpu-fallback"));
         assert_eq!(value["health"], serde_json::json!("direct"));
+        assert_eq!(value["repair_command"], serde_json::Value::Null);
         assert_eq!(value["error"], serde_json::Value::Null);
     }
 }
@@ -162,8 +176,13 @@ fn backend_autoroute_inspects_explicit_cache_path() {
         serde_json::from_slice(&out.stdout).expect("explicit-path inspection JSON");
     if keyhog_scanner::hw_probe::multiple_backends_compiled() {
         assert_eq!(value["health"], serde_json::json!("invalid"));
+        assert_eq!(
+            value["repair_command"],
+            serde_json::json!("keyhog calibrate-autoroute")
+        );
     } else {
         assert_eq!(value["health"], serde_json::json!("direct"));
+        assert_eq!(value["repair_command"], serde_json::Value::Null);
     }
     assert_eq!(
         value["path"],

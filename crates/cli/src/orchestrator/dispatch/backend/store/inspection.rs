@@ -16,6 +16,48 @@ use crate::orchestrator::dispatch::backend::AUTOROUTE_CACHE_VERSION;
 #[cfg(test)]
 mod tests;
 
+/// One operator-visible readiness state shared by every autoroute health surface.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum AutorouteReadiness {
+    Direct,
+    Ready,
+    CalibrationRequired,
+    Disabled,
+    Stale,
+    Invalid,
+}
+
+impl AutorouteReadiness {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Direct => "direct",
+            Self::Ready => "ready",
+            Self::CalibrationRequired => "calibration_required",
+            Self::Disabled => "disabled",
+            Self::Stale => "stale",
+            Self::Invalid => "invalid",
+        }
+    }
+
+    pub(crate) const fn repair_command(self) -> Option<&'static str> {
+        match self {
+            Self::Direct | Self::Ready => None,
+            Self::Disabled => Some("keyhog calibrate-autoroute --autoroute-cache <PATH>"),
+            Self::CalibrationRequired | Self::Stale | Self::Invalid => {
+                Some("keyhog calibrate-autoroute")
+            }
+        }
+    }
+
+    pub(crate) const fn required_repair_command(self) -> Result<&'static str, &'static str> {
+        match self.repair_command() {
+            Some(command) => Ok(command),
+            None => Err("healthy autoroute readiness has no repair command"),
+        }
+    }
+}
+
 /// Operator-facing view of the persisted autoroute cache (one JSON object).
 #[derive(Debug, Default, Serialize)]
 pub(crate) struct AutorouteCacheInspection {
@@ -43,6 +85,31 @@ pub(crate) struct AutorouteCacheInspection {
     pub(crate) rules_digest: Option<String>,
     pub(crate) inspected_at_unix_ms: Option<u128>,
     pub(crate) configs: Vec<AutorouteConfigInspection>,
+}
+
+impl AutorouteCacheInspection {
+    pub(crate) fn readiness(&self) -> AutorouteReadiness {
+        if !self.calibration_required {
+            return AutorouteReadiness::Direct;
+        }
+        if self.path.is_none() {
+            return AutorouteReadiness::Disabled;
+        }
+        if !self.present && self.error.is_none() {
+            return AutorouteReadiness::CalibrationRequired;
+        }
+        if self.error.is_some() {
+            return AutorouteReadiness::Invalid;
+        }
+        if self.identity_matches_build == Some(false) {
+            return AutorouteReadiness::Stale;
+        }
+        if self.present && self.identity_matches_build == Some(true) {
+            AutorouteReadiness::Ready
+        } else {
+            AutorouteReadiness::Invalid
+        }
+    }
 }
 
 /// One exact resolved scan-config and host generation's calibrated decisions.

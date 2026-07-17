@@ -9,7 +9,7 @@ mod schema;
 mod validation;
 
 pub(super) use codec::autoroute_cache_file_presence;
-pub(crate) use inspection::{inspect_autoroute_cache, AutorouteCacheInspection};
+pub(crate) use inspection::{inspect_autoroute_cache, AutorouteReadiness};
 pub(super) use persistence::{
     load_autoroute_cache, save_autoroute_cache, AutorouteCacheSaveOutcome,
 };
