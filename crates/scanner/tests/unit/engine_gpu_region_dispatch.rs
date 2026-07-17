@@ -299,6 +299,7 @@ fn complete_always_active_negative_preserves_triggered_row_keyword_phase2_findin
         Some(&anchors_present),
         None,
         None,
+        scanner.default_execution_route(),
     );
 
     let found = results[0]
@@ -378,6 +379,7 @@ fn normalized_triggered_rows_discard_raw_gpu_evidence_and_recompute_admission() 
         Some(&anchors_present),
         None,
         None,
+        scanner.default_execution_route(),
     );
     let by_detector = |detector: &str| {
         results[0]

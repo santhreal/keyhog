@@ -24,6 +24,7 @@ impl CompiledScanner {
         deadline: Option<std::time::Instant>,
         phase2_keyword_hints: Option<&[u32]>,
         phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence>,
+        route: crate::ScanExecutionRoute,
     ) {
         if let Some(deadline) = deadline {
             if std::time::Instant::now() >= deadline {
@@ -52,6 +53,7 @@ impl CompiledScanner {
                     None,
                     phase2_keyword_hints,
                     phase2_always_active_gpu_evidence,
+                    route,
                 );
                 return;
             }
@@ -70,6 +72,7 @@ impl CompiledScanner {
                 deadline,
                 phase2_keyword_hints,
                 phase2_always_active_gpu_evidence,
+                route,
             );
             return;
         }
@@ -79,6 +82,7 @@ impl CompiledScanner {
             &preprocessed.text,
             phase2_keyword_hints,
             phase2_always_active_gpu_evidence,
+            route,
             |this, active_patterns| {
                 // `active_patterns` is the SPARSE list of active phase-2 indices,
                 // so we touch only the patterns that can fire on this chunk rather
@@ -127,6 +131,7 @@ impl CompiledScanner {
         focus: (usize, usize),
         phase2_keyword_hints: Option<&[u32]>,
         phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence>,
+        route: crate::ScanExecutionRoute,
     ) {
         if let Some(deadline) = deadline {
             if std::time::Instant::now() >= deadline {
@@ -160,6 +165,7 @@ impl CompiledScanner {
                 deadline,
                 phase2_keyword_hints,
                 phase2_always_active_gpu_evidence,
+                route,
             );
             return;
         }
@@ -184,6 +190,7 @@ impl CompiledScanner {
                     focus,
                     phase2_keyword_hints,
                     phase2_always_active_gpu_evidence,
+                    route,
                 );
                 return;
             }
@@ -199,6 +206,7 @@ impl CompiledScanner {
             match_text,
             phase2_keyword_hints,
             phase2_always_active_gpu_evidence,
+            route,
             |this, active_patterns| {
                 for (tested, &index) in active_patterns.iter().enumerate() {
                     if let Some(deadline) = deadline {
@@ -247,6 +255,7 @@ impl CompiledScanner {
         match_text: &str,
         phase2_keyword_hints: Option<&[u32]>,
         phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence>,
+        route: crate::ScanExecutionRoute,
         f: impl FnOnce(&Self, &[usize]) -> R,
     ) -> R {
         ACTIVE_PATTERNS_POOL.with(|cell| {
@@ -261,6 +270,7 @@ impl CompiledScanner {
                 false,
                 phase2_keyword_hints,
                 phase2_always_active_gpu_evidence.is_some_and(|evidence| evidence.absence_proven()),
+                route,
             );
             if self.tuning.phase2_reverse_enabled() {
                 scratch.active.reverse();
@@ -337,7 +347,15 @@ impl CompiledScanner {
             None => ACTIVE_PATTERNS_POOL.with(|cell| {
                 let mut scratch = cell.borrow_mut();
                 scratch.begin(self.phase2_patterns.len());
-                self.populate_active_phase2(data, data, &mut scratch, false, None, false);
+                self.populate_active_phase2(
+                    data,
+                    data,
+                    &mut scratch,
+                    false,
+                    None,
+                    false,
+                    self.default_execution_route(),
+                );
                 !scratch.active.is_empty()
             }),
         }
@@ -369,6 +387,7 @@ impl CompiledScanner {
         anchor_mode: bool,
         phase2_keyword_hints: Option<&[u32]>,
         always_active_absence_proven: bool,
+        route: crate::ScanExecutionRoute,
     ) {
         if let Some(keyword_ac) = &self.phase2_keyword_ac {
             let prof = phase2_pattern_prof_enabled();
@@ -391,8 +410,9 @@ impl CompiledScanner {
                 && self
                     .phase2_anchor_index
                     .as_ref()
-                    .is_some_and(|a| a.has_plain_localizer(&self.tuning));
-            let tuning = self.tuning.resolve();
+                    .is_some_and(|a| a.has_plain_localizer(route.phase2_localizer));
+            let mut tuning = self.tuning.resolve();
+            tuning.fallback_localizer = route.phase2_localizer;
             let t0 = if prof { Some(Instant::now()) } else { None };
             {
                 // The anchorless always-active RegexSet, the detectors that run
@@ -523,6 +543,7 @@ impl CompiledScanner {
         deadline: Option<std::time::Instant>,
         phase2_keyword_hints: Option<&[u32]>,
         phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence>,
+        route: crate::ScanExecutionRoute,
     ) {
         let prof = phase2_pattern_prof_enabled();
         self.with_active_phase2_patterns(
@@ -530,6 +551,7 @@ impl CompiledScanner {
             &preprocessed.text,
             phase2_keyword_hints,
             phase2_always_active_gpu_evidence,
+            route,
             |this, active_set| {
                 // `active_set` is the sparse list of active phase-2 indices, so
                 // we iterate only the patterns that can fire - no second

@@ -15,6 +15,7 @@ impl CompiledScanner {
         phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence>,
         confirmed_anchor_literal_matches: Option<&[(u32, u32)]>,
         generic_keyword_positions: Option<&[u32]>,
+        route: crate::ScanExecutionRoute,
     ) -> Vec<RawMatch> {
         let scan_state = self.scan_prepared_state_with_triggered(
             prepared,
@@ -25,6 +26,7 @@ impl CompiledScanner {
             phase2_always_active_gpu_evidence,
             confirmed_anchor_literal_matches,
             generic_keyword_positions,
+            route,
         );
         #[cfg(feature = "ml")]
         {
@@ -51,6 +53,7 @@ impl CompiledScanner {
         phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence>,
         confirmed_anchor_literal_matches: Option<&[(u32, u32)]>,
         generic_keyword_positions: Option<&[u32]>,
+        route: crate::ScanExecutionRoute,
     ) -> ScanState {
         if crate::deadline::expired(deadline) {
             return ScanState::with_static_intern(self.static_intern.clone());
@@ -199,6 +202,7 @@ impl CompiledScanner {
                 span,
                 phase2_keyword_hints,
                 phase2_always_active_gpu_evidence,
+                route,
             ),
             None => self.scan_phase2_patterns(
                 &prepared.preprocessed,
@@ -210,6 +214,7 @@ impl CompiledScanner {
                 deadline,
                 phase2_keyword_hints,
                 phase2_always_active_gpu_evidence,
+                route,
             ),
         }
         if crate::deadline::expired(deadline) {
@@ -273,6 +278,7 @@ impl CompiledScanner {
             None,
             None,
             None,
+            self.default_execution_route(),
         );
         scan_state.into_matches()
     }

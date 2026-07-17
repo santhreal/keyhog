@@ -59,8 +59,9 @@ impl CompiledScanner {
         &self,
         chunks: &[keyhog_core::Chunk],
         backend: crate::hw_probe::ScanBackend,
+        route: crate::ScanExecutionRoute,
     ) -> Vec<Vec<keyhog_core::RawMatch>> {
-        match self.try_scan_coalesced_gpu_region_presence(chunks, backend) {
+        match self.try_scan_coalesced_gpu_region_presence(chunks, backend, route) {
             Ok(results) => results,
             Err(error) => super::gpu_forced::fail_selected_gpu_dispatch_error(self, error),
         }
@@ -74,6 +75,7 @@ impl CompiledScanner {
         &self,
         chunks: &[keyhog_core::Chunk],
         route: crate::hw_probe::ScanBackend,
+        execution_route: crate::ScanExecutionRoute,
     ) -> std::result::Result<
         Vec<Vec<keyhog_core::RawMatch>>,
         super::gpu_forced::SelectedGpuDispatchError,
@@ -711,6 +713,7 @@ impl CompiledScanner {
                 Some(phase2_always_anchor_presence.as_slice()),
                 confirmed_anchor_literal_matches.as_deref(),
                 generic_keyword_positions.as_deref(),
+                execution_route,
             );
             if kh {
                 let phase2_always_anchor_chunks = phase2_always_anchor_presence

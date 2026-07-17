@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Carry phase-two plain-pattern localization as an immutable per-request
+  execution route through CPU, Hyperscan, CUDA, WGPU, windowing, decode,
+  fragment recovery, and boundary reassembly. Concurrent autoroute requests no
+  longer need to mutate scanner-global tuning to select this path.
+
 - Route the profiled Elasticsearch, ip-api, 8x8, Carbon Black, GovTech,
   SimpleAnalytics, SentinelOne, and MX API patterns through detector-owned
   required anchors instead of scanning them as always-active phase-two regexes

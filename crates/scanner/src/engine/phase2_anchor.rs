@@ -406,8 +406,8 @@ impl Phase2AnchorIndex {
     /// end-to-end LOSS on decode-recursion-heavy inputs (many small sub-chunks),
     /// so the lighter single-RegexSet fold is the better default; explicit
     /// tuning lets it be A/B'd.
-    pub(crate) fn has_plain_localizer(&self, tuning: &super::phase2::ScannerTuning) -> bool {
-        if !tuning.phase2_localizer_enabled() {
+    pub(crate) fn has_plain_localizer(&self, phase2_localizer: bool) -> bool {
+        if !phase2_localizer {
             return false;
         }
         self.plain_anchor_ac.is_some() || !self.plain_always_mark.is_empty()

@@ -535,6 +535,7 @@ impl DefaultScanRuntime {
             batch,
             backend,
             selection.phase1_plan.as_ref(),
+            selection.execution_route,
             self.recover_automatic_gpu_faults,
         )
         .with_context(|| {

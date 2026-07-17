@@ -15,8 +15,8 @@ mod pipeline;
 use anyhow::Result;
 pub(crate) use backend::backend_requires_coalesced_batch_pipeline_for_test;
 pub(crate) use backend::inspect_autoroute_cache;
-use backend::{is_gpu_backend, AutorouteRoutingError, BackendSelection, MeasuredBackendRouter};
 pub(crate) use backend::AutorouteReadiness;
+use backend::{is_gpu_backend, AutorouteRoutingError, BackendSelection, MeasuredBackendRouter};
 pub(crate) use backend::{AutorouteMeasurementObserver, CachedBackendRouter};
 use keyhog_core::{Chunk, RawMatch, Source};
 use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
@@ -141,6 +141,7 @@ impl CoalescedBatchRouter {
             Self::Explicit(backend) => Ok(BackendSelection {
                 backend: *backend,
                 phase1_plan: (!backend.is_gpu()).then(|| scanner.phase1_admission_plan(batch)),
+                execution_route: scanner.default_execution_route(),
             }),
             Self::Measured(router) => router.choose_with_plan(scanner, None, batch),
         }
@@ -256,6 +257,7 @@ impl CoalescedScannerWorker {
             batch,
             chosen_backend,
             selection.phase1_plan.as_ref(),
+            selection.execution_route,
             self.recover_automatic_gpu_faults,
         )
         .map_err(|error| {
@@ -299,6 +301,7 @@ pub(crate) fn recover_automatic_gpu_batch(
     batch: &[Chunk],
     failed_backend: ScanBackend,
     error: &keyhog_scanner::ScanError,
+    execution_route: keyhog_scanner::ScanExecutionRoute,
 ) -> Vec<Vec<RawMatch>> {
     let chunks = batch.len();
     let bytes = batch
@@ -321,10 +324,11 @@ pub(crate) fn recover_automatic_gpu_batch(
         "automatic GPU dispatch failed; exact batch recovered through CPU reference",
     );
     let admission = scanner.phase1_admission_plan(batch);
-    scanner.scan_coalesced_with_backend_and_admission(
+    scanner.scan_coalesced_with_backend_admission_and_route(
         batch,
         ScanBackend::CpuFallback,
         Some(&admission),
+        execution_route,
     )
 }
 
@@ -352,19 +356,24 @@ pub(crate) fn scan_selected_batch(
     batch: &[Chunk],
     backend: ScanBackend,
     admission_plan: Option<&keyhog_scanner::Phase1AdmissionPlan>,
+    execution_route: keyhog_scanner::ScanExecutionRoute,
     recover_automatic_gpu_faults: bool,
 ) -> keyhog_scanner::Result<SelectedBatchScan> {
     let degrade_before = backend.is_gpu().then(|| scanner.gpu_degrade_count());
-    let (per_chunk, mut recovered) =
-        match scanner.try_scan_coalesced_with_backend_and_admission(batch, backend, admission_plan)
-        {
-            Ok(per_chunk) => (per_chunk, false),
-            Err(error) if backend.is_gpu() && recover_automatic_gpu_faults => (
-                recover_automatic_gpu_batch(scanner, batch, backend, &error),
-                true,
-            ),
-            Err(error) => return Err(error),
-        };
+    let (per_chunk, mut recovered) = match scanner
+        .try_scan_coalesced_with_backend_admission_and_route(
+            batch,
+            backend,
+            admission_plan,
+            execution_route,
+        ) {
+        Ok(per_chunk) => (per_chunk, false),
+        Err(error) if backend.is_gpu() && recover_automatic_gpu_faults => (
+            recover_automatic_gpu_batch(scanner, batch, backend, &error, execution_route),
+            true,
+        ),
+        Err(error) => return Err(error),
+    };
 
     if let Some(before) = degrade_before {
         let after = scanner.gpu_degrade_count();

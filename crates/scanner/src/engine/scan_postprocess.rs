@@ -35,8 +35,9 @@ impl CompiledScanner {
         chunk: &Chunk,
         matches: &mut Vec<RawMatch>,
         deadline: Option<std::time::Instant>,
+        route: crate::ScanExecutionRoute,
     ) {
-        self.post_process_matches_inner(chunk, matches, deadline);
+        self.post_process_matches_inner(chunk, matches, deadline, route);
     }
 
     pub(crate) fn post_process_matches_inner(
@@ -44,12 +45,13 @@ impl CompiledScanner {
         chunk: &Chunk,
         matches: &mut Vec<RawMatch>,
         deadline: Option<std::time::Instant>,
+        route: crate::ScanExecutionRoute,
     ) {
         if crate::deadline::expired(deadline) {
             return;
         }
         let pp_start = std::time::Instant::now();
-        self.scan_cross_chunk_fragments(chunk, matches, deadline);
+        self.scan_cross_chunk_fragments(chunk, matches, deadline, route);
         if crate::deadline::expired(deadline) {
             return;
         }
@@ -133,7 +135,7 @@ impl CompiledScanner {
                     // again per window would silently discard this decision.
                     let decoded_backend = self.live_cpu_backend();
                     let decoded_matches = if decoded_chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
-                        self.scan_windowed(&decoded_chunk, decoded_backend, deadline)
+                        self.scan_windowed(&decoded_chunk, decoded_backend, deadline, route)
                     } else {
                         // Decoded sub-chunks are post-process recursion;
                         // they're typically tiny (base64/hex/url payloads
@@ -156,7 +158,7 @@ impl CompiledScanner {
                         // collection fails closed through `backend_unavailable`
                         // (process exit), aborting the whole scan on the
                         // decode-through path.
-                        self.scan_inner(&decoded_chunk, decoded_backend, deadline)
+                        self.scan_inner(&decoded_chunk, decoded_backend, deadline, route)
                     };
                     super::profile::set_in_decode(restore_rescan);
                     if crate::deadline::expired(deadline) {

@@ -31,6 +31,7 @@ impl CompiledScanner {
         chunk: &Chunk,
         backend: crate::hw_probe::ScanBackend,
         deadline: Option<std::time::Instant>,
+        route: crate::ScanExecutionRoute,
     ) -> Vec<RawMatch> {
         if crate::deadline::expired(deadline) {
             return Vec::new();
@@ -65,7 +66,7 @@ impl CompiledScanner {
             return Vec::new();
         }
         self.scan_prepared_with_triggered(
-            prepared, backend, &triggered, deadline, None, None, None, None,
+            prepared, backend, &triggered, deadline, None, None, None, None, route,
         )
     }
 }

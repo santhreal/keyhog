@@ -159,6 +159,7 @@ enum AutorouteRuntimeClass {
 pub(crate) struct BackendSelection {
     pub(crate) backend: ScanBackend,
     pub(crate) phase1_plan: Option<Phase1AdmissionPlan>,
+    pub(crate) execution_route: keyhog_scanner::ScanExecutionRoute,
 }
 
 impl AutorouteRuntimeClass {
@@ -451,12 +452,14 @@ impl CachedBackendRouter {
             return Ok(BackendSelection {
                 backend: forced,
                 phase1_plan: (!forced.is_gpu()).then(|| scanner.phase1_admission_plan(batch)),
+                execution_route: scanner.default_execution_route(),
             });
         }
         if let Some(only) = sole_compiled_backend() {
             return Ok(BackendSelection {
                 backend: only,
                 phase1_plan: (!only.is_gpu()).then(|| scanner.phase1_admission_plan(batch)),
+                execution_route: scanner.default_execution_route(),
             });
         }
         let phase1_plan = scanner.phase1_admission_plan(batch);
@@ -477,6 +480,7 @@ impl CachedBackendRouter {
         Ok(BackendSelection {
             backend,
             phase1_plan: Some(phase1_plan),
+            execution_route: scanner.default_execution_route(),
         })
     }
 }
@@ -580,12 +584,14 @@ impl MeasuredBackendRouter {
             return Ok(BackendSelection {
                 backend: forced,
                 phase1_plan: (!forced.is_gpu()).then(|| scanner.phase1_admission_plan(batch)),
+                execution_route: scanner.default_execution_route(),
             });
         }
         if let Some(only) = sole_compiled_backend() {
             return Ok(BackendSelection {
                 backend: only,
                 phase1_plan: (!only.is_gpu()).then(|| scanner.phase1_admission_plan(batch)),
+                execution_route: scanner.default_execution_route(),
             });
         }
         let phase1_plan = scanner.phase1_admission_plan(batch);
@@ -605,6 +611,7 @@ impl MeasuredBackendRouter {
             return Ok(BackendSelection {
                 backend,
                 phase1_plan: Some(phase1_plan),
+                execution_route: scanner.default_execution_route(),
             });
         }
 
@@ -622,6 +629,7 @@ impl MeasuredBackendRouter {
             return Ok(BackendSelection {
                 backend,
                 phase1_plan: Some(phase1_plan),
+                execution_route: scanner.default_execution_route(),
             });
         }
         self.host_profile
@@ -668,6 +676,7 @@ impl MeasuredBackendRouter {
         Ok(BackendSelection {
             backend,
             phase1_plan: Some(phase1_plan),
+            execution_route: scanner.default_execution_route(),
         })
     }
 

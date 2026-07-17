@@ -113,10 +113,25 @@ fn ast_match_byte_upper_bound(ast: &Ast) -> Option<usize> {
 /// Mutates `per_chunk_results` in place. Boundary findings are dedup'd
 /// against (offset, credential_hash) entries already in the chunks'
 /// own results so the same secret isn't reported twice.
+#[cfg(test)]
 pub(crate) fn scan_chunk_boundaries(
     scanner: &CompiledScanner,
     chunks: &[Chunk],
     per_chunk_results: &mut [Vec<RawMatch>],
+) {
+    scan_chunk_boundaries_with_route(
+        scanner,
+        chunks,
+        per_chunk_results,
+        scanner.default_execution_route(),
+    );
+}
+
+pub(crate) fn scan_chunk_boundaries_with_route(
+    scanner: &CompiledScanner,
+    chunks: &[Chunk],
+    per_chunk_results: &mut [Vec<RawMatch>],
+    route: crate::ScanExecutionRoute,
 ) {
     if chunks.len() < 2 {
         return;
@@ -151,7 +166,15 @@ pub(crate) fn scan_chunk_boundaries(
 
         for w in indices.windows(2) {
             let (ai, bi) = (w[0], w[1]);
-            scan_one_pair(scanner, &chunks[ai], &chunks[bi], ai, bi, per_chunk_results);
+            scan_one_pair(
+                scanner,
+                &chunks[ai],
+                &chunks[bi],
+                ai,
+                bi,
+                per_chunk_results,
+                route,
+            );
         }
     }
 }
@@ -163,6 +186,7 @@ fn scan_one_pair(
     ai: usize,
     bi: usize,
     per_chunk_results: &mut [Vec<RawMatch>],
+    route: crate::ScanExecutionRoute,
 ) {
     if ai >= per_chunk_results.len() || bi >= per_chunk_results.len() {
         crate::telemetry::record_boundary_result_cardinality_mismatch();
@@ -243,7 +267,7 @@ fn scan_one_pair(
         },
     };
 
-    let boundary_matches = scan_boundary_chunk_whole(scanner, &boundary_chunk);
+    let boundary_matches = scan_boundary_chunk_whole(scanner, &boundary_chunk, route);
     let Some(seam_file_offset) = absolute_offset(boundary_base_offset, seam_local) else {
         return;
     };
@@ -330,13 +354,22 @@ fn boundary_context_for_pair(
     scanner.pattern_boundary_context
 }
 
-fn scan_boundary_chunk_whole(scanner: &CompiledScanner, chunk: &Chunk) -> Vec<RawMatch> {
+fn scan_boundary_chunk_whole(
+    scanner: &CompiledScanner,
+    chunk: &Chunk,
+    route: crate::ScanExecutionRoute,
+) -> Vec<RawMatch> {
     // Boundary reassembly is a shared correctness tail, not a second routing
     // decision. Choosing from live hardware here let an explicit batch backend
     // silently change at the seam and made results depend on host state. Keep
     // the small synthetic buffer on the deterministic reference backend; the
     // CLI's persisted router remains the sole owner of workload routing.
-    let mut matches = scanner.scan_inner(chunk, crate::hw_probe::ScanBackend::CpuFallback, None);
-    scanner.post_process_matches(chunk, &mut matches, None);
+    let mut matches = scanner.scan_inner(
+        chunk,
+        crate::hw_probe::ScanBackend::CpuFallback,
+        None,
+        route,
+    );
+    scanner.post_process_matches(chunk, &mut matches, None, route);
     matches
 }

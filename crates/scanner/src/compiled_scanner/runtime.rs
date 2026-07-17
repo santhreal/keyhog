@@ -32,6 +32,15 @@ pub(crate) struct Phase2PoolBreakdown {
 }
 
 impl CompiledScanner {
+    /// Configured recall-equivalent route used when a caller does not provide
+    /// workload-specific autoroute evidence.
+    #[must_use]
+    pub fn default_execution_route(&self) -> crate::ScanExecutionRoute {
+        crate::ScanExecutionRoute {
+            phase2_localizer: self.tuning.phase2_localizer_enabled(),
+        }
+    }
+
     /// Compile the immutable GPU literal and phase-2 programs once for an
     /// autoroute sweep and remember their measured one-time costs. Per-workload
     /// calibration retains those programs while composing their costs into
@@ -697,6 +706,23 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         selected_backend: crate::hw_probe::ScanBackend,
         admission: Option<crate::engine::Phase1Admission>,
     ) -> Vec<RawMatch> {
+        self.scan_with_deadline_and_backend_admission_and_route(
+            chunk,
+            deadline,
+            selected_backend,
+            admission,
+            self.default_execution_route(),
+        )
+    }
+
+    pub(crate) fn scan_with_deadline_and_backend_admission_and_route(
+        &self,
+        chunk: &Chunk,
+        deadline: Option<std::time::Instant>,
+        selected_backend: crate::hw_probe::ScanBackend,
+        admission: Option<crate::engine::Phase1Admission>,
+        route: crate::ScanExecutionRoute,
+    ) -> Vec<RawMatch> {
         if crate::deadline::expired(deadline) {
             return Vec::new();
         }
@@ -724,11 +750,12 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
                     None,
                     None,
                     None,
+                    route,
                 );
                 if crate::deadline::expired(deadline) {
                     return matches;
                 }
-                self.post_process_matches(chunk, &mut matches, deadline);
+                self.post_process_matches(chunk, &mut matches, deadline, route);
                 return matches;
             }
 
@@ -737,7 +764,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
                     return Vec::new();
                 }
                 let mut matches = Vec::new();
-                self.post_process_matches(chunk, &mut matches, deadline);
+                self.post_process_matches(chunk, &mut matches, deadline, route);
                 return matches;
             }
             crate::telemetry::record_file_skipped();
@@ -752,15 +779,15 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
             "scan dispatch"
         );
         let mut matches = if chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
-            self.scan_windowed(chunk, selected_backend, deadline)
+            self.scan_windowed(chunk, selected_backend, deadline, route)
         } else {
-            self.scan_inner(chunk, selected_backend, deadline)
+            self.scan_inner(chunk, selected_backend, deadline, route)
         };
 
         if crate::deadline::expired(deadline) {
             return matches;
         }
-        self.post_process_matches(chunk, &mut matches, deadline);
+        self.post_process_matches(chunk, &mut matches, deadline, route);
 
         matches
     }

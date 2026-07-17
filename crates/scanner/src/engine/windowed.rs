@@ -14,6 +14,7 @@ impl CompiledScanner {
         chunk: &Chunk,
         backend: crate::hw_probe::ScanBackend,
         deadline: Option<std::time::Instant>,
+        route: crate::ScanExecutionRoute,
     ) -> Vec<RawMatch> {
         let chunk_text = &chunk.data;
         if reject_oversized_window_chunk(chunk, chunk_text) {
@@ -40,7 +41,7 @@ impl CompiledScanner {
             }
             let end = window_end_offset(chunk_text, offset, MAX_SCAN_CHUNK_BYTES);
             let window_chunk = window_chunk(chunk, offset, end);
-            for mut raw_match in self.scan_inner(&window_chunk, backend, deadline) {
+            for mut raw_match in self.scan_inner(&window_chunk, backend, deadline, route) {
                 if record_window_match(
                     &line_offsets,
                     chunk.metadata.base_offset,
@@ -73,6 +74,7 @@ impl CompiledScanner {
         phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence>,
         confirmed_anchor_literal_matches: Option<&[(u32, u32)]>,
         generic_keyword_positions: Option<&[u32]>,
+        route: crate::ScanExecutionRoute,
     ) -> Vec<RawMatch> {
         use rayon::prelude::*;
 
@@ -136,6 +138,7 @@ impl CompiledScanner {
                         phase2_always_active_gpu_evidence,
                         confirmed_anchor_matches,
                         generic_positions,
+                        route,
                     );
                     (offset, window_len, matches)
                 })

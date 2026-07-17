@@ -69,11 +69,12 @@ impl CompiledScanner {
         &self,
         chunk: &keyhog_core::Chunk,
         matches: &mut Vec<keyhog_core::RawMatch>,
+        route: crate::ScanExecutionRoute,
     ) {
         if self.chunk_needs_decode_postprocess(chunk) {
-            self.post_process_matches(chunk, matches, None);
+            self.post_process_matches(chunk, matches, None, route);
         } else {
-            self.scan_cross_chunk_fragments(chunk, matches, None);
+            self.scan_cross_chunk_fragments(chunk, matches, None, route);
         }
     }
 
@@ -82,12 +83,13 @@ impl CompiledScanner {
     fn decode_only_coalesced_matches(
         &self,
         chunk: &keyhog_core::Chunk,
+        route: crate::ScanExecutionRoute,
     ) -> Option<Vec<keyhog_core::RawMatch>> {
         if !self.chunk_needs_decode_postprocess(chunk) {
             return None;
         }
         let mut matches = Vec::new();
-        self.post_process_matches(chunk, &mut matches, None);
+        self.post_process_matches(chunk, &mut matches, None, route);
         Some(matches)
     }
 
@@ -114,7 +116,24 @@ impl CompiledScanner {
         backend: crate::hw_probe::ScanBackend,
         plan: Option<&super::Phase1AdmissionPlan>,
     ) -> Vec<Vec<keyhog_core::RawMatch>> {
-        match self.try_scan_coalesced_with_backend_and_admission(chunks, backend, plan) {
+        self.scan_coalesced_with_backend_admission_and_route(
+            chunks,
+            backend,
+            plan,
+            self.default_execution_route(),
+        )
+    }
+
+    /// Coalesced scan with an explicit recall-equivalent execution route.
+    pub fn scan_coalesced_with_backend_admission_and_route(
+        &self,
+        chunks: &[keyhog_core::Chunk],
+        backend: crate::hw_probe::ScanBackend,
+        plan: Option<&super::Phase1AdmissionPlan>,
+        route: crate::ScanExecutionRoute,
+    ) -> Vec<Vec<keyhog_core::RawMatch>> {
+        match self.try_scan_coalesced_with_backend_admission_and_route(chunks, backend, plan, route)
+        {
             Ok(matches) => matches,
             Err(crate::error::ScanError::Gpu(reason)) => {
                 super::gpu_forced::fail_selected_gpu_dispatch(self, &reason)
@@ -135,17 +154,35 @@ impl CompiledScanner {
         backend: crate::hw_probe::ScanBackend,
         plan: Option<&super::Phase1AdmissionPlan>,
     ) -> crate::error::Result<Vec<Vec<keyhog_core::RawMatch>>> {
+        self.try_scan_coalesced_with_backend_admission_and_route(
+            chunks,
+            backend,
+            plan,
+            self.default_execution_route(),
+        )
+    }
+
+    /// Fallible production dispatch with an immutable per-request execution route.
+    pub fn try_scan_coalesced_with_backend_admission_and_route(
+        &self,
+        chunks: &[keyhog_core::Chunk],
+        backend: crate::hw_probe::ScanBackend,
+        plan: Option<&super::Phase1AdmissionPlan>,
+        route: crate::ScanExecutionRoute,
+    ) -> crate::error::Result<Vec<Vec<keyhog_core::RawMatch>>> {
         if backend == crate::hw_probe::ScanBackend::SimdCpu {
             self.require_selected_backend_stack(backend);
-            return Ok(
-                self.scan_coalesced_simd(chunks, plan.filter(|plan| plan.matches_chunks(chunks)))
-            );
+            return Ok(self.scan_coalesced_simd(
+                chunks,
+                plan.filter(|plan| plan.matches_chunks(chunks)),
+                route,
+            ));
         }
         if backend.is_gpu() {
             #[cfg(feature = "gpu")]
             {
                 return self
-                    .try_scan_coalesced_gpu_region_presence(chunks, backend)
+                    .try_scan_coalesced_gpu_region_presence(chunks, backend, route)
                     .map_err(|error| {
                         self.record_gpu_runtime_fault(error.reason());
                         crate::error::ScanError::Gpu(error.to_string())
@@ -159,10 +196,11 @@ impl CompiledScanner {
                 )));
             }
         }
-        Ok(self.scan_chunks_with_backend_internal_and_admission(
+        Ok(self.scan_chunks_with_backend_internal_admission_and_route(
             chunks,
             backend,
             plan.filter(|plan| plan.matches_chunks(chunks)),
+            route,
         ))
     }
 
@@ -182,6 +220,7 @@ impl CompiledScanner {
         &self,
         chunks: &[keyhog_core::Chunk],
         admission_plan: Option<&super::Phase1AdmissionPlan>,
+        route: crate::ScanExecutionRoute,
     ) -> Vec<Vec<keyhog_core::RawMatch>> {
         use rayon::prelude::*;
 
@@ -195,11 +234,17 @@ impl CompiledScanner {
                 .par_iter()
                 .map(|c| {
                     crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
-                        self.scan_with_backend(c, crate::hw_probe::ScanBackend::CpuFallback)
+                        self.scan_with_deadline_and_backend_admission_and_route(
+                            c,
+                            self.config.per_chunk_deadline(),
+                            crate::hw_probe::ScanBackend::CpuFallback,
+                            None,
+                            route,
+                        )
                     })
                 })
                 .collect();
-            super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
+            super::boundary::scan_chunk_boundaries_with_route(self, chunks, &mut results, route);
             return results;
         }
 
@@ -212,11 +257,22 @@ impl CompiledScanner {
                     .par_iter()
                     .map(|c| {
                         crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
-                            self.scan_with_backend(c, crate::hw_probe::ScanBackend::CpuFallback)
+                            self.scan_with_deadline_and_backend_admission_and_route(
+                                c,
+                                self.config.per_chunk_deadline(),
+                                crate::hw_probe::ScanBackend::CpuFallback,
+                                None,
+                                route,
+                            )
                         })
                     })
                     .collect();
-                super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
+                super::boundary::scan_chunk_boundaries_with_route(
+                    self,
+                    chunks,
+                    &mut results,
+                    route,
+                );
                 return results;
             };
 
@@ -229,7 +285,7 @@ impl CompiledScanner {
                 crate::telemetry::record_file_scanned(chunk.data.len());
             }
             let triggers = self.compute_coalesced_triggers(chunks, prefilter, admission_plan);
-            return self.scan_coalesced_phase2(chunks, triggers);
+            return self.scan_coalesced_phase2(chunks, triggers, route);
         }
     }
 
@@ -415,9 +471,10 @@ impl CompiledScanner {
         &self,
         chunks: &[keyhog_core::Chunk],
         triggers: Vec<Option<Vec<u64>>>,
+        route: crate::ScanExecutionRoute,
     ) -> Vec<Vec<keyhog_core::RawMatch>> {
         self.scan_coalesced_phase2_with_admission(
-            chunks, triggers, None, None, None, None, None, None,
+            chunks, triggers, None, None, None, None, None, None, route,
         )
     }
 
@@ -475,6 +532,7 @@ impl CompiledScanner {
         phase2_always_anchor_presence: Option<&[bool]>,
         confirmed_anchor_literal_matches: Option<&[Vec<(u32, u32)>]>,
         generic_keyword_positions: Option<&[Vec<u32>]>,
+        route: crate::ScanExecutionRoute,
     ) -> Vec<Vec<keyhog_core::RawMatch>> {
         use crate::hw_probe::ScanBackend;
         use rayon::prelude::*;
@@ -535,6 +593,7 @@ impl CompiledScanner {
                                 phase2_always_active_gpu_evidence,
                                 confirmed_anchor_matches,
                                 generic_keyword_positions,
+                                route,
                             );
                             return CoalescedChunkOutput {
                                 state: None,
@@ -552,6 +611,7 @@ impl CompiledScanner {
                                 phase2_always_active_gpu_evidence,
                                 confirmed_anchor_matches,
                                 generic_keyword_positions,
+                                route,
                             );
                             return CoalescedChunkOutput {
                                 state: Some(state),
@@ -590,7 +650,7 @@ impl CompiledScanner {
                             raw_phase2_absence_proven,
                         )
                     {
-                        if let Some(matches) = self.decode_only_coalesced_matches(chunk) {
+                        if let Some(matches) = self.decode_only_coalesced_matches(chunk, route) {
                             return CoalescedChunkOutput {
                                 state: None,
                                 matches,
@@ -614,6 +674,7 @@ impl CompiledScanner {
                         phase2_always_active_gpu_evidence,
                         confirmed_anchor_matches,
                         generic_keyword_positions,
+                        route,
                     );
                     CoalescedChunkOutput {
                         state: Some(state),
@@ -652,7 +713,7 @@ impl CompiledScanner {
             .zip(chunks.par_iter())
             .map(|(mut output, chunk)| {
                 if output.needs_postprocess {
-                    self.post_process_coalesced_matches(chunk, &mut output.matches);
+                    self.post_process_coalesced_matches(chunk, &mut output.matches, route);
                 }
                 output.matches
             })
@@ -660,7 +721,7 @@ impl CompiledScanner {
 
         let phase2_elapsed = phase2_start.elapsed();
         let boundary_start = std::time::Instant::now();
-        super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
+        super::boundary::scan_chunk_boundaries_with_route(self, chunks, &mut results, route);
         if super::profile::perf_trace_enabled() {
             eprintln!(
                 "perf-trace scan_coalesced_phase2: chunks={} p2={:.3}s boundary={:.3}s",

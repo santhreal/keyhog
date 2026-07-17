@@ -21,6 +21,7 @@ impl CompiledScanner {
         match_text: &str,
         phase2_keyword_hints: Option<&[u32]>,
         phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence>,
+        route: crate::ScanExecutionRoute,
         f: impl FnOnce(&Self, &ActivePatternsScratch) -> R,
     ) -> R {
         ACTIVE_PATTERNS_POOL.with(|cell| {
@@ -35,6 +36,7 @@ impl CompiledScanner {
                 true,
                 phase2_keyword_hints,
                 phase2_always_active_gpu_evidence.is_some_and(|evidence| evidence.absence_proven()),
+                route,
             );
             if self.tuning.phase2_reverse_enabled() {
                 scratch.active.reverse();
@@ -144,6 +146,7 @@ impl CompiledScanner {
         focus: Option<(usize, usize)>,
         phase2_keyword_hints: Option<&[u32]>,
         phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence>,
+        route: crate::ScanExecutionRoute,
     ) {
         let prof = phase2_pattern_prof_enabled();
         // Text the AC candidate scan and the always-active prefilter run on.
@@ -162,6 +165,7 @@ impl CompiledScanner {
             scan_text,
             phase2_keyword_hints,
             phase2_always_active_gpu_evidence,
+            route,
             |this, scratch| {
                 let active_keyword_anchors = scratch
                     .active
@@ -223,7 +227,7 @@ impl CompiledScanner {
                 // no folded literal run whole-chunk (they are few).
                 if self.tuning.homoglyph_gate_enabled()
                     && scan_text.is_ascii()
-                    && anchor_idx.has_plain_localizer(&self.tuning)
+                    && anchor_idx.has_plain_localizer(route.phase2_localizer)
                 {
                     ANCHOR_CANDIDATES.with(|cell| {
                         let mut cands = cell.borrow_mut();

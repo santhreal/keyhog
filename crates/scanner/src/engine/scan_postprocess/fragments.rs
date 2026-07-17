@@ -28,6 +28,7 @@ impl CompiledScanner {
         chunk: &Chunk,
         matches: &mut Vec<RawMatch>,
         deadline: Option<std::time::Instant>,
+        route: crate::ScanExecutionRoute,
     ) {
         if crate::deadline::expired(deadline) {
             return;
@@ -126,7 +127,7 @@ impl CompiledScanner {
                         }
                     };
                     let mut reassembled_matches =
-                        self.scan_inner(&synthetic_chunk, backend, deadline);
+                        self.scan_inner(&synthetic_chunk, backend, deadline, route);
                     if crate::deadline::expired(deadline) {
                         return;
                     }

@@ -19,7 +19,7 @@ use super::support;
 use support::paths::{corpus_dir, corpus_files, detector_dir};
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
-use keyhog_scanner::{CompiledScanner, ScanBackend};
+use keyhog_scanner::{CompiledScanner, ScanBackend, ScanExecutionRoute};
 use std::sync::OnceLock;
 
 /// Tiny deterministic LCG so the corpus is reproducible without a crate dep and
@@ -204,18 +204,30 @@ fn scan_both(scanner: &CompiledScanner, chunk: &Chunk) -> (Vec<Key>, Vec<Key>) {
     // the cache evolves identically for a fixed anchor setting).
     // Optimized plan: shared anchors, plain localization, and ASCII gate on.
     keyhog_scanner::testing::set_phase2_anchor_mode(&scanner, Some(true));
-    keyhog_scanner::testing::set_phase2_localizer_mode(&scanner, Some(true));
     keyhog_scanner::testing::set_phase2_homoglyph_gate(&scanner, Some(true));
     scanner.clear_fragment_cache();
-    let optimized = vec![scanner.scan_with_backend(chunk, ScanBackend::CpuFallback)];
+    let optimized = scanner.scan_coalesced_with_backend_admission_and_route(
+        std::slice::from_ref(chunk),
+        ScanBackend::CpuFallback,
+        None,
+        ScanExecutionRoute {
+            phase2_localizer: true,
+        },
+    );
     // Fully-unoptimized baseline: every phase-2 pattern runs the legacy
     // whole-chunk path, including every homoglyph variant on every chunk.
     keyhog_scanner::testing::set_phase2_anchor_mode(&scanner, Some(false));
-    keyhog_scanner::testing::set_phase2_localizer_mode(&scanner, Some(false));
     keyhog_scanner::testing::set_phase2_homoglyph_gate(&scanner, Some(false));
     scanner.clear_fragment_cache();
-    let baseline = vec![scanner.scan_with_backend(chunk, ScanBackend::CpuFallback)];
-    keyhog_scanner::testing::set_phase2_localizer_mode(&scanner, None);
+    let baseline = scanner.scan_coalesced_with_backend_admission_and_route(
+        std::slice::from_ref(chunk),
+        ScanBackend::CpuFallback,
+        None,
+        ScanExecutionRoute {
+            phase2_localizer: false,
+        },
+    );
+    assert!(!scanner.default_execution_route().phase2_localizer);
     (canonical(&optimized), canonical(&baseline))
 }
 

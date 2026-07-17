@@ -552,6 +552,7 @@ async fn scan_text(
                     batch,
                     selection.backend,
                     selection.phase1_plan.as_ref(),
+                    selection.execution_route,
                     recover_automatic_gpu_faults,
                 )
                 .with_context(|| {
@@ -670,6 +671,7 @@ async fn scan_path(
                     &chunks,
                     selection.backend,
                     selection.phase1_plan.as_ref(),
+                    selection.execution_route,
                     recover_automatic_gpu_faults,
                 )
                 .with_context(|| {

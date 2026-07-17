@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Carry the selected scanner execution route beside backend and admission
+  evidence through one-shot, fused, daemon, and automatic-recovery dispatch.
+
 - Retain every exact calibration representative inside one canonical workload
   evidence envelope. A route class is reusable only when all points agree on
   the fastest-correct one-shot and daemon backends; inspection exposes each

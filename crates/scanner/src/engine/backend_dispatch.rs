@@ -17,6 +17,21 @@ impl CompiledScanner {
         backend: ScanBackend,
         admission_plan: Option<&Phase1AdmissionPlan>,
     ) -> Vec<Vec<RawMatch>> {
+        self.scan_chunks_with_backend_internal_admission_and_route(
+            chunks,
+            backend,
+            admission_plan,
+            self.default_execution_route(),
+        )
+    }
+
+    pub(crate) fn scan_chunks_with_backend_internal_admission_and_route(
+        &self,
+        chunks: &[Chunk],
+        backend: ScanBackend,
+        admission_plan: Option<&Phase1AdmissionPlan>,
+        route: crate::ScanExecutionRoute,
+    ) -> Vec<Vec<RawMatch>> {
         if chunks.iter().all(|chunk| chunk.data.is_empty()) {
             for _ in chunks {
                 crate::telemetry::record_file_scanned(0);
@@ -33,7 +48,7 @@ impl CompiledScanner {
         // each half too short to match) (load-bearing recall, not optional).
         let gpu_path = backend.is_gpu();
         if !gpu_path || chunks.is_empty() {
-            return self.scan_chunks_cpu_parallel(chunks, backend, admission_plan);
+            return self.scan_chunks_cpu_parallel(chunks, backend, admission_plan, route);
         }
 
         // The batched region-presence literal set is the SINGLE on-GPU trigger
@@ -42,13 +57,13 @@ impl CompiledScanner {
         // backend is selected without silently substituting CPU/SIMD.
         #[cfg(feature = "gpu")]
         {
-            self.scan_coalesced_gpu_region_presence(chunks, backend)
+            self.scan_coalesced_gpu_region_presence(chunks, backend, route)
         }
         // GPU compiled out: the public entry guard rejects a selected GPU route
         // before this internal compatibility arm can execute.
         #[cfg(not(feature = "gpu"))]
         {
-            self.scan_chunks_cpu_parallel(chunks, backend, admission_plan)
+            self.scan_chunks_cpu_parallel(chunks, backend, admission_plan, route)
         }
     }
 
@@ -62,6 +77,7 @@ impl CompiledScanner {
         chunks: &[Chunk],
         backend: ScanBackend,
         admission_plan: Option<&Phase1AdmissionPlan>,
+        route: crate::ScanExecutionRoute,
     ) -> Vec<Vec<RawMatch>> {
         use rayon::prelude::*;
         let telemetry = crate::telemetry::capture_scan_telemetry();
@@ -71,16 +87,17 @@ impl CompiledScanner {
             .map(|(index, chunk)| {
                 crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
                     let admission = admission_plan.and_then(|plan| plan.admission_for(index));
-                    self.scan_with_deadline_and_backend_and_admission(
+                    self.scan_with_deadline_and_backend_admission_and_route(
                         chunk,
                         self.config.per_chunk_deadline(),
                         backend,
                         admission,
+                        route,
                     )
                 })
             })
             .collect();
-        super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
+        super::boundary::scan_chunk_boundaries_with_route(self, chunks, &mut results, route);
         results
     }
 

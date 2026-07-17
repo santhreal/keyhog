@@ -174,6 +174,16 @@ pub struct ResolvedScannerTuningConfig {
     pub gpu_moe_timeout_ms: u64,
 }
 
+/// Recall-equivalent execution choices resolved for one scan request.
+///
+/// This is separate from [`ScannerTuningConfig`]: tuning supplies the default,
+/// while autoroute can select a measured route for an exact workload without
+/// mutating scanner-global state or racing concurrent requests.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ScanExecutionRoute {
+    pub phase2_localizer: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct ResolvedRuntimeTuningConfig {
     pub fallback_hs: bool,

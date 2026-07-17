@@ -301,6 +301,7 @@ impl ScanOrchestrator {
                             backend: *backend,
                             phase1_plan: (!backend.is_gpu())
                                 .then(|| scanner_ref.phase1_admission_plan(&batch)),
+                            execution_route: scanner_ref.default_execution_route(),
                         })
                     }
                     ActiveBackendRouter::Measured(router) => {
@@ -352,6 +353,7 @@ impl ScanOrchestrator {
                     &batch,
                     backend,
                     selection.phase1_plan.as_ref(),
+                    selection.execution_route,
                     recover_automatic_gpu_faults,
                 ) {
                     Ok(outcome) => outcome,

@@ -1231,6 +1231,7 @@ impl CliTestApi for TestApi {
             &chunks,
             keyhog_scanner::ScanBackend::GpuWgpu,
             None,
+            scanner.default_execution_route(),
             recover_automatic_gpu_faults,
         )?;
         if recover_automatic_gpu_faults && !outcome.recovered {

@@ -1630,6 +1630,7 @@ pub fn scan_coalesced_phase2_with_admission_for_test(
         negative_anchor_presence.as_deref(),
         None,
         None,
+        scanner.default_execution_route(),
     )
 }
 
@@ -1639,7 +1640,16 @@ pub fn scan_windowed_with_triggered_for_test(
     chunk: &keyhog_core::Chunk,
     triggered_patterns: &[u64],
 ) -> Vec<keyhog_core::RawMatch> {
-    scanner.scan_windowed_with_triggered(chunk, triggered_patterns, None, None, None, None, None)
+    scanner.scan_windowed_with_triggered(
+        chunk,
+        triggered_patterns,
+        None,
+        None,
+        None,
+        None,
+        None,
+        scanner.default_execution_route(),
+    )
 }
 
 #[cfg(any(feature = "simd", feature = "gpu", test))]
@@ -1658,6 +1668,7 @@ pub fn scan_windowed_with_triggered_evidence_for_test(
         None,
         confirmed_anchor_literal_matches,
         generic_keyword_positions,
+        scanner.default_execution_route(),
     )
 }
 
@@ -3372,14 +3383,6 @@ pub(crate) fn set_hs_prefilter_max_len(
 #[cfg(test)]
 pub(crate) fn set_phase2_anchor_mode(scanner: &crate::engine::CompiledScanner, mode: Option<bool>) {
     scanner.tuning().set_phase2_anchor_mode(mode);
-}
-
-#[cfg(test)]
-pub(crate) fn set_phase2_localizer_mode(
-    scanner: &crate::engine::CompiledScanner,
-    mode: Option<bool>,
-) {
-    scanner.tuning().set_phase2_localizer(mode);
 }
 
 #[cfg(test)]
