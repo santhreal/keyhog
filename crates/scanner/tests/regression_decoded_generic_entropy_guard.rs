@@ -14,7 +14,7 @@ mod support;
 use support::paths::detector_dir;
 
 use base64::Engine;
-use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
+use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, RawMatch, Severity};
 use keyhog_scanner::CompiledScanner;
 
 fn scanner() -> CompiledScanner {
@@ -57,7 +57,7 @@ fn is_generic_or_entropy(detector_id: &str) -> bool {
 // `4MwrrncB4YlTYeeBNbC1oGuHG6sFbU1A`. Paired with a `secret` keyword so the
 // generic keyword bridge surfaces it (the strongest generic-pool path).
 const TOKEN: &str = "4MwrrncB4YlTYeeBNbC1oGuHG6sFbU1A";
-const ENTROPY_ONLY_TOKEN: &str = "A00a0aAaaAEa0AE0a0A0AQaAaAE0aBaba1bcdFCD";
+const ENTROPY_ONLY_TOKEN: &str = "qA9zM4nB7vC2xL8pR5tY1uI6oP3sD0fG9hJ2kL7mN4bV8cX1zQ6wE5rT0yU3iO";
 
 /// A PEM RSA key, fires `private-key` with no vendor checksum (a shipped
 /// decode-through contract positive, reused from `regression_decode_through_strict`).
@@ -112,11 +112,18 @@ fn decoded_generic_assignment_and_vendor_key_both_survive() {
 
 #[test]
 fn decoded_entropy_only_token_stays_suppressed_without_an_assignment_detector() {
-    let direct = scan_text(format!("secret={ENTROPY_ONLY_TOKEN}\n"), "entropy-only.txt");
-    assert!(direct.iter().any(|m| {
-        m.credential.as_ref() == ENTROPY_ONLY_TOKEN
-            && keyhog_scanner::is_entropy_detector(m.detector_id.as_ref())
-    }));
+    let direct = scan_text(
+        format!("VALUE={ENTROPY_ONLY_TOKEN}\n"),
+        "config/secrets.env",
+    );
+    assert!(
+        direct.iter().any(|m| {
+            m.credential.as_ref() == ENTROPY_ONLY_TOKEN
+                && keyhog_scanner::is_entropy_detector(m.detector_id.as_ref())
+        }),
+        "direct entropy control must surface before decode suppression; got {:?}",
+        ids(&direct),
+    );
     assert!(!direct.iter().any(|m| {
         m.credential.as_ref() == ENTROPY_ONLY_TOKEN
             && is_generic_or_entropy(m.detector_id.as_ref())
@@ -126,9 +133,9 @@ fn decoded_entropy_only_token_stays_suppressed_without_an_assignment_detector() 
     let encoded = scan_text(
         format!(
             "blob = \"{}\"\n",
-            b64(&format!("secret={ENTROPY_ONLY_TOKEN}\n"))
+            b64(&format!("VALUE={ENTROPY_ONLY_TOKEN}\n"))
         ),
-        "entropy-only.txt",
+        "config/secrets.env",
     );
     assert!(
         !encoded.iter().any(|m| {
@@ -151,6 +158,43 @@ fn top_level_generic_entropy_is_untouched_by_the_decode_guard() {
         }),
         "top-level generic/entropy detection must be unaffected by the decode-only \
          guard; got {:?}",
+        ids(&hits),
+    );
+}
+
+#[test]
+fn decoded_named_detector_with_entropy_like_id_uses_the_active_plan() {
+    const ID: &str = "entropy-looking-named-detector";
+    const CREDENTIAL: &str = "KHCUSTOM_ABCDEF0123456789";
+    let scanner = CompiledScanner::compile(vec![DetectorSpec {
+        id: ID.into(),
+        name: "Entropy Looking Named Detector".into(),
+        service: "custom-service".into(),
+        severity: Severity::High,
+        patterns: vec![PatternSpec {
+            regex: r"KHCUSTOM_[A-Z0-9]{16}".into(),
+            ..Default::default()
+        }],
+        keywords: vec!["KHCUSTOM_".into()],
+        min_confidence: Some(0.0),
+        ..Default::default()
+    }])
+    .expect("compile custom named detector");
+    let chunk = Chunk {
+        data: format!("blob = \"{}\"\n", b64(CREDENTIAL)).into(),
+        metadata: ChunkMetadata {
+            source_type: "decode-active-plan-test".into(),
+            path: Some("custom.env".into()),
+            ..Default::default()
+        },
+    };
+
+    let hits = scanner.scan(&chunk);
+    assert!(
+        hits.iter().any(|matched| {
+            matched.detector_id.as_ref() == ID && matched.credential.as_ref() == CREDENTIAL
+        }),
+        "decoded named finding must follow its compiled class; got {:?}",
         ids(&hits),
     );
 }

@@ -563,9 +563,9 @@ fn decoded_reverse_placeholder_marker(reversed: &str) -> bool {
         || reversed.contains("YOUR_")
 }
 
-/// Suppress entropy-only findings on synthesized decoded content. Entropy ids
-/// have no keyword or structural evidence of their own, so ordinary decoded
-/// prose can look token-shaped. Phase-2 generic detectors are deliberately not
+/// Suppress entropy-only findings on synthesized decoded content. The caller
+/// supplies the active plan's detector class because IDs and service labels do
+/// not own execution semantics. Phase-2 generic detectors are deliberately not
 /// included: they fire only when the decoded plaintext (or the bounded parent
 /// splice) retains a detector-owned assignment keyword such as `secret=` or
 /// `api_key=`. Discarding those anchored matches lost real base64/hex/URL-wrapped
@@ -574,8 +574,9 @@ fn decoded_reverse_placeholder_marker(reversed: &str) -> bool {
 pub(crate) fn record_decoded_unanchored_entropy_suppression(
     m: &RawMatch,
     fallback_path: Option<&str>,
+    is_entropy: bool,
 ) -> bool {
-    if crate::detector_ids::is_entropy_detector(m.detector_id.as_ref()) {
+    if is_entropy {
         record_match_example_suppression(m, fallback_path, "decoded_entropy_unanchored");
         true
     } else {

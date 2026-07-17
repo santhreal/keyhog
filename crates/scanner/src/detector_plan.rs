@@ -194,6 +194,14 @@ impl CompiledDetectorPlans {
         self.resolution_class_by_id.get(detector_id).copied()
     }
 
+    #[inline]
+    pub(crate) fn is_entropy(&self, detector_id: &str) -> bool {
+        matches!(
+            self.resolution_class(detector_id),
+            Some(DetectorResolutionClass::Entropy)
+        )
+    }
+
     /// Resolve a generic candidate against detector-declared validators. Named
     /// detector paths call their own plan directly and never pay this index
     /// lookup. The first-byte table reduces the generic path to the handful of

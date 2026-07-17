@@ -175,6 +175,7 @@ impl CompiledScanner {
                         if crate::adjudicate::record_decoded_unanchored_entropy_suppression(
                             &m,
                             chunk.metadata.path.as_deref(),
+                            self.detector_plans.is_entropy(m.detector_id.as_ref()),
                         ) {
                             continue;
                         }

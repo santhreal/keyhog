@@ -423,10 +423,7 @@ fn is_private_key_block_detector(detector_id: &str, policy: ResolutionPolicy<'_>
 
 fn is_entropy_detector(detector_id: &str, policy: ResolutionPolicy<'_>) -> bool {
     match policy {
-        ResolutionPolicy::Active(plans) => matches!(
-            plans.resolution_class(detector_id),
-            Some(crate::detector_plan::DetectorResolutionClass::Entropy)
-        ),
+        ResolutionPolicy::Active(plans) => plans.is_entropy(detector_id),
         ResolutionPolicy::Embedded { .. } => crate::detector_ids::is_entropy_detector(detector_id),
     }
 }

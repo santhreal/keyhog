@@ -4,7 +4,8 @@
 
 - Resolve entropy versus named findings from the active compiled detector plan,
   not detector-ID spelling. Custom named detectors whose IDs resemble a
-  fallback namespace no longer lose valid findings during resolution.
+  fallback namespace no longer lose valid findings during resolution or
+  decoded-content adjudication.
 
 - Canonicalize execution-equivalent ML candidates by detector, credential,
   source offset, and producer channel before batch inference. Duplicate
