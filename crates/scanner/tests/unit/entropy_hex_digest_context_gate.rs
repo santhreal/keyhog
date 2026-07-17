@@ -9,12 +9,8 @@
 //! crypto-key anchor release them later.
 
 use keyhog_scanner::testing::entropy_keywords::{
-    is_candidate_plausible_in_context, is_secret_plausible_in_context, PlausibilityContext,
+    is_candidate_plausible_in_context, is_secret_plausible_in_context,
 };
-
-fn plausibility_context(is_credential_context: bool) -> PlausibilityContext {
-    PlausibilityContext::new(is_credential_context, false)
-}
 
 #[test]
 fn hex_32_char_canonical_length_without_context_rejected() {
@@ -27,7 +23,8 @@ fn hex_32_char_canonical_length_without_context_rejected() {
     assert!(!is_secret_plausible_in_context(
         md5,
         &placeholder_keywords,
-        plausibility_context(false)
+        false,
+        false
     ));
 }
 
@@ -41,7 +38,8 @@ fn hex_40_char_canonical_length_without_context_rejected() {
     assert!(!is_secret_plausible_in_context(
         sha1,
         &placeholder_keywords,
-        plausibility_context(false)
+        false,
+        false
     ));
 }
 
@@ -55,7 +53,8 @@ fn hex_64_char_canonical_length_without_context_rejected() {
     assert!(!is_secret_plausible_in_context(
         sha256,
         &placeholder_keywords,
-        plausibility_context(false)
+        false,
+        false
     ));
 }
 
@@ -69,7 +68,8 @@ fn hex_128_char_canonical_length_without_context_rejected() {
     assert!(!is_secret_plausible_in_context(
         sha512,
         &placeholder_keywords,
-        plausibility_context(false)
+        false,
+        false
     ));
 }
 
@@ -84,7 +84,8 @@ fn hex_64_char_canonical_length_with_context_rejected_without_lift() {
     assert!(!is_secret_plausible_in_context(
         sha256,
         &placeholder_keywords,
-        plausibility_context(true)
+        true,
+        false
     ));
 }
 
@@ -98,7 +99,8 @@ fn hex_40_char_canonical_length_with_context_rejected() {
     assert!(!is_secret_plausible_in_context(
         sha1,
         &placeholder_keywords,
-        plausibility_context(true)
+        true,
+        false
     ));
 }
 
@@ -115,7 +117,8 @@ fn hex_non_canonical_66_char_accepted_regardless_of_context() {
     assert!(is_candidate_plausible_in_context(
         &non_canonical,
         &placeholder_keywords,
-        plausibility_context(false)
+        false,
+        false
     ));
 }
 
@@ -139,7 +142,8 @@ fn hex_32_char_canonical_with_context_accepted() {
     assert!(is_candidate_plausible_in_context(
         md5,
         &placeholder_keywords,
-        plausibility_context(true)
+        true,
+        false
     ));
 }
 
@@ -153,7 +157,8 @@ fn hex_128_char_canonical_with_context_rejected() {
     assert!(!is_secret_plausible_in_context(
         sha512,
         &placeholder_keywords,
-        plausibility_context(true)
+        true,
+        false
     ));
 }
 
@@ -169,7 +174,8 @@ fn hex_boundary_31_char_not_rejected_by_hex_gate() {
     assert!(is_candidate_plausible_in_context(
         almost_md5,
         &placeholder_keywords,
-        plausibility_context(false)
+        false,
+        false
     ));
 }
 
@@ -185,7 +191,8 @@ fn hex_boundary_33_char_not_rejected_by_hex_gate() {
     assert!(is_candidate_plausible_in_context(
         almost_md5,
         &placeholder_keywords,
-        plausibility_context(false)
+        false,
+        false
     ));
 }
 

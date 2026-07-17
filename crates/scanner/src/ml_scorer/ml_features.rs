@@ -105,12 +105,9 @@ const MAX_NORMALIZED_ENTROPY: f32 = 8.0;
 /// readable English from random-ish strings. The high and very-high buckets use
 /// the scanner's canonical entropy thresholds, not private ML copies.
 ///
-/// This intentionally does NOT share an owner with
-/// `entropy::plausibility::SYMBOLIC_CREDENTIAL_ENTROPY_FLOOR` (also 3.5): that is
-/// a hard recall floor on the deterministic path, this is a model INPUT bucket
-/// boundary retuned with each `weights.bin`. They coincide today by coincidence,
-/// not by contract: `entropy_feature_bucket_currently_matches_symbolic_floor`
-/// pins that coincidence so a retune of either is a conscious, reviewed change.
+/// This does not share ownership with detector-local deterministic entropy
+/// floors. It is a model input boundary and must be retuned with the model
+/// artifact, while detector floors remain compiled from their TOMLs.
 pub(crate) const ML_LOW_ENTROPY_FEATURE_THRESHOLD: f64 = 3.5;
 
 const MAX_PREFIX_LENGTH: f32 = 10.0;

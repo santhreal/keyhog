@@ -31,8 +31,7 @@ fn entropy_keyword_compaction_does_not_materialize_strings() {
     // call or its argument order changes (it only tolerates reformatting).
     let generic_ws = source_without_whitespace(&generic_keywords);
     assert!(
-        generic_ws.contains("compact_keyword_eq(keyword,exact")
-            && generic_ws.contains("compact_keyword_eq(&normalized,anchor"),
+        generic_ws.contains("compact_keyword_eq(&normalized,anchor"),
         "generic strong-anchor classification should match compacted byte views directly"
     );
 }

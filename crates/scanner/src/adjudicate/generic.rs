@@ -86,7 +86,7 @@ pub(crate) fn bare_auth_value_allowed(
     value: &str,
     policy: &crate::entropy::policy::CompiledEntropyPolicy,
 ) -> bool {
-    let context = PlausibilityContext::new(true, false).with_compiled_policy(Some(policy));
+    let context = PlausibilityContext::from_compiled(true, false, policy);
     crate::suppression::shape::is_structured_dotted_token(value)
         || (!value.contains('.')
             && value.bytes().any(|byte| !byte.is_ascii_alphanumeric())

@@ -2,14 +2,12 @@
 use super::keywords::is_likely_innocuous_line;
 use super::keywords::KeywordContext;
 use super::plausibility::is_isolated_bare_secret_plausible;
-use super::{
-    operator_entropy_override, shannon_entropy, EntropyMatch, FIRST_SOURCE_LINE_NUMBER,
-    ISOLATED_BARE_ENTROPY_LABEL,
-};
+use super::{shannon_entropy, EntropyMatch, FIRST_SOURCE_LINE_NUMBER, ISOLATED_BARE_ENTROPY_LABEL};
 use crate::adjudicate::{EntropyShapeStage, StageId};
 
 #[derive(Clone, Copy)]
 struct IsolatedCandidatePolicy {
+    entropy_high: f64,
     mixed_entropy_floor: f64,
     mixed_min_len: usize,
     symbolic_entropy_floor: f64,
@@ -23,6 +21,7 @@ struct IsolatedCandidatePolicy {
 impl IsolatedCandidatePolicy {
     fn from_compiled(policy: &super::policy::CompiledEntropyPolicy) -> Self {
         Self {
+            entropy_high: policy.entropy_high,
             mixed_entropy_floor: policy.isolated_mixed_entropy_floor,
             mixed_min_len: policy.keyword_free_min_len,
             symbolic_entropy_floor: policy.symbolic_entropy_floor,
@@ -33,41 +32,6 @@ impl IsolatedCandidatePolicy {
             colon_right_min_len: policy.isolated_colon_right_min_len,
         }
     }
-
-    /// Convenience entropy entry points do not carry a compiled scanner, so
-    /// they compile the same embedded detector policy once instead of reading
-    /// flexible schema fields or owning scanner constants.
-    fn from_embedded_detector() -> Self {
-        static POLICY: std::sync::LazyLock<IsolatedCandidatePolicy> =
-            std::sync::LazyLock::new(|| {
-                let detector = keyhog_core::embedded_detector_specs()
-                    .iter()
-                    .find(|detector| {
-                        detector
-                            .entropy_roles
-                            .contains(&keyhog_core::EntropyDetectionRole::IsolatedBare)
-                    })
-                    .expect(
-                        "embedded detector corpus must declare one isolated-bare entropy owner",
-                    );
-                let compiled = match super::policy::CompiledEntropyPolicy::compile(detector) {
-                    Ok(policy) => policy,
-                    Err(error) => {
-                        panic!("embedded isolated-bare entropy policy is invalid: {error}")
-                    }
-                };
-                IsolatedCandidatePolicy::from_compiled(&compiled)
-            });
-        *POLICY
-    }
-
-    #[inline]
-    fn resolve(policy: Option<&super::policy::CompiledEntropyPolicy>) -> Self {
-        match policy {
-            Some(policy) => Self::from_compiled(policy),
-            None => Self::from_embedded_detector(),
-        }
-    }
 }
 
 #[cfg(feature = "entropy")]
@@ -76,15 +40,14 @@ pub(crate) fn has_isolated_bare_secret_candidate_with_policy(
     entropy_threshold: f64,
     placeholder_keywords: &[String],
     min_len: usize,
-    entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
-    plausibility_policy: Option<super::policy::CompiledEntropyPolicy>,
+    plausibility_policy: &super::policy::CompiledEntropyPolicy,
 ) -> bool {
     // Stream `text.lines()` straight into `.any()` instead of collecting a
     // `Vec<&str>` first (Law 7: this runs twice per coalesced chunk in
     // scan_coalesced.rs, the temporary line vector was a pure per-call
     // allocation). `text.lines()` yields exactly the same `&str` sequence the
     // collected slice did, so this is byte-for-byte equivalent.
-    let candidate_policy = IsolatedCandidatePolicy::resolve(plausibility_policy.as_ref());
+    let candidate_policy = IsolatedCandidatePolicy::from_compiled(plausibility_policy);
     let threshold = isolated_bare_entropy_threshold(entropy_threshold, candidate_policy);
     text.lines().any(|line| {
         line_has_isolated_bare_secret_candidate(
@@ -92,7 +55,6 @@ pub(crate) fn has_isolated_bare_secret_candidate_with_policy(
             threshold,
             placeholder_keywords,
             min_len,
-            entropy_shape,
             plausibility_policy,
         )
     })
@@ -104,10 +66,9 @@ pub(crate) fn has_isolated_bare_secret_candidate_with_lines_and_policy(
     entropy_threshold: f64,
     placeholder_keywords: &[String],
     min_len: usize,
-    entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
-    plausibility_policy: Option<super::policy::CompiledEntropyPolicy>,
+    plausibility_policy: &super::policy::CompiledEntropyPolicy,
 ) -> bool {
-    let candidate_policy = IsolatedCandidatePolicy::resolve(plausibility_policy.as_ref());
+    let candidate_policy = IsolatedCandidatePolicy::from_compiled(plausibility_policy);
     let threshold = isolated_bare_entropy_threshold(entropy_threshold, candidate_policy);
     lines.iter().any(|line| {
         line_has_isolated_bare_secret_candidate(
@@ -115,7 +76,6 @@ pub(crate) fn has_isolated_bare_secret_candidate_with_lines_and_policy(
             threshold,
             placeholder_keywords,
             min_len,
-            entropy_shape,
             plausibility_policy,
         )
     })
@@ -130,20 +90,19 @@ fn line_has_isolated_bare_secret_candidate(
     threshold: f64,
     placeholder_keywords: &[String],
     min_len: usize,
-    entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
-    plausibility_policy: Option<super::policy::CompiledEntropyPolicy>,
+    plausibility_policy: &super::policy::CompiledEntropyPolicy,
 ) -> bool {
     if is_likely_innocuous_line(line) {
         return false;
     }
-    let candidate_policy = IsolatedCandidatePolicy::resolve(plausibility_policy.as_ref());
+    let entropy_shape = plausibility_policy.entropy_shape;
+    let candidate_policy = IsolatedCandidatePolicy::from_compiled(plausibility_policy);
     let mut found = false;
     visit_isolated_bare_candidates(line, min_len.max(1), candidate_policy, |candidate, _| {
         found |= isolated_bare_secret_entropy(
             candidate,
             threshold,
             placeholder_keywords,
-            entropy_shape,
             plausibility_policy,
         )
         .is_some();
@@ -153,7 +112,7 @@ fn line_has_isolated_bare_secret_candidate(
     // to 16 bytes. Revisit only that special band; ordinary tokens continue to
     // obey the detector-owned broad minimum.
     let special_min_len =
-        isolated_special_shape_min_len(entropy_shape.as_ref(), plausibility_policy.as_ref());
+        isolated_special_shape_min_len(entropy_shape.as_ref(), plausibility_policy);
     if !found && min_len > special_min_len {
         visit_isolated_bare_candidates(line, special_min_len, candidate_policy, |candidate, _| {
             if !isolated_special_shape_possible(candidate, entropy_shape.as_ref(), candidate_policy)
@@ -171,7 +130,6 @@ fn line_has_isolated_bare_secret_candidate(
                     candidate,
                     threshold,
                     placeholder_keywords,
-                    entropy_shape,
                     plausibility_policy,
                 )
                 .is_some();
@@ -188,8 +146,11 @@ fn isolated_bare_entropy_threshold(
     entropy_threshold: f64,
     candidate_policy: IsolatedCandidatePolicy,
 ) -> f64 {
-    operator_entropy_override(entropy_threshold)
-        .map_or(candidate_policy.mixed_entropy_floor, |threshold| threshold)
+    if entropy_threshold.is_finite() && entropy_threshold > candidate_policy.entropy_high {
+        entropy_threshold
+    } else {
+        candidate_policy.mixed_entropy_floor
+    }
 }
 
 fn isolated_bare_entropy_floor_met(
@@ -220,19 +181,17 @@ fn isolated_bare_entropy_floor_met(
         || isolated_special_shape_floor_met(candidate, entropy, shape_policy, candidate_policy)
 }
 
-pub(super) fn isolated_bare_keyword_context_with_shape(
+pub(super) fn isolated_bare_keyword_context(
     entropy_threshold: f64,
     min_len: usize,
-    entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
-    plausibility_policy: Option<super::policy::CompiledEntropyPolicy>,
+    plausibility_policy: super::policy::CompiledEntropyPolicy,
 ) -> KeywordContext {
-    let candidate_policy = IsolatedCandidatePolicy::resolve(plausibility_policy.as_ref());
+    let candidate_policy = IsolatedCandidatePolicy::from_compiled(&plausibility_policy);
     KeywordContext {
         keyword: ISOLATED_BARE_ENTROPY_LABEL.to_string(),
         threshold: isolated_bare_entropy_threshold(entropy_threshold, candidate_policy),
         min_len: min_len.max(1),
         is_credential_context: false,
-        entropy_shape,
         plausibility_policy,
     }
 }
@@ -265,9 +224,9 @@ pub(crate) fn mixed_separator_token_floor_met(
 
 pub(super) fn isolated_special_shape_min_len(
     entropy_shape: Option<&keyhog_core::EntropyShapeSpec>,
-    policy: Option<&super::policy::CompiledEntropyPolicy>,
+    policy: &super::policy::CompiledEntropyPolicy,
 ) -> usize {
-    let candidate_policy = IsolatedCandidatePolicy::resolve(policy);
+    let candidate_policy = IsolatedCandidatePolicy::from_compiled(policy);
     entropy_shape
         .and_then(|shape| match shape {
             keyhog_core::EntropyShapeSpec::LowerDashAppPassword {
@@ -352,13 +311,13 @@ pub(super) fn isolated_special_shape_floor_met_with_policy(
     candidate: &str,
     entropy: f64,
     entropy_shape: Option<&keyhog_core::EntropyShapeSpec>,
-    policy: Option<&super::policy::CompiledEntropyPolicy>,
+    policy: &super::policy::CompiledEntropyPolicy,
 ) -> bool {
     isolated_special_shape_floor_met(
         candidate,
         entropy,
         entropy_shape,
-        IsolatedCandidatePolicy::resolve(policy),
+        IsolatedCandidatePolicy::from_compiled(policy),
     )
 }
 
@@ -490,8 +449,7 @@ pub(super) fn collect_isolated_bare_candidates_inner(
             candidate,
             context.threshold,
             placeholder_keywords,
-            context.entropy_shape,
-            context.plausibility_policy,
+            &context.plausibility_policy,
         ) {
             Ok(entropy) => entropy,
             Err(stage_id) => {
@@ -516,14 +474,14 @@ pub(super) fn collect_isolated_bare_candidates_inner(
             offset: line_offset + candidate_offset,
         });
     };
-    let candidate_policy = IsolatedCandidatePolicy::resolve(context.plausibility_policy.as_ref());
+    let candidate_policy = IsolatedCandidatePolicy::from_compiled(&context.plausibility_policy);
     visit_isolated_bare_candidates(line, context.min_len, candidate_policy, &mut emit_candidate);
     // See the matching admission exception in
     // `line_has_isolated_bare_secret_candidate`: only shape-proven symbolic or
     // 4x4 app-password candidates may cross a broader detector TOML floor.
     let special_min_len = isolated_special_shape_min_len(
-        context.entropy_shape.as_ref(),
-        context.plausibility_policy.as_ref(),
+        context.plausibility_policy.entropy_shape.as_ref(),
+        &context.plausibility_policy,
     );
     if context.min_len > special_min_len {
         visit_isolated_bare_candidates(
@@ -534,7 +492,7 @@ pub(super) fn collect_isolated_bare_candidates_inner(
                 if candidate.len() >= context.min_len
                     || !isolated_special_shape_possible(
                         candidate,
-                        context.entropy_shape.as_ref(),
+                        context.plausibility_policy.entropy_shape.as_ref(),
                         candidate_policy,
                     )
                 {
@@ -544,7 +502,7 @@ pub(super) fn collect_isolated_bare_candidates_inner(
                 if isolated_special_shape_floor_met(
                     candidate,
                     entropy,
-                    context.entropy_shape.as_ref(),
+                    context.plausibility_policy.entropy_shape.as_ref(),
                     candidate_policy,
                 ) {
                     emit_candidate(candidate, candidate_offset);
@@ -559,14 +517,12 @@ fn isolated_bare_secret_entropy(
     candidate: &str,
     threshold: f64,
     placeholder_keywords: &[String],
-    entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
-    plausibility_policy: Option<super::policy::CompiledEntropyPolicy>,
+    plausibility_policy: &super::policy::CompiledEntropyPolicy,
 ) -> Option<f64> {
     match isolated_bare_secret_entropy_decision(
         candidate,
         threshold,
         placeholder_keywords,
-        entropy_shape,
         plausibility_policy,
     ) {
         Ok(entropy) => Some(entropy),
@@ -583,8 +539,7 @@ fn isolated_bare_secret_entropy_decision(
     candidate: &str,
     threshold: f64,
     placeholder_keywords: &[String],
-    entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
-    plausibility_policy: Option<super::policy::CompiledEntropyPolicy>,
+    plausibility_policy: &super::policy::CompiledEntropyPolicy,
 ) -> Result<f64, StageId> {
     if super::scanner::is_canonical_non_secret_shape(candidate) {
         return Err(StageId::EntropyValueShape(
@@ -592,21 +547,17 @@ fn isolated_bare_secret_entropy_decision(
         ));
     }
     let entropy = shannon_entropy(candidate.as_bytes());
+    let entropy_shape = plausibility_policy.entropy_shape;
     if !isolated_bare_entropy_floor_met(
         candidate,
         entropy,
         threshold,
         entropy_shape.as_ref(),
-        IsolatedCandidatePolicy::resolve(plausibility_policy.as_ref()),
+        IsolatedCandidatePolicy::from_compiled(plausibility_policy),
     ) {
         return Err(StageId::EntropyBelowFloor);
     }
-    if !is_isolated_bare_secret_plausible(
-        candidate,
-        placeholder_keywords,
-        entropy_shape,
-        plausibility_policy,
-    ) {
+    if !is_isolated_bare_secret_plausible(candidate, placeholder_keywords, plausibility_policy) {
         return Err(StageId::EntropyValueShape(
             EntropyShapeStage::SecretPlausibilityRejected,
         ));
@@ -861,13 +812,12 @@ pub(crate) fn symbolic_isolated_bare_candidate(candidate: &str) -> bool {
 #[cfg(test)]
 mod threshold_tests {
     use super::{isolated_bare_entropy_threshold, IsolatedCandidatePolicy};
-    use crate::entropy::HIGH_ENTROPY_THRESHOLD;
-
     /// The detector-owned mixed floor wins for ordinary and non-finite Tier-A
     /// values; only a threshold strictly above the high floor overrides it.
     #[test]
     fn isolated_floor_uses_detector_policy_and_overrides_only_above_high() {
         let policy = IsolatedCandidatePolicy {
+            entropy_high: 4.7,
             mixed_entropy_floor: 3.7,
             mixed_min_len: 20,
             symbolic_entropy_floor: 3.5,
@@ -877,14 +827,12 @@ mod threshold_tests {
             colon_left_min_len: 20,
             colon_right_min_len: 16,
         };
-        assert_eq!(
-            isolated_bare_entropy_threshold(HIGH_ENTROPY_THRESHOLD, policy),
-            3.7
-        );
+        assert_eq!(isolated_bare_entropy_threshold(4.5, policy), 3.7);
+        assert_eq!(isolated_bare_entropy_threshold(4.7, policy), 3.7);
         assert_eq!(isolated_bare_entropy_threshold(4.0, policy), 3.7);
         assert_eq!(isolated_bare_entropy_threshold(2.0, policy), 3.7);
         assert_eq!(isolated_bare_entropy_threshold(f64::NAN, policy), 3.7);
-        assert_eq!(isolated_bare_entropy_threshold(5.8, policy), 5.8);
+        assert_eq!(isolated_bare_entropy_threshold(4.8, policy), 4.8);
         assert_eq!(isolated_bare_entropy_threshold(8.0, policy), 8.0);
     }
 }

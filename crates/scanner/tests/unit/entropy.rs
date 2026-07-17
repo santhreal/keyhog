@@ -233,7 +233,7 @@ fn entropy_generation_rejection_is_dogfood_visible() {
             _ => None,
         })
         .collect();
-    assert_eq!(reasons, vec!["entropy_below_floor"]);
+    assert_eq!(reasons, vec!["entropy_secret_plausibility_rejected"]);
 
     telemetry::testing::reset();
     let trace = Arc::new(ScanTelemetry::new());

@@ -20,12 +20,10 @@ fn desynced_line_offsets_fail_closed() {
 
 #[test]
 fn keyword_context_threshold_follows_shared_override() {
-    // The keyword-anchored floor resolves through the shared
-    // `operator_entropy_override` owner: the default 4.5 drops to the LOW recall
-    // floor, a stricter-than-HIGH request is honored verbatim, a below-LOW
-    // request loosens via `min`, and a non-finite request pins to LOW. Threshold
-    // resolution is independent of credential detection, so a bare keyword line
-    // exercises it deterministically.
+    // The keyword-anchored floor resolves from its detector policy: the default
+    // high threshold drops to the low recall floor, a stricter request is
+    // honored verbatim, a below-low request loosens via `min`, and a non-finite
+    // request pins to the detector's low floor.
     let kw = vec!["token".to_string()];
     let line = "token = abc";
     assert_eq!(

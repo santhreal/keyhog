@@ -33,7 +33,7 @@ fn entropy_and_generic_fallback_confidence_route_through_confidence_owner() {
     );
     assert!(
         entropy.contains("crate::adjudicate::detector_min_confidence_floor(")
-            && entropy.contains("policy_detector.and_then(|detector| detector.min_confidence)")
+            && entropy.contains("execution_policy.min_confidence")
             && !entropy.contains("min_confidence_floor: self.config.min_confidence")
             && !entropy.contains("ml_context,\n                    self.config.min_confidence"),
         "entropy fallback must resolve confidence from its active policy detector"
@@ -69,7 +69,7 @@ fn entropy_and_generic_fallback_confidence_route_through_confidence_owner() {
     );
     assert!(
         generic.contains("crate::adjudicate::detector_min_confidence_floor(")
-            && generic.contains("owning_detector.and_then(|detector| detector.min_confidence)")
+            && generic.contains("execution_policy.min_confidence")
             && !generic.contains("min_confidence_floor: self.config.min_confidence"),
         "generic fallback must resolve confidence from its active owning detector"
     );

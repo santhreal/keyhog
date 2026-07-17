@@ -1,6 +1,4 @@
-use super::isolated::{
-    collect_isolated_bare_candidates_inner, isolated_bare_keyword_context_with_shape,
-};
+use super::isolated::{collect_isolated_bare_candidates_inner, isolated_bare_keyword_context};
 #[cfg(feature = "entropy")]
 pub(crate) use super::isolated::{
     colon_separated_opaque_candidate, lower_dash_app_password_floor_met_with_policy,
@@ -218,8 +216,7 @@ pub(crate) fn credential_keyword_context(keyword: &str) -> KeywordContext {
         threshold: policy.entropy_low,
         min_len: policy.min_len,
         is_credential_context: true,
-        entropy_shape: policy.entropy_shape,
-        plausibility_policy: Some(*policy),
+        plausibility_policy: *policy,
     }
 }
 
@@ -552,13 +549,10 @@ fn scan_keyword_free_candidates(
     let keyword_free_enabled = keyword_free_threshold.is_some()
         && keyword_free_min_len.is_some()
         && keyword_free_operator_margin.is_some();
-    let generic_keyword_secret_min_len =
-        compiled_keyword_secret.map(|policy| policy.keyword_free_min_len);
-    let isolated_bare_enabled = generic_keyword_secret_min_len.is_some();
+    let isolated_bare_enabled = compiled_keyword_secret.is_some();
     if !keyword_free_enabled && !isolated_bare_enabled {
         return;
     }
-    let isolated_shape = compiled_keyword_secret.and_then(|policy| policy.entropy_shape);
     let keyword_free_context = keyword_free_threshold
         .filter(|_| keyword_free_enabled)
         .zip(keyword_free_min_len)
@@ -569,24 +563,18 @@ fn scan_keyword_free_candidates(
                 threshold: compiled.keyword_free_effective_floor(threshold, entropy_threshold)?,
                 min_len,
                 is_credential_context: false,
-                entropy_shape: compiled.entropy_shape,
-                plausibility_policy: Some(*compiled),
+                plausibility_policy: *compiled,
             })
         });
-    let isolated_token_context = generic_keyword_secret_min_len.map(|min_len| {
-        isolated_bare_keyword_context_with_shape(
-            entropy_threshold,
-            min_len,
-            isolated_shape,
-            compiled_keyword_secret.copied(),
-        )
+    let isolated_token_context = compiled_keyword_secret.map(|compiled| {
+        isolated_bare_keyword_context(entropy_threshold, compiled.keyword_free_min_len, *compiled)
     });
     let isolated_admission_lengths = isolated_token_context.as_ref().map(|context| {
         (
             context.min_len,
             super::isolated::isolated_special_shape_min_len(
-                context.entropy_shape.as_ref(),
-                context.plausibility_policy.as_ref(),
+                context.plausibility_policy.entropy_shape.as_ref(),
+                &context.plausibility_policy,
             ),
         )
     });
@@ -765,14 +753,14 @@ pub(crate) fn has_lower_dash_app_password_candidate_with_precomputed_keywords_an
             context.min_len,
             &config.placeholder_keywords,
             context.is_credential_context,
-            get_compiled_policy_for_keyword(active_policy, &context.keyword),
+            &context.plausibility_policy,
             key_material_policy,
         ) {
             let entropy = shannon_entropy(candidate.as_bytes());
             if lower_dash_app_password_floor_met_with_policy(
                 &candidate,
                 entropy,
-                context.entropy_shape.as_ref(),
+                context.plausibility_policy.entropy_shape.as_ref(),
             ) && candidate_is_plausible_with_policy(
                 &candidate,
                 entropy,
@@ -834,7 +822,7 @@ fn collect_line_candidates_inner(
             context.min_len,
             placeholder_keywords,
             context.is_credential_context,
-            get_compiled_policy_for_keyword(active_policy, &context.keyword),
+            &context.plausibility_policy,
             key_material_policy,
         );
         for rejection in &extracted.rejections {
@@ -851,7 +839,7 @@ fn collect_line_candidates_inner(
             context.min_len,
             placeholder_keywords,
             context.is_credential_context,
-            get_compiled_policy_for_keyword(active_policy, &context.keyword),
+            &context.plausibility_policy,
             key_material_policy,
         )
     };
@@ -988,8 +976,8 @@ fn candidate_plausibility_rejection_stage_with_policy(
                 EntropyShapeStage::CredentialContextTooShort,
             ));
         }
-        let plausibility_context = PlausibilityContext::new(true, canonical_policy_admission)
-            .with_compiled_policy(Some(compiled));
+        let plausibility_context =
+            PlausibilityContext::from_compiled(true, canonical_policy_admission, compiled);
         return (!is_secret_plausible(candidate, placeholder_keywords, plausibility_context))
             .then_some(StageId::EntropyValueShape(
                 EntropyShapeStage::SecretPlausibilityRejected,
@@ -1000,8 +988,8 @@ fn candidate_plausibility_rejection_stage_with_policy(
             EntropyShapeStage::KeywordFreeTooShort,
         ));
     }
-    let plausibility_context = PlausibilityContext::new(context.is_credential_context, false)
-        .with_compiled_policy(Some(compiled));
+    let plausibility_context =
+        PlausibilityContext::from_compiled(context.is_credential_context, false, compiled);
     if !is_secret_plausible(candidate, placeholder_keywords, plausibility_context) {
         return Some(StageId::EntropyValueShape(
             EntropyShapeStage::SecretPlausibilityRejected,
@@ -1078,9 +1066,8 @@ fn keyword_context_with_policy(
     // Keyword-anchored floor policy (a NAMED, tested rule, not a silent clamp).
     // Inside a credential-keyword context the keyword IS the positive evidence,
     // so the entropy bar is the LOW floor. The operator's Tier-A threshold
-    // engages only when it is stricter than the blanket HIGH floor, that shared
-    // decision lives in one owner, `operator_entropy_override` (see its doc). It
-    // is honored verbatim when it overrides; otherwise the keyword floor is
+    // engages only when it is stricter than this detector's compiled HIGH floor.
+    // It is honored verbatim when it overrides; otherwise the keyword floor is
     // `min(threshold, LOW)` for a finite request (a below-LOW request may still
     // loosen the recall-oriented keyword path) and LOW for a non-finite one.
     let operator_override = (entropy_threshold.is_finite() && entropy_threshold > entropy_high)
@@ -1100,7 +1087,6 @@ fn keyword_context_with_policy(
             min_length
         },
         is_credential_context,
-        entropy_shape: compiled.entropy_shape,
-        plausibility_policy: Some(*compiled),
+        plausibility_policy: *compiled,
     })
 }

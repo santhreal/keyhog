@@ -373,8 +373,7 @@ impl CompiledScanner {
                     self.config.entropy_threshold,
                     &self.config.placeholder_keywords,
                     policy.keyword_free_min_len,
-                    policy.entropy_shape,
-                    Some(policy),
+                    &policy,
                 ) {
                     return true;
                 }
@@ -395,8 +394,7 @@ impl CompiledScanner {
                         self.config.entropy_threshold,
                         &self.config.placeholder_keywords,
                         policy.keyword_free_min_len,
-                        policy.entropy_shape,
-                        Some(policy),
+                        &policy,
                     )
                 }));
         #[cfg(feature = "entropy")]

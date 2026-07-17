@@ -8,13 +8,7 @@
 //! regardless of context.
 
 use keyhog_scanner::entropy::shannon_entropy;
-use keyhog_scanner::testing::entropy_keywords::{
-    is_secret_plausible_in_context, PlausibilityContext,
-};
-
-fn plausibility_context(is_credential_context: bool) -> PlausibilityContext {
-    PlausibilityContext::new(is_credential_context, false)
-}
+use keyhog_scanner::testing::entropy_keywords::is_secret_plausible_in_context;
 
 #[test]
 fn symbolic_password_3_5_with_context_accepted() {
@@ -30,7 +24,8 @@ fn symbolic_password_3_5_with_context_accepted() {
     assert!(is_secret_plausible_in_context(
         symbolic_pwd,
         &placeholder_keywords,
-        plausibility_context(true)
+        true,
+        false
     ));
 }
 
@@ -47,7 +42,8 @@ fn symbolic_password_3_5_without_context_rejected() {
     assert!(!is_secret_plausible_in_context(
         symbolic_pwd,
         &placeholder_keywords,
-        plausibility_context(false)
+        false,
+        false
     ));
 }
 
@@ -65,7 +61,8 @@ fn pure_alphanumeric_3_5_with_context_still_rejected() {
     assert!(!is_secret_plausible_in_context(
         alphanumeric,
         &placeholder_keywords,
-        plausibility_context(true)
+        true,
+        false
     ));
 }
 
@@ -84,7 +81,8 @@ fn symbolic_password_boundary_3_5_exact_entropy() {
     assert!(is_secret_plausible_in_context(
         borderline,
         &placeholder_keywords,
-        plausibility_context(true)
+        true,
+        false
     ));
 }
 
@@ -107,7 +105,8 @@ fn symbolic_password_with_single_symbol_relaxation_applies() {
         assert!(is_secret_plausible_in_context(
             almost_alnum,
             &placeholder_keywords,
-            plausibility_context(true)
+            true,
+            false
         ));
     }
 }
@@ -125,7 +124,8 @@ fn symbolic_password_multiple_symbols_entropy_relaxation() {
         assert!(is_secret_plausible_in_context(
             multi_symbol,
             &placeholder_keywords,
-            plausibility_context(true)
+            true,
+            false
         ));
     }
 }
@@ -145,7 +145,8 @@ fn pure_alphanumeric_4_5_accepted_without_context() {
     assert!(is_secret_plausible_in_context(
         high_entropy_alnum,
         &placeholder_keywords,
-        plausibility_context(false)
+        false,
+        false
     ));
 }
 
@@ -162,7 +163,8 @@ fn symbolic_password_no_symbols_detected_fails_relaxation() {
         assert!(!is_secret_plausible_in_context(
             pure_alnum,
             &placeholder_keywords,
-            plausibility_context(true)
+            true,
+            false
         ));
     }
 }

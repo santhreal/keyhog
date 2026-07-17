@@ -106,8 +106,7 @@ impl CompiledScanner {
                     self.config.entropy_threshold,
                     &self.config.placeholder_keywords,
                     policy.keyword_free_min_len,
-                    policy.entropy_shape,
-                    Some(*policy),
+                    policy,
                 )
             });
         if !path_entropy_appropriate && !isolated_bare_candidate {
@@ -217,32 +216,48 @@ impl CompiledScanner {
             // owner. There is no keyword classifier or scanner-global identity
             // table: an incomplete custom corpus fails closed instead of
             // silently relabelling the candidate as a built-in entropy class.
-            let policy_detector_index = crate::entropy::scanner::active_policy_detector_index(
+            let Some(policy_detector_index) = crate::entropy::scanner::active_policy_detector_index(
                 &self.generic_owning_detector,
                 &entropy_match.keyword,
-            );
-            let detector_plan = policy_detector_index.map(|index| self.detector_plans.get(index));
-            let execution_policy = detector_plan.map(|plan| &plan.execution);
-            let compiled_policy = detector_plan.and_then(|plan| plan.entropy.as_ref());
+            ) else {
+                tracing::error!(
+                    target: "keyhog::detection",
+                    keyword = %entropy_match.keyword,
+                    "generated entropy candidate has no compiled detector owner"
+                );
+                continue;
+            };
+            let detector_plan = self.detector_plans.get(policy_detector_index);
+            let execution_policy = &detector_plan.execution;
+            let Some(compiled_policy) = detector_plan.entropy.as_ref() else {
+                tracing::error!(
+                    target: "keyhog::detection",
+                    keyword = %entropy_match.keyword,
+                    detector_index = policy_detector_index,
+                    "generated entropy candidate owner has no compiled entropy policy"
+                );
+                continue;
+            };
             let canonical_detector_index = self
                 .generic_owning_detector
                 .canonical_index(&entropy_match.keyword)
-                .or(policy_detector_index);
+                .unwrap_or(policy_detector_index);
             let transport_decoded = preprocessed.transport_decoded_for_offset(entropy_match.offset);
-            let detector_owned_canonical_hex_key = canonical_detector_index.is_some_and(|index| {
-                let policy = &self.detector_plans.get(index).key_material;
+            let detector_owned_canonical_hex_key = {
+                let policy = &self
+                    .detector_plans
+                    .get(canonical_detector_index)
+                    .key_material;
                 if transport_decoded {
                     policy.allows_decoded_hex(&entropy_match.value)
                 } else {
                     policy.allows_canonical_hex(&entropy_match.keyword, &entropy_match.value)
                 }
-            });
+            };
             let bpe_bound = if detector_owned_canonical_hex_key {
                 None
-            } else if let Some(policy) = compiled_policy {
-                policy.bpe_bound(self.config.entropy_bpe_max_bytes_per_token_override)
             } else {
-                None
+                compiled_policy.bpe_bound(self.config.entropy_bpe_max_bytes_per_token_override)
             };
             let policy_conf = crate::confidence::policy::entropy_fallback_confidence(
                 entropy_match.entropy,
@@ -303,13 +318,11 @@ impl CompiledScanner {
                 continue;
             }
 
-            let Some(metadata) = policy_detector_index
-                .and_then(|index| self.detector_plans.get(index).entropy_metadata.as_ref())
-            else {
+            let Some(metadata) = detector_plan.entropy_metadata.as_ref() else {
                 tracing::error!(
                     target: "keyhog::detection",
                     keyword = %entropy_match.keyword,
-                    detector_index = ?policy_detector_index,
+                    detector_index = policy_detector_index,
                     "entropy candidate suppressed because its active detector lacks entropy_fallback metadata"
                 );
                 let entropy_ctx = crate::adjudicate::MatchCtx::for_entropy_fallback(
@@ -365,25 +378,22 @@ impl CompiledScanner {
             // identically). The shape gates above remain cheap, recall-safe
             // pre-filters.
             let min_confidence_floor = crate::adjudicate::detector_min_confidence_floor(
-                execution_policy.and_then(|policy| policy.min_confidence),
+                execution_policy.min_confidence,
                 self.config.min_confidence,
             );
             #[cfg(feature = "ml")]
-            let entropy_ml_policy = detector_plan.map(|plan| plan.ml);
+            let entropy_ml_policy = detector_plan.ml;
             #[cfg(feature = "ml")]
-            let entropy_ml_mode = entropy_ml_policy.and_then(|policy| {
-                if detector_owned_canonical_hex_key {
-                    policy.match_mode
-                } else {
-                    policy.entropy_mode
-                }
-            });
+            let entropy_ml_mode = if detector_owned_canonical_hex_key {
+                entropy_ml_policy.match_mode
+            } else {
+                entropy_ml_policy.entropy_mode
+            };
             #[cfg(feature = "ml")]
-            if let Some(((detector_index, policy), mode)) = policy_detector_index
-                .zip(entropy_ml_policy)
-                .zip(entropy_ml_mode)
+            if let Some(mode) = entropy_ml_mode
                 .filter(|_| self.config.ml_enabled && self.config.entropy_ml_authoritative)
             {
+                let policy = entropy_ml_policy;
                 let raw_match = build_raw_match(scan_state, policy_conf);
                 let ml_features = crate::types::ml_features_for_candidate(
                     &preprocessed.text,
@@ -392,7 +402,7 @@ impl CompiledScanner {
                     &entropy_match.value,
                     policy.context_radius_lines,
                     &self.config,
-                    self.detector_plans.get(detector_index).metadata.2.as_ref(),
+                    detector_plan.metadata.2.as_ref(),
                     policy.features,
                     crate::ml_scorer::MlCandidateChannel::Entropy,
                 );

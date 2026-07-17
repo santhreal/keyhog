@@ -17,8 +17,7 @@ pub(crate) struct KeywordContext {
     pub(crate) threshold: f64,
     pub(crate) min_len: usize,
     pub(crate) is_credential_context: bool,
-    pub(crate) entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
-    pub(crate) plausibility_policy: Option<super::policy::CompiledEntropyPolicy>,
+    pub(crate) plausibility_policy: super::policy::CompiledEntropyPolicy,
 }
 
 pub(crate) fn find_keyword_assignment_lines<'a>(
@@ -126,7 +125,7 @@ pub(super) fn extract_candidates(
     min_length: usize,
     placeholder_keywords: &[String],
     is_credential_context: bool,
-    compiled_policy: Option<&crate::entropy::policy::CompiledEntropyPolicy>,
+    compiled_policy: &crate::entropy::policy::CompiledEntropyPolicy,
     key_material_policy: Option<
         &crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy,
     >,
@@ -160,7 +159,7 @@ pub(super) fn extract_candidates_with_rejections(
     min_length: usize,
     placeholder_keywords: &[String],
     is_credential_context: bool,
-    compiled_policy: Option<&crate::entropy::policy::CompiledEntropyPolicy>,
+    compiled_policy: &crate::entropy::policy::CompiledEntropyPolicy,
     key_material_policy: Option<
         &crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy,
     >,
@@ -184,7 +183,7 @@ fn extract_candidates_internal(
     placeholder_keywords: &[String],
     is_credential_context: bool,
     trace_rejections: bool,
-    compiled_policy: Option<&crate::entropy::policy::CompiledEntropyPolicy>,
+    compiled_policy: &crate::entropy::policy::CompiledEntropyPolicy,
     key_material_policy: Option<
         &crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy,
     >,
@@ -223,9 +222,11 @@ fn extract_candidates_internal(
             && crate::suppression::shape::is_structured_dotted_token(cleaned);
         let detector_owned_canonical_hex_key =
             key_material_policy.is_some_and(|policy| policy.allows_canonical_hex(keyword, cleaned));
-        let plausibility_context =
-            PlausibilityContext::new(is_credential_context, detector_owned_canonical_hex_key)
-                .with_compiled_policy(compiled_policy);
+        let plausibility_context = PlausibilityContext::from_compiled(
+            is_credential_context,
+            detector_owned_canonical_hex_key,
+            compiled_policy,
+        );
         let plausible = structured_dotted
             || if strict {
                 is_secret_plausible(cleaned, placeholder_keywords, plausibility_context)

@@ -85,6 +85,14 @@ fn embedded_detector(id: &str) -> DetectorSpec {
         .unwrap_or_else(|| panic!("embedded detector {id} must exist"))
 }
 
+fn embedded_entropy_detectors() -> Vec<DetectorSpec> {
+    keyhog_core::load_embedded_detectors_or_fail()
+        .expect("embedded detector corpus must load")
+        .into_iter()
+        .filter(DetectorSpec::owns_entropy_policy)
+        .collect()
+}
+
 fn chunk(data: &str) -> Chunk {
     Chunk {
         data: data.into(),
@@ -400,7 +408,7 @@ fn entropy_fallback_honors_min_secret_len_config() {
     config.test_keywords.clear();
     config.placeholder_keywords.clear();
 
-    let scanner = CompiledScanner::compile(Vec::new())
+    let scanner = CompiledScanner::compile(embedded_entropy_detectors())
         .unwrap()
         .with_config(config.clone());
     let matches = scanner.scan(&chunk(&format!("MARKER = \"{value}\"")));
@@ -412,7 +420,7 @@ fn entropy_fallback_honors_min_secret_len_config() {
     );
 
     config.min_secret_len = 33;
-    let scanner = CompiledScanner::compile(Vec::new())
+    let scanner = CompiledScanner::compile(embedded_entropy_detectors())
         .unwrap()
         .with_config(config);
     let matches = scanner.scan(&chunk(&format!("MARKER = \"{value}\"")));
@@ -438,15 +446,14 @@ fn entropy_fallback_precheck_admits_symbolic_password_runs() {
     config.test_keywords.clear();
     config.placeholder_keywords.clear();
 
-    let scanner = CompiledScanner::compile(Vec::new())
+    let scanner = CompiledScanner::compile(embedded_entropy_detectors())
         .unwrap()
         .with_config(config);
     let matches = scanner.scan(&chunk(&format!("SECRET = \"{value}\"")));
     assert!(
-        matches.iter().any(|m| {
-            m.credential.as_ref() == value && m.detector_id.as_ref().starts_with("entropy-")
-        }),
-        "credential-context symbolic password should reach entropy fallback; got {matches:?}"
+        matches.iter().any(|m| m.credential.as_ref() == value
+            && m.detector_id.as_ref() == "generic-keyword-secret"),
+        "credential-context symbolic password should reach its compiled detector owner; got {matches:?}"
     );
 }
 
@@ -464,7 +471,7 @@ fn entropy_fallback_rejection_is_operator_visible() {
     config.test_keywords.clear();
     config.placeholder_keywords.clear();
 
-    let scanner = CompiledScanner::compile(Vec::new())
+    let scanner = CompiledScanner::compile(embedded_entropy_detectors())
         .unwrap()
         .with_config(config);
     keyhog_scanner::telemetry::testing::reset();

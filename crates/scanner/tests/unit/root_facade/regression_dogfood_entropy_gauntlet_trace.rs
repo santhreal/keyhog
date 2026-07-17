@@ -10,7 +10,12 @@ use std::sync::Arc;
 fn scanner() -> CompiledScanner {
     let mut cfg = ScannerConfig::default();
     cfg.ml_enabled = false;
-    CompiledScanner::compile(Vec::new())
+    let detectors = keyhog_core::load_embedded_detectors_or_fail()
+        .expect("embedded detector corpus must load")
+        .into_iter()
+        .filter(keyhog_core::DetectorSpec::owns_entropy_policy)
+        .collect();
+    CompiledScanner::compile(detectors)
         .expect("compile scanner")
         .with_config(cfg)
 }

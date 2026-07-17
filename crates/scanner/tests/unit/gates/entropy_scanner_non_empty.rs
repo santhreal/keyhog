@@ -48,7 +48,7 @@ fn entropy_scanner_non_empty() {
     );
     assert!(
         prod.contains("collect_isolated_bare_candidates_inner(")
-            && prod.contains("isolated_bare_keyword_context_with_shape("),
+            && prod.contains("isolated_bare_keyword_context("),
         "entropy::scanner must delegate isolated token recovery through entropy::isolated"
     );
     assert!(

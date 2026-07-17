@@ -42,15 +42,6 @@ pub const LOW_ENTROPY_THRESHOLD: f64 = 3.0;
 /// entropy owners declare and compile their own `DetectorSpec::entropy_high`.
 pub const HIGH_ENTROPY_THRESHOLD: f64 = 4.5;
 
-/// Floor for mixed alpha+digit tokens that carry stronger evidence than a
-/// normal keyword-free substring: either the whole line is the token, or a
-/// credential/auth anchor owns the quoted value. Kept below the global 4.5
-/// floor but above low-entropy identifiers.
-///
-/// Baseline for detector-neutral plausibility primitives. Shipped entropy
-/// owners use their compiled `DetectorSpec::plausibility.mixed_alnum_floor`.
-pub(crate) const MIXED_ALNUM_TOKEN_THRESHOLD: f64 = 4.0;
-
 pub(crate) const ISOLATED_BARE_ENTROPY_LABEL: &str = "none (isolated-token)";
 
 /// Threshold for keyword-independent entropy detection.
@@ -66,30 +57,6 @@ pub const VERY_HIGH_ENTROPY_THRESHOLD: f64 = 5.8;
 /// path (`isolated::collect_isolated_bare_candidates`), both add it to their
 /// enumerated line index, so the convention lives in exactly one place.
 pub(crate) const FIRST_SOURCE_LINE_NUMBER: usize = 1;
-
-/// The single decision shared by the keyword-anchored and isolated-bare floor
-/// policies: does the operator's Tier-A `entropy_threshold` OVERRIDE the
-/// anchored floor?
-///
-/// An assignment keyword (`api_key=`) or an isolated opaque token is positive
-/// evidence, so the anchored paths run at a LOW named floor by default
-/// (recall-oriented, the anchor, not raw entropy, carries the signal). The
-/// operator knob therefore engages ONLY when it is *stricter* than the blanket
-/// [`HIGH_ENTROPY_THRESHOLD`]: a caller asking for a bar tighter than the global
-/// high floor is honored verbatim (`Some(threshold)`); at or below HIGH, or
-/// non-finite, the anchored floor applies (`None`) and each caller supplies its
-/// own floor ([`LOW_ENTROPY_THRESHOLD`] for the keyword path,
-/// [`MIXED_ALNUM_TOKEN_THRESHOLD`] for the isolated path).
-///
-/// This is a NAMED, TESTED policy, explicitly NOT a silent clamp. The two call
-/// sites (`scanner::keyword_context`, `isolated::isolated_bare_entropy_threshold`)
-/// used to inline byte-divergent copies of this same `> HIGH` test, which is the
-/// exact ONE-PLACE hazard: one owner means a change to the override rule reaches
-/// both floors at once, and the resolution at every band is pinned by tests.
-pub(super) fn operator_entropy_override(entropy_threshold: f64) -> Option<f64> {
-    (entropy_threshold.is_finite() && entropy_threshold > HIGH_ENTROPY_THRESHOLD)
-        .then_some(entropy_threshold)
-}
 
 /// Config/secret file extensions that mark a path as entropy-appropriate. Single
 /// owner: both the direct extension check and the stem+extension check in

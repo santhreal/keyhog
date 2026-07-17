@@ -23,8 +23,8 @@ pub(crate) fn entropy_match_suppression_stage(
     // explicitly disabled token efficiency; `Some` carries detector policy
     // with any Tier-A scan ceiling override already applied.
     bpe_max_bytes_per_token: Option<f64>,
-    compiled_policy: Option<&crate::entropy::policy::CompiledEntropyPolicy>,
-    execution_policy: Option<&crate::detector_execution_policy::CompiledDetectorExecutionPolicy>,
+    compiled_policy: &crate::entropy::policy::CompiledEntropyPolicy,
+    execution_policy: &crate::detector_execution_policy::CompiledDetectorExecutionPolicy,
 ) -> Option<EntropyShapeStage> {
     let randomness =
         crate::suppression::token_randomness::TokenRandomness::for_candidate(&entropy_match.value);
@@ -57,7 +57,7 @@ pub(crate) fn entropy_match_suppression_stage(
         crate::entropy::scanner::lower_dash_app_password_floor_met_with_policy(
             &entropy_match.value,
             entropy_match.entropy,
-            compiled_policy.and_then(|policy| policy.entropy_shape.as_ref()),
+            compiled_policy.entropy_shape.as_ref(),
         );
     // Keep shared content gates live even when canonical shape gates are lifted.
     if let Some(stage) = crate::adjudicate::entropy_fallback_example_suppression_stage(
@@ -147,14 +147,12 @@ pub(crate) fn entropy_match_suppression_stage(
     // no-op on both corpora, left as the plain gate by documented decision.
     if entropy_match.keyword != crate::entropy::ISOLATED_BARE_ENTROPY_LABEL
         && !(same_line_high_signal_assignment_owner
-            && compiled_policy.is_some_and(|policy| {
-                crate::entropy::scanner::mixed_separator_token_floor_met(
-                    &entropy_match.value,
-                    entropy_match.entropy,
-                    policy.isolated_mixed_entropy_floor,
-                    policy.isolated_colon_left_min_len,
-                )
-            }))
+            && crate::entropy::scanner::mixed_separator_token_floor_met(
+                &entropy_match.value,
+                entropy_match.entropy,
+                compiled_policy.isolated_mixed_entropy_floor,
+                compiled_policy.isolated_colon_left_min_len,
+            ))
         && !(same_line_high_signal_assignment_owner && lower_dash_app_password)
         && crate::suppression::shape::looks_like_word_separated_identifier(&entropy_match.value)
     {
@@ -192,7 +190,7 @@ pub(crate) fn entropy_match_suppression_stage(
     {
         return Some(EntropyShapeStage::SourceCodeExpression);
     }
-    if compiled_policy.is_some_and(|policy| policy.reject_source_symbol_identifiers)
+    if compiled_policy.reject_source_symbol_identifiers
         && crate::decode::caesar::is_program_source_code_path(chunk.metadata.path.as_deref())
         && crate::suppression::shape::looks_like_source_symbol_identifier_with_randomness(
             &entropy_match.value,
@@ -243,9 +241,7 @@ pub(crate) fn entropy_match_suppression_stage(
     // identifiers, not credentials. Cheap line lookup via the
     // preprocessed text + line_offsets table.
     if let Some(line_text) = entropy_value_line(entropy_match, preprocessed, line_offsets) {
-        if execution_policy.is_some_and(|policy| {
-            policy.line_has_public_identifier_assignment(line_text.as_bytes())
-        }) {
+        if execution_policy.line_has_public_identifier_assignment(line_text.as_bytes()) {
             return Some(EntropyShapeStage::BlockchainOrNetworkAddress);
         }
     }

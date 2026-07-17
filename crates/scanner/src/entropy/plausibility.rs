@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use super::{shannon_entropy, HIGH_ENTROPY_THRESHOLD, MIXED_ALNUM_TOKEN_THRESHOLD};
+use super::shannon_entropy;
 
 /// Tier-B "universal rejection" value prefixes, the single owner
 /// (`rules/universal-rejection-prefixes.toml`; were inline `starts_with` terms in
@@ -26,32 +26,6 @@ static UNIVERSAL_REJECTION_PREFIXES: LazyLock<Vec<String>> = LazyLock::new(|| {
     }
 });
 
-/// Relaxed Shannon floor for a symbolic (non-alphanumeric-bearing) value that
-/// ALSO carries a strong credential-keyword anchor. The blanket
-/// [`HIGH_ENTROPY_THRESHOLD`] (4.5) over-rejects real symbolic-password shapes
-/// whose entropy lands in the 3.5–4.5 band (e.g. `1E1B3b4Ho$U4kYBi` ≈ 3.95);
-/// the anchor + symbol set together are the positive evidence that licenses this
-/// lower floor. Single named owner for the value used in
-/// [`passes_secret_strength_checks`]. Kept below [`HIGH_ENTROPY_THRESHOLD`].
-pub(crate) const SYMBOLIC_CREDENTIAL_ENTROPY_FLOOR: f64 = 3.5;
-
-/// Shannon floor for an isolated leading-`/` base64 value
-/// (`is_isolated_leading_slash_base64_secret`). Deliberately the strictest floor
-/// in this module: a bare `/`-prefixed base64 blob has no keyword anchor, so it
-/// must clear a high entropy bar before it is treated as a secret. Sits above
-/// [`HIGH_ENTROPY_THRESHOLD`].
-pub(crate) const LEADING_SLASH_BASE64_ENTROPY_FLOOR: f64 = 4.8;
-
-/// Minimum Shannon entropy the SECOND HALF of a >16-char value must carry for the
-/// value to survive the shape gate. Catches values whose randomness is
-/// front-loaded (a real prefix followed by a low-entropy tail). Single owner for
-/// the floor in [`passes_secret_shape_checks`].
-pub(crate) const SECOND_HALF_ENTROPY_FLOOR: f64 = 2.5;
-
-/// Detector-neutral minimum for direct plausibility primitives. Entropy scan
-/// paths replace it with the owning detector's compiled TOML policy.
-pub(crate) const MIXED_ALNUM_MIN_LEN: usize = 20;
-
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct PlausibilityContext {
     pub(crate) is_credential_context: bool,
@@ -70,69 +44,28 @@ pub(crate) struct PlausibilityContext {
     entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
 }
 
-impl Default for PlausibilityContext {
-    fn default() -> Self {
-        Self::new(false, false)
-    }
-}
-
 impl PlausibilityContext {
-    pub(crate) const fn new(is_credential_context: bool, allow_canonical_hex_key: bool) -> Self {
+    pub(crate) fn from_compiled(
+        is_credential_context: bool,
+        allow_canonical_hex_key: bool,
+        policy: &crate::entropy::policy::CompiledEntropyPolicy,
+    ) -> Self {
         Self {
             is_credential_context,
             allow_canonical_hex_key,
-            entropy_high: HIGH_ENTROPY_THRESHOLD,
-            mixed_alnum_floor: MIXED_ALNUM_TOKEN_THRESHOLD,
-            symbolic_entropy_floor: SYMBOLIC_CREDENTIAL_ENTROPY_FLOOR,
-            second_half_entropy_floor: SECOND_HALF_ENTROPY_FLOOR,
-            reject_repeated_blocks: true,
-            allow_alphabetic_credential: true,
-            reject_program_identifiers: true,
-            reject_source_symbol_identifiers: true,
-            reject_dash_segmented_alnum: true,
-            mixed_alnum_min_len: MIXED_ALNUM_MIN_LEN,
-            leading_slash_base64_entropy_floor: LEADING_SLASH_BASE64_ENTROPY_FLOOR,
-            entropy_shape: None,
+            entropy_high: policy.entropy_high,
+            mixed_alnum_floor: policy.mixed_alnum_floor,
+            symbolic_entropy_floor: policy.symbolic_entropy_floor,
+            second_half_entropy_floor: policy.second_half_entropy_floor,
+            reject_repeated_blocks: policy.reject_repeated_blocks,
+            allow_alphabetic_credential: policy.allow_alphabetic_credential,
+            reject_program_identifiers: policy.reject_program_identifiers,
+            reject_source_symbol_identifiers: policy.reject_source_symbol_identifiers,
+            reject_dash_segmented_alnum: policy.reject_dash_segmented_alnum,
+            mixed_alnum_min_len: policy.mixed_alnum_min_len,
+            leading_slash_base64_entropy_floor: policy.leading_slash_base64_entropy_floor,
+            entropy_shape: policy.entropy_shape,
         }
-    }
-
-    pub(crate) fn with_plausibility_policy(
-        mut self,
-        policy: keyhog_core::DetectorPlausibilityPolicySpec,
-    ) -> Self {
-        self.mixed_alnum_floor = policy.mixed_alnum_floor;
-        self.symbolic_entropy_floor = policy.symbolic_entropy_floor;
-        self.second_half_entropy_floor = policy.second_half_entropy_floor;
-        self.reject_repeated_blocks = policy.reject_repeated_blocks;
-        self.allow_alphabetic_credential = policy.allow_alphabetic_credential;
-        self.reject_program_identifiers = policy.reject_program_identifiers;
-        self.reject_source_symbol_identifiers = policy.reject_source_symbol_identifiers;
-        self.reject_dash_segmented_alnum = policy.reject_dash_segmented_alnum;
-        self.mixed_alnum_min_len = policy.mixed_alnum_min_len;
-        self.leading_slash_base64_entropy_floor = policy.leading_slash_base64_entropy_floor;
-        self
-    }
-
-    #[inline]
-    pub(crate) fn with_compiled_policy(
-        mut self,
-        policy: Option<&crate::entropy::policy::CompiledEntropyPolicy>,
-    ) -> Self {
-        if let Some(policy) = policy {
-            self.entropy_high = policy.entropy_high;
-            self.mixed_alnum_floor = policy.mixed_alnum_floor;
-            self.symbolic_entropy_floor = policy.symbolic_entropy_floor;
-            self.second_half_entropy_floor = policy.second_half_entropy_floor;
-            self.reject_repeated_blocks = policy.reject_repeated_blocks;
-            self.allow_alphabetic_credential = policy.allow_alphabetic_credential;
-            self.reject_program_identifiers = policy.reject_program_identifiers;
-            self.reject_source_symbol_identifiers = policy.reject_source_symbol_identifiers;
-            self.reject_dash_segmented_alnum = policy.reject_dash_segmented_alnum;
-            self.mixed_alnum_min_len = policy.mixed_alnum_min_len;
-            self.leading_slash_base64_entropy_floor = policy.leading_slash_base64_entropy_floor;
-            self.entropy_shape = policy.entropy_shape;
-        }
-        self
     }
 }
 
@@ -304,14 +237,9 @@ pub(crate) fn passes_secret_strength_checks(value: &str, context: PlausibilityCo
 pub(crate) fn is_isolated_bare_secret_plausible(
     value: &str,
     placeholder_keywords: &[String],
-    entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
-    plausibility_policy: Option<crate::entropy::policy::CompiledEntropyPolicy>,
+    plausibility_policy: &crate::entropy::policy::CompiledEntropyPolicy,
 ) -> bool {
-    let context = PlausibilityContext {
-        entropy_shape,
-        ..PlausibilityContext::default()
-    }
-    .with_compiled_policy(plausibility_policy.as_ref());
+    let context = PlausibilityContext::from_compiled(false, false, plausibility_policy);
     if value.starts_with('/') {
         return is_isolated_leading_slash_base64_secret(value, placeholder_keywords, context);
     }
@@ -333,7 +261,7 @@ pub(crate) fn is_isolated_bare_secret_plausible(
         value,
         shannon_entropy(value.as_bytes()),
         context.entropy_shape.as_ref(),
-        plausibility_policy.as_ref(),
+        plausibility_policy,
     ) {
         return passes_plausibility_checks(
             value,

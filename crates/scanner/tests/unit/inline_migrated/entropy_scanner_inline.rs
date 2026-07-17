@@ -13,7 +13,7 @@ use keyhog_scanner::testing::entropy_scanner::{
 
 #[test]
 fn isolated_keyword_free_min_len_comes_from_active_generic_keyword_secret_spec() {
-    let secret = "A1b2C3d4E5f6g7H8i9J";
+    let secret = "Kp4Qx7Rm2Sn5Tb8Vw3Yz!9";
     assert_eq!(
         isolated_keyword_free_match_count_with_min_len(secret, 30),
         0,

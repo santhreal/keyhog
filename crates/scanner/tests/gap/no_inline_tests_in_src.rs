@@ -246,9 +246,8 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // exact ASCII/size decision boundary is recall-load-bearing and the predicate
     // is module-private (no public surface), so it can only be pinned in-module.
     "engine/phase2_prefilter.rs",
-    // `entropy/mod.rs` pins `operator_entropy_override` (strictly-above-high-floor
-    // engagement) and the private `plausibility::*` entropy-floor consts. The
-    // floors are crate-internal recall thresholds, not public API.
+    // `entropy/mod.rs` contains only the path bridge to its external unit-test
+    // module; behavioral entropy tests live under `tests/unit`.
     "entropy/mod.rs",
     // `generic_keyword_owner.rs` is the canonical owner of `leading_assignment_key`
     // extraction; its tests pin the exact delimiter-run boundary (`=`/`:`/`~`/`.`)

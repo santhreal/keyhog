@@ -993,19 +993,6 @@ pub fn shannon_entropy_neon_for_test(data: &[u8]) -> f64 {
     crate::entropy::fast_neon::shannon_entropy_neon(data)
 }
 
-/// The ML low-entropy feature-bucket threshold and the deterministic
-/// symbolic-credential entropy floor, independently owned but currently
-/// coincident (both 3.5); exposed so an external test can pin that coincidence.
-pub fn ml_low_entropy_feature_threshold() -> f64 {
-    crate::ml_scorer::ml_features::ML_LOW_ENTROPY_FEATURE_THRESHOLD
-}
-
-/// See [`ml_low_entropy_feature_threshold`]: the symbolic-credential entropy floor
-/// owner in `entropy::plausibility`.
-pub fn symbolic_credential_entropy_floor() -> f64 {
-    crate::entropy::plausibility::SYMBOLIC_CREDENTIAL_ENTROPY_FLOOR
-}
-
 /// The shipped detector-owned generic-keyword bridge regex, built from the
 /// derived assignment vocabulary and detector maximum; `Err` iff the resulting
 /// expression fails to compile.
@@ -1046,9 +1033,8 @@ pub fn assignment_keywords_for_test() -> &'static [String] {
     crate::assignment_keywords::assignment_keywords()
 }
 
-/// The resolved entropy threshold that `keyword_context` derives for a line
-/// the observable half of the shared `operator_entropy_override` owner (returned
-/// as a bare `f64` so the private `KeywordContext` stays crate-internal).
+/// The resolved entropy threshold that `keyword_context` derives from the
+/// owning detector policy and the supplied operator threshold.
 pub fn keyword_context_threshold_for_test(
     keyword_line: &str,
     min_length: usize,
@@ -1079,13 +1065,14 @@ pub fn credential_context_too_short_rejection_for_test(
     min_len: usize,
 ) -> bool {
     use crate::adjudicate::{EntropyShapeStage, StageId};
+    let plausibility_policy =
+        crate::entropy::scanner::credential_keyword_context(keyword).plausibility_policy;
     let context = crate::entropy::keywords::KeywordContext {
         keyword: keyword.to_string(),
         threshold: 0.0,
         min_len,
         is_credential_context: true,
-        entropy_shape: None,
-        plausibility_policy: None,
+        plausibility_policy,
     };
     let entropy = crate::entropy::shannon_entropy(candidate.as_bytes());
     matches!(
@@ -2710,11 +2697,8 @@ pub fn looks_like_bare_hex_digest_for_test(value: &str) -> bool {
     crate::suppression::shape::looks_like_bare_hex_digest(value)
 }
 
-/// Test seam for [`crate::adjudicate::generic::bare_auth_value_allowed`], using
-/// the shipped `generic-api-key` detector policy. Production passes the active
-/// custom-corpus owner instead. A structured dotted token or a dot-free symbolic
-/// value that clears that policy is allowed; plain identifiers are rejected.
-pub fn bare_auth_value_allowed_for_test(value: &str) -> bool {
+fn generic_api_key_entropy_policy_for_test(
+) -> &'static crate::entropy::policy::CompiledEntropyPolicy {
     static POLICY: std::sync::LazyLock<crate::entropy::policy::CompiledEntropyPolicy> =
         std::sync::LazyLock::new(|| {
             let detector = keyhog_core::detector_spec_by_id("generic-api-key")
@@ -2722,7 +2706,17 @@ pub fn bare_auth_value_allowed_for_test(value: &str) -> bool {
             crate::entropy::policy::CompiledEntropyPolicy::compile(detector)
                 .expect("embedded generic-api-key entropy policy must compile")
         });
-    crate::adjudicate::generic::bare_auth_value_allowed(value, &POLICY)
+    &POLICY
+}
+
+/// Test seam for [`crate::adjudicate::generic::bare_auth_value_allowed`], using
+/// the shipped `generic-api-key` detector policy. Production passes the active
+/// custom-corpus owner instead.
+pub fn bare_auth_value_allowed_for_test(value: &str) -> bool {
+    crate::adjudicate::generic::bare_auth_value_allowed(
+        value,
+        generic_api_key_entropy_policy_for_test(),
+    )
 }
 
 /// Test seam for [`crate::suppression::shape::is_structured_dotted_token`], the
@@ -3787,7 +3781,15 @@ pub mod entropy_isolated {
 /// Entropy plausibility and shape predicates exposed for unit tests migrated
 /// out of their original inline homes (KH-GAP-004).
 pub mod entropy_keywords {
-    pub(crate) use crate::entropy::plausibility::PlausibilityContext;
+    use crate::entropy::plausibility::PlausibilityContext;
+
+    fn context(is_credential_context: bool, allow_canonical_hex_key: bool) -> PlausibilityContext {
+        PlausibilityContext::from_compiled(
+            is_credential_context,
+            allow_canonical_hex_key,
+            super::generic_api_key_entropy_policy_for_test(),
+        )
+    }
 
     pub fn looks_like_english_prose(value: &str) -> bool {
         crate::suppression::shape::looks_like_english_prose(value)
@@ -3800,7 +3802,7 @@ pub mod entropy_keywords {
     pub fn passes_secret_strength_checks(value: &str, is_credential_context: bool) -> bool {
         crate::entropy::plausibility::passes_secret_strength_checks(
             value,
-            PlausibilityContext::new(is_credential_context, false),
+            context(is_credential_context, false),
         )
     }
 
@@ -3809,9 +3811,15 @@ pub mod entropy_keywords {
         is_credential_context: bool,
         policy: keyhog_core::DetectorPlausibilityPolicySpec,
     ) -> bool {
+        let mut detector = keyhog_core::detector_spec_by_id("generic-api-key")
+            .expect("embedded generic-api-key detector must load")
+            .clone();
+        detector.plausibility = Some(policy);
+        let compiled = crate::entropy::policy::CompiledEntropyPolicy::compile(&detector)
+            .expect("test plausibility policy must compile");
         crate::entropy::plausibility::passes_secret_strength_checks(
             value,
-            PlausibilityContext::new(is_credential_context, false).with_plausibility_policy(policy),
+            PlausibilityContext::from_compiled(is_credential_context, false, &compiled),
         )
     }
 
@@ -3835,7 +3843,7 @@ pub mod entropy_keywords {
         crate::entropy::plausibility::is_candidate_plausible(
             value,
             placeholder_keywords,
-            PlausibilityContext::default(),
+            context(false, false),
         )
     }
 
@@ -3843,7 +3851,7 @@ pub mod entropy_keywords {
         crate::entropy::plausibility::is_secret_plausible(
             value,
             placeholder_keywords,
-            PlausibilityContext::default(),
+            context(false, false),
         )
     }
 
@@ -3851,18 +3859,28 @@ pub mod entropy_keywords {
     pub(crate) fn is_candidate_plausible_in_context(
         value: &str,
         placeholder_keywords: &[String],
-        context: PlausibilityContext,
+        is_credential_context: bool,
+        allow_canonical_hex_key: bool,
     ) -> bool {
-        crate::entropy::plausibility::is_candidate_plausible(value, placeholder_keywords, context)
+        crate::entropy::plausibility::is_candidate_plausible(
+            value,
+            placeholder_keywords,
+            context(is_credential_context, allow_canonical_hex_key),
+        )
     }
 
     #[cfg(test)]
     pub(crate) fn is_secret_plausible_in_context(
         value: &str,
         placeholder_keywords: &[String],
-        context: PlausibilityContext,
+        is_credential_context: bool,
+        allow_canonical_hex_key: bool,
     ) -> bool {
-        crate::entropy::plausibility::is_secret_plausible(value, placeholder_keywords, context)
+        crate::entropy::plausibility::is_secret_plausible(
+            value,
+            placeholder_keywords,
+            context(is_credential_context, allow_canonical_hex_key),
+        )
     }
 }
 

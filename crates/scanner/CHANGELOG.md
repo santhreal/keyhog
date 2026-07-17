@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Require one compiled detector plan throughout isolated-bare admission and
+  entropy-fallback adjudication; remove optional scanner-default policy plus
+  duplicate entropy-shape and execution-policy inputs.
+
 - Evaluate the bare-`auth` generic bridge and its repeated-block suppression
   through the active detector's compiled plausibility policy instead of
   scanner-owned fallback constants, with the adversarial property suite wired.
