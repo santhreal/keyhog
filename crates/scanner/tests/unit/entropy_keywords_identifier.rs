@@ -67,3 +67,25 @@ fn every_key_material_anchor_is_a_credential_keyword() {
     assert!(normalized_assignment_keyword_is_credential("private_key"));
     assert!(normalized_assignment_keyword_is_credential("session_key"));
 }
+
+#[test]
+fn credential_assignment_surface_preserves_boundaries_across_short_and_long_keys() {
+    for line in [
+        "DB_PASS=hunter2",
+        "client.secret: opaque",
+        "<private-key>opaque</private-key>",
+        "Authorization: Bearer opaque",
+        &format!("{}_TOKEN=opaque", "vendor".repeat(30)),
+    ] {
+        assert!(is_keyword_assignment_line(line, &[]), "{line:?}");
+    }
+    for line in [
+        "let x = compute_value(42);",
+        "CI_BYPASS=true",
+        "compass = north",
+        "passing_value: true",
+        "package com.example.app",
+    ] {
+        assert!(!is_keyword_assignment_line(line, &[]), "{line:?}");
+    }
+}

@@ -1,4 +1,5 @@
-//! Regression: entropy fallback offsets must stay byte-accurate on CRLF source files.
+//! Regression: source credential offsets must stay byte-accurate on CRLF input
+//! after generic and entropy candidates resolve to one finding.
 
 mod support;
 use support::paths::detector_dir;
@@ -32,33 +33,31 @@ fn scan(scanner: &CompiledScanner, body: &str, path: &str) -> Vec<RawMatch> {
         .collect()
 }
 
-fn entropy_hit<'a>(matches: &'a [RawMatch], credential: &str) -> &'a RawMatch {
+fn credential_hit<'a>(matches: &'a [RawMatch], credential: &str) -> &'a RawMatch {
     let hits: Vec<&RawMatch> = matches
         .iter()
-        .filter(|m| {
-            m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref() == credential
-        })
+        .filter(|m| m.credential.as_ref() == credential)
         .collect();
     assert_eq!(
         hits.len(),
         1,
-        "expected exactly one entropy hit for {credential:?}, matches={matches:#?}"
+        "expected exactly one resolved finding for {credential:?}, matches={matches:#?}"
     );
     hits[0]
 }
 
 #[test]
-fn crlf_source_entropy_hit_reports_real_line_start_offset() {
+fn crlf_source_credential_reports_exact_byte_offset() {
     let body = format!("# header\r\nAPI_KEY = \"{SECRET}\"\r\n");
     let scanner = scanner();
     let matches = scan(&scanner, &body, "/repo/app.py");
-    let hit = entropy_hit(&matches, SECRET);
+    let hit = credential_hit(&matches, SECRET);
 
     assert_eq!(hit.location.line, Some(2));
     assert_eq!(
         hit.location.offset,
-        "# header\r\n".len(),
-        "entropy fallback offset must be the CRLF byte line start in the original text"
+        body.find(SECRET).expect("fixture contains credential"),
+        "resolved finding offset must be the credential's CRLF byte position"
     );
 }
 
@@ -70,13 +69,21 @@ fn lf_and_crlf_entropy_hits_preserve_equivalent_line_identity() {
 
     let lf_matches = scan(&scanner, &lf_body, "/repo/app.py");
     let crlf_matches = scan(&scanner, &crlf_body, "/repo/app.py");
-    let lf_hit = entropy_hit(&lf_matches, SECRET);
-    let crlf_hit = entropy_hit(&crlf_matches, SECRET);
+    let lf_hit = credential_hit(&lf_matches, SECRET);
+    let crlf_hit = credential_hit(&crlf_matches, SECRET);
 
     assert_eq!(lf_hit.location.line, Some(2));
     assert_eq!(crlf_hit.location.line, Some(2));
-    assert_eq!(lf_hit.location.offset, "# header\n".len());
-    assert_eq!(crlf_hit.location.offset, "# header\r\n".len());
+    assert_eq!(
+        lf_hit.location.offset,
+        lf_body.find(SECRET).expect("LF fixture contains credential")
+    );
+    assert_eq!(
+        crlf_hit.location.offset,
+        crlf_body
+            .find(SECRET)
+            .expect("CRLF fixture contains credential")
+    );
 }
 
 #[test]
@@ -84,11 +91,11 @@ fn crlf_multibyte_source_entropy_scan_does_not_panic() {
     let body = format!("設定 = \"値\"\r\nemoji = \"😀\"\r\nAPI_KEY = \"{SECRET}\"\r\n");
     let scanner = scanner();
     let matches = scan(&scanner, &body, "/repo/app.py");
-    let hit = entropy_hit(&matches, SECRET);
+    let hit = credential_hit(&matches, SECRET);
 
     assert_eq!(hit.location.line, Some(3));
     assert_eq!(
         hit.location.offset,
-        "設定 = \"値\"\r\nemoji = \"😀\"\r\n".len()
+        body.find(SECRET).expect("fixture contains credential")
     );
 }

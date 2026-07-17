@@ -198,6 +198,12 @@ use crate::entropy::plausibility::{is_secret_plausible, PlausibilityContext};
 
 pub(crate) const KEYWORD_FREE_LABEL: &str = "none (high-entropy)";
 
+#[derive(Clone, Copy)]
+pub(crate) enum KeywordFreeLineScope {
+    All,
+    KeywordAssignments,
+}
+
 /// Build the same detector-owned credential context used by production.
 #[doc(hidden)]
 pub(crate) fn credential_keyword_context(keyword: &str) -> KeywordContext {
@@ -347,6 +353,7 @@ pub(crate) fn find_entropy_secrets_with_precomputed_keywords(
         placeholder_keywords,
         skip_lines,
         None,
+        KeywordFreeLineScope::All,
     )
 }
 
@@ -367,6 +374,7 @@ pub(crate) fn find_entropy_secrets_with_precomputed_keywords_and_policy(
     placeholder_keywords: &[String],
     skip_lines: Option<&std::collections::HashSet<usize>>,
     active_policy: Option<ActiveDetectorPolicy<'_>>,
+    keyword_free_line_scope: KeywordFreeLineScope,
 ) -> Vec<EntropyMatch> {
     assert!(
         line_offsets.len() >= lines.len(),
@@ -393,6 +401,7 @@ pub(crate) fn find_entropy_secrets_with_precomputed_keywords_and_policy(
     scan_keyword_free_candidates(
         lines,
         line_offsets,
+        keyword_lines,
         entropy_threshold,
         keyword_free_threshold,
         &mut seen,
@@ -400,6 +409,7 @@ pub(crate) fn find_entropy_secrets_with_precomputed_keywords_and_policy(
         placeholder_keywords,
         skip_lines,
         active_policy,
+        keyword_free_line_scope,
     );
     matches
 }
@@ -458,9 +468,8 @@ fn scan_keyword_contexts(
 /// - bit 1 (2): entropy candidate byte (alphanumeric + -_+/=.:!@#$%^&*)
 /// - bit 2 (4): trigger byte (=, :, ", ', <), required by `extract_candidates`
 ///
-/// Using a lookup table instead of `is_ascii_alphanumeric()` + `matches!()`
-/// per byte cuts the per-line byte scan from ~3-5 comparisons/byte to a single
-/// table lookup, saving ~15ms across 9 windows at 8 MiB.
+/// Using a lookup table replaces several classifications per byte with one
+/// table lookup on the entropy hot path.
 pub(super) const BYTE_CLASS: [u8; 256] = {
     let mut t = [0u8; 256];
     // Whitespace
@@ -517,6 +526,7 @@ pub(super) const BYTE_CLASS: [u8; 256] = {
 fn scan_keyword_free_candidates(
     lines: &[&str],
     line_offsets: &[usize],
+    keyword_lines: &[(usize, &str)],
     entropy_threshold: f64,
     keyword_free_threshold: Option<f64>,
     seen: &mut std::collections::HashSet<String>,
@@ -524,6 +534,7 @@ fn scan_keyword_free_candidates(
     placeholder_keywords: &[String],
     skip_lines: Option<&std::collections::HashSet<usize>>,
     active_policy: Option<ActiveDetectorPolicy<'_>>,
+    keyword_free_line_scope: KeywordFreeLineScope,
 ) {
     let compiled_secret = get_compiled_policy_for_role(
         active_policy,
@@ -571,7 +582,23 @@ fn scan_keyword_free_candidates(
         )
     });
     let dogfood_enabled = crate::telemetry::is_dogfood_enabled();
+    let mut keyword_line_cursor = 0usize;
     for (line_idx, line) in lines.iter().enumerate() {
+        if matches!(
+            keyword_free_line_scope,
+            KeywordFreeLineScope::KeywordAssignments
+        ) {
+            while keyword_line_cursor < keyword_lines.len()
+                && keyword_lines[keyword_line_cursor].0 < line_idx
+            {
+                keyword_line_cursor += 1;
+            }
+            if keyword_line_cursor == keyword_lines.len()
+                || keyword_lines[keyword_line_cursor].0 != line_idx
+            {
+                continue;
+            }
+        }
         if let Some(skip) = skip_lines {
             if skip.contains(&line_idx) {
                 continue;

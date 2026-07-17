@@ -42,20 +42,37 @@ impl CompiledScanner {
             return;
         }
         let entropy_lines: Vec<&str> = preprocessed.text.lines().collect();
+        let source_path =
+            crate::decode::caesar::is_program_source_code_path(chunk.metadata.path.as_deref());
+        let source_entropy_requires_same_line_credential =
+            !self.config.entropy_in_source_files && source_path;
+        let restrict_source_entropy_to_assignments =
+            source_entropy_requires_same_line_credential && !crate::telemetry::is_dogfood_enabled();
         // Compute keyword assignment lines ONCE and reuse across the
         // appropriateness gate, the lower-dash app-password gate, and the
-        // full entropy scan. Previously `find_keyword_assignment_lines` was
-        // called 2-3 times per chunk (O(lines × 19 keywords) each), which
-        // was the dominant entropy-scan cost at 8 MiB (~33% of the 18.3ms
-        // per-chunk entropy time).
-        let keyword_assignment_lines =
+        // full entropy scan. This avoids repeating the keyword search for the
+        // appropriateness, special-shape, and emission decisions.
+        // In source-restricted mode the emitter already rejects candidates
+        // without a same-line credential assignment. Keep that exact predicate
+        // at admission too, so ordinary source lines never enter the expensive
+        // keyword-free entropy pass only to be rejected after extraction.
+        let keyword_assignment_lines = if restrict_source_entropy_to_assignments {
+            entropy_lines
+                .iter()
+                .enumerate()
+                .filter_map(|(index, line)| {
+                    (memchr::memchr3(b'=', b':', b'<', line.as_bytes()).is_some()
+                        && crate::entropy::keywords::line_has_credential_assignment_surface(line))
+                    .then_some((index, *line))
+                })
+                .collect()
+        } else {
             crate::entropy::keywords::find_keyword_assignment_lines_with_policy(
                 &entropy_lines,
                 &self.config.secret_keywords,
                 self.generic_owning_detector.policy_keywords(),
-            );
-        let source_path =
-            crate::decode::caesar::is_program_source_code_path(chunk.metadata.path.as_deref());
+            )
+        };
         // `is_entropy_appropriate_inner` needs `has_secret_keyword_line`. For
         // source files without `entropy_in_source_files`, the keyword-presence
         // signal is `line_has_credential_assignment_surface` (a stricter check
@@ -63,7 +80,9 @@ impl CompiledScanner {
         // keyword). For all other paths, `find_keyword_assignment_lines` is
         // the signal. We reuse the pre-computed `keyword_assignment_lines`
         // for the latter case.
-        let has_secret_keyword_line = if source_path && !self.config.entropy_in_source_files {
+        let has_secret_keyword_line = if source_entropy_requires_same_line_credential
+            && !restrict_source_entropy_to_assignments
+        {
             entropy_lines
                 .iter()
                 .copied()
@@ -76,8 +95,6 @@ impl CompiledScanner {
             self.config.entropy_in_source_files,
             has_secret_keyword_line,
         );
-        let source_entropy_requires_same_line_credential =
-            !self.config.entropy_in_source_files && source_path;
         let generic_keyword_secret_policy = self
             .generic_owning_detector
             .isolated_bare_owner_index()
@@ -135,7 +152,15 @@ impl CompiledScanner {
                 &skip_lines,
             );
         #[cfg(feature = "simd")]
-        let has_unclaimed_entropy_run = if skip_lines.is_empty() {
+        let has_unclaimed_entropy_run = if restrict_source_entropy_to_assignments {
+            keyword_assignment_lines.iter().any(|(line_index, line)| {
+                !skip_lines.contains(line_index)
+                    && super::scan_filters::has_high_entropy_run_at_least(
+                        line.as_bytes(),
+                        self.config.min_secret_len,
+                    )
+            })
+        } else if skip_lines.is_empty() {
             super::scan_filters::has_high_entropy_run_at_least(
                 preprocessed.text.as_bytes(),
                 self.config.min_secret_len,
@@ -170,7 +195,7 @@ impl CompiledScanner {
                 line_offsets,
                 &keyword_assignment_lines,
                 self.config.min_secret_len,
-                1,
+                usize::from(!restrict_source_entropy_to_assignments),
                 self.config.entropy_threshold,
                 keyword_free_threshold,
                 &self.config.secret_keywords,
@@ -181,6 +206,11 @@ impl CompiledScanner {
                     &self.generic_owning_detector,
                     &self.detector_plans,
                 )),
+                if restrict_source_entropy_to_assignments {
+                    crate::entropy::scanner::KeywordFreeLineScope::KeywordAssignments
+                } else {
+                    crate::entropy::scanner::KeywordFreeLineScope::All
+                },
             );
         for entropy_match in entropy_matches {
             // Resolve the complete synthetic identity from the active policy

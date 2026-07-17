@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Bind the canonical 8 MiB crossover artifact to its exact parity result count,
+  and keep the backend guide synchronized with the current checked RTX 5090
+  evidence instead of the superseded near-parity run.
+- Restrict source-file entropy extraction to unclaimed same-line credential
+  assignments, matching the existing emission contract and removing the
+  whole-file entropy tail without changing dogfood rejection visibility.
+
 - Compile AST-proven per-pattern `required_literals` from detector TOML into
   the shared scalar, Hyperscan, CUDA, and WGPU trigger plan. DeepL `:fx` and URL
   `://` ownership remove the last two ASCII always-active regexes, replacing a

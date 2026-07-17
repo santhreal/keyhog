@@ -620,14 +620,9 @@ fn visit_isolated_bare_candidates<'a>(
     candidate_policy: IsolatedCandidatePolicy,
     mut visit: impl FnMut(&'a str, usize),
 ) {
-    // Fast path: check for whitespace BEFORE the expensive full-line
-    // `isolated_bare_candidate` call. `isolated_bare_candidate` does
-    // `line.trim().trim_matches(...)` + length + whitespace check, which is
-    // ~3 byte passes over the full line. For multi-word lines (the common
-    // case in source code: ~99% of lines), the full-line check always
-    // returns None because the candidate has whitespace. Checking for
-    // whitespace first lets us skip straight to per-token scanning, saving
-    // ~2 byte passes per line (~24ms across 9 windows at 8 MiB).
+    // Check whitespace before the full-line candidate path. Multi-word source
+    // lines cannot be isolated bare candidates, so they proceed directly to
+    // bounded per-token scanning without repeated full-line trimming.
     let bytes = line.as_bytes();
     let has_whitespace = bytes.iter().any(|&b| b.is_ascii_whitespace());
     if !has_whitespace {

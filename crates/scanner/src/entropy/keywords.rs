@@ -10,6 +10,8 @@ use super::plausibility::{is_candidate_plausible, is_secret_plausible, Plausibil
 use crate::adjudicate::{EntropyShapeStage, StageId};
 use crate::engine::phase2_generic::keywords::normalize_assignment_keyword;
 
+const ASSIGNMENT_KEY_STACK_BYTES: usize = 128;
+
 pub(crate) struct KeywordContext {
     pub(crate) keyword: String,
     pub(crate) threshold: f64,
@@ -337,10 +339,56 @@ pub(crate) fn is_import_like_prefix(trimmed: &str) -> bool {
 }
 
 pub(crate) fn line_has_credential_assignment_surface(line: &str) -> bool {
-    authorization_header_value(line).is_some()
-        || assignment_keyword_for_line(line)
-            .as_deref()
-            .is_some_and(normalized_assignment_keyword_is_credential)
+    if authorization_header_value(line).is_some() {
+        return true;
+    }
+    if xml_assignment_tag(line).is_some_and(assignment_keyword_is_credential) {
+        return true;
+    }
+    line.char_indices()
+        .rev()
+        .filter(|(_, ch)| matches!(ch, '=' | ':'))
+        .filter_map(|(sep_pos, _)| {
+            line[..sep_pos]
+                .rsplit(|ch: char| !(ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.')))
+                .find(|part| !part.is_empty())
+        })
+        .any(assignment_keyword_is_credential)
+}
+
+/// Credential classification for a raw assignment key without allocating its
+/// normalized spelling. Entropy admission calls this for every separator-bearing
+/// source line, so materializing a `String` for ordinary names such as `x` was a
+/// measurable whole-file tail. The slow path preserves the exact normalizer for
+/// unusually long keys.
+fn assignment_keyword_is_credential(keyword: &str) -> bool {
+    let mut normalized = [0u8; ASSIGNMENT_KEY_STACK_BYTES];
+    let mut len = 0usize;
+    let mut last_was_separator = false;
+    for byte in keyword.bytes() {
+        let normalized_byte = if byte.is_ascii_alphanumeric() {
+            last_was_separator = false;
+            byte.to_ascii_lowercase()
+        } else if matches!(byte, b'_' | b'-' | b'.') && len > 0 && !last_was_separator {
+            last_was_separator = true;
+            b'_'
+        } else {
+            continue;
+        };
+        if len == normalized.len() {
+            return normalize_assignment_keyword(keyword)
+                .as_deref()
+                .is_some_and(normalized_assignment_keyword_is_credential);
+        }
+        normalized[len] = normalized_byte;
+        len += 1;
+    }
+    if last_was_separator {
+        len = len.saturating_sub(1);
+    }
+    std::str::from_utf8(&normalized[..len])
+        .ok()
+        .is_some_and(normalized_assignment_keyword_is_credential)
 }
 
 pub(crate) fn assignment_keyword_for_line(line: &str) -> Option<String> {

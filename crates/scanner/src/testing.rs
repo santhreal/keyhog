@@ -3583,6 +3583,7 @@ pub mod entropy_scanner {
             &[],
             None,
             Some(policy),
+            crate::entropy::scanner::KeywordFreeLineScope::All,
         )
         .into_iter()
         .filter(|candidate| candidate.keyword == keyword)
@@ -3658,6 +3659,7 @@ pub mod entropy_scanner {
             &[],
             None,
             Some(policy),
+            crate::entropy::scanner::KeywordFreeLineScope::All,
         )
         .into_iter()
         .filter(|candidate| candidate.keyword == "none (isolated-token)")

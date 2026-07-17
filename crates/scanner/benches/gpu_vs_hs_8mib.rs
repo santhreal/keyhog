@@ -103,6 +103,7 @@ struct CrossoverArtifact {
     overlap_bytes: usize,
     chunks: usize,
     detectors: usize,
+    reference_findings: usize,
     selection_rounds: usize,
     held_out_pairs: usize,
     full_result_parity: bool,
@@ -753,7 +754,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 && iters >= RELEASE_HELD_OUT_PAIRS
                 && selection_rounds >= RELEASE_SELECTION_ROUNDS;
             let artifact = CrossoverArtifact {
-                schema_version: 2,
+                schema_version: 3,
                 measured_at_utc: chrono::Utc::now().to_rfc3339(),
                 production_comparable,
                 crossover_passed: production_comparable && interval.high_ratio < 1.0,
@@ -813,6 +814,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 overlap_bytes: WINDOW_OVERLAP,
                 chunks: chunks.len(),
                 detectors: n_det,
+                reference_findings: hit_count(&reference),
                 selection_rounds,
                 held_out_pairs: iters,
                 full_result_parity: true,
