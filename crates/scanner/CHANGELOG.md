@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Resolve entropy versus named findings from the active compiled detector plan,
+  not detector-ID spelling. Custom named detectors whose IDs resemble a
+  fallback namespace no longer lose valid findings during resolution.
+
 - Canonicalize execution-equivalent ML candidates by detector, credential,
   source offset, and producer channel before batch inference. Duplicate
   accelerator lanes now share one pending row without merging distinct pattern

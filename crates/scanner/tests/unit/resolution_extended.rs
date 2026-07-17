@@ -3,8 +3,9 @@
 /// Covers: entropy suppression near named detectors, multiple named detectors
 /// on the same line, line adjacency window boundary, empty input, single match
 /// passthrough, and priority score ordering.
-use keyhog_core::{MatchLocation, RawMatch, Severity};
+use keyhog_core::{DetectorSpec, MatchLocation, PatternSpec, RawMatch, Severity};
 use keyhog_scanner::resolution::{resolve_matches, try_resolve_matches_with_private_key_blocks};
+use keyhog_scanner::CompiledScanner;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -79,6 +80,79 @@ fn single_match_is_returned_unchanged() {
     let resolved = resolve_matches(vec![m.clone()]);
     assert_eq!(resolved.len(), 1);
     assert_eq!(resolved[0].detector_id.as_ref(), "github-pat");
+}
+
+#[test]
+fn active_plan_does_not_infer_entropy_from_a_named_detector_id() {
+    const ID: &str = "entropy-looking-named-detector";
+    let scanner = CompiledScanner::compile(vec![DetectorSpec {
+        id: ID.into(),
+        name: "Entropy Looking Named Detector".into(),
+        service: "custom-service".into(),
+        severity: Severity::High,
+        patterns: vec![PatternSpec {
+            regex: r"KHCUSTOM_[A-Z0-9]{16}".into(),
+            ..Default::default()
+        }],
+        keywords: vec!["KHCUSTOM_".into()],
+        min_confidence: Some(0.0),
+        ..Default::default()
+    }])
+    .expect("compile custom named detector");
+    let first = make_match_at_offset(
+        ID,
+        "KHCUSTOM_ABCDEF0123456789",
+        Some(0.9),
+        "custom.env",
+        1,
+        0,
+    );
+    let second = make_match_at_offset(
+        ID,
+        "KHCUSTOM_9876543210FEDCBA",
+        Some(0.9),
+        "custom.env",
+        10,
+        128,
+    );
+
+    let resolved = scanner
+        .try_resolve_matches(vec![first, second])
+        .expect("active detector plan resolves both findings");
+    assert_eq!(resolved.len(), 2, "resolved={resolved:?}");
+}
+
+#[test]
+fn active_plan_suppresses_its_entropy_fallback_near_named_evidence() {
+    let specs = keyhog_core::embedded_detector_specs()
+        .iter()
+        .filter(|spec| matches!(spec.id.as_str(), "generic-secret" | "npm-access-token"))
+        .cloned()
+        .collect();
+    let scanner = CompiledScanner::compile(specs).expect("compile focused embedded detectors");
+    let credential = "npm_FAKECRED0000000000000000000000000000";
+    let named = make_match_at_offset(
+        "npm-access-token",
+        credential,
+        Some(0.9),
+        "package.env",
+        2,
+        64,
+    );
+    let entropy = make_match_at_offset(
+        "entropy-generic",
+        credential,
+        Some(0.99),
+        "package.env",
+        3,
+        64,
+    );
+
+    let resolved = scanner
+        .try_resolve_matches(vec![entropy, named])
+        .expect("active detector plan resolves entropy evidence");
+    assert_eq!(resolved.len(), 1, "resolved={resolved:?}");
+    assert_eq!(resolved[0].detector_id.as_ref(), "npm-access-token");
 }
 
 #[test]
