@@ -2791,13 +2791,23 @@ pub fn generic_entropy_floor_for_test(
 /// passes a real keyword so the lift applies. Exposed to pin the NaN-sanitize
 /// contract (a NaN entropy must never launder into a 0.55 mid-tier confidence).
 #[cfg(feature = "entropy")]
-pub fn entropy_fallback_confidence_for_test(entropy: f64, keyword_present: bool) -> f64 {
+pub fn entropy_fallback_confidence_for_test(
+    entropy: f64,
+    keyword_present: bool,
+    entropy_high: f64,
+    entropy_very_high: f64,
+) -> f64 {
     let keyword = if keyword_present {
         "password"
     } else {
         crate::entropy::KEYWORD_FREE_LABEL
     };
-    crate::confidence::policy::entropy_fallback_confidence(entropy, keyword)
+    crate::confidence::policy::entropy_fallback_confidence(
+        entropy,
+        keyword,
+        entropy_high,
+        entropy_very_high,
+    )
 }
 
 /// Test seam for [`crate::confidence::policy::generic_secret_confidence`].

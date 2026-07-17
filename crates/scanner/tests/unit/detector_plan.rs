@@ -110,3 +110,23 @@ fn unified_plan_rejects_missing_interned_detector_identity() {
         "missing fix context: {error}"
     );
 }
+
+#[test]
+fn unified_plan_rejects_unordered_detector_entropy_tiers() {
+    let mut detector = keyhog_core::detector_spec_by_id("generic-secret")
+        .expect("embedded generic-secret detector")
+        .clone();
+    detector.entropy_high = Some(6.0);
+    detector.entropy_very_high = Some(5.0);
+    detector.sensitive_path_entropy_very_high = Some(5.0);
+
+    let error = match crate::CompiledScanner::compile(vec![detector]) {
+        Ok(_) => panic!("unordered detector-owned entropy tiers must fail compilation"),
+        Err(error) => error.to_string(),
+    };
+    assert!(error.contains("generic-secret"), "missing owner: {error}");
+    assert!(
+        error.contains("entropy_low <= entropy_high <= entropy_very_high"),
+        "missing ordering fix: {error}"
+    );
+}

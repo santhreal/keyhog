@@ -390,7 +390,13 @@ pub(crate) fn probabilistic_promise_confidence_override(
 }
 
 #[cfg(feature = "entropy")]
-pub(crate) fn entropy_fallback_confidence(entropy: f64, keyword: &str) -> f64 {
+/// Score an entropy fallback using the active owner's compiled TOML tiers.
+pub(crate) fn entropy_fallback_confidence(
+    entropy: f64,
+    keyword: &str,
+    entropy_high: f64,
+    entropy_very_high: f64,
+) -> f64 {
     // A NaN entropy is undefined evidence, never a real measurement
     // (`shannon_entropy` is bounded to `[0, 8]`). Critically, `f64::min` IGNORES
     // NaN, so the `0.55.min(entropy / 8.0)` fallback below would silently launder
@@ -406,9 +412,9 @@ pub(crate) fn entropy_fallback_confidence(entropy: f64, keyword: &str) -> f64 {
     // Keyword-free high-entropy candidates carry weaker evidence than
     // keyword/isolated-token candidates, so only the latter get the historical
     // +0.10 lift. The emit path owns routing; this owner owns the base score.
-    let base_confidence = if entropy >= crate::entropy::VERY_HIGH_ENTROPY_THRESHOLD {
+    let base_confidence = if entropy >= entropy_very_high {
         0.75
-    } else if entropy >= crate::entropy::HIGH_ENTROPY_THRESHOLD {
+    } else if entropy >= entropy_high {
         0.65
     } else {
         0.55_f64.min(entropy / 8.0)

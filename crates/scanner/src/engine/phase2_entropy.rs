@@ -262,6 +262,8 @@ impl CompiledScanner {
             let policy_conf = crate::confidence::policy::entropy_fallback_confidence(
                 entropy_match.entropy,
                 &entropy_match.keyword,
+                compiled_policy.entropy_high,
+                compiled_policy.entropy_very_high,
             );
             let mapped_line = crate::pipeline::match_line_number(
                 preprocessed,

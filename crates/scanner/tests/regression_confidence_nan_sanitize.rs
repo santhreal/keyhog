@@ -18,8 +18,14 @@
 //! on real values.
 
 #[cfg(feature = "entropy")]
-use keyhog_scanner::testing::entropy_fallback_confidence_for_test;
+use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::testing::{apply_named_detector_anchor_floor, NAMED_DETECTOR_ANCHOR_FLOOR};
+#[cfg(feature = "entropy")]
+use keyhog_scanner::testing::{
+    entropy_fallback_confidence_for_test, shannon_entropy_scalar_for_test,
+};
+#[cfg(feature = "entropy")]
+use keyhog_scanner::{CompiledScanner, ScannerConfig};
 
 // ── legit values are unchanged by the guard (mode-independent) ────────────────
 
@@ -27,11 +33,83 @@ use keyhog_scanner::testing::{apply_named_detector_anchor_floor, NAMED_DETECTOR_
 #[test]
 fn entropy_fallback_legit_values_unchanged() {
     // Zero entropy → base 0.55.min(0.0/8.0) = 0.0, keyword-free (no lift).
-    assert_eq!(entropy_fallback_confidence_for_test(0.0, false), 0.0);
+    assert_eq!(
+        entropy_fallback_confidence_for_test(0.0, false, 4.5, 5.8),
+        0.0
+    );
     // Max entropy (8.0) clears every threshold → the very-high tier 0.75.
-    assert_eq!(entropy_fallback_confidence_for_test(8.0, false), 0.75);
+    assert_eq!(
+        entropy_fallback_confidence_for_test(8.0, false, 4.5, 5.8),
+        0.75
+    );
     // Same, with a keyword present → +0.10 lift, capped at 0.90.
-    assert_eq!(entropy_fallback_confidence_for_test(8.0, true), 0.85);
+    assert_eq!(
+        entropy_fallback_confidence_for_test(8.0, true, 4.5, 5.8),
+        0.85
+    );
+}
+
+#[cfg(feature = "entropy")]
+#[test]
+fn entropy_fallback_uses_its_detector_owned_tiers() {
+    let entropy = 5.4;
+    assert_eq!(
+        entropy_fallback_confidence_for_test(entropy, false, 4.0, 5.0),
+        0.75
+    );
+    assert_eq!(
+        entropy_fallback_confidence_for_test(entropy, false, 4.0, 6.0),
+        0.65
+    );
+}
+
+#[cfg(feature = "entropy")]
+#[test]
+fn production_entropy_confidence_changes_with_only_the_owning_toml_tier() {
+    const CREDENTIAL: &str = "qA9zM4nB7vC2xL8pR5tY1uI6oP3sD0fG9hJ2kL7mN4bV8cX1zQ6wE5rT0yU3iO";
+    let entropy = shannon_entropy_scalar_for_test(CREDENTIAL.as_bytes());
+
+    let confidence = |very_high: f64| {
+        let mut detector = keyhog_core::embedded_detector_specs()
+            .iter()
+            .find(|detector| detector.id == "generic-secret")
+            .expect("embedded generic-secret detector")
+            .clone();
+        detector.entropy_low = Some((entropy - 2.0).max(0.0));
+        detector.entropy_high = Some(entropy - 1.0);
+        detector.entropy_very_high = Some(very_high);
+        detector.sensitive_path_entropy_very_high = Some(entropy - 1.0);
+        let mut config = ScannerConfig::default();
+        config.min_confidence = 0.0;
+        config.ml_enabled = false;
+        let scanner = CompiledScanner::compile(vec![detector])
+            .expect("compile focused entropy owner")
+            .with_config(config);
+        let chunk = Chunk {
+            data: format!("VALUE={CREDENTIAL}\n").into(),
+            metadata: ChunkMetadata {
+                source_type: "detector-confidence-policy-test".into(),
+                path: Some("config/secrets.env".into()),
+                ..Default::default()
+            },
+        };
+        scanner
+            .scan(&chunk)
+            .into_iter()
+            .find(|finding| {
+                finding.detector_id.as_ref() == "entropy-generic"
+                    && finding.credential.as_ref() == CREDENTIAL
+            })
+            .and_then(|finding| finding.confidence)
+            .expect("focused entropy owner emits exact credential")
+    };
+
+    let full_tier = confidence(entropy - 0.05);
+    let partial_tier = confidence(entropy + 0.05);
+    assert!(
+        ((full_tier - partial_tier) - 0.1).abs() < 1e-12,
+        "compiled owner tiers must change final confidence by exactly one tier: {full_tier} vs {partial_tier}"
+    );
 }
 
 #[test]
@@ -57,7 +135,7 @@ fn anchor_floor_legit_values_unchanged() {
 fn nan_entropy_panics_loudly_in_debug() {
     // Must NOT return 0.55, a NaN entropy is a broken upstream computation and
     // is caught, never laundered.
-    let _ = entropy_fallback_confidence_for_test(f64::NAN, false);
+    let _ = entropy_fallback_confidence_for_test(f64::NAN, false, 4.5, 5.8);
 }
 
 #[cfg(debug_assertions)]
@@ -74,7 +152,10 @@ fn nan_confidence_panics_loudly_in_debug() {
 fn nan_entropy_sanitizes_to_zero_in_release() {
     // Pre-fix this returned 0.55 (0.55.min(NaN)); now the NaN collapses to the
     // zero-evidence case → 0.0 keyword-free (NEVER the 0.55 mid-tier floor).
-    assert_eq!(entropy_fallback_confidence_for_test(f64::NAN, false), 0.0);
+    assert_eq!(
+        entropy_fallback_confidence_for_test(f64::NAN, false, 4.5, 5.8),
+        0.0
+    );
 }
 
 #[cfg(not(debug_assertions))]

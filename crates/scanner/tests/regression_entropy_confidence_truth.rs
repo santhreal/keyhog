@@ -454,7 +454,8 @@ fn entropy_thresholds_are_strictly_ordered() {
         .expect("generic-secret sensitive path threshold must be declared");
     assert!(HIGH_ENTROPY_THRESHOLD < sensitive);
     assert!(sensitive < VERY_HIGH_ENTROPY_THRESHOLD);
-    // The very-high margin the confidence scorer derives (5.8 - 4.5 = 1.3) is
-    // positive, so the very-high confidence tier always sits above the high tier.
-    assert!((VERY_HIGH_ENTROPY_THRESHOLD - HIGH_ENTROPY_THRESHOLD - 1.3).abs() < EPS);
+    let owner = keyhog_core::detector_spec_by_id("generic-secret")
+        .expect("generic-secret detector policy must exist");
+    assert_eq!(owner.entropy_high, Some(HIGH_ENTROPY_THRESHOLD));
+    assert_eq!(owner.entropy_very_high, Some(VERY_HIGH_ENTROPY_THRESHOLD));
 }

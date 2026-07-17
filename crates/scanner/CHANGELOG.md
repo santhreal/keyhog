@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Score entropy fallback findings from the owning detector TOML's compiled
+  `entropy_high` and `entropy_very_high` tiers instead of scanner-global tiers.
+
 - Resolve entropy versus named findings from the active compiled detector plan,
   not detector-ID spelling. Custom named detectors whose IDs resemble a
   fallback namespace no longer lose valid findings during resolution or

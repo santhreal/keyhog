@@ -177,6 +177,8 @@ impl CompiledEntropyPolicy {
         } else {
             None
         };
+        let entropy_low = Self::required(detector, "entropy_low", detector.entropy_low)?;
+        let entropy_high = Self::required(detector, "entropy_high", detector.entropy_high)?;
         let entropy_very_high =
             Self::required(detector, "entropy_very_high", detector.entropy_very_high)?;
         let sensitive_path_entropy_very_high = Self::required(
@@ -184,9 +186,17 @@ impl CompiledEntropyPolicy {
             "sensitive_path_entropy_very_high",
             detector.sensitive_path_entropy_very_high,
         )?;
-        if !entropy_very_high.is_finite() || entropy_very_high <= 0.0 {
+        if !entropy_low.is_finite()
+            || !entropy_high.is_finite()
+            || !entropy_very_high.is_finite()
+            || entropy_low < 0.0
+            || entropy_low > entropy_high
+            || entropy_high > entropy_very_high
+            || entropy_very_high <= 0.0
+            || entropy_very_high > 8.0
+        {
             return Err(format!(
-                "detector {:?} entropy_very_high must be finite and greater than zero",
+                "detector {:?} entropy thresholds must be finite and ordered as 0.0 <= entropy_low <= entropy_high <= entropy_very_high <= 8.0, with entropy_very_high greater than zero",
                 detector.id
             ));
         }
@@ -244,8 +254,8 @@ impl CompiledEntropyPolicy {
         })?;
 
         Ok(Self {
-            entropy_high: Self::required(detector, "entropy_high", detector.entropy_high)?,
-            entropy_low: Self::required(detector, "entropy_low", detector.entropy_low)?,
+            entropy_high,
+            entropy_low,
             entropy_very_high,
             #[cfg(feature = "entropy")]
             sensitive_path_entropy_very_high,

@@ -113,8 +113,8 @@ model's fixed vocabulary, remain global.
 | Detector TOML field | If increased / enabled | If decreased / disabled |
 |---|---|---|
 | `entropy_low` | Requires more Shannon entropy for keyword-anchored generic values; fewer low-randomness passwords/tokens survive | Admits more values when the assignment key supplies evidence; shape, BPE, context, and confidence gates still apply |
-| `entropy_high` | Tightens keyword-independent generic admission | Admits more opaque candidates without strong assignment context |
-| `entropy_very_high` | Tightens isolated, anchor-free token admission | Expands the no-keyword search and therefore its false-positive surface |
+| `entropy_high` | Tightens keyword-independent generic admission and raises the partial-confidence tier for entropy fallbacks | Admits more opaque candidates and grants the partial entropy score at a lower value |
+| `entropy_very_high` | Tightens isolated, anchor-free admission and raises the full-confidence tier for entropy fallbacks | Expands the no-keyword search and grants the full entropy score at a lower value |
 | `sensitive_path_entropy_very_high` | Raises the keyword-free bar even in sensitive files | Lowers the explicit sensitive-path bar for that detector, improving recall in `.env`/secret manifests |
 | `plausibility.keyword_free_operator_margin` | Raises the detector-owned margin composed with the Tier-A entropy threshold | Lowers that explicit margin for the `keyword-free` role owner; no other detector may declare it |
 | `[detector.entropy_fallback]` | Changes the emitted synthetic entropy finding identity and semantic class for that detector | Omitting it for an active entropy owner fails compilation; there is no scanner-global compatibility identity |
@@ -203,7 +203,11 @@ These settings do not all use one generic “last value wins” rule:
   isolated path keeps its mixed-alphanumeric floor unless the scan threshold
   exceeds the high band. These rules preserve the different evidence carried
   by an assignment key, an isolated opaque token, and an unanchored generic
-  value.
+  value. The owning `entropy_high` and `entropy_very_high` values also define
+  the partial and full heuristic-confidence tiers for emitted entropy
+  fallbacks. Detector ML policy then composes with that heuristic; an
+  authoritative ML mode may replace it, while disabled, lift, and blend modes
+  retain the documented heuristic semantics.
 - **Sensitive paths:** `sensitive_path_entropy_very_high` is a required
   detector-local threshold for active entropy owners. Equaling
   `entropy_very_high` means no sensitive-path relaxation; a lower declared

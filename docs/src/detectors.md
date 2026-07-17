@@ -249,9 +249,9 @@ the ML weight diagnostic override.
 The available per-detector tuning fields are:
 
 ### Entropy Thresholds
-*   **`entropy_high`** (float, required for active entropy owners): Per-detector high-entropy threshold (bits/byte) for keyword-independent detection.
+*   **`entropy_high`** (float, required for active entropy owners): Per-detector high-entropy threshold (bits/byte) for keyword-independent detection and the partial entropy-fallback heuristic-confidence tier.
 *   **`entropy_low`** (float, required for active entropy owners): Per-detector keyword-context entropy threshold.
-*   **`entropy_very_high`** (float, required for active entropy owners): Per-detector very-high entropy threshold for keyword-free or isolated tokens.
+*   **`entropy_very_high`** (float, required for active entropy owners): Per-detector very-high threshold for keyword-free or isolated tokens and the full entropy-fallback heuristic-confidence tier. Compiled policy requires `entropy_low <= entropy_high <= entropy_very_high`.
 *   **`sensitive_path_entropy_very_high`** (float, required for active entropy owners): Per-detector keyword-free threshold for clearly sensitive paths. It must not exceed `entropy_very_high`; omission is invalid rather than an undocumented scanner-wide discount.
 *   **`plausibility.keyword_free_operator_margin`** (float, required only for the `keyword-free` role owner): Margin added to the resolved Tier-A `entropy_threshold` before keyword-free admission. The effective floor is `max(path-specific entropy_very_high, entropy_threshold + keyword_free_operator_margin)`; no scanner-owned margin is applied.
 *   **`entropy_fallback`** (table, required for active entropy owners): Identity metadata for synthetic entropy findings owned by this detector. `class` is one of `generic`, `password`, `token`, or `api-key`; `id` must use the `entropy-` namespace; and `name`/`service` must be non-empty. Both regex-kind detectors that set `entropy_policy_priority` and phase-2 generic owners must declare this block. The primary detector's reporting `service` may name any taxonomy and does not grant or deny entropy ownership. Omitting the block is a compile error, never a compatibility identity.
