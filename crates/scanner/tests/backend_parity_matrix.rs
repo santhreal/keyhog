@@ -21,7 +21,7 @@ use support::contracts::test_chunk as make_chunk;
 use support::paths::detector_dir;
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
-use keyhog_scanner::{CompiledScanner, ScanBackend, ScannerConfig};
+use keyhog_scanner::{CompiledScanner, ScanBackend, ScanExecutionRoute, ScannerConfig};
 use std::collections::BTreeSet;
 
 type FindingKey = (String, String, String, usize, Option<u64>);
@@ -348,6 +348,43 @@ fn backend_parity_matrix_all_fixtures_all_backends() {
         failures.len(),
         failures.join("\n  - ")
     );
+}
+
+#[test]
+fn gpu_fused_always_anchor_positions_match_cpu_when_keyword_localization_is_disabled() {
+    let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");
+    let mut config = ScannerConfig::default();
+    config.penalize_test_paths = false;
+    let scanner = CompiledScanner::compile(detectors)
+        .expect("compile scanner")
+        .with_config(config);
+    let chunks = [make_chunk(
+        "password=Hunter2Hunter2Hunter2xx\n",
+        "fixtures/gpu-fused-always-anchor.txt",
+    )];
+    let route = ScanExecutionRoute {
+        phase2_plain_localizer: false,
+        phase2_keyword_localizer: false,
+    };
+    let cpu = collect_keys(&scanner.scan_coalesced_with_backend_admission_and_route(
+        &chunks,
+        ScanBackend::CpuFallback,
+        None,
+        route,
+    ));
+    assert!(
+        cpu.iter().any(|(detector, credential, _, _, _)| {
+            detector == "generic-password" && credential == "Hunter2Hunter2Hunter2xx"
+        }),
+        "the CPU oracle must emit the exact always-anchor finding: {cpu:?}"
+    );
+    let gpu = collect_keys(&scanner.scan_coalesced_with_backend_admission_and_route(
+        &chunks,
+        ScanBackend::GpuWgpu,
+        None,
+        route,
+    ));
+    assert_eq!(gpu, cpu);
 }
 
 /// Per-fixture, per-backend determinism: running the same scan twice

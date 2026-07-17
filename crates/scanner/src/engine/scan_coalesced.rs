@@ -489,7 +489,7 @@ impl CompiledScanner {
         route: crate::ScanExecutionRoute,
     ) -> Vec<Vec<keyhog_core::RawMatch>> {
         self.scan_coalesced_phase2_with_admission(
-            chunks, triggers, None, None, None, None, None, None, route,
+            chunks, triggers, None, None, None, None, None, None, None, route,
         )
     }
 
@@ -545,6 +545,7 @@ impl CompiledScanner {
         phase2_admission_complete: Option<&[bool]>,
         phase2_keyword_hints: Option<&[Vec<u32>]>,
         phase2_always_anchor_presence: Option<&[bool]>,
+        phase2_always_anchor_literal_matches: Option<&[Vec<(u32, u32)>]>,
         confirmed_anchor_literal_matches: Option<&[Vec<(u32, u32)>]>,
         generic_keyword_positions: Option<&[Vec<u32>]>,
         route: crate::ScanExecutionRoute,
@@ -572,6 +573,9 @@ impl CompiledScanner {
                         .map(Vec::as_slice);
                     let always_anchor_present = phase2_always_anchor_presence
                         .and_then(|rows| rows.get(chunk_index).copied());
+                    let always_anchor_literal_matches = phase2_always_anchor_literal_matches
+                        .and_then(|rows| rows.get(chunk_index))
+                        .map(Vec::as_slice);
                     let admitted_by_phase2_gpu = match phase2_admission
                         .and_then(|admission| admission.get(chunk_index))
                         .copied()
@@ -591,6 +595,7 @@ impl CompiledScanner {
                             prefixless_admitted: admitted_by_phase2_gpu,
                             prefixless_complete: phase2_gpu_complete,
                             anchor_present,
+                            anchor_literal_matches: always_anchor_literal_matches,
                         });
                     let confirmed_anchor_matches = confirmed_anchor_literal_matches
                         .and_then(|rows| rows.get(chunk_index))

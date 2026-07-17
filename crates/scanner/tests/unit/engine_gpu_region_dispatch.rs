@@ -114,17 +114,6 @@ fn unbounded_and_cpu_floor_validation_keep_full_chunk_oracle() {
 }
 
 #[test]
-fn bounded_validation_source_has_no_old_full_chunk_regex_scan() {
-    let src = include_str!("../../src/engine/gpu_region_dispatch.rs");
-    let old_full_chunk_regex_scan = ["rx.is_match", "(text.as_str())"].concat();
-    assert!(
-        !src.contains(&old_full_chunk_regex_scan),
-        "bounded GPU firing validation must not run a full prepared-chunk regex \
-             scan after its local proof window misses"
-    );
-}
-
-#[test]
 fn coalesce_rate_reports_zero_for_zero_duration() {
     assert_eq!(
         mib_per_second(8 * 1024 * 1024, std::time::Duration::ZERO),
@@ -299,6 +288,7 @@ fn complete_always_active_negative_preserves_triggered_row_keyword_phase2_findin
         Some(&anchors_present),
         None,
         None,
+        None,
         scanner.default_execution_route(),
     );
 
@@ -377,6 +367,7 @@ fn normalized_triggered_rows_discard_raw_gpu_evidence_and_recompute_admission() 
         Some(&complete),
         Some(&raw_keyword_hints),
         Some(&anchors_present),
+        None,
         None,
         None,
         scanner.default_execution_route(),

@@ -309,8 +309,8 @@ pub struct CompiledScanner {
     pub(crate) phase2_keyword_count: usize,
     /// GPU region-presence literal rows appended after detector literals and
     /// phase-2 keyword rows. These are the literals backing the always-active
-    /// phase-2 anchor AC; an all-zero row segment proves that AC has no possible
-    /// candidates for the chunk.
+    /// phase-2 anchor AC; presence proves admission and positioned receipts
+    /// replace the host AC walk when the selected route needs only this segment.
     pub(crate) phase2_always_anchor_literal_count: usize,
     /// Confirmed shared-anchor rows appended to the fused GPU literal matcher.
     /// Their positioned matches replace the CPU anchor-index text walk.

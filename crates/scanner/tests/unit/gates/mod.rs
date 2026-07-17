@@ -79,7 +79,6 @@ pub mod engine_segment_attribution_no_unwrap_expect;
 pub mod engine_synthetic_raw_match_owner;
 pub mod engine_windowed_no_inline_tests;
 pub mod engine_windowed_no_unwrap_expect;
-pub mod engine_windowed_non_empty;
 pub mod entropy_avx512_no_inline_tests;
 pub mod entropy_avx512_no_unwrap_expect;
 pub mod entropy_fast_no_inline_tests;

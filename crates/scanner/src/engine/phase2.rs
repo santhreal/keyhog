@@ -33,13 +33,17 @@ pub(crate) const MIN_PREFIX_BYTES: usize = 3;
 /// prefixless completeness bit independently prevents partial proof from
 /// becoming a skip.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct Phase2AlwaysActiveGpuEvidence {
+pub(crate) struct Phase2AlwaysActiveGpuEvidence<'a> {
     pub(crate) prefixless_admitted: bool,
     pub(crate) prefixless_complete: bool,
     pub(crate) anchor_present: bool,
+    /// Complete raw-byte `(literal_id, offset)` rows for the always-active
+    /// anchor segment. `None` means positions were not produced, so presence
+    /// alone may admit work but cannot replace the host anchor walk.
+    pub(crate) anchor_literal_matches: Option<&'a [(u32, u32)]>,
 }
 
-impl Phase2AlwaysActiveGpuEvidence {
+impl Phase2AlwaysActiveGpuEvidence<'_> {
     #[inline]
     pub(crate) const fn prefixless_absence_proven(self) -> bool {
         self.prefixless_complete && !self.prefixless_admitted

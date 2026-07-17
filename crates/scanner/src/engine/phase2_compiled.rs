@@ -23,7 +23,7 @@ impl CompiledScanner {
         scan_state: &mut ScanState,
         deadline: Option<std::time::Instant>,
         phase2_keyword_hints: Option<&[u32]>,
-        phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence>,
+        phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence<'_>>,
         route: crate::ScanExecutionRoute,
     ) {
         if let Some(deadline) = deadline {
@@ -130,7 +130,7 @@ impl CompiledScanner {
         deadline: Option<std::time::Instant>,
         focus: (usize, usize),
         phase2_keyword_hints: Option<&[u32]>,
-        phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence>,
+        phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence<'_>>,
         route: crate::ScanExecutionRoute,
     ) {
         if let Some(deadline) = deadline {
@@ -254,7 +254,7 @@ impl CompiledScanner {
         data: &str,
         match_text: &str,
         phase2_keyword_hints: Option<&[u32]>,
-        phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence>,
+        phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence<'_>>,
         route: crate::ScanExecutionRoute,
         f: impl FnOnce(&Self, &[usize]) -> R,
     ) -> R {
@@ -543,7 +543,7 @@ impl CompiledScanner {
         scan_state: &mut ScanState,
         deadline: Option<std::time::Instant>,
         phase2_keyword_hints: Option<&[u32]>,
-        phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence>,
+        phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence<'_>>,
         route: crate::ScanExecutionRoute,
     ) {
         let prof = phase2_pattern_prof_enabled();

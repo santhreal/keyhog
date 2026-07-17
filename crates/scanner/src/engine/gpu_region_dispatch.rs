@@ -135,11 +135,15 @@ impl CompiledScanner {
             let mut triggers: Vec<Option<Vec<u64>>> = Vec::new();
             let mut phase2_keyword_hints: Vec<Vec<u32>> = Vec::new();
             let mut phase2_always_anchor_presence: Vec<bool> = Vec::new();
-            let positioned_base = self.ac_map.len()
-                + self.phase2_keyword_count
-                + self.phase2_always_anchor_literal_count;
-            let confirmed_position_end = positioned_base + self.confirmed_anchor_literal_count;
+            let positioned_base = self.ac_map.len() + self.phase2_keyword_count;
+            let phase2_always_position_end =
+                positioned_base + self.phase2_always_anchor_literal_count;
+            let confirmed_position_end =
+                phase2_always_position_end + self.confirmed_anchor_literal_count;
             let generic_position_end = confirmed_position_end + self.generic_keyword_literal_count;
+            let mut phase2_always_anchor_literal_matches =
+                (self.phase2_always_anchor_literal_count > 0)
+                    .then(|| vec![Vec::<(u32, u32)>::new(); chunks.len()]);
             let mut confirmed_anchor_literal_matches = (self.confirmed_anchor_literal_count > 0)
                 .then(|| vec![Vec::<(u32, u32)>::new(); chunks.len()]);
             let mut generic_keyword_positions = (self.generic_keyword_literal_count > 0)
@@ -166,8 +170,8 @@ impl CompiledScanner {
             let mut gpu_presence_bits = 0usize;
             let mut logical_derive_s = std::time::Duration::ZERO;
             let mut derive_presence_row = |row: &[u32]| -> std::result::Result<(), String> {
-                let whole_presence_words = positioned_base / 32;
-                let tail_presence_bits = positioned_base % 32;
+                let whole_presence_words = phase2_always_position_end / 32;
+                let tail_presence_bits = phase2_always_position_end % 32;
                 let whole_bits = row
                     .iter()
                     .take(whole_presence_words)
@@ -298,12 +302,33 @@ impl CompiledScanner {
                                     "resident fused positioned match offset exceeds the u32 chunk ABI"
                                         .to_string()
                                 })?;
-                                if pattern_id < confirmed_position_end {
+                                if pattern_id < phase2_always_position_end {
+                                    let rows = phase2_always_anchor_literal_matches
+                                        .as_mut()
+                                        .ok_or_else(|| {
+                                            "resident fused phase-two always-anchor match has no compiled output owner"
+                                                .to_string()
+                                        })?;
+                                    let literal_id = u32::try_from(pattern_id - positioned_base)
+                                        .map_err(|_| {
+                                            "resident fused phase-two always-anchor literal id exceeds the u32 scanner ABI"
+                                                .to_string()
+                                        })?;
+                                    let row_count = rows.len();
+                                    rows.get_mut(row_idx)
+                                        .ok_or_else(|| {
+                                            format!(
+                                                "resident fused phase-two always-anchor row {row_idx} exceeds {row_count} logical chunk row(s)"
+                                            )
+                                        })?
+                                        .push((literal_id, local_start));
+                                } else if pattern_id < confirmed_position_end {
                                     let rows = confirmed_anchor_literal_matches.as_mut().ok_or_else(|| {
                                         "resident fused confirmed-anchor match has no compiled output owner"
                                             .to_string()
                                     })?;
-                                    let literal_id = u32::try_from(pattern_id - positioned_base)
+                                    let literal_id =
+                                        u32::try_from(pattern_id - phase2_always_position_end)
                                         .map_err(|_| {
                                             "resident fused confirmed-anchor literal id exceeds the u32 scanner ABI"
                                                 .to_string()
@@ -458,6 +483,25 @@ impl CompiledScanner {
             }
             drop(dispatch_presence);
             drop(derive_presence_row);
+            if let Some(rows) = phase2_always_anchor_literal_matches.as_mut() {
+                for row in rows.iter_mut() {
+                    row.sort_unstable();
+                    row.dedup();
+                }
+                if let Some((row_idx, (present, matches))) = phase2_always_anchor_presence
+                    .iter()
+                    .copied()
+                    .zip(rows.iter())
+                    .enumerate()
+                    .find(|(_, (present, matches))| *present != !matches.is_empty())
+                {
+                    drop(region_dispatch_profile);
+                    return dispatch_failure(format!(
+                        "GPU phase-two always-anchor evidence row {row_idx} disagrees: presence={present}, positioned_matches={}. Refusing incomplete fused evidence.",
+                        matches.len()
+                    ));
+                }
+            }
             if let Some(rows) = confirmed_anchor_literal_matches.as_mut() {
                 for row in rows {
                     row.sort_unstable();
@@ -711,6 +755,7 @@ impl CompiledScanner {
                     .map(|admission| admission.complete.as_slice()),
                 Some(phase2_keyword_hints.as_slice()),
                 Some(phase2_always_anchor_presence.as_slice()),
+                phase2_always_anchor_literal_matches.as_deref(),
                 confirmed_anchor_literal_matches.as_deref(),
                 generic_keyword_positions.as_deref(),
                 execution_route,
@@ -720,6 +765,16 @@ impl CompiledScanner {
                     .iter()
                     .filter(|&&present| present)
                     .count();
+                let phase2_always_anchor_candidate_rows = phase2_always_anchor_literal_matches
+                    .as_ref()
+                    .map_or(0usize, |rows| {
+                        rows.iter().filter(|row| !row.is_empty()).count()
+                    });
+                let phase2_always_anchor_candidate_count = phase2_always_anchor_literal_matches
+                    .as_ref()
+                    .map_or(0usize, |rows| rows.iter().map(Vec::len).sum());
+                let phase2_always_anchor_positions_complete =
+                    phase2_always_anchor_literal_matches.is_some();
                 let confirmed_anchor_candidate_rows = confirmed_anchor_literal_matches
                     .as_ref()
                     .map_or(0usize, |rows| {
@@ -738,7 +793,7 @@ impl CompiledScanner {
                     .map_or(0usize, |rows| rows.iter().map(Vec::len).sum());
                 let generic_keyword_gpu_complete = generic_keyword_positions.is_some();
                 eprintln!(
-                    "perf-trace {}: chunks={} source_bytes={} coalesced_bytes={} max_dispatch_bytes={} dispatches={} batch_mode={} matcher={:.3}s coalesce={:.6}s coalesce_mib_s={:.3} dispatch={:.3}s derive={:.6}s floor={:.3}s phase2_gpu={:.3}s phase2={:.3}s gpu_presence_bits={} underfire_recovered={} trigger_bits={} phase2_gpu_admitted={} phase2_gpu_matches={} phase2_gpu_complete={} phase2_gpu_complete_rows={} phase2_gpu_excluded_oversized={} phase2_gpu_excluded_non_ascii={} phase2_gpu_ascii_patterns={} phase2_gpu_uncovered_ascii_patterns={} phase2_gpu_excluded_redundant_patterns={} phase2_gpu_shards={} phase2_always_anchor_chunks={} confirmed_anchor_gpu_complete={} confirmed_anchor_candidate_rows={} confirmed_anchor_candidates={} generic_keyword_gpu_complete={} generic_keyword_candidate_rows={} generic_keyword_candidates={} full_recall_floor={}",
+                    "perf-trace {}: chunks={} source_bytes={} coalesced_bytes={} max_dispatch_bytes={} dispatches={} batch_mode={} matcher={:.3}s coalesce={:.6}s coalesce_mib_s={:.3} dispatch={:.3}s derive={:.6}s floor={:.3}s phase2_gpu={:.3}s phase2={:.3}s gpu_presence_bits={} underfire_recovered={} trigger_bits={} phase2_gpu_admitted={} phase2_gpu_matches={} phase2_gpu_complete={} phase2_gpu_complete_rows={} phase2_gpu_excluded_oversized={} phase2_gpu_excluded_non_ascii={} phase2_gpu_ascii_patterns={} phase2_gpu_uncovered_ascii_patterns={} phase2_gpu_excluded_redundant_patterns={} phase2_gpu_shards={} phase2_always_anchor_chunks={} phase2_always_anchor_positions_complete={} phase2_always_anchor_candidate_rows={} phase2_always_anchor_candidates={} confirmed_anchor_gpu_complete={} confirmed_anchor_candidate_rows={} confirmed_anchor_candidates={} generic_keyword_gpu_complete={} generic_keyword_candidate_rows={} generic_keyword_candidates={} full_recall_floor={}",
                     route.label(),
                     chunks.len(),
                     region_source_bytes,
@@ -769,6 +824,9 @@ impl CompiledScanner {
                         .map_or(0, |coverage| coverage.excluded_ascii_redundant_patterns),
                     phase2_gpu_coverage.map_or(0, |coverage| coverage.shards),
                     phase2_always_anchor_chunks,
+                    phase2_always_anchor_positions_complete,
+                    phase2_always_anchor_candidate_rows,
+                    phase2_always_anchor_candidate_count,
                     confirmed_anchor_gpu_complete,
                     confirmed_anchor_candidate_rows,
                     confirmed_anchor_candidate_count,

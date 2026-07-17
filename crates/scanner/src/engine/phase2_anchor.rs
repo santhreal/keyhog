@@ -398,6 +398,29 @@ impl Phase2AnchorIndex {
         out.dedup();
     }
 
+    /// Expand complete literal positions from the fused GPU matcher into the
+    /// same canonical `(phase2_pattern, offset)` candidates as the host AC.
+    pub(crate) fn collect_always_active_candidates_from_literal_matches(
+        &self,
+        literal_matches: &[(u32, u32)],
+        is_allowed: impl Fn(usize) -> bool,
+        out: &mut Vec<(u32, u32)>,
+    ) {
+        out.clear();
+        for &(literal_id, pos) in literal_matches {
+            let Some(patterns) = self.always_literal_patterns.get(literal_id as usize) else {
+                continue;
+            };
+            for &pattern in patterns {
+                if is_allowed(pattern as usize) {
+                    out.push((pattern, pos));
+                }
+            }
+        }
+        out.sort_unstable();
+        out.dedup();
+    }
+
     /// The anchored regex owner for `phase2_idx`, or `None` if not eligible.
     /// The caller chooses the no-context or left-context compiled variant for
     /// each candidate position.

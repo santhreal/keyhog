@@ -1630,6 +1630,7 @@ pub fn scan_coalesced_phase2_with_admission_for_test(
         negative_anchor_presence.as_deref(),
         None,
         None,
+        None,
         scanner.default_execution_route(),
     )
 }

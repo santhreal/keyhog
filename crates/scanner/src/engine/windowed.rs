@@ -71,7 +71,7 @@ impl CompiledScanner {
         triggered_patterns: &[u64],
         deadline: Option<std::time::Instant>,
         phase2_keyword_hints: Option<&[u32]>,
-        phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence>,
+        phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence<'_>>,
         confirmed_anchor_literal_matches: Option<&[(u32, u32)]>,
         generic_keyword_positions: Option<&[u32]>,
         route: crate::ScanExecutionRoute,
@@ -101,6 +101,30 @@ impl CompiledScanner {
                     }
                     let window_chunk = window_chunk(chunk, offset, end);
                     let prepared = self.prepare_chunk(&window_chunk);
+                    let window_phase2_always_anchor_matches;
+                    let phase2_always_evidence =
+                        if let Some(evidence) = phase2_always_active_gpu_evidence {
+                            if let Some(matches) = evidence.anchor_literal_matches {
+                                window_phase2_always_anchor_matches = matches
+                                    .iter()
+                                    .filter_map(|&(literal_idx, pos)| {
+                                        let pos = pos as usize;
+                                        (pos >= offset && pos < end)
+                                            .then(|| (literal_idx, (pos - offset) as u32))
+                                    })
+                                    .collect::<Vec<_>>();
+                                Some(Phase2AlwaysActiveGpuEvidence {
+                                    anchor_literal_matches: Some(
+                                        window_phase2_always_anchor_matches.as_slice(),
+                                    ),
+                                    ..evidence
+                                })
+                            } else {
+                                Some(evidence)
+                            }
+                        } else {
+                            None
+                        };
                     let window_confirmed_anchor_matches;
                     let confirmed_anchor_matches =
                         if let Some(matches) = confirmed_anchor_literal_matches {
@@ -135,7 +159,7 @@ impl CompiledScanner {
                         triggered_patterns,
                         deadline,
                         phase2_keyword_hints,
-                        phase2_always_active_gpu_evidence,
+                        phase2_always_evidence,
                         confirmed_anchor_matches,
                         generic_positions,
                         route,

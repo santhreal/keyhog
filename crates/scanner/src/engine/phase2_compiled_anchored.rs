@@ -18,7 +18,7 @@ impl CompiledScanner {
         data: &str,
         match_text: &str,
         phase2_keyword_hints: Option<&[u32]>,
-        phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence>,
+        phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence<'_>>,
         route: crate::ScanExecutionRoute,
         f: impl FnOnce(&Self, &ActivePatternsScratch) -> R,
     ) -> R {
@@ -143,7 +143,7 @@ impl CompiledScanner {
         // full raw plus normalized text so in-window matches stay byte-identical.
         focus: Option<(usize, usize)>,
         phase2_keyword_hints: Option<&[u32]>,
-        phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence>,
+        phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence<'_>>,
         route: crate::ScanExecutionRoute,
     ) {
         let prof = phase2_pattern_prof_enabled();
@@ -175,6 +175,7 @@ impl CompiledScanner {
                 let localize_keyword_anchors = route.phase2_keyword_localizer;
                 ANCHOR_CANDIDATES.with(|cell| {
                     let mut cands = cell.borrow_mut();
+                    let mut candidates_are_full_text_offsets = false;
                     {
                         let _g = super::profile::span(super::profile::P::Phase2SharedAc);
                         if localize_keyword_anchors {
@@ -184,6 +185,21 @@ impl CompiledScanner {
                                 pattern_is_live,
                                 &mut cands,
                             );
+                        } else if let Some(literal_matches) = phase2_always_active_gpu_evidence
+                            .and_then(|evidence| evidence.anchor_literal_matches)
+                        {
+                            anchor_idx.collect_always_active_candidates_from_literal_matches(
+                                literal_matches,
+                                pattern_is_live,
+                                &mut cands,
+                            );
+                            if let Some((start, end)) = focus {
+                                cands.retain(|&(_, pos)| {
+                                    let pos = pos as usize;
+                                    pos >= start && pos < end
+                                });
+                            }
+                            candidates_are_full_text_offsets = true;
                         } else if phase2_always_active_gpu_evidence
                             .is_some_and(|evidence| !evidence.anchor_present)
                         {
@@ -199,7 +215,7 @@ impl CompiledScanner {
                     // Candidate positions are relative to `scan_text`; lift them back
                     // into full-text coordinates so anchored verification indexes the
                     // real (full) `preprocessed.text`.
-                    if shift != 0 {
+                    if shift != 0 && !candidates_are_full_text_offsets {
                         for c in cands.iter_mut() {
                             c.1 += shift;
                         }

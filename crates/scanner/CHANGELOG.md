@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Reuse fused VYRE positions for always-active phase-two anchors when the
+  measured route disables keyword-anchor localization, eliminating the
+  duplicate host Aho-Corasick walk while retaining raw/normalized boundaries.
 - Compile the fused literal matcher with VYRE's native ASCII-insensitive DFA
   and preserve raw source bytes through borrowed, coalesced, and windowed GPU
   dispatches, removing KeyHog's duplicate host lowercase pass and its single-
