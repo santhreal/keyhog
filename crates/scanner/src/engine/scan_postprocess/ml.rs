@@ -72,7 +72,7 @@ impl CompiledScanner {
             );
         }
 
-        let pending_matches = std::mem::take(&mut scan_state.ml_pending);
+        let pending_matches = scan_state.take_ml_pending();
         let scores = self.score_pending_batch(&pending_matches);
         for (pending, ml_conf) in pending_matches.into_iter().zip(scores.into_iter()) {
             let report_conf = self.pending_report_confidence(&pending, ml_conf);
@@ -102,7 +102,7 @@ impl CompiledScanner {
         let mut owner_counts = Vec::with_capacity(scan_states.len());
         let mut pending_matches = Vec::with_capacity(total_pending);
         for state in scan_states.iter_mut() {
-            let pending = std::mem::take(&mut state.ml_pending);
+            let pending = state.take_ml_pending();
             owner_counts.push(pending.len());
             pending_matches.extend(pending);
         }

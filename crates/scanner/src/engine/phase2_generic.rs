@@ -489,7 +489,7 @@ impl CompiledScanner {
                         crate::ml_scorer::MlCandidateChannel::Pattern,
                     );
                     let raw = build_raw(scan_state, policy_conf);
-                    scan_state.push_detector_ml_pending(
+                    let inserted = scan_state.push_detector_ml_pending(
                         raw,
                         policy_conf,
                         context,
@@ -503,7 +503,7 @@ impl CompiledScanner {
                         checksum_decision,
                         ml_mode,
                     );
-                    if profile_enabled {
+                    if profile_enabled && inserted {
                         metrics::record_emit();
                     }
                     continue;

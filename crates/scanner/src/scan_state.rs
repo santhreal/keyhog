@@ -3,6 +3,8 @@
 //! Configuration lives in `scanner_config`; this module owns the per-scan
 //! match heap, credential/metadata interners, and ML batch queue.
 
+#[cfg(feature = "ml")]
+use std::collections::HashMap;
 use std::collections::{BinaryHeap, HashSet};
 use std::sync::Arc;
 
@@ -84,6 +86,9 @@ pub(crate) struct MlPendingMatch {
     pub(crate) code_context: crate::context::CodeContext,
     /// Exact serve-path features computed while source context is still local.
     pub(crate) ml_features: [f32; crate::ml_scorer::NUM_FEATURES],
+    /// Producer class baked into the feature vector. Keeping it typed here
+    /// prevents pending deduplication from merging pattern and entropy evidence.
+    channel: crate::ml_scorer::MlCandidateChannel,
     /// Detector-local model contribution, already resolved against an explicit
     /// scan-wide diagnostic override before this candidate enters the queue.
     pub(crate) ml_weight: f64,
@@ -131,6 +136,7 @@ impl MlPendingMatch {
             heuristic_conf,
             code_context,
             ml_features,
+            channel: crate::ml_scorer::MlCandidateChannel::Pattern,
             ml_weight,
             min_confidence_floor,
             is_named_detector,
@@ -158,6 +164,7 @@ impl MlPendingMatch {
             heuristic_conf,
             code_context: crate::context::CodeContext::Unknown,
             ml_features,
+            channel: crate::ml_scorer::MlCandidateChannel::Entropy,
             ml_weight,
             min_confidence_floor,
             is_named_detector: false,
@@ -166,6 +173,44 @@ impl MlPendingMatch {
             allow_encoded_text_lift: false,
             checksum,
             ml_mode,
+        }
+    }
+}
+
+#[cfg(feature = "ml")]
+impl MlPendingMatch {
+    fn has_same_execution_as(&self, other: &Self) -> bool {
+        self.channel == other.channel
+            && self.code_context == other.code_context
+            && self.ml_features == other.ml_features
+            && self.ml_weight.to_bits() == other.ml_weight.to_bits()
+            && self.min_confidence_floor.to_bits() == other.min_confidence_floor.to_bits()
+            && self.is_named_detector == other.is_named_detector
+            && self.is_generic_detector == other.is_generic_detector
+            && self.allow_canonical_hex_key == other.allow_canonical_hex_key
+            && self.allow_encoded_text_lift == other.allow_encoded_text_lift
+            && self.checksum == other.checksum
+            && self.ml_mode == other.ml_mode
+    }
+}
+
+#[cfg(feature = "ml")]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct PendingMatchIdentity {
+    detector_id: Arc<str>,
+    credential_hash: keyhog_core::CredentialHash,
+    offset: usize,
+    channel: crate::ml_scorer::MlCandidateChannel,
+}
+
+#[cfg(feature = "ml")]
+impl From<&MlPendingMatch> for PendingMatchIdentity {
+    fn from(pending: &MlPendingMatch) -> Self {
+        Self {
+            detector_id: pending.raw_match.detector_id.clone(),
+            credential_hash: pending.raw_match.credential_hash,
+            offset: pending.raw_match.location.offset,
+            channel: pending.channel,
         }
     }
 }
@@ -321,6 +366,11 @@ pub(crate) struct ScanState {
     /// Detector matches queued for batch ML scoring at the end of the scan.
     #[cfg(feature = "ml")]
     pub(crate) ml_pending: Vec<MlPendingMatch>,
+    /// Indexes the latest pending row for an identity without retaining a
+    /// second plaintext credential. Exact credential and policy equality are
+    /// still checked before a row is replaced.
+    #[cfg(feature = "ml")]
+    ml_pending_index: HashMap<PendingMatchIdentity, usize>,
 }
 
 impl ScanState {
@@ -383,8 +433,8 @@ impl ScanState {
         allow_encoded_text_lift: bool,
         checksum: crate::checksum::ChecksumConfidenceDecision,
         ml_mode: crate::detector_ml_policy::ActiveMlMode,
-    ) {
-        self.ml_pending.push(MlPendingMatch::detector_candidate(
+    ) -> bool {
+        self.push_ml_pending(MlPendingMatch::detector_candidate(
             raw_match,
             heuristic_conf,
             code_context,
@@ -397,7 +447,7 @@ impl ScanState {
             allow_encoded_text_lift,
             checksum,
             ml_mode,
-        ));
+        ))
     }
 
     #[cfg(all(feature = "ml", feature = "entropy"))]
@@ -411,8 +461,8 @@ impl ScanState {
         allow_canonical_hex_key: bool,
         checksum: crate::checksum::ChecksumConfidenceDecision,
         ml_mode: crate::detector_ml_policy::ActiveMlMode,
-    ) {
-        self.ml_pending.push(MlPendingMatch::entropy_candidate(
+    ) -> bool {
+        self.push_ml_pending(MlPendingMatch::entropy_candidate(
             raw_match,
             heuristic_conf,
             ml_features,
@@ -421,7 +471,37 @@ impl ScanState {
             allow_canonical_hex_key,
             checksum,
             ml_mode,
-        ));
+        ))
+    }
+
+    #[cfg(feature = "ml")]
+    fn push_ml_pending(&mut self, candidate: MlPendingMatch) -> bool {
+        let identity = PendingMatchIdentity::from(&candidate);
+        if let Some(&index) = self.ml_pending_index.get(&identity) {
+            let existing = &mut self.ml_pending[index];
+            if same_raw_match_identity(&candidate.raw_match, &existing.raw_match)
+                && candidate.has_same_execution_as(existing)
+            {
+                // Confidence is intentionally excluded above; retain the better
+                // complete pending record under the final finding ordering.
+                if candidate.raw_match < existing.raw_match {
+                    *existing = candidate;
+                    return true;
+                }
+                return false;
+            }
+        }
+
+        let index = self.ml_pending.len();
+        self.ml_pending.push(candidate);
+        self.ml_pending_index.insert(identity, index);
+        true
+    }
+
+    #[cfg(feature = "ml")]
+    pub(crate) fn take_ml_pending(&mut self) -> Vec<MlPendingMatch> {
+        self.ml_pending_index.clear();
+        std::mem::take(&mut self.ml_pending)
     }
 
     #[cfg(all(feature = "ml", feature = "entropy"))]

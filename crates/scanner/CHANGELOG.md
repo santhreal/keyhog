@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Canonicalize execution-equivalent ML candidates by detector, credential,
+  source offset, and producer channel before batch inference. Duplicate
+  accelerator lanes now share one pending row without merging distinct pattern
+  and entropy evidence.
+
 - Let confirmed extraction see hot-prefix findings that are awaiting batch ML,
   not only findings already in the final heap. This prevents the same canonical
   hot candidate from being regex-extracted and ML-featurized twice while

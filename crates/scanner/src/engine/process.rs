@@ -374,7 +374,7 @@ impl CompiledScanner {
                     scan_state,
                     entry.client_safe,
                 );
-                scan_state.push_detector_ml_pending(
+                if scan_state.push_detector_ml_pending(
                     raw_match,
                     heuristic_conf,
                     code_context,
@@ -387,8 +387,9 @@ impl CompiledScanner {
                     false,
                     checksum_decision,
                     mode,
-                );
-                crate::telemetry::record_match_found();
+                ) {
+                    crate::telemetry::record_match_found();
+                }
             }
         }
     }

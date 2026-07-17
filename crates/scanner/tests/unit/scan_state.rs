@@ -5,6 +5,29 @@ use keyhog_scanner::testing::ml_context_for_candidate;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+#[cfg(feature = "ml")]
+fn push_pattern_pending(
+    state: &mut ScanState,
+    raw: RawMatch,
+    confidence: f64,
+    features: [f32; keyhog_scanner::ml_scorer::NUM_FEATURES],
+) -> bool {
+    state.push_detector_ml_pending(
+        raw,
+        confidence,
+        keyhog_scanner::context::CodeContext::Assignment,
+        features,
+        0.35,
+        0.2,
+        true,
+        false,
+        false,
+        false,
+        keyhog_scanner::checksum::ChecksumConfidenceDecision::not_applicable(),
+        keyhog_scanner::detector_ml_policy::ActiveMlMode::Blend,
+    )
+}
+
 fn raw_match(confidence: f64, credential: &'static str, offset: usize) -> RawMatch {
     RawMatch {
         detector_id: Arc::from("gate"),
@@ -138,4 +161,65 @@ fn ml_context_for_candidate_has_one_path_prefix_owner() {
         ml_context_for_candidate(text, 3, None, 5),
         "zero\none\ntwo\nthree\nfour"
     );
+}
+
+#[test]
+#[cfg(feature = "ml")]
+fn pending_ml_queue_deduplicates_only_execution_equivalent_candidates() {
+    let mut state = ScanState::default();
+    let features = [0.25; keyhog_scanner::ml_scorer::NUM_FEATURES];
+
+    assert!(push_pattern_pending(
+        &mut state,
+        raw_match(0.5, "candidate", 7),
+        0.5,
+        features,
+    ));
+    assert!(!push_pattern_pending(
+        &mut state,
+        raw_match(0.5, "candidate", 7),
+        0.5,
+        features,
+    ));
+    assert_eq!(state.ml_pending.len(), 1);
+
+    assert!(push_pattern_pending(
+        &mut state,
+        raw_match(0.9, "candidate", 7),
+        0.9,
+        features,
+    ));
+    assert_eq!(state.ml_pending.len(), 1);
+    assert_eq!(state.ml_pending[0].raw_match.confidence, Some(0.9));
+
+    let mut distinct_features = features;
+    distinct_features[0] = 0.75;
+    assert!(push_pattern_pending(
+        &mut state,
+        raw_match(0.9, "candidate", 7),
+        0.9,
+        distinct_features,
+    ));
+    assert_eq!(state.ml_pending.len(), 2);
+}
+
+#[test]
+#[cfg(all(feature = "ml", feature = "entropy"))]
+fn pending_ml_queue_keeps_pattern_and_entropy_evidence_separate() {
+    let mut state = ScanState::default();
+    let features = [0.5; keyhog_scanner::ml_scorer::NUM_FEATURES];
+    let raw = raw_match(0.7, "candidate", 11);
+
+    assert!(push_pattern_pending(&mut state, raw.clone(), 0.7, features));
+    assert!(state.push_entropy_ml_pending(
+        raw,
+        0.7,
+        features,
+        0.35,
+        0.2,
+        false,
+        keyhog_scanner::checksum::ChecksumConfidenceDecision::not_applicable(),
+        keyhog_scanner::detector_ml_policy::ActiveMlMode::Blend,
+    ));
+    assert_eq!(state.ml_pending.len(), 2);
 }

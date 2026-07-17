@@ -151,7 +151,7 @@ const ENTROPY_TOKEN_FEATURE_INDEX: usize = 53;
 const ENTROPY_API_KEY_FEATURE_INDEX: usize = 54;
 
 /// Production channel that produced a candidate before model scoring.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MlCandidateChannel {
     Pattern,
     Entropy,
