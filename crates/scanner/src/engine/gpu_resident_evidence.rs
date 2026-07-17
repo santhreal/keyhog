@@ -8,11 +8,15 @@
 use super::CompiledScanner;
 use zeroize::Zeroize;
 
-/// VYRE's fused output is a resident array of three-u32 match records. A fixed
-/// 2^16-record ceiling keeps that readback at 768 KiB regardless of haystack
-/// size. Denser workloads return a typed overflow and replay through the exact
-/// stable-byte recovery path; they never expose a truncated position set.
+/// VYRE's fused output is a resident array of three-u32 match records. The
+/// common path starts at 2^16 records (768 KiB); a denser stable batch is counted
+/// exactly, rebuilt at that count, and replayed once without exposing a partial
+/// position set.
 const GPU_FUSED_MATCH_CAP: u32 = 1 << 16;
+/// Bound the rare dense replay to a 12 MiB resident/readback match buffer.
+/// Inputs above it stay on the existing exact CPU recovery path instead of
+/// turning hostile literal density into an unbounded device allocation.
+const GPU_FUSED_MATCH_REPLAY_CAP: u32 = 1 << 20;
 
 pub(crate) struct GpuResidentLiteralState {
     pipeline: vyre_libs::scan::ResidentFusedRegionScan,
@@ -95,6 +99,13 @@ impl ResidentLiteralCapacity {
             max_matches: self.max_matches.max(state.pipeline.max_matches()),
         }
     }
+
+    fn with_max_matches(self, max_matches: u32) -> Self {
+        Self {
+            max_matches: self.max_matches.max(max_matches),
+            ..self
+        }
+    }
 }
 
 struct ZeroResidentHostBuffers<'a> {
@@ -147,6 +158,7 @@ pub(super) fn scan_gpu_literal_evidence_by_region_resident<R>(
     consume: impl FnOnce(&[u32], &[vyre_libs::scan::LiteralMatch]) -> Result<R, String>,
 ) -> Result<R, String> {
     let needed = ResidentLiteralCapacity::for_batch(haystack.len(), region_starts.len())?;
+    let mut consume = Some(consume);
     let mut slot = slot.lock().map_err(|_| {
         "GPU resident literal pipeline lock is poisoned after an earlier scan panic. Fix: restart the scanner process and inspect the preceding GPU fault."
             .to_string()
@@ -172,79 +184,134 @@ pub(super) fn scan_gpu_literal_evidence_by_region_resident<R>(
             GpuResidentLiteralSlot::Ready(state) => Some(state),
             GpuResidentLiteralSlot::Empty | GpuResidentLiteralSlot::Failed(_) => None,
         });
-        let prior = std::mem::replace(&mut *slot, GpuResidentLiteralSlot::Empty);
-        if let GpuResidentLiteralSlot::Ready(prior) = prior {
-            if let Err(error) = prior.free() {
-                *slot = GpuResidentLiteralSlot::Failed(error.clone());
-                return Err(error);
-            }
-        }
-        let pipeline = match matcher
-            .prepare_resident_fused_scan(
-                backend.as_ref(),
-                capacity.haystack_bytes,
-                capacity.regions,
-                capacity.max_matches,
-            )
-            .map_err(|error| {
-                format!(
-                    "failed to prepare the selected GPU resident fused literal pipeline \
-                     ({}-byte haystack, {} regions, {} positioned matches): {error}",
-                    capacity.haystack_bytes, capacity.regions, capacity.max_matches
-                )
-            }) {
-            Ok(pipeline) => pipeline,
-            Err(error) => {
-                *slot = GpuResidentLiteralSlot::Failed(error.clone());
-                return Err(error);
-            }
-        };
-        *slot = GpuResidentLiteralSlot::Ready(GpuResidentLiteralState {
-            pipeline,
-            backend: std::sync::Arc::clone(backend),
-            output: Vec::new(),
-            matches: Vec::new(),
-            scratch: Vec::new(),
-        });
+        rebuild_resident_literal_state(&mut slot, matcher, backend, capacity)?;
     }
 
-    let GpuResidentLiteralSlot::Ready(state) = &mut *slot else {
-        return Err(
-            "GPU resident literal pipeline was not installed after successful preparation"
-                .to_string(),
-        );
-    };
-    if super::profile::perf_trace_enabled() {
-        eprintln!(
-            "perf-trace gpu-resident-fused: action={} backend={} haystack_capacity={} region_capacity={} match_capacity={} host_output_capacity={} host_match_capacity={} host_scratch_capacity={}",
-            if must_rebuild { "prepare" } else { "reuse" },
-            backend.id(),
-            state.pipeline.haystack_capacity(),
-            state.pipeline.max_regions(),
-            state.pipeline.max_matches(),
-            state.output.capacity(),
-            state.matches.capacity(),
-            state.scratch.capacity(),
-        );
+    for attempt in 0..2 {
+        let scan_error = {
+            let GpuResidentLiteralSlot::Ready(state) = &mut *slot else {
+                return Err(
+                    "GPU resident literal pipeline was not installed after successful preparation"
+                        .to_string(),
+                );
+            };
+            if super::profile::perf_trace_enabled() {
+                eprintln!(
+                    "perf-trace gpu-resident-fused: action={} backend={} haystack_capacity={} region_capacity={} match_capacity={} host_output_capacity={} host_match_capacity={} host_scratch_capacity={}",
+                    if must_rebuild || attempt > 0 { "prepare" } else { "reuse" },
+                    backend.id(),
+                    state.pipeline.haystack_capacity(),
+                    state.pipeline.max_regions(),
+                    state.pipeline.max_matches(),
+                    state.output.capacity(),
+                    state.matches.capacity(),
+                    state.scratch.capacity(),
+                );
+            }
+            let guard = ZeroResidentHostBuffers {
+                output: &mut state.output,
+                matches: &mut state.matches,
+                scratch: &mut state.scratch,
+            };
+            match state.pipeline.scan_into(
+                backend.as_ref(),
+                haystack,
+                region_starts,
+                0,
+                guard.output,
+                guard.matches,
+                guard.scratch,
+            ) {
+                Ok(()) => {
+                    let consume = consume.take().ok_or_else(|| {
+                        "GPU resident literal output consumer was already invoked".to_string()
+                    })?;
+                    return consume(guard.output.as_slice(), guard.matches.as_slice());
+                }
+                Err(error) => format!("resident fused literal dispatch error: {error}"),
+            }
+        };
+        if attempt == 1 {
+            return Err(scan_error);
+        }
+
+        // VYRE's resident fused API reports overflow through its closed error
+        // contract but does not expose the count separately. Diagnose any first
+        // dispatch failure with VYRE's exact count-only primitive. A count above
+        // the resident capacity proves overflow without parsing error strings;
+        // rebuild once at the exact device count and replay the stable bytes.
+        let exact_count = match matcher.count(backend.as_ref(), haystack) {
+            Ok(count) => count,
+            Err(count_error) => {
+                return Err(format!(
+                    "{scan_error}; exact GPU match-count diagnosis also failed: {count_error}"
+                ));
+            }
+        };
+        let current_capacity = match &*slot {
+            GpuResidentLiteralSlot::Ready(state) => state.pipeline.max_matches(),
+            GpuResidentLiteralSlot::Empty | GpuResidentLiteralSlot::Failed(_) => 0,
+        };
+        if exact_count <= current_capacity {
+            return Err(scan_error);
+        }
+        if exact_count > GPU_FUSED_MATCH_REPLAY_CAP {
+            return Err(format!(
+                "{scan_error}; exact GPU match count {exact_count} exceeds the bounded dense-replay cap {GPU_FUSED_MATCH_REPLAY_CAP}. Fix: split the GPU batch or allow automatic stable-byte recovery."
+            ));
+        }
+        let capacity = needed
+            .with_max_matches(exact_count)
+            .preserving(match &*slot {
+                GpuResidentLiteralSlot::Ready(state) => Some(state),
+                GpuResidentLiteralSlot::Empty | GpuResidentLiteralSlot::Failed(_) => None,
+            });
+        rebuild_resident_literal_state(&mut slot, matcher, backend, capacity)?;
     }
-    let guard = ZeroResidentHostBuffers {
-        output: &mut state.output,
-        matches: &mut state.matches,
-        scratch: &mut state.scratch,
-    };
-    state
-        .pipeline
-        .scan_into(
+    Err("GPU resident literal scan exhausted its bounded replay".to_string())
+}
+
+fn rebuild_resident_literal_state(
+    slot: &mut GpuResidentLiteralSlot,
+    matcher: &vyre_libs::scan::GpuLiteralSet,
+    backend: &std::sync::Arc<dyn vyre::VyreBackend>,
+    capacity: ResidentLiteralCapacity,
+) -> Result<(), String> {
+    let prior = std::mem::replace(slot, GpuResidentLiteralSlot::Empty);
+    if let GpuResidentLiteralSlot::Ready(prior) = prior {
+        if let Err(error) = prior.free() {
+            *slot = GpuResidentLiteralSlot::Failed(error.clone());
+            return Err(error);
+        }
+    }
+    let pipeline = match matcher
+        .prepare_resident_fused_scan(
             backend.as_ref(),
-            haystack,
-            region_starts,
-            0,
-            guard.output,
-            guard.matches,
-            guard.scratch,
+            capacity.haystack_bytes,
+            capacity.regions,
+            capacity.max_matches,
         )
-        .map_err(|error| format!("resident fused literal dispatch error: {error}"))?;
-    consume(guard.output.as_slice(), guard.matches.as_slice())
+        .map_err(|error| {
+            format!(
+                "failed to prepare the selected GPU resident fused literal pipeline \
+                 ({}-byte haystack, {} regions, {} positioned matches): {error}",
+                capacity.haystack_bytes, capacity.regions, capacity.max_matches
+            )
+        }) {
+        Ok(pipeline) => pipeline,
+        Err(error) => {
+            *slot = GpuResidentLiteralSlot::Failed(error.clone());
+            return Err(error);
+        }
+    };
+    *slot = GpuResidentLiteralSlot::Ready(GpuResidentLiteralState {
+        pipeline,
+        backend: std::sync::Arc::clone(backend),
+        output: Vec::new(),
+        matches: Vec::new(),
+        scratch: Vec::new(),
+    });
+    Ok(())
 }
 
 impl CompiledScanner {

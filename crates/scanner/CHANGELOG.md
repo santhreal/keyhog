@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Replay a dense VYRE resident fused literal scan once at the exact device
+  match count instead of failing autoroute calibration at the fixed 65,536-hit
+  readback ceiling; partial positioned evidence remains impossible.
+
 - Replace the ambiguous phase-two localizer route bit with explicit
   plain-pattern and keyword-anchor choices. Autoroute now calibrates, persists,
   validates, inspects, and benchmarks all four plans per eligible backend;

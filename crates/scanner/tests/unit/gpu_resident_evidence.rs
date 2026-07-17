@@ -19,7 +19,7 @@ fn calibration_reset_preserves_an_unhealthy_resident_slot() {
 }
 
 #[test]
-fn fused_match_overflow_never_exposes_partial_evidence() {
+fn fused_match_overflow_replays_once_with_the_exact_device_count() {
     let backend: std::sync::Arc<dyn vyre::VyreBackend> = match vyre_driver_wgpu::WgpuBackend::shared(
     ) {
         Ok(backend) => backend,
@@ -34,28 +34,58 @@ fn fused_match_overflow_never_exposes_partial_evidence() {
     let matcher = vyre_libs::scan::GpuLiteralSet::compile(&[b"a".as_slice(), b"aa".as_slice()]);
     let slot = std::sync::Mutex::new(GpuResidentLiteralSlot::Empty);
     let haystack = vec![b'a'; super::GPU_FUSED_MATCH_CAP as usize];
-    let mut consumed = false;
+    let mut consumed = None;
 
-    let error = scan_gpu_literal_evidence_by_region_resident(
+    scan_gpu_literal_evidence_by_region_resident(
         &slot,
         &matcher,
         &backend,
         &haystack,
         &[0],
-        |_presence, _matches| {
-            consumed = true;
+        |presence, matches| {
+            consumed = Some((presence.to_vec(), matches.len()));
             Ok(())
         },
     )
-    .expect_err("dense positioned output must exceed the resident match budget");
+    .expect("dense positioned output must resize and replay completely");
 
+    let (presence, matches) = consumed.expect("consumer runs exactly after the complete replay");
+    assert_eq!(presence, vec![0b11]);
+    assert_eq!(
+        matches,
+        haystack.len() * 2 - 1,
+        "the replay returns every `a` and overlapping `aa` position"
+    );
+    let state_guard = slot.lock().expect("resident slot remains healthy");
+    let GpuResidentLiteralSlot::Ready(state) = &*state_guard else {
+        panic!("overflow replay must retain a ready resident pipeline");
+    };
+    assert_eq!(state.pipeline.max_matches() as usize, matches);
+    drop(state_guard);
+    reset_resident_literal_slot(&slot).expect("resized resident resources free cleanly");
+
+    let hostile = vec![b'a'; super::GPU_FUSED_MATCH_REPLAY_CAP as usize / 2 + 1];
+    let mut consumed_hostile = false;
+    let error = scan_gpu_literal_evidence_by_region_resident(
+        &slot,
+        &matcher,
+        &backend,
+        &hostile,
+        &[0],
+        |_presence, _matches| {
+            consumed_hostile = true;
+            Ok(())
+        },
+    )
+    .expect_err("hostile density must not allocate beyond the replay budget");
     assert!(
-        error.contains("exceeds the output-buffer cap"),
-        "unexpected overflow error: {error}"
+        error.contains("exact GPU match count 1048577")
+            && error.contains("bounded dense-replay cap 1048576"),
+        "unexpected bounded replay error: {error}"
     );
     assert!(
-        !consumed,
-        "the consumer must never observe presence or positions from an overflowed fused dispatch"
+        !consumed_hostile,
+        "bounded overflow cannot expose partial evidence"
     );
-    reset_resident_literal_slot(&slot).expect("overflow does not poison resident cleanup");
+    reset_resident_literal_slot(&slot).expect("bounded overflow leaves resident cleanup healthy");
 }
