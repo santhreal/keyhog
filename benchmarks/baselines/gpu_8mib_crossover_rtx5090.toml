@@ -1,11 +1,11 @@
-schema_version = 2
-measured_at_utc = "2026-07-17T05:58:59.426374004+00:00"
+schema_version = 3
+measured_at_utc = "2026-07-17T09:23:35.705547767+00:00"
 production_comparable = true
 crossover_passed = true
-git_hash = "129b488fab7c00e3369ed70d012a196f7d9fcd91"
-binary_sha256 = "a6b19af2dd377f73affba930162e65664b2be9cab51b9c6f2518aab543d38868"
-detector_spec_blake3 = "d862647cf2eaa13f313390ee8e661575a661f6b937f2481b4bc3441885782bb8"
-scanner_detector_digest = "68c426ab9e1a7a8b"
+git_hash = "85e62590a64128ae036bed96185cd20205fa1295"
+binary_sha256 = "6a8a94d22676d09ec6f3b91b4ad654a578d6cf6479739509bd87bdcd53eaf0c4"
+detector_spec_blake3 = "9d52b2f3059ea2738bcb0551ac163f6b285ad0a754e3cdb1d77d5e43bb0a6437"
+scanner_detector_digest = "7a64e3ff38f49c4d"
 resolved_tuning = "ResolvedScannerTuningConfig { fallback_hs: true, hs_prefilter_max_len: 4096, hs_shard_target: 320, fallback_anchor: true, homoglyph_gate: true, homoglyph_ascii_skip: true, fallback_reverse: false, prefilter_truncate: true, fallback_prefix_gate: false, decode_focus: true, confirmed_suffix_gate: true, no_candidate_gate: true, fallback_localizer: false, gpu_recall_floor: false, gpu_moe_timeout_ms: 30000 }"
 compiled_features = "simd=true,gpu=true,decode=true,entropy=true"
 command = "/mnt/FlareTraining/santh-archive/cargo-target/release/deps/gpu_vs_hs_8mib-af88a0fbccd101fc --bench"
@@ -13,7 +13,7 @@ os = "linux"
 arch = "x86_64"
 cpu_model = "AMD Ryzen 9 9950X 16-Core Processor"
 physical_cores = 16
-logical_cores = 22
+logical_cores = 32
 total_memory_mb = 94140
 simd_features = "AVX-512"
 selected_gpu_backend = "gpu-cuda-region-presence"
@@ -27,13 +27,14 @@ chunk_bytes = 1048576
 overlap_bytes = 131072
 chunks = 9
 detectors = 923
+reference_findings = 143
 selection_rounds = 20
 held_out_pairs = 100
 full_result_parity = true
 gpu_degraded = false
-ratio_geometric_mean = 0.5017234426363091
-ratio_ci95_low = 0.49497608939580806
-ratio_ci95_high = 0.508562773604073
+ratio_geometric_mean = 0.353006477387881
+ratio_ci95_low = 0.3481618926197607
+ratio_ci95_high = 0.3579184733290016
 
 [[gpu_peers]]
 backend = "gpu-cuda-region-presence"
@@ -57,958 +58,958 @@ acquisition_error = "none"
 backend = "simd-regex"
 round = 0
 order = 0
-nanoseconds = 86024289
+nanoseconds = 71602790
 
 [[selection_samples]]
 backend = "gpu-cuda-region-presence"
 round = 0
 order = 1
-nanoseconds = 40985640
+nanoseconds = 23737258
 
 [[selection_samples]]
 backend = "gpu-wgpu-region-presence"
 round = 0
 order = 2
-nanoseconds = 43965386
+nanoseconds = 25278382
 
 [[selection_samples]]
 backend = "gpu-cuda-region-presence"
 round = 1
 order = 0
-nanoseconds = 44230846
+nanoseconds = 28291068
 
 [[selection_samples]]
 backend = "gpu-wgpu-region-presence"
 round = 1
 order = 1
-nanoseconds = 46940383
+nanoseconds = 23423206
 
 [[selection_samples]]
 backend = "simd-regex"
 round = 1
 order = 2
-nanoseconds = 86309426
+nanoseconds = 70397539
 
 [[selection_samples]]
 backend = "gpu-wgpu-region-presence"
 round = 2
 order = 0
-nanoseconds = 49166028
+nanoseconds = 24381882
 
 [[selection_samples]]
 backend = "simd-regex"
 round = 2
 order = 1
-nanoseconds = 91171801
+nanoseconds = 68366291
 
 [[selection_samples]]
 backend = "gpu-cuda-region-presence"
 round = 2
 order = 2
-nanoseconds = 45452740
+nanoseconds = 24828534
 
 [[selection_samples]]
 backend = "simd-regex"
 round = 3
 order = 0
-nanoseconds = 89841985
+nanoseconds = 67290013
 
 [[selection_samples]]
 backend = "gpu-cuda-region-presence"
 round = 3
 order = 1
-nanoseconds = 43087992
+nanoseconds = 26556059
 
 [[selection_samples]]
 backend = "gpu-wgpu-region-presence"
 round = 3
 order = 2
-nanoseconds = 43660992
+nanoseconds = 26115830
 
 [[selection_samples]]
 backend = "gpu-cuda-region-presence"
 round = 4
 order = 0
-nanoseconds = 45520637
+nanoseconds = 23535247
 
 [[selection_samples]]
 backend = "gpu-wgpu-region-presence"
 round = 4
 order = 1
-nanoseconds = 44688809
+nanoseconds = 23973162
 
 [[selection_samples]]
 backend = "simd-regex"
 round = 4
 order = 2
-nanoseconds = 88560770
+nanoseconds = 68056086
 
 [[selection_samples]]
 backend = "gpu-wgpu-region-presence"
 round = 5
 order = 0
-nanoseconds = 47045071
+nanoseconds = 29258551
 
 [[selection_samples]]
 backend = "simd-regex"
 round = 5
 order = 1
-nanoseconds = 87129001
+nanoseconds = 68571387
 
 [[selection_samples]]
 backend = "gpu-cuda-region-presence"
 round = 5
 order = 2
-nanoseconds = 41116798
+nanoseconds = 23757155
 
 [[selection_samples]]
 backend = "simd-regex"
 round = 6
 order = 0
-nanoseconds = 86966775
+nanoseconds = 66728314
 
 [[selection_samples]]
 backend = "gpu-cuda-region-presence"
 round = 6
 order = 1
-nanoseconds = 44366773
+nanoseconds = 23783675
 
 [[selection_samples]]
 backend = "gpu-wgpu-region-presence"
 round = 6
 order = 2
-nanoseconds = 42410024
+nanoseconds = 25203250
 
 [[selection_samples]]
 backend = "gpu-cuda-region-presence"
 round = 7
 order = 0
-nanoseconds = 46286671
+nanoseconds = 23154570
 
 [[selection_samples]]
 backend = "gpu-wgpu-region-presence"
 round = 7
 order = 1
-nanoseconds = 44434110
+nanoseconds = 26460509
 
 [[selection_samples]]
 backend = "simd-regex"
 round = 7
 order = 2
-nanoseconds = 89357391
+nanoseconds = 68875360
 
 [[selection_samples]]
 backend = "gpu-wgpu-region-presence"
 round = 8
 order = 0
-nanoseconds = 42615963
+nanoseconds = 24352086
 
 [[selection_samples]]
 backend = "simd-regex"
 round = 8
 order = 1
-nanoseconds = 88291583
+nanoseconds = 70684329
 
 [[selection_samples]]
 backend = "gpu-cuda-region-presence"
 round = 8
 order = 2
-nanoseconds = 42754664
+nanoseconds = 24428600
 
 [[selection_samples]]
 backend = "simd-regex"
 round = 9
 order = 0
-nanoseconds = 86418051
+nanoseconds = 67722809
 
 [[selection_samples]]
 backend = "gpu-cuda-region-presence"
 round = 9
 order = 1
-nanoseconds = 42864691
+nanoseconds = 23820565
 
 [[selection_samples]]
 backend = "gpu-wgpu-region-presence"
 round = 9
 order = 2
-nanoseconds = 42242800
+nanoseconds = 26658962
 
 [[selection_samples]]
 backend = "gpu-cuda-region-presence"
 round = 10
 order = 0
-nanoseconds = 41448903
+nanoseconds = 25226073
 
 [[selection_samples]]
 backend = "gpu-wgpu-region-presence"
 round = 10
 order = 1
-nanoseconds = 46855423
+nanoseconds = 23439446
 
 [[selection_samples]]
 backend = "simd-regex"
 round = 10
 order = 2
-nanoseconds = 90855255
+nanoseconds = 67998087
 
 [[selection_samples]]
 backend = "gpu-wgpu-region-presence"
 round = 11
 order = 0
-nanoseconds = 44465228
+nanoseconds = 23500622
 
 [[selection_samples]]
 backend = "simd-regex"
 round = 11
 order = 1
-nanoseconds = 88800992
+nanoseconds = 70873876
 
 [[selection_samples]]
 backend = "gpu-cuda-region-presence"
 round = 11
 order = 2
-nanoseconds = 45333635
+nanoseconds = 27951719
 
 [[selection_samples]]
 backend = "simd-regex"
 round = 12
 order = 0
-nanoseconds = 88067500
+nanoseconds = 68831478
 
 [[selection_samples]]
 backend = "gpu-cuda-region-presence"
 round = 12
 order = 1
-nanoseconds = 51544321
+nanoseconds = 25597062
 
 [[selection_samples]]
 backend = "gpu-wgpu-region-presence"
 round = 12
 order = 2
-nanoseconds = 42262506
+nanoseconds = 25483338
 
 [[selection_samples]]
 backend = "gpu-cuda-region-presence"
 round = 13
 order = 0
-nanoseconds = 42777397
+nanoseconds = 24332219
 
 [[selection_samples]]
 backend = "gpu-wgpu-region-presence"
 round = 13
 order = 1
-nanoseconds = 44657681
+nanoseconds = 23566726
 
 [[selection_samples]]
 backend = "simd-regex"
 round = 13
 order = 2
-nanoseconds = 89762425
+nanoseconds = 71909036
 
 [[selection_samples]]
 backend = "gpu-wgpu-region-presence"
 round = 14
 order = 0
-nanoseconds = 45277439
+nanoseconds = 24521976
 
 [[selection_samples]]
 backend = "simd-regex"
 round = 14
 order = 1
-nanoseconds = 88231138
+nanoseconds = 69013741
 
 [[selection_samples]]
 backend = "gpu-cuda-region-presence"
 round = 14
 order = 2
-nanoseconds = 40170093
+nanoseconds = 25427432
 
 [[selection_samples]]
 backend = "simd-regex"
 round = 15
 order = 0
-nanoseconds = 89848927
+nanoseconds = 70647890
 
 [[selection_samples]]
 backend = "gpu-cuda-region-presence"
 round = 15
 order = 1
-nanoseconds = 44810178
+nanoseconds = 24633376
 
 [[selection_samples]]
 backend = "gpu-wgpu-region-presence"
 round = 15
 order = 2
-nanoseconds = 48061546
+nanoseconds = 24631904
 
 [[selection_samples]]
 backend = "gpu-cuda-region-presence"
 round = 16
 order = 0
-nanoseconds = 53960294
+nanoseconds = 24670166
 
 [[selection_samples]]
 backend = "gpu-wgpu-region-presence"
 round = 16
 order = 1
-nanoseconds = 41663448
+nanoseconds = 25778414
 
 [[selection_samples]]
 backend = "simd-regex"
 round = 16
 order = 2
-nanoseconds = 86819788
+nanoseconds = 69243454
 
 [[selection_samples]]
 backend = "gpu-wgpu-region-presence"
 round = 17
 order = 0
-nanoseconds = 54251112
+nanoseconds = 23299392
 
 [[selection_samples]]
 backend = "simd-regex"
 round = 17
 order = 1
-nanoseconds = 90804058
+nanoseconds = 71297734
 
 [[selection_samples]]
 backend = "gpu-cuda-region-presence"
 round = 17
 order = 2
-nanoseconds = 45315952
+nanoseconds = 19996078
 
 [[selection_samples]]
 backend = "simd-regex"
 round = 18
 order = 0
-nanoseconds = 89945109
+nanoseconds = 68718715
 
 [[selection_samples]]
 backend = "gpu-cuda-region-presence"
 round = 18
 order = 1
-nanoseconds = 46442875
+nanoseconds = 21770141
 
 [[selection_samples]]
 backend = "gpu-wgpu-region-presence"
 round = 18
 order = 2
-nanoseconds = 46291541
+nanoseconds = 24200981
 
 [[selection_samples]]
 backend = "gpu-cuda-region-presence"
 round = 19
 order = 0
-nanoseconds = 42741640
+nanoseconds = 25374322
 
 [[selection_samples]]
 backend = "gpu-wgpu-region-presence"
 round = 19
 order = 1
-nanoseconds = 43741644
+nanoseconds = 25921564
 
 [[selection_samples]]
 backend = "simd-regex"
 round = 19
 order = 2
-nanoseconds = 88464478
+nanoseconds = 69409567
 
 [[held_out_samples]]
 pair = 0
 order = "hs-gpu"
-hyperscan_nanoseconds = 90470980
-gpu_nanoseconds = 44014739
+hyperscan_nanoseconds = 68769039
+gpu_nanoseconds = 22460402
 
 [[held_out_samples]]
 pair = 1
 order = "gpu-hs"
-hyperscan_nanoseconds = 90438790
-gpu_nanoseconds = 43157834
+hyperscan_nanoseconds = 67996915
+gpu_nanoseconds = 23643861
 
 [[held_out_samples]]
 pair = 2
 order = "hs-gpu"
-hyperscan_nanoseconds = 93277169
-gpu_nanoseconds = 46709338
+hyperscan_nanoseconds = 70293933
+gpu_nanoseconds = 23634454
 
 [[held_out_samples]]
 pair = 3
 order = "gpu-hs"
-hyperscan_nanoseconds = 87815085
-gpu_nanoseconds = 49576072
+hyperscan_nanoseconds = 69453780
+gpu_nanoseconds = 25133770
 
 [[held_out_samples]]
 pair = 4
 order = "hs-gpu"
-hyperscan_nanoseconds = 90318322
-gpu_nanoseconds = 47244537
+hyperscan_nanoseconds = 70566016
+gpu_nanoseconds = 23532110
 
 [[held_out_samples]]
 pair = 5
 order = "gpu-hs"
-hyperscan_nanoseconds = 91270627
-gpu_nanoseconds = 44048543
+hyperscan_nanoseconds = 73134475
+gpu_nanoseconds = 24937579
 
 [[held_out_samples]]
 pair = 6
 order = "hs-gpu"
-hyperscan_nanoseconds = 87431592
-gpu_nanoseconds = 43618762
+hyperscan_nanoseconds = 68905176
+gpu_nanoseconds = 23642388
 
 [[held_out_samples]]
 pair = 7
 order = "gpu-hs"
-hyperscan_nanoseconds = 89926904
-gpu_nanoseconds = 45004545
+hyperscan_nanoseconds = 70482860
+gpu_nanoseconds = 25447590
 
 [[held_out_samples]]
 pair = 8
 order = "hs-gpu"
-hyperscan_nanoseconds = 89348244
-gpu_nanoseconds = 42671036
+hyperscan_nanoseconds = 70735325
+gpu_nanoseconds = 24396340
 
 [[held_out_samples]]
 pair = 9
 order = "gpu-hs"
-hyperscan_nanoseconds = 87183694
-gpu_nanoseconds = 47464532
+hyperscan_nanoseconds = 70204624
+gpu_nanoseconds = 20104903
 
 [[held_out_samples]]
 pair = 10
 order = "hs-gpu"
-hyperscan_nanoseconds = 90180844
-gpu_nanoseconds = 48139354
+hyperscan_nanoseconds = 71088180
+gpu_nanoseconds = 24199759
 
 [[held_out_samples]]
 pair = 11
 order = "gpu-hs"
-hyperscan_nanoseconds = 91268834
-gpu_nanoseconds = 52061245
+hyperscan_nanoseconds = 64586299
+gpu_nanoseconds = 22299168
 
 [[held_out_samples]]
 pair = 12
 order = "hs-gpu"
-hyperscan_nanoseconds = 89132587
-gpu_nanoseconds = 41957262
+hyperscan_nanoseconds = 67009966
+gpu_nanoseconds = 25173453
 
 [[held_out_samples]]
 pair = 13
 order = "gpu-hs"
-hyperscan_nanoseconds = 89169707
-gpu_nanoseconds = 44272224
+hyperscan_nanoseconds = 67969323
+gpu_nanoseconds = 25764277
 
 [[held_out_samples]]
 pair = 14
 order = "hs-gpu"
-hyperscan_nanoseconds = 89614526
-gpu_nanoseconds = 41983942
+hyperscan_nanoseconds = 69317313
+gpu_nanoseconds = 24572311
 
 [[held_out_samples]]
 pair = 15
 order = "gpu-hs"
-hyperscan_nanoseconds = 86458047
-gpu_nanoseconds = 41557458
+hyperscan_nanoseconds = 70239641
+gpu_nanoseconds = 24579805
 
 [[held_out_samples]]
 pair = 16
 order = "hs-gpu"
-hyperscan_nanoseconds = 87506362
-gpu_nanoseconds = 41737737
+hyperscan_nanoseconds = 68893314
+gpu_nanoseconds = 25833989
 
 [[held_out_samples]]
 pair = 17
 order = "gpu-hs"
-hyperscan_nanoseconds = 86222142
-gpu_nanoseconds = 43122197
+hyperscan_nanoseconds = 69079054
+gpu_nanoseconds = 23907769
 
 [[held_out_samples]]
 pair = 18
 order = "hs-gpu"
-hyperscan_nanoseconds = 90248381
-gpu_nanoseconds = 41085969
+hyperscan_nanoseconds = 68835926
+gpu_nanoseconds = 25165008
 
 [[held_out_samples]]
 pair = 19
 order = "gpu-hs"
-hyperscan_nanoseconds = 88953310
-gpu_nanoseconds = 41915242
+hyperscan_nanoseconds = 71497731
+gpu_nanoseconds = 25310572
 
 [[held_out_samples]]
 pair = 20
 order = "hs-gpu"
-hyperscan_nanoseconds = 87822218
-gpu_nanoseconds = 44890330
+hyperscan_nanoseconds = 69859164
+gpu_nanoseconds = 28021580
 
 [[held_out_samples]]
 pair = 21
 order = "gpu-hs"
-hyperscan_nanoseconds = 86942589
-gpu_nanoseconds = 44723004
+hyperscan_nanoseconds = 71511858
+gpu_nanoseconds = 22791395
 
 [[held_out_samples]]
 pair = 22
 order = "hs-gpu"
-hyperscan_nanoseconds = 88035179
-gpu_nanoseconds = 50121459
+hyperscan_nanoseconds = 68117352
+gpu_nanoseconds = 25201517
 
 [[held_out_samples]]
 pair = 23
 order = "gpu-hs"
-hyperscan_nanoseconds = 85471307
-gpu_nanoseconds = 44419051
+hyperscan_nanoseconds = 68767788
+gpu_nanoseconds = 23856482
 
 [[held_out_samples]]
 pair = 24
 order = "hs-gpu"
-hyperscan_nanoseconds = 86558005
-gpu_nanoseconds = 45760269
+hyperscan_nanoseconds = 70811879
+gpu_nanoseconds = 23711258
 
 [[held_out_samples]]
 pair = 25
 order = "gpu-hs"
-hyperscan_nanoseconds = 89124282
-gpu_nanoseconds = 42808125
+hyperscan_nanoseconds = 69586681
+gpu_nanoseconds = 25102600
 
 [[held_out_samples]]
 pair = 26
 order = "hs-gpu"
-hyperscan_nanoseconds = 88138694
-gpu_nanoseconds = 42017024
+hyperscan_nanoseconds = 69507953
+gpu_nanoseconds = 28003797
 
 [[held_out_samples]]
 pair = 27
 order = "gpu-hs"
-hyperscan_nanoseconds = 86577341
-gpu_nanoseconds = 42663953
+hyperscan_nanoseconds = 70073417
+gpu_nanoseconds = 26702836
 
 [[held_out_samples]]
 pair = 28
 order = "hs-gpu"
-hyperscan_nanoseconds = 92103888
-gpu_nanoseconds = 49288218
+hyperscan_nanoseconds = 65902348
+gpu_nanoseconds = 26651609
 
 [[held_out_samples]]
 pair = 29
 order = "gpu-hs"
-hyperscan_nanoseconds = 92029528
-gpu_nanoseconds = 53330908
+hyperscan_nanoseconds = 69004694
+gpu_nanoseconds = 23711018
 
 [[held_out_samples]]
 pair = 30
 order = "hs-gpu"
-hyperscan_nanoseconds = 90851297
-gpu_nanoseconds = 43566946
+hyperscan_nanoseconds = 67458059
+gpu_nanoseconds = 25437271
 
 [[held_out_samples]]
 pair = 31
 order = "gpu-hs"
-hyperscan_nanoseconds = 88246096
-gpu_nanoseconds = 42285860
+hyperscan_nanoseconds = 69966376
+gpu_nanoseconds = 25868714
 
 [[held_out_samples]]
 pair = 32
 order = "hs-gpu"
-hyperscan_nanoseconds = 90431887
-gpu_nanoseconds = 46939121
+hyperscan_nanoseconds = 69477335
+gpu_nanoseconds = 23461257
 
 [[held_out_samples]]
 pair = 33
 order = "gpu-hs"
-hyperscan_nanoseconds = 86277185
-gpu_nanoseconds = 44850514
+hyperscan_nanoseconds = 68989476
+gpu_nanoseconds = 21215136
 
 [[held_out_samples]]
 pair = 34
 order = "hs-gpu"
-hyperscan_nanoseconds = 86351646
-gpu_nanoseconds = 46758941
+hyperscan_nanoseconds = 66606115
+gpu_nanoseconds = 25406513
 
 [[held_out_samples]]
 pair = 35
 order = "gpu-hs"
-hyperscan_nanoseconds = 87110446
-gpu_nanoseconds = 43953293
+hyperscan_nanoseconds = 72447901
+gpu_nanoseconds = 26929903
 
 [[held_out_samples]]
 pair = 36
 order = "hs-gpu"
-hyperscan_nanoseconds = 89975146
-gpu_nanoseconds = 41337313
+hyperscan_nanoseconds = 67971648
+gpu_nanoseconds = 24603549
 
 [[held_out_samples]]
 pair = 37
 order = "gpu-hs"
-hyperscan_nanoseconds = 91142787
-gpu_nanoseconds = 44647843
+hyperscan_nanoseconds = 69528691
+gpu_nanoseconds = 22930708
 
 [[held_out_samples]]
 pair = 38
 order = "hs-gpu"
-hyperscan_nanoseconds = 89888843
-gpu_nanoseconds = 45140651
+hyperscan_nanoseconds = 68524479
+gpu_nanoseconds = 25493948
 
 [[held_out_samples]]
 pair = 39
 order = "gpu-hs"
-hyperscan_nanoseconds = 88947929
-gpu_nanoseconds = 42731050
+hyperscan_nanoseconds = 71700815
+gpu_nanoseconds = 27382647
 
 [[held_out_samples]]
 pair = 40
 order = "hs-gpu"
-hyperscan_nanoseconds = 84216812
-gpu_nanoseconds = 51846530
+hyperscan_nanoseconds = 71944974
+gpu_nanoseconds = 24907863
 
 [[held_out_samples]]
 pair = 41
 order = "gpu-hs"
-hyperscan_nanoseconds = 88764543
-gpu_nanoseconds = 42837260
+hyperscan_nanoseconds = 71864362
+gpu_nanoseconds = 26300518
 
 [[held_out_samples]]
 pair = 42
 order = "hs-gpu"
-hyperscan_nanoseconds = 88858110
-gpu_nanoseconds = 42359860
+hyperscan_nanoseconds = 73226309
+gpu_nanoseconds = 24597298
 
 [[held_out_samples]]
 pair = 43
 order = "gpu-hs"
-hyperscan_nanoseconds = 86375051
-gpu_nanoseconds = 46212061
+hyperscan_nanoseconds = 70501354
+gpu_nanoseconds = 25459172
 
 [[held_out_samples]]
 pair = 44
 order = "hs-gpu"
-hyperscan_nanoseconds = 88742472
-gpu_nanoseconds = 41439064
+hyperscan_nanoseconds = 70715317
+gpu_nanoseconds = 22746681
 
 [[held_out_samples]]
 pair = 45
 order = "gpu-hs"
-hyperscan_nanoseconds = 86847470
-gpu_nanoseconds = 42089660
+hyperscan_nanoseconds = 69257951
+gpu_nanoseconds = 24867167
 
 [[held_out_samples]]
 pair = 46
 order = "hs-gpu"
-hyperscan_nanoseconds = 87143769
-gpu_nanoseconds = 51966838
+hyperscan_nanoseconds = 69716656
+gpu_nanoseconds = 23748288
 
 [[held_out_samples]]
 pair = 47
 order = "gpu-hs"
-hyperscan_nanoseconds = 86452106
-gpu_nanoseconds = 40388455
+hyperscan_nanoseconds = 69167781
+gpu_nanoseconds = 22591408
 
 [[held_out_samples]]
 pair = 48
 order = "hs-gpu"
-hyperscan_nanoseconds = 88527486
-gpu_nanoseconds = 47046173
+hyperscan_nanoseconds = 68762097
+gpu_nanoseconds = 25294872
 
 [[held_out_samples]]
 pair = 49
 order = "gpu-hs"
-hyperscan_nanoseconds = 91502585
-gpu_nanoseconds = 44334743
+hyperscan_nanoseconds = 65586763
+gpu_nanoseconds = 24429432
 
 [[held_out_samples]]
 pair = 50
 order = "hs-gpu"
-hyperscan_nanoseconds = 90267316
-gpu_nanoseconds = 42342948
+hyperscan_nanoseconds = 71141019
+gpu_nanoseconds = 25036566
 
 [[held_out_samples]]
 pair = 51
 order = "gpu-hs"
-hyperscan_nanoseconds = 89557849
-gpu_nanoseconds = 45025474
+hyperscan_nanoseconds = 69453229
+gpu_nanoseconds = 25291135
 
 [[held_out_samples]]
 pair = 52
 order = "hs-gpu"
-hyperscan_nanoseconds = 91072144
-gpu_nanoseconds = 42547183
+hyperscan_nanoseconds = 68948719
+gpu_nanoseconds = 25054490
 
 [[held_out_samples]]
 pair = 53
 order = "gpu-hs"
-hyperscan_nanoseconds = 89144359
-gpu_nanoseconds = 40881073
+hyperscan_nanoseconds = 70777364
+gpu_nanoseconds = 23776231
 
 [[held_out_samples]]
 pair = 54
 order = "hs-gpu"
-hyperscan_nanoseconds = 87380776
-gpu_nanoseconds = 45072693
+hyperscan_nanoseconds = 70717150
+gpu_nanoseconds = 23970357
 
 [[held_out_samples]]
 pair = 55
 order = "gpu-hs"
-hyperscan_nanoseconds = 87484181
-gpu_nanoseconds = 42983426
+hyperscan_nanoseconds = 68269449
+gpu_nanoseconds = 24549448
 
 [[held_out_samples]]
 pair = 56
 order = "hs-gpu"
-hyperscan_nanoseconds = 83969336
-gpu_nanoseconds = 45895324
+hyperscan_nanoseconds = 69961697
+gpu_nanoseconds = 22674675
 
 [[held_out_samples]]
 pair = 57
 order = "gpu-hs"
-hyperscan_nanoseconds = 88633657
-gpu_nanoseconds = 50567259
+hyperscan_nanoseconds = 68311678
+gpu_nanoseconds = 27152713
 
 [[held_out_samples]]
 pair = 58
 order = "hs-gpu"
-hyperscan_nanoseconds = 90001676
-gpu_nanoseconds = 44161054
+hyperscan_nanoseconds = 69541466
+gpu_nanoseconds = 22932932
 
 [[held_out_samples]]
 pair = 59
 order = "gpu-hs"
-hyperscan_nanoseconds = 88636873
-gpu_nanoseconds = 43007170
+hyperscan_nanoseconds = 69856799
+gpu_nanoseconds = 23924030
 
 [[held_out_samples]]
 pair = 60
 order = "hs-gpu"
-hyperscan_nanoseconds = 87992047
-gpu_nanoseconds = 43465845
+hyperscan_nanoseconds = 68362013
+gpu_nanoseconds = 22745840
 
 [[held_out_samples]]
 pair = 61
 order = "gpu-hs"
-hyperscan_nanoseconds = 88073451
-gpu_nanoseconds = 46601143
+hyperscan_nanoseconds = 68282824
+gpu_nanoseconds = 24455361
 
 [[held_out_samples]]
 pair = 62
 order = "hs-gpu"
-hyperscan_nanoseconds = 86089822
-gpu_nanoseconds = 43300654
+hyperscan_nanoseconds = 70205126
+gpu_nanoseconds = 23776762
 
 [[held_out_samples]]
 pair = 63
 order = "gpu-hs"
-hyperscan_nanoseconds = 97854847
-gpu_nanoseconds = 51800814
+hyperscan_nanoseconds = 68145725
+gpu_nanoseconds = 24707165
 
 [[held_out_samples]]
 pair = 64
 order = "hs-gpu"
-hyperscan_nanoseconds = 87265678
-gpu_nanoseconds = 43402886
+hyperscan_nanoseconds = 72577556
+gpu_nanoseconds = 26864891
 
 [[held_out_samples]]
 pair = 65
 order = "gpu-hs"
-hyperscan_nanoseconds = 87346000
-gpu_nanoseconds = 49879463
+hyperscan_nanoseconds = 69746342
+gpu_nanoseconds = 26204446
 
 [[held_out_samples]]
 pair = 66
 order = "hs-gpu"
-hyperscan_nanoseconds = 87655864
-gpu_nanoseconds = 47618151
+hyperscan_nanoseconds = 68717403
+gpu_nanoseconds = 22801594
 
 [[held_out_samples]]
 pair = 67
 order = "gpu-hs"
-hyperscan_nanoseconds = 86589864
-gpu_nanoseconds = 47217656
+hyperscan_nanoseconds = 71870615
+gpu_nanoseconds = 23923177
 
 [[held_out_samples]]
 pair = 68
 order = "hs-gpu"
-hyperscan_nanoseconds = 89797801
-gpu_nanoseconds = 44729386
+hyperscan_nanoseconds = 72908940
+gpu_nanoseconds = 22634690
 
 [[held_out_samples]]
 pair = 69
 order = "gpu-hs"
-hyperscan_nanoseconds = 85730535
-gpu_nanoseconds = 43624403
+hyperscan_nanoseconds = 72450036
+gpu_nanoseconds = 25411472
 
 [[held_out_samples]]
 pair = 70
 order = "hs-gpu"
-hyperscan_nanoseconds = 88621264
-gpu_nanoseconds = 45926783
+hyperscan_nanoseconds = 69499566
+gpu_nanoseconds = 25920862
 
 [[held_out_samples]]
 pair = 71
 order = "gpu-hs"
-hyperscan_nanoseconds = 89140963
-gpu_nanoseconds = 42981341
+hyperscan_nanoseconds = 69320178
+gpu_nanoseconds = 22352208
 
 [[held_out_samples]]
 pair = 72
 order = "hs-gpu"
-hyperscan_nanoseconds = 88724939
-gpu_nanoseconds = 44083529
+hyperscan_nanoseconds = 70831616
+gpu_nanoseconds = 24043755
 
 [[held_out_samples]]
 pair = 73
 order = "gpu-hs"
-hyperscan_nanoseconds = 90650638
-gpu_nanoseconds = 42124216
+hyperscan_nanoseconds = 69364241
+gpu_nanoseconds = 22767851
 
 [[held_out_samples]]
 pair = 74
 order = "hs-gpu"
-hyperscan_nanoseconds = 92537656
-gpu_nanoseconds = 43455124
+hyperscan_nanoseconds = 70839691
+gpu_nanoseconds = 23532371
 
 [[held_out_samples]]
 pair = 75
 order = "gpu-hs"
-hyperscan_nanoseconds = 86615673
-gpu_nanoseconds = 44848390
+hyperscan_nanoseconds = 71263841
+gpu_nanoseconds = 22851359
 
 [[held_out_samples]]
 pair = 76
 order = "hs-gpu"
-hyperscan_nanoseconds = 90275852
-gpu_nanoseconds = 38146058
+hyperscan_nanoseconds = 70705569
+gpu_nanoseconds = 24246267
 
 [[held_out_samples]]
 pair = 77
 order = "gpu-hs"
-hyperscan_nanoseconds = 87938697
-gpu_nanoseconds = 45654560
+hyperscan_nanoseconds = 71388055
+gpu_nanoseconds = 25293931
 
 [[held_out_samples]]
 pair = 78
 order = "hs-gpu"
-hyperscan_nanoseconds = 89676602
-gpu_nanoseconds = 44069332
+hyperscan_nanoseconds = 70235873
+gpu_nanoseconds = 28059692
 
 [[held_out_samples]]
 pair = 79
 order = "gpu-hs"
-hyperscan_nanoseconds = 95624603
-gpu_nanoseconds = 44476509
+hyperscan_nanoseconds = 69346708
+gpu_nanoseconds = 25431900
 
 [[held_out_samples]]
 pair = 80
 order = "hs-gpu"
-hyperscan_nanoseconds = 86990901
-gpu_nanoseconds = 44668992
+hyperscan_nanoseconds = 71191755
+gpu_nanoseconds = 26496927
 
 [[held_out_samples]]
 pair = 81
 order = "gpu-hs"
-hyperscan_nanoseconds = 89427623
-gpu_nanoseconds = 43393078
+hyperscan_nanoseconds = 70033142
+gpu_nanoseconds = 27366977
 
 [[held_out_samples]]
 pair = 82
 order = "hs-gpu"
-hyperscan_nanoseconds = 89670542
-gpu_nanoseconds = 41120494
+hyperscan_nanoseconds = 71638677
+gpu_nanoseconds = 25702411
 
 [[held_out_samples]]
 pair = 83
 order = "gpu-hs"
-hyperscan_nanoseconds = 89745131
-gpu_nanoseconds = 39625908
+hyperscan_nanoseconds = 68081775
+gpu_nanoseconds = 28124123
 
 [[held_out_samples]]
 pair = 84
 order = "hs-gpu"
-hyperscan_nanoseconds = 89686571
-gpu_nanoseconds = 44177536
+hyperscan_nanoseconds = 71634159
+gpu_nanoseconds = 26289356
 
 [[held_out_samples]]
 pair = 85
 order = "gpu-hs"
-hyperscan_nanoseconds = 90348399
-gpu_nanoseconds = 48427506
+hyperscan_nanoseconds = 67605267
+gpu_nanoseconds = 25293720
 
 [[held_out_samples]]
 pair = 86
 order = "hs-gpu"
-hyperscan_nanoseconds = 88583582
-gpu_nanoseconds = 44884920
+hyperscan_nanoseconds = 68189027
+gpu_nanoseconds = 26782095
 
 [[held_out_samples]]
 pair = 87
 order = "gpu-hs"
-hyperscan_nanoseconds = 88002848
-gpu_nanoseconds = 44361473
+hyperscan_nanoseconds = 70251143
+gpu_nanoseconds = 24393955
 
 [[held_out_samples]]
 pair = 88
 order = "hs-gpu"
-hyperscan_nanoseconds = 90693539
-gpu_nanoseconds = 42384577
+hyperscan_nanoseconds = 69812055
+gpu_nanoseconds = 23366940
 
 [[held_out_samples]]
 pair = 89
 order = "gpu-hs"
-hyperscan_nanoseconds = 87479281
-gpu_nanoseconds = 42958257
+hyperscan_nanoseconds = 71700253
+gpu_nanoseconds = 23305343
 
 [[held_out_samples]]
 pair = 90
 order = "hs-gpu"
-hyperscan_nanoseconds = 87793213
-gpu_nanoseconds = 43792710
+hyperscan_nanoseconds = 69026675
+gpu_nanoseconds = 24058012
 
 [[held_out_samples]]
 pair = 91
 order = "gpu-hs"
-hyperscan_nanoseconds = 88664936
-gpu_nanoseconds = 41326542
+hyperscan_nanoseconds = 69149437
+gpu_nanoseconds = 24138473
 
 [[held_out_samples]]
 pair = 92
 order = "hs-gpu"
-hyperscan_nanoseconds = 86003810
-gpu_nanoseconds = 45043829
+hyperscan_nanoseconds = 73885401
+gpu_nanoseconds = 23765591
 
 [[held_out_samples]]
 pair = 93
 order = "gpu-hs"
-hyperscan_nanoseconds = 90586718
-gpu_nanoseconds = 44082006
+hyperscan_nanoseconds = 70165602
+gpu_nanoseconds = 23424809
 
 [[held_out_samples]]
 pair = 94
 order = "hs-gpu"
-hyperscan_nanoseconds = 87529396
-gpu_nanoseconds = 43961940
+hyperscan_nanoseconds = 69423984
+gpu_nanoseconds = 28089930
 
 [[held_out_samples]]
 pair = 95
 order = "gpu-hs"
-hyperscan_nanoseconds = 90275803
-gpu_nanoseconds = 43499929
+hyperscan_nanoseconds = 68787394
+gpu_nanoseconds = 25642277
 
 [[held_out_samples]]
 pair = 96
 order = "hs-gpu"
-hyperscan_nanoseconds = 88197004
-gpu_nanoseconds = 46364949
+hyperscan_nanoseconds = 69442228
+gpu_nanoseconds = 23459845
 
 [[held_out_samples]]
 pair = 97
 order = "gpu-hs"
-hyperscan_nanoseconds = 85781972
-gpu_nanoseconds = 41945649
+hyperscan_nanoseconds = 68164361
+gpu_nanoseconds = 25839569
 
 [[held_out_samples]]
 pair = 98
 order = "hs-gpu"
-hyperscan_nanoseconds = 87754460
-gpu_nanoseconds = 48226697
+hyperscan_nanoseconds = 68596083
+gpu_nanoseconds = 22721934
 
 [[held_out_samples]]
 pair = 99
 order = "gpu-hs"
-hyperscan_nanoseconds = 88112675
-gpu_nanoseconds = 43490921
+hyperscan_nanoseconds = 70225214
+gpu_nanoseconds = 24917191

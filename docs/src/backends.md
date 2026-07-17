@@ -123,14 +123,14 @@ degradation checks but cannot pass the speed gate.
 The canonical checked result is
 `benchmarks/baselines/gpu_8mib_crossover_rtx5090.toml`. On its recorded RTX
 5090 host, VYRE 0.6.5 CUDA produced the same 143 findings with no degradation,
-then measured a 45.6209 ms held-out median against Hyperscan's 47.6683 ms. The
-paired GPU/Hyperscan geometric-mean ratio was 0.9542 with a 95% confidence
-interval of 0.9383 to 0.9703 across 100 held-out pairs. This is evidence for the
+then measured a 24.5886 ms held-out median against Hyperscan's 69.5641 ms. The
+paired GPU/Hyperscan geometric-mean ratio was 0.3530 with a 95% confidence
+interval of 0.3482 to 0.3579 across 100 held-out pairs. This is evidence for the
 recorded host and workload, not a portable route decision. A new crossover claim
 requires a `production_comparable = true` artifact from the corrected route with
-exact binary, detector, configuration, host, runtime, workload, peer, and trial
-identity. Autoroute still requires calibration on the deployment host for the exact
-workload class.
+exact binary, detector, configuration, host, runtime, workload, result count,
+peer, and trial identity. Autoroute still requires calibration on the deployment
+host for the exact workload class.
 
 ## When automatic routing refuses to scan
 

@@ -13,6 +13,7 @@ struct CurrentGpuArtifact {
     git_hash: String,
     selected_gpu_driver_version: String,
     source_bytes: usize,
+    reference_findings: usize,
     held_out_pairs: usize,
     full_result_parity: bool,
     gpu_degraded: bool,
@@ -112,12 +113,13 @@ fn canonical_gpu_artifact_proves_the_checked_8mib_crossover() {
     ))
     .expect("canonical RTX 5090 crossover artifact must parse");
 
-    assert_eq!(artifact.schema_version, 2);
+    assert_eq!(artifact.schema_version, 3);
     assert_eq!(artifact.source_bytes, 8 * 1024 * 1024);
     assert_eq!(artifact.held_out_pairs, 100);
     assert!(artifact.production_comparable);
     assert!(artifact.crossover_passed);
     assert!(artifact.full_result_parity);
+    assert_eq!(artifact.reference_findings, 143);
     assert!(!artifact.gpu_degraded);
     assert!(artifact.ratio_ci95_high < 1.0);
     assert_eq!(artifact.selected_gpu_driver_version, "0.6.5");
@@ -125,20 +127,20 @@ fn canonical_gpu_artifact_proves_the_checked_8mib_crossover() {
 }
 
 #[test]
-fn fixed_high_tier_threshold_does_not_claim_an_unproven_8mib_crossover() {
+fn fixed_high_tier_threshold_does_not_generalize_a_host_specific_8mib_crossover() {
     const MIB: u64 = 1024 * 1024;
     let gpu_min_bytes_high_tier = threshold_u64("GPU_MIN_BYTES_HIGH_TIER");
     let gpu_bytes_breakeven_solo_high_tier = threshold_u64("GPU_BYTES_BREAKEVEN_SOLO_HIGH_TIER");
     let eight_mib_bytes = 8 * MIB;
     assert!(
         gpu_min_bytes_high_tier > eight_mib_bytes,
-        "fixed high-tier minimum must stay above the unproven 8 MiB crossover: threshold={} 8mib={}",
+        "fixed high-tier minimum must not generalize the host-specific 8 MiB crossover: threshold={} 8mib={}",
         gpu_min_bytes_high_tier,
         eight_mib_bytes
     );
     assert!(
         gpu_bytes_breakeven_solo_high_tier > eight_mib_bytes,
-        "fixed solo threshold must stay above the unproven 8 MiB crossover: threshold={} 8mib={}",
+        "fixed solo threshold must not generalize the host-specific 8 MiB crossover: threshold={} 8mib={}",
         gpu_bytes_breakeven_solo_high_tier,
         eight_mib_bytes
     );
