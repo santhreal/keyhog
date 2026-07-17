@@ -13,6 +13,7 @@ keywords = ["CF-Access-Client-Id", "CF-Access-Client-Secret", "cloudflareaccess"
 
 [[detector.patterns]]
 regex = "(?:CF-Access-Client-Id|CF.Access.Client.Id)[=:\\s\"'']+([a-f0-9]{32})\\.access"
+required_literals = [".access"]
 description = "Cloudflare Zero Trust service token Client ID"
 group = 1
 

@@ -252,39 +252,3 @@ fn keyword_signal_proof_requires_all_prefixes_to_start_with_detector_keyword() {
         &stripe_keywords
     ));
 }
-
-/// Quantify how many embedded detectors move from fallback to AC
-/// thanks to the inner-literal extractor. Acts both as a regression
-/// guard (the count shouldn't drop) and as documentation of the
-/// optimization's reach. Run with `--nocapture` to print the count.
-#[test]
-fn inner_literal_corpus_coverage() {
-    let mut promoted_patterns = 0usize;
-    let mut total_inner_literals = 0usize;
-    let mut total_patterns = 0usize;
-    for d in
-        keyhog_core::load_embedded_detectors_or_fail().expect("embedded detector corpus must load")
-    {
-        for p in &d.patterns {
-            total_patterns += 1;
-            let prefixes = extract_literal_prefixes(&p.regex);
-            if !prefixes.is_empty() {
-                continue; // Already AC-eligible via prefix.
-            }
-            let inner = extract_inner_literals(&p.regex);
-            if !inner.is_empty() {
-                promoted_patterns += 1;
-                total_inner_literals += inner.len();
-            }
-        }
-    }
-    assert!(
-        promoted_patterns >= 3,
-        "expected ≥3 patterns promoted out of fallback via inner-literal extraction; \
-         got {promoted_patterns} (of {total_patterns} total)"
-    );
-    eprintln!(
-        "inner-literal coverage: {promoted_patterns} patterns promoted out of fallback, \
-         {total_inner_literals} inner literals added (of {total_patterns} total patterns)"
-    );
-}

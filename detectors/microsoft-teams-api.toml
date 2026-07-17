@@ -13,11 +13,13 @@ keywords = ["microsoft-teams", "TEAMS_API", "MS_TEAMS", "graph.microsoft.com"]
 
 [[detector.patterns]]
 regex = "(?:microsoft[_\\-\\s]{0,2}teams|ms[_\\-\\s]{0,2}teams|teams)[_\\-\\s]{0,2}(?:api[_\\-\\s]{0,2}key|secret|token)[\"\\'\\s]*[=:][\"\\'\\s]*([a-zA-Z0-9_\\-\\.]{32,})"
+required_literals = ["teams"]
 description = "Microsoft Teams API credential with context anchor"
 group = 1
 
 [[detector.patterns]]
 regex = "(?:TEAMS[_\\-\\s]{0,2}API[_\\-\\s]{0,2}KEY|MICROSOFT[_\\-\\s]{0,2}TEAMS[_\\-\\s]{0,2}SECRET|MS[_\\-\\s]{0,2}TEAMS[_\\-\\s]{0,2}TOKEN)[\"\\'\\s]*[=:][\"\\'\\s]*([a-zA-Z0-9_\\-\\.]{32,})"
+required_literals = ["TEAMS"]
 description = "Microsoft Teams API credential in environment variable format"
 group = 1
 

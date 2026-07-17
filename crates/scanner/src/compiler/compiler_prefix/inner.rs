@@ -16,9 +16,9 @@ pub(crate) fn is_escaped_literal(ch: char) -> bool {
 /// is positionally anchored and far more discriminative.
 pub(crate) const MIN_INNER_LITERAL_CHARS: usize = 4;
 
-/// Extract literal substrings from anywhere in a regex pattern (not just
-/// the start), suitable as Aho-Corasick prefilter triggers for phase-2 patterns
-/// whose start is a character class.
+/// Suggest literal substrings from anywhere in a regex for detector-route
+/// auditing. The production compiler never applies these implicitly: a
+/// detector must declare the selected set as `required_literals` in its TOML.
 ///
 /// Walks the parsed regex AST and collects every contiguous run of
 /// `Literal` nodes inside a `Concat`. Alternation branches are walked
@@ -35,6 +35,7 @@ pub(crate) const MIN_INNER_LITERAL_CHARS: usize = 4;
 ///   `(?:secret|api_key)\s*=\s*[a-z0-9]{32}` → `["secret", "api_key"]`
 ///   `[a-f0-9]{32}` → `[]`
 ///   `wx[a-f0-9]{16}` → `[]` (the `wx` prefix is below the 4-char floor)
+#[cfg(test)]
 pub(crate) fn extract_inner_literals(pattern: &str) -> Vec<String> {
     use regex_syntax::ast::{parse::Parser, Ast};
     let Ok(ast) = Parser::new().parse(pattern) else {
@@ -86,6 +87,7 @@ pub(crate) fn extract_inner_literals(pattern: &str) -> Vec<String> {
     out
 }
 
+#[cfg(test)]
 fn walk_ast(ast: &regex_syntax::ast::Ast, out: &mut Vec<String>) {
     use regex_syntax::ast::Ast;
     match ast {

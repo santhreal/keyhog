@@ -15,11 +15,13 @@ entropy_floor = [{ max_len = 24, floor = 3.0 }, { max_len = 40, floor = 2.8 }, {
 
 [[detector.patterns]]
 regex = "(?:workday|WD)[._-]?(?:host|tenant|instance)[=:\\s\"'']+([a-z0-9-]+\\.workday\\.com)"
+required_literals = [".workday.com"]
 description = "Workday tenant hostname"
 group = 1
 
 [[detector.patterns]]
 regex = "(?:workday|WD)[._-]?(?:user|username)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
+required_literals = ["user"]
 description = "Workday username with context anchor"
 group = 1
 weak_anchor = true

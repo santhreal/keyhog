@@ -17,6 +17,7 @@ description = "Salesforce session ID/access token with instance ID prefix (00D)"
 
 [[detector.patterns]]
 regex = "(?i)(?:salesforce|sf)[_.-]?(?:access[_.-]?)?token[=:\\s\"']+([a-zA-Z0-9]{120,})"
+required_literals = ["token"]
 description = "Salesforce OAuth access token with context anchor (long alphanumeric)"
 group = 1
 

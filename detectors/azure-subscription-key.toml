@@ -28,6 +28,7 @@ keywords = [
 
 [[detector.patterns]]
 regex = '''(?i)(?:(?:ocp[-_.]?apim|azure)[-_.]?)?subscription[_.-]?key\s*["']?\s*[=:]\s*["']?([a-f0-9]{32})["']?'''
+required_literals = ["subscription"]
 description = "Azure subscription key - case-insensitive anchor (APIM/Azure env, yaml, camelCase, kebab, dotted, or bare `subscription_key`)."
 group = 1
 

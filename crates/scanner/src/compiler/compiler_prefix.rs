@@ -4,7 +4,7 @@
 //!   - `flags`: inline-flag and zero-width-assertion stripping
 //!   - `guard`: boundary-guard group detection and stripping
 //!   - `groups`: alternation and character-class prefix expansion
-//!   - `inner`: inner-literal extraction and required-run analysis
+//!   - `inner`: detector-route auditing and required-run analysis
 
 mod flags;
 mod groups;
@@ -17,9 +17,11 @@ pub(crate) use groups::{
     MAX_CHARCLASS_PREFIX_EXPANSION,
 };
 pub(crate) use guard::{split_leading_boundary_guard, strip_leading_boundary_guard};
+#[cfg(test)]
+pub(crate) use inner::extract_inner_literals;
 pub(crate) use inner::{
-    extract_inner_literals, is_escaped_literal, regex_has_required_literal_run,
-    MIN_DISTINCTIVE_INFIX_CHARS, MIN_INNER_LITERAL_CHARS,
+    is_escaped_literal, regex_has_required_literal_run, MIN_DISTINCTIVE_INFIX_CHARS,
+    MIN_INNER_LITERAL_CHARS,
 };
 
 use crate::types::MIN_LITERAL_PREFIX_CHARS;

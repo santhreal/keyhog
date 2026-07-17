@@ -15,11 +15,13 @@ entropy_floor = [{ max_len = 24, floor = 3.0 }, { max_len = 40, floor = 2.8 }, {
 
 [[detector.patterns]]
 regex = "(?:servicenow|SN)[._-]?(?:instance|url)[=:\\s\"'']+([a-z0-9-]+\\.service-now\\.com)"
+required_literals = [".service-now.com"]
 description = "ServiceNow instance URL"
 group = 1
 
 [[detector.patterns]]
 regex = "(?:servicenow|SN)[._-]?(?:user|username)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
+required_literals = ["user"]
 description = "ServiceNow username with context anchor"
 group = 1
 weak_anchor = true

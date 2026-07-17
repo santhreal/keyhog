@@ -18,6 +18,7 @@ group = 1
 
 [[detector.patterns]]
 regex = "[Xx]-[Aa]pi-[Kk]ey[=:\\s\"'\\']+([a-zA-Z0-9_-]{20,50}).*(?:data\\.gov|api\\.data\\.gov)"
+required_literals = ["data.gov"]
 description = "Data.gov API key in x-api-key header"
 group = 1
 

@@ -5,8 +5,7 @@ use crate::types::*;
 use keyhog_core::DetectorSpec;
 
 use super::compiler_prefix::{
-    extract_inner_literals, extract_literal_prefixes, is_escaped_literal,
-    split_leading_boundary_guard,
+    extract_literal_prefixes, is_escaped_literal, split_leading_boundary_guard,
 };
 
 use super::compiler_compile::{compile_detector_companions, compile_pattern};
@@ -83,12 +82,11 @@ pub(crate) fn append_hyperscan_unsupported_patterns(
 }
 
 /// The one routing decision produced for a compiled detector pattern.
-/// Detector-declared literals are authoritative; compiler-derived prefixes and
-/// inner literals are used only when the detector omits that policy.
+/// Detector-declared literals are authoritative; otherwise only a leading
+/// literal encoded directly in the regex can enter phase one.
 enum PatternRoute {
     DetectorRequired(Vec<String>),
     LiteralPrefix(Vec<String>),
-    InferredInner(Vec<String>),
     Phase2 {
         keywords: Vec<String>,
         warn_missing_anchor: bool,
@@ -98,9 +96,7 @@ enum PatternRoute {
 impl PatternRoute {
     fn ac_literals(&self) -> Option<&[String]> {
         match self {
-            Self::DetectorRequired(literals)
-            | Self::LiteralPrefix(literals)
-            | Self::InferredInner(literals) => Some(literals),
+            Self::DetectorRequired(literals) | Self::LiteralPrefix(literals) => Some(literals),
             Self::Phase2 { .. } => None,
         }
     }
@@ -108,8 +104,7 @@ impl PatternRoute {
 
 /// Everything the serial assembly phase needs for one compiled pattern, all
 /// derived inside the parallel compile map. The typed route prevents detector
-/// declarations, inferred prefixes, inferred inner literals, and phase two
-/// from becoming competing owners.
+/// declarations, regex prefixes, and phase two from becoming competing owners.
 struct PatternArtifacts {
     compiled: CompiledPattern,
     route: PatternRoute,
@@ -131,12 +126,8 @@ fn append_ac_pattern(
 /// Minimum byte length of a literal prefix before it is worth generating a
 /// homoglyph phase-2 variant. A 1-2 byte prefix carries too little signal: its
 /// homoglyph expansion would broaden the AC set for almost no spoof-coverage
-/// gain. This is deliberately SHORTER than `MIN_INNER_LITERAL_CHARS`: a
-/// homoglyph variant still splices back into the FULL regex (the rest of the
-/// pattern must match), whereas an inner literal stands alone in the AC set and
-/// needs more distinctiveness to avoid flooding the prefilter. Named to match
-/// the prefix-compiler's other tuning thresholds (`MIN_INNER_LITERAL_CHARS`,
-/// `MIN_DISTINCTIVE_INFIX_CHARS`, `MAX_CHARCLASS_PREFIX_EXPANSION`).
+/// gain. A homoglyph variant still splices back into the full regex, so its
+/// three-byte prefix remains selective enough for phase two.
 pub(crate) const MIN_HOMOGLYPH_PREFIX_LEN: usize = 3;
 
 pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
@@ -164,7 +155,7 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
     }
 
     // Phase 1: compile every regex AND derive all of its per-pattern artifacts
-    // (literal prefixes, homoglyph phase-2 variants, inner literals) in
+    // (literal prefixes and homoglyph phase-2 variants) in
     // parallel. The derivation used to live in the serial assembly loop below,
     // where its per-pattern AST parsing and homoglyph DFA compilation dominated
     // cold compile (~430ms over the full corpus on a 22-core box, scaling ~2x
@@ -237,14 +228,9 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
                 } else if !prefixes.is_empty() {
                     PatternRoute::LiteralPrefix(prefixes)
                 } else {
-                    let inner_literals = extract_inner_literals(&pattern.regex);
-                    if inner_literals.is_empty() {
-                        PatternRoute::Phase2 {
-                            keywords: detector.keywords.clone(),
-                            warn_missing_anchor: detector.keywords.is_empty(),
-                        }
-                    } else {
-                        PatternRoute::InferredInner(inner_literals)
+                    PatternRoute::Phase2 {
+                        keywords: detector.keywords.clone(),
+                        warn_missing_anchor: detector.keywords.is_empty(),
                     }
                 };
 

@@ -13,6 +13,7 @@ keywords = [".atlasv1.", "TFE_TOKEN", "tfe_token", "TERRAFORM_ENTERPRISE_TOKEN",
 
 [[detector.patterns]]
 regex = "[a-zA-Z0-9]{14}\\.atlasv1\\.[a-zA-Z0-9]{67,}"
+required_literals = [".atlasv1."]
 description = "Terraform Enterprise API token (atlasv1 infix format)"
 
 [[detector.patterns]]

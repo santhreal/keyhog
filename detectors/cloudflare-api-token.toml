@@ -17,6 +17,7 @@ keywords = ["cloudflare", "CLOUDFLARE", "CF_API_TOKEN", "cloudflareApiToken"]
 
 [[detector.patterns]]
 regex = '''(?i)(?:cloudflare[_.-]?api[_.-]?token|cf[_.-]?api[_.-]?token|cloudflareApiToken)\s*[=:]\s*["']?([a-zA-Z0-9_-]{40})["']?'''
+required_literals = ["token"]
 description = "Cloudflare API token with case-insensitive context anchor."
 group = 1
 

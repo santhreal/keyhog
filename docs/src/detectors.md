@@ -166,10 +166,11 @@ vs `sk.`) tag only the public pattern so a misused secret key still
 surfaces at its nominal severity.
 
 `detector.keywords` - optional prefilter and context signals. Regexes with an
-extractable literal prefix or inner literal can trigger from that literal even
-when no declared keyword occurs; patterns with neither run in the ungated
-phase-2 path and emit a load warning. `kind = "phase2-generic"` detectors require
-keywords because their assignment/context bridge is the candidate source.
+extractable leading literal use that prefix automatically. A prefixless regex
+uses only its declared `required_literals`; without either route it uses the
+keyword-gated or always-active phase-2 path. `kind = "phase2-generic"` detectors
+require keywords because their assignment/context bridge is the candidate
+source.
 
 `detector.patterns[]` - one or more regexes. Each carries:
 
@@ -186,6 +187,7 @@ keywords because their assignment/context bridge is the candidate source.
   that OR-condition from the regex AST, then scalar, Hyperscan, CUDA, and WGPU
   compile the same literals into their candidate plan. Invalid, optional, or
   branch-incomplete declarations reject the detector instead of risking recall.
+  KeyHog never selects a non-prefix literal from the regex implicitly.
 - `client_safe` - optional bool, default `false`. When `true`, any
   match against this pattern collapses to `Severity::ClientSafe`
   regardless of the detector's nominal severity. Use for patterns

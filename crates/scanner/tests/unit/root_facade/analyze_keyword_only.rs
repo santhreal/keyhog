@@ -1,4 +1,4 @@
-use keyhog_scanner::testing::{extract_inner_literals, extract_literal_prefixes};
+use keyhog_scanner::testing::extract_literal_prefixes;
 use std::collections::HashSet;
 
 use super::support;
@@ -26,8 +26,7 @@ fn analyze_keyword_only_detectors() {
         };
 
         let all_keyword_only = detector.patterns.iter().all(|p| {
-            extract_literal_prefixes(&p.regex).is_empty()
-                && extract_inner_literals(&p.regex).is_empty()
+            extract_literal_prefixes(&p.regex).is_empty() && p.required_literals.is_empty()
         });
 
         if !all_keyword_only {

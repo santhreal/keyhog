@@ -43,6 +43,7 @@ description = "Twilio AccountSid (AC + 32 hex, standalone vendor fingerprint)"
 # API and was the FP driver; requiring the in-window Twilio fingerprint
 # restores attribution without leaning solely on the companion gate.
 regex = "(?i)(?:twilio|AC[a-f0-9]{32})[\\sa-z0-9_.:=\"',{}()-]{0,80}?auth[_.-]?token\\s*[=:]\\s*[\"']?([a-fA-F0-9]{32})[\"']?"
+required_literals = ["token"]
 description = "Twilio authToken (32 hex) anchored to in-window twilio/AccountSid fingerprint"
 group = 1
 

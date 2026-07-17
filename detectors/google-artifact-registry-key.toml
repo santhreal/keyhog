@@ -18,6 +18,7 @@ group = 1
 
 [[detector.patterns]]
 regex = '''(?:_json_key|(?:GAR|GOOGLE_ARTIFACT)[\w_]*(?:PASSWORD|KEY))[=:\s"'']+\{[^}\n]*(?:\\?")type(?:\\?")\s*:\s*(?:\\?")service_account(?:\\?")[^}\n]*(?:\\?")private_key(?:\\?")\s*:\s*(?:\\?")(-----BEGIN PRIVATE KEY-----)'''
+required_literals = ["-----BEGIN PRIVATE KEY-----"]
 description = "Google Artifact Registry JSON key in an environment variable, including escaped JSON"
 group = 1
 

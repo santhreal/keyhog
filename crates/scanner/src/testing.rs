@@ -478,12 +478,6 @@ pub fn compiler_min_homoglyph_prefix_len_for_test() -> usize {
     crate::compiler::compiler_build::MIN_HOMOGLYPH_PREFIX_LEN
 }
 
-/// Minimum byte length of a standalone inner literal kept in the AC set
-/// (compiler_prefix.rs). Lets a gap test pin its exact value.
-pub fn compiler_min_inner_literal_chars_for_test() -> usize {
-    crate::compiler::compiler_prefix::MIN_INNER_LITERAL_CHARS
-}
-
 /// Minimum distinctive-infix length before a pattern is treated as having a
 /// usable required literal run (compiler_prefix.rs). Lets a gap test pin its
 /// exact value.

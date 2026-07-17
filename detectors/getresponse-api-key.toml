@@ -24,6 +24,7 @@ group = 1
 
 [[detector.patterns]]
 regex = '(?:X[_-]?Auth[_-]?Token|x[_-]?auth[_-]?token)[=: ]+(?:api[_-]?key )?([a-zA-Z0-9_-]{20,})'
+required_literals = ["Token"]
 description = "GetResponse X-Auth-Token header value"
 group = 1
 

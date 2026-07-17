@@ -9,8 +9,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Detector patterns can declare AST-proven `required_literals` beside their
   regex. KeyHog compiles those literals into every backend's shared candidate
   plan and rejects optional or branch-incomplete declarations. The DeepL and
-  URL credential detectors now own their three-byte routing infixes, making
-  the GPU ASCII prefixless catalog complete without a fixed pattern budget.
+  URL credential detectors now own their three-byte routing infixes. All 56
+  previously inferred prefixless routes now live beside their detector regexes;
+  the production compiler no longer invents non-prefix literals or hides their
+  tuning in scanner code.
 - GPU scans now compose complete prefixless evidence with fused anchor absence
   for every eligible ASCII row, including rows with phase-one triggers. Proven
   rows bypass the redundant Hyperscan always-active prefilter while keyword,
