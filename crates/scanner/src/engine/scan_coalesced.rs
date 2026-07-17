@@ -47,15 +47,11 @@ fn with_trigger_buffer<R>(words_needed: usize, f: impl FnOnce(&mut [u64]) -> R) 
 #[inline]
 fn mark_hs_trigger(
     scratch: &mut [u64],
-    scanner: &crate::simd::backend::HsScanner,
-    hs_index_map: &super::CsrU32,
+    prefilter: &super::SimdPhase1Prefilter,
     ac_len: usize,
     hs_id: usize,
 ) {
-    let Some((_det, dedup_id, _grp)) = scanner.pattern_info(hs_id) else {
-        return;
-    };
-    if let Some(orig) = hs_index_map.get(dedup_id) {
+    if let Some(orig) = prefilter.original_indices(hs_id) {
         for &idx in orig {
             let idx = idx as usize;
             if idx < ac_len {
@@ -208,7 +204,7 @@ impl CompiledScanner {
 
         #[cfg(feature = "simd")]
         {
-            let Some(scanner) = &self.simd_prefilter else {
+            let Some(prefilter) = &self.simd_prefilter else {
                 self.warn_simd_auto_degrade("coalesced scan had no live SIMD prefilter");
                 let telemetry = crate::telemetry::capture_scan_telemetry();
                 let mut results: Vec<Vec<keyhog_core::RawMatch>> = chunks
@@ -231,19 +227,20 @@ impl CompiledScanner {
             for chunk in chunks {
                 crate::telemetry::record_file_scanned(chunk.data.len());
             }
-            let triggers = self.compute_coalesced_triggers(chunks, scanner, admission_plan);
+            let triggers = self.compute_coalesced_triggers(chunks, prefilter, admission_plan);
             return self.scan_coalesced_phase2(chunks, triggers);
         }
     }
 
-    /// Phase 1 of the coalesced scan: the Hyperscan literal prefilter over raw
-    /// chunk bytes, producing one trigger bitmap per chunk. GPU region presence
-    /// is the alternative producer feeding the same phase 2.
+    /// Phase 1 of the coalesced scan: Hyperscan-confirmed rows plus exact
+    /// detector-literal recovery over raw chunk bytes, producing one trigger
+    /// bitmap per chunk. GPU region presence is the alternative producer
+    /// feeding the same phase 2.
     #[cfg(feature = "simd")]
     pub(crate) fn compute_coalesced_triggers(
         &self,
         chunks: &[keyhog_core::Chunk],
-        scanner: &crate::simd::backend::HsScanner,
+        prefilter: &super::SimdPhase1Prefilter,
         admission_plan: Option<&super::Phase1AdmissionPlan>,
     ) -> Vec<Option<Vec<u64>>> {
         use rayon::prelude::*;
@@ -261,8 +258,9 @@ impl CompiledScanner {
                     return None;
                 }
                 with_trigger_buffer(words_needed, |scratch| {
+                    let scanner = prefilter.scanner();
                     let scan_result = scanner.scan_each_result(data, |hs_id| {
-                        mark_hs_trigger(scratch, scanner, &self.hs_index_map, ac_len, hs_id);
+                        mark_hs_trigger(scratch, prefilter, ac_len, hs_id);
                     });
                     if let Err(error) = scan_result {
                         tracing::warn!(
@@ -271,9 +269,12 @@ impl CompiledScanner {
                         );
                         scratch.fill(0);
                         for hs_id in 0..scanner.pattern_count() {
-                            mark_hs_trigger(scratch, scanner, &self.hs_index_map, ac_len, hs_id);
+                            mark_hs_trigger(scratch, prefilter, ac_len, hs_id);
                         }
                     }
+                    prefilter.for_each_recovery_match(data, |pattern_index| {
+                        self.mark_triggered_pattern(scratch, pattern_index);
+                    });
                     if scratch.iter().any(|&w| w != 0) {
                         Some(scratch.to_vec())
                     } else {
@@ -293,7 +294,7 @@ impl CompiledScanner {
             tracing::info!(
                 files = chunks.len(),
                 hits = hit_count,
-                hs_matches = total_hs_matches,
+                triggered_patterns = total_hs_matches,
                 "coalesced scan phase 1 complete"
             );
         }

@@ -157,10 +157,10 @@ mod windowed_support;
 // too. Gate the
 // import to match, or non-simd builds (the `portable` feature used for the
 // macOS/Windows/musl release assets) fail with E0432.
-#[cfg(feature = "simd")]
-pub(crate) use backend_prepared::build_simd_scanner;
 pub(crate) use backend_prepared::code_lines_from_offsets;
 pub(crate) use backend_prepared::PreparedChunk;
+#[cfg(feature = "simd")]
+pub(crate) use backend_prepared::{build_simd_scanner, SimdPhase1Prefilter};
 #[cfg(test)]
 pub(crate) use boundary::scan_chunk_boundaries;
 pub use gpu_artifacts::{
@@ -347,9 +347,7 @@ pub struct CompiledScanner {
     /// [`phase2::ScannerTuning`].
     pub(crate) tuning: phase2::ScannerTuning,
     #[cfg(feature = "simd")]
-    pub(crate) simd_prefilter: Option<crate::simd::backend::HsScanner>,
-    #[cfg(feature = "simd")]
-    pub(crate) hs_index_map: CsrU32,
+    pub(crate) simd_prefilter: Option<SimdPhase1Prefilter>,
     /// Resolved detector-owned hot-pattern slots. Each row bundles the prefix, precise
     /// validator AND its canonical `ac_map` delegate together, so a slot's
     /// validation target and emission target can never be indexed apart and so

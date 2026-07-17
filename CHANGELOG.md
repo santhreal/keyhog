@@ -13,6 +13,11 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   previously inferred prefixless routes now live beside their detector regexes;
   the production compiler no longer invents non-prefix literals or hides their
   tuning in scanner code.
+- Confirmed patterns rejected by Hyperscan now retain their detector-owned
+  literals in a small recovery prefilter instead of being duplicated into the
+  phase-2 regex set. Coalesced SIMD scans preserve exact scalar findings, and
+  offline GPU artifact compilation no longer builds an irrelevant Hyperscan
+  database.
 - GPU scans now compose complete prefixless evidence with fused anchor absence
   for every eligible ASCII row, including rows with phase-one triggers. Proven
   rows bypass the redundant Hyperscan always-active prefilter while keyword,

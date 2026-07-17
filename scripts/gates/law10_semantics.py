@@ -239,7 +239,7 @@ def self_test() -> int:
             False,
         ),
         (
-            "unsupported pattern is returned to the caller and rerouted through keyword fallback",
+            "unsupported pattern is returned to the caller for exact recovery",
             {"recall_preserving"},
             False,
         ),

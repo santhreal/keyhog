@@ -344,16 +344,13 @@ impl CompiledScanner {
 
     fn collect_triggered_patterns_simd(&self, _text: &str) -> Vec<u64> {
         #[cfg(feature = "simd")]
-        if let Some(scanner) = &self.simd_prefilter {
+        if let Some(prefilter) = &self.simd_prefilter {
+            let scanner = prefilter.scanner();
             // AC and HS trigger sets are incomparable; union then confirm.
             let mut triggered_patterns = self.collect_triggered_patterns_cpu(_text);
             let scan_result =
                 scanner.scan_matches_result(_text.as_bytes(), |hs_id, _start, _end| {
-                    let Some((_detector_index, dedup_id, _has_group)) = scanner.pattern_info(hs_id)
-                    else {
-                        return;
-                    };
-                    if let Some(original_indices) = self.hs_index_map.get(dedup_id) {
+                    if let Some(original_indices) = prefilter.original_indices(hs_id) {
                         for &pattern_index in original_indices {
                             self.mark_triggered_pattern(
                                 &mut triggered_patterns,
@@ -370,12 +367,7 @@ impl CompiledScanner {
                         "hyperscan confirmed-trigger scan failed; over-marking SIMD-covered patterns for this chunk"
                     );
                     for hs_id in 0..scanner.pattern_count() {
-                        let Some((_detector_index, dedup_id, _has_group)) =
-                            scanner.pattern_info(hs_id)
-                        else {
-                            continue;
-                        };
-                        if let Some(original_indices) = self.hs_index_map.get(dedup_id) {
+                        if let Some(original_indices) = prefilter.original_indices(hs_id) {
                             for &pattern_index in original_indices {
                                 self.mark_triggered_pattern(
                                     &mut triggered_patterns,
@@ -528,7 +520,11 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         false
     }
 
-    fn mark_triggered_pattern(&self, triggered_patterns: &mut [u64], pattern_index: usize) {
+    pub(crate) fn mark_triggered_pattern(
+        &self,
+        triggered_patterns: &mut [u64],
+        pattern_index: usize,
+    ) {
         if pattern_index / 64 >= triggered_patterns.len() {
             return;
         }

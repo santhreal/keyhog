@@ -163,36 +163,20 @@ impl CompiledScanner {
         let prefix_propagation = CsrU32::from(build_prefix_propagation(&state.ac_literals));
         let same_prefix_patterns = CsrU32::from(build_same_prefix_patterns(&state.ac_literals));
 
-        // Build the Hyperscan scanner BEFORE the phase-2 keyword lane so we
-        // learn which ac_map patterns Hyperscan rejected (over-long, or an
-        // unsupported construct like a large `{100,200}` bounded repeat).
-        // A rejected pattern produces zero HS matches, and because it took
-        // the literal-prefix (ac_map) branch in build_compile_state it is
-        // NOT in the phase-2 keyword lane either - so it is silently dead under
-        // the HS backend (the default on Linux/CI). Reroute each one into
-        // the phase-2 keyword lane, gated by its detector's keywords, so it
-        // fires via the backend-independent regex sweep. Closes the
-        // contracts_runner recall hole on line/paloalto/tower/keystonejs/
-        // snowflake/bandwidth and the matching adversarial-wrapper misses.
+        // Hyperscan-confirmed rows that its compiler rejects retain their exact
+        // detector-owned literals in a small AC recovery prefilter. They stay
+        // in the canonical confirmed route instead of being duplicated into
+        // backend-independent phase two.
         #[cfg(feature = "simd")]
-        let mut state = state;
-        #[cfg(feature = "simd")]
-        let (simd_prefilter, hs_index_map) = match build_simd_scanner(&state.ac_map, tuning_config)
-        {
-            Some((scanner, index_map, unsupported_ac)) => {
-                append_hyperscan_unsupported_patterns(&mut state, &detectors, unsupported_ac);
-                (Some(scanner), CsrU32::from(index_map))
-            }
-            None => (None, CsrU32::default()),
+        let simd_prefilter = match build_simd_scanner(&state.ac_map, tuning_config)? {
+            Some((scanner, index_map, unsupported_ac)) => Some(SimdPhase1Prefilter::new(
+                scanner,
+                index_map,
+                &state.ac_literals,
+                &unsupported_ac,
+            )?),
+            None => None,
         };
-
-        // Hyperscan may reroute unsupported confirmed patterns into phase 2.
-        // Validate the augmented state as well as the pre-append state above.
-        validate_compiled_pattern_detector_indices(
-            &state.ac_map,
-            &state.phase2_patterns,
-            detectors.len(),
-        )?;
 
         let (phase2_keyword_ac, phase2_keyword_to_patterns, phase2_keywords) =
             build_phase2_keyword_ac(&state.phase2_patterns);
@@ -202,8 +186,8 @@ impl CompiledScanner {
         // seeds the sparse active set without scanning the full phase-2 table.
         let phase2_always_active_indices = phase2_always_active_indices(&state.phase2_patterns);
 
-        // Three independent Aho-Corasick indices over the (post-HS-append)
-        // compile state. They share no mutable state and each is a pure function
+        // Three independent Aho-Corasick indices over the canonical compile
+        // state. They share no mutable state and each is a pure function
         // of `state`, so they build concurrently on the rayon pool instead of
         // back-to-back (~82ms -> ~46ms serial->parallel on the full corpus):
         //   - phase2_anchor_index: shared-anchor localization over every phase-2
@@ -535,8 +519,6 @@ impl CompiledScanner {
             tuning: phase2::ScannerTuning::from_defaults(),
             #[cfg(feature = "simd")]
             simd_prefilter,
-            #[cfg(feature = "simd")]
-            hs_index_map,
             #[cfg(feature = "simdsieve")]
             hot_pattern_slots,
             config: ScannerConfig::default(),

@@ -95,6 +95,87 @@ fn detector_required_literals_own_base_and_homoglyph_routes() {
     );
 }
 
+#[cfg(feature = "simd")]
+#[test]
+fn hyperscan_unsupported_confirmed_route_recovers_from_its_literal_plan() {
+    let prefix = "~".repeat(520);
+    let credential = "RECOVER_A1b2C3d4E5f6G7h8I9j0";
+    let scanner = CompiledScanner::compile_with_gpu_policy(
+        vec![
+            DetectorSpec {
+                id: "simd-literal-recovery".into(),
+                name: "SIMD literal recovery".into(),
+                service: "test".into(),
+                severity: Severity::High,
+                patterns: vec![PatternSpec {
+                    regex: format!("{prefix}({credential})"),
+                    group: Some(1),
+                    required_literals: vec!["RECOVER_".into()],
+                    ..PatternSpec::default()
+                }],
+                ..DetectorSpec::default()
+            },
+            DetectorSpec {
+                id: "simd-supported-neighbor".into(),
+                name: "SIMD supported neighbor".into(),
+                service: "test".into(),
+                severity: Severity::High,
+                patterns: vec![PatternSpec {
+                    regex: r"!!!!([A-Z0-9]{16})".into(),
+                    group: Some(1),
+                    ..PatternSpec::default()
+                }],
+                ..DetectorSpec::default()
+            },
+        ],
+        keyhog_scanner::GpuInitPolicy::ForceDisabled,
+    )
+    .expect("compile overlong Hyperscan route");
+    assert!(
+        scanner
+            .simd_prefilter
+            .as_ref()
+            .is_some_and(|prefilter| prefilter.has_recovery()),
+        "an overlong Hyperscan regex must retain its canonical literal route"
+    );
+    assert!(
+        scanner.phase2_patterns.is_empty(),
+        "backend capability must not duplicate a confirmed detector into phase two"
+    );
+
+    let chunks = [Chunk {
+        data: format!("header\n{prefix}{credential}\nfooter").into(),
+        metadata: ChunkMetadata {
+            path: Some("simd-recovery.txt".into()),
+            ..ChunkMetadata::default()
+        },
+    }];
+    let cpu =
+        scanner.scan_coalesced_with_backend(&chunks, keyhog_scanner::ScanBackend::CpuFallback);
+    let simd = scanner.scan_coalesced_with_backend(&chunks, keyhog_scanner::ScanBackend::SimdCpu);
+    let canonical = |rows: Vec<Vec<keyhog_core::RawMatch>>| {
+        rows.into_iter()
+            .flatten()
+            .map(|finding| {
+                (
+                    finding.detector_id.to_string(),
+                    finding.credential.to_string(),
+                    finding.location.offset,
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        canonical(cpu),
+        [(
+            "simd-literal-recovery".into(),
+            credential.into(),
+            "header\n".len() + prefix.len(),
+        )]
+    );
+    assert_eq!(canonical(simd), canonical(scanner.scan_coalesced(&chunks)));
+}
+
 #[test]
 fn extract_literal_prefix_skips_escaped_markers() {
     assert_eq!(extract_literal_prefix(r"\ghp_token"), None);

@@ -12,7 +12,6 @@ fn hyperscan_compile_with_opts_delegates_compile_stages() {
     for required in [
         "const MAX_HS_PATTERN_LEN: usize = 500;",
         "const BASE_PATTERN_COST: u64 = 16;",
-        "const RETRY_THRESHOLD: usize = 100;",
         "const RETRY_DROP_DIVISOR: usize = 10;",
         "fn hs_partition_cost(",
         "fn counted_repeat_upper_bound(",
@@ -127,7 +126,7 @@ fn hyperscan_compile_with_opts_delegates_compile_stages() {
             && cached_body.contains("return Ok((db, dropped));")
             && cached_body.contains("Self::persist_cached_shard(&db, &dropped")
             && !cached_body.contains("return Ok((db, Vec::new()));"),
-        "Hyperscan shard cache hits must preserve compile-time dropped ids so warm-cache scans reroute unsupported patterns exactly like cold compiles"
+        "Hyperscan shard cache hits must preserve compile-time dropped ids so warm-cache scans recover unsupported patterns exactly like cold compiles"
     );
     assert!(
         source.contains("fn caller_pattern_indices_for_dropped(")
@@ -136,7 +135,7 @@ fn hyperscan_compile_with_opts_delegates_compile_stages() {
             && source.contains("map(|(input_idx, _, _, _)| *input_idx)")
             && source.contains("returned dropped pattern id")
             && source.contains("outside pattern map len"),
-        "Hyperscan compile retry/cache dropped ids must be translated from compact HS ids back to caller input pattern indices before rerouting"
+        "Hyperscan compile retry/cache dropped ids must be translated from compact HS ids back to caller input pattern indices before caller-owned recovery"
     );
 
     let partition_body = source

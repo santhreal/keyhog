@@ -6,8 +6,6 @@
 //! matcher artifacts without reimplementing scanner compile semantics.
 
 use super::{gpu_cache, phase2_anchor, phase2_generic, scan_postprocess};
-#[cfg(feature = "simd")]
-use crate::compiler::append_hyperscan_unsupported_patterns;
 use crate::compiler::{
     build_compile_state, build_gpu_literals, build_phase2_keyword_ac, phase2_always_active_indices,
     validate_compiled_pattern_detector_indices,
@@ -51,36 +49,35 @@ pub fn gpu_literal_artifact_cache_dir() -> Result<std::path::PathBuf> {
     gpu_cache::gpu_matcher_cache_dir().map_err(|error| ScanError::Gpu(error.to_string()))
 }
 
-/// Compile GPU literal artifacts using shipped-default scanner tuning.
+/// Compile GPU literal artifacts from the canonical detector plan.
 pub fn compile_gpu_literal_artifacts_default(
     detectors: &[DetectorSpec],
 ) -> Result<GpuLiteralArtifacts> {
-    compile_gpu_literal_artifacts(detectors, &ScannerTuningConfig::default())
+    compile_gpu_literal_artifact_plan(detectors)
 }
 
-/// Compile the exact VYRE literal artifacts for a detector set and tuning.
+/// Compatibility entry point for callers that supplied Hyperscan tuning.
+/// GPU literal artifacts now depend only on the canonical detector plan.
+pub fn compile_gpu_literal_artifacts(
+    detectors: &[DetectorSpec],
+    _tuning_config: &ScannerTuningConfig,
+) -> Result<GpuLiteralArtifacts> {
+    compile_gpu_literal_artifact_plan(detectors)
+}
+
+/// Compile the exact VYRE literal artifacts for a detector set.
 ///
 /// This does not probe hardware and does not initialize wgpu/CUDA. It does run
 /// the scanner compiler because literal rows depend on the same routing
-/// decisions the runtime scanner makes, including the Hyperscan-unsupported
-/// reroute into phase 2 when the `simd` feature is enabled.
-pub fn compile_gpu_literal_artifacts(
-    detectors: &[DetectorSpec],
-    tuning_config: &ScannerTuningConfig,
-) -> Result<GpuLiteralArtifacts> {
-    let mut state = build_compile_state(detectors)?;
+/// decisions the runtime scanner makes. Hyperscan capability does not alter the
+/// canonical GPU literal plan.
+fn compile_gpu_literal_artifact_plan(detectors: &[DetectorSpec]) -> Result<GpuLiteralArtifacts> {
+    let state = build_compile_state(detectors)?;
     validate_compiled_pattern_detector_indices(
         &state.ac_map,
         &state.phase2_patterns,
         detectors.len(),
     )?;
-    reroute_hyperscan_unsupported_patterns(&mut state, detectors, tuning_config);
-    validate_compiled_pattern_detector_indices(
-        &state.ac_map,
-        &state.phase2_patterns,
-        detectors.len(),
-    )?;
-
     let (_, _, phase2_keywords) = build_phase2_keyword_ac(&state.phase2_patterns);
     let phase2_always_active_indices = phase2_always_active_indices(&state.phase2_patterns);
     let phase2_anchor_index = phase2_anchor::Phase2AnchorIndex::build(
@@ -114,27 +111,6 @@ pub fn compile_gpu_literal_artifacts(
         )?,
         positioned_literal: None,
     })
-}
-
-#[cfg(feature = "simd")]
-fn reroute_hyperscan_unsupported_patterns(
-    state: &mut crate::compiler::compiler_build::CompileState,
-    detectors: &[DetectorSpec],
-    tuning_config: &ScannerTuningConfig,
-) {
-    if let Some((_scanner, _index_map, unsupported_ac)) =
-        super::build_simd_scanner(&state.ac_map, tuning_config)
-    {
-        append_hyperscan_unsupported_patterns(state, detectors, unsupported_ac);
-    }
-}
-
-#[cfg(not(feature = "simd"))]
-fn reroute_hyperscan_unsupported_patterns(
-    _state: &mut crate::compiler::compiler_build::CompileState,
-    _detectors: &[DetectorSpec],
-    _tuning_config: &ScannerTuningConfig,
-) {
 }
 
 fn serialize_literal_rows(

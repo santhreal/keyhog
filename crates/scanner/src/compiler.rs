@@ -6,8 +6,6 @@ pub(crate) mod compiler_build;
 pub(crate) mod compiler_compile;
 pub(crate) mod compiler_prefix;
 
-#[cfg(feature = "simd")]
-pub(crate) use compiler_build::append_hyperscan_unsupported_patterns;
 pub(crate) use compiler_build::phase2_always_active_indices;
 pub(crate) use compiler_build::{build_compile_state, validate_compiled_pattern_detector_indices};
 #[cfg(test)]

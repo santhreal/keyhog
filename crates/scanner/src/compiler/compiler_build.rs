@@ -68,19 +68,6 @@ pub(crate) fn phase2_always_active_indices(
         .collect()
 }
 
-#[cfg(feature = "simd")]
-pub(crate) fn append_hyperscan_unsupported_patterns(
-    state: &mut CompileState,
-    detectors: &[DetectorSpec],
-    unsupported_ac: impl IntoIterator<Item = usize>,
-) {
-    for ac_idx in unsupported_ac {
-        let pattern = state.ac_map[ac_idx].clone();
-        let keywords = detectors[pattern.detector_index].keywords.clone();
-        state.phase2_patterns.push((pattern, keywords));
-    }
-}
-
 /// The one routing decision produced for a compiled detector pattern.
 /// Detector-declared literals are authoritative; otherwise only a leading
 /// literal encoded directly in the regex can enter phase one.

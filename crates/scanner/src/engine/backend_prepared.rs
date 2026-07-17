@@ -63,18 +63,108 @@ pub(crate) fn code_lines_from_offsets<'a>(text: &'a str, line_offsets: &[usize])
 }
 
 #[cfg(feature = "simd")]
-/// Returns the Hyperscan scanner, the hs_id -> ac_map index map, and the
-/// list of ac_map indices whose regex Hyperscan could NOT compile
+struct SimdRecoveryPrefilter {
+    ac: aho_corasick::AhoCorasick,
+    ac_map_indices: Box<[usize]>,
+}
+
+#[cfg(feature = "simd")]
+pub(crate) struct SimdPhase1Prefilter {
+    scanner: crate::simd::backend::HsScanner,
+    index_map: super::CsrU32,
+    recovery: Option<SimdRecoveryPrefilter>,
+}
+
+#[cfg(feature = "simd")]
+impl SimdPhase1Prefilter {
+    pub(crate) fn new(
+        scanner: crate::simd::backend::HsScanner,
+        index_map: Vec<Vec<usize>>,
+        ac_literals: &[String],
+        unsupported_ac: &[usize],
+    ) -> crate::error::Result<Self> {
+        Ok(Self {
+            scanner,
+            index_map: super::CsrU32::from(index_map),
+            recovery: SimdRecoveryPrefilter::build(ac_literals, unsupported_ac)?,
+        })
+    }
+
+    pub(crate) fn scanner(&self) -> &crate::simd::backend::HsScanner {
+        &self.scanner
+    }
+
+    pub(crate) fn original_indices(&self, hs_id: usize) -> Option<&[u32]> {
+        let (_, dedup_id, _) = self.scanner.pattern_info(hs_id)?;
+        self.index_map.get(dedup_id)
+    }
+
+    pub(crate) fn for_each_recovery_match(&self, data: &[u8], visit: impl FnMut(usize)) {
+        if let Some(recovery) = &self.recovery {
+            recovery.for_each_match(data, visit);
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_recovery(&self) -> bool {
+        self.recovery.is_some()
+    }
+}
+
+#[cfg(feature = "simd")]
+impl SimdRecoveryPrefilter {
+    fn build(
+        ac_literals: &[String],
+        unsupported_ac: &[usize],
+    ) -> crate::error::Result<Option<Self>> {
+        if unsupported_ac.is_empty() {
+            return Ok(None);
+        }
+        let mut indices = unsupported_ac.to_vec();
+        indices.sort_unstable();
+        indices.dedup();
+        let mut literals = Vec::with_capacity(indices.len());
+        let mut mapped = Vec::with_capacity(indices.len());
+        for index in indices {
+            let literal = ac_literals.get(index).ok_or_else(|| {
+                crate::error::ScanError::Simd(format!(
+                    "Hyperscan returned unsupported AC index {index}, but the canonical literal plan has only {} row(s)",
+                    ac_literals.len()
+                ))
+            })?;
+            literals.push(literal.clone());
+            mapped.push(index);
+        }
+        let ac = crate::compiler::build_ac_pattern_set(&literals)?.ok_or_else(|| {
+            crate::error::ScanError::Simd(
+                "unsupported Hyperscan rows produced an empty recovery literal plan".into(),
+            )
+        })?;
+        Ok(Some(Self {
+            ac,
+            ac_map_indices: mapped.into_boxed_slice(),
+        }))
+    }
+
+    fn for_each_match(&self, data: &[u8], mut visit: impl FnMut(usize)) {
+        for matched in self.ac.find_overlapping_iter(data) {
+            let pattern = matched.pattern().as_usize();
+            visit(self.ac_map_indices[pattern]);
+        }
+    }
+}
+
+#[cfg(feature = "simd")]
+/// Builds the Hyperscan scanner, the hs_id -> ac_map index map, and the list
+/// of ac_map indices whose regex Hyperscan could not compile
 /// (over-long, or an unsupported construct like a large `{100,200}`
-/// bounded repeat). Those patterns produce zero HS matches, so the caller
-/// MUST route them into the backend-independent phase-2 keyword lane or they
-/// are silently dead in every HS-backed scan. Before this was returned,
-/// ~10 context-anchored detectors (line/paloalto/tower/keystonejs/...)
-/// never fired on their own positives. See contracts_runner.
+/// bounded repeat). The caller builds an exact literal recovery prefilter for
+/// those rows so they remain on the confirmed route. A whole-database compile
+/// failure leaves SIMD unavailable; inconsistent returned IDs are an error.
 pub(crate) fn build_simd_scanner(
     ac_map: &[CompiledPattern],
     tuning: &crate::scanner_config::ScannerTuningConfig,
-) -> Option<(crate::simd::backend::HsScanner, Vec<Vec<usize>>, Vec<usize>)> {
+) -> crate::error::Result<Option<(crate::simd::backend::HsScanner, Vec<Vec<usize>>, Vec<usize>)>> {
     use std::collections::HashMap;
 
     let mut regex_to_hs_id: HashMap<String, usize> = HashMap::new();
@@ -123,14 +213,14 @@ pub(crate) fn build_simd_scanner(
         Ok((scanner, unsupported)) => {
             // Map the unsupported hs_ids back to the ac_map indices that
             // share each dropped regex. These never match under HS, so the
-            // caller reroutes them to the phase-2 keyword lane.
+            // caller retains their canonical literal triggers separately.
             let mut unsupported_ac = Vec::new();
             for &hs_id in &unsupported {
                 let Some(indices) = index_map.get(hs_id) else {
-                    panic!(
-                        "compiled scanner invariant violation: HS compile returned unsupported pattern id outside the deduped AC table; hs_id={hs_id}; unique={}; refusing to disable the SIMD prefilter",
+                    return Err(crate::error::ScanError::Simd(format!(
+                        "Hyperscan returned unsupported pattern id {hs_id}, but the canonical SIMD plan has only {} unique row(s)",
                         hs_patterns.len()
-                    );
+                    )));
                 };
                 unsupported_ac.extend(indices.iter().copied());
             }
@@ -140,11 +230,11 @@ pub(crate) fn build_simd_scanner(
                 unsupported_ac = unsupported_ac.len(),
                 "HS ready"
             );
-            Some((scanner, index_map, unsupported_ac))
+            Ok(Some((scanner, index_map, unsupported_ac)))
         }
         Err(error) => {
             tracing::warn!("HS compilation failed: {error}");
-            None
+            Ok(None)
         }
     }
 }

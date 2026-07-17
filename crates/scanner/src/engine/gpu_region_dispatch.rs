@@ -486,7 +486,9 @@ impl CompiledScanner {
             let full_recall_floor = self.tuning.gpu_recall_floor_enabled();
             let cpu_triggers = if full_recall_floor {
                 match self.simd_prefilter.as_ref() {
-                    Some(scanner) => Some(self.compute_coalesced_triggers(chunks, scanner, None)),
+                    Some(prefilter) => {
+                        Some(self.compute_coalesced_triggers(chunks, prefilter, None))
+                    }
                     None => {
                         return dispatch_failure(
                             "gpu_recall_floor requested but no SIMD prefilter is live".to_string(),

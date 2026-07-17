@@ -408,11 +408,11 @@ impl HsScanner {
                 }
                 PrepResult::Unsupported { index } => unsupported.push(index),
                 PrepResult::Rejected { index, error } => {
-                    // LAW10: unsupported HS pattern id is returned to the caller and rerouted through the phase-2 keyword lane.
+                    // Unsupported IDs return to the caller for exact literal recovery.
                     tracing::debug!(
                         error,
                         pattern_index = index,
-                        "pattern rejected by hyperscan; caller reroutes it through keyword phase-2 path"
+                        "pattern rejected by hyperscan; caller retains its canonical literal route"
                     );
                     unsupported.push(index);
                 }
@@ -869,8 +869,8 @@ impl HsScanner {
     /// Build one shard's `BlockDatabase`, returning the database and the
     /// GLOBAL pattern ids it had to drop (over-long or an unsupported
     /// construct Hyperscan rejects only at build time). The dropped ids are
-    /// rerouted into the phase-2 keyword lane by the caller so the pattern is
-    /// never silently lost. Because sharding makes each shard far smaller
+    /// returned to the caller for literal recovery so the pattern is never
+    /// silently lost. Because sharding makes each shard far smaller
     /// than the old single combined database, the size-limit retry below
     /// almost never fires now - which strictly REDUCES the set of patterns
     /// dropped for "Pattern too large", improving recall, never hurting it.
@@ -883,7 +883,7 @@ impl HsScanner {
             match Builder::build::<BlockMode>(&patterns_obj) {
                 Ok(db) => break db,
                 Err(_) if patterns_obj.0.len() > 1 => {
-                    // Law 10: compile retry records dropped ids and caller reroutes them to the phase-2 keyword lane.
+                    // Compile retry records dropped IDs for caller-owned literal recovery.
                     // Reclaim ownership for the next attempt.
                     attempts = patterns_obj.0;
                     // Remove the longest/most expensive expressions first.
@@ -894,7 +894,7 @@ impl HsScanner {
                     let remove_count = (attempts.len() / RETRY_DROP_DIVISOR).max(1);
                     for _ in 0..remove_count {
                         if let Some(removed) = attempts.pop() {
-                            dropped.push(removed.id.unwrap_or(0)); // LAW10: ids are assigned above; fallback id is unreachable and only affects the returned reroute list.
+                            dropped.push(removed.id.unwrap_or(0)); // LAW10: ids are assigned above; fallback id is unreachable and only affects the returned dropped-ID list.
                         }
                     }
                     attempts.sort_by_key(|p| p.id.unwrap_or(0)); // LAW10: ids are assigned above; fallback id is unreachable and preserves deterministic retry order.
