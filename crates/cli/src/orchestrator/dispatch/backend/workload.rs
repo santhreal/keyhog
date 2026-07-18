@@ -17,7 +17,7 @@ const MAX_SOURCE_MIXTURE_ENTRIES: usize = 64;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct SourceRouteClass {
-    family_digest: [u8; 32],
+    source_class_digest: [u8; 32],
     has_full_size: bool,
 }
 
@@ -88,7 +88,7 @@ pub(super) struct SourceMixtureKey {
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct SourceMixtureEntry {
-    pub(super) family_digest: [u8; 32],
+    pub(super) source_class_digest: [u8; 32],
     pub(super) has_full_size: bool,
     pub(super) chunk_ratio: u64,
     pub(super) payload_ratio: u64,
@@ -133,7 +133,7 @@ pub(super) fn render_workload_key(key: &WorkloadKey) -> String {
         .map(|entry| {
             format!(
                 "{}/{}/chunk_ratio={}/payload_ratio={}/max_span_log2={}",
-                keyhog_core::hex_encode(&entry.family_digest),
+                keyhog_core::hex_encode(&entry.source_class_digest),
                 if entry.has_full_size {
                     "full"
                 } else {
@@ -173,7 +173,7 @@ pub(super) fn render_workload_key(key: &WorkloadKey) -> String {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum WorkloadClassificationError {
-    MissingSourceFamily {
+    MissingSourceClass {
         source_type: String,
         path: Option<String>,
     },
@@ -186,13 +186,13 @@ pub(super) enum WorkloadClassificationError {
     },
     EmptySourceMixture,
     EmptySourcePayload,
-    SourceFamilyIdentityCollision,
+    SourceClassIdentityCollision,
     SourceMixtureAccountingOverflow,
 }
 
 impl WorkloadClassificationError {
-    fn missing_source_family(chunk: &Chunk) -> Self {
-        Self::MissingSourceFamily {
+    fn missing_source_class(chunk: &Chunk) -> Self {
+        Self::MissingSourceClass {
             source_type: chunk.metadata.source_type.to_string(),
             path: chunk.metadata.path.as_deref().map(|s| s.to_string()),
         }
@@ -202,19 +202,19 @@ impl WorkloadClassificationError {
 impl fmt::Display for WorkloadClassificationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::MissingSourceFamily {
+            Self::MissingSourceClass {
                 source_type,
                 path: Some(path),
             } => write!(
                 f,
-                "chunk at {path} has invalid source_type {source_type:?}; every autorouted chunk must carry a non-empty source family"
+                "chunk at {path} has invalid source_type {source_type:?}; every autorouted chunk must carry a non-empty source execution class"
             ),
-            Self::MissingSourceFamily {
+            Self::MissingSourceClass {
                 source_type,
                 path: None,
             } => write!(
                 f,
-                "chunk has invalid source_type {source_type:?}; every autorouted chunk must carry a non-empty source family"
+                "chunk has invalid source_type {source_type:?}; every autorouted chunk must carry a non-empty source execution class"
             ),
             Self::DecodeSketchSampleBudgetExceeded {
                 minimum_sample_bytes,
@@ -226,7 +226,7 @@ impl fmt::Display for WorkloadClassificationError {
             ),
             Self::TooManySourceMixtureEntries { entries } => write!(
                 f,
-                "autoroute source mixture has {entries} distinct family/provenance entries, above the bounded limit of {MAX_SOURCE_MIXTURE_ENTRIES}; lower --fused-batch or choose an explicit backend and calibrate a smaller workload"
+                "autoroute source mixture has {entries} distinct class/provenance entries, above the bounded limit of {MAX_SOURCE_MIXTURE_ENTRIES}; lower --fused-batch or choose an explicit backend and calibrate a smaller workload"
             ),
             Self::EmptySourceMixture => write!(
                 f,
@@ -236,9 +236,9 @@ impl fmt::Display for WorkloadClassificationError {
                 f,
                 "autoroute source mixture contains no payload bytes; route a non-empty payload or choose an explicit backend for diagnostics"
             ),
-            Self::SourceFamilyIdentityCollision => write!(
+            Self::SourceClassIdentityCollision => write!(
                 f,
-                "autoroute source-family identities collided after hashing; no routing decision can be trusted for this batch"
+                "autoroute source-class identities collided after hashing; no routing decision can be trusted for this batch"
             ),
             Self::SourceMixtureAccountingOverflow => write!(
                 f,
@@ -435,15 +435,15 @@ pub(super) fn source_mixture_key(
     }
     // `size_bytes` is the original backing-source size; its absence means the
     // max-size bucket was derived from a stream or transformed payload. Bind
-    // that provenance to each source family so numerically equal buckets do
+    // that provenance to each source class so numerically equal buckets do
     // not reuse measurements made for a different kind of workload evidence.
     let mut classes: BTreeMap<(String, bool), (u64, u64, u64)> = BTreeMap::new();
     for chunk in batch {
-        let family = source_family(chunk)?.to_string();
+        let source_class = source_execution_class(chunk)?.to_string();
         let has_full_size = chunk.metadata.size_bytes.is_some();
         let payload_bytes = chunk.data.len() as u64;
         let span = chunk.metadata.size_bytes.unwrap_or(payload_bytes); // LAW10: absent backing size means the payload is the exact transformed or streamed span
-        let entry = classes.entry((family, has_full_size)).or_default();
+        let entry = classes.entry((source_class, has_full_size)).or_default();
         entry.0 = entry
             .0
             .checked_add(1)
@@ -475,35 +475,37 @@ pub(super) fn source_mixture_key(
     let mut entries = classes
         .into_iter()
         .map(
-            |((family, has_full_size), (chunks, payload_bytes, max_span))| SourceMixtureEntry {
-                family_digest: source_family_id(&family),
-                has_full_size,
-                chunk_ratio: chunks / chunk_divisor,
-                payload_ratio: payload_bytes / payload_divisor,
-                max_span_bucket: autoroute_stable_bucket(max_span),
+            |((source_class, has_full_size), (chunks, payload_bytes, max_span))| {
+                SourceMixtureEntry {
+                    source_class_digest: source_class_id(&source_class),
+                    has_full_size,
+                    chunk_ratio: chunks / chunk_divisor,
+                    payload_ratio: payload_bytes / payload_divisor,
+                    max_span_bucket: autoroute_stable_bucket(max_span),
+                }
             },
         )
         .collect::<Vec<_>>();
     entries.sort_unstable();
     if entries.windows(2).any(|pair| {
-        pair[0].family_digest == pair[1].family_digest
+        pair[0].source_class_digest == pair[1].source_class_digest
             && pair[0].has_full_size == pair[1].has_full_size
     }) {
-        return Err(WorkloadClassificationError::SourceFamilyIdentityCollision);
+        return Err(WorkloadClassificationError::SourceClassIdentityCollision);
     }
     Ok(SourceMixtureKey { entries })
 }
 
 pub(crate) fn source_route_class(chunk: &Chunk) -> Option<SourceRouteClass> {
     Some(SourceRouteClass {
-        family_digest: source_family_id(source_family(chunk).ok()?), // LAW10: optional pre-batch split probe; authoritative workload classification returns the source error
+        source_class_digest: source_class_id(source_execution_class(chunk).ok()?), // LAW10: optional pre-batch split probe; authoritative workload classification returns the source error
         has_full_size: chunk.metadata.size_bytes.is_some(),
     })
 }
 
-pub(super) fn source_family_id(family: &str) -> [u8; 32] {
-    let mut hasher = crate::stable_hash::StableHasher::new("autoroute-source-family-v1");
-    hasher.field_str("family", family);
+pub(super) fn source_class_id(source_class: &str) -> [u8; 32] {
+    let mut hasher = crate::stable_hash::StableHasher::new("autoroute-source-class-v1");
+    hasher.field_str("source_class", source_class);
     hasher.finish_256()
 }
 
@@ -552,7 +554,10 @@ pub(super) fn workload_evidence_digest(key: &WorkloadKey) -> [u8; 32] {
     for (index, entry) in key.source_mixture.entries.iter().enumerate() {
         hasher
             .field_usize("source_mixture.index", index)
-            .field_bytes("source_mixture.family_digest", &entry.family_digest)
+            .field_bytes(
+                "source_mixture.source_class_digest",
+                &entry.source_class_digest,
+            )
             .field_bool("source_mixture.has_full_size", entry.has_full_size)
             .field_u64("source_mixture.chunk_ratio", entry.chunk_ratio)
             .field_u64("source_mixture.payload_ratio", entry.payload_ratio)
@@ -573,7 +578,7 @@ pub(super) fn validate_source_mixture_key(key: &SourceMixtureKey) -> Result<(), 
     }
     let mut previous: Option<([u8; 32], bool)> = None;
     for entry in &key.entries {
-        let identity = (entry.family_digest, entry.has_full_size);
+        let identity = (entry.source_class_digest, entry.has_full_size);
         if previous.is_some_and(|prior| prior >= identity) {
             return Err(
                 "source mixture entries are duplicate or not canonically sorted".to_string(),
@@ -584,7 +589,7 @@ pub(super) fn validate_source_mixture_key(key: &SourceMixtureKey) -> Result<(), 
         {
             return Err(format!(
                 "source mixture entry {} has an inconsistent chunk ratio, payload ratio, or span",
-                keyhog_core::hex_encode(&entry.family_digest)
+                keyhog_core::hex_encode(&entry.source_class_digest)
             ));
         }
         previous = Some(identity);
@@ -648,15 +653,17 @@ fn greatest_common_divisor(mut left: u64, mut right: u64) -> u64 {
     left
 }
 
-fn source_family(chunk: &Chunk) -> Result<&str, WorkloadClassificationError> {
-    chunk
-        .metadata
-        .source_type
-        .trim()
-        .split([':', '/'])
-        .next()
-        .filter(|family| !family.is_empty())
-        .ok_or_else(|| WorkloadClassificationError::missing_source_family(chunk))
+fn source_execution_class(chunk: &Chunk) -> Result<&str, WorkloadClassificationError> {
+    let source_type = chunk.metadata.source_type.trim();
+    if source_type.is_empty() {
+        return Err(WorkloadClassificationError::missing_source_class(chunk));
+    }
+    for dynamic_section_prefix in ["binary:elf:", "binary:pe:", "binary:macho:"] {
+        if source_type.starts_with(dynamic_section_prefix) {
+            return Ok(&source_type[..dynamic_section_prefix.len() - 1]);
+        }
+    }
+    Ok(source_type)
 }
 
 pub(super) fn log2_bucket(value: u64) -> u8 {

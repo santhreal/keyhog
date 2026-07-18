@@ -31,8 +31,8 @@ backend-dispatch boundary. Hyperscan uses its coalesced multi-chunk path. Scalar
 CPU and GPU use their normal batch paths. A timing row therefore measures the
 implementation that the persisted route authorizes.
 
-The workload key preserves the canonical source mixture, not only the set of
-source families. Each sorted, raw-family-free BLAKE3 identity and size-provenance
+The workload key preserves the canonical source execution mixture, not only the
+top-level source families. Each sorted, raw-label-free BLAKE3 identity and size-provenance
 entry records exact reduced chunk and payload proportions plus the maximum
 source-span band. Reordering chunks keeps the same complete workload key.
 Scaling every class equally keeps only the source-mixture component stable;
@@ -44,11 +44,13 @@ Each persisted decision also carries a digest of the complete workload key.
 Changing or relabeling any keyed field invalidates the row before routing.
 
 Filesystem producers keep each path's chunks contiguous. KeyHog uses that
-contract to end a batch when the source family or full-size provenance changes,
-unless the next chunk belongs to the same path dependency. Ordinary files and
-extracted archive members therefore use independently measured homogeneous
-routes. Sources without a contiguous-path contract retain their exact mixed
-key instead of being split on an unsafe assumption.
+contract to end a batch when the source execution class or full-size provenance
+changes, unless the next chunk belongs to the same path dependency. Ordinary,
+windowed, PDF, archive, web-script, source-map, and other preprocessing classes
+therefore use independently measured homogeneous routes. Dynamic ELF, PE, and
+Mach-O section names collapse to their binary-format class because the label
+does not change execution. Sources without a contiguous-path contract retain
+their exact mixed key instead of being split on an unsafe assumption.
 
 Git diff producers make the same ordering guarantee. Tracked diff hunks and
 full-size untracked files therefore calibrate as separate route classes during

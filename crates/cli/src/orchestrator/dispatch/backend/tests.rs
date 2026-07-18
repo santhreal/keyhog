@@ -11,8 +11,8 @@ use super::store::{
 use super::workload::{
     autoroute_stable_bucket, autoroute_stable_decode_bucket, decode_workload_projection,
     decode_workload_sketch as decode_workload_sketch_with_plan, planned_decode_sample_bytes,
-    planned_decode_sample_quotas, source_family_id, source_mixture_key,
-    validate_source_mixture_key, validate_workload_source_mixture, workload_evidence_digest,
+    planned_decode_sample_quotas, source_class_id, source_mixture_key, validate_source_mixture_key,
+    validate_workload_source_mixture, workload_evidence_digest,
     workload_key as workload_key_with_plan, Phase1AdmissionKey, SourceMixtureEntry,
     SourceMixtureKey, WorkloadKey,
 };
@@ -383,10 +383,10 @@ fn test_workload_key() -> WorkloadKey {
     }
 }
 
-fn test_source_mixture(family: &str) -> SourceMixtureKey {
+fn test_source_mixture(source_class: &str) -> SourceMixtureKey {
     SourceMixtureKey {
         entries: vec![SourceMixtureEntry {
-            family_digest: source_family_id(family),
+            source_class_digest: source_class_id(source_class),
             has_full_size: true,
             chunk_ratio: 1,
             payload_ratio: 1,
@@ -1282,31 +1282,61 @@ fn calibration_tree_representatives_cover_default_fused_residual_chunk_keys() {
 }
 
 #[test]
-fn source_mixture_uses_stable_top_level_source_family() {
+fn source_mixture_distinguishes_execution_subtypes_without_section_name_explosion() {
     let plain = source_mixture_key(&[
         test_chunk_with_source("a".repeat(64), "filesystem"),
         test_chunk_with_source("a".repeat(64), "filesystem"),
     ])
     .expect("filesystem source mixture classifies");
-    let mixed_filesystem = source_mixture_key(&[
+    let windowed = source_mixture_key(&[
         test_chunk_with_source("a".repeat(64), "filesystem/windowed"),
-        test_chunk_with_source("a".repeat(64), "filesystem/archive"),
+        test_chunk_with_source("a".repeat(64), "filesystem/windowed"),
     ])
-    .expect("filesystem subtype source mixture classifies");
+    .expect("windowed filesystem source mixture classifies");
+    let pdf = source_mixture_key(&[
+        test_chunk_with_source("a".repeat(64), "filesystem/pdf"),
+        test_chunk_with_source("a".repeat(64), "filesystem/pdf"),
+    ])
+    .expect("PDF filesystem source mixture classifies");
     let docker = source_mixture_key(&[
         test_chunk_with_source("a".repeat(64), "docker"),
         test_chunk_with_source("a".repeat(64), "docker"),
     ])
     .expect("docker source mixture classifies");
 
-    assert_eq!(
-        plain, mixed_filesystem,
-        "filesystem subtype mixtures depend on parallel batch grouping and must route as one family"
+    assert_ne!(
+        plain, windowed,
+        "windowed extraction has a distinct execution shape from ordinary filesystem input"
     );
     assert_ne!(
-        plain, docker,
-        "different top-level source families still need separate autoroute cache keys"
+        windowed, pdf,
+        "windowed and PDF extraction must not reuse one another's route evidence"
     );
+    assert_ne!(plain, docker);
+
+    let web_js = source_mixture_key(&[test_chunk_with_source("a".repeat(64), "web:js")])
+        .expect("web JavaScript classifies");
+    let web_sourcemap =
+        source_mixture_key(&[test_chunk_with_source("a".repeat(64), "web:sourcemap")])
+            .expect("web source map classifies");
+    assert_ne!(
+        web_js, web_sourcemap,
+        "colon-delimited web preprocessing classes must retain distinct route evidence"
+    );
+
+    let elf_text =
+        source_mixture_key(&[test_chunk_with_source("a".repeat(64), "binary:elf:.text")])
+            .expect("ELF text section classifies");
+    let elf_rodata =
+        source_mixture_key(&[test_chunk_with_source("a".repeat(64), "binary:elf:.rodata")])
+            .expect("ELF rodata section classifies");
+    let pe_text = source_mixture_key(&[test_chunk_with_source("a".repeat(64), "binary:pe:.text")])
+        .expect("PE text section classifies");
+    assert_eq!(
+        elf_text, elf_rodata,
+        "section names do not change the binary extraction execution shape"
+    );
+    assert_ne!(elf_text, pe_text, "binary formats remain distinct classes");
 }
 
 #[test]
@@ -1328,7 +1358,7 @@ fn workload_key_separates_full_source_size_from_payload_size_fallback() {
 }
 
 #[test]
-fn source_mixture_associates_size_provenance_with_each_source_family() {
+fn source_mixture_associates_size_provenance_with_each_source_class() {
     let mut filesystem = test_chunk_with_source("a".repeat(64), "filesystem/windowed");
     let mut web = test_chunk_with_source("b".repeat(64), "web:js");
     filesystem.metadata.size_bytes = None;
@@ -1342,7 +1372,7 @@ fn source_mixture_associates_size_provenance_with_each_source_family() {
 
     assert_ne!(
         filesystem_payload, web_payload,
-        "equal source sets with different per-family size provenance need distinct calibration keys"
+        "equal source sets with different per-class size provenance need distinct calibration keys"
     );
 }
 
@@ -1549,7 +1579,7 @@ fn exact_source_mixtures_survive_cache_replay_and_inspection() {
         assert!(row
             .source_mixture
             .iter()
-            .all(|entry| entry.family_digest.len() == 64));
+            .all(|entry| entry.source_class_digest.len() == 64));
         assert!(row
             .source_mixture
             .iter()
@@ -1560,7 +1590,7 @@ fn exact_source_mixtures_survive_cache_replay_and_inspection() {
         .as_array()
         .expect("JSON inspection exposes source-mixture entries");
     assert_eq!(json_entries.len(), 2);
-    assert!(json_entries[0]["family_digest"]
+    assert!(json_entries[0]["source_class_digest"]
         .as_str()
         .is_some_and(|digest| {
             digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
@@ -1729,7 +1759,7 @@ fn workload_key_rejects_missing_source_class_evidence() {
         .expect_err("autoroute must not hash missing source class as a reusable bucket");
     let text = err.to_string();
     assert!(
-        text.contains("source_type") && text.contains("non-empty source family"),
+        text.contains("source_type") && text.contains("non-empty source execution class"),
         "missing source-class metadata must be an explicit autoroute evidence error, got: {text}"
     );
 }

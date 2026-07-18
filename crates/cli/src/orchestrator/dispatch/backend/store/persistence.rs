@@ -265,7 +265,7 @@ mod tests {
     use crate::orchestrator::dispatch::backend::host::{host_identity_digest, render_host_profile};
     use crate::orchestrator::dispatch::backend::store::inspection::inspect_autoroute_cache;
     use crate::orchestrator::dispatch::backend::workload::{
-        autoroute_stable_bucket, source_family_id, Phase1AdmissionKey, SourceMixtureEntry,
+        autoroute_stable_bucket, source_class_id, Phase1AdmissionKey, SourceMixtureEntry,
         SourceMixtureKey,
     };
     use keyhog_scanner::ScanBackend;
@@ -334,7 +334,7 @@ mod tests {
             decode_unknown: false,
             source_mixture: SourceMixtureKey {
                 entries: vec![SourceMixtureEntry {
-                    family_digest: source_family_id("filesystem"),
+                    source_class_digest: source_class_id("filesystem"),
                     has_full_size: true,
                     chunk_ratio: 1,
                     payload_ratio: 1,

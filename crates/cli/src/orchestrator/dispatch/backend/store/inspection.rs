@@ -218,7 +218,7 @@ pub(crate) struct AutorouteRouteTimingInspection {
 
 #[derive(Debug, Serialize)]
 pub(crate) struct AutorouteSourceMixtureInspection {
-    pub(crate) family_digest: String,
+    pub(crate) source_class_digest: String,
     pub(crate) has_full_size: bool,
     pub(crate) chunk_ratio: u64,
     pub(crate) payload_ratio: u64,
@@ -587,7 +587,7 @@ fn inspect_autoroute_cache_for_build(
                     .entries
                     .iter()
                     .map(|entry| AutorouteSourceMixtureInspection {
-                        family_digest: keyhog_core::hex_encode(&entry.family_digest),
+                        source_class_digest: keyhog_core::hex_encode(&entry.source_class_digest),
                         has_full_size: entry.has_full_size,
                         chunk_ratio: entry.chunk_ratio,
                         payload_ratio: entry.payload_ratio,

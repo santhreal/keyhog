@@ -13,6 +13,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   scalar, Hyperscan, CUDA, and WGPU routes; SIMD warm evidence is no longer
   misreported as an ordinary rounded median. Recovery warnings now have one
   canonical operator rendering instead of a duplicate tracing WARN.
+- Autoroute cache schema 43 keys routes by the complete canonical source
+  execution class. Web JavaScript, source maps, windowed files, PDFs, archives,
+  and other preprocessing shapes no longer alias under a truncated top-level
+  family; dynamic binary section names collapse to their stable format class.
 
 ## [0.5.41] - 2026-07-18
 

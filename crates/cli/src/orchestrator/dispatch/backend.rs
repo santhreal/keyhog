@@ -24,7 +24,7 @@
 //!   ├─ evidence ───── decision policy
 //!   │    ├─ timing ─────── measured trials and confidence intervals
 //!   │    └─ match_identity ─ secret-safe semantic parity proof
-//!   ├─ store ──────── cache facade (schema v34)
+//!   ├─ store ──────── cache facade (schema v43)
 //!   │    ├─ schema / artifact_identity / build_identity
 //!   │    └─ codec / validation / persistence / inspection
 //!   ├─ host ───────── host identity captured in each calibration record
@@ -72,6 +72,9 @@ use std::sync::{Arc, Mutex};
 /// a shared cache's older generation from proving this host's calibration.
 pub(crate) type AutorouteMeasurementObserver = Arc<Mutex<BTreeSet<(String, String, String)>>>;
 
+// v43: source identity retains the canonical execution subtype instead of
+// truncating at the first ':' or '/'. Dynamic binary section names collapse to
+// their format class so route identity changes with preprocessing, not labels.
 // v42: calibration trials are interleaved across peers and resolve only when
 // one route's 95% confidence interval is wholly faster than every peer backend.
 // Older sequential-trial rows could encode host drift as backend performance.
@@ -119,7 +122,7 @@ pub(crate) type AutorouteMeasurementObserver = Arc<Mutex<BTreeSet<(String, Strin
 // the top, per-resolved-config routing decisions under `configs` keyed by
 // config_digest, merge-on-save. Old single-config (v19 and earlier) caches are
 // rejected on the version gate and recalibrated.
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 42;
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 43;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_ACCELERATOR_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 
