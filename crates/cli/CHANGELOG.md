@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Report automatic backend recovery as `complete_after_recovery` in JSON schema
+  1.6 and JSONL schema 1.7, preserve the
+  exact recovered ranges and byte totals across daemon responses, expose daemon
+  recovery health, and quarantine the affected autoroute workload identity
+  instead of silently selecting another backend on later requests.
 - Measure every plain-pattern and keyword-anchor localization combination for
   every eligible backend, persist the fastest correct execution plan in cache
   schema 39, and carry both choices beside admission evidence through one-shot,

@@ -302,6 +302,7 @@ impl ScanOrchestrator {
                             phase1_plan: (!backend.is_gpu())
                                 .then(|| scanner_ref.phase1_admission_plan(&batch)),
                             execution_route: scanner_ref.default_execution_route(),
+                            runtime_route: None,
                         })
                     }
                     ActiveBackendRouter::Measured(router) => {

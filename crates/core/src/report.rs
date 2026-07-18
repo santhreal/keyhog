@@ -48,6 +48,9 @@ pub use anyhow::Error as ReportError;
 pub enum ScanCompletionStatus {
     /// The requested input completed without coverage gaps.
     Success,
+    /// Every requested byte completed, with one or more backend ranges replayed
+    /// after a visible recoverable runtime fault.
+    CompleteAfterRecovery,
     /// The artifact completed, but one or more requested inputs were not fully scanned.
     Partial,
     /// The operator or host interrupted the scan before completion.
@@ -84,6 +87,8 @@ impl ScanCompletionStatus {
             Some(Self::Cancelled) => Self::Cancelled,
             Some(Self::Failed) => Self::Failed,
             Some(Self::Partial) => Self::Partial,
+            Some(Self::CompleteAfterRecovery) if has_gaps => Self::Partial,
+            Some(Self::CompleteAfterRecovery) => Self::CompleteAfterRecovery,
             Some(Self::Success) if has_gaps => Self::Partial,
             Some(status) => status,
             None => Self::from_coverage_gaps(has_gaps),
@@ -165,9 +170,9 @@ pub struct ScanReportMetadata {
 /// Current major version for the versioned JSON report envelope.
 pub const JSON_REPORT_SCHEMA_MAJOR: u16 = 1;
 /// Current minor version for the versioned JSON report envelope.
-pub const JSON_REPORT_SCHEMA_MINOR: u16 = 5;
+pub const JSON_REPORT_SCHEMA_MINOR: u16 = 6;
 /// Current minor version for the versioned JSONL stream contract.
-pub const JSONL_REPORT_SCHEMA_MINOR: u16 = 6;
+pub const JSONL_REPORT_SCHEMA_MINOR: u16 = 7;
 
 /// Version marker carried by every versioned JSON report.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

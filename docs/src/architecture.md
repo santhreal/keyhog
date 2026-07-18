@@ -192,10 +192,10 @@ KeyHog separates trust failures from recoverable execution failures:
 
 - **Complete:** the selected backend covered the input normally.
 - **Complete after recovery:** an automatically selected accelerator failed,
-  KeyHog warned visibly, replayed the same stable batch through the scalar
-  reference path, and counted the recovered chunks and bytes. The result is
-  complete, but the backend fault remains visible and invalidates confidence in
-  that accelerator's runtime health.
+  KeyHog warned visibly, retained completed dispatches, scanned only the exact
+  unprocessed ranges through the scalar recovery path, and counted the recovered
+  ranges, chunks, and bytes. The result is complete, but the affected autoroute
+  workload identity is quarantined until recalibration.
 - **Incomplete:** some requested bytes or transformation could not be recovered.
   The scan may report findings from covered input, but it cannot report clean.
 - **Fatal trust or explicit-contract failure:** invalid policy, corrupt or
@@ -203,9 +203,10 @@ KeyHog separates trust failures from recoverable execution failures:
   substituted.
 
 Recovery is an owned execution path, not a silent fallback. It must operate on
-the same stable source snapshot, preserve finding parity, identify exactly how
-much work was replayed, and remain absent during autoroute calibration so a
-backend that needs recovery cannot be certified fastest-correct.
+the same stable source snapshot, preserve finding parity, merge results
+deterministically, identify every replayed interval, and remain absent during
+autoroute calibration so a backend that needs recovery cannot be certified
+fastest-correct.
 
 ### Finding identity and dedup
 

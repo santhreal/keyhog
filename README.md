@@ -111,6 +111,13 @@ run `keyhog calibrate-autoroute`; inspect evidence with
 benchmark overrides, not autoroute proof. Single-backend portable builds do
 not need a routing cache.
 
+If an automatically selected GPU faults after dispatch, KeyHog warns, retains
+completed shards, scans only exact unprocessed ranges from the stable input,
+and reports `complete_after_recovery`. The affected workload route is
+quarantined for the rest of that process; recalibrate before restarting so the
+stale persisted decision is not retried. Explicit or required backends remain
+hard contracts and are never substituted.
+
 The complete parity contract, workload identity, GPU/Hyperscan behavior, daemon
 semantics, cache lifecycle, and troubleshooting matrix live in the
 [autoroute reference](docs/src/reference/autoroute-calibration.md).

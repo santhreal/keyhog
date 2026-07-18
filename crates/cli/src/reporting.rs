@@ -124,9 +124,14 @@ pub(crate) fn report_metadata_from_scan_run(
     metadata.detector_count = detector_count;
     let scanner = crate::orchestrator_config::build_scanner_config(args);
     metadata.resolved_scan = Some(resolved_scan_manifest(args, &scanner));
-    metadata.scan_status = ScanCompletionStatus::from_coverage_gaps(
-        !coverage_gap_summary(&CoverageCounts::current()).is_empty(),
-    );
+    let has_coverage_gaps = !coverage_gap_summary(&CoverageCounts::current()).is_empty();
+    metadata.scan_status = if has_coverage_gaps {
+        ScanCompletionStatus::Partial
+    } else if crate::BACKEND_RECOVERY_EVENTS.load(std::sync::atomic::Ordering::Relaxed) > 0 {
+        ScanCompletionStatus::CompleteAfterRecovery
+    } else {
+        ScanCompletionStatus::Success
+    };
     metadata.scan_id = scan_report_id(&metadata);
     metadata
 }

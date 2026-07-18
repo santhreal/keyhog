@@ -2,7 +2,10 @@
 //! and serves scan requests over a Unix socket.
 
 use crate::daemon::frame;
-use crate::daemon::protocol::{Request, Response, SourceCoverageGaps, WIRE_VERSION};
+use crate::daemon::protocol::{
+    BackendRecoveryStatus, RecoveredInputRangeStatus, Request, Response, SourceCoverageGaps,
+    WIRE_VERSION,
+};
 use crate::daemon::trust;
 use crate::style;
 use anyhow::{Context, Result};
@@ -118,6 +121,8 @@ struct ServerState {
     detector_rules_digest: String,
     request_read_timeout: Duration,
     backend_override: Option<ScanBackend>,
+    backend_recoveries: AtomicU64,
+    last_backend_fault: std::sync::Mutex<Option<BackendRecoveryStatus>>,
     // Fragment reassembly is scanner-owned mutable state. Until it becomes an
     // explicit per-scan context, serialize clear/scan/clear so independent
     // clients can never combine secret fragments across requests.
@@ -158,6 +163,8 @@ impl ServerState {
             detector_rules_digest,
             request_read_timeout: options.request_read_timeout,
             backend_override,
+            backend_recoveries: AtomicU64::new(0),
+            last_backend_fault: std::sync::Mutex::new(None),
             fragment_scan_lock: Arc::new(std::sync::Mutex::new(())),
             connection_limit: Arc::new(Semaphore::new(max_conns)),
         }
@@ -171,6 +178,16 @@ impl ServerState {
         self.backend_override
             .map(ScanBackend::label)
             .unwrap_or("autoroute") // LAW10: None is the explicit persisted-autoroute policy label, not a backend substitution
+    }
+
+    fn record_backend_recovery(&self, recovery: BackendRecoveryStatus) -> Result<()> {
+        *self
+            .last_backend_fault
+            .lock()
+            .map_err(|_| anyhow::anyhow!("daemon backend-recovery health lock is poisoned"))? =
+            Some(recovery);
+        self.backend_recoveries.fetch_add(1, Ordering::Relaxed);
+        Ok(())
     }
 }
 
@@ -480,11 +497,19 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             detector_count: state.detector_count,
             uptime_secs: state.uptime_secs(),
         },
-        Request::Health => Response::Health {
-            uptime_secs: state.uptime_secs(),
-            scans_served: state.scans_served.load(Ordering::Relaxed),
-            active_scans: state.active_scans.load(Ordering::Relaxed),
-            detector_count: state.detector_count,
+        Request::Health => match state.last_backend_fault.lock() {
+            Ok(last_backend_fault) => Response::Health {
+                uptime_secs: state.uptime_secs(),
+                scans_served: state.scans_served.load(Ordering::Relaxed),
+                active_scans: state.active_scans.load(Ordering::Relaxed),
+                detector_count: state.detector_count,
+                backend_recoveries: state.backend_recoveries.load(Ordering::Relaxed),
+                last_backend_fault: last_backend_fault.clone(),
+            },
+            Err(_) => Response::Error {
+                message: "daemon: backend-recovery health lock is poisoned; restart the daemon"
+                    .to_string(),
+            },
         },
         Request::ScanText {
             path,
@@ -526,9 +551,9 @@ async fn scan_text(
     // large scan would stall the tokio reactor and block every
     // other connection's framing reads.
     let res = tokio::task::spawn_blocking(move || -> Result<_> {
-        let matches = keyhog_scanner::telemetry::with_scan_telemetry(
+        let (matches, backend_recovery) = keyhog_scanner::telemetry::with_scan_telemetry(
             &telemetry,
-            || -> Result<Vec<RawMatch>> {
+            || -> Result<(Vec<RawMatch>, Option<BackendRecoveryStatus>)> {
                 let _fragment_guard = fragment_scan_lock
                     .lock()
                     .map_err(|_| anyhow::anyhow!("daemon fragment scan lock is poisoned"))?;
@@ -561,20 +586,45 @@ async fn scan_text(
                         selection.backend.label()
                     )
                 })?;
+                if let Some(recovery) = outcome.recovery.as_ref() {
+                    router.quarantine_recovered_route(&selection, recovery)?;
+                }
+                let backend_recovery = outcome
+                    .recovery
+                    .as_ref()
+                    .map(backend_recovery_status_from_receipt);
                 scanner.clear_fragment_cache();
-                Ok(outcome.per_chunk.into_iter().flatten().collect())
+                Ok((
+                    outcome.per_chunk.into_iter().flatten().collect(),
+                    backend_recovery,
+                ))
             },
         )?;
         let telemetry = telemetry.drain();
-        Ok((matches, telemetry))
+        Ok((matches, telemetry, backend_recovery))
     })
     .await;
     state.active_scans.fetch_sub(1, Ordering::Relaxed);
     state.scans_served.fetch_add(1, Ordering::Relaxed);
 
     match res {
-        Ok(Ok((matches, telemetry))) => {
-            scan_results_response(path, matches, telemetry, SourceCoverageGaps::default())
+        Ok(Ok((matches, telemetry, backend_recovery))) => {
+            if let Some(recovery) = backend_recovery.clone() {
+                if let Err(error) = state.record_backend_recovery(recovery) {
+                    return Response::Error {
+                        message: format!(
+                            "daemon: scan recovered, but health recording failed: {error:#}"
+                        ),
+                    };
+                }
+            }
+            scan_results_response(
+                path,
+                matches,
+                telemetry,
+                SourceCoverageGaps::default(),
+                backend_recovery,
+            )
         }
         Ok(Err(e)) => Response::Error {
             message: format!("daemon: scan_text failed: {e:#}"),
@@ -651,15 +701,16 @@ async fn scan_path(
         Vec<RawMatch>,
         keyhog_scanner::telemetry::ScanTelemetrySnapshot,
         SourceCoverageGaps,
+        Option<BackendRecoveryStatus>,
     );
     let res = tokio::task::spawn_blocking(move || -> Result<ScanOutput> {
         let (chunks, source_coverage_gaps) = daemon_scan_path_chunks(&resolved_owned)?;
         if chunks.is_empty() {
-            return Ok((Vec::new(), telemetry.drain(), source_coverage_gaps));
+            return Ok((Vec::new(), telemetry.drain(), source_coverage_gaps, None));
         }
-        let matches = keyhog_scanner::telemetry::with_scan_telemetry(
+        let (matches, backend_recovery) = keyhog_scanner::telemetry::with_scan_telemetry(
             &telemetry,
-            || -> Result<Vec<RawMatch>> {
+            || -> Result<(Vec<RawMatch>, Option<BackendRecoveryStatus>)> {
                 let _fragment_guard = fragment_scan_lock
                     .lock()
                     .map_err(|_| anyhow::anyhow!("daemon fragment scan lock is poisoned"))?;
@@ -680,28 +731,52 @@ async fn scan_path(
                         selection.backend.label()
                     )
                 })?;
+                if let Some(recovery) = outcome.recovery.as_ref() {
+                    router.quarantine_recovered_route(&selection, recovery)?;
+                }
+                let backend_recovery = outcome
+                    .recovery
+                    .as_ref()
+                    .map(backend_recovery_status_from_receipt);
                 scanner.clear_fragment_cache();
                 let mut per_chunk = outcome.per_chunk;
                 crate::inline_suppression::attach_inline_suppression_context(
                     &chunks,
                     &mut per_chunk,
                 );
-                Ok(per_chunk.into_iter().flatten().collect())
+                Ok((per_chunk.into_iter().flatten().collect(), backend_recovery))
             },
         )?;
-        Ok((matches, telemetry.drain(), source_coverage_gaps))
+        Ok((
+            matches,
+            telemetry.drain(),
+            source_coverage_gaps,
+            backend_recovery,
+        ))
     })
     .await;
     state.active_scans.fetch_sub(1, Ordering::Relaxed);
     state.scans_served.fetch_add(1, Ordering::Relaxed);
 
     match res {
-        Ok(Ok((matches, telemetry, source_coverage_gaps))) => scan_results_response(
-            Some(resolved.to_string_lossy().into_owned()),
-            matches,
-            telemetry,
-            source_coverage_gaps,
-        ),
+        Ok(Ok((matches, telemetry, source_coverage_gaps, backend_recovery))) => {
+            if let Some(recovery) = backend_recovery.clone() {
+                if let Err(error) = state.record_backend_recovery(recovery) {
+                    return Response::Error {
+                        message: format!(
+                            "daemon: scan recovered, but health recording failed: {error:#}"
+                        ),
+                    };
+                }
+            }
+            scan_results_response(
+                Some(resolved.to_string_lossy().into_owned()),
+                matches,
+                telemetry,
+                source_coverage_gaps,
+                backend_recovery,
+            )
+        }
         Ok(Err(e)) => Response::Error {
             message: format!("daemon: scan_path failed: {e:#}"),
         },
@@ -716,6 +791,7 @@ fn scan_results_response(
     matches: Vec<RawMatch>,
     telemetry: keyhog_scanner::telemetry::ScanTelemetrySnapshot,
     source_coverage_gaps: SourceCoverageGaps,
+    backend_recovery: Option<BackendRecoveryStatus>,
 ) -> Response {
     Response::ScanResults {
         path,
@@ -725,6 +801,28 @@ fn scan_results_response(
         static_recovery_rejections: telemetry.static_recovery_rejections,
         dogfood_detail_events_dropped: telemetry.dogfood_detail_events_dropped,
         source_coverage_gaps,
+        backend_recovery,
+    }
+}
+
+fn backend_recovery_status_from_receipt(
+    receipt: &keyhog_scanner::BackendRecoveryReceipt,
+) -> BackendRecoveryStatus {
+    BackendRecoveryStatus {
+        failed_backend: receipt.failed_backend.label().to_string(),
+        recovery_backend: receipt.recovery_backend.label().to_string(),
+        recovered_ranges: receipt
+            .ranges
+            .iter()
+            .map(|range| RecoveredInputRangeStatus {
+                chunk_index: range.chunk_index,
+                byte_start: range.byte_start,
+                byte_end: range.byte_end,
+            })
+            .collect(),
+        recovered_chunks: receipt.recovered_chunks(),
+        recovered_bytes: receipt.recovered_bytes(),
+        reason: receipt.reason.clone(),
     }
 }
 

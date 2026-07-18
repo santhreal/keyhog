@@ -39,7 +39,10 @@ use std::collections::BTreeMap;
 /// * v5 - `Hello` names the daemon-owned backend policy so scan clients consent
 ///   to an observable autoroute or forced diagnostic route instead of accepting
 ///   an undisclosed startup override.
-pub const WIRE_VERSION: u32 = 5;
+/// * v6 - scan results and health expose complete backend recovery plus the
+///   daemon's last route fault; recovered requests can never look like clean
+///   no-fault execution to clients.
+pub const WIRE_VERSION: u32 = 6;
 
 /// Maximum length of a single framed message body. 64 MiB ceiling
 /// matches `MAX_SCAN_CHUNK_BYTES * 64` so a chunk batch fits, but
@@ -139,12 +142,17 @@ pub enum Response {
         /// the daemon's process-local counters directly, so missing this field
         /// used to let binary/unreadable/truncated daemon input exit clean.
         source_coverage_gaps: SourceCoverageGaps,
+        /// Exact completed recovery for this request, when the selected
+        /// automatic route faulted. `None` means no backend recovery occurred.
+        backend_recovery: Option<BackendRecoveryStatus>,
     },
     Health {
         uptime_secs: u64,
         scans_served: u64,
         active_scans: u32,
         detector_count: usize,
+        backend_recoveries: u64,
+        last_backend_fault: Option<BackendRecoveryStatus>,
     },
     /// Anything that went wrong on the server side. Connection stays
     /// open so the client can retry with a different request.
@@ -152,6 +160,23 @@ pub enum Response {
     /// Acknowledgement for `Shutdown`. The daemon closes the socket
     /// after sending this; the client should not write again.
     Shutdown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BackendRecoveryStatus {
+    pub failed_backend: String,
+    pub recovery_backend: String,
+    pub recovered_ranges: Vec<RecoveredInputRangeStatus>,
+    pub recovered_chunks: usize,
+    pub recovered_bytes: u64,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecoveredInputRangeStatus {
+    pub chunk_index: usize,
+    pub byte_start: usize,
+    pub byte_end: usize,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

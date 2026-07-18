@@ -23,6 +23,13 @@ for that run; it includes compatible refinements such as
 `--deep --decode-depth 3`, rather than requiring consumers to infer behavior
 from CLI text or stderr.
 
+Metadata-bearing formats expose `scan_status` as `success`,
+`complete_after_recovery`, `partial`, `cancelled`, or `failed`.
+`complete_after_recovery` is a successful complete scan, but it proves that a
+visible backend fault occurred and every affected byte was recovered. Any
+source or scanner coverage gap overrides it to `partial`; recovery never masks
+incomplete input.
+
 Every finding also carries `companions_redacted`, a sorted JSON object of
 nearby credential or context values captured by the detector. Companion values
 are redacted at the same boundary as the primary credential, so plaintext
@@ -92,8 +99,8 @@ for the complete schema. Metadata includes the binary Git identity, detector-set
 digest, effective-config digest when available, a stable non-secret `scan_id`,
 targets, timing, and counters including the exact source bytes and chunks
 consumed by the scanner. The top-level `scan_status` is one of `success`,
-`partial`, `cancelled`, or `failed`; readers must preserve the explicit
-terminal state in detached artifacts. The `scan_id` lets
+`complete_after_recovery`, `partial`, `cancelled`, or `failed`; readers must
+preserve the explicit terminal state in detached artifacts. The `scan_id` lets
 independently stored metadata-bearing JSON, JSONL, and HTML projections be
 joined without exposing secrets. Reports
 from older KeyHog versions may omit it; the HTML projection displays that state

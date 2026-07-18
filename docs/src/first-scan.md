@@ -110,7 +110,7 @@ the artifact without scraping console progress.
 
 ```json
 {
-  "schema_version": {"major": 1, "minor": 5},
+  "schema_version": {"major": 1, "minor": 6},
   "scan_status": "success",
   "metadata": {
     "scan_id": "0123456789abcdef0123456789abcdef",

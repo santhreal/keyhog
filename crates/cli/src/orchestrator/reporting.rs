@@ -254,6 +254,12 @@ pub(crate) fn report_completion_summary(
 ) {
     let count = findings.len();
     let palette = terminal_palette(ansi, false);
+    let completion =
+        if crate::BACKEND_RECOVERY_EVENTS.load(std::sync::atomic::Ordering::Relaxed) > 0 {
+            "Scan complete after recovery."
+        } else {
+            "Scan complete."
+        };
     // Surface a mid-scan crash FIRST, before the "Scan complete!" line, so the
     // incompleteness frames everything below it (Law 10).
     if let Some(notice) =
@@ -263,7 +269,7 @@ pub(crate) fn report_completion_summary(
     }
     if count == 0 {
         eprintln!(
-            "\nScan complete. Found {}0{} secrets in {}{:.2}s{}.",
+            "\n{completion} Found {}0{} secrets in {}{:.2}s{}.",
             palette.green, palette.reset, palette.yellow, elapsed, palette.reset
         );
     } else {
@@ -271,7 +277,7 @@ pub(crate) fn report_completion_summary(
         // "1 secrets"; matches the stdout `Results` footer's `secret{plural}`.
         let noun = secret_noun(count);
         eprintln!(
-            "\nScan complete. Found {}{}{} {} in {}{:.2}s{}.",
+            "\n{completion} Found {}{}{} {} in {}{:.2}s{}.",
             palette.red, count, palette.reset, noun, palette.yellow, elapsed, palette.reset
         );
         if let Some(line) = render_severity_line(findings, ansi) {
@@ -292,16 +298,10 @@ pub(crate) fn report_completion_summary(
 ///
 /// The per-batch routing decision was previously logged only at
 /// `tracing::debug!` (target `keyhog::routing`), invisible at the default
-/// `keyhog=warn` verbosity. So a scan that CORRECTLY chose SIMD, which is
-/// measured faster than the current GPU region-presence route for keyhog's
-/// detector set through the measured sweep (host fold/coalesce, dispatch,
-/// readback, and the shared CPU phase-2 tail; see
-/// `measure_fastest_correct_backend`), read to the operator as "GPU backend
-/// selection is broken." This prints ONE
-/// completion line stating the backend(s) used and the routing rationale, so the
-/// decision is visible instead of buried (Law 10 / coherence). Reuses the
-/// scanner's existing per-chunk telemetry (`gpu_dispatches` vs `files_scanned`);
-/// no new counters.
+/// `keyhog=warn` verbosity. This prints one completion line stating whether
+/// calibrated GPU and non-GPU routes ran. Exact per-bucket route identity stays
+/// in the persisted autoroute decision rather than being guessed from aggregate
+/// chunk counters.
 pub(crate) fn report_backend_summary(
     ansi: bool,
     backend_override: Option<keyhog_scanner::ScanBackend>,
@@ -317,32 +317,29 @@ pub(crate) fn report_backend_summary(
     // GPU region presence; everything else (the default fused CPU path and the
     // coalesced SIMD arm) ran on SIMD/CPU.
     let gpu = crate::GPU_SCANNED_CHUNKS.load(Ordering::Relaxed).min(total);
-    let simd = total - gpu;
+    let non_gpu = total - gpu;
     let recovery_events = crate::BACKEND_RECOVERY_EVENTS.load(Ordering::Relaxed);
     let recovered_chunks = crate::BACKEND_RECOVERED_CHUNKS.load(Ordering::Relaxed);
     let recovered_bytes = crate::BACKEND_RECOVERED_BYTES.load(Ordering::Relaxed);
     let hw = keyhog_scanner::hw_probe::probe_hardware();
     let line = if let Some(backend) = backend_override {
         format!("backend: {} (forced via --backend)", backend.label())
-    } else if gpu > 0 && simd > 0 {
+    } else if gpu > 0 && non_gpu > 0 {
         format!(
-            "backend: calibrated GPU driver peer ({gpu} chunk(s)) + simd-regex ({simd} chunk(s))"
+            "backend: calibrated GPU route ({gpu} chunk(s)) + calibrated non-GPU route ({non_gpu} chunk(s)); inspect `keyhog backend --autoroute` for exact per-bucket routes"
         )
     } else if gpu > 0 {
         "backend: calibrated GPU driver peer (inspect `keyhog backend --autoroute` for the exact route)".to_string()
     } else if hw.gpu_available && !hw.gpu_is_software {
         let name = hw.gpu_name.as_deref().unwrap_or("a GPU").trim().to_string(); // LAW10: absent name/label => display default; reporting-only, recall-safe
         format!(
-            "backend: simd-regex - {name} present but NOT engaged, and that is the \
-             faster path here (measured). The GPU region-presence route still pays \
-             host lowercase/coalescing, device dispatch/readback, and the shared CPU \
-             phase-2 extraction tail. In the current evidence, SIMD wins for this \
-             detector set through the measured range. Force the device path with \
-             --backend gpu-cuda or --backend gpu-wgpu (parity / research), include both in calibration with \
-             --autoroute-gpu, or run `keyhog backend`."
+            "backend: calibrated non-GPU route; {name} was eligible but was not the \
+             fastest measured-correct route for the exact workload bucket(s) scanned. \
+             Inspect the persisted decision with `keyhog backend --autoroute`; explicit \
+             `--backend gpu-cuda` or `--backend gpu-wgpu` is diagnostic only."
         )
     } else {
-        "backend: simd-regex (no GPU available on this host)".to_string()
+        "backend: calibrated non-GPU route (no hardware GPU available on this host)".to_string()
     };
 
     let line = if recovery_events == 0 {

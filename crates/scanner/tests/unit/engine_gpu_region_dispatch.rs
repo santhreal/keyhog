@@ -1,7 +1,7 @@
 use super::super::gpu_region_batch::{
     build_region_presence_batch, validate_region_presence_batch_len, validation_window_range,
-    with_region_presence_batch, RegionPresenceBatchMode, RegionPresenceScratch,
-    ZeroRegionPresenceScratch, REGION_PRESENCE_BATCH_BYTE_LIMIT,
+    with_region_presence_batch, with_test_region_presence_byte_limit, RegionPresenceBatchMode,
+    RegionPresenceScratch, ZeroRegionPresenceScratch, REGION_PRESENCE_BATCH_BYTE_LIMIT,
 };
 use super::*;
 
@@ -120,6 +120,107 @@ fn coalesce_rate_reports_zero_for_zero_duration() {
         0.0
     );
     assert_eq!(mib_per_second(0, std::time::Duration::from_secs(1)), 0.0);
+}
+
+#[cfg(feature = "gpu")]
+fn gpu_recovery_fixture() -> (
+    CompiledScanner,
+    crate::hw_probe::ScanBackend,
+    Vec<keyhog_core::Chunk>,
+    Vec<Vec<keyhog_core::RawMatch>>,
+) {
+    let detector = keyhog_core::DetectorSpec {
+        id: "gpu-range-recovery-fixture".into(),
+        name: "GPU range recovery fixture".into(),
+        service: "fixture".into(),
+        severity: keyhog_core::Severity::High,
+        patterns: vec![keyhog_core::PatternSpec {
+            regex: r"(tok_[A-Za-z0-9]{16})".into(),
+            group: Some(1),
+            required_literals: vec!["tok_".into()],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let scanner = CompiledScanner::compile(vec![detector]).expect("compile recovery fixture");
+    let backend = [
+        crate::hw_probe::ScanBackend::GpuCuda,
+        crate::hw_probe::ScanBackend::GpuWgpu,
+    ]
+    .into_iter()
+    .find(|backend| scanner.gpu_backends.get(*backend).is_some())
+    .expect("known GPU test host must acquire a hardware backend");
+    let chunks = vec![
+        keyhog_core::Chunk::from(format!("{}tok_AAAAAAAAAAAAAAAA", "a".repeat(24))),
+        keyhog_core::Chunk::from(format!("{}tok_BBBBBBBBBBBBBBBB", "b".repeat(24))),
+        keyhog_core::Chunk::from(format!("{}tok_CCCCCCCCCCCCCCCC", "c".repeat(24))),
+    ];
+    let expected =
+        scanner.scan_coalesced_with_backend(&chunks, crate::hw_probe::ScanBackend::CpuFallback);
+    scanner.clear_fragment_cache();
+    (scanner, backend, chunks, expected)
+}
+
+#[cfg(feature = "gpu")]
+#[test]
+fn automatic_gpu_recovery_rescans_only_unprocessed_dispatch_ranges() {
+    let (scanner, backend, chunks, expected) = gpu_recovery_fixture();
+
+    let outcome = with_test_region_presence_byte_limit(64, || {
+        crate::engine::gpu_resident_evidence::with_test_resident_dispatch_failure(1, || {
+            scanner
+                .try_scan_coalesced_gpu_region_presence_recovering(
+                    &chunks,
+                    backend,
+                    scanner.default_execution_route(),
+                    true,
+                )
+                .expect("automatic route must recover stable dispatch ranges")
+        })
+    });
+
+    assert_eq!(outcome.matches, expected);
+    let recovery = outcome.recovery.expect("typed recovery receipt");
+    assert_eq!(recovery.failed_backend, backend);
+    assert_eq!(
+        recovery.ranges,
+        vec![
+            crate::RecoveredInputRange::new(1, 0, chunks[1].data.len()),
+            crate::RecoveredInputRange::new(2, 0, chunks[2].data.len()),
+        ],
+        "the completed first GPU shard must not be replayed"
+    );
+}
+
+#[cfg(feature = "gpu")]
+#[test]
+fn automatic_phase2_gpu_recovery_preserves_completed_shards() {
+    let (scanner, backend, chunks, expected) = gpu_recovery_fixture();
+
+    let outcome = with_test_region_presence_byte_limit(64, || {
+        crate::engine::gpu_region_dispatch_helpers::with_test_phase2_dispatch_failure(1, || {
+            scanner
+                .try_scan_coalesced_gpu_region_presence_recovering(
+                    &chunks,
+                    backend,
+                    scanner.default_execution_route(),
+                    true,
+                )
+                .expect("automatic route must recover phase-two admission ranges")
+        })
+    });
+
+    assert_eq!(outcome.matches, expected);
+    let recovery = outcome.recovery.expect("typed phase-two recovery receipt");
+    assert_eq!(recovery.failed_backend, backend);
+    assert_eq!(
+        recovery.ranges,
+        vec![
+            crate::RecoveredInputRange::new(1, 0, chunks[1].data.len()),
+            crate::RecoveredInputRange::new(2, 0, chunks[2].data.len()),
+        ],
+        "the completed phase-two shard must remain GPU-owned"
+    );
 }
 
 #[test]

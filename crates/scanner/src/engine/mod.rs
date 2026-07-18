@@ -123,6 +123,8 @@ mod phase2_prefilter;
 pub(crate) mod phase2_truncate;
 mod process;
 pub(crate) mod profile;
+mod recovery;
+pub use recovery::{BackendRecoveryReceipt, CoalescedScanOutcome, RecoveredInputRange};
 mod scan;
 mod scan_coalesced;
 pub(crate) mod scan_filters;

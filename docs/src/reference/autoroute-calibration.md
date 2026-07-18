@@ -289,10 +289,13 @@ in-process retry policy, socket, and timeout semantics.
 
 Calibration never accepts a candidate that needs recovery. During an ordinary
 automatic scan, however, a transient GPU dispatch failure warns and replays the
-same stable batch through the scalar reference path so coverage is preserved.
-Recovered work is counted separately and the GPU fault remains visible. An
-explicit GPU override or `--require-gpu` remains a hard backend contract and is
-not substituted.
+exact unprocessed ranges from the same stable snapshot through the scalar
+recovery path. Completed GPU shards are retained. Recovered work is counted
+separately, the affected workload route is quarantined, and the GPU fault
+remains visible for the life of that process. Recalibrate before restarting;
+runtime quarantine deliberately does not rewrite the persisted timing artifact.
+An explicit GPU override or `--require-gpu` remains a hard backend contract and
+is not substituted.
 
 ## When an auto scan reports `calibration required`
 

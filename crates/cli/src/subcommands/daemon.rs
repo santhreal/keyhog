@@ -143,6 +143,8 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
             scans_served,
             active_scans,
             detector_count,
+            backend_recoveries,
+            last_backend_fault,
         } => {
             println!(
                 "keyhog daemon: uptime {}s · {} scans served · {} active · {} detectors",
@@ -159,6 +161,17 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
                 println!(
                     "backend policy: forced {backend_policy} (daemon startup diagnostic override)"
                 );
+            }
+            if let Some(fault) = last_backend_fault {
+                println!(
+                    "backend health: {} recovered request(s); last fault {} recovered {} byte(s) through {}. The affected route is quarantined until recalibration.",
+                    backend_recoveries,
+                    fault.failed_backend,
+                    fault.recovered_bytes,
+                    fault.recovery_backend,
+                );
+            } else {
+                println!("backend health: no recovered runtime faults");
             }
             if stale {
                 let palette = style::for_stderr();

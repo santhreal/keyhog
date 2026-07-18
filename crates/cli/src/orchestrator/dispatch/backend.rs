@@ -130,6 +130,7 @@ pub(super) struct MeasuredBackendRouter {
     host_profile: AutorouteHostProfile,
     decisions: HashMap<WorkloadKey, AutorouteDecision>,
     measured_this_run: HashSet<WorkloadKey>,
+    runtime_faults: HashMap<WorkloadKey, RuntimeRouteFault>,
     measurement_observer: Option<AutorouteMeasurementObserver>,
     cache_path: Option<PathBuf>,
     cache_load_error: Option<String>,
@@ -148,6 +149,18 @@ pub(crate) struct CachedBackendRouter {
     cache_path: Option<PathBuf>,
     cache_load_error: Option<String>,
     runtime_class: AutorouteRuntimeClass,
+    runtime_faults: Mutex<HashMap<WorkloadKey, RuntimeRouteFault>>,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeRouteFault {
+    backend: ScanBackend,
+    reason: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct RuntimeRouteIdentity {
+    key: WorkloadKey,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -156,10 +169,12 @@ enum AutorouteRuntimeClass {
     PersistentDaemon,
 }
 
+#[derive(Debug)]
 pub(crate) struct BackendSelection {
     pub(crate) backend: ScanBackend,
     pub(crate) phase1_plan: Option<Phase1AdmissionPlan>,
     pub(crate) execution_route: keyhog_scanner::ScanExecutionRoute,
+    pub(crate) runtime_route: Option<RuntimeRouteIdentity>,
 }
 
 impl AutorouteRuntimeClass {
@@ -337,6 +352,22 @@ impl AutorouteRoutingError {
             ),
         }
     }
+
+    fn runtime_route_unhealthy(
+        key: &WorkloadKey,
+        runtime_class: AutorouteRuntimeClass,
+        fault: &RuntimeRouteFault,
+    ) -> Self {
+        Self {
+            message: format!(
+                "autoroute decision is quarantined after backend {} faulted and the prior request completed through visible recovery.\n  fix: repair the backend and rerun `keyhog calibrate-autoroute`; this process will not silently substitute another route.\n  workload bucket: [{}], runtime={}\n  fault: {}",
+                fault.backend.label(),
+                render_workload_key(key),
+                runtime_class.label(),
+                fault.reason,
+            ),
+        }
+    }
 }
 
 impl fmt::Display for AutorouteRoutingError {
@@ -409,6 +440,7 @@ impl CachedBackendRouter {
             cache_path,
             cache_load_error,
             runtime_class: AutorouteRuntimeClass::OneShot,
+            runtime_faults: Mutex::new(HashMap::new()),
         }
     }
 
@@ -453,6 +485,7 @@ impl CachedBackendRouter {
                 backend: forced,
                 phase1_plan: (!forced.is_gpu()).then(|| scanner.phase1_admission_plan(batch)),
                 execution_route: scanner.default_execution_route(),
+                runtime_route: None,
             });
         }
         if let Some(only) = sole_compiled_backend() {
@@ -460,6 +493,7 @@ impl CachedBackendRouter {
                 backend: only,
                 phase1_plan: (!only.is_gpu()).then(|| scanner.phase1_admission_plan(batch)),
                 execution_route: scanner.default_execution_route(),
+                runtime_route: None,
             });
         }
         let phase1_plan = scanner.phase1_admission_plan(batch);
@@ -470,9 +504,24 @@ impl CachedBackendRouter {
             self.decode_workload_plan,
         )
         .map_err(AutorouteRoutingError::incomplete_workload_evidence)?;
+        if let Some(fault) = self
+            .runtime_faults
+            .lock()
+            .map_err(|_| AutorouteRoutingError {
+                message: "autoroute runtime route-health lock is poisoned; restart KeyHog before scanning again".to_string(),
+            })?
+            .get(&key)
+            .cloned()
+        {
+            return Err(AutorouteRoutingError::runtime_route_unhealthy(
+                &key,
+                self.runtime_class,
+                &fault,
+            ));
+        }
         let route = resolve_persisted_route(
             &self.decisions,
-            key,
+            key.clone(),
             self.runtime_class,
             &self.cache_path,
             &self.cache_load_error,
@@ -481,7 +530,40 @@ impl CachedBackendRouter {
             backend: route.backend,
             phase1_plan: Some(phase1_plan),
             execution_route: route.execution_route(),
+            runtime_route: Some(RuntimeRouteIdentity { key }),
         })
+    }
+
+    pub(crate) fn quarantine_recovered_route(
+        &self,
+        selection: &BackendSelection,
+        recovery: &keyhog_scanner::BackendRecoveryReceipt,
+    ) -> Result<(), AutorouteRoutingError> {
+        let Some(identity) = selection.runtime_route.as_ref() else {
+            return Ok(());
+        };
+        if recovery.failed_backend != selection.backend {
+            return Err(AutorouteRoutingError {
+                message: format!(
+                    "autoroute recovery receipt names failed backend {}, but the selected route was {}; refusing to quarantine the wrong route identity",
+                    recovery.failed_backend.label(),
+                    selection.backend.label(),
+                ),
+            });
+        }
+        self.runtime_faults
+            .lock()
+            .map_err(|_| AutorouteRoutingError {
+                message: "autoroute recovered the request, but the runtime route-health lock is poisoned; restart KeyHog before scanning again".to_string(),
+            })?
+            .insert(
+                identity.key.clone(),
+                RuntimeRouteFault {
+                    backend: recovery.failed_backend,
+                    reason: recovery.reason.clone(),
+                },
+            );
+        Ok(())
     }
 }
 
@@ -567,6 +649,7 @@ impl MeasuredBackendRouter {
             host_profile,
             decisions,
             measured_this_run: HashSet::new(),
+            runtime_faults: HashMap::new(),
             measurement_observer,
             cache_path,
             cache_load_error,
@@ -585,6 +668,7 @@ impl MeasuredBackendRouter {
                 backend: forced,
                 phase1_plan: (!forced.is_gpu()).then(|| scanner.phase1_admission_plan(batch)),
                 execution_route: scanner.default_execution_route(),
+                runtime_route: None,
             });
         }
         if let Some(only) = sole_compiled_backend() {
@@ -592,6 +676,7 @@ impl MeasuredBackendRouter {
                 backend: only,
                 phase1_plan: (!only.is_gpu()).then(|| scanner.phase1_admission_plan(batch)),
                 execution_route: scanner.default_execution_route(),
+                runtime_route: None,
             });
         }
         let phase1_plan = scanner.phase1_admission_plan(batch);
@@ -602,6 +687,13 @@ impl MeasuredBackendRouter {
             self.decode_workload_plan,
         )
         .map_err(AutorouteRoutingError::incomplete_workload_evidence)?;
+        if let Some(fault) = self.runtime_faults.get(&key) {
+            return Err(AutorouteRoutingError::runtime_route_unhealthy(
+                &key,
+                AutorouteRuntimeClass::OneShot,
+                fault,
+            ));
+        }
         let (sample_bytes, sample_chunks) = if self.calibration_mode {
             (calibration::calibration_sample_bytes(batch)?, batch.len())
         } else {
@@ -612,6 +704,7 @@ impl MeasuredBackendRouter {
                 backend: route.backend,
                 phase1_plan: Some(phase1_plan),
                 execution_route: route.execution_route(),
+                runtime_route: Some(RuntimeRouteIdentity { key: key.clone() }),
             });
         }
 
@@ -621,7 +714,7 @@ impl MeasuredBackendRouter {
             // evidence for this workload identity.
             let route = resolve_persisted_route(
                 &self.decisions,
-                key,
+                key.clone(),
                 AutorouteRuntimeClass::OneShot,
                 &self.cache_path,
                 &self.cache_load_error,
@@ -630,6 +723,7 @@ impl MeasuredBackendRouter {
                 backend: route.backend,
                 phase1_plan: Some(phase1_plan),
                 execution_route: route.execution_route(),
+                runtime_route: Some(RuntimeRouteIdentity { key }),
             });
         }
         self.host_profile
@@ -677,7 +771,35 @@ impl MeasuredBackendRouter {
             backend: route.backend,
             phase1_plan: Some(phase1_plan),
             execution_route: route.execution_route(),
+            runtime_route: None,
         })
+    }
+
+    pub(super) fn quarantine_recovered_route(
+        &mut self,
+        selection: &BackendSelection,
+        recovery: &keyhog_scanner::BackendRecoveryReceipt,
+    ) -> Result<(), AutorouteRoutingError> {
+        let Some(identity) = selection.runtime_route.as_ref() else {
+            return Ok(());
+        };
+        if recovery.failed_backend != selection.backend {
+            return Err(AutorouteRoutingError {
+                message: format!(
+                    "autoroute recovery receipt names failed backend {}, but the selected route was {}; refusing to quarantine the wrong route identity",
+                    recovery.failed_backend.label(),
+                    selection.backend.label(),
+                ),
+            });
+        }
+        self.runtime_faults.insert(
+            identity.key.clone(),
+            RuntimeRouteFault {
+                backend: recovery.failed_backend,
+                reason: recovery.reason.clone(),
+            },
+        );
+        Ok(())
     }
 
     fn reusable_decision_route(

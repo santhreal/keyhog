@@ -44,7 +44,7 @@ pub(crate) static FINDINGS_COUNT: AtomicUsize = AtomicUsize::new(0);
 /// per-chunk telemetry, so that snapshot under-counts on the production batch
 /// path; this orchestrator-level counter is the authoritative routing signal.
 pub(crate) static GPU_SCANNED_CHUNKS: AtomicUsize = AtomicUsize::new(0);
-/// Exact work replayed through the scalar reference after an automatic GPU
+/// Exact work replayed through the scalar recovery backend after an automatic GPU
 /// route failed at runtime. These are successful coverage receipts, not source
 /// errors: every counted chunk and byte completed through the recovery path.
 pub(crate) static BACKEND_RECOVERY_EVENTS: AtomicUsize = AtomicUsize::new(0);

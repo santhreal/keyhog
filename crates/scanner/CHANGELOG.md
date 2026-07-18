@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Preserve successful GPU dispatch work when a later fused region dispatch
+  faults, recover only the exact unprocessed source-byte intervals through the
+  scalar trigger path, stop issuing work to the faulted route for that request,
+  and return a typed complete-recovery receipt to orchestrators.
 - Require explicit 8x8 service context before the 8x8 detector claims a generic
   `X-Api-Key` header, removing cross-service false attribution and unrelated
   phase-two work.

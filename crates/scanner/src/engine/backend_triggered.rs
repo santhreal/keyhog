@@ -395,6 +395,10 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
     }
 
     pub(crate) fn collect_triggered_patterns_cpu(&self, text: &str) -> Vec<u64> {
+        self.collect_triggered_patterns_cpu_bytes(text.as_bytes())
+    }
+
+    pub(crate) fn collect_triggered_patterns_cpu_bytes(&self, bytes: &[u8]) -> Vec<u64> {
         let mut triggered_patterns = super::trigger_bitmap::new_trigger_bitmap(self.ac_map.len());
         if let Some(ac) = &self.ac {
             // OVERLAPPING iteration, not leftmost `find_iter`: a non-overlapping
@@ -412,7 +416,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
             // Phase-1 is ~1.7% of scan and literals are sparse in real source, so
             // the extra overlap matches are negligible; proven recall-neutral for
             // the skip by `homoglyph_ascii_skip_parity_default`.
-            for ac_match in ac.find_overlapping_iter(text.as_bytes()) {
+            for ac_match in ac.find_overlapping_iter(bytes) {
                 self.mark_triggered_pattern(&mut triggered_patterns, ac_match.pattern().as_usize());
             }
         }

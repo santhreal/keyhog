@@ -3,6 +3,93 @@ use super::gpu_region_batch::{
     region_presence_ref_shards, region_presence_shards,
 };
 use super::phase2_gpu_dfa::{Phase2GpuDfaAdmission, Phase2GpuDfaCatalog};
+use std::ops::Range;
+
+#[cfg(test)]
+thread_local! {
+    static TEST_PHASE2_FAIL_AFTER_DISPATCHES: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+}
+
+#[cfg(test)]
+pub(crate) fn with_test_phase2_dispatch_failure<R>(
+    successful_dispatches_before_failure: usize,
+    run: impl FnOnce() -> R,
+) -> R {
+    struct Reset(Option<usize>);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            TEST_PHASE2_FAIL_AFTER_DISPATCHES.with(|slot| slot.set(self.0));
+        }
+    }
+    let prior = TEST_PHASE2_FAIL_AFTER_DISPATCHES
+        .with(|slot| slot.replace(Some(successful_dispatches_before_failure)));
+    let _reset = Reset(prior);
+    run()
+}
+
+#[cfg(test)]
+fn injected_phase2_dispatch_failure() -> bool {
+    TEST_PHASE2_FAIL_AFTER_DISPATCHES.with(|slot| match slot.get() {
+        Some(0) => {
+            slot.set(None);
+            true
+        }
+        Some(remaining) => {
+            slot.set(Some(remaining - 1));
+            false
+        }
+        None => false,
+    })
+}
+
+fn scan_phase2_chunks(
+    catalog: &Phase2GpuDfaCatalog,
+    backend: &dyn vyre::VyreBackend,
+    chunks: &[keyhog_core::Chunk],
+) -> Result<Phase2GpuDfaAdmission, String> {
+    #[cfg(test)]
+    if injected_phase2_dispatch_failure() {
+        return Err("injected phase-2 GPU admission dispatch fault".to_string());
+    }
+    catalog.scan_admission_chunks(backend, chunks)
+}
+
+fn scan_phase2_refs(
+    catalog: &Phase2GpuDfaCatalog,
+    backend: &dyn vyre::VyreBackend,
+    chunks: &[&keyhog_core::Chunk],
+) -> Result<Phase2GpuDfaAdmission, String> {
+    #[cfg(test)]
+    if injected_phase2_dispatch_failure() {
+        return Err("injected phase-2 GPU admission dispatch fault".to_string());
+    }
+    catalog.scan_admission_refs(backend, chunks)
+}
+
+pub(super) struct Phase2GpuAdmissionOutcome {
+    pub(super) admission: Phase2GpuDfaAdmission,
+    pub(super) recovered_rows: Vec<Range<usize>>,
+    pub(super) fault: Option<String>,
+}
+
+fn recovered_phase2_tail(
+    mut admission: Phase2GpuDfaAdmission,
+    start: usize,
+    total_rows: usize,
+    fault: String,
+) -> Phase2GpuAdmissionOutcome {
+    let remaining = total_rows.saturating_sub(start);
+    admission.admitted.resize(total_rows, false);
+    admission.complete.resize(total_rows, false);
+    Phase2GpuAdmissionOutcome {
+        admission,
+        recovered_rows: (remaining > 0)
+            .then_some(start..total_rows)
+            .into_iter()
+            .collect(),
+        fault: Some(fault),
+    }
+}
 
 pub(super) fn mib_per_second(bytes: usize, elapsed: std::time::Duration) -> f64 {
     if bytes == 0 || elapsed.is_zero() {
@@ -64,10 +151,28 @@ pub(super) fn scan_phase2_gpu_chunks_sharded(
     catalog: &Phase2GpuDfaCatalog,
     backend: &dyn vyre::VyreBackend,
     chunks: &[keyhog_core::Chunk],
-) -> std::result::Result<Phase2GpuDfaAdmission, String> {
+    recover_dispatch_faults: bool,
+) -> std::result::Result<Phase2GpuAdmissionOutcome, String> {
     let byte_limit = region_presence_batch_byte_limit(backend.id());
     if region_presence_batch_len(chunks)? <= byte_limit {
-        return catalog.scan_admission_chunks(backend, chunks);
+        return match scan_phase2_chunks(catalog, backend, chunks) {
+            Ok(admission) => Ok(Phase2GpuAdmissionOutcome {
+                admission,
+                recovered_rows: Vec::new(),
+                fault: None,
+            }),
+            Err(error) if recover_dispatch_faults => Ok(recovered_phase2_tail(
+                Phase2GpuDfaAdmission {
+                    admitted: Vec::new(),
+                    complete: Vec::new(),
+                    matches_seen: 0,
+                },
+                0,
+                chunks.len(),
+                error,
+            )),
+            Err(error) => Err(error),
+        };
     }
     let shards = region_presence_shards(chunks, byte_limit)?;
     let mut merged = Phase2GpuDfaAdmission {
@@ -86,20 +191,54 @@ pub(super) fn scan_phase2_gpu_chunks_sharded(
     for shard in shards {
         let shard = shard?;
         let rows = shard.chunks.len();
-        let admission = catalog.scan_admission_chunks(backend, &chunks[shard.chunks])?;
-        append_phase2_gpu_admission(&mut merged, admission, rows)?;
+        let start = shard.chunks.start;
+        let admission = match scan_phase2_chunks(catalog, backend, &chunks[shard.chunks]) {
+            Ok(admission) => admission,
+            Err(error) if recover_dispatch_faults => {
+                return Ok(recovered_phase2_tail(merged, start, chunks.len(), error));
+            }
+            Err(error) => return Err(error),
+        };
+        if let Err(error) = append_phase2_gpu_admission(&mut merged, admission, rows) {
+            if recover_dispatch_faults {
+                return Ok(recovered_phase2_tail(merged, start, chunks.len(), error));
+            }
+            return Err(error);
+        }
     }
-    Ok(merged)
+    Ok(Phase2GpuAdmissionOutcome {
+        admission: merged,
+        recovered_rows: Vec::new(),
+        fault: None,
+    })
 }
 
 pub(super) fn scan_phase2_gpu_refs_sharded(
     catalog: &Phase2GpuDfaCatalog,
     backend: &dyn vyre::VyreBackend,
     chunks: &[&keyhog_core::Chunk],
-) -> std::result::Result<Phase2GpuDfaAdmission, String> {
+    recover_dispatch_faults: bool,
+) -> std::result::Result<Phase2GpuAdmissionOutcome, String> {
     let byte_limit = region_presence_batch_byte_limit(backend.id());
     if region_presence_ref_batch_len(chunks)? <= byte_limit {
-        return catalog.scan_admission_refs(backend, chunks);
+        return match scan_phase2_refs(catalog, backend, chunks) {
+            Ok(admission) => Ok(Phase2GpuAdmissionOutcome {
+                admission,
+                recovered_rows: Vec::new(),
+                fault: None,
+            }),
+            Err(error) if recover_dispatch_faults => Ok(recovered_phase2_tail(
+                Phase2GpuDfaAdmission {
+                    admitted: Vec::new(),
+                    complete: Vec::new(),
+                    matches_seen: 0,
+                },
+                0,
+                chunks.len(),
+                error,
+            )),
+            Err(error) => Err(error),
+        };
     }
     let shards = region_presence_ref_shards(chunks, byte_limit)?;
     let mut merged = Phase2GpuDfaAdmission {
@@ -118,8 +257,24 @@ pub(super) fn scan_phase2_gpu_refs_sharded(
     for shard in shards {
         let shard = shard?;
         let rows = shard.chunks.len();
-        let admission = catalog.scan_admission_refs(backend, &chunks[shard.chunks])?;
-        append_phase2_gpu_admission(&mut merged, admission, rows)?;
+        let start = shard.chunks.start;
+        let admission = match scan_phase2_refs(catalog, backend, &chunks[shard.chunks]) {
+            Ok(admission) => admission,
+            Err(error) if recover_dispatch_faults => {
+                return Ok(recovered_phase2_tail(merged, start, chunks.len(), error));
+            }
+            Err(error) => return Err(error),
+        };
+        if let Err(error) = append_phase2_gpu_admission(&mut merged, admission, rows) {
+            if recover_dispatch_faults {
+                return Ok(recovered_phase2_tail(merged, start, chunks.len(), error));
+            }
+            return Err(error);
+        }
     }
-    Ok(merged)
+    Ok(Phase2GpuAdmissionOutcome {
+        admission: merged,
+        recovered_rows: Vec::new(),
+        fault: None,
+    })
 }

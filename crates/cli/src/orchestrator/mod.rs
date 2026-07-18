@@ -3,8 +3,8 @@
 mod allowlist;
 mod dispatch;
 pub(crate) use dispatch::{
-    automatic_gpu_recovery_allowed, scan_selected_batch, COALESCED_CHUNK_SCAN_CEILING_BYTES,
-    COALESCED_CHUNK_SCAN_CEILING_MB,
+    automatic_gpu_recovery_allowed, record_completed_backend_recovery, scan_selected_batch,
+    COALESCED_CHUNK_SCAN_CEILING_BYTES, COALESCED_CHUNK_SCAN_CEILING_MB,
 };
 mod postprocess;
 pub(crate) mod reporting;
@@ -544,6 +544,10 @@ impl DefaultScanRuntime {
                 backend.label()
             )
         })?;
+        if let Some(recovery) = outcome.recovery.as_ref() {
+            self.router
+                .quarantine_recovered_route(&selection, recovery)?;
+        }
         Ok(outcome.per_chunk.into_iter().flatten().collect())
     }
 

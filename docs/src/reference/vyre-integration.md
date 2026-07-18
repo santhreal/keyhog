@@ -59,8 +59,9 @@ keyhog scan PATH --backend gpu-wgpu --profile
 selection nor a valid calibration record. GPU initialization, runtime, parity,
 and calibration failures remain visible in the command result and exit status.
 An explicit or required GPU route that fails dispatch exits `12`. A normal
-automatic scan visibly replays the same stable batch through the CPU reference
-path, records recovered work, and never counts that batch as GPU execution.
+automatic scan visibly scans exact unprocessed ranges from the same stable
+snapshot through the scalar recovery path, records those ranges, retains
+completed GPU work, and quarantines the affected autoroute workload identity.
 
 ## Feature boundaries
 

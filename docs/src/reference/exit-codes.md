@@ -141,16 +141,20 @@ regression without scraping stderr.
 
 An automatically selected GPU that faults after routing is different: KeyHog
 warns, records the accelerator fault, and replays the same stable batch through
-the scalar reference path. A fully recovered scan keeps the ordinary
-finding/clean exit semantics and reports recovered chunks and bytes. If exact
+the scalar recovery path. Completed dispatches are retained; only exact
+unprocessed ranges are replayed. A fully recovered scan keeps the ordinary
+finding/clean exit semantics, reports `complete_after_recovery`, and names the
+recovered ranges, chunks, and bytes. If exact
 recovery cannot cover the requested input, the result is incomplete rather
 than clean.
 
 For `keyhog daemon start`, exit `12` covers required GPU preflight, GPU scanner
 compilation, an unavailable or incompatible explicitly required backend, and a
 warmup that fails before readiness. An automatic-route fault after readiness
-recovers the affected stable request through CPU and leaves the daemon alive;
-an explicit GPU daemon route returns a request error. Run
+recovers the affected stable request and leaves the daemon alive. It quarantines
+that workload route, exposes the recovery count and last fault in daemon status,
+and requires recalibration before that route can serve another request. An
+explicit GPU daemon route returns a request error. Run
 `keyhog backend --self-test`, repair the GPU driver/runtime, and recalibrate.
 
 ## `13` (requested source failed or coverage incomplete)

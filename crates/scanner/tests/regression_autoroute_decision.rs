@@ -49,6 +49,7 @@ fn caps(
         total_memory_mb: Some(32_768),
         io_uring_available: false,
         hyperscan_available,
+        hyperscan_runtime_identity: None,
     }
 }
 

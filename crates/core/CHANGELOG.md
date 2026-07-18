@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add `complete_after_recovery` as a complete scan terminal state and advance
+  the versioned JSON contract to 1.6 and JSONL contract to 1.7.
+
 - Add detector-owned `plausibility.keyword_free_operator_margin`, validate it
   only for the `keyword-free` entropy role, and bind it into detector identity.
 

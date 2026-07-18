@@ -56,9 +56,13 @@ daemon configuration error remains exit `2`.
 
 After readiness, an automatically routed GPU fault does not kill the service or
 drop the request. The daemon warns, replays that request's stable text or file
-chunks through the CPU reference path, records recovered bytes, and keeps other
-requests alive. A forced GPU daemon remains an explicit contract and returns a
-request error instead of substituting another backend.
+input only for the exact unprocessed ranges, records recovered ranges and bytes,
+quarantines that workload route, and keeps unrelated requests alive. Later
+requests for the quarantined workload fail with recalibration guidance instead
+of silently changing backend. The quarantine lasts for that daemon process;
+recalibrate before restarting because the daemon does not mutate persisted
+calibration evidence. A forced GPU daemon remains an explicit contract and
+returns a request error instead of substituting another backend.
 
 `daemon status` connects to an existing service. It reports uptime, completed
 scan attempts, active scans, detector count, backend policy, and identity
@@ -66,6 +70,8 @@ staleness. `scans served` includes attempts that returned a daemon error, so it
 is an activity counter rather than a success counter. Status never starts a
 daemon. `active scans` counts accepted scan attempts until their blocking task
 finishes, including attempts queued behind the scanner's fragment-state lock.
+Backend health reports the number of recovered requests and the last failed and
+recovery backend with recovered byte count.
 The daemon can frame multiple client connections concurrently, but production
 scanner execution is serialized so fragment state cannot cross requests.
 

@@ -134,10 +134,9 @@ impl CompiledScanner {
         }
     }
 
-    /// Fallible production dispatch boundary used by orchestrators that can
-    /// recover the same stable input bytes after a transient accelerator fault.
-    /// This method never substitutes a backend itself: the caller must either
-    /// surface the error or explicitly replay the input and record recovery.
+    /// Fallible production dispatch boundary for callers that require the
+    /// selected backend as a hard contract. Automatic orchestrators use the
+    /// recovery-aware companion below with an explicitly stable snapshot.
     pub fn try_scan_coalesced_with_backend_and_admission(
         &self,
         chunks: &[keyhog_core::Chunk],
@@ -160,21 +159,47 @@ impl CompiledScanner {
         plan: Option<&super::Phase1AdmissionPlan>,
         route: crate::ScanExecutionRoute,
     ) -> crate::error::Result<Vec<Vec<keyhog_core::RawMatch>>> {
+        self.try_scan_coalesced_with_backend_admission_route_and_recovery(
+            chunks, backend, plan, route, false,
+        )
+        .map(|outcome| outcome.matches)
+    }
+
+    /// Fallible dispatch that may recover exact failed GPU dispatch ranges when
+    /// the caller owns a stable input snapshot and explicitly permits recovery.
+    pub fn try_scan_coalesced_with_backend_admission_route_and_recovery(
+        &self,
+        chunks: &[keyhog_core::Chunk],
+        backend: crate::hw_probe::ScanBackend,
+        plan: Option<&super::Phase1AdmissionPlan>,
+        route: crate::ScanExecutionRoute,
+        recover_gpu_dispatch_faults: bool,
+    ) -> crate::error::Result<super::CoalescedScanOutcome> {
+        #[cfg(not(feature = "gpu"))]
+        let _ = recover_gpu_dispatch_faults;
         let result = if backend == crate::hw_probe::ScanBackend::SimdCpu {
             self.require_selected_backend_stack(backend);
-            Ok(self.scan_coalesced_simd(
-                chunks,
-                plan.filter(|plan| plan.matches_chunks(chunks)),
-                route,
-            ))
+            Ok(super::CoalescedScanOutcome {
+                matches: self.scan_coalesced_simd(
+                    chunks,
+                    plan.filter(|plan| plan.matches_chunks(chunks)),
+                    route,
+                ),
+                recovery: None,
+            })
         } else if backend.is_gpu() {
             #[cfg(feature = "gpu")]
             {
-                self.try_scan_coalesced_gpu_region_presence(chunks, backend, route)
-                    .map_err(|error| {
-                        self.record_gpu_runtime_fault(error.reason());
-                        crate::error::ScanError::Gpu(error.to_string())
-                    })
+                self.try_scan_coalesced_gpu_region_presence_recovering(
+                    chunks,
+                    backend,
+                    route,
+                    recover_gpu_dispatch_faults,
+                )
+                .map_err(|error| {
+                    self.record_gpu_runtime_fault(error.reason());
+                    crate::error::ScanError::Gpu(error.to_string())
+                })
             }
             #[cfg(not(feature = "gpu"))]
             {
@@ -184,12 +209,15 @@ impl CompiledScanner {
                 )))
             }
         } else {
-            Ok(self.scan_chunks_with_backend_internal_admission_and_route(
-                chunks,
-                backend,
-                plan.filter(|plan| plan.matches_chunks(chunks)),
-                route,
-            ))
+            Ok(super::CoalescedScanOutcome {
+                matches: self.scan_chunks_with_backend_internal_admission_and_route(
+                    chunks,
+                    backend,
+                    plan.filter(|plan| plan.matches_chunks(chunks)),
+                    route,
+                ),
+                recovery: None,
+            })
         };
         // Count logical input only after a complete route succeeds. A failed GPU
         // attempt followed by visible CPU replay therefore records the input

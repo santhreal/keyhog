@@ -8,6 +8,43 @@
 use super::CompiledScanner;
 use zeroize::Zeroize;
 
+#[cfg(test)]
+thread_local! {
+    static TEST_FAIL_AFTER_DISPATCHES: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+}
+
+#[cfg(test)]
+pub(crate) fn with_test_resident_dispatch_failure<R>(
+    successful_dispatches_before_failure: usize,
+    run: impl FnOnce() -> R,
+) -> R {
+    struct Reset(Option<usize>);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            TEST_FAIL_AFTER_DISPATCHES.with(|slot| slot.set(self.0));
+        }
+    }
+    let prior = TEST_FAIL_AFTER_DISPATCHES
+        .with(|slot| slot.replace(Some(successful_dispatches_before_failure)));
+    let _reset = Reset(prior);
+    run()
+}
+
+#[cfg(test)]
+fn injected_dispatch_failure() -> bool {
+    TEST_FAIL_AFTER_DISPATCHES.with(|slot| match slot.get() {
+        Some(0) => {
+            slot.set(None);
+            true
+        }
+        Some(remaining) => {
+            slot.set(Some(remaining - 1));
+            false
+        }
+        None => false,
+    })
+}
+
 /// VYRE's fused output is a resident array of three-u32 match records. The
 /// common path starts at 2^16 records (768 KiB); a denser stable batch is counted
 /// exactly, rebuilt at that count, and replayed once without exposing a partial
@@ -213,15 +250,41 @@ pub(super) fn scan_gpu_literal_evidence_by_region_resident<R>(
                 matches: &mut state.matches,
                 scratch: &mut state.scratch,
             };
-            match state.pipeline.scan_into(
-                backend.as_ref(),
-                haystack,
-                region_starts,
-                0,
-                guard.output,
-                guard.matches,
-                guard.scratch,
-            ) {
+            let dispatch = {
+                #[cfg(test)]
+                if injected_dispatch_failure() {
+                    Err("injected resident fused literal dispatch fault".to_string())
+                } else {
+                    state
+                        .pipeline
+                        .scan_into(
+                            backend.as_ref(),
+                            haystack,
+                            region_starts,
+                            0,
+                            guard.output,
+                            guard.matches,
+                            guard.scratch,
+                        )
+                        .map_err(|error| error.to_string())
+                }
+                #[cfg(not(test))]
+                {
+                    state
+                        .pipeline
+                        .scan_into(
+                            backend.as_ref(),
+                            haystack,
+                            region_starts,
+                            0,
+                            guard.output,
+                            guard.matches,
+                            guard.scratch,
+                        )
+                        .map_err(|error| error.to_string())
+                }
+            };
+            match dispatch {
                 Ok(()) => {
                     let consume = consume.take().ok_or_else(|| {
                         "GPU resident literal output consumer was already invoked".to_string()

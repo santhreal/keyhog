@@ -402,6 +402,7 @@ fn test_hw_caps() -> keyhog_scanner::hw_probe::HardwareCaps {
         total_memory_mb: Some(65_536),
         io_uring_available: false,
         hyperscan_available: true,
+        hyperscan_runtime_identity: Some("test-hyperscan".to_string()),
     }
 }
 
@@ -3009,6 +3010,7 @@ fn measured_router_clears_dirty_after_successful_cache_save() {
         host_profile: host,
         decisions,
         measured_this_run,
+        runtime_faults: HashMap::new(),
         measurement_observer: Some(Arc::clone(&observer)),
         cache_path: Some(path.clone()),
         cache_load_error: None,
@@ -3070,6 +3072,7 @@ fn measured_router_drop_does_not_persist_dirty_cache() {
             host_profile: host,
             decisions,
             measured_this_run: [key].into_iter().collect(),
+            runtime_faults: HashMap::new(),
             measurement_observer: Some(Arc::clone(&observer)),
             cache_path: Some(path.clone()),
             cache_load_error: None,
@@ -3127,6 +3130,7 @@ fn measured_router_commit_discards_unmeasured_stale_decisions() {
         host_profile: host.clone(),
         decisions,
         measured_this_run,
+        runtime_faults: HashMap::new(),
         measurement_observer: None,
         cache_path: Some(path.clone()),
         cache_load_error: None,
@@ -3183,6 +3187,7 @@ fn calibration_mode_remeasures_loaded_cache_decisions_before_reuse() {
         host_profile: host,
         decisions,
         measured_this_run: HashSet::new(),
+        runtime_faults: HashMap::new(),
         measurement_observer: None,
         cache_path: None,
         cache_load_error: None,
@@ -3386,6 +3391,40 @@ fn cached_router_loads_persisted_decision_and_fails_loud_on_missing_bucket() {
             .choose_with_plan(&scanner, Some(ScanBackend::CpuFallback), &miss_batch)
             .map(|selection| selection.backend)
             .expect("explicit backend diagnostics bypass autoroute cache"),
+        ScanBackend::CpuFallback
+    );
+
+    let selected = router
+        .choose_with_plan(&scanner, None, &hit_batch)
+        .expect("persisted route before runtime fault");
+    let recovery = keyhog_scanner::BackendRecoveryReceipt::new(
+        selected.backend,
+        ScanBackend::CpuFallback,
+        vec![keyhog_scanner::RecoveredInputRange::new(
+            0,
+            0,
+            hit_batch[0].data.len(),
+        )],
+        "injected dispatch fault".to_string(),
+    );
+    router
+        .quarantine_recovered_route(&selected, &recovery)
+        .expect("record exact route fault");
+    let quarantined = router
+        .choose_with_plan(&scanner, None, &hit_batch)
+        .expect_err("a recovered runtime fault must quarantine the exact route")
+        .to_string();
+    assert!(
+        quarantined.contains("autoroute decision is quarantined")
+            && quarantined.contains("will not silently substitute another route")
+            && quarantined.contains("injected dispatch fault"),
+        "quarantined route must fail visibly with recalibration guidance; got {quarantined}"
+    );
+    assert_eq!(
+        router
+            .choose_with_plan(&scanner, Some(ScanBackend::CpuFallback), &hit_batch)
+            .expect("explicit diagnostic route bypasses quarantined autoroute evidence")
+            .backend,
         ScanBackend::CpuFallback
     );
 
@@ -5308,6 +5347,7 @@ fn daemon_warm_routes_come_only_from_persisted_selected_backends() {
         cache_path: None,
         cache_load_error: None,
         runtime_class: AutorouteRuntimeClass::OneShot,
+        runtime_faults: Mutex::new(HashMap::new()),
     };
 
     assert_eq!(

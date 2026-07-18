@@ -129,3 +129,32 @@ fn legacy_writer_still_accepts_html_metadata_alias() {
         .expect("HTML output is UTF-8")
         .contains("0.5.41-test"));
 }
+
+#[test]
+fn complete_after_recovery_is_successful_but_never_masks_a_coverage_gap() {
+    use keyhog_core::ScanCompletionStatus;
+
+    assert_eq!(
+        ScanCompletionStatus::resolve(Some(ScanCompletionStatus::CompleteAfterRecovery), false),
+        ScanCompletionStatus::CompleteAfterRecovery
+    );
+    assert_eq!(
+        ScanCompletionStatus::resolve(Some(ScanCompletionStatus::CompleteAfterRecovery), true),
+        ScanCompletionStatus::Partial
+    );
+
+    let mut metadata = metadata();
+    metadata.scan_status = ScanCompletionStatus::CompleteAfterRecovery;
+    let mut output = Vec::new();
+    write_scan_report(
+        &mut output,
+        ReportFormat::JsonEnvelope {
+            coverage_gap_summary: Vec::new(),
+        },
+        ScanReport::new(&[]).with_metadata(&metadata),
+    )
+    .expect("recovered complete report must render");
+    let value: serde_json::Value = serde_json::from_slice(&output).expect("valid JSON");
+    assert_eq!(value["scan_status"], "complete_after_recovery");
+    assert_eq!(value["metadata"]["scan_status"], "complete_after_recovery");
+}

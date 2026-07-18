@@ -183,13 +183,17 @@ fn scan_object<'a>(
 ) -> GitlabScan<'a> {
     GitlabScan {
         scan_type: "sast",
-        status: if matches!(scan_status, ScanCompletionStatus::Success) {
+        status: if matches!(
+            scan_status,
+            ScanCompletionStatus::Success | ScanCompletionStatus::CompleteAfterRecovery
+        ) {
             "success"
         } else {
             "failure"
         },
         keyhog_scan_status: match scan_status {
             ScanCompletionStatus::Success => "success",
+            ScanCompletionStatus::CompleteAfterRecovery => "success",
             ScanCompletionStatus::Partial => "partial",
             ScanCompletionStatus::Cancelled => "cancelled",
             ScanCompletionStatus::Failed => "failed",

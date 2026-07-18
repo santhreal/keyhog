@@ -142,6 +142,7 @@ impl CoalescedBatchRouter {
                 backend: *backend,
                 phase1_plan: (!backend.is_gpu()).then(|| scanner.phase1_admission_plan(batch)),
                 execution_route: scanner.default_execution_route(),
+                runtime_route: None,
             }),
             Self::Measured(router) => router.choose_with_plan(scanner, None, batch),
         }
@@ -151,6 +152,17 @@ impl CoalescedBatchRouter {
         match self {
             Self::Explicit(_) => Ok(()),
             Self::Measured(router) => router.commit(),
+        }
+    }
+
+    fn quarantine_recovered_route(
+        &mut self,
+        selection: &BackendSelection,
+        recovery: &keyhog_scanner::BackendRecoveryReceipt,
+    ) -> std::result::Result<(), AutorouteRoutingError> {
+        match self {
+            Self::Explicit(_) => Ok(()),
+            Self::Measured(router) => router.quarantine_recovered_route(selection, recovery),
         }
     }
 }
@@ -263,6 +275,10 @@ impl CoalescedScannerWorker {
         .map_err(|error| {
             AutorouteRoutingError::selected_backend_dispatch_failed(chosen_backend, error)
         })?;
+        if let Some(recovery) = outcome.recovery.as_ref() {
+            self.router
+                .quarantine_recovered_route(&selection, recovery)?;
+        }
         append_scanned_batch_findings(
             findings,
             batch,
@@ -302,33 +318,32 @@ pub(crate) fn recover_automatic_gpu_batch(
     failed_backend: ScanBackend,
     error: &keyhog_scanner::ScanError,
     execution_route: keyhog_scanner::ScanExecutionRoute,
-) -> Vec<Vec<RawMatch>> {
-    let chunks = batch.len();
-    let bytes = batch
-        .iter()
-        .map(|chunk| chunk.data.len() as u64)
-        .sum::<u64>();
-    crate::BACKEND_RECOVERY_EVENTS.fetch_add(1, Ordering::Relaxed);
-    crate::BACKEND_RECOVERED_CHUNKS.fetch_add(chunks, Ordering::Relaxed);
-    crate::BACKEND_RECOVERED_BYTES.fetch_add(bytes, Ordering::Relaxed);
-    eprintln!(
-        "keyhog: WARNING: automatic backend {} failed ({error}); replaying {chunks} stable chunk(s), {bytes} byte(s) through cpu-fallback for complete coverage",
-        failed_backend.label(),
-    );
-    tracing::warn!(
-        target: "keyhog::routing",
-        backend = failed_backend.label(),
-        chunks,
-        bytes,
-        error = %error,
-        "automatic GPU dispatch failed; exact batch recovered through CPU reference",
-    );
+) -> (
+    Vec<Vec<RawMatch>>,
+    Option<keyhog_scanner::BackendRecoveryReceipt>,
+) {
     let admission = scanner.phase1_admission_plan(batch);
-    scanner.scan_coalesced_with_backend_admission_and_route(
+    let matches = scanner.scan_coalesced_with_backend_admission_and_route(
         batch,
         ScanBackend::CpuFallback,
         Some(&admission),
         execution_route,
+    );
+    let ranges = batch
+        .iter()
+        .enumerate()
+        .map(|(chunk_index, chunk)| {
+            keyhog_scanner::RecoveredInputRange::new(chunk_index, 0, chunk.data.len())
+        })
+        .collect();
+    (
+        matches,
+        Some(keyhog_scanner::BackendRecoveryReceipt::new(
+            failed_backend,
+            ScanBackend::CpuFallback,
+            ranges,
+            error.to_string(),
+        )),
     )
 }
 
@@ -346,6 +361,7 @@ pub(crate) fn automatic_gpu_recovery_allowed(
 pub(crate) struct SelectedBatchScan {
     pub(crate) per_chunk: Vec<Vec<RawMatch>>,
     pub(crate) recovered: bool,
+    pub(crate) recovery: Option<keyhog_scanner::BackendRecoveryReceipt>,
 }
 
 /// Execute one already-selected backend and own its complete recovery contract.
@@ -360,27 +376,30 @@ pub(crate) fn scan_selected_batch(
     recover_automatic_gpu_faults: bool,
 ) -> keyhog_scanner::Result<SelectedBatchScan> {
     let degrade_before = backend.is_gpu().then(|| scanner.gpu_degrade_count());
-    let (per_chunk, mut recovered) = match scanner
-        .try_scan_coalesced_with_backend_admission_and_route(
+    let (per_chunk, mut recovery) = match scanner
+        .try_scan_coalesced_with_backend_admission_route_and_recovery(
             batch,
             backend,
             admission_plan,
             execution_route,
+            backend.is_gpu() && recover_automatic_gpu_faults,
         ) {
-        Ok(per_chunk) => (per_chunk, false),
-        Err(error) if backend.is_gpu() && recover_automatic_gpu_faults => (
-            recover_automatic_gpu_batch(scanner, batch, backend, &error, execution_route),
-            true,
-        ),
+        Ok(outcome) => (outcome.matches, outcome.recovery),
+        Err(error) if backend.is_gpu() && recover_automatic_gpu_faults => {
+            recover_automatic_gpu_batch(scanner, batch, backend, &error, execution_route)
+        }
         Err(error) => return Err(error),
     };
 
     if let Some(before) = degrade_before {
         let after = scanner.gpu_degrade_count();
-        if !recovered && after != before {
+        if recovery.is_none() && after != before {
             if recover_automatic_gpu_faults {
-                record_completed_gpu_recovery(batch);
-                recovered = true;
+                recovery = Some(completed_gpu_recovery_receipt(
+                    batch,
+                    backend,
+                    "GPU dispatch completed through the scanner recall floor",
+                ));
             } else {
                 return Err(keyhog_scanner::ScanError::Gpu(format!(
                     "selected backend {} degraded during dispatch (GPU degradation counter {before} -> {after}); explicit or required backend requests cannot be substituted",
@@ -390,21 +409,59 @@ pub(crate) fn scan_selected_batch(
         }
     }
 
+    if let Some(receipt) = recovery.as_ref() {
+        record_completed_backend_recovery(receipt);
+    }
+
     Ok(SelectedBatchScan {
         per_chunk,
-        recovered,
+        recovered: recovery.is_some(),
+        recovery,
     })
 }
 
-/// Record a GPU dispatch whose built-in CPU recall floor completed accelerator
-/// misses. The scanner emits the concrete warning; this is the coverage receipt.
-pub(crate) fn record_completed_gpu_recovery(batch: &[Chunk]) {
+pub(crate) fn record_completed_backend_recovery(receipt: &keyhog_scanner::BackendRecoveryReceipt) {
+    let recovered_chunks = receipt.recovered_chunks();
+    let recovered_bytes = receipt.recovered_bytes();
     crate::BACKEND_RECOVERY_EVENTS.fetch_add(1, Ordering::Relaxed);
-    crate::BACKEND_RECOVERED_CHUNKS.fetch_add(batch.len(), Ordering::Relaxed);
-    crate::BACKEND_RECOVERED_BYTES.fetch_add(
-        batch.iter().map(|chunk| chunk.data.len() as u64).sum(),
-        Ordering::Relaxed,
+    crate::BACKEND_RECOVERED_CHUNKS.fetch_add(recovered_chunks, Ordering::Relaxed);
+    crate::BACKEND_RECOVERED_BYTES.fetch_add(recovered_bytes, Ordering::Relaxed);
+    eprintln!(
+        "keyhog: WARNING: automatic backend {} faulted ({}); recovered {} exact range(s) across {recovered_chunks} chunk(s), {recovered_bytes} byte(s), through {}; scan coverage is complete",
+        receipt.failed_backend.label(),
+        receipt.reason,
+        receipt.ranges.len(),
+        receipt.recovery_backend.label(),
     );
+    tracing::warn!(
+        target: "keyhog::routing",
+        failed_backend = receipt.failed_backend.label(),
+        recovery_backend = receipt.recovery_backend.label(),
+        ranges = receipt.ranges.len(),
+        chunks = recovered_chunks,
+        bytes = recovered_bytes,
+        reason = %receipt.reason,
+        "automatic backend fault recovered with complete byte coverage",
+    );
+}
+
+fn completed_gpu_recovery_receipt(
+    batch: &[Chunk],
+    failed_backend: ScanBackend,
+    reason: impl Into<String>,
+) -> keyhog_scanner::BackendRecoveryReceipt {
+    keyhog_scanner::BackendRecoveryReceipt::new(
+        failed_backend,
+        ScanBackend::CpuFallback,
+        batch
+            .iter()
+            .enumerate()
+            .map(|(chunk_index, chunk)| {
+                keyhog_scanner::RecoveredInputRange::new(chunk_index, 0, chunk.data.len())
+            })
+            .collect(),
+        reason.into(),
+    )
 }
 
 fn batch_has_no_scan_bytes(batch: &[Chunk]) -> bool {

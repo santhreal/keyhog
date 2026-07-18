@@ -67,10 +67,9 @@ impl CompiledScanner {
         }
     }
 
-    /// Result-returning production GPU boundary. CLI orchestrators consume the
-    /// error in-band to recover stable input; health diagnostics consume it to
-    /// emit a complete report. Only the infallible direct-library wrapper maps
-    /// it to the process-level explicit-backend contract.
+    /// Result-returning hard GPU boundary. The recovery-aware companion retains
+    /// completed shards and returns exact recovered ranges; explicit callers
+    /// keep this all-or-error contract.
     pub(crate) fn try_scan_coalesced_gpu_region_presence(
         &self,
         chunks: &[keyhog_core::Chunk],
@@ -80,8 +79,28 @@ impl CompiledScanner {
         Vec<Vec<keyhog_core::RawMatch>>,
         super::gpu_forced::SelectedGpuDispatchError,
     > {
+        self.try_scan_coalesced_gpu_region_presence_recovering(
+            chunks,
+            route,
+            execution_route,
+            false,
+        )
+        .map(|outcome| outcome.matches)
+    }
+
+    pub(crate) fn try_scan_coalesced_gpu_region_presence_recovering(
+        &self,
+        chunks: &[keyhog_core::Chunk],
+        route: crate::hw_probe::ScanBackend,
+        execution_route: crate::ScanExecutionRoute,
+        recover_dispatch_faults: bool,
+    ) -> std::result::Result<super::CoalescedScanOutcome, super::gpu_forced::SelectedGpuDispatchError>
+    {
         if chunks.is_empty() {
-            return Ok(Vec::new());
+            return Ok(super::CoalescedScanOutcome {
+                matches: Vec::new(),
+                recovery: None,
+            });
         }
 
         let dispatch_failure =
@@ -196,6 +215,9 @@ impl CompiledScanner {
                 triggers.push(bits.iter().any(|&word| word != 0).then_some(bits));
                 Ok(())
             };
+            let mut recovery_ranges = Vec::new();
+            let mut gpu_dispatch_fault: Option<String> = None;
+            let mut recovered_dispatches = 0usize;
             let mut dispatch_presence = |haystack: &[u8],
                                          region_starts: &[u32],
                                          logical_start: usize,
@@ -217,7 +239,12 @@ impl CompiledScanner {
                     "region-presence logical row range overflows host usize".to_string()
                 })?;
                 let mut derive_s = std::time::Duration::ZERO;
-                let result =
+                let result = if gpu_dispatch_fault.is_some() {
+                    Err(
+                        "selected GPU route was quarantined after an earlier dispatch fault"
+                            .to_string(),
+                    )
+                } else {
                     super::gpu_resident_evidence::scan_gpu_literal_evidence_by_region_resident(
                         resident_slot,
                         matcher,
@@ -357,10 +384,86 @@ impl CompiledScanner {
                             derive_s = t_derive.elapsed();
                             Ok(())
                         },
-                    );
+                    )
+                };
                 dis_s += t_dis.elapsed().saturating_sub(derive_s);
                 derive_s_total += derive_s;
-                result
+                match result {
+                    Ok(()) => Ok(()),
+                    Err(error) if recover_dispatch_faults => {
+                        if gpu_dispatch_fault.is_none() {
+                            gpu_dispatch_fault = Some(error.clone());
+                        }
+                        if region_starts.len() != rows {
+                            return Err(format!(
+                                "cannot recover GPU dispatch with {} region start(s) for {rows} logical row(s): {error}",
+                                region_starts.len()
+                            ));
+                        }
+                        recovered_dispatches = recovered_dispatches.saturating_add(1);
+                        for region in 0..rows {
+                            let source_start =
+                                usize::try_from(region_starts[region]).map_err(|_| {
+                                    "GPU recovery region start exceeds host usize".to_string()
+                                })?;
+                            let source_end = if let Some(next) = region_starts.get(region + 1) {
+                                usize::try_from(*next)
+                                    .map_err(|_| {
+                                        "GPU recovery next-region start exceeds host usize"
+                                            .to_string()
+                                    })?
+                                    .checked_sub(1)
+                                    .ok_or_else(|| {
+                                        "GPU recovery region separator underflows".to_string()
+                                    })?
+                            } else {
+                                haystack.len()
+                            };
+                            let source = haystack.get(source_start..source_end).ok_or_else(|| {
+                                format!(
+                                    "GPU recovery region {region} range {source_start}..{source_end} exceeds {} dispatch byte(s)",
+                                    haystack.len()
+                                )
+                            })?;
+                            let triggered = self.collect_triggered_patterns_cpu_bytes(source);
+                            let mut recovered_presence = vec![0u32; presence_words];
+                            for (word_index, word) in triggered.iter().copied().enumerate() {
+                                let mut remaining = word;
+                                while remaining != 0 {
+                                    let bit = remaining.trailing_zeros() as usize;
+                                    remaining &= remaining - 1;
+                                    let pattern_index = word_index * 64 + bit;
+                                    if pattern_index < self.ac_map.len() {
+                                        recovered_presence[pattern_index / 32] |=
+                                            1u32 << (pattern_index % 32);
+                                    }
+                                }
+                            }
+                            consume(&recovered_presence).map_err(|recovery_error| {
+                                format!(
+                                    "GPU dispatch failed ({error}); exact CPU trigger recovery also failed: {recovery_error}"
+                                )
+                            })?;
+                            let chunk_index =
+                                logical_start.checked_add(region).ok_or_else(|| {
+                                    "GPU recovery logical chunk index overflows host usize"
+                                        .to_string()
+                                })?;
+                            let byte_start = logical_byte_base;
+                            let byte_end =
+                                byte_start.checked_add(source.len()).ok_or_else(|| {
+                                    "GPU recovery byte end overflows host usize".to_string()
+                                })?;
+                            recovery_ranges.push(super::RecoveredInputRange::new(
+                                chunk_index,
+                                byte_start,
+                                byte_end,
+                            ));
+                        }
+                        Ok(())
+                    }
+                    Err(error) => Err(error),
+                }
             };
             let byte_limit = region_presence_batch_byte_limit(backend.id());
             let planned_dispatches =
@@ -483,6 +586,7 @@ impl CompiledScanner {
             }
             drop(dispatch_presence);
             drop(derive_presence_row);
+            let gpu_evidence_complete = gpu_dispatch_fault.is_none();
             if let Some(rows) = phase2_always_anchor_literal_matches.as_mut() {
                 for row in rows.iter_mut() {
                     row.sort_unstable();
@@ -664,10 +768,13 @@ impl CompiledScanner {
                     && !self.should_scan_no_hit_chunk(chunk);
                 phase2_gpu_row_needed.push(row_has_trigger || !decode_only_row);
             }
-            let phase2_gpu_workload =
+            let phase2_gpu_workload = if gpu_evidence_complete {
                 build_phase2_gpu_admission_workload_filtered(chunks, |idx, _| {
                     phase2_gpu_row_needed[idx]
-                });
+                })
+            } else {
+                Phase2GpuAdmissionWorkload::Empty
+            };
             let phase2_dispatch_profile = super::profile::span(super::profile::P::BackendDispatch);
             let t_phase2_gpu = std::time::Instant::now();
             let mut phase2_gpu_empty_complete = false;
@@ -681,8 +788,33 @@ impl CompiledScanner {
                     match self.phase2_gpu_dfa_catalog(Some(backend.id())) {
                         Some(catalog) => {
                             phase2_gpu_coverage = Some(catalog.coverage());
-                            match scan_phase2_gpu_chunks_sharded(catalog, &**backend, gpu_chunks) {
-                                Ok(admission) => Some(admission),
+                            match scan_phase2_gpu_chunks_sharded(
+                                catalog,
+                                &**backend,
+                                gpu_chunks,
+                                recover_dispatch_faults,
+                            ) {
+                                Ok(outcome) => {
+                                    if let Some(fault) = outcome.fault.as_ref() {
+                                        if gpu_dispatch_fault.is_none() {
+                                            gpu_dispatch_fault = Some(format!(
+                                                "phase-2 GPU admission dispatch failed: {fault}"
+                                            ));
+                                        }
+                                        for recovered in &outcome.recovered_rows {
+                                            for chunk_index in recovered.clone() {
+                                                recovery_ranges.push(
+                                                    super::RecoveredInputRange::new(
+                                                        chunk_index,
+                                                        0,
+                                                        chunks[chunk_index].data.len(),
+                                                    ),
+                                                );
+                                            }
+                                        }
+                                    }
+                                    Some(outcome.admission)
+                                }
                                 Err(error) => {
                                     let reason =
                                         format!("phase-2 GPU admission dispatch failed: {error}");
@@ -704,10 +836,31 @@ impl CompiledScanner {
                             catalog,
                             &**backend,
                             gpu_chunks.as_slice(),
+                            recover_dispatch_faults,
                         ) {
-                            Ok(admission) => {
-                                let admission =
-                                    expand_phase2_gpu_admission(admission, &indices, full_len);
+                            Ok(outcome) => {
+                                if let Some(fault) = outcome.fault.as_ref() {
+                                    if gpu_dispatch_fault.is_none() {
+                                        gpu_dispatch_fault = Some(format!(
+                                            "phase-2 GPU admission dispatch failed: {fault}"
+                                        ));
+                                    }
+                                    for recovered in &outcome.recovered_rows {
+                                        for subset_index in recovered.clone() {
+                                            let chunk_index = indices[subset_index];
+                                            recovery_ranges.push(super::RecoveredInputRange::new(
+                                                chunk_index,
+                                                0,
+                                                chunks[chunk_index].data.len(),
+                                            ));
+                                        }
+                                    }
+                                }
+                                let admission = expand_phase2_gpu_admission(
+                                    outcome.admission,
+                                    &indices,
+                                    full_len,
+                                );
                                 Some(admission)
                             }
                             Err(error) => {
@@ -753,11 +906,17 @@ impl CompiledScanner {
                 phase2_gpu_admission
                     .as_ref()
                     .map(|admission| admission.complete.as_slice()),
-                Some(phase2_keyword_hints.as_slice()),
-                Some(phase2_always_anchor_presence.as_slice()),
-                phase2_always_anchor_literal_matches.as_deref(),
-                confirmed_anchor_literal_matches.as_deref(),
-                generic_keyword_positions.as_deref(),
+                gpu_evidence_complete.then_some(phase2_keyword_hints.as_slice()),
+                gpu_evidence_complete.then_some(phase2_always_anchor_presence.as_slice()),
+                gpu_evidence_complete
+                    .then_some(phase2_always_anchor_literal_matches.as_deref())
+                    .flatten(),
+                gpu_evidence_complete
+                    .then_some(confirmed_anchor_literal_matches.as_deref())
+                    .flatten(),
+                gpu_evidence_complete
+                    .then_some(generic_keyword_positions.as_deref())
+                    .flatten(),
                 execution_route,
             );
             if kh {
@@ -793,13 +952,14 @@ impl CompiledScanner {
                     .map_or(0usize, |rows| rows.iter().map(Vec::len).sum());
                 let generic_keyword_gpu_complete = generic_keyword_positions.is_some();
                 eprintln!(
-                    "perf-trace {}: chunks={} source_bytes={} coalesced_bytes={} max_dispatch_bytes={} dispatches={} batch_mode={} matcher={:.3}s coalesce={:.6}s coalesce_mib_s={:.3} dispatch={:.3}s derive={:.6}s floor={:.3}s phase2_gpu={:.3}s phase2={:.3}s gpu_presence_bits={} underfire_recovered={} trigger_bits={} phase2_gpu_admitted={} phase2_gpu_matches={} phase2_gpu_complete={} phase2_gpu_complete_rows={} phase2_gpu_excluded_oversized={} phase2_gpu_excluded_non_ascii={} phase2_gpu_ascii_patterns={} phase2_gpu_uncovered_ascii_patterns={} phase2_gpu_excluded_redundant_patterns={} phase2_gpu_shards={} phase2_always_anchor_chunks={} phase2_always_anchor_positions_complete={} phase2_always_anchor_candidate_rows={} phase2_always_anchor_candidates={} confirmed_anchor_gpu_complete={} confirmed_anchor_candidate_rows={} confirmed_anchor_candidates={} generic_keyword_gpu_complete={} generic_keyword_candidate_rows={} generic_keyword_candidates={} full_recall_floor={}",
+                    "perf-trace {}: chunks={} source_bytes={} coalesced_bytes={} max_dispatch_bytes={} dispatches={} recovered_dispatches={} batch_mode={} matcher={:.3}s coalesce={:.6}s coalesce_mib_s={:.3} dispatch={:.3}s derive={:.6}s floor={:.3}s phase2_gpu={:.3}s phase2={:.3}s gpu_presence_bits={} underfire_recovered={} trigger_bits={} phase2_gpu_admitted={} phase2_gpu_matches={} phase2_gpu_complete={} phase2_gpu_complete_rows={} phase2_gpu_excluded_oversized={} phase2_gpu_excluded_non_ascii={} phase2_gpu_ascii_patterns={} phase2_gpu_uncovered_ascii_patterns={} phase2_gpu_excluded_redundant_patterns={} phase2_gpu_shards={} phase2_always_anchor_chunks={} phase2_always_anchor_positions_complete={} phase2_always_anchor_candidate_rows={} phase2_always_anchor_candidates={} confirmed_anchor_gpu_complete={} confirmed_anchor_candidate_rows={} confirmed_anchor_candidates={} generic_keyword_gpu_complete={} generic_keyword_candidate_rows={} generic_keyword_candidates={} full_recall_floor={}",
                     route.label(),
                     chunks.len(),
                     region_source_bytes,
                     region_coalesced_bytes,
                     region_max_dispatch_bytes,
                     region_dispatches,
+                    recovered_dispatches,
                     region_batch_mode.label(),
                     matcher_s.as_secs_f64(),
                     co_s.as_secs_f64(),
@@ -836,7 +996,23 @@ impl CompiledScanner {
                     full_recall_floor,
                 );
             }
-            Ok(results)
+            let recovery = gpu_dispatch_fault.map(|reason| {
+                self.record_gpu_runtime_fault(format!(
+                    "{} recovered {} exact input range(s) after GPU dispatch fault: {reason}",
+                    route.label(),
+                    recovery_ranges.len()
+                ));
+                super::BackendRecoveryReceipt::new(
+                    route,
+                    crate::hw_probe::ScanBackend::CpuFallback,
+                    recovery_ranges,
+                    reason,
+                )
+            });
+            Ok(super::CoalescedScanOutcome {
+                matches: results,
+                recovery,
+            })
         }
     }
 }

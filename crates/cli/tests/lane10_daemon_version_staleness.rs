@@ -195,6 +195,8 @@ async fn spawn_stop_protocol_mismatch_daemon(
                 scans_served: 0,
                 active_scans: 0,
                 detector_count,
+                backend_recoveries: 0,
+                last_backend_fault: None,
             },
         )
         .await

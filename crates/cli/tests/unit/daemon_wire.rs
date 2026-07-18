@@ -1,12 +1,15 @@
 //! Micro gate for `cli/daemon/frame.rs` and `cli/daemon/protocol.rs`.
 
 use keyhog::daemon::frame;
-use keyhog::daemon::protocol::{Request, Response, SourceCoverageGaps, WIRE_VERSION};
+use keyhog::daemon::protocol::{
+    BackendRecoveryStatus, RecoveredInputRangeStatus, Request, Response, SourceCoverageGaps,
+    WIRE_VERSION,
+};
 use std::collections::BTreeMap;
 use tokio::io::AsyncWriteExt;
 
 #[tokio::test]
-async fn daemon_wire_v5_hello_roundtrip() {
+async fn daemon_wire_v6_hello_roundtrip() {
     let (mut client, mut server) = tokio::io::duplex(64 * 1024);
 
     frame::write_request(&mut client, &Request::Hello)
@@ -92,6 +95,7 @@ async fn daemon_scan_text_roundtrip_carries_matches() {
             static_recovery_rejections: BTreeMap::new(),
             dogfood_detail_events_dropped: 0,
             source_coverage_gaps: Default::default(),
+            backend_recovery: None,
         },
     )
     .await
@@ -107,7 +111,7 @@ async fn daemon_scan_text_roundtrip_carries_matches() {
 }
 
 #[test]
-fn daemon_wire_v4_requires_every_scan_result_integrity_field() {
+fn daemon_wire_v6_requires_every_scan_result_integrity_field() {
     let complete = Response::ScanResults {
         path: None,
         matches: vec![],
@@ -116,6 +120,7 @@ fn daemon_wire_v4_requires_every_scan_result_integrity_field() {
         static_recovery_rejections: BTreeMap::new(),
         dogfood_detail_events_dropped: 0,
         source_coverage_gaps: SourceCoverageGaps::default(),
+        backend_recovery: None,
     };
     let complete = serde_json::to_value(complete).expect("serialize complete response");
 
@@ -125,6 +130,7 @@ fn daemon_wire_v4_requires_every_scan_result_integrity_field() {
         "source_coverage_gaps",
         "static_recovery_rejections",
         "dogfood_detail_events_dropped",
+        "backend_recovery",
     ] {
         let mut incomplete = complete.clone();
         incomplete
@@ -132,7 +138,7 @@ fn daemon_wire_v4_requires_every_scan_result_integrity_field() {
             .expect("response object")
             .remove(missing);
         let error = serde_json::from_value::<Response>(incomplete)
-            .expect_err("wire-v4 ScanResults must reject omitted integrity fields");
+            .expect_err("wire-v6 ScanResults must reject omitted integrity fields");
         assert!(
             error.to_string().contains(missing),
             "missing {missing} must be named in the frame error: {error}"
@@ -145,7 +151,7 @@ fn daemon_wire_v4_requires_every_scan_result_integrity_field() {
         .expect("coverage object")
         .remove("over_max_size");
     let error = serde_json::from_value::<Response>(incomplete)
-        .expect_err("wire-v4 must reject incomplete source coverage");
+        .expect_err("wire-v6 must reject incomplete source coverage");
     assert!(error.to_string().contains("over_max_size"));
 }
 
@@ -162,6 +168,18 @@ fn daemon_scan_results_source_coverage_gaps_roundtrip_exactly() {
             binary: 1,
             ..Default::default()
         },
+        backend_recovery: Some(BackendRecoveryStatus {
+            failed_backend: "gpu-cuda-region-presence".into(),
+            recovery_backend: "cpu-fallback".into(),
+            recovered_ranges: vec![RecoveredInputRangeStatus {
+                chunk_index: 2,
+                byte_start: 64,
+                byte_end: 96,
+            }],
+            recovered_chunks: 1,
+            recovered_bytes: 32,
+            reason: "injected dispatch fault".into(),
+        }),
     };
     let encoded = serde_json::to_string(&response).expect("serialize scan results");
     let decoded: Response = serde_json::from_str(&encoded).expect("deserialize scan results");
@@ -170,12 +188,23 @@ fn daemon_scan_results_source_coverage_gaps_roundtrip_exactly() {
             source_coverage_gaps,
             static_recovery_rejections,
             dogfood_detail_events_dropped,
+            backend_recovery,
             ..
         } => {
             assert_eq!(source_coverage_gaps.binary, 1);
             assert_eq!(source_coverage_gaps.total(), 1);
             assert_eq!(static_recovery_rejections["json_base64"], 3);
             assert_eq!(dogfood_detail_events_dropped, 7);
+            let recovery = backend_recovery.expect("recovery status");
+            assert_eq!(recovery.recovered_bytes, 32);
+            assert_eq!(
+                recovery.recovered_ranges,
+                vec![RecoveredInputRangeStatus {
+                    chunk_index: 2,
+                    byte_start: 64,
+                    byte_end: 96,
+                }]
+            );
         }
         other => panic!("expected ScanResults, got {other:?}"),
     }

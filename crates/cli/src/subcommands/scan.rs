@@ -733,6 +733,7 @@ fn unwrap_scan_results(resp: Response) -> Result<(Vec<RawMatch>, SourceCoverageG
             static_recovery_rejections,
             dogfood_detail_events_dropped,
             source_coverage_gaps,
+            backend_recovery,
             ..
         } => {
             // Merge daemon-side telemetry into the CLI's process-local
@@ -761,6 +762,50 @@ fn unwrap_scan_results(resp: Response) -> Result<(Vec<RawMatch>, SourceCoverageG
             }
             if !dogfood_events.is_empty() {
                 keyhog_scanner::telemetry::append_daemon_events(dogfood_events);
+            }
+            if let Some(recovery) = backend_recovery {
+                let failed_backend = keyhog_scanner::hw_probe::parse_backend_str(
+                    &recovery.failed_backend,
+                )
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "daemon returned unknown failed backend {:?}; restart it with this KeyHog build",
+                        recovery.failed_backend
+                    )
+                })?;
+                let recovery_backend = keyhog_scanner::hw_probe::parse_backend_str(
+                    &recovery.recovery_backend,
+                )
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "daemon returned unknown recovery backend {:?}; restart it with this KeyHog build",
+                        recovery.recovery_backend
+                    )
+                })?;
+                let receipt = keyhog_scanner::BackendRecoveryReceipt::new(
+                    failed_backend,
+                    recovery_backend,
+                    recovery
+                        .recovered_ranges
+                        .into_iter()
+                        .map(|range| {
+                            keyhog_scanner::RecoveredInputRange::new(
+                                range.chunk_index,
+                                range.byte_start,
+                                range.byte_end,
+                            )
+                        })
+                        .collect(),
+                    recovery.reason,
+                );
+                if receipt.recovered_chunks() != recovery.recovered_chunks
+                    || receipt.recovered_bytes() != recovery.recovered_bytes
+                {
+                    bail!(
+                        "daemon returned inconsistent backend-recovery totals; restart it with this KeyHog build"
+                    );
+                }
+                crate::orchestrator::record_completed_backend_recovery(&receipt);
             }
             Ok((matches, source_coverage_gaps))
         }
