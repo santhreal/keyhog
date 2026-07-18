@@ -1,12 +1,14 @@
 # Summary
 
 [Introduction](./introduction.md)
+[What KeyHog can do](./capabilities.md)
 [Security](./security.md)
 
 # Getting started
 
 - [Install](./install.md)
 - [Your first scan](./first-scan.md)
+- [Recipes](./recipes.md)
 - [Output formats](./output-formats.md)
 
 # Core concepts
@@ -19,6 +21,7 @@
 - [Source archives](./source-archives.md)
 - [Suppressions](./suppressions.md)
 - [Verification](./verification.md)
+- [Hardening and data handling](./hardening.md)
 
 # Workflows
 
@@ -32,6 +35,7 @@
 
 - [Deep recovery](./guides/deep-recovery.md)
 - [Mass scanning](./guides/mass-scanning.md)
+- [System-wide triage](./guides/system-wide-triage.md)
 
 # Reference
 

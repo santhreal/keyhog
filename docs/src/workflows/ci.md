@@ -37,7 +37,7 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@v4
-      - uses: santhreal/keyhog/.github/actions/keyhog@v0.5.41
+      - uses: santhreal/keyhog/.github/actions/keyhog@v0
         with:
           path: .
           severity: high
@@ -101,7 +101,7 @@ git add .keyhog-baseline.json && git commit -m 'chore: keyhog baseline'
 ```
 
 ```yaml
-      - uses: santhreal/keyhog/.github/actions/keyhog@v0.5.41
+      - uses: santhreal/keyhog/.github/actions/keyhog@v0
         with:
           baseline: .keyhog-baseline.json
 ```

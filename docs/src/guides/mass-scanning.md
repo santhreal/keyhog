@@ -1,5 +1,29 @@
 # Mass scanning
 
+## One command, whole account
+
+For a single organization, group, workspace, or bucket, keyhog does the
+inventory traversal itself. No loop, no clone script:
+
+```bash
+export KEYHOG_GITHUB_TOKEN="$GH_PAT"
+keyhog scan --github-org acme --format json-envelope --output acme.json
+```
+
+```bash
+KEYHOG_GITLAB_TOKEN="$GL_PAT"    keyhog scan --gitlab-group acme       --format json-envelope --output gitlab.json
+KEYHOG_BITBUCKET_USERNAME="$U" KEYHOG_BITBUCKET_TOKEN="$P" \
+  keyhog scan --bitbucket-workspace acme --format json-envelope --output bitbucket.json
+keyhog scan --s3-bucket logs-prod --s3-prefix config/ --format json-envelope --output s3.json
+```
+
+Each run walks every repository or object under the target and writes one
+envelope report carrying source identity and coverage. That is the whole setup
+for a single provider target. The rest of this guide covers scanning *across
+many* targets (multiple orgs, mixed local + cloud, thousands of repos) where
+you partition and aggregate. If one org or bucket is all you need, the command
+above is complete.
+
 Use one bounded report and one exit status per partition when scanning many
 repositories, buckets, or files. Keep the partition manifest outside the scan
 tree so a scanner never treats its own answer key as input.

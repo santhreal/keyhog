@@ -26,6 +26,20 @@ binary first runs `keyhog calibrate-autoroute`.
   <img src="demo/keyhog-scan.gif" alt="keyhog scan: boxed findings with severity, confidence, file:line, and remediation, then a results summary and an honest coverage-gap line" width="860" />
 </p>
 
+### Start in 60 seconds
+
+```sh
+# Linux / macOS: install, then scan the current tree
+curl -fsSL https://santh.dev/keyhog/install.sh | sh
+keyhog scan .
+```
+
+That is the whole first run. From here, keyhog scans a lot more than a
+directory. Every use case is a single copy-paste command in the
+[Recipes cookbook](https://santhreal.github.io/keyhog/recipes.html) (mirrored
+below in [Quickstart](#quickstart)): whole GitHub/GitLab/Bitbucket orgs, git history,
+Docker images, S3/GCS/Azure buckets, live URLs, and a full machine sweep.
+
 ### Add it to your CI (one workflow file)
 
 ```yaml
@@ -38,7 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: santhreal/keyhog/.github/actions/keyhog@v0.5.41
+      - uses: santhreal/keyhog/.github/actions/keyhog@v0
         with: { path: ., severity: high, format: sarif }
 ```
 
