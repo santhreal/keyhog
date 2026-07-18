@@ -17,7 +17,7 @@ description = "EPA API key (32-40 alphanumeric chars) with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:api[_-]?key|X-Api-Key)[=:\\s\"'\\']+([a-zA-Z0-9]{32,40}).*(?:epa\\.gov|EPA)"
+regex = '''(?:api[_\-\s]*key|X-Api-Key)[=:\s"'\']+([a-zA-Z0-9]{32,40}).*(?:epa\.gov|EPA)'''
 description = "EPA API key in header or query with EPA context"
 group = 1
 

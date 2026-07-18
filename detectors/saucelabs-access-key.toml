@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["SAUCE_ACCESS_KEY", "sauce_access_key", "SAUCE_ACCESSKEY", "sauce-access-key"]
 
 [[detector.patterns]]
-regex = "(?:SAUCE_ACCESS[_-]?KEY|sauce_access[_-]?key)[=:\\s\"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+regex = '''(?:SAUCE_ACCESS[_\-\s]*KEY|sauce_access[_\-\s]*key)[=:\s"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
 description = "SauceLabs access key (UUID format) with context anchor"
 group = 1
 

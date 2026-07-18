@@ -20,7 +20,7 @@ keywords = ["LT_ACCESS_KEY", "LT_ACCESSKEY", "lambdatest"]
 # `LT_ACCESS_KEY`, so removing the generic `access_key` arm preserves
 # every contract shape. Keywords list narrowed in lockstep so the AC
 # pre-filter no longer admits chunks for `access_key`/`access-key`.
-regex = "LT_ACCESS[_-]?KEY[=:\\s\"']+([a-zA-Z0-9]{40,})"
+regex = '''LT_ACCESS[_\-\s]*KEY[=:\s"']+([a-zA-Z0-9]{40,})'''
 description = "LambdaTest access key (LT_ACCESS_KEY anchor only)"
 group = 1
 

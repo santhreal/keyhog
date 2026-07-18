@@ -16,7 +16,7 @@ regex = "dal:[a-zA-Z0-9_-]{20,60}"
 description = "LiveChat deprecated access token (dal: prefix)"
 
 [[detector.patterns]]
-regex = "(?i)(?:LIVECHAT|livechat)[_\\s]?(?:PAT|TOKEN|API[_\\s]?KEY|ACCESS[_\\s]?TOKEN)[=:\\s\"'']+([A-Za-z0-9_-]{60,})"
+regex = '''(?i)(?:LIVECHAT|livechat)[_\-\s]*(?:PAT|TOKEN|API[_\-\s]*KEY|ACCESS[_\-\s]*TOKEN)[=:\s"'']+([A-Za-z0-9_-]{60,})'''
 description = "LiveChat Personal Access Token with context anchor"
 group = 1
 

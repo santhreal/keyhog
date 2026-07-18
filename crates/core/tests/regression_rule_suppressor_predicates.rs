@@ -1,11 +1,6 @@
-//! Regression: detector regex inter-keyword separator canonicalization
-//! (`keyhog_core::canonicalize_keyword_separators` / `CANONICAL_SEPARATOR`)
-//! and `.keyhogignore.toml` rule-suppression path/detector predicates
-//! (`keyhog_core::RuleSuppressor`).
+//! Regression: `.keyhogignore.toml` rule-suppression path/detector predicates.
 //!
-//! Every assertion pins a CONCRETE expected value: the exact canonical
-//! rewrite string, the exact `Cow` borrow discriminant, or an exact
-//! suppression bool / error variant. No `is_empty()` / `is_ok()`-only checks.
+//! Every assertion pins an exact suppression bool or error variant.
 //!
 //! This is an EXTERNAL integration crate: it uses only the public API surface
 //! re-exported from `keyhog_core` (via `api::*`), never `#[cfg(test)]` helpers.
@@ -16,123 +11,9 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use keyhog_core::{
-    canonicalize_keyword_separators, MatchLocation, RuleSuppressor, RuleSuppressorError, Severity,
-    VerificationResult, VerifiedFinding, CANONICAL_SEPARATOR,
+    MatchLocation, RuleSuppressor, RuleSuppressorError, Severity, VerificationResult,
+    VerifiedFinding,
 };
-
-// ---------------------------------------------------------------------------
-// Separator canonicalization
-// ---------------------------------------------------------------------------
-
-/// The canonical form is the exact union charset, hyphen escaped, unbounded.
-#[test]
-fn canonical_separator_constant_is_expected_form() {
-    assert_eq!(CANONICAL_SEPARATOR, "[_\\-\\s]*");
-}
-
-/// `[_-]?` carries `_` and `-` and nothing else → separator. The optional
-/// `?` quantifier is consumed and folded into the canonical `*`.
-#[test]
-fn optional_hyphen_underscore_class_is_canonicalized() {
-    let out = canonicalize_keyword_separators("api[_-]?key");
-    assert_eq!(out.as_ref(), format!("api{CANONICAL_SEPARATOR}key"));
-    // A rewrite happened, so the result must be an owned allocation.
-    assert!(matches!(out, Cow::Owned(_)));
-}
-
-/// A pure-whitespace class carries neither `_` nor `-`, so the oracle leaves
-/// it verbatim and the function returns the input BORROWED (no allocation).
-#[test]
-fn pure_whitespace_class_left_untouched_and_borrowed() {
-    let input = "foo[\\s]*bar";
-    let out = canonicalize_keyword_separators(input);
-    assert_eq!(out.as_ref(), input);
-    assert!(matches!(out, Cow::Borrowed(_)));
-}
-
-/// A negated class `[^_-]` is never a separator even though it names `_`/`-`.
-#[test]
-fn negated_class_is_never_a_separator() {
-    let input = "foo[^_-]bar";
-    let out = canonicalize_keyword_separators(input);
-    assert_eq!(out.as_ref(), input);
-    assert!(matches!(out, Cow::Borrowed(_)));
-}
-
-/// An escaped `\[` is not a class opener, so nothing between it and the
-/// escaped `\]` is scanned as a separator body (input passes through).
-#[test]
-fn escaped_bracket_not_treated_as_class() {
-    let input = "foo\\[_-\\]bar";
-    let out = canonicalize_keyword_separators(input);
-    assert_eq!(out.as_ref(), input);
-    assert!(matches!(out, Cow::Borrowed(_)));
-}
-
-/// Multiple separator classes are each replaced, and every verbatim byte
-/// around them (anchors, inline flags, literal `$`) is preserved exactly.
-#[test]
-fn multiple_separators_each_replaced_and_boundaries_preserved() {
-    let out = canonicalize_keyword_separators("(?i)api[_-]key[_ ]id$");
-    let expected = format!("(?i)api{CANONICAL_SEPARATOR}key{CANONICAL_SEPARATOR}id$");
-    assert_eq!(out.as_ref(), expected);
-}
-
-/// A digit member (`0`) sets `other`, disqualifying the class → left verbatim.
-#[test]
-fn digit_member_disqualifies_class() {
-    let input = "foo[_-0]bar";
-    let out = canonicalize_keyword_separators(input);
-    assert_eq!(out.as_ref(), input);
-    assert!(matches!(out, Cow::Borrowed(_)));
-}
-
-/// The over-escaped `[_\\s-]` (literal backslash + literal `s` + `_` + `-`)
-/// is still recognised as a separator and canonicalized, the exact recall
-/// bug the module was written to erase.
-#[test]
-fn over_escaped_backslash_s_class_is_canonicalized() {
-    let out = canonicalize_keyword_separators("last[_\\\\s-]fm");
-    assert_eq!(out.as_ref(), format!("last{CANONICAL_SEPARATOR}fm"));
-    assert!(matches!(out, Cow::Owned(_)));
-}
-
-/// `[_\s]` = underscore + whitespace shorthand → separator (has `_`).
-#[test]
-fn underscore_plus_whitespace_shorthand_is_separator() {
-    let out = canonicalize_keyword_separators("api[_\\s]key");
-    assert_eq!(out.as_ref(), format!("api{CANONICAL_SEPARATOR}key"));
-}
-
-/// A counted `{1,3}` quantifier after a separator class is consumed whole and
-/// replaced by the unbounded canonical form.
-#[test]
-fn counted_quantifier_is_consumed() {
-    let out = canonicalize_keyword_separators("api[_-]{1,3}key");
-    assert_eq!(out.as_ref(), format!("api{CANONICAL_SEPARATOR}key"));
-}
-
-/// Canonicalizing the canonical form yields the canonical form unchanged
-/// (idempotent by value).
-#[test]
-fn canonicalization_is_idempotent() {
-    let out = canonicalize_keyword_separators(CANONICAL_SEPARATOR);
-    assert_eq!(out.as_ref(), CANONICAL_SEPARATOR);
-}
-
-/// An unterminated class (`[` with no closing `]`) is a malformed regex; the
-/// scanner returns `None`, the `[` is treated as a literal, input unchanged.
-#[test]
-fn unterminated_class_treated_as_literal() {
-    let input = "foo[_-bar";
-    let out = canonicalize_keyword_separators(input);
-    assert_eq!(out.as_ref(), input);
-    assert!(matches!(out, Cow::Borrowed(_)));
-}
-
-// ---------------------------------------------------------------------------
-// Rule-suppression detector / path predicates
-// ---------------------------------------------------------------------------
 
 fn finding(
     detector: &str,

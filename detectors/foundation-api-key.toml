@@ -18,7 +18,7 @@ entropy_high = 4.5
 entropy_floor = [{ max_len = 24, floor = 3.0 }, { max_len = 40, floor = 2.8 }, { floor = 3.5 }]
 
 [[detector.patterns]]
-regex = "(?:foundation|FOUNDATION)[_\\s]*(?:API[_\\s]*)?KEY[_\\s]*[=:][\\s]*[\"'']+([a-zA-Z0-9_-]{20,})[\"'']+"
+regex = '''(?:foundation|FOUNDATION)[_\-\s]*(?:API[_\-\s]*)?KEY[_\-\s]*[=:][\s]*["'']+([a-zA-Z0-9_-]{20,})["'']+'''
 description = "Foundation API key in assignment context"
 group = 1
 

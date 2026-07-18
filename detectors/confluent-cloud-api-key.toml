@@ -16,13 +16,13 @@ regex = "cflt[A-Za-z0-9+/]{60}"
 description = "Confluent Cloud API secret (new format with cflt prefix)"
 
 [[detector.patterns]]
-regex = "(?:CONFLUENT|CONFLUENT_CLOUD|confluent|confluent_cloud)[_\\s]*(?:API[_\\s]*)?(?:KEY[_\\s]*ID|KEY)[=:\\s\"'']+([a-zA-Z0-9]{16})"
+regex = '''(?:CONFLUENT|CONFLUENT_CLOUD|confluent|confluent_cloud)[_\-\s]*(?:API[_\-\s]*)?(?:KEY[_\-\s]*ID|KEY)[=:\s"'']+([a-zA-Z0-9]{16})'''
 description = "Confluent Cloud API key ID with context anchor"
 group = 1
 
 [[detector.companions]]
 name = "confluent_api_secret"
-regex = "(?:CONFLUENT|CONFLUENT_CLOUD|confluent|confluent_cloud)[_\\s]*(?:API[_\\s]*)?(?:SECRET|PASSWORD)[=:\\s\"'']+([a-zA-Z0-9+/]{64}|cflt[A-Za-z0-9+/]{60})"
+regex = '''(?:CONFLUENT|CONFLUENT_CLOUD|confluent|confluent_cloud)[_\-\s]*(?:API[_\-\s]*)?(?:SECRET|PASSWORD)[=:\s"'']+([a-zA-Z0-9+/]{64}|cflt[A-Za-z0-9+/]{60})'''
 within_lines = 5
 [detector.verify]
 method = "GET"

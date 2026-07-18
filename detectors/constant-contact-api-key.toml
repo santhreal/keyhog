@@ -12,22 +12,22 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["constantcontact", "CONSTANTCONTACT", "constant_contact", "client_id", "client_secret"]
 
 [[detector.patterns]]
-regex = """(?i)constant[_-]?contact[_-]?(?:api[_-]?)?key[=:\\s\"']+([a-zA-Z0-9]{20,})"""
+regex = '''(?i)constant[_\-\s]*contact[_\-\s]*(?:api[_\-\s]*)?key[=:\s"']+([a-zA-Z0-9]{20,})'''
 description = "Constant Contact API Key with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = """(?i)constant[_-]?contact[_-]?(?:client[_-]?)?id[=:\\s\"']+([a-zA-Z0-9]{20,})"""
+regex = '''(?i)constant[_\-\s]*contact[_\-\s]*(?:client[_\-\s]*)?id[=:\s"']+([a-zA-Z0-9]{20,})'''
 description = "Constant Contact Client ID"
 group = 1
 
 [[detector.patterns]]
-regex = """(?i)constant[_-]?contact[_-]?(?:client[_-]?)?secret[=:\\s\"']+([a-zA-Z0-9_-]{20,})"""
+regex = '''(?i)constant[_\-\s]*contact[_\-\s]*(?:client[_\-\s]*)?secret[=:\s"']+([a-zA-Z0-9_-]{20,})'''
 description = "Constant Contact Client Secret"
 group = 1
 
 [[detector.patterns]]
-regex = """(?i)constant[_-]?contact[_-]?(?:access[_-]?)?token[=:\\s\"']+([a-zA-Z0-9_-]{20,})"""
+regex = '''(?i)constant[_\-\s]*contact[_\-\s]*(?:access[_\-\s]*)?token[=:\s"']+([a-zA-Z0-9_-]{20,})'''
 description = "Constant Contact Access Token"
 group = 1
 

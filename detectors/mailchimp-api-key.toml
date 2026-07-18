@@ -16,7 +16,7 @@ min_confidence = 0.3
 keywords = ["MAILCHIMP_API_KEY", "mailchimp_api_key", "mailchimp", "-us", "-eu", "-uk"]
 
 [[detector.patterns]]
-regex = "(?:MAILCHIMP|mailchimp)[_\\s]*(?:API|api)?[_\\s]*(?:KEY|key)?[=:\\s\"'']+([a-f0-9]{32}-(?:us|eu|uk)[0-9]{1,2})"
+regex = '''(?:MAILCHIMP|mailchimp)[_\-\s]*(?:API|api)?[_\-\s]*(?:KEY|key)?[=:\s"'']+([a-f0-9]{32}-(?:us|eu|uk)[0-9]{1,2})'''
 description = "Mailchimp API key with context anchor"
 group = 1
 

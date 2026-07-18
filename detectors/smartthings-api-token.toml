@@ -12,12 +12,12 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["smartthings", "personal_access_token", "api.smartthings.com"]
 
 [[detector.patterns]]
-regex = "(?:smartthings|SMARTTHINGS)[._-]?(?:PAT|pat|PERSONAL[_-]?ACCESS[_-]?TOKEN|personal[_-]?access[_-]?token|ACCESS[_-]?TOKEN|access[_-]?token)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+regex = '''(?:smartthings|SMARTTHINGS)[._-]?(?:PAT|pat|PERSONAL[_\-\s]*ACCESS[_\-\s]*TOKEN|personal[_\-\s]*access[_\-\s]*token|ACCESS[_\-\s]*TOKEN|access[_\-\s]*token)[=:\s"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
 description = "SmartThings Personal Access Token (UUID format)"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:smartthings|SMARTTHINGS)[._-]?(?:PAT|pat|PERSONAL[_-]?ACCESS[_-]?TOKEN|personal[_-]?access[_-]?token|ACCESS[_-]?TOKEN|access[_-]?token)[=:\\s\"'']+([a-f0-9]{36,64})"
+regex = '''(?:smartthings|SMARTTHINGS)[._-]?(?:PAT|pat|PERSONAL[_\-\s]*ACCESS[_\-\s]*TOKEN|personal[_\-\s]*access[_\-\s]*token|ACCESS[_\-\s]*TOKEN|access[_\-\s]*token)[=:\s"'']+([a-f0-9]{36,64})'''
 description = "SmartThings API token (hex format)"
 group = 1
 

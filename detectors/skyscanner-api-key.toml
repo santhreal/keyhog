@@ -12,12 +12,12 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["SKYSCANNER", "skyscanner"]
 
 [[detector.patterns]]
-regex = "(?:SKYSCANNER|skyscanner)[_\\s]?(?:API_KEY|api_key|KEY|key)[=:\\s\"'']+([A-Za-z0-9]{32,64})"
+regex = '''(?:SKYSCANNER|skyscanner)[_\-\s]*(?:API_KEY|api_key|KEY|key)[=:\s"'']+([A-Za-z0-9]{32,64})'''
 description = "Skyscanner API key with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "(?is)partners\\.api\\.skyscanner\\.net.{0,256}x[_\\-\\s]?api[_\\-\\s]?key[=:\\s\"'']+([A-Za-z0-9]{32,64})"
+regex = '''(?is)partners\.api\.skyscanner\.net.{0,256}x[_\-\s]*api[_\-\s]*key[=:\s"'']+([A-Za-z0-9]{32,64})'''
 required_literals = ["partners.api.skyscanner.net"]
 description = "Skyscanner API key header following the Skyscanner API endpoint"
 group = 1

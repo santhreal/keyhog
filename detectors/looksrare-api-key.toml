@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["looksrare", "X-Looks-Api-Key", "LOOKSRARE_API_KEY"]
 
 [[detector.patterns]]
-regex = "(?:looksrare|LOOKSRARE)[_\\s]*(?:API[_\\s]*)?KEY[_\\s]*[=:][\\s]*[\"'']+([a-zA-Z0-9_-]{32,})[\"'']+"
+regex = '''(?:looksrare|LOOKSRARE)[_\-\s]*(?:API[_\-\s]*)?KEY[_\-\s]*[=:][\s]*["'']+([a-zA-Z0-9_-]{32,})["'']+'''
 description = "LooksRare API key in assignment context"
 group = 1
 

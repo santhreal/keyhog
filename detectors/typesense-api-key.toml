@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["TYPESENSE_API_KEY", "typesense_api_key", "TYPESENSE_APIKEY", "typesenseApiKey"]
 
 [[detector.patterns]]
-regex = "(?:TYPESENSE[_-]?API[_-]?KEY|typesense[_-]?api[_-]?key)[=:\\s\"'']+([a-zA-Z0-9_-]{16,})"
+regex = '''(?:TYPESENSE[_\-\s]*API[_\-\s]*KEY|typesense[_\-\s]*api[_\-\s]*key)[=:\s"'']+([a-zA-Z0-9_-]{16,})'''
 description = "Typesense API key with context anchor"
 group = 1
 

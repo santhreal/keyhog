@@ -14,7 +14,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["gitea"]
 
 [[detector.patterns]]
-regex = '''(?i)gitea[_-]?token['"\s]*[:=]['"\s]*([a-f0-9]{32,40})'''
+regex = '''(?i)gitea[_\-\s]*token['"\s]*[:=]['"\s]*([a-f0-9]{32,40})'''
 description = "Gitea access token in a GITEA_TOKEN assignment"
 group = 1
 

@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["PACKAGIST", "packagist.com", "auth.json", "composer"]
 
 [[detector.patterns]]
-regex = "(?:PACKAGIST|packagist)[_\\s]*(?:API[_\\s]*KEY|TOKEN|token)[=:\\s\"'']+([a-f0-9]{32,64})"
+regex = '''(?:PACKAGIST|packagist)[_\-\s]*(?:API[_\-\s]*KEY|TOKEN|token)[=:\s"'']+([a-f0-9]{32,64})'''
 description = "Packagist API key/token in configuration"
 group = 1
 

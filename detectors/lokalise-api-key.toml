@@ -16,7 +16,7 @@ regex = "lol[0-9a-f]{40,}"
 description = "Lokalise API token (lol prefix)"
 
 [[detector.patterns]]
-regex = "(?:LOKALISE|LOKALISE_API)[_\\s]?(?:API[_\\s]?(?:KEY|TOKEN)|TOKEN|KEY)?[=:\\s\"'']+(lol[0-9a-f]{40,})"
+regex = '''(?:LOKALISE|LOKALISE_API)[_\-\s]*(?:API[_\-\s]*(?:KEY|TOKEN)|TOKEN|KEY)?[=:\s"'']+(lol[0-9a-f]{40,})'''
 description = "Lokalise API token with context anchor"
 group = 1
 

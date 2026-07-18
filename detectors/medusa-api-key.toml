@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["medusa", "MEDUSA_API_KEY", "x-medusa-access-token", "MEDUSA_ADMIN"]
 
 [[detector.patterns]]
-regex = "(?:MEDUSA|medusa)[_\\s]?(?:API[_\\s]?KEY|ADMIN[_\\s]?API[_\\s]?KEY)[=:\\s\"']+([a-zA-Z0-9]{32,64})"
+regex = '''(?:MEDUSA|medusa)[_\-\s]*(?:API[_\-\s]*KEY|ADMIN[_\-\s]*API[_\-\s]*KEY)[=:\s"']+([a-zA-Z0-9]{32,64})'''
 description = "Medusa API key with context anchor"
 group = 1
 

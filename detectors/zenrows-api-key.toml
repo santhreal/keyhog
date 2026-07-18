@@ -17,7 +17,7 @@ description = "ZenRows API key with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:api[_-]?key|apikey)[=:\\s\"'']+([a-zA-Z0-9]{32}).{0,50}(?:zenrows)"
+regex = '''(?:api[_\-\s]*key|apikey)[=:\s"'']+([a-zA-Z0-9]{32}).{0,50}(?:zenrows)'''
 description = "ZenRows API key with api_key prefix and zenrows context"
 group = 1
 

@@ -12,22 +12,22 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["AKIA", "ASIA", "govcloud", "us-gov-"]
 
 [[detector.patterns]]
-regex = "(?:AWS[_-]?GOVCLOUD|GOVCLOUD)[_\\s]*(?:ACCESS[_-]?KEY|KEY[_-]?ID)[=:\\s\"'']+((?-i:(?:AKIA|ASIA)[0-9A-Z]{16}))\\b"
+regex = '''(?:AWS[_\-\s]*GOVCLOUD|GOVCLOUD)[_\-\s]*(?:ACCESS[_\-\s]*KEY|KEY[_\-\s]*ID)[=:\s"'']+((?-i:(?:AKIA|ASIA)[0-9A-Z]{16}))\b'''
 description = "AWS GovCloud access key with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:AWS[_-]?REGION|REGION)[=:\\s\"'']+(us-gov-[a-z]+-[0-9])"
+regex = '''(?:AWS[_\-\s]*REGION|REGION)[=:\s"'']+(us-gov-[a-z]+-[0-9])'''
 description = "AWS GovCloud region identifier"
 group = 1
 
 [[detector.companions]]
-regex = "(?i:AWS[_-]?SECRET[_-]?ACCESS[_-]?KEY|SECRET[_-]?KEY|AWS[_-]?SECRET)[=:\\s\"'']+([0-9a-zA-Z/+=]{40})"
+regex = '''(?i:AWS[_\-\s]*SECRET[_\-\s]*ACCESS[_\-\s]*KEY|SECRET[_\-\s]*KEY|AWS[_\-\s]*SECRET)[=:\s"'']+([0-9a-zA-Z/+=]{40})'''
 within_lines = 5
 name = "secret_key"
 
 [[detector.companions]]
-regex = "(?i:AWS[_-]?SESSION[_-]?TOKEN|X-Amz-Security-Token)[=:\\s\"'']+([A-Za-z0-9/+=\\-]{80,})"
+regex = '''(?i:AWS[_\-\s]*SESSION[_\-\s]*TOKEN|X-Amz-Security-Token)[=:\s"'']+([A-Za-z0-9/+=\-]{80,})'''
 within_lines = 5
 name = "session_token"
 

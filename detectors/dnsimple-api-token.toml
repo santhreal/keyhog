@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["DNSIMPLE", "dnsimple", "DNSIMPLE_API_TOKEN", "dnsimple_api_token"]
 
 [[detector.patterns]]
-regex = "(?:DNSIMPLE|dnsimple)(?:_API)?[_-]?(?:TOKEN|token|KEY|key)[=:\\s\"']+([a-zA-Z0-9_-]{20,50})"
+regex = '''(?:DNSIMPLE|dnsimple)(?:_API)?[_\-\s]*(?:TOKEN|token|KEY|key)[=:\s"']+([a-zA-Z0-9_-]{20,50})'''
 description = "DNSimple API token with context anchor"
 group = 1
 

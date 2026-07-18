@@ -15,12 +15,12 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["convertkit", "CONVERTKIT", "api_secret"]
 
 [[detector.patterns]]
-regex = """(?i)convertkit[_-]?(?:api[_-]?)?(?:secret|key)[=:\\s\"']+([a-zA-Z0-9_-]{20,})"""
+regex = '''(?i)convertkit[_\-\s]*(?:api[_\-\s]*)?(?:secret|key)[=:\s"']+([a-zA-Z0-9_-]{20,})'''
 description = "ConvertKit API Secret/Key with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = """(?i)convertkit[_-]?(?:api[_-]?)?key[_-]?(?:v3)?[=:\\s\"']+([a-zA-Z0-9_-]{20,})"""
+regex = '''(?i)convertkit[_\-\s]*(?:api[_\-\s]*)?key[_\-\s]*(?:v3)?[=:\s"']+([a-zA-Z0-9_-]{20,})'''
 description = "ConvertKit V3 API Key"
 group = 1
 

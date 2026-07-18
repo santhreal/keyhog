@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["FATHOM_API_KEY", "fathom_api_key", "usefathom"]
 
 [[detector.patterns]]
-regex = "(?:FATHOM[_\\-\\s]?API[_\\-\\s]?KEY|fathom[_\\-\\s]?api[_\\-\\s]?key)[=:\\s\"'']+([a-zA-Z0-9_-]{32,})"
+regex = '''(?:FATHOM[_\-\s]*API[_\-\s]*KEY|fathom[_\-\s]*api[_\-\s]*key)[=:\s"'']+([a-zA-Z0-9_-]{32,})'''
 description = "Fathom API key with context anchor"
 group = 1
 

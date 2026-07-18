@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["pingdom", "PINGDOM", "Authorization", "Bearer", "api.pingdom.com"]
 
 [[detector.patterns]]
-regex = "(?:pingdom|PINGDOM)[_.]?(?:api[_-]?key|token)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+regex = '''(?:pingdom|PINGDOM)[_.]?(?:api[_\-\s]*key|token)[=:\s"'']+([a-zA-Z0-9_-]{20,})'''
 description = "Pingdom API key with context anchor"
 group = 1
 

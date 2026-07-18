@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["jotform", "JOTFORM_API_KEY", "jotform_key"]
 
 [[detector.patterns]]
-regex = "(?:jotform|JOTFORM)[_.\\s]*(?:api[_\\s]*key|API[_\\s]*KEY)[=:\\s\"''']+([a-f0-9]{32})(?:[^a-f0-9]|$)"
+regex = "(?:jotform|JOTFORM)[_.\\s]*(?:api[_\\-\\s]*key|API[_\\-\\s]*KEY)[=:\\s\"''']+([a-f0-9]{32})(?:[^a-f0-9]|$)"
 description = "JotForm API key with context anchor"
 group = 1
 

@@ -12,12 +12,12 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["infinite", "campus", "INFINITE_CAMPUS", "campus_api", "icampus"]
 
 [[detector.patterns]]
-regex = "(?:infinite[_\\s-]*campus|icampus|campus)[_\\s.-]*(?:api[_\\s.-]*)?(?:key|token)[=:\\s\"'']+([a-zA-Z0-9_-]{32,64})"
+regex = '''(?:infinite[_\-\s]*campus|icampus|campus)[_\s.-]*(?:api[_\s.-]*)?(?:key|token)[=:\s"'']+([a-zA-Z0-9_-]{32,64})'''
 description = "Infinite Campus API key with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:infinite[_\\s-]*campus|icampus)[_\\s.-]*(?:client[_\\s.-]*id)[=:\\s\"'']+([a-zA-Z0-9]{20,40})"
+regex = '''(?:infinite[_\-\s]*campus|icampus)[_\s.-]*(?:client[_\s.-]*id)[=:\s"'']+([a-zA-Z0-9]{20,40})'''
 description = "Infinite Campus client ID with context anchor"
 group = 1
 

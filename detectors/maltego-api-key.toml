@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["maltego", "MALTEGO_API_KEY", "transform_hub"]
 
 [[detector.patterns]]
-regex = "(?:maltego|MALTEGO)[\\s_-]*(?:api[_-]?key|key)[=:\\s\"'']+([a-zA-Z0-9_-]{16,64})"
+regex = '''(?:maltego|MALTEGO)[_\-\s]*(?:api[_\-\s]*key|key)[=:\s"'']+([a-zA-Z0-9_-]{16,64})'''
 description = "Maltego API key with context anchor"
 group = 1
 

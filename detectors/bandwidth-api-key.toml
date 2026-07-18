@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["BANDWIDTH", "BANDWIDTH_API_USER", "BANDWIDTH_API_TOKEN", "BANDWIDTH_USERNAME", "BANDWIDTH_PASSWORD"]
 
 [[detector.patterns]]
-regex = "(?:BANDWIDTH|bandwidth)[_\\s]*(?:API[_\\s]*)?(?:USER|USERNAME|TOKEN|PASSWORD|SECRET)[=:\\s\"']+([a-zA-Z0-9_-]{20,})"
+regex = '''(?:BANDWIDTH|bandwidth)[_\-\s]*(?:API[_\-\s]*)?(?:USER|USERNAME|TOKEN|PASSWORD|SECRET)[=:\s"']+([a-zA-Z0-9_-]{20,})'''
 description = "Bandwidth API credential with context anchor"
 group = 1
 

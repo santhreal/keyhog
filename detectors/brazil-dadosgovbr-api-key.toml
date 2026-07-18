@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["dados.gov.br", "DADOS_GOV_BR", "CKAN_BRAZIL", "dadosgovbr"]
 
 [[detector.patterns]]
-regex = '''(?:dados\.gov\.br|DADOS_GOV|BRAZIL)[_.-]?(?:API[_-]?KEY|api_key|CKAN[_-]?KEY|ckan_key)[\s"'=:]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
+regex = '''(?:dados\.gov\.br|DADOS_GOV|BRAZIL)[_.-]?(?:API[_\-\s]*KEY|api_key|CKAN[_\-\s]*KEY|ckan_key)[\s"'=:]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
 description = "Brazil dados.gov.br CKAN API key"
 group = 1
 

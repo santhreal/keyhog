@@ -14,7 +14,7 @@ entropy_high = 4.5
 entropy_floor = [{ max_len = 24, floor = 3.0 }, { max_len = 40, floor = 2.8 }, { floor = 3.5 }]
 
 [[detector.patterns]]
-regex = "(?:TRANSIFEX|TRANSIFEX_API|TRANSIFEX_TOKEN)[_\\s]?(?:API[_\\s]?(?:KEY|TOKEN)|TOKEN|KEY)?[=:\\s\"'']+([a-zA-Z0-9_-]{40,})"
+regex = '''(?:TRANSIFEX|TRANSIFEX_API|TRANSIFEX_TOKEN)[_\-\s]*(?:API[_\-\s]*(?:KEY|TOKEN)|TOKEN|KEY)?[=:\s"'']+([a-zA-Z0-9_-]{40,})'''
 description = "Transifex API token with context anchor"
 group = 1
 
@@ -29,14 +29,14 @@ description = "Transifex API token with domain context (multi-line tolerant)"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:TRANSIFEX|TRANSIFEX_API)[_\\s]?USERNAME[=:\\s\"'']+([a-zA-Z0-9_-]+)"
+regex = '''(?:TRANSIFEX|TRANSIFEX_API)[_\-\s]*USERNAME[=:\s"'']+([a-zA-Z0-9_-]+)'''
 description = "Transifex username for API authentication"
 group = 1
 weak_anchor = true
 
 [[detector.companions]]
 name = "Transifex API Password/Token"
-regex = "(?:TRANSIFEX|TRANSIFEX_API)[_\\s]?PASSWORD[=:\\s\"'']+([a-zA-Z0-9_-]{40,})"
+regex = '''(?:TRANSIFEX|TRANSIFEX_API)[_\-\s]*PASSWORD[=:\s"'']+([a-zA-Z0-9_-]{40,})'''
 within_lines = 5
 
 [[detector.tests]]

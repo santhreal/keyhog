@@ -12,13 +12,13 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["ELASTICSEARCH_API_KEY", "ELASTIC_API_KEY", "ES_API_KEY", "elasticsearch_api_key", "elastic_api_key"]
 
 [[detector.patterns]]
-regex = "(?:ELASTICSEARCH[_-]?API[_-]?KEY|ELASTIC[_-]?API[_-]?KEY|ES[_-]?API[_-]?KEY|elasticsearch[_-]?api[_-]?key|elastic[_-]?api[_-]?key)[=:\\s\"'']+([a-zA-Z0-9_-]{48,})"
+regex = '''(?:ELASTICSEARCH[_\-\s]*API[_\-\s]*KEY|ELASTIC[_\-\s]*API[_\-\s]*KEY|ES[_\-\s]*API[_\-\s]*KEY|elasticsearch[_\-\s]*api[_\-\s]*key|elastic[_\-\s]*api[_\-\s]*key)[=:\s"'']+([a-zA-Z0-9_-]{48,})'''
 required_literals = ["ELASTICSEARCH", "ELASTIC", "ES"]
 description = "Elasticsearch API key with context anchor (48+ chars)"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:ELASTICSEARCH[_-]?API[_-]?KEY|ELASTIC[_-]?API[_-]?KEY|ES[_-]?API[_-]?KEY|elasticsearch[_-]?api[_-]?key|elastic[_-]?api[_-]?key)[=:\\s\"'']+([A-Za-z0-9+/]{40,}={0,2})"
+regex = '''(?:ELASTICSEARCH[_\-\s]*API[_\-\s]*KEY|ELASTIC[_\-\s]*API[_\-\s]*KEY|ES[_\-\s]*API[_\-\s]*KEY|elasticsearch[_\-\s]*api[_\-\s]*key|elastic[_\-\s]*api[_\-\s]*key)[=:\s"'']+([A-Za-z0-9+/]{40,}={0,2})'''
 required_literals = ["ELASTICSEARCH", "ELASTIC", "ES"]
 description = "Elasticsearch API key (base64 encoded) with context anchor"
 group = 1

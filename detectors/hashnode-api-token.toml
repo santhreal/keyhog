@@ -15,7 +15,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["hashnode", "HASHNODE", "personal_access_token"]
 
 [[detector.patterns]]
-regex = '''(?:hashnode|HASHNODE|personal[_-]?access[_-]?token|HASHNODE[_-]?TOKEN)[=:\s"\']+([a-f0-9]{32,})'''
+regex = '''(?:hashnode|HASHNODE|personal[_\-\s]*access[_\-\s]*token|HASHNODE[_\-\s]*TOKEN)[=:\s"\']+([a-f0-9]{32,})'''
 description = "Hashnode Personal Access Token with context anchor"
 group = 1
 

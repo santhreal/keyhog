@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["APPLITOOLS_API_KEY", "applitools_api_key", "X-Eyes-Api-Key", "applitools"]
 
 [[detector.patterns]]
-regex = "\\b(?:APPLITOOLS_API_KEY|applitools[_-]?api[_-]?key)[=:\\s\"']+([a-zA-Z0-9_-]{40,})"
+regex = '''\b(?:APPLITOOLS_API_KEY|applitools[_\-\s]*api[_\-\s]*key)[=:\s"']+([a-zA-Z0-9_-]{40,})'''
 description = "Applitools API key with context anchor"
 group = 1
 

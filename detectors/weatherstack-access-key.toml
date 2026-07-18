@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["WEATHERSTACK", "weatherstack", "WEATHERSTACK_ACCESS_KEY"]
 
 [[detector.patterns]]
-regex = "(?:WEATHERSTACK|weatherstack)[_\\s]*(?:ACCESS[_\\s]*)?KEY[=:\\s\"'']+([a-zA-Z0-9]{20,})"
+regex = '''(?:WEATHERSTACK|weatherstack)[_\-\s]*(?:ACCESS[_\-\s]*)?KEY[=:\s"'']+([a-zA-Z0-9]{20,})'''
 description = "Weatherstack access key with context anchor"
 group = 1
 

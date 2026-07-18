@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["COUNTLY_API_KEY", "COUNTLY_APP_KEY", "countly"]
 
 [[detector.patterns]]
-regex = "(?:COUNTLY[_\\-\\s]?(?:API|APP)[_\\-\\s]?KEY|countly[_\\-\\s]?(?:api|app)[_\\-\\s]?key)[=:\\s\"'']+([a-f0-9]{32})"
+regex = '''(?:COUNTLY[_\-\s]*(?:API|APP)[_\-\s]*KEY|countly[_\-\s]*(?:api|app)[_\-\s]*key)[=:\s"'']+([a-f0-9]{32})'''
 description = "Countly API/App key - 32 hex characters with context anchor"
 group = 1
 

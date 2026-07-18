@@ -12,12 +12,12 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["whereby", "WHEREBY", "whereby.com"]
 
 [[detector.patterns]]
-regex = "(?:whereby)[_\\-\\s]?(?:api[_\\-\\s]?key|token)[\"\\'\\s]*[=:][\"\\'\\s]*([a-zA-Z0-9_\\-\\.]{40,})"
+regex = '''(?:whereby)[_\-\s]*(?:api[_\-\s]*key|token)["\'\s]*[=:]["\'\s]*([a-zA-Z0-9_\-\.]{40,})'''
 description = "Whereby API key with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:WHEREBY[_\\-\\s]?API[_\\-\\s]?KEY|WHEREBY[_\\-\\s]?TOKEN)[\"\\'\\s]*[=:][\"\\'\\s]*([a-zA-Z0-9_\\-\\.]{40,})"
+regex = '''(?:WHEREBY[_\-\s]*API[_\-\s]*KEY|WHEREBY[_\-\s]*TOKEN)["\'\s]*[=:]["\'\s]*([a-zA-Z0-9_\-\.]{40,})'''
 description = "Whereby API key in environment variable format"
 group = 1
 

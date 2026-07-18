@@ -223,8 +223,8 @@ pub mod regression_keyword_bridge;
 pub mod regression_keyword_bridge_floor;
 #[path = "regression_keyword_predicate_union.rs"]
 pub mod regression_keyword_predicate_union;
-#[path = "regression_keyword_separator_canonicalization.rs"]
-pub mod regression_keyword_separator_canonicalization;
+#[path = "regression_detector_owned_keyword_separators.rs"]
+pub mod regression_detector_owned_keyword_separators;
 #[path = "regression_kubeconfig_k8s_recall.rs"]
 pub mod regression_kubeconfig_k8s_recall;
 #[path = "regression_leading_assertion_and_alternation_prefix_recall.rs"]

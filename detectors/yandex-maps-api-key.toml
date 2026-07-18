@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["YANDEX_MAPS_KEY", "yandex.maps.key", "yandex_maps_key"]
 
 [[detector.patterns]]
-regex = "(?:YANDEX[_-]?MAPS[_-]?KEY|yandex[_-]?maps[_-]?key|yandex\\.maps\\.key)[=:\\s\"'']+([A-Za-z0-9-]{36,})"
+regex = '''(?:YANDEX[_\-\s]*MAPS[_\-\s]*KEY|yandex[_\-\s]*maps[_\-\s]*key|yandex\.maps\.key)[=:\s"'']+([A-Za-z0-9-]{36,})'''
 description = "Yandex Maps API key with context anchor"
 group = 1
 

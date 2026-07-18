@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["OPENCAGE_API_KEY", "opencage.api.key", "opencage_api_key"]
 
 [[detector.patterns]]
-regex = "(?:OPENCAGE[_-]?API[_-]?KEY|opencage[_-]?api[_-]?key|opencage\\.api\\.key)[=:\\s\"'']+([a-f0-9]{32})"
+regex = '''(?:OPENCAGE[_\-\s]*API[_\-\s]*KEY|opencage[_\-\s]*api[_\-\s]*key|opencage\.api\.key)[=:\s"'']+([a-f0-9]{32})'''
 description = "OpenCage API key with context anchor (32 hex chars)"
 group = 1
 

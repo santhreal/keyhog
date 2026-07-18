@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["thehive", "THEHIVE_API_KEY", "hive_api_key"]
 
 [[detector.patterns]]
-regex = "(?:thehive|THEHIVE|hive)[\\s_-]*(?:api[_-]?key|key)[=:\\s\"'']+([a-zA-Z0-9_-]{20,64})"
+regex = '''(?:thehive|THEHIVE|hive)[_\-\s]*(?:api[_\-\s]*key|key)[=:\s"'']+([a-zA-Z0-9_-]{20,64})'''
 description = "TheHive API key with context anchor"
 group = 1
 

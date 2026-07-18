@@ -17,7 +17,7 @@ description = "ScrapeOps API key with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:api[_-]?key|apikey)[=:\\s\"'']+([a-zA-Z0-9]{32}).{0,50}(?:scrapeops)"
+regex = '''(?:api[_\-\s]*key|apikey)[=:\s"'']+([a-zA-Z0-9]{32}).{0,50}(?:scrapeops)'''
 description = "ScrapeOps API key with api_key prefix and scrapeops context"
 group = 1
 

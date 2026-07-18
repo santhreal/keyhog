@@ -32,7 +32,7 @@ description = "ServiceNow password with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:servicenow|SN)[._-]?(?:token|api[_-]?key)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+regex = '''(?:servicenow|SN)[._-]?(?:token|api[_\-\s]*key)[=:\s"'']+([a-zA-Z0-9_-]{20,})'''
 description = "ServiceNow API token with context anchor"
 group = 1
 

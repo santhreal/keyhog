@@ -16,12 +16,12 @@ regex = "trnsl\\.1\\.1\\.[0-9]{8}T[0-9]{6}Z\\.[0-9a-f]{8}\\.[0-9a-f]{24}"
 description = "Yandex Translate API key (trnsl format)"
 
 [[detector.patterns]]
-regex = "(?:YANDEX_TRANSLATE|YANDEX_API_KEY|YANDEX_TRANSLATION)[_\\s]?(?:API[_\\s]?KEY|KEY)?[=:\\s\"'']+(trnsl\\.1\\.1\\.[0-9]{8}T[0-9]{6}Z\\.[0-9a-f]{8}\\.[0-9a-f]{24})"
+regex = '''(?:YANDEX_TRANSLATE|YANDEX_API_KEY|YANDEX_TRANSLATION)[_\-\s]*(?:API[_\-\s]*KEY|KEY)?[=:\s"'']+(trnsl\.1\.1\.[0-9]{8}T[0-9]{6}Z\.[0-9a-f]{8}\.[0-9a-f]{24})'''
 description = "Yandex Translate API key with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:YANDEX_TRANSLATE|YANDEX_API_KEY|YANDEX_TRANSLATION)[_\\s]?(?:API[_\\s]?KEY|KEY)?[=:\\s\"'']+([A-Za-z0-9_-]{39,})"
+regex = '''(?:YANDEX_TRANSLATE|YANDEX_API_KEY|YANDEX_TRANSLATION)[_\-\s]*(?:API[_\-\s]*KEY|KEY)?[=:\s"'']+([A-Za-z0-9_-]{39,})'''
 description = "Yandex Translate API key (generic format)"
 group = 1
 

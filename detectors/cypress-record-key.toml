@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["CYPRESS_RECORD_KEY", "cypress_record_key", "record_key", "record-key", "--record --key"]
 
 [[detector.patterns]]
-regex = "(?:CYPRESS_RECORD_KEY|cypress[_-]?record[_-]?key)[=:\\s\"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+regex = '''(?:CYPRESS_RECORD_KEY|cypress[_\-\s]*record[_\-\s]*key)[=:\s"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
 description = "Cypress record key (GUID format) with context anchor"
 group = 1
 

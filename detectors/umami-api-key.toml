@@ -12,12 +12,12 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["UMAMI_API_KEY", "umami_api_key", "umami.is"]
 
 [[detector.patterns]]
-regex = "(?:UMAMI[_\\-\\s]?API[_\\-\\s]?KEY|umami[_\\-\\s]?api[_\\-\\s]?key)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+regex = '''(?:UMAMI[_\-\s]*API[_\-\s]*KEY|umami[_\-\s]*api[_\-\s]*key)[=:\s"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
 description = "Umami API key (website ID) in UUID format with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:UMAMI[_\\-\\s]?WEBSITE[_\\-\\s]?ID|umami[_\\-\\s]?website)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+regex = '''(?:UMAMI[_\-\s]*WEBSITE[_\-\s]*ID|umami[_\-\s]*website)[=:\s"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
 description = "Umami website ID in UUID format"
 group = 1
 

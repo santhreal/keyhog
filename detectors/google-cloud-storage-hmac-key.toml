@@ -24,13 +24,13 @@ group = 1
 # The `hmac_access_key` prefix stays case-insensitive (env vars are often
 # HMAC_ACCESS_KEY), but the GOOG body is pinned case-sensitive via `(?-i:…)`.
 [[detector.patterns]]
-regex = "hmac[_-]?access[_-]?key[=:\\s\"'']+(?-i:(GOOG[0-9A-Z]{37,40}))\\b(?:[^A-Za-z0-9_-]|$)"
+regex = '''hmac[_\-\s]*access[_\-\s]*key[=:\s"'']+(?-i:(GOOG[0-9A-Z]{37,40}))\b(?:[^A-Za-z0-9_-]|$)'''
 description = "GCS HMAC access key with context anchor"
 group = 1
 
 [[detector.companions]]
 name = "hmac_secret"
-regex = "(?i)(?:gcs[_-]?)?hmac[_-]?(?:secret|secret[_-]?access[_-]?key)[=:\\s\"'']+([a-zA-Z0-9+/]{40,}={0,2})"
+regex = '''(?i)(?:gcs[_\-\s]*)?hmac[_\-\s]*(?:secret|secret[_\-\s]*access[_\-\s]*key)[=:\s"'']+([a-zA-Z0-9+/]{40,}={0,2})'''
 within_lines = 3
 
 [[detector.tests]]

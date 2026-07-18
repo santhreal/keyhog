@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["HERE_API_KEY", "here.api.key", "here_api_key"]
 
 [[detector.patterns]]
-regex = "(?:HERE[_-]?API[_-]?KEY|here[_-]?api[_-]?key|here\\.api\\.key)[=:\\s\"'']+([A-Za-z0-9]{40,})"
+regex = '''(?:HERE[_\-\s]*API[_\-\s]*KEY|here[_\-\s]*api[_\-\s]*key|here\.api\.key)[=:\s"'']+([A-Za-z0-9]{40,})'''
 description = "HERE Maps API key with context anchor"
 group = 1
 

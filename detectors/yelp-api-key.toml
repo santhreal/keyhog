@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["YELP_API_KEY", "yelp", "fusion"]
 
 [[detector.patterns]]
-regex = "(?:YELP_API_KEY|yelp[_-]?api[_-]?key)[=:\\s\"'']+([a-zA-Z0-9_-]{100,})"
+regex = '''(?:YELP_API_KEY|yelp[_\-\s]*api[_\-\s]*key)[=:\s"'']+([a-zA-Z0-9_-]{100,})'''
 description = "Yelp Fusion API key with context anchor"
 group = 1
 

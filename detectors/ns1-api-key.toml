@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["NS1", "ns1", "NSONE", "nson", "X-NSONE-Key", "X-NS1-Key"]
 
 [[detector.patterns]]
-regex = "(?:NS1|ns1|NSONE|nsone)(?:_API)?[_-]?(?:KEY|key)[=:\\s\"']+([a-zA-Z0-9_-]{32,64})"
+regex = '''(?:NS1|ns1|NSONE|nsone)(?:_API)?[_\-\s]*(?:KEY|key)[=:\s"']+([a-zA-Z0-9_-]{32,64})'''
 description = "NS1 API key with context anchor"
 group = 1
 

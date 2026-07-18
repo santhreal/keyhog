@@ -17,7 +17,7 @@ description = "Moosend API key (32 hex characters, may include dashes)"
 group = 1
 
 [[detector.patterns]]
-regex = "(?is)api\\.moosend\\.com.{0,256}x[_\\-\\s]?api[_\\-\\s]?key[=:\\s\"'']+([a-f0-9-]{32,36})"
+regex = '''(?is)api\.moosend\.com.{0,256}x[_\-\s]*api[_\-\s]*key[=:\s"'']+([a-f0-9-]{32,36})'''
 required_literals = ["api.moosend.com"]
 description = "Moosend API key header following the Moosend API endpoint"
 group = 1

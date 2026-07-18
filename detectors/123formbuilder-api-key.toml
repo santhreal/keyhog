@@ -12,12 +12,12 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["123formbuilder", "123FORMBUILDER", "formbuilder_api"]
 
 [[detector.patterns]]
-regex = "(?:123[_\\s]*form[_\\s]*builder|123FORMBUILDER)[_.\\s]*(?:api[_\\s]*key|API[_\\s]*KEY)[\\s\"'']+([a-zA-Z0-9]+-[a-zA-Z0-9]+)"
+regex = '''(?:123[_\-\s]*form[_\-\s]*builder|123FORMBUILDER)[_.\s]*(?:api[_\-\s]*key|API[_\-\s]*KEY)[\s"'']+([a-zA-Z0-9]+-[a-zA-Z0-9]+)'''
 description = "123FormBuilder API key with context anchor (35 chars with hyphen)"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:api[_\\s]*key|API[_\\s]*KEY)[\\s\"'']+([a-zA-Z0-9]{5,10}-[a-zA-Z0-9]{20,30})"
+regex = '''(?:api[_\-\s]*key|API[_\-\s]*KEY)[\s"'']+([a-zA-Z0-9]{5,10}-[a-zA-Z0-9]{20,30})'''
 description = "123FormBuilder API key pattern (hyphenated format)"
 group = 1
 

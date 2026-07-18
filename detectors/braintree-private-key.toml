@@ -17,7 +17,7 @@ description = "Braintree private key with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:braintree|BRAINTREE)[_\\s]?(?:private_key|PRIVATE_KEY)[=:\\s\"']+([a-f0-9]{32,40})"
+regex = '''(?:braintree|BRAINTREE)[_\-\s]*(?:private_key|PRIVATE_KEY)[=:\s"']+([a-f0-9]{32,40})'''
 description = "Braintree private key with braintree prefix context"
 group = 1
 

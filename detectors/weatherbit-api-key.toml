@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["WEATHERBIT", "weatherbit", "WEATHERBIT_API_KEY"]
 
 [[detector.patterns]]
-regex = "(?:WEATHERBIT|weatherbit)[_\\s]*(?:API[_\\s]*)?KEY[=:\\s\"'']+([a-zA-Z0-9]{20,})"
+regex = '''(?:WEATHERBIT|weatherbit)[_\-\s]*(?:API[_\-\s]*)?KEY[=:\s"'']+([a-zA-Z0-9]{20,})'''
 description = "Weatherbit API key with context anchor"
 group = 1
 

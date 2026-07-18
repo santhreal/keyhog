@@ -178,7 +178,11 @@ source.
   it matches both cases without explicit alternation. To make a single
   pattern case-SENSITIVE (AWS `AKIA` is uppercase; some GCP/Snowflake ids
   are lowercase), prefix its regex with the inline flag `(?-i)` in the
-  TOML - no schema field needed.
+  TOML - no schema field needed. The loaded expression is byte-for-byte the
+  authored TOML value: KeyHog never widens separator classes or quantifiers at
+  load. When an anchor intentionally accepts joined, spaced, underscored, and
+  hyphenated words, write `[_\-\s]*` explicitly in that detector. A narrower
+  class remains narrow and changes only that detector's digest and behavior.
 - `group` - which capture group is the credential. `0` = whole match,
   `1` = first captured group, etc.
 - `description` - what shape this captures (env var, header, URL, …).

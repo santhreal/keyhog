@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["ACCUWEATHER", "accuweather", "ACCU_WEATHER_API_KEY"]
 
 [[detector.patterns]]
-regex = "(?:ACCUWEATHER|accuweather)[_\\s]*(?:API[_\\s]*)?KEY[=:\\s\"'']+([a-zA-Z0-9]{20,})"
+regex = '''(?:ACCUWEATHER|accuweather)[_\-\s]*(?:API[_\-\s]*)?KEY[=:\s"'']+([a-zA-Z0-9]{20,})'''
 description = "AccuWeather API key with context anchor"
 group = 1
 

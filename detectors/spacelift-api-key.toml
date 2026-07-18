@@ -14,18 +14,18 @@ entropy_high = 4.5
 entropy_floor = [{ max_len = 24, floor = 3.0 }, { max_len = 40, floor = 2.8 }, { floor = 3.5 }]
 
 [[detector.patterns]]
-regex = "(?:SPACELIFT[_-]API[_-]KEY[_-]ID)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
+regex = '''(?:SPACELIFT[_\-\s]*API[_\-\s]*KEY[_\-\s]*ID)[=:\s"'']+([a-zA-Z0-9_-]+)'''
 description = "Spacelift API Key ID"
 group = 1
 weak_anchor = true
 
 [[detector.patterns]]
-regex = "(?:SPACELIFT[_-]API[_-]KEY[_-]SECRET)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+regex = '''(?:SPACELIFT[_\-\s]*API[_\-\s]*KEY[_\-\s]*SECRET)[=:\s"'']+([a-zA-Z0-9_-]{20,})'''
 description = "Spacelift API Key Secret"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:SPACELIFT[_-]API[_-]TOKEN|SPACELIFT[_-]TOKEN)[=:\\s\"'']+(eyJ[a-zA-Z0-9_-]*\\.eyJ[a-zA-Z0-9_-]*\\.[a-zA-Z0-9_-]*)"
+regex = '''(?:SPACELIFT[_\-\s]*API[_\-\s]*TOKEN|SPACELIFT[_\-\s]*TOKEN)[=:\s"'']+(eyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*)'''
 description = "Spacelift JWT API token"
 group = 1
 

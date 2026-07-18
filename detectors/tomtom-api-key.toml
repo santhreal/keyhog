@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["TOMTOM_API_KEY", "tomtom.api.key", "tomtom_api_key"]
 
 [[detector.patterns]]
-regex = "(?:TOMTOM[_-]?API[_-]?KEY|tomtom[_-]?api[_-]?key|tomtom\\.api\\.key)[=:\\s\"'']+([A-Za-z0-9]{32,})"
+regex = '''(?:TOMTOM[_\-\s]*API[_\-\s]*KEY|tomtom[_\-\s]*api[_\-\s]*key|tomtom\.api\.key)[=:\s"'']+([A-Za-z0-9]{32,})'''
 description = "TomTom API key with context anchor"
 group = 1
 

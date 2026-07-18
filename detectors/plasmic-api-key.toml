@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["PLASMIC", "plasmic", "PLASMIC_API_TOKEN"]
 
 [[detector.patterns]]
-regex = "(?:PLASMIC|plasmic)[_=:\\s\"'']+(?:api[_-]?)?(?:key|token|project[_-]?token)[=:\\s\"'']+([a-zA-Z0-9_-]{20,50})"
+regex = '''(?:PLASMIC|plasmic)[_=:\s"'']+(?:api[_\-\s]*)?(?:key|token|project[_\-\s]*token)[=:\s"'']+([a-zA-Z0-9_-]{20,50})'''
 description = "Plasmic API token with context anchor"
 group = 1
 

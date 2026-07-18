@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["statuscake", "STATUSCAKE", "Authorization", "Bearer", "api.statuscake.com"]
 
 [[detector.patterns]]
-regex = "(?:statuscake|STATUSCAKE)[_.\\s-]*(?:api[_\\s-]*key|token)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+regex = '''(?:statuscake|STATUSCAKE)[_.\s-]*(?:api[_\-\s]*key|token)[=:\s"'']+([a-zA-Z0-9_-]{20,})'''
 description = "StatusCake API key with context anchor"
 group = 1
 

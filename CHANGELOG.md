@@ -6,6 +6,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Detector regex separator semantics now live in the owning TOML expression.
+  The loader no longer rewrites bounded or exact authored classes into a global
+  unbounded separator, and phase-two routing derives repeated-separator support
+  from the parsed regex instead of a shared textual constant.
 - Detector-owned isolated entropy exceptions are now declarative TOML shapes
   with typed character sets, optional grouping, entropy and length floors, and
   explicit diversity requirements. The scanner uses one generic matcher,

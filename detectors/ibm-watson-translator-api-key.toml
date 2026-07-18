@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["IBM_WATSON", "WATSON_TRANSLATOR", "IBM_TRANSLATOR", "IAM_API_KEY", "language-translator", "ibm_cloud"]
 
 [[detector.patterns]]
-regex = "(?:IBM_WATSON|WATSON_TRANSLATOR|IBM_TRANSLATOR)[_\\s]?(?:API[_\\s]?KEY)?[=:\\s\"'']+([A-Za-z0-9_-]{22,44})"
+regex = '''(?:IBM_WATSON|WATSON_TRANSLATOR|IBM_TRANSLATOR)[_\-\s]*(?:API[_\-\s]*KEY)?[=:\s"'']+([A-Za-z0-9_-]{22,44})'''
 description = "IBM Watson Language Translator API key with context anchor"
 group = 1
 
@@ -28,7 +28,7 @@ group = 1
 
 [[detector.companions]]
 name = "IBM Watson Service URL"
-regex = "(?:WATSON|IBM_TRANSLATOR|language-translator)[_\\s]?(?:URL|SERVICE_URL)[=:\\s\"'']+(https://api\\.[a-z-]+\\.language-translator\\.watson\\.cloud\\.ibm\\.com)"
+regex = '''(?:WATSON|IBM_TRANSLATOR|language-translator)[_\-\s]*(?:URL|SERVICE_URL)[=:\s"'']+(https://api\.[a-z-]+\.language-translator\.watson\.cloud\.ibm\.com)'''
 within_lines = 5
 
 [[detector.tests]]

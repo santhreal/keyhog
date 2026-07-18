@@ -41,14 +41,14 @@ description = "AWS access key ID"
 # downgrades to "unverified" but the match still surfaces - partial leaks
 # are exactly what an attacker pivots on.
 [[detector.companions]]
-regex = "(?i:AWS[_-]?SECRET[_-]?ACCESS[_-]?KEY|SECRET[_-]?KEY|AWS[_-]?SECRET(?:[_-]?KEY)?)[=:\\s\"'']+([0-9a-zA-Z/+=]{40})"
+regex = '''(?i:AWS[_\-\s]*SECRET[_\-\s]*ACCESS[_\-\s]*KEY|SECRET[_\-\s]*KEY|AWS[_\-\s]*SECRET(?:[_\-\s]*KEY)?)[=:\s"'']+([0-9a-zA-Z/+=]{40})'''
 within_lines = 5
 name = "secret_key"
 
 [[detector.companions]]
 # Config/header field casing is not part of the session-token value. Fold only
 # the anchor so the base64 credential body retains its detector-owned alphabet.
-regex = "(?i:AWS[_-]?SESSION[_-]?TOKEN|X-Amz-Security-Token)[=:\\s\"'']+([A-Za-z0-9/+=]{80,})"
+regex = '''(?i:AWS[_\-\s]*SESSION[_\-\s]*TOKEN|X-Amz-Security-Token)[=:\s"'']+([A-Za-z0-9/+=]{80,})'''
 within_lines = 5
 name = "session_token"
 

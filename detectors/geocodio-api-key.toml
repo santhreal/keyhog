@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["GEOCODIO_API_KEY", "geocodio.api.key", "geocodio_api_key"]
 
 [[detector.patterns]]
-regex = "(?:GEOCODIO[_-]?API[_-]?KEY|geocodio[_-]?api[_-]?key|geocodio\\.api\\.key)[=:\\s\"'']+([A-Za-z0-9]{40,})"
+regex = '''(?:GEOCODIO[_\-\s]*API[_\-\s]*KEY|geocodio[_\-\s]*api[_\-\s]*key|geocodio\.api\.key)[=:\s"'']+([A-Za-z0-9]{40,})'''
 description = "Geocodio API key with context anchor"
 group = 1
 

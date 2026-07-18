@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["FASTLY", "fastly", "FASTLY_API_TOKEN", "fastly_api_token", "FASTLY_KEY", "Fastly-Key"]
 
 [[detector.patterns]]
-regex = "(?:FASTLY|fastly)(?:_API)?[_-]?(?:TOKEN|token|KEY|key)[=:\\s\"']+([a-zA-Z0-9_=-]{32})"
+regex = '''(?:FASTLY|fastly)(?:_API)?[_\-\s]*(?:TOKEN|token|KEY|key)[=:\s"']+([a-zA-Z0-9_=-]{32})'''
 description = "Fastly API token with context anchor"
 group = 1
 

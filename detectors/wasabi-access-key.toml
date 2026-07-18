@@ -18,7 +18,7 @@ group = 1
 
 [[detector.companions]]
 name = "secret_access_key"
-regex = "(?:WASABI[_-]?SECRET(?:[_-]?KEY)?|secret[_-]?access[_-]?key|aws[_-]?secret[_-]?access[_-]?key)[=:\\s\"']+([A-Za-z0-9/+=]{40})"
+regex = '''(?:WASABI[_\-\s]*SECRET(?:[_\-\s]*KEY)?|secret[_\-\s]*access[_\-\s]*key|aws[_\-\s]*secret[_\-\s]*access[_\-\s]*key)[=:\s"']+([A-Za-z0-9/+=]{40})'''
 within_lines = 5
 [detector.verify]
 method = "GET"

@@ -24,7 +24,7 @@ regex = "HostName=([a-zA-Z0-9_-]+\\.azure-devices\\.net);DeviceId=([a-zA-Z0-9_-]
 description = "Azure IoT Hub device connection string"
 
 [[detector.patterns]]
-regex = "(?:IOTHUB|iothub)[._-]?CONNECTION[_-]?STRING[=:\\s\"'']+(HostName=[^\"'']+azure-devices\\.net[^\"'']+)"
+regex = '''(?:IOTHUB|iothub)[._-]?CONNECTION[_\-\s]*STRING[=:\s"'']+(HostName=[^"'']+azure-devices\.net[^"'']+)'''
 description = "Azure IoT Hub connection string with context anchor"
 group = 1
 

@@ -31,7 +31,7 @@ description = "Twilio API key SID (SK prefix + exactly 32 hex chars)"
 name = "secret"
 # Companion matching is case-sensitive unless the detector opts in. Config-key
 # casing is not part of the credential format, so fold the anchor only.
-regex = "(?i:(?:TWILIO[_-]?API[_-]?SECRET|SECRET))[=:\\s\"'']+([a-zA-Z0-9]{32})"
+regex = '''(?i:(?:TWILIO[_\-\s]*API[_\-\s]*SECRET|SECRET))[=:\s"'']+([a-zA-Z0-9]{32})'''
 within_lines = 3
 required = true
 [detector.verify]

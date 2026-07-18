@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["gitkraken", "GITKRAKEN", "gk_token"]
 
 [[detector.patterns]]
-regex = "(?:gitkraken|GITKRAKEN)[_-]?(?:api|API)?[_-]?(?:token|TOKEN|key|KEY)[=:\\s\"'']+([a-zA-Z0-9_-]{32,})"
+regex = '''(?:gitkraken|GITKRAKEN)[_\-\s]*(?:api|API)?[_\-\s]*(?:token|TOKEN|key|KEY)[=:\s"'']+([a-zA-Z0-9_-]{32,})'''
 description = "GitKraken API token with context anchor"
 group = 1
 

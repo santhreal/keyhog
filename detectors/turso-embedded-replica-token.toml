@@ -16,12 +16,12 @@ regex = "libsql://[a-zA-Z0-9_-]+\\.turso\\.io"
 description = "Turso database URL (libsql:// prefix)"
 
 [[detector.patterns]]
-regex = "(?:TURSO[_-]DATABASE[_-]?URL)[=:\\s\"'']+(libsql://[^\\s\"'']+)"
+regex = '''(?:TURSO[_\-\s]*DATABASE[_\-\s]*URL)[=:\s"'']+(libsql://[^\s"'']+)'''
 description = "Turso database URL with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:TURSO[_-]AUTH[_-]?TOKEN)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+regex = '''(?:TURSO[_\-\s]*AUTH[_\-\s]*TOKEN)[=:\s"'']+([a-zA-Z0-9_-]{20,})'''
 description = "Turso auth token with context anchor"
 group = 1
 

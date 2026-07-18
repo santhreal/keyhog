@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["AUTHENTIK_TOKEN", "AUTHENTIK_API_TOKEN", "authentik"]
 
 [[detector.patterns]]
-regex = "(?:^|[^A-Za-z0-9_])(?:AUTHENTIK[_-]?TOKEN|AUTHENTIK[_-]?API[_-]?TOKEN)[=:\\s\"'']+([a-zA-Z0-9]{40,})"
+regex = '''(?:^|[^A-Za-z0-9_])(?:AUTHENTIK[_\-\s]*TOKEN|AUTHENTIK[_\-\s]*API[_\-\s]*TOKEN)[=:\s"'']+([a-zA-Z0-9]{40,})'''
 description = "Authentik API token with context anchor"
 group = 1
 

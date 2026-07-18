@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["STRAPI_API_TOKEN", "strapi", "API_TOKEN_SALT"]
 
 [[detector.patterns]]
-regex = "(?:STRAPI|strapi)[_\\s]?API[_\\s]?TOKEN[=:\\s\"'']+([a-zA-Z0-9]{20,})"
+regex = '''(?:STRAPI|strapi)[_\-\s]*API[_\-\s]*TOKEN[=:\s"'']+([a-zA-Z0-9]{20,})'''
 description = "Strapi API token with context anchor"
 group = 1
 

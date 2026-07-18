@@ -12,12 +12,12 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["socure", "SOCURE", "id_plus"]
 
 [[detector.patterns]]
-regex = "(?:socure|SOCURE)[_\\s]*(api[_\\s]*key|key)[=:;\\s\"'']+([a-zA-Z0-9_-]{20,})"
+regex = '''(?:socure|SOCURE)[_\-\s]*(api[_\-\s]*key|key)[=:;\s"'']+([a-zA-Z0-9_-]{20,})'''
 description = "Socure API key with context anchor"
 group = 2
 
 [[detector.patterns]]
-regex = "(?:socure|SOCURE)[_\\s]*(sdk[_\\s]*key)[=:;\\s\"'']+([a-zA-Z0-9_-]{20,})"
+regex = '''(?:socure|SOCURE)[_\-\s]*(sdk[_\-\s]*key)[=:;\s"'']+([a-zA-Z0-9_-]{20,})'''
 description = "Socure SDK key with context anchor"
 group = 2
 

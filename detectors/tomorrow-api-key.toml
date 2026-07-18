@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["TOMORROW", "tomorrow", "TOMORROW_API_KEY", "CLIMACELL", "climacell"]
 
 [[detector.patterns]]
-regex = "(?:TOMORROW|tomorrow|CLIMACELL|climacell)[_\\s]*(?:API[_\\s]*)?KEY[=:\\s\"'']+([a-zA-Z0-9]{20,})"
+regex = '''(?:TOMORROW|tomorrow|CLIMACELL|climacell)[_\-\s]*(?:API[_\-\s]*)?KEY[=:\s"'']+([a-zA-Z0-9]{20,})'''
 description = "Tomorrow.io API key with context anchor"
 group = 1
 

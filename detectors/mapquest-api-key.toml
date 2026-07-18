@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["MAPQUEST_API_KEY", "mapquest.api.key", "mapquest_api_key"]
 
 [[detector.patterns]]
-regex = "(?:MAPQUEST[_-]?API[_-]?KEY|mapquest[_-]?api[_-]?key|mapquest\\.api\\.key)[=:\\s\"'']+([A-Za-z0-9]{32})"
+regex = '''(?:MAPQUEST[_\-\s]*API[_\-\s]*KEY|mapquest[_\-\s]*api[_\-\s]*key|mapquest\.api\.key)[=:\s"'']+([A-Za-z0-9]{32})'''
 description = "MapQuest API key with context anchor (32 chars)"
 group = 1
 

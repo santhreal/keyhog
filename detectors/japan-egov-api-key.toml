@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["e-Stat", "ESTAT", "e_stat", "e-gov", "appId", "e-stat.go.jp"]
 
 [[detector.patterns]]
-regex = "(?:e-Stat|ESTAT|e_stat|e-gov)[_.-]?(?:APP[_-]?ID|appid|API[_-]?KEY|api_key)[\\s\"''=:]+([a-zA-Z0-9]{20,40})"
+regex = '''(?:e-Stat|ESTAT|e_stat|e-gov)[_.-]?(?:APP[_\-\s]*ID|appid|API[_\-\s]*KEY|api_key)[\s"''=:]+([a-zA-Z0-9]{20,40})'''
 description = "Japan e-Stat API application ID"
 group = 1
 

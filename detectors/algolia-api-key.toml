@@ -18,13 +18,13 @@ description = "Algolia API key with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "(?i)search[_-]?api[_-]?key[=:\\s\"']+([a-f0-9]{32})"
+regex = '''(?i)search[_\-\s]*api[_\-\s]*key[=:\s"']+([a-f0-9]{32})'''
 description = "Algolia search_api_key YAML/env form"
 group = 1
 
 [[detector.companions]]
 name = "application_id"
-regex = "(?:ALGOLIA_APP(?:LICATION)?_ID|algolia[_-]?app(?:lication)?[_-]?id|app[_-]?id)[=:\\s\"']+([A-Z0-9]{10})"
+regex = '''(?:ALGOLIA_APP(?:LICATION)?_ID|algolia[_\-\s]*app(?:lication)?[_\-\s]*id|app[_\-\s]*id)[=:\s"']+([A-Z0-9]{10})'''
 within_lines = 5
 [detector.verify]
 method = "GET"

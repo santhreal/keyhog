@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["opencti", "OPENCTI_TOKEN", "opencti_api_key"]
 
 [[detector.patterns]]
-regex = "(?:opencti|OPENCTI)[\\s_-]*(?:token|api[_-]?key)[=:\\s\"'']+([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})"
+regex = '''(?:opencti|OPENCTI)[_\-\s]*(?:token|api[_\-\s]*key)[=:\s"'']+([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})'''
 description = "OpenCTI API token (UUID v4) with context anchor"
 group = 1
 

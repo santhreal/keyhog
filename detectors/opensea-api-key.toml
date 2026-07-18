@@ -17,7 +17,7 @@ description = "OpenSea API key in assignment context"
 group = 1
 
 [[detector.patterns]]
-regex = "(?is)api\\.opensea\\.io.{0,256}x[_\\-\\s]?api[_\\-\\s]?key[=:\\s\"'']+([a-zA-Z0-9_-]{32,})"
+regex = '''(?is)api\.opensea\.io.{0,256}x[_\-\s]*api[_\-\s]*key[=:\s"'']+([a-zA-Z0-9_-]{32,})'''
 required_literals = ["api.opensea.io"]
 description = "OpenSea API key header following the OpenSea API endpoint"
 group = 1

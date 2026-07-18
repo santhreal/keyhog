@@ -16,13 +16,13 @@ regex = "sk[a-zA-Z0-9]{8,16}[a-f0-9]{24}"
 description = "Sanity.io API token (sk prefix with project ID and secret)"
 
 [[detector.patterns]]
-regex = "(?:SANITY|sanity)[_\\s]?(?:API[_\\s]?TOKEN|TOKEN)[=:\\s\"']+(sk[a-zA-Z0-9]{8,16}[a-f0-9]{24})"
+regex = '''(?:SANITY|sanity)[_\-\s]*(?:API[_\-\s]*TOKEN|TOKEN)[=:\s"']+(sk[a-zA-Z0-9]{8,16}[a-f0-9]{24})'''
 description = "Sanity.io API token with context anchor"
 group = 1
 
 [[detector.companions]]
 name = "sanity_project_id"
-regex = "(?:SANITY|sanity)[_\\s]?(?:PROJECT[_\\s]?ID|project[_\\s]?id)[=:\\s\"']+([a-z0-9]{8,12})"
+regex = '''(?:SANITY|sanity)[_\-\s]*(?:PROJECT[_\-\s]*ID|project[_\-\s]*id)[=:\s"']+([a-z0-9]{8,12})'''
 within_lines = 5
 
 [[detector.tests]]

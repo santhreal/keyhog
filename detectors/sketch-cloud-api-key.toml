@@ -12,12 +12,12 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["SKETCH", "sketch", "SKETCH_API_KEY", "sketchapp"]
 
 [[detector.patterns]]
-regex = "(?:SKETCH|sketch)[_=:\\s\"'']+(?:api[_-]?)?(?:key|token)[=:\\s\"'']+([a-zA-Z0-9_-]{20,50})"
+regex = '''(?:SKETCH|sketch)[_=:\s"'']+(?:api[_\-\s]*)?(?:key|token)[=:\s"'']+([a-zA-Z0-9_-]{20,50})'''
 description = "Sketch Cloud API key with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:sketch[_-]?cloud|SKETCH_CLOUD)[_=:\\s\"'']+(?:api[_-]?)?(?:key|token)[=:\\s\"'']+([a-zA-Z0-9_-]{20,50})"
+regex = '''(?:sketch[_\-\s]*cloud|SKETCH_CLOUD)[_=:\s"'']+(?:api[_\-\s]*)?(?:key|token)[=:\s"'']+([a-zA-Z0-9_-]{20,50})'''
 description = "Sketch Cloud API token"
 group = 1
 

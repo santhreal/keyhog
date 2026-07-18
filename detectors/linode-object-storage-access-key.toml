@@ -18,7 +18,7 @@ group = 1
 
 [[detector.companions]]
 name = "secret_access_key"
-regex = "(?:LINODE[_-]?SECRET(?:[_-]?KEY)?|linode[_-]?object[_-]?storage[_-]?secret|secret[_-]?access[_-]?key|aws[_-]?secret[_-]?access[_-]?key)[=:\\s\"']+([A-Za-z0-9/+=]{40})"
+regex = '''(?:LINODE[_\-\s]*SECRET(?:[_\-\s]*KEY)?|linode[_\-\s]*object[_\-\s]*storage[_\-\s]*secret|secret[_\-\s]*access[_\-\s]*key|aws[_\-\s]*secret[_\-\s]*access[_\-\s]*key)[=:\s"']+([A-Za-z0-9/+=]{40})'''
 within_lines = 5
 
 [[detector.tests]]

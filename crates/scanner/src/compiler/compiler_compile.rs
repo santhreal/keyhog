@@ -115,6 +115,8 @@ pub(crate) fn build_phase2_keyword_ac(
         std::collections::HashMap::new();
 
     for (pattern_idx, (pattern, keywords)) in phase2_patterns.iter().enumerate() {
+        let allows_repeated_separator =
+            regex_allows_repeated_compound_keyword_separator(pattern.regex.as_str());
         for kw in keywords {
             // The ordinary raw-keyword floor stays at 4: lowering it to 3 to admit
             // mailchimp's `-us`/`-eu`/`-uk` and openai/anthropic's
@@ -130,18 +132,12 @@ pub(crate) fn build_phase2_keyword_ac(
             if kw.len() >= 4 {
                 candidates.push(kw.clone());
             }
-            // Detector regexes are canonicalized to `[_\-\s]*`, which accepts
-            // repeated separators (`SA__API__KEY`). The raw TOML keyword cannot
-            // admit that spelling through the AC, so add the longest contiguous
-            // alphanumeric segment as a detector-scoped stem. The full detector
-            // regex still confirms the match; this is routing only, not a new
-            // detection rule. Keeping one longest stem bounds prefilter breadth
-            // while preserving the existing four-byte floor for ordinary keys.
-            if pattern
-                .regex
-                .as_str()
-                .contains(keyhog_core::CANONICAL_SEPARATOR)
-            {
+            // When the detector-authored regex accepts repeated separators
+            // (`SA__API__KEY`), its joined TOML keyword cannot admit every
+            // spelling through AC. Derive that fact from the parsed expression,
+            // then add one detector-scoped stem. The full regex still confirms
+            // the match; this is routing only, not a second detection rule.
+            if allows_repeated_separator {
                 if let Some(stem) = longest_compound_keyword_segment(kw) {
                     if stem.len() >= 2 && !candidates.iter().any(|candidate| candidate == &stem) {
                         candidates.push(stem);
@@ -190,6 +186,74 @@ fn longest_compound_keyword_segment(keyword: &str) -> Option<String> {
         })
         .max_by_key(|segment| segment.len())
         .map(str::to_ascii_lowercase)
+}
+
+fn regex_allows_repeated_compound_keyword_separator(regex: &str) -> bool {
+    let Ok(hir) = regex_syntax::Parser::new().parse(regex) else {
+        return false;
+    };
+    hir_contains_repeated_separator(&hir)
+}
+
+fn hir_contains_repeated_separator(hir: &regex_syntax::hir::Hir) -> bool {
+    use regex_syntax::hir::HirKind;
+
+    match hir.kind() {
+        HirKind::Repetition(repetition) => {
+            let repeats = repetition.max.is_none_or(|maximum| maximum > 1);
+            (repeats && hir_is_compound_keyword_separator(&repetition.sub))
+                || hir_contains_repeated_separator(&repetition.sub)
+        }
+        HirKind::Capture(capture) => hir_contains_repeated_separator(&capture.sub),
+        HirKind::Concat(parts) | HirKind::Alternation(parts) => {
+            parts.iter().any(hir_contains_repeated_separator)
+        }
+        HirKind::Empty | HirKind::Literal(_) | HirKind::Class(_) | HirKind::Look(_) => false,
+    }
+}
+
+fn hir_is_compound_keyword_separator(hir: &regex_syntax::hir::Hir) -> bool {
+    use regex_syntax::hir::{Class, HirKind};
+
+    match hir.kind() {
+        HirKind::Class(Class::Unicode(class)) => {
+            let mut has_join_punctuation = false;
+            for range in class.iter() {
+                let start = u32::from(range.start());
+                let end = u32::from(range.end());
+                // Unicode whitespace ranges are short. Reject a broad user
+                // class before walking it so routing analysis stays bounded.
+                if end - start > 32 {
+                    return false;
+                }
+                for codepoint in start..=end {
+                    let Some(character) = char::from_u32(codepoint) else {
+                        return false;
+                    };
+                    if matches!(character, '_' | '-' | '.') {
+                        has_join_punctuation = true;
+                    } else if !character.is_whitespace() {
+                        return false;
+                    }
+                }
+            }
+            has_join_punctuation
+        }
+        HirKind::Class(Class::Bytes(class)) => {
+            let mut has_join_punctuation = false;
+            for range in class.iter() {
+                for byte in range.start()..=range.end() {
+                    if matches!(byte, b'_' | b'-' | b'.') {
+                        has_join_punctuation = true;
+                    } else if !byte.is_ascii_whitespace() {
+                        return false;
+                    }
+                }
+            }
+            has_join_punctuation
+        }
+        _ => false,
+    }
 }
 
 pub(crate) fn log_quality_warnings(warnings: &[String]) {

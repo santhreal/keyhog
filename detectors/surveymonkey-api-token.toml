@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["surveymonkey", "SURVEYMONKEY_API_KEY", "SurveyMonkey"]
 
 [[detector.patterns]]
-regex = "(?:surveymonkey|SurveyMonkey|SURVEYMONKEY)[_.\\s]*(?:api[_\\s]*token|api[_\\s]*key|access[_\\s]*token)[\\s\"''']+([a-zA-Z0-9_-]{20,})"
+regex = "(?:surveymonkey|SurveyMonkey|SURVEYMONKEY)[_.\\s]*(?:api[_\\-\\s]*token|api[_\\-\\s]*key|access[_\\-\\s]*token)[\\s\"''']+([a-zA-Z0-9_-]{20,})"
 description = "SurveyMonkey API token with context anchor"
 group = 1
 

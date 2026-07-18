@@ -15,17 +15,17 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["drip", "DRIP"]
 
 [[detector.patterns]]
-regex = """(?i)drip[_-]?(?:api[_-]?)?(?:token|key)[=:\\s\"']+([a-zA-Z0-9_-]{20,})"""
+regex = '''(?i)drip[_\-\s]*(?:api[_\-\s]*)?(?:token|key)[=:\s"']+([a-zA-Z0-9_-]{20,})'''
 description = "Drip API token with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = """(?i)drip[_-]?(?:account[_-]?)?id[=:\\s\"']+([a-zA-Z0-9]{6,})"""
+regex = '''(?i)drip[_\-\s]*(?:account[_\-\s]*)?id[=:\s"']+([a-zA-Z0-9]{6,})'''
 description = "Drip Account ID"
 group = 1
 
 [[detector.patterns]]
-regex = """(?i)drip[_-]?(?:oauth[_-]?)?token[=:\\s\"']+([a-zA-Z0-9_-]{20,})"""
+regex = '''(?i)drip[_\-\s]*(?:oauth[_\-\s]*)?token[=:\s"']+([a-zA-Z0-9_-]{20,})'''
 description = "Drip OAuth access token"
 group = 1
 

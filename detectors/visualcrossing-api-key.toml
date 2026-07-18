@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["VISUALCROSSING", "visualcrossing", "VISUAL_CROSSING_API_KEY"]
 
 [[detector.patterns]]
-regex = "(?:VISUALCROSSING|visualcrossing|VISUAL[_\\s]CROSSING)[_\\s]*(?:API[_\\s]*)?KEY[=:\\s\"'']+([a-zA-Z0-9]{16,})"
+regex = '''(?:VISUALCROSSING|visualcrossing|VISUAL[_\-\s]*CROSSING)[_\-\s]*(?:API[_\-\s]*)?KEY[=:\s"'']+([a-zA-Z0-9]{16,})'''
 description = "Visual Crossing API key with context anchor"
 group = 1
 

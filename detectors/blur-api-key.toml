@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["blur", "BLUR", "BLUR_API_KEY", "blur.io"]
 
 [[detector.patterns]]
-regex = "(?i)blur[_\\s]*(?:api[_\\s]*)?key[_\\s]*[=:][\\s]*[\"'']+([a-zA-Z0-9_-]{20,})[\"'']+"
+regex = '''(?i)blur[_\-\s]*(?:api[_\-\s]*)?key[_\-\s]*[=:][\s]*["'']+([a-zA-Z0-9_-]{20,})["'']+'''
 description = "Blur API key in assignment context (case-insensitive)"
 group = 1
 

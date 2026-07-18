@@ -49,7 +49,7 @@ regex = 'AIzaSy[A-Za-z0-9_-]{33}'
 description = "Google Places API key (AIzaSy prefix)"
 
 [[detector.patterns]]
-regex = "(?:youtube|YOUTUBE)[_\\s]?(?:api_key|API_KEY|key)[=:\\s\"'']+(AIza[0-9A-Za-z_-]{35})"
+regex = '''(?:youtube|YOUTUBE)[_\-\s]*(?:api_key|API_KEY|key)[=:\s"'']+(AIza[0-9A-Za-z_-]{35})'''
 description = "YouTube API key with context anchor"
 group = 1
 

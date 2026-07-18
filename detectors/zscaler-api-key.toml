@@ -12,13 +12,13 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["ZSCALER", "zscaler", "ZPA", "zpa", "ZIA"]
 
 [[detector.patterns]]
-regex = "(?:ZSCALER|zscaler|ZPA|zpa)[_\\s]*(?:CLIENT[_\\s]*)?ID[=:\\s\"'']+([a-zA-Z0-9_-]{24,36})"
+regex = '''(?:ZSCALER|zscaler|ZPA|zpa)[_\-\s]*(?:CLIENT[_\-\s]*)?ID[=:\s"'']+([a-zA-Z0-9_-]{24,36})'''
 description = "Zscaler client ID with context anchor"
 group = 1
 
 [[detector.companions]]
 name = "zscaler_client_secret"
-regex = "(?:ZSCALER|zscaler|ZPA|zpa)[_\\s]*(?:CLIENT[_\\s]*)?(?:SECRET|KEY)[=:\\s\"'']+[a-zA-Z0-9_-]{32,64}"
+regex = '''(?:ZSCALER|zscaler|ZPA|zpa)[_\-\s]*(?:CLIENT[_\-\s]*)?(?:SECRET|KEY)[=:\s"'']+[a-zA-Z0-9_-]{32,64}'''
 within_lines = 5
 
 [[detector.tests]]

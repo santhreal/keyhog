@@ -12,13 +12,13 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["TAWK", "tawk_to", "tawkto", "tawkto_api"]
 
 [[detector.patterns]]
-regex = "(?i)(?:tawk|tawkto|tawk_to)[_\\s]?(?:api[_\\s]?key|key|token)[=:\\s\"'']+([a-f0-9]{32,64})\\b(?:[^a-zA-Z0-9_-]|$)"
+regex = '''(?i)(?:tawk|tawkto|tawk_to)[_\-\s]*(?:api[_\-\s]*key|key|token)[=:\s"'']+([a-f0-9]{32,64})\b(?:[^a-zA-Z0-9_-]|$)'''
 description = "Tawk.to API key with context anchor"
 group = 1
 
 [[detector.companions]]
 name = "tawkto_credentials_pair"
-regex = "(?i)(?:tawk|tawkto|tawk_to)[_\\s]?(?:property[_\\s]?id|site[_\\s]?id)[=:\\s\"'']+([a-f0-9]{24})\\b(?:[^a-zA-Z0-9_-]|$)"
+regex = '''(?i)(?:tawk|tawkto|tawk_to)[_\-\s]*(?:property[_\-\s]*id|site[_\-\s]*id)[=:\s"'']+([a-f0-9]{24})\b(?:[^a-zA-Z0-9_-]|$)'''
 within_lines = 5
 
 [[detector.tests]]

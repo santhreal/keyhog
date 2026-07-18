@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["BING_MAPS_KEY", "bing.maps.key", "bing_maps_key"]
 
 [[detector.patterns]]
-regex = "(?:BING[_-]?MAPS[_-]?KEY|bing[_-]?maps[_-]?key|bing\\.maps\\.key)[=:\\s\"'']+([A-Za-z0-9]{64,})"
+regex = '''(?:BING[_\-\s]*MAPS[_\-\s]*KEY|bing[_\-\s]*maps[_\-\s]*key|bing\.maps\.key)[=:\s"'']+([A-Za-z0-9]{64,})'''
 description = "Bing Maps API key with context anchor (64+ chars)"
 group = 1
 

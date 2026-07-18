@@ -16,7 +16,7 @@ regex = "https://hooks\\.slack\\.com/services/T[a-zA-Z0-9]{8,10}/B[a-zA-Z0-9]{8,
 description = "Slack incoming webhook URL (full services path)"
 
 [[detector.patterns]]
-regex = "(?:slack[_\\-\\s]?webhook[_\\-\\s]?url|SLACK[_\\-\\s]?WEBHOOK[_\\-\\s]?URL)[\"\\'\\s]*[=:][\"\\'\\s]*(https://hooks\\.slack\\.com/services/[a-zA-Z0-9/]+)"
+regex = '''(?:slack[_\-\s]*webhook[_\-\s]*url|SLACK[_\-\s]*WEBHOOK[_\-\s]*URL)["\'\s]*[=:]["\'\s]*(https://hooks\.slack\.com/services/[a-zA-Z0-9/]+)'''
 description = "Slack webhook URL with context anchor"
 group = 1
 

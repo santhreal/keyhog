@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["PRACTICEPANTHER_API_KEY", "PRACTICEPANTHER_TOKEN", "practicepanther_api_key", "x-practicepanther-token"]
 
 [[detector.patterns]]
-regex = "(?:PRACTICEPANTHER|practicepanther)[_\\s]?(?:API[_\\s]?KEY|TOKEN|token)[=:\\s\"'']+([a-zA-Z0-9_\\-]{40,})"
+regex = '''(?:PRACTICEPANTHER|practicepanther)[_\-\s]*(?:API[_\-\s]*KEY|TOKEN|token)[=:\s"'']+([a-zA-Z0-9_\-]{40,})'''
 description = "PracticePanther API key or token"
 group = 1
 

@@ -16,7 +16,7 @@ regex = "xau_[a-zA-Z0-9_-]{40,}"
 description = "Xata workspace API key (xau_ prefix)"
 
 [[detector.patterns]]
-regex = "(?:XATA|xata)[_\\s]?WORKSPACE[_\\s]?(?:API[_\\s]?)?KEY[=:\\s\"'']+(xau_[a-zA-Z0-9_-]{40,})"
+regex = '''(?:XATA|xata)[_\-\s]*WORKSPACE[_\-\s]*(?:API[_\-\s]*)?KEY[=:\s"'']+(xau_[a-zA-Z0-9_-]{40,})'''
 description = "Xata workspace API key with context anchor"
 group = 1
 

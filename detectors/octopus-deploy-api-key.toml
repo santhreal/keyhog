@@ -23,7 +23,7 @@ regex = "(?-i)API-[A-Z0-9]{0,15}[0-9][A-Z0-9]{15,}"
 description = "Octopus Deploy API key with API- prefix"
 
 [[detector.patterns]]
-regex = "(?:OCTOPUS[_-]API[_-]KEY|OCTOPUS[_-]KEY)[=:\\s\"'']+((?-i:API-[A-Z0-9]{0,15}[0-9][A-Z0-9]{15,}))"
+regex = '''(?:OCTOPUS[_\-\s]*API[_\-\s]*KEY|OCTOPUS[_\-\s]*KEY)[=:\s"'']+((?-i:API-[A-Z0-9]{0,15}[0-9][A-Z0-9]{15,}))'''
 description = "Octopus Deploy API key with context anchor"
 group = 1
 

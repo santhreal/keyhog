@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["HANKO_API_KEY", "HANKO_KEY", "hanko"]
 
 [[detector.patterns]]
-regex = "(?:HANKO[_-]?API[_-]?KEY|HANKO[_-]?KEY)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+regex = '''(?:HANKO[_\-\s]*API[_\-\s]*KEY|HANKO[_\-\s]*KEY)[=:\s"'']+([a-zA-Z0-9_-]{20,})'''
 description = "Hanko API key with context anchor"
 group = 1
 

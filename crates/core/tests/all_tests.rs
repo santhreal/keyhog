@@ -62,7 +62,7 @@ pub mod regression_pattern_required_literals;
 pub mod regression_redaction_mask;
 pub mod regression_redaction_policy;
 pub mod regression_redaction_zeroization;
-pub mod regression_regex_separator_predicates;
+pub mod regression_rule_suppressor_predicates;
 pub mod regression_report_alt_formats;
 pub mod regression_report_csv_columns;
 pub mod regression_report_escape_invariants;

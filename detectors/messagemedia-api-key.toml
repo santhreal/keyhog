@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["MESSAGEMEDIA", "messagemedia", "MessageMedia", "API_KEY", "API_SECRET", "basicAuthUserName", "basicAuthPassword"]
 
 [[detector.patterns]]
-regex = "(?:MESSAGEMEDIA|messagemedia|MessageMedia)[_\\s]*(?:API[_\\s]*)?(?:KEY|USER|USERNAME)[=:\\s\"']+([a-zA-Z0-9]{20,})"
+regex = '''(?:MESSAGEMEDIA|messagemedia|MessageMedia)[_\-\s]*(?:API[_\-\s]*)?(?:KEY|USER|USERNAME)[=:\s"']+([a-zA-Z0-9]{20,})'''
 description = "MessageMedia API key with context anchor"
 group = 1
 

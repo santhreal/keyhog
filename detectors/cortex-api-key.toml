@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["cortex", "CORTEX_API_KEY", "cortex_key"]
 
 [[detector.patterns]]
-regex = "(?:cortex|CORTEX)[\\s_-]*(?:api[_-]?key|key)[=:\\s\"'']+([a-zA-Z0-9_-]{20,64})"
+regex = '''(?:cortex|CORTEX)[_\-\s]*(?:api[_\-\s]*key|key)[=:\s"'']+([a-zA-Z0-9_-]{20,64})'''
 description = "Cortex API key with context anchor"
 group = 1
 

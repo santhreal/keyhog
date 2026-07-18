@@ -18,7 +18,7 @@ group = 1
 
 [[detector.companions]]
 name = "management_key"
-regex = "(?:management[_-]?key|api[_-]?secret)[\"\\']?\\s*[:=]\\s*[\"\\']([a-zA-Z0-9_-]{20,})[\"\\']"
+regex = '''(?:management[_\-\s]*key|api[_\-\s]*secret)["\']?\s*[:=]\s*["\']([a-zA-Z0-9_-]{20,})["\']'''
 within_lines = 5
 
 [[detector.tests]]

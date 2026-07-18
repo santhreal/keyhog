@@ -17,7 +17,7 @@ description = "GitLab deploy token (gldt- prefix)"
 
 [[detector.companions]]
 name = "username"
-regex = "(?:GITLAB[_-]?DEPLOY[_-]?TOKEN[_-]?USER|username|user)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
+regex = '''(?:GITLAB[_\-\s]*DEPLOY[_\-\s]*TOKEN[_\-\s]*USER|username|user)[=:\s"'']+([a-zA-Z0-9_-]+)'''
 within_lines = 5
 
 [[detector.tests]]

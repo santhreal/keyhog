@@ -15,17 +15,17 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["thingspeak", "write_api_key", "read_api_key"]
 
 [[detector.patterns]]
-regex = "(?:thingspeak|THINGSPEAK)[._-]?(?:WRITE[_-]?API[_-]?KEY|write[_-]?api[_-]?key)[=:\\s\"'']+([a-zA-Z0-9]{16})"
+regex = '''(?:thingspeak|THINGSPEAK)[._-]?(?:WRITE[_\-\s]*API[_\-\s]*KEY|write[_\-\s]*api[_\-\s]*key)[=:\s"'']+([a-zA-Z0-9]{16})'''
 description = "ThingSpeak channel write API key"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:thingspeak|THINGSPEAK)[._-]?(?:READ[_-]?API[_-]?KEY|read[_-]?api[_-]?key)[=:\\s\"'']+([a-zA-Z0-9]{16})"
+regex = '''(?:thingspeak|THINGSPEAK)[._-]?(?:READ[_\-\s]*API[_\-\s]*KEY|read[_\-\s]*api[_\-\s]*key)[=:\s"'']+([a-zA-Z0-9]{16})'''
 description = "ThingSpeak channel read API key"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:thingspeak|THINGSPEAK)[._-]?(?:API[_-]?KEY|api[_-]?key)[=:\\s\"'']+([a-zA-Z0-9]{16})"
+regex = '''(?:thingspeak|THINGSPEAK)[._-]?(?:API[_\-\s]*KEY|api[_\-\s]*key)[=:\s"'']+([a-zA-Z0-9]{16})'''
 description = "ThingSpeak API key"
 group = 1
 

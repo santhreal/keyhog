@@ -12,19 +12,19 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["data.europa.eu", "EU_LOGIN", "EU-Login", "party_token"]
 
 [[detector.patterns]]
-regex = "(?:EU|data\\.europa)[_.-]?(?:CLIENT[_-]?ID|client_id)[\\s\"''=:]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+regex = '''(?:EU|data\.europa)[_.-]?(?:CLIENT[_\-\s]*ID|client_id)[\s"''=:]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
 required_literals = ["CLIENT"]
 description = "EU Open Data client ID for service account"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:EU|data\\.europa)[_.-]?(?:CLIENT[_-]?SECRET|client_secret)[\\s\"''=:]+([a-zA-Z0-9_-]{20,})"
+regex = '''(?:EU|data\.europa)[_.-]?(?:CLIENT[_\-\s]*SECRET|client_secret)[\s"''=:]+([a-zA-Z0-9_-]{20,})'''
 required_literals = ["SECRET"]
 description = "EU Open Data client secret for service account"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:data\\.europa|EDP)[_.-]?(?:API[_-]?TOKEN|token)[\\s\"''=:]+([a-zA-Z0-9_-]{30,})"
+regex = '''(?:data\.europa|EDP)[_.-]?(?:API[_\-\s]*TOKEN|token)[\s"''=:]+([a-zA-Z0-9_-]{30,})'''
 description = "EU Open Data Portal API token"
 group = 1
 

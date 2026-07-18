@@ -1,70 +1,14 @@
-//! Board-wide inter-keyword separator canonicalization.
+//! Detector-owned inter-keyword separator behavior.
 //!
-//! Detector anchors hand-wrote the separator between keyword words in 17
-//! inconsistent, recall-leaky forms (`[_-]?`: no whitespace; `[_\s]?`: one
-//! separator; `[_]*`: underscore only; over-escaped `[\\s_-]`: a literal
-//! backslash/`s` instead of `\s`). `keyhog_core` now collapses every one of them
-//! to a single canonical `[_\-\s]*` at spec-load, so a real secret is never
-//! missed because a leaked file used a tab, a double space, or a hyphen where
-//! the author allowed only one underscore. These tests pin that behaviour over
-//! the LIVE corpus and prove the recall gain (incl. the over-escape fix) end to
-//! end through the compiled scanner.
+//! Shipped detectors write their intended `[_\-\s]*` semantics directly in
+//! TOML. Loading does not broaden a pattern behind its owner's back. These
+//! behavioral cases retain the multi-separator and former over-escape recall
+//! guarantees through the compiled scanner.
 
 mod support;
 use support::contracts::{load_contracts, make_chunk, primaries, scanner, surfaces};
-use support::paths::detector_dir;
 
-use keyhog_core::{canonicalize_keyword_separators, load_detectors, CANONICAL_SEPARATOR};
-
-const SOURCE_TYPE: &str = "kwsep-canonicalization";
-
-/// Every regex, AS LOADED through the production `load_detectors` path, must be a
-/// fixed point of the canonicalizer, i.e. the separator canonicalization is
-/// actually applied (no load path bypasses it) and no recall-leaky form survives
-/// into the compiled corpus. Also asserts the canonical class is applied widely,
-/// so the test cannot pass vacuously on an empty/uncanonicalized corpus.
-#[test]
-fn loaded_corpus_separators_are_all_canonical() {
-    let dets = load_detectors(&detector_dir()).expect("load detectors");
-    let mut patterns = 0usize;
-    let mut canonical_uses = 0usize;
-    let mut offenders: Vec<String> = Vec::new();
-    for d in &dets {
-        let regexes = d
-            .patterns
-            .iter()
-            .map(|p| &p.regex)
-            .chain(d.companions.iter().map(|c| &c.regex));
-        for r in regexes {
-            patterns += 1;
-            if canonicalize_keyword_separators(r).as_ref() != r.as_str() {
-                offenders.push(format!(
-                    "{}: non-canonical separator survived load: {r:?}",
-                    d.id
-                ));
-            }
-            if r.contains(CANONICAL_SEPARATOR) {
-                canonical_uses += 1;
-            }
-        }
-    }
-    assert!(
-        patterns > 800,
-        "expected the full corpus, only saw {patterns} regexes"
-    );
-    assert!(
-        offenders.is_empty(),
-        "{} regex(es) carry a non-canonical inter-keyword separator after load, a load path \
-         bypassed canonicalization:\n  {}",
-        offenders.len(),
-        offenders.join("\n  ")
-    );
-    assert!(
-        canonical_uses > 200,
-        "the canonical separator should be applied across hundreds of detectors; saw only \
-         {canonical_uses} (is canonicalization wired in?)"
-    );
-}
+const SOURCE_TYPE: &str = "detector-owned-keyword-separators";
 
 /// Double every inter-keyword separator (a space/`_`/`-` flanked by word chars)
 /// in `prefix`. `8x8_api_key=` -> `8x8__api__key=`. The credential is never part
@@ -86,9 +30,8 @@ fn double_interword_separators(prefix: &str) -> String {
 }
 
 /// Detectors whose contract positive anchors with an underscore-joined keyword
-/// phrase (`8x8_api_key`, `AVAYA_CLOUD_CLIENT_ID`, …). Before canonicalization
-/// their `[_\-\s]?` / `[_-]?` separators matched at most ONE underscore, so the
-/// doubled form below was dropped; after it, the canonical `[_\-\s]*` rescues it.
+/// phrase (`8x8_api_key`, `AVAYA_CLOUD_CLIENT_ID`, …). These TOMLs now own the
+/// explicit `[_\-\s]*` separator needed to accept the doubled form below.
 const DOUBLED_SEPARATOR_DETECTORS: &[&str] = &[
     "8x8-api-credentials",
     "avaya-api-credentials",
@@ -149,7 +92,7 @@ fn detectors_fire_under_doubled_keyword_separators() {
 
     assert!(
         failures.is_empty(),
-        "canonicalization failed to rescue doubled keyword separators:\n  {}",
+        "detector-owned separator patterns dropped doubled keyword separators:\n  {}",
         failures.join("\n  ")
     );
     assert!(
@@ -160,9 +103,8 @@ fn detectors_fire_under_doubled_keyword_separators() {
 
 /// The over-escape fix: lastfm's anchor was `[\\s_-]`: a literal backslash/`s`,
 /// never whitespace, so `LAST FM=<key>` (a real, space-separated mention) was
-/// silently missed. Canonicalization rewrites it to `[_\-\s]*`, so the spaced
-/// form now fires. (Its contract positive is the joined `LASTFM=` form, which
-/// matched even with the bug; only a genuine whitespace separator exposes it.)
+/// silently missed. LastFM now owns `[_\-\s]*` directly in its TOML, so the
+/// spaced form fires. Its joined `LASTFM=` contract did not expose this case.
 #[test]
 fn over_escaped_separator_now_matches_whitespace() {
     let scanner = scanner();
@@ -171,7 +113,7 @@ fn over_escaped_separator_now_matches_whitespace() {
     let chunk = make_chunk(&text, SOURCE_TYPE, "lastfm.txt");
     assert!(
         surfaces(&scanner, &chunk, key),
-        "the over-escaped lastfm separator must match a real space after canonicalization: \
+        "the detector-owned lastfm separator must match a real space: \
          {text:?} dropped {key:?}"
     );
 }

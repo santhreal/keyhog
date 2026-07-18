@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["WEAVIATE_API_KEY", "weaviate_api_key", "WEAVIATE_APIKEY", "weaviateApiKey"]
 
 [[detector.patterns]]
-regex = "(?:WEAVIATE[_-]?API[_-]?KEY|weaviate[_-]?api[_-]?key)[=:\\s\"'']+([a-zA-Z0-9_-]{32,})"
+regex = '''(?:WEAVIATE[_\-\s]*API[_\-\s]*KEY|weaviate[_\-\s]*api[_\-\s]*key)[=:\s"'']+([a-zA-Z0-9_-]{32,})'''
 description = "Weaviate API key with context anchor"
 group = 1
 

@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["BUNNYCDN", "bunnycdn", "BUNNY", "bunny", "AccessKey"]
 
 [[detector.patterns]]
-regex = "(?:BUNNYCDN|bunnycdn|BUNNY|bunny)(?:_API)?[_-]?(?:KEY|key|TOKEN|token)[=:\\s\"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+regex = '''(?:BUNNYCDN|bunnycdn|BUNNY|bunny)(?:_API)?[_\-\s]*(?:KEY|key|TOKEN|token)[=:\s"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
 description = "BunnyCDN API key with UUID format and context anchor"
 group = 1
 

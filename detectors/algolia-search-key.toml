@@ -28,7 +28,7 @@ client_safe = true
 
 [[detector.companions]]
 name = "application_id"
-regex = "(?:ALGOLIA_APP(?:LICATION)?_ID|algolia[_-]?app(?:lication)?[_-]?id|app[_-]?id)[=:\\s\"']+([A-Z0-9]{10})"
+regex = '''(?:ALGOLIA_APP(?:LICATION)?_ID|algolia[_\-\s]*app(?:lication)?[_\-\s]*id|app[_\-\s]*id)[=:\s"']+([A-Z0-9]{10})'''
 within_lines = 5
 [detector.verify]
 method = "GET"

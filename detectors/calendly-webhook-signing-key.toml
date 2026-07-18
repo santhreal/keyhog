@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["signing_key", "signingKey", "CALENDLY_SIGNING_KEY"]
 
 [[detector.patterns]]
-regex = "(?:calendly|CALENDLY)[_.\\s]*(?:signing[_\\s]*key|SIGNING[_\\s]*KEY)[\\s\"''']+([a-zA-Z0-9!@#$%^&*()_+\\-=\\[\\]{};':\"\\\\|,.<>\\/?]{10,})"
+regex = "(?:calendly|CALENDLY)[_.\\s]*(?:signing[_\\-\\s]*key|SIGNING[_\\-\\s]*KEY)[\\s\"''']+([a-zA-Z0-9!@#$%^&*()_+\\-=\\[\\]{};':\"\\\\|,.<>\\/?]{10,})"
 description = "Calendly webhook signing key with context anchor"
 group = 1
 

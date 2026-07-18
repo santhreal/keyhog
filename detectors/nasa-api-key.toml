@@ -17,7 +17,7 @@ description = "NASA API key (40 alphanumeric chars) with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "api[_-]?key[=:\\s\"'\\']+([a-zA-Z0-9]{40}).*api\\.nasa\\.gov"
+regex = '''api[_\-\s]*key[=:\s"'\']+([a-zA-Z0-9]{40}).*api\.nasa\.gov'''
 description = "NASA API key in URL with api.nasa.gov domain"
 group = 1
 

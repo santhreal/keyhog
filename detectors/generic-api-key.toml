@@ -78,12 +78,12 @@ service = "generic"
 # separate fixed-anchor patterns makes every backend compile the same trigger
 # roots instead of relying on one multi-family alternation.
 [[detector.patterns]]
-regex = "(?i)\"api[_-]?key\"\\s*:\\s*\"([a-zA-Z0-9/+=_.!@#$%^&*-]{12,80})\""
+regex = '(?i)"api[_\-\s]*key"\s*:\s*"([a-zA-Z0-9/+=_.!@#$%^&*-]{12,80})"'
 description = "API key value in a JSON object field"
 group = 1
 
 [[detector.patterns]]
-regex = "(?i)\"access[_-]?key\"\\s*:\\s*\"([a-zA-Z0-9/+=_.!@#$%^&*-]{12,80})\""
+regex = '(?i)"access[_\-\s]*key"\s*:\s*"([a-zA-Z0-9/+=_.!@#$%^&*-]{12,80})"'
 description = "Access key value in a JSON object field"
 group = 1
 

@@ -14,17 +14,17 @@ entropy_high = 4.5
 entropy_floor = [{ max_len = 24, floor = 3.0 }, { max_len = 40, floor = 2.8 }, { floor = 3.5 }]
 
 [[detector.patterns]]
-regex = "(?:sap)[._-]?(?:client[_-]?id)[=:\\s\"'']+([a-zA-Z0-9_-]{10,})"
+regex = '''(?:sap)[._-]?(?:client[_\-\s]*id)[=:\s"'']+([a-zA-Z0-9_-]{10,})'''
 description = "SAP OAuth2 client ID with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:sap)[._-]?(?:client[_-]?secret)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+regex = '''(?:sap)[._-]?(?:client[_\-\s]*secret)[=:\s"'']+([a-zA-Z0-9_-]{20,})'''
 description = "SAP OAuth2 client secret with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:sap)[._-]?(?:api[_-]?key|token)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+regex = '''(?:sap)[._-]?(?:api[_\-\s]*key|token)[=:\s"'']+([a-zA-Z0-9_-]{20,})'''
 description = "SAP API key with context anchor"
 group = 1
 

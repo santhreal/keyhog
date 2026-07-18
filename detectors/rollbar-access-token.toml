@@ -15,7 +15,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["ROLLBAR_ACCESS_TOKEN", "rollbar_access_token", "X-Rollbar-Access-Token", "ROLLBAR_TOKEN", "rollbarToken"]
 
 [[detector.patterns]]
-regex = "(?:ROLLBAR[_\\-]?ACCESS[_\\-]?TOKEN|rollbar[_\\-]?access[_\\-]?token|X-Rollbar-Access-Token|ROLLBAR[_\\-]?TOKEN|rollbarToken)[=:\\s\\\"']+([a-f0-9]{32})"
+regex = '''(?:ROLLBAR[_\-\s]*ACCESS[_\-\s]*TOKEN|rollbar[_\-\s]*access[_\-\s]*token|X-Rollbar-Access-Token|ROLLBAR[_\-\s]*TOKEN|rollbarToken)[=:\s\"']+([a-f0-9]{32})'''
 description = "Rollbar project access token (32 hex chars with context anchor)"
 group = 1
 

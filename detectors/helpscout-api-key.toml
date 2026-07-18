@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["HELPSCOUT", "help_scout", "helpscout_api", "docsapi"]
 
 [[detector.patterns]]
-regex = "(?i)(?:HELPSCOUT|HELP_SCOUT|helpscout)[_\\s]?(?:API[_\\s]?KEY|KEY)[=:\\s\"'']+([a-f0-9]{20})"
+regex = '''(?i)(?:HELPSCOUT|HELP_SCOUT|helpscout)[_\-\s]*(?:API[_\-\s]*KEY|KEY)[=:\s"'']+([a-f0-9]{20})'''
 description = "Help Scout Docs API key with context anchor"
 group = 1
 

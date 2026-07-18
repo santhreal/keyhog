@@ -17,7 +17,7 @@ description = "Bitbucket pipeline variable containing sensitive credential"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:bitbucket[_-]?pipeline|BITBUCKET[_-]?PIPELINE)[_\\s]?(?:var|VAR)?[=:\\s\"'']+([A-Za-z0-9_!@#$%^&*+=/-]{16,})"
+regex = '''(?:bitbucket[_\-\s]*pipeline|BITBUCKET[_\-\s]*PIPELINE)[_\-\s]*(?:var|VAR)?[=:\s"'']+([A-Za-z0-9_!@#$%^&*+=/-]{16,})'''
 description = "Bitbucket pipeline variable with context anchor"
 group = 1
 

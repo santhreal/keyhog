@@ -721,11 +721,6 @@ error = true
 adversarial = true
 
 [[module]]
-path = "crates/core/src/spec/regex_separator.rs"
-error = true
-adversarial = true
-
-[[module]]
 path = "crates/core/src/spec/validate.rs"
 error = true
 adversarial = true

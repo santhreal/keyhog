@@ -20,18 +20,18 @@ description = "Tableau Server URL"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:TABLEAU|tableau)[._-]?(?:token[_-]?name|pat[_-]?name)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
+regex = '''(?:TABLEAU|tableau)[._-]?(?:token[_\-\s]*name|pat[_\-\s]*name)[=:\s"'']+([a-zA-Z0-9_-]+)'''
 description = "Tableau personal access token name"
 group = 1
 weak_anchor = true
 
 [[detector.patterns]]
-regex = "(?:TABLEAU|tableau)[._-]?(?:token[_-]?secret|pat[_-]?secret)[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+regex = '''(?:TABLEAU|tableau)[._-]?(?:token[_\-\s]*secret|pat[_\-\s]*secret)[=:\s"'']+([a-zA-Z0-9_-]{20,})'''
 description = "Tableau personal access token secret"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:TABLEAU|tableau)[._-]?(?:site[_-]?id|site)[=:\\s\"'']+([a-zA-Z0-9_-]+)"
+regex = '''(?:TABLEAU|tableau)[._-]?(?:site[_\-\s]*id|site)[=:\s"'']+([a-zA-Z0-9_-]+)'''
 description = "Tableau site ID"
 group = 1
 weak_anchor = true

@@ -12,12 +12,12 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["HOLOGRAM", "hologram", "HOLOGRAM_API", "hologram.io"]
 
 [[detector.patterns]]
-regex = "(?:HOLOGRAM|hologram)[._-]?API[_-]?KEY[=:\\s\"'']+([a-zA-Z0-9]{32,64})"
+regex = '''(?:HOLOGRAM|hologram)[._-]?API[_\-\s]*KEY[=:\s"'']+([a-zA-Z0-9]{32,64})'''
 description = "Hologram API key with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:HOLOGRAM|hologram)[._-]?DEVICE[_-]?KEY[=:\\s\"'']+([a-zA-Z0-9]{16,32})"
+regex = '''(?:HOLOGRAM|hologram)[._-]?DEVICE[_\-\s]*KEY[=:\s"'']+([a-zA-Z0-9]{16,32})'''
 description = "Hologram device key"
 group = 1
 

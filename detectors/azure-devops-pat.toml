@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["azure", "devops", "AZURE_DEVOPS", "ADO_PAT", "vsopenapi"]
 
 [[detector.patterns]]
-regex = "(?:azure[_-]?devops|AZURE[_-]?DEVOPS|ado[_-]?pat|ADO[_-]?PAT)[=:\\s\"'']+([a-zA-Z0-9]{52})"
+regex = '''(?:azure[_\-\s]*devops|AZURE[_\-\s]*DEVOPS|ado[_\-\s]*pat|ADO[_\-\s]*PAT)[=:\s"'']+([a-zA-Z0-9]{52})'''
 description = "Azure DevOps PAT with context anchor"
 group = 1
 

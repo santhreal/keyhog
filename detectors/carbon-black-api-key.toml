@@ -18,7 +18,7 @@ weak_anchor = false
 allowlist_values = ["^0{20,32}$"]
 
 [[detector.patterns]]
-regex = "(?:CARBON[_\\s]*BLACK|carbon[_\\s]*black|CB|vmware_cb)[_\\s]*(?:API[_\\s]*)?KEY[=:\\s\"'']+([A-F0-9]{20,32})"
+regex = '''(?:CARBON[_\-\s]*BLACK|carbon[_\-\s]*black|CB|vmware_cb)[_\-\s]*(?:API[_\-\s]*)?KEY[=:\s"'']+([A-F0-9]{20,32})'''
 required_literals = ["CARBON", "CB"]
 description = "Carbon Black API key with context anchor"
 group = 1
@@ -27,7 +27,7 @@ group = 1
 name = "carbon_black_api_id"
 # Anchored to the `CB_API_ID=` declaration; auto-detected capture group
 # resolves `{{companion.carbon_black_api_id}}` to just the numeric id.
-regex = "(?:CARBON[_\\s]*BLACK|carbon[_\\s]*black|CB)[_\\s]*(?:API[_\\s]*)?ID[=:\\s\"'']+([0-9]+)"
+regex = '''(?:CARBON[_\-\s]*BLACK|carbon[_\-\s]*black|CB)[_\-\s]*(?:API[_\-\s]*)?ID[=:\s"'']+([0-9]+)'''
 within_lines = 5
 
 # Org key companion. Anchored to the `CB_ORG_KEY=` declaration so a stray
@@ -35,7 +35,7 @@ within_lines = 5
 # `{{companion.org_key}}` to the key value alone.
 [[detector.companions]]
 name = "org_key"
-regex = "(?:CARBON[_\\s]*BLACK|carbon[_\\s]*black|CB)[_\\s]*ORG[_\\s]*KEY[=:\\s\"'']+([A-Z0-9]{8,16})"
+regex = '''(?:CARBON[_\-\s]*BLACK|carbon[_\-\s]*black|CB)[_\-\s]*ORG[_\-\s]*KEY[=:\s"'']+([A-Z0-9]{8,16})'''
 within_lines = 5
 
 [detector.verify]

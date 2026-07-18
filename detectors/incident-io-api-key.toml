@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["INCIDENT_IO_API_KEY", "incident.io", "INCIDENT_API_KEY"]
 
 [[detector.patterns]]
-regex = "(?:INCIDENT_IO|INCIDENTIO|incident\\.io)[_\\s]*API[_\\s]*KEY[=:\\s\"\\']+([a-zA-Z0-9]{40,})"
+regex = '''(?:INCIDENT_IO|INCIDENTIO|incident\.io)[_\-\s]*API[_\-\s]*KEY[=:\s"\']+([a-zA-Z0-9]{40,})'''
 description = "incident.io API key with context anchor"
 group = 1
 

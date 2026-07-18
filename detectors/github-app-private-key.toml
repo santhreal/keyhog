@@ -28,7 +28,7 @@ regex = "-----BEGIN (RSA|OPENSSH) PRIVATE KEY-----[A-Za-z0-9+/=\\s]{200,}?-----E
 description = "PEM-encoded private key for GitHub App authentication"
 
 [[detector.patterns]]
-regex = "(?:github[_-]?app|GITHUB[_-]?APP)[=:\\s\"'']+(-----BEGIN (?:RSA|OPENSSH) PRIVATE KEY-----[A-Za-z0-9+/=\\s]{200,}?-----END (?:RSA|OPENSSH) PRIVATE KEY-----)"
+regex = '''(?:github[_\-\s]*app|GITHUB[_\-\s]*APP)[=:\s"'']+(-----BEGIN (?:RSA|OPENSSH) PRIVATE KEY-----[A-Za-z0-9+/=\s]{200,}?-----END (?:RSA|OPENSSH) PRIVATE KEY-----)'''
 description = "GitHub App private key with context anchor"
 group = 1
 

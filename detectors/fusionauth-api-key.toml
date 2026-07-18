@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["FUSIONAUTH_API_KEY", "FUSIONAUTH_KEY", "fusionauth"]
 
 [[detector.patterns]]
-regex = "(?:FUSIONAUTH[_-]?API[_-]?KEY|FUSIONAUTH[_-]?KEY)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+regex = '''(?:FUSIONAUTH[_\-\s]*API[_\-\s]*KEY|FUSIONAUTH[_\-\s]*KEY)[=:\s"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
 description = "FusionAuth API key with context anchor"
 group = 1
 

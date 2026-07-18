@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["datos.gob.mx", "DATOS_GOB_MX", "SISTEMA_AJOLOTE", "datosgobmx"]
 
 [[detector.patterns]]
-regex = '''(?:datos\.gob\.mx|DATOS_GOB|AJOLOTE)[_.-]?(?:API[_-]?KEY|api_key|CKAN[_-]?KEY|ckan_key)[\s"'=:]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
+regex = '''(?:datos\.gob\.mx|DATOS_GOB|AJOLOTE)[_.-]?(?:API[_\-\s]*KEY|api_key|CKAN[_\-\s]*KEY|ckan_key)[\s"'=:]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
 description = "Mexico datos.gob.mx CKAN API key"
 group = 1
 

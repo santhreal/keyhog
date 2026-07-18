@@ -18,7 +18,7 @@ description = "Cloudsmith API key with cs_ prefix"
 [[detector.patterns]]
 # Separator class must include `=` and `:`. Real env-var forms are
 # `CLOUDSMITH_API_KEY="value"` and `cloudsmith.api.key=value`.
-regex = "(?:cloudsmith|CLOUDSMITH)[_\\s]*(?:API[_\\s]*KEY|api[_\\s]*key)[=:\\s\"'']+([a-zA-Z0-9_]{32,64})"
+regex = '''(?:cloudsmith|CLOUDSMITH)[_\-\s]*(?:API[_\-\s]*KEY|api[_\-\s]*key)[=:\s"'']+([a-zA-Z0-9_]{32,64})'''
 description = "Cloudsmith API key in configuration context"
 group = 1
 

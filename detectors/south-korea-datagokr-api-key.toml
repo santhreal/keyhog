@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["data.go.kr", "DATA_GO_KR", "serviceKey", "공공데이터포털"]
 
 [[detector.patterns]]
-regex = "(?:data\\.go\\.kr|DATA_GO_KR|datagokr)[_.-]?(?:SERVICE[_-]?KEY|service_key|API[_-]?KEY|api_key)[\\s\"''=:]+([a-zA-Z0-9]{20,50})"
+regex = '''(?:data\.go\.kr|DATA_GO_KR|datagokr)[_.-]?(?:SERVICE[_\-\s]*KEY|service_key|API[_\-\s]*KEY|api_key)[\s"''=:]+([a-zA-Z0-9]{20,50})'''
 description = "Korea data.go.kr service API key"
 group = 1
 

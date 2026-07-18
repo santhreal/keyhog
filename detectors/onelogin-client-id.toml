@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["ONELOGIN_CLIENT_ID", "onelogin_client_id", "ONELOGIN", "onelogin", "client_id"]
 
 [[detector.patterns]]
-regex = "(?:ONELOGIN|onelogin)[_\\s]*(?:CLIENT|client)?[_\\s]*(?:ID|id)?[=:\\s\"']+([a-f0-9]{32})"
+regex = '''(?:ONELOGIN|onelogin)[_\-\s]*(?:CLIENT|client)?[_\-\s]*(?:ID|id)?[=:\s"']+([a-f0-9]{32})'''
 description = "OneLogin Client ID with context anchor"
 group = 1
 

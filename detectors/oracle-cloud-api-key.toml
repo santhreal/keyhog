@@ -29,7 +29,7 @@ description = "Oracle Cloud region identifier"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:OCI|oracle)[._-]?(?:api[_-]?key|private[_-]?key|key[_-]?file)[=:\\s\"'']+([a-zA-Z0-9_/.-]+)"
+regex = '''(?:OCI|oracle)[._-]?(?:api[_\-\s]*key|private[_\-\s]*key|key[_\-\s]*file)[=:\s"'']+([a-zA-Z0-9_/.-]+)'''
 description = "Oracle Cloud API key file path"
 group = 1
 weak_anchor = true

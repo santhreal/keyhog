@@ -18,12 +18,12 @@ entropy_high = 4.5
 entropy_floor = [{ max_len = 24, floor = 3.0 }, { max_len = 40, floor = 2.8 }, { floor = 3.5 }]
 
 [[detector.patterns]]
-regex = '(?:GETRESPONSE|getresponse)[_-]*(?:API|api)?[_-]*(?:KEY|key|TOKEN|token)[=: ]+([a-zA-Z0-9_-]{20,})'
+regex = '(?:GETRESPONSE|getresponse)[_\-\s]*(?:API|api)?[_\-\s]*(?:KEY|key|TOKEN|token)[=: ]+([a-zA-Z0-9_-]{20,})'
 description = "GetResponse API key with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = '(?:X[_-]?Auth[_-]?Token|x[_-]?auth[_-]?token)[=: ]+(?:api[_-]?key )?([a-zA-Z0-9_-]{20,})'
+regex = '(?:X[_\-\s]*Auth[_\-\s]*Token|x[_\-\s]*auth[_\-\s]*token)[=: ]+(?:api[_\-\s]*key )?([a-zA-Z0-9_-]{20,})'
 required_literals = ["Token"]
 description = "GetResponse X-Auth-Token header value"
 group = 1

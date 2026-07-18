@@ -12,13 +12,13 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["CRISP", "crisp_api", "crisp_website", "X-Crisp-Tier"]
 
 [[detector.patterns]]
-regex = "(?i)(?:CRISP|crisp)[_\\s]?(?:API[_\\s]?KEY|TOKEN|IDENTIFIER|KEY)[=:\\s\"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+regex = '''(?i)(?:CRISP|crisp)[_\-\s]*(?:API[_\-\s]*KEY|TOKEN|IDENTIFIER|KEY)[=:\s"'']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
 description = "Crisp API identifier (UUID format) with context anchor"
 group = 1
 
 [[detector.companions]]
 name = "crisp_secret"
-regex = "(?i)(?:CRISP|crisp)[_\\s]?(?:SECRET|API[_\\s]?SECRET)[=:\\s\"'']+([a-f0-9a-zA-Z]{32,64})"
+regex = '''(?i)(?:CRISP|crisp)[_\-\s]*(?:SECRET|API[_\-\s]*SECRET)[=:\s"'']+([a-f0-9a-zA-Z]{32,64})'''
 within_lines = 5
 
 [[detector.tests]]

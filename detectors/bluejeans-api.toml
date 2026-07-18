@@ -12,12 +12,12 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["bluejeans", "BLUEJEANS", "bjn", "bluejeans.com"]
 
 [[detector.patterns]]
-regex = "(?:bluejeans|BJN)[_\\-\\s]?(?:api[_\\-\\s]?key|access[_\\-\\s]?token|secret)[\"\\'\\s]*[=:][\"\\'\\s]*([a-zA-Z0-9]{32,})"
+regex = '''(?:bluejeans|BJN)[_\-\s]*(?:api[_\-\s]*key|access[_\-\s]*token|secret)["\'\s]*[=:]["\'\s]*([a-zA-Z0-9]{32,})'''
 description = "BlueJeans API credential with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:BLUEJEANS[_\\-\\s]?API[_\\-\\s]?KEY|BLUEJEANS[_\\-\\s]?TOKEN|BJN[_\\-\\s]?SECRET)[\"\\'\\s]*[=:][\"\\'\\s]*([a-zA-Z0-9]{32,})"
+regex = '''(?:BLUEJEANS[_\-\s]*API[_\-\s]*KEY|BLUEJEANS[_\-\s]*TOKEN|BJN[_\-\s]*SECRET)["\'\s]*[=:]["\'\s]*([a-zA-Z0-9]{32,})'''
 description = "BlueJeans API credential in environment variable format"
 group = 1
 

@@ -16,7 +16,7 @@ regex = "percy_[a-zA-Z0-9_-]{30,}"
 description = "Percy API token (percy_ prefix)"
 
 [[detector.patterns]]
-regex = "(?:PERCY_TOKEN|percy[_-]?token)[=:\\s\"']+(percy_[a-zA-Z0-9_-]+)"
+regex = '''(?:PERCY_TOKEN|percy[_\-\s]*token)[=:\s"']+(percy_[a-zA-Z0-9_-]+)'''
 description = "Percy token with context anchor"
 group = 1
 

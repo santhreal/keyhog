@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["MUSIXMATCH", "musixmatch", "MUSIXMATCH_API_KEY", "musixmatch_api_key"]
 
 [[detector.patterns]]
-regex = "(?:MUSIXMATCH|musixmatch)[\\\\s_-]?(?:API|api)?[\\\\s_-]?(?:KEY|key)?[=:\\s\"'']+([a-f0-9]{32})"
+regex = '''(?:MUSIXMATCH|musixmatch)[_\-\s]*(?:API|api)?[_\-\s]*(?:KEY|key)?[=:\s"'']+([a-f0-9]{32})'''
 description = "Musixmatch API key with context anchor"
 group = 1
 

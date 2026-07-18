@@ -186,8 +186,8 @@ fn valid_single_detector_parses_to_exact_fields() {
     assert_eq!(d.severity, Severity::High);
     assert_eq!(d.keywords, vec!["demo_".to_string()]);
     assert_eq!(d.patterns.len(), 1);
-    // No separator classes in this regex, so canonicalisation is a no-op and
-    // the string round-trips byte-for-byte.
+    // Detector regexes always round-trip byte-for-byte; loading does not
+    // broaden separator classes or quantifiers.
     assert_eq!(d.patterns[0].regex, "demo_[A-Z0-9]{8}");
     assert!(!d.patterns[0].client_safe, "client_safe defaults to false");
     // Documented defaults for the omitted optional fields.

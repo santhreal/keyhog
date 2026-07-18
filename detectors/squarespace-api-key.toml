@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["squarespace", "SQUARESPACE", "Developer API Key"]
 
 [[detector.patterns]]
-regex = "(?:squarespace|SQUARESPACE)[_=:\\s\"'']+(?:api[_-]?key|key)[=:\\s\"'']+([a-zA-Z0-9]{40,})"
+regex = '''(?:squarespace|SQUARESPACE)[_=:\s"'']+(?:api[_\-\s]*key|key)[=:\s"'']+([a-zA-Z0-9]{40,})'''
 description = "Squarespace API key with context anchor"
 group = 1
 

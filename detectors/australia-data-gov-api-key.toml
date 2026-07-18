@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["data.gov.au", "CKAN_API_KEY", "auckan"]
 
 [[detector.patterns]]
-regex = "(?:data\\.gov\\.au|CKAN|AUSTRALIA)[_.-]?(?:API[_-]?KEY|apikey)[\\s\"''=:]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+regex = '''(?:data\.gov\.au|CKAN|AUSTRALIA)[_.-]?(?:API[_\-\s]*KEY|apikey)[\s"''=:]+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
 description = "Australia data.gov.au CKAN API key with context anchor"
 group = 1
 

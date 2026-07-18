@@ -12,12 +12,12 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["SCALR_TOKEN", "scalr.io", "Authorization", "Bearer"]
 
 [[detector.patterns]]
-regex = "(?:SCALR[_-]TOKEN|SCALR[_-]API[_-]TOKEN)[=:\\s\"'']+(eyJ[a-zA-Z0-9_-]*\\.eyJ[a-zA-Z0-9_-]*\\.[a-zA-Z0-9_-]*)"
+regex = '''(?:SCALR[_\-\s]*TOKEN|SCALR[_\-\s]*API[_\-\s]*TOKEN)[=:\s"'']+(eyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*)'''
 description = "Scalr API JWT token with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:SCALR[_-]HOSTNAME)[=:\\s\"'']+([a-zA-Z0-9_-]+\\.scalr\\.io)"
+regex = '''(?:SCALR[_\-\s]*HOSTNAME)[=:\s"'']+([a-zA-Z0-9_-]+\.scalr\.io)'''
 description = "Scalr hostname for API endpoint"
 group = 1
 

@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["TURSO_AUTH_TOKEN", "turso.io", "TURSO_TOKEN", "api.turso.io"]
 
 [[detector.patterns]]
-regex = "(?:TURSO|turso)[_\\s]?(?:AUTH|API)[_\\s]?TOKEN[=:\\s\"'']+(eyJ[a-zA-Z0-9_-]*\\.eyJ[a-zA-Z0-9_-]*\\.[a-zA-Z0-9_-]+)"
+regex = '''(?:TURSO|turso)[_\-\s]*(?:AUTH|API)[_\-\s]*TOKEN[=:\s"'']+(eyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]+)'''
 description = "Turso v2 platform API token with context anchor"
 group = 1
 

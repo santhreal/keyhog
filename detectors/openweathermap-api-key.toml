@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["OPENWEATHERMAP", "openweathermap", "OWM_API_KEY", "appid"]
 
 [[detector.patterns]]
-regex = "(?:OPENWEATHERMAP|openweathermap|OWM)[_\\s]*(?:API[_\\s]*)?KEY[=:\\s\"'']+([a-f0-9]{32})"
+regex = '''(?:OPENWEATHERMAP|openweathermap|OWM)[_\-\s]*(?:API[_\-\s]*)?KEY[=:\s"'']+([a-f0-9]{32})'''
 description = "OpenWeatherMap API key with context anchor"
 group = 1
 

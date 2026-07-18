@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["MEILISEARCH_API_KEY", "MEILISEARCH_MASTER_KEY", "meilisearch_api_key", "meilisearch_master_key"]
 
 [[detector.patterns]]
-regex = "(?:MEILISEARCH[_-]?(?:API|MASTER|ADMIN)[_-]?KEY|meilisearch[_-]?(?:api|master|admin)[_-]?key)[=:\\s\"'']+([a-zA-Z0-9_-]{16,})"
+regex = '''(?:MEILISEARCH[_\-\s]*(?:API|MASTER|ADMIN)[_\-\s]*KEY|meilisearch[_\-\s]*(?:api|master|admin)[_\-\s]*key)[=:\s"'']+([a-zA-Z0-9_-]{16,})'''
 description = "Meilisearch API key with context anchor"
 group = 1
 

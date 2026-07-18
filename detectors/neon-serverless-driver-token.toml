@@ -17,7 +17,7 @@ description = "Neon PostgreSQL connection string with password"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:NEON[_-](?:DATABASE[_-]?URL|POSTGRES[_-]?URL|URL))[=:\\s\"'']+(postgres(?:ql)?://[^\\s\"'']+)"
+regex = '''(?:NEON[_\-\s]*(?:DATABASE[_\-\s]*URL|POSTGRES[_\-\s]*URL|URL))[=:\s"'']+(postgres(?:ql)?://[^\s"'']+)'''
 description = "Neon connection string with context anchor"
 group = 1
 

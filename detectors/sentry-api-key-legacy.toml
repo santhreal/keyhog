@@ -12,7 +12,7 @@ ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_rad
 keywords = ["SENTRY_API_KEY", "sentry_api_key", "SENTRY-API-KEY", "auth.api_key"]
 
 [[detector.patterns]]
-regex = "(?:SENTRY[_\\-]?API[_\\-]?KEY|sentry[_\\-]?api[_\\-]?key|auth\\.api_key)[=:\\s\\\"']+([a-f0-9]{32})"
+regex = '''(?:SENTRY[_\-\s]*API[_\-\s]*KEY|sentry[_\-\s]*api[_\-\s]*key|auth\.api_key)[=:\s\"']+([a-f0-9]{32})'''
 description = "Sentry legacy API key (32 hex chars with context anchor)"
 group = 1
 
