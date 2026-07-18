@@ -23,7 +23,8 @@ description = "Skyscanner API key header following the Skyscanner API endpoint"
 group = 1
 
 [[detector.patterns]]
-regex = "(?is)x[_\\-\\s]?api[_\\-\\s]?key[=:\\s\"'']+([A-Za-z0-9]{32,64}).{0,256}partners\\.api\\.skyscanner\\.net"
+# Explicit `\x20` keeps this detector-owned bounded shape out of global separator expansion.
+regex = "(?is)x[\\x20_\\t\\r\\n-]?api[\\x20_\\t\\r\\n-]?key[=:\\s\"'']+([A-Za-z0-9]{32,64}).{0,256}partners\\.api\\.skyscanner\\.net"
 required_literals = ["partners.api.skyscanner.net"]
 description = "Skyscanner API key header preceding the Skyscanner API endpoint"
 group = 1

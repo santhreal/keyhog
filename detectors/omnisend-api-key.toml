@@ -23,7 +23,8 @@ description = "Omnisend API key header following the Omnisend API endpoint"
 group = 1
 
 [[detector.patterns]]
-regex = "(?is)x[_\\-\\s]?api[_\\-\\s]?key[=:\\s\"'']+([a-f0-9]{32}).{0,256}api\\.omnisend\\.com"
+# Explicit `\x20` keeps this detector-owned bounded shape out of global separator expansion.
+regex = "(?is)x[\\x20_\\t\\r\\n-]?api[\\x20_\\t\\r\\n-]?key[=:\\s\"'']+([a-f0-9]{32}).{0,256}api\\.omnisend\\.com"
 required_literals = ["api.omnisend.com"]
 description = "Omnisend API key header preceding the Omnisend API endpoint"
 group = 1

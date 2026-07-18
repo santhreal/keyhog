@@ -23,7 +23,8 @@ description = "Moosend API key header following the Moosend API endpoint"
 group = 1
 
 [[detector.patterns]]
-regex = "(?is)x[_\\-\\s]?api[_\\-\\s]?key[=:\\s\"'']+([a-f0-9-]{32,36}).{0,256}api\\.moosend\\.com"
+# Explicit `\x20` keeps this detector-owned bounded shape out of global separator expansion.
+regex = "(?is)x[\\x20_\\t\\r\\n-]?api[\\x20_\\t\\r\\n-]?key[=:\\s\"'']+([a-f0-9-]{32,36}).{0,256}api\\.moosend\\.com"
 required_literals = ["api.moosend.com"]
 description = "Moosend API key header preceding the Moosend API endpoint"
 group = 1

@@ -23,7 +23,8 @@ description = "OpenSea API key header following the OpenSea API endpoint"
 group = 1
 
 [[detector.patterns]]
-regex = "(?is)x[_\\-\\s]?api[_\\-\\s]?key[=:\\s\"'']+([a-zA-Z0-9_-]{32,}).{0,256}api\\.opensea\\.io"
+# Explicit `\x20` keeps this detector-owned bounded shape out of global separator expansion.
+regex = "(?is)x[\\x20_\\t\\r\\n-]?api[\\x20_\\t\\r\\n-]?key[=:\\s\"'']+([a-zA-Z0-9_-]{32,}).{0,256}api\\.opensea\\.io"
 required_literals = ["api.opensea.io"]
 description = "OpenSea API key header preceding the OpenSea API endpoint"
 group = 1

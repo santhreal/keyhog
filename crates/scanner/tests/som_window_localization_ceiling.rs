@@ -21,6 +21,9 @@
 //! facade, whereas that file's `_mirror` measurement calls the crate-private
 //! `confirmed_profile_dump` and so cannot link outside the lib.
 
+use keyhog_core::{Chunk, ChunkMetadata};
+use keyhog_scanner::{CompiledScanner, ScannerConfig};
+
 #[test]
 fn som_window_localization_ceiling_over_embedded_corpus() {
     let (prefix_anchored, prefixless_internal_literal, whole_chunk_residue) =
@@ -46,4 +49,92 @@ fn som_window_localization_ceiling_over_embedded_corpus() {
          got prefix_anchored={prefix_anchored} prefixless_internal_literal={prefixless_internal_literal} \
          whole_chunk_residue={whole_chunk_residue}"
     );
+}
+
+#[test]
+fn optional_api_header_shape_is_localized_without_changing_findings() {
+    let detector_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../detectors");
+    let detectors = keyhog_core::load_detectors(&detector_dir).expect("detectors load");
+    let target_ids = [
+        "opensea-api-key",
+        "omnisend-api-key",
+        "moosend-api-key",
+        "skyscanner-api-key",
+        "8x8-api-credentials",
+        "x2y2-api-key",
+    ];
+    for detector_id in target_ids {
+        let detector = detectors
+            .iter()
+            .find(|detector| detector.id == detector_id)
+            .unwrap_or_else(|| panic!("missing detector {detector_id}"));
+        let reverse = detector
+            .patterns
+            .iter()
+            .filter(|pattern| {
+                pattern
+                    .description
+                    .as_deref()
+                    .is_some_and(|description| description.contains("preceding"))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            reverse.len(),
+            1,
+            "{detector_id} must have one coherent reverse-order header pattern"
+        );
+        let prefixes =
+            keyhog_scanner::testing::confirmed_required_prefix_literals(&reverse[0].regex)
+                .unwrap_or_else(|| panic!("{detector_id} reverse header is not localizable"));
+        assert_eq!(
+            prefixes.len(),
+            7,
+            "{detector_id} must retain the seven finite header-prefix spellings"
+        );
+    }
+
+    let mut config = ScannerConfig::default();
+    config.ml_enabled = false;
+    config.min_confidence = 0.0;
+    let opensea = detectors
+        .into_iter()
+        .find(|detector| detector.id == "opensea-api-key")
+        .expect("OpenSea detector exists");
+    let scanner = CompiledScanner::compile(vec![opensea])
+        .expect("provider header scanner compiles")
+        .with_config(config);
+
+    let credential = "0123456789abcdef0123456789abcdef";
+    for header in [
+        "x-api-key",
+        "x_api_key",
+        "x api key",
+        "x-api_key",
+        "xapikey",
+        "x\napi-key",
+        "x\u{b}api-key",
+        "x\u{c}api-key",
+        "x\u{a0}api-key",
+    ] {
+        let text = format!("{header}: {credential}\nhttps://api.opensea.io/v1");
+        let findings = scanner.scan(&Chunk {
+            data: text.into(),
+            metadata: ChunkMetadata {
+                source_type: "confirmed-anchor-localization".into(),
+                path: Some("opensea.env".into()),
+                ..ChunkMetadata::default()
+            },
+        });
+        assert_eq!(
+            findings.len(),
+            1,
+            "accepted `{header}` spelling must produce one exact finding: {findings:?}"
+        );
+        assert_eq!(findings[0].detector_id.as_ref(), "opensea-api-key");
+        assert_eq!(
+            findings[0].credential.as_ref(),
+            credential,
+            "localized extraction changed the credential for `{header}`"
+        );
+    }
 }

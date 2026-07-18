@@ -3330,6 +3330,16 @@ pub(crate) fn phase2_required_prefix_literals(src: &str) -> Option<Vec<String>> 
     crate::engine::phase2_required_prefix_literals_for_test(src)
 }
 
+/// Return the exact finite prefixes that make a confirmed pattern eligible for
+/// shared-anchor extraction. Integration tests use the production cap and
+/// parser rather than duplicating either contract.
+pub fn confirmed_required_prefix_literals(src: &str) -> Option<Vec<String>> {
+    crate::engine::required_prefix_literals_with_cap(
+        src,
+        crate::engine::CONFIRMED_MAX_LITERALS_PER_PATTERN,
+    )
+}
+
 #[cfg(test)]
 pub(crate) fn phase2_gate_prefix_literals(src: &str) -> Option<Vec<Vec<u8>>> {
     crate::engine::phase2::gate_prefix_literals(src)

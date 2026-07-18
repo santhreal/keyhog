@@ -44,6 +44,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   previously inferred prefixless routes now live beside their detector regexes;
   the production compiler no longer invents non-prefix literals or hides their
   tuning in scanner code.
+- OpenSea, Omnisend, Moosend, Skyscanner, 8x8, and X2Y2 now define the accepted
+  ASCII `X-API-Key` separator variants in their detector TOMLs. Reverse-order
+  header forms use shared-anchor extraction instead of whole-window regex
+  passes, while canonical preprocessing retains whitespace-evasion coverage.
 - Confirmed patterns rejected by Hyperscan now retain their detector-owned
   literals in a small recovery prefilter instead of being duplicated into the
   phase-2 regex set. Coalesced SIMD scans preserve exact scalar findings, and
