@@ -24,6 +24,7 @@ pub mod unit_daemon_stdin_replay;
 // CI-orphans whose fail-closed / wiring / coherence assertions never ran.
 // `scripts/gates/tests_wired.py` keeps every top-level `tests/*.rs` reachable.
 pub mod action_root_mirror_parity;
+pub mod binstall_release_asset_parity;
 pub mod cross_os_target_spec;
 pub mod fused_dispatch_panic_contract;
 pub mod lane10_daemon_terminal_failure;

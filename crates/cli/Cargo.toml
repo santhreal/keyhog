@@ -16,6 +16,38 @@ readme = "README.md"
 [package.metadata.santh]
 status = "alpha"
 
+# `cargo binstall keyhog` fetches the same signed release binaries the
+# install.sh / install.ps1 flow uses and verifies them against the release
+# minisign key below (the identical key pinned in both installers). Assets are
+# raw binaries, not archives (pkg-fmt = "bin"); the four asset names here must
+# stay identical to the `asset:` entries in .github/workflows/release.yml -
+# `crates/cli/tests/binstall_release_asset_parity.rs` fails the build if they
+# drift. Targets not listed fall back to a source build. Because binstall reads
+# this from the crates.io metadata, it takes effect for consumers on the first
+# published release that carries it.
+[package.metadata.binstall]
+pkg-fmt = "bin"
+
+[package.metadata.binstall.signing]
+algorithm = "minisign"
+pubkey = "RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go"
+# keyhog publishes detached signatures with the `.minisig` extension, not the
+# cargo-binstall default `.sig`. A missing/invalid signature fails the install
+# closed - there is no unsigned fallback, matching install.sh.
+file = "{ url }.minisig"
+
+[package.metadata.binstall.overrides.x86_64-unknown-linux-gnu]
+pkg-url = "{ repo }/releases/download/v{ version }/keyhog-linux-x86_64"
+
+[package.metadata.binstall.overrides.x86_64-apple-darwin]
+pkg-url = "{ repo }/releases/download/v{ version }/keyhog-macos-x86_64"
+
+[package.metadata.binstall.overrides.aarch64-apple-darwin]
+pkg-url = "{ repo }/releases/download/v{ version }/keyhog-macos-aarch64"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/v{ version }/keyhog-windows-x86_64.exe"
+
 [package.metadata.docs.rs]
 no-default-features = true
 features = ["portable"]
