@@ -482,7 +482,7 @@ pub(crate) fn record_completed_backend_recovery(receipt: &keyhog_scanner::Backen
         receipt.ranges.len(),
         receipt.recovery_backend.label(),
     );
-    tracing::warn!(
+    tracing::debug!(
         target: "keyhog::routing",
         failed_backend = receipt.failed_backend.label(),
         recovery_backend = receipt.recovery_backend.label(),
@@ -516,7 +516,7 @@ pub(crate) fn record_completed_autoroute_state_recovery(
             "keyhog: WARNING: autoroute state is invalid; scalar correctness recovery scanned {recovered_chunks} chunk(s), {recovered_bytes} byte(s); scan coverage is complete; repair: keyhog calibrate-autoroute"
         );
         eprintln!("keyhog: autoroute evidence: {}", recovery.reason);
-        tracing::warn!(
+        tracing::debug!(
             target: "keyhog::routing",
             recovery_backend = recovery_backend.label(),
             chunks = recovered_chunks,
@@ -545,7 +545,7 @@ pub(crate) fn record_completed_remote_autoroute_state_recovery(
         "keyhog: WARNING: daemon autoroute state is invalid; scalar correctness recovery scanned {recovered_chunks} chunk(s), {recovered_bytes} byte(s); scan coverage is complete; repair: keyhog calibrate-autoroute"
     );
     eprintln!("keyhog: autoroute evidence: {reason}");
-    tracing::warn!(
+    tracing::debug!(
         target: "keyhog::routing",
         recovery_backend = recovery_backend.label(),
         ranges = recovered_ranges,

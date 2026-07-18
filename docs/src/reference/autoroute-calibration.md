@@ -374,8 +374,11 @@ Pass `--autoroute-cache` when the scan uses a non-default cache path through
 the matching scan flag or `[system].autoroute_cache`.
 
 These show every persisted config and host generation, its workload buckets,
-representative median route times, whether confidence was separated, the
-selection basis, and the resolved one-shot and daemon backends. Each
+representative route times, whether confidence was separated, the selection
+basis, and the resolved one-shot and daemon backends. The JSON view is lossless:
+each route includes its ordered nanosecond trials, cold observation, exact
+one-shot and warm projections, and 95 percent confidence bounds, so the result
+can be reproduced without parsing the private cache file. Each
 generation's `eligible_backends` array defines the complete backend set. Every
 decision must contain all four localization plans for every eligible backend and
 prove each plan correct. Removing a candidate timing and its receipt together

@@ -109,7 +109,7 @@ pub(crate) fn run(args: BackendArgs) -> Result<ExitCode> {
 
 /// `keyhog backend --autoroute`: render the persisted autoroute calibration
 /// cache so an operator can see which resolved configs and workload buckets are
-/// calibrated (and to which backend), diagnosing a fail-closed scan. Read-only.
+/// calibrated (and to which backend), diagnosing visible scalar recovery. Read-only.
 fn run_autoroute_inspection(
     json: bool,
     autoroute_cache: Option<&str>,
@@ -189,8 +189,9 @@ fn run_autoroute_inspection(
         );
         println!();
         println!(
-            "No autoroute cache exists here yet, so automatic scans reject unproved routes. \
-             Repair: `{}`. An explicit `--backend` is a diagnostic override, not autoroute evidence.",
+            "No autoroute cache exists here yet, so automatic scans warn and complete through \
+             scalar correctness recovery rather than claim an unproved route. Repair: `{}`. \
+             An explicit `--backend` is a diagnostic override, not autoroute evidence.",
             health
                 .required_repair_command()
                 .map_err(anyhow::Error::msg)?

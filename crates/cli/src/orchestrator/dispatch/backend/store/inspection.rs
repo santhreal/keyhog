@@ -199,6 +199,19 @@ pub(crate) struct AutorouteRouteTimingInspection {
     pub(crate) backend: String,
     pub(crate) phase2_plain_localizer: bool,
     pub(crate) phase2_keyword_localizer: bool,
+    /// Primary persisted evidence in measurement order.
+    pub(crate) trials_ns: Vec<u128>,
+    /// First materialization/dispatch cost for SIMD and GPU routes.
+    pub(crate) cold_ns: Option<u128>,
+    /// Exact one-shot projection used by route selection.
+    pub(crate) one_shot_ns: u128,
+    pub(crate) one_shot_ci95_low_ns: u128,
+    pub(crate) one_shot_ci95_high_ns: u128,
+    /// Exact persistent-runtime projection for SIMD and GPU routes.
+    pub(crate) warm_ns: Option<u128>,
+    pub(crate) warm_ci95_low_ns: Option<u128>,
+    pub(crate) warm_ci95_high_ns: Option<u128>,
+    /// Convenience projections for the concise human renderer.
     pub(crate) one_shot_ms: u128,
     pub(crate) warm_ms: Option<u128>,
 }
@@ -240,20 +253,56 @@ fn route_timing_inspections(
             let route = entry
                 .measured_route()
                 .expect("validated route timing has a supported backend");
-            let (one_shot_ms, warm_ms) = if route.backend.is_gpu() {
-                let (_, warm, route_ns) = point
-                    .gpu_cold_warm_route_for_measured(route)
-                    .expect("validated GPU route timing has cold/warm evidence");
-                (route_ns / 1_000_000, Some(warm.median_ms()))
+            let (
+                cold_ns,
+                one_shot_ns,
+                one_shot_ci95_low_ns,
+                one_shot_ci95_high_ns,
+                warm_ns,
+                warm_ci95_low_ns,
+                warm_ci95_high_ns,
+            ) = if route.backend == keyhog_scanner::hw_probe::ScanBackend::SimdCpu
+                || route.backend.is_gpu()
+            {
+                let (cold_ns, warm, one_shot_ns) = point
+                    .accelerator_cold_warm_route_for_measured(route)
+                    .expect("validated accelerator route timing has cold/warm evidence");
+                let warm_ci95 = warm.confidence_interval_95_ns();
+                (
+                    Some(cold_ns),
+                    one_shot_ns,
+                    cold_ns.max(warm_ci95.low_ns),
+                    cold_ns.max(warm_ci95.high_ns),
+                    Some(warm.median_ns()),
+                    Some(warm_ci95.low_ns),
+                    Some(warm_ci95.high_ns),
+                )
             } else {
-                (entry.timing.median_ms(), None)
+                let one_shot_ci95 = entry.timing.confidence_interval_95_ns();
+                (
+                    None,
+                    entry.timing.median_ns(),
+                    one_shot_ci95.low_ns,
+                    one_shot_ci95.high_ns,
+                    None,
+                    None,
+                    None,
+                )
             };
             AutorouteRouteTimingInspection {
                 backend: entry.backend.clone(),
                 phase2_plain_localizer: entry.phase2_plain_localizer,
                 phase2_keyword_localizer: entry.phase2_keyword_localizer,
-                one_shot_ms,
-                warm_ms,
+                trials_ns: entry.timing.trials_ns.clone(),
+                cold_ns,
+                one_shot_ns,
+                one_shot_ci95_low_ns,
+                one_shot_ci95_high_ns,
+                warm_ns,
+                warm_ci95_low_ns,
+                warm_ci95_high_ns,
+                one_shot_ms: one_shot_ns / 1_000_000,
+                warm_ms: warm_ns.map(|ns| ns / 1_000_000),
             }
         })
         .collect()
@@ -282,7 +331,8 @@ fn inspect_autoroute_cache_for_build(
         if multiple_backends_compiled {
             out.error = Some(
                 "autoroute cache is disabled (--autoroute-cache off / [system].autoroute_cache = \
-                 off); auto scans require an explicit --backend in this configuration"
+                 off); automatic scans warn and complete through scalar correctness recovery, \
+                 but cannot claim a fastest measured route until calibration is persisted"
                     .to_string(),
             );
         }

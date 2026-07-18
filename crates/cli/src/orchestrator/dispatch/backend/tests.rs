@@ -1889,6 +1889,38 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
         .measured_points
         .iter()
         .all(|point| point.route_timings.len() == expected_route_timings));
+    let first_point = &inspection.configs[0].decisions[0].measured_points[0];
+    let simd_plain = first_point
+        .route_timings
+        .iter()
+        .find(|timing| {
+            timing.backend == ScanBackend::SimdCpu.label()
+                && timing.phase2_plain_localizer
+                && !timing.phase2_keyword_localizer
+        })
+        .expect("inspection exposes the measured SIMD localizer route");
+    assert_eq!(
+        simd_plain.trials_ns,
+        vec![7_000_000; AUTOROUTE_CALIBRATION_TRIALS]
+    );
+    assert_eq!(simd_plain.cold_ns, Some(7_000_000));
+    assert_eq!(simd_plain.one_shot_ns, 7_000_000);
+    assert_eq!(simd_plain.one_shot_ci95_low_ns, 7_000_000);
+    assert_eq!(simd_plain.one_shot_ci95_high_ns, 7_000_000);
+    assert_eq!(simd_plain.warm_ns, Some(7_000_000));
+    assert_eq!(simd_plain.warm_ci95_low_ns, Some(7_000_000));
+    assert_eq!(simd_plain.warm_ci95_high_ns, Some(7_000_000));
+    let scalar_plain = first_point
+        .route_timings
+        .iter()
+        .find(|timing| {
+            timing.backend == ScanBackend::CpuFallback.label()
+                && timing.phase2_plain_localizer
+                && !timing.phase2_keyword_localizer
+        })
+        .expect("inspection exposes the measured scalar localizer route");
+    assert_eq!(scalar_plain.cold_ns, None);
+    assert_eq!(scalar_plain.warm_ns, None);
     assert_eq!(inspection.configs[0].decisions[0].measured_points.len(), 2);
     assert_eq!(
         inspection.configs[0].decisions[0]

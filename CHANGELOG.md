@@ -4,6 +4,16 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## [Unreleased]
 
+### Changed
+
+- Autoroute inspection now reports disabled or missing evidence as visible,
+  complete scalar correctness recovery instead of claiming scans require an
+  explicit backend. Its JSON timing receipts expose ordered nanosecond trials,
+  cold cost, exact one-shot and warm projections, and confidence bounds for
+  scalar, Hyperscan, CUDA, and WGPU routes; SIMD warm evidence is no longer
+  misreported as an ordinary rounded median. Recovery warnings now have one
+  canonical operator rendering instead of a duplicate tracing WARN.
+
 ## [0.5.41] - 2026-07-18
 
 ### Fixed

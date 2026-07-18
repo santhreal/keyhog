@@ -22,8 +22,8 @@ pub struct BackendArgs {
     /// configs and workload buckets have a fastest-correct backend decision,
     /// the cold-aware one-shot and warm-daemon routes, confidence basis, and
     /// whether the cache is stale for this build. Read-only; pairs with
-    /// `--json`. Use this to diagnose a
-    /// fail-closed "no decision for workload bucket ..." scan error.
+    /// `--json`. Use this to diagnose an "autoroute calibration required"
+    /// recovery receipt and identify the exact unproved workload bucket.
     #[arg(long)]
     pub autoroute: bool,
 

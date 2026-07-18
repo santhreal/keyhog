@@ -238,7 +238,7 @@ impl AutorouteCalibrationPoint {
             .and_then(gpu_cold_warm_route_evidence)
     }
 
-    fn accelerator_cold_warm_route_for_measured(
+    pub(super) fn accelerator_cold_warm_route_for_measured(
         &self,
         route: MeasuredRoute,
     ) -> Option<(u128, BackendTimingEvidence, u128)> {

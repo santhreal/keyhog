@@ -189,11 +189,12 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
     }
 
     // ── Autoroute calibration coverage ────────────────────────────────
-    // The default `keyhog scan` resolves a backend from the persisted autoroute
-    // cache and FAILS CLOSED (exit 2) on a workload it has no decision for
-    // Law 10: never guess a substitute. Surface whether this binary+host is
-    // calibrated so a user understands an "autoroute calibration required" scan
-    // error. Readiness and repair come from the same typed contract as
+    // The default `keyhog scan` resolves a backend from persisted autoroute
+    // evidence. An uncovered workload warns and completes through scalar
+    // correctness recovery, without calling that recovery an autoroute result.
+    // Surface whether this binary and host are calibrated so an operator can
+    // distinguish complete recovery from a measured fastest route. Readiness
+    // and repair come from the same typed contract as
     // `backend --autoroute`; doctor only decides how that state affects its
     // aggregate health report.
     println!("\n{bold}autoroute{reset}");
@@ -233,12 +234,15 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
                     .map_err(anyhow::Error::msg)?
             );
         }
-        crate::orchestrator::AutorouteReadiness::CalibrationRequired => println!(
-            "  calibration    {dim}not calibrated; repair: `{}`{reset}",
-            readiness
-                .required_repair_command()
-                .map_err(anyhow::Error::msg)?
-        ),
+        crate::orchestrator::AutorouteReadiness::CalibrationRequired => {
+            warned = true;
+            println!(
+                "  calibration    {yellow}NOT CALIBRATED{reset}  {dim}automatic scans complete through visible scalar correctness recovery; repair: `{}`{reset}",
+                readiness
+                    .required_repair_command()
+                    .map_err(anyhow::Error::msg)?
+            );
+        }
         crate::orchestrator::AutorouteReadiness::Disabled => {
             warned = true;
             println!(
@@ -304,11 +308,11 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
     // two health checks disagreed and a user trusting `doctor` never learned
     // their GPU path was dead. Surface the production GPU verdict here too.
     //
-    // A FAIL is UNHEALTHY, not a warning: on a GPU-capable host the default
-    // auto-scan resolves to the GPU route, and autoroute is fail-closed - it
-    // refuses to silently substitute CPU/SIMD for a GPU decision it cannot
-    // make (Law 10). A broken GPU region-presence path therefore breaks the default scan
-    // the moment calibration tries to record a GPU runtime identity, so
+    // A FAIL is UNHEALTHY, not a warning: on a GPU-capable host calibration
+    // must measure the GPU peer. A broken GPU region-presence path makes that
+    // peer ineligible, while a previously selected automatic GPU route recovers
+    // visibly through its measured-correct recovery peer and is quarantined.
+    // Required-GPU and explicit GPU requests remain hard contracts. Therefore
     // "keyhog is healthy" while the GPU scan path is dead is a lie. `doctor`
     // must agree with `backend --self-test` (which exits 4) and report
     // unhealthy. (Explicit `--backend cpu/simd` runs still work, but that is a
@@ -336,7 +340,7 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
             Err(e) => {
                 healthy = false;
                 println!(
-                    "  gpu scan path  {}  GPU region-presence self-test failed; GPU routes are unavailable until fixed. The default GPU scan route is BROKEN on this host (auto scans fail closed rather than silently route to CPU/SIMD). Fix the GPU path, or scan with an explicit `--backend cpu`/`--backend simd` override.\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test` for the full GPU diagnostic{reset}",
+                    "  gpu scan path  {}  GPU region-presence self-test failed; GPU routes are unavailable until fixed. Automatic scans with a persisted GPU route recover visibly through their measured-correct peer and quarantine the faulted route; required-GPU and explicit GPU scans fail. Fix the GPU path and recalibrate, or use an explicit CPU/SIMD backend for diagnostics.\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test` for the full GPU diagnostic{reset}",
                     style::fail("FAIL", &palette)
                 );
             }

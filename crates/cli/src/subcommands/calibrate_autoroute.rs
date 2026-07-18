@@ -33,7 +33,8 @@ use std::sync::{Arc, Mutex};
 
 /// This binary's own scan-policy preset flags, swept in addition to the default
 /// policy. Each resolves a distinct autoroute config digest, so each needs its
-/// own calibrated decisions or a `keyhog scan <preset>` fails closed (exit 2).
+/// own calibrated decisions to claim a fastest route. Until then, a normal
+/// `keyhog scan <preset>` warns and completes through scalar correctness recovery.
 /// Keep in sync with the `--fast` / `--deep` / `--precision` flags in
 /// `args::scan`; the `every_documented_preset_resolves` e2e gate fails if a
 /// preset is missing a calibrated decision.
