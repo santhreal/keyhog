@@ -4,6 +4,12 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## [Unreleased]
 
+### Fixed
+
+- Watch-mode burst dedup now binds the one-way credential hash and complete
+  source location. Replacing a credential at the same detector and byte span
+  emits immediately instead of being mistaken for a duplicate save event.
+
 ### Changed
 
 - Autoroute inspection now reports disabled or missing evidence as visible,

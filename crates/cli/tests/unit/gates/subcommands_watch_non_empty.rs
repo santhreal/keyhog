@@ -6,13 +6,22 @@ use std::sync::Arc;
 use std::time::Duration;
 
 fn raw_match(detector_id: &str, line: Option<usize>, offset: usize) -> RawMatch {
+    raw_match_with_hash(detector_id, line, offset, [0u8; 32])
+}
+
+fn raw_match_with_hash(
+    detector_id: &str,
+    line: Option<usize>,
+    offset: usize,
+    credential_hash: [u8; 32],
+) -> RawMatch {
     RawMatch {
         detector_id: Arc::from(detector_id),
         detector_name: Arc::from("Test Detector"),
         service: Arc::from("test"),
         severity: Severity::High,
         credential: keyhog_core::SensitiveString::from("secret"),
-        credential_hash: [0u8; 32].into(),
+        credential_hash: credential_hash.into(),
         companions: std::collections::HashMap::new(),
         location: MatchLocation {
             source: Arc::from("filesystem"),
@@ -86,8 +95,8 @@ fn watch_findings_dedupe_collapses_identical_finding_burst() {
     // mid-write can return bytes that differ from the final read (e.g. missing
     // the trailing newline) yet locate the SAME secret at the SAME offset -- so
     // the raw-content dedupe misses and the finding printed twice. The finding
-    // fingerprint keys on detector id + line + byte offset (never credential
-    // bytes), so both reads of the same secret share a fingerprint.
+    // fingerprint keys on detector, credential hash, and complete location
+    // (never credential bytes), so both reads of the same secret share it.
     let full_read = [raw_match("aws-access-key", Some(1), 17)];
     // Same finding set surfaced by a byte-distinct partial read; the secret sits
     // at the same offset, so the fingerprint must match the full read's.
@@ -116,6 +125,33 @@ fn watch_findings_dedupe_collapses_identical_finding_burst() {
         API.watch_duplicate_findings_decisions(fp_full, fp_edited, Duration::from_millis(1)),
         (false, false),
         "a real edit changing the finding set must re-print, not be suppressed"
+    );
+
+    // Replacing one credential with another at the same detector and span is a
+    // real security event. The old location-only key suppressed it for 750 ms.
+    let replacement_a = [raw_match_with_hash(
+        "aws-access-key",
+        Some(1),
+        17,
+        [0x11; 32],
+    )];
+    let replacement_b = [raw_match_with_hash(
+        "aws-access-key",
+        Some(1),
+        17,
+        [0x22; 32],
+    )];
+    let fp_replacement_a = API.watch_findings_fingerprint(&replacement_a);
+    let fp_replacement_b = API.watch_findings_fingerprint(&replacement_b);
+    assert_ne!(fp_replacement_a, fp_replacement_b);
+    assert_eq!(
+        API.watch_duplicate_findings_decisions(
+            fp_replacement_a,
+            fp_replacement_b,
+            Duration::from_millis(1),
+        ),
+        (false, false),
+        "a different credential at the same span must emit immediately"
     );
 
     // Fingerprint is order-independent: the same set in a different order must

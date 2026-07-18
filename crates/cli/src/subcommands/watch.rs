@@ -38,12 +38,10 @@ use std::time::{Duration, Instant};
 const DEDUP_WINDOW: Duration = Duration::from_millis(750);
 const DEDUP_PRUNE_INTERVAL: usize = 128;
 
-/// FNV-1a 64-bit offset basis and prime. Shared by the raw-content hash
-/// ([`content_hash`]) and the finding-set fingerprint ([`findings_fingerprint`]),
-/// which both use the same non-cryptographic hash purely to collapse a save
-/// burst's duplicate inotify events. Named here (instead of pasting the two
-/// magic constants into each function) so both provably use one algorithm and
-/// cannot silently drift apart.
+/// FNV-1a 64-bit offset basis and prime for the cheap pre-scan raw-content
+/// filter. The post-scan finding identity uses the framed stable hasher because
+/// it binds credential and complete location fields rather than arbitrary file
+/// bytes.
 const FNV_OFFSET_BASIS: u64 = keyhog_scanner::FNV_OFFSET_BASIS;
 const FNV_PRIME: u64 = keyhog_scanner::FNV_PRIME;
 
@@ -58,7 +56,7 @@ struct WatchDedupeState {
     /// yet yield the SAME findings -- which then printed twice. This layer
     /// collapses that to one print while a genuine edit (different findings)
     /// still prints.
-    finding_entries: HashMap<PathBuf, (Instant, u64)>,
+    finding_entries: HashMap<PathBuf, (Instant, [u8; 32])>,
     scans_since_prune: usize,
 }
 
@@ -429,27 +427,34 @@ fn suppress_duplicate_event(
     false
 }
 
-/// Order-independent fingerprint of a scan's FINDING SET, built only from each
-/// match's stable position identity (detector id + line + byte offset) -- never
-/// the credential bytes. Two reads of the same save yield the same set even when
-/// their raw bytes differ (a partial mid-write read missing the trailing
-/// newline), so the burst's duplicate output collapses to one print.
-fn findings_fingerprint(matches: &[keyhog_core::RawMatch]) -> u64 {
-    let mut combined: u64 = 0;
+/// Order-independent fingerprint of a scan's complete finding identities.
+/// Credential identity uses the scanner-owned SHA-256, never plaintext. The
+/// complete stable location prevents two sources or history objects from
+/// aliasing, while sorted framed digests avoid XOR cancellation for duplicates.
+fn findings_fingerprint(matches: &[keyhog_core::RawMatch]) -> [u8; 32] {
+    let mut identities = Vec::with_capacity(matches.len());
     for m in matches {
-        let mut h: u64 = FNV_OFFSET_BASIS;
-        for b in m.detector_id.as_bytes() {
-            h ^= u64::from(*b);
-            h = h.wrapping_mul(FNV_PRIME);
-        }
-        h ^= m.location.line.unwrap_or(0) as u64; // LAW10: dedup-key hash input; recall-safe
-        h = h.wrapping_mul(FNV_PRIME);
-        h ^= m.location.offset as u64;
-        h = h.wrapping_mul(FNV_PRIME);
-        // XOR-combine so the fingerprint is independent of match order.
-        combined ^= h;
+        let mut identity = crate::stable_hash::StableHasher::new("watch-finding-identity-v1");
+        identity
+            .field_str("detector_id", &m.detector_id)
+            .field_bytes("credential_hash", m.credential_hash.as_bytes())
+            .field_str("location.source", &m.location.source)
+            .field_option_str("location.file_path", m.location.file_path.as_deref())
+            .field_option_usize("location.line", m.location.line)
+            .field_usize("location.offset", m.location.offset)
+            .field_option_str("location.commit", m.location.commit.as_deref())
+            .field_option_str("location.author", m.location.author.as_deref())
+            .field_option_str("location.date", m.location.date.as_deref());
+        identities.push(identity.finish_256());
     }
-    combined
+    identities.sort_unstable();
+    let mut set = crate::stable_hash::StableHasher::new("watch-finding-set-v1");
+    set.field_usize("findings", identities.len());
+    for (index, identity) in identities.iter().enumerate() {
+        set.field_usize("finding.index", index)
+            .field_bytes("finding.identity", identity);
+    }
+    set.finish_256()
 }
 
 /// Suppress a re-print when the SAME finding set for `path` was already printed
@@ -459,7 +464,7 @@ fn findings_fingerprint(matches: &[keyhog_core::RawMatch]) -> u64 {
 /// per real change.
 fn suppress_duplicate_findings(
     path: &std::path::Path,
-    fingerprint: u64,
+    fingerprint: [u8; 32],
     now: Instant,
     recently_scanned: &mut WatchDedupeState,
 ) -> bool {
@@ -510,7 +515,7 @@ pub(crate) mod testing {
         (first_suppressed, second_suppressed)
     }
 
-    pub(crate) fn findings_fingerprint(matches: &[keyhog_core::RawMatch]) -> u64 {
+    pub(crate) fn findings_fingerprint(matches: &[keyhog_core::RawMatch]) -> [u8; 32] {
         super::findings_fingerprint(matches)
     }
 
@@ -576,8 +581,8 @@ pub(crate) mod testing {
     /// Mirrors `duplicate_event_decisions` but on the finding fingerprint,
     /// which is what collapses a save burst's identical-finding re-prints.
     pub(crate) fn duplicate_findings_decisions(
-        first: u64,
-        second: u64,
+        first: [u8; 32],
+        second: [u8; 32],
         elapsed: Duration,
     ) -> (bool, bool) {
         let mut recently_scanned = super::WatchDedupeState::default();

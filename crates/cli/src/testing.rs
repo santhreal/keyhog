@@ -322,11 +322,11 @@ pub trait CliTestApi {
         second: &[u8],
         elapsed: std::time::Duration,
     ) -> (bool, bool);
-    fn watch_findings_fingerprint(&self, matches: &[keyhog_core::RawMatch]) -> u64;
+    fn watch_findings_fingerprint(&self, matches: &[keyhog_core::RawMatch]) -> [u8; 32];
     fn watch_duplicate_findings_decisions(
         &self,
-        first: u64,
-        second: u64,
+        first: [u8; 32],
+        second: [u8; 32],
         elapsed: std::time::Duration,
     ) -> (bool, bool);
     fn watch_resolve_roots(&self, requested: &[PathBuf]) -> Result<Vec<PathBuf>>;
@@ -1017,13 +1017,13 @@ impl CliTestApi for TestApi {
     ) -> (bool, bool) {
         crate::subcommands::watch::testing::duplicate_event_decisions(first, second, elapsed)
     }
-    fn watch_findings_fingerprint(&self, matches: &[keyhog_core::RawMatch]) -> u64 {
+    fn watch_findings_fingerprint(&self, matches: &[keyhog_core::RawMatch]) -> [u8; 32] {
         crate::subcommands::watch::testing::findings_fingerprint(matches)
     }
     fn watch_duplicate_findings_decisions(
         &self,
-        first: u64,
-        second: u64,
+        first: [u8; 32],
+        second: [u8; 32],
         elapsed: std::time::Duration,
     ) -> (bool, bool) {
         crate::subcommands::watch::testing::duplicate_findings_decisions(first, second, elapsed)

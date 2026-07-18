@@ -6,11 +6,33 @@
 
 use super::*;
 
+fn finding(hash_byte: u8, source: &str, path: &str) -> keyhog_core::RawMatch {
+    keyhog_core::RawMatch {
+        detector_id: "aws-access-key".into(),
+        detector_name: "AWS access key".into(),
+        service: "aws".into(),
+        severity: keyhog_core::Severity::High,
+        credential: "redacted-test-value".into(),
+        credential_hash: [hash_byte; 32].into(),
+        companions: std::collections::HashMap::new(),
+        location: keyhog_core::MatchLocation {
+            source: source.into(),
+            file_path: Some(path.into()),
+            line: Some(1),
+            offset: 17,
+            commit: None,
+            author: None,
+            date: None,
+        },
+        entropy: None,
+        confidence: None,
+    }
+}
+
 #[test]
 fn fnv_constants_are_the_canonical_64_bit_values() {
-    // The two constants MUST be the standard FNV-1a 64-bit offset basis and
-    // prime; a drift here silently changes both the raw-content hash and the
-    // finding-set fingerprint, breaking burst dedup.
+    // The pre-scan content filter must remain byte-compatible with the shared
+    // scanner FNV implementation.
     assert_eq!(FNV_OFFSET_BASIS, 0xcbf2_9ce4_8422_2325);
     assert_eq!(FNV_PRIME, 0x0000_0100_0000_01b3);
 }
@@ -28,6 +50,28 @@ fn content_hash_matches_reference_fnv1a() {
 #[test]
 fn content_hash_distinguishes_distinct_content() {
     assert_ne!(content_hash(b"keyhog"), content_hash(b"KEYHOG"));
+}
+
+#[test]
+fn finding_fingerprint_keeps_credential_and_complete_location_identity() {
+    let original = finding(0x11, "filesystem", "watched.env");
+    let replacement = finding(0x22, "filesystem", "watched.env");
+    let other_source = finding(0x11, "git", "watched.env");
+    let other_path = finding(0x11, "filesystem", "nested/watched.env");
+
+    let original_fingerprint = findings_fingerprint(std::slice::from_ref(&original));
+    assert_ne!(
+        original_fingerprint,
+        findings_fingerprint(&[replacement]),
+        "credential replacement at one span is a new watch event"
+    );
+    assert_ne!(original_fingerprint, findings_fingerprint(&[other_source]));
+    assert_ne!(original_fingerprint, findings_fingerprint(&[other_path]));
+    assert_ne!(
+        findings_fingerprint(&[original.clone(), original]),
+        findings_fingerprint(&[]),
+        "duplicate finding identities must not XOR-cancel into the empty set"
+    );
 }
 
 // ---------------------------------------------------------------------------
