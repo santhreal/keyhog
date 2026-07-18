@@ -181,14 +181,25 @@ pub struct ResolvedScannerTuningConfig {
 /// mutating scanner-global state or racing concurrent requests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ScanExecutionRoute {
-    /// Exact backend for decoded derived buffers. Keeping this in the measured
-    /// route prevents scalar and GPU candidates from silently borrowing
-    /// Hyperscan work that was never attributed to their timing evidence.
+    /// Backend for residual host work, including decoded derived buffers and
+    /// phase-two acceleration. GPU routes deliberately use `CpuFallback` here:
+    /// GPU owns phase-one evidence while residual extraction stays portable.
+    /// Keeping that choice in the measured route prevents scalar and GPU
+    /// candidates from silently borrowing unattributed Hyperscan work.
     pub decode_backend: crate::hw_probe::ScanBackend,
     /// Localize eligible folded plain patterns before residual extraction.
     pub phase2_plain_localizer: bool,
     /// Localize eligible keyword-anchored patterns before residual extraction.
     pub phase2_keyword_localizer: bool,
+}
+
+impl ScanExecutionRoute {
+    /// Only a route whose residual host work is SIMD-owned may execute the
+    /// Hyperscan phase-two engine.
+    #[must_use]
+    pub const fn owns_hyperscan_phase2(self) -> bool {
+        matches!(self.decode_backend, crate::hw_probe::ScanBackend::SimdCpu)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

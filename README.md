@@ -689,11 +689,13 @@ tools/        Contract generators (gen_contracts.py, gen_companion_contracts.py)
 Two-phase coalesced scan:
 
 1. **Phase 1:** shared trigger scan on raw bytes, parallel across all files
-   via rayon. Hyperscan accelerates this phase when compiled; portable builds
-   use the pure-Rust trigger path. Files with no trigger hit stop before extraction.
+   via rayon. The selected SIMD route uses Hyperscan; scalar and GPU routes keep
+   their measured owners, and portable builds use the pure-Rust trigger path.
+   Files with no trigger hit stop before extraction.
 2. **Phase 2:** full extraction on hits only: regex capture groups,
    companion matching, detector-owned offline validation, entropy gating, ML
-   confidence + explicit Bayesian damping when configured.
+   confidence + explicit Bayesian damping when configured. Its optional
+   Hyperscan prefilter is likewise exclusive to the selected SIMD route.
 
 Result: extraction work is concentrated on trigger-positive data. Determinism
 is part of the contract: same input → same output, byte-exact, every time.

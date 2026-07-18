@@ -1093,7 +1093,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 && iters >= RELEASE_HELD_OUT_PAIRS
                 && selection_rounds >= RELEASE_SELECTION_ROUNDS;
             let artifact = CrossoverArtifact {
-                schema_version: 7,
+                schema_version: 8,
                 measured_at_utc: chrono::Utc::now().to_rfc3339(),
                 diagnostic,
                 production_comparable,

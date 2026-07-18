@@ -15,7 +15,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   without compiling databases. Scalar and GPU-selected scans leave it
   untouched; explicit SIMD selection, calibration, and daemon readiness
   materialize it once and preserve exact initialization errors.
-- Autoroute cache schema 40 records SIMD with the same cold-first and warm-trial
+- Bind the independent phase-two Hyperscan prefilter to the selected SIMD route.
+  Scalar, GPU, normalized no-hit, windowed, and fragment-reassembly paths no
+  longer borrow unmeasured Hyperscan work through a global tuning default.
+- Autoroute cache schema 41 records SIMD with the same cold-first and warm-trial
   model used for GPU. One-shot selection includes Hyperscan materialization,
   persistent-daemon selection uses warm execution, and daemon startup warms
   only backends selected by validated decisions.

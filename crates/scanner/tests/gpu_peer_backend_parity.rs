@@ -177,6 +177,48 @@ fn compilation_censuses_gpu_peers_without_materializing_execution_backends() {
 }
 
 #[test]
+fn gpu_routes_do_not_borrow_the_phase_two_hyperscan_engine() {
+    let detectors =
+        keyhog_core::load_embedded_detectors_or_fail().expect("embedded detector corpus must load");
+    let scanner = CompiledScanner::compile(detectors).expect("compile embedded detector plan");
+    let chunk = Chunk::from("const api_key = \"sk_live_0123456789abcdefghijklmnopqrstuv\";\n");
+    let reference =
+        scanner.scan_coalesced_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback);
+    assert!(
+        !reference[0].is_empty(),
+        "fixture must exercise real phase two"
+    );
+    assert!(!keyhog_scanner::testing::phase2_hyperscan_initialized(
+        &scanner
+    ));
+
+    let candidates = scanner
+        .gpu_backend_candidates()
+        .into_iter()
+        .filter(|candidate| candidate.is_eligible())
+        .collect::<Vec<_>>();
+    assert!(
+        !candidates.is_empty(),
+        "GPU release host must expose an eligible execution peer"
+    );
+    for candidate in candidates {
+        let findings =
+            scanner.scan_coalesced_with_backend(std::slice::from_ref(&chunk), candidate.backend);
+        assert_eq!(
+            findings,
+            reference,
+            "{} diverged",
+            candidate.backend.label()
+        );
+        assert!(
+            !keyhog_scanner::testing::phase2_hyperscan_initialized(&scanner),
+            "{} borrowed an unmeasured phase-two Hyperscan engine",
+            candidate.backend.label()
+        );
+    }
+}
+
+#[test]
 fn detector_required_literals_preserve_every_backend_finding() {
     let mut detectors = keyhog_core::load_detectors(&detector_dir())
         .expect("load production detector TOMLs")

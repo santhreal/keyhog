@@ -60,3 +60,56 @@ fn selected_simd_without_a_plan_returns_the_exact_typed_error() {
         "initialization error must preserve the exact missing-plan reason: {error}"
     );
 }
+
+#[test]
+fn scalar_route_does_not_borrow_the_phase_two_hyperscan_engine() {
+    let detectors =
+        keyhog_core::load_embedded_detectors_or_fail().expect("embedded detector corpus must load");
+    let scanner = CompiledScanner::compile(detectors).expect("compile embedded detector plan");
+    let chunk = Chunk::from("const api_key = \"sk_live_0123456789abcdefghijklmnopqrstuv\";\n");
+
+    let scalar =
+        scanner.scan_coalesced_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback);
+    assert!(
+        !scalar[0].is_empty(),
+        "fixture must exercise real phase two"
+    );
+    assert!(
+        !keyhog_scanner::testing::phase2_hyperscan_initialized(&scanner),
+        "the scalar route must retain the portable phase-two owner"
+    );
+
+    let simd = scanner.scan_coalesced_with_backend(&[chunk], ScanBackend::SimdCpu);
+    assert_eq!(simd, scalar);
+    assert!(
+        keyhog_scanner::testing::phase2_hyperscan_initialized(&scanner),
+        "the selected SIMD route must own its phase-two Hyperscan engine"
+    );
+}
+
+#[test]
+fn explicit_route_rejects_a_residual_backend_from_another_candidate() {
+    let detectors =
+        keyhog_core::load_embedded_detectors_or_fail().expect("embedded detector corpus must load");
+    let scanner = CompiledScanner::compile(detectors).expect("compile embedded detector plan");
+    let chunk = Chunk::from("const api_key = \"sk_live_0123456789abcdefghijklmnopqrstuv\";\n");
+    let mismatched = keyhog_scanner::ScanExecutionRoute {
+        decode_backend: ScanBackend::SimdCpu,
+        ..scanner.execution_route_for_backend(ScanBackend::CpuFallback)
+    };
+
+    let error = scanner
+        .try_scan_coalesced_with_backend_admission_and_route(
+            &[chunk],
+            ScanBackend::CpuFallback,
+            None,
+            mismatched,
+        )
+        .expect_err("a scalar route must not borrow SIMD residual execution");
+    assert!(
+        error.to_string().contains(
+            "cpu-fallback route declares simd-regex residual execution, expected cpu-fallback"
+        ),
+        "route mismatch must identify both backends and the fix: {error}"
+    );
+}

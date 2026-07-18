@@ -12,7 +12,9 @@ use keyhog_scanner::testing::{
     compile_state_ac_literals, compile_state_is_ok, compile_state_phase2_regexes,
 };
 use keyhog_scanner::types::ScannerConfig;
-use keyhog_scanner::{testing::BigramBloom, ScanBackend, ScanError};
+#[cfg(feature = "simd")]
+use keyhog_scanner::ScanBackend;
+use keyhog_scanner::{testing::BigramBloom, ScanError};
 
 // ── bigram_bloom.rs ─────────────────────────────────────────────────
 

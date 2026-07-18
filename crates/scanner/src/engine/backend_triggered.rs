@@ -8,7 +8,6 @@ impl CompiledScanner {
     pub(crate) fn scan_prepared_with_triggered(
         &self,
         prepared: PreparedChunk<'_>,
-        backend: ScanBackend,
         triggered_patterns: &[u64],
         deadline: Option<std::time::Instant>,
         phase2_keyword_hints: Option<&[u32]>,
@@ -19,7 +18,6 @@ impl CompiledScanner {
     ) -> Vec<RawMatch> {
         let scan_state = self.scan_prepared_state_with_triggered(
             prepared,
-            backend,
             triggered_patterns,
             deadline,
             phase2_keyword_hints,
@@ -46,7 +44,6 @@ impl CompiledScanner {
     pub(crate) fn scan_prepared_state_with_triggered(
         &self,
         prepared: PreparedChunk<'_>,
-        _backend: ScanBackend,
         triggered_patterns: &[u64],
         deadline: Option<std::time::Instant>,
         phase2_keyword_hints: Option<&[u32]>,

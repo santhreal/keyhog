@@ -95,6 +95,17 @@ impl Phase2AlwaysActivePrefilter {
         })
     }
 
+    #[cfg(feature = "simd")]
+    pub(crate) fn hyperscan_initialized(&self) -> bool {
+        [
+            &self.hs,
+            &self.hs_anchor_residual,
+            &self.hs_localized_residual,
+        ]
+        .into_iter()
+        .any(|slot| slot.get().is_some_and(Option::is_some))
+    }
+
     fn combined_gate<'a>(
         &'a self,
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
@@ -610,7 +621,10 @@ impl Phase2AlwaysActivePrefilter {
         anchor_mode: bool,
         localize_plain: bool,
         tuning: &ResolvedRuntimeTuningConfig,
+        allow_hyperscan: bool,
     ) {
+        #[cfg(not(feature = "simd"))]
+        let _ = allow_hyperscan;
         record_mark_call();
         let ascii = match_text.is_ascii();
         let scope = if !anchor_mode {
@@ -658,7 +672,7 @@ impl Phase2AlwaysActivePrefilter {
         // that anchored verification will execute.
         #[cfg(feature = "simd")]
         let hs_owns_marking = hs_prefilter_engages(
-            tuning.fallback_hs,
+            allow_hyperscan && tuning.fallback_hs,
             match_text.len(),
             tuning.hs_prefilter_max_len,
             ascii,
@@ -824,7 +838,10 @@ impl Phase2AlwaysActivePrefilter {
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
         match_text: &str,
         tuning: &ResolvedRuntimeTuningConfig,
+        allow_hyperscan: bool,
     ) -> bool {
+        #[cfg(not(feature = "simd"))]
+        let _ = allow_hyperscan;
         let ascii = match_text.is_ascii();
         // Same no-candidate gate as `mark_matches`: on a pure-ASCII no-anchor chunk
         // no anchorable pattern can fire, so the active set is non-empty iff some
@@ -841,7 +858,8 @@ impl Phase2AlwaysActivePrefilter {
             }
         }
         #[cfg(feature = "simd")]
-        if tuning.fallback_hs && match_text.len() <= tuning.hs_prefilter_max_len {
+        if allow_hyperscan && tuning.fallback_hs && match_text.len() <= tuning.hs_prefilter_max_len
+        {
             if let Some(hs) = self.hs_for(phase2_patterns, PrefilterScope::Full) {
                 // Same `homoglyph_skip_applies` owner as `mark_matches` and the
                 // RegexSet admission path below: on ASCII (and on decoded sub-chunks)

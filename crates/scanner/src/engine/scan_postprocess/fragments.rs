@@ -116,18 +116,13 @@ impl CompiledScanner {
                     // into `select_backend_for_file` and turned a
                     // 64 MiB messy-corpus scan into ~60 s of synthetic
                     // GPU launches.
-                    let backend = {
-                        #[cfg(feature = "simd")]
-                        {
-                            crate::hw_probe::ScanBackend::SimdCpu
-                        }
-                        #[cfg(not(feature = "simd"))]
-                        {
-                            crate::hw_probe::ScanBackend::CpuFallback
-                        }
+                    let backend = crate::hw_probe::ScanBackend::CpuFallback;
+                    let synthetic_route = crate::ScanExecutionRoute {
+                        decode_backend: backend,
+                        ..route
                     };
                     let mut reassembled_matches =
-                        self.scan_inner(&synthetic_chunk, backend, deadline, route);
+                        self.scan_inner(&synthetic_chunk, backend, deadline, synthetic_route);
                     if crate::deadline::expired(deadline) {
                         return;
                     }

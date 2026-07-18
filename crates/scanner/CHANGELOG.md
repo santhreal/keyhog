@@ -11,6 +11,9 @@
   now cross the fallible coalesced boundary, scalar/GPU routes do not pay the
   unused database cost, and the recorded materialization duration is available
   to cold-aware autoroute evidence.
+- Make the measured route own phase-two acceleration as well as decoded scans.
+  Only SIMD may initialize the always-active Hyperscan prefilter; scalar and GPU
+  routes retain the portable owner through no-hit, window, and reassembly paths.
 - Establish calibration correctness from the always-present scalar engine,
   rejecting a divergent optional Hyperscan candidate without invalidating the
   independent oracle. Persist decoded-rescan backend composition in each
@@ -45,7 +48,7 @@
 - Replace the ambiguous phase-two localizer route bit with explicit
   plain-pattern and keyword-anchor choices. Autoroute now calibrates, persists,
   validates, inspects, and benchmarks all four plans per eligible backend;
-  cache schema 40 and crossover schema 7 reject the incomplete older evidence.
+  cache schema 41 and crossover schema 8 reject the incomplete older evidence.
 
 - Apply the resolved scan `entropy_threshold` to named-detector heuristic
   confidence instead of silently scoring those findings at the compiled default.

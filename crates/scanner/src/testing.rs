@@ -3366,6 +3366,14 @@ pub fn set_phase2_hs(scanner: &crate::engine::CompiledScanner, mode: Option<bool
     scanner.tuning.set_phase2_hs(mode);
 }
 
+#[cfg(feature = "simd")]
+pub fn phase2_hyperscan_initialized(scanner: &crate::engine::CompiledScanner) -> bool {
+    scanner
+        .phase2_always_active_prefilter
+        .as_ref()
+        .is_some_and(|prefilter| prefilter.hyperscan_initialized())
+}
+
 /// Score the production cl100k token-efficiency gate. Benchmarks use this
 /// instead of substituting Shannon entropy under a BPE label.
 #[cfg(feature = "entropy")]

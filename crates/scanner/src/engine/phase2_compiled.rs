@@ -299,7 +299,11 @@ impl CompiledScanner {
     //
     // Every backend uses this admission proof before the phase-2 tail so a
     // no-hit chunk cannot bypass anchorless detection.
-    pub(crate) fn has_active_phase2_patterns_for_chunk(&self, data: &str) -> bool {
+    pub(crate) fn has_active_phase2_patterns_for_chunk(
+        &self,
+        data: &str,
+        route: crate::ScanExecutionRoute,
+    ) -> bool {
         if self.phase2_patterns.is_empty() {
             return false;
         }
@@ -335,7 +339,12 @@ impl CompiledScanner {
         match &self.phase2_always_active_prefilter {
             Some(prefilter) => {
                 let tuning = self.tuning.resolve();
-                prefilter.any_active_match(&self.phase2_patterns, data, &tuning)
+                prefilter.any_active_match(
+                    &self.phase2_patterns,
+                    data,
+                    &tuning,
+                    route.owns_hyperscan_phase2(),
+                )
             }
             // No always-active prefilter compiled (degraded build): there is no
             // discriminating prefilter to run, so defer to the REAL marking path
@@ -347,15 +356,7 @@ impl CompiledScanner {
             None => ACTIVE_PATTERNS_POOL.with(|cell| {
                 let mut scratch = cell.borrow_mut();
                 scratch.begin(self.phase2_patterns.len());
-                self.populate_active_phase2(
-                    data,
-                    data,
-                    &mut scratch,
-                    false,
-                    None,
-                    false,
-                    self.default_execution_route(),
-                );
+                self.populate_active_phase2(data, data, &mut scratch, false, None, false, route);
                 !scratch.active.is_empty()
             }),
         }
@@ -427,6 +428,7 @@ impl CompiledScanner {
                             anchor_mode,
                             localize_plain,
                             &tuning,
+                            route.owns_hyperscan_phase2(),
                         ),
                         None => {
                             for &index in &self.phase2_always_active_indices {

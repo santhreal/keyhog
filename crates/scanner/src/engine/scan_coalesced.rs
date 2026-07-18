@@ -177,6 +177,19 @@ impl CompiledScanner {
     ) -> crate::error::Result<super::CoalescedScanOutcome> {
         #[cfg(not(feature = "gpu"))]
         let _ = recover_gpu_dispatch_faults;
+        let expected_residual_backend = if backend.is_gpu() {
+            crate::hw_probe::ScanBackend::CpuFallback
+        } else {
+            backend
+        };
+        if route.decode_backend != expected_residual_backend {
+            return Err(crate::error::ScanError::Config(format!(
+                "{} route declares {} residual execution, expected {}. Rebuild the execution route from the selected backend",
+                backend.label(),
+                route.decode_backend.label(),
+                expected_residual_backend.label(),
+            )));
+        }
         let result = if backend == crate::hw_probe::ScanBackend::SimdCpu {
             self.try_initialize_simd_backend().map_err(|error| {
                 crate::error::ScanError::Simd(format!(
@@ -374,17 +387,22 @@ impl CompiledScanner {
 
     /// No-hit chunk admission: should a chunk that produced no phase-1 trigger
     /// still be driven through the phase-2 / generic / entropy tail?
-    pub(crate) fn should_scan_no_hit_chunk(&self, chunk: &keyhog_core::Chunk) -> bool {
-        self.should_scan_no_hit_chunk_with_phase2_absence_proof(chunk, false)
+    pub(crate) fn should_scan_no_hit_chunk(
+        &self,
+        chunk: &keyhog_core::Chunk,
+        route: crate::ScanExecutionRoute,
+    ) -> bool {
+        self.should_scan_no_hit_chunk_with_phase2_absence_proof(chunk, false, route)
     }
 
     fn should_scan_no_hit_chunk_with_phase2_absence_proof(
         &self,
         chunk: &keyhog_core::Chunk,
         raw_phase2_absence_proven: bool,
+        route: crate::ScanExecutionRoute,
     ) -> bool {
         let raw_text = chunk.data.as_ref();
-        if self.no_hit_text_admits(chunk, raw_text, raw_phase2_absence_proven) {
+        if self.no_hit_text_admits(chunk, raw_text, raw_phase2_absence_proven, route) {
             return true;
         }
 
@@ -399,12 +417,10 @@ impl CompiledScanner {
         if normalized.as_bytes() == raw_text.as_bytes() {
             return false;
         }
-        let normalized_triggers = self.collect_triggered_patterns_for_backend(
-            normalized,
-            crate::hw_probe::ScanBackend::SimdCpu,
-        );
+        let normalized_triggers =
+            self.collect_triggered_patterns_for_backend(normalized, route.decode_backend);
         normalized_triggers.iter().any(|&word| word != 0)
-            || self.no_hit_text_admits(chunk, normalized, false)
+            || self.no_hit_text_admits(chunk, normalized, false, route)
     }
 
     fn no_hit_text_admits(
@@ -412,8 +428,9 @@ impl CompiledScanner {
         _chunk: &keyhog_core::Chunk,
         text: &str,
         phase2_absence_proven: bool,
+        route: crate::ScanExecutionRoute,
     ) -> bool {
-        if !phase2_absence_proven && self.has_active_phase2_patterns_for_chunk(text) {
+        if !phase2_absence_proven && self.has_active_phase2_patterns_for_chunk(text, route) {
             return true;
         }
         let data = text.as_bytes();
@@ -511,6 +528,7 @@ impl CompiledScanner {
         &self,
         chunks: &[keyhog_core::Chunk],
         mut triggers: Vec<Option<Vec<u64>>>,
+        route: crate::ScanExecutionRoute,
     ) -> Vec<Option<Vec<u64>>> {
         let chunk_count = chunks.len();
         let trigger_count = triggers.len();
@@ -530,10 +548,8 @@ impl CompiledScanner {
 
         triggers.reserve(chunk_count - trigger_count);
         for chunk in chunks.iter().skip(trigger_count) {
-            let triggered = self.collect_triggered_patterns_for_backend(
-                &chunk.data,
-                crate::hw_probe::ScanBackend::SimdCpu,
-            );
+            let triggered =
+                self.collect_triggered_patterns_for_backend(&chunk.data, route.decode_backend);
             if triggered.iter().any(|&word| word != 0) {
                 triggers.push(Some(triggered));
             } else {
@@ -563,10 +579,9 @@ impl CompiledScanner {
         generic_keyword_positions: Option<&[Vec<u32>]>,
         route: crate::ScanExecutionRoute,
     ) -> Vec<Vec<keyhog_core::RawMatch>> {
-        use crate::hw_probe::ScanBackend;
         use rayon::prelude::*;
 
-        let triggers = self.normalize_coalesced_phase2_triggers(chunks, triggers);
+        let triggers = self.normalize_coalesced_phase2_triggers(chunks, triggers, route);
         let phase2_start = std::time::Instant::now();
         let telemetry = crate::telemetry::capture_scan_telemetry();
         struct CoalescedChunkOutput {
@@ -637,7 +652,6 @@ impl CompiledScanner {
                             let prepared = self.prepare_chunk(chunk);
                             let state = self.scan_prepared_state_with_triggered(
                                 prepared,
-                                ScanBackend::SimdCpu,
                                 &triggered,
                                 None,
                                 keyword_hints,
@@ -681,6 +695,7 @@ impl CompiledScanner {
                         && !self.should_scan_no_hit_chunk_with_phase2_absence_proof(
                             chunk,
                             raw_phase2_absence_proven,
+                            route,
                         )
                     {
                         if let Some(matches) = self.decode_only_coalesced_matches(chunk, route) {
@@ -700,7 +715,6 @@ impl CompiledScanner {
                     let prepared = self.prepare_chunk(chunk);
                     let state = self.scan_prepared_state_with_triggered(
                         prepared,
-                        ScanBackend::SimdCpu,
                         &[],
                         None,
                         keyword_hints,

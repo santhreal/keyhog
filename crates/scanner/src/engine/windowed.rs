@@ -155,7 +155,6 @@ impl CompiledScanner {
                     };
                     let matches = self.scan_prepared_with_triggered(
                         prepared,
-                        crate::hw_probe::ScanBackend::SimdCpu,
                         triggered_patterns,
                         deadline,
                         phase2_keyword_hints,

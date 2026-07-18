@@ -320,6 +320,7 @@ impl CompiledScanner {
             false,
             false,
             &tuning,
+            true,
         );
         // Timed loop.
         let t0 = std::time::Instant::now();
@@ -332,6 +333,7 @@ impl CompiledScanner {
                 false,
                 false,
                 &tuning,
+                true,
             );
         }
         let elapsed_ns = t0.elapsed().as_nanos() as f64;
@@ -850,11 +852,10 @@ impl CompiledScanner {
         // traffic keeps the fast skip.
         let admission = admission.unwrap_or_else(|| self.phase1_admission(chunk.data.as_bytes()));
         if admission != Phase1Admission::Admitted {
-            if self.should_scan_no_hit_chunk(chunk) {
+            if self.should_scan_no_hit_chunk(chunk, route) {
                 let prepared = self.prepare_chunk(chunk);
                 let mut matches = self.scan_prepared_with_triggered(
                     prepared,
-                    selected_backend,
                     &[],
                     deadline,
                     None,

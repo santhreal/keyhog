@@ -760,7 +760,7 @@ impl CompiledScanner {
                 // DFA. The shared phase-2 tail still runs decode-only on those
                 // rows; this just avoids a redundant GPU admission dispatch.
                 let decode_only_row = self.chunk_needs_decode_postprocess(chunk)
-                    && !self.should_scan_no_hit_chunk(chunk);
+                    && !self.should_scan_no_hit_chunk(chunk, execution_route);
                 phase2_gpu_row_needed.push(row_has_trigger || !decode_only_row);
             }
             let phase2_gpu_workload = if gpu_evidence_complete {

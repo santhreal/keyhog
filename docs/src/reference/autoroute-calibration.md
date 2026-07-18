@@ -213,6 +213,10 @@ which backend is fastest:
   SIMD route materializes the plan exactly once; failure aborts calibration or
   the selected scan with the initialization reason instead of removing SIMD
   from the census or substituting scalar CPU.
+- Backend identity covers the complete scan tail, not only phase one. The
+  always-active phase-two Hyperscan prefilter executes only for the SIMD
+  candidate. Scalar and GPU candidates use their own measured trigger path and
+  the portable host residual, so their timing cannot borrow hidden SIMD work.
 - Each scan preset (default, `--fast`, `--deep`, `--precision`) is calibrated
   separately.
 - Flags hashed into the scan config (for example `--threads` or
