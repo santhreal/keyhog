@@ -4,6 +4,25 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## [Unreleased]
 
+## [0.5.41] - 2026-07-18
+
+### Fixed
+
+- **Documented CI action pins pointed at an unreleased tag.** Every copy-paste
+  CI snippet pinned `santhreal/keyhog/.github/actions/keyhog@v0.5.41`, a version
+  with no release, so GitHub failed to resolve the action at checkout before the
+  scan could run. The pins now use the floating `@v0`, which the Action resolves
+  to the newest published release.
+- Pin `simdsieve` to crates.io `0.1.2` so macOS/aarch64 builds no longer hit
+  the broken `0.1.1` NEON `inline(always)` + `target_feature` combination.
+- Installer GPU-literal sidecar validation extracts to a temp tree and checks
+  paths with `find -print0`, so newline-bearing tar member names cannot spoof
+  the old line-oriented listing checks.
+- Scanner hard-stops flush the CLI warn-dedup summary before `process::exit`,
+  so rate-limited WARN totals are not lost when a selected backend aborts.
+- Windows installer HEAD probes share the same transient-retry helper as
+  downloads; CI apt-get install steps retry on mirror blips.
+
 ### Changed
 
 - Detector regex separator semantics now live in the owning TOML expression.
@@ -586,10 +605,21 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   graph under different names and incorrectly required a developer toolkit for
   a runtime-dynamically-loaded backend.
 
-## [0.5.41] - 2026-07-11
-
 ### Added
 
+- **`cargo binstall keyhog`.** `[package.metadata.binstall]` maps the four
+  prebuilt targets to their signed release binaries and verifies each against
+  the release minisign key before install, failing closed on a missing or
+  invalid `.minisig` (no unsigned fallback). Targets without a prebuilt asset
+  fall back to a source build.
+- **Marketplace-ready root `action.yml`.** The composite Action is published at
+  the repository root as an exact mirror of `.github/actions/keyhog`, so it can
+  be pinned as `santhreal/keyhog@v0` from the GitHub Actions Marketplace. A
+  parity test keeps the root and the canonical inner copy from drifting.
+- **Recipes cookbook.** `docs/src/recipes.md` indexes 18 real workflows by goal
+  (scan locally, gate a PR, sweep an org, audit a bucket, emit SARIF) as
+  copy-paste commands, alongside a one-command mass-scan front door and an
+  install-and-scan hero in the README.
 - **`keyhog scan --quiet` and `--no-color`.** `--quiet` suppresses the banner,
   progress, and summary vanity while keeping findings and errors (the flag CI
   logs want without `--format json`); `--no-color` disables ANSI styling even
