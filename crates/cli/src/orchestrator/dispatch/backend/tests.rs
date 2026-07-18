@@ -2406,6 +2406,56 @@ fn exact_median_tie_persists_lowest_overhead_backend() {
 }
 
 #[test]
+fn automatic_recovery_uses_the_fastest_remaining_measured_backend() {
+    let decision = AutorouteDecision::new(
+        ScanBackend::GpuWgpu,
+        8 * 1024 * 1024,
+        1,
+        12,
+        Some(20),
+        Some(5),
+    );
+    let recovery = decision
+        .resolved_recovery_route(ScanBackend::GpuWgpu, false)
+        .expect("GPU winner has measured recovery peers");
+    assert_eq!(recovery.backend, ScanBackend::SimdCpu);
+    assert!(!recovery.phase2_plain_localizer);
+    assert!(!recovery.phase2_keyword_localizer);
+
+    let plan = automatic_recovery_plan(
+        Some(&decision),
+        ScanBackend::GpuWgpu,
+        AutorouteRuntimeClass::OneShot,
+    )
+    .expect("recovery plan resolves")
+    .expect("GPU route needs recovery plan");
+    assert_eq!(plan.backend, ScanBackend::SimdCpu);
+}
+
+#[test]
+fn calibration_rejects_a_recovery_backend_crossover_inside_one_workload_class() {
+    let mut decision = AutorouteDecision::new(
+        ScanBackend::GpuWgpu,
+        8 * 1024 * 1024,
+        1,
+        10,
+        Some(20),
+        Some(5),
+    );
+    let error = decision
+        .merge_calibration_point(AutorouteDecision::new(
+            ScanBackend::GpuWgpu,
+            8 * 1024 * 1024 + 1,
+            1,
+            20,
+            Some(10),
+            Some(5),
+        ))
+        .expect_err("recovery crossover must split the workload class");
+    assert!(error.contains("changes fastest remaining one-shot recovery route"));
+}
+
+#[test]
 fn overlapping_confidence_selects_fastest_measured_median_not_backend_rank() {
     let simd_timing = BackendTimingEvidence::from_trial_ns(vec![
         18_000_000, 20_000_000, 20_000_000, 20_000_000, 20_000_000, 20_000_000, 22_000_000,

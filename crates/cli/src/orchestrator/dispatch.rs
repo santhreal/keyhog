@@ -16,6 +16,7 @@ use anyhow::Result;
 pub(crate) use backend::backend_requires_coalesced_batch_pipeline_for_test;
 pub(crate) use backend::inspect_autoroute_cache;
 pub(crate) use backend::AutorouteReadiness;
+pub(crate) use backend::BackendRecoveryPlan;
 use backend::{is_gpu_backend, AutorouteRoutingError, BackendSelection, MeasuredBackendRouter};
 pub(crate) use backend::{AutorouteMeasurementObserver, CachedBackendRouter};
 use keyhog_core::{Chunk, RawMatch, Source};
@@ -142,6 +143,7 @@ impl CoalescedBatchRouter {
                 backend: *backend,
                 phase1_plan: (!backend.is_gpu()).then(|| scanner.phase1_admission_plan(batch)),
                 execution_route: scanner.default_execution_route(),
+                recovery_plan: None,
                 runtime_route: None,
             }),
             Self::Measured(router) => router.choose_with_plan(scanner, None, batch),
@@ -270,7 +272,9 @@ impl CoalescedScannerWorker {
             chosen_backend,
             selection.phase1_plan.as_ref(),
             selection.execution_route,
-            self.recover_automatic_gpu_faults,
+            selection
+                .recovery_plan
+                .filter(|_| self.recover_automatic_gpu_faults),
         )
         .map_err(|error| {
             AutorouteRoutingError::selected_backend_dispatch_failed(chosen_backend, error)
@@ -310,25 +314,46 @@ impl CoalescedScannerWorker {
     }
 }
 
-/// Replay one stable batch after an automatically selected GPU peer faults.
-/// Explicit backend requests and calibration candidates never call this path.
+/// Replay one stable batch through the fastest remaining calibrated peer after
+/// an automatically selected GPU faults. Explicit backend requests and
+/// calibration candidates never call this path.
 pub(crate) fn recover_automatic_gpu_batch(
     scanner: &CompiledScanner,
     batch: &[Chunk],
     failed_backend: ScanBackend,
     error: &keyhog_scanner::ScanError,
-    execution_route: keyhog_scanner::ScanExecutionRoute,
-) -> (
+    recovery_plan: BackendRecoveryPlan,
+) -> keyhog_scanner::Result<(
     Vec<Vec<RawMatch>>,
     Option<keyhog_scanner::BackendRecoveryReceipt>,
-) {
-    let admission = scanner.phase1_admission_plan(batch);
-    let matches = scanner.scan_coalesced_with_backend_admission_and_route(
+)> {
+    if recovery_plan.backend == failed_backend {
+        return Err(keyhog_scanner::ScanError::Config(format!(
+            "automatic recovery plan repeats failed backend {}; recalibrate autoroute before scanning",
+            failed_backend.label()
+        )));
+    }
+    let admission = (!recovery_plan.backend.is_gpu()).then(|| scanner.phase1_admission_plan(batch));
+    let recovery_degrade_before = recovery_plan
+        .backend
+        .is_gpu()
+        .then(|| scanner.gpu_degrade_count());
+    let outcome = scanner.try_scan_coalesced_with_backend_admission_route_and_recovery(
         batch,
-        ScanBackend::CpuFallback,
-        Some(&admission),
-        execution_route,
-    );
+        recovery_plan.backend,
+        admission.as_ref(),
+        recovery_plan.execution_route,
+        false,
+    )?;
+    if let Some(before) = recovery_degrade_before {
+        let after = scanner.gpu_degrade_count();
+        if after != before {
+            return Err(keyhog_scanner::ScanError::Gpu(format!(
+                "calibrated recovery backend {} degraded during dispatch (GPU degradation counter {before} -> {after}); scan coverage cannot be certified complete",
+                recovery_plan.backend.label()
+            )));
+        }
+    }
     let ranges = batch
         .iter()
         .enumerate()
@@ -336,15 +361,15 @@ pub(crate) fn recover_automatic_gpu_batch(
             keyhog_scanner::RecoveredInputRange::new(chunk_index, 0, chunk.data.len())
         })
         .collect();
-    (
-        matches,
+    Ok((
+        outcome.matches,
         Some(keyhog_scanner::BackendRecoveryReceipt::new(
             failed_backend,
-            ScanBackend::CpuFallback,
+            recovery_plan.backend,
             ranges,
             error.to_string(),
         )),
-    )
+    ))
 }
 
 #[inline]
@@ -366,40 +391,49 @@ pub(crate) struct SelectedBatchScan {
 
 /// Execute one already-selected backend and own its complete recovery contract.
 /// Callers choose and report routes; this boundary alone decides whether a GPU
-/// fault yields exact CPU replay or a hard selected-backend error.
+/// fault yields exact calibrated-peer replay or a hard selected-backend error.
 pub(crate) fn scan_selected_batch(
     scanner: &CompiledScanner,
     batch: &[Chunk],
     backend: ScanBackend,
     admission_plan: Option<&keyhog_scanner::Phase1AdmissionPlan>,
     execution_route: keyhog_scanner::ScanExecutionRoute,
-    recover_automatic_gpu_faults: bool,
+    recovery_plan: Option<BackendRecoveryPlan>,
 ) -> keyhog_scanner::Result<SelectedBatchScan> {
+    if recovery_plan.is_some() && !backend.is_gpu() {
+        return Err(keyhog_scanner::ScanError::Config(format!(
+            "automatic GPU recovery plan was attached to non-GPU backend {}; recalibrate autoroute before scanning",
+            backend.label()
+        )));
+    }
     let degrade_before = backend.is_gpu().then(|| scanner.gpu_degrade_count());
-    let (per_chunk, mut recovery) = match scanner
+    let (mut per_chunk, mut recovery) = match scanner
         .try_scan_coalesced_with_backend_admission_route_and_recovery(
             batch,
             backend,
             admission_plan,
             execution_route,
-            backend.is_gpu() && recover_automatic_gpu_faults,
+            false,
         ) {
         Ok(outcome) => (outcome.matches, outcome.recovery),
-        Err(error) if backend.is_gpu() && recover_automatic_gpu_faults => {
-            recover_automatic_gpu_batch(scanner, batch, backend, &error, execution_route)
-        }
+        Err(error) if backend.is_gpu() => match recovery_plan {
+            Some(recovery_plan) => {
+                recover_automatic_gpu_batch(scanner, batch, backend, &error, recovery_plan)?
+            }
+            None => return Err(error),
+        },
         Err(error) => return Err(error),
     };
 
     if let Some(before) = degrade_before {
         let after = scanner.gpu_degrade_count();
         if recovery.is_none() && after != before {
-            if recover_automatic_gpu_faults {
-                recovery = Some(completed_gpu_recovery_receipt(
-                    batch,
-                    backend,
-                    "GPU dispatch completed through the scanner recall floor",
-                ));
+            if let Some(recovery_plan) = recovery_plan {
+                let error = keyhog_scanner::ScanError::Gpu(
+                    "GPU dispatch completed through the scanner recall floor".to_string(),
+                );
+                (per_chunk, recovery) =
+                    recover_automatic_gpu_batch(scanner, batch, backend, &error, recovery_plan)?;
             } else {
                 return Err(keyhog_scanner::ScanError::Gpu(format!(
                     "selected backend {} degraded during dispatch (GPU degradation counter {before} -> {after}); explicit or required backend requests cannot be substituted",
@@ -453,25 +487,6 @@ pub(crate) fn record_completed_backend_recovery(receipt: &keyhog_scanner::Backen
         reason = %receipt.reason,
         "automatic backend fault recovered with complete byte coverage",
     );
-}
-
-fn completed_gpu_recovery_receipt(
-    batch: &[Chunk],
-    failed_backend: ScanBackend,
-    reason: impl Into<String>,
-) -> keyhog_scanner::BackendRecoveryReceipt {
-    keyhog_scanner::BackendRecoveryReceipt::new(
-        failed_backend,
-        ScanBackend::CpuFallback,
-        batch
-            .iter()
-            .enumerate()
-            .map(|(chunk_index, chunk)| {
-                keyhog_scanner::RecoveredInputRange::new(chunk_index, 0, chunk.data.len())
-            })
-            .collect(),
-        reason.into(),
-    )
 }
 
 fn batch_has_no_scan_bytes(batch: &[Chunk]) -> bool {

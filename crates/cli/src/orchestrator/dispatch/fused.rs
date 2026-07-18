@@ -302,6 +302,7 @@ impl ScanOrchestrator {
                             phase1_plan: (!backend.is_gpu())
                                 .then(|| scanner_ref.phase1_admission_plan(&batch)),
                             execution_route: scanner_ref.default_execution_route(),
+                            recovery_plan: None,
                             runtime_route: None,
                         })
                     }
@@ -327,7 +328,7 @@ impl ScanOrchestrator {
                 let backend = selection.backend;
                 let scanned_count = batch.len();
                 // The shared selected-batch outcome distinguishes real GPU
-                // execution from a route that completed through CPU recovery.
+                // execution from a route completed by another calibrated peer.
                 match backend {
                     keyhog_scanner::hw_probe::ScanBackend::GpuCuda
                     | keyhog_scanner::hw_probe::ScanBackend::GpuWgpu => {
@@ -355,7 +356,9 @@ impl ScanOrchestrator {
                     backend,
                     selection.phase1_plan.as_ref(),
                     selection.execution_route,
-                    recover_automatic_gpu_faults,
+                    selection
+                        .recovery_plan
+                        .filter(|_| recover_automatic_gpu_faults),
                 ) {
                     Ok(outcome) => outcome,
                     Err(error) => {

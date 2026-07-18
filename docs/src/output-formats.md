@@ -30,6 +30,11 @@ visible backend fault occurred and every affected byte was recovered. Any
 source or scanner coverage gap overrides it to `partial`; recovery never masks
 incomplete input.
 
+The recovery backend is the fastest remaining measured-correct peer for the
+same workload and runtime class. Calibration must resolve that peer across all
+retained points before an automatic GPU route is usable; KeyHog does not use a
+hardcoded CPU recovery hierarchy.
+
 Automatic recovery is never stderr-only. JSON, JSONL, HTML, and the CSV
 preamble carry structured `backend_recoveries`; SARIF uses
 `runs[].properties["keyhog.backend.recoveries"]`; GitLab SAST uses

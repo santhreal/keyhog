@@ -456,6 +456,10 @@ pub trait CliTestApi {
     fn seed_scan_runtime_state_for_test(&self, _guard: &ScanRuntimeGuard);
     fn reset_scan_runtime_state_for_test(&self, _guard: &ScanRuntimeGuard);
     fn scan_runtime_snapshot(&self, _guard: &ScanRuntimeGuard) -> ScanRuntimeSnapshot;
+    fn backend_recovery_summaries_for_test(
+        &self,
+        _guard: &ScanRuntimeGuard,
+    ) -> Vec<keyhog_core::ScanBackendRecoverySummary>;
     fn scanned_chunks(&self, _guard: &ScanRuntimeGuard) -> usize;
     fn scanner_panicked(&self, _guard: &ScanRuntimeGuard) -> bool;
 
@@ -1232,7 +1236,10 @@ impl CliTestApi for TestApi {
             keyhog_scanner::ScanBackend::GpuWgpu,
             None,
             scanner.default_execution_route(),
-            recover_automatic_gpu_faults,
+            recover_automatic_gpu_faults.then_some(crate::orchestrator::BackendRecoveryPlan {
+                backend: keyhog_scanner::ScanBackend::SimdCpu,
+                execution_route: scanner.default_execution_route(),
+            }),
         )?;
         if recover_automatic_gpu_faults && !outcome.recovered {
             anyhow::bail!("disabled GPU unexpectedly completed without recovery");
@@ -1380,6 +1387,13 @@ impl CliTestApi for TestApi {
             example_suppressions: keyhog_scanner::telemetry::example_suppression_count(),
             decode_truncations: keyhog_scanner::telemetry::decode_truncation_count(),
         }
+    }
+
+    fn backend_recovery_summaries_for_test(
+        &self,
+        _guard: &ScanRuntimeGuard,
+    ) -> Vec<keyhog_core::ScanBackendRecoverySummary> {
+        crate::backend_recovery_summaries()
     }
 
     fn scanned_chunks(&self, _guard: &ScanRuntimeGuard) -> usize {

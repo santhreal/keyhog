@@ -211,8 +211,26 @@ fn validate_decision_route_evidence_at(
         }
         return Err("selected route does not match measured-median resolution among statistically non-dominated routes".into());
     }
-    if decision.resolved_persistent_backend().is_none() {
+    if selected_route.backend.is_gpu()
+        && decision
+            .resolved_recovery_route(selected_route.backend, false)
+            .is_none()
+    {
+        return Err(
+            "cache GPU decision has no unanimous fastest remaining one-shot recovery route".into(),
+        );
+    }
+    let Some(persistent_route) = decision.resolved_persistent_route() else {
         return Err("cache decision changes fastest daemon route across measured points".into());
+    };
+    if persistent_route.backend.is_gpu()
+        && decision
+            .resolved_recovery_route(persistent_route.backend, true)
+            .is_none()
+    {
+        return Err(
+            "cache GPU decision has no unanimous fastest remaining daemon recovery route".into(),
+        );
     }
     Ok(())
 }

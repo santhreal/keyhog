@@ -181,7 +181,14 @@ pub(crate) struct BackendSelection {
     pub(crate) backend: ScanBackend,
     pub(crate) phase1_plan: Option<Phase1AdmissionPlan>,
     pub(crate) execution_route: keyhog_scanner::ScanExecutionRoute,
+    pub(crate) recovery_plan: Option<BackendRecoveryPlan>,
     pub(crate) runtime_route: Option<RuntimeRouteIdentity>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct BackendRecoveryPlan {
+    pub(crate) backend: ScanBackend,
+    pub(crate) execution_route: keyhog_scanner::ScanExecutionRoute,
 }
 
 impl AutorouteRuntimeClass {
@@ -509,6 +516,7 @@ impl CachedBackendRouter {
                 backend: forced,
                 phase1_plan: (!forced.is_gpu()).then(|| scanner.phase1_admission_plan(batch)),
                 execution_route: scanner.default_execution_route(),
+                recovery_plan: None,
                 runtime_route: None,
             });
         }
@@ -517,6 +525,7 @@ impl CachedBackendRouter {
                 backend: only,
                 phase1_plan: (!only.is_gpu()).then(|| scanner.phase1_admission_plan(batch)),
                 execution_route: scanner.default_execution_route(),
+                recovery_plan: None,
                 runtime_route: None,
             });
         }
@@ -554,6 +563,11 @@ impl CachedBackendRouter {
             backend: route.backend,
             phase1_plan: Some(phase1_plan),
             execution_route: route.execution_route(),
+            recovery_plan: automatic_recovery_plan(
+                self.decisions.get(&key),
+                route.backend,
+                self.runtime_class,
+            )?,
             runtime_route: Some(RuntimeRouteIdentity { key }),
         })
     }
@@ -636,6 +650,31 @@ fn resolve_persisted_route(
             cache_load_error,
         )),
     }
+}
+
+fn automatic_recovery_plan(
+    decision: Option<&AutorouteDecision>,
+    selected_backend: ScanBackend,
+    runtime_class: AutorouteRuntimeClass,
+) -> Result<Option<BackendRecoveryPlan>, AutorouteRoutingError> {
+    if !selected_backend.is_gpu() {
+        return Ok(None);
+    }
+    let persistent_runtime = runtime_class == AutorouteRuntimeClass::PersistentDaemon;
+    let route = decision
+        .and_then(|decision| {
+            decision.resolved_recovery_route(selected_backend, persistent_runtime)
+        })
+        .ok_or_else(|| {
+            AutorouteRoutingError::calibration_not_persisted(format!(
+                "autoroute selected {}, but its workload evidence does not resolve one fastest remaining measured-correct recovery peer across every calibration point; rerun `keyhog calibrate-autoroute` after repairing or splitting this workload class",
+                selected_backend.label()
+            ))
+        })?;
+    Ok(Some(BackendRecoveryPlan {
+        backend: route.backend,
+        execution_route: route.execution_route(),
+    }))
 }
 
 impl MeasuredBackendRouter {
@@ -732,6 +771,7 @@ impl MeasuredBackendRouter {
                 backend: forced,
                 phase1_plan: (!forced.is_gpu()).then(|| scanner.phase1_admission_plan(batch)),
                 execution_route: scanner.default_execution_route(),
+                recovery_plan: None,
                 runtime_route: None,
             });
         }
@@ -740,6 +780,7 @@ impl MeasuredBackendRouter {
                 backend: only,
                 phase1_plan: (!only.is_gpu()).then(|| scanner.phase1_admission_plan(batch)),
                 execution_route: scanner.default_execution_route(),
+                recovery_plan: None,
                 runtime_route: None,
             });
         }
@@ -770,6 +811,15 @@ impl MeasuredBackendRouter {
                 backend: route.backend,
                 phase1_plan: Some(phase1_plan),
                 execution_route: route.execution_route(),
+                recovery_plan: if self.calibration_mode {
+                    None
+                } else {
+                    automatic_recovery_plan(
+                        self.decisions.get(&key),
+                        route.backend,
+                        AutorouteRuntimeClass::OneShot,
+                    )?
+                },
                 runtime_route: Some(RuntimeRouteIdentity { key: key.clone() }),
             });
         }
@@ -789,6 +839,11 @@ impl MeasuredBackendRouter {
                 backend: route.backend,
                 phase1_plan: Some(phase1_plan),
                 execution_route: route.execution_route(),
+                recovery_plan: automatic_recovery_plan(
+                    self.decisions.get(&key),
+                    route.backend,
+                    AutorouteRuntimeClass::OneShot,
+                )?,
                 runtime_route: Some(RuntimeRouteIdentity { key }),
             });
         }
@@ -837,6 +892,7 @@ impl MeasuredBackendRouter {
             backend: route.backend,
             phase1_plan: Some(phase1_plan),
             execution_route: route.execution_route(),
+            recovery_plan: None,
             runtime_route: None,
         })
     }

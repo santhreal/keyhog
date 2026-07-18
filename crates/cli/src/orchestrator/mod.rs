@@ -4,7 +4,7 @@ mod allowlist;
 mod dispatch;
 pub(crate) use dispatch::{
     automatic_gpu_recovery_allowed, record_completed_backend_recovery, scan_selected_batch,
-    COALESCED_CHUNK_SCAN_CEILING_BYTES, COALESCED_CHUNK_SCAN_CEILING_MB,
+    BackendRecoveryPlan, COALESCED_CHUNK_SCAN_CEILING_BYTES, COALESCED_CHUNK_SCAN_CEILING_MB,
 };
 mod postprocess;
 pub(crate) mod reporting;
@@ -536,7 +536,9 @@ impl DefaultScanRuntime {
             backend,
             selection.phase1_plan.as_ref(),
             selection.execution_route,
-            self.recover_automatic_gpu_faults,
+            selection
+                .recovery_plan
+                .filter(|_| self.recover_automatic_gpu_faults),
         )
         .with_context(|| {
             format!(

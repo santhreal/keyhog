@@ -7,7 +7,9 @@
   exact recovered ranges and byte totals across daemon responses, expose daemon
   recovery health, and persist the affected autoroute workload quarantine in a
   bounded artifact that survives restart, is visible in `backend --autoroute`
-  and `doctor`, and clears through successful recalibration.
+  and `doctor`, and clears through successful recalibration. Recovery replays
+  stable bytes through the fastest remaining measured-correct peer resolved by
+  the same workload evidence, rather than a hardcoded CPU backend.
 - Measure every plain-pattern and keyword-anchor localization combination for
   every eligible backend, persist the fastest correct execution plan in cache
   schema 39, and carry both choices beside admission evidence through one-shot,

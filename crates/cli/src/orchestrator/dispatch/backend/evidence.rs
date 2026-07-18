@@ -241,7 +241,15 @@ impl AutorouteCalibrationPoint {
     }
 
     pub(super) fn resolve_measured_route(&self, persistent_runtime: bool) -> Option<MeasuredRoute> {
-        self.statistically_non_dominated_routes(persistent_runtime)
+        self.resolve_measured_route_excluding(persistent_runtime, None)
+    }
+
+    fn resolve_measured_route_excluding(
+        &self,
+        persistent_runtime: bool,
+        excluded_backend: Option<ScanBackend>,
+    ) -> Option<MeasuredRoute> {
+        self.statistically_non_dominated_routes(persistent_runtime, excluded_backend)
             .into_iter()
             .filter_map(|route| {
                 self.route_median_ns(route, persistent_runtime)
@@ -258,8 +266,16 @@ impl AutorouteCalibrationPoint {
             .map(|(route, _)| route)
     }
 
-    fn statistically_non_dominated_routes(&self, persistent_runtime: bool) -> Vec<MeasuredRoute> {
-        let intervals = self.route_confidence_intervals_for(persistent_runtime);
+    fn statistically_non_dominated_routes(
+        &self,
+        persistent_runtime: bool,
+        excluded_backend: Option<ScanBackend>,
+    ) -> Vec<MeasuredRoute> {
+        let intervals = self
+            .route_confidence_intervals_for(persistent_runtime)
+            .into_iter()
+            .filter(|(route, _)| Some(route.backend) != excluded_backend)
+            .collect::<Vec<_>>();
         intervals
             .iter()
             .filter(|(route, ci)| {
@@ -561,6 +577,40 @@ impl AutorouteDecision {
                 render_measured_route(measured_daemon),
             ));
         }
+        for (runtime_label, persistent_runtime, expected_route) in [
+            ("one-shot", false, expected_one_shot),
+            ("daemon", true, expected_daemon),
+        ] {
+            if !expected_route.backend.is_gpu() {
+                continue;
+            }
+            let existing_recovery = self
+                .resolved_recovery_route(expected_route.backend, persistent_runtime)
+                .ok_or_else(|| {
+                    format!(
+                        "existing workload evidence has no unanimous {runtime_label} recovery route after {}",
+                        expected_route.backend.label()
+                    )
+                })?;
+            let measured_recovery = point
+                .resolve_measured_route_excluding(persistent_runtime, Some(expected_route.backend))
+                .ok_or_else(|| {
+                    format!(
+                        "new workload point has no {runtime_label} recovery route after {}",
+                        expected_route.backend.label()
+                    )
+                })?;
+            if existing_recovery != measured_recovery {
+                return Err(format!(
+                    "workload class changes fastest remaining {runtime_label} recovery route after {}: existing={}, new {}-byte/{}-chunk point={}; split the workload identity at this recovery crossover and recalibrate",
+                    expected_route.backend.label(),
+                    render_measured_route(existing_recovery),
+                    point.sample_bytes,
+                    point.sample_chunks,
+                    render_measured_route(measured_recovery),
+                ));
+            }
+        }
         self.calibration_points.push(point);
         self.calibration_points
             .sort_unstable_by_key(|point| (point.sample_bytes, point.sample_chunks));
@@ -756,6 +806,29 @@ impl AutorouteDecision {
 
     pub(super) fn resolved_persistent_backend(&self) -> Option<ScanBackend> {
         self.resolved_persistent_route().map(|route| route.backend)
+    }
+
+    /// Fastest measured-correct route after one backend becomes unhealthy.
+    /// Every retained point in the workload class must agree, just as it must
+    /// for the primary route. Excluding the backend, rather than only the one
+    /// localizer variant, prevents a runtime device fault from being disguised
+    /// as a second plan on the same unhealthy peer.
+    pub(super) fn resolved_recovery_route(
+        &self,
+        failed_backend: ScanBackend,
+        persistent_runtime: bool,
+    ) -> Option<MeasuredRoute> {
+        let selected = self
+            .calibration_points
+            .first()?
+            .resolve_measured_route_excluding(persistent_runtime, Some(failed_backend))?;
+        self.calibration_points
+            .iter()
+            .all(|point| {
+                point.resolve_measured_route_excluding(persistent_runtime, Some(failed_backend))
+                    == Some(selected)
+            })
+            .then_some(selected)
     }
 
     /// True iff exactly one route is provably fastest. Equivalently, the

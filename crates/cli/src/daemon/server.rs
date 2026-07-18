@@ -578,7 +578,9 @@ async fn scan_text(
                     selection.backend,
                     selection.phase1_plan.as_ref(),
                     selection.execution_route,
-                    recover_automatic_gpu_faults,
+                    selection
+                        .recovery_plan
+                        .filter(|_| recover_automatic_gpu_faults),
                 )
                 .with_context(|| {
                     format!(
@@ -723,7 +725,9 @@ async fn scan_path(
                     selection.backend,
                     selection.phase1_plan.as_ref(),
                     selection.execution_route,
-                    recover_automatic_gpu_faults,
+                    selection
+                        .recovery_plan
+                        .filter(|_| recover_automatic_gpu_faults),
                 )
                 .with_context(|| {
                     format!(

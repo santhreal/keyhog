@@ -7,8 +7,9 @@ fn automatic_gpu_failure_replays_the_stable_batch_without_losing_bytes() {
 
     let detector_ids = API
         .disabled_gpu_dispatch_for_test(body, true, &guard)
-        .expect("automatic GPU recovery should complete the stable input on CPU");
+        .expect("automatic GPU recovery should complete the stable input on its recovery peer");
     let snapshot = API.scan_runtime_snapshot(&guard);
+    let recovery = API.backend_recovery_summaries_for_test(&guard);
 
     assert_eq!(
         detector_ids
@@ -22,6 +23,11 @@ fn automatic_gpu_failure_replays_the_stable_batch_without_losing_bytes() {
     assert_eq!(snapshot.backend_recovered_chunks, 1);
     assert_eq!(snapshot.backend_recovered_bytes, body.len() as u64);
     assert_eq!(snapshot.gpu_scanned_chunks, 0);
+    assert_eq!(recovery.len(), 1);
+    assert_eq!(
+        recovery[0].recovery_backend,
+        keyhog_scanner::ScanBackend::SimdCpu.label()
+    );
     assert_eq!(snapshot.source_errors, 0);
     assert_eq!(snapshot.failed_sources, 0);
 }
