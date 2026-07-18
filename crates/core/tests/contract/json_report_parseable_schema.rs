@@ -83,6 +83,7 @@ fn versioned_json_envelope_validates_major_and_accepts_minor() {
     let metadata = ScanReportMetadata {
         scan_id: "scan-test-id".into(),
         scan_status: keyhog_core::ScanCompletionStatus::Success,
+        backend_recoveries: Vec::new(),
         keyhog_version: "0.5.41".into(),
         git_hash: "test-git".into(),
         detector_digest: "922-test".into(),
@@ -110,7 +111,7 @@ fn versioned_json_envelope_validates_major_and_accepts_minor() {
     let text = String::from_utf8(buf).expect("JSON envelope is UTF-8");
     let parsed = JsonReportEnvelope::parse(&text).expect("current major parses");
     assert_eq!(parsed.schema_version.major, 1);
-    assert_eq!(parsed.schema_version.minor, 5);
+    assert_eq!(parsed.schema_version.minor, 7);
     assert_eq!(
         parsed.scan_status,
         keyhog_core::ScanCompletionStatus::Partial
@@ -200,7 +201,7 @@ fn versioned_jsonl_headers_split_concatenated_streams_and_validate_major() {
     let streams = parse_jsonl_stream(std::str::from_utf8(&joined).expect("JSONL is UTF-8"))
         .expect("concatenated streams parse by header boundary");
     assert_eq!(streams.len(), 2);
-    assert_eq!(streams[0].header.schema_version.minor, 6);
+    assert_eq!(streams[0].header.schema_version.minor, 8);
     assert_eq!(streams[0].findings.len(), 1);
     assert!(streams[0].is_complete());
     assert_eq!(

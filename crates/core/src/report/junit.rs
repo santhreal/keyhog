@@ -2,7 +2,7 @@
 
 use std::io::Write;
 
-use crate::{ScanCompletionStatus, VerifiedFinding};
+use crate::{ScanBackendRecoverySummary, ScanCompletionStatus, VerifiedFinding};
 
 use super::{
     escape::{escape_cdata, escape_xml_attr},
@@ -16,6 +16,7 @@ pub(crate) struct JunitReporter<W: Write + Send> {
     tests_count: usize,
     skip_summary: Vec<(String, usize)>,
     scan_status: ScanCompletionStatus,
+    backend_recoveries: Vec<ScanBackendRecoverySummary>,
 }
 
 impl<W: Write + Send> JunitReporter<W> {
@@ -27,6 +28,7 @@ impl<W: Write + Send> JunitReporter<W> {
             tests_count: 0,
             skip_summary: Vec::new(),
             scan_status: ScanCompletionStatus::Success,
+            backend_recoveries: Vec::new(),
         }
     }
 
@@ -44,6 +46,14 @@ impl<W: Write + Send> JunitReporter<W> {
     /// Attach the explicit terminal state from the shared scan metadata.
     pub(crate) fn with_scan_status(mut self, status: ScanCompletionStatus) -> Self {
         self.scan_status = status;
+        self
+    }
+
+    pub(crate) fn with_backend_recoveries(
+        mut self,
+        recoveries: Vec<ScanBackendRecoverySummary>,
+    ) -> Self {
+        self.backend_recoveries = recoveries;
         self
     }
 }
@@ -77,6 +87,13 @@ impl<W: Write + Send> Reporter for JunitReporter<W> {
                 "      <property name=\"keyhog.coverage_gap\" value=\"{}={}\"/>",
                 escape_xml_attr(reason),
                 count
+            )?;
+        }
+        for recovery in &self.backend_recoveries {
+            writeln!(
+                self.writer,
+                "      <property name=\"keyhog.backend.recovery\" value=\"{}\"/>",
+                escape_xml_attr(&serde_json::to_string(recovery)?)
             )?;
         }
         writeln!(self.writer, "    </properties>")?;

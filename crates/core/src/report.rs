@@ -116,6 +116,31 @@ pub struct ResolvedScanManifest {
     pub overrides: Vec<String>,
 }
 
+/// Bounded, non-secret summary of one completed automatic backend recovery.
+///
+/// Exact dispatch-local ranges remain available on the daemon wire. Detached
+/// reports carry stable aggregates because scanner chunk indices restart for
+/// each batch and therefore are not durable source identities.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ScanBackendRecoverySummary {
+    /// Number of recovery events represented by this summary row.
+    pub events: usize,
+    /// Backend selected by calibrated autoroute that faulted at runtime.
+    pub failed_backend: String,
+    /// Backend that completed the unprocessed stable input ranges.
+    pub recovery_backend: String,
+    /// Number of canonical disjoint ranges recovered in this event.
+    pub recovered_ranges: usize,
+    /// Number of distinct scanner chunks containing those ranges.
+    pub recovered_chunks: usize,
+    /// Total recovered source bytes across the canonical ranges.
+    pub recovered_bytes: u64,
+    /// Non-secret runtime fault diagnostic.
+    pub reason: String,
+    /// Canonical command that repairs the quarantined autoroute identity.
+    pub repair_command: String,
+}
+
 /// Format-neutral operator-visible metadata for a scan report.
 ///
 /// The metadata belongs to the report, not to one renderer. Individual output
@@ -134,6 +159,10 @@ pub struct ScanReportMetadata {
     /// because they predate this explicit field and have no state to recover.
     #[serde(default)]
     pub scan_status: ScanCompletionStatus,
+    /// Completed automatic backend recovery events. Empty means the scan did
+    /// not recover a selected backend fault.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub backend_recoveries: Vec<ScanBackendRecoverySummary>,
     /// KeyHog crate/binary version that produced the report.
     pub keyhog_version: String,
     /// Git identity of the binary that produced the report.
@@ -170,9 +199,9 @@ pub struct ScanReportMetadata {
 /// Current major version for the versioned JSON report envelope.
 pub const JSON_REPORT_SCHEMA_MAJOR: u16 = 1;
 /// Current minor version for the versioned JSON report envelope.
-pub const JSON_REPORT_SCHEMA_MINOR: u16 = 6;
+pub const JSON_REPORT_SCHEMA_MINOR: u16 = 7;
 /// Current minor version for the versioned JSONL stream contract.
-pub const JSONL_REPORT_SCHEMA_MINOR: u16 = 7;
+pub const JSONL_REPORT_SCHEMA_MINOR: u16 = 8;
 
 /// Version marker carried by every versioned JSON report.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -582,18 +611,21 @@ pub fn write_scan_report<W: Write + Send>(
         ReportFormat::Sarif { skip_summary } => finish_reporter(
             sarif::SarifReporter::new(writer)
                 .with_skip_summary(skip_summary.clone())
-                .with_scan_status(resolve_report_status(report_metadata, &skip_summary)),
+                .with_scan_status(resolve_report_status(report_metadata, &skip_summary))
+                .with_backend_recoveries(report_recoveries(report_metadata)),
             findings,
         ),
         ReportFormat::Csv => finish_reporter(csv::CsvReporter::new(writer)?, findings),
         ReportFormat::GithubAnnotations => finish_reporter(
-            github_annotations::GithubAnnotationsReporter::new(writer),
+            github_annotations::GithubAnnotationsReporter::new(writer)
+                .with_backend_recoveries(report_recoveries(report_metadata)),
             findings,
         ),
         ReportFormat::GithubAnnotationsCoverage { skip_summary } => finish_reporter(
             github_annotations::GithubAnnotationsReporter::new(writer)
                 .with_skip_summary(skip_summary.clone())
-                .with_scan_status(resolve_report_status(report_metadata, &skip_summary)),
+                .with_scan_status(resolve_report_status(report_metadata, &skip_summary))
+                .with_backend_recoveries(report_recoveries(report_metadata)),
             findings,
         ),
         ReportFormat::GitlabSast {
@@ -614,7 +646,8 @@ pub fn write_scan_report<W: Write + Send>(
                     |metadata| &metadata.scan_finished_at,
                     "scan_finished_at",
                 )?,
-            ),
+            )
+            .with_backend_recoveries(report_recoveries(report_metadata)),
             findings,
         ),
         ReportFormat::GitlabSastCoverage {
@@ -638,7 +671,8 @@ pub fn write_scan_report<W: Write + Send>(
                 )?,
             )
             .with_skip_summary(skip_summary.clone())
-            .with_scan_status(resolve_report_status(report_metadata, &skip_summary)),
+            .with_scan_status(resolve_report_status(report_metadata, &skip_summary))
+            .with_backend_recoveries(report_recoveries(report_metadata)),
             findings,
         ),
         ReportFormat::Html {
@@ -650,14 +684,25 @@ pub fn write_scan_report<W: Write + Send>(
                 .with_metadata(merge_html_metadata(metadata, report_metadata)?),
             findings,
         ),
-        ReportFormat::Junit => finish_reporter(junit::JunitReporter::new(writer), findings),
+        ReportFormat::Junit => finish_reporter(
+            junit::JunitReporter::new(writer)
+                .with_backend_recoveries(report_recoveries(report_metadata)),
+            findings,
+        ),
         ReportFormat::JunitCoverage { skip_summary } => finish_reporter(
             junit::JunitReporter::new(writer)
                 .with_skip_summary(skip_summary.clone())
-                .with_scan_status(resolve_report_status(report_metadata, &skip_summary)),
+                .with_scan_status(resolve_report_status(report_metadata, &skip_summary))
+                .with_backend_recoveries(report_recoveries(report_metadata)),
             findings,
         ),
     }
+}
+
+fn report_recoveries(metadata: Option<&ScanReportMetadata>) -> Vec<ScanBackendRecoverySummary> {
+    metadata
+        .map(|value| value.backend_recoveries.clone())
+        .unwrap_or_default()
 }
 
 fn resolve_report_status(

@@ -85,6 +85,14 @@ function renderScanMetadata() {
   setText('meta-duration', formatDuration(scanMetadata.duration_ms));
   setText('meta-scan-id', scanMetadata.scan_id || 'not recorded');
   setText('meta-scan-status', scanMetadata.scan_status || 'not recorded');
+  const recoveries = Array.isArray(scanMetadata.backend_recoveries)
+    ? scanMetadata.backend_recoveries
+    : [];
+  const recoveredEvents = recoveries.reduce((sum, row) => sum + Number(row.events || 0), 0);
+  const recoveredBytes = recoveries.reduce((sum, row) => sum + Number(row.recovered_bytes || 0), 0);
+  setText('meta-backend-recovery', recoveredEvents > 0
+    ? `${recoveredEvents} event(s), ${recoveredBytes} byte(s) recovered`
+    : 'none');
   setText('meta-source-chunks', scanMetadata.source_chunks_scanned ?? 'not recorded');
   setText('meta-source-bytes', scanMetadata.source_bytes_scanned ?? 'not recorded');
   setText('meta-detectors', scanMetadata.detector_count ?? 'not recorded');

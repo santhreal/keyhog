@@ -37,8 +37,11 @@ impl<W: Write + Send> CsvReporter<W> {
             !coverage_gap_summary.is_empty(),
         );
         let preamble = CsvScanMetadata {
-            schema_version: 1,
+            schema_version: 2,
             scan_status,
+            backend_recoveries: metadata
+                .map(|value| value.backend_recoveries.as_slice())
+                .unwrap_or_default(),
             coverage_gap_summary: coverage_gap_summary
                 .iter()
                 .map(|(reason, count)| CsvCoverageGap {
@@ -66,9 +69,10 @@ fn write_header<W: Write>(writer: &mut W) -> Result<(), ReportError> {
 }
 
 #[derive(Debug, serde::Serialize)]
-struct CsvScanMetadata {
+struct CsvScanMetadata<'a> {
     schema_version: u8,
     scan_status: ScanCompletionStatus,
+    backend_recoveries: &'a [super::ScanBackendRecoverySummary],
     coverage_gap_summary: Vec<CsvCoverageGap>,
 }
 

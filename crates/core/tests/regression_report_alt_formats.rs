@@ -86,6 +86,7 @@ fn test_metadata(scan_status: ScanCompletionStatus) -> ScanReportMetadata {
     ScanReportMetadata {
         scan_id: "0123456789abcdef0123456789abcdef".into(),
         scan_status,
+        backend_recoveries: Vec::new(),
         keyhog_version: "test".into(),
         git_hash: "test".into(),
         detector_digest: "test".into(),
@@ -151,7 +152,7 @@ fn csv_coverage_preamble_preserves_zero_finding_partial_status() {
     let mut lines = out.lines();
     assert_eq!(
         lines.next(),
-        Some("# keyhog.scan.metadata={\"schema_version\":1,\"scan_status\":\"partial\",\"coverage_gap_summary\":[{\"reason\":\"unreadable source\",\"count\":2}]}")
+        Some("# keyhog.scan.metadata={\"schema_version\":2,\"scan_status\":\"partial\",\"backend_recoveries\":[],\"coverage_gap_summary\":[{\"reason\":\"unreadable source\",\"count\":2}]}")
     );
     assert_eq!(lines.next(), Some(CSV_HEADER));
     assert_eq!(lines.next(), None);

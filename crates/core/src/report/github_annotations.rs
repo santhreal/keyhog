@@ -2,7 +2,7 @@
 
 use std::io::Write;
 
-use crate::{ScanCompletionStatus, Severity, VerifiedFinding};
+use crate::{ScanBackendRecoverySummary, ScanCompletionStatus, Severity, VerifiedFinding};
 
 use super::escape::sanitize_terminal;
 use super::{impl_writer_backed, ReportError, Reporter, WriterBackedReporter};
@@ -13,6 +13,7 @@ pub(crate) struct GithubAnnotationsReporter<W: Write + Send> {
     skip_summary: Vec<(String, usize)>,
     emit_scan_status: bool,
     scan_status: ScanCompletionStatus,
+    backend_recoveries: Vec<ScanBackendRecoverySummary>,
 }
 
 impl<W: Write + Send> GithubAnnotationsReporter<W> {
@@ -23,6 +24,7 @@ impl<W: Write + Send> GithubAnnotationsReporter<W> {
             skip_summary: Vec::new(),
             emit_scan_status: false,
             scan_status: ScanCompletionStatus::Success,
+            backend_recoveries: Vec::new(),
         }
     }
 
@@ -41,6 +43,14 @@ impl<W: Write + Send> GithubAnnotationsReporter<W> {
     /// Attach the explicit terminal state from the shared scan metadata.
     pub(crate) fn with_scan_status(mut self, status: ScanCompletionStatus) -> Self {
         self.scan_status = status;
+        self
+    }
+
+    pub(crate) fn with_backend_recoveries(
+        mut self,
+        recoveries: Vec<ScanBackendRecoverySummary>,
+    ) -> Self {
+        self.backend_recoveries = recoveries;
         self
     }
 }
@@ -71,6 +81,21 @@ impl<W: Write + Send> Reporter for GithubAnnotationsReporter<W> {
     }
 
     fn finish(&mut self) -> Result<(), ReportError> {
+        for recovery in &self.backend_recoveries {
+            let detail = format!(
+                "{} recovered {} byte(s) in {} range(s) from {} fault(s); repair: {}",
+                sanitize_terminal(&recovery.recovery_backend),
+                recovery.recovered_bytes,
+                recovery.recovered_ranges,
+                recovery.events,
+                sanitize_terminal(&recovery.repair_command),
+            );
+            writeln!(
+                self.writer,
+                "::warning title=keyhog backend recovery::{}",
+                escape_command_data(&detail)
+            )?;
+        }
         if self.emit_scan_status {
             writeln!(
                 self.writer,

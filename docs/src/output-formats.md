@@ -30,6 +30,15 @@ visible backend fault occurred and every affected byte was recovered. Any
 source or scanner coverage gap overrides it to `partial`; recovery never masks
 incomplete input.
 
+Automatic recovery is never stderr-only. JSON, JSONL, HTML, and the CSV
+preamble carry structured `backend_recoveries`; SARIF uses
+`runs[].properties["keyhog.backend.recoveries"]`; GitLab SAST uses
+`scan.keyhog_backend_recoveries`; JUnit adds `keyhog.backend.recovery` suite
+properties; GitHub annotations emit a warning with recovered bytes and the
+repair command. Text output emits the same warning during the scan. Each
+projection retains the failed backend, recovery backend, recovered byte count,
+and `keyhog calibrate-autoroute` remediation.
+
 Every finding also carries `companions_redacted`, a sorted JSON object of
 nearby credential or context values captured by the detector. Companion values
 are redacted at the same boundary as the primary credential, so plaintext
@@ -98,7 +107,9 @@ additive and may be accepted. See [Your first scan](./first-scan.md#json-output)
 for the complete schema. Metadata includes the binary Git identity, detector-set
 digest, effective-config digest when available, a stable non-secret `scan_id`,
 targets, timing, and counters including the exact source bytes and chunks
-consumed by the scanner. The top-level `scan_status` is one of `success`,
+consumed by the scanner. `backend_recoveries` records bounded, non-secret
+failed-backend, recovery-backend, range, chunk, byte, reason, and repair-command
+aggregates whenever an automatic route completes exact recovery. The top-level `scan_status` is one of `success`,
 `complete_after_recovery`, `partial`, `cancelled`, or `failed`; readers must
 preserve the explicit terminal state in detached artifacts. The `scan_id` lets
 independently stored metadata-bearing JSON, JSONL, and HTML projections be
@@ -109,9 +120,10 @@ omitted only for library-created reports that have no resolved CLI scan policy.
 
 ## `--format csv`
 
-CSV emits one row per finding. CLI scan output begins with one metadata comment
+CSV emits one row per finding. CLI scan output begins with one schema-2 metadata comment
 (`# keyhog.scan.metadata=<JSON>`) before the header. It records a schema
-version, terminal `scan_status`, and the complete `coverage_gap_summary`, so a
+version, terminal `scan_status`, `backend_recoveries`, and the complete
+`coverage_gap_summary`, so a
 zero-finding partial scan cannot be mistaken for a clean scan. CSV consumers
 should ignore comment lines before parsing the RFC 4180 header and data rows.
 The library-compatible `ReportFormat::Csv` renderer omits this preamble;

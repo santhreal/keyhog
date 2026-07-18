@@ -122,6 +122,7 @@ pub(crate) fn report_metadata_from_scan_run(
     metadata.source_chunks_scanned = source_chunks_scanned;
     metadata.source_bytes_scanned = source_bytes_scanned;
     metadata.detector_count = detector_count;
+    metadata.backend_recoveries = crate::backend_recovery_summaries();
     let scanner = crate::orchestrator_config::build_scanner_config(args);
     metadata.resolved_scan = Some(resolved_scan_manifest(args, &scanner));
     let has_coverage_gaps = !coverage_gap_summary(&CoverageCounts::current()).is_empty();
@@ -144,6 +145,7 @@ fn report_metadata_from_times(
     let mut metadata = ScanReportMetadata {
         scan_id: String::new(),
         scan_status: ScanCompletionStatus::Success,
+        backend_recoveries: Vec::new(),
         keyhog_version: env!("CARGO_PKG_VERSION").to_string(),
         git_hash: keyhog_core::git_hash().to_string(),
         detector_digest: keyhog_core::detector_digest().to_string(),
@@ -357,6 +359,7 @@ mod tests {
         ScanReportMetadata {
             scan_id: String::new(),
             scan_status: ScanCompletionStatus::Success,
+            backend_recoveries: Vec::new(),
             keyhog_version: "0.5.41".to_string(),
             git_hash: "test-git".to_string(),
             detector_digest: "test-detectors".to_string(),

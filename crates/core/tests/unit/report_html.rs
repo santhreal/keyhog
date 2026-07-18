@@ -230,6 +230,7 @@ fn html_report_embeds_scan_metadata_panel() {
     let out = render_with_metadata(HtmlScanMetadata {
         scan_id: "scan-test-id".to_string(),
         scan_status: keyhog_core::ScanCompletionStatus::Success,
+        backend_recoveries: Vec::new(),
         keyhog_version: "1.2.3".to_string(),
         git_hash: "test-git".to_string(),
         detector_digest: "test-detectors".to_string(),

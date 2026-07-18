@@ -27,6 +27,7 @@ mod stable_hash;
 use std::io::Write;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{LazyLock, Mutex};
 
 pub(crate) static SCANNED_CHUNKS: AtomicUsize = AtomicUsize::new(0);
 /// Total source bytes consumed by the scanner. This is incremented at the
@@ -50,6 +51,12 @@ pub(crate) static GPU_SCANNED_CHUNKS: AtomicUsize = AtomicUsize::new(0);
 pub(crate) static BACKEND_RECOVERY_EVENTS: AtomicUsize = AtomicUsize::new(0);
 pub(crate) static BACKEND_RECOVERED_CHUNKS: AtomicUsize = AtomicUsize::new(0);
 pub(crate) static BACKEND_RECOVERED_BYTES: AtomicU64 = AtomicU64::new(0);
+const MAX_BACKEND_RECOVERY_SUMMARY_ROWS: usize = 256;
+const BACKEND_RECOVERY_OVERFLOW_REASON: &str =
+    "additional distinct backend faults; inspect stderr and autoroute runtime health";
+pub(crate) static BACKEND_RECOVERY_SUMMARIES: LazyLock<
+    Mutex<Vec<keyhog_core::ScanBackendRecoverySummary>>,
+> = LazyLock::new(|| Mutex::new(Vec::new()));
 /// Number of source-read errors (a source yielded `Err` instead of a chunk).
 /// Read at the end of `run()`: if a scan produced ZERO chunks AND a source
 /// errored, the requested scan never actually ran (e.g. `--git-history` /
@@ -153,11 +160,86 @@ pub(crate) fn reset_scan_runtime_state() {
     BACKEND_RECOVERY_EVENTS.store(0, Ordering::Relaxed);
     BACKEND_RECOVERED_CHUNKS.store(0, Ordering::Relaxed);
     BACKEND_RECOVERED_BYTES.store(0, Ordering::Relaxed);
+    match BACKEND_RECOVERY_SUMMARIES.lock() {
+        Ok(mut summaries) => summaries.clear(),
+        Err(poisoned) => {
+            BACKEND_RECOVERY_SUMMARIES.clear_poison();
+            poisoned.into_inner().clear();
+        }
+    }
     SOURCE_ERRORS.store(0, Ordering::Relaxed);
     FAILED_SOURCES.store(0, Ordering::Relaxed);
     INCREMENTAL_CACHE_ERRORS.store(0, Ordering::Relaxed);
     SCANNER_PANICKED.store(false, Ordering::Relaxed);
     keyhog_scanner::telemetry::reset_for_scan();
+}
+
+pub(crate) fn record_backend_recovery_summary(summary: keyhog_core::ScanBackendRecoverySummary) {
+    let mut summaries = match BACKEND_RECOVERY_SUMMARIES.lock() {
+        Ok(summaries) => summaries,
+        Err(poisoned) => {
+            BACKEND_RECOVERY_SUMMARIES.clear_poison();
+            poisoned.into_inner()
+        }
+    };
+    if let Some(existing) = summaries.iter_mut().find(|existing| {
+        existing.failed_backend == summary.failed_backend
+            && existing.recovery_backend == summary.recovery_backend
+            && existing.reason == summary.reason
+            && existing.repair_command == summary.repair_command
+    }) {
+        existing.events = existing.events.saturating_add(summary.events);
+        existing.recovered_ranges = existing
+            .recovered_ranges
+            .saturating_add(summary.recovered_ranges);
+        existing.recovered_chunks = existing
+            .recovered_chunks
+            .saturating_add(summary.recovered_chunks);
+        existing.recovered_bytes = existing
+            .recovered_bytes
+            .saturating_add(summary.recovered_bytes);
+        return;
+    }
+    if summaries.len() + 1 < MAX_BACKEND_RECOVERY_SUMMARY_ROWS {
+        summaries.push(summary);
+        return;
+    }
+    if let Some(overflow) = summaries
+        .iter_mut()
+        .find(|existing| existing.reason == BACKEND_RECOVERY_OVERFLOW_REASON)
+    {
+        overflow.events = overflow.events.saturating_add(summary.events);
+        overflow.recovered_ranges = overflow
+            .recovered_ranges
+            .saturating_add(summary.recovered_ranges);
+        overflow.recovered_chunks = overflow
+            .recovered_chunks
+            .saturating_add(summary.recovered_chunks);
+        overflow.recovered_bytes = overflow
+            .recovered_bytes
+            .saturating_add(summary.recovered_bytes);
+    } else {
+        summaries.push(keyhog_core::ScanBackendRecoverySummary {
+            events: summary.events,
+            failed_backend: "multiple".to_string(),
+            recovery_backend: "multiple".to_string(),
+            recovered_ranges: summary.recovered_ranges,
+            recovered_chunks: summary.recovered_chunks,
+            recovered_bytes: summary.recovered_bytes,
+            reason: BACKEND_RECOVERY_OVERFLOW_REASON.to_string(),
+            repair_command: summary.repair_command,
+        });
+    }
+}
+
+pub(crate) fn backend_recovery_summaries() -> Vec<keyhog_core::ScanBackendRecoverySummary> {
+    match BACKEND_RECOVERY_SUMMARIES.lock() {
+        Ok(summaries) => summaries.clone(),
+        Err(poisoned) => {
+            BACKEND_RECOVERY_SUMMARIES.clear_poison();
+            poisoned.into_inner().clone()
+        }
+    }
 }
 
 pub(crate) fn write_banner<W: Write>(

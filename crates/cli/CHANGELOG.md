@@ -3,7 +3,7 @@
 ## Unreleased
 
 - Report automatic backend recovery as `complete_after_recovery` in JSON schema
-  1.6 and JSONL schema 1.7, preserve the
+  1.7 and JSONL schema 1.8, preserve the
   exact recovered ranges and byte totals across daemon responses, expose daemon
   recovery health, and persist the affected autoroute workload quarantine in a
   bounded artifact that survives restart, is visible in `backend --autoroute`

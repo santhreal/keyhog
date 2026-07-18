@@ -4,7 +4,9 @@
 use std::collections::{BTreeMap, HashMap};
 use std::io::Write;
 
-use crate::{MatchLocation, ScanCompletionStatus, Severity, VerifiedFinding};
+use crate::{
+    MatchLocation, ScanBackendRecoverySummary, ScanCompletionStatus, Severity, VerifiedFinding,
+};
 
 use super::{impl_writer_backed, ReportError, Reporter, WriterBackedReporter};
 
@@ -43,6 +45,7 @@ pub(crate) struct SarifReporter<W: Write + Send> {
     /// sources crate.
     skip_summary: Vec<(String, usize)>,
     scan_status: ScanCompletionStatus,
+    backend_recoveries: Vec<ScanBackendRecoverySummary>,
 }
 
 #[path = "sarif_types.rs"]
@@ -71,6 +74,7 @@ impl<W: Write + Send> SarifReporter<W> {
             any_result: false,
             skip_summary: Vec::new(),
             scan_status: ScanCompletionStatus::Success,
+            backend_recoveries: Vec::new(),
         }
     }
 
@@ -89,6 +93,14 @@ impl<W: Write + Send> SarifReporter<W> {
     /// Attach the explicit terminal state from the shared scan metadata.
     pub(crate) fn with_scan_status(mut self, status: ScanCompletionStatus) -> Self {
         self.scan_status = status;
+        self
+    }
+
+    pub(crate) fn with_backend_recoveries(
+        mut self,
+        recoveries: Vec<ScanBackendRecoverySummary>,
+    ) -> Self {
+        self.backend_recoveries = recoveries;
         self
     }
 
@@ -420,6 +432,8 @@ impl<W: Write + Send> Reporter for SarifReporter<W> {
         // a complete run from one with coverage gaps.
         write!(self.writer, ",\"properties\":{{\"keyhog.scan.status\":")?;
         serde_json::to_writer(&mut self.writer, &self.scan_status)?;
+        write!(self.writer, ",\"keyhog.backend.recoveries\":")?;
+        serde_json::to_writer(&mut self.writer, &self.backend_recoveries)?;
         write!(self.writer, "}}")?;
 
         // Coverage transparency: report whole-file skips and partial scan

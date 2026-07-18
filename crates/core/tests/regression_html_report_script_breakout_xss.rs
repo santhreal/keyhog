@@ -118,6 +118,7 @@ fn poisoned_scan_metadata_does_not_break_out_of_script_element() {
     let out = render_with_metadata(HtmlScanMetadata {
         scan_id: "scan-test-id".to_string(),
         scan_status: keyhog_core::ScanCompletionStatus::Success,
+        backend_recoveries: Vec::new(),
         keyhog_version: PAYLOAD.to_string(),
         git_hash: "test-git".to_string(),
         detector_digest: "test-detectors".to_string(),

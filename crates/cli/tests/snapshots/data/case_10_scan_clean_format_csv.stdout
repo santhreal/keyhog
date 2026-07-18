@@ -1,2 +1,2 @@
-# keyhog.scan.metadata={"schema_version":1,"scan_status":"success","coverage_gap_summary":[]}
+# keyhog.scan.metadata={"schema_version":2,"scan_status":"success","backend_recoveries":[],"coverage_gap_summary":[]}
 detector_id,detector_name,service,severity,credential_redacted,credential_hash,companions_redacted,source,file_path,line,offset,commit,author,date,verification,confidence,entropy,remediation,metadata,additional_locations

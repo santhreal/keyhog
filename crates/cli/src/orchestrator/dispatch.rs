@@ -426,8 +426,18 @@ pub(crate) fn record_completed_backend_recovery(receipt: &keyhog_scanner::Backen
     crate::BACKEND_RECOVERY_EVENTS.fetch_add(1, Ordering::Relaxed);
     crate::BACKEND_RECOVERED_CHUNKS.fetch_add(recovered_chunks, Ordering::Relaxed);
     crate::BACKEND_RECOVERED_BYTES.fetch_add(recovered_bytes, Ordering::Relaxed);
+    crate::record_backend_recovery_summary(keyhog_core::ScanBackendRecoverySummary {
+        events: 1,
+        failed_backend: receipt.failed_backend.label().to_string(),
+        recovery_backend: receipt.recovery_backend.label().to_string(),
+        recovered_ranges: receipt.ranges.len(),
+        recovered_chunks,
+        recovered_bytes,
+        reason: receipt.reason.clone(),
+        repair_command: "keyhog calibrate-autoroute".to_string(),
+    });
     eprintln!(
-        "keyhog: WARNING: automatic backend {} faulted ({}); recovered {} exact range(s) across {recovered_chunks} chunk(s), {recovered_bytes} byte(s), through {}; scan coverage is complete",
+        "keyhog: WARNING: automatic backend {} faulted ({}); recovered {} exact range(s) across {recovered_chunks} chunk(s), {recovered_bytes} byte(s), through {}; scan coverage is complete; repair: keyhog calibrate-autoroute",
         receipt.failed_backend.label(),
         receipt.reason,
         receipt.ranges.len(),

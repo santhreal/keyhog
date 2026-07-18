@@ -3,7 +3,7 @@
 use std::borrow::Cow;
 use std::io::Write;
 
-use crate::{ScanCompletionStatus, Severity, VerifiedFinding};
+use crate::{ScanBackendRecoverySummary, ScanCompletionStatus, Severity, VerifiedFinding};
 use serde::Serialize;
 
 use super::{impl_writer_backed, ReportError, Reporter, WriterBackedReporter};
@@ -20,6 +20,7 @@ pub(crate) struct GitlabSastReporter<W: Write + Send> {
     first_vulnerability: bool,
     skip_summary: Vec<(String, usize)>,
     scan_status: ScanCompletionStatus,
+    backend_recoveries: Vec<ScanBackendRecoverySummary>,
 }
 
 impl<W: Write + Send> GitlabSastReporter<W> {
@@ -33,6 +34,7 @@ impl<W: Write + Send> GitlabSastReporter<W> {
             first_vulnerability: true,
             skip_summary: Vec::new(),
             scan_status: ScanCompletionStatus::Success,
+            backend_recoveries: Vec::new(),
         }
     }
 
@@ -55,6 +57,14 @@ impl<W: Write + Send> GitlabSastReporter<W> {
         self
     }
 
+    pub(crate) fn with_backend_recoveries(
+        mut self,
+        recoveries: Vec<ScanBackendRecoverySummary>,
+    ) -> Self {
+        self.backend_recoveries = recoveries;
+        self
+    }
+
     fn ensure_prefix(&mut self) -> Result<(), ReportError> {
         if self.prefix_written {
             return Ok(());
@@ -70,6 +80,7 @@ impl<W: Write + Send> GitlabSastReporter<W> {
                 &self.scan_started_at,
                 &self.scan_finished_at,
                 self.scan_status,
+                &self.backend_recoveries,
             ),
         )?;
         write!(self.writer, ",\"vulnerabilities\":[")?;
@@ -109,6 +120,7 @@ struct GitlabScan<'a> {
     /// failure, so this additive namespaced field preserves partial, failed,
     /// and cancelled distinctions for detached-artifact consumers.
     keyhog_scan_status: String,
+    keyhog_backend_recoveries: &'a [ScanBackendRecoverySummary],
     start_time: &'a str,
     end_time: &'a str,
     analyzer: GitlabTool,
@@ -180,6 +192,7 @@ fn scan_object<'a>(
     scan_started_at: &'a str,
     scan_finished_at: &'a str,
     scan_status: ScanCompletionStatus,
+    backend_recoveries: &'a [ScanBackendRecoverySummary],
 ) -> GitlabScan<'a> {
     GitlabScan {
         scan_type: "sast",
@@ -199,6 +212,7 @@ fn scan_object<'a>(
             ScanCompletionStatus::Failed => "failed",
         }
         .to_string(),
+        keyhog_backend_recoveries: backend_recoveries,
         start_time: scan_started_at,
         end_time: scan_finished_at,
         analyzer: keyhog_tool(),
