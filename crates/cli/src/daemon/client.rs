@@ -215,7 +215,10 @@ impl Client {
 }
 
 fn validate_backend_policy(policy: &str) -> Result<()> {
-    if policy == "autoroute" {
+    if matches!(
+        policy,
+        "autoroute" | "autoroute-recovery" | "autoroute-degraded"
+    ) {
         return Ok(());
     }
     if keyhog_scanner::hw_probe::parse_backend_str(policy)

@@ -764,6 +764,46 @@ fn unwrap_scan_results(resp: Response) -> Result<(Vec<RawMatch>, SourceCoverageG
                 keyhog_scanner::telemetry::append_daemon_events(dogfood_events);
             }
             if let Some(recovery) = backend_recovery {
+                if recovery.failed_backend == "autoroute-invalid" {
+                    let recovery_backend = keyhog_scanner::hw_probe::parse_backend_str(
+                        &recovery.recovery_backend,
+                    )
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "daemon returned unknown recovery backend {:?}; restart it with this KeyHog build",
+                            recovery.recovery_backend
+                        )
+                    })?;
+                    let recovered_range_count = recovery.recovered_ranges.len();
+                    let recovered_chunks = recovery.recovered_ranges.iter().try_fold(
+                        std::collections::BTreeSet::new(),
+                        |mut chunks, range| {
+                            if range.byte_end < range.byte_start {
+                                bail!("daemon returned an invalid autoroute recovery range; restart it with this KeyHog build");
+                            }
+                            chunks.insert(range.chunk_index);
+                            Ok::<_, anyhow::Error>(chunks)
+                        },
+                    )?.len();
+                    let recovered_bytes = recovery
+                        .recovered_ranges
+                        .iter()
+                        .map(|range| (range.byte_end - range.byte_start) as u64)
+                        .sum::<u64>();
+                    if recovered_chunks != recovery.recovered_chunks
+                        || recovered_bytes != recovery.recovered_bytes
+                    {
+                        bail!("daemon returned inconsistent autoroute-recovery totals; restart it with this KeyHog build");
+                    }
+                    crate::orchestrator::record_completed_remote_autoroute_state_recovery(
+                        recovery_backend,
+                        recovered_range_count,
+                        recovered_chunks,
+                        recovered_bytes,
+                        recovery.reason,
+                    );
+                    return Ok((matches, source_coverage_gaps));
+                }
                 let failed_backend = keyhog_scanner::hw_probe::parse_backend_str(
                     &recovery.failed_backend,
                 )

@@ -15,7 +15,7 @@ owned by the core `ScanReport` model, so an output format cannot accidentally
 invent a second scan clock or target list. Formats keep their established
 schemas: HTML displays the full metadata panel, GitLab SAST projects the scan
 times required by its schema, and finding-only formats preserve their stable
-finding shape. Metadata-bearing JSON, JSONL, and HTML artifacts also include
+finding shape. JSON-envelope, JSONL-envelope, and HTML artifacts also include
 `resolved_scan`: a versioned object with the selected `preset`, sorted
 `effective` detection values, and an `overrides` list. This is the authoritative
 machine-diffable record of what `default`, `fast`, `deep`, or `precision` meant
@@ -26,23 +26,27 @@ from CLI text or stderr.
 Metadata-bearing formats expose `scan_status` as `success`,
 `complete_after_recovery`, `partial`, `cancelled`, or `failed`.
 `complete_after_recovery` is a successful complete scan, but it proves that a
-visible backend fault occurred and every affected byte was recovered. Any
+visible backend fault or invalid autoroute state occurred and every affected
+byte was recovered. Any
 source or scanner coverage gap overrides it to `partial`; recovery never masks
 incomplete input.
 
-The recovery backend is the fastest remaining measured-correct peer for the
-same workload and runtime class. Calibration must resolve that peer across all
-retained points before an automatic GPU route is usable; KeyHog does not use a
-hardcoded CPU recovery hierarchy.
+After a selected GPU faults, the recovery backend is the confidence-separated
+fastest remaining measured-correct peer for the same workload and runtime
+class. When no trustworthy route can be selected at all, the scalar correctness
+oracle completes the input and the receipt names `autoroute-invalid`; this is
+recovery, not an autoroute decision.
 
-Automatic recovery is never stderr-only. JSON, JSONL, HTML, and the CSV
-preamble carry structured `backend_recoveries`; SARIF uses
+Automatic recovery is structured in every metadata-bearing artifact.
+JSON-envelope, JSONL-envelope, HTML, and the CSV preamble carry
+`backend_recoveries`; SARIF uses
 `runs[].properties["keyhog.backend.recoveries"]`; GitLab SAST uses
 `scan.keyhog_backend_recoveries`; JUnit adds `keyhog.backend.recovery` suite
 properties; GitHub annotations emit a warning with recovered bytes and the
-repair command. Text output emits the same warning during the scan. Each
-projection retains the failed backend, recovery backend, recovered byte count,
-and `keyhog calibrate-autoroute` remediation.
+repair command. Plain `json` and `jsonl` intentionally retain their stable
+finding-only schemas and receive the same recovery warning on stderr as text.
+Each metadata projection retains the failed backend, recovery backend,
+recovered byte count, and `keyhog calibrate-autoroute` remediation.
 
 Every finding also carries `companions_redacted`, a sorted JSON object of
 nearby credential or context values captured by the detector. Companion values
@@ -117,7 +121,7 @@ failed-backend, recovery-backend, range, chunk, byte, reason, and repair-command
 aggregates whenever an automatic route completes exact recovery. The top-level `scan_status` is one of `success`,
 `complete_after_recovery`, `partial`, `cancelled`, or `failed`; readers must
 preserve the explicit terminal state in detached artifacts. The `scan_id` lets
-independently stored metadata-bearing JSON, JSONL, and HTML projections be
+independently stored JSON-envelope, JSONL-envelope, and HTML projections be
 joined without exposing secrets. Reports
 from older KeyHog versions may omit it; the HTML projection displays that state
 as `not recorded` rather than inventing an identifier. `resolved_scan` is

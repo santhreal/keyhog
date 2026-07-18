@@ -125,7 +125,8 @@ pub struct ResolvedScanManifest {
 pub struct ScanBackendRecoverySummary {
     /// Number of recovery events represented by this summary row.
     pub events: usize,
-    /// Backend selected by calibrated autoroute that faulted at runtime.
+    /// Selected backend that faulted, or `autoroute-invalid` when recovery was
+    /// required before a trustworthy route could be selected.
     pub failed_backend: String,
     /// Backend that completed the unprocessed stable input ranges.
     pub recovery_backend: String,

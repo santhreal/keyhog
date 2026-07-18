@@ -8,7 +8,7 @@ plugins, and health checks) can rely on it.
 |------|--------------------------------------------------------------------|
 | `0`  | Command succeeded; for a scan, zero reported findings and no clean-blocking coverage/cache failure. |
 | `1`  | Findings present, none confirmed live (unverified, skipped, or verified-inactive: dead/revoked). |
-| `2`  | User/operator error: bad input/config, missing or invalid scan state, an unavailable required daemon, or missing/stale/incomplete autoroute evidence. Also operator-correctable I/O such as not-found, permission-denied, connection-refused, invalid-input, or invalid-data. |
+| `2`  | User/operator error: bad input/config, an unavailable required daemon, or operator-correctable I/O such as not-found, permission-denied, connection-refused, invalid-input, or invalid-data. Missing/stale/incomplete normal-scan autoroute evidence instead completes through visible scalar recovery; calibration candidates and explicit backend contracts still fail when they cannot execute. |
 | `3`  | System error: a lower-level operating-system I/O failure, incremental-cache failure, or explicitly selected non-GPU backend that cannot execute. |
 | `4`  | Health/self-test failure: `keyhog doctor` unhealthy, `keyhog repair` could not restore a working binary, `keyhog backend` self-test failed, or multi-backend `keyhog backend --autoroute` reports `quarantined`, `calibration_required`, `disabled`, `stale`, or `invalid`. |
 | `10` | **LIVE credentials confirmed** (a `--verify` scan where the vendor API accepted a found secret) - the highest-severity gate. Also returned by `keyhog update --check` when a newer release exists. |
@@ -148,12 +148,19 @@ recovered ranges, chunks, and bytes. If exact
 recovery cannot cover the requested input, the result is incomplete rather
 than clean.
 
+A missing, stale, invalid, incomplete, or quarantined autoroute decision uses
+the same successful complete-recovery semantics. KeyHog warns once and scans
+the affected batches through the scalar correctness oracle; structured reports
+name `autoroute-invalid`, the recovered byte count, and the recalibration
+command. Inspection remains unhealthy even though scan coverage is complete.
+
 For `keyhog daemon start`, exit `12` covers required GPU preflight, GPU scanner
 compilation, an unavailable or incompatible explicitly required backend, and a
 warmup that fails before readiness. An automatic-route fault after readiness
 recovers the affected stable request and leaves the daemon alive. It quarantines
 that workload route, exposes the recovery count and last fault in daemon status,
-and requires recalibration before that route can serve another request. An
+and requires recalibration before that route can serve as autoroute again.
+Later requests recover visibly through the scalar correctness oracle. An
 explicit GPU daemon route returns a request error. Run
 `keyhog backend --self-test`, repair the GPU driver/runtime, and recalibrate.
 

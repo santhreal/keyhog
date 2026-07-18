@@ -17,6 +17,26 @@ enum ActiveBackendRouter {
     Measured(Arc<Mutex<MeasuredBackendRouter>>),
 }
 
+impl ActiveBackendRouter {
+    fn quarantine_recovered_route(
+        &self,
+        selection: &super::backend::BackendSelection,
+        recovery: &keyhog_scanner::BackendRecoveryReceipt,
+    ) -> std::result::Result<(), AutorouteRoutingError> {
+        match self {
+            Self::Explicit(_) => Ok(()),
+            Self::Cached(router) => router.quarantine_recovered_route(selection, recovery),
+            Self::Measured(router) => {
+                let mut router = match router.lock() {
+                    Ok(guard) => guard,
+                    Err(poisoned) => poisoned.into_inner(),
+                };
+                router.quarantine_recovered_route(selection, recovery)
+            }
+        }
+    }
+}
+
 impl ScanOrchestrator {
     /// Decide whether a scan runs on the fused parallel read+scan path.
     ///
@@ -304,6 +324,7 @@ impl ScanOrchestrator {
                             execution_route: scanner_ref.execution_route_for_backend(*backend),
                             recovery_plan: None,
                             runtime_route: None,
+                            autoroute_recovery: None,
                         })
                     }
                     ActiveBackendRouter::Measured(router) => {
@@ -369,6 +390,17 @@ impl ScanOrchestrator {
                         return Vec::new();
                     }
                 };
+                if let Some(recovery) = outcome.recovery.as_ref() {
+                    if let Err(error) =
+                        active_router.quarantine_recovered_route(&selection, recovery)
+                    {
+                        record_routing_error(&routing_error_ref, error);
+                        return Vec::new();
+                    }
+                }
+                if let Some(recovery) = selection.autoroute_recovery.as_ref() {
+                    super::record_completed_autoroute_state_recovery(&batch, backend, recovery);
+                }
                 crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
                 crate::SCANNED_BYTES.fetch_add(
                     batch

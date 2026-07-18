@@ -482,8 +482,8 @@ pub struct ScanArgs {
     /// Run this scan as an explicit autoroute calibration probe: benchmark
     /// parity-checked backend candidates and persist the fastest-correct
     /// decision for each workload bucket. Normal scans never benchmark on cache
-    /// miss; they require persisted installer calibration or an explicit
-    /// `--backend`.
+    /// miss; they use persisted evidence or visibly complete through scalar
+    /// correctness recovery. An explicit `--backend` is diagnostic only.
     #[arg(long)]
     pub autoroute_calibrate: bool,
 

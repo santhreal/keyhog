@@ -340,8 +340,8 @@ fn explicit_auto_stale_daemon_socket_surfaces_in_process_route() {
     let combined = combined_output(&out);
     assert_eq!(
         out.status.code(),
-        Some(2),
-        "explicit daemon auto should surface the daemon miss before the in-process route reports its own failure; output={combined}"
+        Some(1),
+        "explicit daemon auto should surface the daemon miss and retain the in-process finding through recovery; output={combined}"
     );
     assert!(
         combined.contains("daemon auto route unavailable")
@@ -349,8 +349,10 @@ fn explicit_auto_stale_daemon_socket_surfaces_in_process_route() {
         "explicit daemon auto route change must be operator-visible; output={combined}"
     );
     assert!(
-        combined.contains("autoroute calibration required"),
-        "the in-process route must be the route that reports the missing calibration; output={combined}"
+        combined.contains("autoroute calibration required")
+            && combined.contains("scalar correctness recovery")
+            && combined.contains("scan coverage is complete"),
+        "the in-process route must report complete recovery from missing calibration; output={combined}"
     );
 }
 

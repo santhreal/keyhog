@@ -96,8 +96,9 @@ eligibility and retry matrix.
 For a large inventory, partition at the provider or repository boundary, not
 inside one daemon request. Calibrate autoroute on the actual worker class and
 retain the per-partition resolved policy and coverage envelope. A missing or
-stale autoroute decision is a visible failure, never permission to substitute
-CPU, Hyperscan, or GPU silently.
+stale autoroute decision triggers visible scalar correctness recovery, never a
+silent CPU, Hyperscan, or GPU substitution. Treat `complete_after_recovery` as a
+recalibration signal even though scan byte coverage is complete.
 
 ## Report aggregation
 

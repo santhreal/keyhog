@@ -18,10 +18,20 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Bind the independent phase-two Hyperscan prefilter to the selected SIMD route.
   Scalar, GPU, normalized no-hit, windowed, and fragment-reassembly paths no
   longer borrow unmeasured Hyperscan work through a global tuning default.
-- Autoroute cache schema 41 records SIMD with the same cold-first and warm-trial
-  model used for GPU. One-shot selection includes Hyperscan materialization,
-  persistent-daemon selection uses warm execution, and daemon startup warms
-  only backends selected by validated decisions.
+- Autoroute cache schema 42 records SIMD with the same cold-first and warm-trial
+  model used for GPU, interleaves peer trials to distribute host drift, and
+  persists a winner only when its 95% confidence interval is wholly faster than
+  every route of every peer backend. Equivalent plans within one backend no
+  longer masquerade as peer backends. Inconclusive results name every route's
+  median and 95% interval instead of hiding which peers overlap. One-shot
+  selection includes Hyperscan materialization and
+  persistent-daemon selection uses warm execution. Missing, stale, invalid, or
+  quarantined normal-scan state now warns and completes every byte through
+  reported scalar correctness recovery; daemon requests carry the same recovery
+  receipt, while calibration candidates and explicit overrides remain hard
+  execution contracts. Daemon handshake and status distinguish invalid startup
+  state from persisted-route quarantine, and zero-byte requests remain no-ops
+  instead of reporting fictional recovery.
 - Autoroute calibration now uses the always-present scalar engine as its
   independent correctness oracle. Optional Hyperscan and GPU candidates are
   rejected when their findings diverge, and decoded rescans remain attributed
@@ -97,6 +107,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   explicit GPU overrides, `--require-gpu`, invalid policy, and artifact trust
   failures remain hard contracts, so recovery cannot become silent fallback or
   certify a broken accelerator.
+- Fused automatic scans now quarantine a GPU route after exact peer recovery,
+  matching coalesced and daemon behavior. Failure to persist the durable health
+  record is warning-visible without discarding already recovered scan output.
 - `https://santh.dev/keyhog/install.sh` and
   `https://santh.dev/keyhog/install.ps1` are now the canonical installer URLs
   across the repository and product site. The santh.dev build copies the exact

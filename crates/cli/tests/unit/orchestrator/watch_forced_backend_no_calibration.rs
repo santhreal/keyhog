@@ -1,8 +1,5 @@
-//! Regression (dogfood): `keyhog watch` had no `--backend` escape hatch, so an
-//! uncalibrated binary failed EVERY change scan with "autoroute calibration
-//! required", and the error even advised `--backend`, a flag watch did not
-//! accept. A forced explicit backend must scan WITHOUT consulting the autoroute
-//! decision cache, so watch works on an uncalibrated binary.
+//! Regression (dogfood): an explicit watch backend must bypass autoroute state.
+//! This keeps diagnostic backend contracts usable on an uncalibrated host.
 //!
 //! Relocated out of an inline `orchestrator::mod` test module (the orchestrator
 //! tree forbids inline `#[cfg(test)]`; the runtime internals are reached through

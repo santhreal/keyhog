@@ -88,9 +88,9 @@ pub enum Response {
         keyhog_version: String,
         git_hash: String,
         detector_rules_digest: String,
-        /// `autoroute` or the canonical label of the backend forced at daemon
-        /// startup (`gpu-cuda-region-presence`, `gpu-wgpu-region-presence`,
-        /// `simd-regex`, or `cpu-fallback`).
+        /// `autoroute`, `autoroute-recovery` for invalid startup evidence,
+        /// `autoroute-degraded` for persisted route quarantine, or the canonical
+        /// label of a backend forced at daemon startup.
         backend_policy: String,
         detector_count: usize,
         uptime_secs: u64,
@@ -142,8 +142,8 @@ pub enum Response {
         /// the daemon's process-local counters directly, so missing this field
         /// used to let binary/unreadable/truncated daemon input exit clean.
         source_coverage_gaps: SourceCoverageGaps,
-        /// Exact completed recovery for this request, when the selected
-        /// automatic route faulted. `None` means no backend recovery occurred.
+        /// Exact completed recovery for this request, when a selected route
+        /// faulted or autoroute state was invalid. `None` means no recovery.
         backend_recovery: Option<BackendRecoveryStatus>,
     },
     Health {

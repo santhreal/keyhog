@@ -54,21 +54,28 @@ Git diff producers make the same ordering guarantee. Tracked diff hunks and
 full-size untracked files therefore calibrate as separate route classes during
 installer calibration, even when one `--git-diff` scan contains both.
 
-Performance selection uses the median of the recorded trials, not the single
-fastest sample. If one route's 95% Student-t confidence interval is entirely
-below every competitor, it is the separated winner. If intervals overlap,
-KeyHog reports that evidence as inconclusive and chooses the lowest measured
-median among the statistically non-dominated routes; it does not pretend that
-overlap proves equivalence or apply a CPU/GPU preference hierarchy. Engagement
-overhead breaks only an exact median tie. `keyhog backend --autoroute` exposes
-the representative times and a `selection_basis` for every decision, so this
-distinction is visible in both text and JSON inspection output.
+Performance selection uses the complete recorded distribution, not the single
+fastest sample. A route is eligible for persistence only when its 95% Student-t
+confidence interval is entirely below every route of every peer backend.
+Equivalent localization plans within that winning backend are not counted as
+separate backends; KeyHog chooses the lowest measured-median plan that preserves
+the cross-backend proof. Cross-backend overlap is inconclusive and produces no
+autoroute decision. KeyHog never turns an overlapping median, backend rank, or
+CPU/GPU preference into a claim that a backend is fastest. `keyhog backend
+--autoroute` exposes the representative times and `selection_basis` for every
+valid decision.
+
+Calibration records 7 trials per route. Accelerator evidence retains its real
+cold dispatch; steady and warm rounds rotate route order so host drift is shared
+across peers. If cross-backend confidence still overlaps, calibration stops with
+host-load guidance plus every route's median and 95% interval instead of
+spending unbounded install time or guessing.
 
 Because the decision is *measured*, it must be recorded before `--backend auto`
-(the default) can run. A fresh install has no recorded decisions yet, so until
-you calibrate, an auto scan fails closed with
-[exit code `2`](./exit-codes.md), `autoroute calibration required`, rather
-than silently substituting a slower or unverified backend.
+(the default) can claim a fastest route. A fresh install has no decisions yet,
+so an auto scan warns, scans every byte through the scalar correctness oracle,
+and reports `complete_after_recovery` plus `autoroute calibration required`.
+That recovery is deliberately not labelled autoroute.
 
 ## Operator workflow
 
@@ -136,8 +143,8 @@ that choice, so broken help output cannot silently select the older matrix. The
 installers also accept the earlier unified command's migration summary
 (`calibrated N workload buckets`). The low-level scan flag records one
 caller-supplied workload but does not build or sweep external fixtures. If
-you scan those sources and hit
-`autoroute calibration required`, re-run `install.sh --calibrate` /
+you scan those sources and receive an
+`autoroute calibration required` recovery receipt, re-run `install.sh --calibrate` /
 `install.ps1 -Calibrate` rather than the subcommand. Decisions are written,
 parity-checked, to the autoroute cache
 (`$XDG_CACHE_HOME/keyhog/autoroute.json` by default; override with
@@ -263,8 +270,11 @@ without changing detection semantics. The decision proves correctness and
 timing for the representative that was
 measured under that key. It does **not** prove that the same backend is fastest
 for every individual byte length inside the numeric range. A neighbouring range
-is not evidence for this one. Uncalibrated keys fail closed; KeyHog never
-interpolates or clamps them to a CPU/GPU substitute.
+is not evidence for this one. Uncalibrated keys never interpolate or clamp to
+a guessed route. A normal scan warns, completes that exact input through scalar
+correctness recovery, and reports the invalid autoroute state; calibration and
+explicit backend contracts still fail when their requested evidence or route
+cannot be produced.
 
 Large directory and multi-source scans run in process and produce multiple real
 batches. Each batch needs an exact key in the cache; one calibrated single-file
@@ -314,16 +324,18 @@ is separate from immutable timing evidence and survives restart. A successful
 calibration commit clears only the workload identities remeasured in that
 command. Missing health state means no runtime fault has been observed;
 malformed, oversized, unknown-backend, or calibration-inconsistent health state
-invalidates automatic routing with repair guidance. An explicit GPU override or
+invalidates automatic routing and triggers visible scalar recovery with repair
+guidance. An explicit GPU override or
 `--require-gpu` remains a hard backend contract and is not substituted.
 `keyhog backend --autoroute` reports `quarantined` readiness, aggregate and
 per-config fault counts, and the failed backend/reason on each affected workload;
 `keyhog doctor` reports the same repair state.
 
-## When an auto scan reports `calibration required`
+## When an auto scan recovers with `calibration required`
 
-The error names the missing workload bucket and reports which dimensions differ
-from the nearest calibrated class. Resolve it by either:
+The warning and report receipt name the missing workload bucket and which
+dimensions differ from the nearest calibrated class. Scan coverage remains
+complete, but routing proof is unhealthy. Resolve it by either:
 
 - Re-running the same scan once with `--autoroute-calibrate --autoroute-gpu`.
   This measures the actual source, resolved config, and workload class that
@@ -335,7 +347,7 @@ from the nearest calibrated class. Resolve it by either:
   not prove autoroute correctness.
 
 A `STALE` status means the cache was written for a different build; auto scans
-reject it, so recalibrate after upgrading KeyHog.
+recover through the scalar oracle, so recalibrate after upgrading KeyHog.
 
 ## Inspect what is calibrated
 
@@ -354,8 +366,9 @@ For a multi-backend build, `health: ready` exits `0`; `quarantined`,
 automation cannot mistake an unusable autoroute state for a healthy host. JSON includes the same `health`
 value plus `repair_command`: `null` for `direct` or `ready`, the canonical
 calibration command for quarantined, absent, stale, or invalid evidence, and an explicit
-cache-path command when persistence is disabled. The scan command continues to
-use exit `2` for a missing exact workload decision.
+cache-path command when persistence is disabled. Scan reports expose recovered
+chunks and bytes plus `complete_after_recovery`; inspection remains unhealthy
+until calibration produces confidence-separated evidence.
 
 Pass `--autoroute-cache` when the scan uses a non-default cache path through
 the matching scan flag or `[system].autoroute_cache`.
@@ -368,9 +381,8 @@ decision must contain all four localization plans for every eligible backend and
 prove each plan correct. Removing a candidate timing and its receipt together
 still invalidates the cache because validation compares the full Cartesian route
 set with this live config identity.
-When a scan hits `exit 2`, you can
-therefore see exactly what *is* covered and how each existing decision was
-made. An invalid decision makes the inspection report the cache as unusable;
+The inspection shows exactly what *is* covered and how each existing decision
+was made. An invalid decision makes the inspection report the cache as unusable;
 inspection never omits a malformed row and presents the remainder as healthy.
 
 Inspection validates build compatibility and the complete persisted cache
@@ -395,9 +407,9 @@ meanings:
 | `sample_bytes_min`, `sample_bytes_max`, `sample_chunks_min`, `sample_chunks_max` | Exact measured envelope covered by the class. |
 | `measured_points` | Complete point-by-point projection: sample identity, timestamp, one-shot and daemon execution-plan winners, confidence status, every route timing, and every parity receipt. Use this array to diagnose crossover behavior. |
 | `sample_bytes`, `sample_chunks`, `route_timings` | Concise sample identity plus the complete generic route-timing array for the first point after sorting by bytes then chunks. Each timing identifies the backend, both localization choices, one-shot time, and warm time when applicable. `measured_points` is authoritative when the class retains more than one point. |
-| `confidence_separated` | Whether the one-shot winner's 95% interval is entirely below every competitor at every measured point. |
-| `selection_basis` | `separated-95pct-confidence`, or `lowest-measured-median-among-overlapping-confidence`. |
-| `selected_margin_ns` | Smallest one-shot representative-time margin to the next candidate across all measured points; `null` when there is no competitor. |
+| `confidence_separated` | Whether the one-shot winner's 95% interval is entirely below every route of every peer backend at every measured point. |
+| `selection_basis` | `separated-95pct-confidence`. Inconclusive evidence is rejected instead of appearing as a routable decision. |
+| `selected_margin_ns` | Smallest one-shot representative-time margin to the next peer backend across all measured points; `null` when there is no peer. |
 | `daemon_backend`, `daemon_phase2_plain_localizer`, `daemon_phase2_keyword_localizer` | Backend and both phase-two localization choices derived for a ready persistent daemon from warm evidence. |
 | `daemon_confidence_separated`, `daemon_selection_basis`, `daemon_selected_margin_ns` | Daemon-route counterparts, also aggregated conservatively across every measured point. |
 | `source_mixture` | Structured source-class components used by the workload identity: canonical family digest, full-size versus payload provenance, reduced chunk/payload ratios, and maximum source-span bucket. JSON consumers should use these fields instead of parsing the human-readable `workload` string. |

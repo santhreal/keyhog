@@ -175,9 +175,12 @@ impl ServerState {
     }
 
     fn backend_policy(&self) -> &'static str {
-        self.backend_override
-            .map(ScanBackend::label)
-            .unwrap_or("autoroute") // LAW10: None is the explicit persisted-autoroute policy label, not a backend substitution
+        match self.backend_override {
+            Some(backend) => backend.label(),
+            None if self.router.autoroute_state_is_invalid() => "autoroute-recovery",
+            None if self.router.autoroute_has_quarantined_routes() => "autoroute-degraded",
+            None => "autoroute",
+        }
     }
 
     fn record_backend_recovery(&self, recovery: BackendRecoveryStatus) -> Result<()> {
@@ -566,6 +569,10 @@ async fn scan_text(
                         ..Default::default()
                     },
                 };
+                if chunk.data.is_empty() {
+                    scanner.clear_fragment_cache();
+                    return Ok((Vec::new(), None));
+                }
                 let selection = router.choose_with_plan(
                     scanner.as_ref(),
                     backend_override,
@@ -594,7 +601,16 @@ async fn scan_text(
                 let backend_recovery = outcome
                     .recovery
                     .as_ref()
-                    .map(backend_recovery_status_from_receipt);
+                    .map(backend_recovery_status_from_receipt)
+                    .or_else(|| {
+                        selection.autoroute_recovery.as_ref().map(|recovery| {
+                            autoroute_state_recovery_status(
+                                std::slice::from_ref(&chunk),
+                                selection.backend,
+                                recovery,
+                            )
+                        })
+                    });
                 scanner.clear_fragment_cache();
                 Ok((
                     outcome.per_chunk.into_iter().flatten().collect(),
@@ -707,7 +723,7 @@ async fn scan_path(
     );
     let res = tokio::task::spawn_blocking(move || -> Result<ScanOutput> {
         let (chunks, source_coverage_gaps) = daemon_scan_path_chunks(&resolved_owned)?;
-        if chunks.is_empty() {
+        if chunks.iter().all(|chunk| chunk.data.is_empty()) {
             return Ok((Vec::new(), telemetry.drain(), source_coverage_gaps, None));
         }
         let (matches, backend_recovery) = keyhog_scanner::telemetry::with_scan_telemetry(
@@ -741,7 +757,12 @@ async fn scan_path(
                 let backend_recovery = outcome
                     .recovery
                     .as_ref()
-                    .map(backend_recovery_status_from_receipt);
+                    .map(backend_recovery_status_from_receipt)
+                    .or_else(|| {
+                        selection.autoroute_recovery.as_ref().map(|recovery| {
+                            autoroute_state_recovery_status(&chunks, selection.backend, recovery)
+                        })
+                    });
                 scanner.clear_fragment_cache();
                 let mut per_chunk = outcome.per_chunk;
                 crate::inline_suppression::attach_inline_suppression_context(
@@ -830,6 +851,34 @@ fn backend_recovery_status_from_receipt(
     }
 }
 
+fn autoroute_state_recovery_status(
+    chunks: &[Chunk],
+    recovery_backend: ScanBackend,
+    recovery: &crate::orchestrator::AutorouteStateRecovery,
+) -> BackendRecoveryStatus {
+    let recovered_ranges = chunks
+        .iter()
+        .enumerate()
+        .filter(|(_, chunk)| !chunk.data.is_empty())
+        .map(|(chunk_index, chunk)| RecoveredInputRangeStatus {
+            chunk_index,
+            byte_start: 0,
+            byte_end: chunk.data.len(),
+        })
+        .collect::<Vec<_>>();
+    BackendRecoveryStatus {
+        failed_backend: "autoroute-invalid".to_string(),
+        recovery_backend: recovery_backend.label().to_string(),
+        recovered_chunks: recovered_ranges.len(),
+        recovered_bytes: recovered_ranges
+            .iter()
+            .map(|range| (range.byte_end - range.byte_start) as u64)
+            .sum(),
+        recovered_ranges,
+        reason: recovery.reason.clone(),
+    }
+}
+
 fn daemon_scan_path_chunks(path: &Path) -> Result<(Vec<Chunk>, SourceCoverageGaps)> {
     let _coverage_guard = DAEMON_SOURCE_COVERAGE_LOCK
         .lock()
@@ -882,6 +931,56 @@ fn source_coverage_gaps_since(before: keyhog_sources::SkipCounts) -> SourceCover
             .archive_duplicate_scan_unavailable
             .saturating_sub(before.archive_duplicate_scan_unavailable),
         git_lfs_pointer: after.git_lfs_pointer.saturating_sub(before.git_lfs_pointer),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn autoroute_state_recovery_receipt_covers_every_nonempty_daemon_chunk() {
+        let chunks = vec![
+            Chunk {
+                data: "first".into(),
+                metadata: ChunkMetadata::default(),
+            },
+            Chunk {
+                data: String::new().into(),
+                metadata: ChunkMetadata::default(),
+            },
+            Chunk {
+                data: "second-secret".into(),
+                metadata: ChunkMetadata::default(),
+            },
+        ];
+        let recovery = crate::orchestrator::AutorouteStateRecovery {
+            reason: "missing proof".to_string(),
+            announce: true,
+        };
+
+        let status = autoroute_state_recovery_status(&chunks, ScanBackend::CpuFallback, &recovery);
+
+        assert_eq!(status.failed_backend, "autoroute-invalid");
+        assert_eq!(status.recovery_backend, "cpu-fallback");
+        assert_eq!(status.recovered_chunks, 2);
+        assert_eq!(status.recovered_bytes, 18);
+        assert_eq!(
+            status.recovered_ranges,
+            vec![
+                RecoveredInputRangeStatus {
+                    chunk_index: 0,
+                    byte_start: 0,
+                    byte_end: 5,
+                },
+                RecoveredInputRangeStatus {
+                    chunk_index: 2,
+                    byte_start: 0,
+                    byte_end: 13,
+                },
+            ]
+        );
+        assert_eq!(status.reason, "missing proof");
     }
 }
 

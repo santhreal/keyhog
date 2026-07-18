@@ -14,10 +14,9 @@
 //!   * the credential is redacted to `AK...YA`, never the full key;
 //!   * an invalid `--detectors` fails with exit code 2 regardless of `--quiet`.
 //!
-//! Host-independence: every scanning invocation forces `--backend cpu`. An
-//! uncalibrated binary's `watch` fails closed on autoroute, so `--backend cpu`
-//! is what lets a finding print AND guarantees the CPU path on any host (no
-//! accelerator assumption). Readiness is gated on observable output (the banner
+//! Host-independence: every scanning invocation forces `--backend cpu`, which
+//! guarantees the CPU path on any host without depending on autoroute state or
+//! accelerator availability. Readiness is gated on observable output (the banner
 //! for noisy mode; a stdout finding for quiet mode), never a fixed sleep.
 
 use std::io::{BufRead, BufReader, Read};

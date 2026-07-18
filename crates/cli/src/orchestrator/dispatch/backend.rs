@@ -5,17 +5,16 @@
 //! Backend choice splits by *when* it runs, never by guessing:
 //!
 //! - [`CachedBackendRouter`] drives normal scans. It only reads install-time
-//!   calibration evidence, zero benchmarks, zero writes. A bucket the
-//!   installer never measured is an [`AutorouteRoutingError`], not a runtime
-//!   probe or a substitute backend.
+//!   calibration evidence, zero benchmarks, zero writes. Invalid evidence is
+//!   never called autoroute: the scan visibly replays through the scalar
+//!   correctness oracle and reports complete recovery with a repair command.
 //! - [`MeasuredBackendRouter`] drives explicit calibration (installer / backend
 //!   maintenance). It probes candidate backends, proves output parity against a
 //!   reference, times the survivors, and persists the fastest correct choice.
 //!
 //! Both honour an explicit `--backend` first; only then does
 //! [`sole_compiled_backend`] resolve a build that compiled exactly one backend
-//! (portable / single-feature). Neither path silently substitutes, a miss
-//! fails closed (Law 10).
+//! (portable / single-feature). Neither path silently substitutes.
 //!
 //! # Submodule map (one-way dependency DAG)
 //!
@@ -65,6 +64,7 @@ use keyhog_scanner::{CompiledScanner, Phase1AdmissionPlan};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// Canonical `(config digest, exact host digest, rendered workload key)`
@@ -72,6 +72,9 @@ use std::sync::{Arc, Mutex};
 /// a shared cache's older generation from proving this host's calibration.
 pub(crate) type AutorouteMeasurementObserver = Arc<Mutex<BTreeSet<(String, String, String)>>>;
 
+// v42: calibration trials are interleaved across peers and resolve only when
+// one route's 95% confidence interval is wholly faster than every peer backend.
+// Older sequential-trial rows could encode host drift as backend performance.
 // v41: phase-two Hyperscan is owned only by the measured SIMD route. Older
 // scalar and GPU rows included unreported SIMD work and are not comparable.
 // v40: SIMD timing adopts the same first-materialization plus warm-trial model
@@ -116,19 +119,23 @@ pub(crate) type AutorouteMeasurementObserver = Arc<Mutex<BTreeSet<(String, Strin
 // the top, per-resolved-config routing decisions under `configs` keyed by
 // config_digest, merge-on-save. Old single-config (v19 and earlier) caches are
 // rejected on the version gate and recalibrated.
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 41;
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 42;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_ACCELERATOR_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 
 fn backend_override_hint() -> String {
-    keyhog_scanner::hw_probe::BACKEND_OVERRIDE_VALUES.join("|")
+    keyhog_scanner::hw_probe::BACKEND_OVERRIDE_VALUES
+        .into_iter()
+        .filter(|value| *value != "auto")
+        .collect::<Vec<_>>()
+        .join("|")
 }
 
 /// Persistent calibrated backend router.
 ///
 /// Autoroute probes only in explicit calibration mode (installer / backend
-/// maintenance). Cache hits are zero-benchmark table lookups; cache misses in
-/// normal scans fail before scanning instead of guessing a substitute backend.
+/// maintenance). Cache hits are zero-benchmark table lookups; invalid state in
+/// normal scans is reported as scalar correctness recovery, never autoroute.
 pub(super) struct MeasuredBackendRouter {
     pattern_count: usize,
     decode_workload_plan: keyhog_scanner::decode::DecodeWorkloadPlan,
@@ -146,13 +153,15 @@ pub(super) struct MeasuredBackendRouter {
     cache_load_error: Option<String>,
     cache_dirty: bool,
     runtime_health: Option<RuntimeHealthIdentity>,
+    recovery_announced: bool,
 }
 
 /// Cache-only backend router for fused filesystem scans.
 ///
 /// This never benchmarks or writes decisions; it only consumes install-time
-/// calibration evidence. Missing buckets return an autoroute configuration
-/// error, keeping normal scans free of runtime probes and backend guesses.
+/// calibration evidence. Missing buckets use a visible scalar recovery, keeping
+/// normal scans free of runtime probes and backend guesses while preserving
+/// complete byte coverage.
 pub(crate) struct CachedBackendRouter {
     pattern_count: usize,
     decode_workload_plan: keyhog_scanner::decode::DecodeWorkloadPlan,
@@ -162,6 +171,7 @@ pub(crate) struct CachedBackendRouter {
     runtime_class: AutorouteRuntimeClass,
     runtime_faults: Mutex<HashMap<WorkloadKey, RuntimeRouteFault>>,
     runtime_health: Option<RuntimeHealthIdentity>,
+    recovery_announced: AtomicBool,
 }
 
 #[derive(Debug, Clone)]
@@ -188,6 +198,13 @@ pub(crate) struct BackendSelection {
     pub(crate) execution_route: keyhog_scanner::ScanExecutionRoute,
     pub(crate) recovery_plan: Option<BackendRecoveryPlan>,
     pub(crate) runtime_route: Option<RuntimeRouteIdentity>,
+    pub(crate) autoroute_recovery: Option<AutorouteStateRecovery>,
+}
+
+#[derive(Debug)]
+pub(crate) struct AutorouteStateRecovery {
+    pub(crate) reason: String,
+    pub(crate) announce: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -257,8 +274,9 @@ impl AutorouteRoutingError {
                  coverage: {coverage}.\n  \
                  cache: {cache_state}.\n  \
                  Decisions are scoped to this exact binary, host, detector corpus, resolved \
-                 scan config, and source class. Normal auto scans never benchmark, guess, or \
-                 substitute CPU/SIMD/GPU for a missing decision; pass an explicit \
+                 scan config, and source class. Normal auto scans never benchmark or guess: \
+                 they report invalid autoroute state and complete through scalar correctness \
+                 recovery, which is not an autoroute decision. Pass an explicit \
                  `--backend <{}>` for a one-off diagnostic scan.",
                 render_workload_key(&key),
                 runtime_class.label(),
@@ -420,6 +438,23 @@ fn sole_compiled_backend() -> Option<ScanBackend> {
     }
 }
 
+fn autoroute_state_recovery_selection(
+    scanner: &CompiledScanner,
+    phase1_plan: Phase1AdmissionPlan,
+    reason: String,
+    announce: bool,
+) -> BackendSelection {
+    let backend = ScanBackend::CpuFallback;
+    BackendSelection {
+        backend,
+        phase1_plan: Some(phase1_plan),
+        execution_route: scanner.execution_route_for_backend(backend),
+        recovery_plan: None,
+        runtime_route: None,
+        autoroute_recovery: Some(AutorouteStateRecovery { reason, announce }),
+    }
+}
+
 impl CachedBackendRouter {
     pub(crate) fn new(
         hw_caps: HardwareCaps,
@@ -477,6 +512,7 @@ impl CachedBackendRouter {
             runtime_class: AutorouteRuntimeClass::OneShot,
             runtime_faults: Mutex::new(runtime_faults),
             runtime_health,
+            recovery_announced: AtomicBool::new(false),
         }
     }
 
@@ -485,14 +521,23 @@ impl CachedBackendRouter {
         self
     }
 
+    pub(crate) fn autoroute_state_is_invalid(&self) -> bool {
+        sole_compiled_backend().is_none() && self.decisions.is_empty()
+    }
+
+    pub(crate) fn autoroute_has_quarantined_routes(&self) -> bool {
+        self.runtime_faults
+            .lock()
+            .map(|faults| !faults.is_empty())
+            .unwrap_or(true)
+    }
+
     /// Exact peers selected by at least one validated persistent-daemon
-    /// decision. Daemon readiness materializes this set only.
+    /// decision. Invalid autoroute state initializes only scalar recovery so
+    /// the daemon can become ready and report degraded routing per request.
     pub(crate) fn persistent_routes(&self) -> Result<Vec<ScanBackend>, AutorouteRoutingError> {
-        if sole_compiled_backend().is_none() && self.decisions.is_empty() {
-            return Err(AutorouteRoutingError::calibration_not_persisted(format!(
-                "daemon autoroute has no validated persistent workload decisions ({})",
-                autoroute_cache_state(&self.cache_path, &self.cache_load_error)
-            )));
+        if self.autoroute_state_is_invalid() {
+            return Ok(vec![ScanBackend::CpuFallback]);
         }
         let mut routes = Vec::new();
         for decision in self.decisions.values() {
@@ -531,6 +576,7 @@ impl CachedBackendRouter {
                 execution_route: scanner.execution_route_for_backend(forced),
                 recovery_plan: None,
                 runtime_route: None,
+                autoroute_recovery: None,
             });
         }
         if let Some(only) = sole_compiled_backend() {
@@ -540,16 +586,28 @@ impl CachedBackendRouter {
                 execution_route: scanner.execution_route_for_backend(only),
                 recovery_plan: None,
                 runtime_route: None,
+                autoroute_recovery: None,
             });
         }
         let phase1_plan = scanner.phase1_admission_plan(batch);
-        let key = workload_key(
+        let key = match workload_key(
             batch,
             self.pattern_count,
             phase1_plan.summary(),
             self.decode_workload_plan,
-        )
-        .map_err(AutorouteRoutingError::incomplete_workload_evidence)?;
+        ) {
+            Ok(key) => key,
+            Err(error) => {
+                let reason = AutorouteRoutingError::incomplete_workload_evidence(error).to_string();
+                let announce = !self.recovery_announced.swap(true, Ordering::Relaxed);
+                return Ok(autoroute_state_recovery_selection(
+                    scanner,
+                    phase1_plan,
+                    reason,
+                    announce,
+                ));
+            }
+        };
         if let Some(fault) = self
             .runtime_faults
             .lock()
@@ -559,19 +617,38 @@ impl CachedBackendRouter {
             .get(&key)
             .cloned()
         {
-            return Err(AutorouteRoutingError::runtime_route_unhealthy(
+            let reason = AutorouteRoutingError::runtime_route_unhealthy(
                 &key,
                 self.runtime_class,
                 &fault,
+            )
+            .to_string();
+            let announce = !self.recovery_announced.swap(true, Ordering::Relaxed);
+            return Ok(autoroute_state_recovery_selection(
+                scanner,
+                phase1_plan,
+                reason,
+                announce,
             ));
         }
-        let route = resolve_persisted_route(
+        let route = match resolve_persisted_route(
             &self.decisions,
             key.clone(),
             self.runtime_class,
             &self.cache_path,
             &self.cache_load_error,
-        )?;
+        ) {
+            Ok(route) => route,
+            Err(error) => {
+                let announce = !self.recovery_announced.swap(true, Ordering::Relaxed);
+                return Ok(autoroute_state_recovery_selection(
+                    scanner,
+                    phase1_plan,
+                    error.to_string(),
+                    announce,
+                ));
+            }
+        };
         Ok(BackendSelection {
             backend: route.backend,
             phase1_plan: Some(phase1_plan),
@@ -582,6 +659,7 @@ impl CachedBackendRouter {
                 self.runtime_class,
             )?,
             runtime_route: Some(RuntimeRouteIdentity { key }),
+            autoroute_recovery: None,
         })
     }
 
@@ -635,8 +713,9 @@ impl CachedBackendRouter {
     }
 }
 
-/// Resolve an exact workload bucket against the persisted decision table and
-/// fail closed on any miss. ONE owner for the lookup contract shared by
+/// Resolve an exact workload bucket against the persisted decision table.
+/// A miss becomes visible scalar recovery at the router boundary. ONE owner for
+/// the lookup contract shared by
 /// [`CachedBackendRouter::choose`] and the non-calibration branch of
 /// [`MeasuredBackendRouter::choose`], neither router may infer a backend from
 /// neighbouring measurements.
@@ -770,6 +849,7 @@ impl MeasuredBackendRouter {
             cache_load_error,
             cache_dirty: false,
             runtime_health,
+            recovery_announced: false,
         }
     }
 
@@ -786,6 +866,7 @@ impl MeasuredBackendRouter {
                 execution_route: scanner.execution_route_for_backend(forced),
                 recovery_plan: None,
                 runtime_route: None,
+                autoroute_recovery: None,
             });
         }
         if let Some(only) = sole_compiled_backend() {
@@ -795,22 +876,45 @@ impl MeasuredBackendRouter {
                 execution_route: scanner.execution_route_for_backend(only),
                 recovery_plan: None,
                 runtime_route: None,
+                autoroute_recovery: None,
             });
         }
         let phase1_plan = scanner.phase1_admission_plan(batch);
-        let key = workload_key(
+        let key = match workload_key(
             batch,
             self.pattern_count,
             phase1_plan.summary(),
             self.decode_workload_plan,
-        )
-        .map_err(AutorouteRoutingError::incomplete_workload_evidence)?;
+        ) {
+            Ok(key) => key,
+            Err(error) if !self.calibration_mode => {
+                let reason = AutorouteRoutingError::incomplete_workload_evidence(error).to_string();
+                let announce = !std::mem::replace(&mut self.recovery_announced, true);
+                return Ok(autoroute_state_recovery_selection(
+                    scanner,
+                    phase1_plan,
+                    reason,
+                    announce,
+                ));
+            }
+            Err(error) => {
+                return Err(AutorouteRoutingError::incomplete_workload_evidence(error));
+            }
+        };
         if !self.calibration_mode {
             if let Some(fault) = self.runtime_faults.get(&key) {
-                return Err(AutorouteRoutingError::runtime_route_unhealthy(
+                let reason = AutorouteRoutingError::runtime_route_unhealthy(
                     &key,
                     AutorouteRuntimeClass::OneShot,
                     fault,
+                )
+                .to_string();
+                let announce = !std::mem::replace(&mut self.recovery_announced, true);
+                return Ok(autoroute_state_recovery_selection(
+                    scanner,
+                    phase1_plan,
+                    reason,
+                    announce,
                 ));
             }
         }
@@ -834,20 +938,33 @@ impl MeasuredBackendRouter {
                     )?
                 },
                 runtime_route: Some(RuntimeRouteIdentity { key: key.clone() }),
+                autoroute_recovery: None,
             });
         }
 
         if !self.calibration_mode {
-            // Not calibrating: behave like the cache-only router. Every miss is
-            // an invalid autoroute state; neighbouring measurements are not
-            // evidence for this workload identity.
-            let route = resolve_persisted_route(
+            // A miss remains an invalid autoroute state: neighbouring evidence
+            // is never reused. The caller receives an explicitly marked scalar
+            // recovery so every byte is scanned without disguising it as a
+            // fastest-route decision.
+            let route = match resolve_persisted_route(
                 &self.decisions,
                 key.clone(),
                 AutorouteRuntimeClass::OneShot,
                 &self.cache_path,
                 &self.cache_load_error,
-            )?;
+            ) {
+                Ok(route) => route,
+                Err(error) => {
+                    let announce = !std::mem::replace(&mut self.recovery_announced, true);
+                    return Ok(autoroute_state_recovery_selection(
+                        scanner,
+                        phase1_plan,
+                        error.to_string(),
+                        announce,
+                    ));
+                }
+            };
             return Ok(BackendSelection {
                 backend: route.backend,
                 phase1_plan: Some(phase1_plan),
@@ -858,6 +975,7 @@ impl MeasuredBackendRouter {
                     AutorouteRuntimeClass::OneShot,
                 )?,
                 runtime_route: Some(RuntimeRouteIdentity { key }),
+                autoroute_recovery: None,
             });
         }
         self.host_profile
@@ -907,6 +1025,7 @@ impl MeasuredBackendRouter {
             execution_route: route.execution_route(),
             recovery_plan: None,
             runtime_route: None,
+            autoroute_recovery: None,
         })
     }
 

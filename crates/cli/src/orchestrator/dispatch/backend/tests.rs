@@ -850,10 +850,10 @@ fn valid_decision_for_host(host: &AutorouteHostProfile) -> AutorouteDecision {
             Some(timing(20)),
             has(ScanBackend::GpuCuda).then(|| timing(30)),
             has(ScanBackend::GpuWgpu).then(|| timing(40)),
-            Some(timing(12)),
-            Some(timing(20)),
-            has(ScanBackend::GpuCuda).then(|| timing(30)),
-            has(ScanBackend::GpuWgpu).then(|| timing(40)),
+            Some(timing(1_012)),
+            Some(timing(1_020)),
+            has(ScanBackend::GpuCuda).then(|| timing(1_030)),
+            has(ScanBackend::GpuWgpu).then(|| timing(1_040)),
         ),
     )
 }
@@ -2354,10 +2354,8 @@ fn multi_config_cache_upserts_same_bucket_without_duplicating() {
     );
 }
 
-// Exact measured equality is the only case where engagement overhead decides.
-// Confidence overlap with unequal medians is covered separately below.
 #[test]
-fn exact_median_tie_persists_lowest_overhead_backend() {
+fn exact_tie_is_inconclusive_and_cannot_be_persisted() {
     let dir = tempfile::TempDir::new().expect("tempdir for tie calibration");
     let path = dir.path().join("tie-autoroute-cache.json");
     let digest = 0x0FF1_CE00_0FF1_CE00u64;
@@ -2365,18 +2363,18 @@ fn exact_median_tie_persists_lowest_overhead_backend() {
     let host = test_host(Some("NVIDIA GeForce RTX 5090"));
     let key = test_workload_key();
 
-    // SimdCpu and the GPU route measure identically (20ms). Their medians are
-    // exactly equal, so the lower-engagement SimdCpu route wins.
+    // SimdCpu and the GPU route measure identically (20ms). No timing evidence
+    // proves either peer fastest, regardless of engagement overhead.
     let tie_to_simd =
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 20, None, Some(20));
     assert_eq!(
         tie_to_simd.resolved_routing_backend(),
-        Some(ScanBackend::SimdCpu),
-        "a SimdCpu/GPU tie must resolve to the lowest-overhead route (SimdCpu)"
+        None,
+        "an exact timing tie cannot prove one fastest route"
     );
     let mut decisions = HashMap::new();
     decisions.insert(key.clone(), tie_to_simd);
-    save_autoroute_cache(
+    let error = save_autoroute_cache(
         &path,
         digest,
         test_rules_digest(),
@@ -2384,34 +2382,42 @@ fn exact_median_tie_persists_lowest_overhead_backend() {
         &host,
         &decisions,
     )
-    .expect("an exact measured tie must persist the engagement tie-break");
-    let loaded =
-        load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host).unwrap();
-    assert_eq!(
-        loaded, decisions,
-        "tied decision must round-trip through the cache"
-    );
-
-    // The same exact median tie naming the higher-overhead GPU must be rejected.
-    let mut wrong = HashMap::new();
-    wrong.insert(
-        key.clone(),
-        AutorouteDecision::new(ScanBackend::GpuWgpu, 8 * 1024 * 1024, 1, 20, None, Some(20)),
-    );
-    let err = save_autoroute_cache(
-        &path,
-        digest,
-        test_rules_digest(),
-        config_digest,
-        &host,
-        &wrong,
-    )
-    .expect_err("an exact tie that names the higher-overhead backend must be rejected")
+    .expect_err("an exact tie must not become a persisted autoroute decision")
     .to_string();
     assert!(
-        err.contains("does not match measured-median resolution"),
-        "median-resolution rejection should name the contract, got {err:?}"
+        error.contains("no confidence-separated fastest one-shot backend"),
+        "proof rejection should name the missing separated winner, got {error:?}"
     );
+}
+
+#[test]
+fn equivalent_plans_do_not_invalidate_a_proven_fastest_backend() {
+    let timing = |ms| BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS);
+    let decision = AutorouteDecision::from_peer_timing_evidence(
+        ScanBackend::SimdCpu,
+        8 * 1024 * 1024,
+        1,
+        7,
+        1,
+        route_timings(
+            timing(10),
+            Some(timing(30)),
+            None,
+            None,
+            Some(timing(10)),
+            Some(timing(30)),
+            None,
+            None,
+        ),
+    );
+
+    let selected = decision
+        .resolved_routing_route()
+        .expect("same-backend plan equivalence must not erase backend proof");
+    assert_eq!(selected.backend, ScanBackend::SimdCpu);
+    assert!(!selected.phase2_plain_localizer);
+    assert!(!selected.phase2_keyword_localizer);
+    assert!(decision.has_separated_fastest_route());
 }
 
 #[test]
@@ -2465,7 +2471,7 @@ fn calibration_rejects_a_recovery_backend_crossover_inside_one_workload_class() 
 }
 
 #[test]
-fn overlapping_confidence_selects_fastest_measured_median_not_backend_rank() {
+fn overlapping_confidence_produces_no_autoroute_decision() {
     let simd_timing = BackendTimingEvidence::from_trial_ns(vec![
         18_000_000, 20_000_000, 20_000_000, 20_000_000, 20_000_000, 20_000_000, 22_000_000,
     ])
@@ -2495,8 +2501,8 @@ fn overlapping_confidence_selects_fastest_measured_median_not_backend_rank() {
     assert_eq!(decision.gpu_ms(), Some(19));
     assert_eq!(
         decision.resolved_routing_backend(),
-        Some(ScanBackend::GpuWgpu),
-        "confidence overlap is inconclusive, not permission to prefer SIMD over the faster measured median"
+        None,
+        "a lower measured median does not prove a fastest route when confidence overlaps"
     );
 }
 
@@ -3075,6 +3081,7 @@ fn measured_router_clears_dirty_after_successful_cache_save() {
         cache_load_error: None,
         cache_dirty: true,
         runtime_health: None,
+        recovery_announced: false,
     };
 
     router
@@ -3138,6 +3145,7 @@ fn measured_router_drop_does_not_persist_dirty_cache() {
             cache_load_error: None,
             cache_dirty: true,
             runtime_health: None,
+            recovery_announced: false,
         };
     }
 
@@ -3197,6 +3205,7 @@ fn measured_router_commit_discards_unmeasured_stale_decisions() {
         cache_load_error: None,
         cache_dirty: true,
         runtime_health: None,
+        recovery_announced: false,
     };
 
     router
@@ -3255,6 +3264,7 @@ fn calibration_mode_remeasures_loaded_cache_decisions_before_reuse() {
         cache_load_error: None,
         cache_dirty: false,
         runtime_health: None,
+        recovery_announced: false,
     };
 
     assert_eq!(
@@ -3307,7 +3317,7 @@ fn calibration_envelope_retains_agreeing_points_and_rejects_a_crossover() {
         1_000_000, 12_000_000, 12_000_000, 12_000_000, 12_000_000, 12_000_000, 20_000_000,
     ])
     .expect("valid CPU confidence fixture");
-    stable
+    let overlap_error = stable
         .merge_calibration_point(AutorouteDecision::from_timing_evidence(
             ScanBackend::SimdCpu,
             14 * 1024 * 1024,
@@ -3318,10 +3328,10 @@ fn calibration_envelope_retains_agreeing_points_and_rejects_a_crossover() {
             Some(overlapping_cpu),
             None,
         ))
-        .expect("an overlapping point with the same measured winner remains valid evidence");
+        .expect_err("an inconclusive point cannot enter a routable workload class");
     assert!(
-        !stable.has_separated_fastest_route(),
-        "class confidence is separated only when every retained point is separated"
+        overlap_error.contains("does not resolve one one-shot route"),
+        "inconclusive point rejection must name the missing route proof: {overlap_error}"
     );
 
     let error = stable
@@ -3340,7 +3350,7 @@ fn calibration_envelope_retains_agreeing_points_and_rejects_a_crossover() {
 
 #[test]
 #[cfg(feature = "simd")]
-fn cached_router_loads_persisted_decision_and_fails_loud_on_missing_bucket() {
+fn cached_router_uses_visible_scalar_recovery_for_invalid_autoroute_state() {
     let path = std::env::temp_dir().join(format!(
         "keyhog_cached_router_hit_miss_{}.json",
         std::process::id()
@@ -3445,16 +3455,26 @@ fn cached_router_loads_persisted_decision_and_fails_loud_on_missing_bucket() {
     );
     let miss = router
         .choose_with_plan(&scanner, None, &miss_batch)
-        .map(|selection| selection.backend)
-        .expect_err("cache miss must fail loud instead of guessing a backend")
-        .to_string();
+        .expect("cache miss must preserve scan coverage through visible recovery");
+    assert_eq!(miss.backend, ScanBackend::CpuFallback);
+    let miss_recovery = miss
+        .autoroute_recovery
+        .expect("cache miss must be marked as autoroute-state recovery");
     assert!(
-        miss.contains("autoroute calibration required")
-            && miss.contains("--autoroute-calibrate --autoroute-gpu")
-            && miss.contains("coverage:")
-            && miss.contains("Normal auto scans never benchmark, guess, or substitute"),
-        "cache miss must preserve operator-visible autoroute contract; got {miss}"
+        miss_recovery
+            .reason
+            .contains("autoroute calibration required")
+            && miss_recovery
+                .reason
+                .contains("--autoroute-calibrate --autoroute-gpu")
+            && miss_recovery.reason.contains("coverage:")
+            && miss_recovery
+                .reason
+                .contains("complete through scalar correctness recovery"),
+        "cache miss must preserve operator-visible autoroute diagnosis; got {}",
+        miss_recovery.reason,
     );
+    assert!(miss_recovery.announce, "first recovery must warn");
     assert_eq!(
         router
             .choose_with_plan(&scanner, Some(ScanBackend::CpuFallback), &miss_batch)
@@ -3479,10 +3499,15 @@ fn cached_router_loads_persisted_decision_and_fails_loud_on_missing_bucket() {
     router
         .quarantine_recovered_route(&selected, &recovery)
         .expect("record exact route fault");
+    assert!(router.autoroute_has_quarantined_routes());
     let quarantined = router
         .choose_with_plan(&scanner, None, &hit_batch)
-        .expect_err("a recovered runtime fault must quarantine the exact route")
-        .to_string();
+        .expect("a quarantined route must recover visibly through the scalar oracle");
+    assert_eq!(quarantined.backend, ScanBackend::CpuFallback);
+    let quarantined = quarantined
+        .autoroute_recovery
+        .expect("quarantined route must carry recovery state")
+        .reason;
     assert!(
         quarantined.contains("autoroute decision is quarantined")
             && quarantined.contains("will not silently substitute another route")
@@ -3506,10 +3531,18 @@ fn cached_router_loads_persisted_decision_and_fails_loud_on_missing_bucket() {
         Ok(Some(path.clone())),
         &scanner,
     );
+    assert!(
+        restarted_router.autoroute_has_quarantined_routes(),
+        "daemon policy must expose a persisted quarantine after restart"
+    );
     let after_restart = restarted_router
         .choose_with_plan(&scanner, None, &hit_batch)
-        .expect_err("runtime quarantine must survive process-local router reconstruction")
-        .to_string();
+        .expect("runtime quarantine must recover after process-local router reconstruction");
+    assert_eq!(after_restart.backend, ScanBackend::CpuFallback);
+    let after_restart = after_restart
+        .autoroute_recovery
+        .expect("restarted quarantined route must carry recovery state")
+        .reason;
     assert!(
         after_restart.contains("autoroute decision is quarantined")
             && after_restart.contains("injected dispatch fault"),
@@ -3567,13 +3600,17 @@ fn cached_router_loads_persisted_decision_and_fails_loud_on_missing_bucket() {
     );
     let corrupt_health = corrupt_health_router
         .choose_with_plan(&scanner, None, &hit_batch)
-        .expect_err("corrupt runtime health must invalidate automatic routing")
-        .to_string();
+        .expect("corrupt runtime health must recover with complete coverage");
+    assert_eq!(corrupt_health.backend, ScanBackend::CpuFallback);
+    let corrupt_health = corrupt_health
+        .autoroute_recovery
+        .expect("corrupt runtime health must be marked as recovery")
+        .reason;
     assert!(
         corrupt_health.contains("cache or host identity was rejected")
             && corrupt_health.contains("runtime route-health artifact")
             && corrupt_health.contains("invalid JSON"),
-        "corrupt runtime health must fail closed with repair context; got {corrupt_health}"
+        "corrupt runtime health must recover visibly with repair context; got {corrupt_health}"
     );
     assert_eq!(
         corrupt_health_router
@@ -5377,7 +5414,7 @@ fn cpu_decision(backend: ScanBackend) -> AutorouteDecision {
 }
 
 fn gpu_decision() -> AutorouteDecision {
-    AutorouteDecision::new(ScanBackend::GpuWgpu, 8 * 1024 * 1024, 1, 20, None, Some(20))
+    AutorouteDecision::new(ScanBackend::GpuWgpu, 8 * 1024 * 1024, 1, 20, None, Some(5))
 }
 
 #[test]
@@ -5560,10 +5597,10 @@ fn daemon_warm_routes_come_only_from_persisted_selected_backends() {
                 Some(timing(40)),
                 Some(timing(8)),
                 Some(timing(16)),
-                Some(timing(30)),
-                Some(timing(40)),
-                Some(timing(8)),
-                Some(timing(16)),
+                Some(timing(1_030)),
+                Some(timing(1_040)),
+                Some(timing(1_008)),
+                Some(timing(1_016)),
             ),
         ),
     );
@@ -5576,6 +5613,7 @@ fn daemon_warm_routes_come_only_from_persisted_selected_backends() {
         runtime_class: AutorouteRuntimeClass::OneShot,
         runtime_faults: Mutex::new(HashMap::new()),
         runtime_health: None,
+        recovery_announced: AtomicBool::new(false),
     };
 
     assert_eq!(
@@ -5591,6 +5629,29 @@ fn daemon_warm_routes_come_only_from_persisted_selected_backends() {
             .expect("complete persisted routes"),
         vec![ScanBackend::GpuCuda],
         "CPU-selected rows and unused WGPU peers must not enter daemon warm-up"
+    );
+}
+
+#[test]
+fn daemon_without_valid_autoroute_evidence_initializes_scalar_recovery() {
+    let router = CachedBackendRouter {
+        pattern_count: 922,
+        decode_workload_plan: test_decode_workload_plan(),
+        decisions: HashMap::new(),
+        cache_path: Some(std::path::PathBuf::from("missing-autoroute.json")),
+        cache_load_error: Some("cache schema is stale".to_string()),
+        runtime_class: AutorouteRuntimeClass::OneShot,
+        runtime_faults: Mutex::new(HashMap::new()),
+        runtime_health: None,
+        recovery_announced: AtomicBool::new(false),
+    };
+
+    assert_eq!(
+        router
+            .persistent_routes()
+            .expect("invalid autoroute state must not prevent daemon readiness"),
+        vec![ScanBackend::CpuFallback],
+        "daemon readiness must initialize only the scalar correctness recovery route"
     );
 }
 
@@ -5938,10 +5999,10 @@ fn cuda_and_wgpu_are_independent_measured_candidates() {
             Some(timing(40)),
             Some(timing(10)),
             Some(timing(15)),
-            Some(timing(30)),
-            Some(timing(40)),
-            Some(timing(10)),
-            Some(timing(15)),
+            Some(timing(1_030)),
+            Some(timing(1_040)),
+            Some(timing(1_010)),
+            Some(timing(1_015)),
         ),
     );
     assert_eq!(
@@ -5972,10 +6033,10 @@ fn cuda_and_wgpu_are_independent_measured_candidates() {
             Some(timing(40)),
             Some(timing(16)),
             Some(timing(9)),
-            Some(timing(30)),
-            Some(timing(40)),
-            Some(timing(16)),
-            Some(timing(9)),
+            Some(timing(1_030)),
+            Some(timing(1_040)),
+            Some(timing(1_016)),
+            Some(timing(1_009)),
         ),
     );
     assert_eq!(
@@ -6073,7 +6134,7 @@ fn phase2_keyword_localizer_is_an_independent_measured_route_candidate() {
 
 #[cfg(feature = "default")]
 #[test]
-fn live_calibration_measures_both_gpu_driver_peers() {
+fn live_calibration_measures_every_gpu_peer_before_resolving_or_refusing() {
     let detector = keyhog_core::DetectorSpec {
         id: "gpu-peer-calibration".into(),
         name: "GPU peer calibration".into(),
@@ -6112,21 +6173,35 @@ fn live_calibration_measures_both_gpu_driver_peers() {
     }];
     let eligible = super::eligible_backend_labels(&scanner, true);
     let admission_plan = scanner.phase1_admission_plan(&sample);
-    let decision = super::calibration::calibrate_fastest_correct_backend(
+    let outcome = super::calibration::calibrate_fastest_correct_backend(
         &scanner,
         0,
         &sample,
         &eligible,
         Some(&admission_plan),
-    )
-    .expect("calibrate every scanner-owned eligible peer");
-    assert!(decision
-        .primary_point()
-        .baseline_timing_for_backend(ScanBackend::GpuCuda)
-        .is_some());
-    assert!(decision
-        .primary_point()
-        .baseline_timing_for_backend(ScanBackend::GpuWgpu)
-        .is_some());
-    assert!(decision.backend().is_some());
+    );
+    match outcome {
+        Ok(decision) => {
+            assert!(decision
+                .primary_point()
+                .baseline_timing_for_backend(ScanBackend::GpuCuda)
+                .is_some());
+            assert!(decision
+                .primary_point()
+                .baseline_timing_for_backend(ScanBackend::GpuWgpu)
+                .is_some());
+            assert!(decision.backend().is_some());
+        }
+        Err(error) => {
+            let diagnostic = error.to_string();
+            assert!(
+                diagnostic.contains("calibration timing is inconclusive")
+                    && diagnostic.contains(ScanBackend::GpuCuda.label())
+                    && diagnostic.contains(ScanBackend::GpuWgpu.label())
+                    && diagnostic.contains("median_ns=")
+                    && diagnostic.contains("ci95_ns=["),
+                "an honest refusal must prove that both live GPU peers were measured and expose why no winner exists: {diagnostic}"
+            );
+        }
+    }
 }

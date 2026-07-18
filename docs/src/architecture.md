@@ -161,7 +161,7 @@ inspectable.
 |---|---|---|
 | One in-process scan | `keyhog scan ... --daemon=off` | Full orchestrator; persisted one-shot autoroute evidence or an explicit diagnostic `--backend`. |
 | Large tree, multiple inputs, Git, cloud, container, binary, or live verification | In-process orchestrator | Fused or coalesced batches; the daemon is not eligible even when it is running. |
-| Repeated eligible stdin or single-file scans on Unix | `keyhog daemon start`, then `keyhog scan ...` | Client checks request eligibility and peer identity; the ready daemon uses warm-runtime autoroute evidence. |
+| Repeated eligible stdin or single-file scans on Unix | `keyhog daemon start`, then `keyhog scan ...` | Client checks request eligibility and peer identity; a calibrated daemon uses warm-runtime autoroute evidence, invalid startup state is labeled `autoroute-recovery`, and persisted quarantine is labeled `autoroute-degraded`. Every affected request reports scalar recovery. |
 | Continuous local directory monitoring | `keyhog watch` | Foreground watcher with its own compiled scanner; not the daemon and not reported by `daemon status`. |
 
 Persisted backend selection lives under
@@ -191,12 +191,12 @@ silently weaken detection parity.
 KeyHog separates trust failures from recoverable execution failures:
 
 - **Complete:** the selected backend covered the input normally.
-- **Complete after recovery:** an automatically selected accelerator failed,
-  KeyHog warned visibly, retained completed dispatches, scanned only the exact
-  unprocessed ranges through the scalar recovery path, and counted the recovered
-  ranges, chunks, and bytes. The result is complete, but the affected autoroute
-  workload identity is quarantined in a bounded runtime-health artifact until
-  successful recalibration clears that exact identity.
+- **Complete after recovery:** an automatically selected accelerator failed or
+  autoroute evidence was invalid. KeyHog warned visibly and counted every
+  recovered range, chunk, and byte. Runtime faults retain completed dispatches
+  and replay only unprocessed ranges through a proven recovery peer; invalid
+  selection state scans the batch through the scalar correctness oracle. The
+  result is complete, but it is not a healthy autoroute claim.
 - **Incomplete:** some requested bytes or transformation could not be recovered.
   The scan may report findings from covered input, but it cannot report clean.
 - **Fatal trust or explicit-contract failure:** invalid policy, corrupt or

@@ -256,8 +256,7 @@ fn watch_detects_changes_under_every_root() {
     let canon_a = root_a.path().canonicalize().expect("canonical a");
     let canon_b = root_b.path().canonicalize().expect("canonical b");
 
-    // An explicit backend is required: an uncalibrated binary's watch fails
-    // closed on autoroute, so `--backend cpu` is what lets a finding print.
+    // Pin CPU so this watch behavior test is independent of host calibration.
     // No `--quiet`: the `watching:` banner is the readiness signal.
     let mut child = Command::new(binary())
         .arg("watch")

@@ -1,11 +1,11 @@
-//! E2E: `--backend auto` fails loud when no autoroute calibration covers the workload.
+//! E2E: invalid autoroute state completes through visible scalar recovery.
 
 use crate::e2e::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 
 #[test]
-fn scan_autoroute_missing_calibration_exits_two() {
+fn scan_autoroute_missing_calibration_recovers_complete_input() {
     let dir = TempDir::new().expect("tempdir");
     let fixture = dir.path().join("clean.rs");
     std::fs::write(&fixture, "fn main() {}\n").expect("write fixture");
@@ -31,15 +31,17 @@ fn scan_autoroute_missing_calibration_exits_two() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert_eq!(
         output.status.code(),
-        Some(2),
-        "missing autoroute calibration must be a config/user error; stderr={stderr}"
+        Some(0),
+        "a clean scan must complete through visible scalar recovery; stderr={stderr}"
     );
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "[]");
     assert!(
         stderr.contains("autoroute calibration required")
             && stderr.contains("No autoroute cache file exists")
-            && stderr.contains("install.sh --calibrate")
-            && stderr.contains("install.ps1 -Calibrate"),
-        "stderr must explain the missing autoroute calibration and fix; stderr={stderr}"
+            && stderr.contains("scalar correctness recovery")
+            && stderr.contains("scan coverage is complete")
+            && stderr.contains("keyhog calibrate-autoroute"),
+        "stderr must identify invalid autoroute state, exact recovery, and repair; stderr={stderr}"
     );
 }
 

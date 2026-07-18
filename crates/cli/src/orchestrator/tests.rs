@@ -278,14 +278,12 @@ fn persistent_runtime_uses_configured_autoroute_cache_path() {
             .expect("empty chunks have a backend-independent exact result"),
         Vec::<keyhog_core::RawMatch>::new()
     );
-    let error = runtime
+    let findings = runtime
         .scan_chunk(&chunk)
-        .expect_err("an uncalibrated multi-backend runtime must fail closed");
-
-    assert!(
-        error
-            .to_string()
-            .contains(&cache_path.display().to_string()),
-        "routing error must name the configured cache path; got {error}"
+        .expect("an uncalibrated persistent runtime must complete through scalar recovery");
+    assert_eq!(
+        findings,
+        Vec::<keyhog_core::RawMatch>::new(),
+        "scalar recovery must preserve the clean result"
     );
 }

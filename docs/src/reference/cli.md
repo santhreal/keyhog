@@ -243,7 +243,7 @@ keyhog watch                      # watch the current directory
 | `[PATH]...` | directory path(s) | `.` | Watch one or more directory trees. Nested and duplicate roots fold into their covering parent. |
 | `--detectors <PATH>` | directory path | installed or embedded corpus | Replace corpus discovery with an explicit detector TOML directory. An explicitly named missing or invalid directory is an error. |
 | `--cache-dir <DIR>` | directory path | unset | Override the Hyperscan compiled-database cache directory. |
-| `--backend <BACKEND>` | `auto`, `cpu` (`cpu-fallback`), `simd` (`simd-regex`), `gpu-cuda` (`gpu-cuda-region-presence`), or `gpu-wgpu` (`gpu-wgpu-region-presence`) | `auto` | Use persisted autoroute evidence or force one diagnostic backend. Missing, stale, or runtime-quarantined evidence in `auto` mode fails closed. The aliases are accepted spellings of the same backend, not separate routing candidates. |
+| `--backend <BACKEND>` | `auto`, `cpu` (`cpu-fallback`), `simd` (`simd-regex`), `gpu-cuda` (`gpu-cuda-region-presence`), or `gpu-wgpu` (`gpu-wgpu-region-presence`) | `auto` | Use persisted autoroute evidence or force one diagnostic backend. Missing, stale, invalid, or runtime-quarantined evidence triggers visible scalar recovery with complete byte coverage and a recalibration receipt. The aliases are accepted spellings of the same backend, not separate routing candidates. |
 | `--quiet` | flag | off | Print findings while suppressing watcher startup and status lines. |
 
 ## `keyhog hook <install|uninstall>`
@@ -415,8 +415,9 @@ actual KeyHog-owned width.
 
 `scan-system` always runs its own in-process scanner, whether the daemon is
 active or inactive. It uses persisted autoroute evidence and has no explicit
-backend override. Missing, stale, or incomplete evidence fails closed before
-scanning.
+backend override. Missing, stale, or incomplete evidence warns and completes
+through the scalar correctness oracle; the report is marked
+`complete_after_recovery` rather than claiming a calibrated route.
 
 ## `keyhog completion <bash|zsh|fish|powershell|elvish>`
 

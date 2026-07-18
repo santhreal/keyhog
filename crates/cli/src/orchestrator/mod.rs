@@ -3,7 +3,8 @@
 mod allowlist;
 mod dispatch;
 pub(crate) use dispatch::{
-    automatic_gpu_recovery_allowed, record_completed_backend_recovery, scan_selected_batch,
+    automatic_gpu_recovery_allowed, record_completed_backend_recovery,
+    record_completed_remote_autoroute_state_recovery, scan_selected_batch, AutorouteStateRecovery,
     BackendRecoveryPlan, COALESCED_CHUNK_SCAN_CEILING_BYTES, COALESCED_CHUNK_SCAN_CEILING_MB,
 };
 mod postprocess;
@@ -300,9 +301,9 @@ pub(crate) struct DefaultScanRuntime {
     /// repeating intent.
     worker_threads: usize,
     /// Explicit backend forced by the caller (e.g. `keyhog watch --backend cpu`).
-    /// `None` => use the persisted autoroute decision (which requires
-    /// calibration). When `Some`, the per-file scan never consults the autoroute
-    /// cache, so the runtime works on an uncalibrated binary.
+    /// `None` => use persisted autoroute evidence, with visible scalar recovery
+    /// when that state is invalid. When `Some`, the per-file scan never consults
+    /// the autoroute cache, so the runtime works on an uncalibrated binary.
     backend_override: Option<keyhog_scanner::ScanBackend>,
     /// True only for an unforced production autoroute under the automatic GPU
     /// policy. Explicit, required, and calibration dispatches are hard
@@ -552,6 +553,9 @@ impl DefaultScanRuntime {
         if let Some(recovery) = outcome.recovery.as_ref() {
             self.router
                 .quarantine_recovered_route(&selection, recovery)?;
+        }
+        if let Some(recovery) = selection.autoroute_recovery.as_ref() {
+            dispatch::record_completed_autoroute_state_recovery(batch, backend, recovery);
         }
         Ok(outcome.per_chunk.into_iter().flatten().collect())
     }

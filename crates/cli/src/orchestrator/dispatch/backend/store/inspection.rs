@@ -160,10 +160,10 @@ pub(crate) struct AutorouteDecisionInspection {
     pub(crate) candidate_receipts: Vec<AutorouteCandidateReceiptInspection>,
     pub(crate) route_timings: Vec<AutorouteRouteTimingInspection>,
     /// Whether the one-shot route's 95% confidence interval is entirely below
-    /// every competitor. When false, medians decide among non-dominated routes.
+    /// every route of every peer backend. Valid decisions satisfy this proof.
     pub(crate) confidence_separated: bool,
     pub(crate) selection_basis: &'static str,
-    /// One-shot representative-time margin to the next candidate.
+    /// One-shot representative-time margin to the next peer backend.
     pub(crate) selected_margin_ns: Option<u128>,
     /// Warm backend derived for a preinitialized persistent daemon.
     pub(crate) daemon_backend: String,
@@ -226,7 +226,7 @@ fn selection_basis(confidence_separated: bool) -> &'static str {
     if confidence_separated {
         "separated-95pct-confidence"
     } else {
-        "lowest-measured-median-among-overlapping-confidence"
+        "inconclusive-no-route"
     }
 }
 

@@ -330,8 +330,9 @@ calibrate-autoroute` rejects any peer whose canonical match identity differs
 from the reference. It records the first real GPU dispatch plus warm trials: an
 ordinary process resolves against the cold-aware GPU cost, while a daemon that
 initialized its engines before readiness resolves against the warm GPU
-evidence. A missing or invalid decision is an error; automatic routing never
-silently substitutes another backend.
+evidence. A missing or invalid decision is not autoroute evidence: KeyHog warns,
+uses the scalar correctness oracle to complete the scan, and records the exact
+recovered byte coverage and repair command.
 
 When comparing settings, record the effective config, detector digest, input
 identity, backend, host/accelerator identity, and complete findings, not only

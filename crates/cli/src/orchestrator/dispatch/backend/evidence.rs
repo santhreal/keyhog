@@ -44,7 +44,7 @@ fn selected_route_margin_ns(
     let selected_time = candidates.iter().find(|(route, _)| *route == selected)?.1;
     candidates
         .iter()
-        .filter(|(route, _)| *route != selected)
+        .filter(|(route, _)| route.backend != selected.backend)
         .map(|(_, timing_ns)| *timing_ns)
         .min()
         .map(|next_time| next_time.saturating_sub(selected_time))
@@ -268,7 +268,7 @@ impl AutorouteCalibrationPoint {
         };
         intervals
             .iter()
-            .filter(|(route, _)| *route != selected)
+            .filter(|(route, _)| route.backend != selected.backend)
             .all(|(_, competitor_interval)| selected_interval.high_ns < competitor_interval.low_ns)
     }
 
@@ -281,28 +281,6 @@ impl AutorouteCalibrationPoint {
         persistent_runtime: bool,
         excluded_backend: Option<ScanBackend>,
     ) -> Option<MeasuredRoute> {
-        self.statistically_non_dominated_routes(persistent_runtime, excluded_backend)
-            .into_iter()
-            .filter_map(|route| {
-                self.route_median_ns(route, persistent_runtime)
-                    .map(|median_ns| (route, median_ns))
-            })
-            .min_by_key(|(route, median_ns)| {
-                (
-                    *median_ns,
-                    backend_overhead_rank(route.backend),
-                    route.phase2_plain_localizer,
-                    route.phase2_keyword_localizer,
-                )
-            })
-            .map(|(route, _)| route)
-    }
-
-    fn statistically_non_dominated_routes(
-        &self,
-        persistent_runtime: bool,
-        excluded_backend: Option<ScanBackend>,
-    ) -> Vec<MeasuredRoute> {
         let intervals = self
             .route_confidence_intervals_for(persistent_runtime)
             .into_iter()
@@ -310,13 +288,24 @@ impl AutorouteCalibrationPoint {
             .collect::<Vec<_>>();
         intervals
             .iter()
-            .filter(|(route, ci)| {
-                !intervals
-                    .iter()
-                    .any(|(other, other_ci)| other != route && other_ci.high_ns < ci.low_ns)
+            .filter(|(route, interval)| {
+                intervals.iter().all(|(competitor_route, competitor)| {
+                    competitor_route.backend == route.backend
+                        || interval.high_ns < competitor.low_ns
+                })
             })
-            .map(|(route, _)| *route)
-            .collect()
+            .filter_map(|(route, _)| {
+                self.route_median_ns(*route, persistent_runtime)
+                    .map(|median_ns| (*route, median_ns))
+            })
+            .min_by_key(|(route, median_ns)| {
+                (
+                    *median_ns,
+                    route.phase2_plain_localizer,
+                    route.phase2_keyword_localizer,
+                )
+            })
+            .map(|(route, _)| route)
     }
 
     fn route_median_ns(&self, route: MeasuredRoute, persistent_runtime: bool) -> Option<u128> {
@@ -455,11 +444,12 @@ impl AutorouteDecision {
     ) -> Self {
         let simd_timing = BackendTimingEvidence::constant_ms(simd_ms, AUTOROUTE_CALIBRATION_TRIALS);
         // Production calibration always measures scalar CPU. Test fixtures
-        // therefore default an omitted explicit value to the SIMD duration;
-        // missing-candidate tests remove the field after construction.
+        // default an omitted explicit value to a clearly slower scalar route so
+        // a nominal SIMD decision remains confidence-separated; missing-candidate
+        // tests remove the field after construction.
         let cpu_duration_ms = match cpu_ms {
             Some(duration_ms) => duration_ms,
-            None => simd_ms,
+            None => simd_ms.saturating_add(1_000),
         };
         let cpu_timing = Some(BackendTimingEvidence::constant_ms(
             cpu_duration_ms,
@@ -799,13 +789,11 @@ impl AutorouteDecision {
     /// mode has its own route and timing), so a cache that names any other route is rejected as
     /// tampered or non-deterministic.
     ///
-    /// Policy:
-    /// - If one route is provably fastest (its 95% CI lies entirely below every
-    ///   competitor's), that route wins.
-    /// - Otherwise confidence overlap is explicitly inconclusive, not proof of
-    ///   equivalence. Choose the lowest measured median among the statistically
-    ///   non-dominated candidates. Engagement overhead breaks only an exact
-    ///   median tie, never an overlap whose measured medians differ.
+    /// A route resolves only when its 95% interval lies entirely below every
+    /// route of every peer backend. Equivalent plans within that backend are not
+    /// fake backend competitors; the lowest measured-median proven plan wins.
+    /// Cross-backend overlap is incomplete evidence, never permission to persist
+    /// a measured-median guess as the fastest backend.
     pub(super) fn resolved_routing_route(&self) -> Option<MeasuredRoute> {
         let selected = self
             .calibration_points
@@ -864,10 +852,8 @@ impl AutorouteDecision {
             .then_some(selected)
     }
 
-    /// True iff exactly one route is provably fastest. Equivalently, the
-    /// resolved winner is separated from every competitor, its 95% CI lies
-    /// entirely below theirs. When false, confidence intervals overlap and the
-    /// measured-median selection rule is operator-visible as inconclusive.
+    /// True iff one backend is provably fastest. The resolved route's 95% CI
+    /// lies entirely below every route belonging to every peer backend.
     pub(super) fn has_separated_fastest_route(&self) -> bool {
         self.resolved_routing_route().is_some_and(|winner| {
             self.selected_route_has_non_overlapping_confidence_for(winner, false)
@@ -881,16 +867,28 @@ impl AutorouteDecision {
             self.selected_route_has_non_overlapping_confidence_for(winner, true)
         })
     }
-}
 
-/// Engagement-overhead rank used only when representative measured medians are
-/// exactly equal. Confidence-interval overlap alone never invokes this ranking.
-fn backend_overhead_rank(backend: ScanBackend) -> u8 {
-    match backend {
-        ScanBackend::SimdCpu => 0,
-        ScanBackend::CpuFallback => 1,
-        ScanBackend::GpuCuda | ScanBackend::GpuWgpu => 2,
-        _ => 3,
+    pub(super) fn confidence_diagnostic(&self, persistent_runtime: bool) -> String {
+        let Some(point) = self.calibration_points.first() else {
+            return "no measured calibration point".to_string();
+        };
+        point
+            .route_confidence_intervals_for(persistent_runtime)
+            .into_iter()
+            .filter_map(|(route, interval)| {
+                point
+                    .route_median_ns(route, persistent_runtime)
+                    .map(|median_ns| {
+                        format!(
+                            "{} median_ns={median_ns} ci95_ns=[{},{}]",
+                            render_measured_route(route),
+                            interval.low_ns,
+                            interval.high_ns,
+                        )
+                    })
+            })
+            .collect::<Vec<_>>()
+            .join("; ")
     }
 }
 

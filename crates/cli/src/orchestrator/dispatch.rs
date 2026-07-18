@@ -16,6 +16,7 @@ use anyhow::Result;
 pub(crate) use backend::backend_requires_coalesced_batch_pipeline_for_test;
 pub(crate) use backend::inspect_autoroute_cache;
 pub(crate) use backend::AutorouteReadiness;
+pub(crate) use backend::AutorouteStateRecovery;
 pub(crate) use backend::BackendRecoveryPlan;
 use backend::{is_gpu_backend, AutorouteRoutingError, BackendSelection, MeasuredBackendRouter};
 pub(crate) use backend::{AutorouteMeasurementObserver, CachedBackendRouter};
@@ -145,6 +146,7 @@ impl CoalescedBatchRouter {
                 execution_route: scanner.execution_route_for_backend(*backend),
                 recovery_plan: None,
                 runtime_route: None,
+                autoroute_recovery: None,
             }),
             Self::Measured(router) => router.choose_with_plan(scanner, None, batch),
         }
@@ -282,6 +284,9 @@ impl CoalescedScannerWorker {
         if let Some(recovery) = outcome.recovery.as_ref() {
             self.router
                 .quarantine_recovered_route(&selection, recovery)?;
+        }
+        if let Some(recovery) = selection.autoroute_recovery.as_ref() {
+            record_completed_autoroute_state_recovery(batch, chosen_backend, recovery);
         }
         append_scanned_batch_findings(
             findings,
@@ -487,6 +492,90 @@ pub(crate) fn record_completed_backend_recovery(receipt: &keyhog_scanner::Backen
         reason = %receipt.reason,
         "automatic backend fault recovered with complete byte coverage",
     );
+}
+
+pub(crate) fn record_completed_autoroute_state_recovery(
+    batch: &[Chunk],
+    recovery_backend: ScanBackend,
+    recovery: &AutorouteStateRecovery,
+) {
+    let recovered_chunks = batch.iter().filter(|chunk| !chunk.data.is_empty()).count();
+    let recovered_bytes = batch
+        .iter()
+        .map(|chunk| chunk.data.len() as u64)
+        .sum::<u64>();
+    record_autoroute_state_recovery_summary(
+        recovery_backend,
+        recovered_chunks,
+        recovered_chunks,
+        recovered_bytes,
+        &recovery.reason,
+    );
+    if recovery.announce {
+        eprintln!(
+            "keyhog: WARNING: autoroute state is invalid; scalar correctness recovery scanned {recovered_chunks} chunk(s), {recovered_bytes} byte(s); scan coverage is complete; repair: keyhog calibrate-autoroute"
+        );
+        eprintln!("keyhog: autoroute evidence: {}", recovery.reason);
+        tracing::warn!(
+            target: "keyhog::routing",
+            recovery_backend = recovery_backend.label(),
+            chunks = recovered_chunks,
+            bytes = recovered_bytes,
+            reason = %recovery.reason,
+            "invalid autoroute state recovered with complete byte coverage",
+        );
+    }
+}
+
+pub(crate) fn record_completed_remote_autoroute_state_recovery(
+    recovery_backend: ScanBackend,
+    recovered_ranges: usize,
+    recovered_chunks: usize,
+    recovered_bytes: u64,
+    reason: String,
+) {
+    record_autoroute_state_recovery_summary(
+        recovery_backend,
+        recovered_ranges,
+        recovered_chunks,
+        recovered_bytes,
+        &reason,
+    );
+    eprintln!(
+        "keyhog: WARNING: daemon autoroute state is invalid; scalar correctness recovery scanned {recovered_chunks} chunk(s), {recovered_bytes} byte(s); scan coverage is complete; repair: keyhog calibrate-autoroute"
+    );
+    eprintln!("keyhog: autoroute evidence: {reason}");
+    tracing::warn!(
+        target: "keyhog::routing",
+        recovery_backend = recovery_backend.label(),
+        ranges = recovered_ranges,
+        chunks = recovered_chunks,
+        bytes = recovered_bytes,
+        reason = %reason,
+        "daemon invalid autoroute state recovered with complete byte coverage",
+    );
+}
+
+fn record_autoroute_state_recovery_summary(
+    recovery_backend: ScanBackend,
+    recovered_ranges: usize,
+    recovered_chunks: usize,
+    recovered_bytes: u64,
+    reason: &str,
+) {
+    crate::BACKEND_RECOVERY_EVENTS.fetch_add(1, Ordering::Relaxed);
+    crate::BACKEND_RECOVERED_CHUNKS.fetch_add(recovered_chunks, Ordering::Relaxed);
+    crate::BACKEND_RECOVERED_BYTES.fetch_add(recovered_bytes, Ordering::Relaxed);
+    crate::record_backend_recovery_summary(keyhog_core::ScanBackendRecoverySummary {
+        events: 1,
+        failed_backend: "autoroute-invalid".to_string(),
+        recovery_backend: recovery_backend.label().to_string(),
+        recovered_ranges,
+        recovered_chunks,
+        recovered_bytes,
+        reason: reason.to_string(),
+        repair_command: "keyhog calibrate-autoroute".to_string(),
+    });
 }
 
 fn batch_has_no_scan_bytes(batch: &[Chunk]) -> bool {

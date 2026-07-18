@@ -33,10 +33,9 @@
 //!     host with the Hyperscan/SIMD prefilter, `--backend simd`/`simd-regex`
 //!     produce a byte-identical finding set to `cpu`; on a host WITHOUT it they
 //!     FAIL CLOSED at exit 3 ("silent cpu-fallback execution is forbidden")
-//!     rather than silently degrade. `--backend auto` with no calibration either
-//!     fails closed (exit 2, "autoroute calibration required") or completes a
-//!     scan matching cpu (exit 1), never a silently-wrong result. These tests
-//!     assert that disjunction so they are green on accel and no-accel hosts.
+//!     rather than silently degrade. `--backend auto` with no calibration warns,
+//!     completes through reported scalar correctness recovery, and matches the
+//!     explicit CPU finding set without claiming an autoroute decision.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -485,12 +484,8 @@ fn auto_backend_without_calibration_never_returns_a_silently_wrong_result() {
     // `--backend auto` routes through the persisted autoroute cache. With the
     // cache disabled (`--autoroute-cache off`) there is no cached decision, so
     // auto must NEVER return a silently-wrong answer (Law 10). The host-agnostic
-    // contract is a disjunction:
-    //   (a) FAIL CLOSED, exit 2 with "autoroute calibration required", OR
-    //   (b) COMPLETE with a correct scan, exit 1 and the SAME finding set as
-    //       an explicit cpu run (auto legitimately resolved a real engine).
-    // What is forbidden is exit 1 with a dropped/empty finding set, or exit 0
-    // on a file that plainly carries a secret.
+    // contract is visible complete scalar recovery with the SAME finding set
+    // as an explicit CPU run. The recovery is not reported as autoroute.
     let home = cache_home();
     let (_d, path) = fixture("leak.env", &format!("GITHUB_TOKEN={GHP}\n"));
 
@@ -502,24 +497,22 @@ fn auto_backend_without_calibration_never_returns_a_silently_wrong_result() {
     );
 
     let (_c, out_cpu, _) = scan(home.path(), &path, Some("cpu"), &[]);
-    if code == Some(2) {
-        assert!(
-            err.contains("autoroute calibration required"),
-            "fail-closed auto must tell the operator to calibrate; stderr={err}"
-        );
-    } else {
-        assert_eq!(
-            code,
-            Some(1),
-            "uncalibrated auto must either fail closed (2) or complete (1), \
-             never exit 0 on a file with a secret; stdout={out} stderr={err}"
-        );
-        assert_eq!(
-            ordered_findings(&out),
-            ordered_findings(&out_cpu),
-            "a completing auto run must match cpu's finding set exactly (no silent drop)"
-        );
-    }
+    assert_eq!(
+        code,
+        Some(1),
+        "uncalibrated auto must retain the finding through recovery; stdout={out} stderr={err}"
+    );
+    assert!(
+        err.contains("autoroute calibration required")
+            && err.contains("scalar correctness recovery")
+            && err.contains("scan coverage is complete"),
+        "recovery must be operator-visible with repair context; stderr={err}"
+    );
+    assert_eq!(
+        ordered_findings(&out),
+        ordered_findings(&out_cpu),
+        "recovered auto must match cpu's finding set exactly"
+    );
 }
 
 #[test]

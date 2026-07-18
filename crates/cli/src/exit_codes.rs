@@ -82,7 +82,7 @@ pub const DEFINITIONS: &[ExitCodeDefinition] = &[
     ExitCodeDefinition {
         code: EXIT_REQUIRE_GPU_UNMET,
         label: "Selected GPU unavailable",
-        help: "Selected GPU unavailable (--require-gpu, explicit gpu, or autoroute gpu dispatch)",
+        help: "Required GPU unavailable (--require-gpu, explicit gpu, or proof-selected daemon GPU before readiness)",
         scan_reachable: true,
     },
     ExitCodeDefinition {

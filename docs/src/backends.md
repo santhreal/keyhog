@@ -78,12 +78,13 @@ Each backend is measured with phase-two plain-pattern localization disabled and
 enabled. The persisted route owns both choices, so concurrent scans never mutate
 scanner-global tuning and decode or recovery replays retain the selected route.
 
-Among parity-correct candidates, routing uses representative measured medians,
-never a lucky fastest trial. A fully separated 95% confidence interval is the
-strongest result. Overlapping intervals are disclosed as inconclusive rather
-than mislabeled as proof of equal performance; KeyHog then selects the lowest
-measured median among the non-dominated candidates, using engagement overhead
-only for an exact median tie. Autoroute inspection prints this selection basis.
+Among parity-correct candidates, routing uses complete trial distributions,
+never a lucky fastest trial. The selected route's 95% confidence interval must
+lie below every route belonging to every peer backend. Equivalent localization
+plans inside the winning backend are not fake backend competitors; the lowest
+measured-median plan that preserves cross-backend proof is selected. Any
+cross-backend overlap is inconclusive and produces no autoroute decision.
+Autoroute inspection prints this selection basis.
 
 `scan_coalesced_with_backend` already includes extraction, decode, built-in
 suppression, confidence, and scanner postprocessing. Autoroute parity therefore
@@ -169,18 +170,20 @@ so cleaning a tree after compiling dirty source forces a rebuild before the
 artifact can qualify. Autoroute still requires calibration on the deployment
 host for the exact workload class.
 
-## When automatic routing refuses to scan
+## When automatic routing has no decision
 
 Missing, stale, malformed, or incomplete evidence is an invalid automatic
-route. KeyHog exits with a configuration error and prints the missing workload
-identity plus the calibration command. Run `keyhog calibrate-autoroute` for the
-core ladder or the installer calibration for source-specific probes. Use an
-explicit backend only when you intentionally want a diagnostic override.
+route. KeyHog prints the missing workload identity and calibration command,
+completes the bytes through the scalar correctness oracle, and marks structured
+output `complete_after_recovery`. Run `keyhog calibrate-autoroute` for the core
+ladder or the installer calibration for source-specific probes. Use an explicit
+backend only when you intentionally want a diagnostic override.
 
 Calibration candidates and explicit backend overrides remain hard execution
 contracts. During a normal automatic scan, a runtime GPU fault is warned and
 only exact unprocessed intervals from the same stable snapshot are scanned
-through the scalar recovery path. Completed GPU dispatches remain GPU-owned;
+through the confidence-separated fastest remaining peer. Completed GPU
+dispatches remain GPU-owned;
 recovered ranges, chunks, and bytes are reported. The exact workload route is
 then quarantined in a bounded runtime-health artifact instead of silently
 selecting another backend. That artifact is separate from immutable timing

@@ -189,9 +189,10 @@ as unavailable; install the tool and rerun `install.sh --calibrate` or
 Calibration is identity-bound to the KeyHog binary/build, detector and routing
 rules, resolved scan configuration, host/backend capabilities, source class,
 and workload bucket. An absent, stale, malformed, or incomplete decision is
-therefore not permission to choose a convenient backend. An automatic scan
-fails closed with exit `2` and an actionable recalibration message. Inspect the
-current state without changing it with:
+therefore not permission to claim a convenient backend as fastest. An automatic
+scan warns, completes every byte through the scalar correctness oracle, and
+records `complete_after_recovery` plus an actionable recalibration command.
+Inspect the current state without changing it with:
 
 ```sh
 keyhog backend --autoroute

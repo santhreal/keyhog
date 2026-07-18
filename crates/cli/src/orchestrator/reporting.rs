@@ -346,7 +346,7 @@ pub(crate) fn report_backend_summary(
         line
     } else {
         format!(
-            "{line}; recovered {recovered_chunks} chunk(s), {recovered_bytes} byte(s) after {recovery_events} accelerator fault(s)"
+            "{line}; recovered {recovered_chunks} chunk(s), {recovered_bytes} byte(s) across {recovery_events} routing recovery event(s)"
         )
     };
     let palette = terminal_palette(ansi, false);

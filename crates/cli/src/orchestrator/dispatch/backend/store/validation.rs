@@ -203,13 +203,13 @@ fn validate_decision_route_evidence_at(
         )?;
     }
     let Some(resolved) = decision.resolved_routing_route() else {
-        return Err("cache decision changes fastest one-shot route across measured points".into());
+        return Err(
+            "cache decision has no confidence-separated fastest one-shot backend across every measured point"
+                .into(),
+        );
     };
     if selected_route != resolved {
-        if decision.has_separated_fastest_route() {
-            return Err("selected route is not the fastest persisted timing evidence".into());
-        }
-        return Err("selected route does not match measured-median resolution among statistically non-dominated routes".into());
+        return Err("selected route is not the fastest persisted timing evidence".into());
     }
     if selected_route.backend.is_gpu()
         && decision
@@ -221,7 +221,10 @@ fn validate_decision_route_evidence_at(
         );
     }
     let Some(persistent_route) = decision.resolved_persistent_route() else {
-        return Err("cache decision changes fastest daemon route across measured points".into());
+        return Err(
+            "cache decision has no confidence-separated fastest daemon backend across every measured point"
+                .into(),
+        );
     };
     if persistent_route.backend.is_gpu()
         && decision
