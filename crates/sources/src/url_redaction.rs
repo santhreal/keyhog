@@ -130,7 +130,6 @@ pub(crate) fn redact_url(url: &str) -> Cow<'_, str> {
     Cow::Owned(out)
 }
 
-
 #[cfg(test)]
 #[path = "../tests/unit/url_redaction.rs"]
 mod tests;

@@ -134,15 +134,15 @@ fn phase2_gpu_catalog_loss_is_operator_visible() {
         "phase-2 GPU regex-DFA catalog incompleteness must be visible to normal CLI stderr, not only tracing"
     );
     assert!(
-        src.contains("candidate budget reached: selected")
-            && src.contains("no lowerable prefixless always-active pattern")
-            && src.contains("prefixless always-active pattern(s) uncovered after lowering"),
-        "candidate budget, no-lowerable-catalog, and uncovered-pattern catalog gaps must describe the lost GPU evidence"
+        !src.contains("candidate budget reached: selected")
+            && src.contains("no lowerable ASCII prefixless always-active pattern")
+            && src.contains("ASCII prefixless always-active pattern(s) uncovered after lowering"),
+        "the retired fixed candidate budget must stay absent and every real lowering gap must describe the lost GPU evidence"
     );
     assert!(
         src.matches("report_phase2_gpu_catalog_loss(format!(")
             .count()
-            >= 3,
+            >= 2,
         "every phase-2 GPU catalog incompleteness branch must route through the visible reporter"
     );
 }

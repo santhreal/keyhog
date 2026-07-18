@@ -634,9 +634,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let gpu_candidates = scanner.gpu_backend_candidates();
         for candidate in &gpu_candidates {
             println!(
-                "gpu-peer backend={} acquired={} eligible={} software={} driver={} version={} device={} runtime={} error={}",
+                "gpu-peer backend={} available={} eligible={} software={} driver={} version={} device={} runtime={} error={}",
                 candidate.backend.label(),
-                candidate.acquired,
+                candidate.available,
                 candidate.is_eligible(),
                 candidate.is_software,
                 visible_peer_field(candidate.driver_id, "unavailable"),
@@ -1135,7 +1135,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .iter()
                     .map(|candidate| GpuPeerArtifact {
                         backend: candidate.backend.label().to_owned(),
-                        acquired: candidate.acquired,
+                        acquired: candidate.available,
                         driver: visible_peer_field(candidate.driver_id, "unavailable").to_owned(),
                         driver_version: visible_peer_field(candidate.driver_version, "unavailable")
                             .to_owned(),

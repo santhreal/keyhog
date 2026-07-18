@@ -210,31 +210,6 @@ pub enum ConfigError {
     Parse(String),
 }
 
-/// Shipped default keyword lists for [`ScanConfig`], loaded once from the Tier-B
-/// data file `rules/config-keywords.toml` so the defaults have exactly one owner
-/// (they used to be inline `vec![...]` literals in `ScanConfig::default`).
-#[derive(serde::Deserialize)]
-struct ConfigKeywords {
-    known_prefixes: Vec<String>,
-    secret_keywords: Vec<String>,
-    test_keywords: Vec<String>,
-    placeholder_keywords: Vec<String>,
-}
-
-fn parse_config_keywords(raw: &str) -> Result<ConfigKeywords, String> {
-    toml::from_str::<ConfigKeywords>(raw).map_err(|error| error.to_string())
-}
-
-static CONFIG_KEYWORDS: std::sync::LazyLock<ConfigKeywords> = std::sync::LazyLock::new(|| {
-    match parse_config_keywords(include_str!("../rules/config-keywords.toml")) {
-        Ok(keywords) => keywords,
-        Err(error) => panic!(
-            "rules/config-keywords.toml is invalid: {error}. \
-             Fix the Tier-B config keyword defaults."
-        ),
-    }
-});
-
 impl Default for ScanConfig {
     fn default() -> Self {
         Self {
@@ -266,10 +241,22 @@ impl Default for ScanConfig {
             max_decode_bytes: 512 * 1024,
             max_matches_per_chunk: 1000,
             scan_comments: false,
-            known_prefixes: CONFIG_KEYWORDS.known_prefixes.clone(),
-            secret_keywords: CONFIG_KEYWORDS.secret_keywords.clone(),
-            test_keywords: CONFIG_KEYWORDS.test_keywords.clone(),
-            placeholder_keywords: CONFIG_KEYWORDS.placeholder_keywords.clone(),
+            known_prefixes: crate::embedded::CONFIG_KNOWN_PREFIXES
+                .iter()
+                .map(|value| (*value).to_string())
+                .collect(),
+            secret_keywords: crate::embedded::CONFIG_SECRET_KEYWORDS
+                .iter()
+                .map(|value| (*value).to_string())
+                .collect(),
+            test_keywords: crate::embedded::CONFIG_TEST_KEYWORDS
+                .iter()
+                .map(|value| (*value).to_string())
+                .collect(),
+            placeholder_keywords: crate::embedded::CONFIG_PLACEHOLDER_KEYWORDS
+                .iter()
+                .map(|value| (*value).to_string())
+                .collect(),
         }
     }
 }

@@ -17,6 +17,7 @@ fn select_backend_test_gpu_override() {
         total_memory_mb: Some(8192),
         io_uring_available: false,
         hyperscan_available: true,
+        hyperscan_runtime_identity: None,
     };
     assert_eq!(select_backend(&caps, 0, 0), ScanBackend::GpuWgpu);
     clear_test_backend_override();

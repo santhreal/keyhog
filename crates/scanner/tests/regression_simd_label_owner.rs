@@ -135,6 +135,7 @@ fn caps(has_avx512: bool, has_avx2: bool, has_neon: bool) -> HardwareCaps {
         total_memory_mb: Some(16384),
         io_uring_available: false,
         hyperscan_available: false,
+        hyperscan_runtime_identity: None,
     }
 }
 

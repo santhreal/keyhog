@@ -65,6 +65,10 @@ pub struct DedupedMatch {
     pub additional_locations: Vec<MatchLocation>,
     /// Confidence score (0.0 - 1.0) combining entropy, keyword proximity, file type, etc.
     pub confidence: Option<f64>,
+    /// Shannon entropy measured for the credential, when the detection path
+    /// computed it. `None` means entropy was not part of that path.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entropy: Option<f64>,
 }
 
 impl std::fmt::Debug for DedupedMatch {
@@ -89,6 +93,7 @@ impl std::fmt::Debug for DedupedMatch {
             .field("primary_location", &self.primary_location)
             .field("additional_locations", &self.additional_locations)
             .field("confidence", &self.confidence)
+            .field("entropy", &self.entropy)
             .finish()
     }
 }
@@ -112,6 +117,7 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
                     primary_location: m.location,
                     additional_locations: Vec::new(),
                     confidence: m.confidence,
+                    entropy: m.entropy,
                 }
             })
             .collect();
@@ -200,6 +206,7 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
                     }
                     merge_companions(&mut existing.companions, matched.companions);
                     existing.confidence = max_confidence(existing.confidence, matched.confidence);
+                    existing.entropy = max_entropy(existing.entropy, matched.entropy);
                     continue;
                 }
                 // Drop locations that are the same (file_path, line) as the
@@ -226,6 +233,7 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
                 }
                 merge_companions(&mut existing.companions, matched.companions);
                 existing.confidence = max_confidence(existing.confidence, matched.confidence);
+                existing.entropy = max_entropy(existing.entropy, matched.entropy);
             }
             None => {
                 let mut seen = IndexSet::with_capacity(1);
@@ -254,6 +262,7 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
                         primary_location: matched.location,
                         additional_locations: Vec::new(),
                         confidence: matched.confidence,
+                        entropy: matched.entropy,
                     },
                 );
                 // groups.insert on a fresh key appends at the tail, so the new
@@ -317,37 +326,10 @@ where
     map.end()
 }
 
-/// `/{decoder_name}` source suffixes, loaded once from the Tier-B data file
-/// `rules/decoder-source-suffixes.toml`. Single owner shared with the scanner's
-/// decode registry (see the file header): a decoder missing here would leave its
-/// aliases uncollapsed as duplicate findings.
-static DECODER_SUFFIXES: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    #[derive(serde::Deserialize)]
-    struct DecoderNames {
-        decoder_names: Vec<String>,
-    }
-    let raw = include_str!("../rules/decoder-source-suffixes.toml");
-    match toml::from_str::<DecoderNames>(raw) {
-        Ok(parsed) if !parsed.decoder_names.is_empty() => parsed
-            .decoder_names
-            .iter()
-            .map(|n| format!("/{n}"))
-            .collect(),
-        Ok(_) => panic!(
-            "rules/decoder-source-suffixes.toml is empty; it must list every \
-             default decoder name so match dedup can collapse decoder aliases."
-        ),
-        Err(error) => panic!(
-            "rules/decoder-source-suffixes.toml is invalid: {error}. \
-             Fix the Tier-B decoder-suffix list."
-        ),
-    }
-});
-
 fn is_decoder_location(location: &MatchLocation) -> bool {
-    DECODER_SUFFIXES
+    crate::embedded::DECODER_SOURCE_SUFFIXES
         .iter()
-        .any(|suffix| location.source.ends_with(suffix))
+        .any(|suffix| location.source.ends_with(*suffix))
 }
 
 fn effective_credential_hash(credential: &str, credential_hash: CredentialHash) -> CredentialHash {
@@ -462,6 +444,7 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
                     .unwrap_or_else(|| "n/a".to_string()) // LAW10: display-only label for absent confidence in cross_detector evidence, no recall impact
             );
             winner.companions.entry(key).or_insert(value);
+            winner.entropy = max_entropy(winner.entropy, loser.entropy);
             merge_cross_detector_locations(&mut winner, &mut seen_locations, loser);
         }
         out.push(winner);
@@ -695,16 +678,6 @@ fn max_confidence(lhs: Option<f64>, rhs: Option<f64>) -> Option<f64> {
         (None, None) => None,
     }
 }
-    /// Shannon entropy measured for the credential, when the detection path
-    /// computed it. `None` means entropy was not part of that path.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub entropy: Option<f64>,
-            .field("entropy", &self.entropy)
-                    entropy: m.entropy,
-                    existing.entropy = max_entropy(existing.entropy, matched.entropy);
-                existing.entropy = max_entropy(existing.entropy, matched.entropy);
-                        entropy: matched.entropy,
-            winner.entropy = max_entropy(winner.entropy, loser.entropy);
 
 fn max_entropy(lhs: Option<f64>, rhs: Option<f64>) -> Option<f64> {
     match (lhs, rhs) {

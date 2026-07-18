@@ -260,7 +260,7 @@ fn corrected_primary_role_regressions_have_exact_backend_parity() {
     let acquired_gpu_backends: Vec<_> = scanner
         .gpu_backend_candidates()
         .into_iter()
-        .filter(|candidate| candidate.acquired)
+        .filter(|candidate| candidate.available)
         .map(|candidate| candidate.backend)
         .collect();
     assert!(

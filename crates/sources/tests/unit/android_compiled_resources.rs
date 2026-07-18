@@ -2,6 +2,20 @@ use super::*;
 use keyhog_core::{Chunk, Source, SourceCoverageGapKind, SourceError};
 use std::io::Write;
 
+fn split_chunk_results<'a>(
+    rows: &'a [Result<Chunk, SourceError>],
+) -> (Vec<&'a Chunk>, Vec<&'a SourceError>) {
+    let mut chunks = Vec::new();
+    let mut errors = Vec::new();
+    for row in rows {
+        match row {
+            Ok(chunk) => chunks.push(chunk),
+            Err(error) => errors.push(error),
+        }
+    }
+    (chunks, errors)
+}
+
 fn put_u16(bytes: &mut [u8], offset: usize, value: u16) {
     bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
 }
@@ -234,9 +248,8 @@ fn filesystem_apk_path_emits_xml_table_and_original_members_end_to_end() {
 
     let source = crate::filesystem::FilesystemSource::new(directory.path().to_path_buf());
     let rows: Vec<_> = source.chunks().collect();
-    let errors: Vec<_> = rows.iter().filter_map(|row| row.as_ref().err()).collect();
+    let (chunks, errors) = split_chunk_results(&rows);
     assert!(errors.is_empty(), "valid APK errors: {errors:?}");
-    let chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
     assert!(chunks.iter().any(|chunk| {
         chunk.metadata.source_type.as_ref() == "filesystem/archive/android-xml"
             && chunk.data.contains("sk_live_android_e2e")
@@ -259,7 +272,7 @@ fn utf8_binary_xml_emits_typed_provenance_and_keeps_raw_member_scan() {
         &[(1, 2)],
     );
     let rows = emit_archive_member("AndroidManifest.xml", xml);
-    let chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
+    let (chunks, _errors) = split_chunk_results(&rows);
     let typed = chunks
         .iter()
         .find(|chunk| chunk.metadata.source_type.as_ref() == "filesystem/archive/android-xml")
@@ -476,7 +489,7 @@ fn plain_xml_is_negative_and_only_uses_the_ordinary_member_path() {
         b"<config endpoint=\"https://example.test\"/>".to_vec(),
     );
     assert!(rows.iter().all(Result::is_ok));
-    let chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
+    let (chunks, _errors) = split_chunk_results(&rows);
     assert_eq!(chunks.len(), 1);
     assert_eq!(
         chunks[0].metadata.source_type.as_ref(),

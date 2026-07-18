@@ -108,6 +108,11 @@ fn unparseable_or_hostless_url_fails_closed() {
             "unparseable/hostless URL must fail closed: {bad:?}"
         );
     }
+
+    let hostless = TestApi
+        .check_url_against_spec("mailto:security@example.com", &spec)
+        .expect_err("a parseable URL without a host must be blocked");
+    assert_eq!(hostless, "blocked: verify URL has no host");
 }
 
 #[test]

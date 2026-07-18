@@ -52,23 +52,8 @@ impl GpuContext {
         Some((self.device_limits.max_buffer_size / (1024 * 1024)).min(SANE_CAP_MB))
     }
 
-    /// Human-readable GPU name from the adapter.
     pub(crate) fn gpu_name(&self) -> &str {
         &self.adapter_info.name
-    }
-
-    /// Stable-enough runtime identity for calibration caches: wgpu backend,
-    /// device type, PCI/vendor IDs where available, and driver strings.
-    pub(super) fn runtime_identity(&self) -> String {
-        format!(
-            "wgpu:{:?}:type={:?}:vendor={:04x}:device={:04x}:driver={}:info={}",
-            self.adapter_info.backend,
-            self.adapter_info.device_type,
-            self.adapter_info.vendor,
-            self.adapter_info.device,
-            self.adapter_info.driver,
-            self.adapter_info.driver_info
-        )
     }
 
     #[inline]
@@ -363,10 +348,6 @@ pub(crate) fn get_gpu() -> Option<&'static GpuContext> {
         ),
     })
     .as_ref()
-}
-
-pub(super) fn gpu_runtime_identity() -> Option<String> {
-    get_gpu().map(GpuContext::runtime_identity)
 }
 
 /// One-shot guard so a *runtime* GPU-MoE dispatch failure surfaces once per

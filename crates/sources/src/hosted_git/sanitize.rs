@@ -79,7 +79,6 @@ pub(crate) fn redact_with(
 #[cfg(test)]
 pub(crate) const REDACTION_FAILED_PLACEHOLDER_FOR_TEST: &str = REDACTION_FAILED_PLACEHOLDER;
 
-
 #[cfg(test)]
 #[path = "../../tests/unit/hosted_git_sanitize.rs"]
 mod tests;

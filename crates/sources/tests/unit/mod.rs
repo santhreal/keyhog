@@ -32,6 +32,7 @@ pub mod binary_sections_fat_macho;
 pub mod cloud;
 pub mod file_gate;
 pub mod filesystem;
+pub mod filesystem_filter;
 pub mod gates;
 pub mod git_diff;
 pub mod git_diff_head_worktree;
@@ -44,6 +45,7 @@ pub mod har;
 pub mod http;
 pub mod internal_contracts;
 pub mod lib;
+pub mod magic;
 #[cfg(any(
     feature = "git",
     feature = "docker",

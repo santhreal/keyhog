@@ -15,6 +15,7 @@ fn startup_banner_no_gpu() {
         total_memory_mb: Some(8192),
         io_uring_available: false,
         hyperscan_available: true,
+        hyperscan_runtime_identity: None,
     };
     let banner = startup_banner(&caps, 100, 200);
     assert!(banner.contains("GPU: none"));

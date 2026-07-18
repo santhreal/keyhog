@@ -39,6 +39,16 @@ pub mod testing {
     pub fn starts_with_python_pickle_protocol2_for_test(bytes: &[u8]) -> bool {
         crate::magic::starts_with_python_pickle_protocol2(bytes)
     }
+    /// [`crate::magic::starts_with_gzip`] (docker feature).
+    #[cfg(feature = "docker")]
+    pub fn starts_with_gzip_for_test(bytes: &[u8]) -> bool {
+        crate::magic::starts_with_gzip(bytes)
+    }
+    /// [`crate::magic::starts_with_zstd_frame`] (docker feature).
+    #[cfg(feature = "docker")]
+    pub fn starts_with_zstd_frame_for_test(bytes: &[u8]) -> bool {
+        crate::magic::starts_with_zstd_frame(bytes)
+    }
     /// [`crate::magic::starts_with_wasm_module`] (web feature).
     #[cfg(feature = "web")]
     pub fn starts_with_wasm_module_for_test(bytes: &[u8]) -> bool {

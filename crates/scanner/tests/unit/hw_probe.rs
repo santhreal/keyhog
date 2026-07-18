@@ -15,6 +15,7 @@ fn caps() -> HardwareCaps {
         total_memory_mb: Some(32 * 1024),
         io_uring_available: false,
         hyperscan_available: false,
+        hyperscan_runtime_identity: None,
     }
 }
 

@@ -63,7 +63,6 @@ pub(crate) fn read_to_cap_preserving_error(
     }
 }
 
-
 #[cfg(test)]
 #[path = "../tests/unit/capped_read.rs"]
 mod tests;

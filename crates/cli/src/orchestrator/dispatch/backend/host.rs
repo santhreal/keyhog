@@ -90,10 +90,13 @@ impl AutorouteHostProfile {
             has_avx512: caps.has_avx512,
             has_neon: caps.has_neon,
             hyperscan_available: caps.hyperscan_available,
-            hyperscan_runtime_identity: caps
-                .hyperscan_available
-                .then(keyhog_scanner::hw_probe::hyperscan_runtime_identity)
-                .flatten(),
+            hyperscan_runtime_identity: if caps.hyperscan_available {
+                caps.hyperscan_runtime_identity
+                    .clone()
+                    .or_else(keyhog_scanner::hw_probe::hyperscan_runtime_identity)
+            } else {
+                None
+            },
             gpu_name: gpu_device_identity,
             gpu_runtime_backend: (gpu_participates && acquired_peer_present)
                 .then(|| gpu_peer_identity.map(str::to_string))

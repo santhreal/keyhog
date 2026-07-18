@@ -717,7 +717,7 @@ fn github_org_rewrite_preserves_offsets_and_requires_real_repo_relative_path() {
     assert_eq!(rewritten.metadata.source_type.as_ref(), "github-org");
     assert_eq!(
         rewritten.metadata.path.as_deref(),
-        Some("santhreal/keyhog/src/secret.env")
+        Some("santhsecurity/keyhog/src/secret.env")
     );
     assert_eq!(rewritten.metadata.base_offset, 8192);
     assert_eq!(rewritten.metadata.base_line, 77);

@@ -20,6 +20,7 @@ fn select_backend_high_tier_large_file() {
         total_memory_mb: Some(65536),
         io_uring_available: true,
         hyperscan_available: true,
+        hyperscan_runtime_identity: None,
     };
     let solo = gpu_solo_bytes_for_tier(tier);
     // A high-tier solo-cap workload clears the GPU crossover. Asserted on the

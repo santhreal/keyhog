@@ -160,6 +160,10 @@ pub struct HardwareCaps {
     pub io_uring_available: bool,
     /// True when the `simd` feature is compiled in AND Hyperscan initialized.
     pub hyperscan_available: bool,
+    /// Runtime identity of the Hyperscan/Vectorscan library that produced these
+    /// capabilities. `None` when `hyperscan_available` is false or the identity
+    /// has not been probed yet.
+    pub hyperscan_runtime_identity: Option<String>,
 }
 
 static HW_PROBE: OnceLock<HardwareCaps> = OnceLock::new();
@@ -200,6 +204,9 @@ pub fn probe_hardware() -> &'static HardwareCaps {
         }
 
         let hyperscan_available = cfg!(feature = "simd");
+        let hyperscan_runtime_identity = hyperscan_available
+            .then(hyperscan_runtime_identity)
+            .flatten();
         let total_memory_mb = platform::detect_total_memory_mb();
         let io_uring_available = platform::detect_io_uring();
 
@@ -217,6 +224,7 @@ pub fn probe_hardware() -> &'static HardwareCaps {
             total_memory_mb,
             io_uring_available,
             hyperscan_available,
+            hyperscan_runtime_identity,
         };
 
         tracing::info!(

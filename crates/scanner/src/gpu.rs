@@ -28,6 +28,8 @@
 // unchanged; only the files moved (and gpu_moe_backend.rs/gpu_env.rs were
 // renamed to match their module names).
 #[cfg(feature = "gpu")]
+mod adapter_probe;
+#[cfg(feature = "gpu")]
 mod backend;
 #[cfg(feature = "gpu")]
 pub(crate) mod gpu_shader;
@@ -36,6 +38,9 @@ mod policy;
 pub use policy::*;
 mod self_test;
 pub use self_test::*;
+
+#[cfg(feature = "gpu")]
+pub(crate) use adapter_probe::gpu_adapter_probe;
 
 /// Split timers: accumulated wall time in feature extraction vs MoE scoring
 /// across all batch ML inference calls. Only the SCORING fraction is
@@ -223,24 +228,10 @@ pub fn gpu_available() -> bool {
     }
     #[cfg(feature = "gpu")]
     {
-        backend::get_gpu().is_some()
+        gpu_adapter_probe().is_some_and(|probe| !probe.is_software)
     }
     #[cfg(not(feature = "gpu"))]
     {
         false
-    }
-}
-
-pub(crate) fn gpu_runtime_identity() -> Option<String> {
-    if gpu_disabled_by_policy() {
-        return None;
-    }
-    #[cfg(feature = "gpu")]
-    {
-        backend::gpu_runtime_identity()
-    }
-    #[cfg(not(feature = "gpu"))]
-    {
-        None
     }
 }

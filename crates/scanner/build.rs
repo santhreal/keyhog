@@ -14,7 +14,9 @@ fn main() -> io::Result<()> {
             "CARGO_MANIFEST_DIR is not set. Fix: run the build through Cargo",
         )
     })?;
-    stamp_source_tree_state(Path::new(&manifest_dir))?;
+    let manifest_dir = Path::new(&manifest_dir);
+    stamp_source_tree_state(manifest_dir)?;
+    stamp_gpu_driver_versions(manifest_dir)?;
 
     let out_dir = env::var_os("OUT_DIR").ok_or_else(|| {
         io::Error::new(
@@ -96,6 +98,40 @@ fn main() -> io::Result<()> {
             rust_string(&summary),
         ),
     )?;
+    Ok(())
+}
+
+fn stamp_gpu_driver_versions(manifest_dir: &Path) -> io::Result<()> {
+    let workspace_manifest = manifest_dir.join("../..").join("Cargo.toml");
+    println!("cargo:rerun-if-changed={}", workspace_manifest.display());
+    let source = fs::read_to_string(&workspace_manifest)?;
+    let manifest = toml::from_str::<toml::Value>(&source).map_err(|error| {
+        invalid_data(format!(
+            "cannot parse workspace Cargo.toml for GPU driver identity: {error}"
+        ))
+    })?;
+    for (dependency, variable) in [
+        ("vyre-driver-cuda", "KEYHOG_VYRE_CUDA_VERSION"),
+        ("vyre-driver-wgpu", "KEYHOG_VYRE_WGPU_VERSION"),
+    ] {
+        let version = manifest
+            .get("workspace")
+            .and_then(|value| value.get("dependencies"))
+            .and_then(|value| value.get(dependency))
+            .and_then(|value| value.get("version"))
+            .and_then(toml::Value::as_str)
+            .ok_or_else(|| {
+                invalid_data(format!(
+                    "workspace dependency {dependency} must declare an exact version for autoroute identity"
+                ))
+            })?;
+        let exact = version.strip_prefix('=').ok_or_else(|| {
+            invalid_data(format!(
+                "workspace dependency {dependency} version {version:?} is not exact; use =x.y.z so autoroute identity is reproducible"
+            ))
+        })?;
+        println!("cargo:rustc-env={variable}={exact}");
+    }
     Ok(())
 }
 

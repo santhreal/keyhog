@@ -3,6 +3,19 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+#[derive(serde::Deserialize)]
+struct ConfigKeywords {
+    known_prefixes: Vec<String>,
+    secret_keywords: Vec<String>,
+    test_keywords: Vec<String>,
+    placeholder_keywords: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct DecoderNames {
+    decoder_names: Vec<String>,
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR")
         .map_err(|error| io::Error::other(format!("CARGO_MANIFEST_DIR is not set: {error}")))?;
@@ -54,6 +67,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .into());
     }
     let entries = read_detector_entries(&toml_paths)?;
+    let config_keywords = read_toml::<ConfigKeywords>(
+        &manifest_dir.join("rules/config-keywords.toml"),
+        "Tier-B config keyword defaults",
+    )?;
+    validate_nonempty_unique("known_prefixes", &config_keywords.known_prefixes)?;
+    validate_nonempty_unique("secret_keywords", &config_keywords.secret_keywords)?;
+    validate_nonempty_unique("test_keywords", &config_keywords.test_keywords)?;
+    validate_nonempty_unique(
+        "placeholder_keywords",
+        &config_keywords.placeholder_keywords,
+    )?;
+    let decoder_names = read_toml::<DecoderNames>(
+        &manifest_dir.join("rules/decoder-source-suffixes.toml"),
+        "Tier-B decoder source suffixes",
+    )?;
+    validate_nonempty_unique("decoder_names", &decoder_names.decoder_names)?;
 
     // Build provenance: stamp the digest of the EXACT detector set that is
     // about to be baked into the binary. The CLI surfaces this so the
@@ -66,7 +95,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let detector_digest = detector_set_digest(&entries);
     println!("cargo:rustc-env=KEYHOG_DETECTOR_DIGEST={detector_digest}");
 
-    write_embedded_detectors(&output_path, &entries)?;
+    write_embedded_data(
+        &output_path,
+        &entries,
+        &config_keywords,
+        &decoder_names.decoder_names,
+    )?;
 
     // Re-run when the directory contents change (file add/remove).
     println!("cargo:rerun-if-changed={}", detectors_dir.display());
@@ -80,6 +114,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for path in &toml_paths {
         println!("cargo:rerun-if-changed={}", path.display());
     }
+    println!(
+        "cargo:rerun-if-changed={}",
+        manifest_dir.join("rules/config-keywords.toml").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        manifest_dir
+            .join("rules/decoder-source-suffixes.toml")
+            .display()
+    );
     println!(
         "cargo:warning=Embedded {} detectors ({} bytes)",
         entries.len(),
@@ -146,12 +190,88 @@ fn read_detector_entries(toml_paths: &[PathBuf]) -> io::Result<Vec<(String, Stri
     Ok(entries)
 }
 
-fn write_embedded_detectors(output_path: &Path, entries: &[(String, String)]) -> io::Result<()> {
+fn read_toml<T: serde::de::DeserializeOwned>(path: &Path, label: &str) -> io::Result<T> {
+    let raw = fs::read_to_string(path).map_err(|error| {
+        io::Error::new(
+            error.kind(),
+            format!("failed to read {label} '{}': {error}", path.display()),
+        )
+    })?;
+    toml::from_str(&raw).map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("invalid {label} '{}': {error}", path.display()),
+        )
+    })
+}
+
+fn validate_nonempty_unique(label: &str, values: &[String]) -> io::Result<()> {
+    if values.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("{label} must not be empty"),
+        ));
+    }
+    if let Some(value) = values.iter().find(|value| value.trim().is_empty()) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("{label} contains an empty or whitespace-only value {value:?}"),
+        ));
+    }
+    let mut seen = std::collections::HashSet::with_capacity(values.len());
+    if let Some(duplicate) = values.iter().find(|value| !seen.insert(value.as_str())) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("{label} contains duplicate value {duplicate:?}"),
+        ));
+    }
+    Ok(())
+}
+
+fn write_string_slice(code: &mut String, name: &str, values: &[String]) {
+    code.push_str(&format!("pub const {name}: &[&str] = &[\n"));
+    for value in values {
+        code.push_str(&format!("    {value:?},\n"));
+    }
+    code.push_str("];\n");
+}
+
+fn write_embedded_data(
+    output_path: &Path,
+    entries: &[(String, String)],
+    config_keywords: &ConfigKeywords,
+    decoder_names: &[String],
+) -> io::Result<()> {
     let mut code = String::from("pub const EMBEDDED_DETECTORS: &[(&str, &str)] = &[\n");
     for (name, content) in entries {
         code.push_str(&format!("    ({name:?}, {content:?}),\n"));
     }
     code.push_str("];\n");
+    write_string_slice(
+        &mut code,
+        "CONFIG_KNOWN_PREFIXES",
+        &config_keywords.known_prefixes,
+    );
+    write_string_slice(
+        &mut code,
+        "CONFIG_SECRET_KEYWORDS",
+        &config_keywords.secret_keywords,
+    );
+    write_string_slice(
+        &mut code,
+        "CONFIG_TEST_KEYWORDS",
+        &config_keywords.test_keywords,
+    );
+    write_string_slice(
+        &mut code,
+        "CONFIG_PLACEHOLDER_KEYWORDS",
+        &config_keywords.placeholder_keywords,
+    );
+    let decoder_suffixes = decoder_names
+        .iter()
+        .map(|name| format!("/{name}"))
+        .collect::<Vec<_>>();
+    write_string_slice(&mut code, "DECODER_SOURCE_SUFFIXES", &decoder_suffixes);
     fs::write(output_path, code).map_err(|error| {
         io::Error::new(
             error.kind(),

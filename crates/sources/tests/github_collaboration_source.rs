@@ -5,6 +5,9 @@ use keyhog_core::{Source, SourceCoverageGapKind, SourceError};
 use keyhog_sources::testing::{SourceTestApi as _, TestApi};
 use keyhog_sources::{GitHubCollaborationSelection, SourceLimits};
 
+mod support;
+use support::split_chunk_results;
+
 fn limits(requests: usize) -> SourceLimits {
     SourceLimits {
         hosted_git_pages: requests,
@@ -67,7 +70,7 @@ fn issue_selection_fetches_only_issues_and_deduplicates_comment_identity() {
         )
         .expect("valid source");
     let rows: Vec<_> = source.chunks().collect();
-    let chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
+    let (chunks, _errors) = split_chunk_results(&rows);
 
     assert_eq!(chunks.len(), 2, "issue plus one immutable comment");
     assert_eq!(

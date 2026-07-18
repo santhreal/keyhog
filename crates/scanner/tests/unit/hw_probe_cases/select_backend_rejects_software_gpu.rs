@@ -17,6 +17,7 @@ fn select_backend_rejects_software_gpu() {
         total_memory_mb: Some(8192),
         io_uring_available: false,
         hyperscan_available: true,
+        hyperscan_runtime_identity: None,
     };
     assert_ne!(
         select_backend(&caps, 1_000_000_000, 5000),

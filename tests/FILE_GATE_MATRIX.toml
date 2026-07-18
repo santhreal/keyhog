@@ -2521,3 +2521,28 @@ boundary = true
 error = true
 adversarial = true
 e2e_linked = true
+
+[[module]]
+path = "crates/sources/src/filesystem/extract/archive/android_compiled.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/sources/src/filesystem/extract/image_metadata.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/sources/src/filesystem/extract/tex_package.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/sources/src/git/staged.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/sources/src/github_collaboration.rs"
+error = true
+adversarial = true

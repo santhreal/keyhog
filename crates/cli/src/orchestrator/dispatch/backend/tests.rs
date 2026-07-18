@@ -6009,14 +6009,14 @@ fn live_calibration_measures_both_gpu_driver_peers() {
         candidates
             .iter()
             .find(|candidate| candidate.backend == ScanBackend::GpuCuda)
-            .is_some_and(|candidate| candidate.acquired),
+            .is_some_and(|candidate| candidate.available),
         "CUDA peer must be live on the GPU release host"
     );
     assert!(
         candidates
             .iter()
             .find(|candidate| candidate.backend == ScanBackend::GpuWgpu)
-            .is_some_and(|candidate| candidate.acquired),
+            .is_some_and(|candidate| candidate.available),
         "WGPU peer must be live on the GPU release host"
     );
     let sample = vec![Chunk {

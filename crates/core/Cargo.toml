@@ -71,3 +71,7 @@ proptest = { workspace = true }
 quick-xml = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tracing-subscriber = { workspace = true, features = ["fmt"] }
+
+[build-dependencies]
+serde = { version = "=1.0.228", features = ["derive"] }
+toml = { workspace = true }

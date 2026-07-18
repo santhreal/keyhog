@@ -216,7 +216,7 @@ impl ScanOrchestrator {
                         "gpu candidate unavailable | backend={} | error={error}",
                         candidate.backend.label()
                     );
-                } else if candidate.acquired {
+                } else if candidate.available {
                     eprintln!(
                         "gpu candidate ineligible | backend={} | software={} | complete_identity={}",
                         candidate.backend.label(),

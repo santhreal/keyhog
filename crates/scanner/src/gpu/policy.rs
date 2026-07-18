@@ -5,8 +5,6 @@
 //! closed when a GPU is demanded but absent. Re-exported from `gpu` via
 //! `pub use policy::*`.
 
-#[cfg(feature = "gpu")]
-use super::backend;
 use std::{
     fmt,
     sync::atomic::{AtomicU8, Ordering},
@@ -72,10 +70,26 @@ pub(crate) fn gpu_probe() -> (bool, Option<String>, Option<u64>) {
         return (false, None, None);
     }
     #[cfg(feature = "gpu")]
-    if let Some(gpu) = backend::get_gpu() {
-        return (true, Some(gpu.gpu_name().to_string()), gpu.vram_mb());
+    if let Some(gpu) = super::gpu_adapter_probe() {
+        return (
+            !gpu.is_software,
+            Some(gpu.name.clone()),
+            Some(gpu.buffer_limit_mb),
+        );
     }
     (false, None, None)
+}
+
+pub(crate) fn gpu_runtime_identity() -> Option<String> {
+    if gpu_disabled_by_policy() {
+        return None;
+    }
+    #[cfg(feature = "gpu")]
+    {
+        return super::gpu_adapter_probe().map(|probe| probe.runtime_identity.clone());
+    }
+    #[cfg(not(feature = "gpu"))]
+    None
 }
 
 /// True when the resolved runtime policy demands a usable GPU and a silent CPU

@@ -32,14 +32,15 @@ git = ["gix", "dep:ignore"]
 # S3 request signing delegates to the single SigV4 owner instead of carrying
 # source-local forks.
 web = ["dep:reqwest", "dep:keyhog-verifier", "dep:brotli"]
-github = ["dep:reqwest", "dep:tempfile", "dep:keyhog-verifier"]
+github = ["git", "dep:reqwest", "dep:tempfile", "dep:keyhog-verifier"]
 gitlab = [
+    "git",
     "dep:reqwest",
     "dep:tempfile",
     "dep:urlencoding",
     "dep:keyhog-verifier",
 ]
-bitbucket = ["dep:reqwest", "dep:tempfile", "dep:keyhog-verifier"]
+bitbucket = ["git", "dep:reqwest", "dep:tempfile", "dep:keyhog-verifier"]
 slack = ["dep:reqwest"]
 azure = [
     "dep:reqwest",

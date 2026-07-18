@@ -114,8 +114,9 @@ if [ -x "$KEYHOG" ]; then
     fi
 
     # Seeded scan: must find the planted secrets and exit 1.
-    "$KEYHOG" scan "$WORK/scanme" >/dev/null 2>&1; sc=$?
-    [ "$sc" = "1" ] && ok_ "A.5 seeded scan exits 1 (findings)" || bad_ "A.5 seeded scan exits 1 (findings)" "exit=$sc"
+    scan_output=$("$KEYHOG" scan "$WORK/scanme" 2>&1); sc=$?
+    [ "$sc" = "1" ] && ok_ "A.5 seeded scan exits 1 (findings)" || \
+        bad_ "A.5 seeded scan exits 1 (findings)" "exit=$sc; $(printf '%s' "$scan_output" | tail -4)"
 
     # Clean dir: exit 0.
     mkdir -p "$WORK/empty"
@@ -123,11 +124,12 @@ if [ -x "$KEYHOG" ]; then
     [ "$ec" = "0" ] && ok_ "A.6 empty scan exits 0" || bad_ "A.6 empty scan exits 0" "exit=$ec"
 
     # SARIF emission is well-formed and carries results.
-    "$KEYHOG" scan "$WORK/scanme" --format sarif --output "$WORK/out.sarif" >/dev/null 2>&1 || true
+    sarif_output=$("$KEYHOG" scan "$WORK/scanme" --format sarif --output "$WORK/out.sarif" 2>&1); sarif_rc=$?
     if [ -s "$WORK/out.sarif" ] && grep -q '2.1.0' "$WORK/out.sarif" && grep -q '"results"' "$WORK/out.sarif"; then
         ok_ "A.7 SARIF output well-formed with results"
     else
-        bad_ "A.7 SARIF output well-formed with results"
+        bad_ "A.7 SARIF output well-formed with results" \
+            "exit=$sarif_rc; $(printf '%s' "$sarif_output" | tail -4)"
     fi
 fi
 

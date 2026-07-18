@@ -40,6 +40,7 @@ fn rtx_5090_caps() -> HardwareCaps {
         total_memory_mb: Some(128 * 1024),
         io_uring_available: true,
         hyperscan_available: true,
+        hyperscan_runtime_identity: None,
     }
 }
 

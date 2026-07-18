@@ -16,6 +16,10 @@ readme = "README.md"
 [package.metadata.santh]
 status = "alpha"
 
+[package.metadata.docs.rs]
+no-default-features = true
+features = ["portable"]
+
 [lib]
 path = "src/lib.rs"
 

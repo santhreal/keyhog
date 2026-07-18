@@ -232,7 +232,7 @@ fn production_wgpu_shards_the_8mib_overlapped_workload_with_cpu_parity() {
         .find(|candidate| candidate.backend == ScanBackend::GpuWgpu)
         .expect("compiled scanner must report WGPU");
     assert!(
-        wgpu.acquired,
+        wgpu.available,
         "RTX host must acquire WGPU: {}",
         wgpu.acquisition_error.as_deref().unwrap_or("no diagnostic")
     );
@@ -319,7 +319,7 @@ fn production_cuda_windows_seam_tail_and_mixed_rows_with_cpu_parity() {
         .into_iter()
         .find(|candidate| candidate.backend == ScanBackend::GpuCuda)
         .expect("compiled scanner must report CUDA");
-    if !cuda.acquired {
+    if !cuda.available {
         let caps = crate::hw_probe::probe_hardware();
         let cuda_capable = cuda.device_identity.is_some()
             || caps

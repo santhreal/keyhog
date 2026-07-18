@@ -61,11 +61,59 @@ pub(crate) fn current_binary() -> Result<std::path::PathBuf> {
 }
 
 #[cfg(unix)]
+fn require_trusted_install_directory(dir: &Path) -> Result<()> {
+    use std::os::unix::fs::MetadataExt;
+
+    let metadata = std::fs::metadata(dir)
+        .with_context(|| format!("inspect install directory {}", dir.display()))?;
+    if !metadata.is_dir() {
+        anyhow::bail!("install parent {} is not a directory", dir.display());
+    }
+    // SAFETY: geteuid has no preconditions and cannot fail.
+    let effective_uid = unsafe { libc::geteuid() };
+    if metadata.uid() != effective_uid && metadata.uid() != 0 {
+        anyhow::bail!(
+            "refusing to update through install directory '{}' owned by uid {} while running as uid {}. \
+             Fix: run KeyHog as the directory owner, or reinstall into a root-owned system directory.",
+            dir.display(),
+            metadata.uid(),
+            effective_uid
+        );
+    }
+    if metadata.mode() & 0o022 != 0 {
+        anyhow::bail!(
+            "refusing to update through group/world-writable install directory '{}' (mode {:04o}); \
+             another user could replace update artifacts. Fix: remove group/world write permission \
+             from the directory or reinstall KeyHog into a private directory.",
+            dir.display(),
+            metadata.mode() & 0o7777
+        );
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn create_installer_artifact(path: &Path, purpose: &str) -> Result<std::fs::File> {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .with_context(|| {
+            format!(
+                "create {purpose} {} exclusively; an existing path is refused to prevent symlink replacement",
+                path.display()
+            )
+        })
+}
+
+#[cfg(unix)]
 pub(crate) fn install_binary(exe: &Path, bytes: &[u8]) -> Result<()> {
+    use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
     let dir = exe
         .parent()
         .ok_or_else(|| anyhow!("current executable has no parent directory"))?;
+    require_trusted_install_directory(dir)?;
     // Stage in the SAME directory so the final rename is atomic (same
     // filesystem). Unix lets you replace a running executable's file: the
     // running process keeps the old (now-unlinked) inode; the next run picks
@@ -75,18 +123,22 @@ pub(crate) fn install_binary(exe: &Path, bytes: &[u8]) -> Result<()> {
         remove_installer_artifact_best_effort(&tmp, "failed unix install_binary cleanup");
         e
     };
-    std::fs::write(&tmp, bytes)
+    // Exclusive creation refuses a pre-planted symlink. Keep chmod and writes
+    // on the opened descriptor so a path replacement cannot redirect them.
+    let mut staged = create_installer_artifact(&tmp, "update staging file")?;
+    staged
+        .write_all(bytes)
         .map_err(cleanup)
-        .with_context(|| {
-            format!(
-                "write new binary to {} (need write permission on the install dir; \
-                 re-run with sudo or reinstall if keyhog lives in a system path)",
-                dir.display()
-            )
-        })?;
-    std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755))
+        .context("write candidate binary bytes")?;
+    staged
+        .set_permissions(std::fs::Permissions::from_mode(0o755))
         .map_err(cleanup)
         .context("chmod the new binary")?;
+    staged
+        .sync_all()
+        .map_err(cleanup)
+        .context("flush the new binary before atomic replacement")?;
+    drop(staged);
     std::fs::rename(&tmp, exe)
         .map_err(cleanup)
         .with_context(|| format!("atomically replace {}", exe.display()))?;
@@ -544,24 +596,43 @@ where
     let backup = backup_path(exe);
 
     if had_prior {
-        std::fs::copy(exe, &backup).with_context(|| {
-            format!(
-                "back up the current binary to {} before updating (the install dir must be \
-                 writable so a failed update can roll back; re-run with sudo or reinstall if \
-                 keyhog lives in a system path)",
-                backup.display()
-            )
-        })?;
-        // Backup must itself be runnable for the rollback to restore a working
-        // tool; mirror the 0755 we set on installs.
-        std::fs::set_permissions(&backup, std::fs::Permissions::from_mode(0o755)).with_context(
-            || {
+        let dir = exe
+            .parent()
+            .ok_or_else(|| anyhow!("current executable has no parent directory"))?;
+        require_trusted_install_directory(dir)?;
+        let mut source = std::fs::File::open(exe)
+            .with_context(|| format!("open current binary {} for backup", exe.display()))?;
+        let mut backup_file = create_installer_artifact(&backup, "rollback backup")?;
+        if let Err(error) = std::io::copy(&mut source, &mut backup_file) {
+            remove_installer_artifact_best_effort(
+                &backup,
+                "failed unix rollback backup cleanup after copy error",
+            );
+            return Err(error).with_context(|| {
                 format!(
-                    "set executable permissions on rollback backup {} before updating",
+                    "copy current binary into rollback backup {}",
                     backup.display()
                 )
-            },
-        )?;
+            });
+        }
+        // Backup must itself be runnable for the rollback to restore a working
+        // tool; mirror the 0755 we set on installs.
+        backup_file
+            .set_permissions(std::fs::Permissions::from_mode(0o755))
+            .and_then(|()| backup_file.sync_all())
+            .map_err(|error| {
+                remove_installer_artifact_best_effort(
+                    &backup,
+                    "failed unix rollback backup cleanup after finalize error",
+                );
+                error
+            })
+            .with_context(|| {
+                format!(
+                    "finalize executable rollback backup {} before updating",
+                    backup.display()
+                )
+            })?;
     }
 
     // Atomic replace. On error `exe` is untouched (write/rename either fully

@@ -15,6 +15,7 @@ fn startup_banner_software_gpu_ignored() {
         total_memory_mb: None,
         io_uring_available: false,
         hyperscan_available: false,
+        hyperscan_runtime_identity: None,
     };
     let banner = startup_banner(&caps, 1, 1);
     assert!(banner.contains("software, ignored"));

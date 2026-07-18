@@ -46,10 +46,11 @@ impl CompiledScanner {
         // GPU is unconditional in the build; runtime probe decides whether to
         // actually use it. `gpu_available` is set by hw_probe based on adapter
         // detection (excluding software renderers like llvmpipe/lavapipe).
-        // Acquire every compiled GPU driver independently. CUDA and WGPU are
-        // peer execution candidates. Persisted autoroute evidence chooses the
-        // exact driver for each workload, so acquisition order has no routing
-        // meaning and one driver's failure never silently selects another.
+        // Census every compiled GPU driver independently without retaining an
+        // execution device. Persisted autoroute evidence chooses the exact
+        // peer for each workload; the selected peer is materialized lazily at
+        // the dispatch boundary, while calibration materializes every peer it
+        // measures.
         // `crate::gpu::gpu_disabled_by_policy()` is the single source of truth
         // for "skip every GPU init path". The value comes from the resolved
         // scanner runtime policy set by the CLI/TOML layer, not ambient process
@@ -80,9 +81,9 @@ impl CompiledScanner {
             {
                 #[cfg(target_os = "linux")]
                 {
-                    match vyre_driver_cuda::backend::CudaBackend::acquire() {
-                        Ok(cuda) => {
-                            let caps = &cuda.caps;
+                    match vyre_driver_cuda::device::CudaDeviceCaps::probe(0) {
+                        Ok(caps) => {
+                            peers.cuda_available = true;
                             peers.cuda_device_identity = Some(format!(
                                 "{}:ordinal={}:cc={}.{}:vram={}",
                                 caps.name,
@@ -101,13 +102,7 @@ impl CompiledScanner {
                                     );
                                 }
                             }
-                            let boxed: Box<dyn vyre::VyreBackend> =
-                                Box::new(vyre_driver_cuda::CudaBackendRegistration::new(cuda));
-                            tracing::info!(
-                                target: "keyhog::routing",
-                                "CUDA peer backend acquired"
-                            );
-                            peers.cuda = Some(Arc::from(boxed));
+                            tracing::debug!(target: "keyhog::routing", "CUDA peer identity probed");
                         }
                         Err(error) => {
                             surface_cuda_acquisition_failure(&error);
@@ -119,33 +114,17 @@ impl CompiledScanner {
                     }
                 }
             }
-            match vyre_driver_wgpu::WgpuBackend::shared() {
-                Ok(wgpu) => {
-                    let info = wgpu.adapter_info();
-                    peers.wgpu_device_identity = Some(format!(
-                        "{}:vendor={:04x}:device={:04x}",
-                        info.name, info.vendor, info.device
-                    ));
-                    peers.wgpu_runtime_identity = Some(format!(
-                        "{:?}:{}:{}",
-                        info.backend, info.driver, info.driver_info
-                    ));
-                    peers.wgpu_is_software = info.device_type == wgpu::DeviceType::Cpu;
-                    let trait_obj: Arc<dyn vyre::VyreBackend> = wgpu;
-                    peers.wgpu = Some(trait_obj);
-                    tracing::info!(target: "keyhog::routing", "WGPU peer backend acquired");
-                }
-                Err(error) => {
-                    tracing::warn!(
-                        target: "keyhog::routing",
-                        %error,
-                        "WGPU peer backend acquisition failed"
-                    );
-                    failures.push(GpuBackendAcquisitionFailure {
-                        backend: "wgpu",
-                        diagnostic: error.to_string(),
-                    });
-                }
+            if let Some(probe) = crate::gpu::gpu_adapter_probe() {
+                peers.wgpu_available = true;
+                peers.wgpu_device_identity = Some(probe.name.clone());
+                peers.wgpu_runtime_identity = Some(probe.runtime_identity.clone());
+                peers.wgpu_is_software = probe.is_software;
+                tracing::debug!(target: "keyhog::routing", "WGPU peer identity probed");
+            } else {
+                failures.push(GpuBackendAcquisitionFailure {
+                    backend: "wgpu",
+                    diagnostic: "WGPU adapter census found no adapters".to_string(),
+                });
             }
             (peers, failures)
         } else {

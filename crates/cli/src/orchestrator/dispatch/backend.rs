@@ -1167,7 +1167,7 @@ fn gpu_peer_identity(scanner: &CompiledScanner) -> Option<String> {
     let candidates = scanner.gpu_backend_candidates();
     if candidates
         .iter()
-        .any(|candidate| candidate.acquired && !candidate.is_software && !candidate.is_eligible())
+        .any(|candidate| candidate.available && !candidate.is_software && !candidate.is_eligible())
     {
         // An executable hardware peer with incomplete identity is an invalid
         // autoroute state. Preserve it as an invalid identity instead of

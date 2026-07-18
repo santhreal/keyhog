@@ -79,16 +79,15 @@ WORKDIR /data
 # LOUD exit 2 against the built image (drift fails the test, never ships silent).
 # Decisions accumulate in the current multi-config cache at ~/.cache/keyhog/autoroute.json,
 # baked into this layer and read by every later `docker run --rm`.
-# NOTE on exit codes: `--autoroute-calibrate` runs calibration THEN scans, so it
-# returns the SCAN code: 0 (clean) or 1 (aws_leak.env found the key). Only exit
-# >=2 (autoroute/calibration error) is a real failure; the calib() helper aborts
-# the build loudly on >=2 (Law 10: never ship a silently-uncalibrated image) and
-# treats 0/1 as success. No `set -e`: exit 1 (a found secret) is success here.
+# NOTE on exit codes: `--autoroute-calibrate` is a routing-measurement command,
+# so successful calibration returns 0 even when the measured scan finds a
+# credential. Any non-zero result is a calibration failure and aborts the image
+# build (Law 10: never ship a silently uncalibrated image).
 RUN calib() { \
-        keyhog scan --autoroute-calibrate "$@" --format json >/dev/null; \
+        keyhog scan --autoroute-calibrate --autoroute-gpu "$@" --format json >/dev/null; \
         rc=$?; \
-        if [ "$rc" != 0 ] && [ "$rc" != 1 ]; then \
-            echo "autoroute calibration failed (exit $rc): keyhog scan --autoroute-calibrate $*" >&2; \
+        if [ "$rc" != 0 ]; then \
+            echo "autoroute calibration failed (exit $rc): keyhog scan --autoroute-calibrate --autoroute-gpu $*" >&2; \
             exit 1; \
         fi; \
     }; \

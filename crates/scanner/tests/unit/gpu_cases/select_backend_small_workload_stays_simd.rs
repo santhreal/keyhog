@@ -15,6 +15,7 @@ fn select_backend_small_workload_stays_simd() {
         total_memory_mb: Some(16384),
         io_uring_available: false,
         hyperscan_available: true,
+        hyperscan_runtime_identity: None,
     };
     assert_eq!(select_backend(&caps, 1024, 10), ScanBackend::SimdCpu);
 }

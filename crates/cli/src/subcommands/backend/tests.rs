@@ -105,6 +105,7 @@ fn require_gpu_turns_adapter_absence_into_a_failed_health_report() {
         total_memory_mb: Some(32 * 1024),
         io_uring_available: true,
         hyperscan_available: true,
+        hyperscan_runtime_identity: None,
     };
 
     let optional = unavailable_gpu_self_test_report(&caps, false);

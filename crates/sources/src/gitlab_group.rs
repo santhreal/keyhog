@@ -284,7 +284,6 @@ pub(crate) fn listing_truncated_error_for_test(
     hosted_git::listing_truncated_error("GitLab", "group", group, repo_count, max_pages)
 }
 
-
 #[cfg(test)]
 #[path = "../tests/unit/gitlab_group.rs"]
 mod tests;

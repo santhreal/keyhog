@@ -29,6 +29,7 @@ fn caps_with(gpu: bool, soft: bool, hs: bool, avx2: bool) -> HardwareCaps {
         total_memory_mb: Some(32_768),
         io_uring_available: false,
         hyperscan_available: hs,
+        hyperscan_runtime_identity: None,
     }
 }
 
@@ -217,6 +218,7 @@ fn caps_with_named_gpu(name: &str) -> HardwareCaps {
         total_memory_mb: Some(32_768),
         io_uring_available: false,
         hyperscan_available: true,
+        hyperscan_runtime_identity: None,
     }
 }
 

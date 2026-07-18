@@ -312,7 +312,6 @@ fn trim_ascii_whitespace(mut bytes: &[u8]) -> &[u8] {
     bytes
 }
 
-
 #[cfg(test)]
 #[path = "../../tests/unit/git_diff_parser.rs"]
 mod tests;

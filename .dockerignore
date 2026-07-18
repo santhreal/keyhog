@@ -1,0 +1,9 @@
+.git/
+.git_status.txt
+target/
+target-*/
+docs/book/
+benchmarks/corpora/
+benchmarks/results/
+fuzz/artifacts/
+fuzz/corpus/

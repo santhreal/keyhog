@@ -545,17 +545,32 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         [ScanBackend::GpuCuda, ScanBackend::GpuWgpu]
             .into_iter()
             .map(|backend| {
-                let acquired = self.gpu_backends.get(backend);
+                let acquired = self.gpu_backends.initialized(backend);
+                let available = match backend {
+                    ScanBackend::GpuCuda => self.gpu_backends.cuda_available,
+                    ScanBackend::GpuWgpu => self.gpu_backends.wgpu_available,
+                    _ => false,
+                };
                 let acquisition_error = self
-                    .gpu_acquisition_failures
-                    .iter()
-                    .find(|failure| failure.backend == backend_driver_name(backend))
-                    .map(|failure| failure.diagnostic.clone());
+                    .gpu_backends
+                    .initialization_error(backend)
+                    .map(str::to_owned)
+                    .or_else(|| {
+                        self.gpu_acquisition_failures
+                            .iter()
+                            .find(|failure| failure.backend == backend_driver_name(backend))
+                            .map(|failure| failure.diagnostic.clone())
+                    });
                 GpuBackendCandidateStatus {
                     backend,
+                    available,
                     acquired: acquired.is_some(),
-                    driver_id: acquired.map(|driver| driver.id()),
-                    driver_version: acquired.map(|driver| driver.version()),
+                    driver_id: available.then(|| backend_driver_name(backend)),
+                    driver_version: available.then(|| match backend {
+                        ScanBackend::GpuCuda => env!("KEYHOG_VYRE_CUDA_VERSION"),
+                        ScanBackend::GpuWgpu => env!("KEYHOG_VYRE_WGPU_VERSION"),
+                        _ => unreachable!("candidate list contains only GPU backends"),
+                    }),
                     device_identity: match backend {
                         ScanBackend::GpuCuda => self.gpu_backends.cuda_device_identity.clone(),
                         ScanBackend::GpuWgpu => self.gpu_backends.wgpu_device_identity.clone(),

@@ -23,7 +23,8 @@
 //! (the production read/write path, not a facade).
 
 use keyhog::daemon::frame;
-use keyhog::daemon::protocol::{Request, Response};
+use keyhog::daemon::protocol::{BackendRecoveryStatus, Request, Response};
+use keyhog_scanner::hw_probe::ScanBackend;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 /// Capture the exact on-wire bytes a `Request` frames to, by writing it into one
@@ -113,6 +114,19 @@ async fn health_response_roundtrips() {
             scans_served: 7,
             active_scans: 3,
             detector_count: 900,
+            backend_recoveries: 1,
+            last_backend_fault: Some(BackendRecoveryStatus {
+                failed_backend: ScanBackend::GpuCuda.label().to_string(),
+                recovery_backend: ScanBackend::CpuFallback.label().to_string(),
+                recovered_ranges: vec![keyhog::daemon::protocol::RecoveredInputRangeStatus {
+                    chunk_index: 0,
+                    byte_start: 0,
+                    byte_end: 128,
+                }],
+                recovered_chunks: 1,
+                recovered_bytes: 128,
+                reason: "test recovery".to_string(),
+            }),
         },
     )
     .await
@@ -127,11 +141,29 @@ async fn health_response_roundtrips() {
             scans_served,
             active_scans,
             detector_count,
+            backend_recoveries,
+            last_backend_fault,
         } => {
             assert_eq!(uptime_secs, 42);
             assert_eq!(scans_served, 7);
             assert_eq!(active_scans, 3);
             assert_eq!(detector_count, 900);
+            assert_eq!(backend_recoveries, 1);
+            assert_eq!(
+                last_backend_fault,
+                Some(BackendRecoveryStatus {
+                    failed_backend: ScanBackend::GpuCuda.label().to_string(),
+                    recovery_backend: ScanBackend::CpuFallback.label().to_string(),
+                    recovered_ranges: vec![keyhog::daemon::protocol::RecoveredInputRangeStatus {
+                        chunk_index: 0,
+                        byte_start: 0,
+                        byte_end: 128,
+                    }],
+                    recovered_chunks: 1,
+                    recovered_bytes: 128,
+                    reason: "test recovery".to_string(),
+                })
+            );
         }
         other => panic!("expected Health response, got {other:?}"),
     }

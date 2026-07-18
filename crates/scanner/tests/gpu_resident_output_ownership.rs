@@ -62,7 +62,7 @@ fn resident_gpu_readback_reuse_preserves_owned_results_and_parity() {
     let candidates = scanner.gpu_backend_candidates();
     let acquired: Vec<_> = candidates
         .into_iter()
-        .filter(|candidate| candidate.acquired)
+        .filter(|candidate| candidate.available)
         .collect();
     assert!(
         !keyhog_scanner::hw_probe::probe_hardware().gpu_available || !acquired.is_empty(),

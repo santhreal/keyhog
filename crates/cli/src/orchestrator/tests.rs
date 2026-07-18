@@ -120,6 +120,7 @@ fn low_ram_host_limits_mutate_the_resolved_config_shared_by_all_runtimes() {
         total_memory_mb: Some(LOW_RAM_HOST_THRESHOLD_MB - 1),
         io_uring_available: false,
         hyperscan_available: false,
+        hyperscan_runtime_identity: None,
     };
 
     apply_host_runtime_limits(&mut resolved, &hardware);

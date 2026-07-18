@@ -170,7 +170,7 @@ pub(crate) fn record_git_cap_once(
         surface: "history".into(),
         target: source_name.into(),
         kind: SourceCoverageGapKind::Truncated,
-        detail: format!("{reason}; {remaining_description} were not scanned"),
+        detail: format!("{source_name} was truncated; {reason}; {remaining_description} were not scanned"),
     })
 }
 

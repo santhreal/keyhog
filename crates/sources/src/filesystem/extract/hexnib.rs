@@ -15,7 +15,6 @@ pub(super) fn hex_value(byte: u8) -> Option<u8> {
     }
 }
 
-
 #[cfg(test)]
 #[path = "../../../tests/unit/hexnib.rs"]
 mod tests;

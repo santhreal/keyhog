@@ -24,6 +24,7 @@ mod docker_tar_hardlink_entry_rejected;
 mod docker_tar_single_entry_exceeds_cap_rejected;
 mod docker_tar_symlink_entry_rejected;
 mod empty_jar_does_not_panic;
+mod extract_malformed_files;
 mod filesystem_minified_js_skipped;
 mod git_bare_repository_without_commits_handled;
 mod git_corrupt_author_metadata_rejected;

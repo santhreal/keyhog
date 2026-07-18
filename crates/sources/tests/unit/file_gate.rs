@@ -554,7 +554,8 @@ fn git_diff_hot_path_consolidates_git_processes_and_reuses_buffers() {
         "git-diff line dispatch must operate on capped bytes through the shared parser instead of allocating one String per diff line"
     );
     assert!(
-        git_mod.contains("memchr::memchr(b'\\n', available)")
+        git_mod.contains("pub(crate) fn read_capped_line")
+            && git_mod.contains("memchr::memchr(")
             && !git_mod.contains("available.iter().position(|&b| b == b'\\n')"),
         "git capped-line reads must use memchr for newline search instead of byte-by-byte iterator scans"
     );

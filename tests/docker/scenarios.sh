@@ -33,7 +33,7 @@ FAILED=()
 # never a silent pass. (Auto scans need no guard: a single-backend build resolves
 # its lone backend directly, see `sole_compiled_backend` in dispatch/backend.rs 
 # so it never fails closed and needs no calibration bake.)
-if docker run --rm "$IMAGE" keyhog backend 2>&1 | grep -qE 'hyperscan: *compiled-in'; then
+if docker run --rm "$IMAGE" keyhog backend 2>&1 | grep -E 'hyperscan: *compiled-in' >/dev/null; then
   HAS_SIMD=1
 else
   HAS_SIMD=0
@@ -56,7 +56,14 @@ check() {
   [[ "$rc" == "$want_exit" ]] || { ok=0; echo "  ✗ [$name] exit: want $want_exit got $rc"; }
   [[ "$want" == "-" ]] || grep -qF -- "$want" <<<"$out" || { ok=0; echo "  ✗ [$name] missing: '$want'"; }
   [[ "$forbid" == "-" ]] || ! grep -qF -- "$forbid" <<<"$out" || { ok=0; echo "  ✗ [$name] forbidden: '$forbid'"; }
-  if [[ "$ok" == 1 ]]; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); FAILED+=("$name"); fi
+  if [[ "$ok" == 1 ]]; then
+    PASS=$((PASS + 1))
+  else
+    FAIL=$((FAIL + 1))
+    FAILED+=("$name")
+    echo "    output (last 40 lines):"
+    tail -n 40 <<<"$out" | sed 's/^/      /'
+  fi
 }
 
 echo "== docker integration matrix: $IMAGE =="

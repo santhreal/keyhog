@@ -186,14 +186,14 @@ fn phase1_admission_classes_preserve_backend_findings_at_eight_mib() {
         let wgpu_acquired = candidates
             .iter()
             .find(|candidate| candidate.backend == ScanBackend::GpuWgpu)
-            .is_some_and(|candidate| candidate.acquired);
+            .is_some_and(|candidate| candidate.available);
         assert!(
             !hardware.gpu_available || wgpu_acquired,
             "a physical GPU was detected but the WGPU peer needed to prove the 8 MiB dispatch seam was not acquired: {candidates:?}"
         );
         let acquired = candidates
             .iter()
-            .filter(|candidate| candidate.acquired)
+            .filter(|candidate| candidate.available)
             .collect::<Vec<_>>();
         assert!(
             !hardware.gpu_available || !acquired.is_empty(),
@@ -258,7 +258,7 @@ fn oversized_window_reduction_preserves_mixed_logical_rows() {
     for candidate in scanner
         .gpu_backend_candidates()
         .into_iter()
-        .filter(|candidate| candidate.acquired)
+        .filter(|candidate| candidate.available)
     {
         assert_eq!(
             canonical(&scanner.scan_coalesced_with_backend(&batch, candidate.backend)),
@@ -298,7 +298,7 @@ fn oversized_prefixless_phase2_row_keeps_cpu_admission_authoritative() {
     for candidate in scanner
         .gpu_backend_candidates()
         .into_iter()
-        .filter(|candidate| candidate.acquired)
+        .filter(|candidate| candidate.available)
     {
         assert_eq!(
             canonical(&scanner.scan_coalesced_with_backend(&batch, candidate.backend)),

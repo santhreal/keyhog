@@ -131,7 +131,11 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
       - run: cargo test -p keyhog-core --lib
       - run: cargo check -p keyhog-core --all-targets
-      - run: cargo test -p keyhog-scanner --lib
+      # Hosted runners have no accelerator. Keep this broad library gate on the
+      # complete CPU/SIMD detection stack; real GPU execution and parity belong
+      # to the GPU-labelled fleet lane, where an unavailable adapter is a hard
+      # configuration failure instead of a false failure on GitHub hardware.
+      - run: cargo test -p keyhog-scanner --lib --no-default-features --features ci-lean
       - run: cargo test -p keyhog --lib
       # verifier + sources inline unit tests: previously only their `--test`
       # aggregators ran in CI, so a lib-internal unit test (e.g. the

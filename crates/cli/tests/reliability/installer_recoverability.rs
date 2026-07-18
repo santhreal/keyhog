@@ -13,6 +13,7 @@
 #![cfg(unix)]
 
 use std::fs;
+use std::os::unix::fs::symlink;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
@@ -246,4 +247,68 @@ fn backup_path_sits_beside_the_exe_and_is_hidden() {
         name.contains("keyhog"),
         "backup name should reference the binary: {name}"
     );
+}
+
+#[test]
+fn preplanted_update_symlink_cannot_overwrite_its_target() {
+    let dir = TempDir::new().unwrap();
+    let exe = dir.path().join("keyhog");
+    let protected = dir.path().join("protected");
+    fs::write(&protected, b"DO-NOT-TOUCH").unwrap();
+    let staged = dir
+        .path()
+        .join(format!(".keyhog-update-{}.tmp", std::process::id()));
+    symlink(&protected, &staged).unwrap();
+
+    let error = API
+        .install_with_rollback(&exe, b"ATTACKER-CONTROLLED-REPLACEMENT", |_| true)
+        .expect_err("a pre-existing staging path must be refused");
+
+    assert!(
+        format!("{error:#}").contains("exclusively"),
+        "the failure must explain exclusive artifact creation: {error:#}"
+    );
+    assert_eq!(fs::read(&protected).unwrap(), b"DO-NOT-TOUCH");
+    assert!(
+        !exe.exists(),
+        "failed fresh install must not create the binary"
+    );
+}
+
+#[test]
+fn preplanted_backup_symlink_cannot_overwrite_its_target() {
+    let (_dir, exe) = staged_exe(b"OLD-WORKING-BINARY");
+    let protected = exe.parent().unwrap().join("protected");
+    fs::write(&protected, b"DO-NOT-TOUCH").unwrap();
+    symlink(&protected, API.backup_path(&exe)).unwrap();
+
+    let error = API
+        .install_with_rollback(&exe, b"NEW-BINARY", |_| true)
+        .expect_err("a pre-existing rollback path must be refused");
+
+    assert!(
+        format!("{error:#}").contains("exclusively"),
+        "the failure must explain exclusive artifact creation: {error:#}"
+    );
+    assert_eq!(fs::read(&protected).unwrap(), b"DO-NOT-TOUCH");
+    assert_eq!(fs::read(&exe).unwrap(), b"OLD-WORKING-BINARY");
+}
+
+#[test]
+fn writable_by_other_users_install_directory_is_refused() {
+    let dir = TempDir::new().unwrap();
+    let exe = dir.path().join("keyhog");
+    fs::write(&exe, b"OLD-WORKING-BINARY").unwrap();
+    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o777)).unwrap();
+
+    let error = API
+        .install_with_rollback(&exe, b"NEW-BINARY", |_| true)
+        .expect_err("a shared writable install directory must fail closed");
+
+    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(
+        format!("{error:#}").contains("group/world-writable install directory"),
+        "the error must explain the unsafe directory permissions: {error:#}"
+    );
+    assert_eq!(fs::read(&exe).unwrap(), b"OLD-WORKING-BINARY");
 }

@@ -70,6 +70,7 @@ fn caps_gpu(hyperscan: bool, simd: bool) -> HardwareCaps {
         total_memory_mb: Some(64 * 1024),
         io_uring_available: true,
         hyperscan_available: hyperscan,
+        hyperscan_runtime_identity: None,
     }
 }
 
@@ -88,6 +89,7 @@ fn caps_no_gpu(hyperscan: bool, simd: bool) -> HardwareCaps {
         total_memory_mb: Some(64 * 1024),
         io_uring_available: true,
         hyperscan_available: hyperscan,
+        hyperscan_runtime_identity: None,
     }
 }
 

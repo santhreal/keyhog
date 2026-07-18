@@ -41,7 +41,6 @@ pub(crate) fn drain_stderr_excerpt(mut stderr_pipe: impl Read) -> String {
     text
 }
 
-
 #[cfg(test)]
 #[path = "../tests/unit/process_excerpt_inline.rs"]
 mod tests;

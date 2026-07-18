@@ -85,7 +85,7 @@ fn every_acquired_gpu_peer_matches_the_cpu_reference() {
             .iter()
             .find(|candidate| candidate.backend == expected)
             .expect("scanner must report every compiled GPU peer");
-        if !status.acquired {
+        if !status.available {
             assert!(
                 status
                     .acquisition_error
@@ -98,7 +98,7 @@ fn every_acquired_gpu_peer_matches_the_cpu_reference() {
     }
     let acquired: Vec<_> = candidates
         .into_iter()
-        .filter(|candidate| candidate.acquired)
+        .filter(|candidate| candidate.available)
         .collect();
     assert!(
         !keyhog_scanner::hw_probe::probe_hardware().gpu_available || !acquired.is_empty(),
@@ -182,7 +182,7 @@ fn detector_required_literals_preserve_every_backend_finding() {
     }
     let acquired = candidates
         .into_iter()
-        .filter(|candidate| candidate.acquired)
+        .filter(|candidate| candidate.available)
         .map(|candidate| candidate.backend)
         .collect::<Vec<_>>();
     assert!(
@@ -313,7 +313,7 @@ fn service_scoped_api_headers_match_on_every_acquired_backend() {
         scanner
             .gpu_backend_candidates()
             .into_iter()
-            .filter(|candidate| candidate.acquired)
+            .filter(|candidate| candidate.available)
             .map(|candidate| candidate.backend),
     );
     for backend in backends {

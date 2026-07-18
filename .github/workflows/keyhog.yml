@@ -22,7 +22,7 @@ jobs:
   scan:
     name: keyhog scan
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     # Per-job permissions instead of workflow-level, some org/repo
     # policy configurations reject dispatch of any workflow that
     # declares top-level `permissions:`. Per-job is equivalent in

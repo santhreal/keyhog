@@ -76,7 +76,9 @@ fn lf_and_crlf_entropy_hits_preserve_equivalent_line_identity() {
     assert_eq!(crlf_hit.location.line, Some(2));
     assert_eq!(
         lf_hit.location.offset,
-        lf_body.find(SECRET).expect("LF fixture contains credential")
+        lf_body
+            .find(SECRET)
+            .expect("LF fixture contains credential")
     );
     assert_eq!(
         crlf_hit.location.offset,

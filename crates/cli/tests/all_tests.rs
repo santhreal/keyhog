@@ -31,6 +31,7 @@ pub mod lane10_silent_fallback_surfacing;
 pub mod platform_compat;
 pub mod regression_ambient_source_env_ignored;
 pub mod regression_daemon_frame_incremental_read;
+pub mod regression_daemon_frame_streaming_and_eof;
 pub mod regression_incremental_cache_config_wiring;
 pub mod regression_ml_threshold_wired_to_confidence_floor;
 pub mod regression_scan_system_mount_filters_tier_b;

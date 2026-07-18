@@ -276,8 +276,6 @@ fn repo_https_clone_url(repo: BitbucketRepo) -> Result<String, SourceError> {
         })
 }
 
-
-
 pub(crate) fn validate_workspace(workspace: &str) -> Result<(), SourceError> {
     hosted_git::validate_repo_name("bitbucket", workspace)
 }

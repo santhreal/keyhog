@@ -31,6 +31,7 @@ def is_sha256(value: object) -> bool:
     """Return whether a value is one canonical lowercase SHA-256 digest."""
     return isinstance(value, str) and _SHA256_RE.fullmatch(value) is not None
 
+
 # ── confidence histogram resolution ───────────────────────────────────
 # Per-detector findings are bucketed into CONF_BINS bins of width
 # CONF_BIN_WIDTH over [0, 1]. 0.05 is the min_confidence tuning resolution
@@ -262,7 +263,9 @@ class Detection:
     def to_json(self) -> dict:
         return {
             "overall": self.overall.to_json(),
-            "per_category": {c: o.to_json() for c, o in sorted(self.per_category.items())},
+            "per_category": {
+                c: o.to_json() for c, o in sorted(self.per_category.items())
+            },
             "per_detector": {
                 d: s.to_json() for d, s in sorted(self.per_detector.items())
             },
@@ -273,7 +276,8 @@ class Detection:
         return cls(
             overall=Outcome.from_json(d.get("overall", {})),
             per_category={
-                c: Outcome.from_json(o) for c, o in (d.get("per_category") or {}).items()
+                c: Outcome.from_json(o)
+                for c, o in (d.get("per_category") or {}).items()
             },
             per_detector={
                 det: DetectorStat.from_json(s)
@@ -290,7 +294,7 @@ class Host:
     """Captured once per run so Windows-ThinkPad / macOS / santhserver /
     desktop results aggregate into one matrix keyed by real hardware.
 
-    ``hostname_hash`` is a short non-reversible digest of the hostname 
+    ``hostname_hash`` is a short non-reversible digest of the hostname
     enough to group a machine's runs without committing a raw hostname.
     """
 
@@ -323,10 +327,10 @@ class ScannerConfig:
     ``config_id`` is the stable matrix key, e.g. ``simd-nocache-nodaemon-full``.
     """
 
-    backend: str = "default"   # cpu | simd | gpu | auto | default
-    cache: str = "off"         # on | off
-    daemon: str = "off"        # on | off
-    mode: str = "full"         # full | fast | <competitor-specific>
+    backend: str = "default"  # cpu | simd | gpu-cuda | gpu-wgpu | auto | default
+    cache: str = "off"  # on | off
+    daemon: str = "off"  # on | off
+    mode: str = "full"  # full | fast | <competitor-specific>
     # Optional report-floor override. None = the scanner's compiled default
     # (what the leaderboard scores). The harvest loop sets this LOW so the ML
     # feedback loop can label the sub-floor candidates a detector fires on but
@@ -342,12 +346,18 @@ class ScannerConfig:
         # min_confidence is deliberately NOT part of the matrix key: it is a
         # harvest-only knob, never a leaderboard axis, so a None vs low floor
         # must not fork the stable config_id the README table / gate key on.
-        return f"{self.backend}-{'cache' if self.cache == 'on' else 'nocache'}-" \
-               f"{'daemon' if self.daemon == 'on' else 'nodaemon'}-{self.mode}"
+        return (
+            f"{self.backend}-{'cache' if self.cache == 'on' else 'nocache'}-"
+            f"{'daemon' if self.daemon == 'on' else 'nodaemon'}-{self.mode}"
+        )
 
     def to_json(self) -> dict:
-        out = {"backend": self.backend, "cache": self.cache,
-               "daemon": self.daemon, "mode": self.mode}
+        out = {
+            "backend": self.backend,
+            "cache": self.cache,
+            "daemon": self.daemon,
+            "mode": self.mode,
+        }
         if self.min_confidence is not None:
             out["min_confidence"] = self.min_confidence
         return out
@@ -373,8 +383,12 @@ class Scanner:
         return self.config.config_id
 
     def to_json(self) -> dict:
-        value = {"name": self.name, "version": self.version,
-                 "config_id": self.config_id, "config": self.config.to_json()}
+        value = {
+            "name": self.name,
+            "version": self.version,
+            "config_id": self.config_id,
+            "config": self.config.to_json(),
+        }
         if self.executable_sha256:
             value["executable_sha256"] = self.executable_sha256
         if self.detector_corpus_sha256:
@@ -389,13 +403,16 @@ class Scanner:
 
     @classmethod
     def from_json(cls, d: dict) -> "Scanner":
-        return cls(name=d.get("name", ""), version=d.get("version", ""),
-                   config=ScannerConfig.from_json(d.get("config", {})),
-                   executable_sha256=d.get("executable_sha256", ""),
-                   detector_corpus_sha256=d.get("detector_corpus_sha256", ""),
-                   execution_route=d.get("execution_route", ""),
-                   daemon_pid=int(d.get("daemon_pid", 0)),
-                   daemon_requests=int(d.get("daemon_requests", 0)))
+        return cls(
+            name=d.get("name", ""),
+            version=d.get("version", ""),
+            config=ScannerConfig.from_json(d.get("config", {})),
+            executable_sha256=d.get("executable_sha256", ""),
+            detector_corpus_sha256=d.get("detector_corpus_sha256", ""),
+            execution_route=d.get("execution_route", ""),
+            daemon_pid=int(d.get("daemon_pid", 0)),
+            daemon_requests=int(d.get("daemon_requests", 0)),
+        )
 
 
 # ── corpus: which dataset + its size ──────────────────────────────────
@@ -426,15 +443,19 @@ class Speed:
     peak_rss_kb: int = 0
 
     def to_json(self) -> dict:
-        return {"wall_ms": round(self.wall_ms, 2),
-                "throughput_mb_s": round(self.throughput_mb_s, 4),
-                "peak_rss_kb": int(self.peak_rss_kb)}
+        return {
+            "wall_ms": round(self.wall_ms, 2),
+            "throughput_mb_s": round(self.throughput_mb_s, 4),
+            "peak_rss_kb": int(self.peak_rss_kb),
+        }
 
     @classmethod
     def from_json(cls, d: dict) -> "Speed":
-        return cls(wall_ms=float(d.get("wall_ms", 0.0)),
-                   throughput_mb_s=float(d.get("throughput_mb_s", 0.0)),
-                   peak_rss_kb=int(d.get("peak_rss_kb", 0)))
+        return cls(
+            wall_ms=float(d.get("wall_ms", 0.0)),
+            throughput_mb_s=float(d.get("throughput_mb_s", 0.0)),
+            peak_rss_kb=int(d.get("peak_rss_kb", 0)),
+        )
 
 
 # ── the top-level record ──────────────────────────────────────────────
@@ -485,7 +506,9 @@ class RunResult:
     def from_json(cls, d: dict, *, source: str = "benchmark result") -> "RunResult":
         observed_version = d.get("schema_version")
         if observed_version != SCHEMA_VERSION:
-            rendered = "<missing>" if observed_version is None else repr(observed_version)
+            rendered = (
+                "<missing>" if observed_version is None else repr(observed_version)
+            )
             raise ValueError(
                 f"{source} has schema_version={rendered}; supported={SCHEMA_VERSION!r}. "
                 "Rerun the benchmark with the current harness"
