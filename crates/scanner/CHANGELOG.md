@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Replace the hardcoded lower-dash entropy exception with one compiled
+  detector-TOML shape matcher covering typed alphabets, optional grouping,
+  padding, diversity, and detector-owned floors. Ambiguous shape lists fail
+  compilation instead of silently choosing one entry.
 - Compile a backend-neutral SIMD phase-one plan during scanner construction and
   lazily materialize Hyperscan only when selected. Exact initialization errors
   now cross the fallible coalesced boundary, scalar/GPU routes do not pay the

@@ -134,22 +134,35 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
                 entries.push(format!("spevh:{}:{:016x}", d.id, v.to_bits()));
             }
             for (index, shape) in d.entropy_shapes.iter().enumerate() {
-                match shape {
-                    crate::EntropyShapeSpec::LowerDashAppPassword {
-                        entropy_floor,
-                        group_count,
-                        group_length,
-                        special_min_length,
-                    } => entries.push(format!(
-                        "entropy-shape:{}:{}:lower-dash-app-password:{:016x}:{}:{}:{}",
-                        d.id,
-                        index,
-                        entropy_floor.to_bits(),
-                        group_count,
-                        group_length,
-                        special_min_length,
-                    )),
-                }
+                let charset = match shape.charset {
+                    crate::ShapeCharset::LowerAlnum => "lower-alnum",
+                    crate::ShapeCharset::Hex => "hex",
+                    crate::ShapeCharset::Base64Standard => "base64-standard",
+                    crate::ShapeCharset::Base64Url => "base64-url",
+                };
+                let grouping = shape.grouping.map_or_else(
+                    || "none".to_string(),
+                    |g| {
+                        format!(
+                            "{}:{}:{:x}",
+                            g.group_count, g.group_length, g.separator as u32
+                        )
+                    },
+                );
+                entries.push(format!(
+                    "entropy-shape:{}:{}:{}:{:016x}:{}:{}:{}:{}:{}:{}:{}",
+                    d.id,
+                    index,
+                    charset,
+                    shape.entropy_floor.to_bits(),
+                    shape.special_min_length,
+                    grouping,
+                    shape.require_mixed_case,
+                    shape.require_digit,
+                    shape.min_symbols,
+                    shape.require_non_hex_alpha,
+                    shape.require_group_alpha_digit,
+                ));
             }
             if let Some(policy) = d.plausibility {
                 entries.push(format!(

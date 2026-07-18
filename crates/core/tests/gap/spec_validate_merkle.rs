@@ -252,11 +252,12 @@ bpe_enabled = false
 entropy_floor = [{ floor = 1.5 }]
 
 [[detector.entropy_shapes]]
-kind = "lower-dash-app-password"
+charset = "lower-alnum"
 entropy_floor = 3.9
-group_count = 4
-group_length = 4
 special_min_length = 16
+grouping = { group_count = 4, group_length = 4, separator = "-" }
+require_non_hex_alpha = true
+require_group_alpha_digit = true
 
 [detector.entropy_fallback]
 class = "generic"

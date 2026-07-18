@@ -228,11 +228,7 @@ pub(super) fn isolated_special_shape_min_len(
 ) -> usize {
     let candidate_policy = IsolatedCandidatePolicy::from_compiled(policy);
     entropy_shape
-        .and_then(|shape| match shape {
-            keyhog_core::EntropyShapeSpec::LowerDashAppPassword {
-                special_min_length, ..
-            } => Some(*special_min_length),
-        })
+        .map(|shape| shape.special_min_length)
         .map_or(candidate_policy.symbolic_min_len, |min_len| {
             min_len.min(candidate_policy.symbolic_min_len)
         })
@@ -244,8 +240,8 @@ fn isolated_special_shape_floor_met(
     entropy_shape: Option<&keyhog_core::EntropyShapeSpec>,
     candidate_policy: IsolatedCandidatePolicy,
 ) -> bool {
-    if lower_dash_app_password_layout_matches(candidate, entropy_shape) {
-        return lower_dash_app_password_floor_met_with_policy(candidate, entropy, entropy_shape);
+    if declared_entropy_shape_matches(candidate, entropy_shape) {
+        return declared_entropy_shape_floor_met(candidate, entropy, entropy_shape);
     }
     entropy >= candidate_policy.symbolic_entropy_floor
         && symbolic_special_shape_candidate(candidate, candidate_policy)
@@ -256,8 +252,8 @@ fn isolated_special_shape_possible(
     entropy_shape: Option<&keyhog_core::EntropyShapeSpec>,
     candidate_policy: IsolatedCandidatePolicy,
 ) -> bool {
-    if lower_dash_app_password_layout_matches(candidate, entropy_shape) {
-        return lower_dash_app_password_shape_matches(candidate, entropy_shape);
+    if declared_entropy_shape_matches(candidate, entropy_shape) {
+        return true;
     }
     symbolic_special_shape_candidate(candidate, candidate_policy)
 }
@@ -326,80 +322,131 @@ pub(crate) fn lower_dash_app_password_floor_met_with_policy(
     entropy: f64,
     entropy_shape: Option<&keyhog_core::EntropyShapeSpec>,
 ) -> bool {
-    let Some(entropy_floor) = lower_dash_app_password_declared_floor(entropy_shape) else {
+    declared_entropy_shape_floor_met(candidate, entropy, entropy_shape)
+}
+
+fn declared_entropy_shape_floor_met(
+    candidate: &str,
+    entropy: f64,
+    entropy_shape: Option<&keyhog_core::EntropyShapeSpec>,
+) -> bool {
+    let Some(shape) = entropy_shape else {
         return false;
     };
-    entropy >= entropy_floor && lower_dash_app_password_shape_matches(candidate, entropy_shape)
+    entropy >= shape.entropy_floor && declared_entropy_shape_matches(candidate, entropy_shape)
 }
 
-fn lower_dash_app_password_declared_floor(
-    entropy_shape: Option<&keyhog_core::EntropyShapeSpec>,
-) -> Option<f64> {
-    let Some(keyhog_core::EntropyShapeSpec::LowerDashAppPassword { entropy_floor, .. }) =
-        entropy_shape
-    else {
-        return None;
-    };
-    Some(*entropy_floor)
-}
-
-fn lower_dash_app_password_shape_matches(
+fn declared_entropy_shape_matches(
     candidate: &str,
     entropy_shape: Option<&keyhog_core::EntropyShapeSpec>,
 ) -> bool {
-    if !lower_dash_app_password_layout_matches(candidate, entropy_shape) {
+    let Some(shape) = entropy_shape else {
+        return false;
+    };
+    if candidate.len() < shape.special_min_length {
         return false;
     }
 
-    let mut has_non_hex = false;
-    for group in candidate.split('-') {
-        let mut has_alpha = false;
-        let mut has_digit = false;
-        for b in group.bytes() {
-            if !(b.is_ascii_lowercase() || b.is_ascii_digit()) {
-                return false;
-            }
-            has_alpha |= b.is_ascii_lowercase();
-            has_digit |= b.is_ascii_digit();
-            has_non_hex |= b.is_ascii_alphabetic() && !b.is_ascii_hexdigit();
-        }
-        if !has_alpha || !has_digit {
+    let grouping = shape.grouping;
+    if grouping.is_none() && candidate.as_bytes().contains(&0) {
+        return false;
+    }
+    if let Some(grouping) = grouping {
+        let Some(expected_len) = grouping
+            .group_count
+            .checked_mul(grouping.group_length)
+            .and_then(|length| {
+                length.checked_add(
+                    grouping
+                        .group_count
+                        .saturating_sub(1)
+                        .saturating_mul(grouping.separator.len_utf8()),
+                )
+            })
+        else {
+            return false;
+        };
+        if candidate.len() != expected_len {
             return false;
         }
     }
 
-    has_non_hex
-}
-
-fn lower_dash_app_password_layout_matches(
-    candidate: &str,
-    entropy_shape: Option<&keyhog_core::EntropyShapeSpec>,
-) -> bool {
-    let Some(keyhog_core::EntropyShapeSpec::LowerDashAppPassword {
-        group_count,
-        group_length,
-        ..
-    }) = entropy_shape
-    else {
-        return false;
-    };
-    let Some(expected_len) = group_count
-        .checked_mul(*group_length)
-        .and_then(|length| length.checked_add(group_count.saturating_sub(1)))
-    else {
-        return false;
-    };
-    if candidate.len() != expected_len {
-        return false;
-    }
+    let mut has_upper = false;
+    let mut has_lower = false;
+    let mut has_digit = false;
+    let mut has_non_hex_alpha = false;
+    let mut symbols = 0usize;
     let mut actual_groups = 0usize;
-    for group in candidate.split('-') {
-        if group.len() != *group_length {
+    // NUL cannot pass any declared ASCII charset, so it is a zero-allocation
+    // sentinel that makes an ungrouped candidate yield exactly one group.
+    let separator = grouping.map_or('\0', |grouping| grouping.separator);
+    for group in candidate.split(separator) {
+        if grouping.is_some_and(|grouping| group.len() != grouping.group_length) {
             return false;
         }
         actual_groups += 1;
+        let mut group_has_alpha = false;
+        let mut group_has_digit = false;
+        if shape.charset == keyhog_core::ShapeCharset::Base64Standard
+            && !valid_standard_base64_group(group.as_bytes())
+        {
+            return false;
+        }
+        if shape.charset == keyhog_core::ShapeCharset::Base64Url && group.len() % 4 == 1 {
+            return false;
+        }
+        for byte in group.bytes() {
+            if !shape_charset_accepts(shape.charset, byte) {
+                return false;
+            }
+            has_upper |= byte.is_ascii_uppercase();
+            has_lower |= byte.is_ascii_lowercase();
+            has_digit |= byte.is_ascii_digit();
+            group_has_alpha |= byte.is_ascii_alphabetic();
+            group_has_digit |= byte.is_ascii_digit();
+            has_non_hex_alpha |= byte.is_ascii_alphabetic() && !byte.is_ascii_hexdigit();
+            symbols += usize::from(!byte.is_ascii_alphanumeric());
+        }
+        if shape.require_group_alpha_digit && (!group_has_alpha || !group_has_digit) {
+            return false;
+        }
     }
-    actual_groups == *group_count
+
+    if let Some(grouping) = grouping {
+        if actual_groups != grouping.group_count {
+            return false;
+        }
+        symbols = symbols.saturating_add(grouping.group_count.saturating_sub(1));
+    }
+
+    (!shape.require_mixed_case || (has_upper && has_lower))
+        && (!shape.require_digit || has_digit)
+        && symbols >= shape.min_symbols
+        && (!shape.require_non_hex_alpha || has_non_hex_alpha)
+}
+
+fn valid_standard_base64_group(group: &[u8]) -> bool {
+    if group.len() % 4 == 1 {
+        return false;
+    }
+    let Some(first_padding) = group.iter().position(|&byte| byte == b'=') else {
+        return true;
+    };
+    let padding = group.len() - first_padding;
+    padding <= 2 && group.len() % 4 == 0 && group[first_padding..].iter().all(|&byte| byte == b'=')
+}
+
+fn shape_charset_accepts(charset: keyhog_core::ShapeCharset, byte: u8) -> bool {
+    match charset {
+        keyhog_core::ShapeCharset::LowerAlnum => byte.is_ascii_lowercase() || byte.is_ascii_digit(),
+        keyhog_core::ShapeCharset::Hex => byte.is_ascii_hexdigit(),
+        keyhog_core::ShapeCharset::Base64Standard => {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'=')
+        }
+        keyhog_core::ShapeCharset::Base64Url => {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_')
+        }
+    }
 }
 
 pub(crate) fn mixed_contiguous_token_floor_met(

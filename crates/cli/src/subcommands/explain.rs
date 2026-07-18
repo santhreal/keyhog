@@ -280,16 +280,37 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
         );
     }
     for shape in &d.entropy_shapes {
-        match shape {
-            keyhog_core::EntropyShapeSpec::LowerDashAppPassword {
-                entropy_floor,
-                group_count,
-                group_length,
-                special_min_length,
-            } => println!(
-                "    entropy_shape: kind=lower-dash-app-password entropy_floor={entropy_floor} group_count={group_count} group_length={group_length} special_min_length={special_min_length}"
-            ),
+        let charset = match shape.charset {
+            keyhog_core::ShapeCharset::LowerAlnum => "lower-alnum",
+            keyhog_core::ShapeCharset::Hex => "hex",
+            keyhog_core::ShapeCharset::Base64Standard => "base64-standard",
+            keyhog_core::ShapeCharset::Base64Url => "base64-url",
+        };
+        let mut line = format!(
+            "    entropy_shape: charset={charset} entropy_floor={} special_min_length={}",
+            shape.entropy_floor, shape.special_min_length
+        );
+        if let Some(grouping) = shape.grouping {
+            line.push_str(&format!(
+                " grouping={}x{}sep{:?}",
+                grouping.group_count, grouping.group_length, grouping.separator
+            ));
         }
+        for (flag, on) in [
+            ("require_mixed_case", shape.require_mixed_case),
+            ("require_digit", shape.require_digit),
+            ("require_non_hex_alpha", shape.require_non_hex_alpha),
+            ("require_group_alpha_digit", shape.require_group_alpha_digit),
+        ] {
+            if on {
+                line.push(' ');
+                line.push_str(flag);
+            }
+        }
+        if shape.min_symbols > 0 {
+            line.push_str(&format!(" min_symbols={}", shape.min_symbols));
+        }
+        println!("{line}");
     }
     optional_policy!(
         "sensitive_path_entropy_very_high",

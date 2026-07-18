@@ -297,26 +297,59 @@ fn entropy_fallback_metadata_requires_entropy_identity_and_labels() {
 }
 
 #[test]
-fn entropy_shape_policy_rejects_invalid_bounds_and_duplicate_kinds() {
+fn entropy_shape_policy_rejects_invalid_bounds_and_duplicate_shapes() {
     let mut detector = detector_with_pattern("token=([A-Za-z0-9]+)");
     detector.entropy_shapes = vec![
-        keyhog_core::EntropyShapeSpec::LowerDashAppPassword {
+        keyhog_core::EntropyShapeSpec {
+            charset: keyhog_core::ShapeCharset::LowerAlnum,
             entropy_floor: 8.1,
-            group_count: 0,
-            group_length: 4,
             special_min_length: 20,
+            grouping: Some(keyhog_core::ShapeGrouping {
+                group_count: 0,
+                group_length: 4,
+                separator: '-',
+            }),
+            require_mixed_case: false,
+            require_digit: false,
+            min_symbols: 0,
+            require_non_hex_alpha: true,
+            require_group_alpha_digit: true,
         },
-        keyhog_core::EntropyShapeSpec::LowerDashAppPassword {
+        keyhog_core::EntropyShapeSpec {
+            charset: keyhog_core::ShapeCharset::LowerAlnum,
             entropy_floor: 3.9,
-            group_count: 4,
-            group_length: 4,
+            special_min_length: 20,
+            grouping: Some(keyhog_core::ShapeGrouping {
+                group_count: 4,
+                group_length: 4,
+                separator: '-',
+            }),
+            require_mixed_case: false,
+            require_digit: false,
+            min_symbols: 0,
+            require_non_hex_alpha: true,
+            require_group_alpha_digit: true,
+        },
+        keyhog_core::EntropyShapeSpec {
+            charset: keyhog_core::ShapeCharset::LowerAlnum,
+            entropy_floor: 3.9,
             special_min_length: 16,
+            grouping: Some(keyhog_core::ShapeGrouping {
+                group_count: 4,
+                group_length: 4,
+                separator: '-',
+            }),
+            require_mixed_case: false,
+            require_digit: false,
+            min_symbols: 0,
+            require_non_hex_alpha: true,
+            require_group_alpha_digit: true,
         },
     ];
     let issues = validate_detector(&detector);
     assert!(issues.iter().any(|issue| matches!(
         issue,
-        QualityIssue::Error(message) if message.contains("duplicate kind")
+        QualityIssue::Error(message) if message.contains("duplicates an earlier shape")
     )));
     assert!(issues.iter().any(|issue| matches!(
         issue,
@@ -339,16 +372,25 @@ fn entropy_shape_policy_rejects_invalid_bounds_and_duplicate_kinds() {
 #[test]
 fn entropy_shape_policy_rejects_derived_length_overflow() {
     let mut detector = detector_with_pattern("token=([A-Za-z0-9]+)");
-    detector.entropy_shapes = vec![keyhog_core::EntropyShapeSpec::LowerDashAppPassword {
+    detector.entropy_shapes = vec![keyhog_core::EntropyShapeSpec {
+        charset: keyhog_core::ShapeCharset::LowerAlnum,
         entropy_floor: 3.9,
-        group_count: usize::MAX,
-        group_length: 2,
         special_min_length: 1,
+        grouping: Some(keyhog_core::ShapeGrouping {
+            group_count: usize::MAX,
+            group_length: 2,
+            separator: '-',
+        }),
+        require_mixed_case: false,
+        require_digit: false,
+        min_symbols: 0,
+        require_non_hex_alpha: true,
+        require_group_alpha_digit: true,
     }];
     let issues = validate_detector(&detector);
     assert!(issues.iter().any(|issue| matches!(
         issue,
-        QualityIssue::Error(message) if message.contains("overflow the derived candidate length")
+        QualityIssue::Error(message) if message.contains("overflows the derived candidate length")
     )));
 }
 

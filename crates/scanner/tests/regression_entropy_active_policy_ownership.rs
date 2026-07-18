@@ -61,11 +61,20 @@ fn detector(id: &str, keywords: &[&str], min_len: usize) -> DetectorSpec {
         }),
         keyword_free_min_len: Some(20),
         bpe_enabled: Some(false),
-        entropy_shapes: vec![EntropyShapeSpec::LowerDashAppPassword {
+        entropy_shapes: vec![EntropyShapeSpec {
+            charset: keyhog_core::ShapeCharset::LowerAlnum,
             entropy_floor: 3.9,
-            group_count: 4,
-            group_length: 4,
             special_min_length: 16,
+            grouping: Some(keyhog_core::ShapeGrouping {
+                group_count: 4,
+                group_length: 4,
+                separator: '-',
+            }),
+            require_mixed_case: false,
+            require_digit: false,
+            min_symbols: 0,
+            require_non_hex_alpha: true,
+            require_group_alpha_digit: true,
         }],
         entropy_fallback: Some(EntropyFallbackMetadata {
             class: EntropyFallbackClass::Generic,
@@ -196,6 +205,21 @@ fn active_entropy_owner_without_metadata_fails_compilation() {
         message.contains("metadata-missing-owner")
             && message.contains("omits [detector.entropy_fallback]"),
         "compile must explain the missing detector-owned identity: {message}"
+    );
+}
+
+#[test]
+fn active_entropy_owner_with_multiple_shapes_fails_instead_of_ignoring_policy() {
+    let mut owner = detector("ambiguous-shape-owner", &["custom_secret"], 8);
+    owner.entropy_shapes.push(owner.entropy_shapes[0]);
+    let error = CompiledScanner::compile(vec![owner])
+        .err()
+        .expect("multiple detector-owned shapes must not compile ambiguously");
+    assert!(
+        error.to_string().contains(
+            "ambiguous-shape-owner\" owns entropy detection and must declare exactly one"
+        ),
+        "compile error must identify the detector and exact cardinality contract: {error}"
     );
 }
 
@@ -1185,13 +1209,21 @@ fn lower_dash_entropy_exception_is_owned_by_the_active_detector_shape_policy() {
         .iter_mut()
         .find(|detector| detector.id == "generic-keyword-secret")
         .expect("generic-keyword-secret policy must be present");
-    generic_keyword_secret.entropy_shapes =
-        vec![keyhog_core::EntropyShapeSpec::LowerDashAppPassword {
-            entropy_floor: 8.0,
+    generic_keyword_secret.entropy_shapes = vec![keyhog_core::EntropyShapeSpec {
+        charset: keyhog_core::ShapeCharset::LowerAlnum,
+        entropy_floor: 8.0,
+        special_min_length: 16,
+        grouping: Some(keyhog_core::ShapeGrouping {
             group_count: 4,
             group_length: 4,
-            special_min_length: 16,
-        }];
+            separator: '-',
+        }),
+        require_mixed_case: false,
+        require_digit: false,
+        min_symbols: 0,
+        require_non_hex_alpha: true,
+        require_group_alpha_digit: true,
+    }];
 
     let mut config = ScannerConfig::default();
     config.entropy_enabled = true;
@@ -1219,13 +1251,21 @@ fn lower_dash_entropy_exception_is_owned_by_the_active_detector_shape_policy() {
         .iter_mut()
         .find(|detector| detector.id == "generic-keyword-secret")
         .expect("generic-keyword-secret policy must be present");
-    generic_keyword_secret.entropy_shapes =
-        vec![keyhog_core::EntropyShapeSpec::LowerDashAppPassword {
-            entropy_floor: 3.9,
+    generic_keyword_secret.entropy_shapes = vec![keyhog_core::EntropyShapeSpec {
+        charset: keyhog_core::ShapeCharset::LowerAlnum,
+        entropy_floor: 3.9,
+        special_min_length: 16,
+        grouping: Some(keyhog_core::ShapeGrouping {
             group_count: 4,
             group_length: 4,
-            special_min_length: 16,
-        }];
+            separator: '-',
+        }),
+        require_mixed_case: false,
+        require_digit: false,
+        min_symbols: 0,
+        require_non_hex_alpha: true,
+        require_group_alpha_digit: true,
+    }];
     detectors
         .iter_mut()
         .find(|detector| detector.id == "generic-secret")
@@ -1241,6 +1281,62 @@ fn lower_dash_entropy_exception_is_owned_by_the_active_detector_shape_policy() {
             .any(|finding| finding.credential.as_ref() == secret),
         "declaring the detector-owned shape must admit the exact structural exception: {with_shape:?}"
     );
+}
+
+#[test]
+fn declarative_base64_shape_enforces_alphabet_padding_and_diversity() {
+    const VALID: &str = "Ab3+/Cd4Ef5+Gh6/Ij7=";
+    const INVALID_PADDING: &str = "Ab3+/Cd4Ef5+Gh6/I=7";
+    let shape = keyhog_core::EntropyShapeSpec {
+        charset: keyhog_core::ShapeCharset::Base64Standard,
+        entropy_floor: 0.0,
+        special_min_length: 16,
+        grouping: None,
+        require_mixed_case: true,
+        require_digit: true,
+        min_symbols: 2,
+        require_non_hex_alpha: false,
+        require_group_alpha_digit: false,
+    };
+    let mut detectors =
+        keyhog_core::load_embedded_detectors_or_fail().expect("embedded detector corpus must load");
+    for detector_id in ["generic-keyword-secret", "generic-secret"] {
+        let detector = detectors
+            .iter_mut()
+            .find(|detector| detector.id == detector_id)
+            .expect("generic entropy owner must be present");
+        detector.entropy_shapes = vec![shape];
+        detector.keyword_free_min_len = Some(64);
+        detector
+            .plausibility
+            .as_mut()
+            .expect("generic entropy owner declares plausibility")
+            .symbolic_entropy_floor = 8.0;
+    }
+
+    let mut config = ScannerConfig::default();
+    config.entropy_enabled = true;
+    config.min_confidence = 0.0;
+    config.penalize_test_paths = false;
+    let scanner = CompiledScanner::compile(detectors)
+        .expect("declarative base64 shape corpus must compile")
+        .with_config(config);
+    let chunk = |candidate: &str| Chunk {
+        data: format!("{candidate}\n").into(),
+        metadata: ChunkMetadata {
+            path: Some("notes/shape-contract.txt".into()),
+            ..Default::default()
+        },
+    };
+
+    assert!(scanner
+        .scan_with_backend(&chunk(VALID), ScanBackend::CpuFallback)
+        .iter()
+        .any(|finding| finding.credential.as_ref() == VALID));
+    assert!(scanner
+        .scan_with_backend(&chunk(INVALID_PADDING), ScanBackend::CpuFallback)
+        .iter()
+        .all(|finding| finding.credential.as_ref() != INVALID_PADDING));
 }
 
 #[cfg(feature = "gpu")]

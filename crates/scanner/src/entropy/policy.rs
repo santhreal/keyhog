@@ -273,12 +273,13 @@ impl CompiledEntropyPolicy {
                 detector.id
             ));
         }
-        let entropy_shape = detector.lower_dash_entropy_shape().ok_or_else(|| {
-            format!(
-                "detector {:?} owns entropy detection but omits [[detector.entropy_shapes]]; declare its isolated-candidate policy in the detector TOML",
-                detector.id
-            )
-        })?;
+        let [entropy_shape] = detector.entropy_shapes.as_slice() else {
+            return Err(format!(
+                "detector {:?} owns entropy detection and must declare exactly one [[detector.entropy_shapes]] entry, found {}",
+                detector.id,
+                detector.entropy_shapes.len()
+            ));
+        };
 
         Ok(Self {
             entropy_high,
@@ -320,7 +321,7 @@ impl CompiledEntropyPolicy {
             max_len: Self::required(detector, "max_len", detector.max_len)?,
             #[cfg(feature = "entropy")]
             bpe_max_bytes_per_token,
-            entropy_shape: Some(entropy_shape),
+            entropy_shape: Some(*entropy_shape),
         })
     }
 }

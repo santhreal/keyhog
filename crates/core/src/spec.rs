@@ -632,23 +632,73 @@ impl EntropyFallbackClass {
     }
 }
 
-/// A structural shape that may cross a detector's broad isolated entropy floor.
+/// Character class an isolated entropy shape admits. Replaces the former
+/// per-shape enum variant so a new shape family is TOML data, not scanner code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ShapeCharset {
+    /// Lowercase letters and digits only.
+    LowerAlnum,
+    /// Hexadecimal digits only.
+    Hex,
+    /// Standard base64 alphabet (`A-Za-z0-9`, `+`, `/`, optional `=` padding).
+    Base64Standard,
+    /// URL-safe base64 alphabet (`A-Za-z0-9`, `-`, `_`).
+    Base64Url,
+}
+
+fn default_shape_separator() -> char {
+    '-'
+}
+
+/// Fixed-width separator grouping, e.g. a Bluesky app password's four
+/// dash-separated groups of four. Absent means an ungrouped run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ShapeGrouping {
+    /// Number of separator-delimited groups.
+    pub group_count: usize,
+    /// Exact byte length of every group.
+    pub group_length: usize,
+    /// Character that separates the groups.
+    #[serde(default = "default_shape_separator")]
+    pub separator: char,
+}
+
+/// A declarative structural shape that may cross a detector's broad isolated
+/// entropy floor. Every field is detector TOML data and the scanner keeps one
+/// general matcher, so a new shape family (base64, hex block) is added by a
+/// detector TOML rather than a scanner enum variant.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
-pub enum EntropyShapeSpec {
-    /// Lowercase alphanumeric groups separated by dashes, used by Bluesky app
-    /// passwords and emitted through the generic entropy fallback path.
-    LowerDashAppPassword {
-        /// Minimum Shannon entropy in bits/byte.
-        entropy_floor: f64,
-        /// Number of dash-separated groups.
-        group_count: usize,
-        /// Exact byte length of every group.
-        group_length: usize,
-        /// Minimum candidate length used by the isolated-shape revisit. This
-        /// may be below the detector's broad keyword-free minimum.
-        special_min_length: usize,
-    },
+#[serde(deny_unknown_fields)]
+pub struct EntropyShapeSpec {
+    /// Character class the candidate body must consist of.
+    pub charset: ShapeCharset,
+    /// Minimum Shannon entropy in bits/byte.
+    pub entropy_floor: f64,
+    /// Minimum candidate length used by the isolated-shape revisit. This may be
+    /// below the detector's broad keyword-free minimum.
+    pub special_min_length: usize,
+    /// Optional separator grouping. Absent means an ungrouped run.
+    #[serde(default)]
+    pub grouping: Option<ShapeGrouping>,
+    /// Require both a lowercase and an uppercase letter.
+    #[serde(default)]
+    pub require_mixed_case: bool,
+    /// Require at least one digit.
+    #[serde(default)]
+    pub require_digit: bool,
+    /// Minimum count of symbol (non-alphanumeric) bytes.
+    #[serde(default)]
+    pub min_symbols: usize,
+    /// Require at least one non-hex alphabetic byte, distinguishing an app
+    /// password from a pure-hex digest of the same layout.
+    #[serde(default)]
+    pub require_non_hex_alpha: bool,
+    /// When grouped, require every group to contain at least one letter and one
+    /// digit (the app-password per-group rule).
+    #[serde(default)]
+    pub require_group_alpha_digit: bool,
 }
 
 /// One detector-local pure-hex key-material policy.
@@ -683,13 +733,6 @@ impl DetectorSpec {
     /// Whether this detector supplies policy to the generic entropy engine.
     pub fn owns_entropy_policy(&self) -> bool {
         self.kind == DetectorKind::Phase2Generic || self.entropy_policy_priority.is_some()
-    }
-
-    /// Return the detector-owned lower-dash isolated shape, if declared.
-    pub fn lower_dash_entropy_shape(&self) -> Option<EntropyShapeSpec> {
-        self.entropy_shapes.iter().find_map(|shape| match shape {
-            EntropyShapeSpec::LowerDashAppPassword { .. } => Some(*shape),
-        })
     }
 
     /// Return the stable, redaction-safe declaration used by detector

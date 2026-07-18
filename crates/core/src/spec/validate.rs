@@ -685,50 +685,87 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
             ));
         }
     }
-    let mut lower_dash_shape_seen = false;
     if !spec.entropy_shapes.is_empty() && !entropy_owner {
         issues.push(QualityIssue::Error(
             "entropy_shapes require an active detector-owned entropy policy".into(),
         ));
     }
+    if spec.entropy_shapes.len() > 1 {
+        issues.push(QualityIssue::Error(format!(
+            "active entropy policy accepts exactly one detector.entropy_shapes entry, found {}",
+            spec.entropy_shapes.len()
+        )));
+    }
+    let mut shape_signatures: Vec<(crate::spec::ShapeCharset, Option<(usize, usize, char)>)> =
+        Vec::new();
     for (index, shape) in spec.entropy_shapes.iter().enumerate() {
-        match shape {
-            crate::spec::EntropyShapeSpec::LowerDashAppPassword {
-                entropy_floor,
-                group_count,
-                group_length,
-                special_min_length,
-            } => {
-                if lower_dash_shape_seen {
-                    issues.push(QualityIssue::Error(
-                        "entropy_shapes contains duplicate kind \"lower-dash-app-password\"".into(),
-                    ));
-                }
-                lower_dash_shape_seen = true;
-                if !entropy_floor.is_finite() || !(0.0..=8.0).contains(entropy_floor) {
-                    issues.push(QualityIssue::Error(format!(
-                        "entropy_shapes[{index}].entropy_floor must be finite and in [0.0, 8.0], found {entropy_floor}"
-                    )));
-                }
-                if *group_count == 0 || *group_length == 0 {
-                    issues.push(QualityIssue::Error(format!(
-                        "entropy_shapes[{index}] group_count and group_length must both be greater than 0"
-                    )));
-                }
-                let derived_length = group_count
-                    .checked_mul(*group_length)
-                    .and_then(|length| length.checked_add(group_count.saturating_sub(1)));
-                let Some(derived_length) = derived_length else {
-                    issues.push(QualityIssue::Error(format!(
-                        "entropy_shapes[{index}] group_count/group_length overflow the derived candidate length"
-                    )));
-                    continue;
-                };
-                if *special_min_length == 0 || *special_min_length > derived_length {
-                    issues.push(QualityIssue::Error(format!(
-                        "entropy_shapes[{index}].special_min_length must be in 1..={derived_length}, found {special_min_length}"
-                    )));
-                }
+        let signature = (
+            shape.charset,
+            shape
+                .grouping
+                .map(|g| (g.group_count, g.group_length, g.separator)),
+        );
+        if shape_signatures.contains(&signature) {
+            issues.push(QualityIssue::Error(format!(
+                "entropy_shapes[{index}] duplicates an earlier shape's charset and grouping"
+            )));
+        }
+        shape_signatures.push(signature);
+        if !shape.entropy_floor.is_finite() || !(0.0..=8.0).contains(&shape.entropy_floor) {
+            issues.push(QualityIssue::Error(format!(
+                "entropy_shapes[{index}].entropy_floor must be finite and in [0.0, 8.0], found {}",
+                shape.entropy_floor
+            )));
+        }
+        if shape.special_min_length == 0 {
+            issues.push(QualityIssue::Error(format!(
+                "entropy_shapes[{index}].special_min_length must be greater than 0"
+            )));
+        }
+        if shape.require_mixed_case && shape.charset == crate::spec::ShapeCharset::LowerAlnum {
+            issues.push(QualityIssue::Error(format!(
+                "entropy_shapes[{index}].require_mixed_case is impossible with charset lower-alnum"
+            )));
+        }
+        if shape.require_non_hex_alpha && shape.charset == crate::spec::ShapeCharset::Hex {
+            issues.push(QualityIssue::Error(format!(
+                "entropy_shapes[{index}].require_non_hex_alpha is impossible with charset hex"
+            )));
+        }
+        if shape.require_group_alpha_digit && shape.grouping.is_none() {
+            issues.push(QualityIssue::Error(format!(
+                "entropy_shapes[{index}].require_group_alpha_digit requires grouping"
+            )));
+        }
+        if let Some(grouping) = shape.grouping {
+            if grouping.group_count == 0 || grouping.group_length == 0 {
+                issues.push(QualityIssue::Error(format!(
+                    "entropy_shapes[{index}] grouping.group_count and group_length must both be greater than 0"
+                )));
+                continue;
+            }
+            let derived_length = grouping
+                .group_count
+                .checked_mul(grouping.group_length)
+                .and_then(|length| {
+                    length.checked_add(
+                        grouping
+                            .group_count
+                            .saturating_sub(1)
+                            .saturating_mul(grouping.separator.len_utf8()),
+                    )
+                });
+            let Some(derived_length) = derived_length else {
+                issues.push(QualityIssue::Error(format!(
+                    "entropy_shapes[{index}] grouping overflows the derived candidate length"
+                )));
+                continue;
+            };
+            if shape.special_min_length > derived_length {
+                issues.push(QualityIssue::Error(format!(
+                    "entropy_shapes[{index}].special_min_length must be in 1..={derived_length}, found {}",
+                    shape.special_min_length
+                )));
             }
         }
     }

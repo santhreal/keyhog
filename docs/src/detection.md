@@ -125,7 +125,7 @@ invariants, not a second source of per-detector tuning.
 | `plausibility.keyword_free_operator_margin` | Raises the detector-owned margin composed with the Tier-A entropy threshold | Lowers that explicit margin for the `keyword-free` role owner; no other detector may declare it |
 | `[detector.entropy_fallback]` | Changes the emitted synthetic entropy finding identity and semantic class for that detector | Omitting it for an active entropy owner fails compilation; there is no scanner-global compatibility identity |
 | `entropy_roles` | Claims one or more corpus entry paths: `keyword-free`, `isolated-bare`, or `unclaimed-keyword` | Omitting a role disables that path in a focused custom corpus; no built-in owner or threshold is substituted |
-| `[[detector.entropy_shapes]]` | A lower declared shape floor admits more matching isolated credentials | A higher floor narrows the exception; omission is invalid for an active entropy owner |
+| `[[detector.entropy_shapes]]` | `charset`, optional `grouping`, diversity requirements, and a lower shape floor admit explicitly structured isolated credentials | Stricter structural requirements or a higher floor narrow the exception; omission is invalid for an active entropy owner |
 | `entropy_floor` | A higher applicable length-bucket floor suppresses more low-entropy candidates for that detector | A lower floor preserves more human-chosen or structured credentials |
 | `plausibility.mixed_alnum_floor` | Rejects more identifier-like alphanumeric runs | Preserves more low-randomness mixed-alphanumeric values |
 | `plausibility.symbolic_entropy_floor` | Raises the minimum entropy for symbol-bearing credential assignments, including the bare `auth=` bridge | Preserves more anchored symbolic passwords through the same compiled detector policy |
@@ -240,12 +240,13 @@ These settings do not all use one generic “last value wins” rule:
   for entropy-only findings. Omitting the block is a visible compile error;
   no scanner-global keyword classifier or compatibility identity can relabel a
   custom candidate.
-- **Isolated entropy shapes:** generic entropy owners may declare a typed
-  `lower-dash-app-password` shape with its entropy floor, group count/length,
-  and special minimum length. The candidate length is derived as
-  `group_count * group_length + group_count - 1`, with one dash between groups;
-  `special_min_length` controls the short-candidate revisit and must not exceed
-  that derived length. The shape is used for anchorless synthetic entropy
+- **Isolated entropy shapes:** generic entropy owners declare one data-driven
+  shape with its character set, entropy floor, optional fixed-width grouping,
+  diversity requirements, and special minimum length. For the shipped
+  lower-alphanumeric app-password policy, candidate length is derived from four
+  groups of four plus three separators; `special_min_length` controls the
+  short-candidate revisit and must not exceed that derived length. The shape is
+  used for anchorless synthetic entropy
   recovery; the anchored `bluesky-app-password` regex remains the source of the
   named Bluesky finding. A custom corpus without the shape has no isolated
   exception, rather than inheriting an embedded detector policy.

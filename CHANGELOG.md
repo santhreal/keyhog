@@ -6,6 +6,11 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Detector-owned isolated entropy exceptions are now declarative TOML shapes
+  with typed character sets, optional grouping, entropy and length floors, and
+  explicit diversity requirements. The scanner uses one generic matcher,
+  rejects ambiguous multi-shape owners, and no longer carries a hardcoded
+  lower-dash app-password enum branch.
 - Scanner construction now builds a backend-neutral Hyperscan phase-one plan
   without compiling databases. Scalar and GPU-selected scans leave it
   untouched; explicit SIMD selection, calibration, and daemon readiness

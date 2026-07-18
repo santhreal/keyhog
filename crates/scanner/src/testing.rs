@@ -3715,7 +3715,7 @@ pub mod entropy_isolated {
                     .entropy_roles
                     .contains(&keyhog_core::EntropyDetectionRole::KeywordFree)
             })
-            .and_then(keyhog_core::DetectorSpec::lower_dash_entropy_shape);
+            .and_then(|detector| detector.entropy_shapes.first().copied());
         crate::entropy::scanner::lower_dash_app_password_floor_met_with_policy(
             candidate,
             entropy,

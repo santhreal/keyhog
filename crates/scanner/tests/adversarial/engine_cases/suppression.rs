@@ -396,11 +396,20 @@ fn dogfood_records_engine_probabilistic_gate_drop() {
             max_len: None,
             floor: 0.0,
         }],
-        entropy_shapes: vec![keyhog_core::EntropyShapeSpec::LowerDashAppPassword {
+        entropy_shapes: vec![keyhog_core::EntropyShapeSpec {
+            charset: keyhog_core::ShapeCharset::LowerAlnum,
             entropy_floor: 3.9,
-            group_count: 4,
-            group_length: 4,
             special_min_length: 16,
+            grouping: Some(keyhog_core::ShapeGrouping {
+                group_count: 4,
+                group_length: 4,
+                separator: '-',
+            }),
+            require_mixed_case: false,
+            require_digit: false,
+            min_symbols: 0,
+            require_non_hex_alpha: true,
+            require_group_alpha_digit: true,
         }],
         entropy_fallback: Some(keyhog_core::EntropyFallbackMetadata {
             class: keyhog_core::EntropyFallbackClass::Generic,

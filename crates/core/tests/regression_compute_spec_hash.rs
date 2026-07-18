@@ -515,11 +515,20 @@ fn spec_hash_binds_entropy_fallback_class() {
 }
 
 knob_changes_digest!(spec_hash_binds_entropy_shapes, |d| d.entropy_shapes =
-    vec![EntropyShapeSpec::LowerDashAppPassword {
+    vec![EntropyShapeSpec {
+        charset: keyhog_core::ShapeCharset::LowerAlnum,
         entropy_floor: 3.9,
-        group_count: 4,
-        group_length: 4,
         special_min_length: 16,
+        grouping: Some(keyhog_core::ShapeGrouping {
+            group_count: 4,
+            group_length: 4,
+            separator: '-',
+        }),
+        require_mixed_case: false,
+        require_digit: false,
+        min_symbols: 0,
+        require_non_hex_alpha: true,
+        require_group_alpha_digit: true,
     }]);
 knob_changes_digest!(spec_hash_binds_plausibility_policy, |d| d.plausibility =
     Some(DetectorPlausibilityPolicySpec {
