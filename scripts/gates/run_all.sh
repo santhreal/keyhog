@@ -11,6 +11,7 @@
 #   #1c no_stale_internal_refs, retired planning docs/registries cannot reappear
 #   #1d no_deferral_markers, stale deferral markers cannot reappear
 #   #1e docs_truth, canonical mdBook is complete and source-true
+#   #1i doc_version_pins, documented action/install pins resolve to a real release
 #   #1f github_actions_pinned, repo CI cannot execute mutable third-party refs
 #   package_licenses: publishable crate roots carry canonical license bytes
 #   #4 surface_coverage: a subcommand with no real-process test
@@ -119,6 +120,10 @@ run "Gate #1e self-test: stale and duplicate documentation is detected" \
   python3 scripts/gates/docs_truth.py --self-test
 run "Gate #1e: canonical mdBook documentation is complete and source-true" \
   python3 scripts/gates/docs_truth.py
+run "Gate #1i self-test: dangling doc version pins are detected" \
+  python3 scripts/gates/doc_version_pins.py --self-test
+run "Gate #1i: documented action/install pins resolve to v0 or the current version" \
+  python3 scripts/gates/doc_version_pins.py
 run "Package license gate: publishable crate roots use canonical bytes" \
   python3 -B scripts/gates/package_licenses.py
 run "Gate #1f self-test: mutable GitHub Action refs are detected" \
