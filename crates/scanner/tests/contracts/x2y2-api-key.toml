@@ -8,14 +8,14 @@ severity = "medium"
 # least fires on its canonical-shape anchor + body.
 
 [[positive]]
-text = "X-API-KEY                                          :                                                    JSuKxKWNfd898GujYX9p66-_M1knu3xIPTZfsus5cByqlnilvi7"
+text = "curl https://api.x2y2.org/orders\nX-API-KEY: JSuKxKWNfd898GujYX9p66-_M1knu3xIPTZfsus5cByqlnilvi7"
 credential = "JSuKxKWNfd898GujYX9p66-_M1knu3xIPTZfsus5cByqlnilvi7"
-reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+reason = "Canonical X2Y2 API endpoint followed by its documented authentication header."
 
 [[positive]]
-text = "X-API-KEY                                          :                                                    JSuKxKWNfd898GujYX9p66-_M1knu3xIPTZfsus5cByqlnilvi7\""
+text = "X-API-KEY: JSuKxKWNfd898GujYX9p66-_M1knu3xIPTZfsus5cByqlnilvi7\nhttps://api.x2y2.org/orders"
 credential = "JSuKxKWNfd898GujYX9p66-_M1knu3xIPTZfsus5cByqlnilvi7"
-reason = "Quoted-value variant of the canonical positive."
+reason = "Documented authentication header preceding the canonical X2Y2 API endpoint."
 
 [[negative]]
 text = "X-API-KEY                                          :                                                    YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
@@ -25,9 +25,13 @@ reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)
 text = "X-API-KEY                                          :                                                    JSuKxEXAMPLEEXAMPLEilvi7"
 reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
+[[negative]]
+text = "X-API-KEY: JSuKxKWNfd898GujYX9p66-_M1knu3xIPTZfsus5cByqlnilvi7"
+reason = "A generic API header does not identify the credential as X2Y2."
+
 # ---- EVASION (adversarial) -----------------------------------------
 
 [[evasion]]
 text = '# x2y2 (rotate): X2Y2_API_KEY = "JSuKxKWNfd898GujYX9p66-_M1knu3xIPTZfsus5cByqlnilvi7"'
 credential = "JSuKxKWNfd898GujYX9p66-_M1knu3xIPTZfsus5cByqlnilvi7"
-reason = "Commented-out config; the QUOTED X2Y2_API_KEY = form fires x2y2-api-key distinctly (the bare X-API-KEY: form is claimed by the overlapping 8x8-api-credentials which shares that generic pattern)."
+reason = "Commented-out config; the quoted X2Y2_API_KEY form remains attributable to X2Y2 without relying on a generic header owner."

@@ -13,6 +13,11 @@ text = "MOOSEND_API_KEY=\"a4f4f-7a6c28--633f18a1a2b0ff571464fc\""
 credential = "a4f4f-7a6c28--633f18a1a2b0ff571464fc"
 reason = "Quoted-value variant of the canonical positive."
 
+[[positive]]
+text = "https://api.moosend.com/v3/subscribers.json\nX-Api-Key: a4f4f-7a6c28--633f18a1a2b0ff571464fc"
+credential = "a4f4f-7a6c28--633f18a1a2b0ff571464fc"
+reason = "Moosend API host followed by its authentication header."
+
 [[negative]]
 text = "MOOSEND_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
 reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
@@ -20,6 +25,10 @@ reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)
 [[negative]]
 text = "MOOSEND_API_KEY=a4f4fEXAMPLEEXAMPLE464fc"
 reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
+
+[[negative]]
+text = "X-Api-Key: a4f4f-7a6c28--633f18a1a2b0ff571464fc"
+reason = "A generic API header does not identify the credential as Moosend."
 
 [[evasion]]
 text = "export MOOSEND_API_KEY=a4f4f-7a6c28--633f18a1a2b0ff571464fc"

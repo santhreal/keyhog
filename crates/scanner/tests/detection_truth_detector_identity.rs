@@ -6,6 +6,14 @@
 
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
+use std::sync::{LazyLock, Mutex};
+
+static SCANNER: LazyLock<Mutex<CompiledScanner>> = LazyLock::new(|| {
+    Mutex::new(
+        CompiledScanner::compile(keyhog_core::embedded_detector_specs().to_vec())
+            .expect("scanner compile"),
+    )
+});
 
 struct Found {
     detector_id: String,
@@ -16,8 +24,8 @@ struct Found {
 }
 
 fn scan(text: &str) -> Vec<Found> {
-    let detectors = keyhog_core::embedded_detector_specs().to_vec();
-    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
+    let scanner = SCANNER.lock().expect("identity scanner lock");
+    scanner.clear_fragment_cache();
     let chunk = Chunk {
         data: text.into(),
         metadata: ChunkMetadata {

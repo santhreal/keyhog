@@ -13,6 +13,11 @@ text = "SKYSCANNER_API_KEY=\"JEA8DfgFxzo9YbHh99eKuvHZUH62tIOeNPCQWBgg\""
 credential = "JEA8DfgFxzo9YbHh99eKuvHZUH62tIOeNPCQWBgg"
 reason = "Quoted-value variant of the canonical positive."
 
+[[positive]]
+text = "https://partners.api.skyscanner.net/apiservices/v3/cultures\nx-api-key: JEA8DfgFxzo9YbHh99eKuvHZUH62tIOeNPCQWBgg"
+credential = "JEA8DfgFxzo9YbHh99eKuvHZUH62tIOeNPCQWBgg"
+reason = "Documented Skyscanner API host followed by its authentication header."
+
 [[negative]]
 text = "SKYSCANNER_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
 reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
@@ -20,6 +25,10 @@ reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)
 [[negative]]
 text = "SKYSCANNER_API_KEY=JEA8DEXAMPLEEXAMPLEQWBgg"
 reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
+
+[[negative]]
+text = "x-api-key: JEA8DfgFxzo9YbHh99eKuvHZUH62tIOeNPCQWBgg"
+reason = "A generic API header does not identify the credential as Skyscanner."
 
 [[evasion]]
 text = "{\"SKYSCANNER_API_KEY\":\"JEA8DfgFxzo9YbHh99eKuvHZUH62tIOeNPCQWBgg\"}"

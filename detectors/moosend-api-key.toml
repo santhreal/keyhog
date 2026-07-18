@@ -17,8 +17,15 @@ description = "Moosend API key (32 hex characters, may include dashes)"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:X-Api-Key|x-api-key)[=:\\s\"'']+([a-f0-9-]{32,36})"
-description = "Moosend API key from header format"
+regex = "(?is)api\\.moosend\\.com.{0,256}x[_\\-\\s]?api[_\\-\\s]?key[=:\\s\"'']+([a-f0-9-]{32,36})"
+required_literals = ["api.moosend.com"]
+description = "Moosend API key header following the Moosend API endpoint"
+group = 1
+
+[[detector.patterns]]
+regex = "(?is)x[_\\-\\s]?api[_\\-\\s]?key[=:\\s\"'']+([a-f0-9-]{32,36}).{0,256}api\\.moosend\\.com"
+required_literals = ["api.moosend.com"]
+description = "Moosend API key header preceding the Moosend API endpoint"
 group = 1
 
 [detector.verify]
@@ -37,3 +44,7 @@ status = 200
 [[detector.tests]]
 test_positive = "MOOSEND_API_KEY=a4f4f-7a6c28--633f18a1a2b0ff571464fc"
 test_negative = "MOOSEND_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+
+[[detector.tests]]
+test_positive = "https://api.moosend.com/v3/subscribers.json\nX-Api-Key: a4f4f-7a6c28--633f18a1a2b0ff571464fc"
+test_negative = "X-Api-Key: a4f4f-7a6c28--633f18a1a2b0ff571464fc"

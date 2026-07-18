@@ -6,6 +6,14 @@
 
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
+use std::sync::{LazyLock, Mutex};
+
+static SCANNER: LazyLock<Mutex<CompiledScanner>> = LazyLock::new(|| {
+    Mutex::new(
+        CompiledScanner::compile(keyhog_core::embedded_detector_specs().to_vec())
+            .expect("scanner compile"),
+    )
+});
 
 struct Found {
     detector_id: String,
@@ -16,8 +24,8 @@ struct Found {
 }
 
 fn scan(text: &str) -> Vec<Found> {
-    let detectors = keyhog_core::embedded_detector_specs().to_vec();
-    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
+    let scanner = SCANNER.lock().expect("identity scanner lock");
+    scanner.clear_fragment_cache();
     let chunk = Chunk {
         data: text.into(),
         metadata: ChunkMetadata {
@@ -121,12 +129,12 @@ fn mailgun_api_key_identity() {
 #[test]
 fn github_oauth_token_identity() {
     assert_identity(
-        "t = gho_0123456789abcdef0123456789abcdef0123",
+        "t = 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",
         "github-oauth-access-token",
         "github",
         "Critical",
         4,
-        "gho_0123456789abcdef0123456789abcdef0123",
+        "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",
     );
 }
 
@@ -139,6 +147,173 @@ fn google_oauth_client_secret_identity() {
         "Critical",
         4,
         "GOCSPX-0123456789abcdefghijklmnopqr",
+    );
+}
+
+#[test]
+fn eight_x_eight_header_requires_service_context() {
+    let credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5";
+    let unrelated = format!("X-Api-Key: {credential}");
+    let unrelated_findings = scan(&unrelated);
+    assert!(
+        unrelated_findings
+            .iter()
+            .all(|finding| finding.detector_id != "8x8-api-credentials"),
+        "a generic X-Api-Key header must not be attributed to 8x8: {}",
+        unrelated_findings
+            .iter()
+            .map(|finding| finding.detector_id.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+
+    let contextual = format!("https://api.8x8.com/stats\nX-Api-Key: {credential}");
+    assert_identity(
+        &contextual,
+        "8x8-api-credentials",
+        "8x8",
+        "Critical",
+        contextual
+            .find(credential)
+            .expect("fixture contains its credential"),
+        credential,
+    );
+
+    let reversed = format!("X-Api-Key: {credential}\nhttps://api.8x8.com/stats");
+    assert_identity(
+        &reversed,
+        "8x8-api-credentials",
+        "8x8",
+        "Critical",
+        reversed
+            .find(credential)
+            .expect("fixture contains its credential"),
+        credential,
+    );
+}
+
+#[test]
+fn x2y2_header_requires_service_context() {
+    let credential = "JSuKxKWNfd898GujYX9p66-_M1knu3xIPTZfsus5cByqlnilvi7";
+    let unrelated = format!("X-API-KEY: {credential}");
+    let unrelated_findings = scan(&unrelated);
+    assert!(
+        unrelated_findings
+            .iter()
+            .all(|finding| finding.detector_id != "x2y2-api-key"),
+        "a generic X-API-KEY header must not be attributed to X2Y2: {}",
+        unrelated_findings
+            .iter()
+            .map(|finding| finding.detector_id.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+
+    let contextual = format!("https://api.x2y2.org/orders\nX-API-KEY: {credential}");
+    assert_identity(
+        &contextual,
+        "x2y2-api-key",
+        "x2y2",
+        "Medium",
+        contextual
+            .find(credential)
+            .expect("fixture contains its credential"),
+        credential,
+    );
+
+    let reversed = format!("X-API-KEY: {credential}\nhttps://api.x2y2.org/orders");
+    assert_identity(
+        &reversed,
+        "x2y2-api-key",
+        "x2y2",
+        "Medium",
+        reversed
+            .find(credential)
+            .expect("fixture contains its credential"),
+        credential,
+    );
+}
+
+#[test]
+fn provider_api_headers_require_service_context() {
+    let cases = [
+        (
+            "opensea-api-key",
+            "opensea",
+            "High",
+            "https://api.opensea.io/api/v2/collections",
+            "X-API-KEY",
+            "2sIuLPADN-nQyiY2sVUsxowxpKZUoKKW",
+        ),
+        (
+            "omnisend-api-key",
+            "omnisend",
+            "Critical",
+            "https://api.omnisend.com/v3/account",
+            "X-API-Key",
+            "614030930ca9626eedd2b6b73c763ac9",
+        ),
+        (
+            "skyscanner-api-key",
+            "skyscanner",
+            "Medium",
+            "https://partners.api.skyscanner.net/apiservices/v3/cultures",
+            "x-api-key",
+            "JEA8DfgFxzo9YbHh99eKuvHZUH62tIOeNPCQWBgg",
+        ),
+        (
+            "moosend-api-key",
+            "moosend",
+            "High",
+            "https://api.moosend.com/v3/subscribers.json",
+            "X-Api-Key",
+            "a4f4f-7a6c28--633f18a1a2b0ff571464fc",
+        ),
+    ];
+
+    for (detector_id, service, severity, endpoint, header, credential) in cases {
+        let unrelated = format!("{header}: {credential}");
+        assert!(
+            scan(&unrelated)
+                .iter()
+                .all(|finding| finding.detector_id != detector_id),
+            "a generic {header} header must not be attributed to {detector_id}"
+        );
+
+        for contextual in [
+            format!("{endpoint}\n{header}: {credential}"),
+            format!("{header}: {credential}\n{endpoint}"),
+        ] {
+            assert_identity(
+                &contextual,
+                detector_id,
+                service,
+                severity,
+                contextual
+                    .find(credential)
+                    .expect("fixture contains its credential"),
+                credential,
+            );
+        }
+    }
+
+    let passbase_key = "7VVpvY_rJEc_G33gXrRw";
+    assert!(
+        scan(&format!("X-API-KEY: {passbase_key}"))
+            .iter()
+            .all(|finding| finding.detector_id != "passbase-api-key"),
+        "a generic X-API-KEY header must not be attributed to Passbase"
+    );
+    let passbase_assignment = format!("PASSBASE_API_KEY={passbase_key}");
+    assert_identity(
+        &passbase_assignment,
+        "passbase-api-key",
+        "passbase",
+        "High",
+        passbase_assignment
+            .find(passbase_key)
+            .expect("fixture contains its credential"),
+        passbase_key,
     );
 }
 

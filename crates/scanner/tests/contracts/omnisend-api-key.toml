@@ -13,6 +13,11 @@ text = "OMNISEND_API_KEY=\"614030930ca9626eedd2b6b73c763ac9\""
 credential = "614030930ca9626eedd2b6b73c763ac9"
 reason = "Quoted-value variant of the canonical positive."
 
+[[positive]]
+text = "https://api.omnisend.com/v3/account\nX-API-Key: 614030930ca9626eedd2b6b73c763ac9"
+credential = "614030930ca9626eedd2b6b73c763ac9"
+reason = "Omnisend API host followed by its authentication header."
+
 [[negative]]
 text = "OMNISEND_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
 reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
@@ -20,6 +25,10 @@ reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)
 [[negative]]
 text = "OMNISEND_API_KEY=61403EXAMPLEEXAMPLE63ac9"
 reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
+
+[[negative]]
+text = "X-API-Key: 614030930ca9626eedd2b6b73c763ac9"
+reason = "A generic API header does not identify the credential as Omnisend."
 
 [[evasion]]
 text = "# OMNISEND_API_KEY=614030930ca9626eedd2b6b73c763ac9"

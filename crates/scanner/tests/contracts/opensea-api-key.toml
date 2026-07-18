@@ -13,6 +13,11 @@ text = "opensea=\"2sIuLPADN-nQyiY2sVUsxowxpKZUoKKW\""
 credential = "2sIuLPADN-nQyiY2sVUsxowxpKZUoKKW"
 reason = "Quoted-value variant of the canonical positive."
 
+[[positive]]
+text = "https://api.opensea.io/api/v2/collections\nX-API-KEY: 2sIuLPADN-nQyiY2sVUsxowxpKZUoKKW"
+credential = "2sIuLPADN-nQyiY2sVUsxowxpKZUoKKW"
+reason = "Documented OpenSea API host followed by its authentication header."
+
 [[negative]]
 text = "opensea=\"YOUR_API_KEY_HERE_PLACEHOLDER_VALUE\""
 reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
@@ -20,6 +25,10 @@ reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)
 [[negative]]
 text = "opensea=\"2sIuLEXAMPLEEXAMPLEUoKKW\""
 reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
+
+[[negative]]
+text = "X-API-KEY: 2sIuLPADN-nQyiY2sVUsxowxpKZUoKKW"
+reason = "A generic API header does not identify the credential as OpenSea."
 
 [[evasion]]
 text = "export opensea=\"2sIuLPADN-nQyiY2sVUsxowxpKZUoKKW\""

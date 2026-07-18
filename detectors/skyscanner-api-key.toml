@@ -9,7 +9,7 @@ name = "Skyscanner API Key"
 service = "skyscanner"
 severity = "medium"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
-keywords = ["SKYSCANNER", "skyscanner", "x-api-key", "X-API-KEY"]
+keywords = ["SKYSCANNER", "skyscanner"]
 
 [[detector.patterns]]
 regex = "(?:SKYSCANNER|skyscanner)[_\\s]?(?:API_KEY|api_key|KEY|key)[=:\\s\"'']+([A-Za-z0-9]{32,64})"
@@ -17,8 +17,15 @@ description = "Skyscanner API key with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:x-api-key|X-API-KEY)[=:\\s\"'']+([A-Za-z0-9]{32,64})"
-description = "Skyscanner x-api-key header value"
+regex = "(?is)partners\\.api\\.skyscanner\\.net.{0,256}x[_\\-\\s]?api[_\\-\\s]?key[=:\\s\"'']+([A-Za-z0-9]{32,64})"
+required_literals = ["partners.api.skyscanner.net"]
+description = "Skyscanner API key header following the Skyscanner API endpoint"
+group = 1
+
+[[detector.patterns]]
+regex = "(?is)x[_\\-\\s]?api[_\\-\\s]?key[=:\\s\"'']+([A-Za-z0-9]{32,64}).{0,256}partners\\.api\\.skyscanner\\.net"
+required_literals = ["partners.api.skyscanner.net"]
+description = "Skyscanner API key header preceding the Skyscanner API endpoint"
 group = 1
 
 [detector.verify]
@@ -37,3 +44,7 @@ status = 200
 [[detector.tests]]
 test_positive = "SKYSCANNER_API_KEY=JEA8DfgFxzo9YbHh99eKuvHZUH62tIOeNPCQWBgg"
 test_negative = "SKYSCANNER_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+
+[[detector.tests]]
+test_positive = "https://partners.api.skyscanner.net/apiservices/v3/cultures\nx-api-key: JEA8DfgFxzo9YbHh99eKuvHZUH62tIOeNPCQWBgg"
+test_negative = "x-api-key: JEA8DfgFxzo9YbHh99eKuvHZUH62tIOeNPCQWBgg"

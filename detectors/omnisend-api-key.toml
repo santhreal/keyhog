@@ -17,8 +17,15 @@ description = "Omnisend API key (32 hex characters) with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "(?:X-API-Key|x-api-key)[=:\\s\"'']+([a-f0-9]{32})"
-description = "Omnisend API key from header format"
+regex = "(?is)api\\.omnisend\\.com.{0,256}x[_\\-\\s]?api[_\\-\\s]?key[=:\\s\"'']+([a-f0-9]{32})"
+required_literals = ["api.omnisend.com"]
+description = "Omnisend API key header following the Omnisend API endpoint"
+group = 1
+
+[[detector.patterns]]
+regex = "(?is)x[_\\-\\s]?api[_\\-\\s]?key[=:\\s\"'']+([a-f0-9]{32}).{0,256}api\\.omnisend\\.com"
+required_literals = ["api.omnisend.com"]
+description = "Omnisend API key header preceding the Omnisend API endpoint"
 group = 1
 
 [detector.verify]
@@ -42,3 +49,7 @@ sensitivity = "hashed"
 [[detector.tests]]
 test_positive = "OMNISEND_API_KEY=614030930ca9626eedd2b6b73c763ac9"
 test_negative = "OMNISEND_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+
+[[detector.tests]]
+test_positive = "https://api.omnisend.com/v3/account\nX-API-Key: 614030930ca9626eedd2b6b73c763ac9"
+test_negative = "X-API-Key: 614030930ca9626eedd2b6b73c763ac9"

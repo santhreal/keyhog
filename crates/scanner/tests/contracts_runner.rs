@@ -527,9 +527,10 @@ fn every_contract_has_evasion_section() {
     /// required companions (twilio-api-key/twilio-iot), `[\s"']`/quote-only separators
     /// (typeform/zora/x2y2), the hex-digest gate on double-quoted 40-hex, special-char
     /// values (z85/surrealdb/thales/upcloud), connection-strings (vercel/yugabytedb),
-    /// and multiline JSON (vertexai). The backfill also surfaced 5 recorded detector
-    /// findings (BACKLOG §4): aerisweather/x2y2 unanchored generic-header arms,
-    /// google-artifact garbage-capture, turso/woocommerce duplicate patterns.
+    /// and multiline JSON (vertexai). The backfill also surfaced detector defects,
+    /// including unanchored AerisWeather/X2Y2 patterns, Google Artifact garbage
+    /// capture, and duplicate Turso/WooCommerce patterns; fixes belong to the
+    /// detector owners rather than this contract gate.
     const EVASION_BACKLOG_CEILING: usize = 0;
 
     let contracts = load_contracts();

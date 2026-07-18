@@ -9,7 +9,7 @@ name = "OpenSea API Key"
 service = "opensea"
 severity = "high"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
-keywords = ["opensea", "X-API-Key", "OPENSEA_API_KEY"]
+keywords = ["opensea", "OPENSEA_API_KEY"]
 
 [[detector.patterns]]
 regex = "(?:opensea|OPENSEA)[\\s]*[=:][\\s]*[\"'']+([a-zA-Z0-9_-]{32,})[\"'']+"
@@ -17,10 +17,21 @@ description = "OpenSea API key in assignment context"
 group = 1
 
 [[detector.patterns]]
-regex = "X-API-Key[\\s]*:[\\s]*([a-zA-Z0-9_-]{32,})"
-description = "OpenSea API key in HTTP header"
+regex = "(?is)api\\.opensea\\.io.{0,256}x[_\\-\\s]?api[_\\-\\s]?key[=:\\s\"'']+([a-zA-Z0-9_-]{32,})"
+required_literals = ["api.opensea.io"]
+description = "OpenSea API key header following the OpenSea API endpoint"
+group = 1
+
+[[detector.patterns]]
+regex = "(?is)x[_\\-\\s]?api[_\\-\\s]?key[=:\\s\"'']+([a-zA-Z0-9_-]{32,}).{0,256}api\\.opensea\\.io"
+required_literals = ["api.opensea.io"]
+description = "OpenSea API key header preceding the OpenSea API endpoint"
 group = 1
 
 [[detector.tests]]
 test_positive = "opensea=\"2sIuLPADN-nQyiY2sVUsxowxpKZUoKKW\""
 test_negative = "opensea=\"YOUR_API_KEY_HERE_PLACEHOLDER_VALUE\""
+
+[[detector.tests]]
+test_positive = "https://api.opensea.io/api/v2/collections\nX-API-KEY: 2sIuLPADN-nQyiY2sVUsxowxpKZUoKKW"
+test_negative = "X-API-KEY: 2sIuLPADN-nQyiY2sVUsxowxpKZUoKKW"

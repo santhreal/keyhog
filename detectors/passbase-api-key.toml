@@ -9,18 +9,13 @@ name = "Passbase API Key"
 service = "passbase"
 severity = "high"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
-keywords = ["passbase", "PASSBASE", "X-API-KEY"]
+keywords = ["passbase", "PASSBASE"]
 
 [[detector.patterns]]
 regex = "(?:passbase|PASSBASE)[_\\s]*(api[_\\s]*key|secret[_\\s]*key)[=:;\\s\"'']+([a-zA-Z0-9_-]{20,})"
 description = "Passbase API key with context anchor"
 group = 2
 
-[[detector.patterns]]
-regex = "X-API-KEY[=:;\\s\"'']+([a-zA-Z0-9_-]{20,})"
-description = "X-API-KEY header value (Passbase)"
-group = 1
-
 [[detector.tests]]
-test_positive = "X-API-KEY=7VVpvY_rJEc_G33gXrRw"
-test_negative = "X-API-KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+test_positive = "PASSBASE_API_KEY=7VVpvY_rJEc_G33gXrRw"
+test_negative = "X-API-KEY=7VVpvY_rJEc_G33gXrRw"

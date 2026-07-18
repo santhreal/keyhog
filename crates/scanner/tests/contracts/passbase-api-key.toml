@@ -4,25 +4,29 @@ service = "passbase"
 severity = "high"
 
 [[positive]]
-text = "X-API-KEY=7VVpvY_rJEc_G33gXrRw"
+text = "PASSBASE_API_KEY=7VVpvY_rJEc_G33gXrRw"
 credential = "7VVpvY_rJEc_G33gXrRw"
-reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+reason = "Passbase-owned API key assignment."
 
 [[positive]]
-text = "X-API-KEY=\"7VVpvY_rJEc_G33gXrRw\""
+text = "PASSBASE_API_KEY=\"7VVpvY_rJEc_G33gXrRw\""
 credential = "7VVpvY_rJEc_G33gXrRw"
 reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
-text = "X-API-KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+text = "PASSBASE_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
 reason = "Placeholder-keyword body (suppression gate matches PLACEHOLDER prefix)."
 
 [[negative]]
-text = "X-API-KEY=7VVpvEXAMPLEEXAMPLEgXrRw"
+text = "PASSBASE_API_KEY=7VVpvEXAMPLEEXAMPLEgXrRw"
 reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
+[[negative]]
+text = "X-API-KEY=7VVpvY_rJEc_G33gXrRw"
+reason = "A generic API header does not identify the credential as Passbase."
+
 [[evasion]]
-text = "# X-API-KEY=7VVpvY_rJEc_G33gXrRw"
+text = "# PASSBASE_API_KEY=7VVpvY_rJEc_G33gXrRw"
 credential = "7VVpvY_rJEc_G33gXrRw"
 reason = "Adversarial envelope (credential must still surface under this detector)."
 

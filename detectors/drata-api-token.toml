@@ -9,7 +9,7 @@ name = "Drata API Token"
 service = "drata"
 severity = "critical"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
-keywords = ["DRATA_API_KEY", "DRATA_TOKEN", "drata.com", "x-api-key"]
+keywords = ["DRATA_API_KEY", "DRATA_TOKEN", "drata.com"]
 
 [[detector.patterns]]
 regex = "(?i)drata[_.-]?(?:api[_.-]?)?(?:key|token)[=:\\s\"']+([a-f0-9]{64,})"

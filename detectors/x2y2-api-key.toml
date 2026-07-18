@@ -9,7 +9,7 @@ name = "X2Y2 API Key"
 service = "x2y2"
 severity = "medium"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
-keywords = ["x2y2", "X2Y2", "X-API-KEY"]
+keywords = ["x2y2", "X2Y2"]
 
 [[detector.patterns]]
 regex = "(?:x2y2|X2Y2)[_\\s]*(?:API[_\\s]*)?KEY[_\\s]*[=:][\\s]*[\"'']+([a-zA-Z0-9_-]{20,})[\"'']+"
@@ -17,10 +17,17 @@ description = "X2Y2 API key in assignment context"
 group = 1
 
 [[detector.patterns]]
-regex = "X-API-KEY[\\s]*:[\\s]*([a-zA-Z0-9_-]{20,})"
-description = "X2Y2 API key in HTTP header"
+regex = "(?is)api\\.x2y2\\.org.{0,256}x[_\\-\\s]?api[_\\-\\s]?key[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+required_literals = ["api.x2y2.org"]
+description = "X2Y2 API key header following the X2Y2 API endpoint"
+group = 1
+
+[[detector.patterns]]
+regex = "(?is)x[_\\-\\s]?api[_\\-\\s]?key[=:\\s\"'']+([a-zA-Z0-9_-]{20,}).{0,256}api\\.x2y2\\.org"
+required_literals = ["api.x2y2.org"]
+description = "X2Y2 API key header preceding the X2Y2 API endpoint"
 group = 1
 
 [[detector.tests]]
-test_positive = "X-API-KEY                                          :                                                    JSuKxKWNfd898GujYX9p66-_M1knu3xIPTZfsus5cByqlnilvi7"
-test_negative = "X-API-KEY                                          :                                                    YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+test_positive = "curl https://api.x2y2.org/orders\nX-API-KEY: JSuKxKWNfd898GujYX9p66-_M1knu3xIPTZfsus5cByqlnilvi7"
+test_negative = "X-API-KEY: JSuKxKWNfd898GujYX9p66-_M1knu3xIPTZfsus5cByqlnilvi7"

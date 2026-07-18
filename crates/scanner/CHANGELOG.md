@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Require explicit 8x8 service context before the 8x8 detector claims a generic
+  `X-Api-Key` header, removing cross-service false attribution and unrelated
+  phase-two work.
+- Require the documented X2Y2 API host before its detector claims a generic
+  `X-API-KEY` header.
+- Remove or service-anchor generic API-header patterns for OpenSea, Omnisend,
+  Passbase, Skyscanner, and Moosend so another provider's key is not
+  misattributed.
+- Remove orphan generic API-header routing keywords from Dacast and Drata.
 - Reuse fused VYRE positions for always-active phase-two anchors when the
   measured route disables keyword-anchor localization, eliminating the
   duplicate host Aho-Corasick walk while retaining raw/normalized boundaries.
