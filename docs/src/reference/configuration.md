@@ -107,7 +107,7 @@ A dash means that layer intentionally has no surface.
 | Secret-context keywords | embedded scanner set | `secret_keywords` | - | Replace the scan-wide positive context words used by generic confidence scoring. Empty entries fail closed. |
 | Test-context keywords | embedded scanner set | `test_keywords` | - | Replace the scan-wide test/mock context words used by confidence policy. Empty entries fail closed. |
 | Placeholder keywords | embedded scanner set | `placeholder_keywords` | - | Replace the scan-wide placeholder markers used by confidence policy. Empty entries fail closed. |
-| Backend | `auto` | - | `--backend <BACKEND>` | `auto`, `cpu` (`cpu-fallback`), `simd` (`simd-regex`), `gpu-cuda` (`gpu-cuda-region-presence`), or `gpu-wgpu` (`gpu-wgpu-region-presence`). Aliases are accepted spellings of the same backend, not extra routing candidates. CUDA and WGPU remain separate measured candidates with distinct route labels and timing evidence. Auto uses a persisted fastest-correct decision for the exact workload bucket; missing, stale, or incomplete calibration is an error. |
+| Backend | `auto` | - | `--backend <BACKEND>` | `auto`, `cpu` (`cpu-fallback`), `simd` (`simd-regex`), `gpu-cuda` (`gpu-cuda-region-presence`), or `gpu-wgpu` (`gpu-wgpu-region-presence`). Aliases are accepted spellings of the same backend, not extra routing candidates. CUDA and WGPU remain separate measured candidates with distinct route labels and timing evidence. Auto uses a persisted fastest-correct decision for the exact workload bucket; missing, stale, incomplete, or runtime-quarantined calibration is an error. |
 
 The scan worker pool is process-global. Repeated in-process scans may reuse the
 same resolved width when KeyHog created the pool. A later request for a

@@ -223,6 +223,16 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
                 decisions
             );
         }
+        crate::orchestrator::AutorouteReadiness::Quarantined => {
+            warned = true;
+            println!(
+                "  calibration    {yellow}QUARANTINED{reset}  {dim}{} runtime-faulted route(s); repair: `{}`{reset}",
+                autoroute.runtime_fault_count,
+                readiness
+                    .required_repair_command()
+                    .map_err(anyhow::Error::msg)?
+            );
+        }
         crate::orchestrator::AutorouteReadiness::CalibrationRequired => println!(
             "  calibration    {dim}not calibrated; repair: `{}`{reset}",
             readiness

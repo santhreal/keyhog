@@ -59,10 +59,11 @@ drop the request. The daemon warns, replays that request's stable text or file
 input only for the exact unprocessed ranges, records recovered ranges and bytes,
 quarantines that workload route, and keeps unrelated requests alive. Later
 requests for the quarantined workload fail with recalibration guidance instead
-of silently changing backend. The quarantine lasts for that daemon process;
-recalibrate before restarting because the daemon does not mutate persisted
-calibration evidence. A forced GPU daemon remains an explicit contract and
-returns a request error instead of substituting another backend.
+of silently changing backend. Runtime route health is persisted separately from
+timing evidence, so restarting the daemon cannot erase quarantine; successful
+recalibration clears only the repaired workload identity. A forced GPU daemon
+remains an explicit contract and returns a request error instead of substituting
+another backend.
 
 `daemon status` connects to an existing service. It reports uptime, completed
 scan attempts, active scans, detector count, backend policy, and identity

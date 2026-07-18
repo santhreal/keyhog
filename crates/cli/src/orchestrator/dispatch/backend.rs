@@ -38,12 +38,17 @@
 mod calibration;
 mod evidence;
 mod host;
+mod runtime_health;
 mod store;
 mod workload;
 
 use self::calibration::calibrate_fastest_correct_backend;
 use self::evidence::AutorouteDecision;
 use self::host::{host_identity_digest, AutorouteHostProfile};
+use self::runtime_health::{
+    clear_runtime_route_faults, load_runtime_route_faults, persist_runtime_route_fault,
+    RuntimeHealthIdentity,
+};
 use self::store::{
     autoroute_cache_file_presence, load_autoroute_cache, save_autoroute_cache,
     AutorouteCacheSaveOutcome,
@@ -135,6 +140,7 @@ pub(super) struct MeasuredBackendRouter {
     cache_path: Option<PathBuf>,
     cache_load_error: Option<String>,
     cache_dirty: bool,
+    runtime_health: Option<RuntimeHealthIdentity>,
 }
 
 /// Cache-only backend router for fused filesystem scans.
@@ -150,6 +156,7 @@ pub(crate) struct CachedBackendRouter {
     cache_load_error: Option<String>,
     runtime_class: AutorouteRuntimeClass,
     runtime_faults: Mutex<HashMap<WorkloadKey, RuntimeRouteFault>>,
+    runtime_health: Option<RuntimeHealthIdentity>,
 }
 
 #[derive(Debug, Clone)]
@@ -425,13 +432,29 @@ impl CachedBackendRouter {
             eligible_backends,
         )
         .with_live_hyperscan(scanner.simd_backend_available());
-        let (cache_path, decisions, cache_load_error) = load_persistent_autoroute_decisions(
+        let (cache_path, mut decisions, mut cache_load_error) = load_persistent_autoroute_decisions(
             detector_digest,
             &rules_digest,
             config_digest,
             &host_profile,
             autoroute_cache_path,
         );
+        let runtime_health = cache_path.as_deref().map(|path| {
+            RuntimeHealthIdentity::new(path, config_digest, host_identity_digest(&host_profile))
+        });
+        let runtime_faults = match runtime_health.as_ref() {
+            Some(identity) if cache_load_error.is_none() && !decisions.is_empty() => {
+                match load_runtime_fault_map(identity, &decisions) {
+                    Ok(faults) => faults,
+                    Err(error) => {
+                        decisions.clear();
+                        cache_load_error = Some(error);
+                        HashMap::new()
+                    }
+                }
+            }
+            _ => HashMap::new(),
+        };
 
         Self {
             pattern_count,
@@ -440,7 +463,8 @@ impl CachedBackendRouter {
             cache_path,
             cache_load_error,
             runtime_class: AutorouteRuntimeClass::OneShot,
-            runtime_faults: Mutex::new(HashMap::new()),
+            runtime_faults: Mutex::new(runtime_faults),
+            runtime_health,
         }
     }
 
@@ -563,6 +587,23 @@ impl CachedBackendRouter {
                     reason: recovery.reason.clone(),
                 },
             );
+        if let Some(runtime_health) = self.runtime_health.as_ref() {
+            if let Err(error) = persist_runtime_route_fault(
+                runtime_health,
+                &identity.key,
+                recovery.failed_backend.label(),
+                &recovery.reason,
+            ) {
+                eprintln!(
+                    "keyhog: WARNING: recovered scan coverage is complete, but durable autoroute quarantine could not be persisted ({error}); do not restart before recalibrating"
+                );
+                tracing::warn!(
+                    target: "keyhog::routing",
+                    %error,
+                    "durable autoroute quarantine persistence failed",
+                );
+            }
+        }
         Ok(())
     }
 }
@@ -630,13 +671,35 @@ impl MeasuredBackendRouter {
             eligible_backends,
         )
         .with_live_hyperscan(scanner.simd_backend_available());
-        let (cache_path, decisions, cache_load_error) = load_persistent_autoroute_decisions(
+        let (cache_path, mut decisions, mut cache_load_error) = load_persistent_autoroute_decisions(
             detector_digest,
             &rules_digest,
             config_digest,
             &host_profile,
             autoroute_cache_path,
         );
+        let runtime_health = cache_path.as_deref().map(|path| {
+            RuntimeHealthIdentity::new(path, config_digest, host_identity_digest(&host_profile))
+        });
+        let runtime_faults = match runtime_health.as_ref() {
+            Some(identity) if cache_load_error.is_none() && !decisions.is_empty() => {
+                match load_runtime_fault_map(identity, &decisions) {
+                    Ok(faults) => faults,
+                    Err(error) if calibration_mode => {
+                        eprintln!(
+                            "warning: autoroute runtime health is invalid ({error}); calibration will not trust it and must repair or remove the artifact before commit"
+                        );
+                        HashMap::new()
+                    }
+                    Err(error) => {
+                        decisions.clear();
+                        cache_load_error = Some(error);
+                        HashMap::new()
+                    }
+                }
+            }
+            _ => HashMap::new(),
+        };
 
         Self {
             pattern_count,
@@ -649,11 +712,12 @@ impl MeasuredBackendRouter {
             host_profile,
             decisions,
             measured_this_run: HashSet::new(),
-            runtime_faults: HashMap::new(),
+            runtime_faults,
             measurement_observer,
             cache_path,
             cache_load_error,
             cache_dirty: false,
+            runtime_health,
         }
     }
 
@@ -687,12 +751,14 @@ impl MeasuredBackendRouter {
             self.decode_workload_plan,
         )
         .map_err(AutorouteRoutingError::incomplete_workload_evidence)?;
-        if let Some(fault) = self.runtime_faults.get(&key) {
-            return Err(AutorouteRoutingError::runtime_route_unhealthy(
-                &key,
-                AutorouteRuntimeClass::OneShot,
-                fault,
-            ));
+        if !self.calibration_mode {
+            if let Some(fault) = self.runtime_faults.get(&key) {
+                return Err(AutorouteRoutingError::runtime_route_unhealthy(
+                    &key,
+                    AutorouteRuntimeClass::OneShot,
+                    fault,
+                ));
+            }
         }
         let (sample_bytes, sample_chunks) = if self.calibration_mode {
             (calibration::calibration_sample_bytes(batch)?, batch.len())
@@ -799,6 +865,23 @@ impl MeasuredBackendRouter {
                 reason: recovery.reason.clone(),
             },
         );
+        if let Some(runtime_health) = self.runtime_health.as_ref() {
+            if let Err(error) = persist_runtime_route_fault(
+                runtime_health,
+                &identity.key,
+                recovery.failed_backend.label(),
+                &recovery.reason,
+            ) {
+                eprintln!(
+                    "keyhog: WARNING: recovered scan coverage is complete, but durable autoroute quarantine could not be persisted ({error}); do not restart before recalibrating"
+                );
+                tracing::warn!(
+                    target: "keyhog::routing",
+                    %error,
+                    "durable autoroute quarantine persistence failed",
+                );
+            }
+        }
         Ok(())
     }
 
@@ -854,6 +937,14 @@ impl MeasuredBackendRouter {
                 path.display()
             ),
             AutorouteCacheSaveOutcome::Fresh | AutorouteCacheSaveOutcome::Merged => {}
+        }
+        if self.calibration_mode {
+            if let Some(runtime_health) = self.runtime_health.as_ref() {
+                clear_runtime_route_faults(runtime_health, self.measured_this_run.iter())
+                    .map_err(AutorouteRoutingError::calibration_not_persisted)?;
+                self.runtime_faults
+                    .retain(|key, _| !self.measured_this_run.contains(key));
+            }
         }
         if let Some(observer) = self.measurement_observer.as_ref() {
             let mut observed = observer
@@ -952,6 +1043,40 @@ fn load_persistent_autoroute_decisions(
     }
 
     (cache_path, decisions, cache_load_error)
+}
+
+fn load_runtime_fault_map(
+    identity: &RuntimeHealthIdentity,
+    decisions: &HashMap<WorkloadKey, AutorouteDecision>,
+) -> Result<HashMap<WorkloadKey, RuntimeRouteFault>, String> {
+    let loaded = load_runtime_route_faults(identity)?;
+    let mut faults = HashMap::with_capacity(loaded.len());
+    for (key, fault) in loaded {
+        let backend =
+            keyhog_scanner::hw_probe::parse_backend_str(&fault.backend).ok_or_else(|| {
+                format!(
+                    "runtime route-health artifact names unknown backend {:?}",
+                    fault.backend
+                )
+            })?;
+        let decision_backend = decisions.get(&key).and_then(AutorouteDecision::backend);
+        if decision_backend != Some(backend) {
+            return Err(format!(
+                "runtime route-health fault for [{}] names backend {}, but the current calibration decision names {}; recalibrate before scanning",
+                render_workload_key(&key),
+                backend.label(),
+                decision_backend.map_or("no route", |backend| backend.label()),
+            ));
+        }
+        faults.insert(
+            key,
+            RuntimeRouteFault {
+                backend,
+                reason: fault.reason,
+            },
+        );
+    }
+    Ok(faults)
 }
 
 fn autoroute_cache_state(

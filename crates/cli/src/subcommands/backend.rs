@@ -291,6 +291,17 @@ fn run_autoroute_inspection(
     println!(
         "  route summary: one-shot GPU {one_shot_gpu}/{total_decisions} (CUDA {one_shot_cuda}, WGPU {one_shot_wgpu}); daemon GPU {daemon_gpu}/{total_decisions} (CUDA {daemon_cuda}, WGPU {daemon_wgpu}); VYRE candidate receipts {vyre_gpu_receipts}"
     );
+    if inspection.runtime_fault_count > 0 {
+        println!(
+            "  runtime health:  {}{} quarantined workload decision(s){}; repair: `keyhog calibrate-autoroute`",
+            p.yellow, inspection.runtime_fault_count, p.reset
+        );
+    } else {
+        println!(
+            "  runtime health:  {}no quarantined routes{}",
+            p.green, p.reset
+        );
+    }
     if let Some(workload) = first_gpu_workload {
         println!("  first calibrated GPU bucket: {workload}");
     } else {
@@ -306,8 +317,12 @@ fn run_autoroute_inspection(
     for config in &inspection.configs {
         println!();
         println!(
-            "  {}config {}{}  -  {} decision(s)",
-            p.cyan, config.config_digest, p.reset, config.decision_count
+            "  {}config {}{}  -  {} decision(s), {} quarantined",
+            p.cyan,
+            config.config_digest,
+            p.reset,
+            config.decision_count,
+            config.quarantined_decision_count,
         );
         println!("    host: {}", config.host);
         for decision in &config.decisions {
@@ -354,6 +369,21 @@ fn run_autoroute_inspection(
                 .map(|ns| format!(" margin={}µs", ns / 1_000))
                 .unwrap_or_default(); // LAW10: display-only optional derived margin; recall-safe
             println!("    {}", decision.workload);
+            if decision.runtime_quarantined {
+                println!(
+                    "        runtime:     {}QUARANTINED{} backend={} fault={}",
+                    p.yellow,
+                    p.reset,
+                    decision
+                        .runtime_fault_backend
+                        .as_deref()
+                        .unwrap_or("unknown"),
+                    decision
+                        .runtime_fault_reason
+                        .as_deref()
+                        .unwrap_or("not recorded"),
+                );
+            }
             println!(
                 "        evidence age: {} (calibrated_at_unix_ms={})",
                 render_age_ms(decision.calibration_age_ms),
@@ -393,7 +423,8 @@ fn autoroute_inspection_exit_code(health: crate::orchestrator::AutorouteReadines
 
     match health {
         AutorouteReadiness::Direct | AutorouteReadiness::Ready => ExitCode::SUCCESS,
-        AutorouteReadiness::CalibrationRequired
+        AutorouteReadiness::Quarantined
+        | AutorouteReadiness::CalibrationRequired
         | AutorouteReadiness::Disabled
         | AutorouteReadiness::Stale
         | AutorouteReadiness::Invalid => ExitCode::from(EXIT_HEALTH_FAILURE),

@@ -10,6 +10,7 @@ use super::codec::{
 use super::schema::AutorouteBuildFeatures;
 use super::validation::{current_unix_time_ms, validate_cache_structure_at};
 use crate::orchestrator::dispatch::backend::host::{host_identity_digest, render_host_profile};
+use crate::orchestrator::dispatch::backend::runtime_health::inspect_runtime_route_faults;
 use crate::orchestrator::dispatch::backend::workload::render_workload_key;
 use crate::orchestrator::dispatch::backend::AUTOROUTE_CACHE_VERSION;
 
@@ -22,6 +23,7 @@ mod tests;
 pub(crate) enum AutorouteReadiness {
     Direct,
     Ready,
+    Quarantined,
     CalibrationRequired,
     Disabled,
     Stale,
@@ -33,6 +35,7 @@ impl AutorouteReadiness {
         match self {
             Self::Direct => "direct",
             Self::Ready => "ready",
+            Self::Quarantined => "quarantined",
             Self::CalibrationRequired => "calibration_required",
             Self::Disabled => "disabled",
             Self::Stale => "stale",
@@ -43,6 +46,7 @@ impl AutorouteReadiness {
     pub(crate) const fn repair_command(self) -> Option<&'static str> {
         match self {
             Self::Direct | Self::Ready => None,
+            Self::Quarantined => Some("keyhog calibrate-autoroute"),
             Self::Disabled => Some("keyhog calibrate-autoroute --autoroute-cache <PATH>"),
             Self::CalibrationRequired | Self::Stale | Self::Invalid => {
                 Some("keyhog calibrate-autoroute")
@@ -84,6 +88,7 @@ pub(crate) struct AutorouteCacheInspection {
     pub(crate) detector_digest: Option<String>,
     pub(crate) rules_digest: Option<String>,
     pub(crate) inspected_at_unix_ms: Option<u128>,
+    pub(crate) runtime_fault_count: usize,
     pub(crate) configs: Vec<AutorouteConfigInspection>,
 }
 
@@ -104,6 +109,9 @@ impl AutorouteCacheInspection {
         if self.identity_matches_build == Some(false) {
             return AutorouteReadiness::Stale;
         }
+        if self.runtime_fault_count > 0 {
+            return AutorouteReadiness::Quarantined;
+        }
         if self.present && self.identity_matches_build == Some(true) {
             AutorouteReadiness::Ready
         } else {
@@ -122,6 +130,7 @@ pub(crate) struct AutorouteConfigInspection {
     pub(crate) gpu_batch_input_limit_bytes: Option<u64>,
     pub(crate) eligible_backends: Vec<String>,
     pub(crate) decision_count: usize,
+    pub(crate) quarantined_decision_count: usize,
     pub(crate) decisions: Vec<AutorouteDecisionInspection>,
 }
 
@@ -163,6 +172,9 @@ pub(crate) struct AutorouteDecisionInspection {
     pub(crate) daemon_confidence_separated: bool,
     pub(crate) daemon_selection_basis: &'static str,
     pub(crate) daemon_selected_margin_ns: Option<u128>,
+    pub(crate) runtime_quarantined: bool,
+    pub(crate) runtime_fault_backend: Option<String>,
+    pub(crate) runtime_fault_reason: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -365,6 +377,52 @@ fn inspect_autoroute_cache_for_build(
         ));
         return out;
     }
+    let mut runtime_faults = match inspect_runtime_route_faults(path) {
+        Ok(faults) => faults
+            .into_iter()
+            .map(|fault| {
+                (
+                    (fault.config_digest, fault.host_digest, fault.workload),
+                    (fault.backend, fault.reason),
+                )
+            })
+            .collect::<std::collections::HashMap<_, _>>(),
+        Err(error) => {
+            out.error = Some(format!(
+                "autoroute runtime route health is invalid: {error}; re-run calibration"
+            ));
+            return out;
+        }
+    };
+    let calibrated_routes = cache
+        .configs
+        .iter()
+        .flat_map(|config| {
+            let host_identity = host_identity_digest(&config.host);
+            config.decisions.iter().map(move |row| {
+                (
+                    (
+                        config.config_digest,
+                        host_identity.clone(),
+                        row.workload.clone(),
+                    ),
+                    row.decision.backend.clone(),
+                )
+            })
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+    for (identity, (backend, _)) in &runtime_faults {
+        if let Some(calibrated_backend) = calibrated_routes.get(identity) {
+            if calibrated_backend != backend {
+                out.error = Some(format!(
+                    "autoroute runtime route health names backend {backend}, but calibration names {calibrated_backend}; re-run calibration"
+                ));
+                return out;
+            }
+        }
+    }
+    runtime_faults.retain(|identity, _| calibrated_routes.contains_key(identity));
+    out.runtime_fault_count = runtime_faults.len();
 
     let common_host = cache.configs.first().map(|config| &config.host);
     if common_host.is_some()
@@ -377,10 +435,16 @@ fn inspect_autoroute_cache_for_build(
     }
 
     for config in &cache.configs {
+        let config_host_identity = host_identity_digest(&config.host);
         let mut decisions = Vec::with_capacity(config.decisions.len());
         for row in &config.decisions {
             let key = &row.workload;
             let decision = &row.decision;
+            let runtime_fault = runtime_faults.get(&(
+                config.config_digest,
+                config_host_identity.clone(),
+                key.clone(),
+            ));
             let Some(daemon_route) = decision.resolved_persistent_route() else {
                 out.error = Some(
                     "autoroute cache decision has no persistent-daemon route evidence; \
@@ -515,17 +579,25 @@ fn inspect_autoroute_cache_for_build(
                 daemon_confidence_separated,
                 daemon_selection_basis: selection_basis(daemon_confidence_separated),
                 daemon_selected_margin_ns: decision.persistent_selected_margin_ns(),
+                runtime_quarantined: runtime_fault.is_some(),
+                runtime_fault_backend: runtime_fault.map(|(backend, _)| backend.clone()),
+                runtime_fault_reason: runtime_fault.map(|(_, reason)| reason.clone()),
             });
         }
         decisions.sort_by(|left, right| left.workload.cmp(&right.workload));
+        let quarantined_decision_count = decisions
+            .iter()
+            .filter(|decision| decision.runtime_quarantined)
+            .count();
         out.configs.push(AutorouteConfigInspection {
             config_digest: format!("{:016x}", config.config_digest),
-            host_identity: host_identity_digest(&config.host),
+            host_identity: config_host_identity,
             host: render_host_profile(&config.host),
             hyperscan_runtime_identity: config.host.hyperscan_runtime_identity.clone(),
             gpu_batch_input_limit_bytes: config.host.gpu_batch_input_limit_bytes,
             eligible_backends: config.host.eligible_backends.clone(),
             decision_count: config.decisions.len(),
+            quarantined_decision_count,
             decisions,
         });
     }

@@ -409,7 +409,8 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
     }
     let readiness = inspection.readiness();
     match readiness {
-        crate::orchestrator::AutorouteReadiness::Ready => {}
+        crate::orchestrator::AutorouteReadiness::Ready
+        | crate::orchestrator::AutorouteReadiness::Quarantined => {}
         crate::orchestrator::AutorouteReadiness::Direct => anyhow::bail!(
             "autoroute calibration is not applicable because this build has one direct backend"
         ),
@@ -441,6 +442,31 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
             })
         })
         .collect::<BTreeSet<_>>();
+    let quarantined_route_classes = inspection
+        .configs
+        .iter()
+        .flat_map(|config| {
+            config
+                .decisions
+                .iter()
+                .filter(|decision| decision.runtime_quarantined)
+                .map(|decision| {
+                    (
+                        config.config_digest.clone(),
+                        config.host_identity.clone(),
+                        decision.workload.clone(),
+                    )
+                })
+        })
+        .collect::<BTreeSet<_>>();
+    let measured_still_quarantined = measured_route_classes
+        .intersection(&quarantined_route_classes)
+        .count();
+    if measured_still_quarantined > 0 {
+        anyhow::bail!(
+            "autoroute calibration persisted timing evidence, but {measured_still_quarantined} route class(es) measured by this command remain runtime-quarantined; repair the runtime-health artifact and rerun calibration"
+        );
+    }
     let (persisted_decisions, measured_unique_decisions) =
         calibration_summary_counts(&persisted_route_classes, &measured_route_classes)?;
     if persisted_decisions == 0 {
@@ -510,6 +536,12 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
     println!(
         "  cache route summary: one-shot GPU {one_shot_gpu}/{persisted_decisions}, daemon GPU {daemon_gpu}/{persisted_decisions}; VYRE GPU execution-plan receipts {vyre_gpu_receipts}"
     );
+    if !quarantined_route_classes.is_empty() {
+        eprintln!(
+            "warning: {} unrelated route class(es) in the shared cache remain runtime-quarantined; inspect them with `keyhog backend --autoroute --verbose`",
+            quarantined_route_classes.len()
+        );
+    }
     Ok(ExitCode::SUCCESS)
 }
 

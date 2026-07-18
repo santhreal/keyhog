@@ -292,10 +292,16 @@ automatic scan, however, a transient GPU dispatch failure warns and replays the
 exact unprocessed ranges from the same stable snapshot through the scalar
 recovery path. Completed GPU shards are retained. Recovered work is counted
 separately, the affected workload route is quarantined, and the GPU fault
-remains visible for the life of that process. Recalibrate before restarting;
-runtime quarantine deliberately does not rewrite the persisted timing artifact.
-An explicit GPU override or `--require-gpu` remains a hard backend contract and
-is not substituted.
+is written to a bounded `<cache>.runtime-health.json` artifact. Runtime health
+is separate from immutable timing evidence and survives restart. A successful
+calibration commit clears only the workload identities remeasured in that
+command. Missing health state means no runtime fault has been observed;
+malformed, oversized, unknown-backend, or calibration-inconsistent health state
+invalidates automatic routing with repair guidance. An explicit GPU override or
+`--require-gpu` remains a hard backend contract and is not substituted.
+`keyhog backend --autoroute` reports `quarantined` readiness, aggregate and
+per-config fault counts, and the failed backend/reason on each affected workload;
+`keyhog doctor` reports the same repair state.
 
 ## When an auto scan reports `calibration required`
 
@@ -326,11 +332,11 @@ keyhog doctor                       # reports the same readiness and repair acti
 
 The inspection command is also a health gate. A single-backend build reports
 `health: direct` and exits `0` even when its unused cache is absent or stale.
-For a multi-backend build, `health: ready` exits `0`; `calibration_required`,
-`disabled`, `stale`, and `invalid` exit `4` so automation cannot mistake an
-unusable autoroute state for a healthy host. JSON includes the same `health`
+For a multi-backend build, `health: ready` exits `0`; `quarantined`,
+`calibration_required`, `disabled`, `stale`, and `invalid` exit `4` so
+automation cannot mistake an unusable autoroute state for a healthy host. JSON includes the same `health`
 value plus `repair_command`: `null` for `direct` or `ready`, the canonical
-calibration command for absent, stale, or invalid evidence, and an explicit
+calibration command for quarantined, absent, stale, or invalid evidence, and an explicit
 cache-path command when persistence is disabled. The scan command continues to
 use exit `2` for a missing exact workload decision.
 

@@ -182,10 +182,11 @@ contracts. During a normal automatic scan, a runtime GPU fault is warned and
 only exact unprocessed intervals from the same stable snapshot are scanned
 through the scalar recovery path. Completed GPU dispatches remain GPU-owned;
 recovered ranges, chunks, and bytes are reported. The exact workload route is
-then quarantined for the rest of the process instead of silently selecting
-another backend. Recalibrate before restarting because runtime quarantine does
-not rewrite calibration evidence. If recovery cannot prove full coverage, the
-result is incomplete rather than clean.
+then quarantined in a bounded runtime-health artifact instead of silently
+selecting another backend. That artifact is separate from immutable timing
+evidence, survives restart, and clears the repaired workload only after
+successful recalibration. If recovery cannot prove full coverage, the result is
+incomplete rather than clean.
 
 For cache identity, inspection commands, calibration coverage, and recovery,
 see [Autoroute calibration](./reference/autoroute-calibration.md).

@@ -10,7 +10,7 @@ plugins, and health checks) can rely on it.
 | `1`  | Findings present, none confirmed live (unverified, skipped, or verified-inactive: dead/revoked). |
 | `2`  | User/operator error: bad input/config, missing or invalid scan state, an unavailable required daemon, or missing/stale/incomplete autoroute evidence. Also operator-correctable I/O such as not-found, permission-denied, connection-refused, invalid-input, or invalid-data. |
 | `3`  | System error: a lower-level operating-system I/O failure, incremental-cache failure, or explicitly selected non-GPU backend that cannot execute. |
-| `4`  | Health/self-test failure: `keyhog doctor` unhealthy, `keyhog repair` could not restore a working binary, `keyhog backend` self-test failed, or multi-backend `keyhog backend --autoroute` reports `calibration_required`, `disabled`, `stale`, or `invalid`. |
+| `4`  | Health/self-test failure: `keyhog doctor` unhealthy, `keyhog repair` could not restore a working binary, `keyhog backend` self-test failed, or multi-backend `keyhog backend --autoroute` reports `quarantined`, `calibration_required`, `disabled`, `stale`, or `invalid`. |
 | `10` | **LIVE credentials confirmed** (a `--verify` scan where the vendor API accepted a found secret) - the highest-severity gate. Also returned by `keyhog update --check` when a newer release exists. |
 | `11` | Scanner thread panicked. The finding count is NOT trustworthy - investigate, don't ship. Distinct from `2`/`3` so CI can tell a code bug from a config error. |
 | `12` | Required or explicit GPU unavailable, or a GPU calibration candidate could not execute. Normal automatic runtime faults recover stable input visibly when possible. |
@@ -61,7 +61,7 @@ Things that exit `2`:
 - Detector corpus load failure. KeyHog rejects the whole corpus before reading
   scan input. It does not scan with a partial detector set.
 - `--baseline <FILE>` where FILE doesn't exist or isn't valid JSON.
-- Missing, stale, invalid, or incomplete autoroute calibration for an
+- Missing, stale, invalid, incomplete, or runtime-quarantined autoroute calibration for an
   automatic backend decision. Inspect it with `keyhog backend --autoroute`,
   then rerun `keyhog calibrate-autoroute`, `install.sh --calibrate`, or
   `install.ps1 -Calibrate`. An explicit `--backend` bypasses the table for that
@@ -97,7 +97,7 @@ Returned by the maintenance subcommands, not by `scan`: `keyhog doctor`
 when the install fails its end-to-end self-test, `keyhog repair` when it
 could not restore a working binary, `keyhog backend` when its self-test fails,
 and multi-backend `keyhog backend --autoroute` when its persisted routing state
-is missing, disabled, stale, or invalid. A health monitor can treat `4` as
+is missing, disabled, stale, quarantined, or invalid. A health monitor can treat `4` as
 "binary present but not trustworthy." Use `keyhog backend --self-test --json`
 or `keyhog backend --autoroute --json` when CI needs stable fields instead of
 stderr scraping.

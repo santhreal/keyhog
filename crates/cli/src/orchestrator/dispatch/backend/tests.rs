@@ -3015,6 +3015,7 @@ fn measured_router_clears_dirty_after_successful_cache_save() {
         cache_path: Some(path.clone()),
         cache_load_error: None,
         cache_dirty: true,
+        runtime_health: None,
     };
 
     router
@@ -3077,6 +3078,7 @@ fn measured_router_drop_does_not_persist_dirty_cache() {
             cache_path: Some(path.clone()),
             cache_load_error: None,
             cache_dirty: true,
+            runtime_health: None,
         };
     }
 
@@ -3135,6 +3137,7 @@ fn measured_router_commit_discards_unmeasured_stale_decisions() {
         cache_path: Some(path.clone()),
         cache_load_error: None,
         cache_dirty: true,
+        runtime_health: None,
     };
 
     router
@@ -3192,6 +3195,7 @@ fn calibration_mode_remeasures_loaded_cache_decisions_before_reuse() {
         cache_path: None,
         cache_load_error: None,
         cache_dirty: false,
+        runtime_health: None,
     };
 
     assert_eq!(
@@ -3282,7 +3286,13 @@ fn cached_router_loads_persisted_decision_and_fails_loud_on_missing_bucket() {
         "keyhog_cached_router_hit_miss_{}.json",
         std::process::id()
     ));
+    let runtime_health_path = {
+        let mut path = path.as_os_str().to_os_string();
+        path.push(".runtime-health.json");
+        std::path::PathBuf::from(path)
+    };
     std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired pre-state, recall-irrelevant
+    std::fs::remove_file(&runtime_health_path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired pre-state, recall-irrelevant
 
     let scanner = CompiledScanner::compile_with_gpu_policy(
         phase1_test_detectors(),
@@ -3330,7 +3340,7 @@ fn cached_router_loads_persisted_decision_and_fails_loud_on_missing_bucket() {
     let mut decisions = HashMap::new();
     let hit_sample_bytes = hit_batch.iter().map(|chunk| chunk.data.len() as u64).sum();
     decisions.insert(
-        hit_key,
+        hit_key.clone(),
         AutorouteDecision::new(
             if scanner.simd_backend_available() {
                 ScanBackend::SimdCpu
@@ -3355,7 +3365,7 @@ fn cached_router_loads_persisted_decision_and_fails_loud_on_missing_bucket() {
     .expect("autoroute cache hit fixture should persist");
 
     let router = CachedBackendRouter::new(
-        caps,
+        caps.clone(),
         pattern_count,
         test_rules_digest().to_string(),
         config_digest,
@@ -3428,7 +3438,94 @@ fn cached_router_loads_persisted_decision_and_fails_loud_on_missing_bucket() {
         ScanBackend::CpuFallback
     );
 
+    let restarted_router = CachedBackendRouter::new(
+        caps.clone(),
+        pattern_count,
+        test_rules_digest().to_string(),
+        config_digest,
+        true,
+        Ok(Some(path.clone())),
+        &scanner,
+    );
+    let after_restart = restarted_router
+        .choose_with_plan(&scanner, None, &hit_batch)
+        .expect_err("runtime quarantine must survive process-local router reconstruction")
+        .to_string();
+    assert!(
+        after_restart.contains("autoroute decision is quarantined")
+            && after_restart.contains("injected dispatch fault"),
+        "durable route health must reject the exact persisted decision after restart; got {after_restart}"
+    );
+    let quarantined_inspection = inspect_autoroute_cache(Some(&path));
+    assert_eq!(
+        quarantined_inspection.readiness(),
+        AutorouteReadiness::Quarantined
+    );
+    assert_eq!(quarantined_inspection.runtime_fault_count, 1);
+    assert_eq!(
+        quarantined_inspection.configs[0].quarantined_decision_count,
+        1
+    );
+    assert!(quarantined_inspection.configs[0].decisions[0].runtime_quarantined);
+    clear_runtime_route_faults(
+        restarted_router
+            .runtime_health
+            .as_ref()
+            .expect("cache-backed router has runtime-health identity"),
+        [&hit_key],
+    )
+    .expect("successful recalibration clears the exact runtime fault");
+    let repaired_inspection = inspect_autoroute_cache(Some(&path));
+    assert_eq!(repaired_inspection.readiness(), AutorouteReadiness::Ready);
+    assert_eq!(repaired_inspection.runtime_fault_count, 0);
+    let repaired_router = CachedBackendRouter::new(
+        caps,
+        pattern_count,
+        test_rules_digest().to_string(),
+        config_digest,
+        true,
+        Ok(Some(path.clone())),
+        &scanner,
+    );
+    assert_eq!(
+        repaired_router
+            .choose_with_plan(&scanner, None, &hit_batch)
+            .expect("cleared runtime fault restores calibrated route")
+            .backend,
+        selected.backend
+    );
+
+    std::fs::write(&runtime_health_path, b"{not-json")
+        .expect("write corrupt runtime-health fixture");
+    let corrupt_health_router = CachedBackendRouter::new(
+        test_hw_caps(),
+        pattern_count,
+        test_rules_digest().to_string(),
+        config_digest,
+        true,
+        Ok(Some(path.clone())),
+        &scanner,
+    );
+    let corrupt_health = corrupt_health_router
+        .choose_with_plan(&scanner, None, &hit_batch)
+        .expect_err("corrupt runtime health must invalidate automatic routing")
+        .to_string();
+    assert!(
+        corrupt_health.contains("cache or host identity was rejected")
+            && corrupt_health.contains("runtime route-health artifact")
+            && corrupt_health.contains("invalid JSON"),
+        "corrupt runtime health must fail closed with repair context; got {corrupt_health}"
+    );
+    assert_eq!(
+        corrupt_health_router
+            .choose_with_plan(&scanner, Some(ScanBackend::CpuFallback), &hit_batch)
+            .expect("explicit diagnostic route bypasses corrupt autoroute health")
+            .backend,
+        ScanBackend::CpuFallback
+    );
+
     std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
+    std::fs::remove_file(&runtime_health_path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
 }
 
 #[test]
@@ -5348,6 +5445,7 @@ fn daemon_warm_routes_come_only_from_persisted_selected_backends() {
         cache_load_error: None,
         runtime_class: AutorouteRuntimeClass::OneShot,
         runtime_faults: Mutex::new(HashMap::new()),
+        runtime_health: None,
     };
 
     assert_eq!(

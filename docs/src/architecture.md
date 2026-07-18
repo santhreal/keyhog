@@ -195,7 +195,8 @@ KeyHog separates trust failures from recoverable execution failures:
   KeyHog warned visibly, retained completed dispatches, scanned only the exact
   unprocessed ranges through the scalar recovery path, and counted the recovered
   ranges, chunks, and bytes. The result is complete, but the affected autoroute
-  workload identity is quarantined until recalibration.
+  workload identity is quarantined in a bounded runtime-health artifact until
+  successful recalibration clears that exact identity.
 - **Incomplete:** some requested bytes or transformation could not be recovered.
   The scan may report findings from covered input, but it cannot report clean.
 - **Fatal trust or explicit-contract failure:** invalid policy, corrupt or
