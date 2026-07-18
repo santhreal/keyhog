@@ -12,7 +12,7 @@ pub(super) use match_identity::{
 };
 pub(super) use timing::{BackendTimingEvidence, TimingConfidenceInterval};
 
-use super::{AUTOROUTE_CALIBRATION_TRIALS, AUTOROUTE_GPU_WARM_TRIALS};
+use super::{AUTOROUTE_ACCELERATOR_WARM_TRIALS, AUTOROUTE_CALIBRATION_TRIALS};
 
 pub(super) const MAX_AUTOROUTE_MEASURED_POINTS: usize = 64;
 
@@ -50,15 +50,15 @@ fn selected_route_margin_ns(
         .map(|next_time| next_time.saturating_sub(selected_time))
 }
 
-pub(super) fn gpu_cold_warm_route_evidence(
-    gpu_timing: &BackendTimingEvidence,
+fn accelerator_cold_warm_route_evidence(
+    timing: &BackendTimingEvidence,
 ) -> Option<(u128, BackendTimingEvidence, u128)> {
-    let (&cold_ns, warm_trials) = gpu_timing.trials_ns.split_first()?;
-    if warm_trials.len() != AUTOROUTE_GPU_WARM_TRIALS {
+    let (&cold_ns, warm_trials) = timing.trials_ns.split_first()?;
+    if warm_trials.len() != AUTOROUTE_ACCELERATOR_WARM_TRIALS {
         return None;
     }
     let warm_timing = BackendTimingEvidence::from_trial_ns(warm_trials.to_vec())?;
-    if !warm_timing.is_valid_for_trials(AUTOROUTE_GPU_WARM_TRIALS) {
+    if !warm_timing.is_valid_for_trials(AUTOROUTE_ACCELERATOR_WARM_TRIALS) {
         return None;
     }
     // A single lucky minimum is not representative routing evidence. Use the
@@ -66,6 +66,18 @@ pub(super) fn gpu_cold_warm_route_evidence(
     // one-shot routing. The daemon path consumes the warm median directly.
     let route_ns = cold_ns.max(warm_timing.median_ns());
     Some((cold_ns, warm_timing, route_ns))
+}
+
+pub(super) fn gpu_cold_warm_route_evidence(
+    timing: &BackendTimingEvidence,
+) -> Option<(u128, BackendTimingEvidence, u128)> {
+    accelerator_cold_warm_route_evidence(timing)
+}
+
+pub(super) fn simd_cold_warm_route_evidence(
+    timing: &BackendTimingEvidence,
+) -> Option<(u128, BackendTimingEvidence, u128)> {
+    accelerator_cold_warm_route_evidence(timing)
 }
 
 /// Parity and timing binding for one measured backend candidate.
@@ -226,6 +238,21 @@ impl AutorouteCalibrationPoint {
             .and_then(gpu_cold_warm_route_evidence)
     }
 
+    fn accelerator_cold_warm_route_for_measured(
+        &self,
+        route: MeasuredRoute,
+    ) -> Option<(u128, BackendTimingEvidence, u128)> {
+        match route.backend {
+            ScanBackend::SimdCpu => self
+                .timing_for_route(route)
+                .and_then(simd_cold_warm_route_evidence),
+            ScanBackend::GpuCuda | ScanBackend::GpuWgpu => {
+                self.gpu_cold_warm_route_for_measured(route)
+            }
+            _ => None,
+        }
+    }
+
     pub(super) fn selected_route_has_non_overlapping_confidence_for(
         &self,
         selected: MeasuredRoute,
@@ -294,11 +321,12 @@ impl AutorouteCalibrationPoint {
 
     fn route_median_ns(&self, route: MeasuredRoute, persistent_runtime: bool) -> Option<u128> {
         match route.backend {
-            ScanBackend::SimdCpu | ScanBackend::CpuFallback => self
+            ScanBackend::CpuFallback => self
                 .timing_for_route(route)
                 .map(BackendTimingEvidence::median_ns),
-            ScanBackend::GpuCuda | ScanBackend::GpuWgpu => {
-                let (_, warm_timing, one_shot_ns) = self.gpu_cold_warm_route_for_measured(route)?;
+            ScanBackend::SimdCpu | ScanBackend::GpuCuda | ScanBackend::GpuWgpu => {
+                let (_, warm_timing, one_shot_ns) =
+                    self.accelerator_cold_warm_route_for_measured(route)?;
                 Some(if persistent_runtime {
                     warm_timing.median_ns()
                 } else {
@@ -315,9 +343,9 @@ impl AutorouteCalibrationPoint {
     ) -> Vec<(MeasuredRoute, TimingConfidenceInterval)> {
         let mut intervals = Vec::with_capacity(self.route_timings.len());
         for route in self.measured_routes() {
-            if route.backend.is_gpu() {
+            if route.backend == ScanBackend::SimdCpu || route.backend.is_gpu() {
                 let Some((cold_ns, warm_timing, _route_ns)) =
-                    self.gpu_cold_warm_route_for_measured(route)
+                    self.accelerator_cold_warm_route_for_measured(route)
                 else {
                     continue;
                 };

@@ -8,14 +8,14 @@
 //!
 //! ## What this pins
 //!
-//! Cold-starting the scanner compiles every detector pattern into a Hyperscan
-//! `BlockDatabase` via a SINGLE serial call:
+//! First selection of the SIMD peer materializes every detector pattern into
+//! Hyperscan `BlockDatabase`s. Scanner construction itself only builds the
+//! backend-neutral plan and must not be charged this cost:
 //!
 //!   crates/scanner/src/simd.rs:283  `Builder::build::<BlockMode>(&patterns_obj)`
 //!   crates/scanner/src/simd.rs:279  `let mut attempts = hs_pats.to_vec();`  (clones the whole pattern vec)
-//!   driven from crates/scanner/src/engine/backend_prepared.rs:81
-//!     `crate::simd::backend::HsScanner::compile(&pattern_refs)`
-//!   and crates/scanner/src/compiled_scanner/compile.rs `build_simd_scanner(...)`.
+//!   driven by `SimdPhase1CompilePlan::materialize` in
+//!   crates/scanner/src/engine/backend_prepared.rs.
 //!
 //! That one `Builder::build` compiles all 899 detector regexes on ONE core
 //! while every other core idles. The Rust-side parallel phase
@@ -78,7 +78,7 @@ mod support;
 use support::paths::detector_dir;
 
 use keyhog_scanner::gpu::{gpu_runtime_policy, set_gpu_runtime_policy, GpuRuntimePolicy};
-use keyhog_scanner::CompiledScanner;
+use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::time::{Duration, Instant};
 
 /// full/half cold-compile ratio must drop to at most this once the serial
@@ -152,13 +152,15 @@ fn cold_compile_must_parallelize_across_pattern_shards() {
         std::fs::create_dir_all(d).expect("recreate cache dir");
     };
 
-    // Each iteration clears the HS disk cache first, so EVERY compile pays the
-    // full serial Hyperscan `Builder::build`. best-of-3 -> the min strips
-    // scheduler/IO noise and leaves the pure compute cost.
+    // Each iteration clears the HS disk cache first, builds the neutral scanner
+    // plan, then times only selected-peer materialization. best-of-3 strips
+    // scheduler/IO noise and leaves the Hyperscan compile cost.
     let cold_full = best_of(3, || {
         clear(&dir);
+        let s = CompiledScanner::compile(detectors.clone()).expect("full compile plan");
+        assert!(!s.simd_backend_initialized());
         let t = Instant::now();
-        let s = CompiledScanner::compile(detectors.clone()).expect("cold full compile");
+        assert!(s.warm_backend(ScanBackend::SimdCpu));
         let e = t.elapsed();
         std::hint::black_box(&s);
         e
@@ -166,8 +168,10 @@ fn cold_compile_must_parallelize_across_pattern_shards() {
 
     let cold_half = best_of(3, || {
         clear(&dir);
+        let s = CompiledScanner::compile(half.clone()).expect("half compile plan");
+        assert!(!s.simd_backend_initialized());
         let t = Instant::now();
-        let s = CompiledScanner::compile(half.clone()).expect("cold half compile");
+        assert!(s.warm_backend(ScanBackend::SimdCpu));
         let e = t.elapsed();
         std::hint::black_box(&s);
         e
@@ -202,8 +206,8 @@ fn cold_compile_must_parallelize_across_pattern_shards() {
         "SERIAL Hyperscan compile: doubling the pattern set ({} -> {} detectors) \
          multiplied cold-compile wall-clock by {ratio:.2}x (target <= {MAX_FULL_OVER_HALF_RATIO:.2}x) \
          on a {cores}-core machine. ~99.7% of the cold compile is a single serial \
-         `Builder::build::<BlockMode>` call at crates/scanner/src/simd.rs:283 \
-         (driven from engine/backend_prepared.rs:81); the rayon-parallel \
+         `Builder::build::<BlockMode>` call in the SIMD backend \
+         (driven by SimdPhase1CompilePlan::materialize); the rayon-parallel \
          build_compile_state phase is already ~5ms. The full corpus compiled in \
          {:.0}ms while the half compiled in {:.0}ms - linear scaling means every \
          core but one sat idle during the build. \

@@ -6,6 +6,14 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Scanner construction now builds a backend-neutral Hyperscan phase-one plan
+  without compiling databases. Scalar and GPU-selected scans leave it
+  untouched; explicit SIMD selection, calibration, and daemon readiness
+  materialize it once and preserve exact initialization errors.
+- Autoroute cache schema 40 records SIMD with the same cold-first and warm-trial
+  model used for GPU. One-shot selection includes Hyperscan materialization,
+  persistent-daemon selection uses warm execution, and daemon startup warms
+  only backends selected by validated decisions.
 - Autoroute calibration now uses the always-present scalar engine as its
   independent correctness oracle. Optional Hyperscan and GPU candidates are
   rejected when their findings diverge, and decoded rescans remain attributed

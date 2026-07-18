@@ -9,9 +9,6 @@ fn backend_driver_name(backend: ScanBackend) -> &'static str {
     }
 }
 
-#[cfg(feature = "simd")]
-static SIMD_AUTO_DEGRADE_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
-
 /// Family + homoglyph breakdown of the always-active (`phase2_always_active_indices`)
 /// pool, used to pin the true composition behind the F3 perf floor.
 ///
@@ -98,6 +95,27 @@ impl CompiledScanner {
         Ok(())
     }
 
+    /// Materialize the SIMD peer and preserve its exact initialization error.
+    pub fn initialize_simd_backend(&self) -> std::result::Result<(), String> {
+        self.try_initialize_simd_backend().map_err(str::to_owned)
+    }
+
+    /// One-time Hyperscan materialization cost recorded by this scanner.
+    #[must_use]
+    pub fn simd_initialization_ns(&self) -> Option<u128> {
+        #[cfg(feature = "simd")]
+        {
+            let ns = self
+                .simd_initialization_ns
+                .load(std::sync::atomic::Ordering::Acquire);
+            return (self.simd_backend_initialized() && ns > 0).then_some(ns as u128);
+        }
+        #[cfg(not(feature = "simd"))]
+        {
+            None
+        }
+    }
+
     /// Reset workload-shaped GPU state while retaining immutable literal and
     /// phase-2 programs whose measured preparation costs are composed into cold
     /// evidence.
@@ -135,22 +153,54 @@ impl CompiledScanner {
         }
     }
 
-    /// Whether a SIMD (Hyperscan/Vectorscan) prefilter is compiled in and live.
-    ///
-    /// The GPU phase-1 paths reroute a batch through the SIMD coalesced scan
-    /// when the GPU prefix output is too dense for phase 2. That reroute only
-    /// exists when the `simd` feature is on; in `--no-default-features`
-    /// (portable / macOS no-system-libs) builds the `simd_prefilter` field is
-    /// `#[cfg]`-compiled out entirely, so there is nothing to reroute into and
-    /// the answer is always `false`. This accessor keeps the reroute guards
-    /// compiling in every feature combination without scattering
-    /// `#[cfg(feature = "simd")]` across each call site.
-    ///
-    #[inline]
-    pub(crate) fn simd_backend_usable(&self) -> bool {
+    /// Materialize and return the exact phase-one Hyperscan backend.
+    #[cfg(feature = "simd")]
+    pub(crate) fn try_simd_prefilter(
+        &self,
+    ) -> std::result::Result<&crate::engine::SimdPhase1Prefilter, &str> {
+        if !self.simd_candidate_available {
+            return Err("the detector corpus produced no Hyperscan phase-one plan");
+        }
+        self.simd_prefilter
+            .get_or_init(|| {
+                let started = std::time::Instant::now();
+                let plan = self
+                    .simd_compile_plan
+                    .lock()
+                    .map_err(|_| "Hyperscan compile-plan lock was poisoned".to_string())?
+                    .take()
+                    .ok_or_else(|| "Hyperscan compile plan was already consumed".to_string())?;
+                let result = plan.materialize();
+                self.simd_initialization_ns.store(
+                    u64::try_from(started.elapsed().as_nanos())
+                        .unwrap_or(u64::MAX)
+                        .max(1),
+                    std::sync::atomic::Ordering::Release,
+                );
+                result
+            })
+            .as_ref()
+            .map_err(String::as_str)
+    }
+
+    pub(crate) fn try_initialize_simd_backend(&self) -> std::result::Result<(), &str> {
         #[cfg(feature = "simd")]
         {
-            return self.simd_prefilter.is_some();
+            self.try_simd_prefilter().map(|_| ())
+        }
+        #[cfg(not(feature = "simd"))]
+        {
+            Err("this scanner build has no Hyperscan/SIMD backend")
+        }
+    }
+
+    /// Whether this scanner has a backend-neutral SIMD candidate plan.
+    /// This census does not materialize a Hyperscan database.
+    #[must_use]
+    pub fn simd_backend_available(&self) -> bool {
+        #[cfg(feature = "simd")]
+        {
+            self.simd_candidate_available
         }
         #[cfg(not(feature = "simd"))]
         {
@@ -158,38 +208,31 @@ impl CompiledScanner {
         }
     }
 
-    /// Whether the live compiled SIMD/Hyperscan prefilter initialized for this
-    /// scanner. Routing must use this runtime fact, not only the crate feature
-    /// flag, because database construction can fail on an otherwise SIMD-built
-    /// host and cached evidence must be invalidated in that state.
+    /// Whether this process has successfully materialized the SIMD candidate.
     #[must_use]
-    pub fn simd_backend_available(&self) -> bool {
-        self.simd_backend_usable()
-    }
-
-    #[cfg(feature = "simd")]
-    pub(crate) fn warn_simd_auto_degrade(&self, context: &str) {
-        if SIMD_AUTO_DEGRADE_WARNED.set(()).is_ok() {
-            eprintln!(
-                "keyhog: SIMD backend unavailable ({context}); routing this automatic CPU-tier scan through cpu-fallback. \
-Forced --backend simd is rejected instead of silently running another backend."
-            );
+    pub fn simd_backend_initialized(&self) -> bool {
+        #[cfg(feature = "simd")]
+        {
+            self.simd_prefilter
+                .get()
+                .is_some_and(std::result::Result::is_ok)
         }
-        tracing::warn!(
-            target: "keyhog::routing",
-            %context,
-            "SIMD backend unavailable; automatic CPU-tier route changed to cpu-fallback"
-        );
+        #[cfg(not(feature = "simd"))]
+        {
+            false
+        }
     }
 
     /// Exit before a caller-selected backend can silently run a different path.
     pub(crate) fn require_selected_backend_stack(&self, backend: ScanBackend) {
-        if backend == ScanBackend::SimdCpu && !self.simd_backend_usable() {
-            crate::process_exit::backend_unavailable(
-                "simd-regex selected but the SIMD/Hyperscan prefilter is unavailable; \
-silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or choose \
-`--backend cpu-fallback` explicitly.",
-            );
+        if backend == ScanBackend::SimdCpu {
+            if let Err(error) = self.try_initialize_simd_backend() {
+                crate::process_exit::backend_unavailable(format!(
+                    "simd-regex selected but Hyperscan initialization failed: {error}; silent \
+                     cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or \
+                     choose `--backend cpu-fallback` explicitly."
+                ));
+            }
         }
         require_selected_gpu_stack(self, backend);
     }
@@ -664,7 +707,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
             crate::hw_probe::ScanBackend::GpuCuda | crate::hw_probe::ScanBackend::GpuWgpu => {
                 self.gpu_stack_usable_for(backend)
             }
-            crate::hw_probe::ScanBackend::SimdCpu => self.simd_backend_usable(),
+            crate::hw_probe::ScanBackend::SimdCpu => self.try_initialize_simd_backend().is_ok(),
             crate::hw_probe::ScanBackend::CpuFallback => true,
         };
         // Warming is a PROBE with an in-band `bool` channel: report readiness

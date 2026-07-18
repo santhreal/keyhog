@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Compile a backend-neutral SIMD phase-one plan during scanner construction and
+  lazily materialize Hyperscan only when selected. Exact initialization errors
+  now cross the fallible coalesced boundary, scalar/GPU routes do not pay the
+  unused database cost, and the recorded materialization duration is available
+  to cold-aware autoroute evidence.
 - Establish calibration correctness from the always-present scalar engine,
   rejecting a divergent optional Hyperscan candidate without invalidating the
   independent oracle. Persist decoded-rescan backend composition in each
@@ -36,7 +41,7 @@
 - Replace the ambiguous phase-two localizer route bit with explicit
   plain-pattern and keyword-anchor choices. Autoroute now calibrates, persists,
   validates, inspects, and benchmarks all four plans per eligible backend;
-  cache schema 39 and crossover schema 7 reject the incomplete older evidence.
+  cache schema 40 and crossover schema 7 reject the incomplete older evidence.
 
 - Apply the resolved scan `entropy_threshold` to named-detector heuristic
   confidence instead of silently scoring those findings at the compiled default.

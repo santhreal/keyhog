@@ -146,6 +146,10 @@ fn compilation_censuses_gpu_peers_without_materializing_execution_backends() {
         before.iter().all(|candidate| !candidate.acquired),
         "scanner compilation must not materialize an execution peer: {before:?}"
     );
+    assert!(
+        !scanner.simd_backend_initialized(),
+        "scanner compilation must not materialize the unused Hyperscan peer"
+    );
 
     assert!(
         scanner.warm_backend(selected),
@@ -165,6 +169,10 @@ fn compilation_censuses_gpu_peers_without_materializing_execution_backends() {
             .filter(|candidate| candidate.backend != selected)
             .all(|candidate| !candidate.acquired),
         "warming one route must not initialize an unused peer: {after:?}"
+    );
+    assert!(
+        !scanner.simd_backend_initialized(),
+        "warming a GPU route must not initialize the unused Hyperscan peer"
     );
 }
 

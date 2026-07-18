@@ -154,7 +154,7 @@ pub(crate) mod trigger_bitmap;
 mod windowed;
 mod windowed_support;
 
-// `build_simd_scanner` only exists under the `simd` (Hyperscan) feature; its
+// The SIMD compile plan only exists under the `simd` (Hyperscan) feature; its
 // sole call site in `compiled_scanner/compile.rs` is `#[cfg(feature = "simd")]`
 // too. Gate the
 // import to match, or non-simd builds (the `portable` feature used for the
@@ -162,7 +162,9 @@ mod windowed_support;
 pub(crate) use backend_prepared::code_lines_from_offsets;
 pub(crate) use backend_prepared::PreparedChunk;
 #[cfg(feature = "simd")]
-pub(crate) use backend_prepared::{build_simd_scanner, SimdPhase1Prefilter};
+pub(crate) use backend_prepared::{
+    build_simd_compile_plan, SimdPhase1CompilePlan, SimdPhase1Prefilter,
+};
 #[cfg(test)]
 pub(crate) use boundary::scan_chunk_boundaries;
 pub use gpu_artifacts::{
@@ -349,7 +351,13 @@ pub struct CompiledScanner {
     /// [`phase2::ScannerTuning`].
     pub(crate) tuning: phase2::ScannerTuning,
     #[cfg(feature = "simd")]
-    pub(crate) simd_prefilter: Option<SimdPhase1Prefilter>,
+    pub(crate) simd_candidate_available: bool,
+    #[cfg(feature = "simd")]
+    pub(crate) simd_compile_plan: std::sync::Mutex<Option<SimdPhase1CompilePlan>>,
+    #[cfg(feature = "simd")]
+    pub(crate) simd_prefilter: OnceLock<std::result::Result<SimdPhase1Prefilter, String>>,
+    #[cfg(feature = "simd")]
+    pub(crate) simd_initialization_ns: std::sync::atomic::AtomicU64,
     /// Resolved detector-owned hot-pattern slots. Each row bundles the prefix, precise
     /// validator AND its canonical `ac_map` delegate together, so a slot's
     /// validation target and emission target can never be indexed apart and so

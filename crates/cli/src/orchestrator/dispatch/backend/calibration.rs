@@ -18,8 +18,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::evidence::{
     canonical_match_digest, canonical_matches, canonical_matches_equal_reference,
-    differing_canonical_match_fields, gpu_cold_warm_route_evidence, AutorouteDecision,
-    BackendTimingEvidence, CanonicalMatch, MeasuredRoute, RouteTimingEvidence,
+    differing_canonical_match_fields, gpu_cold_warm_route_evidence, simd_cold_warm_route_evidence,
+    AutorouteDecision, BackendTimingEvidence, CanonicalMatch, MeasuredRoute, RouteTimingEvidence,
 };
 use super::{is_gpu_backend, AutorouteRoutingError, AUTOROUTE_CALIBRATION_TRIALS};
 
@@ -51,6 +51,14 @@ pub(super) fn calibrate_fastest_correct_backend(
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
+    if candidate_backends.contains(&ScanBackend::SimdCpu) {
+        scanner.initialize_simd_backend().map_err(|error| {
+            AutorouteRoutingError::candidate_backend_rejected(
+                ScanBackend::SimdCpu,
+                format!("Hyperscan initialization failed: {error}"),
+            )
+        })?;
+    }
     let gpu_candidate_allowed = candidate_backends.iter().any(|backend| backend.is_gpu());
     if gpu_candidate_allowed {
         scanner
@@ -91,6 +99,21 @@ pub(super) fn calibrate_fastest_correct_backend(
         }
         let mut measured =
             measure_candidate_backend(scanner, sample, route, &reference_key, admission_plan)?;
+        if backend == ScanBackend::SimdCpu {
+            let initialization_ns = scanner.simd_initialization_ns().ok_or_else(|| {
+                AutorouteRoutingError::candidate_backend_rejected(
+                    backend,
+                    "Hyperscan materialized without initialization timing evidence",
+                )
+            })?;
+            measured = measured.add_to_first_trial(initialization_ns);
+            if simd_cold_warm_route_evidence(&measured).is_none() {
+                return Err(AutorouteRoutingError::candidate_backend_rejected(
+                    backend,
+                    "Hyperscan cold/warm route evidence was incomplete or invalid",
+                ));
+            }
+        }
         if is_gpu_backend(backend) {
             let backend_cold_ns = scanner
                 .autoroute_calibration_gpu_backend_cold_ns(backend)

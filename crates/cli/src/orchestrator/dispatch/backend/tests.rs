@@ -112,7 +112,10 @@ fn test_eligible_backends(gpu: Option<ScanBackend>) -> Vec<String> {
 }
 
 #[cfg(feature = "simd")]
-fn test_live_eligible_backends(scanner: &CompiledScanner, gpu: Option<ScanBackend>) -> Vec<String> {
+fn test_scanner_eligible_backends(
+    scanner: &CompiledScanner,
+    gpu: Option<ScanBackend>,
+) -> Vec<String> {
     let mut labels = vec![ScanBackend::CpuFallback.label().to_string()];
     if scanner.simd_backend_available() {
         labels.push(ScanBackend::SimdCpu.label().to_string());
@@ -125,8 +128,9 @@ fn test_live_eligible_backends(scanner: &CompiledScanner, gpu: Option<ScanBacken
 }
 
 #[test]
-fn eligible_backend_labels_follow_live_simd_initialization() {
+fn eligible_backend_labels_use_the_simd_plan_without_materializing_it() {
     let scanner = phase1_test_scanner();
+    assert!(!scanner.simd_backend_initialized());
     let labels = super::eligible_backend_labels(&scanner, false);
     assert!(
         labels.contains(&ScanBackend::CpuFallback.label().to_string()),
@@ -135,7 +139,11 @@ fn eligible_backend_labels_follow_live_simd_initialization() {
     assert_eq!(
         labels.contains(&ScanBackend::SimdCpu.label().to_string()),
         scanner.simd_backend_available(),
-        "autoroute candidate census must reflect live Hyperscan initialization, not only the compiled feature"
+        "autoroute candidate census must reflect the canonical Hyperscan plan, not only the compiled feature"
+    );
+    assert!(
+        !scanner.simd_backend_initialized(),
+        "candidate census must not materialize Hyperscan"
     );
 }
 
@@ -621,7 +629,7 @@ fn cached_router_replays_cpu_identity_when_runtime_policy_disables_gpu() {
         &probed_caps,
         None,
         false,
-        test_live_eligible_backends(&scanner, None),
+        test_scanner_eligible_backends(&scanner, None),
     )
     .with_live_hyperscan(scanner.simd_backend_available());
     let directory = tempfile::tempdir().expect("CPU-policy autoroute cache directory");
@@ -2465,7 +2473,7 @@ fn overlapping_confidence_selects_fastest_measured_median_not_backend_rank() {
     // First GPU trial is the real cold dispatch (19 ms); the six warm trials
     // have an 18 ms median. Its one-shot representative is therefore 19 ms.
     let gpu_timing = BackendTimingEvidence::from_trial_ns(vec![
-        19_000_000, 16_000_000, 18_000_000, 18_000_000, 18_000_000, 18_000_000, 20_000_000,
+        19_000_000, 16_000_000, 18_000_000, 18_000_000, 18_000_000, 18_000_000, 22_000_000,
     ])
     .expect("valid GPU timing");
     let decision = AutorouteDecision::from_timing_evidence(
@@ -3356,7 +3364,7 @@ fn cached_router_loads_persisted_decision_and_fails_loud_on_missing_bucket() {
         &caps,
         None,
         keyhog_scanner::hw_probe::gpu_backend_compiled(),
-        test_live_eligible_backends(&scanner, None),
+        test_scanner_eligible_backends(&scanner, None),
     )
     .with_live_hyperscan(scanner.simd_backend_available());
     let pattern_count = 902;
@@ -5495,6 +5503,43 @@ fn persistent_daemon_route_uses_warm_gpu_evidence_but_one_shot_uses_cold_cost() 
 }
 
 #[test]
+fn persistent_daemon_route_uses_warm_simd_evidence_but_one_shot_includes_materialization() {
+    let simd = BackendTimingEvidence::from_trial_ns(vec![
+        100_000_000,
+        10_000_000,
+        10_000_000,
+        10_000_000,
+        10_000_000,
+        10_000_000,
+        10_000_000,
+    ])
+    .expect("SIMD cold/warm timing evidence");
+    let cpu =
+        BackendTimingEvidence::from_trial_ns(vec![30_000_000; 7]).expect("CPU timing evidence");
+    let decision = AutorouteDecision::from_timing_evidence(
+        ScanBackend::CpuFallback,
+        8 * 1024 * 1024,
+        1,
+        0x51AD,
+        1,
+        simd,
+        Some(cpu),
+        None,
+    );
+
+    assert_eq!(
+        decision.resolved_routing_backend(),
+        Some(ScanBackend::CpuFallback),
+        "one-shot routing must include Hyperscan materialization"
+    );
+    assert_eq!(
+        decision.resolved_persistent_backend(),
+        Some(ScanBackend::SimdCpu),
+        "a persistent daemon must select from warm Hyperscan trials"
+    );
+}
+
+#[test]
 fn daemon_warm_routes_come_only_from_persisted_selected_backends() {
     let timing = |ms| BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS);
     let mut decisions = HashMap::new();
@@ -5533,6 +5578,13 @@ fn daemon_warm_routes_come_only_from_persisted_selected_backends() {
         runtime_health: None,
     };
 
+    assert_eq!(
+        router
+            .persistent_routes()
+            .expect("complete persisted routes"),
+        vec![ScanBackend::GpuCuda, ScanBackend::SimdCpu],
+        "daemon warm-up must include exactly every selected accelerator"
+    );
     assert_eq!(
         router
             .persistent_gpu_routes()

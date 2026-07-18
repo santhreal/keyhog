@@ -4,8 +4,8 @@ use std::collections::{BTreeSet, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::super::evidence::{
-    gpu_cold_warm_route_evidence, AutorouteCalibrationPoint, AutorouteDecision, MeasuredRoute,
-    MAX_AUTOROUTE_MEASURED_POINTS,
+    gpu_cold_warm_route_evidence, simd_cold_warm_route_evidence, AutorouteCalibrationPoint,
+    AutorouteDecision, MeasuredRoute, MAX_AUTOROUTE_MEASURED_POINTS,
 };
 use super::super::workload::{
     autoroute_stable_bucket, render_workload_key, validate_workload_source_mixture,
@@ -316,6 +316,15 @@ fn validate_point_route_evidence_at(
                 entry.backend,
                 entry.phase2_plain_localizer,
                 entry.phase2_keyword_localizer
+            )
+            .into());
+        }
+        if route.backend == keyhog_scanner::ScanBackend::SimdCpu
+            && simd_cold_warm_route_evidence(&entry.timing).is_none()
+        {
+            return Err(format!(
+                "cache decision has invalid SIMD cold/warm timing evidence for plain_localizer={} keyword_localizer={}",
+                entry.phase2_plain_localizer, entry.phase2_keyword_localizer
             )
             .into());
         }

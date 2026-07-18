@@ -3,7 +3,7 @@
 //! in the small-file regime, ~35µs/call), at a real speedup AND without
 //! changing the matched-pattern set (soundness)?
 //!
-//! `build_simd_scanner` compiles ONLY the keyword-triggered `ac_map` into
+//! `SimdPhase1CompilePlan` materializes ONLY the keyword-triggered `ac_map` in
 //! Hyperscan; every always-active phase-2 pattern runs through `regex::RegexSet`
 //! instead. Hyperscan is built
 //! for thousands of patterns at multi-GB/s, and `SINGLEMATCH` (fire each pattern

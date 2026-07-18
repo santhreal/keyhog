@@ -72,6 +72,9 @@ use std::sync::{Arc, Mutex};
 /// a shared cache's older generation from proving this host's calibration.
 pub(crate) type AutorouteMeasurementObserver = Arc<Mutex<BTreeSet<(String, String, String)>>>;
 
+// v40: SIMD timing adopts the same first-materialization plus warm-trial model
+// as GPU. Older rows measured only warm Hyperscan execution and would make a
+// lazy one-shot route look faster than the operator-observed path.
 // v34: route generations are keyed by exact `(config digest, host)` identity,
 // so shared caches preserve independent evidence for every calibrated host.
 // v33: each resolved config host persists the exact live eligible-backend
@@ -111,9 +114,9 @@ pub(crate) type AutorouteMeasurementObserver = Arc<Mutex<BTreeSet<(String, Strin
 // the top, per-resolved-config routing decisions under `configs` keyed by
 // config_digest, merge-on-save. Old single-config (v19 and earlier) caches are
 // rejected on the version gate and recalibrated.
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 39;
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 40;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
-pub(super) const AUTOROUTE_GPU_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
+pub(super) const AUTOROUTE_ACCELERATOR_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 
 fn backend_override_hint() -> String {
     keyhog_scanner::hw_probe::BACKEND_OVERRIDE_VALUES.join("|")
@@ -480,10 +483,9 @@ impl CachedBackendRouter {
         self
     }
 
-    /// Exact GPU peers selected by at least one validated persistent-daemon
-    /// decision. Daemon readiness warms this set only. An acquired but unused
-    /// peer cannot block a CPU-selected or different-GPU daemon.
-    pub(crate) fn persistent_gpu_routes(&self) -> Result<Vec<ScanBackend>, AutorouteRoutingError> {
+    /// Exact peers selected by at least one validated persistent-daemon
+    /// decision. Daemon readiness materializes this set only.
+    pub(crate) fn persistent_routes(&self) -> Result<Vec<ScanBackend>, AutorouteRoutingError> {
         if sole_compiled_backend().is_none() && self.decisions.is_empty() {
             return Err(AutorouteRoutingError::calibration_not_persisted(format!(
                 "daemon autoroute has no validated persistent workload decisions ({})",
@@ -497,12 +499,21 @@ impl CachedBackendRouter {
                     "persisted autoroute decision has no complete persistent-daemon route evidence",
                 )
             })?;
-            if backend.is_gpu() && !routes.contains(&backend) {
+            if !routes.contains(&backend) {
                 routes.push(backend);
             }
         }
         routes.sort_by_key(|backend| backend.label());
         Ok(routes)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn persistent_gpu_routes(&self) -> Result<Vec<ScanBackend>, AutorouteRoutingError> {
+        Ok(self
+            .persistent_routes()?
+            .into_iter()
+            .filter(|backend| backend.is_gpu())
+            .collect())
     }
 
     pub(crate) fn choose_with_plan(

@@ -12,7 +12,7 @@ use keyhog_scanner::testing::{
     compile_state_ac_literals, compile_state_is_ok, compile_state_phase2_regexes,
 };
 use keyhog_scanner::types::ScannerConfig;
-use keyhog_scanner::{testing::BigramBloom, ScanError};
+use keyhog_scanner::{testing::BigramBloom, ScanBackend, ScanError};
 
 // ── bigram_bloom.rs ─────────────────────────────────────────────────
 
@@ -131,11 +131,11 @@ fn hyperscan_unsupported_confirmed_route_recovers_from_its_literal_plan() {
         keyhog_scanner::GpuInitPolicy::ForceDisabled,
     )
     .expect("compile overlong Hyperscan route");
+    assert!(scanner.warm_backend(ScanBackend::SimdCpu));
     assert!(
         scanner
-            .simd_prefilter
-            .as_ref()
-            .is_some_and(|prefilter| prefilter.has_recovery()),
+            .try_simd_prefilter()
+            .is_ok_and(|prefilter| prefilter.has_recovery()),
         "an overlong Hyperscan regex must retain its canonical literal route"
     );
     assert!(

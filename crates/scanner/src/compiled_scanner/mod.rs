@@ -16,6 +16,8 @@ pub use types::{
 pub(crate) use types::{GpuBackendAcquisitionFailure, GpuBackendPeers};
 
 use crate::compiler::*;
+#[cfg(feature = "simd")]
+use crate::engine::build_simd_compile_plan;
 use crate::engine::CompiledScanner;
 #[cfg(all(test, feature = "simd"))]
 use crate::engine::Phase2HsEngine;
@@ -23,8 +25,6 @@ use crate::engine::{
     build_confirmed_suffix_gate, derive_pattern_boundary_context, phase2, profile,
     require_selected_gpu_stack, ConfirmedAnchorIndex, CsrU32, Phase1Admission, Phase2AnchorIndex,
 };
-#[cfg(feature = "simd")]
-use crate::engine::{build_simd_scanner, SimdPhase1Prefilter};
 #[cfg(feature = "gpu")]
 use crate::engine::{
     regex_match_byte_upper_bound, GpuResidentLiteralSlot, Phase2GpuDfaCatalogCache,

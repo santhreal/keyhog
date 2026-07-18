@@ -347,7 +347,12 @@ impl CompiledScanner {
 
     fn collect_triggered_patterns_simd(&self, _text: &str) -> Vec<u64> {
         #[cfg(feature = "simd")]
-        if let Some(prefilter) = &self.simd_prefilter {
+        {
+            let prefilter = self.try_simd_prefilter().unwrap_or_else(|error| {
+                crate::process_exit::backend_unavailable(format!(
+                    "selected Hyperscan trigger backend was not initialized: {error}"
+                ))
+            });
             let scanner = prefilter.scanner();
             // AC and HS trigger sets are incomparable; union then confirm.
             let mut triggered_patterns = self.collect_triggered_patterns_cpu(_text);
@@ -384,6 +389,7 @@ impl CompiledScanner {
             return triggered_patterns;
         }
 
+        #[cfg(not(feature = "simd"))]
         crate::process_exit::backend_unavailable(
             "simd-regex trigger collection reached without a live SIMD/Hyperscan prefilter; \
 silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or choose \

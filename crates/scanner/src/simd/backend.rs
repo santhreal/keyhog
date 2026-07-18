@@ -851,7 +851,7 @@ impl HsScanner {
             &pattern_map,
         )?;
 
-        // The caller (`build_simd_scanner`) already logs
+        // The materializer (`SimdPhase1CompilePlan`) already logs
         // `unsupported.len()` via tracing::info!, and consumers that
         // need the count get the Vec returned alongside. No need to
         // store a redundant copy on the scanner itself.

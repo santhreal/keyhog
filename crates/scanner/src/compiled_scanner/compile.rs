@@ -144,20 +144,14 @@ impl CompiledScanner {
         let prefix_propagation = CsrU32::from(build_prefix_propagation(&state.ac_literals));
         let same_prefix_patterns = CsrU32::from(build_same_prefix_patterns(&state.ac_literals));
 
-        // Hyperscan-confirmed rows that its compiler rejects retain their exact
-        // detector-owned literals in a small AC recovery prefilter. They stay
-        // in the canonical confirmed route instead of being duplicated into
-        // backend-independent phase two.
+        // Build only the backend-neutral Hyperscan plan. A selected SIMD route
+        // materializes its database lazily; rejected rows then retain their
+        // exact detector-owned literals in the recovery prefilter.
         #[cfg(feature = "simd")]
-        let simd_prefilter = match build_simd_scanner(&state.ac_map, tuning_config)? {
-            Some((scanner, index_map, unsupported_ac)) => Some(SimdPhase1Prefilter::new(
-                scanner,
-                index_map,
-                &state.ac_literals,
-                &unsupported_ac,
-            )?),
-            None => None,
-        };
+        let simd_compile_plan =
+            build_simd_compile_plan(&state.ac_map, &state.ac_literals, tuning_config);
+        #[cfg(feature = "simd")]
+        let simd_candidate_available = simd_compile_plan.is_some();
 
         let (phase2_keyword_ac, phase2_keyword_to_patterns, phase2_keywords) =
             build_phase2_keyword_ac(&state.phase2_patterns);
@@ -481,7 +475,13 @@ impl CompiledScanner {
             phase2_gpu_dfa: Phase2GpuDfaCatalogCache::default(),
             tuning: phase2::ScannerTuning::from_defaults(),
             #[cfg(feature = "simd")]
-            simd_prefilter,
+            simd_candidate_available,
+            #[cfg(feature = "simd")]
+            simd_compile_plan: std::sync::Mutex::new(simd_compile_plan),
+            #[cfg(feature = "simd")]
+            simd_prefilter: std::sync::OnceLock::new(),
+            #[cfg(feature = "simd")]
+            simd_initialization_ns: std::sync::atomic::AtomicU64::new(0),
             #[cfg(feature = "simdsieve")]
             hot_pattern_slots,
             config: ScannerConfig::default(),

@@ -112,6 +112,22 @@ impl SimdPhase1Prefilter {
 }
 
 #[cfg(feature = "simd")]
+struct SimdPatternPlan {
+    detector_index: usize,
+    hyperscan_id: usize,
+    regex: String,
+    reports_start: bool,
+}
+
+#[cfg(feature = "simd")]
+pub(crate) struct SimdPhase1CompilePlan {
+    patterns: Box<[SimdPatternPlan]>,
+    index_map: Vec<Vec<usize>>,
+    ac_literals: Box<[String]>,
+    shard_target: Option<usize>,
+}
+
+#[cfg(feature = "simd")]
 impl SimdRecoveryPrefilter {
     fn build(
         ac_literals: &[String],
@@ -155,20 +171,17 @@ impl SimdRecoveryPrefilter {
 }
 
 #[cfg(feature = "simd")]
-/// Builds the Hyperscan scanner, the hs_id -> ac_map index map, and the list
-/// of ac_map indices whose regex Hyperscan could not compile
-/// (over-long, or an unsupported construct like a large `{100,200}`
-/// bounded repeat). The caller builds an exact literal recovery prefilter for
-/// those rows so they remain on the confirmed route. A whole-database compile
-/// failure leaves SIMD unavailable; inconsistent returned IDs are an error.
-pub(crate) fn build_simd_scanner(
+/// Builds the backend-neutral phase-one plan without creating a Hyperscan
+/// database. The exact selected backend materializes this plan on first use.
+pub(crate) fn build_simd_compile_plan(
     ac_map: &[CompiledPattern],
+    ac_literals: &[String],
     tuning: &crate::scanner_config::ScannerTuningConfig,
-) -> crate::error::Result<Option<(crate::simd::backend::HsScanner, Vec<Vec<usize>>, Vec<usize>)>> {
+) -> Option<SimdPhase1CompilePlan> {
     use std::collections::HashMap;
 
     let mut regex_to_hs_id: HashMap<String, usize> = HashMap::new();
-    let mut hs_patterns: Vec<(usize, usize, String, bool)> = Vec::new();
+    let mut hs_patterns = Vec::new();
     let mut index_map: Vec<Vec<usize>> = Vec::new();
 
     for (idx, entry) in ac_map.iter().enumerate() {
@@ -177,64 +190,82 @@ pub(crate) fn build_simd_scanner(
             .entry(regex_str.to_string())
             .or_insert_with(|| {
                 let id = hs_patterns.len();
-                hs_patterns.push((
-                    entry.detector_index,
-                    id,
-                    regex_str.to_string(),
-                    entry.group.is_some(),
-                ));
+                hs_patterns.push(SimdPatternPlan {
+                    detector_index: entry.detector_index,
+                    hyperscan_id: id,
+                    regex: regex_str.to_string(),
+                    reports_start: entry.group.is_some(),
+                });
                 index_map.push(Vec::new());
                 id
             });
         index_map[hs_id].push(idx);
     }
 
-    let pattern_refs: Vec<(usize, usize, &str, bool)> = hs_patterns
-        .iter()
-        .map(|(a, b, c, d)| (*a, *b, c.as_str(), *d))
-        .collect();
-
-    tracing::info!(
-        unique = hs_patterns.len(),
-        raw = ac_map.len(),
-        "compiling deduplicated AC regexes into Hyperscan"
-    );
-
-    let opts = crate::simd::backend::HsCompileOpts {
-        // Phase 1 consumes set membership only: every callback marks a pattern
-        // bit, and match positions/multiplicity are discarded. Retiring a
-        // pattern after its first hit avoids callback storms on repetitive
-        // multi-MiB inputs without changing the triggered-pattern set.
-        singlematch: true,
+    (!hs_patterns.is_empty()).then(|| SimdPhase1CompilePlan {
+        patterns: hs_patterns.into_boxed_slice(),
+        index_map,
+        ac_literals: ac_literals.to_vec().into_boxed_slice(),
         shard_target: tuning.hs_shard_target,
-        ..Default::default()
-    };
-    match crate::simd::backend::HsScanner::compile_with_opts(&pattern_refs, opts) {
-        Ok((scanner, unsupported)) => {
-            // Map the unsupported hs_ids back to the ac_map indices that
-            // share each dropped regex. These never match under HS, so the
-            // caller retains their canonical literal triggers separately.
-            let mut unsupported_ac = Vec::new();
-            for &hs_id in &unsupported {
-                let Some(indices) = index_map.get(hs_id) else {
-                    return Err(crate::error::ScanError::Simd(format!(
-                        "Hyperscan returned unsupported pattern id {hs_id}, but the canonical SIMD plan has only {} unique row(s)",
-                        hs_patterns.len()
-                    )));
-                };
-                unsupported_ac.extend(indices.iter().copied());
-            }
-            tracing::info!(
-                compiled = scanner.pattern_count(),
-                unsupported = unsupported.len(),
-                unsupported_ac = unsupported_ac.len(),
-                "HS ready"
-            );
-            Ok(Some((scanner, index_map, unsupported_ac)))
+    })
+}
+
+#[cfg(feature = "simd")]
+impl SimdPhase1CompilePlan {
+    pub(crate) fn materialize(self) -> std::result::Result<SimdPhase1Prefilter, String> {
+        let pattern_refs: Vec<(usize, usize, &str, bool)> = self
+            .patterns
+            .iter()
+            .map(|pattern| {
+                (
+                    pattern.detector_index,
+                    pattern.hyperscan_id,
+                    pattern.regex.as_str(),
+                    pattern.reports_start,
+                )
+            })
+            .collect();
+
+        tracing::info!(
+            unique = self.patterns.len(),
+            raw = self.ac_literals.len(),
+            "materializing deduplicated AC regexes in Hyperscan"
+        );
+
+        let opts = crate::simd::backend::HsCompileOpts {
+            // Phase 1 consumes set membership only: every callback marks a
+            // pattern bit, and match positions/multiplicity are discarded.
+            singlematch: true,
+            shard_target: self.shard_target,
+            ..Default::default()
+        };
+        let (scanner, unsupported) =
+            crate::simd::backend::HsScanner::compile_with_opts(&pattern_refs, opts)
+                .map_err(|error| format!("Hyperscan phase-one compilation failed: {error}"))?;
+
+        // Map unsupported deduplicated ids back to every canonical pattern
+        // that shares the regex. Their detector-owned literals form the exact
+        // recovery prefilter rather than silently disappearing from SIMD.
+        let mut unsupported_ac = Vec::new();
+        for &hs_id in &unsupported {
+            let Some(indices) = self.index_map.get(hs_id) else {
+                return Err(format!(
+                    "Hyperscan returned unsupported pattern id {hs_id}, but the canonical SIMD plan has only {} unique row(s)",
+                    self.patterns.len()
+                ));
+            };
+            unsupported_ac.extend(indices.iter().copied());
         }
-        Err(error) => {
-            tracing::warn!("HS compilation failed: {error}");
-            Ok(None)
-        }
+
+        let prefilter =
+            SimdPhase1Prefilter::new(scanner, self.index_map, &self.ac_literals, &unsupported_ac)
+                .map_err(|error| error.to_string())?;
+        tracing::info!(
+            compiled = prefilter.scanner().pattern_count(),
+            unsupported = unsupported.len(),
+            unsupported_ac = unsupported_ac.len(),
+            "Hyperscan phase-one backend ready"
+        );
+        Ok(prefilter)
     }
 }

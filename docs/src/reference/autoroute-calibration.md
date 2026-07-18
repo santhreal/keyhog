@@ -207,10 +207,12 @@ which backend is fastest:
   resolved batch-input byte cap, and the exact sorted eligible-backend census
   for that resolved config. A missing or changed required field invalidates the
   evidence and requires recalibration.
-- SIMD is admitted only when the scanner's live Hyperscan/Vectorscan database
-  initialized successfully. A binary built with the SIMD feature but unable to
-  construct its database records a CPU-fallback-only census, so old SIMD
-  evidence cannot be reused or silently selected.
+- SIMD is admitted when the scanner produced a nonempty backend-neutral plan
+  and the linked Hyperscan/Vectorscan runtime has a reproducible identity.
+  Scanner construction does not build its databases. Calibration or a selected
+  SIMD route materializes the plan exactly once; failure aborts calibration or
+  the selected scan with the initialization reason instead of removing SIMD
+  from the census or substituting scalar CPU.
 - Each scan preset (default, `--fast`, `--deep`, `--precision`) is calibrated
   separately.
 - Flags hashed into the scan config (for example `--threads` or
@@ -268,13 +270,15 @@ calibration.
 
 ## One-shot scans and the daemon
 
-Runtime lifetime changes GPU cost, so it is part of routing semantics.
-Calibration records warm CPU/Hyperscan medians and, for GPU, the real first
-dispatch followed by warm trials:
+Runtime lifetime changes accelerator cost, so it is part of routing semantics.
+Calibration records the scalar CPU distribution directly. For SIMD and each
+GPU peer it records the real first materialization/dispatch followed by warm
+trials:
 
-- An in-process one-shot scan includes cold GPU cost when choosing a backend.
+- An in-process one-shot scan includes cold Hyperscan or GPU cost when choosing
+  a backend.
 - A ready daemon initializes accelerator state before accepting requests and
-  chooses from the warm GPU trials. Startup derives its required warm peer set
+  chooses from warm accelerator trials. Startup derives its required peer set
   from the validated decision table. It does not warm unrelated eligible peers,
   and it refuses readiness if any selected peer cannot be warmed.
 

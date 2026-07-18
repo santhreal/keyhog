@@ -643,14 +643,12 @@ impl CompiledScanner {
             let t_floor = std::time::Instant::now();
             let full_recall_floor = self.tuning.gpu_recall_floor_enabled();
             let cpu_triggers = if full_recall_floor {
-                match self.simd_prefilter.as_ref() {
-                    Some(prefilter) => {
-                        Some(self.compute_coalesced_triggers(chunks, prefilter, None))
-                    }
-                    None => {
-                        return dispatch_failure(
-                            "gpu_recall_floor requested but no SIMD prefilter is live".to_string(),
-                        );
+                match self.try_simd_prefilter() {
+                    Ok(prefilter) => Some(self.compute_coalesced_triggers(chunks, prefilter, None)),
+                    Err(error) => {
+                        return dispatch_failure(format!(
+                            "gpu_recall_floor requested but Hyperscan initialization failed: {error}"
+                        ));
                     }
                 }
             } else {

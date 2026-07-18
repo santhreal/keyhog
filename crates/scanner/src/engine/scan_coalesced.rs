@@ -178,7 +178,11 @@ impl CompiledScanner {
         #[cfg(not(feature = "gpu"))]
         let _ = recover_gpu_dispatch_faults;
         let result = if backend == crate::hw_probe::ScanBackend::SimdCpu {
-            self.require_selected_backend_stack(backend);
+            self.try_initialize_simd_backend().map_err(|error| {
+                crate::error::ScanError::Simd(format!(
+                    "selected Hyperscan backend initialization failed: {error}"
+                ))
+            })?;
             Ok(super::CoalescedScanOutcome {
                 matches: self.scan_coalesced_simd(
                     chunks,
@@ -247,6 +251,7 @@ impl CompiledScanner {
         admission_plan: Option<&super::Phase1AdmissionPlan>,
         route: crate::ScanExecutionRoute,
     ) -> Vec<Vec<keyhog_core::RawMatch>> {
+        #[cfg(not(feature = "simd"))]
         use rayon::prelude::*;
 
         #[cfg(not(feature = "simd"))]
@@ -275,31 +280,11 @@ impl CompiledScanner {
 
         #[cfg(feature = "simd")]
         {
-            let Some(prefilter) = &self.simd_prefilter else {
-                self.warn_simd_auto_degrade("coalesced scan had no live SIMD prefilter");
-                let telemetry = crate::telemetry::capture_scan_telemetry();
-                let mut results: Vec<Vec<keyhog_core::RawMatch>> = chunks
-                    .par_iter()
-                    .map(|c| {
-                        crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
-                            self.scan_with_deadline_and_backend_admission_and_route(
-                                c,
-                                self.config.per_chunk_deadline(),
-                                crate::hw_probe::ScanBackend::CpuFallback,
-                                None,
-                                route,
-                            )
-                        })
-                    })
-                    .collect();
-                super::boundary::scan_chunk_boundaries_with_route(
-                    self,
-                    chunks,
-                    &mut results,
-                    route,
-                );
-                return results;
-            };
+            let prefilter = self.try_simd_prefilter().unwrap_or_else(|error| {
+                crate::process_exit::backend_unavailable(format!(
+                    "selected Hyperscan backend was not initialized: {error}"
+                ))
+            });
 
             // Coalesced SIMD bypasses `scan_inner`, so it owns the same scanner
             // telemetry events. Logical profiler input is recorded once by the

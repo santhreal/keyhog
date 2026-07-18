@@ -424,14 +424,11 @@ impl DefaultScanRuntime {
                 }
             }
             Some(keyhog_scanner::ScanBackend::SimdCpu) => {
-                if !self
-                    .scanner
-                    .warm_backend(keyhog_scanner::ScanBackend::SimdCpu)
-                {
-                    anyhow::bail!(
-                        "{subcommand_name} --backend simd cannot be honored because the Hyperscan/SIMD prefilter is unavailable. Run `keyhog backend --self-test` or choose --backend cpu"
-                    );
-                }
+                self.scanner.initialize_simd_backend().map_err(|error| {
+                    anyhow::anyhow!(
+                        "{subcommand_name} --backend simd cannot be honored because Hyperscan initialization failed: {error}. Run `keyhog backend --self-test` or choose --backend cpu"
+                    )
+                })?;
             }
             Some(keyhog_scanner::ScanBackend::CpuFallback) | None => {}
             Some(backend) => {
@@ -452,23 +449,29 @@ impl DefaultScanRuntime {
         backend_override: Option<keyhog_scanner::ScanBackend>,
     ) -> Result<Self> {
         self.scanner.warm();
-        let simd_ready = self
-            .scanner
-            .warm_backend(keyhog_scanner::ScanBackend::SimdCpu);
         let gpu_candidates = self.scanner.gpu_backend_candidates();
-        if backend_override == Some(keyhog_scanner::ScanBackend::SimdCpu) && !simd_ready {
-            anyhow::bail!(
-                "daemon --backend simd cannot be honored because the Hyperscan/SIMD prefilter is unavailable. Run `keyhog backend --self-test` or choose --backend cpu"
-            );
-        }
-        let gpu_routes: Vec<_> = match backend_override {
-            Some(backend) if backend.is_gpu() => vec![backend],
+        let required_routes = match backend_override {
+            Some(backend) => vec![backend],
             None => self
                 .router
-                .persistent_gpu_routes()
+                .persistent_routes()
                 .map_err(anyhow::Error::from)?,
-            _ => Vec::new(),
         };
+        let simd_required = required_routes.contains(&keyhog_scanner::ScanBackend::SimdCpu);
+        if simd_required {
+            self.scanner
+                .initialize_simd_backend()
+                .map_err(|error| {
+                    anyhow::anyhow!(
+                        "daemon requires SIMD but Hyperscan initialization failed: {error}. Run `keyhog backend --self-test` or choose --backend cpu"
+                    )
+                })?;
+        }
+        let gpu_routes: Vec<_> = required_routes
+            .iter()
+            .copied()
+            .filter(|backend| backend.is_gpu())
+            .collect();
         let requested_gpu_is_eligible = match backend_override {
             Some(backend) if backend.is_gpu() => gpu_candidates
                 .iter()
@@ -506,7 +509,7 @@ impl DefaultScanRuntime {
             )?;
         }
         tracing::info!(
-            simd_ready,
+            simd_initialized = self.scanner.simd_backend_initialized(),
             gpu_ready,
             selected_gpu_routes = ?gpu_routes,
             gpu_must_be_ready,
