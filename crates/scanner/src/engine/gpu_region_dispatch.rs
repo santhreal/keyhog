@@ -124,10 +124,7 @@ impl CompiledScanner {
             };
             let matcher_s = t_matcher.elapsed();
             let Some(backend) = self.gpu_backends.get(route) else {
-                return dispatch_failure(format!(
-                    "{} was selected but its driver was not acquired",
-                    route.label()
-                ));
+                return dispatch_failure(self.gpu_backend_unavailable_reason(route));
             };
             let Some(resident_slot) = self.gpu_resident_literal_slot(route) else {
                 return dispatch_failure(format!(

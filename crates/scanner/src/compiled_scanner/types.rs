@@ -7,12 +7,12 @@ use std::sync::{Arc, OnceLock};
 pub enum GpuInitPolicy {
     /// Honor the resolved GPU runtime policy.
     FromRuntimePolicy,
-    /// Acquire a GPU backend when hardware is present, regardless of the
-    /// disabled-GPU policy. Used when the operator explicitly forces GPU.
+    /// Census GPU peers regardless of the disabled-GPU policy. The selected
+    /// execution backend is still materialized lazily.
     ForceEnabled,
-    /// Skip CUDA/wgpu acquisition. Used when the selected CLI path cannot
-    /// route to GPU, avoiding startup and RSS overhead without changing scan
-    /// results.
+    /// Skip CUDA/WGPU census and acquisition. Used when the selected CLI path
+    /// cannot route to GPU, avoiding startup and RSS overhead without changing
+    /// scan results.
     ForceDisabled,
 }
 

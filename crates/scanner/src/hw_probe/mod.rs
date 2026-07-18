@@ -33,7 +33,7 @@ pub use select::{
 pub use tier::{gpu_routing_profile, gpu_routing_profiles, GpuRoutingProfile};
 
 /// Scan execution backend selected for a given workload.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum ScanBackend {
     /// GPU region-presence phase 1 through VYRE's CUDA driver.

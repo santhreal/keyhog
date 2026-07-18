@@ -13,10 +13,12 @@ It does
 not guess from a device name or a hard-coded size threshold. Autoroute is *not*
 a fallback hierarchy: during calibration KeyHog measures every eligible
 execution class exposed by that scanner, rejects candidates whose complete
-redacted raw-match identity differs from the reference, and records the fastest
-survivor for the measured representative. Every executable CUDA and WGPU path
-is acquired and measured independently. One driver never substitutes for the
-other. The parity identity covers chunk membership; detector
+redacted raw-match identity differs from the independent scalar reference, and
+records the fastest survivor for the measured representative. Optional SIMD,
+CUDA, and WGPU engines are candidates, never correctness oracles. Every
+executable CUDA and WGPU path is acquired and measured independently during
+calibration. One driver never substitutes for the other. The parity identity
+covers chunk membership; detector
 id/name/service/severity; exact credential, stored-hash, and companion identity;
 full source/history location; entropy; confidence; and finding multiplicity.
 Mismatch diagnostics expose only field names and occurrence counts.
@@ -146,7 +148,9 @@ Canonical calibration admits every eligible execution class. The low-level
 under a noncanonical config identity; its CPU-only evidence cannot overwrite a
 normal all-candidate decision.
 
-Startup reports every acquired GPU peer and each acquisition failure. The
+Startup reports every available GPU peer without creating execution devices or
+pipelines. Calibration acquires each peer when its candidate is measured and
+reports the exact acquisition failure. The
 autoroute cache stores separate CUDA and WGPU cold and warm timing vectors, and
 `keyhog backend --autoroute` prints both. A failed driver is ineligible until it
 is repaired and calibration is rerun.
@@ -199,7 +203,7 @@ which backend is fastest:
 - Host identity includes OS/architecture, CPU model and topology, memory, CPU
   instruction support, the live linked Hyperscan/Vectorscan runtime version
   when SIMD is eligible and, when the scanner can use a physical GPU, the GPU
-  device, every acquired runtime backend and version, driver/runtime identity,
+  device, every available runtime backend and version, driver/runtime identity,
   resolved batch-input byte cap, and the exact sorted eligible-backend census
   for that resolved config. A missing or changed required field invalidates the
   evidence and requires recalibration.
@@ -271,8 +275,13 @@ dispatch followed by warm trials:
 - An in-process one-shot scan includes cold GPU cost when choosing a backend.
 - A ready daemon initializes accelerator state before accepting requests and
   chooses from the warm GPU trials. Startup derives its required warm peer set
-  from the validated decision table. It does not warm unrelated acquired peers,
+  from the validated decision table. It does not warm unrelated eligible peers,
   and it refuses readiness if any selected peer cannot be warmed.
+
+Decoded derived buffers are part of the measured route rather than a hidden
+runtime choice. Scalar and SIMD candidates keep their own backend for decoded
+rescans. GPU candidates explicitly compose with scalar for those small buffers,
+so neither scalar nor GPU timing can silently borrow Hyperscan work.
 
 The current in-process router applies that cold-aware decision to each workload
 lookup. It does not infer request-wide GPU startup amortization across a large
@@ -384,7 +393,7 @@ meanings:
 | `daemon_backend`, `daemon_phase2_plain_localizer`, `daemon_phase2_keyword_localizer` | Backend and both phase-two localization choices derived for a ready persistent daemon from warm evidence. |
 | `daemon_confidence_separated`, `daemon_selection_basis`, `daemon_selected_margin_ns` | Daemon-route counterparts, also aggregated conservatively across every measured point. |
 | `source_mixture` | Structured source-class components used by the workload identity: canonical family digest, full-size versus payload provenance, reduced chunk/payload ratios, and maximum source-span bucket. JSON consumers should use these fields instead of parsing the human-readable `workload` string. |
-| `candidate_receipts` | Concise summary of the first measured point's receipts. Every receipt identifies the backend plus both localization choices. Every point carries the complete four-plans-per-backend set; every result digest must equal its point's SIMD/both-off reference, and every evidence digest must recompute exactly or the cache is rejected. |
+| `candidate_receipts` | Concise summary of the first measured point's receipts. Every receipt identifies the backend plus both localization choices. Every point carries the complete four-plans-per-backend set; every result digest must equal its point's scalar/both-off reference, and every evidence digest must recompute exactly or the cache is rejected. |
 
 ## Single-backend builds
 

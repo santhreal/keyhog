@@ -33,12 +33,12 @@ pub(super) fn calibrate_fastest_correct_backend(
     let sample_bytes = calibration_sample_bytes(sample)?;
 
     let reference_route = MeasuredRoute {
-        backend: ScanBackend::SimdCpu,
+        backend: ScanBackend::CpuFallback,
         phase2_plain_localizer: false,
         phase2_keyword_localizer: false,
     };
     let reference_matches =
-        establish_reference_simd(scanner, sample, admission_plan, reference_route);
+        establish_scalar_reference(scanner, sample, admission_plan, reference_route);
     let reference_key = canonical_matches(&reference_matches);
 
     let candidate_backends = eligible_backend_labels
@@ -118,7 +118,7 @@ pub(super) fn calibrate_fastest_correct_backend(
         .any(|entry| entry.measured_route() == Some(reference_route));
     if !reference_present {
         return Err(AutorouteRoutingError::calibration_not_persisted(
-            "calibration candidate plan omitted the SIMD reference backend",
+            "calibration candidate plan omitted the scalar correctness reference backend",
         ));
     }
 
@@ -141,7 +141,7 @@ pub(super) fn calibrate_fastest_correct_backend(
     // The provisional backend/margin are ALWAYS overwritten below; only the
     // resolved pair is ever observable.
     let mut decision = AutorouteDecision::from_peer_timing_evidence(
-        ScanBackend::SimdCpu,
+        ScanBackend::CpuFallback,
         sample_bytes,
         sample.len(),
         correctness_digest,
@@ -201,15 +201,15 @@ pub(super) fn calibration_candidate_rotation(
     size_band.wrapping_add(sample_chunks) % candidates
 }
 
-fn establish_reference_simd(
+fn establish_scalar_reference(
     scanner: &CompiledScanner,
     sample: &[Chunk],
     admission_plan: Option<&Phase1AdmissionPlan>,
     route: MeasuredRoute,
 ) -> Vec<Vec<keyhog_core::RawMatch>> {
-    // Establish the canonical finding set outside the rotated timed plan. SIMD
-    // is still the correctness reference, but no longer receives the same
-    // first thermal position in every workload.
+    // Establish the canonical finding set outside the rotated timed plan. The
+    // always-present scalar engine is independent of optional accelerator
+    // compilation and therefore remains the correctness oracle.
     scanner.clear_fragment_cache();
     let reference = scan_calibration_backend(scanner, sample, route, admission_plan);
     scanner.clear_fragment_cache();
@@ -280,7 +280,7 @@ fn measure_candidate_backend(
             let only_in_trial_count =
                 sorted_calibration_difference_count(&trial_key, &reference_key);
             let differing_fields = differing_canonical_match_fields(&reference_key, &trial_key);
-            if backend == ScanBackend::SimdCpu {
+            if backend == ScanBackend::CpuFallback {
                 tracing::error!(
                     target: "keyhog::routing",
                     backend = backend.label(),
@@ -364,12 +364,12 @@ pub(super) fn calibration_candidate_parity_result(
     if canonical_matches_equal_reference(matches, reference_key) {
         return Ok(());
     }
-    if backend == ScanBackend::SimdCpu {
+    if backend == ScanBackend::CpuFallback {
         return Err(AutorouteRoutingError::inconsistent_reference_backend(trial));
     }
     Err(AutorouteRoutingError::candidate_backend_rejected(
         backend,
-        "candidate findings diverged from the SIMD reference",
+        "candidate findings diverged from the scalar reference",
     ))
 }
 

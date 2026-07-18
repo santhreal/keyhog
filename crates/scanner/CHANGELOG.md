@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Establish calibration correctness from the always-present scalar engine,
+  rejecting a divergent optional Hyperscan candidate without invalidating the
+  independent oracle. Persist decoded-rescan backend composition in each
+  measured route so scalar and GPU timings cannot silently borrow Hyperscan.
+- Census CUDA and WGPU identities during scanner compilation without creating
+  execution devices or pipelines. Materialize only the selected peer, retain
+  exact initialization diagnostics, and leave unrelated peers untouched.
 - Preserve successful GPU dispatch work when a later fused region dispatch
   faults, recover only the exact unprocessed source-byte intervals through the
   scalar trigger path, stop issuing work to the faulted route for that request,

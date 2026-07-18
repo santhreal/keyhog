@@ -67,10 +67,20 @@ fn check_decoder_cells(decoder_label: &str, fixture: &Chunk) {
     let mut failed = Vec::new();
     scanner.clear_fragment_cache();
     let reference_results =
-        scanner.scan_chunks_with_backend(std::slice::from_ref(fixture), ScanBackend::SimdCpu);
+        scanner.scan_chunks_with_backend(std::slice::from_ref(fixture), ScanBackend::CpuFallback);
     let reference = canonical(&reference_results);
 
     for backend in ALL_BACKENDS {
+        let expected_decode_backend = if backend.is_gpu() {
+            ScanBackend::CpuFallback
+        } else {
+            *backend
+        };
+        assert_eq!(
+            scanner.execution_route_for_backend(*backend).decode_backend,
+            expected_decode_backend,
+            "decoded rescans must remain attributed to the measured route"
+        );
         scanner.clear_fragment_cache();
         let degrade_before = scanner.runtime_status().gpu_degrade_count;
         let results = scanner.scan_chunks_with_backend(std::slice::from_ref(fixture), *backend);

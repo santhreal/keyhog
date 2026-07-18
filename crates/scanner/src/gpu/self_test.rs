@@ -296,7 +296,7 @@ fn gpu_region_presence_self_test_impl(
         let results = match scanner.try_scan_coalesced_gpu_region_presence(
             &[make_chunk()],
             route,
-            scanner.default_execution_route(),
+            scanner.execution_route_for_backend(route),
         ) {
             Ok(results) => results,
             Err(error) => {

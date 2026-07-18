@@ -524,6 +524,7 @@ fn hardware_cuda_identity_survives_a_software_wgpu_probe() {
 fn gpu_candidate_eligibility_requires_hardware_and_complete_identity() {
     let complete = keyhog_scanner::GpuBackendCandidateStatus {
         backend: ScanBackend::GpuWgpu,
+        available: true,
         acquired: true,
         driver_id: Some("wgpu"),
         driver_version: Some("0.6.4"),
@@ -4575,7 +4576,7 @@ fn autoroute_confidence_uses_student_t_for_small_calibration_samples() {
 }
 
 #[test]
-fn autoroute_reference_inconsistency_aborts_calibration_contract() {
+fn scalar_reference_inconsistency_aborts_calibration_contract() {
     let reference = vec![vec![canonical_test_match(
         "detector-reference",
         7,
@@ -4585,7 +4586,7 @@ fn autoroute_reference_inconsistency_aborts_calibration_contract() {
     )]];
     let reference_key = canonical_matches(&reference);
     assert!(calibration::calibration_candidate_parity_result(
-        ScanBackend::SimdCpu,
+        ScanBackend::CpuFallback,
         1,
         &reference,
         &reference_key,
@@ -4595,17 +4596,51 @@ fn autoroute_reference_inconsistency_aborts_calibration_contract() {
     let mut divergent = reference.clone();
     divergent[0][0].location.offset += 1;
     let error = calibration::calibration_candidate_parity_result(
-        ScanBackend::SimdCpu,
+        ScanBackend::CpuFallback,
         2,
         &divergent,
         &reference_key,
     )
-    .expect_err("a divergent SIMD trial must abort reference calibration")
+    .expect_err("a divergent scalar trial must abort reference calibration")
     .to_string();
     assert!(
         error.contains("reference backend produced inconsistent findings")
             && error.contains("no backend decision was persisted"),
         "reference inconsistency must be an autoroute calibration failure, got: {error}"
+    );
+}
+
+#[test]
+fn injected_simd_miss_rejects_only_simd_and_preserves_scalar_oracle() {
+    let reference = vec![vec![canonical_test_match(
+        "detector-simd-miss",
+        5,
+        Some("src/simd-miss.rs"),
+        Some(3),
+        11,
+    )]];
+    let reference_key = canonical_matches(&reference);
+    assert!(calibration::calibration_candidate_parity_result(
+        ScanBackend::CpuFallback,
+        1,
+        &reference,
+        &reference_key,
+    )
+    .is_ok());
+
+    let simd_miss = vec![Vec::new()];
+    let error = calibration::calibration_candidate_parity_result(
+        ScanBackend::SimdCpu,
+        1,
+        &simd_miss,
+        &reference_key,
+    )
+    .expect_err("a SIMD-only miss must reject the SIMD candidate")
+    .to_string();
+    assert!(error.contains("rejected eligible backend simd"), "{error}");
+    assert!(
+        !error.contains("reference backend produced inconsistent findings"),
+        "an optional SIMD miss must not invalidate the scalar oracle: {error}"
     );
 }
 

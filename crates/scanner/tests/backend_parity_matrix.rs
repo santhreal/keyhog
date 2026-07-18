@@ -363,6 +363,7 @@ fn gpu_fused_always_anchor_positions_match_cpu_when_keyword_localization_is_disa
         "fixtures/gpu-fused-always-anchor.txt",
     )];
     let route = ScanExecutionRoute {
+        decode_backend: ScanBackend::CpuFallback,
         phase2_plain_localizer: false,
         phase2_keyword_localizer: false,
     };

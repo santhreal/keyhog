@@ -142,7 +142,7 @@ impl CoalescedBatchRouter {
             Self::Explicit(backend) => Ok(BackendSelection {
                 backend: *backend,
                 phase1_plan: (!backend.is_gpu()).then(|| scanner.phase1_admission_plan(batch)),
-                execution_route: scanner.default_execution_route(),
+                execution_route: scanner.execution_route_for_backend(*backend),
                 recovery_plan: None,
                 runtime_route: None,
             }),

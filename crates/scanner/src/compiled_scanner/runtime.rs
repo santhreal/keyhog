@@ -36,7 +36,17 @@ impl CompiledScanner {
     /// workload-specific autoroute evidence.
     #[must_use]
     pub fn default_execution_route(&self) -> crate::ScanExecutionRoute {
+        self.execution_route_for_backend(ScanBackend::CpuFallback)
+    }
+
+    #[must_use]
+    pub fn execution_route_for_backend(&self, backend: ScanBackend) -> crate::ScanExecutionRoute {
         crate::ScanExecutionRoute {
+            decode_backend: if backend.is_gpu() {
+                ScanBackend::CpuFallback
+            } else {
+                backend
+            },
             phase2_plain_localizer: self.tuning.phase2_plain_localizer_enabled(),
             phase2_keyword_localizer: true,
         }
@@ -155,16 +165,6 @@ impl CompiledScanner {
     #[must_use]
     pub fn simd_backend_available(&self) -> bool {
         self.simd_backend_usable()
-    }
-
-    #[inline]
-    #[cfg(feature = "decode")]
-    pub(crate) fn live_cpu_backend(&self) -> ScanBackend {
-        if self.simd_backend_usable() {
-            ScanBackend::SimdCpu
-        } else {
-            ScanBackend::CpuFallback
-        }
     }
 
     #[cfg(feature = "simd")]
@@ -538,7 +538,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
         self.detector_digest
     }
 
-    /// Every compiled GPU driver peer and its acquisition result.
+    /// Every compiled GPU driver peer and its census and initialization state.
     #[must_use]
     pub fn gpu_backend_candidates(&self) -> Vec<GpuBackendCandidateStatus> {
         use crate::hw_probe::ScanBackend;
@@ -590,6 +590,44 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
                 }
             })
             .collect()
+    }
+
+    pub(crate) fn gpu_backend_unavailable_reason(
+        &self,
+        backend: crate::hw_probe::ScanBackend,
+    ) -> String {
+        let Some(candidate) = self
+            .gpu_backend_candidates()
+            .into_iter()
+            .find(|candidate| candidate.backend == backend)
+        else {
+            return format!("{} is not a compiled GPU peer", backend.label());
+        };
+        if let Some(error) = candidate.acquisition_error {
+            return format!(
+                "{} execution backend initialization failed: {error}",
+                backend.label()
+            );
+        }
+        if !candidate.available {
+            return format!(
+                "{} is absent from the current hardware peer census",
+                backend.label()
+            );
+        }
+        if !candidate.has_complete_identity() {
+            return format!(
+                "{} has incomplete driver, device, or runtime identity",
+                backend.label()
+            );
+        }
+        if candidate.acquired {
+            return format!("{} execution backend initialized", backend.label());
+        }
+        format!(
+            "{} did not publish an initialized execution handle",
+            backend.label()
+        )
     }
 
     /// Most recent concrete GPU runtime-degrade reason for this compiled
@@ -741,7 +779,7 @@ silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or 
             deadline,
             selected_backend,
             admission,
-            self.default_execution_route(),
+            self.execution_route_for_backend(selected_backend),
         )
     }
 

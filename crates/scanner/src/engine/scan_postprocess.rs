@@ -129,11 +129,10 @@ impl CompiledScanner {
                     // Mark the rescan so the phase-2 profiler can separate sub-chunk
                     // per-pass cost from parent-chunk cost (cheap thread-local swap).
                     let restore_rescan = super::profile::set_in_decode(true);
-                    // Decoded rescans deliberately stay on the live CPU tier:
-                    // GPU dispatch overhead dominates these derived buffers.
-                    // Pass that resolved backend through windowing too; selecting
-                    // again per window would silently discard this decision.
-                    let decoded_backend = self.live_cpu_backend();
+                    // Decoded rescans execute the exact backend carried by the
+                    // measured route. Scalar candidates stay scalar; GPU routes
+                    // explicitly compose with scalar for these small buffers.
+                    let decoded_backend = route.decode_backend;
                     let decoded_matches = if decoded_chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
                         self.scan_windowed(&decoded_chunk, decoded_backend, deadline, route)
                     } else {
@@ -143,21 +142,9 @@ impl CompiledScanner {
                         // to the GPU literal-set: per-dispatch overhead
                         // (driver init + queue submit + sync) is 10-100 ms,
                         // and an exact GPU backend would otherwise force
-                        // every decoded chunk through that path. On a
-                        // 64 MiB chunk that decodes into 1 000 sub-chunks
-                        // that's a 50-second tax - exactly the wall-clock
-                        // delta keyhog used to show vs SIMD on messy
-                        // corpora. Force the live CPU-tier backend here
-                        // regardless of env override: `live_cpu_backend()`
-                        // returns SimdCpu ONLY when this scanner actually
-                        // built a Hyperscan prefilter, else CpuFallback, and
-                        // never GPU. Hardcoding SimdCpu crashed a
-                        // scanner whose patterns expose no anchorable literal
-                        // (an empty detector set, or `[a-z]{16}`-only), its
-                        // `simd_prefilter` is None, so the SimdCpu trigger
-                        // collection fails closed through `backend_unavailable`
-                        // (process exit), aborting the whole scan on the
-                        // decode-through path.
+                        // every decoded chunk through that path. The composed
+                        // decode backend is part of calibration evidence rather
+                        // than a live-host choice made inside post-processing.
                         self.scan_inner(&decoded_chunk, decoded_backend, deadline, route)
                     };
                     super::profile::set_in_decode(restore_rescan);

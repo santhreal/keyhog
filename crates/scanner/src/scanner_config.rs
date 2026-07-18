@@ -181,6 +181,10 @@ pub struct ResolvedScannerTuningConfig {
 /// mutating scanner-global state or racing concurrent requests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ScanExecutionRoute {
+    /// Exact backend for decoded derived buffers. Keeping this in the measured
+    /// route prevents scalar and GPU candidates from silently borrowing
+    /// Hyperscan work that was never attributed to their timing evidence.
+    pub decode_backend: crate::hw_probe::ScanBackend,
     /// Localize eligible folded plain patterns before residual extraction.
     pub phase2_plain_localizer: bool,
     /// Localize eligible keyword-anchored patterns before residual extraction.

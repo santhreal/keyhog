@@ -301,7 +301,7 @@ impl ScanOrchestrator {
                             backend: *backend,
                             phase1_plan: (!backend.is_gpu())
                                 .then(|| scanner_ref.phase1_admission_plan(&batch)),
-                            execution_route: scanner_ref.default_execution_route(),
+                            execution_route: scanner_ref.execution_route_for_backend(*backend),
                             recovery_plan: None,
                             runtime_route: None,
                         })

@@ -26,6 +26,11 @@ pub(super) struct MeasuredRoute {
 impl MeasuredRoute {
     pub(super) fn execution_route(self) -> keyhog_scanner::ScanExecutionRoute {
         keyhog_scanner::ScanExecutionRoute {
+            decode_backend: if self.backend.is_gpu() {
+                ScanBackend::CpuFallback
+            } else {
+                self.backend
+            },
             phase2_plain_localizer: self.phase2_plain_localizer,
             phase2_keyword_localizer: self.phase2_keyword_localizer,
         }
@@ -648,7 +653,7 @@ impl AutorouteDecision {
     pub(super) fn simd_baseline_ms(&self) -> u128 {
         self.primary_point()
             .baseline_timing_for_backend(ScanBackend::SimdCpu)
-            .expect("validated calibration contains the SIMD reference route")
+            .expect("validated calibration contains the SIMD baseline route")
             .median_ms()
     }
 

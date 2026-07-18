@@ -309,10 +309,7 @@ impl CompiledScanner {
             return dispatch_failure("gpu literal matcher not built for this scanner".to_string());
         };
         let Some(gpu_backend) = self.gpu_backends.get(route) else {
-            return dispatch_failure(format!(
-                "{} was selected but its driver was not acquired",
-                route.label()
-            ));
+            return dispatch_failure(self.gpu_backend_unavailable_reason(route));
         };
         // Presence bitmap is the phase-1 path: no per-hit triples and no match
         // cap, with the same pattern-id mapping.

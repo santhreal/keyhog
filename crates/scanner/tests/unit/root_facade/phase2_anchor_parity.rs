@@ -220,6 +220,7 @@ fn scan_paths(scanner: &CompiledScanner, chunk: &Chunk) -> PathResults {
                     ScanBackend::CpuFallback,
                     None,
                     ScanExecutionRoute {
+                        decode_backend: ScanBackend::CpuFallback,
                         phase2_plain_localizer,
                         phase2_keyword_localizer,
                     },
@@ -242,6 +243,7 @@ fn scan_paths(scanner: &CompiledScanner, chunk: &Chunk) -> PathResults {
         ScanBackend::CpuFallback,
         None,
         ScanExecutionRoute {
+            decode_backend: ScanBackend::CpuFallback,
             phase2_plain_localizer: true,
             phase2_keyword_localizer: true,
         },
@@ -256,6 +258,7 @@ fn scan_paths(scanner: &CompiledScanner, chunk: &Chunk) -> PathResults {
         ScanBackend::CpuFallback,
         None,
         ScanExecutionRoute {
+            decode_backend: ScanBackend::CpuFallback,
             phase2_plain_localizer: false,
             phase2_keyword_localizer: false,
         },

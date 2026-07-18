@@ -173,6 +173,11 @@ impl BenchRoute {
 
     fn execution_route(self) -> ScanExecutionRoute {
         ScanExecutionRoute {
+            decode_backend: if self.backend.is_gpu() {
+                ScanBackend::CpuFallback
+            } else {
+                self.backend
+            },
             phase2_plain_localizer: self.phase2_plain_localizer,
             phase2_keyword_localizer: self.phase2_keyword_localizer,
         }

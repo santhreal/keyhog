@@ -6,6 +6,14 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Autoroute calibration now uses the always-present scalar engine as its
+  independent correctness oracle. Optional Hyperscan and GPU candidates are
+  rejected when their findings diverge, and decoded rescans remain attributed
+  to the measured route instead of silently borrowing another CPU engine.
+- Scanner compilation now inventories GPU peer identity without eagerly
+  creating execution devices or pipelines. Calibration, daemon warm-up, and
+  explicit selection materialize only the peer they execute and surface exact
+  initialization failures.
 - Entropy plausibility no longer owns hidden length or diversity thresholds in
   scanner code. Active entropy detectors now declare tail-check, distinct-byte,
   unanchored-hex, repeated-character, structured-dotted, and slash-base64

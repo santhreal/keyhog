@@ -21,7 +21,7 @@ impl CompiledScanner {
             chunks,
             backend,
             admission_plan,
-            self.default_execution_route(),
+            self.execution_route_for_backend(backend),
         )
     }
 

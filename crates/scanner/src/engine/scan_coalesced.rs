@@ -110,7 +110,7 @@ impl CompiledScanner {
             chunks,
             backend,
             plan,
-            self.default_execution_route(),
+            self.execution_route_for_backend(backend),
         )
     }
 
@@ -147,7 +147,7 @@ impl CompiledScanner {
             chunks,
             backend,
             plan,
-            self.default_execution_route(),
+            self.execution_route_for_backend(backend),
         )
     }
 

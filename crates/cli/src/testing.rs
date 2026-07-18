@@ -1235,10 +1235,11 @@ impl CliTestApi for TestApi {
             &chunks,
             keyhog_scanner::ScanBackend::GpuWgpu,
             None,
-            scanner.default_execution_route(),
+            scanner.execution_route_for_backend(keyhog_scanner::ScanBackend::GpuWgpu),
             recover_automatic_gpu_faults.then_some(crate::orchestrator::BackendRecoveryPlan {
                 backend: keyhog_scanner::ScanBackend::SimdCpu,
-                execution_route: scanner.default_execution_route(),
+                execution_route: scanner
+                    .execution_route_for_backend(keyhog_scanner::ScanBackend::SimdCpu),
             }),
         )?;
         if recover_automatic_gpu_faults && !outcome.recovered {

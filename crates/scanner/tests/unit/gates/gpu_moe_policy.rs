@@ -30,7 +30,7 @@ fn public_gpu_available_honors_disabled_policy_before_adapter_probe() {
         .find("gpu_disabled_by_policy()")
         .expect("public gpu_available checks resolved GPU runtime policy");
     let adapter_probe = body
-        .find("backend::get_gpu().is_some()")
+        .find("gpu_adapter_probe().is_some_and")
         .expect("gpu_available still owns adapter availability check");
 
     assert!(
@@ -42,7 +42,7 @@ fn public_gpu_available_honors_disabled_policy_before_adapter_probe() {
 
 #[test]
 fn gpu_runtime_identity_honors_disabled_policy_before_adapter_probe() {
-    let src = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/gpu.rs"));
+    let src = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/gpu/policy.rs"));
     let fn_start = src
         .find("pub(crate) fn gpu_runtime_identity() -> Option<String>")
         .expect("gpu_runtime_identity owner present");
@@ -51,7 +51,7 @@ fn gpu_runtime_identity_honors_disabled_policy_before_adapter_probe() {
         .find("gpu_disabled_by_policy()")
         .expect("gpu_runtime_identity checks resolved GPU runtime policy");
     let adapter_probe = body
-        .find("backend::gpu_runtime_identity()")
+        .find("super::gpu_adapter_probe()")
         .expect("gpu_runtime_identity still owns adapter identity check");
 
     assert!(

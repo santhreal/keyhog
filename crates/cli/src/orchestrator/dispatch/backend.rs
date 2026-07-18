@@ -321,7 +321,7 @@ impl AutorouteRoutingError {
         Self {
             message: format!(
                 "autoroute calibration reference backend produced inconsistent findings on trial \
-                 {trial}. Autoroute cannot prove fastest-correct routing when the SIMD reference \
+                 {trial}. Autoroute cannot prove fastest-correct routing when the scalar reference \
                  is unstable, so no backend decision was persisted. Fix scanner nondeterminism or \
                  run an explicit `--backend <{}>` diagnostic scan.",
                 backend_override_hint()
@@ -515,7 +515,7 @@ impl CachedBackendRouter {
             return Ok(BackendSelection {
                 backend: forced,
                 phase1_plan: (!forced.is_gpu()).then(|| scanner.phase1_admission_plan(batch)),
-                execution_route: scanner.default_execution_route(),
+                execution_route: scanner.execution_route_for_backend(forced),
                 recovery_plan: None,
                 runtime_route: None,
             });
@@ -524,7 +524,7 @@ impl CachedBackendRouter {
             return Ok(BackendSelection {
                 backend: only,
                 phase1_plan: (!only.is_gpu()).then(|| scanner.phase1_admission_plan(batch)),
-                execution_route: scanner.default_execution_route(),
+                execution_route: scanner.execution_route_for_backend(only),
                 recovery_plan: None,
                 runtime_route: None,
             });
@@ -770,7 +770,7 @@ impl MeasuredBackendRouter {
             return Ok(BackendSelection {
                 backend: forced,
                 phase1_plan: (!forced.is_gpu()).then(|| scanner.phase1_admission_plan(batch)),
-                execution_route: scanner.default_execution_route(),
+                execution_route: scanner.execution_route_for_backend(forced),
                 recovery_plan: None,
                 runtime_route: None,
             });
@@ -779,7 +779,7 @@ impl MeasuredBackendRouter {
             return Ok(BackendSelection {
                 backend: only,
                 phase1_plan: (!only.is_gpu()).then(|| scanner.phase1_admission_plan(batch)),
-                execution_route: scanner.default_execution_route(),
+                execution_route: scanner.execution_route_for_backend(only),
                 recovery_plan: None,
                 runtime_route: None,
             });

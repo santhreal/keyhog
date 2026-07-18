@@ -44,7 +44,7 @@ fn production_detectors(ids: &[&str]) -> Vec<DetectorSpec> {
 }
 
 #[test]
-fn every_acquired_gpu_peer_matches_the_cpu_reference() {
+fn every_available_gpu_peer_matches_the_cpu_reference() {
     let detector = DetectorSpec {
         id: "gpu-peer-parity".into(),
         name: "GPU peer parity".into(),
@@ -96,15 +96,15 @@ fn every_acquired_gpu_peer_matches_the_cpu_reference() {
             );
         }
     }
-    let acquired: Vec<_> = candidates
+    let available: Vec<_> = candidates
         .into_iter()
         .filter(|candidate| candidate.available)
         .collect();
     assert!(
-        !keyhog_scanner::hw_probe::probe_hardware().gpu_available || !acquired.is_empty(),
-        "physical GPU probe succeeded but no compiled peer was acquired"
+        !keyhog_scanner::hw_probe::probe_hardware().gpu_available || !available.is_empty(),
+        "physical GPU probe succeeded but no compiled peer was available"
     );
-    for candidate in acquired {
+    for candidate in available {
         assert!(candidate.backend.is_gpu());
         let findings =
             scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), candidate.backend);
@@ -115,6 +115,57 @@ fn every_acquired_gpu_peer_matches_the_cpu_reference() {
             candidate.backend.label()
         );
     }
+}
+
+#[test]
+fn compilation_censuses_gpu_peers_without_materializing_execution_backends() {
+    let detector = DetectorSpec {
+        id: "gpu-lazy-peer".into(),
+        name: "GPU lazy peer".into(),
+        service: "test".into(),
+        severity: Severity::High,
+        patterns: vec![PatternSpec {
+            regex: "KHGPULAZY_[A-Za-z0-9]{20}".into(),
+            description: None,
+            group: None,
+            required_literals: Vec::new(),
+            client_safe: false,
+            weak_anchor: false,
+        }],
+        keywords: vec!["KHGPULAZY".into()],
+        ..DetectorSpec::default()
+    };
+    let scanner = CompiledScanner::compile(vec![detector]).expect("compile lazy-peer scanner");
+    let before = scanner.gpu_backend_candidates();
+    let selected = before
+        .iter()
+        .find(|candidate| candidate.is_eligible())
+        .expect("GPU release host must expose an eligible peer")
+        .backend;
+    assert!(
+        before.iter().all(|candidate| !candidate.acquired),
+        "scanner compilation must not materialize an execution peer: {before:?}"
+    );
+
+    assert!(
+        scanner.warm_backend(selected),
+        "selected peer must initialize"
+    );
+    let after = scanner.gpu_backend_candidates();
+    assert!(
+        after
+            .iter()
+            .find(|candidate| candidate.backend == selected)
+            .is_some_and(|candidate| candidate.acquired),
+        "warming the selected peer must publish its initialized state: {after:?}"
+    );
+    assert!(
+        after
+            .iter()
+            .filter(|candidate| candidate.backend != selected)
+            .all(|candidate| !candidate.acquired),
+        "warming one route must not initialize an unused peer: {after:?}"
+    );
 }
 
 #[test]
