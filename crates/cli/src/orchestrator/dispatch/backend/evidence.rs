@@ -12,6 +12,7 @@ pub(super) use match_identity::{
 };
 pub(super) use timing::{BackendTimingEvidence, TimingConfidenceInterval};
 
+use super::workload::MeasurementShapeEvidence;
 use super::{AUTOROUTE_ACCELERATOR_WARM_TRIALS, AUTOROUTE_CALIBRATION_TRIALS};
 
 pub(super) const MAX_AUTOROUTE_MEASURED_POINTS: usize = 64;
@@ -197,6 +198,7 @@ impl RouteTimingEvidence {
 pub(super) struct AutorouteCalibrationPoint {
     pub(super) sample_bytes: u64,
     pub(super) sample_chunks: usize,
+    pub(super) measurement_shape: MeasurementShapeEvidence,
     pub(super) candidate_receipts: Vec<BackendParityReceipt>,
     pub(super) calibrated_at_unix_ms: u128,
     pub(super) route_timings: Vec<RouteTimingEvidence>,
@@ -472,6 +474,10 @@ impl AutorouteDecision {
             calibration_points: vec![AutorouteCalibrationPoint {
                 sample_bytes,
                 sample_chunks,
+                measurement_shape: super::workload::test_measurement_shape_evidence(
+                    sample_bytes,
+                    sample_chunks,
+                ),
                 candidate_receipts,
                 calibrated_at_unix_ms: 1,
                 route_timings,
@@ -506,6 +512,10 @@ impl AutorouteDecision {
             calibration_points: vec![AutorouteCalibrationPoint {
                 sample_bytes,
                 sample_chunks,
+                measurement_shape: super::workload::test_measurement_shape_evidence(
+                    sample_bytes,
+                    sample_chunks,
+                ),
                 candidate_receipts,
                 calibrated_at_unix_ms,
                 route_timings,
@@ -518,6 +528,7 @@ impl AutorouteDecision {
         backend: ScanBackend,
         sample_bytes: u64,
         sample_chunks: usize,
+        measurement_shape: MeasurementShapeEvidence,
         correctness_digest: u64,
         calibrated_at_unix_ms: u128,
         mut route_timings: Vec<RouteTimingEvidence>,
@@ -531,6 +542,7 @@ impl AutorouteDecision {
             calibration_points: vec![AutorouteCalibrationPoint {
                 sample_bytes,
                 sample_chunks,
+                measurement_shape,
                 candidate_receipts,
                 calibrated_at_unix_ms,
                 route_timings,
@@ -539,10 +551,13 @@ impl AutorouteDecision {
         }
     }
 
-    pub(super) fn contains_sample(&self, sample_bytes: u64, sample_chunks: usize) -> bool {
+    pub(super) fn contains_measurement(
+        &self,
+        measurement_shape: &MeasurementShapeEvidence,
+    ) -> bool {
         self.calibration_points
             .iter()
-            .any(|point| point.sample_bytes == sample_bytes && point.sample_chunks == sample_chunks)
+            .any(|point| point.measurement_shape.shape_digest == measurement_shape.shape_digest)
     }
 
     pub(super) fn merge_calibration_point(
@@ -560,7 +575,7 @@ impl AutorouteDecision {
             .into_iter()
             .next()
             .expect("length checked");
-        if self.contains_sample(point.sample_bytes, point.sample_chunks) {
+        if self.contains_measurement(&point.measurement_shape) {
             return Ok(());
         }
         if self.calibration_points.len() >= MAX_AUTOROUTE_MEASURED_POINTS {
@@ -635,8 +650,13 @@ impl AutorouteDecision {
             }
         }
         self.calibration_points.push(point);
-        self.calibration_points
-            .sort_unstable_by_key(|point| (point.sample_bytes, point.sample_chunks));
+        self.calibration_points.sort_unstable_by_key(|point| {
+            (
+                point.sample_bytes,
+                point.sample_chunks,
+                point.measurement_shape.shape_digest,
+            )
+        });
         Ok(())
     }
 

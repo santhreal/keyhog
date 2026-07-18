@@ -327,6 +327,21 @@ fn run_autoroute_inspection(
         );
         println!("    host: {}", config.host);
         for decision in &config.decisions {
+            let measurement_receipts = decision
+                .measured_points
+                .iter()
+                .map(|point| {
+                    format!(
+                        "{}B/{}chunk(s):generator={}:payload={}:shape={}",
+                        point.sample_bytes,
+                        point.sample_chunks,
+                        point.measurement_generator,
+                        point.payload_digest,
+                        point.measurement_shape_digest,
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
             let parity_receipts = decision
                 .candidate_receipts
                 .iter()
@@ -390,6 +405,7 @@ fn run_autoroute_inspection(
                 render_age_ms(decision.calibration_age_ms),
                 decision.calibrated_at_unix_ms
             );
+            println!("        measurements: {measurement_receipts}");
             println!("        parity:      {parity_receipts}");
             println!(
                 "        one-shot -> {}+plain-localizer={}+keyword-localizer={}  {}[{} B / {} chunk(s);{} basis={}]{}",

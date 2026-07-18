@@ -8,8 +8,8 @@ use super::super::evidence::{
     AutorouteDecision, MeasuredRoute, MAX_AUTOROUTE_MEASURED_POINTS,
 };
 use super::super::workload::{
-    autoroute_stable_bucket, render_workload_key, validate_workload_source_mixture,
-    workload_evidence_digest, WorkloadKey,
+    autoroute_stable_bucket, render_workload_key, validate_measurement_shape_evidence,
+    validate_workload_source_mixture, workload_evidence_digest, WorkloadKey,
 };
 use super::super::AUTOROUTE_CALIBRATION_TRIALS;
 use super::artifact_identity::current_executable_sha256;
@@ -188,10 +188,11 @@ fn validate_decision_route_evidence_at(
     }
     let mut measured_points = HashSet::with_capacity(decision.calibration_points.len());
     for point in &decision.calibration_points {
-        if !measured_points.insert((point.sample_bytes, point.sample_chunks)) {
+        validate_measurement_shape_evidence(&point.measurement_shape)?;
+        if !measured_points.insert(point.measurement_shape.shape_digest) {
             return Err(format!(
-                "autoroute decision contains duplicate calibration evidence for {} bytes and {} chunks",
-                point.sample_bytes, point.sample_chunks
+                "autoroute decision contains duplicate measurement-shape evidence {}",
+                keyhog_core::hex_encode(&point.measurement_shape.shape_digest)
             )
             .into());
         }

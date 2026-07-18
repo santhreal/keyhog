@@ -24,7 +24,7 @@
 //!   ├─ evidence ───── decision policy
 //!   │    ├─ timing ─────── measured trials and confidence intervals
 //!   │    └─ match_identity ─ secret-safe semantic parity proof
-//!   ├─ store ──────── cache facade (schema v43)
+//!   ├─ store ──────── cache facade (schema v44)
 //!   │    ├─ schema / artifact_identity / build_identity
 //!   │    └─ codec / validation / persistence / inspection
 //!   ├─ host ───────── host identity captured in each calibration record
@@ -55,8 +55,8 @@ use self::store::{
 pub(crate) use self::store::{inspect_autoroute_cache, AutorouteReadiness};
 pub(crate) use self::workload::source_route_class;
 use self::workload::{
-    differing_workload_dimensions, render_workload_key, workload_key, WorkloadClassificationError,
-    WorkloadKey,
+    differing_workload_dimensions, measurement_shape_evidence, render_workload_key, workload_key,
+    WorkloadClassificationError, WorkloadKey,
 };
 use keyhog_core::Chunk;
 use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
@@ -72,6 +72,8 @@ use std::sync::{Arc, Mutex};
 /// a shared cache's older generation from proving this host's calibration.
 pub(crate) type AutorouteMeasurementObserver = Arc<Mutex<BTreeSet<(String, String, String)>>>;
 
+// v44: every timing point carries a content-addressed measurement-shape
+// receipt, so equal byte/chunk counts cannot overwrite different payloads.
 // v43: source identity retains the canonical execution subtype instead of
 // truncating at the first ':' or '/'. Dynamic binary section names collapse to
 // their format class so route identity changes with preprocessing, not labels.
@@ -122,7 +124,7 @@ pub(crate) type AutorouteMeasurementObserver = Arc<Mutex<BTreeSet<(String, Strin
 // the top, per-resolved-config routing decisions under `configs` keyed by
 // config_digest, merge-on-save. Old single-config (v19 and earlier) caches are
 // rejected on the version gate and recalibrated.
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 43;
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 44;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_ACCELERATOR_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 
@@ -921,12 +923,15 @@ impl MeasuredBackendRouter {
                 ));
             }
         }
-        let (sample_bytes, sample_chunks) = if self.calibration_mode {
-            (calibration::calibration_sample_bytes(batch)?, batch.len())
+        let measurement_shape = if self.calibration_mode {
+            Some(
+                measurement_shape_evidence(batch)
+                    .map_err(AutorouteRoutingError::incomplete_workload_evidence)?,
+            )
         } else {
-            (0, 0)
+            None
         };
-        if let Some(route) = self.reusable_decision_route(&key, sample_bytes, sample_chunks) {
+        if let Some(route) = self.reusable_decision_route(&key, measurement_shape.as_ref()) {
             return Ok(BackendSelection {
                 backend: route.backend,
                 phase1_plan: Some(phase1_plan),
@@ -996,6 +1001,11 @@ impl MeasuredBackendRouter {
             scanner,
             self.pattern_count,
             batch,
+            measurement_shape.ok_or_else(|| {
+                AutorouteRoutingError::calibration_not_persisted(
+                    "calibration measurement identity was not constructed",
+                )
+            })?,
             &live_eligible_backends,
             Some(&phase1_plan),
         )?;
@@ -1079,15 +1089,17 @@ impl MeasuredBackendRouter {
     fn reusable_decision_route(
         &self,
         key: &WorkloadKey,
-        sample_bytes: u64,
-        sample_chunks: usize,
+        measurement_shape: Option<&workload::MeasurementShapeEvidence>,
     ) -> Option<evidence::MeasuredRoute> {
         if self.calibration_mode && !self.measured_this_run.contains(key) {
             return None;
         }
         let decision = self.decisions.get(key)?;
-        if self.calibration_mode && !decision.contains_sample(sample_bytes, sample_chunks) {
-            return None;
+        if self.calibration_mode {
+            let measurement_shape = measurement_shape?;
+            if !decision.contains_measurement(measurement_shape) {
+                return None;
+            }
         }
         decision.measured_route()
     }

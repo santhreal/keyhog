@@ -11,10 +11,10 @@ use super::store::{
 use super::workload::{
     autoroute_stable_bucket, autoroute_stable_decode_bucket, decode_workload_projection,
     decode_workload_sketch as decode_workload_sketch_with_plan, planned_decode_sample_bytes,
-    planned_decode_sample_quotas, source_class_id, source_mixture_key, validate_source_mixture_key,
-    validate_workload_source_mixture, workload_evidence_digest,
-    workload_key as workload_key_with_plan, Phase1AdmissionKey, SourceMixtureEntry,
-    SourceMixtureKey, WorkloadKey,
+    planned_decode_sample_quotas, source_class_id, source_mixture_key,
+    test_measurement_shape_evidence, validate_source_mixture_key, validate_workload_source_mixture,
+    workload_evidence_digest, workload_key as workload_key_with_plan, Phase1AdmissionKey,
+    SourceMixtureEntry, SourceMixtureKey, WorkloadKey,
 };
 use super::*;
 
@@ -843,6 +843,7 @@ fn valid_decision_for_host(host: &AutorouteHostProfile) -> AutorouteDecision {
         ScanBackend::SimdCpu,
         8 * 1024 * 1024,
         1,
+        test_measurement_shape_evidence(8 * 1024 * 1024, 1),
         0xA11D_0B57_A11D_0B57,
         1,
         route_timings(
@@ -876,6 +877,49 @@ fn test_chunk_with_source(data: String, source_type: &str) -> Chunk {
             ..Default::default()
         },
     }
+}
+
+#[test]
+fn measurement_shape_distinguishes_equal_size_payloads_without_order_noise() {
+    let alpha = test_chunk("token=AAAAAAAAAAAAAAAA\n".to_string());
+    let beta = test_chunk("token=BBBBBBBBBBBBBBBB\n".to_string());
+    assert_eq!(alpha.data.len(), beta.data.len());
+
+    let alpha_only =
+        measurement_shape_evidence(std::slice::from_ref(&alpha)).expect("alpha measurement shape");
+    let beta_only =
+        measurement_shape_evidence(std::slice::from_ref(&beta)).expect("beta measurement shape");
+    assert_ne!(alpha_only.payload_digest, beta_only.payload_digest);
+    assert_ne!(alpha_only.shape_digest, beta_only.shape_digest);
+
+    let forward = measurement_shape_evidence(&[alpha.clone(), beta.clone()])
+        .expect("forward measurement shape");
+    let reverse = measurement_shape_evidence(&[beta, alpha]).expect("reverse measurement shape");
+    assert_eq!(forward, reverse, "producer order is not a scan-cost class");
+}
+
+#[test]
+fn calibration_envelope_retains_equal_size_distinct_measurement_shapes() {
+    let alpha = test_chunk("token=AAAAAAAAAAAAAAAA\n".to_string());
+    let beta = test_chunk("token=BBBBBBBBBBBBBBBB\n".to_string());
+    let sample_bytes = alpha.data.len() as u64;
+    let mut first =
+        AutorouteDecision::new(ScanBackend::SimdCpu, sample_bytes, 1, 8, Some(12), None);
+    first.primary_point_mut().measurement_shape =
+        measurement_shape_evidence(&[alpha]).expect("alpha measurement shape");
+    let mut second =
+        AutorouteDecision::new(ScanBackend::SimdCpu, sample_bytes, 1, 8, Some(12), None);
+    second.primary_point_mut().measurement_shape =
+        measurement_shape_evidence(&[beta]).expect("beta measurement shape");
+
+    first
+        .merge_calibration_point(second)
+        .expect("same-band points with the same winner form one envelope");
+    assert_eq!(first.calibration_points.len(), 2);
+    assert_ne!(
+        first.calibration_points[0].measurement_shape.shape_digest,
+        first.calibration_points[1].measurement_shape.shape_digest,
+    );
 }
 
 #[test]
@@ -1813,6 +1857,7 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
             ScanBackend::SimdCpu,
             sample_bytes,
             1,
+            test_measurement_shape_evidence(sample_bytes, 1),
             0xA11D_0B57_A11D_0B57,
             1,
             route_timings(
@@ -1920,6 +1965,16 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
         .iter()
         .all(|point| point.route_timings.len() == expected_route_timings));
     let first_point = &inspection.configs[0].decisions[0].measured_points[0];
+    let first_shape = test_measurement_shape_evidence(8 * 1024 * 1024, 1);
+    assert_eq!(first_point.measurement_generator, first_shape.generator);
+    assert_eq!(
+        first_point.payload_digest,
+        keyhog_core::hex_encode(&first_shape.payload_digest)
+    );
+    assert_eq!(
+        first_point.measurement_shape_digest,
+        keyhog_core::hex_encode(&first_shape.shape_digest)
+    );
     let simd_plain = first_point
         .route_timings
         .iter()
@@ -2459,6 +2514,7 @@ fn equivalent_plans_do_not_invalidate_a_proven_fastest_backend() {
         ScanBackend::SimdCpu,
         8 * 1024 * 1024,
         1,
+        test_measurement_shape_evidence(8 * 1024 * 1024, 1),
         7,
         1,
         route_timings(
@@ -3330,20 +3386,29 @@ fn calibration_mode_remeasures_loaded_cache_decisions_before_reuse() {
     };
 
     assert_eq!(
-        router.reusable_decision_route(&key, 8 * 1024 * 1024, 1),
+        router.reusable_decision_route(
+            &key,
+            Some(&test_measurement_shape_evidence(8 * 1024 * 1024, 1)),
+        ),
         None,
         "calibration mode must not reuse a persisted cache row before this run remeasures the bucket"
     );
     router.measured_this_run.insert(key.clone());
     assert_eq!(
         router
-            .reusable_decision_route(&key, 8 * 1024 * 1024, 1)
+            .reusable_decision_route(
+                &key,
+                Some(&test_measurement_shape_evidence(8 * 1024 * 1024, 1)),
+            )
             .map(|route| route.backend),
         Some(ScanBackend::CpuFallback),
         "once the bucket is measured during this calibration run, duplicate batches may reuse the new in-memory decision"
     );
     assert_eq!(
-        router.reusable_decision_route(&key, 12 * 1024 * 1024, 1),
+        router.reusable_decision_route(
+            &key,
+            Some(&test_measurement_shape_evidence(12 * 1024 * 1024, 1)),
+        ),
         None,
         "another exact size inside the same coarse class must be measured, not hidden behind the first point"
     );
@@ -3364,8 +3429,8 @@ fn calibration_envelope_retains_agreeing_points_and_rejects_a_crossover() {
         ))
         .expect("agreeing points form one reproducible workload envelope");
     assert_eq!(stable.calibration_points.len(), 2);
-    assert!(stable.contains_sample(8 * 1024 * 1024, 1));
-    assert!(stable.contains_sample(12 * 1024 * 1024, 1));
+    assert!(stable.contains_measurement(&test_measurement_shape_evidence(8 * 1024 * 1024, 1)));
+    assert!(stable.contains_measurement(&test_measurement_shape_evidence(12 * 1024 * 1024, 1)));
     assert_eq!(
         stable.resolved_routing_backend(),
         Some(ScanBackend::SimdCpu)
@@ -5652,6 +5717,7 @@ fn daemon_warm_routes_come_only_from_persisted_selected_backends() {
             ScanBackend::GpuCuda,
             8 * 1024 * 1024,
             1,
+            test_measurement_shape_evidence(8 * 1024 * 1024, 1),
             7,
             1,
             route_timings(
@@ -6054,6 +6120,7 @@ fn cuda_and_wgpu_are_independent_measured_candidates() {
         ScanBackend::GpuCuda,
         8 * 1024 * 1024,
         1,
+        test_measurement_shape_evidence(8 * 1024 * 1024, 1),
         7,
         1,
         route_timings(
@@ -6088,6 +6155,7 @@ fn cuda_and_wgpu_are_independent_measured_candidates() {
         ScanBackend::GpuWgpu,
         8 * 1024 * 1024,
         1,
+        test_measurement_shape_evidence(8 * 1024 * 1024, 1),
         7,
         1,
         route_timings(
@@ -6132,6 +6200,7 @@ fn phase2_plain_localizer_is_an_independent_measured_route_candidate() {
         ScanBackend::SimdCpu,
         8 * 1024 * 1024,
         8,
+        test_measurement_shape_evidence(8 * 1024 * 1024, 8),
         7,
         1,
         route_timings(
@@ -6185,6 +6254,7 @@ fn phase2_keyword_localizer_is_an_independent_measured_route_candidate() {
         ScanBackend::SimdCpu,
         8 * 1024 * 1024,
         8,
+        test_measurement_shape_evidence(8 * 1024 * 1024, 8),
         7,
         1,
         timings,
@@ -6239,6 +6309,10 @@ fn live_calibration_measures_every_gpu_peer_before_resolving_or_refusing() {
         &scanner,
         0,
         &sample,
+        test_measurement_shape_evidence(
+            sample.iter().map(|chunk| chunk.data.len() as u64).sum(),
+            sample.len(),
+        ),
         &eligible,
         Some(&admission_plan),
     );

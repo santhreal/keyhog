@@ -14,6 +14,7 @@ const AUTOROUTE_DECODE_MIN_STRATA: usize = 3;
 const AUTOROUTE_DECODE_MIN_CHUNK_SAMPLE: usize =
     AUTOROUTE_DECODE_SAMPLE_WINDOW_BYTES * AUTOROUTE_DECODE_MIN_STRATA;
 const MAX_SOURCE_MIXTURE_ENTRIES: usize = 64;
+pub(super) const MEASUREMENT_SHAPE_GENERATOR: &str = "keyhog-content-addressed-batch-v1";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct SourceRouteClass {
@@ -37,6 +38,19 @@ pub(super) struct WorkloadKey {
     pub(super) decode_candidate_bytes_bucket: u8,
     pub(super) decode_unknown: bool,
     pub(super) source_mixture: SourceMixtureKey,
+}
+
+/// Secret-safe identity for the exact batch that produced one timing point.
+///
+/// The workload key intentionally groups nearby workloads. This receipt keeps
+/// distinct same-sized representatives inside that group from overwriting one
+/// another while persisting no source text or paths.
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct MeasurementShapeEvidence {
+    pub(super) generator: String,
+    pub(super) payload_digest: [u8; 32],
+    pub(super) shape_digest: [u8; 32],
 }
 
 /// Return the exact workload dimensions that differ between two route keys.
@@ -567,6 +581,111 @@ pub(super) fn workload_evidence_digest(key: &WorkloadKey) -> [u8; 32] {
             );
     }
     hasher.finish_256()
+}
+
+pub(super) fn measurement_shape_evidence(
+    batch: &[Chunk],
+) -> Result<MeasurementShapeEvidence, WorkloadClassificationError> {
+    let mut payloads = Vec::with_capacity(batch.len());
+    let mut shapes = Vec::with_capacity(batch.len());
+    for chunk in batch {
+        let source_class = source_execution_class(chunk)?;
+        let mut payload_hasher =
+            crate::stable_hash::StableHasher::new("autoroute-measured-chunk-payload-v1");
+        payload_hasher
+            .field_usize("payload_bytes", chunk.data.len())
+            .field_bytes("payload", chunk.data.as_bytes());
+        let payload_digest = payload_hasher.finish_256();
+        payloads.push((chunk.data.len(), payload_digest));
+
+        let mut shape_hasher =
+            crate::stable_hash::StableHasher::new("autoroute-measured-chunk-shape-v1");
+        shape_hasher
+            .field_str("source_class", source_class)
+            .field_usize("payload_bytes", chunk.data.len())
+            .field_option_u64("source_bytes", chunk.metadata.size_bytes)
+            .field_usize("base_offset", chunk.metadata.base_offset)
+            .field_usize("base_line", chunk.metadata.base_line)
+            .field_bytes("payload_digest", &payload_digest);
+        match chunk.metadata.decoded_span {
+            Some((start, end)) => {
+                shape_hasher
+                    .field_bool("decoded_span.present", true)
+                    .field_usize("decoded_span.start", start)
+                    .field_usize("decoded_span.end", end);
+            }
+            None => {
+                shape_hasher.field_bool("decoded_span.present", false);
+            }
+        }
+        shapes.push(shape_hasher.finish_256());
+    }
+    payloads.sort_unstable();
+    shapes.sort_unstable();
+
+    let mut payload_hasher =
+        crate::stable_hash::StableHasher::new("autoroute-measured-batch-payload-v1");
+    payload_hasher.field_usize("chunks", payloads.len());
+    for (index, (bytes, digest)) in payloads.iter().enumerate() {
+        payload_hasher
+            .field_usize("chunk.index", index)
+            .field_usize("chunk.bytes", *bytes)
+            .field_bytes("chunk.payload_digest", digest);
+    }
+    let payload_digest = payload_hasher.finish_256();
+
+    let mut shape_hasher =
+        crate::stable_hash::StableHasher::new("autoroute-measured-batch-shape-v1");
+    shape_hasher
+        .field_str("generator", MEASUREMENT_SHAPE_GENERATOR)
+        .field_usize("chunks", shapes.len())
+        .field_bytes("payload_digest", &payload_digest);
+    for (index, digest) in shapes.iter().enumerate() {
+        shape_hasher
+            .field_usize("chunk.index", index)
+            .field_bytes("chunk.shape_digest", digest);
+    }
+    Ok(MeasurementShapeEvidence {
+        generator: MEASUREMENT_SHAPE_GENERATOR.to_string(),
+        payload_digest,
+        shape_digest: shape_hasher.finish_256(),
+    })
+}
+
+pub(super) fn validate_measurement_shape_evidence(
+    evidence: &MeasurementShapeEvidence,
+) -> Result<(), String> {
+    if evidence.generator != MEASUREMENT_SHAPE_GENERATOR {
+        return Err(format!(
+            "measurement point uses unsupported probe generator {:?}; expected {MEASUREMENT_SHAPE_GENERATOR:?}",
+            evidence.generator
+        ));
+    }
+    if evidence.payload_digest == [0; 32] || evidence.shape_digest == [0; 32] {
+        return Err("measurement point contains an empty payload or shape digest".into());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+pub(super) fn test_measurement_shape_evidence(
+    sample_bytes: u64,
+    sample_chunks: usize,
+) -> MeasurementShapeEvidence {
+    let mut payload = crate::stable_hash::StableHasher::new("autoroute-test-payload-v1");
+    payload
+        .field_u64("sample_bytes", sample_bytes)
+        .field_usize("sample_chunks", sample_chunks);
+    let payload_digest = payload.finish_256();
+    let mut shape = crate::stable_hash::StableHasher::new("autoroute-test-shape-v1");
+    shape
+        .field_str("generator", MEASUREMENT_SHAPE_GENERATOR)
+        .field_bytes("payload_digest", &payload_digest);
+    MeasurementShapeEvidence {
+        generator: MEASUREMENT_SHAPE_GENERATOR.to_string(),
+        payload_digest,
+        shape_digest: shape.finish_256(),
+    }
 }
 
 pub(super) fn validate_source_mixture_key(key: &SourceMixtureKey) -> Result<(), String> {

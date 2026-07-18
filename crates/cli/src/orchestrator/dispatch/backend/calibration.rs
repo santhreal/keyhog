@@ -21,12 +21,14 @@ use super::evidence::{
     differing_canonical_match_fields, gpu_cold_warm_route_evidence, simd_cold_warm_route_evidence,
     AutorouteDecision, BackendTimingEvidence, CanonicalMatch, MeasuredRoute, RouteTimingEvidence,
 };
+use super::workload::MeasurementShapeEvidence;
 use super::{is_gpu_backend, AutorouteRoutingError, AUTOROUTE_CALIBRATION_TRIALS};
 
 pub(super) fn calibrate_fastest_correct_backend(
     scanner: &CompiledScanner,
     _pattern_count: usize,
     sample: &[Chunk],
+    measurement_shape: MeasurementShapeEvidence,
     eligible_backend_labels: &[String],
     admission_plan: Option<&Phase1AdmissionPlan>,
 ) -> Result<AutorouteDecision, AutorouteRoutingError> {
@@ -112,6 +114,7 @@ pub(super) fn calibrate_fastest_correct_backend(
         ScanBackend::CpuFallback,
         sample_bytes,
         sample.len(),
+        measurement_shape,
         correctness_digest,
         calibrated_at_unix_ms,
         route_timings,

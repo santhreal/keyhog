@@ -17,6 +17,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   execution class. Web JavaScript, source maps, windowed files, PDFs, archives,
   and other preprocessing shapes no longer alias under a truncated top-level
   family; dynamic binary section names collapse to their stable format class.
+- Autoroute cache schema 44 content-addresses every measured payload and source
+  shape. Equal byte/chunk counts no longer overwrite distinct calibration
+  representatives, and JSON inspection exposes the canonical generator plus
+  payload and shape digests needed to reproduce crossover evidence.
 
 ## [0.5.41] - 2026-07-18
 

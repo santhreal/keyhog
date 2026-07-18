@@ -128,9 +128,9 @@ each representative. The measured shared literal and backend-shaped phase-two
 preparation costs are added to every matching one-shot GPU observation. Candidate
 order rotates across workload bands rather than giving one backend the same
 thermal position in every probe. The final count is the number of probes run,
-not the number of unique persisted route classes. Multiple representatives can share one
-logarithmic workload key. The summary separately reports unique route classes
-measured by this sweep and the total route decisions in the cache after a
+not the number of unique persisted route classes. Multiple representatives can
+share one logarithmic workload key. The summary separately reports unique route
+classes measured by this sweep and the total route decisions in the cache after a
 required readback check. The cache total can include valid decisions from prior
 calibration runs. The command also prints a cache route summary showing how many
 one-shot and daemon rows select a VYRE GPU route, plus the number of GPU candidate
@@ -191,6 +191,14 @@ regenerate it. The scan loader, calibration merge path, and `backend --autoroute
 inspection use this same diagnostic. Re-run calibration after upgrading KeyHog
 or changing the cache format; a replacement save never merges rows from an
 incompatible schema.
+
+Each timing point stores a content-addressed measurement receipt: the canonical
+receipt generator, a digest of the complete payload multiset, and a digest of
+the exact source, offset, and decode shape. It stores no source text or paths.
+Same-sized representatives with different candidate density therefore remain
+distinct points, while the same chunks in a different producer order reuse one
+receipt. `keyhog backend --autoroute --json` exposes all three fields so a
+crossover can be tied to its exact probe.
 
 ## What a decision covers
 
@@ -408,16 +416,16 @@ meanings:
 | `calibrated_at_unix_ms` | Oldest persisted Unix timestamp among the decision's measured points. A future value on any point invalidates the complete cache. |
 | `calibration_age_ms` | Age of that oldest point, derived at inspection time from `inspected_at_unix_ms`; it is visible evidence, not an expiry policy. |
 | `backend`, `phase2_plain_localizer`, `phase2_keyword_localizer` | Cold-aware backend and both phase-two localization choices for an in-process one-shot scan. |
-| `calibration_points` | Number of exact byte/chunk representatives retained for this workload class. |
+| `calibration_points` | Number of exact content-and-source-shape representatives retained for this workload class. Equal byte/chunk counts can contribute more than one point. |
 | `sample_bytes_min`, `sample_bytes_max`, `sample_chunks_min`, `sample_chunks_max` | Exact measured envelope covered by the class. |
-| `measured_points` | Complete point-by-point projection: sample identity, timestamp, one-shot and daemon execution-plan winners, confidence status, every route timing, and every parity receipt. Use this array to diagnose crossover behavior. |
-| `sample_bytes`, `sample_chunks`, `route_timings` | Concise sample identity plus the complete generic route-timing array for the first point after sorting by bytes then chunks. Each timing identifies the backend, both localization choices, one-shot time, and warm time when applicable. `measured_points` is authoritative when the class retains more than one point. |
+| `measured_points` | Complete point-by-point projection: exact sample size, `measurement_generator`, `payload_digest`, `measurement_shape_digest`, timestamp, one-shot and daemon execution-plan winners, confidence status, every route timing, and every parity receipt. Use this array to distinguish same-sized probes and diagnose crossover behavior. |
+| `sample_bytes`, `sample_chunks`, `route_timings` | Concise size projection plus the complete generic route-timing array for the first point after sorting by bytes, chunks, then measurement-shape digest. Each timing identifies the backend, both localization choices, one-shot time, and warm time when applicable. `measured_points` is authoritative. |
 | `confidence_separated` | Whether the one-shot winner's 95% interval is entirely below every route of every peer backend at every measured point. |
 | `selection_basis` | `separated-95pct-confidence`. Inconclusive evidence is rejected instead of appearing as a routable decision. |
 | `selected_margin_ns` | Smallest one-shot representative-time margin to the next peer backend across all measured points; `null` when there is no peer. |
 | `daemon_backend`, `daemon_phase2_plain_localizer`, `daemon_phase2_keyword_localizer` | Backend and both phase-two localization choices derived for a ready persistent daemon from warm evidence. |
 | `daemon_confidence_separated`, `daemon_selection_basis`, `daemon_selected_margin_ns` | Daemon-route counterparts, also aggregated conservatively across every measured point. |
-| `source_mixture` | Structured source-class components used by the workload identity: canonical family digest, full-size versus payload provenance, reduced chunk/payload ratios, and maximum source-span bucket. JSON consumers should use these fields instead of parsing the human-readable `workload` string. |
+| `source_mixture` | Structured source-class components used by the workload identity: canonical execution-class digest, full-size versus payload provenance, reduced chunk/payload ratios, and maximum source-span bucket. JSON consumers should use these fields instead of parsing the human-readable `workload` string. |
 | `candidate_receipts` | Concise summary of the first measured point's receipts. Every receipt identifies the backend plus both localization choices. Every point carries the complete four-plans-per-backend set; every result digest must equal its point's scalar/both-off reference, and every evidence digest must recompute exactly or the cache is rejected. |
 
 ## Single-backend builds

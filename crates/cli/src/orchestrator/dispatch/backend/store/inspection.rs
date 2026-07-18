@@ -181,6 +181,9 @@ pub(crate) struct AutorouteDecisionInspection {
 pub(crate) struct AutorouteCalibrationPointInspection {
     pub(crate) sample_bytes: u64,
     pub(crate) sample_chunks: usize,
+    pub(crate) measurement_generator: String,
+    pub(crate) payload_digest: String,
+    pub(crate) measurement_shape_digest: String,
     pub(crate) calibrated_at_unix_ms: u128,
     pub(crate) one_shot_backend: String,
     pub(crate) one_shot_phase2_plain_localizer: bool,
@@ -550,6 +553,13 @@ fn inspect_autoroute_cache_for_build(
                     AutorouteCalibrationPointInspection {
                         sample_bytes: point.sample_bytes,
                         sample_chunks: point.sample_chunks,
+                        measurement_generator: point.measurement_shape.generator.clone(),
+                        payload_digest: keyhog_core::hex_encode(
+                            &point.measurement_shape.payload_digest,
+                        ),
+                        measurement_shape_digest: keyhog_core::hex_encode(
+                            &point.measurement_shape.shape_digest,
+                        ),
                         calibrated_at_unix_ms: point.calibrated_at_unix_ms,
                         one_shot_backend: one_shot_route.backend.label().to_string(),
                         one_shot_phase2_plain_localizer: one_shot_route.phase2_plain_localizer,
