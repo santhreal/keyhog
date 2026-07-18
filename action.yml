@@ -1,0 +1,554 @@
+name: 'KeyHog Secret Scanner'
+description: 'Scan source code for leaked secrets with KeyHog.'
+branding:
+  icon: 'shield'
+  color: 'red'
+
+inputs:
+  path:
+    description: 'Path to scan (file or directory).'
+    default: '.'
+  severity:
+    description: 'Minimum severity to report: info | client-safe | low | medium | high | critical.'
+    default: 'high'
+  format:
+    description: 'Output format supported by the composite Action: text | json | sarif | jsonl.'
+    default: 'sarif'
+  verify:
+    description: 'Run live credential verification on findings ("true" enables --verify).'
+    default: 'false'
+  version:
+    description: |
+      KeyHog version to use. Matched against a published GitHub Release tag.
+      Exact versions use vMAJOR.MINOR.PATCH with an optional prerelease suffix;
+      build metadata is not published and is rejected.
+      Exact versions, semver action tags, and floating major tags require the
+      complete signed binary and GPU literal bundle. When unset, exact and
+      floating release refs resolve the checked-out release version. Branch and
+      commit refs build their checked-out source directly.
+    default: ''
+  upload-sarif:
+    description: 'When format=sarif, upload via the GitHub Code Scanning SARIF action.'
+    default: 'true'
+  analysis-category:
+    description: |
+      Stable lowercase identity for this analysis partition. Use a distinct
+      value for each monorepo slice or matrix partition scanned on one commit.
+      Allowed: 1-64 lowercase letters, digits, dot, underscore, or dash. Start
+      and end with a letter or digit.
+    default: 'keyhog'
+  fail-on-findings:
+    description: |
+      Fail the workflow when any finding at or above `severity` is reported.
+      Set to "false" to keep the job green and rely on the uploaded SARIF
+      surfacing in code-scanning instead. Verified-live credentials under
+      `verify: "true"` always fail after reports are uploaded.
+    default: 'true'
+  baseline:
+    description: |
+      Path to a keyhog baseline file (produced by
+      `keyhog scan --create-baseline baseline.json` and committed to the
+      repo). Findings already present in the baseline are suppressed, so the
+      job blocks only NEW secrets. This is the standard way to adopt keyhog in
+      a repo that already has findings, without a noisy failing first run.
+    default: ''
+  backend:
+    description: |
+      Optional scan backend: auto | simd | cpu | gpu-cuda | gpu-wgpu. Leave
+      unset or choose auto to calibrate this workload; explicit backends are
+      for diagnostics.
+    default: ''
+
+outputs:
+  findings:
+    description: 'Number of findings at or above `severity` (parsed from the report).'
+    value: ${{ steps.scan.outputs.findings }}
+  exit-code:
+    description: 'Raw keyhog process exit code: 0 clean, 1 findings, 10 live findings under --verify.'
+    value: ${{ steps.scan.outputs.exit-code }}
+  duration-ms:
+    description: 'Wall-clock scan duration in milliseconds, measured by the Action wrapper.'
+    value: ${{ steps.scan.outputs.duration-ms }}
+  scan-status:
+    description: 'Typed terminal scan state: success, partial, cancelled, or failed.'
+    value: ${{ steps.scan.outputs.scan-status }}
+  report-present:
+    description: 'Whether the scanner wrote the requested report before termination.'
+    value: ${{ steps.scan.outputs.report-present }}
+  report:
+    description: 'Path to the produced scan report (relative to the workspace).'
+    value: ${{ steps.outfile.outputs.name }}
+  analysis-category:
+    description: 'Validated Code Scanning and report partition identity.'
+    value: ${{ steps.outfile.outputs.category }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Compute output filename
+      id: outfile
+      shell: bash
+      env:
+        ACTION_FORMAT: ${{ inputs.format }}
+        ACTION_ANALYSIS_CATEGORY: ${{ inputs.analysis-category }}
+      run: |
+        set -euo pipefail
+        category="${ACTION_ANALYSIS_CATEGORY:-}"
+        if [[ -z "$category" || ${#category} -gt 64 || ! "$category" =~ ^[a-z0-9]([a-z0-9._-]*[a-z0-9])?$ ]]; then
+          echo "::error title=KeyHog::Invalid analysis-category. Use 1-64 lowercase letters, digits, dot, underscore, or dash; start and end with a letter or digit."
+          exit 2
+        fi
+        if [[ -n "${RUNNER_TEMP:-}" && -n "${GITHUB_RUN_ID:-}" && -n "${GITHUB_JOB:-}" ]]; then
+          identity_root="${RUNNER_TEMP}/keyhog-analysis-categories/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT:-1}-${GITHUB_JOB}"
+          mkdir -p -- "$identity_root"
+          if ! mkdir -- "${identity_root}/${category}" 2>/dev/null; then
+            echo "::error title=KeyHog::Conflicting analysis-category. Every KeyHog scan in one job must use a distinct category."
+            exit 2
+          fi
+        fi
+        ext="json"
+        case "${ACTION_FORMAT:-sarif}" in
+          sarif) ext="sarif" ;;
+          jsonl) ext="jsonl" ;;
+          text)  ext="txt" ;;
+        esac
+        printf 'category=%s\n' "$category" >> "$GITHUB_OUTPUT"
+        printf 'name=keyhog-results-%s.%s\n' "$category" "$ext" >> "$GITHUB_OUTPUT"
+
+    - name: Resolve KeyHog version
+      id: version
+      shell: bash
+      env:
+        ACTION_VERSION: ${{ inputs.version }}
+        ACTION_SOURCE_ROOT: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        release_required=false
+        if [[ -n "${ACTION_VERSION:-}" ]]; then
+          if ! normalized_tag="$(bash "$ACTION_SOURCE_ROOT/scripts/release-version.sh" "$ACTION_VERSION")"; then
+            echo "::error title=KeyHog::Invalid version. Explicit version must be MAJOR.MINOR.PATCH with an optional prerelease suffix."
+            exit 2
+          fi
+          v="${normalized_tag#v}"
+          release_required=true
+        else
+          # GITHUB_ACTION_REF is e.g. "v0.5.12", "main", a SHA, or a branch.
+          ref="${GITHUB_ACTION_REF:-main}"
+          if [[ "$ref" =~ ^v[0-9]+[.] ]]; then
+            if ! normalized_tag="$(bash "$ACTION_SOURCE_ROOT/scripts/release-version.sh" "$ref")"; then
+              echo "::error title=KeyHog::Invalid action ref. Release refs must be vMAJOR.MINOR.PATCH with an optional prerelease suffix."
+              exit 2
+            fi
+            v="${normalized_tag#v}"
+            release_required=true
+          elif [[ "$ref" =~ ^v([0-9]+)$ ]]; then
+            major="${BASH_REMATCH[1]}"
+            manifest="$ACTION_SOURCE_ROOT/Cargo.toml"
+            if [[ ! -f "$manifest" ]]; then
+              echo "::error title=KeyHog::Floating release ref cannot resolve its exact version because Cargo.toml is unavailable."
+              exit 2
+            fi
+            v="$(awk '
+              $0 == "[workspace.package]" { in_workspace_package = 1; next }
+              in_workspace_package && /^\[/ { exit }
+              in_workspace_package && $1 == "version" {
+                gsub(/\"/, "", $3)
+                print $3
+                exit
+              }
+            ' "$manifest")"
+            if ! [[ "$v" =~ ^${major}[.][0-9]+[.][0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+              echo "::error title=KeyHog::Floating release ref does not match the exact version in Cargo.toml."
+              exit 2
+            fi
+            release_required=true
+          fi
+        fi
+        case "$v" in
+          "" | *[!A-Za-z0-9._/-]*)
+            echo "::error title=KeyHog::Invalid version. Use only letters, digits, dot, dash, underscore, or slash."
+            exit 2
+            ;;
+        esac
+        printf 'version=%s\n' "$v" >> "$GITHUB_OUTPUT"
+        printf 'release_required=%s\n' "$release_required" >> "$GITHUB_OUTPUT"
+        printf 'Resolved keyhog version: %s\n' "$v"
+        printf 'Release asset required: %s\n' "$release_required"
+
+    - name: Detect platform asset name
+      id: asset
+      shell: bash
+      run: |
+        set -euo pipefail
+        os="$(uname -s)"
+        arch="$(uname -m)"
+        case "$os/$arch" in
+          Linux/x86_64)    name="keyhog-linux-x86_64" ;;
+          Darwin/x86_64)  name="keyhog-macos-x86_64" ;;
+          Darwin/arm64)   name="keyhog-macos-aarch64" ;;
+          MINGW*/x86_64 | MSYS*/x86_64 | CYGWIN*/x86_64)
+                           name="keyhog-windows-x86_64.exe" ;;
+          *)              name="" ;;
+        esac
+        echo "name=$name" >> "$GITHUB_OUTPUT"
+        echo "Asset name for $os/$arch: ${name:-<none, source build>}"
+
+    - name: Install release runtime and verifier (Linux prebuilt)
+      if: steps.version.outputs.release_required == 'true' && startsWith(steps.asset.outputs.name, 'keyhog-linux-x86_64')
+      shell: bash
+      run: |
+        set -euo pipefail
+        sudo apt-get update -qq
+        sudo apt-get install -y --no-install-recommends minisign libhyperscan5 || \
+          sudo apt-get install -y --no-install-recommends minisign libhyperscan-dev
+
+    - name: Install release verifier (macOS and Windows)
+      if: steps.version.outputs.release_required == 'true' && runner.os != 'Linux'
+      shell: bash
+      run: |
+        set -euo pipefail
+        case "${RUNNER_OS:-}" in
+          macOS) brew install minisign ;;
+          Windows) choco install minisign --yes --no-progress ;;
+          *) echo "::error title=KeyHog::Unsupported runner for minisign verification."; exit 2 ;;
+        esac
+
+    # Release refs use the same two proofs as the installers: detached minisign
+    # signatures against KeyHog's pinned public key plus adjacent SHA-256 files.
+    # The signed GPU literal sidecar is required and safely seeded before the
+    # binary runs, so the Action does not silently compile shipped matchers.
+    - name: Try downloading prebuilt binary
+      id: download
+      shell: bash
+      env:
+        ACTION_ASSET_NAME: ${{ steps.asset.outputs.name }}
+        ACTION_RESOLVED_VERSION: ${{ steps.version.outputs.version }}
+        ACTION_RELEASE_REQUIRED: ${{ steps.version.outputs.release_required }}
+        KEYHOG_MINISIGN_PUBLIC_KEY: 'RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
+      run: |
+        set -euo pipefail
+        asset="${ACTION_ASSET_NAME:-}"
+        version="${ACTION_RESOLVED_VERSION:-}"
+        release_required="${ACTION_RELEASE_REQUIRED:-false}"
+        if [[ "$release_required" != "true" ]]; then
+          echo "Branch/SHA action ref uses the checked-out source directly; skipping release lookup."
+          echo "found=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        if [[ -z "$asset" ]] || [[ -z "$version" ]]; then
+          echo "::error title=KeyHog::No published asset is available for this runner/version; refusing source-build fallback for a required release."
+          exit 2
+        fi
+        release_url="https://github.com/santhreal/keyhog/releases/download/v${version}"
+        sidecar="$asset.gpu-literals.tar.gz"
+        bundle_dir="$(mktemp -d "$RUNNER_TEMP/keyhog-release.XXXXXX")"
+        extract_dir=""
+        staged_target=""
+        cleanup_release_bundle() {
+          rm -rf -- "$bundle_dir"
+          if [[ -n "$extract_dir" ]]; then
+            rm -rf -- "$extract_dir"
+          fi
+          if [[ -n "$staged_target" ]]; then
+            rm -f -- "$staged_target"
+          fi
+        }
+        trap cleanup_release_bundle EXIT
+        echo "Downloading authenticated release bundle from $release_url/$asset"
+        for name in \
+          "$asset" "$asset.sha256" "$asset.minisig" \
+          "$sidecar" "$sidecar.sha256" "$sidecar.minisig"; do
+          if ! curl -fL --retry 2 "$release_url/$name" -o "$bundle_dir/$name"; then
+            echo "::error title=KeyHog::Required release payload '$name' is unavailable; refusing source-build fallback for a release ref."
+            exit 2
+          fi
+        done
+
+        minisign -Vm "$bundle_dir/$asset" -x "$bundle_dir/$asset.minisig" -P "$KEYHOG_MINISIGN_PUBLIC_KEY"
+        minisign -Vm "$bundle_dir/$sidecar" -x "$bundle_dir/$sidecar.minisig" -P "$KEYHOG_MINISIGN_PUBLIC_KEY"
+        validate_checksum_manifest() {
+          local manifest_path="$1"
+          local expected_name="$2"
+          local line=""
+          local extra_line=""
+          if ! IFS= read -r line < "$manifest_path" || IFS= read -r extra_line < <(sed -n '2p' "$manifest_path"); then
+            echo "::error title=KeyHog::Release checksum manifest is malformed or names an unexpected file."
+            return 2
+          fi
+          if [[ ! "$line" =~ ^[0-9A-Fa-f]{64}[[:space:]]+[*]?([A-Za-z0-9._-]+)$ ]]; then
+            echo "::error title=KeyHog::Release checksum manifest is malformed or names an unexpected file."
+            return 2
+          fi
+          if [[ "${BASH_REMATCH[1]}" != "$expected_name" ]]; then
+            echo "::error title=KeyHog::Release checksum manifest is malformed or names an unexpected file."
+            return 2
+          fi
+        }
+        validate_checksum_manifest "$bundle_dir/$asset.sha256" "$asset"
+        validate_checksum_manifest "$bundle_dir/$sidecar.sha256" "$sidecar"
+        if command -v sha256sum >/dev/null 2>&1; then
+          (cd "$bundle_dir" && sha256sum -c "$asset.sha256" && sha256sum -c "$sidecar.sha256")
+        elif command -v shasum >/dev/null 2>&1; then
+          (cd "$bundle_dir" && shasum -a 256 -c "$asset.sha256" && shasum -a 256 -c "$sidecar.sha256")
+        else
+          echo "::error title=KeyHog::No SHA256 verifier on runner; refusing source-build fallback for a required release."
+          exit 2
+        fi
+
+        if ! tar -tzf "$bundle_dir/$sidecar" >/dev/null 2>&1; then
+          echo "::error title=KeyHog::GPU literal sidecar is not a readable tar.gz archive."
+          exit 2
+        fi
+        while IFS= read -r entry; do
+          if [[ -z "$entry" || "$entry" == /* || "$entry" == \\* || "$entry" =~ ^[A-Za-z]: || "$entry" =~ (^|[\\/])[.][.][[:space:].]*([\\/]|$) ]]; then
+            echo "::error title=KeyHog::GPU literal sidecar contains an unsafe path."
+            exit 2
+          fi
+        done < <(tar -tzf "$bundle_dir/$sidecar")
+        while IFS= read -r listing; do
+          case "${listing:0:1}" in
+            - | d) ;;
+            l | h)
+              echo "::error title=KeyHog::GPU literal sidecar contains a link entry."
+              exit 2
+              ;;
+            *)
+              echo "::error title=KeyHog::GPU literal sidecar contains an unsupported entry type."
+              exit 2
+              ;;
+          esac
+        done < <(tar -tvzf "$bundle_dir/$sidecar")
+
+        extract_dir="$(mktemp -d)"
+        tar -xzf "$bundle_dir/$sidecar" -C "$extract_dir"
+        case "${RUNNER_OS:-}" in
+          macOS) programs_dir="$HOME/Library/Caches/keyhog/programs" ;;
+          Windows)
+            [[ -n "${LOCALAPPDATA:-}" ]] || { echo "::error title=KeyHog::LOCALAPPDATA is unavailable for the GPU literal cache."; exit 2; }
+            programs_dir="$(cygpath -u "$LOCALAPPDATA")/keyhog/programs"
+            ;;
+          *) programs_dir="${XDG_CACHE_HOME:-$HOME/.cache}/keyhog/programs" ;;
+        esac
+        keyhog_cache_dir="${programs_dir%/programs}"
+        if [[ "$keyhog_cache_dir" == "$programs_dir" || -L "$keyhog_cache_dir" || -L "$programs_dir" ]]; then
+          echo "::error title=KeyHog::GPU literal cache contains an unsafe owned-directory symlink."
+          exit 2
+        fi
+        mkdir -p -- "$programs_dir"
+        if [[ -L "$keyhog_cache_dir" || -L "$programs_dir" || ! -d "$programs_dir" ]]; then
+          echo "::error title=KeyHog::GPU literal cache changed to an unsafe owned-directory symlink."
+          exit 2
+        fi
+        artifact_count=0
+        while IFS= read -r -d '' artifact; do
+          base="$(basename "$artifact")"
+          staged_target="$(mktemp "$programs_dir/.${base}.XXXXXX")"
+          if ! cp -- "$artifact" "$staged_target"; then
+            echo "::error title=KeyHog::Could not stage GPU literal matcher artifact."
+            exit 2
+          fi
+          if ! mv -f -- "$staged_target" "$programs_dir/$base"; then
+            echo "::error title=KeyHog::Could not atomically install GPU literal matcher artifact."
+            exit 2
+          fi
+          staged_target=""
+          artifact_count=$((artifact_count + 1))
+        done < <(find "$extract_dir" -type f -name '*.bin' -print0)
+        if [[ "$artifact_count" -eq 0 ]]; then
+          echo "::error title=KeyHog::GPU literal sidecar contains no matcher artifacts."
+          exit 2
+        fi
+
+        bin_name="keyhog"
+        case "$asset" in
+          *.exe) bin_name="keyhog.exe" ;;
+        esac
+        cp "$bundle_dir/$asset" "$RUNNER_TEMP/$bin_name"
+        chmod +x "$RUNNER_TEMP/$bin_name"
+        echo "found=true" >> "$GITHUB_OUTPUT"
+        echo "Downloaded and authenticated $asset plus $artifact_count GPU literal matcher artifact(s) for v$version"
+
+    - name: Install Rust toolchain (source-build fallback)
+      if: steps.download.outputs.found != 'true'
+      uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+    - name: Cache cargo registry/build (source-build fallback)
+      if: steps.download.outputs.found != 'true'
+      uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+
+    - name: Install Vectorscan/Hyperscan (Linux source-build only)
+      if: steps.download.outputs.found != 'true' && runner.os == 'Linux'
+      shell: bash
+      run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
+
+    - name: Build keyhog from source (fallback)
+      if: steps.download.outputs.found != 'true'
+      shell: bash
+      env:
+        ACTION_SOURCE_ROOT: ${{ github.action_path }}
+        ACTION_ASSET_NAME: ${{ steps.asset.outputs.name }}
+      run: |
+        set -euo pipefail
+        cd "$ACTION_SOURCE_ROOT"
+        # Only the Linux Action asset ships the default `simd` feature. Manual
+        # macOS builds can link Homebrew Vectorscan, but this fallback matches
+        # the portable macOS release asset; Windows has no supported Hyperscan
+        # package. Portable keeps every scanner data path and its portable
+        # source-backend set without the Hyperscan link.
+        case "$(uname -s)" in
+          Linux*) cargo build --locked --release -p keyhog ;;
+          *)
+            cargo build --locked --release -p keyhog --no-default-features --features portable
+            ;;
+        esac
+        bin="target/release/keyhog"
+        [[ -x "$bin" ]] || bin="target/release/keyhog.exe"
+        cp "$bin" "$RUNNER_TEMP/$(basename "$bin")"
+
+    - name: Add keyhog to PATH
+      shell: bash
+      run: echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+    - name: Calibrate autoroute for this scan
+      if: inputs.backend == '' || inputs.backend == 'auto'
+      shell: bash
+      env:
+        ACTION_SCAN_PATH: ${{ inputs.path }}
+        ACTION_SEVERITY: ${{ inputs.severity }}
+        ACTION_BASELINE: ${{ inputs.baseline }}
+      run: |
+        set -euo pipefail
+        probe="${RUNNER_TEMP}/keyhog-autoroute-probe-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}.json"
+        trap 'rm -f -- "$probe"' EXIT
+        config_args=(
+          config
+          --effective
+          --path "$ACTION_SCAN_PATH"
+          --severity "$ACTION_SEVERITY"
+          --format json
+        )
+        args=(
+          scan
+          --autoroute-calibrate
+          --autoroute-gpu
+          --path "$ACTION_SCAN_PATH"
+          --severity "$ACTION_SEVERITY"
+          --format json
+          --output "$probe"
+        )
+        if [[ -n "${ACTION_BASELINE:-}" ]]; then
+          config_args+=(--baseline "$ACTION_BASELINE")
+          args+=(--baseline "$ACTION_BASELINE")
+        fi
+        set +e
+        keyhog "${config_args[@]}" >/dev/null
+        config_exit=$?
+        set -e
+        if [[ "$config_exit" != "0" ]]; then
+          echo "::error title=KeyHog::Could not resolve the exact scan configuration before autoroute calibration. Run keyhog config --effective with the same path and policy inputs."
+          exit "$config_exit"
+        fi
+        keyhog "${args[@]}"
+
+    - name: Run scan
+      id: scan
+      shell: bash
+      env:
+        ACTION_SCAN_PATH: ${{ inputs.path }}
+        ACTION_SEVERITY: ${{ inputs.severity }}
+        ACTION_FORMAT: ${{ inputs.format }}
+        ACTION_VERIFY: ${{ inputs.verify }}
+        ACTION_BASELINE: ${{ inputs.baseline }}
+        ACTION_BACKEND: ${{ inputs.backend }}
+        ACTION_OUTPUT: ${{ steps.outfile.outputs.name }}
+        ACTION_FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
+        ACTION_UPLOAD_SARIF: ${{ inputs.upload-sarif }}
+      run: |
+        set -euo pipefail
+        args=(
+          --print-effective-config
+          --path "$ACTION_SCAN_PATH"
+          --severity "$ACTION_SEVERITY"
+          --format "$ACTION_FORMAT"
+          --output "$ACTION_OUTPUT"
+          --verify "$ACTION_VERIFY"
+          --fail-on-findings "$ACTION_FAIL_ON_FINDINGS"
+          --upload-sarif "$ACTION_UPLOAD_SARIF"
+        )
+        if [[ -n "${ACTION_BASELINE:-}" ]]; then
+          args+=(--baseline "$ACTION_BASELINE")
+        fi
+        if [[ -n "${ACTION_BACKEND:-}" ]]; then
+          args+=(--backend "$ACTION_BACKEND")
+        fi
+        bash "${{ github.action_path }}/.github/actions/keyhog/run-scan.sh" "${args[@]}"
+
+    - name: Check report exists before SARIF upload
+      id: report-check
+      if: always()
+      shell: bash
+      env:
+        ACTION_REPORT_NAME: ${{ steps.outfile.outputs.name }}
+      run: |
+        if [[ -f "$ACTION_REPORT_NAME" ]]; then
+          echo "exists=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "exists=false" >> "$GITHUB_OUTPUT"
+          echo "::warning title=KeyHog::Scan report '$ACTION_REPORT_NAME' missing; skipping SARIF + artifact upload."
+        fi
+
+    - name: Upload SARIF to code-scanning
+      # Fork PRs get a restricted GITHUB_TOKEN without security-events:write,
+      # so codeql-action/upload-sarif 403s. Without continue-on-error the
+      # whole external contributor PR fails on this step instead of just
+      # missing the code-scanning surface. The downloadable workflow artifact
+      # below stays available either way, so reviewers can grab the SARIF.
+      # Trusted pushes/PRs are different: upload-sarif=true is an explicit
+      # production CI contract, so upload failures must fail closed instead
+      # of silently passing without Code Scanning annotations.
+      if: inputs.format == 'sarif' && inputs.upload-sarif == 'true' && steps.report-check.outputs.exists == 'true'
+      continue-on-error: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+      uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
+      with:
+        sarif_file: ${{ steps.outfile.outputs.name }}
+        category: ${{ steps.outfile.outputs.category }}
+
+    - name: Upload scan report as workflow artifact
+      if: always() && steps.report-check.outputs.exists == 'true'
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      with:
+        name: keyhog-report-${{ steps.outfile.outputs.category }}-${{ github.job }}-${{ strategy.job-index || '0' }}-${{ github.run_attempt }}
+        path: ${{ steps.outfile.outputs.name }}
+        if-no-files-found: warn
+
+    - name: Fail when findings reported
+      if: steps.scan.outputs.findings != '' && steps.scan.outputs.exit-code != '' && ((inputs.fail-on-findings == 'true' && steps.scan.outputs.findings != '0') || steps.scan.outputs.exit-code == '10')
+      shell: bash
+      env:
+        ACTION_FINDINGS: ${{ steps.scan.outputs.findings }}
+        ACTION_EXIT_CODE: ${{ steps.scan.outputs.exit-code }}
+        ACTION_SEVERITY: ${{ inputs.severity }}
+      run: |
+        case "${ACTION_FINDINGS:-}" in
+          "" | *[!0-9]*)
+            echo "::error title=KeyHog::Invalid findings output."
+            exit 3
+            ;;
+        esac
+        case "${ACTION_EXIT_CODE:-}" in
+          0 | 1 | 10) ;;
+          "" | *[!0-9]*)
+            echo "::error title=KeyHog::Invalid exit-code output."
+            exit 3
+            ;;
+          *)
+            echo "::error title=KeyHog::Unexpected scan exit code ${ACTION_EXIT_CODE}."
+            exit "$ACTION_EXIT_CODE"
+            ;;
+        esac
+        if [[ "$ACTION_EXIT_CODE" == "10" ]]; then
+          echo "::error title=KeyHog::LIVE credential(s) confirmed by --verify (exit 10)."
+          exit 10
+        fi
+        echo "::error title=KeyHog::${ACTION_FINDINGS} finding(s) at or above '${ACTION_SEVERITY}' severity. Set fail-on-findings:false to ignore."
+        exit 1

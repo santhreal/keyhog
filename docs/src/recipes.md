@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: santhreal/keyhog/.github/actions/keyhog@v0
+      - uses: santhreal/keyhog@v0
         with: { path: ., severity: high, format: sarif }
 ```
 

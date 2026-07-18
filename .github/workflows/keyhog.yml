@@ -38,7 +38,7 @@ jobs:
 
       - name: scan
         id: keyhog
-        uses: ./.github/actions/keyhog
+        uses: ./
         with:
           # No version override: a branch/SHA action ref builds and exercises
           # this exact checkout. Release artifacts have separate signed smokes.
