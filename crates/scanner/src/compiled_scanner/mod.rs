@@ -9,6 +9,7 @@ mod compile_helpers;
 mod detector_digest;
 mod runtime;
 mod types;
+mod validation;
 
 pub use types::{
     CompiledScannerRuntime, GpuBackendAvailability, GpuBackendCandidateStatus, GpuInitPolicy,

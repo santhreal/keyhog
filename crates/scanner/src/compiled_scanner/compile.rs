@@ -31,6 +31,8 @@ impl CompiledScanner {
         gpu_policy: GpuInitPolicy,
         tuning_config: &ScannerTuningConfig,
     ) -> Result<Self> {
+        super::validation::validate_detector_corpus(&detectors)
+            .map_err(crate::error::ScanError::Config)?;
         crate::entropy::policy::validate_feature_compatibility(&detectors)
             .map_err(crate::error::ScanError::Config)?;
         let decoder_plan = Arc::new(crate::decode::CompiledDecoderPlan::snapshot().map_err(

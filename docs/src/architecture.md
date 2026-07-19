@@ -253,6 +253,12 @@ matchers and policies are built, `CompiledScanner` drops `DetectorSpec` itself;
 the flexible structure remains a configuration and introspection schema, not a
 second runtime policy owner.
 
+Every public scanner constructor reaches one full-corpus quality gate before it
+builds matchers or probes backends. This also applies when you construct
+`DetectorSpec` values in memory instead of loading TOML. The gate rejects
+invalid detector fields and duplicate IDs with detector-indexed configuration
+errors.
+
 Each detector index addresses one compiled plan containing its interned primary
 and entropy-fallback metadata, execution facts, canonical/decoded key-material
 program, entropy floor and policy, ML policy, credential-shape gate,

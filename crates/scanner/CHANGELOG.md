@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Apply the detector quality gate at the public scanner compilation boundary.
+  Programmatic `DetectorSpec` corpora now reject invalid thresholds, regexes,
+  identities, validators, and duplicate detector IDs before matcher or backend
+  construction. TOML-loaded and in-memory detectors share the same acceptance
+  rules.
 - Snapshot the decoder registry when you compile a scanner. Decode execution
   and autoroute admission now use that immutable plan, and its ordered decoder
   names and versions contribute to the detector digest. Registering a decoder

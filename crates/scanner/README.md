@@ -37,6 +37,11 @@ detector TOMLs embedded by `keyhog-core`; scanner configuration supplies the
 operational defaults and explicit overrides. Every backend feeds the same
 extraction, suppression, confidence, decode, and reporting contracts.
 
+If you construct `DetectorSpec` values in memory, `CompiledScanner::compile`
+applies the same quality gate used by the TOML loader. Invalid fields or
+duplicate detector IDs return a configuration error before matcher or backend
+construction.
+
 A detector that owns entropy fallback or sets `bpe_enabled = true` requires the
 scanner `entropy` feature. Scanner construction returns an actionable
 configuration error when the artifact cannot execute a declared mechanism. It
