@@ -11,11 +11,11 @@ mod scan;
 /// single serial C-side NFA/DFA build whose wall-clock scales ~linearly
 /// with the pattern count, so the shard COUNT is sized to keep each shard
 /// near this many patterns: `shards = ceil(n / TARGET_PATTERNS_PER_SHARD)`,
-/// capped at the core count. Sizing by patterns-per-shard (rather than a
-/// fixed shard count) is what flattens the build's scaling: as the corpus
-/// grows, the number of shards grows while each shard's serial build stays
-/// ~constant, so on a many-core box "double the patterns" is absorbed by
-/// spinning up more parallel shards instead of doubling each shard's work.
+/// capped at the active Rayon executor width. Sizing by patterns-per-shard
+/// (rather than a fixed shard count) is what flattens the build's scaling: as
+/// the corpus grows, the number of shards grows while each shard's serial
+/// build stays ~constant, so on a many-core box "double the patterns" is
+/// absorbed by adding parallel shards instead of doubling work per shard.
 /// ~320 was chosen empirically: on the ~900-detector corpus (~2.2k compiled
 /// patterns) it keeps the full and half corpora in a small number of similarly
 /// heavy shards. That gives the ratio gate stable margin (about 1.25x on the
@@ -221,14 +221,14 @@ static SCANNER_ID_SEQ: AtomicU64 = AtomicU64::new(0);
 
 /// One compiled shard: its database plus a Mutex-guarded scratch pool. Each
 /// `Scratch` is tied to exactly one `BlockDatabase`, so the pools are
-/// per-shard. The pool is SEEDED during scanner construction to the host core
-/// count (the warm-start fast path: every common-case thread checks out a
-/// preallocated scratch under the lock once, then reuses it lock-free from its
-/// TLS). If more distinct threads scan a shard than the seed covered (the
-/// `--batch-pipeline` reader + fused-dispatch threads stack on top of rayon),
-/// `take_scratch` GROWS the pool on demand with a fresh per-database scratch.
-/// On-demand growth runs the identical precise scan, it never skips a shard
-/// or returns a partial marked set, so there is no silent recall loss.
+/// per-shard. The pool is SEEDED during scanner construction to the active
+/// Rayon executor width (the warm-start fast path: every common-case thread
+/// checks out a preallocated scratch under the lock once, then reuses it
+/// lock-free from its TLS). If more distinct threads scan a shard than the seed
+/// covered (`--batch-pipeline` reader + fused-dispatch threads stack on top of
+/// rayon), `take_scratch` GROWS the pool on demand with a fresh per-database
+/// scratch. Growth runs the identical precise scan; it never skips a shard or
+/// returns a partial marked set, so there is no silent recall loss.
 struct Shard {
     db: BlockDatabase,
     scratch_pool: parking_lot::Mutex<Vec<Scratch>>,
@@ -515,14 +515,11 @@ impl HsScanner {
     }
 
     fn compile_shard_count(pattern_count: usize, opts: HsCompileOpts<'_>) -> usize {
-        let cores = std::thread::available_parallelism()
-            .map(|c| c.get())
-            .unwrap_or(1); // LAW10: host core-count probe failure only selects the one-shard compile path; findings are unchanged.
         let target = opts
             .shard_target
             .filter(|&v| v >= 1)
             .unwrap_or(TARGET_PATTERNS_PER_SHARD); // LAW10: absent shard-target compile tuning => documented default; sharding only changes WHERE patterns compile, never the finding set.
-        let cap = cores.clamp(1, MAX_COMPILE_SHARDS);
+        let cap = Self::executor_width();
         pattern_count
             .div_ceil(target)
             .clamp(1, cap)
@@ -781,9 +778,10 @@ impl HsScanner {
             .collect()
     }
 
-    // Seed the per-shard scratch pool to the host core count: this is a
-    // WARM-START FLOOR, not a hard cap. The common case (rayon worker count ≈
-    // cores) checks out a preallocated scratch under the lock once and then
+    // Seed each shard from the executor that actually compiles and scans it,
+    // not host topology that may exceed --threads, cpuset, or local-pool width.
+    // This is a WARM-START FLOOR, not a hard cap. The common case checks out a
+    // preallocated scratch under the lock once and then
     // reuses it lock-free from TLS. When more distinct threads scan a shard than
     // the seed covered (`--batch-pipeline` stacks a reader pool + fused-dispatch
     // threads on top of rayon), `take_scratch` GROWS the pool on demand with a
@@ -791,11 +789,12 @@ impl HsScanner {
     // there is no exhaustion failure and no recall-losing degrade to fall into.
     // The `MAX_COMPILE_SHARDS` clamp only bounds the up-front preallocation
     // memory; growth handles any host whose true concurrency exceeds it.
+    fn executor_width() -> usize {
+        rayon::current_num_threads().clamp(1, MAX_COMPILE_SHARDS)
+    }
+
     fn scratch_pool_size() -> usize {
-        std::thread::available_parallelism()
-            .map(|cores| cores.get())
-            .unwrap_or(1) // LAW10: host core-count probe failure seeds one scratch per shard; on-demand growth runs the same precise scan and never drops shard coverage.
-            .clamp(1, MAX_COMPILE_SHARDS)
+        Self::executor_width()
     }
 
     fn build_scratch_pool(

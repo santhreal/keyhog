@@ -55,6 +55,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Autoroute config identity now includes profile and performance-trace
   instrumentation, preventing timed routes from reusing evidence measured
   under a different hot-path cost model.
+- Hyperscan compile sharding and per-shard scratch preallocation now follow the
+  active Rayon executor width instead of host-visible CPU count, avoiding
+  needless databases and scratch allocations under `--threads` and local pools.
 
 ## [0.5.41] - 2026-07-18
 
