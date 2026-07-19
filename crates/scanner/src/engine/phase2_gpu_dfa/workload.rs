@@ -5,6 +5,8 @@ pub(crate) struct Phase2GpuDfaAdmission {
     /// Per-region proof that a negative admission bit covered every
     /// prefixless always-active pattern relevant to that region's byte class.
     pub(crate) complete: Vec<bool>,
+    /// Distinct (region, shard-local pattern) admission bits observed. This is
+    /// telemetry only; exact extraction remains owned by the shared CPU tail.
     pub(crate) matches_seen: usize,
 }
 

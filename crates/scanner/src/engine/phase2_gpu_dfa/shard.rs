@@ -1,7 +1,6 @@
-//! Regex-DFA shard dispatch and match attribution for phase-2 GPU admission.
+//! Regex-DFA shard dispatch and direct region admission for phase-2 GPU scanning.
 
 use super::batch::Phase2GpuDfaScratch;
-use super::PHASE2_GPU_DFA_MAX_MATCHES;
 
 #[derive(Debug)]
 pub(super) struct Phase2GpuDfaShard {
@@ -16,91 +15,138 @@ impl Phase2GpuDfaShard {
         scratch: &mut Phase2GpuDfaScratch,
         haystack_len: u32,
         admitted: &mut [bool],
-    ) -> std::result::Result<bool, String> {
+    ) -> std::result::Result<usize, String> {
         use vyre_libs::scan::dispatch_io;
+
+        let region_count = u32::try_from(scratch.region_starts.len()).map_err(|error| {
+            format!(
+                "phase-2 GPU regex-DFA region count {} exceeds the u32 GPU ABI: {error}",
+                scratch.region_starts.len()
+            )
+        })?;
+        if region_count == 0 || scratch.region_starts.first().copied() != Some(0) {
+            return Err(
+                "phase-2 GPU regex-DFA admission requires at least one region beginning at byte 0"
+                    .to_string(),
+            );
+        }
+        if admitted.len() != scratch.region_starts.len() {
+            return Err(format!(
+                "phase-2 GPU regex-DFA admission has {} output row(s), need {region_count}",
+                admitted.len()
+            ));
+        }
+
+        let pattern_count = u32::try_from(self.phase2_indices.len()).map_err(|error| {
+            format!(
+                "phase-2 GPU regex-DFA shard pattern count {} exceeds the u32 GPU ABI: {error}",
+                self.phase2_indices.len()
+            )
+        })?;
+        let presence_words =
+            vyre_libs::scan::regex_admission_presence_words(pattern_count) as usize;
+        let bitmap_words = scratch
+            .region_starts
+            .len()
+            .checked_mul(presence_words)
+            .ok_or_else(|| {
+                "phase-2 GPU regex-DFA admission bitmap word count overflows host usize"
+                    .to_string()
+            })?;
+        let bitmap_bytes = bitmap_words
+            .checked_mul(std::mem::size_of::<u32>())
+            .ok_or_else(|| {
+                "phase-2 GPU regex-DFA admission bitmap byte count overflows host usize"
+                    .to_string()
+            })?;
 
         let transition_bytes = dispatch_io::u32_words_as_le_bytes(&self.pipeline.dfa.transitions);
         let output_offset_bytes =
             dispatch_io::u32_words_as_le_bytes(&self.pipeline.dfa.output_offsets);
         let output_record_bytes =
             dispatch_io::u32_words_as_le_bytes(&self.pipeline.dfa.output_records);
-        let pattern_length_bytes =
-            dispatch_io::u32_words_as_le_bytes(&self.pipeline.pattern_lengths);
+        let region_start_bytes = dispatch_io::u32_words_as_le_bytes(&scratch.region_starts);
+        let region_base_bytes = 0u32.to_le_bytes();
         let haystack_len_bytes = haystack_len.to_le_bytes();
-        let match_count_bytes = [0u8; 4];
+        scratch.dispatch.hit_bytes.clear();
+        scratch
+            .dispatch
+            .hit_bytes
+            .try_reserve(bitmap_bytes)
+            .map_err(|error| {
+                format!(
+                    "phase-2 GPU regex-DFA admission bitmap reserve failed for {bitmap_bytes} byte(s): {error}"
+                )
+            })?;
+        scratch.dispatch.hit_bytes.resize(bitmap_bytes, 0);
+
+        let log2_max_regions = (32 - (region_count.max(2) - 1).leading_zeros()).max(1);
+        let program = vyre_libs::scan::regex_admission_by_region_program(
+            "haystack",
+            "transitions",
+            "output_offsets",
+            "output_records",
+            "region_starts",
+            "region_base",
+            "haystack_len",
+            "presence",
+            self.pipeline.dfa.state_count,
+            u32::try_from(self.pipeline.dfa.output_records.len()).map_err(|error| {
+                format!(
+                    "phase-2 GPU regex-DFA output record count {} exceeds the u32 GPU ABI: {error}",
+                    self.pipeline.dfa.output_records.len()
+                )
+            })?,
+            region_count,
+            presence_words as u32,
+            self.pipeline.dfa.max_pattern_len,
+            log2_max_regions,
+        );
         let config = dispatch_io::byte_scan_dispatch_config(
             haystack_len,
-            self.pipeline.program.workgroup_size[0],
+            program.workgroup_size[0],
         );
         let inputs = [
             scratch.dispatch.haystack_bytes.as_slice(),
             transition_bytes.as_ref(),
             output_offset_bytes.as_ref(),
             output_record_bytes.as_ref(),
-            pattern_length_bytes.as_ref(),
+            region_start_bytes.as_ref(),
+            region_base_bytes.as_slice(),
             haystack_len_bytes.as_slice(),
-            match_count_bytes.as_slice(),
+            scratch.dispatch.hit_bytes.as_slice(),
         ];
-        let outputs = backend
-            .dispatch_borrowed(&self.pipeline.program, &inputs, &config)
+        backend
+            .dispatch_borrowed_into(&program, &inputs, &config, &mut scratch.outputs)
             .map_err(|error| error.to_string())?;
-        let count_bytes =
-            dispatch_io::try_output_bytes(&outputs, 0, "phase-2 GPU regex-DFA match count")
-                .map_err(|error| error.to_string())?;
-        let count =
-            dispatch_io::try_read_u32_prefix(count_bytes, "phase-2 GPU regex-DFA match count")
-                .map_err(|error| error.to_string())?;
-        let triples_bytes =
-            dispatch_io::try_output_bytes(&outputs, 1, "phase-2 GPU regex-DFA matches")
-                .map_err(|error| error.to_string())?;
-        let overflowed = count > PHASE2_GPU_DFA_MAX_MATCHES;
-        let decoded_count = count.min(PHASE2_GPU_DFA_MAX_MATCHES);
-        // `try_unpack_match_triples_exact_prefix_into` validates that
-        // `triples_bytes` holds `decoded_count` triples (VYRE owns the triple
-        // byte-width), so no local length pre-check or triple-size constant is
-        // duplicated here.
-        dispatch_io::try_unpack_match_triples_exact_prefix_into(
-            triples_bytes,
-            decoded_count,
-            &mut scratch.matches,
+        let presence = dispatch_io::try_output_bytes(
+            &scratch.outputs,
+            0,
+            "phase-2 GPU regex-DFA admission bitmap",
         )
         .map_err(|error| error.to_string())?;
+        if presence.len() < bitmap_bytes {
+            return Err(format!(
+                "phase-2 GPU regex-DFA admission returned {} bitmap byte(s), need {bitmap_bytes}",
+                presence.len()
+            ));
+        }
 
-        let mut unattributed_matches = 0usize;
-        for m in &scratch.matches {
-            if self.phase2_indices.get(m.pattern_id as usize).is_none() {
-                return Err(format!(
-                    "phase-2 GPU regex-DFA reported pattern id {} outside shard size {}",
-                    m.pattern_id,
-                    self.phase2_indices.len()
-                ));
+        let row_bytes = presence_words * std::mem::size_of::<u32>();
+        let mut evidence_bits = 0usize;
+        for (region, row) in presence[..bitmap_bytes]
+            .chunks_exact(row_bytes)
+            .enumerate()
+        {
+            let mut row_admitted = false;
+            for word in row.chunks_exact(std::mem::size_of::<u32>()) {
+                let word = u32::from_le_bytes([word[0], word[1], word[2], word[3]]);
+                row_admitted |= word != 0;
+                evidence_bits = evidence_bits.saturating_add(word.count_ones() as usize);
             }
-            if let Some(region) =
-                match_region(&scratch.region_starts, scratch.haystack_len, m.start, m.end)
-            {
-                if let Some(slot) = admitted.get_mut(region) {
-                    *slot = true;
-                }
-            } else {
-                unattributed_matches = unattributed_matches.saturating_add(1);
-            }
+            admitted[region] |= row_admitted;
         }
-        if overflowed {
-            tracing::warn!(
-                target: "keyhog::gpu",
-                count,
-                cap = PHASE2_GPU_DFA_MAX_MATCHES,
-                "phase-2 GPU regex-DFA admission hit cap; decoded hits can admit chunks, misses still consult CPU admission"
-            );
-        }
-        if unattributed_matches > 0 {
-            tracing::warn!(
-                target: "keyhog::gpu",
-                unattributed = unattributed_matches,
-                "phase-2 GPU regex-DFA admission saw unattributed hit(s); decoded hits can admit chunks, misses still consult CPU admission"
-            );
-        }
-        Ok(overflowed || unattributed_matches > 0)
+        Ok(evidence_bits)
     }
 }
 

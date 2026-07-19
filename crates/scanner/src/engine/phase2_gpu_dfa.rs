@@ -36,7 +36,6 @@ mod lowering;
 mod shard;
 mod workload;
 
-const PHASE2_GPU_DFA_MAX_MATCHES: u32 = 1 << 20;
 const PHASE2_GPU_DFA_MAX_STATES: usize = 16_384;
 
 fn report_phase2_gpu_catalog_loss(reason: impl std::fmt::Display) {
@@ -67,36 +66,8 @@ pub(crate) struct Phase2GpuDfaCoverage {
 
 #[derive(Debug, Default)]
 pub(crate) struct Phase2GpuDfaCatalogCache {
-    subgroup: OnceLock<Option<Phase2GpuDfaCatalog>>,
-    cuda: OnceLock<Option<Phase2GpuDfaCatalog>>,
-    subgroup_preparation_ns: std::sync::atomic::AtomicU64,
-    cuda_preparation_ns: std::sync::atomic::AtomicU64,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Phase2GpuDfaProgramKind {
-    SubgroupCoalesced,
-    CudaCompatible,
-}
-
-impl Phase2GpuDfaProgramKind {
-    fn for_backend_id(backend_id: Option<&'static str>) -> Self {
-        match backend_id {
-            Some("cuda") => Self::CudaCompatible,
-            _ => Self::SubgroupCoalesced,
-        }
-    }
-
-    fn use_subgroup_coalesce(self) -> bool {
-        matches!(self, Self::SubgroupCoalesced)
-    }
-
-    fn label(self) -> &'static str {
-        match self {
-            Self::SubgroupCoalesced => "subgroup-coalesced",
-            Self::CudaCompatible => "cuda-compatible",
-        }
-    }
+    catalog: OnceLock<Option<Phase2GpuDfaCatalog>>,
+    preparation_ns: std::sync::atomic::AtomicU64,
 }
 
 impl Phase2GpuDfaCatalog {
@@ -116,7 +87,6 @@ impl Phase2GpuDfaCatalog {
     fn build(
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
         always_active_indices: &[usize],
-        program_kind: Phase2GpuDfaProgramKind,
     ) -> Option<Self> {
         let all_candidates =
             prefixless_always_active_candidates(phase2_patterns, always_active_indices);
@@ -126,7 +96,6 @@ impl Phase2GpuDfaCatalog {
             candidates.len(),
             all_candidates.len().saturating_sub(candidates.len()),
             &candidates,
-            program_kind,
         )
     }
 
@@ -135,7 +104,6 @@ impl Phase2GpuDfaCatalog {
         ascii_candidate_count: usize,
         excluded_ascii_redundant_patterns: usize,
         candidates: &[usize],
-        program_kind: Phase2GpuDfaProgramKind,
     ) -> Option<Self> {
         if candidates.is_empty() {
             return (ascii_candidate_count == 0).then_some(Self {
@@ -145,13 +113,11 @@ impl Phase2GpuDfaCatalog {
             });
         }
 
-        let use_subgroup_coalesce = program_kind.use_subgroup_coalesce();
         let mut shards = Vec::new();
         let mut uncovered_ascii_patterns = ascii_candidate_count.saturating_sub(candidates.len());
         build_shards_recursive(
             phase2_patterns,
             candidates,
-            use_subgroup_coalesce,
             &mut shards,
             &mut uncovered_ascii_patterns,
         );
@@ -184,7 +150,7 @@ impl Phase2GpuDfaCatalog {
             covered = covered_patterns,
             uncovered_ascii = uncovered_ascii_patterns,
             excluded_ascii_redundant = excluded_ascii_redundant_patterns,
-            program = program_kind.label(),
+            program = "region-admission",
             "phase-2 GPU regex-DFA ASCII admission catalog built"
         );
         Some(Self {
@@ -259,20 +225,20 @@ impl Phase2GpuDfaCatalog {
         }
 
         let mut admitted = vec![false; chunk_count];
-        let mut complete = vec![self.uncovered_ascii_patterns == 0; chunk_count];
-        let mut matches_seen = 0usize;
+        let complete = vec![self.uncovered_ascii_patterns == 0; chunk_count];
+        let mut evidence_seen = 0usize;
         for shard in &self.shards {
-            let shard_incomplete =
-                shard.scan_admission_into(backend, scratch, haystack_len, &mut admitted)?;
-            matches_seen = matches_seen.saturating_add(scratch.matches.len());
-            if shard_incomplete {
-                complete.fill(false);
-            }
+            evidence_seen = evidence_seen.saturating_add(shard.scan_admission_into(
+                backend,
+                scratch,
+                haystack_len,
+                &mut admitted,
+            )?);
         }
         Ok(Phase2GpuDfaAdmission {
             admitted,
             complete,
-            matches_seen,
+            matches_seen: evidence_seen,
         })
     }
 }
@@ -282,34 +248,22 @@ impl Phase2GpuDfaCatalogCache {
         &self,
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
         always_active_indices: &[usize],
-        backend_id: Option<&'static str>,
+        _backend_id: Option<&'static str>,
     ) -> Option<&Phase2GpuDfaCatalog> {
-        let program_kind = Phase2GpuDfaProgramKind::for_backend_id(backend_id);
-        let cell = match program_kind {
-            Phase2GpuDfaProgramKind::SubgroupCoalesced => &self.subgroup,
-            Phase2GpuDfaProgramKind::CudaCompatible => &self.cuda,
-        };
-        let preparation_ns = match program_kind {
-            Phase2GpuDfaProgramKind::SubgroupCoalesced => &self.subgroup_preparation_ns,
-            Phase2GpuDfaProgramKind::CudaCompatible => &self.cuda_preparation_ns,
-        };
-        cell.get_or_init(|| {
+        self.catalog.get_or_init(|| {
             let started = std::time::Instant::now();
-            let catalog =
-                Phase2GpuDfaCatalog::build(phase2_patterns, always_active_indices, program_kind);
+            let catalog = Phase2GpuDfaCatalog::build(phase2_patterns, always_active_indices);
             let elapsed_ns = (started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64).max(1);
-            preparation_ns.store(elapsed_ns, std::sync::atomic::Ordering::Release);
+            self.preparation_ns
+                .store(elapsed_ns, std::sync::atomic::Ordering::Release);
             catalog
         })
         .as_ref()
     }
 
-    pub(crate) fn preparation_ns(&self, backend_id: Option<&'static str>) -> u128 {
-        let preparation_ns = match Phase2GpuDfaProgramKind::for_backend_id(backend_id) {
-            Phase2GpuDfaProgramKind::SubgroupCoalesced => &self.subgroup_preparation_ns,
-            Phase2GpuDfaProgramKind::CudaCompatible => &self.cuda_preparation_ns,
-        };
-        preparation_ns.load(std::sync::atomic::Ordering::Acquire) as u128
+    pub(crate) fn preparation_ns(&self, _backend_id: Option<&'static str>) -> u128 {
+        self.preparation_ns
+            .load(std::sync::atomic::Ordering::Acquire) as u128
     }
 }
 
