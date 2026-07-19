@@ -106,7 +106,7 @@ pub(crate) fn save_autoroute_cache(
     }
     let _write_lock = keyhog_core::StateFileWriteLock::acquire(path)?;
 
-    let mergeable = read_mergeable_configs(path, detector_digest, rules_digest);
+    let mergeable = read_mergeable_configs(path, detector_digest, rules_digest)?;
     let mut configs = mergeable.configs;
     let outcome = mergeable.outcome;
     let mut merged = BTreeMap::new();
@@ -174,23 +174,21 @@ fn read_mergeable_configs(
     path: &std::path::Path,
     detector_digest: u64,
     rules_digest: &str,
-) -> MergeableConfigs {
-    if !path.exists() {
-        return MergeableConfigs {
-            configs: Vec::new(),
-            outcome: AutorouteCacheSaveOutcome::Fresh,
-        };
-    }
+) -> Result<MergeableConfigs, Box<dyn std::error::Error + Send + Sync>> {
     let data = match read_autoroute_cache_file(path) {
         Ok(data) => data,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(MergeableConfigs {
+                configs: Vec::new(),
+                outcome: AutorouteCacheSaveOutcome::Fresh,
+            });
+        }
         Err(error) => {
-            tracing::warn!(
-                target: "keyhog::routing",
-                path = %path.display(),
-                %error,
-                "existing autoroute cache is unreadable; replacing it with a fresh calibration (any other presets in it are lost)"
-            );
-            return replacement(format!("existing cache is unreadable: {error}"));
+            return Err(format!(
+                "cannot merge autoroute calibration because the existing cache at {} is unreadable: {error}; no cache bytes were replaced. Fix the path permissions or storage error and retry",
+                path.display()
+            )
+            .into());
         }
     };
     let cache = match parse_autoroute_cache(&data) {
@@ -203,7 +201,7 @@ fn read_mergeable_configs(
                 expected_version = AUTOROUTE_CACHE_VERSION,
                 "existing autoroute cache is an older schema; superseding it with this build's calibration"
             );
-            return replacement(error.diagnostic());
+            return Ok(replacement(error.diagnostic()));
         }
         Err(error @ CacheParseError::NotJson(_)) => {
             tracing::warn!(
@@ -212,7 +210,7 @@ fn read_mergeable_configs(
                 diagnostic = %error.diagnostic(),
                 "existing autoroute cache is not valid cache JSON; replacing it with a fresh calibration"
             );
-            return replacement(error.diagnostic());
+            return Ok(replacement(error.diagnostic()));
         }
         Err(error @ CacheParseError::Payload(_)) => {
             tracing::warn!(
@@ -221,7 +219,7 @@ fn read_mergeable_configs(
                 diagnostic = %error.diagnostic(),
                 "existing autoroute cache failed to deserialize; replacing it with a fresh calibration"
             );
-            return replacement(error.diagnostic());
+            return Ok(replacement(error.diagnostic()));
         }
     };
     if let Err(error) = validate_cache_global_identity(&cache, detector_digest, rules_digest) {
@@ -231,9 +229,9 @@ fn read_mergeable_configs(
             %error,
             "existing autoroute cache is for a different build or corpus; superseding it with this build's calibration"
         );
-        return replacement(format!(
+        return Ok(replacement(format!(
             "existing cache identity does not match this build or detector corpus: {error}"
-        ));
+        )));
     }
     if let Err(error) = validate_cache_structure(&cache) {
         tracing::warn!(
@@ -242,14 +240,14 @@ fn read_mergeable_configs(
             %error,
             "existing autoroute cache has invalid structure or decision evidence; replacing it with a fresh calibration"
         );
-        return replacement(format!(
+        return Ok(replacement(format!(
             "existing cache structure or route evidence is invalid: {error}"
-        ));
+        )));
     }
-    MergeableConfigs {
+    Ok(MergeableConfigs {
         configs: cache.configs,
         outcome: AutorouteCacheSaveOutcome::Merged,
-    }
+    })
 }
 
 fn replacement(reason: String) -> MergeableConfigs {
@@ -357,6 +355,25 @@ mod tests {
             workload(bytes),
             AutorouteDecision::new(ScanBackend::SimdCpu, bytes, 1, 12, Some(20), gpu_ms),
         )])
+    }
+
+    #[test]
+    fn unreadable_existing_cache_aborts_merge_without_replacement_state() {
+        let directory = tempfile::tempdir().expect("create unreadable cache stand-in");
+        let result = read_mergeable_configs(directory.path(), DETECTOR_DIGEST, RULES_DIGEST);
+        let error = match result {
+            Ok(_) => panic!("an unreadable existing cache must not become replacement input"),
+            Err(error) => error.to_string(),
+        };
+        assert!(error.contains("existing cache"), "diagnostic: {error}");
+        assert!(
+            error.contains("no cache bytes were replaced"),
+            "diagnostic must make the preservation contract explicit: {error}"
+        );
+        assert!(
+            directory.path().is_dir(),
+            "failed merge must leave the existing filesystem object untouched"
+        );
     }
 
     #[test]

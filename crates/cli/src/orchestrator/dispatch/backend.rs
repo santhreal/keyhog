@@ -193,7 +193,7 @@ pub(crate) struct RuntimeRouteIdentity {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AutorouteRuntimeClass {
     OneShot,
-    PersistentDaemon,
+    Persistent,
 }
 
 #[derive(Debug)]
@@ -222,7 +222,7 @@ impl AutorouteRuntimeClass {
     fn label(self) -> &'static str {
         match self {
             Self::OneShot => "one-shot",
-            Self::PersistentDaemon => "persistent-daemon",
+            Self::Persistent => "persistent-runtime",
         }
     }
 }
@@ -521,8 +521,8 @@ impl CachedBackendRouter {
         }
     }
 
-    pub(crate) fn for_persistent_daemon(mut self) -> Self {
-        self.runtime_class = AutorouteRuntimeClass::PersistentDaemon;
+    pub(crate) fn for_persistent_runtime(mut self) -> Self {
+        self.runtime_class = AutorouteRuntimeClass::Persistent;
         self
     }
 
@@ -537,9 +537,9 @@ impl CachedBackendRouter {
             .unwrap_or(true)
     }
 
-    /// Exact peers selected by at least one validated persistent-daemon
-    /// decision. Invalid autoroute state initializes only scalar recovery so
-    /// the daemon can become ready and report degraded routing per request.
+    /// Exact peers selected by at least one validated persistent-runtime
+    /// decision. Invalid autoroute state initializes only scalar recovery so a
+    /// daemon or watcher can become ready and report degraded routing per request.
     pub(crate) fn persistent_routes(&self) -> Result<Vec<ScanBackend>, AutorouteRoutingError> {
         if self.autoroute_state_is_invalid() {
             return Ok(vec![ScanBackend::CpuFallback]);
@@ -548,7 +548,7 @@ impl CachedBackendRouter {
         for decision in self.decisions.values() {
             let backend = decision.resolved_persistent_backend().ok_or_else(|| {
                 AutorouteRoutingError::calibration_not_persisted(
-                    "persisted autoroute decision has no complete persistent-daemon route evidence",
+                    "persisted autoroute decision has no complete persistent-runtime route evidence",
                 )
             })?;
             if !routes.contains(&backend) {
@@ -735,7 +735,7 @@ fn resolve_persisted_route(
         .get(&key)
         .and_then(|decision| match runtime_class {
             AutorouteRuntimeClass::OneShot => decision.measured_route(),
-            AutorouteRuntimeClass::PersistentDaemon => decision.resolved_persistent_route(),
+            AutorouteRuntimeClass::Persistent => decision.resolved_persistent_route(),
         });
     match route {
         Some(route) => Ok(route),
@@ -757,7 +757,7 @@ fn automatic_recovery_plan(
     if !selected_backend.is_gpu() {
         return Ok(None);
     }
-    let persistent_runtime = runtime_class == AutorouteRuntimeClass::PersistentDaemon;
+    let persistent_runtime = runtime_class == AutorouteRuntimeClass::Persistent;
     let route = decision
         .and_then(|decision| {
             decision.resolved_recovery_route(selected_backend, persistent_runtime)

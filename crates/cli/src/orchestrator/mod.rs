@@ -132,46 +132,93 @@ fn apply_host_runtime_limits(
     }
 }
 
-fn daemon_requires_gpu(
+fn persistent_runtime_requires_gpu(
+    surface: &str,
     backend_override: Option<keyhog_scanner::ScanBackend>,
     gpu_required_by_route: bool,
 ) -> Result<bool> {
     match backend_override {
         None => Ok(gpu_required_by_route),
         Some(backend) if backend.is_gpu() && gpu_required_by_route => Ok(true),
-        Some(backend) if backend.is_gpu() => Err(daemon_gpu_failure(format!(
-            "daemon --backend {} cannot be honored: this build and host have no eligible physical GPU path.",
-            backend.label()
-        ))),
+        Some(backend) if backend.is_gpu() => Err(persistent_runtime_gpu_failure(
+            surface,
+            format!(
+                "{surface} --backend {} cannot be honored: this build and host have no eligible physical GPU path.",
+                backend.label()
+            ),
+        )),
         Some(keyhog_scanner::ScanBackend::SimdCpu | keyhog_scanner::ScanBackend::CpuFallback) => {
             Ok(false)
         }
         Some(unknown) => anyhow::bail!(
-            "daemon backend {unknown:?} is not supported by this KeyHog build; choose auto, gpu-cuda, gpu-wgpu, simd, or cpu"
+            "{surface} backend {unknown:?} is not supported by this KeyHog build; choose auto, gpu-cuda, gpu-wgpu, simd, or cpu"
         ),
     }
 }
 
-fn validate_daemon_gpu_initialization(gpu_required: bool, gpu_ready: bool) -> Result<()> {
+fn persistent_runtime_gpu_failure(
+    surface: &str,
+    diagnostic: impl std::fmt::Display,
+) -> anyhow::Error {
+    if surface == "daemon" {
+        daemon_gpu_failure(diagnostic)
+    } else {
+        GpuUnavailableError::new(format!(
+            "{diagnostic} Run `keyhog backend --self-test` and repair the GPU driver/runtime, or run `keyhog {surface} --backend simd` or `keyhog {surface} --backend cpu`."
+        ))
+        .into()
+    }
+}
+
+fn validate_persistent_gpu_initialization(
+    surface: &str,
+    gpu_required: bool,
+    gpu_ready: bool,
+) -> Result<()> {
     if gpu_required && !gpu_ready {
-        return Err(daemon_gpu_failure(
-            "daemon GPU initialization failed: the detected physical GPU is unavailable or incompatible with the compiled scanner, driver, or runtime; refusing to announce readiness.",
+        return Err(persistent_runtime_gpu_failure(
+            surface,
+            format_args!("{surface} GPU initialization failed: the detected physical GPU is unavailable or incompatible with the compiled scanner, driver, or runtime; refusing to announce readiness."),
         ));
     }
     Ok(())
 }
 
-fn validate_daemon_gpu_warmup(
+fn validate_persistent_gpu_warmup(
+    surface: &str,
     gpu_required: bool,
     degrade_before: u64,
     degrade_after: u64,
 ) -> Result<()> {
     if gpu_required && degrade_after != degrade_before {
-        return Err(daemon_gpu_failure(
-            "daemon GPU warmup degraded before readiness; refusing to apply persistent warm autoroute evidence.",
+        return Err(persistent_runtime_gpu_failure(
+            surface,
+            format_args!("{surface} GPU warmup degraded before readiness; refusing to apply persistent warm autoroute evidence."),
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+fn daemon_requires_gpu(
+    backend_override: Option<keyhog_scanner::ScanBackend>,
+    gpu_required_by_route: bool,
+) -> Result<bool> {
+    persistent_runtime_requires_gpu("daemon", backend_override, gpu_required_by_route)
+}
+
+#[cfg(test)]
+fn validate_daemon_gpu_initialization(gpu_required: bool, gpu_ready: bool) -> Result<()> {
+    validate_persistent_gpu_initialization("daemon", gpu_required, gpu_ready)
+}
+
+#[cfg(test)]
+fn validate_daemon_gpu_warmup(
+    gpu_required: bool,
+    degrade_before: u64,
+    degrade_after: u64,
+) -> Result<()> {
+    validate_persistent_gpu_warmup("daemon", gpu_required, degrade_before, degrade_after)
 }
 
 pub(crate) use postprocess::render_credential;
@@ -446,8 +493,26 @@ impl DefaultScanRuntime {
     /// explicit GPU daemon require a proven warm accelerator before accepting
     /// requests; explicit CPU/SIMD daemons do not acquire an unused GPU route.
     pub(crate) fn prepare_persistent_daemon(
+        self,
+        backend_override: Option<keyhog_scanner::ScanBackend>,
+    ) -> Result<Self> {
+        self.prepare_persistent_runtime(backend_override, "daemon")
+    }
+
+    /// Prepare the foreground watcher as a warm compile-once runtime. Its
+    /// repeated file events must consume persistent timing evidence rather than
+    /// charging accelerator materialization to every save.
+    pub(crate) fn prepare_persistent_watch(
+        self,
+        backend_override: Option<keyhog_scanner::ScanBackend>,
+    ) -> Result<Self> {
+        self.prepare_persistent_runtime(backend_override, "watch")
+    }
+
+    fn prepare_persistent_runtime(
         mut self,
         backend_override: Option<keyhog_scanner::ScanBackend>,
+        surface: &'static str,
     ) -> Result<Self> {
         self.scanner.warm();
         let gpu_candidates = self.scanner.gpu_backend_candidates();
@@ -464,7 +529,7 @@ impl DefaultScanRuntime {
                 .initialize_simd_backend()
                 .map_err(|error| {
                     anyhow::anyhow!(
-                        "daemon requires SIMD but Hyperscan initialization failed: {error}. Run `keyhog backend --self-test` or choose --backend cpu"
+                        "{surface} requires SIMD but Hyperscan initialization failed: {error}. Run `keyhog backend --self-test` or choose --backend cpu"
                     )
                 })?;
         }
@@ -479,18 +544,19 @@ impl DefaultScanRuntime {
                 .any(|candidate| candidate.backend == backend && candidate.is_eligible()),
             _ => !gpu_routes.is_empty(),
         };
-        let gpu_must_be_ready = daemon_requires_gpu(backend_override, requested_gpu_is_eligible)?;
+        let gpu_must_be_ready =
+            persistent_runtime_requires_gpu(surface, backend_override, requested_gpu_is_eligible)?;
         let gpu_ready = gpu_must_be_ready
             && !gpu_routes.is_empty()
             && gpu_routes
                 .iter()
                 .all(|backend| self.scanner.warm_backend(*backend));
-        validate_daemon_gpu_initialization(gpu_must_be_ready, gpu_ready)?;
+        validate_persistent_gpu_initialization(surface, gpu_must_be_ready, gpu_ready)?;
         if gpu_must_be_ready {
             let warmup = keyhog_core::Chunk {
-                data: "keyhog daemon accelerator warmup\n".into(),
+                data: format!("keyhog {surface} accelerator warmup\n").into(),
                 metadata: keyhog_core::ChunkMetadata {
-                    source_type: "daemon-warmup".into(),
+                    source_type: format!("{surface}-warmup").into(),
                     ..Default::default()
                 },
             };
@@ -503,7 +569,8 @@ impl DefaultScanRuntime {
                 );
             }
             self.scanner.clear_fragment_cache();
-            validate_daemon_gpu_warmup(
+            validate_persistent_gpu_warmup(
+                surface,
                 gpu_must_be_ready,
                 degrade_before,
                 self.scanner.gpu_degrade_count(),
@@ -514,9 +581,10 @@ impl DefaultScanRuntime {
             gpu_ready,
             selected_gpu_routes = ?gpu_routes,
             gpu_must_be_ready,
-            "persistent daemon backends initialized"
+            surface,
+            "persistent runtime backends initialized"
         );
-        self.router = self.router.for_persistent_daemon();
+        self.router = self.router.for_persistent_runtime();
         Ok(self)
     }
 

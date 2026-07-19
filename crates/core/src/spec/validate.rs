@@ -457,6 +457,20 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
             )));
         }
     }
+    if let (Some(low), Some(high)) = (spec.entropy_low, spec.entropy_high) {
+        if low > high {
+            issues.push(QualityIssue::Error(format!(
+                "entropy_low {low} must not exceed entropy_high {high}"
+            )));
+        }
+    }
+    if let (Some(high), Some(very_high)) = (spec.entropy_high, spec.entropy_very_high) {
+        if high > very_high {
+            issues.push(QualityIssue::Error(format!(
+                "entropy_high {high} must not exceed entropy_very_high {very_high}"
+            )));
+        }
+    }
     if let Some(plausibility) = spec.plausibility {
         for (name, score) in [
             (

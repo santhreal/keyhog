@@ -22,9 +22,13 @@
 //!
 //! Gated on `feature = "entropy"` (the tokenizer dep rides that feature).
 
+use std::cell::RefCell;
+use std::num::NonZeroUsize;
 use std::sync::LazyLock;
 
+use lru::LruCache;
 use tiktoken_rs::{cl100k_base, CoreBPE};
+use zeroize::Zeroizing;
 
 /// The compiled default bytes-per-token suppression bound. A candidate whose
 /// `cl100k_base` bytes-per-token is STRICTLY GREATER than the ACTIVE bound is
@@ -49,6 +53,65 @@ pub(crate) const ENTROPY_BPE_MAX_BYTES_PER_TOKEN: f64 =
 static CL100K: LazyLock<CoreBPE> =
     LazyLock::new(|| cl100k_base().expect("tiktoken cl100k_base ranks are embedded in the crate"));
 
+/// Bound retained candidate material to at most 64 KiB per scanner worker.
+/// Longer values still tokenize exactly but do not remain resident.
+const TOKEN_CACHE_ENTRIES: usize = 256;
+const TOKEN_CACHE_MAX_VALUE_BYTES: usize = 256;
+
+struct TokenCountCacheEntry {
+    /// Exact bytes make an FNV collision a miss rather than a recall-affecting
+    /// cached verdict. `Zeroizing` scrubs candidate material on replacement,
+    /// eviction, thread exit, and explicit test reset.
+    value: Zeroizing<Box<[u8]>>,
+    tokens: usize,
+}
+
+thread_local! {
+    static TOKEN_COUNT_CACHE: RefCell<LruCache<u64, TokenCountCacheEntry>> = RefCell::new(
+        LruCache::new(
+            NonZeroUsize::new(TOKEN_CACHE_ENTRIES).unwrap_or(NonZeroUsize::MIN)
+        )
+    );
+    #[cfg(test)]
+    static TOKENIZER_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+fn token_count_uncached(s: &str) -> usize {
+    #[cfg(test)]
+    TOKENIZER_CALLS.with(|calls| calls.set(calls.get().saturating_add(1)));
+    CL100K.encode_ordinary(s).len()
+}
+
+fn token_count_with_key(s: &str, key: u64) -> usize {
+    if s.len() > TOKEN_CACHE_MAX_VALUE_BYTES {
+        return token_count_uncached(s);
+    }
+    if let Some(tokens) = TOKEN_COUNT_CACHE.with(|cache| {
+        cache.borrow_mut().get(&key).and_then(|entry| {
+            let cached: &[u8] = entry.value.as_ref().as_ref();
+            (cached == s.as_bytes()).then_some(entry.tokens)
+        })
+    }) {
+        return tokens;
+    }
+
+    let tokens = token_count_uncached(s);
+    TOKEN_COUNT_CACHE.with(|cache| {
+        cache.borrow_mut().put(
+            key,
+            TokenCountCacheEntry {
+                value: Zeroizing::new(s.as_bytes().to_vec().into_boxed_slice()),
+                tokens,
+            },
+        );
+    });
+    tokens
+}
+
+fn token_count(s: &str) -> usize {
+    token_count_with_key(s, crate::util_hash::hash_fast(s.as_bytes()))
+}
+
 /// UTF-8 bytes per BPE token for `s` under cl100k_base. Higher = more
 /// compressible = more word-like. `cl100k_base` is byte-level, so using Unicode
 /// scalar counts would artificially lower non-ASCII text and let ordinary
@@ -57,7 +120,7 @@ pub(crate) fn bytes_per_token(s: &str) -> f64 {
     if s.is_empty() {
         return 0.0;
     }
-    let tokens = CL100K.encode_ordinary(s).len();
+    let tokens = token_count(s);
     if tokens == 0 {
         return 0.0;
     }
@@ -72,6 +135,17 @@ pub(crate) fn bytes_per_token(s: &str) -> f64 {
 /// the config value is the single runtime authority.
 pub(crate) fn is_word_like_low_bpe(s: &str, max_bytes_per_token: f64) -> bool {
     bytes_per_token(s) > max_bytes_per_token
+}
+
+#[cfg(test)]
+fn reset_token_cache_for_test() {
+    TOKEN_COUNT_CACHE.with(|cache| cache.borrow_mut().clear());
+    TOKENIZER_CALLS.with(|calls| calls.set(0));
+}
+
+#[cfg(test)]
+fn tokenizer_calls_for_test() -> usize {
+    TOKENIZER_CALLS.with(std::cell::Cell::get)
 }
 
 #[cfg(test)]

@@ -85,7 +85,8 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
         "keyhog watch",
         false,
         watch_roots.first().map(PathBuf::as_path),
-    )?;
+    )?
+    .prepare_persistent_watch(backend_override)?;
     let detector_count = scan_runtime.detector_count();
 
     if !args.quiet {
@@ -329,6 +330,11 @@ fn scan_file(
     if data.is_empty() {
         return Ok(());
     }
+    // Bind watch to the same full-source-size provenance as the ordinary
+    // filesystem source. Autoroute keys distinguish a complete file from a
+    // transformed/windowed payload, so `None` here made an editor save miss
+    // calibration produced by `keyhog scan` over the identical file.
+    let source_size_bytes = bytes.len() as u64;
 
     let chunk = Chunk {
         data: data.into(),
@@ -341,7 +347,7 @@ fn scan_file(
             author: None,
             date: None,
             mtime_ns: None,
-            size_bytes: None,
+            size_bytes: Some(source_size_bytes),
             decoded_span: None,
         },
     };

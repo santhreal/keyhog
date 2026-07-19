@@ -269,6 +269,61 @@ fn keyword_free_operator_margin_rejects_nonfinite_and_out_of_domain_values() {
 }
 
 #[test]
+fn entropy_threshold_tiers_reject_inverted_detector_policy() {
+    let mut detector = keyhog_core::detector_spec_by_id("generic-secret")
+        .expect("embedded entropy owner must load")
+        .clone();
+
+    detector.entropy_low = Some(4.6);
+    detector.entropy_high = Some(4.5);
+    let low_over_high = validate_detector(&detector);
+    assert!(
+        low_over_high.iter().any(|issue| matches!(
+            issue,
+            QualityIssue::Error(message)
+                if message == "entropy_low 4.6 must not exceed entropy_high 4.5"
+        )),
+        "inverted low/high tiers were accepted: {low_over_high:#?}"
+    );
+
+    detector.entropy_low = Some(3.0);
+    detector.entropy_high = Some(5.9);
+    detector.entropy_very_high = Some(5.8);
+    let high_over_very_high = validate_detector(&detector);
+    assert!(
+        high_over_very_high.iter().any(|issue| matches!(
+            issue,
+            QualityIssue::Error(message)
+                if message == "entropy_high 5.9 must not exceed entropy_very_high 5.8"
+        )),
+        "inverted high/very-high tiers were accepted: {high_over_very_high:#?}"
+    );
+}
+
+#[test]
+fn entropy_threshold_tiers_accept_equal_and_strictly_ordered_boundaries() {
+    let mut detector = keyhog_core::detector_spec_by_id("generic-secret")
+        .expect("embedded entropy owner must load")
+        .clone();
+
+    detector.entropy_low = Some(4.5);
+    detector.entropy_high = Some(4.5);
+    detector.entropy_very_high = Some(5.8);
+    assert!(
+        validate_detector(&detector).is_empty(),
+        "equal adjacent tiers are a valid inclusive boundary"
+    );
+
+    detector.entropy_low = Some(3.0);
+    detector.entropy_high = Some(4.5);
+    detector.entropy_very_high = Some(5.8);
+    assert!(
+        validate_detector(&detector).is_empty(),
+        "the shipped monotonic detector policy must remain valid"
+    );
+}
+
+#[test]
 fn entropy_fallback_metadata_requires_entropy_identity_and_labels() {
     let mut detector = detector_with_pattern("token=([A-Za-z0-9]+)");
     detector.entropy_fallback = Some(keyhog_core::EntropyFallbackMetadata {

@@ -130,6 +130,56 @@ fn empty_is_not_word_like() {
 }
 
 #[test]
+fn repeated_candidate_reuses_one_exact_tokenization() {
+    reset_token_cache_for_test();
+    let candidate = "PInvoke.User32.WindowMessage.WM_SYSCOLORCHANGE";
+    let first = bytes_per_token(candidate);
+    let second = bytes_per_token(candidate);
+
+    assert_eq!(first.to_bits(), second.to_bits());
+    assert_eq!(
+        tokenizer_calls_for_test(),
+        1,
+        "an exact repeated candidate should tokenize once per worker"
+    );
+}
+
+#[test]
+fn equal_hash_distinct_candidates_never_reuse_a_bpe_verdict() {
+    reset_token_cache_for_test();
+    let forced_collision = 0x5eed_u64;
+    let word_like = "PInvoke.User32.WindowMessage.WM_SYSCOLORCHANGE";
+    let secret = "ghp_a8Xk9mQ2pL5vR7tN3wErtY1zAbCdEf0GhIj";
+
+    let word_tokens = token_count_with_key(word_like, forced_collision);
+    let secret_tokens = token_count_with_key(secret, forced_collision);
+    assert_eq!(word_tokens, CL100K.encode_ordinary(word_like).len());
+    assert_eq!(secret_tokens, CL100K.encode_ordinary(secret).len());
+    assert_ne!(word_like.as_bytes(), secret.as_bytes());
+    assert_eq!(
+        tokenizer_calls_for_test(),
+        2,
+        "exact-byte verification must turn a hash collision into a cache miss"
+    );
+}
+
+#[test]
+fn oversized_candidates_are_exact_but_never_retained() {
+    reset_token_cache_for_test();
+    let candidate = "aB3/".repeat(TOKEN_CACHE_MAX_VALUE_BYTES / 2);
+    assert!(candidate.len() > TOKEN_CACHE_MAX_VALUE_BYTES);
+    let first = bytes_per_token(&candidate);
+    let second = bytes_per_token(&candidate);
+
+    assert_eq!(first.to_bits(), second.to_bits());
+    assert_eq!(
+        tokenizer_calls_for_test(),
+        2,
+        "oversized candidate bytes must not accumulate in the worker cache"
+    );
+}
+
+#[test]
 fn unicode_efficiency_uses_utf8_bytes_not_scalar_count() {
     let localized_prose = "設定ファイルの秘密値をここに入力してください";
     let tokens = CL100K.encode_ordinary(localized_prose).len();

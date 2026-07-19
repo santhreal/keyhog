@@ -305,6 +305,9 @@ trials:
   chooses from warm accelerator trials. Startup derives its required peer set
   from the validated decision table. It does not warm unrelated eligible peers,
   and it refuses readiness if any selected peer cannot be warmed.
+- `keyhog watch` is also a compile-once persistent runtime. It warms every
+  selected route before announcing readiness and uses warm evidence for later
+  file events; it does not repeatedly price the same cold backend startup.
 
 Decoded derived buffers are part of the measured route rather than a hidden
 runtime choice. Scalar and SIMD candidates keep their own backend for decoded

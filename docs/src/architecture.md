@@ -162,7 +162,7 @@ inspectable.
 | One in-process scan | `keyhog scan ... --daemon=off` | Full orchestrator; persisted one-shot autoroute evidence or an explicit diagnostic `--backend`. |
 | Large tree, multiple inputs, Git, cloud, container, binary, or live verification | In-process orchestrator | Fused or coalesced batches; the daemon is not eligible even when it is running. |
 | Repeated eligible stdin or single-file scans on Unix | `keyhog daemon start`, then `keyhog scan ...` | Client checks request eligibility and peer identity; a calibrated daemon uses warm-runtime autoroute evidence, invalid startup state is labeled `autoroute-recovery`, and persisted quarantine is labeled `autoroute-degraded`. Every affected request reports scalar recovery. |
-| Continuous local directory monitoring | `keyhog watch` | Foreground watcher with its own compiled scanner; not the daemon and not reported by `daemon status`. |
+| Continuous local directory monitoring | `keyhog watch` | Foreground watcher with its own compiled scanner and warm-runtime autoroute policy; not the daemon and not reported by `daemon status`. |
 
 Persisted backend selection lives under
 `crates/cli/src/orchestrator/dispatch/backend.rs` and

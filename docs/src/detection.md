@@ -312,7 +312,7 @@ relaxes a detector to make a backend look faster.
 | `--fast`, `--deep`, or `--precision` | Changes the resolved feature and confidence policy, so results may differ by design | Each preset has a distinct config identity and calibration coverage |
 | Explicit `--backend cpu|simd|gpu-cuda|gpu-wgpu` | Intended to be parity-identical; it is a diagnostic/benchmark override, not proof | Bypasses autoroute and does not create reusable fastest-correct evidence |
 | Input size, chunk count, source execution class, decoder-kind mask, decode candidate count or byte bucket, decoder uncertainty, or full-source-size availability | The input itself can change findings; backend choice must not | Selects a different exact workload key, including whether each source class's size bucket came from full-source or payload evidence |
-| One-shot process versus ready daemon | None: runtime lifetime cannot change detector policy or canonical matches | The same timing record derives a cold-aware one-shot route and a warm persistent-daemon route; the winners may differ |
+| One-shot process versus ready daemon/watch runtime | None: runtime lifetime cannot change detector policy or canonical matches | The same timing record derives a cold-aware one-shot route and a warm persistent-runtime route; the winners may differ |
 
 ### Configuration Presets
 

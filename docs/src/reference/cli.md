@@ -230,7 +230,9 @@ connect to or appear in `keyhog daemon status`; the independent `keyhog daemon`
 is a Unix-socket service used only by eligible `keyhog scan --daemon` requests.
 Pass several roots to monitor them with a single watcher; nested or
 duplicate roots fold into their covering parent, mirroring `keyhog scan`.
-Every root must be a directory.
+Every root must be a directory. The scanner and selected backend stay warm:
+automatic routing consumes the persisted warm-runtime decision for each exact
+single-file workload, while `--backend` remains a diagnostic override.
 
 ```sh
 keyhog watch src/                 # watch the source tree

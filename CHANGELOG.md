@@ -6,6 +6,23 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Fixed
 
+- Detector TOML validation now rejects inverted entropy tiers before scanner
+  compilation, with exact diagnostics for `entropy_low > entropy_high` and
+  `entropy_high > entropy_very_high`.
+- Watch-mode file chunks now carry their complete raw file size into autoroute,
+  so an editor save reuses the same measured workload identity as an ordinary
+  filesystem scan instead of appearing to be a transformed payload.
+- Watch mode now warms its selected backend before announcing readiness and
+  consumes persistent-runtime autoroute evidence instead of pricing every file
+  event as a cold one-shot scan.
+- Autoroute calibration now aborts without writing when an existing cache is
+  temporarily unreadable. A sharing violation, permission failure, or short
+  storage read error can no longer erase other calibrated profiles by being
+  treated as corrupt replacement input.
+- Repeated detector-owned BPE checks now reuse a bounded per-worker token count
+  only after exact-byte verification. Hash collisions recompute, oversized
+  candidates remain uncached, and retained candidate bytes are zeroized on
+  eviction.
 - Watch-mode burst dedup now binds the one-way credential hash and complete
   source location. Replacing a credential at the same detector and byte span
   emits immediately instead of being mistaken for a duplicate save event.
