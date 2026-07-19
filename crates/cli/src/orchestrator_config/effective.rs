@@ -393,6 +393,8 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
 pub(crate) fn autoroute_config_digest(resolved: &ResolvedScanConfig) -> u64 {
     let mut h = StableHasher::new("autoroute-config-digest");
     let s = &resolved.scanner;
+    h.field_bool("scanner.profile", s.profile);
+    h.field_bool("scanner.perf_trace", s.perf_trace);
     h.field_f64_bits("scanner.min_confidence", s.min_confidence);
     h.field_bool("scanner.ml_enabled", s.ml_enabled);
     h.field_bool(

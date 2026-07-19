@@ -247,9 +247,11 @@ which backend is fastest:
   the portable host residual, so their timing cannot borrow hidden SIMD work.
 - Each scan preset (default, `--fast`, `--deep`, `--precision`) is calibrated
   separately.
-- Flags hashed into the scan config (for example `--threads` or
-  `--min-confidence`) fork the decision; `keyhog calibrate-autoroute` sweeps the
-  documented presets so the common combinations are covered.
+- Flags hashed into the scan config (for example `--threads`,
+  `--min-confidence`, `--profile`, or `--perf-trace`) fork the decision;
+  instrumentation cannot reuse timings measured without its hot-path overhead.
+  `keyhog calibrate-autoroute` sweeps the documented presets so the common
+  combinations are covered.
 - Candidate-shape knobs (`--min-secret-len`, `--entropy-threshold`, decode depth,
   entropy/ML/keyword floors) fork the decision, because they change what reaches
   scan-phase output and can therefore change backend crossover.

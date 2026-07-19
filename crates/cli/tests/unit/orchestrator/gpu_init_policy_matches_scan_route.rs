@@ -265,6 +265,28 @@ fn autoroute_config_digest_includes_decoded_payload_validation() {
 }
 
 #[test]
+fn autoroute_config_digest_includes_hot_path_instrumentation() {
+    let baseline = keyhog_scanner::ScannerConfig::default();
+    let baseline_digest = API.autoroute_config_digest_for_scanner(baseline.clone());
+
+    let mut profiled = baseline.clone();
+    profiled.profile = true;
+    assert_ne!(
+        baseline_digest,
+        API.autoroute_config_digest_for_scanner(profiled),
+        "profile instrumentation changes hot-path cost and cannot reuse unprofiled route evidence"
+    );
+
+    let mut traced = baseline;
+    traced.perf_trace = true;
+    assert_ne!(
+        baseline_digest,
+        API.autoroute_config_digest_for_scanner(traced),
+        "perf-trace instrumentation changes hot-path cost and cannot reuse untraced route evidence"
+    );
+}
+
+#[test]
 fn canonical_calibration_shares_normal_identity_but_gpu_exclusion_is_isolated() {
     let mut normal = scan_args(&["scan", "--no-config", "--stdin"]);
     let normal_digest = API

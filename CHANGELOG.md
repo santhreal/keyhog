@@ -52,6 +52,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Autoroute inspection now renders KeyHog-owned source execution classes by
   privacy-safe canonical name alongside their digest. Unknown library-provided
   metadata remains digest-only instead of being echoed into diagnostics.
+- Autoroute config identity now includes profile and performance-trace
+  instrumentation, preventing timed routes from reusing evidence measured
+  under a different hot-path cost model.
 
 ## [0.5.41] - 2026-07-18
 
