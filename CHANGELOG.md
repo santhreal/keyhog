@@ -6,6 +6,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Fixed
 
+- GPU MoE dispatch now reuses its uniform buffer and bind group with each
+  exclusive pooled buffer set, validates device buffer and workgroup limits
+  before submission, and recovers from a poisoned pool without panicking.
 - Source construction now returns typed unknown-name, unavailable-feature, and
   invalid-configuration errors. Canonical source names use hyphens, and retired
   underscore aliases are rejected with their exact replacement instead of being

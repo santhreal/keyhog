@@ -535,18 +535,59 @@ struct MoeBufferPool {
     spare: Vec<MoeBufferSet>,
 }
 
-/// A checked-out set of MoE dispatch buffers. Returned to the pool on drop
-/// via [`MoeBufferPool::checkin`]. The params buffer is NOT pooled, it is
-/// 16 bytes and created fresh per dispatch to prevent concurrent batch_size
-/// races (the params buffer is the one shared mutable GPU state that must
-/// remain per-dispatch).
+/// A checked-out set of MoE dispatch buffers. The complete set is exclusive to
+/// one dispatch until check-in, so the params buffer can be reused safely
+/// without sharing mutable batch state between concurrent dispatches.
 struct MoeBufferSet {
     input: wgpu::Buffer,
     output: wgpu::Buffer,
     staging: wgpu::Buffer,
+    params: wgpu::Buffer,
+    bind_group: wgpu::BindGroup,
     /// The batch_size this set was allocated for. Used to verify the set
     /// is large enough before reuse (wgpu buffers are immutable in size).
     alloc_batch_size: usize,
+}
+
+struct MoeDispatchLayout {
+    batch_size: u32,
+    input_bytes: u64,
+    output_bytes: u64,
+    workgroups: u32,
+}
+
+impl MoeDispatchLayout {
+    fn for_device(batch_size: usize, limits: &wgpu::Limits) -> Result<Self, &'static str> {
+        let batch_size_u32 = u32::try_from(batch_size)
+            .map_err(|_| "candidate count exceeds the GPU batch index width")?;
+        let input_bytes = batch_size
+            .checked_mul(INPUT_DIM)
+            .and_then(|values| values.checked_mul(std::mem::size_of::<f32>()))
+            .and_then(|bytes| u64::try_from(bytes).ok())
+            .ok_or("GPU MoE input-buffer size overflow")?;
+        let output_bytes = batch_size
+            .checked_mul(std::mem::size_of::<f32>())
+            .and_then(|bytes| u64::try_from(bytes).ok())
+            .ok_or("GPU MoE output-buffer size overflow")?;
+        let storage_limit = u64::from(limits.max_storage_buffer_binding_size);
+        if input_bytes > storage_limit || output_bytes > storage_limit {
+            return Err("GPU MoE batch exceeds the device storage-buffer binding limit");
+        }
+        if input_bytes > limits.max_buffer_size || output_bytes > limits.max_buffer_size {
+            return Err("GPU MoE batch exceeds the device buffer-size limit");
+        }
+        let workgroups =
+            batch_size_u32.div_ceil(crate::ml_scorer::model_arch::WORKGROUP_SIZE as u32);
+        if workgroups > limits.max_compute_workgroups_per_dimension {
+            return Err("GPU MoE batch exceeds the device compute-workgroup limit");
+        }
+        Ok(Self {
+            batch_size: batch_size_u32,
+            input_bytes,
+            output_bytes,
+            workgroups,
+        })
+    }
 }
 
 impl MoeBufferPool {
@@ -611,93 +652,107 @@ fn dispatch_moe_batch(
     let batch_size = features.len();
     let device = gpu.device();
     let queue = gpu.queue();
-    let output_size = (batch_size * std::mem::size_of::<f32>()) as u64;
+    let layout = match MoeDispatchLayout::for_device(batch_size, &gpu.device_limits) {
+        Ok(layout) => layout,
+        Err(reason) => {
+            moe_runtime_degrade(reason);
+            return None;
+        }
+    };
 
     // Checkout pooled buffers (reused across dispatches, eliminating
     // per-dispatch buffer allocation, the dominant non-GPU overhead for
     // large MoE batches in coalesced scanning). The global mutex is held
     // only for the pop/push, not during GPU compute or readback.
     let bufs = {
-        let mut pool = MOE_BUFFER_POOL.lock().unwrap();
-        pool.try_checkout(batch_size)
+        match MOE_BUFFER_POOL.lock() {
+            Ok(mut pool) => pool.try_checkout(batch_size),
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    "GPU MoE buffer pool is poisoned; allocating an isolated buffer set"
+                );
+                None
+            }
+        }
     };
     let bufs = match bufs {
         Some(set) => set,
         None => {
-            // No spare set or too small, allocate fresh. The input buffer
-            // uses COPY_DST so we can write_buffer into it for reuse.
-            let input_bytes = (batch_size * INPUT_DIM * std::mem::size_of::<f32>()) as u64;
-            let output_bytes = (batch_size * std::mem::size_of::<f32>()) as u64;
+            // No spare set or too small, allocate one complete reusable
+            // dispatch set. The bind group is immutable and points at these
+            // same buffers, so it is safe to retain with the exclusive set.
+            let input = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("moe_input_pooled"),
+                size: layout.input_bytes,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            let output = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("moe_output_pooled"),
+                size: layout.output_bytes,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            });
+            let staging = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("moe_staging_pooled"),
+                size: layout.output_bytes,
+                usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            let params = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("moe_params_pooled"),
+                size: std::mem::size_of::<GpuParams>() as u64,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("moe_bg_pooled"),
+                layout: &gpu.bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: gpu.weights_buf.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: input.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: output.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: params.as_entire_binding(),
+                    },
+                ],
+            });
             MoeBufferSet {
-                input: device.create_buffer(&wgpu::BufferDescriptor {
-                    label: Some("moe_input_pooled"),
-                    size: input_bytes,
-                    usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-                    mapped_at_creation: false,
-                }),
-                output: device.create_buffer(&wgpu::BufferDescriptor {
-                    label: Some("moe_output_pooled"),
-                    size: output_bytes,
-                    usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-                    mapped_at_creation: false,
-                }),
-                staging: device.create_buffer(&wgpu::BufferDescriptor {
-                    label: Some("moe_staging_pooled"),
-                    size: output_bytes,
-                    usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-                    mapped_at_creation: false,
-                }),
+                input,
+                output,
+                staging,
+                params,
+                bind_group,
                 alloc_batch_size: batch_size,
             }
         }
     };
 
-    // Per-dispatch params buffer (NOT pooled). Per-chunk ML scoring runs
-    // dispatch_moe_batch CONCURRENTLY across chunks (the rayon par_iter in
-    // scan_coalesced). A single shared params buffer written by every
-    // concurrent dispatch is a data race (Law 7): dispatch A writes
-    // batch_size 136, dispatch B overwrites it with 72 before A's compute
-    // reads it, so A processes only 72 of its 136 candidates and the tail
-    // 64 outputs are never written, read back as 0.0 and dropped below the
-    // confidence floor. Each dispatch owning its params buffer removes the
-    // only shared mutable GPU state across concurrent MoE batches.
+    // Each checked-out set owns its params buffer until this dispatch has
+    // completed and read back. This preserves per-dispatch batch_size isolation
+    // under rayon concurrency without paying a device-buffer allocation on
+    // every batch.
     let params = GpuParams {
-        batch_size: batch_size as u32,
+        batch_size: layout.batch_size,
         _pad: [0; 3],
     };
-    let params_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("moe_params"),
-        contents: bytemuck::bytes_of(&params),
-        usage: wgpu::BufferUsages::UNIFORM,
-    });
 
     // Upload input features via queue.write_buffer (pooled buffer is
     // COPY_DST). `&[[f32; INPUT_DIM]]` is already a contiguous f32 block,
     // so reinterpret in place (no flatten allocation).
     queue.write_buffer(&bufs.input, 0, bytemuck::cast_slice(features));
-
-    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("moe_bg"),
-        layout: &gpu.bind_group_layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: gpu.weights_buf.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: bufs.input.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 2,
-                resource: bufs.output.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 3,
-                resource: params_buf.as_entire_binding(),
-            },
-        ],
-    });
+    queue.write_buffer(&bufs.params, 0, bytemuck::bytes_of(&params));
 
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("moe_encoder"),
@@ -709,19 +764,17 @@ fn dispatch_moe_batch(
             timestamp_writes: None,
         });
         pass.set_pipeline(&gpu.pipeline);
-        pass.set_bind_group(0, &bind_group, &[]);
-        let workgroups =
-            (batch_size as u32).div_ceil(crate::ml_scorer::model_arch::WORKGROUP_SIZE as u32);
-        pass.dispatch_workgroups(workgroups, 1, 1);
+        pass.set_bind_group(0, &bufs.bind_group, &[]);
+        pass.dispatch_workgroups(layout.workgroups, 1, 1);
     }
 
-    encoder.copy_buffer_to_buffer(&bufs.output, 0, &bufs.staging, 0, output_size);
+    encoder.copy_buffer_to_buffer(&bufs.output, 0, &bufs.staging, 0, layout.output_bytes);
     queue.submit(std::iter::once(encoder.finish()));
 
     // Read back results, slice only the portion we copied (the pooled
     // staging buffer may be larger than this batch if it was allocated
     // for a previous larger batch).
-    let slice = bufs.staging.slice(..output_size);
+    let slice = bufs.staging.slice(..layout.output_bytes);
     let (sender, receiver) = std::sync::mpsc::channel();
     slice.map_async(wgpu::MapMode::Read, move |result| {
         if sender.send(result).is_err() {
