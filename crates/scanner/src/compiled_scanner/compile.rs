@@ -31,6 +31,8 @@ impl CompiledScanner {
         gpu_policy: GpuInitPolicy,
         tuning_config: &ScannerTuningConfig,
     ) -> Result<Self> {
+        crate::entropy::policy::validate_feature_compatibility(&detectors)
+            .map_err(crate::error::ScanError::Config)?;
         // LAW10: cfg-only Hyperscan tuning marker; no runtime effect.
         #[cfg(not(feature = "simd"))]
         let _tuning_config = tuning_config;

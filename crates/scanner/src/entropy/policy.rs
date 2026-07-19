@@ -1,5 +1,46 @@
 use keyhog_core::{DetectorSpec, EntropyShapeSpec};
 
+/// Reject detector policy that this scanner artifact cannot execute.
+///
+/// Run this before matcher construction. A detector-declared mechanism is part
+/// of the finding contract, so compiling the detector while omitting that
+/// mechanism would create a different detector under the same identity.
+#[cfg(not(feature = "entropy"))]
+pub(crate) fn validate_feature_compatibility(detectors: &[DetectorSpec]) -> Result<(), String> {
+    let entropy_detectors = detectors
+        .iter()
+        .filter(|detector| detector.owns_entropy_policy())
+        .map(|detector| detector.id.as_str())
+        .collect::<Vec<_>>();
+    if entropy_detectors.is_empty() {
+        return Ok(());
+    }
+    let bpe_detectors = detectors
+        .iter()
+        .filter(|detector| detector.bpe_enabled == Some(true))
+        .map(|detector| detector.id.as_str())
+        .collect::<Vec<_>>();
+    let bpe_detail = if bpe_detectors.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "; BPE policy is also enabled for {}",
+            bpe_detectors.join(", ")
+        )
+    };
+    Err(format!(
+        "scanner was built without the `entropy` feature, but detector entropy policy is enabled for {}{bpe_detail}; rebuild with `--features entropy` or use a detector corpus without entropy policy",
+        entropy_detectors.join(", ")
+    ))
+}
+
+#[cfg(feature = "entropy")]
+pub(crate) const fn validate_feature_compatibility(
+    _detectors: &[DetectorSpec],
+) -> Result<(), String> {
+    Ok(())
+}
+
 /// Length-bucketed detector floor compiled into parallel primitive arrays.
 /// Runtime lookup performs one binary search and never walks optional TOML
 /// fields or substitutes a scanner-owned threshold.

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Reject detector corpora with entropy fallback or BPE policy when the scanner
+  artifact lacks the `entropy` feature. The public compile boundary reports the
+  affected detector IDs and corrective build feature before constructing
+  matchers.
 - Replace the hardcoded lower-dash entropy exception with one compiled
   detector-TOML shape matcher covering typed alphabets, optional grouping,
   padding, diversity, and detector-owned floors. Ambiguous shape lists fail

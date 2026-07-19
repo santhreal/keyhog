@@ -2,6 +2,8 @@
 
 mod support;
 
+#[path = "gap/entropy_feature_policy_fails_closed.rs"]
+pub mod entropy_feature_policy_fails_closed;
 pub mod concurrent;
 pub mod contract;
 pub mod integration;
