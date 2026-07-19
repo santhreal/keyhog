@@ -9,6 +9,7 @@ name = "Postman API Key"
 service = "postman"
 severity = "high"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
+decode_transforms = { reverse_prefixes = ["PMAK-"], caesar_prefixes = ["PMAK-"] }
 # PMAK- is a distinctive, fixed-shape vendor prefix (24-hex + 34-hex body),
 # but it is NOT in the scanner's KNOWN_PREFIXES floor list, so the all-hex
 # body scores below the 0.40 global floor on entropy alone and a real key is

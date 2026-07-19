@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add detector-owned `decode_transforms` policy for reverse and Caesar
+  admission, validate its literal prefixes, and bind it into detector identity.
+
 - Add `complete_after_recovery` as a complete scan terminal state, preserve
   bounded backend-recovery evidence across report formats, and advance the
   versioned JSON contract to 1.7 and JSONL contract to 1.8.

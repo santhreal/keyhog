@@ -613,7 +613,7 @@ impl CachedBackendRouter {
             batch,
             self.pattern_count,
             phase1_plan.summary(),
-            self.decode_workload_plan,
+            self.decode_workload_plan.clone(),
         ) {
             Ok(key) => key,
             Err(error) => {
@@ -913,7 +913,7 @@ impl MeasuredBackendRouter {
             batch,
             self.pattern_count,
             phase1_plan.summary(),
-            self.decode_workload_plan,
+            self.decode_workload_plan.clone(),
         ) {
             Ok(key) => key,
             Err(error) if !self.calibration_mode => {

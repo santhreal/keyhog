@@ -442,7 +442,7 @@ pub(super) fn decode_workload_sketch(
     if !decode_plan.enabled() {
         return Ok(DecodeAdmissionSketch::NONE);
     }
-    let plan = decode_sample_plan(batch, decode_plan)?;
+    let plan = decode_sample_plan(batch, decode_plan.clone())?;
     let mut sampled = 0usize;
     let mut sketch = DecodeAdmissionSketch::NONE;
 

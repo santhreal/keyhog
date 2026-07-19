@@ -260,6 +260,11 @@ suppression policy, weak-anchor state, and compiled companions. Those policies
 remain separate modules by responsibility, but their runtime ownership and
 index alignment live in one structure rather than parallel vectors.
 
+The same plan owner compiles detector `decode_transforms` declarations into one
+active-corpus reverse and Caesar admission program. The decoders do not read the
+scanner-global confidence prefix list. A custom corpus therefore changes both
+matching and evasion recovery through the same detector digest.
+
 **The rule.** Emission paths produce `CandidateMatch` values and typed signals;
 `adjudicate_match` owns the ordered suppression verdict. Path owners may compute
 context-specific facts (entropy shape, generic bridge boundaries, named
@@ -351,6 +356,7 @@ table.
 | Retrain / improve the ML model | `ml/retrain_loop.sh` (+ `ml/README.md`) |
 | Change an entropy entry path or weak-anchor floor | the owning detector TOML (`entropy_roles`, `entropy_floor`, `entropy_high`) |
 | Add or tune offline validation | the owning detector TOML `validators` declaration |
+| Add or tune reverse or Caesar recovery | the owning detector TOML `decode_transforms` declaration |
 | Add an input source | `crates/sources/src/` |
 | Add live verification for a detector | `[detector.verify]` in the TOML + `crates/verifier/src/verify/` |
 | Change output format / exit codes | `crates/cli/src/format.rs`, `reporting.rs` |

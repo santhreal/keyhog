@@ -9,6 +9,7 @@ name = "GitLab Personal Access Token"
 service = "gitlab"
 severity = "critical"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
+decode_transforms = { reverse_prefixes = ["glpat-"], caesar_prefixes = ["glpat-"] }
 validators = [{ type = "pattern-shape", prefixes = ["glpat-"], allow_overlong = true }]
 keywords = ["glpat-", "gitlab"]
 

@@ -10,6 +10,7 @@ name = "Clerk Frontend API Key"
 service = "clerk"
 severity = "medium"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
+decode_transforms = { reverse_prefixes = ["pk_live_", "pk_test_"], caesar_prefixes = ["pk_live_", "pk_test_"] }
 keywords = ["pk_live_", "pk_test_"]
 
 [[detector.patterns]]

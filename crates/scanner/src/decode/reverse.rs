@@ -1,8 +1,6 @@
 use super::pipeline::{decode_candidate_refs_exact, with_extracted_value_spans};
 use super::{DecodeAdmissionSketch, Decoder};
-use aho_corasick::AhoCorasick;
 use keyhog_core::Chunk;
-use std::sync::LazyLock;
 
 /// Match secrets that have been reversed character-by-character to dodge a
 /// naïve byte-substring scan. Cheap evasion the adversarial corpus
@@ -25,51 +23,12 @@ const MIN_REVERSE_LEN: usize = super::util::MIN_EVASION_DECODE_LEN;
 /// sibling Caesar decoder names the same kind of gate `MIN_ALNUM_RUN`.
 const MIN_REVERSE_ALNUM_RUN: usize = 12;
 
-/// Shortest known-prefix length admitted into the reverse-decode gate. The only
-/// 2-char [`crate::confidence::KNOWN_PREFIXES`] entry (`0x`) is deliberately
-/// excluded: it appears by random chance in ~1.6% of long base64 strings and
-/// drove spurious findings on the base64-protobuf decoy class (see
-/// [`looks_reversible`]). Every 3+ char vendor prefix still gates as before.
-const MIN_REVERSE_PREFIX_LEN: usize = 3;
-
-/// Reverse-prefix automaton for [`looks_reversible`]: an Aho-Corasick over the
-/// reversed known prefixes (each 3+ chars). One linear pass replaces an
-/// `O(prefixes × |candidate|)` fan of `str::contains` calls, the twin of the
-/// caesar decoder's `PLAIN_PREFIX_AC`, built from the same `KNOWN_PREFIXES`
-/// source of truth (ONE-PLACE).
-///
-/// SOUNDNESS: `reverse(candidate).contains(prefix)` iff
-/// `candidate.contains(reverse(prefix))`, because reverse is a bijection over
-/// character positions. The decoder still reverses only admitted candidates
-/// when emitting output; this gate just avoids allocating a full reversed copy
-/// for the overwhelmingly common no-match candidate. `is_match` is an unanchored
-/// substring test, exactly equivalent to `any(|p| candidate.contains(p))`.
-static REVERSED_PREFIX_AC: LazyLock<AhoCorasick> = LazyLock::new(|| {
-    let needles: Vec<String> = (&*crate::confidence::KNOWN_PREFIXES)
-        .iter()
-        .filter(|prefix| prefix.len() >= MIN_REVERSE_PREFIX_LEN)
-        .map(|prefix| reverse_str(prefix.as_str()))
-        .collect();
-    // Law 10 (build-bug ⇒ fail closed): needles derive ENTIRELY from the
-    // compiled-in `KNOWN_PREFIXES` constant, so a build failure is an invariant
-    // violation, not a runtime hostile-input condition. Panic so the defect can't
-    // ship as a silent degraded path (matching caesar's PLAIN_PREFIX_AC).
-    match AhoCorasick::new(&needles) {
-        Ok(ac) => ac,
-        Err(e) => panic!(
-            "Reverse-decode prefix automaton (REVERSED_PREFIX_AC) failed to build \
-             from the compiled-in KNOWN_PREFIXES needle set: {e}. This is a build \
-             defect in the prefix list or its reversal, not a runtime condition."
-        ),
-    }
-});
-
-impl Decoder for ReverseDecoder {
-    fn name(&self) -> &'static str {
-        "reverse"
-    }
-
-    fn admission_sketch(&self, chunk: &Chunk) -> DecodeAdmissionSketch {
+impl ReverseDecoder {
+    pub(super) fn admission_sketch_with_policy(
+        &self,
+        chunk: &Chunk,
+        policy: &super::policy::CompiledDecodeTransformPolicy,
+    ) -> DecodeAdmissionSketch {
         if chunk.metadata.source_type.contains("/reverse") {
             return DecodeAdmissionSketch::NONE;
         }
@@ -78,7 +37,7 @@ impl Decoder for ReverseDecoder {
             let mut bytes = 0usize;
             for candidate in candidates
                 .iter()
-                .filter(|candidate| is_reverse_candidate(candidate))
+                .filter(|candidate| is_reverse_candidate(candidate, policy))
             {
                 count = count.saturating_add(1);
                 bytes = bytes.saturating_add(candidate.value.len());
@@ -91,11 +50,11 @@ impl Decoder for ReverseDecoder {
         })
     }
 
-    fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
-        // Refuse to recurse on our own output: reverse(reverse(s)) == s, so
-        // the recursive pass would emit the original credential under a
-        // `…/reverse/reverse` source_type, defeating downstream
-        // evasion-aware suppression rules and (at minimum) wasting work.
+    pub(super) fn decode_chunk_with_policy(
+        &self,
+        chunk: &Chunk,
+        policy: &super::policy::CompiledDecodeTransformPolicy,
+    ) -> Vec<Chunk> {
         if chunk.metadata.source_type.contains("/reverse") {
             return Vec::new();
         }
@@ -104,7 +63,7 @@ impl Decoder for ReverseDecoder {
                 chunk,
                 candidates
                     .iter()
-                    .filter_map(|candidate| is_reverse_candidate(candidate).then_some(candidate)),
+                    .filter(|candidate| is_reverse_candidate(candidate, policy)),
                 |s| Ok(reverse_str(s)),
                 self.name(),
             )
@@ -112,10 +71,27 @@ impl Decoder for ReverseDecoder {
     }
 }
 
-fn is_reverse_candidate(candidate: &super::pipeline::ExtractedValue) -> bool {
+impl Decoder for ReverseDecoder {
+    fn name(&self) -> &'static str {
+        "reverse"
+    }
+
+    fn admission_sketch(&self, chunk: &Chunk) -> DecodeAdmissionSketch {
+        self.admission_sketch_with_policy(chunk, super::policy::bundled_compat_policy())
+    }
+
+    fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
+        self.decode_chunk_with_policy(chunk, super::policy::bundled_compat_policy())
+    }
+}
+
+fn is_reverse_candidate(
+    candidate: &super::pipeline::ExtractedValue,
+    policy: &super::policy::CompiledDecodeTransformPolicy,
+) -> bool {
     candidate.value.len() >= MIN_REVERSE_LEN
         && !crate::suppression::shape::looks_like_prefixed_hash_digest(&candidate.value)
-        && looks_reversible(&candidate.value)
+        && looks_reversible_with_policy(&candidate.value, policy)
 }
 
 pub(crate) fn reverse_str(s: &str) -> String {
@@ -127,13 +103,20 @@ pub(crate) fn reverse_str(s: &str) -> String {
 ///
 /// 1. A 12+ ASCII alphanumeric run in the reversed direction (filters out
 ///    `a-b-c-d-...` and other punctuated text).
-/// 2. The reversed text must contain at least one known credential prefix
-///    from `confidence::KNOWN_PREFIXES`. Without this, plain prose like
+/// 2. The reversed text must contain at least one prefix declared for reverse
+///    recovery by the active detector corpus. Without this, plain prose like
 ///    `ABCDEFGHIJKLMNOPQRSTUVWXYZ` reverses to `ZYXWVUTSRQPONMLKJIHGFEDCBA`,
 ///    passes the alphanumeric-run gate, and gets emitted as a decoy chunk
 ///    on every chunk that contains a long alphanumeric word - pure noise
 ///    that hammers the dedup layer. Kimi-decode audit finding #4.
 pub(crate) fn looks_reversible(candidate: &str) -> bool {
+    looks_reversible_with_policy(candidate, super::policy::bundled_compat_policy())
+}
+
+fn looks_reversible_with_policy(
+    candidate: &str,
+    policy: &super::policy::CompiledDecodeTransformPolicy,
+) -> bool {
     let bytes = candidate.as_bytes();
     let mut run = 0usize;
     let mut saw_long_run = false;
@@ -152,17 +135,11 @@ pub(crate) fn looks_reversible(candidate: &str) -> bool {
         return false;
     }
     // Only emit a reverse-decoded chunk when the reversed string would
-    // contain a known provider prefix. Stops `ZYXWVUTSRQPONMLKJIHGFEDCBA`
+    // contain an active detector prefix. Stops `ZYXWVUTSRQPONMLKJIHGFEDCBA`
     // from looking like a candidate just because it has a long alnum run.
     //
-    // Skip 2-char prefixes - the only entry that short is the Ethereum
-    // `0x` literal. `0x` shows up by random chance in ~1.6% of 80-char
-    // base64 strings, which routed every such reversed blob through the
-    // decoder and emitted spurious findings on the base64-protobuf
-    // decoy class. Investigator empirically attributed 4 FPs to this
-    // exact path. An Ethereum address embedded inside an obfuscated
-    // reversed string is exotic enough that the recall loss is near zero;
-    // every 3+ char vendor prefix (`hf_`, `SG.`, `eyJ`, `sk-`, `ghp_`,
-    // ...) still gates as before.
-    REVERSED_PREFIX_AC.is_match(candidate)
+    // Detector schema validation rejects prefixes shorter than three bytes.
+    // Two-byte strings such as `0x` occur often enough by chance in encoded
+    // data to create excessive reverse fan-out.
+    policy.reverse_matches(candidate)
 }

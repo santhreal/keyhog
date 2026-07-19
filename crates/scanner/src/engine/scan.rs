@@ -6,9 +6,10 @@ use super::*;
 impl CompiledScanner {
     /// Capture the effective decode policy consumed by this scanner.
     pub fn decode_workload_plan(&self) -> crate::decode::DecodeWorkloadPlan {
-        crate::decode::DecodeWorkloadPlan::from_limits(
+        crate::decode::DecodeWorkloadPlan::from_compiled_limits(
             self.config.max_decode_depth,
             self.config.max_decode_bytes,
+            self.detector_plans.decode_transforms_arc(),
         )
     }
 
@@ -17,7 +18,8 @@ impl CompiledScanner {
     pub(crate) fn chunk_needs_decode_postprocess(&self, chunk: &keyhog_core::Chunk) -> bool {
         self.config.max_decode_depth > 0
             && chunk.data.len() <= self.config.max_decode_bytes
-            && crate::decode::decoder_admission(chunk) != crate::decode::DecodeAdmission::Impossible
+            && crate::decode::decoder_admission(chunk, self.detector_plans.decode_transforms())
+                != crate::decode::DecodeAdmission::Impossible
     }
 
     #[cfg(not(feature = "decode"))]

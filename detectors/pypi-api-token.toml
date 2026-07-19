@@ -9,6 +9,7 @@ name = "PyPI API Token"
 service = "pypi"
 severity = "critical"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
+decode_transforms = { reverse_prefixes = ["pypi-"], caesar_prefixes = ["pypi-"] }
 validators = [{ type = "base64-payload", prefixes = ["pypi-"], alphabet = "url-safe-no-pad", min_encoded_len = 100, max_encoded_len = 128, min_decoded_len = 32, confidence_floor = 0.9 }]
 keywords = ["pypi-"]
 

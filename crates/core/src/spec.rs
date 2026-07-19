@@ -70,6 +70,14 @@ pub struct DetectorSpec {
     /// not own token prefixes, field widths, confidence floors, or shape rules.
     #[serde(default)]
     pub validators: Vec<DetectorValidatorSpec>,
+    /// Detector-owned admission policy for asymmetric evasion transforms.
+    /// Shared decoders implement reverse and Caesar recovery, while each
+    /// detector declares the literal prefixes that make those transforms
+    /// eligible. Empty lists disable the corresponding transform for this
+    /// detector. The compiled scanner unions only the declarations in its
+    /// active corpus, so a custom corpus never inherits unrelated prefixes.
+    #[serde(default)]
+    pub decode_transforms: DetectorDecodeTransformSpec,
     /// List of regex patterns to match. Defaults to empty so a
     /// `kind = "phase2-generic"` detector can omit it when it has no structured
     /// envelope; a `kind = "regex"` detector with no patterns is rejected by
@@ -310,6 +318,70 @@ pub enum DetectorKind {
     /// envelopes (for example a JSON `"secret"` field); those anchors compile
     /// through the same detector while phase-2 remains the shapeless fallback.
     Phase2Generic,
+}
+
+/// Literal admission prefixes for detector-owned evasion recovery.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DetectorDecodeTransformSpec {
+    /// Plaintext prefixes whose character-reversed spelling may admit reverse
+    /// recovery. Prefixes shorter than three bytes are rejected because they
+    /// create excessive accidental matches in encoded data.
+    #[serde(default)]
+    pub reverse_prefixes: Vec<String>,
+    /// Plaintext prefixes whose rotated spellings may admit Caesar/ROT-N
+    /// recovery. A prefix must contain at least one ASCII letter so rotation
+    /// can change it.
+    #[serde(default)]
+    pub caesar_prefixes: Vec<String>,
+}
+
+impl DetectorDecodeTransformSpec {
+    /// Validate transform prefix shape and per-list uniqueness.
+    pub fn validate(&self) -> Vec<String> {
+        let mut issues = Vec::new();
+        validate_decode_transform_prefixes(
+            "reverse_prefixes",
+            &self.reverse_prefixes,
+            true,
+            &mut issues,
+        );
+        validate_decode_transform_prefixes(
+            "caesar_prefixes",
+            &self.caesar_prefixes,
+            false,
+            &mut issues,
+        );
+        issues
+    }
+}
+
+fn validate_decode_transform_prefixes(
+    field: &str,
+    prefixes: &[String],
+    reverse: bool,
+    issues: &mut Vec<String>,
+) {
+    let mut seen = std::collections::HashSet::with_capacity(prefixes.len());
+    for prefix in prefixes {
+        if prefix.is_empty() || !prefix.is_ascii() {
+            issues.push(format!("{field} entry {prefix:?} must be non-empty ASCII"));
+            continue;
+        }
+        if reverse && prefix.len() < 3 {
+            issues.push(format!(
+                "{field} entry {prefix:?} must contain at least three bytes"
+            ));
+        }
+        if !reverse && !prefix.bytes().any(|byte| byte.is_ascii_alphabetic()) {
+            issues.push(format!(
+                "{field} entry {prefix:?} must contain an ASCII letter"
+            ));
+        }
+        if !seen.insert(prefix.as_str()) {
+            issues.push(format!("{field} contains duplicate prefix {prefix:?}"));
+        }
+    }
 }
 
 /// How the shared ML model participates in one detector path.

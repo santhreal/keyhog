@@ -9,6 +9,7 @@ name = "Shippo API Token"
 service = "shippo"
 severity = "high"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
+decode_transforms = { reverse_prefixes = ["shippo_live_"], caesar_prefixes = ["shippo_live_"] }
 keywords = ["shippo_live_", "shippo_test_", "SHIPPO_TOKEN", "api.goshippo.com"]
 
 [[detector.patterns]]

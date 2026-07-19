@@ -24,7 +24,7 @@ mechanisms, and their roles are deliberately different:
 | Service-anchored detector regex | Matches a vendor or credential-specific shape from detector TOML | Yes |
 | Companion patterns | Finds related fields near a primary match; `required = true` gates acceptance, while optional companions enrich confidence or verification | Confirms an existing candidate |
 | Structured and multiline extraction | Reassembles assignments and strings that syntax splits across lines or nodes | Yes |
-| Decode-through transforms | Scans supported encoded or transformed representations while preserving source attribution | Yes |
+| Decode-through transforms | Scans supported encoded representations while preserving source attribution. Reverse and Caesar admission uses the active detector TOMLs' `decode_transforms` prefixes | Yes |
 | Bounded static program recovery | Evaluates recognized side-effect-free JavaScript XOR, explicit-key AES-256-CBC, and CryptoJS/OpenSSL passphrase expressions when every operand is embedded and immutable | Yes |
 | Generic assignment bridge | Extracts values beside credential-role keys when no vendor shape exists | Yes |
 | Shannon entropy | Measures byte-distribution uncertainty for opaque generic values | Yes, on the entropy-discovery path |
@@ -133,6 +133,8 @@ invariants, not a second source of per-detector tuning.
 | `plausibility.keyword_free_operator_margin` | Raises the detector-owned margin composed with the Tier-A entropy threshold | Lowers that explicit margin for the `keyword-free` role owner; no other detector may declare it |
 | `[detector.entropy_fallback]` | Changes the emitted synthetic entropy finding identity and semantic class for that detector | Omitting it for an active entropy owner fails compilation; there is no scanner-global compatibility identity |
 | `entropy_roles` | Claims one or more corpus entry paths: `keyword-free`, `isolated-bare`, or `unclaimed-keyword` | Omitting a role disables that path in a focused custom corpus; no built-in owner or threshold is substituted |
+| `decode_transforms.reverse_prefixes` | Admits character-reversed candidates that can recover one of the declared plaintext prefixes | Omitting a prefix prevents reverse recovery for that prefix in a focused custom corpus |
+| `decode_transforms.caesar_prefixes` | Admits only ROT-N shifts that can recover one of the declared plaintext prefixes | Omitting a prefix prevents Caesar recovery for that prefix in a focused custom corpus |
 | `[[detector.entropy_shapes]]` | `charset`, optional `grouping`, diversity requirements, and a lower shape floor admit explicitly structured isolated credentials | Stricter structural requirements or a higher floor narrow the exception; omission is invalid for an active entropy owner |
 | `entropy_floor` | A higher applicable length-bucket floor suppresses more low-entropy candidates for that detector | A lower floor preserves more human-chosen or structured credentials |
 | `plausibility.mixed_alnum_floor` | Rejects more identifier-like alphanumeric runs | Preserves more low-randomness mixed-alphanumeric values |

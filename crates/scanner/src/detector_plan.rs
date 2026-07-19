@@ -96,6 +96,7 @@ pub(crate) struct CompiledDetectorPlans {
     by_detector_index: Box<[CompiledDetectorPlan]>,
     resolution: DetectorResolutionIndex,
     validator_index: crate::checksum::CompiledValidatorIndex,
+    decode_transforms: Arc<crate::decode::policy::CompiledDecodeTransformPolicy>,
 }
 
 impl CompiledDetectorPlans {
@@ -169,10 +170,13 @@ impl CompiledDetectorPlans {
         let validator_index = crate::checksum::CompiledValidatorIndex::compile(
             by_detector_index.iter().map(|plan| &plan.validators),
         );
+        let decode_transforms =
+            Arc::new(crate::decode::policy::CompiledDecodeTransformPolicy::compile(detectors)?);
         Ok(Self {
             by_detector_index,
             resolution,
             validator_index,
+            decode_transforms,
         })
     }
 
@@ -197,6 +201,21 @@ impl CompiledDetectorPlans {
             self.resolution_class(detector_id),
             Some(DetectorResolutionClass::Entropy)
         )
+    }
+
+    #[inline]
+    #[cfg(feature = "decode")]
+    pub(crate) fn decode_transforms(
+        &self,
+    ) -> &crate::decode::policy::CompiledDecodeTransformPolicy {
+        &self.decode_transforms
+    }
+
+    #[inline]
+    pub(crate) fn decode_transforms_arc(
+        &self,
+    ) -> Arc<crate::decode::policy::CompiledDecodeTransformPolicy> {
+        Arc::clone(&self.decode_transforms)
     }
 
     /// Resolve a generic candidate against detector-declared validators. Named

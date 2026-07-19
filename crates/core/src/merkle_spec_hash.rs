@@ -225,6 +225,28 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
                     d.id
                 ));
             }
+            for (prefix_index, prefix) in d
+                .decode_transforms
+                .reverse_prefixes
+                .iter()
+                .enumerate()
+            {
+                entries.push(format!(
+                    "decode-reverse-prefix:{}:{prefix_index}:{prefix}",
+                    d.id
+                ));
+            }
+            for (prefix_index, prefix) in d
+                .decode_transforms
+                .caesar_prefixes
+                .iter()
+                .enumerate()
+            {
+                entries.push(format!(
+                    "decode-caesar-prefix:{}:{prefix_index}:{prefix}",
+                    d.id
+                ));
+            }
             for (policy_index, policy) in d.canonical_hex_key_material.iter().enumerate() {
                 for (length_index, length) in policy.lengths.iter().enumerate() {
                     entries.push(format!(
@@ -422,6 +444,7 @@ fn assert_scan_hash_field_inventory_is_exhaustive(detector: &DetectorSpec) {
         kind: _,
         ml: _,
         validators: _,
+        decode_transforms: _,
         patterns: _,
         companions: _,
         verify: _,

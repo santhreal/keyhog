@@ -24,8 +24,67 @@ use std::sync::Arc;
 // of deep-cloning the 14-decoder Vec (14 Arc bumps + a heap allocation) on every
 // chunk. Mutation (`register_decoder`) is copy-on-write, so in-flight readers
 // keep a consistent snapshot.
-static DECODERS: std::sync::OnceLock<RwLock<Arc<Vec<Arc<dyn Decoder>>>>> =
+static DECODERS: std::sync::OnceLock<RwLock<Arc<Vec<RegisteredDecoder>>>> =
     std::sync::OnceLock::new();
+
+#[derive(Clone)]
+pub(super) enum RegisteredDecoder {
+    Shared(Arc<dyn Decoder>),
+    Reverse,
+    Caesar,
+}
+
+impl RegisteredDecoder {
+    fn name(&self) -> &'static str {
+        match self {
+            Self::Shared(decoder) => decoder.name(),
+            Self::Reverse => "reverse",
+            Self::Caesar => "caesar",
+        }
+    }
+
+    #[cfg(feature = "decode")]
+    fn admission(
+        &self,
+        chunk: &keyhog_core::Chunk,
+        policy: &super::super::policy::CompiledDecodeTransformPolicy,
+    ) -> DecodeAdmission {
+        match self {
+            Self::Shared(decoder) => decoder.admission(chunk),
+            Self::Reverse => ReverseDecoder
+                .admission_sketch_with_policy(chunk, policy)
+                .admission(),
+            Self::Caesar => CaesarDecoder
+                .admission_sketch_with_policy(chunk, policy)
+                .admission(),
+        }
+    }
+
+    #[cfg(any(feature = "decode", test))]
+    fn admission_sketch(
+        &self,
+        chunk: &keyhog_core::Chunk,
+        policy: &super::super::policy::CompiledDecodeTransformPolicy,
+    ) -> DecodeAdmissionSketch {
+        match self {
+            Self::Shared(decoder) => decoder.admission_sketch(chunk),
+            Self::Reverse => ReverseDecoder.admission_sketch_with_policy(chunk, policy),
+            Self::Caesar => CaesarDecoder.admission_sketch_with_policy(chunk, policy),
+        }
+    }
+
+    pub(super) fn decode_chunk(
+        &self,
+        chunk: &keyhog_core::Chunk,
+        policy: &super::super::policy::CompiledDecodeTransformPolicy,
+    ) -> Vec<keyhog_core::Chunk> {
+        match self {
+            Self::Shared(decoder) => decoder.decode_chunk(chunk),
+            Self::Reverse => ReverseDecoder.decode_chunk_with_policy(chunk, policy),
+            Self::Caesar => CaesarDecoder.decode_chunk_with_policy(chunk, policy),
+        }
+    }
+}
 
 #[cfg(test)]
 thread_local! {
@@ -126,28 +185,28 @@ pub(crate) fn decoder_profile_reset() {
     }
 }
 
-fn default_decoders() -> Vec<Arc<dyn Decoder>> {
+fn default_decoders() -> Vec<RegisteredDecoder> {
     vec![
-        Arc::new(Base64Decoder),
-        Arc::new(HexDecoder),
-        Arc::new(UrlDecoder),
-        Arc::new(QuotedPrintableDecoder),
-        Arc::new(HtmlNamedEntityDecoder),
-        Arc::new(HtmlNumericEntityDecoder),
-        Arc::new(OctalEscapeDecoder),
-        Arc::new(MimeEncodedWordDecoder),
+        RegisteredDecoder::Shared(Arc::new(Base64Decoder)),
+        RegisteredDecoder::Shared(Arc::new(HexDecoder)),
+        RegisteredDecoder::Shared(Arc::new(UrlDecoder)),
+        RegisteredDecoder::Shared(Arc::new(QuotedPrintableDecoder)),
+        RegisteredDecoder::Shared(Arc::new(HtmlNamedEntityDecoder)),
+        RegisteredDecoder::Shared(Arc::new(HtmlNumericEntityDecoder)),
+        RegisteredDecoder::Shared(Arc::new(OctalEscapeDecoder)),
+        RegisteredDecoder::Shared(Arc::new(MimeEncodedWordDecoder)),
         // JSON unescape - strips `\"` / `\\` / `\n` style escapes inside JSON
         // string values so credentials stored as JSON-encoded fields survive
         // into the scanner.
-        Arc::new(JsonDecoder),
-        Arc::new(UnicodeEscapeDecoder),
-        Arc::new(Z85Decoder),
+        RegisteredDecoder::Shared(Arc::new(JsonDecoder)),
+        RegisteredDecoder::Shared(Arc::new(UnicodeEscapeDecoder)),
+        RegisteredDecoder::Shared(Arc::new(Z85Decoder)),
         // Bounded, side-effect-free JavaScript constant recovery. Keep it after
         // representation decoders and before the asymmetric evasion decoders.
         #[cfg(feature = "decode")]
-        Arc::new(JavaScriptStaticDecoder),
-        Arc::new(ReverseDecoder),
-        Arc::new(CaesarDecoder),
+        RegisteredDecoder::Shared(Arc::new(JavaScriptStaticDecoder)),
+        RegisteredDecoder::Reverse,
+        RegisteredDecoder::Caesar,
     ]
 }
 
@@ -168,14 +227,17 @@ pub(crate) fn default_decoder_names() -> Vec<&'static str> {
 /// decoder that keeps the trait default returns `Unknown`, which is preserved
 /// unless another decoder already proves the chunk is `Possible`.
 #[cfg(feature = "decode")]
-pub(crate) fn decoder_admission(chunk: &keyhog_core::Chunk) -> DecodeAdmission {
+pub(crate) fn decoder_admission(
+    chunk: &keyhog_core::Chunk,
+    policy: &super::super::policy::CompiledDecodeTransformPolicy,
+) -> DecodeAdmission {
     let decoders = active_decoders();
     super::extractor::clear_shared_candidates();
     super::extractor::prime_shared_candidates(&chunk.data);
 
     let mut aggregate = DecodeAdmission::Impossible;
     for decoder in decoders.iter() {
-        match decoder.admission(chunk) {
+        match decoder.admission(chunk, policy) {
             DecodeAdmission::Possible => {
                 aggregate = DecodeAdmission::Possible;
                 break;
@@ -190,26 +252,29 @@ pub(crate) fn decoder_admission(chunk: &keyhog_core::Chunk) -> DecodeAdmission {
 }
 
 #[cfg(any(feature = "decode", test))]
-pub(crate) fn decoder_admission_sketch(chunk: &keyhog_core::Chunk) -> DecodeAdmissionSketch {
+pub(crate) fn decoder_admission_sketch(
+    chunk: &keyhog_core::Chunk,
+    policy: &super::super::policy::CompiledDecodeTransformPolicy,
+) -> DecodeAdmissionSketch {
     let decoders = active_decoders();
     super::extractor::clear_shared_candidates();
     super::extractor::prime_shared_candidates(&chunk.data);
 
     let mut aggregate = DecodeAdmissionSketch::NONE;
     for decoder in decoders.iter() {
-        aggregate.merge(decoder.admission_sketch(chunk));
+        aggregate.merge(decoder.admission_sketch(chunk, policy));
     }
 
     super::extractor::clear_shared_candidates();
     aggregate
 }
 
-fn decoder_registry() -> &'static RwLock<Arc<Vec<Arc<dyn Decoder>>>> {
+fn decoder_registry() -> &'static RwLock<Arc<Vec<RegisteredDecoder>>> {
     DECODERS.get_or_init(|| RwLock::new(Arc::new(default_decoders())))
 }
 
 #[cfg(not(test))]
-pub(super) fn active_decoders() -> Arc<Vec<Arc<dyn Decoder>>> {
+pub(super) fn active_decoders() -> Arc<Vec<RegisteredDecoder>> {
     // One `Arc` clone (a single atomic increment) instead of deep-cloning the
     // decoder Vec on every `decode_chunk`. Callers only iterate, so the shared
     // snapshot suffices.
@@ -217,7 +282,7 @@ pub(super) fn active_decoders() -> Arc<Vec<Arc<dyn Decoder>>> {
 }
 
 #[cfg(test)]
-pub(super) fn active_decoders() -> Arc<Vec<Arc<dyn Decoder>>> {
+pub(super) fn active_decoders() -> Arc<Vec<RegisteredDecoder>> {
     let base = Arc::clone(&decoder_registry().read());
     THREAD_DECODERS.with(|thread_decoders| {
         let thread = thread_decoders.borrow();
@@ -227,7 +292,7 @@ pub(super) fn active_decoders() -> Arc<Vec<Arc<dyn Decoder>>> {
             base
         } else {
             let mut combined = (*base).clone();
-            combined.extend(thread.iter().cloned());
+            combined.extend(thread.iter().cloned().map(RegisteredDecoder::Shared));
             Arc::new(combined)
         }
     })
@@ -249,7 +314,7 @@ pub fn register_decoder(decoder: Box<dyn Decoder>) {
     // startup / test setup, never on the decode hot path, so this one-time Vec
     // clone is not a concern.
     let mut next = (**guard).clone();
-    next.push(Arc::from(decoder));
+    next.push(RegisteredDecoder::Shared(Arc::from(decoder)));
     *guard = Arc::new(next);
 }
 

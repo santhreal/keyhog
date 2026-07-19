@@ -9,6 +9,7 @@ name = "Slack User Token"
 service = "slack"
 severity = "critical"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
+decode_transforms = { reverse_prefixes = ["xoxp-"], caesar_prefixes = ["xoxp-"] }
 validators = [{ type = "pattern-shape", prefixes = ["xoxp-"], allow_overlong = false }]
 # "user" removed: extremely over-broad (fires the detector on ANY text containing
 # "user") and redundant, both regexes require the unambiguous `xoxp-` prefix

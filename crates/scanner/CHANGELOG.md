@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Compile reverse and Caesar admission from each active detector TOML's
+  `decode_transforms` declaration. Custom corpora no longer inherit unrelated
+  global prefixes, and detectors such as Databricks can recover `dapi` tokens
+  without a scanner-code prefix edit. `DecodeWorkloadPlan` now carries this
+  shared compiled policy and is `Clone` rather than `Copy`; callers that pass
+  one plan to more than one owner must clone it explicitly.
 - Use one compiled validator index for the active detector plan and the embedded
   compatibility API, so prefix narrowing and validator-result precedence have
   one implementation.

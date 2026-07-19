@@ -17,6 +17,7 @@ name = "SSH2/ssh.com Private Key (RFC 4716)"
 service = "ssh"
 severity = "critical"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
+decode_transforms = { reverse_prefixes = ["---- BEGIN SSH2"], caesar_prefixes = ["---- BEGIN SSH2"] }
 keywords = ["BEGIN SSH2", "PRIVATE KEY"]
 
 # Anchor on the 4-dash spaced `---- BEGIN SSH2 … PRIVATE KEY ----` framing and

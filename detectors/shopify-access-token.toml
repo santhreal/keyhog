@@ -19,6 +19,7 @@ name = "Shopify Access Token"
 service = "shopify"
 severity = "critical"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
+decode_transforms = { reverse_prefixes = ["shpca_"], caesar_prefixes = ["shpca_"] }
 keywords = ["shpca_", "shopify"]
 
 [[detector.patterns]]

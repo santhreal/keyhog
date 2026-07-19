@@ -9,6 +9,7 @@ name = "GitLab Package Registry Token"
 service = "gitlab-package-registry"
 severity = "high"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
+decode_transforms = { reverse_prefixes = ["glcbt-"], caesar_prefixes = ["glcbt-"] }
 validators = [{ type = "pattern-shape", prefixes = ["gldt-", "glcbt-"], allow_overlong = true }]
 keywords = ["gldt-", "glcbt-", "CI_JOB_TOKEN", "CI_DEPLOY_TOKEN"]
 

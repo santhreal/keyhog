@@ -3,8 +3,9 @@ use keyhog_core::Chunk;
 use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 
-pub(crate) fn decode_chunk(
+pub(crate) fn decode_chunk_with_policy(
     chunk: &Chunk,
+    policy: &super::policy::CompiledDecodeTransformPolicy,
     max_depth: usize,
     validate: bool,
     deadline: Option<std::time::Instant>,
@@ -84,7 +85,7 @@ pub(crate) fn decode_chunk(
                 return unwrap_decoded_chunks(decoded_chunks);
             }
             let dec_t0 = prof_dec.then(std::time::Instant::now);
-            let decoded_out = decoder.decode_chunk(&current);
+            let decoded_out = decoder.decode_chunk(&current, policy);
             if let Some(t0) = dec_t0 {
                 registry::record_decoder_run(dec_i, t0.elapsed(), decoded_out.len());
             }

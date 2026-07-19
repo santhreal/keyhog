@@ -65,6 +65,7 @@ pub fn validate_detector(spec: &DetectorSpec) -> Vec<QualityIssue> {
     validate_keywords(spec, &mut issues);
     validate_simdsieve_prefixes(spec, &mut issues);
     validate_offline_validators(spec, &mut issues);
+    validate_decode_transforms(spec, &mut issues);
     validate_pattern_specificity(spec, &mut issues, &mut regex_cache);
     validate_companions(spec, &mut issues, &mut regex_cache);
     validate_verify_spec(spec, &mut issues);
@@ -75,6 +76,12 @@ pub fn validate_detector(spec: &DetectorSpec) -> Vec<QualityIssue> {
     validate_credential_shape(spec, &mut issues);
     validate_detector_allowlists(spec, &mut issues);
     issues
+}
+
+fn validate_decode_transforms(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
+    for issue in spec.decode_transforms.validate() {
+        issues.push(QualityIssue::Error(format!("decode_transforms.{issue}")));
+    }
 }
 
 fn validate_required_literals(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {

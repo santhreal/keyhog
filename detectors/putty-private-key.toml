@@ -31,6 +31,7 @@ name = "PuTTY Private Key (.ppk)"
 service = "ssh"
 severity = "critical"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
+decode_transforms = { reverse_prefixes = ["PuTTY-User-Key-File-"], caesar_prefixes = ["PuTTY-User-Key-File-"] }
 keywords = ["PuTTY-User-Key-File"]
 
 # Anchor on the distinctive `PuTTY-User-Key-File-<version>:` header and close

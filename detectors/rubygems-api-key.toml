@@ -9,6 +9,7 @@ name = "RubyGems API Key"
 service = "rubygems"
 severity = "critical"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
+decode_transforms = { reverse_prefixes = ["rubygems_"], caesar_prefixes = ["rubygems_"] }
 keywords = ["rubygems_", "RUBYGEMS_API_KEY", "gem push", "rubygems.org"]
 
 [[detector.patterns]]

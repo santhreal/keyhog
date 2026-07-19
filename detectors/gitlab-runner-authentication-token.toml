@@ -10,6 +10,7 @@ name = "GitLab Runner Authentication Token"
 service = "gitlab"
 severity = "high"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
+decode_transforms = { reverse_prefixes = ["glrt-"], caesar_prefixes = ["glrt-"] }
 validators = [{ type = "pattern-shape", prefixes = ["glrt-"], allow_overlong = true }]
 keywords = ["glrt-", "gitlab", "CI_SERVER_URL", "runner"]
 

@@ -62,8 +62,9 @@ impl CompiledScanner {
             let gen_start = prof_decode.then(std::time::Instant::now);
             let decoded_chunks = {
                 let _g = super::profile::span(super::profile::P::Decode);
-                crate::decode::decode_chunk(
+                crate::decode::decode_chunk_with_policy(
                     chunk,
+                    self.detector_plans.decode_transforms(),
                     self.config.max_decode_depth,
                     self.config.validate_decode,
                     deadline,

@@ -132,6 +132,22 @@ directly through their compiled detector plan; generic candidates use a compiled
 first-byte prefix index. One verdict follows the candidate through suppression,
 ML batching, and final confidence, so validation is not repeated after inference.
 
+`detector.decode_transforms` declares admission for asymmetric evasion recovery.
+Use plaintext prefixes. KeyHog compiles the reversed and rotated spellings once
+from the active corpus:
+
+```toml
+decode_transforms = { reverse_prefixes = ["dapi"], caesar_prefixes = ["dapi"] }
+```
+
+An empty list disables that transform for this detector. A custom corpus does
+not inherit prefixes from the embedded corpus. Reverse prefixes must contain at
+least three ASCII bytes. Caesar prefixes must contain an ASCII letter. These
+fields control only reverse and Caesar admission. Base64, hex, URL, JSON,
+Unicode, MIME, quoted-printable, and bounded static-program recovery use shared
+representation grammars because their eligibility is not specific to a secret
+type.
+
 `detector.name` - human-readable name. Shows up in `keyhog detectors`
 listing and IDE plugins.
 

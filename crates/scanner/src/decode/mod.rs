@@ -13,6 +13,7 @@ mod javascript_static;
 mod json;
 mod limits;
 mod pipeline;
+pub(crate) mod policy;
 pub(crate) mod reverse;
 mod unicode_escape;
 mod url;
@@ -29,7 +30,6 @@ pub(crate) use base64::{
     contains_non_padding_equals, is_standard_base64_byte, standard_base64_shape,
 };
 pub use hex::{find_hex_strings, hex_decode};
-pub(crate) use pipeline::decode_chunk;
 pub use pipeline::register_decoder;
 pub(crate) use pipeline::{
     bytecount_newlines, decoder_profile_dump, decoder_profile_reset, extract_profile_dump,
@@ -42,6 +42,37 @@ pub(crate) use pipeline::{register_thread_decoder, ScopedDecoderRegistration};
 pub(crate) use util::take_hex_digits;
 
 use keyhog_core::Chunk;
+
+pub(crate) fn decode_chunk_with_policy(
+    chunk: &Chunk,
+    policy: &policy::CompiledDecodeTransformPolicy,
+    max_depth: usize,
+    validate: bool,
+    deadline: Option<std::time::Instant>,
+    screen: Option<&crate::alphabet_filter::AlphabetScreen>,
+) -> Vec<Chunk> {
+    pipeline::decode_chunk_with_policy(chunk, policy, max_depth, validate, deadline, screen)
+}
+
+/// Direct primitive compatibility for the public testing facade. Product
+/// scans always call `decode_chunk_with_policy` with their active detector
+/// corpus.
+pub(crate) fn decode_chunk(
+    chunk: &Chunk,
+    max_depth: usize,
+    validate: bool,
+    deadline: Option<std::time::Instant>,
+    screen: Option<&crate::alphabet_filter::AlphabetScreen>,
+) -> Vec<Chunk> {
+    decode_chunk_with_policy(
+        chunk,
+        policy::bundled_compat_policy(),
+        max_depth,
+        validate,
+        deadline,
+        screen,
+    )
+}
 
 pub(crate) fn unicode_escape_decode(input: &str) -> Result<String, ()> {
     unicode_escape::unicode_escape_decode(input)
@@ -359,49 +390,99 @@ impl DecodeAdmissionSketch {
 ///
 /// Autoroute keeps this value with its router so workload classification uses
 /// the same decode enablement and input ceiling as the scanner it will run.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct DecodeWorkloadPlan {
     enabled: bool,
     max_input_bytes: usize,
+    transforms: DecodeTransformPolicyHandle,
 }
+
+#[derive(Clone, Debug)]
+enum DecodeTransformPolicyHandle {
+    Bundled,
+    Compiled(std::sync::Arc<policy::CompiledDecodeTransformPolicy>),
+}
+
+impl DecodeTransformPolicyHandle {
+    fn policy(&self) -> &policy::CompiledDecodeTransformPolicy {
+        match self {
+            Self::Bundled => policy::bundled_compat_policy(),
+            Self::Compiled(policy) => policy,
+        }
+    }
+}
+
+impl PartialEq for DecodeWorkloadPlan {
+    fn eq(&self, other: &Self) -> bool {
+        self.enabled == other.enabled
+            && self.max_input_bytes == other.max_input_bytes
+            && self.transforms.policy().identity() == other.transforms.policy().identity()
+    }
+}
+
+impl Eq for DecodeWorkloadPlan {}
 
 impl DecodeWorkloadPlan {
     /// Resolve decode enablement from the same depth and byte limits consumed
-    /// by [`crate::ScannerConfig`]. A zero depth disables the mechanism.
+    /// by [`crate::ScannerConfig`]. A zero depth disables the mechanism. This
+    /// standalone constructor uses the bundled compatibility prefix policy;
+    /// [`crate::CompiledScanner::decode_workload_plan`] carries its exact active
+    /// detector policy instead.
     pub const fn from_limits(max_depth: usize, max_input_bytes: usize) -> Self {
         Self {
             enabled: cfg!(feature = "decode") && max_depth > 0,
             max_input_bytes,
+            transforms: DecodeTransformPolicyHandle::Bundled,
         }
     }
 
-    pub const fn enabled(self) -> bool {
+    pub(crate) fn from_compiled_limits(
+        max_depth: usize,
+        max_input_bytes: usize,
+        transforms: std::sync::Arc<policy::CompiledDecodeTransformPolicy>,
+    ) -> Self {
+        Self {
+            enabled: cfg!(feature = "decode") && max_depth > 0,
+            max_input_bytes,
+            transforms: DecodeTransformPolicyHandle::Compiled(transforms),
+        }
+    }
+
+    pub const fn enabled(&self) -> bool {
         self.enabled
     }
 
-    pub const fn max_input_bytes(self) -> usize {
+    pub const fn max_input_bytes(&self) -> usize {
         self.max_input_bytes
     }
 
-    pub fn admits(self, chunk: &Chunk) -> bool {
+    pub fn admits(&self, chunk: &Chunk) -> bool {
         self.enabled && chunk.data.len() <= self.max_input_bytes
     }
 
     /// Project work only when the compiled scanner can execute decode-through
     /// for this exact chunk.
-    pub fn sketch(self, chunk: &Chunk) -> DecodeAdmissionSketch {
+    pub fn sketch(&self, chunk: &Chunk) -> DecodeAdmissionSketch {
+        #[cfg(not(feature = "decode"))]
+        {
+            let _ = chunk;
+            return DecodeAdmissionSketch::NONE;
+        }
+        #[cfg(feature = "decode")]
         if !self.admits(chunk) {
             DecodeAdmissionSketch::NONE
         } else {
-            decode_admission_sketch(chunk)
+            pipeline::decoder_admission_sketch(chunk, self.transforms.policy())
         }
     }
 }
 
-/// Compute a scanner-owned decode work sketch for one chunk.
+/// Compute a standalone decode work sketch with the bundled compatibility
+/// prefix policy. Autoroute uses [`crate::CompiledScanner::decode_workload_plan`]
+/// so its sketch matches the active detector corpus.
 #[cfg(feature = "decode")]
 pub fn decode_admission_sketch(chunk: &Chunk) -> DecodeAdmissionSketch {
-    pipeline::decoder_admission_sketch(chunk)
+    pipeline::decoder_admission_sketch(chunk, policy::bundled_compat_policy())
 }
 
 /// Decode-disabled builds contribute no decoder work to autoroute identity.
