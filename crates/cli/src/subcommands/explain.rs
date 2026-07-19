@@ -436,10 +436,14 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
                 policy.excluded_keywords.join(", ")
             )
         };
-        println!(
-            "    canonical_hex_key_material: lengths=[{lengths}] keywords=[{}]{suffixes}{excluded}",
-            policy.keywords.join(", ")
-        );
+        if policy.keywords.is_empty() && policy.suffixes.is_empty() {
+            println!("    canonical_hex_key_material: lengths=[{lengths}] anchor=matched-pattern");
+        } else {
+            println!(
+                "    canonical_hex_key_material: lengths=[{lengths}] keywords=[{}]{suffixes}{excluded}",
+                policy.keywords.join(", ")
+            );
+        }
     }
 
     for bucket in &d.entropy_floor {

@@ -1,6 +1,6 @@
 //! Detector quality gate validation rules used while loading TOML specs.
 
-use super::{DetectorKind, DetectorSpec, VerifySpec};
+use super::{CanonicalHexKeyMaterialSpec, DetectorKind, DetectorSpec, VerifySpec};
 use regex_syntax::ast;
 use serde::Serialize;
 use std::collections::{hash_map::Entry, HashMap};
@@ -208,9 +208,20 @@ fn validate_canonical_hex_key_material(spec: &DetectorSpec, issues: &mut Vec<Qua
     if spec.canonical_hex_key_material.is_empty() {
         return;
     }
-    if spec.kind != DetectorKind::Phase2Generic {
+    let generic_policy = spec.kind == DetectorKind::Phase2Generic;
+    let has_assignment_scope = |policy: &CanonicalHexKeyMaterialSpec| {
+        !policy.keywords.is_empty()
+            || !policy.suffixes.is_empty()
+            || !policy.excluded_keywords.is_empty()
+    };
+    if !generic_policy
+        && spec
+            .canonical_hex_key_material
+            .iter()
+            .any(has_assignment_scope)
+    {
         issues.push(QualityIssue::Error(
-            "canonical_hex_key_material is only valid for kind = \"phase2-generic\"".into(),
+            "keyword- or suffix-scoped canonical_hex_key_material is only valid for kind = \"phase2-generic\"; regex detectors must declare length-only entries because the matched pattern is their anchor".into(),
         ));
     }
 
@@ -220,15 +231,16 @@ fn validate_canonical_hex_key_material(spec: &DetectorSpec, issues: &mut Vec<Qua
         .filter_map(|keyword| normalize_detector_keyword(keyword))
         .collect();
     let mut seen_pairs = std::collections::HashSet::new();
+    let mut seen_regex_lengths = std::collections::HashSet::new();
     for (policy_index, policy) in spec.canonical_hex_key_material.iter().enumerate() {
         if policy.lengths.is_empty() {
             issues.push(QualityIssue::Error(format!(
                 "canonical_hex_key_material[{policy_index}].lengths must not be empty"
             )));
         }
-        if policy.keywords.is_empty() && policy.suffixes.is_empty() {
+        if generic_policy && policy.keywords.is_empty() && policy.suffixes.is_empty() {
             issues.push(QualityIssue::Error(format!(
-                "canonical_hex_key_material[{policy_index}] must declare keywords or suffixes"
+                "phase2-generic canonical_hex_key_material[{policy_index}] must declare keywords or suffixes"
             )));
         }
         let mut seen_lengths = std::collections::HashSet::new();
@@ -241,6 +253,11 @@ fn validate_canonical_hex_key_material(spec: &DetectorSpec, issues: &mut Vec<Qua
             if !seen_lengths.insert(length) {
                 issues.push(QualityIssue::Error(format!(
                     "canonical_hex_key_material[{policy_index}] contains duplicate length {length}"
+                )));
+            }
+            if !generic_policy && !seen_regex_lengths.insert(length) {
+                issues.push(QualityIssue::Error(format!(
+                    "canonical_hex_key_material repeats regex-detector length {length} across policies"
                 )));
             }
         }

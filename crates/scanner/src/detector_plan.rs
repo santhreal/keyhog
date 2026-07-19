@@ -115,7 +115,7 @@ impl CompiledDetectorPlans {
                         key_material:
                             crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy::compile(
                                 detector,
-                            ),
+                            )?,
                         entropy_floor:
                             crate::entropy::policy::CompiledEntropyFloorPolicy::compile(detector)?,
                         entropy: crate::entropy::policy::compile_entropy_policy(detector)?,

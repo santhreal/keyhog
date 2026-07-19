@@ -100,8 +100,8 @@ struct EmbeddedEntropyPolicies {
 }
 
 fn embedded_entropy_policies() -> &'static EmbeddedEntropyPolicies {
-    static POLICIES: std::sync::LazyLock<EmbeddedEntropyPolicies> =
-        std::sync::LazyLock::new(|| {
+    static POLICIES: std::sync::LazyLock<EmbeddedEntropyPolicies> = std::sync::LazyLock::new(
+        || {
             let detectors = keyhog_core::embedded_detector_specs();
             let index =
                 match crate::generic_keyword_owner::GenericOwningDetectorIndex::build(detectors) {
@@ -123,16 +123,24 @@ fn embedded_entropy_policies() -> &'static EmbeddedEntropyPolicies {
                 .collect();
             let key_material = detectors
                 .iter()
-                .map(
-                    crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy::compile,
-                )
+                .map(|detector| {
+                    match crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy::compile(
+                        detector,
+                    ) {
+                        Ok(policy) => policy,
+                        Err(error) => {
+                            panic!("embedded detector key-material policy is invalid: {error}")
+                        }
+                    }
+                })
                 .collect();
             EmbeddedEntropyPolicies {
                 index,
                 entropy,
                 key_material,
             }
-        });
+        },
+    );
     &POLICIES
 }
 

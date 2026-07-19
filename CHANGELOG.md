@@ -34,6 +34,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Changed
 
+- Named regex detectors now admit digest-shaped pure-hex credentials only through
+  length-only `canonical_hex_key_material` declarations in their own TOMLs.
+  The scanner-global service-key width fallback is removed; generic assignment
+  rules remain scoped to their declared keywords and suffixes.
 - Autoroute inspection now reports disabled or missing evidence as visible,
   complete scalar correctness recovery instead of claiming scans require an
   explicit backend. Its JSON timing receipts expose ordered nanosecond trials,

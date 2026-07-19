@@ -303,15 +303,16 @@ The available per-detector tuning fields are:
     64-hex SHA-256 shapes remain digest-suppressed. Structured decoders preserve
     transport provenance, so direct `secret_key=<64hex>` policy cannot silently
     reclassify a base64-wrapped digest.
-*   **`canonical_hex_key_material`** (array of tables, optional;
-    `kind = "phase2-generic"` only): Declares exact pure-hex character counts
-    and assignment keys that this detector may treat as key material instead of
-    a digest. Each table has non-empty `lengths` and at least one `keywords` or
-    `suffixes` entry. Exact `keywords` must also appear in the detector's
-    top-level `keywords`; `suffixes` admit only vendor-prefixed names such as
-    `stripe_secret_key` and never the bare suffix itself. `excluded_keywords`
-    removes ambiguous exact or suffix matches such as `license_key`. Matching
-    ignores assignment-key case and `_`, `-`, or `.` separators.
+*   **`canonical_hex_key_material`** (array of tables, optional): Declares exact
+    pure-hex character counts this detector may treat as key material instead
+    of a digest. A `kind = "phase2-generic"` table must include `keywords` or
+    `suffixes`; exact keywords must also appear in the detector's top-level
+    `keywords`, suffixes admit only vendor-prefixed names, and
+    `excluded_keywords` removes ambiguous names such as `license_key`.
+    A regex detector instead declares a length-only table. Its matched pattern
+    supplies the scope, so assignment scopes are rejected on that path rather
+    than silently ignored. Matching assignment keys ignores case and `_`, `-`,
+    or `.` separators.
     Direct assignments and structured assignment extraction (including XML)
     resolve the same policy; there is no format-specific override. For
     example, `generic-api-key.toml` admits 64-hex only for its explicit
@@ -326,8 +327,8 @@ The available per-detector tuning fields are:
     apply. The owning detector's `ml.match_mode` governs structurally proven key
     material, while `ml.entropy_mode` governs its weaker entropy fallback.
 
-The fields live beside the detector's other top-level phase-2 policy, not in a
-scan-wide suppression table. For example:
+The fields live beside the detector's other top-level policy, not in a
+scan-wide suppression table. A phase-2 example is:
 
 ```toml
 decoded_hex_key_material_lengths = [32, 48]
@@ -336,6 +337,15 @@ canonical_hex_key_material = [
   { lengths = [64], keywords = ["encryption_key"] },
 ]
 ```
+
+A weak-anchor named detector declares only the widths its own regex captures:
+
+```toml
+canonical_hex_key_material = [{ lengths = [32] }]
+```
+
+Omitting that declaration leaves a pure-hex capture digest-suppressed. KeyHog
+does not infer widths from the service name, confidence floor, or a global list.
 
 `keyhog explain <detector-id>` prints both declarations in the human-readable
 policy view. `keyhog detectors --format json` exposes them under each detector's

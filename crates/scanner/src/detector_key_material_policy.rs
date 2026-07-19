@@ -46,19 +46,53 @@ impl CompiledCanonicalHexRule {
 #[derive(Debug)]
 pub(crate) struct CompiledDetectorKeyMaterialPolicy {
     decoded_hex_lengths: Box<[usize]>,
+    regex_hex_lengths: Box<[usize]>,
     canonical_hex_rules: Box<[CompiledCanonicalHexRule]>,
 }
 
 impl CompiledDetectorKeyMaterialPolicy {
-    pub(crate) fn compile(detector: &DetectorSpec) -> Self {
-        Self {
+    pub(crate) fn compile(detector: &DetectorSpec) -> Result<Self, String> {
+        let generic_policy = detector.kind == keyhog_core::DetectorKind::Phase2Generic;
+        for (index, rule) in detector.canonical_hex_key_material.iter().enumerate() {
+            let has_assignment_scope = !rule.keywords.is_empty()
+                || !rule.suffixes.is_empty()
+                || !rule.excluded_keywords.is_empty();
+            if generic_policy && rule.keywords.is_empty() && rule.suffixes.is_empty() {
+                return Err(format!(
+                    "detector {} canonical_hex_key_material[{index}] is length-only, but phase2-generic rules require keywords or suffixes",
+                    detector.id
+                ));
+            }
+            if !generic_policy && has_assignment_scope {
+                return Err(format!(
+                    "detector {} canonical_hex_key_material[{index}] declares assignment scope, but regex detectors require length-only rules",
+                    detector.id
+                ));
+            }
+        }
+        Ok(Self {
             decoded_hex_lengths: sorted_lengths(&detector.decoded_hex_key_material_lengths),
+            regex_hex_lengths: if generic_policy {
+                Box::default()
+            } else {
+                sorted_unique_lengths(
+                    detector
+                        .canonical_hex_key_material
+                        .iter()
+                        .filter(|rule| {
+                            rule.keywords.is_empty()
+                                && rule.suffixes.is_empty()
+                                && rule.excluded_keywords.is_empty()
+                        })
+                        .flat_map(|rule| rule.lengths.iter().copied()),
+                )
+            },
             canonical_hex_rules: detector
                 .canonical_hex_key_material
                 .iter()
                 .map(CompiledCanonicalHexRule::compile)
                 .collect(),
-        }
+        })
     }
 
     /// Whether this detector admits an exact assignment key and pure-hex value.
@@ -85,20 +119,22 @@ impl CompiledDetectorKeyMaterialPolicy {
         decoded_len.is_some_and(|len| self.decoded_hex_lengths.binary_search(&len).is_ok())
     }
 
-    /// Whether any canonical rule admits this already-proven pure-hex length.
-    /// Named-regex processing no longer retains the assignment key, so this is
-    /// the same length-only evidence that path historically consumed.
+    /// Whether a regex detector explicitly admits this already-proven pure-hex
+    /// length. Regex policies are length-only because the matched detector
+    /// pattern is itself the anchor. Assignment-scoped generic rules are never
+    /// widened into a length-only bypass here.
     #[inline]
-    #[cfg(feature = "entropy")]
     pub(crate) fn allows_canonical_hex_len(&self, value_len: usize) -> bool {
-        self.canonical_hex_rules
-            .iter()
-            .any(|rule| rule.lengths.binary_search(&value_len).is_ok())
+        self.regex_hex_lengths.binary_search(&value_len).is_ok()
     }
 }
 
 fn sorted_lengths(lengths: &[usize]) -> Box<[usize]> {
-    let mut compiled = lengths.to_vec();
+    sorted_unique_lengths(lengths.iter().copied())
+}
+
+fn sorted_unique_lengths(lengths: impl IntoIterator<Item = usize>) -> Box<[usize]> {
+    let mut compiled = lengths.into_iter().collect::<Vec<_>>();
     compiled.sort_unstable();
     compiled.dedup();
     compiled.into_boxed_slice()

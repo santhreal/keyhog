@@ -231,13 +231,14 @@ anchor proves safe.
 
 For direct pure-hex assignments, a phase-2 detector can declare exact
 `canonical_hex_key_material` keyword/length pairs plus detector-owned suffixes
-for vendor-prefixed names. The shipped generic API-key detector admits 32/48-hex
-for strong key roles and vendor-prefixed `*_key`/`*_secret` names, and 64-hex
+for vendor-prefixed names. A named regex detector declares a length-only rule;
+the matched pattern is its scope. The shipped generic API-key detector admits
+32/48-hex for strong key roles and vendor-prefixed `*_key`/`*_secret` names, and 64-hex
 only for its explicit cryptographic roles such as `encryption_key`,
 `signing_key`, and `hmac_secret`; the generic-secret detector separately owns
 `private_key`, `signing_secret`, `secret`, and its vendor-prefixed forms. Bare
-`key` and `license_key` remain suppressed. There is no scanner-global strong-key
-fallback: omitting the detector policy fails closed.
+`key` and `license_key` remain suppressed. There is no scanner-global service-key
+width fallback: omitting the detector policy leaves the value digest-suppressed.
 Generic UUID assignments, public salts, and nonces stay suppressed; a named
 detector or structural authorization envelope must provide stronger evidence.
 Canonical policy does not bypass placeholder or degenerate-value checks. Short

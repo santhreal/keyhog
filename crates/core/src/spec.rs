@@ -195,11 +195,11 @@ pub struct DetectorSpec {
     /// digest-shaped values.
     #[serde(default)]
     pub decoded_hex_key_material_lengths: Vec<usize>,
-    /// Exact keyword and length combinations under which this phase-2 generic
-    /// detector owns canonical pure-hex key material. This detector-local policy
-    /// distinguishes real 64-hex encryption/signing keys from SHA-256 digests
-    /// without granting every generic `secret=` or `api_key=` assignment the
-    /// same bypass.
+    /// Detector-owned canonical pure-hex key material. Phase-2 generic
+    /// detectors scope lengths to exact assignment `keywords` or vendor
+    /// `suffixes`. Regex detectors use length-only entries because their own
+    /// matched pattern is already the anchor. This keeps digest-shaped recall
+    /// exceptions in detector TOML instead of a scanner-wide length table.
     #[serde(default)]
     pub canonical_hex_key_material: Vec<CanonicalHexKeyMaterialSpec>,
     /// Per-detector minimum length for an anchor-free (keyword-free/isolated)
@@ -696,17 +696,18 @@ pub struct CanonicalHexKeyMaterialSpec {
     /// Exact pure-hex character counts admitted by this policy.
     #[serde(default)]
     pub lengths: Vec<usize>,
-    /// Assignment keys owned by this policy. Each must also appear in the
-    /// detector's top-level `keywords` list.
+    /// Assignment keys owned by a phase-2 generic policy. Each must also appear
+    /// in the detector's top-level `keywords` list. Regex policies leave this
+    /// empty because their matched pattern supplies the scope.
     #[serde(default)]
     pub keywords: Vec<String>,
-    /// Normalized assignment-key suffixes that may own this policy. This
+    /// Normalized phase-2 assignment-key suffixes that may own this policy. This
     /// expresses vendor-prefixed names such as `stripe_secret_key` without a
     /// scanner-global suffix heuristic.
     #[serde(default)]
     pub suffixes: Vec<String>,
-    /// Normalized assignment keys excluded from suffix ownership, such as the
-    /// ambiguous `license_key` shape.
+    /// Normalized phase-2 assignment keys excluded from suffix ownership, such
+    /// as the ambiguous `license_key` shape.
     #[serde(default)]
     pub excluded_keywords: Vec<String>,
 }

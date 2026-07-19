@@ -125,8 +125,11 @@ impl CompiledScanner {
         let allow_decoded_hex_key_material = key_material_policy.allows_decoded_hex_len(
             crate::decode_structure::evidence(credential).decoded_hex_text_len(),
         );
+        let allow_canonical_hex_key_material = allow_decoded_hex_key_material
+            || (credential.bytes().all(|byte| byte.is_ascii_hexdigit())
+                && key_material_policy.allows_canonical_hex_len(credential.len()));
         let named_suppression_ctx =
-            crate::suppression::NamedDetectorSuppressionCtx::with_weak_anchor_and_decoded_hex_policy(
+            crate::suppression::NamedDetectorSuppressionCtx::with_weak_anchor_and_key_material_policy(
                 chunk.metadata.path.as_deref(),
                 inferred_context,
                 Some(chunk.metadata.source_type.as_ref()),
@@ -134,7 +137,7 @@ impl CompiledScanner {
                 !is_generic,
                 weak_anchor,
                 execution_policy.structural_password_slot,
-                allow_decoded_hex_key_material,
+                allow_canonical_hex_key_material,
             );
         let match_ctx = crate::adjudicate::MatchCtx::for_named_detector(named_suppression_ctx);
         if crate::adjudicate::record_suppression(
@@ -317,7 +320,7 @@ impl CompiledScanner {
                         is_named_detector,
                         is_generic_detector: is_generic,
                         allow_encoded_text_lift: false,
-                        allow_canonical_hex_key: allow_decoded_hex_key_material,
+                        allow_canonical_hex_key: allow_canonical_hex_key_material,
                         checksum: checksum_decision,
                         calibration: self.config.calibration.as_deref(),
                     },
@@ -384,7 +387,7 @@ impl CompiledScanner {
                     min_confidence_floor,
                     is_named_detector,
                     is_generic,
-                    allow_decoded_hex_key_material,
+                    allow_canonical_hex_key_material,
                     false,
                     checksum_decision,
                     mode,

@@ -153,7 +153,7 @@ invariants, not a second source of per-detector tuning.
 | `bpe_max_bytes_per_token` | A higher ceiling is looser: fewer compressible/word-like candidates are rejected | A lower ceiling is stricter: more language-like values are rejected, with corresponding recall risk |
 | `bpe_enabled = false` | Not applicable | Skips token-efficiency rejection for detectors such as human-chosen passwords |
 | `decoded_hex_key_material_lengths` | Adds only the declared pure-hex widths after transport decoding | Omitted widths remain decoded-digest negatives |
-| `canonical_hex_key_material` | Adds only the declared pure-hex lengths under exact `keywords` or vendor-prefixed `suffixes`; `excluded_keywords` carve out ambiguous names | Omitted policy, keyword, suffix, or length remains a digest-shaped negative |
+| `canonical_hex_key_material` | Generic detectors admit declared lengths only under exact `keywords` or vendor-prefixed `suffixes`; regex detectors use length-only entries because their matched pattern is the anchor | Omitted policy, scope, or length remains a digest-shaped negative; there is no service-wide width fallback |
 | `min_len` / `keyword_free_min_len` | Longer values are required; short false positives fall, but short real credentials can also fall | Shorter credential shapes become eligible |
 | `max_len` (generic entropy owner) | Longer assignment values remain eligible; increase only when the credential contract permits them | Long assignment values are rejected rather than truncated into an apparently valid finding |
 | `allowlist_paths`, `allowlist_values`, `stopwords` | Adds detector-specific path, value-regex, or literal exclusions | Removing an exclusion makes that detector consider the matching path/value again; it does not affect other detectors |
@@ -271,9 +271,10 @@ execute; the current pipeline has no entropy-or-BPE branch.
 Detector-owned `canonical_hex_key_material` is the deliberate exception to the
 BPE and generic low-diversity/decode-as-data gates. Hexadecimal key bytes
 tokenize efficiently and use a small alphabet for the same mechanical reasons
-hexadecimal digests do, so the exact detector-owned keyword/length contract
-supplies the discriminator. Placeholder, degenerate-repeat, entropy, context,
-and reporting gates remain active. When ML is enabled, this exact TOML match is
+hexadecimal digests do, so the exact detector-owned contract supplies the
+discriminator: assignment scope plus length for generic detectors, or matched
+regex plus length for named detectors. Placeholder, degenerate-repeat, entropy,
+context, and reporting gates remain active. When ML is enabled, this exact TOML match is
 structural positive evidence and therefore preserves the detector heuristic
 floor; the model may raise its score but cannot erase a policy-proven key as if
 it were an unowned entropy candidate.

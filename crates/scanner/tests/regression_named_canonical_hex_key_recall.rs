@@ -8,9 +8,9 @@
 //! the `bare_hex_digest` arm of the suppression cascade dropped the value BEFORE
 //! confidence ran, defeating the detectors' own `min_confidence = 0.2`, which
 //! explicitly declares the keyword anchor authoritative. The fix wires the
-//! existing KH-L-0110 `allow_canonical_hex_key` escape hatch (CredData-validated:
-//! hex48+kw 1033 POS / 0 NEG; hex32+kw 0.976) into the named-detector path,
-//! keyed on the detector's service anchor instead of a captured keyword.
+//! existing KH-L-0110 `allow_canonical_hex_key` escape hatch into the
+//! named-detector path, keyed on an exact length-only declaration in the
+//! detector TOML. Omission remains a digest-shaped negative.
 //!
 //! FP-safe by construction: only the `bare_hex_digest` / `algorithmic_placeholder`
 //! arms are exempted, every decoy gate (repetitive runs, fake sequences,
@@ -23,7 +23,6 @@ mod support;
 use support::paths::detector_dir;
 
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::testing::is_canonical_service_hex_key;
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::sync::OnceLock;
 
@@ -63,33 +62,40 @@ fn detector_fired(matches: &[(String, String)], detector_id: &str) -> bool {
     matches.iter().any(|(id, _)| id == detector_id)
 }
 
-#[test]
-fn is_canonical_service_hex_key_accepts_only_canonical_hex_lengths() {
-    // Canonical service-key lengths: accepted.
-    assert!(is_canonical_service_hex_key(
-        "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
-    )); // 32 (MD5)
-    assert!(is_canonical_service_hex_key(
-        "3b70df2c347b7e02b642198793dc0b8a9827bb4c"
-    )); // 40 (SHA1)
-    assert!(is_canonical_service_hex_key(&"a".repeat(48))); // 48
-    assert!(is_canonical_service_hex_key(&"0123456789abcdef".repeat(4))); // 64 (SHA256)
+fn alchemy_matches_with_declared_hex_policy(declare_policy: bool) -> Vec<String> {
+    let mut detector = keyhog_core::load_detectors(&detector_dir())
+        .expect("load detectors")
+        .into_iter()
+        .find(|detector| detector.id == "alchemy-api-key")
+        .expect("embedded Alchemy detector");
+    if !declare_policy {
+        detector.canonical_hex_key_material.clear();
+    }
+    let scanner = CompiledScanner::compile(vec![detector]).expect("compile Alchemy detector");
+    scanner
+        .scan(&Chunk {
+            data: "ALCHEMY_API_KEY=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d".into(),
+            metadata: ChunkMetadata {
+                source_type: "canonical-hex-policy-probe".into(),
+                path: Some("probe.env".into()),
+                ..Default::default()
+            },
+        })
+        .into_iter()
+        .map(|finding| finding.credential.to_string())
+        .collect()
+}
 
-    // Non-canonical lengths the gate also catches (56/72/128 SHA-2 digests)
-    // stay OUT (no service detector requests them as a key body).
-    assert!(!is_canonical_service_hex_key(&"a".repeat(56)));
-    assert!(!is_canonical_service_hex_key(&"a".repeat(72)));
-    assert!(!is_canonical_service_hex_key(&"a".repeat(128)));
-    // Off-length: rejected.
-    assert!(!is_canonical_service_hex_key(&"a".repeat(31)));
-    assert!(!is_canonical_service_hex_key(&"a".repeat(33)));
-    // Non-hex / mixed-case: rejected (real digests are single-case).
-    assert!(!is_canonical_service_hex_key(
-        "g123456789abcdef0123456789abcdef"
-    ));
-    assert!(!is_canonical_service_hex_key(
-        "7B3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
-    ));
+#[test]
+fn named_hex_admission_requires_its_detector_toml_policy() {
+    assert_eq!(
+        alchemy_matches_with_declared_hex_policy(true),
+        vec!["7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"]
+    );
+    assert!(
+        alchemy_matches_with_declared_hex_policy(false).is_empty(),
+        "removing the detector-owned length must not inherit a global service-key width"
+    );
 }
 
 #[test]

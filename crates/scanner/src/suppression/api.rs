@@ -105,7 +105,7 @@ pub(crate) struct NamedDetectorSuppressionCtx<'a> {
     service_anchored: bool,
     weak_anchor: bool,
     structural_password_slot: bool,
-    allow_decoded_hex_key_material: bool,
+    allow_canonical_hex_key_material: bool,
 }
 
 impl<'a> NamedDetectorSuppressionCtx<'a> {
@@ -118,7 +118,7 @@ impl<'a> NamedDetectorSuppressionCtx<'a> {
         weak_anchor: bool,
         structural_password_slot: bool,
     ) -> Self {
-        Self::with_weak_anchor_and_decoded_hex_policy(
+        Self::with_weak_anchor_and_key_material_policy(
             path,
             context,
             source_type,
@@ -130,7 +130,7 @@ impl<'a> NamedDetectorSuppressionCtx<'a> {
         )
     }
 
-    pub(crate) fn with_weak_anchor_and_decoded_hex_policy(
+    pub(crate) fn with_weak_anchor_and_key_material_policy(
         path: Option<&'a str>,
         context: context::CodeContext,
         source_type: Option<&'a str>,
@@ -138,7 +138,7 @@ impl<'a> NamedDetectorSuppressionCtx<'a> {
         service_anchored: bool,
         weak_anchor: bool,
         structural_password_slot: bool,
-        allow_decoded_hex_key_material: bool,
+        allow_canonical_hex_key_material: bool,
     ) -> Self {
         Self {
             path,
@@ -148,7 +148,7 @@ impl<'a> NamedDetectorSuppressionCtx<'a> {
             service_anchored,
             weak_anchor,
             structural_password_slot,
-            allow_decoded_hex_key_material,
+            allow_canonical_hex_key_material,
         }
     }
 }
@@ -486,20 +486,14 @@ pub(crate) fn suppress_named_detector_finding_stage(
     // Weakly anchored named detectors (e.g. carbon-black-api-key) also do not
     // bypass shape gates to prevent false positive traps from triggering.
     let bypass_shape_gates = service_anchored && !weak_anchor;
-    // A service-anchored detector's regex REQUIRED its service-specific keyword
-    // to match (`ALCHEMY_API_KEY=`, `CROWDIN_API_TOKEN=`, `DATADOG_API_KEY:`),
-    // so a complete canonical-length pure-hex capture is a real key, not a
-    // coincidental digest. Exempt it from the bare-hex-digest / algorithmic-
-    // placeholder arms only (every decoy gate still runs). Strong-anchor
-    // detectors already skip those via `bypass_shape_gates`; this is the
-    // weak_anchor pure-hex case (alchemy / carbon-black / crowdin / …) whose
-    // `min_confidence = 0.2` already declares the keyword anchor authoritative
-    // the shape gate firing ahead of confidence was defeating that intent.
+    // Canonical pure-hex recall is an explicit detector-TOML decision. Strong
+    // anchors already skip generic shape gates; weak anchors may bypass the
+    // digest arms only when their compiled detector policy admits the length.
+    // Missing policy therefore suppresses digest-shaped values instead of
+    // inheriting a scanner-global width list.
     let allow_encoded_text_secret =
         !service_anchored && crate::decode_structure::decodes_to_printable_text(credential);
-    let allow_canonical_hex_key = (service_anchored
-        && super::shape::is_canonical_service_hex_key(credential))
-        || ctx.allow_decoded_hex_key_material;
+    let allow_canonical_hex_key = ctx.allow_canonical_hex_key_material;
     suppression_stage_inner(
         credential,
         path,
