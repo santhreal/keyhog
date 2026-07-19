@@ -287,7 +287,10 @@ timed out before any installed file is changed.
 `keyhog backend --self-test --json` is the machine-readable GPU health
 gate for self-hosted runners. It exits `4` when the production GPU
 region-presence path fails and emits stable `ok`, `status`, `exit_code`,
-`recommended_backend`, and per-probe fields for CI routing.
+`healthy_gpu_backends`, `route_selection`, and per-probe fields for CI health
+gates. `route_selection` is `not_measured` because a self-test proves
+correctness, not comparative speed. Use `keyhog backend --autoroute` to inspect
+the measured route.
 On a host without an eligible physical GPU it returns one `gpu_adapter` probe
 with status `skip` and exits `0`; add `--require-gpu` to make absence a failed
 health gate (exit `4`).

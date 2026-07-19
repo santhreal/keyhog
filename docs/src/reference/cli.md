@@ -374,6 +374,9 @@ GPU capability failure makes the health report fail. When no eligible physical
 GPU exists, the normal self-test emits one `gpu_adapter` probe with status
 `skip` and exits `0`; `--require-gpu` changes that probe to `fail` and exits
 `4`. `--no-gpu` explicitly requests the skip without initializing a GPU.
+The JSON report lists `healthy_gpu_backends` and sets `route_selection` to
+`not_measured`. A health probe does not recommend a route. Use
+`keyhog backend --autoroute` to inspect persisted measured evidence.
 `--json` is available for self-test
 and autoroute inspection output. A failed self-test emits the complete report
 and exits `4`. An explicit or required GPU scan whose route fails exits `12`;

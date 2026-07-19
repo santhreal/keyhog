@@ -704,6 +704,12 @@ impl BackendSelfTestProbe {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum BackendSelfTestRouteSelection {
+    NotMeasured,
+}
+
+#[derive(Debug, Serialize)]
 pub(crate) struct BackendSelfTestReport {
     pub(crate) ok: bool,
     pub(crate) status: BackendSelfTestStatus,
@@ -714,8 +720,9 @@ pub(crate) struct BackendSelfTestReport {
     pub(crate) gpu_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) gpu_max_buffer_mb: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) recommended_backend: Option<&'static str>,
+    pub(crate) healthy_gpu_backends: Vec<&'static str>,
+    /// A health probe does not measure comparative route performance.
+    pub(crate) route_selection: BackendSelfTestRouteSelection,
     pub(crate) probes: Vec<BackendSelfTestProbe>,
 }
 
@@ -750,19 +757,17 @@ fn collect_self_test_report(require_gpu: bool) -> BackendSelfTestReport {
     let mut all_ok = true;
     let mut probes = Vec::with_capacity(2 + acquired_backends.len());
     let has_wgpu = acquired_backends.contains(&keyhog_scanner::ScanBackend::GpuWgpu);
-    let recommended_gpu = region_presence.as_ref().ok().and_then(|report| {
-        // LAW10: reporting-only recommendation. The original error is surfaced as a failed probe and nonzero exit below.
-        report
-            .peers
-            .iter()
-            .find(|peer| peer.backend == keyhog_scanner::ScanBackend::GpuWgpu)
-            .or_else(|| report.peers.first())
-            .map(|peer| match peer.backend {
-                keyhog_scanner::ScanBackend::GpuCuda => "gpu-cuda",
-                keyhog_scanner::ScanBackend::GpuWgpu => "gpu-wgpu",
-                _ => "simd-regex",
-            })
-    });
+    let healthy_gpu_backends = region_presence
+        .as_ref()
+        .ok()
+        .map(|report| {
+            report
+                .peers
+                .iter()
+                .map(|peer| crate::orchestrator_config::backend_override_cli_value(peer.backend))
+                .collect()
+        })
+        .unwrap_or_default();
 
     // Test 1: keyhog's MoE compute dispatch.
     if !has_wgpu {
@@ -876,11 +881,8 @@ fn collect_self_test_report(require_gpu: bool) -> BackendSelfTestReport {
         gpu_is_software: hw.gpu_is_software && acquired_backends.is_empty(),
         gpu_name: hw.gpu_name.clone(),
         gpu_max_buffer_mb: hw.gpu_vram_mb,
-        recommended_backend: if all_ok {
-            recommended_gpu
-        } else {
-            Some("simd-regex")
-        },
+        healthy_gpu_backends,
+        route_selection: BackendSelfTestRouteSelection::NotMeasured,
         probes,
     }
 }
@@ -913,7 +915,8 @@ fn unavailable_gpu_self_test_report(hw: &HardwareCaps, require_gpu: bool) -> Bac
         gpu_is_software: hw.gpu_is_software,
         gpu_name: hw.gpu_name.clone(),
         gpu_max_buffer_mb: hw.gpu_vram_mb,
-        recommended_backend: Some("simd-regex"),
+        healthy_gpu_backends: Vec::new(),
+        route_selection: BackendSelfTestRouteSelection::NotMeasured,
         probes: vec![BackendSelfTestProbe {
             name: "gpu_adapter",
             status,
@@ -971,6 +974,9 @@ fn print_self_test_report(report: &BackendSelfTestReport) {
         println!(
             "{} GPU self-test passed, scans on this box can route to GPU.",
             style::pass("PASS", &palette)
+        );
+        println!(
+            "  Self-test proves backend health only. `keyhog backend --autoroute` shows the measured route."
         );
     } else {
         let stderr_palette = style::for_stderr();
@@ -1040,7 +1046,8 @@ pub(crate) mod testing {
             gpu_is_software: false,
             gpu_name: Some("NVIDIA GeForce RTX 5090".to_string()),
             gpu_max_buffer_mb: Some(262_144),
-            recommended_backend: Some("simd-regex"),
+            healthy_gpu_backends: vec!["gpu-wgpu"],
+            route_selection: super::BackendSelfTestRouteSelection::NotMeasured,
             probes: vec![
                 super::BackendSelfTestProbe {
                     name: "moe_kernel",

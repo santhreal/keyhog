@@ -79,17 +79,18 @@ diagnosable.
 report/SARIF/artifact are written. A `--verify` scan that confirms a live
 credential still fails the action with KeyHog exit code `10`.
 
-Self-hosted GPU runners can add `keyhog backend --self-test --json`
-before the scan. On an eligible GPU host, the JSON includes `ok`, `status`, `exit_code`,
-`recommended_backend`, and records for `moe_kernel`, the diagnostic
-`vyre_literal_set`, and the production `gpu_region_presence` route. Exit `4`
+Self-hosted GPU runners can add `keyhog backend --self-test --json` before the
+scan. On an eligible GPU host, the JSON includes `ok`, `status`, `exit_code`,
+`healthy_gpu_backends`, `route_selection`, and records for `moe_kernel`, the
+diagnostic `vyre_literal_set`, and the production `gpu_region_presence` route. Exit `4`
 means the binary is present but a required GPU capability or the production
 route failed; fail the GPU
 lane or intentionally start a separate explicit SIMD/CPU lane. Normal automatic
 scans recover a transient accelerated-backend fault against the same stable bytes
 and expose the recovered byte count; `--require-gpu` keeps absence or runtime
-failure as a hard lane contract. A runner without an
-eligible physical GPU instead returns one `gpu_adapter` probe with status
+failure as a hard lane contract. The self-test sets `route_selection` to
+`not_measured`. Read `keyhog backend --autoroute` for the calibrated route. A
+runner without an eligible physical GPU instead returns one `gpu_adapter` probe with status
 `skip` and exits `0`; add `--require-gpu` when absence must fail the lane.
 
 To adopt on a repo that already has known findings, generate and commit a
