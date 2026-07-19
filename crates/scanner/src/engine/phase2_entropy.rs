@@ -52,44 +52,16 @@ impl CompiledScanner {
         // appropriateness gate, the lower-dash app-password gate, and the
         // full entropy scan. This avoids repeating the keyword search for the
         // appropriateness, special-shape, and emission decisions.
-        // In source-restricted mode the emitter already rejects candidates
-        // without a same-line credential assignment. Keep that exact predicate
-        // at admission too, so ordinary source lines never enter the expensive
-        // keyword-free entropy pass only to be rejected after extraction.
-        let keyword_assignment_lines = if restrict_source_entropy_to_assignments {
-            entropy_lines
-                .iter()
-                .enumerate()
-                .filter_map(|(index, line)| {
-                    (memchr::memchr3(b'=', b':', b'<', line.as_bytes()).is_some()
-                        && crate::entropy::keywords::line_has_credential_assignment_surface(line))
-                    .then_some((index, *line))
-                })
-                .collect()
-        } else {
+        // Production discovery uses only active detector TOML keywords and the
+        // operator's Tier-A list. The compatibility assignment vocabulary must
+        // not widen a replacement corpus, including source-restricted scans.
+        let keyword_assignment_lines =
             crate::entropy::keywords::find_keyword_assignment_lines_with_policy(
                 &entropy_lines,
                 &self.config.secret_keywords,
                 self.generic_owning_detector.policy_keywords(),
-            )
-        };
-        // `is_entropy_appropriate_inner` needs `has_secret_keyword_line`. For
-        // source files without `entropy_in_source_files`, the keyword-presence
-        // signal is `line_has_credential_assignment_surface` (a stricter check
-        // that requires a credential-shaped assignment, not just any secret
-        // keyword). For all other paths, `find_keyword_assignment_lines` is
-        // the signal. We reuse the pre-computed `keyword_assignment_lines`
-        // for the latter case.
-        let has_secret_keyword_line = if source_entropy_requires_same_line_credential
-            && !restrict_source_entropy_to_assignments
-        {
-            entropy_lines
-                .iter()
-                .copied()
-                .any(crate::entropy::keywords::line_has_credential_assignment_surface)
-        } else {
-            !keyword_assignment_lines.is_empty()
-        };
+            );
+        let has_secret_keyword_line = !keyword_assignment_lines.is_empty();
         let path_entropy_appropriate = crate::entropy::is_entropy_appropriate_inner(
             chunk.metadata.path.as_deref(),
             self.config.entropy_in_source_files,
@@ -189,7 +161,7 @@ impl CompiledScanner {
         let keyword_free_threshold = self.keyword_free_entropy_threshold(sensitive_path);
 
         let entropy_matches =
-            crate::entropy::scanner::find_entropy_secrets_with_precomputed_keywords_and_policy(
+            crate::entropy::scanner::find_classified_entropy_secrets_with_precomputed_keywords_and_policy(
                 &entropy_lines,
                 line_offsets,
                 &keyword_assignment_lines,
@@ -211,7 +183,10 @@ impl CompiledScanner {
                     crate::entropy::scanner::KeywordFreeLineScope::All
                 },
             );
-        for entropy_match in entropy_matches {
+        for classified_match in entropy_matches {
+            let declared_credential_context = classified_match.is_credential_context;
+            let same_line_credential_context = classified_match.is_same_line_credential_context;
+            let entropy_match = classified_match.matched;
             // Resolve the complete synthetic identity from the active policy
             // owner. There is no keyword classifier or scanner-global identity
             // table: an incomplete custom corpus fails closed instead of
@@ -288,6 +263,8 @@ impl CompiledScanner {
                 preprocessed,
                 line_offsets,
                 chunk,
+                declared_credential_context,
+                same_line_credential_context,
                 detector_owned_canonical_hex_key,
                 source_entropy_requires_same_line_credential,
                 bpe_bound,

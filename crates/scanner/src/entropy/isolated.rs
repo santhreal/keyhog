@@ -2,7 +2,10 @@
 use super::keywords::is_likely_innocuous_line;
 use super::keywords::KeywordContext;
 use super::plausibility::is_isolated_bare_secret_plausible;
-use super::{shannon_entropy, EntropyMatch, FIRST_SOURCE_LINE_NUMBER, ISOLATED_BARE_ENTROPY_LABEL};
+use super::{
+    shannon_entropy, ClassifiedEntropyMatch, EntropyMatch, FIRST_SOURCE_LINE_NUMBER,
+    ISOLATED_BARE_ENTROPY_LABEL,
+};
 use crate::adjudicate::{EntropyShapeStage, StageId};
 
 #[derive(Clone, Copy)]
@@ -497,7 +500,7 @@ pub(super) fn collect_isolated_bare_candidates_inner(
     line_offset: usize,
     context: &KeywordContext,
     seen: &mut std::collections::HashSet<String>,
-    matches: &mut Vec<EntropyMatch>,
+    matches: &mut Vec<ClassifiedEntropyMatch>,
     placeholder_keywords: &[String],
 ) {
     let mut emit_candidate = |candidate: &str, candidate_offset: usize| {
@@ -522,12 +525,16 @@ pub(super) fn collect_isolated_bare_candidates_inner(
             return;
         }
         seen.insert(candidate.to_string());
-        matches.push(EntropyMatch {
-            value: candidate.to_string(),
-            entropy,
-            keyword: context.keyword.clone(),
-            line: line_idx + FIRST_SOURCE_LINE_NUMBER,
-            offset: line_offset + candidate_offset,
+        matches.push(ClassifiedEntropyMatch {
+            matched: EntropyMatch {
+                value: candidate.to_string(),
+                entropy,
+                keyword: context.keyword.clone(),
+                line: line_idx + FIRST_SOURCE_LINE_NUMBER,
+                offset: line_offset + candidate_offset,
+            },
+            is_credential_context: false,
+            is_same_line_credential_context: false,
         });
     };
     let candidate_policy = IsolatedCandidatePolicy::from_compiled(&context.plausibility_policy);

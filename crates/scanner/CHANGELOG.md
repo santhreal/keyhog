@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Resolve production entropy credential context from the active detector TOMLs
+  and Tier-A keyword configuration at generation and suppression. Embedded
+  compatibility keywords no longer widen a replacement detector corpus, and
+  adjacent declared assignments retain their own detector context.
 - Compile one typed min/max policy from each detector and apply its inclusive
   bounds before generic entropy, BPE, entropy fallback, or regex-envelope
   scoring. Overlength values now share the `value_too_long` suppression reason

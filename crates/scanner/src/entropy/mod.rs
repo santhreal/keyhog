@@ -249,6 +249,13 @@ pub struct EntropyMatch {
     pub offset: usize,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct ClassifiedEntropyMatch {
+    pub(crate) matched: EntropyMatch,
+    pub(crate) is_credential_context: bool,
+    pub(crate) is_same_line_credential_context: bool,
+}
+
 /// True if the file at `path` is worth running entropy scanning on.
 ///
 /// Path-only gate: `.json` and all source-code extensions are hard-OFF here.

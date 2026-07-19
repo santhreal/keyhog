@@ -1,5 +1,4 @@
 //! Entropy-fallback candidate suppression predicate.
-use super::helpers::*;
 use super::line_context::{
     entropy_value_line, value_line_has_random_byte_blob_owner,
     value_line_has_same_line_credential_keyword,
@@ -15,6 +14,8 @@ pub(crate) fn entropy_match_suppression_stage(
     preprocessed: &ScannerPreprocessedText<'_>,
     line_offsets: &[usize],
     chunk: &Chunk,
+    declared_credential_context: bool,
+    same_line_credential_context: bool,
     // Exact owning-detector TOML keyword/length evidence. This is independent
     // of ML authority and covers structured assignment forms such as XML.
     detector_owned_canonical_hex_key: bool,
@@ -39,8 +40,12 @@ pub(crate) fn entropy_match_suppression_stage(
         crate::suppression::token_randomness::TokenRandomness::for_candidate(&entropy_match.value);
     // Proximity context is too loose to release canonical shapes; require the
     // credential keyword on the same line as the candidate.
-    let same_line_credential_assignment =
-        value_line_has_same_line_credential_keyword(entropy_match, preprocessed, line_offsets);
+    let same_line_credential_assignment = value_line_has_same_line_credential_keyword(
+        entropy_match,
+        preprocessed,
+        line_offsets,
+        same_line_credential_context,
+    );
     if source_entropy_requires_same_line_credential
         && crate::suppression::shape::looks_like_source_type_identifier_with_randomness(
             &entropy_match.value,
@@ -134,7 +139,7 @@ pub(crate) fn entropy_match_suppression_stage(
     // anchor (`api_key`, `token`, `password`, ...), the
     // keyword itself is positive evidence and we keep the
     // candidate - users do plant lowercase-only passwords.
-    if !keyword_is_credential_anchor(&entropy_match.keyword)
+    if !declared_credential_context
         && crate::suppression::shape::looks_like_english_prose(&entropy_match.value)
     {
         return Some(EntropyShapeStage::EnglishProse);

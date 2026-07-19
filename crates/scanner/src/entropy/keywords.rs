@@ -36,10 +36,27 @@ pub(crate) fn find_keyword_assignment_lines_with_policy<'a>(
         .iter()
         .enumerate()
         .filter_map(|(index, line)| {
-            is_keyword_assignment_line_with_policy(line, secret_keywords, detector_policy_keywords)
+            is_declared_keyword_assignment_line(line, secret_keywords, detector_policy_keywords)
                 .then_some((index, *line))
         })
         .collect()
+}
+
+fn is_declared_keyword_assignment_line(
+    line: &str,
+    secret_keywords: &[String],
+    detector_policy_keywords: &[String],
+) -> bool {
+    let trimmed = line.trim();
+    if is_import_like_prefix(trimmed) {
+        return false;
+    }
+    let line_bytes = line.as_bytes();
+    memchr::memchr3(b'=', b':', b'<', line_bytes).is_some()
+        && secret_keywords
+            .iter()
+            .chain(detector_policy_keywords)
+            .any(|keyword| crate::ascii_ci::ci_find_nonempty(line_bytes, keyword.as_bytes()))
 }
 
 pub(crate) fn is_keyword_assignment_line(line: &str, secret_keywords: &[String]) -> bool {

@@ -10,7 +10,9 @@ pub(crate) use super::isolated::{
     has_isolated_bare_secret_candidate_with_lines_and_policy,
     has_isolated_bare_secret_candidate_with_policy,
 };
-use super::{keywords::*, shannon_entropy, EntropyMatch, FIRST_SOURCE_LINE_NUMBER};
+use super::{
+    keywords::*, shannon_entropy, ClassifiedEntropyMatch, EntropyMatch, FIRST_SOURCE_LINE_NUMBER,
+};
 
 /// Borrowed view of the detector corpus that actually compiled for this scan.
 /// Production phase-2 paths pass this view so custom detector directories and
@@ -383,6 +385,45 @@ pub(crate) fn find_entropy_secrets_with_precomputed_keywords_and_policy(
     active_policy: Option<ActiveDetectorPolicy<'_>>,
     keyword_free_line_scope: KeywordFreeLineScope,
 ) -> Vec<EntropyMatch> {
+    find_classified_entropy_secrets_with_precomputed_keywords_and_policy(
+        lines,
+        line_offsets,
+        keyword_lines,
+        min_length,
+        context_lines,
+        entropy_threshold,
+        keyword_free_threshold,
+        secret_keywords,
+        test_keywords,
+        placeholder_keywords,
+        skip_lines,
+        active_policy,
+        keyword_free_line_scope,
+    )
+    .into_iter()
+    .map(|candidate| candidate.matched)
+    .collect()
+}
+
+/// Production entropy candidates with the exact credential-context decision
+/// made during generation. The internal wrapper keeps the public match shape
+/// stable while suppression consumes the same detector/config classification.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn find_classified_entropy_secrets_with_precomputed_keywords_and_policy(
+    lines: &[&str],
+    line_offsets: &[usize],
+    keyword_lines: &[(usize, &str)],
+    min_length: usize,
+    context_lines: usize,
+    entropy_threshold: f64,
+    keyword_free_threshold: Option<f64>,
+    secret_keywords: &[String],
+    test_keywords: &[String],
+    placeholder_keywords: &[String],
+    skip_lines: Option<&std::collections::HashSet<usize>>,
+    active_policy: Option<ActiveDetectorPolicy<'_>>,
+    keyword_free_line_scope: KeywordFreeLineScope,
+) -> Vec<ClassifiedEntropyMatch> {
     assert!(
         line_offsets.len() >= lines.len(),
         "entropy line offsets must cover every split line"
@@ -430,7 +471,7 @@ fn scan_keyword_contexts(
     context_lines: usize,
     entropy_threshold: f64,
     seen: &mut std::collections::HashSet<String>,
-    matches: &mut Vec<EntropyMatch>,
+    matches: &mut Vec<ClassifiedEntropyMatch>,
     secret_keywords: &[String],
     _test_keywords: &[String],
     placeholder_keywords: &[String],
@@ -450,6 +491,13 @@ fn scan_keyword_contexts(
         let start = keyword_line_index.saturating_sub(context_lines);
         let end = (*keyword_line_index + context_lines + 1).min(lines.len());
         for line_idx in start..end {
+            if line_idx != *keyword_line_index
+                && keyword_lines
+                    .binary_search_by_key(&line_idx, |(index, _)| *index)
+                    .is_ok()
+            {
+                continue;
+            }
             if let Some(skip) = skip_lines {
                 if skip.contains(&line_idx) {
                     continue;
@@ -464,6 +512,7 @@ fn scan_keyword_contexts(
                 matches,
                 placeholder_keywords,
                 active_policy,
+                line_idx == *keyword_line_index && context.is_credential_context,
             );
         }
     }
@@ -537,7 +586,7 @@ fn scan_keyword_free_candidates(
     entropy_threshold: f64,
     keyword_free_threshold: Option<f64>,
     seen: &mut std::collections::HashSet<String>,
-    matches: &mut Vec<EntropyMatch>,
+    matches: &mut Vec<ClassifiedEntropyMatch>,
     placeholder_keywords: &[String],
     skip_lines: Option<&std::collections::HashSet<usize>>,
     active_policy: Option<ActiveDetectorPolicy<'_>>,
@@ -720,6 +769,7 @@ fn scan_keyword_free_candidates(
                 matches,
                 placeholder_keywords,
                 active_policy,
+                false,
             );
         }
     }
@@ -792,9 +842,10 @@ fn collect_line_candidates(
     line_offset: usize,
     context: &KeywordContext,
     seen: &mut std::collections::HashSet<String>,
-    matches: &mut Vec<EntropyMatch>,
+    matches: &mut Vec<ClassifiedEntropyMatch>,
     placeholder_keywords: &[String],
     active_policy: Option<ActiveDetectorPolicy<'_>>,
+    is_same_line_credential_context: bool,
 ) {
     if is_likely_innocuous_line(line) {
         return;
@@ -808,6 +859,7 @@ fn collect_line_candidates(
         matches,
         placeholder_keywords,
         active_policy,
+        is_same_line_credential_context,
     );
 }
 
@@ -821,9 +873,10 @@ fn collect_line_candidates_inner(
     line_offset: usize,
     context: &KeywordContext,
     seen: &mut std::collections::HashSet<String>,
-    matches: &mut Vec<EntropyMatch>,
+    matches: &mut Vec<ClassifiedEntropyMatch>,
     placeholder_keywords: &[String],
     active_policy: Option<ActiveDetectorPolicy<'_>>,
+    is_same_line_credential_context: bool,
 ) {
     let key_material_policy = get_key_material_policy_for_keyword(active_policy, &context.keyword);
     let candidates = if crate::telemetry::is_dogfood_enabled() {
@@ -885,12 +938,16 @@ fn collect_line_candidates_inner(
             continue;
         }
         seen.insert(candidate.clone());
-        matches.push(EntropyMatch {
-            value: candidate,
-            entropy,
-            keyword: context.keyword.clone(),
-            line: line_idx + FIRST_SOURCE_LINE_NUMBER,
-            offset: line_offset,
+        matches.push(ClassifiedEntropyMatch {
+            matched: EntropyMatch {
+                value: candidate,
+                entropy,
+                keyword: context.keyword.clone(),
+                line: line_idx + FIRST_SOURCE_LINE_NUMBER,
+                offset: line_offset,
+            },
+            is_credential_context: context.is_credential_context,
+            is_same_line_credential_context,
         });
     }
 }
@@ -1068,25 +1125,31 @@ fn keyword_context_with_policy(
     let line_bytes = keyword_line.as_bytes();
     let exact_assignment_keyword =
         crate::entropy::keywords::assignment_keyword_for_line(keyword_line);
-    let keyword = exact_assignment_keyword.as_deref().or_else(|| {
-        secret_keywords
-            .iter()
-            .find(|keyword| crate::ascii_ci::ci_find_nonempty(line_bytes, keyword.as_bytes()))
-            .map(|keyword| keyword.as_str())
-    })?;
+    let configured_keyword = secret_keywords
+        .iter()
+        .find(|keyword| crate::ascii_ci::ci_find_nonempty(line_bytes, keyword.as_bytes()))
+        .map(String::as_str);
+    let keyword = exact_assignment_keyword.as_deref().or(configured_keyword)?;
     let is_exact_credential_context = exact_assignment_keyword
         .as_deref()
         .is_some_and(crate::entropy::keywords::normalized_assignment_keyword_is_credential);
     let is_active_detector_context = exact_assignment_keyword
         .as_deref()
         .is_some_and(|keyword| active_policy.is_some_and(|policy| policy.claims_keyword(keyword)));
-    let is_credential_context = is_exact_credential_context
-        || is_active_detector_context
-        || crate::credential_context_keywords::credential_context_keywords()
-            .iter()
-            .any(|credential_keyword| {
-                crate::ascii_ci::ci_find_nonempty(line_bytes, credential_keyword.as_bytes())
-            });
+    let is_credential_context = if active_policy.is_some() {
+        // Production scanners take positive context only from the active
+        // detector corpus or the operator's Tier-A keyword list. The embedded
+        // compatibility vocabulary must never widen a replacement corpus.
+        is_active_detector_context || configured_keyword.is_some()
+    } else {
+        is_exact_credential_context
+            || configured_keyword.is_some()
+            || crate::credential_context_keywords::credential_context_keywords()
+                .iter()
+                .any(|credential_keyword| {
+                    crate::ascii_ci::ci_find_nonempty(line_bytes, credential_keyword.as_bytes())
+                })
+    };
 
     let compiled = get_compiled_policy_for_keyword(active_policy, keyword)?;
     let entropy_low = compiled.entropy_low;

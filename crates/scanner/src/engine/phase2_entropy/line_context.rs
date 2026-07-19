@@ -1,6 +1,5 @@
 //! Same-line ownership checks for entropy fallback candidates.
 
-use super::helpers::keyword_is_credential_anchor;
 use crate::types::ScannerPreprocessedText;
 
 /// True iff the value's own line carries a STRONG credential keyword anchor
@@ -13,12 +12,17 @@ pub(super) fn value_line_has_same_line_credential_keyword(
     entropy_match: &crate::entropy::EntropyMatch,
     preprocessed: &ScannerPreprocessedText<'_>,
     line_offsets: &[usize],
+    same_line_credential_context: bool,
 ) -> bool {
     let Some(line_text) = entropy_value_line(entropy_match, preprocessed, line_offsets) else {
         return false;
     };
-    crate::entropy::keywords::line_has_credential_assignment_surface(line_text)
-        || value_owned_by_local_credential_key(line_text, &entropy_match.value)
+    same_line_credential_context
+        && value_owned_by_local_credential_key(
+            line_text,
+            &entropy_match.value,
+            &entropy_match.keyword,
+        )
 }
 
 pub(super) fn value_line_has_random_byte_blob_owner(
@@ -72,10 +76,9 @@ pub(crate) fn entropy_value_line<'a>(
         .then_some(line_text)
 }
 
-fn value_owned_by_local_credential_key(line: &str, value: &str) -> bool {
+fn value_owned_by_local_credential_key(line: &str, value: &str, owning_keyword: &str) -> bool {
     value_owned_by_local_key_matching(line, value, |normalized| {
-        crate::entropy::keywords::normalized_assignment_keyword_is_credential(normalized)
-            || keyword_is_credential_anchor(normalized)
+        normalized.eq_ignore_ascii_case(owning_keyword)
     })
 }
 
