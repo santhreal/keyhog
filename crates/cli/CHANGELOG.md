@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Let `calibrate-autoroute --policy` refresh one scan policy without rerunning
+  every preset. The default remains the complete all-policy install sweep.
 - Reject autoroute cache and runtime-health workload identities with impossible
   logarithmic ranges, phase-one subtotals, decoder bits, or decoder cost bands.
 - Report automatic backend recovery as `complete_after_recovery` in JSON schema

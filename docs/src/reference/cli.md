@@ -340,8 +340,10 @@ one-shot decision. Candidate measurement order rotates across workload bands to
 limit fixed-order thermal bias. This avoids per-probe process startup without
 turning cold GPU evidence into warm evidence.
 `--autoroute-cache <PATH>` selects the evidence file; `off` is rejected because
-calibration must persist its result. `--quiet` suppresses per-probe progress but
-still prints the final summary.
+calibration must persist its result. `--policy <default|fast|deep|precision|all>`
+selects the policy to refresh. It defaults to `all` for the complete install
+sweep. `--quiet` suppresses per-probe progress but still prints the final
+summary.
 
 ## `keyhog backend`
 

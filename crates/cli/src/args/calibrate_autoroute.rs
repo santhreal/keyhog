@@ -1,4 +1,19 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
+
+/// Scan policy whose workload ladder should be calibrated.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub enum AutorouteCalibrationPolicy {
+    /// Calibrate the ordinary scan policy with no preset flag.
+    Default,
+    /// Calibrate the `--fast` scan preset.
+    Fast,
+    /// Calibrate the `--deep` scan preset.
+    Deep,
+    /// Calibrate the `--precision` scan preset.
+    Precision,
+    /// Calibrate the ordinary policy and every documented preset.
+    All,
+}
 
 /// Run the full install-time autoroute calibration sweep in one command.
 ///
@@ -19,6 +34,13 @@ pub struct CalibrateAutorouteArgs {
     /// scans resolve against.
     #[arg(long, value_name = "PATH")]
     pub autoroute_cache: Option<String>,
+
+    /// Select which scan policy to calibrate.
+    ///
+    /// `all` preserves the install-time sweep. Select one policy when you need
+    /// to repair or refresh only the configuration you run.
+    #[arg(long, value_enum, default_value_t = AutorouteCalibrationPolicy::All)]
+    pub policy: AutorouteCalibrationPolicy,
 
     /// Suppress the per-probe progress lines; print only the final summary.
     #[arg(long)]

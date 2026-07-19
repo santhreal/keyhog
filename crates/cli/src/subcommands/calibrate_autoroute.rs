@@ -18,7 +18,7 @@
 //! child process for every representative made install calibration take
 //! hours while measuring startup work that is not part of the route decision.
 
-use crate::args::{CalibrateAutorouteArgs, ScanArgs};
+use crate::args::{AutorouteCalibrationPolicy, CalibrateAutorouteArgs, ScanArgs};
 use crate::orchestrator::ScanOrchestrator;
 use crate::style::Palette;
 use anyhow::{Context, Result};
@@ -39,6 +39,18 @@ use std::sync::{Arc, Mutex};
 /// `args::scan`; the `every_documented_preset_resolves` e2e gate fails if a
 /// preset is missing a calibrated decision.
 const SCAN_POLICY_PRESETS: &[&str] = &["--fast", "--deep", "--precision"];
+
+fn selected_policy_flags(policy: AutorouteCalibrationPolicy) -> Vec<Option<&'static str>> {
+    match policy {
+        AutorouteCalibrationPolicy::Default => vec![None],
+        AutorouteCalibrationPolicy::Fast => vec![Some("--fast")],
+        AutorouteCalibrationPolicy::Deep => vec![Some("--deep")],
+        AutorouteCalibrationPolicy::Precision => vec![Some("--precision")],
+        AutorouteCalibrationPolicy::All => std::iter::once(None)
+            .chain(SCAN_POLICY_PRESETS.iter().copied().map(Some))
+            .collect(),
+    }
+}
 
 /// A 1 KiB block of plain, low-decode-density text. The installer builds probes
 /// as whole 1 KiB blocks; mirroring the block size keeps a Rust-generated probe
@@ -354,10 +366,7 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
     })?;
 
     let workloads = core_workload_plan();
-    // Default policy first (no preset flag), then each preset.
-    let policy_flags: Vec<Option<&str>> = std::iter::once(None)
-        .chain(SCAN_POLICY_PRESETS.iter().copied().map(Some))
-        .collect();
+    let policy_flags = selected_policy_flags(args.policy);
     let total = workloads.len() * policy_flags.len();
 
     let p = crate::style::for_stdout();

@@ -109,6 +109,18 @@ The binary can also recalibrate its own core workloads in place:
 keyhog calibrate-autoroute
 ```
 
+The default command calibrates every documented scan policy. To refresh only
+the policy you use, select it explicitly:
+
+```sh
+keyhog calibrate-autoroute --policy default
+keyhog calibrate-autoroute --policy deep
+```
+
+You can also select `fast` or `precision`. A focused run keeps valid evidence
+for other configurations and publishes only after every workload in the
+selected policy succeeds.
+
 This drives the core stdin + filesystem workload ladder across every scan
 preset. Plain single-file probes cover every power-of-two size band from 1 byte
 through 32 MiB, with additional 4 MiB + 1, 8 MiB - 1, 8 MiB + 1, and

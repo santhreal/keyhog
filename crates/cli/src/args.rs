@@ -15,7 +15,7 @@ mod scan_system;
 mod watch;
 
 pub use calibrate::CalibrateArgs;
-pub use calibrate_autoroute::CalibrateAutorouteArgs;
+pub use calibrate_autoroute::{AutorouteCalibrationPolicy, CalibrateAutorouteArgs};
 pub use config::ConfigArgs;
 pub use daemon::{DaemonAction, DaemonArgs};
 pub use detectors::{DetectorArgs, DetectorFormat};
