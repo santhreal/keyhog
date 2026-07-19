@@ -85,7 +85,13 @@ fn device_priority(device_type: wgpu::DeviceType) -> u8 {
 }
 
 fn is_software(info: &wgpu::AdapterInfo) -> bool {
-    if info.device_type == wgpu::DeviceType::Cpu {
+    // VYRE accepts only discrete, integrated, and virtual GPU adapters.
+    // `Other` is not proof of hardware compute and must not enter the same
+    // autoroute candidate census that VYRE will later execute.
+    if matches!(
+        info.device_type,
+        wgpu::DeviceType::Cpu | wgpu::DeviceType::Other
+    ) {
         return true;
     }
     let name = info.name.to_ascii_lowercase();

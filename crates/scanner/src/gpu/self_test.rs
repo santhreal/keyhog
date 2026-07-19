@@ -123,7 +123,8 @@ fn vyre_gpu_self_test_impl() -> Result<VyreGpuSelfTest, String> {
         ));
     }
 
-    let items: Vec<Vec<u8>> = (0..100)
+    const COALESCED_ITEMS: usize = 100;
+    let items: Vec<Vec<u8>> = (0..COALESCED_ITEMS)
         .map(|index| format!("id-{index:03}-needle").into_bytes())
         .collect();
     let mut buffer = Vec::with_capacity(items.iter().map(Vec::len).sum());
@@ -134,6 +135,12 @@ fn vyre_gpu_self_test_impl() -> Result<VyreGpuSelfTest, String> {
     let coalesced = scanner
         .scan(backend.as_ref(), &buffer, 10_000)
         .map_err(|error| format!("vyre coalesced GPU scan failed: {error}"))?;
+    if coalesced.len() != COALESCED_ITEMS {
+        return Err(format!(
+            "vyre coalesced GPU scan returned {} matches, expected {COALESCED_ITEMS}",
+            coalesced.len()
+        ));
+    }
 
     Ok(VyreGpuSelfTest {
         direct_matches: direct.len(),
