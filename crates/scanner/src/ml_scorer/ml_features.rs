@@ -38,7 +38,8 @@ pub(crate) enum CompiledEntropyFeatureClass {
 
 /// Static detector-conditioned model inputs compiled once from TOML. Runtime
 /// feature extraction receives this compact copy instead of rereading kind,
-/// verifier, companion, and entropy-fallback structures for every candidate.
+/// verifier, companion, entropy-fallback, and entropy-tier structures for every
+/// candidate.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct CompiledDetectorMlFeatures {
     pub(crate) generic_detector: bool,
@@ -48,6 +49,8 @@ pub(crate) struct CompiledDetectorMlFeatures {
     pub(crate) structural_password_slot: bool,
     pub(crate) phase2_generic: bool,
     pub(crate) entropy_class: CompiledEntropyFeatureClass,
+    entropy_high: f64,
+    entropy_very_high: f64,
 }
 
 impl CompiledDetectorMlFeatures {
@@ -81,6 +84,13 @@ impl CompiledDetectorMlFeatures {
             structural_password_slot: detector.structural_password_slot,
             phase2_generic: detector.kind == keyhog_core::DetectorKind::Phase2Generic,
             entropy_class,
+            // Active entropy owners and weak-anchor detectors declare these
+            // values in their detector TOML. Other detectors retain the
+            // detector-neutral model tiers used by the training API.
+            entropy_high: detector.entropy_high.unwrap_or(HIGH_ENTROPY_THRESHOLD),
+            entropy_very_high: detector
+                .entropy_very_high
+                .unwrap_or(VERY_HIGH_ENTROPY_THRESHOLD),
         }
     }
 }
@@ -102,8 +112,9 @@ const VERY_LONG_LENGTH_THRESHOLD: usize = 100;
 const MAX_NORMALIZED_ENTROPY: f32 = 8.0;
 
 /// Model-specific low-entropy bucket from the training corpus: 3.5 separates
-/// readable English from random-ish strings. The high and very-high buckets use
-/// the scanner's canonical entropy thresholds, not private ML copies.
+/// readable English from random-ish strings. Detector-conditioned scoring uses
+/// the owning detector's compiled high and very-high tiers. The neutral
+/// training API uses the scanner's documented detector-neutral defaults.
 ///
 /// This does not share ownership with detector-local deterministic entropy
 /// floors. It is a model input boundary and must be retuned with the model
@@ -224,6 +235,8 @@ pub fn compute_features_with_config(
 /// Compute serve-path features conditioned on the detector policy that owns
 /// the candidate. Every detector feature is derived from that loaded TOML;
 /// candidate provenance contributes only the pattern-versus-entropy channel.
+/// Features 6 and 7 use the detector's declared high and very-high entropy
+/// tiers when present.
 pub fn compute_features_for_detector_with_config(
     text: &str,
     context: &str,
@@ -296,7 +309,7 @@ fn compute_features_internal(
     let ent = shannon_entropy(text_bytes);
     let text_summary = summarize_text_bytes(text_bytes);
     apply_length_features(&mut f, len);
-    apply_entropy_features(&mut f, ent);
+    apply_entropy_features(&mut f, ent, detector_features);
     apply_character_features(&mut f, &text_summary);
     apply_prefix_features(&mut f, text, known_prefixes);
     apply_context_features(
@@ -416,11 +429,19 @@ fn apply_length_features(features: &mut [f32; NUM_FEATURES], len: usize) {
     features[3] = binary_feature(len >= VERY_LONG_LENGTH_THRESHOLD);
 }
 
-fn apply_entropy_features(features: &mut [f32; NUM_FEATURES], entropy_value: f64) {
+fn apply_entropy_features(
+    features: &mut [f32; NUM_FEATURES],
+    entropy_value: f64,
+    detector: Option<CompiledDetectorMlFeatures>,
+) {
+    let (entropy_high, entropy_very_high) = match detector {
+        Some(compiled) => (compiled.entropy_high, compiled.entropy_very_high),
+        None => (HIGH_ENTROPY_THRESHOLD, VERY_HIGH_ENTROPY_THRESHOLD),
+    };
     features[4] = entropy_value as f32 / MAX_NORMALIZED_ENTROPY;
     features[5] = binary_feature(entropy_value >= ML_LOW_ENTROPY_FEATURE_THRESHOLD);
-    features[6] = binary_feature(entropy_value >= HIGH_ENTROPY_THRESHOLD);
-    features[7] = binary_feature(entropy_value >= VERY_HIGH_ENTROPY_THRESHOLD);
+    features[6] = binary_feature(entropy_value >= entropy_high);
+    features[7] = binary_feature(entropy_value >= entropy_very_high);
 }
 
 fn apply_character_features(features: &mut [f32; NUM_FEATURES], summary: &TextSummary) {
