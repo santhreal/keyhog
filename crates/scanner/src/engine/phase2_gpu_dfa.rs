@@ -55,6 +55,7 @@ pub(crate) struct Phase2GpuDfaCatalog {
     shards: Vec<Phase2GpuDfaShard>,
     uncovered_ascii_patterns: usize,
     excluded_ascii_redundant_patterns: usize,
+    resident: resident::Phase2GpuDfaCatalogResident,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -111,6 +112,7 @@ impl Phase2GpuDfaCatalog {
                 shards: Vec::new(),
                 uncovered_ascii_patterns: 0,
                 excluded_ascii_redundant_patterns,
+                resident: resident::Phase2GpuDfaCatalogResident::default(),
             });
         }
 
@@ -158,6 +160,7 @@ impl Phase2GpuDfaCatalog {
             shards,
             uncovered_ascii_patterns,
             excluded_ascii_redundant_patterns,
+            resident: resident::Phase2GpuDfaCatalogResident::default(),
         })
     }
 
@@ -227,15 +230,9 @@ impl Phase2GpuDfaCatalog {
 
         let mut admitted = vec![false; chunk_count];
         let complete = vec![self.uncovered_ascii_patterns == 0; chunk_count];
-        let mut evidence_seen = 0usize;
-        for shard in &self.shards {
-            evidence_seen = evidence_seen.saturating_add(shard.scan_admission_into(
-                backend,
-                scratch,
-                haystack_len,
-                &mut admitted,
-            )?);
-        }
+        let evidence_seen =
+            self.resident
+                .scan(&self.shards, backend, scratch, haystack_len, &mut admitted)?;
         Ok(Phase2GpuDfaAdmission {
             admitted,
             complete,

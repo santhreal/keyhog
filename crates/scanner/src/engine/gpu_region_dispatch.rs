@@ -785,6 +785,7 @@ impl CompiledScanner {
             let t_phase2_gpu = kh.then(std::time::Instant::now);
             let mut phase2_gpu_empty_complete = false;
             let mut phase2_gpu_coverage = None;
+            let mut phase2_gpu_haystack_uploads = 0usize;
             let phase2_gpu_admission = match phase2_gpu_workload {
                 Phase2GpuAdmissionWorkload::Empty => {
                     phase2_gpu_empty_complete = chunks.is_empty();
@@ -801,6 +802,7 @@ impl CompiledScanner {
                                 recover_dispatch_faults,
                             ) {
                                 Ok(outcome) => {
+                                    phase2_gpu_haystack_uploads = outcome.haystack_uploads;
                                     if let Some(fault) = outcome.fault.as_ref() {
                                         if gpu_dispatch_fault.is_none() {
                                             gpu_dispatch_fault = Some(format!(
@@ -845,6 +847,7 @@ impl CompiledScanner {
                             recover_dispatch_faults,
                         ) {
                             Ok(outcome) => {
+                                phase2_gpu_haystack_uploads = outcome.haystack_uploads;
                                 if let Some(fault) = outcome.fault.as_ref() {
                                     if gpu_dispatch_fault.is_none() {
                                         gpu_dispatch_fault = Some(format!(
@@ -958,7 +961,7 @@ impl CompiledScanner {
                     .map_or(0usize, |rows| rows.iter().map(Vec::len).sum());
                 let generic_keyword_gpu_complete = generic_keyword_positions.is_some();
                 eprintln!(
-                    "perf-trace {}: chunks={} source_bytes={} coalesced_bytes={} max_dispatch_bytes={} dispatches={} recovered_dispatches={} batch_mode={} matcher={:.3}s coalesce={:.6}s coalesce_mib_s={:.3} dispatch={:.3}s derive={:.6}s floor={:.3}s phase2_gpu={:.3}s phase2={:.3}s gpu_presence_bits={} underfire_recovered={} trigger_bits={} phase2_gpu_admitted={} phase2_gpu_evidence_bits={} phase2_gpu_complete={} phase2_gpu_complete_rows={} phase2_gpu_excluded_oversized={} phase2_gpu_excluded_non_ascii={} phase2_gpu_ascii_patterns={} phase2_gpu_uncovered_ascii_patterns={} phase2_gpu_excluded_redundant_patterns={} phase2_gpu_shards={} phase2_always_anchor_chunks={} phase2_always_anchor_positions_complete={} phase2_always_anchor_candidate_rows={} phase2_always_anchor_candidates={} confirmed_anchor_gpu_complete={} confirmed_anchor_candidate_rows={} confirmed_anchor_candidates={} generic_keyword_gpu_complete={} generic_keyword_candidate_rows={} generic_keyword_candidates={} full_recall_floor={}",
+                    "perf-trace {}: chunks={} source_bytes={} coalesced_bytes={} max_dispatch_bytes={} dispatches={} recovered_dispatches={} batch_mode={} matcher={:.3}s coalesce={:.6}s coalesce_mib_s={:.3} dispatch={:.3}s derive={:.6}s floor={:.3}s phase2_gpu={:.3}s phase2={:.3}s gpu_presence_bits={} underfire_recovered={} trigger_bits={} phase2_gpu_admitted={} phase2_gpu_evidence_bits={} phase2_gpu_haystack_uploads={} phase2_gpu_complete={} phase2_gpu_complete_rows={} phase2_gpu_excluded_oversized={} phase2_gpu_excluded_non_ascii={} phase2_gpu_ascii_patterns={} phase2_gpu_uncovered_ascii_patterns={} phase2_gpu_excluded_redundant_patterns={} phase2_gpu_shards={} phase2_always_anchor_chunks={} phase2_always_anchor_positions_complete={} phase2_always_anchor_candidate_rows={} phase2_always_anchor_candidates={} confirmed_anchor_gpu_complete={} confirmed_anchor_candidate_rows={} confirmed_anchor_candidates={} generic_keyword_gpu_complete={} generic_keyword_candidate_rows={} generic_keyword_candidates={} full_recall_floor={}",
                     route.label(),
                     chunks.len(),
                     region_source_bytes,
@@ -980,6 +983,7 @@ impl CompiledScanner {
                     trigger_bits,
                     phase2_gpu_admitted,
                     phase2_gpu_evidence_bits,
+                    phase2_gpu_haystack_uploads,
                     phase2_gpu_complete,
                     phase2_gpu_complete_rows,
                     phase2_gpu_excluded_oversized,

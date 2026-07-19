@@ -1,25 +1,9 @@
 //! Regex-DFA shard dispatch and direct region admission for phase-2 GPU scanning.
 
-use super::batch::Phase2GpuDfaScratch;
-
 #[derive(Debug)]
 pub(super) struct Phase2GpuDfaShard {
     pub(super) pipeline: vyre_libs::scan::RegexDfaPipeline,
     pub(super) phase2_indices: Vec<usize>,
-    pub(super) resident: super::resident::Phase2GpuDfaResident,
-}
-
-impl Phase2GpuDfaShard {
-    pub(super) fn scan_admission_into(
-        &self,
-        backend: &std::sync::Arc<dyn vyre::VyreBackend>,
-        scratch: &mut Phase2GpuDfaScratch,
-        haystack_len: u32,
-        admitted: &mut [bool],
-    ) -> std::result::Result<usize, String> {
-        self.resident
-            .scan(&self.pipeline, backend, scratch, haystack_len, admitted)
-    }
 }
 
 pub(in crate::engine) fn match_region(

@@ -68,12 +68,14 @@ fn scan_phase2_refs(
 
 pub(super) struct Phase2GpuAdmissionOutcome {
     pub(super) admission: Phase2GpuDfaAdmission,
+    pub(super) haystack_uploads: usize,
     pub(super) recovered_rows: Vec<Range<usize>>,
     pub(super) fault: Option<String>,
 }
 
 fn recovered_phase2_tail(
     mut admission: Phase2GpuDfaAdmission,
+    haystack_uploads: usize,
     start: usize,
     total_rows: usize,
     fault: String,
@@ -83,6 +85,7 @@ fn recovered_phase2_tail(
     admission.complete.resize(total_rows, false);
     Phase2GpuAdmissionOutcome {
         admission,
+        haystack_uploads,
         recovered_rows: (remaining > 0)
             .then_some(start..total_rows)
             .into_iter()
@@ -158,6 +161,7 @@ pub(super) fn scan_phase2_gpu_chunks_sharded(
         return match scan_phase2_chunks(catalog, backend, chunks) {
             Ok(admission) => Ok(Phase2GpuAdmissionOutcome {
                 admission,
+                haystack_uploads: usize::from(!chunks.is_empty() && catalog.coverage().shards > 0),
                 recovered_rows: Vec::new(),
                 fault: None,
             }),
@@ -167,6 +171,7 @@ pub(super) fn scan_phase2_gpu_chunks_sharded(
                     complete: Vec::new(),
                     matches_seen: 0,
                 },
+                0,
                 0,
                 chunks.len(),
                 error,
@@ -180,6 +185,8 @@ pub(super) fn scan_phase2_gpu_chunks_sharded(
         complete: Vec::new(),
         matches_seen: 0,
     };
+    let mut haystack_uploads = 0usize;
+    let uploads_per_batch = usize::from(catalog.coverage().shards > 0);
     merged
         .admitted
         .try_reserve(chunks.len())
@@ -193,21 +200,43 @@ pub(super) fn scan_phase2_gpu_chunks_sharded(
         let rows = shard.chunks.len();
         let start = shard.chunks.start;
         let admission = match scan_phase2_chunks(catalog, backend, &chunks[shard.chunks]) {
-            Ok(admission) => admission,
+            Ok(admission) => {
+                haystack_uploads =
+                    haystack_uploads
+                        .checked_add(uploads_per_batch)
+                        .ok_or_else(|| {
+                            "phase-2 GPU haystack upload count overflow across input shards"
+                                .to_string()
+                        })?;
+                admission
+            }
             Err(error) if recover_dispatch_faults => {
-                return Ok(recovered_phase2_tail(merged, start, chunks.len(), error));
+                return Ok(recovered_phase2_tail(
+                    merged,
+                    haystack_uploads,
+                    start,
+                    chunks.len(),
+                    error,
+                ));
             }
             Err(error) => return Err(error),
         };
         if let Err(error) = append_phase2_gpu_admission(&mut merged, admission, rows) {
             if recover_dispatch_faults {
-                return Ok(recovered_phase2_tail(merged, start, chunks.len(), error));
+                return Ok(recovered_phase2_tail(
+                    merged,
+                    haystack_uploads,
+                    start,
+                    chunks.len(),
+                    error,
+                ));
             }
             return Err(error);
         }
     }
     Ok(Phase2GpuAdmissionOutcome {
         admission: merged,
+        haystack_uploads,
         recovered_rows: Vec::new(),
         fault: None,
     })
@@ -224,6 +253,7 @@ pub(super) fn scan_phase2_gpu_refs_sharded(
         return match scan_phase2_refs(catalog, backend, chunks) {
             Ok(admission) => Ok(Phase2GpuAdmissionOutcome {
                 admission,
+                haystack_uploads: usize::from(!chunks.is_empty() && catalog.coverage().shards > 0),
                 recovered_rows: Vec::new(),
                 fault: None,
             }),
@@ -233,6 +263,7 @@ pub(super) fn scan_phase2_gpu_refs_sharded(
                     complete: Vec::new(),
                     matches_seen: 0,
                 },
+                0,
                 0,
                 chunks.len(),
                 error,
@@ -246,6 +277,8 @@ pub(super) fn scan_phase2_gpu_refs_sharded(
         complete: Vec::new(),
         matches_seen: 0,
     };
+    let mut haystack_uploads = 0usize;
+    let uploads_per_batch = usize::from(catalog.coverage().shards > 0);
     merged
         .admitted
         .try_reserve(chunks.len())
@@ -259,21 +292,43 @@ pub(super) fn scan_phase2_gpu_refs_sharded(
         let rows = shard.chunks.len();
         let start = shard.chunks.start;
         let admission = match scan_phase2_refs(catalog, backend, &chunks[shard.chunks]) {
-            Ok(admission) => admission,
+            Ok(admission) => {
+                haystack_uploads =
+                    haystack_uploads
+                        .checked_add(uploads_per_batch)
+                        .ok_or_else(|| {
+                            "phase-2 GPU haystack upload count overflow across input shards"
+                                .to_string()
+                        })?;
+                admission
+            }
             Err(error) if recover_dispatch_faults => {
-                return Ok(recovered_phase2_tail(merged, start, chunks.len(), error));
+                return Ok(recovered_phase2_tail(
+                    merged,
+                    haystack_uploads,
+                    start,
+                    chunks.len(),
+                    error,
+                ));
             }
             Err(error) => return Err(error),
         };
         if let Err(error) = append_phase2_gpu_admission(&mut merged, admission, rows) {
             if recover_dispatch_faults {
-                return Ok(recovered_phase2_tail(merged, start, chunks.len(), error));
+                return Ok(recovered_phase2_tail(
+                    merged,
+                    haystack_uploads,
+                    start,
+                    chunks.len(),
+                    error,
+                ));
             }
             return Err(error);
         }
     }
     Ok(Phase2GpuAdmissionOutcome {
         admission: merged,
+        haystack_uploads,
         recovered_rows: Vec::new(),
         fault: None,
     })

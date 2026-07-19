@@ -64,7 +64,6 @@ fn build_shard(
     Ok(Phase2GpuDfaShard {
         pipeline,
         phase2_indices: indices.to_vec(),
-        resident: super::resident::Phase2GpuDfaResident::default(),
     })
 }
 
