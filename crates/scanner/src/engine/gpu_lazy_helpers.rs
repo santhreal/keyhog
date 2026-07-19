@@ -18,18 +18,6 @@ Fix the OS user cache directory or set XDG_CACHE_HOME to a writable directory."
     }
 }
 
-/// Shared decode of a `catch_unwind` panic payload into an owned detail string.
-/// Single owner for the literal and artifact compile paths.
-pub(super) fn catch_unwind_panic_detail(panic: Box<dyn std::any::Any + Send>) -> String {
-    if let Some(message) = panic.downcast_ref::<String>() {
-        message.clone()
-    } else if let Some(message) = panic.downcast_ref::<&'static str>() {
-        (*message).to_string()
-    } else {
-        "non-string panic payload".to_string()
-    }
-}
-
 pub(super) fn report_gpu_literal_matcher_unavailable(error: &crate::error::ScanError) {
     tracing::warn!(
         target: "keyhog::routing",
@@ -65,7 +53,7 @@ pub(super) fn compile_gpu_literal_set(
         }
     }))
     .map_err(|panic| {
-        let detail = catch_unwind_panic_detail(panic);
+        let detail = crate::error::panic_payload_detail(panic);
         crate::error::ScanError::Gpu(format!(
             "GPU literal-set compile panicked for cache prefix {cache_prefix} with {} patterns: {detail}. Fix: reduce literal rows, increase VYRE's DFA budget, or shard the literal set; matcher disabled for this scanner build.",
             literal_refs.len()

@@ -132,7 +132,7 @@ fn serialize_literal_rows(
         GpuLiteralSet::compile_case_insensitive(&literal_refs)
     }))
     .map_err(|panic| {
-        let detail = super::gpu_lazy_helpers::catch_unwind_panic_detail(panic);
+        let detail = crate::error::panic_payload_detail(panic);
         ScanError::Gpu(format!(
             "GPU literal artifact compile panicked for cache prefix {cache_prefix} with {pattern_count} patterns: {detail}. Fix: reduce literal rows, increase VYRE's DFA budget, or shard the literal set."
         ))

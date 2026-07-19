@@ -84,11 +84,20 @@ impl GpuBackendPeers {
 
 #[cfg(all(feature = "gpu", target_os = "linux"))]
 fn acquire_cuda_peer() -> Result<Arc<dyn vyre::VyreBackend>, String> {
-    let cuda = vyre_driver_cuda::backend::CudaBackend::acquire()?;
-    let boxed: Box<dyn vyre::VyreBackend> =
-        Box::new(vyre_driver_cuda::CudaBackendRegistration::new(cuda));
+    let backend = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let cuda = vyre_driver_cuda::backend::CudaBackend::acquire()?;
+        let boxed: Box<dyn vyre::VyreBackend> =
+            Box::new(vyre_driver_cuda::CudaBackendRegistration::new(cuda));
+        Ok::<Arc<dyn vyre::VyreBackend>, String>(Arc::from(boxed))
+    }))
+    .map_err(|panic| {
+        format!(
+            "CUDA backend acquisition panicked: {}. Fix: repair the CUDA driver/runtime or select another calibrated backend",
+            crate::error::panic_payload_detail(panic)
+        )
+    })??;
     tracing::info!(target: "keyhog::routing", "selected CUDA peer backend acquired");
-    Ok(Arc::from(boxed))
+    Ok(backend)
 }
 
 #[cfg(not(all(feature = "gpu", target_os = "linux")))]
@@ -98,13 +107,35 @@ fn acquire_cuda_peer() -> Result<Arc<dyn vyre::VyreBackend>, String> {
 
 #[cfg(feature = "gpu")]
 fn acquire_wgpu_peer() -> Result<Arc<dyn vyre::VyreBackend>, String> {
-    vyre_driver_wgpu::WgpuBackend::shared()
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+        vyre_driver_wgpu::WgpuBackend::shared,
+    ))
+    .map_err(|panic| {
+        format!(
+            "WGPU backend acquisition panicked: {}. Fix: repair the graphics driver/runtime or select another calibrated backend",
+            crate::error::panic_payload_detail(panic)
+        )
+    })?
         .map(|backend| {
             tracing::info!(target: "keyhog::routing", "selected WGPU peer backend acquired");
             let backend: Arc<dyn vyre::VyreBackend> = backend;
             backend
         })
         .map_err(|error| error.to_string())
+}
+
+#[cfg(all(feature = "gpu", target_os = "linux"))]
+pub(crate) fn probe_cuda_peer() -> Result<vyre_driver_cuda::device::CudaDeviceCaps, String> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        vyre_driver_cuda::device::CudaDeviceCaps::probe(0)
+    }))
+    .map_err(|panic| {
+        format!(
+            "CUDA device probe panicked: {}. Fix: repair the CUDA driver/runtime before enabling this backend",
+            crate::error::panic_payload_detail(panic)
+        )
+    })?
+    .map_err(|error| error.to_string())
 }
 
 #[cfg(not(feature = "gpu"))]

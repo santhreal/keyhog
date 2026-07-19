@@ -90,7 +90,7 @@ impl CompiledScanner {
             {
                 #[cfg(target_os = "linux")]
                 {
-                    match vyre_driver_cuda::device::CudaDeviceCaps::probe(0) {
+                    match super::types::probe_cuda_peer() {
                         Ok(caps) => {
                             peers.cuda_available = true;
                             peers.cuda_device_identity = Some(format!(

@@ -230,9 +230,16 @@ impl Phase2GpuDfaCatalog {
 
         let mut admitted = vec![false; chunk_count];
         let complete = vec![self.uncovered_ascii_patterns == 0; chunk_count];
-        let evidence_seen =
+        let evidence_seen = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             self.resident
-                .scan(&self.shards, backend, scratch, haystack_len, &mut admitted)?;
+                .scan(&self.shards, backend, scratch, haystack_len, &mut admitted)
+        }))
+        .map_err(|panic| {
+            format!(
+                "phase-2 GPU resident admission panicked: {}. Fix: repair the selected GPU driver/runtime and recalibrate autoroute",
+                crate::error::panic_payload_detail(panic)
+            )
+        })??;
         Ok(Phase2GpuDfaAdmission {
             admitted,
             complete,

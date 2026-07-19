@@ -2,6 +2,18 @@
 
 use thiserror::Error;
 
+/// Convert a caught panic payload into a stable diagnostic without resuming
+/// unwinding across an optional backend boundary.
+pub(crate) fn panic_payload_detail(panic: Box<dyn std::any::Any + Send>) -> String {
+    if let Some(message) = panic.downcast_ref::<String>() {
+        message.clone()
+    } else if let Some(message) = panic.downcast_ref::<&'static str>() {
+        (*message).to_string()
+    } else {
+        "non-string panic payload".to_string()
+    }
+}
+
 #[derive(Debug, Error)]
 /// Errors returned while compiling detector patterns into a scanner.
 pub enum ScanError {
