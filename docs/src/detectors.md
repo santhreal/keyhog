@@ -279,6 +279,29 @@ entropy_fallback_confidence = { low_entropy_max = 0.55, high_entropy = 0.65, ver
 KeyHog compiles this mapping with the detector. A custom corpus can tune one
 secret family without changing another family or inheriting scanner literals.
 
+The same owner declares how a generic assignment becomes a confidence score:
+
+```toml
+[detector.generic_assignment_confidence]
+ordinary_base = 0.60
+test_base = 0.25
+documentation_base = 0.30
+comment_base = 0.30
+scanned_comment_base = 0.60
+entropy_reference = 3.5
+entropy_gain_per_bit = 0.10
+entropy_lift_max = 0.25
+length_reference = 16
+length_gain_per_byte = 0.005
+length_lift_max = 0.15
+max_confidence = 0.95
+```
+
+For example, a 20-byte value gains four times `length_gain_per_byte`. Entropy
+above `entropy_reference` gains `entropy_gain_per_bit` for each additional bit.
+Each lift stops at its declared maximum, and the final score stops at
+`max_confidence`.
+
 *   **`entropy_high`** (float, required for active entropy owners): Per-detector high-entropy threshold (bits/byte) for keyword-independent detection and the partial entropy-fallback heuristic-confidence tier.
 *   **`entropy_low`** (float, required for active entropy owners): Per-detector keyword-context entropy threshold.
 *   **`entropy_very_high`** (float, required for active entropy owners): Per-detector very-high threshold for keyword-free or isolated tokens and the full entropy-fallback heuristic-confidence tier. Compiled policy requires `entropy_low <= entropy_high <= entropy_very_high`.
@@ -286,6 +309,7 @@ secret family without changing another family or inheriting scanner literals.
 *   **`plausibility.keyword_free_operator_margin`** (float, required only for the `keyword-free` role owner): Margin added to the resolved Tier-A `entropy_threshold` before keyword-free admission. The effective floor is `max(path-specific entropy_very_high, entropy_threshold + keyword_free_operator_margin)`; no scanner-owned margin is applied.
 *   **`entropy_fallback`** (table, required for active entropy owners): Identity metadata for synthetic entropy findings owned by this detector. `class` is one of `generic`, `password`, `token`, or `api-key`; `id` must use the `entropy-` namespace; and `name`/`service` must be non-empty. Both regex-kind detectors that set `entropy_policy_priority` and phase-2 generic owners must declare this block. The primary detector's reporting `service` may name any taxonomy and does not grant or deny entropy ownership. Omitting the block is a compile error, never a compatibility identity.
 *   **`entropy_fallback_confidence`** (inline table, required for active entropy owners): Maps this detector's Shannon evidence to report confidence. `low_entropy_max` caps candidates below `entropy_high`; `high_entropy` and `very_high_entropy` are the base scores for those detector thresholds; `keyword_lift` applies only when a configured keyword owns the candidate; and `max_confidence` caps the result. Every value must be a finite probability, and the three base tiers must be monotonic. The scanner does not supply confidence tiers for an omitted policy.
+*   **`generic_assignment_confidence`** (table, required for active entropy owners): Maps generic assignment evidence to confidence for the detector that owns the assignment keyword. The five context fields choose the base score. `entropy_reference`, `entropy_gain_per_bit`, and `entropy_lift_max` define the entropy lift. `length_reference`, `length_gain_per_byte`, and `length_lift_max` define the byte-length lift. Every base, gain, lift cap, and maximum must be a finite value from 0 to 1. `entropy_reference` must be from 0 to 8. The scanner does not supply a hidden assignment-confidence policy.
 *   **`entropy_roles`** (string array): Corpus-level entry roles owned by this detector. `keyword-free` owns anchor-free high-entropy candidates, `isolated-bare` owns detector-shaped bare candidates, and `unclaimed-keyword` owns configured credential keywords not claimed by another detector. A role may have only one owner in a compiled corpus. Omission disables that entry path for a focused custom corpus; the scanner never substitutes a built-in detector ID or global policy.
 *   **`entropy_shapes`** (one array-table entry required for active entropy owners): Declarative isolated-shape policy owned by this detector. The entry declares a `charset`, `entropy_floor`, `special_min_length`, optional fixed-width `grouping`, and explicit diversity requirements such as `require_group_alpha_digit` or `require_non_hex_alpha`. A grouped candidate's exact length is derived from its group count, group width, and separator, so adding a shape family does not require a scanner enum variant. Multiple entries are rejected rather than silently ignored or ambiguously combined.
 *   **`plausibility`** (inline table, required for active entropy owners): Complete strict candidate-shape policy. Its entropy floors, length boundaries, diversity requirements, isolated-token shapes, and rejection switches are all required detector data. `second_half_min_len`, `unique_chars_min_len`, `min_unique_chars`, `unanchored_hex_max_len`, `identical_char_max_len`, `structured_dotted_min_len`, and `leading_slash_base64_min_len` own boundaries that were formerly scanner literals. `isolated_mixed_entropy_floor` governs contiguous or underscore-delimited mixed tokens. The three isolated-symbolic fields govern the shorter symbol-rich exception's byte length, minimum symbol count, and whether one symbol must differ from underscore. `reject_program_identifiers` covers pure source-language names, while `reject_source_symbol_identifiers` independently controls digit-bearing mixed alphanumeric names. An exact lower-dash layout declared by `entropy_shapes` cannot bypass its shape-specific rules. The `keyword-free` role owner additionally declares `keyword_free_operator_margin`; no detector inherits an invisible family decision from scanner code.

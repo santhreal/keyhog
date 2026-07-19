@@ -131,6 +131,7 @@ pub(crate) struct CompiledEntropyPolicy {
     pub(crate) entropy_very_high: f64,
     #[cfg(feature = "entropy")]
     pub(crate) fallback_confidence: keyhog_core::EntropyFallbackConfidenceSpec,
+    pub(crate) generic_assignment_confidence: keyhog_core::GenericAssignmentConfidenceSpec,
     #[cfg(feature = "entropy")]
     pub(crate) sensitive_path_entropy_very_high: f64,
     pub(crate) mixed_alnum_floor: f64,
@@ -280,6 +281,17 @@ impl CompiledEntropyPolicy {
                 detector.id
             )
         })?;
+        let generic_assignment_confidence = Self::required(
+            detector,
+            "generic_assignment_confidence",
+            detector.generic_assignment_confidence,
+        )?;
+        generic_assignment_confidence.validate().map_err(|error| {
+            format!(
+                "detector {:?} generic_assignment_confidence is invalid: {error}",
+                detector.id
+            )
+        })?;
         let sensitive_path_entropy_very_high = Self::required(
             detector,
             "sensitive_path_entropy_very_high",
@@ -359,6 +371,7 @@ impl CompiledEntropyPolicy {
             entropy_very_high,
             #[cfg(feature = "entropy")]
             fallback_confidence,
+            generic_assignment_confidence,
             #[cfg(feature = "entropy")]
             sensitive_path_entropy_very_high,
             mixed_alnum_floor: plausibility.mixed_alnum_floor,

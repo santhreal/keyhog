@@ -2823,7 +2823,7 @@ pub fn entropy_fallback_confidence_for_test(
     )
 }
 
-/// Test seam for [`crate::confidence::policy::generic_secret_confidence`].
+/// Test seam for [`crate::confidence::policy::generic_assignment_confidence`].
 /// `context_label` selects the `CodeContext` ("test" / "comment" / "doc" /
 /// anything else = ordinary source) so a gap test can pin the exact confidence
 /// formula without depending on the crate-internal `CodeContext` enum.
@@ -2841,12 +2841,16 @@ pub fn generic_secret_confidence_for_test(
         "assignment" => crate::context::CodeContext::Assignment,
         _ => crate::context::CodeContext::Unknown,
     };
-    crate::confidence::policy::generic_secret_confidence(
+    let policy = keyhog_core::detector_spec_by_id("generic-secret")
+        .and_then(|detector| detector.generic_assignment_confidence)
+        .expect("embedded generic-secret detector must declare assignment confidence");
+    crate::confidence::policy::generic_assignment_confidence(
         context,
         scan_comments,
         penalize_test_paths,
         entropy,
         value_len,
+        policy,
     )
 }
 

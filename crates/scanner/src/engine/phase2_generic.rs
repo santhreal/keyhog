@@ -428,12 +428,13 @@ impl CompiledScanner {
                         preprocessed_documentation_lines.as_slice(),
                     )
                 };
-                let policy_conf = crate::confidence::policy::generic_secret_confidence(
+                let policy_conf = crate::confidence::policy::generic_assignment_confidence(
                     context,
                     self.config.scan_comments,
                     self.config.penalize_test_paths,
                     entropy,
                     value.len(),
+                    owning_policy.generic_assignment_confidence,
                 );
 
                 // Route through the SAME report-confidence finalizer the ML and

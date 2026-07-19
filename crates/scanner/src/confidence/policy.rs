@@ -441,12 +441,13 @@ pub(crate) fn entropy_fallback_confidence(
     }
 }
 
-pub(crate) fn generic_secret_confidence(
+pub(crate) fn generic_assignment_confidence(
     context: context::CodeContext,
     scan_comments: bool,
     penalize_test_paths: bool,
     entropy: f64,
     value_len: usize,
+    policy: keyhog_core::GenericAssignmentConfidenceSpec,
 ) -> f64 {
     // The test/docs base-confidence haircut follows the same operator policy
     // as the later path penalties: `--no-suppress-test-fixtures` clears test
@@ -454,16 +455,24 @@ pub(crate) fn generic_secret_confidence(
     // the ordinary-source floor. Keep the entropy/length boosts here too so the
     // generic emitter supplies raw signals, not a private confidence formula.
     let base_confidence = match context {
-        context::CodeContext::TestCode if penalize_test_paths => 0.25,
-        context::CodeContext::Comment if scan_comments => 0.60,
-        context::CodeContext::Documentation if penalize_test_paths => 0.30,
-        context::CodeContext::Comment => 0.30,
-        _ => 0.60,
+        context::CodeContext::TestCode if penalize_test_paths => policy.test_base,
+        context::CodeContext::Comment if scan_comments => policy.scanned_comment_base,
+        context::CodeContext::Documentation if penalize_test_paths => policy.documentation_base,
+        context::CodeContext::Comment => policy.comment_base,
+        _ => policy.ordinary_base,
     };
-    let entropy_boost = ((entropy - 3.5) * 0.1).clamp(0.0, 0.25);
-    let length_boost = ((value_len as f64 - 16.0) * 0.005).clamp(0.0, 0.15);
-    // Lower clamp is defensive: the boosts already floor at 0.0, but pin the
-    // whole score into [0.0, 0.95] so no future base/boost retune can emit a
-    // negative or >0.95 confidence into the pipeline.
-    (base_confidence + entropy_boost + length_boost).clamp(0.0, 0.95)
+    debug_assert!(
+        !entropy.is_nan(),
+        "generic_assignment_confidence received NaN entropy, broken upstream entropy computation"
+    );
+    let entropy_lift = if entropy.is_nan() {
+        0.0
+    } else {
+        ((entropy - policy.entropy_reference) * policy.entropy_gain_per_bit)
+            .clamp(0.0, policy.entropy_lift_max)
+    };
+    let length_lift = (value_len.saturating_sub(policy.length_reference) as f64
+        * policy.length_gain_per_byte)
+        .min(policy.length_lift_max);
+    (base_confidence + entropy_lift + length_lift).clamp(0.0, policy.max_confidence)
 }

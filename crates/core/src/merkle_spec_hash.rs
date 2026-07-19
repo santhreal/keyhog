@@ -135,6 +135,24 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
                     confidence.max_confidence.to_bits(),
                 ));
             }
+            if let Some(confidence) = d.generic_assignment_confidence {
+                entries.push(format!(
+                    "generic-assignment-confidence:{}:{:016x}:{:016x}:{:016x}:{:016x}:{:016x}:{:016x}:{:016x}:{:016x}:{}:{:016x}:{:016x}:{:016x}",
+                    d.id,
+                    confidence.ordinary_base.to_bits(),
+                    confidence.test_base.to_bits(),
+                    confidence.documentation_base.to_bits(),
+                    confidence.comment_base.to_bits(),
+                    confidence.scanned_comment_base.to_bits(),
+                    confidence.entropy_reference.to_bits(),
+                    confidence.entropy_gain_per_bit.to_bits(),
+                    confidence.entropy_lift_max.to_bits(),
+                    confidence.length_reference,
+                    confidence.length_gain_per_byte.to_bits(),
+                    confidence.length_lift_max.to_bits(),
+                    confidence.max_confidence.to_bits(),
+                ));
+            }
             let mut entropy_roles: Vec<&str> =
                 d.entropy_roles.iter().map(|role| role.as_str()).collect();
             entropy_roles.sort_unstable();
@@ -468,6 +486,7 @@ fn assert_scan_hash_field_inventory_is_exhaustive(detector: &DetectorSpec) {
         entropy_very_high: _,
         entropy_fallback: _,
         entropy_fallback_confidence: _,
+        generic_assignment_confidence: _,
         entropy_roles: _,
         sensitive_path_entropy_very_high: _,
         entropy_shapes: _,

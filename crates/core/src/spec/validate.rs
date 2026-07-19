@@ -741,6 +741,11 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
             "active entropy owner must declare entropy_fallback_confidence; omission would leave detector confidence in scanner literals".into(),
         ));
     }
+    if entropy_owner && spec.generic_assignment_confidence.is_none() {
+        issues.push(QualityIssue::Error(
+            "active entropy owner must declare generic_assignment_confidence; omission would leave generic assignment scoring in scanner literals".into(),
+        ));
+    }
     if let Some(confidence) = spec.entropy_fallback_confidence {
         if !entropy_owner {
             issues.push(QualityIssue::Error(
@@ -751,6 +756,19 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
         if let Err(error) = confidence.validate() {
             issues.push(QualityIssue::Error(format!(
                 "entropy_fallback_confidence is invalid: {error}"
+            )));
+        }
+    }
+    if let Some(confidence) = spec.generic_assignment_confidence {
+        if !entropy_owner {
+            issues.push(QualityIssue::Error(
+                "generic_assignment_confidence requires an active detector-owned entropy policy"
+                    .into(),
+            ));
+        }
+        if let Err(error) = confidence.validate() {
+            issues.push(QualityIssue::Error(format!(
+                "generic_assignment_confidence is invalid: {error}"
             )));
         }
     }

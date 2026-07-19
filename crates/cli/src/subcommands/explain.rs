@@ -279,6 +279,26 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
             confidence.max_confidence,
         );
     }
+    if let Some(confidence) = d.generic_assignment_confidence {
+        println!(
+            "    generic_assignment_confidence: ordinary_base={} test_base={} documentation_base={} comment_base={} scanned_comment_base={}",
+            confidence.ordinary_base,
+            confidence.test_base,
+            confidence.documentation_base,
+            confidence.comment_base,
+            confidence.scanned_comment_base,
+        );
+        println!(
+            "      entropy_reference={} entropy_gain_per_bit={} entropy_lift_max={} length_reference={} length_gain_per_byte={} length_lift_max={} max_confidence={}",
+            confidence.entropy_reference,
+            confidence.entropy_gain_per_bit,
+            confidence.entropy_lift_max,
+            confidence.length_reference,
+            confidence.length_gain_per_byte,
+            confidence.length_lift_max,
+            confidence.max_confidence,
+        );
+    }
     if !d.entropy_roles.is_empty() {
         println!(
             "    entropy_roles: {}",

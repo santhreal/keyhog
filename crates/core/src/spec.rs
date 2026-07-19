@@ -159,6 +159,11 @@ pub struct DetectorSpec {
     /// detector declares how that evidence maps to report confidence.
     #[serde(default)]
     pub entropy_fallback_confidence: Option<EntropyFallbackConfidenceSpec>,
+    /// Detector-owned confidence policy for phase-two generic assignments.
+    /// Context bases and evidence lifts compile with the detector that owns
+    /// the assignment keyword.
+    #[serde(default)]
+    pub generic_assignment_confidence: Option<GenericAssignmentConfidenceSpec>,
     /// Corpus-level entropy roles owned by this detector. Roles make the
     /// shared entropy engine data-driven: it resolves keyword-free,
     /// isolated-bare, and unclaimed-keyword candidates from detector TOML
@@ -671,6 +676,80 @@ impl EntropyFallbackConfidenceSpec {
             return Err(
                 "confidence tiers must satisfy low_entropy_max <= high_entropy <= very_high_entropy <= max_confidence",
             );
+        }
+        Ok(())
+    }
+}
+
+/// Confidence mapping for a detector-owned generic assignment candidate.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GenericAssignmentConfidenceSpec {
+    /// Base confidence for ordinary source and configuration content.
+    pub ordinary_base: f64,
+    /// Base confidence for test content when test-path penalties are enabled.
+    pub test_base: f64,
+    /// Base confidence for documentation when test-path penalties are enabled.
+    pub documentation_base: f64,
+    /// Base confidence for comments under the default comment policy.
+    pub comment_base: f64,
+    /// Base confidence for comments when the operator enables comment scanning.
+    pub scanned_comment_base: f64,
+    /// Shannon entropy at which the entropy lift starts.
+    pub entropy_reference: f64,
+    /// Confidence gained per entropy bit above `entropy_reference`.
+    pub entropy_gain_per_bit: f64,
+    /// Maximum confidence contributed by entropy.
+    pub entropy_lift_max: f64,
+    /// Byte length at which the length lift starts.
+    pub length_reference: usize,
+    /// Confidence gained per byte above `length_reference`.
+    pub length_gain_per_byte: f64,
+    /// Maximum confidence contributed by length.
+    pub length_lift_max: f64,
+    /// Maximum confidence this generic assignment path may emit.
+    pub max_confidence: f64,
+}
+
+impl GenericAssignmentConfidenceSpec {
+    /// Validate probability bounds and the byte-entropy reference domain.
+    pub fn validate(self) -> Result<(), &'static str> {
+        let probabilities = [
+            self.ordinary_base,
+            self.test_base,
+            self.documentation_base,
+            self.comment_base,
+            self.scanned_comment_base,
+            self.entropy_gain_per_bit,
+            self.entropy_lift_max,
+            self.length_gain_per_byte,
+            self.length_lift_max,
+            self.max_confidence,
+        ];
+        if probabilities
+            .into_iter()
+            .any(|value| !value.is_finite() || !(0.0..=1.0).contains(&value))
+        {
+            return Err(
+                "bases, gains, lift caps, and max_confidence must be finite values in [0.0, 1.0]",
+            );
+        }
+        if !self.entropy_reference.is_finite()
+            || !(0.0..=u8::BITS as f64).contains(&self.entropy_reference)
+        {
+            return Err("entropy_reference must be finite and in [0.0, 8.0]");
+        }
+        if [
+            self.ordinary_base,
+            self.test_base,
+            self.documentation_base,
+            self.comment_base,
+            self.scanned_comment_base,
+        ]
+        .into_iter()
+        .any(|base| base > self.max_confidence)
+        {
+            return Err("every context base must be less than or equal to max_confidence");
         }
         Ok(())
     }
