@@ -43,11 +43,10 @@ fn parse_known_prefixes(raw: &str) -> Result<Vec<String>, String> {
 }
 
 /// Minimum confidence a credential carrying a well-known literal prefix is lifted
-/// to. Named (not an inline `0.8`) so this floor has a single owner alongside the
-/// sibling confidence floors [`super::policy::NAMED_DETECTOR_ANCHOR_FLOOR`] and
-/// `crate::checksum::CHECKSUM_VALID_FLOOR`, and so the many doc references to "the
-/// 0.8 floor" resolve to one constant. Locked by the `confidence_prefix_floor_*`
-/// unit tests.
+/// to. Named (not an inline `0.8`) so this shared prefix-list floor has one owner
+/// alongside detector-owned match floors and validator confidence floors. The
+/// documentation references to the 0.8 floor resolve to this constant. Locked
+/// by the `confidence_prefix_floor_*` unit tests.
 pub(crate) const KNOWN_PREFIX_CONFIDENCE_FLOOR: f64 = 0.8;
 
 /// Return a minimum confidence floor for credentials with well-known literal prefixes.

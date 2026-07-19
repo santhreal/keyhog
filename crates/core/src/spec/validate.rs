@@ -382,6 +382,46 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
         )));
     }
     let owns_entropy = spec.owns_entropy_policy();
+    match spec.match_confidence {
+        None => issues.push(QualityIssue::Error(
+            "detector must declare match_confidence; scanner-wide match scoring defaults are not permitted"
+                .into(),
+        )),
+        Some(confidence) => {
+            if let Err(error) = confidence.validate() {
+                issues.push(QualityIssue::Error(format!(
+                    "match_confidence is invalid: {error}"
+                )));
+            }
+            if owns_entropy {
+                if confidence.named_anchor_floor.is_some() {
+                    issues.push(QualityIssue::Error(
+                        "generic entropy owners must omit match_confidence.named_anchor_floor because their regex candidates do not receive the named-detector lift"
+                            .into(),
+                    ));
+                }
+                if confidence.low_promise_confidence.is_none() {
+                    issues.push(QualityIssue::Error(
+                        "generic entropy owners must declare match_confidence.low_promise_confidence"
+                            .into(),
+                    ));
+                }
+            } else {
+                if confidence.named_anchor_floor.is_none() {
+                    issues.push(QualityIssue::Error(
+                        "named detectors must declare match_confidence.named_anchor_floor"
+                            .into(),
+                    ));
+                }
+                if confidence.low_promise_confidence.is_some() {
+                    issues.push(QualityIssue::Error(
+                        "named detectors must omit match_confidence.low_promise_confidence because the promise gate cannot replace service-owned evidence"
+                            .into(),
+                    ));
+                }
+            }
+        }
+    }
     if owns_entropy && spec.ml.entropy_mode == crate::DetectorMlMode::Disabled {
         issues.push(QualityIssue::Error(
             "an active entropy-policy owner must declare a non-disabled ml.entropy_mode"

@@ -64,6 +64,11 @@ pub struct DetectorSpec {
     /// TOML detectors must declare it. Programmatic `DetectorSpec::default()`
     /// disables both model paths until the caller chooses a policy.
     pub ml: DetectorMlPolicySpec,
+    /// Detector-owned scoring policy for regex matches. Every signal weight,
+    /// entropy tier, penalty, structural floor, and low-promise result is
+    /// compiled into the detector execution plan.
+    #[serde(default)]
+    pub match_confidence: Option<DetectorMatchConfidenceSpec>,
     /// Detector-owned offline validation policy. Each entry declares both the
     /// validator primitive and every detector-specific parameter it needs.
     /// Shared scanner code supplies the primitive implementations, but it must
@@ -437,6 +442,97 @@ pub struct DetectorMlPolicySpec {
     /// Number of source lines on each side of the candidate supplied to feature
     /// extraction. Zero intentionally restricts inference to the candidate line.
     pub context_radius_lines: usize,
+}
+
+/// Complete detector-local confidence policy for regex candidates.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DetectorMatchConfidenceSpec {
+    /// Weight earned by a detector-specific literal prefix.
+    pub literal_prefix_weight: f64,
+    /// Weight earned by a required contextual capture.
+    pub context_anchor_weight: f64,
+    /// Full weight earned at the very-high entropy tier.
+    pub entropy_weight: f64,
+    /// Partial weight earned at the resolved high entropy tier.
+    pub high_entropy_partial_weight: f64,
+    /// Shannon threshold for moderate entropy evidence.
+    pub moderate_entropy_threshold: f64,
+    /// Weight earned at the moderate entropy tier.
+    pub moderate_entropy_weight: f64,
+    /// Shannon floor below which a long match receives a penalty.
+    pub low_entropy_penalty_floor: f64,
+    /// Minimum byte length above which the low-entropy penalty applies.
+    pub low_entropy_min_match_length: usize,
+    /// Multiplier applied when the low-entropy penalty fires.
+    pub low_entropy_penalty_multiplier: f64,
+    /// Weight earned when detector-owned context is nearby.
+    pub keyword_nearby_weight: f64,
+    /// Weight earned in a sensitive file.
+    pub sensitive_file_weight: f64,
+    /// Weight earned when a companion capture is present.
+    pub companion_weight: f64,
+    /// Margin above the resolved high tier for full entropy evidence.
+    pub very_high_entropy_margin: f64,
+    /// Structural floor for a non-generic match carrying a compiled anchor.
+    pub named_anchor_floor: Option<f64>,
+    /// Final score for an unaccompanied generic match rejected by the cheap
+    /// promise gate before model inference.
+    pub low_promise_confidence: Option<f64>,
+}
+
+impl DetectorMatchConfidenceSpec {
+    /// Validate probabilities, entropy domains, and evidence ordering.
+    pub fn validate(self) -> Result<(), &'static str> {
+        let probabilities = [
+            self.literal_prefix_weight,
+            self.context_anchor_weight,
+            self.entropy_weight,
+            self.high_entropy_partial_weight,
+            self.moderate_entropy_weight,
+            self.low_entropy_penalty_multiplier,
+            self.keyword_nearby_weight,
+            self.sensitive_file_weight,
+            self.companion_weight,
+        ];
+        if probabilities
+            .into_iter()
+            .chain(self.named_anchor_floor)
+            .chain(self.low_promise_confidence)
+            .any(|value| !value.is_finite() || !(0.0..=1.0).contains(&value))
+        {
+            return Err("weights, multipliers, floors, and final scores must be finite values in [0.0, 1.0]");
+        }
+        if [
+            self.moderate_entropy_threshold,
+            self.low_entropy_penalty_floor,
+            self.very_high_entropy_margin,
+        ]
+        .into_iter()
+        .any(|value| !value.is_finite() || !(0.0..=u8::BITS as f64).contains(&value))
+        {
+            return Err("entropy thresholds and margins must be finite values in [0.0, 8.0]");
+        }
+        if self.low_entropy_penalty_floor > self.moderate_entropy_threshold {
+            return Err("low_entropy_penalty_floor must not exceed moderate_entropy_threshold");
+        }
+        if self.moderate_entropy_weight > self.high_entropy_partial_weight
+            || self.high_entropy_partial_weight > self.entropy_weight
+        {
+            return Err("entropy weights must satisfy moderate <= high partial <= full");
+        }
+        if self.literal_prefix_weight
+            + self.context_anchor_weight
+            + self.entropy_weight
+            + self.keyword_nearby_weight
+            + self.sensitive_file_weight
+            + self.companion_weight
+            <= 0.0
+        {
+            return Err("at least one maximum signal weight must be positive");
+        }
+        Ok(())
+    }
 }
 
 /// Exact base64 dialect accepted by a detector-owned offline validator.

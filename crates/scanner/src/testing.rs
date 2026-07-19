@@ -1750,7 +1750,11 @@ pub mod confidence {
     }
 
     pub fn compute_confidence(signals: &ConfidenceSignals) -> f64 {
-        crate::confidence::compute_confidence(&signals.into())
+        let detector = keyhog_core::detector_spec_by_id("generic-secret")
+            .expect("embedded generic-secret detector");
+        crate::confidence::policy::CompiledMatchConfidencePolicy::compile(detector)
+            .expect("embedded generic-secret match confidence")
+            .score(&signals.into(), crate::entropy::HIGH_ENTROPY_THRESHOLD)
     }
 
     pub fn known_prefix_confidence_floor(credential: &str) -> Option<f64> {
@@ -1910,6 +1914,11 @@ pub mod confidence {
         code_context: crate::context::CodeContext,
         penalize_test_paths: bool,
     ) -> f64 {
+        let confidence = crate::confidence::policy::CompiledMatchConfidencePolicy::compile(
+            keyhog_core::detector_spec_by_id("generic-secret")
+                .expect("embedded generic-secret detector"),
+        )
+        .expect("embedded generic-secret match confidence");
         crate::confidence::policy::match_heuristic_confidence(
             crate::confidence::policy::MatchHeuristicConfidencePolicy {
                 has_literal_prefix: signals.has_literal_prefix,
@@ -1922,6 +1931,7 @@ pub mod confidence {
                 has_companion: signals.has_companion,
                 code_context,
                 penalize_test_paths,
+                confidence: &confidence,
             },
         )
     }
@@ -1978,10 +1988,18 @@ pub mod confidence {
         is_named_detector: bool,
         has_companion: bool,
     ) -> Option<f64> {
+        let detector_id = if is_named_detector {
+            "aws-access-key"
+        } else {
+            "generic-secret"
+        };
+        let low_promise_confidence = keyhog_core::detector_spec_by_id(detector_id)
+            .and_then(|detector| detector.match_confidence)
+            .and_then(|confidence| confidence.low_promise_confidence);
         crate::confidence::policy::probabilistic_promise_confidence_override(
             credential,
-            is_named_detector,
             has_companion,
+            low_promise_confidence,
         )
     }
 }
@@ -2549,7 +2567,7 @@ pub fn normalize_chunk_data(data: &str) -> std::borrow::Cow<'_, str> {
 /// Baseline confidence a service-anchored ("named") detector match is lifted to
 /// when its regex required a context anchor. Exposed for the
 /// `named_detector_anchor_floor` regression test.
-pub const NAMED_DETECTOR_ANCHOR_FLOOR: f64 = crate::confidence::policy::NAMED_DETECTOR_ANCHOR_FLOOR;
+pub const NAMED_DETECTOR_ANCHOR_FLOOR: f64 = 0.55;
 
 /// Test seam for [`crate::confidence::policy::apply_named_detector_anchor_floor`].
 /// `has_anchor` is `has_context_anchor || has_literal_prefix` at the call site.
@@ -2558,11 +2576,12 @@ pub fn apply_named_detector_anchor_floor(
     is_named_detector: bool,
     has_anchor: bool,
 ) -> f64 {
-    crate::confidence::policy::apply_named_detector_anchor_floor(
-        confidence,
-        is_named_detector,
-        has_anchor,
-    )
+    let floor = is_named_detector
+        .then(|| keyhog_core::detector_spec_by_id("aws-access-key"))
+        .flatten()
+        .and_then(|detector| detector.match_confidence)
+        .and_then(|policy| policy.named_anchor_floor);
+    crate::confidence::policy::apply_named_detector_anchor_floor(confidence, floor, has_anchor)
 }
 
 /// Test seam for [`crate::suppression::shape::looks_like_english_prose`], the

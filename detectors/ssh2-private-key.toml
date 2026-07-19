@@ -17,6 +17,7 @@ name = "SSH2/ssh.com Private Key (RFC 4716)"
 service = "ssh"
 severity = "critical"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
+match_confidence = { literal_prefix_weight = 0.35, context_anchor_weight = 0.20, entropy_weight = 0.20, high_entropy_partial_weight = 0.12, moderate_entropy_threshold = 3.0, moderate_entropy_weight = 0.05, low_entropy_penalty_floor = 2.0, low_entropy_min_match_length = 10, low_entropy_penalty_multiplier = 0.60, keyword_nearby_weight = 0.10, sensitive_file_weight = 0.10, companion_weight = 0.05, very_high_entropy_margin = 1.2999999999999998, named_anchor_floor = 0.55 }
 decode_transforms = { reverse_prefixes = ["---- BEGIN SSH2"], caesar_prefixes = ["---- BEGIN SSH2"] }
 keywords = ["BEGIN SSH2", "PRIVATE KEY"]
 

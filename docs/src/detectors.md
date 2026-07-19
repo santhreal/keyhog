@@ -27,6 +27,7 @@ name = "Stripe Secret Key"
 service = "stripe"
 severity = "critical"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
+match_confidence = { literal_prefix_weight = 0.35, context_anchor_weight = 0.20, entropy_weight = 0.20, high_entropy_partial_weight = 0.12, moderate_entropy_threshold = 3.0, moderate_entropy_weight = 0.05, low_entropy_penalty_floor = 2.0, low_entropy_min_match_length = 10, low_entropy_penalty_multiplier = 0.60, keyword_nearby_weight = 0.10, sensitive_file_weight = 0.10, companion_weight = 0.05, very_high_entropy_margin = 1.2999999999999998, named_anchor_floor = 0.55 }
 validators = [{ type = "pattern-shape", prefixes = ["sk_live_", "sk_test_", "rk_live_", "rk_test_"], allow_overlong = false }]
 keywords = ["sk_live_", "sk_test_", "rk_live_", "rk_test_", "stripe"]
 simdsieve_prefixes = ["sk_live_", "sk_test_", "rk_live_", "rk_test_"]
@@ -116,6 +117,21 @@ to every secret type.
 Every detector TOML must declare `detector.ml`; omission fails parsing instead
 of silently applying an embedded or scanner-side model policy. Programmatic
 `DetectorSpec::default()` disables both model paths until the caller opts in.
+
+`detector.match_confidence` is the complete pre-model scoring policy for regex
+matches. The six signal weights define the maximum normalized evidence.
+`high_entropy_partial_weight`, `moderate_entropy_threshold`, and
+`moderate_entropy_weight` define the lower entropy tiers.
+`very_high_entropy_margin` is added to the resolved operational entropy
+threshold for the full entropy weight. The shipped value is the exact binary64
+difference between the historical 5.8 and 4.5 tiers. The low-entropy fields
+define the long-value penalty. A named detector declares `named_anchor_floor` and omits
+`low_promise_confidence`. A phase-two generic owner does the reverse. This lets
+the cheap promise gate reject only unaccompanied generic candidates. Missing,
+misplaced, non-finite, or non-monotonic policy fails detector validation. KeyHog
+precomputes the normalization reciprocal once in the detector execution plan.
+`DetectorSpec::default()` leaves this policy unset, so a programmatic detector
+must declare it before scanner compilation.
 
 `detector.validators` - optional typed offline validation programs compiled with
 this detector. `crc32-base62` declares `prefixes`, `entropy_len`,

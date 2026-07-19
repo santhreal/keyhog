@@ -3,6 +3,106 @@ use crate::context;
 #[cfg(feature = "entropy")]
 const MAX_BYTE_SHANNON_ENTROPY: f64 = u8::BITS as f64;
 
+/// Hot-path form of one detector's complete regex-match confidence policy.
+/// The reciprocal normalization denominator is compiled once so candidate
+/// scoring performs a multiply instead of rediscovering or dividing by the
+/// detector's maximum signal weight.
+#[derive(Debug)]
+pub(crate) struct CompiledMatchConfidencePolicy {
+    spec: keyhog_core::DetectorMatchConfidenceSpec,
+    inverse_max_signal_weight: f64,
+}
+
+impl CompiledMatchConfidencePolicy {
+    pub(crate) fn compile(detector: &keyhog_core::DetectorSpec) -> Result<Self, String> {
+        let spec = detector.match_confidence.ok_or_else(|| {
+            format!(
+                "detector {:?} omits match_confidence; declare the complete scoring policy in its TOML",
+                detector.id
+            )
+        })?;
+        spec.validate().map_err(|error| {
+            format!(
+                "detector {:?} match_confidence is invalid: {error}",
+                detector.id
+            )
+        })?;
+        if detector.owns_entropy_policy() {
+            if spec.named_anchor_floor.is_some() || spec.low_promise_confidence.is_none() {
+                return Err(format!(
+                    "detector {:?} owns generic entropy policy, so match_confidence must omit named_anchor_floor and declare low_promise_confidence",
+                    detector.id
+                ));
+            }
+        } else if spec.named_anchor_floor.is_none() || spec.low_promise_confidence.is_some() {
+            return Err(format!(
+                "detector {:?} is named, so match_confidence must declare named_anchor_floor and omit low_promise_confidence",
+                detector.id
+            ));
+        }
+        let max_signal_weight = spec.literal_prefix_weight
+            + spec.context_anchor_weight
+            + spec.entropy_weight
+            + spec.keyword_nearby_weight
+            + spec.sensitive_file_weight
+            + spec.companion_weight;
+        Ok(Self {
+            spec,
+            inverse_max_signal_weight: max_signal_weight.recip(),
+        })
+    }
+
+    #[inline]
+    pub(crate) fn score(
+        &self,
+        signals: &crate::confidence::ConfidenceSignals,
+        entropy_threshold: f64,
+    ) -> f64 {
+        let mut score = 0.0;
+        if signals.has_literal_prefix {
+            score += self.spec.literal_prefix_weight;
+        }
+        if signals.has_context_anchor {
+            score += self.spec.context_anchor_weight;
+        }
+        if signals.entropy >= entropy_threshold + self.spec.very_high_entropy_margin {
+            score += self.spec.entropy_weight;
+        } else if signals.entropy >= entropy_threshold {
+            score += self.spec.high_entropy_partial_weight;
+        } else if signals.entropy >= self.spec.moderate_entropy_threshold {
+            score += self.spec.moderate_entropy_weight;
+        }
+        if signals.keyword_nearby {
+            score += self.spec.keyword_nearby_weight;
+        }
+        if signals.sensitive_file {
+            score += self.spec.sensitive_file_weight;
+        }
+        if signals.has_companion {
+            score += self.spec.companion_weight;
+        }
+        let penalty = if signals.entropy < self.spec.low_entropy_penalty_floor
+            && signals.match_length > self.spec.low_entropy_min_match_length
+        {
+            self.spec.low_entropy_penalty_multiplier
+        } else {
+            1.0
+        };
+        (score * self.inverse_max_signal_weight * penalty).clamp(0.0, 1.0)
+    }
+
+    #[inline]
+    pub(crate) fn named_anchor_floor(&self) -> Option<f64> {
+        self.spec.named_anchor_floor
+    }
+
+    #[inline]
+    #[cfg(feature = "ml")]
+    pub(crate) fn low_promise_confidence(&self) -> Option<f64> {
+        self.spec.low_promise_confidence
+    }
+}
+
 pub(crate) enum MlScoreResult {
     /// Score is final and the match can be pushed immediately.
     Final(f64),
@@ -70,7 +170,7 @@ pub(crate) fn pre_ml_heuristic_confidence(
     raw_confidence * context_multiplier
 }
 
-pub(crate) struct MatchHeuristicConfidencePolicy {
+pub(crate) struct MatchHeuristicConfidencePolicy<'a> {
     pub(crate) has_literal_prefix: bool,
     pub(crate) has_context_anchor: bool,
     pub(crate) entropy: f64,
@@ -81,6 +181,7 @@ pub(crate) struct MatchHeuristicConfidencePolicy {
     pub(crate) has_companion: bool,
     pub(crate) code_context: context::CodeContext,
     pub(crate) penalize_test_paths: bool,
+    pub(crate) confidence: &'a CompiledMatchConfidencePolicy,
 }
 
 pub(crate) struct CandidateMatchScorePolicy<'a> {
@@ -94,23 +195,23 @@ pub(crate) struct CandidateMatchScorePolicy<'a> {
     pub(crate) has_companion: bool,
     pub(crate) code_context: context::CodeContext,
     pub(crate) penalize_test_paths: bool,
+    pub(crate) confidence: &'a CompiledMatchConfidencePolicy,
+    /// Whether this pattern is allowed to receive the detector-owned anchor
+    /// floor. Weak-anchor patterns keep the full generic gate stack.
+    pub(crate) named_anchor_floor_eligible: bool,
     #[cfg(feature = "ml")]
     pub(crate) ml_mode: Option<crate::detector_ml_policy::ActiveMlMode>,
     #[cfg(not(feature = "ml"))]
     pub(crate) ml_enabled: bool,
     pub(crate) credential: &'a str,
-    /// Strong service match eligible for the structural anchor floor.
-    pub(crate) is_named_detector: bool,
-    /// Any non-generic service regex, including weakly anchored patterns.
-    pub(crate) is_service_detector: bool,
     /// The matched pattern requires a distinctive literal infix (terraform
     /// `\.atlasv1\.`), a third anchor form alongside the keyword context anchor
     /// and the literal prefix, for named detectors that carry neither.
     pub(crate) has_distinctive_inner_literal: bool,
 }
 
-pub(crate) fn match_heuristic_confidence(policy: MatchHeuristicConfidencePolicy) -> f64 {
-    let raw_confidence = crate::confidence::compute_confidence_with_threshold(
+pub(crate) fn match_heuristic_confidence(policy: MatchHeuristicConfidencePolicy<'_>) -> f64 {
+    let raw_confidence = policy.confidence.score(
         &crate::confidence::ConfidenceSignals {
             has_literal_prefix: policy.has_literal_prefix,
             has_context_anchor: policy.has_context_anchor,
@@ -129,15 +230,8 @@ pub(crate) fn match_heuristic_confidence(policy: MatchHeuristicConfidencePolicy)
     )
 }
 
-/// Baseline confidence guaranteed to a service-anchored ("named") detector whose
-/// regex required a context anchor. Chosen to clear the default `min_confidence`
-/// floor (`0.40`) with headroom for downstream path / calibration penalties,
-/// while staying below the "high confidence" band so refinement signals
-/// (entropy, companion, sensitive file) still differentiate above it.
-pub(crate) const NAMED_DETECTOR_ANCHOR_FLOOR: f64 = 0.55;
-
 /// Lift the heuristic confidence of a service-anchored detector match to
-/// [`NAMED_DETECTOR_ANCHOR_FLOOR`] when the match carried a strong anchor, a
+/// its compiled detector floor when the match carried a strong anchor, a
 /// required keyword **context anchor** (capture group), a distinctive **literal
 /// prefix** (`cs_`, `pl_`, `tk_`, `sk-`, `ghp_`), or a distinctive **required
 /// literal infix** (terraform `\.atlasv1\.`, whose regex opens with a class and
@@ -145,27 +239,26 @@ pub(crate) const NAMED_DETECTOR_ANCHOR_FLOOR: f64 = 0.55;
 /// independently matched companion. These signals are folded into the single
 /// `has_anchor` argument by the caller.
 ///
-/// `compute_confidence` is a *normalized* weighted sum: it divides the earned
+/// Match confidence is a *normalized* weighted sum: it divides the earned
 /// signal weight by the full signal set (literal prefix, context anchor,
 /// entropy, sensitive file, companion, keyword-nearby). A service detector that
-/// earns ONLY the anchor weight. `CROWDIN_API_TOKEN = <40hex>` (context anchor)
-/// or a bare `cs_<34 alnum>` cloudsmith token (literal prefix), structurally
-/// cannot earn the others, so its normalized score lands below the `0.40` floor
+/// earns only the anchor weight, such as `CROWDIN_API_TOKEN = <40hex>` (context
+/// anchor) or a bare `cs_<34 alnum>` Cloudsmith token (literal prefix), cannot
+/// earn the others. Its normalized score lands below the `0.40` floor
 /// and the match is dropped as `below_min_confidence`, even though the match
 /// *only fired because the service-specific anchor was present next to a value
 /// of the contracted shape*. That anchor is itself positive evidence. This is
 /// the single trust signal the previously-scattered shape / entropy / confidence
 /// gates each failed to credit consistently.
 ///
-/// FP-safe by construction: `is_named_detector` is `is_service_anchored_detector
-/// && !weak_anchor`, so generic, entropy, private-key-fallback, and
-/// collision-prone weak-anchor detectors are excluded upstream and keep the full
-/// gate stack; `has_anchor` requires a real keyword group or an extractable
-/// literal prefix (not a bare-value match). The lift is a floor (`max`), never a
-/// cap, so stronger matches keep their higher score.
+/// Generic detectors omit the floor, and collision-prone weak-anchor patterns
+/// are ineligible at the call site. Both keep the full gate stack. `has_anchor`
+/// requires a real keyword group, an extractable literal prefix (not a bare-value
+/// match), a distinctive required infix, or a companion. The lift is a floor
+/// (`max`), never a cap, so stronger matches keep their higher score.
 pub(crate) fn apply_named_detector_anchor_floor(
     confidence: f64,
-    is_named_detector: bool,
+    floor: Option<f64>,
     has_anchor: bool,
 ) -> f64 {
     // A NaN confidence is a broken upstream signal, never a real score. `f64::max`
@@ -179,8 +272,8 @@ pub(crate) fn apply_named_detector_anchor_floor(
         "apply_named_detector_anchor_floor received NaN confidence, broken upstream score"
     );
     let confidence = if confidence.is_nan() { 0.0 } else { confidence };
-    if is_named_detector && has_anchor {
-        confidence.max(NAMED_DETECTOR_ANCHOR_FLOOR)
+    if let (Some(floor), true) = (floor, has_anchor) {
+        confidence.max(floor)
     } else {
         confidence
     }
@@ -198,6 +291,7 @@ pub(crate) fn candidate_match_score(policy: CandidateMatchScorePolicy<'_>) -> Ml
         has_companion: policy.has_companion,
         code_context: policy.code_context,
         penalize_test_paths: policy.penalize_test_paths,
+        confidence: policy.confidence,
     });
     // An anchored service-detector match is positive evidence the normalized
     // signal sum structurally under-credits; lift it to clear the floor. The
@@ -211,20 +305,17 @@ pub(crate) fn candidate_match_score(policy: CandidateMatchScorePolicy<'_>) -> Ml
     // where the compiled detector-owned model mode determines its contribution.
     let heuristic_conf = apply_named_detector_anchor_floor(
         heuristic_conf,
-        policy.is_named_detector,
-        policy.has_context_anchor
-            || policy.has_literal_prefix
-            || policy.has_distinctive_inner_literal
-            || policy.has_companion,
+        policy.confidence.named_anchor_floor(),
+        policy.named_anchor_floor_eligible
+            && (policy.has_context_anchor
+                || policy.has_literal_prefix
+                || policy.has_distinctive_inner_literal
+                || policy.has_companion),
     );
 
     #[cfg(not(feature = "ml"))]
     let score_result = {
-        let _ = (
-            policy.ml_enabled,
-            policy.is_named_detector,
-            policy.is_service_detector,
-        ); // cfg-only fields; heuristic confidence still emits without ML
+        let _ = policy.ml_enabled;
         MlScoreResult::Final(heuristic_conf)
     };
 
@@ -235,8 +326,8 @@ pub(crate) fn candidate_match_score(policy: CandidateMatchScorePolicy<'_>) -> Ml
         };
         if let Some(confidence) = probabilistic_promise_confidence_override(
             policy.credential,
-            policy.is_service_detector,
             policy.has_companion,
+            policy.confidence.low_promise_confidence(),
         ) {
             MlScoreResult::Final(confidence)
         } else {
@@ -390,18 +481,16 @@ pub(crate) fn apply_empty_candidate_score_policy<'a>(
 #[cfg(feature = "ml")]
 pub(crate) fn probabilistic_promise_confidence_override(
     credential: &str,
-    is_service_detector: bool,
     has_companion: bool,
+    low_promise_confidence: Option<f64>,
 ) -> Option<f64> {
     if crate::probabilistic_gate::ProbabilisticGate::looks_promising(credential) {
         return None;
     }
     // A service regex or matched companion is independent detector-owned
-    // evidence. The probabilistic gate may cheaply reject an unaccompanied
-    // generic candidate, but it must not bypass ML and manufacture a 0.1 score
-    // for either stronger path. Anchor strength is deliberately irrelevant:
-    // weak service patterns still prove which detector owns the candidate.
-    (!is_service_detector && !has_companion).then_some(0.1)
+    // evidence. Only a generic detector declares a low-promise score, so the
+    // gate cannot bypass ML or manufacture a score for a stronger service path.
+    low_promise_confidence.filter(|_| !has_companion)
 }
 
 #[cfg(feature = "entropy")]

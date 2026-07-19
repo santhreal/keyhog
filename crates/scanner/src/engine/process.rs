@@ -287,13 +287,13 @@ impl CompiledScanner {
                 has_companion: !companions.is_empty(),
                 code_context: inferred_context,
                 penalize_test_paths: self.config.penalize_test_paths,
+                confidence: &detector_plan.match_confidence,
+                named_anchor_floor_eligible: !weak_anchor,
                 #[cfg(feature = "ml")]
                 ml_mode: detector_ml_mode,
                 #[cfg(not(feature = "ml"))]
                 ml_enabled: false,
                 credential,
-                is_named_detector,
-                is_service_detector: !is_generic,
                 // Per-PATTERN constant, memoized on the `LazyRegex`: the matched
                 // regex requires a distinctive literal infix (terraform
                 // `\.atlasv1\.`) that no prefix/keyword-group anchor captures.

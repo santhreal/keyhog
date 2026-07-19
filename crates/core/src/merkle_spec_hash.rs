@@ -363,6 +363,31 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
                     d.ml.context_radius_lines
                 ));
             }
+            if let Some(confidence) = d.match_confidence {
+                entries.push(format!(
+                    "match-confidence:{}:{:016x}:{:016x}:{:016x}:{:016x}:{:016x}:{:016x}:{:016x}:{}:{:016x}:{:016x}:{:016x}:{:016x}:{:016x}:{}:{}",
+                    d.id,
+                    confidence.literal_prefix_weight.to_bits(),
+                    confidence.context_anchor_weight.to_bits(),
+                    confidence.entropy_weight.to_bits(),
+                    confidence.high_entropy_partial_weight.to_bits(),
+                    confidence.moderate_entropy_threshold.to_bits(),
+                    confidence.moderate_entropy_weight.to_bits(),
+                    confidence.low_entropy_penalty_floor.to_bits(),
+                    confidence.low_entropy_min_match_length,
+                    confidence.low_entropy_penalty_multiplier.to_bits(),
+                    confidence.keyword_nearby_weight.to_bits(),
+                    confidence.sensitive_file_weight.to_bits(),
+                    confidence.companion_weight.to_bits(),
+                    confidence.very_high_entropy_margin.to_bits(),
+                    confidence
+                        .named_anchor_floor
+                        .map_or_else(|| "none".into(), |value| format!("{:016x}", value.to_bits())),
+                    confidence
+                        .low_promise_confidence
+                        .map_or_else(|| "none".into(), |value| format!("{:016x}", value.to_bits())),
+                ));
+            }
             for (validator_index, validator) in d.validators.iter().enumerate() {
                 match validator {
                     crate::DetectorValidatorSpec::Crc32Base62 {
@@ -472,6 +497,7 @@ fn assert_scan_hash_field_inventory_is_exhaustive(detector: &DetectorSpec) {
         severity: _,
         kind: _,
         ml: _,
+        match_confidence: _,
         validators: _,
         decode_transforms: _,
         patterns: _,

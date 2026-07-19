@@ -249,6 +249,36 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
         d.ml.weight,
         d.ml.context_radius_lines
     );
+    if let Some(confidence) = d.match_confidence {
+        println!(
+            "    match_confidence: literal_prefix_weight={} context_anchor_weight={} entropy_weight={} high_entropy_partial_weight={} moderate_entropy_threshold={} moderate_entropy_weight={}",
+            confidence.literal_prefix_weight,
+            confidence.context_anchor_weight,
+            confidence.entropy_weight,
+            confidence.high_entropy_partial_weight,
+            confidence.moderate_entropy_threshold,
+            confidence.moderate_entropy_weight,
+        );
+        println!(
+            "      low_entropy_penalty_floor={} low_entropy_min_match_length={} low_entropy_penalty_multiplier={} keyword_nearby_weight={} sensitive_file_weight={} companion_weight={} very_high_entropy_margin={}",
+            confidence.low_entropy_penalty_floor,
+            confidence.low_entropy_min_match_length,
+            confidence.low_entropy_penalty_multiplier,
+            confidence.keyword_nearby_weight,
+            confidence.sensitive_file_weight,
+            confidence.companion_weight,
+            confidence.very_high_entropy_margin,
+        );
+        println!(
+            "      named_anchor_floor={} low_promise_confidence={}",
+            confidence
+                .named_anchor_floor
+                .map_or_else(|| "none".into(), |value| value.to_string()),
+            confidence
+                .low_promise_confidence
+                .map_or_else(|| "none".into(), |value| value.to_string()),
+        );
+    }
     macro_rules! optional_policy {
         ($name:literal, $value:expr, $unit:literal) => {
             if let Some(value) = $value {

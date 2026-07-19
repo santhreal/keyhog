@@ -206,7 +206,7 @@ fn gpu_region_presence_self_test_impl(
 ) -> Result<GpuRegionPresenceSelfTest, GpuRegionPresenceSelfTestFailure> {
     use crate::engine::CompiledScanner;
     use crate::hw_probe::ScanBackend;
-    use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
+    use keyhog_core::{Chunk, ChunkMetadata, DetectorFile};
 
     // The probe MUST be a credential keyhog actually REPORTS, not one it
     // suppresses. A plain dictionary word (e.g. "needle") triggers phase-1 and
@@ -218,24 +218,13 @@ fn gpu_region_presence_self_test_impl(
     // region-presence -> trigger, followed by a mixed-case high-entropy suffix
     // that survives suppression so the match is emitted end to end.
     const PLANTED: &str = "KHGPUSELFTEST_A1b2C3d4E5f6";
-    let detector = DetectorSpec {
-        tests: Vec::new(),
-        id: "kh-gpu-self-test".into(),
-        name: "GPU self-test".into(),
-        service: "test".into(),
-        severity: Severity::Low,
-        patterns: vec![PatternSpec {
-            regex: "KHGPUSELFTEST_[A-Za-z0-9]{12}".into(),
-            description: None,
-            group: None,
-            required_literals: Vec::new(),
-            client_safe: false,
-            weak_anchor: false,
-        }],
-        keywords: vec!["KHGPUSELFTEST".into()],
-        min_confidence: None,
-        ..Default::default()
-    };
+    let detector =
+        toml::from_str::<DetectorFile>(include_str!("../../data/gpu-self-test-detector.toml"))
+            .map(|file| file.detector)
+            .map_err(|error| GpuRegionPresenceSelfTestFailure {
+                acquired_backends: Vec::new(),
+                message: format!("bundled GPU self-test detector TOML is invalid: {error}"),
+            })?;
 
     let scanner = CompiledScanner::compile(vec![detector]).map_err(|error| {
         GpuRegionPresenceSelfTestFailure {

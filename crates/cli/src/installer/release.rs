@@ -15,7 +15,7 @@
 //! signature gate (config-policy mandate + security).
 
 use anyhow::{anyhow, Context, Result};
-use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
+use keyhog_core::{Chunk, ChunkMetadata, DetectorFile};
 use keyhog_scanner::{hw_probe::ScanBackend, CompiledScanner};
 use serde::Deserialize;
 use std::time::Duration;
@@ -447,24 +447,10 @@ async fn read_limited_response(
 /// collides with a real detector nor trips example/placeholder suppression.
 pub(crate) fn scan_engine_self_test() -> Result<bool> {
     const PLANTED: &str = "KHDOCTOR_A1b2C3d4E5f6";
-    let detector = DetectorSpec {
-        tests: Vec::new(),
-        id: "kh-doctor-selftest".into(),
-        name: "doctor self-test".into(),
-        service: "doctor".into(),
-        severity: Severity::Low,
-        patterns: vec![PatternSpec {
-            regex: "KHDOCTOR_[A-Za-z0-9]{12}".into(),
-            description: None,
-            group: None,
-            required_literals: Vec::new(),
-            client_safe: false,
-            weak_anchor: false,
-        }],
-        keywords: vec!["KHDOCTOR".into()],
-        min_confidence: None,
-        ..Default::default()
-    };
+    let detector =
+        toml::from_str::<DetectorFile>(include_str!("../../data/doctor-self-test-detector.toml"))
+            .context("bundled doctor self-test detector TOML is invalid")?
+            .detector;
     let scanner = CompiledScanner::compile(vec![detector])?;
     let chunk = Chunk {
         data: format!("api_secret = {PLANTED}").into(),

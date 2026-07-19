@@ -59,6 +59,7 @@ pub(crate) struct CompiledDetectorPlan {
     pub(crate) metadata: CompiledDetectorMetadata,
     pub(crate) entropy_metadata: Option<CompiledDetectorMetadata>,
     pub(crate) execution: crate::detector_execution_policy::CompiledDetectorExecutionPolicy,
+    pub(crate) match_confidence: crate::confidence::policy::CompiledMatchConfidencePolicy,
     pub(crate) key_material: crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy,
     pub(crate) entropy_floor: Option<crate::entropy::policy::CompiledEntropyFloorPolicy>,
     pub(crate) entropy: Option<crate::entropy::policy::CompiledEntropyPolicy>,
@@ -161,6 +162,10 @@ impl CompiledDetectorPlans {
                             })
                             .transpose()?,
                         execution,
+                        match_confidence:
+                            crate::confidence::policy::CompiledMatchConfidencePolicy::compile(
+                                detector,
+                            )?,
                         key_material:
                             crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy::compile(
                                 detector,
