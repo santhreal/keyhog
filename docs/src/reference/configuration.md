@@ -375,7 +375,10 @@ configuration that must be calibrated before automatic use.
 `gpu_recall_floor` forces the GPU region-presence path to compute the full CPU
 trigger net during parity/debug scans and report any GPU under-fire it recovers.
 `gpu_moe_timeout_ms` bounds one GPU MoE confidence readback; on timeout KeyHog
-surfaces the GPU fault and scores the same candidates on CPU MoE.
+surfaces the GPU fault and scores the same candidates on CPU MoE. A NaN or
+infinite GPU confidence invalidates the complete batch, triggers exact CPU
+rescoring, and disables GPU MoE scoring for the rest of the process; KeyHog
+never substitutes a neutral probability for a corrupt accelerator result.
 
 ### `[allowlist]`
 

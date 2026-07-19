@@ -1,6 +1,22 @@
 use super::*;
 
 #[test]
+fn gpu_moe_score_validation_clamps_only_complete_finite_batches() {
+    assert_eq!(
+        checked_moe_scores(&[-0.25, 0.25, 1.25]),
+        Ok(vec![0.0, 0.25, 1.0])
+    );
+}
+
+#[test]
+fn gpu_moe_score_validation_rejects_the_complete_batch_on_nonfinite_output() {
+    assert_eq!(
+        checked_moe_scores(&[0.9, f32::NAN, f32::INFINITY, f32::NEG_INFINITY]),
+        Err(3)
+    );
+}
+
+#[test]
 fn gpu_moe_dispatch_matches_cpu_on_every_repeat() {
     // GPU/CPU parity guard: the GPU MoE compute shader must reproduce the CPU
     // MoE (`ml_scorer::score_features`, the reference every confidence floor is

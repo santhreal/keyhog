@@ -6,6 +6,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Fixed
 
+- Non-finite GPU MoE confidence now invalidates and CPU-rescores the complete
+  batch, then disables GPU MoE scoring for the process, instead of substituting
+  0.5 and risking CPU/GPU detection drift (KH-1342).
 - Service-regex and companion-backed candidates now continue into detector-owned
   ML scoring even when the cheap probabilistic gate finds little randomness;
   only unaccompanied generic candidates may take the early 0.1-confidence path

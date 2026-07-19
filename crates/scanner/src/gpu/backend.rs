@@ -359,6 +359,10 @@ static MOE_RUNTIME_DEGRADE_WARNED: AtomicBool = AtomicBool::new(false);
 static MOE_NONFINITE_WARNED: AtomicBool = AtomicBool::new(false);
 
 static MOE_NUMERIC_TRUST: OnceLock<bool> = OnceLock::new();
+/// Permanently disables GPU MoE scoring after any runtime numeric fault. A
+/// parity probe proves the device once, but a later device/driver fault can
+/// still corrupt a batch; subsequent batches must not retry that device.
+static MOE_NUMERIC_FAULTED: AtomicBool = AtomicBool::new(false);
 static MOE_NUMERIC_DIVERGENCE_WARNED: AtomicBool = AtomicBool::new(false);
 
 /// Surface a runtime GPU-MoE dispatch failure that is about to degrade the
@@ -405,14 +409,13 @@ this scan are scored on the CPU MoE (identical scores, lower throughput). Set \
 /// Surface NaN / ±Inf scores returned by the GPU MoE staging buffer. A
 /// non-finite probability is not a routing choice, it can only come from a GPU
 /// driver bug, a shader miscompile, or a corrupt weights buffer, i.e. a GPU
-/// CORRECTNESS fault. Each bad value is sanitized to a neutral `0.5` at the GPU
-/// boundary (so downstream `confidence` math never sees NaN and the finding
-/// still surfaces on its heuristic score), but Law 10 forbids doing that
-/// silently: the operator must be told their GPU produced garbage. Gating
-/// mirrors [`moe_runtime_degrade`], hard-fail under `--require-gpu` (a GPU
-/// emitting NaN is exactly the malfunction that flag exists to catch), one loud
-/// stderr line on an ordinary run, and quiet under `--no-gpu` where the CPU MoE
-/// is the intended path anyway.
+/// CORRECTNESS fault. The complete affected batch is rejected and rescored by
+/// the exact CPU MoE; inventing a neutral probability would change
+/// authoritative confidence semantics. The GPU MoE then remains disabled for
+/// the process. Gating mirrors [`moe_runtime_degrade`], hard-fail under
+/// `--require-gpu` (a GPU emitting NaN is exactly the malfunction that flag
+/// exists to catch), one loud stderr line on an ordinary run, and quiet under
+/// `--no-gpu` where the CPU MoE is the intended path anyway.
 fn moe_nonfinite_degrade(nonfinite: usize, total: usize) {
     let no_gpu = super::gpu_disabled_by_policy();
     let require_gpu = super::gpu_required_by_policy();
@@ -420,7 +423,7 @@ fn moe_nonfinite_degrade(nonfinite: usize, total: usize) {
         crate::process_exit::require_gpu_unmet(format!(
             "--require-gpu requested but the GPU MoE returned {nonfinite}/{total} \
 non-finite (NaN/Inf) confidence score(s), a GPU driver/shader/weights malfunction. \
-Refusing to silently sanitize and continue."
+Refusing to continue with an untrusted GPU score."
         ));
     }
     if no_gpu {
@@ -429,14 +432,14 @@ Refusing to silently sanitize and continue."
     tracing::error!(
         nonfinite,
         total,
-        "GPU MoE produced non-finite confidence scores; scores were sanitized to neutral 0.5"
+        "GPU MoE produced non-finite confidence scores; affected batch is routed to CPU MoE"
     );
     if !MOE_NONFINITE_WARNED.swap(true, Ordering::Relaxed) {
         eprintln!(
             "keyhog: GPU MoE produced {nonfinite}/{total} non-finite (NaN/Inf) confidence \
-score(s); each was sanitized to a neutral 0.5 so the finding still surfaces on its \
-heuristic score, but this indicates a GPU driver/shader/weights bug worth investigating. \
-Use --no-gpu to score on the CPU MoE, or --require-gpu to hard-fail next time."
+score(s); the complete batch is rescored by the CPU MoE and GPU MoE scoring is disabled \
+for this process. This indicates a GPU driver/shader/weights bug worth investigating. \
+Use --no-gpu to select CPU scoring explicitly, or --require-gpu to hard-fail next time."
         );
     }
 }
@@ -492,6 +495,12 @@ pub(crate) fn batch_score_features(
     // scores), and the adapter is never probed. Mirrors the gpu_probe guard so
     // the disabled-GPU path can never drift back into an unconditional probe.
     if super::gpu_disabled_by_policy() {
+        return None;
+    }
+
+    // A runtime numeric fault invalidates the device beyond the affected
+    // batch. The fault site already emitted the operator-visible diagnostic.
+    if MOE_NUMERIC_FAULTED.load(Ordering::Acquire) {
         return None;
     }
 
@@ -590,7 +599,7 @@ fn return_moe_buffers(bufs: MoeBufferSet) {
 }
 
 /// Raw GPU MoE dispatch: upload features, run the compute shader, read back and
-/// sanitize the per-candidate scores. Split out of [`batch_score_features`] so
+/// validate every per-candidate score. Split out of [`batch_score_features`] so
 /// the parity self-test ([`gpu_moe_parity_max_divergence`]) can exercise the
 /// exact production dispatch without re-entering the trustworthiness gate (which
 /// would recurse). Callers own the size/policy/trust guards.
@@ -796,30 +805,46 @@ fn dispatch_moe_batch(
         return_moe_buffers(bufs);
         return None;
     }
-    let mut nonfinite = 0usize;
-    let result: Vec<f64> = scores
-        .iter()
-        .map(|&s| {
-            let v = s as f64;
-            if v.is_finite() {
-                v.clamp(0.0, 1.0)
-            } else {
-                nonfinite += 1;
-                0.5
-            }
-        })
-        .collect();
+    let result = checked_moe_scores(scores);
+    if result.is_err() {
+        // Latch the fault before releasing the readback resources so a new
+        // dispatch cannot enter during cleanup and retry the corrupt device.
+        MOE_NUMERIC_FAULTED.store(true, Ordering::Release);
+    }
     drop(data);
     bufs.staging.unmap();
 
     // Return buffers to pool for reuse by the next dispatch.
     return_moe_buffers(bufs);
 
-    if nonfinite > 0 {
-        moe_nonfinite_degrade(nonfinite, result.len());
+    match result {
+        Ok(scores) => Some(scores),
+        Err(nonfinite) => {
+            moe_nonfinite_degrade(nonfinite, batch_size);
+            None
+        }
     }
+}
 
-    Some(result)
+/// Convert a complete GPU score buffer only when every value is finite. A
+/// single invalid probability makes the whole batch untrusted because adjacent
+/// finite-looking values may have been produced by the same device fault.
+fn checked_moe_scores(scores: &[f32]) -> Result<Vec<f64>, usize> {
+    let mut result = Vec::with_capacity(scores.len());
+    let mut nonfinite = 0usize;
+    for &score in scores {
+        let score = f64::from(score);
+        if score.is_finite() {
+            result.push(score.clamp(0.0, 1.0));
+        } else {
+            nonfinite += 1;
+        }
+    }
+    if nonfinite == 0 {
+        Ok(result)
+    } else {
+        Err(nonfinite)
+    }
 }
 
 /// Maximum tolerated GPU-vs-CPU MoE score divergence on the parity probe. The
@@ -953,7 +978,12 @@ fn gpu_moe_numerically_trustworthy(readback_timeout: Duration) -> bool {
             false
         }
         Err(reason) => {
-            moe_numeric_divergence_degrade(&reason);
+            // A non-finite readback already emitted the more precise numeric
+            // fault and permanently disabled GPU MoE scoring. Avoid a second,
+            // less-specific parity warning for the same event.
+            if !MOE_NUMERIC_FAULTED.load(Ordering::Acquire) {
+                moe_numeric_divergence_degrade(&reason);
+            }
             false
         }
     })
