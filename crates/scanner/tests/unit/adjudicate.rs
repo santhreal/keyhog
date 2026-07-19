@@ -10,6 +10,13 @@ use crate::adjudicate::{
 use crate::context::CodeContext;
 use crate::suppression::NamedDetectorSuppressionCtx;
 
+fn length_policy(
+    min_len: Option<usize>,
+    max_len: Option<usize>,
+) -> crate::detector_execution_policy::CompiledDetectorLengthPolicy {
+    crate::detector_execution_policy::CompiledDetectorLengthPolicy { min_len, max_len }
+}
+
 fn adjudicate_process_signal(
     detector_id: &str,
     credential_shape: Option<&crate::credential_shapes::CredentialShapeRule>,
@@ -22,7 +29,10 @@ fn adjudicate_process_signal(
         .is_some_and(|spec| spec.kind == keyhog_core::DetectorKind::Phase2Generic);
     let signals = ProcessCandidateSignals::from_match(
         is_generic_detector,
-        keyhog_core::detector_spec_by_id(detector_id).and_then(|spec| spec.min_len),
+        keyhog_core::detector_spec_by_id(detector_id).map_or(
+            length_policy(None, None),
+            crate::detector_execution_policy::CompiledDetectorLengthPolicy::compile,
+        ),
         credential_shape,
         credential,
         data,
@@ -72,7 +82,7 @@ fn process_stage_enforces_detector_minimum_length() {
     let credential = "Q7vN2xK8cP4mR9tW";
     let signals = ProcessCandidateSignals::from_match(
         false,
-        Some(32),
+        length_policy(Some(32), None),
         None,
         credential,
         credential,
@@ -98,7 +108,7 @@ fn process_stage_keeps_candidate_at_detector_minimum_length() {
     let credential = "Q7vN2xK8cP4mR9tW3zH6yL5sD8fJ1bG0";
     let signals = ProcessCandidateSignals::from_match(
         false,
-        Some(32),
+        length_policy(Some(32), None),
         None,
         credential,
         credential,
@@ -116,6 +126,38 @@ fn process_stage_keeps_candidate_at_detector_minimum_length() {
 }
 
 #[test]
+fn process_stage_enforces_detector_maximum_length_without_truncation() {
+    let at_max = "Q7vN2xK8";
+    let above_max = "Q7vN2xK8c";
+
+    for (credential, expected) in [
+        (at_max, Verdict::Reported(None)),
+        (
+            above_max,
+            Verdict::Suppressed(StageId::AboveDetectorMaxLength),
+        ),
+    ] {
+        let signals = ProcessCandidateSignals::from_match(
+            false,
+            length_policy(None, Some(at_max.len())),
+            None,
+            credential,
+            credential,
+            0,
+            credential.len(),
+        );
+        assert_eq!(
+            adjudicate_match(
+                CandidateMatch::new(credential),
+                &MatchCtx::for_process_signals(signals),
+            ),
+            expected,
+        );
+    }
+    assert_eq!(StageId::AboveDetectorMaxLength.as_str(), "value_too_long");
+}
+
+#[test]
 fn process_stage_measures_detector_minimum_in_utf8_bytes() {
     let credential = "éé";
     assert_eq!(credential.len(), 4, "fixture must contain four UTF-8 bytes");
@@ -126,7 +168,7 @@ fn process_stage_measures_detector_minimum_in_utf8_bytes() {
     ] {
         let signals = ProcessCandidateSignals::from_match(
             false,
-            Some(min_len),
+            length_policy(Some(min_len), None),
             None,
             credential,
             credential,

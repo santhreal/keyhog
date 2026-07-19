@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Compile one typed min/max policy from each detector and apply its inclusive
+  bounds before generic entropy, BPE, entropy fallback, or regex-envelope
+  scoring. Overlength values now share the `value_too_long` suppression reason
+  and are rejected whole.
 - Reject detector corpora with entropy fallback or BPE policy when the scanner
   artifact lacks the `entropy` feature. The public compile boundary reports the
   affected detector IDs and corrective build feature before constructing

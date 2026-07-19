@@ -42,5 +42,10 @@ scanner `entropy` feature. Scanner construction returns an actionable
 configuration error when the artifact cannot execute a declared mechanism. It
 never compiles a weaker detector under the same detector identity.
 
+For example, `max_len = 512` admits a 512-byte candidate and rejects a
+513-byte candidate whole. Generic assignment, entropy fallback, and explicit
+regex envelopes use the same compiled inclusive bound before entropy or BPE
+work.
+
 See the [main documentation](https://github.com/santhreal/keyhog) for the
 detector schema, backend calibration, parity guarantees, and complete usage.

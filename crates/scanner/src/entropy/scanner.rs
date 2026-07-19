@@ -222,7 +222,7 @@ pub(crate) fn credential_keyword_context(keyword: &str) -> KeywordContext {
     KeywordContext {
         keyword: keyword.to_string(),
         threshold: policy.entropy_low,
-        min_len: policy.min_len,
+        min_len: policy.length.min_len,
         is_credential_context: true,
         plausibility_policy: *policy,
     }
@@ -764,6 +764,9 @@ pub(crate) fn has_lower_dash_app_password_candidate_with_precomputed_keywords_an
             &context.plausibility_policy,
             key_material_policy,
         ) {
+            if candidate_max_length_stage(&candidate, &context).is_some() {
+                continue;
+            }
             let entropy = shannon_entropy(candidate.as_bytes());
             if lower_dash_app_password_floor_met_with_policy(
                 &candidate,
@@ -853,6 +856,15 @@ fn collect_line_candidates_inner(
     };
 
     for candidate in candidates {
+        if let Some(stage_id) = candidate_max_length_stage(&candidate, context) {
+            if crate::telemetry::is_dogfood_enabled() {
+                let ctx = crate::adjudicate::MatchCtx::for_entropy_generation(
+                    crate::adjudicate::EntropyGenerationSignal::SuppressionStage(stage_id),
+                );
+                crate::adjudicate::record_suppression(None, &candidate, &ctx);
+            }
+            continue;
+        }
         let entropy = shannon_entropy(candidate.as_bytes());
         if let Some(stage_id) = candidate_plausibility_rejection_stage_with_policy(
             &candidate,
@@ -912,6 +924,15 @@ fn candidate_is_plausible_with_policy(
     .is_none()
 }
 
+#[inline]
+pub(crate) fn candidate_max_length_stage(
+    candidate: &str,
+    context: &KeywordContext,
+) -> Option<StageId> {
+    (candidate.len() > context.plausibility_policy.length.max_len)
+        .then_some(StageId::EntropyValueShape(EntropyShapeStage::ValueTooLong))
+}
+
 pub(crate) fn candidate_plausibility_rejection_stage(
     candidate: &str,
     entropy: f64,
@@ -939,7 +960,7 @@ fn candidate_plausibility_rejection_stage_with_policy(
         return Some(StageId::EntropyPolicyUnavailable);
     };
     let keyword_free_min_len = compiled.keyword_free_min_len;
-    let credential_context_min_len = compiled.min_len;
+    let credential_context_min_len = compiled.length.min_len;
 
     let structured_dotted = crate::suppression::shape::is_structured_dotted_token(candidate);
     if structured_dotted {
@@ -1069,7 +1090,7 @@ fn keyword_context_with_policy(
 
     let compiled = get_compiled_policy_for_keyword(active_policy, keyword)?;
     let entropy_low = compiled.entropy_low;
-    let min_len = compiled.min_len;
+    let min_len = compiled.length.min_len;
     let entropy_high = compiled.entropy_high;
 
     // Keyword-anchored floor policy (a NAMED, tested rule, not a silent clamp).

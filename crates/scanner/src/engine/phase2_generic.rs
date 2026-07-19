@@ -235,6 +235,26 @@ impl CompiledScanner {
                 let detector_plan = self.detector_plans.get(owning_detector_index);
                 let execution_policy = &detector_plan.execution;
                 let metadata = &detector_plan.metadata;
+                let length_stage = match execution_policy.length.rejection(value.len()) {
+                    Some(crate::detector_execution_policy::CandidateLengthRejection::TooShort) => {
+                        Some(crate::adjudicate::GenericValueShapeStage::ValueTooShort)
+                    }
+                    Some(crate::detector_execution_policy::CandidateLengthRejection::TooLong) => {
+                        Some(crate::adjudicate::GenericValueShapeStage::ValueTooLong)
+                    }
+                    None => None,
+                };
+                if let Some(stage) = length_stage {
+                    let generic_ctx = crate::adjudicate::MatchCtx::for_generic_bridge(
+                        crate::adjudicate::GenericBridgeSignal::ValueShape(stage),
+                    );
+                    crate::adjudicate::record_suppression(
+                        chunk.metadata.path.as_deref(),
+                        value,
+                        &generic_ctx,
+                    );
+                    continue;
+                }
                 let Some(owning_policy) = detector_plan.entropy.as_ref() else {
                     tracing::error!(
                         detector_id = metadata.0.as_ref(),
@@ -273,7 +293,6 @@ impl CompiledScanner {
                 // stricter. This bridge must not pre-resolve against a global
                 // threshold because detector-local calibration can differ.
                 let entropy = crate::pipeline::match_entropy(value.as_bytes());
-                let owning_detector_max_len = owning_policy.max_len;
                 let canonical_key_material_policy =
                     self.detector_plans.get(owner_resolution.canonical_index);
                 // A complete pure-hex value admitted by the detector that
@@ -307,20 +326,16 @@ impl CompiledScanner {
                 // dropped generic-secret candidate is visible to `--dogfood`
                 // (Law-10), then continue. Zero-cost when dogfood is off (the
                 // `is_dogfood_enabled()` atomic short-circuits before any work).
-                let shape_rejected = if value.len() > owning_detector_max_len {
-                    Some(crate::adjudicate::GenericValueShapeStage::ValueTooLong)
-                } else {
-                    self.generic_value_shape_rejected(
-                        value,
-                        entropy,
-                        chunk,
-                        owning_detector_index,
-                        owning_policy,
-                        allow_canonical_hex_key,
-                        allow_encoded_text_secret,
-                        allow_decoded_hex_key_material,
-                    )
-                };
+                let shape_rejected = self.generic_value_shape_rejected(
+                    value,
+                    entropy,
+                    chunk,
+                    owning_detector_index,
+                    owning_policy,
+                    allow_canonical_hex_key,
+                    allow_encoded_text_secret,
+                    allow_decoded_hex_key_material,
+                );
 
                 // BPE "rare-not-random" gate. LAST, so it only tokenizes values
                 // that survived every cheaper generic shape gate (bounded cost),

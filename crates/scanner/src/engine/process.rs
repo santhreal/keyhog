@@ -70,7 +70,7 @@ impl CompiledScanner {
 
         let process_signals = crate::adjudicate::ProcessCandidateSignals::from_match(
             is_generic,
-            execution_policy.min_len,
+            execution_policy.length,
             detector_plan.credential_shape.as_ref(),
             credential,
             data,

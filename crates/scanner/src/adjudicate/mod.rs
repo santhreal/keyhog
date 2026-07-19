@@ -53,15 +53,21 @@ impl ProcessCandidateSignals {
 
     pub(crate) fn from_match(
         is_generic_detector: bool,
-        detector_min_len: Option<usize>,
+        detector_length: crate::detector_execution_policy::CompiledDetectorLengthPolicy,
         credential_shape: Option<&crate::credential_shapes::CredentialShapeRule>,
         credential: &str,
         data: &str,
         credential_start: usize,
         match_end: usize,
     ) -> Self {
-        if detector_min_len.is_some_and(|min_len| credential.len() < min_len) {
-            return Self::suppress(StageId::BelowDetectorMinLength);
+        match detector_length.rejection(credential.len()) {
+            Some(crate::detector_execution_policy::CandidateLengthRejection::TooShort) => {
+                return Self::suppress(StageId::BelowDetectorMinLength);
+            }
+            Some(crate::detector_execution_policy::CandidateLengthRejection::TooLong) => {
+                return Self::suppress(StageId::AboveDetectorMaxLength);
+            }
+            None => {}
         }
         if credential_shape.is_some_and(|shape| !shape.allows(credential)) {
             return Self::suppress(StageId::DetectorCredentialShapeInvalid);
@@ -70,7 +76,7 @@ impl ProcessCandidateSignals {
             return Self::suppress(StageId::WithinHexContext);
         }
         if is_hex_digest_fragment(
-            detector_min_len,
+            detector_length.min_len,
             data,
             credential_start,
             match_end,

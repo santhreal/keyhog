@@ -92,14 +92,8 @@ impl CompiledScanner {
             );
             return Some(GenericValueShapeStage::EntropyPolicyUnavailable);
         };
-        let min_len = owning_policy.min_len;
         if !allow_encoded_text_secret && entropy < entropy_floor {
             return Some(GenericValueShapeStage::EntropyBelowFloor);
-        }
-
-        // Length gate
-        if value.len() < min_len {
-            return Some(GenericValueShapeStage::ValueTooShort);
         }
         let randomness = TokenRandomness::for_candidate(value);
         let allow_ambiguous_base64_candidate =
@@ -163,7 +157,6 @@ impl CompiledScanner {
         };
         if type_name_policy_enabled
             && keep_identifier_gate_with_randomness(value, &randomness)
-            && value.len() >= min_len
             && value.len() <= owning_policy.source_type_name_max_len
             && value.as_bytes()[0].is_ascii_uppercase()
             && keyhog_core::ascii_ci::is_ascii_alphanumeric_str(value)

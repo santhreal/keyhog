@@ -85,6 +85,13 @@ impl CompiledDetectorPlans {
                 .iter()
                 .zip(companions)
                 .map(|(detector, companions)| {
+                    let execution = crate::detector_execution_policy::CompiledDetectorExecutionPolicy::compile(
+                        detector,
+                    );
+                    let entropy = crate::entropy::policy::compile_entropy_policy_with_length(
+                        detector,
+                        execution.length,
+                    )?;
                     Ok(CompiledDetectorPlan {
                         metadata: compile_metadata(
                             interner,
@@ -108,17 +115,14 @@ impl CompiledDetectorPlans {
                                 )
                             })
                             .transpose()?,
-                        execution:
-                            crate::detector_execution_policy::CompiledDetectorExecutionPolicy::compile(
-                                detector,
-                            ),
+                        execution,
                         key_material:
                             crate::detector_key_material_policy::CompiledDetectorKeyMaterialPolicy::compile(
                                 detector,
                             )?,
                         entropy_floor:
                             crate::entropy::policy::CompiledEntropyFloorPolicy::compile(detector)?,
-                        entropy: crate::entropy::policy::compile_entropy_policy(detector)?,
+                        entropy,
                         credential_shape:
                             crate::credential_shapes::compile_detector_shape_rule(detector)?,
                         suppression:

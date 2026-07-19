@@ -44,6 +44,7 @@ pub mod decode_splice_payload_window;
 pub mod decode_structure_protobuf_fixed_width_fields;
 pub mod decoder_registry_default_composition;
 pub mod detector_contract_coverage_100pct;
+pub mod detector_length_policy_parity;
 #[cfg(any(feature = "entropy", feature = "simd", feature = "gpu"))]
 pub mod detector_precision_decoys;
 pub mod detector_recall_prefixes;

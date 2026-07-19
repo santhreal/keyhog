@@ -9,6 +9,9 @@ pub(crate) enum EntropyShapeStage {
     #[cfg(feature = "entropy")]
     CaesarSource,
     #[cfg(feature = "entropy")]
+    ValueTooShort,
+    ValueTooLong,
+    #[cfg(feature = "entropy")]
     SuppressionStage(&'static str),
     #[cfg(feature = "entropy")]
     KebabIdentifier,
@@ -84,6 +87,9 @@ impl EntropyShapeStage {
             Self::MissingSameLineCredential => "entropy_missing_same_line_credential",
             #[cfg(feature = "entropy")]
             Self::CaesarSource => "entropy_caesar_source",
+            #[cfg(feature = "entropy")]
+            Self::ValueTooShort => "value_too_short",
+            Self::ValueTooLong => "value_too_long",
             #[cfg(feature = "entropy")]
             Self::SuppressionStage(reason) => reason,
             #[cfg(feature = "entropy")]

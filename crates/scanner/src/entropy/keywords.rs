@@ -207,6 +207,16 @@ fn extract_candidates_internal(
 
     let mut push_candidate = |raw: &str, strict: bool, allow_structured_dotted: bool| {
         let cleaned = clean_candidate_value(raw);
+        if cleaned.len() > compiled_policy.length.max_len {
+            if trace_rejections {
+                push_extraction_rejection(
+                    &mut rejections,
+                    cleaned,
+                    StageId::EntropyValueShape(EntropyShapeStage::ValueTooLong),
+                );
+            }
+            return;
+        }
         if cleaned.len() < min_length {
             if trace_rejections && !cleaned.is_empty() {
                 let stage_id = if is_credential_context {

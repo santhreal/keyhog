@@ -162,8 +162,7 @@ pub(crate) struct CompiledEntropyPolicy {
     pub(crate) leading_slash_base64_min_len: usize,
     pub(crate) keyword_free_operator_margin: Option<f64>,
     pub(crate) keyword_free_min_len: usize,
-    pub(crate) min_len: usize,
-    pub(crate) max_len: usize,
+    pub(crate) length: crate::detector_execution_policy::CompiledRequiredDetectorLengthPolicy,
     #[cfg(feature = "entropy")]
     pub(crate) bpe_max_bytes_per_token: Option<f64>,
     pub(crate) entropy_shape: Option<EntropyShapeSpec>,
@@ -224,6 +223,17 @@ impl CompiledEntropyPolicy {
     }
 
     pub(crate) fn compile(detector: &DetectorSpec) -> Result<Self, String> {
+        Self::compile_with_length(
+            detector,
+            crate::detector_execution_policy::CompiledDetectorLengthPolicy::compile(detector),
+        )
+    }
+
+    pub(crate) fn compile_with_length(
+        detector: &DetectorSpec,
+        length: crate::detector_execution_policy::CompiledDetectorLengthPolicy,
+    ) -> Result<Self, String> {
+        let length = length.require_bounded(&detector.id)?;
         let plausibility = detector.plausibility.ok_or_else(|| {
             format!(
                 "detector {:?} owns entropy detection but omits [detector.plausibility]",
@@ -370,8 +380,7 @@ impl CompiledEntropyPolicy {
                 "keyword_free_min_len",
                 detector.keyword_free_min_len,
             )?,
-            min_len: Self::required(detector, "min_len", detector.min_len)?,
-            max_len: Self::required(detector, "max_len", detector.max_len)?,
+            length,
             #[cfg(feature = "entropy")]
             bpe_max_bytes_per_token,
             entropy_shape: Some(*entropy_shape),
@@ -381,6 +390,16 @@ impl CompiledEntropyPolicy {
 
 pub(crate) fn compile_entropy_policy(
     detector: &DetectorSpec,
+) -> Result<Option<CompiledEntropyPolicy>, String> {
+    compile_entropy_policy_with_length(
+        detector,
+        crate::detector_execution_policy::CompiledDetectorLengthPolicy::compile(detector),
+    )
+}
+
+pub(crate) fn compile_entropy_policy_with_length(
+    detector: &DetectorSpec,
+    length: crate::detector_execution_policy::CompiledDetectorLengthPolicy,
 ) -> Result<Option<CompiledEntropyPolicy>, String> {
     if !detector.owns_entropy_policy() {
         return Ok(None);
@@ -397,5 +416,5 @@ pub(crate) fn compile_entropy_policy(
             detector.id
         ));
     }
-    CompiledEntropyPolicy::compile(detector).map(Some)
+    CompiledEntropyPolicy::compile_with_length(detector, length).map(Some)
 }

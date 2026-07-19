@@ -26,6 +26,15 @@ pub(crate) fn entropy_match_suppression_stage(
     compiled_policy: &crate::entropy::policy::CompiledEntropyPolicy,
     execution_policy: &crate::detector_execution_policy::CompiledDetectorExecutionPolicy,
 ) -> Option<EntropyShapeStage> {
+    match execution_policy.length.rejection(entropy_match.value.len()) {
+        Some(crate::detector_execution_policy::CandidateLengthRejection::TooShort) => {
+            return Some(EntropyShapeStage::ValueTooShort);
+        }
+        Some(crate::detector_execution_policy::CandidateLengthRejection::TooLong) => {
+            return Some(EntropyShapeStage::ValueTooLong);
+        }
+        None => {}
+    }
     let randomness =
         crate::suppression::token_randomness::TokenRandomness::for_candidate(&entropy_match.value);
     // Proximity context is too loose to release canonical shapes; require the

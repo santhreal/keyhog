@@ -3,6 +3,7 @@ use super::{entropy::EntropyShapeStage, generic::GenericValueShapeStage};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StageId {
     BelowDetectorMinLength,
+    AboveDetectorMaxLength,
     DetectorCredentialShapeInvalid,
     WithinHexContext,
     HexDigestFragment,
@@ -30,6 +31,7 @@ impl StageId {
     pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::BelowDetectorMinLength => "below_detector_min_length",
+            Self::AboveDetectorMaxLength => "value_too_long",
             Self::DetectorCredentialShapeInvalid => "detector_credential_shape_invalid",
             Self::WithinHexContext => "within_hex_context",
             Self::HexDigestFragment => "hex_digest_fragment",

@@ -2,6 +2,8 @@
 
 mod support;
 
+#[path = "gap/detector_length_policy_parity.rs"]
+pub mod detector_length_policy_parity;
 #[path = "gap/entropy_feature_policy_fails_closed.rs"]
 pub mod entropy_feature_policy_fails_closed;
 pub mod concurrent;
