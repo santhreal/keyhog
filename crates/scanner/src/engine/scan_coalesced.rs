@@ -201,7 +201,7 @@ impl CompiledScanner {
                     chunks,
                     plan.filter(|plan| plan.matches_chunks(chunks)),
                     route,
-                ),
+                )?,
                 recovery: None,
             })
         } else if backend.is_gpu() {
@@ -263,41 +263,22 @@ impl CompiledScanner {
         chunks: &[keyhog_core::Chunk],
         admission_plan: Option<&super::Phase1AdmissionPlan>,
         route: crate::ScanExecutionRoute,
-    ) -> Vec<Vec<keyhog_core::RawMatch>> {
-        #[cfg(not(feature = "simd"))]
-        use rayon::prelude::*;
-
-        #[cfg(not(feature = "simd"))]
-        let _admission_plan = admission_plan;
-
+    ) -> crate::error::Result<Vec<Vec<keyhog_core::RawMatch>>> {
         #[cfg(not(feature = "simd"))]
         {
-            let telemetry = crate::telemetry::capture_scan_telemetry();
-            let mut results: Vec<Vec<keyhog_core::RawMatch>> = chunks
-                .par_iter()
-                .map(|c| {
-                    crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
-                        self.scan_with_deadline_and_backend_admission_and_route(
-                            c,
-                            self.config.per_chunk_deadline(),
-                            crate::hw_probe::ScanBackend::CpuFallback,
-                            None,
-                            route,
-                        )
-                    })
-                })
-                .collect();
-            super::boundary::scan_chunk_boundaries_with_route(self, chunks, &mut results, route);
-            return results;
+            let _ = (chunks, admission_plan, route);
+            return Err(crate::error::ScanError::Simd(
+                "selected SimdCpu/Hyperscan backend but this binary was built without the `simd` feature; rebuild with simd or choose --backend cpu".to_string(),
+            ));
         }
 
         #[cfg(feature = "simd")]
         {
-            let prefilter = self.try_simd_prefilter().unwrap_or_else(|error| {
-                crate::process_exit::backend_unavailable(format!(
+            let prefilter = self.try_simd_prefilter().map_err(|error| {
+                crate::error::ScanError::Simd(format!(
                     "selected Hyperscan backend was not initialized: {error}"
                 ))
-            });
+            })?;
 
             // Coalesced SIMD bypasses `scan_inner`, so it owns the same scanner
             // telemetry events. Logical profiler input is recorded once by the
@@ -308,8 +289,9 @@ impl CompiledScanner {
             let triggers = {
                 let _g = profile::span(profile::P::Phase1Triggers);
                 self.compute_coalesced_triggers(chunks, prefilter, admission_plan)
+                    .map_err(crate::error::ScanError::Simd)?
             };
-            return self.scan_coalesced_phase2(chunks, triggers, route);
+            return Ok(self.scan_coalesced_phase2(chunks, triggers, route));
         }
     }
 
@@ -323,50 +305,40 @@ impl CompiledScanner {
         chunks: &[keyhog_core::Chunk],
         prefilter: &super::SimdPhase1Prefilter,
         admission_plan: Option<&super::Phase1AdmissionPlan>,
-    ) -> Vec<Option<Vec<u64>>> {
+    ) -> Result<Vec<Option<Vec<u64>>>, String> {
         use rayon::prelude::*;
         let ac_len = self.ac_map.len();
         let words_needed = super::trigger_bitmap::words_for(ac_len);
-        let triggers: Vec<Option<Vec<u64>>> = chunks
+        let triggers: Result<Vec<Option<Vec<u64>>>, String> = chunks
             .par_iter()
             .enumerate()
             .map(|(chunk_index, chunk)| {
                 let data = chunk.data.as_bytes();
-                let admission = match admission_plan
-                    .and_then(|plan| plan.admission_for(chunk_index))
-                {
-                    Some(admission) => admission,
-                    None => self.phase1_admission(data),
-                };
+                let admission =
+                    match admission_plan.and_then(|plan| plan.admission_for(chunk_index)) {
+                        Some(admission) => admission,
+                        None => self.phase1_admission(data),
+                    };
                 if admission != super::Phase1Admission::Admitted {
-                    return None;
+                    return Ok(None);
                 }
                 with_trigger_buffer(words_needed, |scratch| {
                     let scanner = prefilter.scanner();
-                    let scan_result = scanner.scan_each_result(data, |hs_id| {
+                    scanner.scan_each_result(data, |hs_id| {
                         mark_hs_trigger(scratch, prefilter, ac_len, hs_id);
-                    });
-                    if let Err(error) = scan_result {
-                        tracing::warn!(
-                            %error,
-                            "hyperscan coalesced phase-1 scan failed; over-marking SIMD-covered patterns for this chunk"
-                        );
-                        scratch.fill(0);
-                        for hs_id in 0..scanner.pattern_count() {
-                            mark_hs_trigger(scratch, prefilter, ac_len, hs_id);
-                        }
-                    }
+                    })?;
                     prefilter.for_each_recovery_match(data, |pattern_index| {
                         self.mark_triggered_pattern(scratch, pattern_index);
                     });
                     if scratch.iter().any(|&w| w != 0) {
-                        Some(scratch.to_vec())
+                        Ok(Some(scratch.to_vec()))
                     } else {
-                        None
+                        Ok(None)
                     }
                 })
             })
             .collect();
+        let triggers = triggers?;
 
         if tracing::enabled!(tracing::Level::INFO) {
             let hit_count = triggers.iter().filter(|t| t.is_some()).count();
@@ -382,7 +354,7 @@ impl CompiledScanner {
                 "coalesced scan phase 1 complete"
             );
         }
-        triggers
+        Ok(triggers)
     }
 
     /// No-hit chunk admission: should a chunk that produced no phase-1 trigger

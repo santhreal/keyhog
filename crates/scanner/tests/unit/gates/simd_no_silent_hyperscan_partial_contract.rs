@@ -123,6 +123,8 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
     );
     assert!(
         engine_scan.contains("scanner.scan_each_result(data")
+            && engine_scan.contains("Result<Vec<Option<Vec<u64>>>, String>")
+            && engine_scan.contains(".map_err(crate::error::ScanError::Simd)?")
             && triggered.contains("scanner.scan_matches_result(text.as_bytes()")
             && phase2_hs.contains("scan_each_result")
             && phase2_hs.contains("any_match_result")
@@ -131,14 +133,10 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
             && phase2_prefilter.contains(
                 "HS always-active admission gate failed; using RegexSet path for this chunk"
             )
-            && triggered.contains(
-                "hyperscan confirmed-trigger scan failed; over-marking SIMD-covered patterns for this chunk"
-            )
-            && triggered.contains("for hs_id in 0..scanner.pattern_count()")
-            && engine_scan.contains(
-                "hyperscan coalesced phase-1 scan failed; over-marking SIMD-covered patterns for this chunk"
-            ),
-        "production engine callers must use fallible SIMD helpers and route failures to conservative explicit paths that warn before over-marking"
+            && triggered.contains("selected Hyperscan trigger scan failed")
+            && !triggered.contains("over-marking SIMD-covered patterns")
+            && !engine_scan.contains("over-marking SIMD-covered patterns"),
+        "selected SIMD runtime failures must propagate to recovery or fail visibly instead of reporting an over-marked successful scan"
     );
     assert!(
         scan.contains("fn scan_matches_result(")

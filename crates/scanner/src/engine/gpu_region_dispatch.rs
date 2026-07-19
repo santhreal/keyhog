@@ -644,7 +644,15 @@ impl CompiledScanner {
             let full_recall_floor = self.tuning.gpu_recall_floor_enabled();
             let cpu_triggers = if full_recall_floor {
                 match self.try_simd_prefilter() {
-                    Ok(prefilter) => Some(self.compute_coalesced_triggers(chunks, prefilter, None)),
+                    Ok(prefilter) => match self.compute_coalesced_triggers(chunks, prefilter, None)
+                    {
+                        Ok(triggers) => Some(triggers),
+                        Err(error) => {
+                            return dispatch_failure(format!(
+                                "gpu_recall_floor Hyperscan scan failed: {error}"
+                            ));
+                        }
+                    },
                     Err(error) => {
                         return dispatch_failure(format!(
                             "gpu_recall_floor requested but Hyperscan initialization failed: {error}"

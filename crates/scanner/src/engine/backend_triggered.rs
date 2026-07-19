@@ -364,24 +364,10 @@ impl CompiledScanner {
                         }
                     }
                 });
-            match scan_result {
-                Ok(()) => {}
-                Err(error) => {
-                    tracing::warn!(
-                        %error,
-                        "hyperscan confirmed-trigger scan failed; over-marking SIMD-covered patterns for this chunk"
-                    );
-                    for hs_id in 0..scanner.pattern_count() {
-                        if let Some(original_indices) = prefilter.original_indices(hs_id) {
-                            for &pattern_index in original_indices {
-                                self.mark_triggered_pattern(
-                                    &mut triggered_patterns,
-                                    pattern_index as usize,
-                                );
-                            }
-                        }
-                    }
-                }
+            if let Err(error) = scan_result {
+                crate::process_exit::backend_unavailable(format!(
+                    "selected Hyperscan trigger scan failed: {error}. The scan did not complete; rerun with `--backend cpu` or recalibrate autoroute"
+                ));
             }
             return triggered_patterns;
         }
