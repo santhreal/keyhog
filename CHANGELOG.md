@@ -6,6 +6,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Fixed
 
+- Source construction now returns typed unknown-name, unavailable-feature, and
+  invalid-configuration errors. Canonical source names use hyphens, and retired
+  underscore aliases are rejected with their exact replacement instead of being
+  accepted silently.
 - Autoroute cache schema 45 requires the winning execution plan's confidence
   interval to clear every eligible route, including localization variants on
   the same backend; overlapping same-backend plans remain visibly inconclusive.

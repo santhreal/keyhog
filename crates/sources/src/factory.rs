@@ -57,14 +57,10 @@ pub fn create_source_with_http_config_limits_and_policy(
                 #[cfg(not(feature = "slack"))]
                 {
                     let _ = token; // LAW10: unused-binding marker; no runtime effect, not a fallback
-                    return Err(keyhog_core::SourceError::Other(
-                        "slack feature not enabled".into(),
-                    ));
+                    return Err(feature_unavailable("slack", "slack"));
                 }
             }
-            Err(keyhog_core::SourceError::Other(
-                "slack source requires a token: slack:TOKEN".into(),
-            ))
+            Err(invalid_configuration("slack", "a token is required"))
         }
         "docker" => {
             if let Some(image) = params {
@@ -77,16 +73,13 @@ pub fn create_source_with_http_config_limits_and_policy(
                 #[cfg(not(feature = "docker"))]
                 {
                     let _ = image; // LAW10: unused-binding marker; no runtime effect, not a fallback
-                    return Err(keyhog_core::SourceError::Other(
-                        "docker feature not enabled".into(),
-                    ));
+                    return Err(feature_unavailable("docker", "docker"));
                 }
             }
-            Err(keyhog_core::SourceError::Other(
-                "docker source requires an image name: docker:IMAGE".into(),
-            ))
+            Err(invalid_configuration("docker", "an image name is required"))
         }
-        "github-org" | "github_org" => {
+        "github_org" => Err(deprecated_source_name("github_org", "github-org")),
+        "github-org" => {
             if let Some(params) = params {
                 #[cfg(feature = "github")]
                 {
@@ -103,13 +96,12 @@ pub fn create_source_with_http_config_limits_and_policy(
                 #[cfg(not(feature = "github"))]
                 {
                     let _ = params; // LAW10: unused-binding marker; feature-disabled path returns a loud source error
-                    return Err(keyhog_core::SourceError::Other(
-                        "github feature not enabled".into(),
-                    ));
+                    return Err(feature_unavailable("github-org", "github"));
                 }
             }
-            Err(keyhog_core::SourceError::Other(
-                "github-org source requires ORG and TOKEN parameters".into(),
+            Err(invalid_configuration(
+                "github-org",
+                "ORG and TOKEN parameters are required",
             ))
         }
         "s3" => {
@@ -138,14 +130,10 @@ pub fn create_source_with_http_config_limits_and_policy(
                 #[cfg(not(feature = "s3"))]
                 {
                     let _ = bucket; // LAW10: unused-binding marker; no runtime effect, not a fallback
-                    return Err(keyhog_core::SourceError::Other(
-                        "s3 feature not enabled".into(),
-                    ));
+                    return Err(feature_unavailable("s3", "s3"));
                 }
             }
-            Err(keyhog_core::SourceError::Other(
-                "s3 source requires a bucket name: s3:BUCKET".into(),
-            ))
+            Err(invalid_configuration("s3", "a bucket name is required"))
         }
         "gcs" => {
             if let Some(bucket) = params {
@@ -173,22 +161,19 @@ pub fn create_source_with_http_config_limits_and_policy(
                 #[cfg(not(feature = "gcs"))]
                 {
                     let _ = bucket; // LAW10: unused-binding marker; no runtime effect, not a fallback
-                    return Err(keyhog_core::SourceError::Other(
-                        "gcs feature not enabled".into(),
-                    ));
+                    return Err(feature_unavailable("gcs", "gcs"));
                 }
             }
-            Err(keyhog_core::SourceError::Other(
-                "gcs source requires a bucket name: gcs:BUCKET".into(),
-            ))
+            Err(invalid_configuration("gcs", "a bucket name is required"))
         }
-        "azure_blob" => {
+        "azure_blob" => Err(deprecated_source_name("azure_blob", "azure-blob")),
+        "azure-blob" => {
             if let Some(container_url) = params {
                 #[cfg(feature = "azure")]
                 {
                     let fields = source_param_fields(container_url);
                     let container_url =
-                        required_source_param("azure_blob", &fields, 0, "CONTAINER_URL")?;
+                        required_source_param("azure-blob", &fields, 0, "CONTAINER_URL")?;
                     let mut source = crate::cloud::azure_blob::AzureBlobSource::new(container_url)
                         .with_http_config(http)
                         .with_limits(limits);
@@ -196,7 +181,7 @@ pub fn create_source_with_http_config_limits_and_policy(
                         source = source.with_prefix(prefix);
                     }
                     if let Some(max_objects) =
-                        optional_usize_source_param("azure_blob", &fields, 2)?
+                        optional_usize_source_param("azure-blob", &fields, 2)?
                     {
                         source = source.with_max_objects(max_objects);
                     }
@@ -205,16 +190,16 @@ pub fn create_source_with_http_config_limits_and_policy(
                 #[cfg(not(feature = "azure"))]
                 {
                     let _ = container_url; // LAW10: unused-binding marker; no runtime effect, not a fallback
-                    return Err(keyhog_core::SourceError::Other(
-                        "azure feature not enabled".into(),
-                    ));
+                    return Err(feature_unavailable("azure-blob", "azure"));
                 }
             }
-            Err(keyhog_core::SourceError::Other(
-                "azure_blob source requires a container URL: azure_blob:URL".into(),
+            Err(invalid_configuration(
+                "azure-blob",
+                "a container URL is required",
             ))
         }
-        "web" | "url" => {
+        "url" => Err(deprecated_source_name("url", "web")),
+        "web" => {
             if let Some(params) = params {
                 #[cfg(feature = "web")]
                 {
@@ -234,8 +219,9 @@ pub fn create_source_with_http_config_limits_and_policy(
                         .map(ToOwned::to_owned)
                         .collect();
                     if urls.is_empty() {
-                        return Err(keyhog_core::SourceError::Other(
-                            "web source requires at least one URL parameter".into(),
+                        return Err(invalid_configuration(
+                            "web",
+                            "at least one URL parameter is required",
                         ));
                     }
                     return Ok(Box::new(
@@ -250,16 +236,16 @@ pub fn create_source_with_http_config_limits_and_policy(
                 #[cfg(not(feature = "web"))]
                 {
                     let _ = params; // LAW10: unused-binding marker; feature-disabled path returns a loud source error
-                    return Err(keyhog_core::SourceError::Other(
-                        "web feature not enabled".into(),
-                    ));
+                    return Err(feature_unavailable("web", "web"));
                 }
             }
-            Err(keyhog_core::SourceError::Other(
-                "web source requires at least one URL parameter".into(),
+            Err(invalid_configuration(
+                "web",
+                "at least one URL parameter is required",
             ))
         }
-        "gitlab-group" | "gitlab_group" => {
+        "gitlab_group" => Err(deprecated_source_name("gitlab_group", "gitlab-group")),
+        "gitlab-group" => {
             if let Some(params) = params {
                 #[cfg(feature = "gitlab")]
                 return Ok(Box::new(crate::gitlab_group::source_from_params(
@@ -271,17 +257,19 @@ pub fn create_source_with_http_config_limits_and_policy(
                 #[cfg(not(feature = "gitlab"))]
                 {
                     let _ = params; // LAW10: unused-binding marker; feature-disabled path returns a loud source error
-                    return Err(keyhog_core::SourceError::Other(
-                        "gitlab feature not enabled".into(),
-                    ));
+                    return Err(feature_unavailable("gitlab-group", "gitlab"));
                 }
             }
-            Err(keyhog_core::SourceError::Other(
-                "gitlab-group source requires GROUP, TOKEN, and optional ENDPOINT parameters"
-                    .into(),
+            Err(invalid_configuration(
+                "gitlab-group",
+                "GROUP and TOKEN parameters are required; ENDPOINT is optional",
             ))
         }
-        "bitbucket-workspace" | "bitbucket_workspace" => {
+        "bitbucket_workspace" => Err(deprecated_source_name(
+            "bitbucket_workspace",
+            "bitbucket-workspace",
+        )),
+        "bitbucket-workspace" => {
             if let Some(params) = params {
                 #[cfg(feature = "bitbucket")]
                 return Ok(Box::new(crate::bitbucket_workspace::source_from_params(
@@ -293,19 +281,38 @@ pub fn create_source_with_http_config_limits_and_policy(
                 #[cfg(not(feature = "bitbucket"))]
                 {
                     let _ = params; // LAW10: unused-binding marker; feature-disabled path returns a loud source error
-                    return Err(keyhog_core::SourceError::Other(
-                        "bitbucket feature not enabled".into(),
-                    ));
+                    return Err(feature_unavailable("bitbucket-workspace", "bitbucket"));
                 }
             }
-            Err(keyhog_core::SourceError::Other(
-                "bitbucket-workspace source requires WORKSPACE, USERNAME, APP_PASSWORD, and optional ENDPOINT parameters".into(),
+            Err(invalid_configuration(
+                "bitbucket-workspace",
+                "WORKSPACE, USERNAME, and APP_PASSWORD parameters are required; ENDPOINT is optional",
             ))
         }
-        _ => Err(keyhog_core::SourceError::Other(format!(
-            "unknown source plugin: {}",
-            name
-        ))),
+        _ => Err(keyhog_core::SourceError::UnknownSource {
+            name: name.to_owned(),
+        }),
+    }
+}
+
+fn feature_unavailable(source: &str, feature: &str) -> keyhog_core::SourceError {
+    keyhog_core::SourceError::FeatureUnavailable {
+        source_name: source.to_owned(),
+        feature: feature.to_owned(),
+    }
+}
+
+fn invalid_configuration(source: &str, detail: impl Into<String>) -> keyhog_core::SourceError {
+    keyhog_core::SourceError::InvalidConfiguration {
+        source_name: source.to_owned(),
+        detail: detail.into(),
+    }
+}
+
+fn deprecated_source_name(name: &str, replacement: &str) -> keyhog_core::SourceError {
+    keyhog_core::SourceError::DeprecatedSourceName {
+        name: name.to_owned(),
+        replacement: replacement.to_owned(),
     }
 }
 
@@ -328,9 +335,7 @@ fn required_source_param<'a>(
     label: &str,
 ) -> Result<&'a str, keyhog_core::SourceError> {
     optional_source_param(fields, index).ok_or_else(|| {
-        keyhog_core::SourceError::Other(format!(
-            "{source} source requires non-empty {label} parameter"
-        ))
+        invalid_configuration(source, format!("a non-empty {label} parameter is required"))
     })
 }
 
@@ -350,9 +355,10 @@ fn parse_bool_source_param(
     match raw.map(str::trim) {
         None | Some("") | Some("false") | Some("0") | Some("no") | Some("off") => Ok(false),
         Some("true") | Some("1") | Some("yes") | Some("on") => Ok(true),
-        Some(value) => Err(keyhog_core::SourceError::Other(format!(
-            "{source} source boolean parameter must be true/false, got {value:?}"
-        ))),
+        Some(value) => Err(invalid_configuration(
+            source,
+            format!("boolean parameter must be true/false, got {value:?}"),
+        )),
     }
 }
 
@@ -365,9 +371,12 @@ fn optional_usize_source_param(
     optional_source_param(fields, index)
         .map(|value| {
             value.parse::<usize>().map_err(|error| {
-                keyhog_core::SourceError::Other(format!(
-                    "{source} source numeric parameter must be a non-negative integer, got {value:?}: {error}"
-                ))
+                invalid_configuration(
+                    source,
+                    format!(
+                        "numeric parameter must be a non-negative integer, got {value:?}: {error}"
+                    ),
+                )
             })
         })
         .transpose()

@@ -12,12 +12,8 @@ use crate::hosted_git::{self, HostedRepo};
 
 const DEFAULT_ENDPOINT: &str = "https://api.bitbucket.org/2.0";
 
-/// Single owner of the missing-required-field diagnostic. `source_from_params`
-/// reports the same shortfall from four branches (too few `\n`-separated fields,
-/// or any of workspace/username/token empty); one const keeps the operator-facing
-/// wording identical across every branch instead of pasting it inline four times.
 const MISSING_REQUIRED_FIELDS_ERROR: &str =
-    "bitbucket-workspace source requires workspace, username, and app password";
+    "workspace, username, and app password parameters are required";
 
 pub(crate) struct BitbucketWorkspaceSource {
     workspace: String,
@@ -302,20 +298,20 @@ pub(crate) fn source_from_params(
 ) -> Result<BitbucketWorkspaceSource, SourceError> {
     let mut parts = params.splitn(4, '\n');
     let Some(workspace) = parts.next() else {
-        return Err(SourceError::Other(MISSING_REQUIRED_FIELDS_ERROR.into()));
+        return Err(invalid_configuration(MISSING_REQUIRED_FIELDS_ERROR));
     };
     let Some(username) = parts.next() else {
-        return Err(SourceError::Other(MISSING_REQUIRED_FIELDS_ERROR.into()));
+        return Err(invalid_configuration(MISSING_REQUIRED_FIELDS_ERROR));
     };
     let Some(token) = parts.next() else {
-        return Err(SourceError::Other(MISSING_REQUIRED_FIELDS_ERROR.into()));
+        return Err(invalid_configuration(MISSING_REQUIRED_FIELDS_ERROR));
     };
     let endpoint = match parts.next() {
         Some(endpoint) if !endpoint.is_empty() => endpoint,
         Some(_) | None => DEFAULT_ENDPOINT,
     };
     if workspace.is_empty() || username.is_empty() || token.is_empty() {
-        return Err(SourceError::Other(MISSING_REQUIRED_FIELDS_ERROR.into()));
+        return Err(invalid_configuration(MISSING_REQUIRED_FIELDS_ERROR));
     }
     Ok(BitbucketWorkspaceSource::new(
         workspace.to_string(),
@@ -326,6 +322,13 @@ pub(crate) fn source_from_params(
     .with_http_config(http)
     .with_limits(limits)
     .with_default_excludes(respect_default_excludes))
+}
+
+fn invalid_configuration(detail: &str) -> SourceError {
+    SourceError::InvalidConfiguration {
+        source_name: "bitbucket-workspace".into(),
+        detail: detail.into(),
+    }
 }
 
 pub(crate) fn listing_truncated_error_for_test(

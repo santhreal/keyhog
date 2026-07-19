@@ -14,14 +14,14 @@
 #[test]
 fn create_source_docker_requires_an_image_name() {
     match keyhog_sources::create_source("docker", None) {
-        Err(err) => {
-            let msg = err.to_string();
-            assert!(
-                msg.contains("docker source requires an image name")
-                    && msg.contains("docker:IMAGE"),
-                "docker without an image must name the fix (docker:IMAGE); got {err}"
-            );
+        Err(keyhog_core::SourceError::InvalidConfiguration {
+            source_name,
+            detail,
+        }) => {
+            assert_eq!(source_name, "docker");
+            assert_eq!(detail, "an image name is required");
         }
+        Err(err) => panic!("docker returned the wrong error: {err}"),
         Ok(_) => panic!("docker without an image must return Err"),
     }
 }
@@ -30,13 +30,14 @@ fn create_source_docker_requires_an_image_name() {
 #[test]
 fn create_source_s3_requires_a_bucket_name() {
     match keyhog_sources::create_source("s3", None) {
-        Err(err) => {
-            let msg = err.to_string();
-            assert!(
-                msg.contains("s3 source requires a bucket name") && msg.contains("s3:BUCKET"),
-                "s3 without a bucket must name the fix (s3:BUCKET); got {err}"
-            );
+        Err(keyhog_core::SourceError::InvalidConfiguration {
+            source_name,
+            detail,
+        }) => {
+            assert_eq!(source_name, "s3");
+            assert_eq!(detail, "a bucket name is required");
         }
+        Err(err) => panic!("s3 returned the wrong error: {err}"),
         Ok(_) => panic!("s3 without a bucket must return Err"),
     }
 }
@@ -47,13 +48,15 @@ fn create_source_s3_requires_a_bucket_name() {
 #[test]
 fn create_source_web_rejects_non_boolean_calibration_flag() {
     match keyhog_sources::create_source("web", Some("autoroute_loopback_calibration=notabool")) {
-        Err(err) => {
-            let msg = err.to_string();
-            assert!(
-                msg.contains("boolean parameter must be true/false") && msg.contains("notabool"),
-                "a non-bool calibration flag must be rejected and echoed; got {err}"
-            );
+        Err(keyhog_core::SourceError::InvalidConfiguration {
+            source_name,
+            detail,
+        }) => {
+            assert_eq!(source_name, "web");
+            assert!(detail.contains("boolean parameter must be true/false"));
+            assert!(detail.contains("notabool"));
         }
+        Err(err) => panic!("web returned the wrong error: {err}"),
         Ok(_) => panic!("a non-boolean calibration flag must return Err"),
     }
 }

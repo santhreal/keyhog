@@ -41,7 +41,7 @@ or coverage incomplete.
 | `--gcs-bucket <BUCKET>`       | Scan a Google Cloud Storage bucket. Use `--gcs-prefix` to narrow and `--gcs-endpoint` for a compatible API. |
 | `--azure-container-url <URL>` | Scan an Azure Blob container URL. Include a SAS query string for private containers; use `--azure-prefix` to narrow. |
 | `--url <URL>...`              | Fetch + scan one or more HTTPS URLs (JS/source-map/WASM/text). |
-| `--source <NAME>`             | Enable a named pluggable custom input source. Repeat as supported by the loaded source registry. |
+| `--source <NAME[:PARAMS]>`    | Construct a source included in this binary's feature set. Canonical names are `slack`, `docker`, `github-org`, `gitlab-group`, `bitbucket-workspace`, `s3`, `gcs`, `azure-blob`, and `web`; unavailable features, unknown names, retired underscore aliases, and invalid parameters are distinct errors. Prefer the dedicated flags above because they keep credentials out of source spec strings. |
 
 ### Output
 

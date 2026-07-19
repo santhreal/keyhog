@@ -472,7 +472,7 @@ pub(crate) fn build_sources(
         let params = format!("{container_url}\n{azure_prefix}");
         sources.push(
             keyhog_sources::create_source_with_http_config_limits_and_policy(
-                "azure_blob",
+                "azure-blob",
                 Some(&params),
                 source_http_config(args, "azure-blob"),
                 source_limits,
@@ -531,7 +531,7 @@ pub(crate) fn build_sources(
                     sources.push(s);
                     continue;
                 }
-                Err(e) if e.to_string().contains("unknown source plugin") => {
+                Err(keyhog_core::SourceError::UnknownSource { .. }) => {
                     anyhow::bail!(
                         "custom source '{source_name}' not found in the compiled source factory. \
                          Fix: use a compiled-in source name or a dedicated source flag from \

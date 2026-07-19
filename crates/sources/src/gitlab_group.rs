@@ -11,11 +11,7 @@ use crate::hosted_git::{self, HostedRepo};
 
 const DEFAULT_ENDPOINT: &str = "https://gitlab.com";
 
-/// Single owner of the missing-required-field diagnostic. `source_from_params`
-/// reports the same shortfall from three branches (too few `\n`-separated fields,
-/// or either of group/token empty); one const keeps the operator-facing wording
-/// identical across every branch instead of pasting it inline three times.
-const MISSING_REQUIRED_FIELDS_ERROR: &str = "gitlab-group source requires group and token";
+const MISSING_REQUIRED_FIELDS_ERROR: &str = "group and token parameters are required";
 const PRIVATE_TOKEN: HeaderName = HeaderName::from_static("private-token");
 
 pub(crate) struct GitLabGroupSource {
@@ -257,23 +253,30 @@ pub(crate) fn source_from_params(
 ) -> Result<GitLabGroupSource, SourceError> {
     let mut parts = params.splitn(3, '\n');
     let Some(group) = parts.next() else {
-        return Err(SourceError::Other(MISSING_REQUIRED_FIELDS_ERROR.into()));
+        return Err(invalid_configuration(MISSING_REQUIRED_FIELDS_ERROR));
     };
     let Some(token) = parts.next() else {
-        return Err(SourceError::Other(MISSING_REQUIRED_FIELDS_ERROR.into()));
+        return Err(invalid_configuration(MISSING_REQUIRED_FIELDS_ERROR));
     };
     let endpoint = match parts.next() {
         Some(endpoint) if !endpoint.is_empty() => endpoint,
         Some(_) | None => DEFAULT_ENDPOINT,
     };
     if group.is_empty() || token.is_empty() {
-        return Err(SourceError::Other(MISSING_REQUIRED_FIELDS_ERROR.into()));
+        return Err(invalid_configuration(MISSING_REQUIRED_FIELDS_ERROR));
     }
     Ok(GitLabGroupSource::new(group.to_string(), token.to_string())
         .with_endpoint(endpoint.to_string())
         .with_http_config(http)
         .with_limits(limits)
         .with_default_excludes(respect_default_excludes))
+}
+
+fn invalid_configuration(detail: &str) -> SourceError {
+    SourceError::InvalidConfiguration {
+        source_name: "gitlab-group".into(),
+        detail: detail.into(),
+    }
 }
 
 pub(crate) fn listing_truncated_error_for_test(

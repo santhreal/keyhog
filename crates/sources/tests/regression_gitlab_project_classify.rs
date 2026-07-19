@@ -228,12 +228,17 @@ fn listing_truncated_error_exact_message_and_variant() {
 fn factory_missing_params_returns_exact_arity_error() {
     match create_source("gitlab-group", None) {
         Ok(_) => panic!("gitlab-group with no params must be refused"),
-        Err(SourceError::Other(msg)) => assert_eq!(
-            msg,
-            "gitlab-group source requires GROUP, TOKEN, and optional ENDPOINT parameters"
-                .to_string(),
-        ),
-        Err(other) => panic!("expected SourceError::Other, got: {other:?}"),
+        Err(SourceError::InvalidConfiguration {
+            source_name,
+            detail,
+        }) => {
+            assert_eq!(source_name, "gitlab-group");
+            assert_eq!(
+                detail,
+                "GROUP and TOKEN parameters are required; ENDPOINT is optional"
+            );
+        }
+        Err(other) => panic!("expected typed configuration error, got: {other:?}"),
     }
 }
 
@@ -242,11 +247,14 @@ fn factory_missing_token_field_rejected() {
     // A single line (group only, no '\n' token field) must be refused.
     match create_source("gitlab-group", Some("onlygroup")) {
         Ok(_) => panic!("gitlab-group without a token field must be refused"),
-        Err(SourceError::Other(msg)) => assert_eq!(
-            msg,
-            "gitlab-group source requires group and token".to_string(),
-        ),
-        Err(other) => panic!("expected SourceError::Other, got: {other:?}"),
+        Err(SourceError::InvalidConfiguration {
+            source_name,
+            detail,
+        }) => {
+            assert_eq!(source_name, "gitlab-group");
+            assert_eq!(detail, "group and token parameters are required");
+        }
+        Err(other) => panic!("expected typed configuration error, got: {other:?}"),
     }
 }
 
@@ -255,11 +263,14 @@ fn factory_empty_token_field_rejected() {
     // Present-but-empty token field ("grp\n") is refused by the emptiness check.
     match create_source("gitlab-group", Some("grp\n")) {
         Ok(_) => panic!("gitlab-group with an empty token must be refused"),
-        Err(SourceError::Other(msg)) => assert_eq!(
-            msg,
-            "gitlab-group source requires group and token".to_string(),
-        ),
-        Err(other) => panic!("expected SourceError::Other, got: {other:?}"),
+        Err(SourceError::InvalidConfiguration {
+            source_name,
+            detail,
+        }) => {
+            assert_eq!(source_name, "gitlab-group");
+            assert_eq!(detail, "group and token parameters are required");
+        }
+        Err(other) => panic!("expected typed configuration error, got: {other:?}"),
     }
 }
 
@@ -268,11 +279,14 @@ fn factory_empty_group_field_rejected() {
     // Empty group field ("\ntok") is refused by the same emptiness check.
     match create_source("gitlab-group", Some("\ntok")) {
         Ok(_) => panic!("gitlab-group with an empty group must be refused"),
-        Err(SourceError::Other(msg)) => assert_eq!(
-            msg,
-            "gitlab-group source requires group and token".to_string(),
-        ),
-        Err(other) => panic!("expected SourceError::Other, got: {other:?}"),
+        Err(SourceError::InvalidConfiguration {
+            source_name,
+            detail,
+        }) => {
+            assert_eq!(source_name, "gitlab-group");
+            assert_eq!(detail, "group and token parameters are required");
+        }
+        Err(other) => panic!("expected typed configuration error, got: {other:?}"),
     }
 }
 
@@ -284,15 +298,17 @@ fn factory_constructs_source_and_reports_stable_name() {
         .expect("valid group/token constructs a gitlab-group source");
     assert_eq!(dashed.name(), "gitlab-group");
 
-    // The underscore alias resolves to the same plugin, and a self-hosted
-    // ENDPOINT param is accepted at construction (endpoint is validated lazily at
-    // scan time, covered by regression_hosted_git_endpoint.rs).
-    let underscore = create_source(
+    match create_source(
         "gitlab_group",
         Some("grp\ntok\nhttps://gitlab.internal.example"),
-    )
-    .expect("underscore alias with self-hosted endpoint constructs");
-    assert_eq!(underscore.name(), "gitlab-group");
+    ) {
+        Err(SourceError::DeprecatedSourceName { name, replacement }) => {
+            assert_eq!(name, "gitlab_group");
+            assert_eq!(replacement, "gitlab-group");
+        }
+        Err(other) => panic!("underscore alias returned the wrong error: {other:?}"),
+        Ok(_) => panic!("underscore alias must not be accepted silently"),
+    }
 }
 
 #[test]
@@ -301,9 +317,9 @@ fn factory_unknown_gitlab_like_plugin_rejected() {
     // naming the offending plugin.
     match create_source("gitlab-project", None) {
         Ok(_) => panic!("unknown plugin name must be refused"),
-        Err(SourceError::Other(msg)) => {
-            assert_eq!(msg, "unknown source plugin: gitlab-project".to_string())
+        Err(SourceError::UnknownSource { name }) => {
+            assert_eq!(name, "gitlab-project")
         }
-        Err(other) => panic!("expected SourceError::Other, got: {other:?}"),
+        Err(other) => panic!("expected typed unknown-source error, got: {other:?}"),
     }
 }

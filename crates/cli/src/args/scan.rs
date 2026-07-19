@@ -696,8 +696,8 @@ pub struct ScanArgs {
     #[command(flatten)]
     pub limits: SourceLimitArgs,
 
-    /// Custom input sources to enable (pluggable).
-    #[arg(long, value_name = "NAME")]
+    /// Construct a compiled-in source by canonical name.
+    #[arg(long, value_name = "NAME[:PARAMS]")]
     pub source: Option<Vec<String>>,
 
     /// Fast mode: pattern matching only. No decode, no entropy. Maximum speed.

@@ -224,6 +224,38 @@ pub enum SourceError {
         /// Response-free operator guidance.
         detail: String,
     },
+    #[error("unknown source '{name}'. Fix: use a source name listed by `keyhog scan --help`")]
+    UnknownSource {
+        /// Unrecognized source identifier supplied by the caller.
+        name: String,
+    },
+    #[error(
+        "source '{source_name}' is unavailable because this KeyHog artifact was built without the '{feature}' feature. Fix: install an artifact that includes '{feature}' or choose an enabled source"
+    )]
+    FeatureUnavailable {
+        /// Canonical source identifier.
+        source_name: String,
+        /// Cargo feature required to construct the source.
+        feature: String,
+    },
+    #[error(
+        "invalid configuration for source '{source_name}': {detail}. Fix: use the parameter format documented by `keyhog scan --help`"
+    )]
+    InvalidConfiguration {
+        /// Canonical source identifier.
+        source_name: String,
+        /// Credential-free explanation of the invalid input shape.
+        detail: String,
+    },
+    #[error(
+        "source name '{name}' is no longer accepted; use '{replacement}'. Fix: update the source identifier and rerun the scan"
+    )]
+    DeprecatedSourceName {
+        /// Retired source identifier.
+        name: String,
+        /// Canonical replacement identifier.
+        replacement: String,
+    },
     #[error(
         "failed to read source: {0}. Fix: adjust the source settings or input so KeyHog can read plain text safely"
     )]
