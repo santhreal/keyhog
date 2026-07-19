@@ -278,6 +278,16 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
                 .low_promise_confidence
                 .map_or_else(|| "none".into(), |value| value.to_string()),
         );
+        println!(
+            "      context_multipliers: assignment={} string_literal={} unknown={} documentation={} comment={} test={} encrypted={}",
+            confidence.assignment_context_multiplier,
+            confidence.string_literal_context_multiplier,
+            confidence.unknown_context_multiplier,
+            confidence.documentation_context_multiplier,
+            confidence.comment_context_multiplier,
+            confidence.test_context_multiplier,
+            confidence.encrypted_context_multiplier,
+        );
     }
     macro_rules! optional_policy {
         ($name:literal, $value:expr, $unit:literal) => {

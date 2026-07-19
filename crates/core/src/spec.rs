@@ -479,6 +479,20 @@ pub struct DetectorMatchConfidenceSpec {
     /// Final score for an unaccompanied generic match rejected by the cheap
     /// promise gate before model inference.
     pub low_promise_confidence: Option<f64>,
+    /// Confidence multiplier for an assignment context.
+    pub assignment_context_multiplier: f64,
+    /// Confidence multiplier for a string-literal context.
+    pub string_literal_context_multiplier: f64,
+    /// Confidence multiplier when source context is unknown.
+    pub unknown_context_multiplier: f64,
+    /// Confidence multiplier for documentation context.
+    pub documentation_context_multiplier: f64,
+    /// Confidence multiplier for comment context.
+    pub comment_context_multiplier: f64,
+    /// Confidence multiplier for test-code context.
+    pub test_context_multiplier: f64,
+    /// Confidence multiplier for encrypted or sealed context.
+    pub encrypted_context_multiplier: f64,
 }
 
 impl DetectorMatchConfidenceSpec {
@@ -494,6 +508,13 @@ impl DetectorMatchConfidenceSpec {
             self.keyword_nearby_weight,
             self.sensitive_file_weight,
             self.companion_weight,
+            self.assignment_context_multiplier,
+            self.string_literal_context_multiplier,
+            self.unknown_context_multiplier,
+            self.documentation_context_multiplier,
+            self.comment_context_multiplier,
+            self.test_context_multiplier,
+            self.encrypted_context_multiplier,
         ];
         if probabilities
             .into_iter()

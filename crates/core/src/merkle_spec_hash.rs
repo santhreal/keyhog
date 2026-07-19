@@ -365,7 +365,7 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
             }
             if let Some(confidence) = d.match_confidence {
                 entries.push(format!(
-                    "match-confidence:{}:{:016x}:{:016x}:{:016x}:{:016x}:{:016x}:{:016x}:{:016x}:{}:{:016x}:{:016x}:{:016x}:{:016x}:{:016x}:{}:{}",
+                    "match-confidence:{}:{:016x}:{:016x}:{:016x}:{:016x}:{:016x}:{:016x}:{:016x}:{}:{:016x}:{:016x}:{:016x}:{:016x}:{:016x}:{}:{}:{:016x}:{:016x}:{:016x}:{:016x}:{:016x}:{:016x}:{:016x}",
                     d.id,
                     confidence.literal_prefix_weight.to_bits(),
                     confidence.context_anchor_weight.to_bits(),
@@ -386,6 +386,13 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
                     confidence
                         .low_promise_confidence
                         .map_or_else(|| "none".into(), |value| format!("{:016x}", value.to_bits())),
+                    confidence.assignment_context_multiplier.to_bits(),
+                    confidence.string_literal_context_multiplier.to_bits(),
+                    confidence.unknown_context_multiplier.to_bits(),
+                    confidence.documentation_context_multiplier.to_bits(),
+                    confidence.comment_context_multiplier.to_bits(),
+                    confidence.test_context_multiplier.to_bits(),
+                    confidence.encrypted_context_multiplier.to_bits(),
                 ));
             }
             for (validator_index, validator) in d.validators.iter().enumerate() {

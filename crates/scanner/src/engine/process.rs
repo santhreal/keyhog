@@ -351,6 +351,7 @@ impl CompiledScanner {
             MlScoreResult::Pending {
                 heuristic_conf,
                 code_context,
+                context_multiplier,
                 mode,
             } => {
                 let source_offset =
@@ -383,6 +384,7 @@ impl CompiledScanner {
                     raw_match,
                     heuristic_conf,
                     code_context,
+                    context_multiplier,
                     ml_features,
                     detector_ml_policy.effective_weight(&self.config),
                     min_confidence_floor,

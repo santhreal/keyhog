@@ -54,7 +54,9 @@ pub enum CodeContext {
 }
 
 impl CodeContext {
-    /// Confidence multiplier for this context.
+    /// Legacy baseline multiplier for callers that classify context without a
+    /// detector plan. Production candidate scoring uses the active detector's
+    /// compiled `match_confidence` multipliers instead.
     pub fn confidence_multiplier(&self) -> f64 {
         match self {
             Self::Assignment => ASSIGNMENT_CONFIDENCE_MULTIPLIER,

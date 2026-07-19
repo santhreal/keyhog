@@ -101,6 +101,19 @@ impl CompiledMatchConfidencePolicy {
     pub(crate) fn low_promise_confidence(&self) -> Option<f64> {
         self.spec.low_promise_confidence
     }
+
+    #[inline]
+    pub(crate) fn context_multiplier(&self, context: context::CodeContext) -> f64 {
+        match context {
+            context::CodeContext::Assignment => self.spec.assignment_context_multiplier,
+            context::CodeContext::StringLiteral => self.spec.string_literal_context_multiplier,
+            context::CodeContext::Unknown => self.spec.unknown_context_multiplier,
+            context::CodeContext::Documentation => self.spec.documentation_context_multiplier,
+            context::CodeContext::Comment => self.spec.comment_context_multiplier,
+            context::CodeContext::TestCode => self.spec.test_context_multiplier,
+            context::CodeContext::Encrypted => self.spec.encrypted_context_multiplier,
+        }
+    }
 }
 
 pub(crate) enum MlScoreResult {
@@ -111,6 +124,7 @@ pub(crate) enum MlScoreResult {
     Pending {
         heuristic_conf: f64,
         code_context: crate::context::CodeContext,
+        context_multiplier: f64,
         mode: crate::detector_ml_policy::ActiveMlMode,
     },
 }
@@ -158,6 +172,7 @@ pub(crate) fn pre_ml_heuristic_confidence(
     raw_confidence: f64,
     code_context: context::CodeContext,
     penalize_test_paths: bool,
+    confidence: &CompiledMatchConfidencePolicy,
 ) -> f64 {
     let context_multiplier = match code_context {
         context::CodeContext::TestCode | context::CodeContext::Documentation
@@ -165,7 +180,7 @@ pub(crate) fn pre_ml_heuristic_confidence(
         {
             1.0
         }
-        _ => code_context.confidence_multiplier(),
+        _ => confidence.context_multiplier(code_context),
     };
     raw_confidence * context_multiplier
 }
@@ -227,6 +242,7 @@ pub(crate) fn match_heuristic_confidence(policy: MatchHeuristicConfidencePolicy<
         raw_confidence,
         policy.code_context,
         policy.penalize_test_paths,
+        policy.confidence,
     )
 }
 
@@ -334,6 +350,7 @@ pub(crate) fn candidate_match_score(policy: CandidateMatchScorePolicy<'_>) -> Ml
             MlScoreResult::Pending {
                 heuristic_conf,
                 code_context: policy.code_context,
+                context_multiplier: policy.confidence.context_multiplier(policy.code_context),
                 mode,
             }
         }
@@ -406,6 +423,7 @@ pub(crate) struct MlConfidencePolicy {
     pub(crate) ml_weight: f64,
     pub(crate) mode: crate::detector_ml_policy::ActiveMlMode,
     pub(crate) code_context: context::CodeContext,
+    pub(crate) context_multiplier: f64,
     pub(crate) scan_comments: bool,
     pub(crate) penalize_test_paths: bool,
 }
@@ -433,7 +451,7 @@ pub(crate) fn ml_pending_confidence(policy: MlConfidencePolicy) -> f64 {
         _ => false,
     };
     if context_penalty_applies && confidence < 0.95 {
-        confidence *= policy.code_context.confidence_multiplier();
+        confidence *= policy.context_multiplier;
     }
     confidence
 }
@@ -451,6 +469,7 @@ pub(crate) fn ml_pending_match_confidence(
         ml_weight: pending.ml_weight,
         mode: pending.ml_mode,
         code_context: pending.code_context,
+        context_multiplier: pending.context_multiplier,
         scan_comments,
         penalize_test_paths,
     })

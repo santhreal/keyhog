@@ -396,6 +396,9 @@ impl CompiledScanner {
                 scan_state.push_entropy_ml_pending(
                     raw_match,
                     policy_conf,
+                    detector_plan
+                        .match_confidence
+                        .context_multiplier(crate::context::CodeContext::Unknown),
                     ml_features,
                     policy.effective_weight(&self.config),
                     min_confidence_floor,

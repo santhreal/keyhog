@@ -84,6 +84,8 @@ pub(crate) struct MlPendingMatch {
     pub(crate) heuristic_conf: f64,
     /// Inferred code context for post-ML adjustments.
     pub(crate) code_context: crate::context::CodeContext,
+    /// Detector-owned multiplier for `code_context`, resolved before batching.
+    pub(crate) context_multiplier: f64,
     /// Exact serve-path features computed while source context is still local.
     pub(crate) ml_features: [f32; crate::ml_scorer::NUM_FEATURES],
     /// Producer class baked into the feature vector. Keeping it typed here
@@ -121,6 +123,7 @@ impl MlPendingMatch {
         raw_match: keyhog_core::RawMatch,
         heuristic_conf: f64,
         code_context: crate::context::CodeContext,
+        context_multiplier: f64,
         ml_features: [f32; crate::ml_scorer::NUM_FEATURES],
         ml_weight: f64,
         min_confidence_floor: f64,
@@ -135,6 +138,7 @@ impl MlPendingMatch {
             raw_match,
             heuristic_conf,
             code_context,
+            context_multiplier,
             ml_features,
             channel: crate::ml_scorer::MlCandidateChannel::Pattern,
             ml_weight,
@@ -152,6 +156,7 @@ impl MlPendingMatch {
     pub(crate) fn entropy_candidate(
         raw_match: keyhog_core::RawMatch,
         heuristic_conf: f64,
+        context_multiplier: f64,
         ml_features: [f32; crate::ml_scorer::NUM_FEATURES],
         ml_weight: f64,
         min_confidence_floor: f64,
@@ -163,6 +168,7 @@ impl MlPendingMatch {
             raw_match,
             heuristic_conf,
             code_context: crate::context::CodeContext::Unknown,
+            context_multiplier,
             ml_features,
             channel: crate::ml_scorer::MlCandidateChannel::Entropy,
             ml_weight,
@@ -182,6 +188,7 @@ impl MlPendingMatch {
     fn has_same_execution_as(&self, other: &Self) -> bool {
         self.channel == other.channel
             && self.code_context == other.code_context
+            && self.context_multiplier.to_bits() == other.context_multiplier.to_bits()
             && self.ml_features == other.ml_features
             && self.ml_weight.to_bits() == other.ml_weight.to_bits()
             && self.min_confidence_floor.to_bits() == other.min_confidence_floor.to_bits()
@@ -424,6 +431,7 @@ impl ScanState {
         raw_match: keyhog_core::RawMatch,
         heuristic_conf: f64,
         code_context: crate::context::CodeContext,
+        context_multiplier: f64,
         ml_features: [f32; crate::ml_scorer::NUM_FEATURES],
         ml_weight: f64,
         min_confidence_floor: f64,
@@ -438,6 +446,7 @@ impl ScanState {
             raw_match,
             heuristic_conf,
             code_context,
+            context_multiplier,
             ml_features,
             ml_weight,
             min_confidence_floor,
@@ -455,6 +464,7 @@ impl ScanState {
         &mut self,
         raw_match: keyhog_core::RawMatch,
         heuristic_conf: f64,
+        context_multiplier: f64,
         ml_features: [f32; crate::ml_scorer::NUM_FEATURES],
         ml_weight: f64,
         min_confidence_floor: f64,
@@ -465,6 +475,7 @@ impl ScanState {
         self.push_ml_pending(MlPendingMatch::entropy_candidate(
             raw_match,
             heuristic_conf,
+            context_multiplier,
             ml_features,
             ml_weight,
             min_confidence_floor,

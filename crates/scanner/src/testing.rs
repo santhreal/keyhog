@@ -1900,10 +1900,16 @@ pub mod confidence {
         code_context: crate::context::CodeContext,
         penalize_test_paths: bool,
     ) -> f64 {
+        let confidence = crate::confidence::policy::CompiledMatchConfidencePolicy::compile(
+            keyhog_core::detector_spec_by_id("generic-secret")
+                .expect("embedded generic-secret detector"),
+        )
+        .expect("embedded generic-secret match confidence");
         crate::confidence::policy::pre_ml_heuristic_confidence(
             raw_confidence,
             code_context,
             penalize_test_paths,
+            &confidence,
         )
     }
 
@@ -1946,6 +1952,11 @@ pub mod confidence {
         scan_comments: bool,
         penalize_test_paths: bool,
     ) -> f64 {
+        let confidence = crate::confidence::policy::CompiledMatchConfidencePolicy::compile(
+            keyhog_core::detector_spec_by_id("generic-secret")
+                .expect("embedded generic-secret detector"),
+        )
+        .expect("embedded generic-secret match confidence");
         crate::confidence::policy::ml_pending_confidence(
             crate::confidence::policy::MlConfidencePolicy {
                 heuristic_confidence,
@@ -1966,6 +1977,7 @@ pub mod confidence {
                     }
                 },
                 code_context,
+                context_multiplier: confidence.context_multiplier(code_context),
                 scan_comments,
                 penalize_test_paths,
             },

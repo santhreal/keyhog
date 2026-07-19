@@ -509,6 +509,7 @@ impl CompiledScanner {
                         raw,
                         policy_conf,
                         context,
+                        detector_plan.match_confidence.context_multiplier(context),
                         ml_features,
                         ml_policy.effective_weight(&self.config),
                         min_confidence_floor,
