@@ -279,7 +279,7 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
                 .map_or_else(|| "none".into(), |value| value.to_string()),
         );
         println!(
-            "      context_multipliers: assignment={} string_literal={} unknown={} documentation={} comment={} test={} encrypted={}",
+            "      context_multipliers: assignment={} string_literal={} unknown={} documentation={} comment={} test={} encrypted={} soft_suppression_threshold={} encrypted_suppression_threshold={}",
             confidence.assignment_context_multiplier,
             confidence.string_literal_context_multiplier,
             confidence.unknown_context_multiplier,
@@ -287,6 +287,8 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
             confidence.comment_context_multiplier,
             confidence.test_context_multiplier,
             confidence.encrypted_context_multiplier,
+            confidence.soft_context_suppression_threshold,
+            confidence.encrypted_context_suppression_threshold,
         );
     }
     macro_rules! optional_policy {

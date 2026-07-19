@@ -493,6 +493,10 @@ pub struct DetectorMatchConfidenceSpec {
     pub test_context_multiplier: f64,
     /// Confidence multiplier for encrypted or sealed context.
     pub encrypted_context_multiplier: f64,
+    /// Hard-suppression threshold for comment, test, and documentation context.
+    pub soft_context_suppression_threshold: f64,
+    /// Hard-suppression threshold for encrypted or sealed context.
+    pub encrypted_context_suppression_threshold: f64,
 }
 
 impl DetectorMatchConfidenceSpec {
@@ -515,6 +519,8 @@ impl DetectorMatchConfidenceSpec {
             self.comment_context_multiplier,
             self.test_context_multiplier,
             self.encrypted_context_multiplier,
+            self.soft_context_suppression_threshold,
+            self.encrypted_context_suppression_threshold,
         ];
         if probabilities
             .into_iter()

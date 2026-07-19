@@ -33,6 +33,8 @@ const DOCUMENTATION_CONFIDENCE_MULTIPLIER: f64 = 0.3;
 const COMMENT_CONFIDENCE_MULTIPLIER: f64 = 0.4;
 const TEST_CODE_CONFIDENCE_MULTIPLIER: f64 = 0.3;
 const ENCRYPTED_CONFIDENCE_MULTIPLIER: f64 = 0.05;
+const SOFT_CONTEXT_HARD_SUPPRESSION_THRESHOLD: f64 = 0.5;
+const ENCRYPTED_CONTEXT_HARD_SUPPRESSION_THRESHOLD: f64 = 0.8;
 
 /// The structural context of a code location.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -69,12 +71,22 @@ impl CodeContext {
         }
     }
 
-    /// Returns `true` if this context should trigger hard suppression for low-confidence findings.
+    /// Legacy baseline hard-suppression decision for callers without a detector
+    /// plan. Production finalization uses the active detector's compiled
+    /// context thresholds.
     pub fn should_hard_suppress(&self, confidence: f64) -> bool {
+        self.hard_suppression_threshold()
+            .is_some_and(|threshold| confidence < threshold)
+    }
+
+    /// Legacy baseline threshold paired with [`CodeContext::should_hard_suppress`].
+    pub const fn hard_suppression_threshold(&self) -> Option<f64> {
         match self {
-            Self::Documentation | Self::TestCode | Self::Comment => confidence < 0.5,
-            Self::Encrypted => confidence < 0.8,
-            _ => false,
+            Self::Documentation | Self::TestCode | Self::Comment => {
+                Some(SOFT_CONTEXT_HARD_SUPPRESSION_THRESHOLD)
+            }
+            Self::Encrypted => Some(ENCRYPTED_CONTEXT_HARD_SUPPRESSION_THRESHOLD),
+            _ => None,
         }
     }
 }

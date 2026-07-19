@@ -86,6 +86,8 @@ pub(crate) struct MlPendingMatch {
     pub(crate) code_context: crate::context::CodeContext,
     /// Detector-owned multiplier for `code_context`, resolved before batching.
     pub(crate) context_multiplier: f64,
+    /// Detector-owned hard-suppression threshold for `code_context`.
+    pub(crate) context_suppression_threshold: Option<f64>,
     /// Exact serve-path features computed while source context is still local.
     pub(crate) ml_features: [f32; crate::ml_scorer::NUM_FEATURES],
     /// Producer class baked into the feature vector. Keeping it typed here
@@ -124,6 +126,7 @@ impl MlPendingMatch {
         heuristic_conf: f64,
         code_context: crate::context::CodeContext,
         context_multiplier: f64,
+        context_suppression_threshold: Option<f64>,
         ml_features: [f32; crate::ml_scorer::NUM_FEATURES],
         ml_weight: f64,
         min_confidence_floor: f64,
@@ -139,6 +142,7 @@ impl MlPendingMatch {
             heuristic_conf,
             code_context,
             context_multiplier,
+            context_suppression_threshold,
             ml_features,
             channel: crate::ml_scorer::MlCandidateChannel::Pattern,
             ml_weight,
@@ -157,6 +161,7 @@ impl MlPendingMatch {
         raw_match: keyhog_core::RawMatch,
         heuristic_conf: f64,
         context_multiplier: f64,
+        context_suppression_threshold: Option<f64>,
         ml_features: [f32; crate::ml_scorer::NUM_FEATURES],
         ml_weight: f64,
         min_confidence_floor: f64,
@@ -169,6 +174,7 @@ impl MlPendingMatch {
             heuristic_conf,
             code_context: crate::context::CodeContext::Unknown,
             context_multiplier,
+            context_suppression_threshold,
             ml_features,
             channel: crate::ml_scorer::MlCandidateChannel::Entropy,
             ml_weight,
@@ -189,6 +195,8 @@ impl MlPendingMatch {
         self.channel == other.channel
             && self.code_context == other.code_context
             && self.context_multiplier.to_bits() == other.context_multiplier.to_bits()
+            && self.context_suppression_threshold.map(f64::to_bits)
+                == other.context_suppression_threshold.map(f64::to_bits)
             && self.ml_features == other.ml_features
             && self.ml_weight.to_bits() == other.ml_weight.to_bits()
             && self.min_confidence_floor.to_bits() == other.min_confidence_floor.to_bits()
@@ -432,6 +440,7 @@ impl ScanState {
         heuristic_conf: f64,
         code_context: crate::context::CodeContext,
         context_multiplier: f64,
+        context_suppression_threshold: Option<f64>,
         ml_features: [f32; crate::ml_scorer::NUM_FEATURES],
         ml_weight: f64,
         min_confidence_floor: f64,
@@ -447,6 +456,7 @@ impl ScanState {
             heuristic_conf,
             code_context,
             context_multiplier,
+            context_suppression_threshold,
             ml_features,
             ml_weight,
             min_confidence_floor,
@@ -465,6 +475,7 @@ impl ScanState {
         raw_match: keyhog_core::RawMatch,
         heuristic_conf: f64,
         context_multiplier: f64,
+        context_suppression_threshold: Option<f64>,
         ml_features: [f32; crate::ml_scorer::NUM_FEATURES],
         ml_weight: f64,
         min_confidence_floor: f64,
@@ -476,6 +487,7 @@ impl ScanState {
             raw_match,
             heuristic_conf,
             context_multiplier,
+            context_suppression_threshold,
             ml_features,
             ml_weight,
             min_confidence_floor,

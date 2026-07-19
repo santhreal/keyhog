@@ -43,6 +43,7 @@ impl CompiledScanner {
                 confidence: report_conf,
                 min_confidence_floor: pending.min_confidence_floor,
                 penalize_test_paths: self.config.penalize_test_paths,
+                context_suppression_threshold: pending.context_suppression_threshold,
                 file_path: file_path.as_deref(),
                 is_named_detector: pending.is_named_detector,
                 is_generic_detector: pending.is_generic_detector,

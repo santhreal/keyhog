@@ -399,6 +399,9 @@ impl CompiledScanner {
                     detector_plan
                         .match_confidence
                         .context_multiplier(crate::context::CodeContext::Unknown),
+                    detector_plan
+                        .match_confidence
+                        .context_suppression_threshold(crate::context::CodeContext::Unknown),
                     ml_features,
                     policy.effective_weight(&self.config),
                     min_confidence_floor,
@@ -420,6 +423,9 @@ impl CompiledScanner {
                     confidence: policy_conf,
                     min_confidence_floor,
                     penalize_test_paths: self.config.penalize_test_paths,
+                    context_suppression_threshold: detector_plan
+                        .match_confidence
+                        .context_suppression_threshold(crate::context::CodeContext::Unknown),
                     file_path: chunk.metadata.path.as_deref(),
                     is_named_detector: false,
                     is_generic_detector: true,

@@ -317,6 +317,9 @@ impl CompiledScanner {
                         confidence: policy_conf,
                         min_confidence_floor,
                         penalize_test_paths: self.config.penalize_test_paths,
+                        context_suppression_threshold: detector_plan
+                            .match_confidence
+                            .context_suppression_threshold(inferred_context),
                         file_path: chunk.metadata.path.as_deref(),
                         is_named_detector,
                         is_generic_detector: is_generic,
@@ -385,6 +388,9 @@ impl CompiledScanner {
                     heuristic_conf,
                     code_context,
                     context_multiplier,
+                    detector_plan
+                        .match_confidence
+                        .context_suppression_threshold(code_context),
                     ml_features,
                     detector_ml_policy.effective_weight(&self.config),
                     min_confidence_floor,

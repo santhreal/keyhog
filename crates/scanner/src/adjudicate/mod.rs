@@ -172,10 +172,13 @@ fn final_emit_suppression_stage(
     confidence: f64,
     min_confidence_floor: f64,
     penalize_test_paths: bool,
+    context_suppression_threshold: Option<f64>,
 ) -> Option<StageId> {
     let context_hard_suppression_applies =
         penalize_test_paths || matches!(code_context, crate::context::CodeContext::Comment);
-    if context_hard_suppression_applies && code_context.should_hard_suppress(confidence) {
+    if context_hard_suppression_applies
+        && context_suppression_threshold.is_some_and(|threshold| confidence < threshold)
+    {
         return Some(StageId::HardSuppressedContext);
     }
 
@@ -205,9 +208,11 @@ pub(crate) struct FinalEmitSignals {
     confidence: f64,
     min_confidence_floor: f64,
     penalize_test_paths: bool,
+    context_suppression_threshold: Option<f64>,
 }
 
 impl FinalEmitSignals {
+    #[cfg(test)]
     pub(crate) const fn new(
         is_generic_detector: bool,
         code_context: crate::context::CodeContext,
@@ -215,12 +220,31 @@ impl FinalEmitSignals {
         min_confidence_floor: f64,
         penalize_test_paths: bool,
     ) -> Self {
+        Self::with_context_suppression_threshold(
+            is_generic_detector,
+            code_context,
+            confidence,
+            min_confidence_floor,
+            penalize_test_paths,
+            code_context.hard_suppression_threshold(),
+        )
+    }
+
+    pub(crate) const fn with_context_suppression_threshold(
+        is_generic_detector: bool,
+        code_context: crate::context::CodeContext,
+        confidence: f64,
+        min_confidence_floor: f64,
+        penalize_test_paths: bool,
+        context_suppression_threshold: Option<f64>,
+    ) -> Self {
         Self {
             is_generic_detector,
             code_context,
             confidence,
             min_confidence_floor,
             penalize_test_paths,
+            context_suppression_threshold,
         }
     }
 }
@@ -232,6 +256,7 @@ pub(crate) struct ReportAdjudicationPolicy<'a> {
     pub(crate) confidence: f64,
     pub(crate) min_confidence_floor: f64,
     pub(crate) penalize_test_paths: bool,
+    pub(crate) context_suppression_threshold: Option<f64>,
     pub(crate) file_path: Option<&'a str>,
     pub(crate) is_named_detector: bool,
     /// Compiled from the active detector's TOML `kind = "phase2-generic"`, or
@@ -461,13 +486,15 @@ pub(crate) fn finalize_report_candidate(
         return None;
     };
 
-    let final_emit_ctx = MatchCtx::for_final_emit(FinalEmitSignals::new(
-        policy.is_generic_detector,
-        policy.code_context,
-        confidence,
-        policy.min_confidence_floor,
-        policy.penalize_test_paths,
-    ));
+    let final_emit_ctx =
+        MatchCtx::for_final_emit(FinalEmitSignals::with_context_suppression_threshold(
+            policy.is_generic_detector,
+            policy.code_context,
+            confidence,
+            policy.min_confidence_floor,
+            policy.penalize_test_paths,
+            policy.context_suppression_threshold,
+        ));
     match adjudicate_match(CandidateMatch::new(credential), &final_emit_ctx) {
         Verdict::Suppressed(stage_id) => {
             record_suppression_telemetry(path, credential, stage_id);
@@ -668,6 +695,7 @@ fn final_emit_stage(candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> StageO
         signals.confidence,
         signals.min_confidence_floor,
         signals.penalize_test_paths,
+        signals.context_suppression_threshold,
     ) {
         return StageOutcome::Suppress(stage_id);
     }

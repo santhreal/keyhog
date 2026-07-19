@@ -27,7 +27,7 @@ name = "Stripe Secret Key"
 service = "stripe"
 severity = "critical"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
-match_confidence = { literal_prefix_weight = 0.35, context_anchor_weight = 0.20, entropy_weight = 0.20, high_entropy_partial_weight = 0.12, moderate_entropy_threshold = 3.0, moderate_entropy_weight = 0.05, low_entropy_penalty_floor = 2.0, low_entropy_min_match_length = 10, low_entropy_penalty_multiplier = 0.60, keyword_nearby_weight = 0.10, sensitive_file_weight = 0.10, companion_weight = 0.05, very_high_entropy_margin = 1.2999999999999998, named_anchor_floor = 0.55, assignment_context_multiplier = 1.0, string_literal_context_multiplier = 0.9, unknown_context_multiplier = 0.8, documentation_context_multiplier = 0.3, comment_context_multiplier = 0.4, test_context_multiplier = 0.3, encrypted_context_multiplier = 0.05 }
+match_confidence = { literal_prefix_weight = 0.35, context_anchor_weight = 0.20, entropy_weight = 0.20, high_entropy_partial_weight = 0.12, moderate_entropy_threshold = 3.0, moderate_entropy_weight = 0.05, low_entropy_penalty_floor = 2.0, low_entropy_min_match_length = 10, low_entropy_penalty_multiplier = 0.60, keyword_nearby_weight = 0.10, sensitive_file_weight = 0.10, companion_weight = 0.05, very_high_entropy_margin = 1.2999999999999998, named_anchor_floor = 0.55, assignment_context_multiplier = 1.0, string_literal_context_multiplier = 0.9, unknown_context_multiplier = 0.8, documentation_context_multiplier = 0.3, comment_context_multiplier = 0.4, test_context_multiplier = 0.3, encrypted_context_multiplier = 0.05, soft_context_suppression_threshold = 0.5, encrypted_context_suppression_threshold = 0.8 }
 validators = [{ type = "pattern-shape", prefixes = ["sk_live_", "sk_test_", "rk_live_", "rk_test_"], allow_overlong = false }]
 keywords = ["sk_live_", "sk_test_", "rk_live_", "rk_test_", "stripe"]
 simdsieve_prefixes = ["sk_live_", "sk_test_", "rk_live_", "rk_test_"]
@@ -127,8 +127,10 @@ threshold for the full entropy weight. The shipped value is the exact binary64
 difference between the historical 5.8 and 4.5 tiers. The low-entropy fields
 define the long-value penalty. The seven context multipliers define how
 assignment, string-literal, unknown, documentation, comment, test, and encrypted
-source contexts affect this detector before and after model scoring. A named
-detector declares `named_anchor_floor` and omits `low_promise_confidence`. A
+source contexts affect this detector before and after model scoring. The two
+context-suppression thresholds decide when a comment, test, documentation, or
+encrypted candidate is too weak to report. A named detector declares
+`named_anchor_floor` and omits `low_promise_confidence`. A
 phase-two generic owner does the reverse. This lets the cheap promise gate
 reject only unaccompanied generic candidates. Missing, misplaced, non-finite,
 or non-monotonic policy fails detector validation. KeyHog precomputes the

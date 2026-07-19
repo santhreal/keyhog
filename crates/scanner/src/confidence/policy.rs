@@ -114,6 +114,26 @@ impl CompiledMatchConfidencePolicy {
             context::CodeContext::Encrypted => self.spec.encrypted_context_multiplier,
         }
     }
+
+    #[inline]
+    pub(crate) fn context_suppression_threshold(
+        &self,
+        context: context::CodeContext,
+    ) -> Option<f64> {
+        match context {
+            context::CodeContext::Comment
+            | context::CodeContext::TestCode
+            | context::CodeContext::Documentation => {
+                Some(self.spec.soft_context_suppression_threshold)
+            }
+            context::CodeContext::Encrypted => {
+                Some(self.spec.encrypted_context_suppression_threshold)
+            }
+            context::CodeContext::Assignment
+            | context::CodeContext::StringLiteral
+            | context::CodeContext::Unknown => None,
+        }
+    }
 }
 
 pub(crate) enum MlScoreResult {
