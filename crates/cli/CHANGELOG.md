@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Reject autoroute cache and runtime-health workload identities with impossible
+  logarithmic ranges, phase-one subtotals, decoder bits, or decoder cost bands.
 - Report automatic backend recovery as `complete_after_recovery` in JSON schema
   1.7 and JSONL schema 1.8, preserve the
   exact recovered ranges and byte totals across daemon responses, expose daemon

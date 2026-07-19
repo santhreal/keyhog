@@ -803,6 +803,7 @@ pub(super) fn validate_source_mixture_key(key: &SourceMixtureKey) -> Result<(), 
 }
 
 pub(super) fn validate_workload_source_mixture(key: &WorkloadKey) -> Result<(), String> {
+    validate_workload_buckets(key)?;
     validate_source_mixture_key(&key.source_mixture)?;
     let Some(max_span_bucket) = key
         .source_mixture
@@ -826,6 +827,141 @@ pub(super) fn validate_workload_source_mixture(key: &WorkloadKey) -> Result<(), 
     {
         return Err(
             "a payload-derived source span cannot exceed the aggregate payload band".into(),
+        );
+    }
+    Ok(())
+}
+
+fn validate_workload_buckets(key: &WorkloadKey) -> Result<(), String> {
+    let max_u64_bucket = log2_bucket(u64::MAX);
+    let scalar_buckets = [
+        ("bytes", key.bytes_bucket),
+        ("chunks", key.chunks_bucket),
+        ("max_file", key.max_file_bucket),
+        ("patterns", key.pattern_bucket),
+        (
+            "phase1_alphabet_rejected_chunks",
+            key.phase1.alphabet_rejected_chunks_bucket,
+        ),
+        (
+            "phase1_alphabet_rejected_bytes",
+            key.phase1.alphabet_rejected_bytes_bucket,
+        ),
+        (
+            "phase1_bigram_rejected_chunks",
+            key.phase1.bigram_rejected_chunks_bucket,
+        ),
+        (
+            "phase1_bigram_rejected_bytes",
+            key.phase1.bigram_rejected_bytes_bucket,
+        ),
+        ("phase1_admitted_chunks", key.phase1.admitted_chunks_bucket),
+        ("phase1_admitted_bytes", key.phase1.admitted_bytes_bucket),
+    ];
+    if let Some((name, bucket)) = scalar_buckets
+        .into_iter()
+        .find(|(_, bucket)| *bucket > max_u64_bucket)
+    {
+        return Err(format!(
+            "workload {name} bucket {bucket} exceeds the maximum logarithmic bucket {max_u64_bucket}"
+        ));
+    }
+    if key.bytes_bucket == 0 || key.chunks_bucket == 0 {
+        return Err(
+            "workload byte and chunk buckets must describe non-empty calibration input".into(),
+        );
+    }
+    for (name, bucket) in [
+        (
+            "phase1_alphabet_rejected_chunks",
+            key.phase1.alphabet_rejected_chunks_bucket,
+        ),
+        (
+            "phase1_bigram_rejected_chunks",
+            key.phase1.bigram_rejected_chunks_bucket,
+        ),
+        ("phase1_admitted_chunks", key.phase1.admitted_chunks_bucket),
+    ] {
+        if bucket > key.chunks_bucket {
+            return Err(format!(
+                "workload {name} bucket {bucket} exceeds the parent chunk bucket {}",
+                key.chunks_bucket
+            ));
+        }
+    }
+    if key.phase1.alphabet_rejected_chunks_bucket == 0
+        && key.phase1.bigram_rejected_chunks_bucket == 0
+        && key.phase1.admitted_chunks_bucket == 0
+    {
+        return Err("non-empty workload has no phase-one chunk accounting".into());
+    }
+    if key.phase1.alphabet_rejected_bytes_bucket == 0
+        && key.phase1.bigram_rejected_bytes_bucket == 0
+        && key.phase1.admitted_bytes_bucket == 0
+    {
+        return Err("non-empty workload has no phase-one byte accounting".into());
+    }
+    for (name, bucket) in [
+        (
+            "phase1_alphabet_rejected_bytes",
+            key.phase1.alphabet_rejected_bytes_bucket,
+        ),
+        (
+            "phase1_bigram_rejected_bytes",
+            key.phase1.bigram_rejected_bytes_bucket,
+        ),
+        ("phase1_admitted_bytes", key.phase1.admitted_bytes_bucket),
+    ] {
+        if bucket > key.bytes_bucket {
+            return Err(format!(
+                "workload {name} bucket {bucket} exceeds the parent byte bucket {}",
+                key.bytes_bucket
+            ));
+        }
+    }
+
+    let known_decode_mask = (DecodeAdmissionSketch::COMPRESSED_CONTAINER << 1) - 1;
+    if key.decode_kind_mask & !known_decode_mask != 0 {
+        return Err(format!(
+            "workload decode-kind mask {:08x} contains unsupported decoder bits",
+            key.decode_kind_mask
+        ));
+    }
+    let max_decode_count_bucket = autoroute_stable_decode_bucket(log2_bucket(u64::from(u16::MAX)));
+    let max_decode_bytes_bucket = autoroute_stable_decode_bucket(log2_bucket(u64::from(u32::MAX)));
+    if key.decode_candidate_count_bucket > max_decode_count_bucket
+        || key.decode_candidate_bytes_bucket > max_decode_bytes_bucket
+    {
+        return Err(format!(
+            "workload decoder buckets count={} bytes={} exceed the supported maxima count={} bytes={}",
+            key.decode_candidate_count_bucket,
+            key.decode_candidate_bytes_bucket,
+            max_decode_count_bucket,
+            max_decode_bytes_bucket
+        ));
+    }
+    if key.decode_unknown
+        && (key.decode_candidate_count_bucket != max_decode_count_bucket
+            || key.decode_candidate_bytes_bucket != max_decode_bytes_bucket)
+    {
+        return Err(
+            "workload with unknown decoder admission must retain saturated decoder buckets".into(),
+        );
+    }
+    if !key.decode_unknown
+        && key.decode_kind_mask == 0
+        && (key.decode_candidate_count_bucket != 0 || key.decode_candidate_bytes_bucket != 0)
+    {
+        return Err(
+            "workload without decoder candidates must use zero decoder cost buckets".into(),
+        );
+    }
+    if !key.decode_unknown
+        && key.decode_kind_mask != 0
+        && (key.decode_candidate_count_bucket == 0 || key.decode_candidate_bytes_bucket == 0)
+    {
+        return Err(
+            "workload with decoder candidates must use nonzero decoder cost buckets".into(),
         );
     }
     Ok(())
