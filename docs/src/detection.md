@@ -54,6 +54,14 @@ carried end to end. The retrainer refuses mismatched detector/channel records
 and now requires positive and negative held-out support for every `blend` or
 `authoritative` channel before writing another model.
 
+Before model inference, a cheap probabilistic gate may assign 0.1 confidence to
+an unaccompanied generic candidate that lacks secret-like randomness. It cannot
+short-circuit a service-regex match or a candidate backed by a matched
+companion, including a weakly anchored service pattern: those candidates
+continue into their detector-owned ML mode. This distinction prevents a
+corpus-wide randomness shortcut from overriding stronger detector-local
+evidence.
+
 Static program recovery is a decode mechanism, not arbitrary code execution.
 KeyHog does not invoke Node.js or evaluate source. It recognizes a bounded
 grammar for cyclic byte-array XOR and Node-style AES-256-CBC decryption,

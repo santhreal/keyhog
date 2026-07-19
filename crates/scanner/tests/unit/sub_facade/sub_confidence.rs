@@ -506,10 +506,10 @@ fn probabilistic_promise_override_keeps_named_structured_values() {
 
 #[test]
 #[cfg(feature = "ml")]
-fn probabilistic_promise_override_still_slams_named_unpromising_identifier_shapes() {
+fn probabilistic_promise_override_keeps_service_owned_identifier_shapes_for_ml() {
     assert_eq!(
         probabilistic_promise_confidence_override("aaaaaaaaaaaaaaaa", true, false),
-        Some(0.1)
+        None
     );
 }
 
@@ -518,6 +518,15 @@ fn probabilistic_promise_override_still_slams_named_unpromising_identifier_shape
 fn probabilistic_promise_override_keeps_named_companion_proof() {
     assert_eq!(
         probabilistic_promise_confidence_override("aaaaaaaaaaaaaaaa", true, true),
+        None
+    );
+}
+
+#[test]
+#[cfg(feature = "ml")]
+fn probabilistic_promise_override_keeps_generic_companion_proof() {
+    assert_eq!(
+        probabilistic_promise_confidence_override("aaaaaaaaaaaaaaaa", false, true),
         None
     );
 }

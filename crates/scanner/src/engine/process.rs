@@ -293,6 +293,7 @@ impl CompiledScanner {
                 ml_enabled: false,
                 credential,
                 is_named_detector,
+                is_service_detector: !is_generic,
                 // Per-PATTERN constant, memoized on the `LazyRegex`: the matched
                 // regex requires a distinctive literal infix (terraform
                 // `\.atlasv1\.`) that no prefix/keyword-group anchor captures.

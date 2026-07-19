@@ -6,6 +6,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Fixed
 
+- Service-regex and companion-backed candidates now continue into detector-owned
+  ML scoring even when the cheap probabilistic gate finds little randomness;
+  only unaccompanied generic candidates may take the early 0.1-confidence path
+  (KH-1343).
 - `keyhog calibrate-autoroute` now writes its complete workload and preset
   sweep to an isolated cache, validates the finished generation, and publishes
   it once. A failed late probe leaves the live cache byte-identical, while a

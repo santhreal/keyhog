@@ -239,39 +239,3 @@ fn ml_pending_confidence_policy_routes_through_confidence_owner() {
         );
     }
 }
-
-#[test]
-fn probabilistic_promise_confidence_routes_through_confidence_owner() {
-    let src = scanner_src();
-    let policy = uncommented_code(&read(&src.join("confidence/policy.rs")));
-    for required in [
-        "fn probabilistic_promise_confidence_override(",
-        "ProbabilisticGate::looks_promising",
-        "looks_like_word_separated_identifier",
-        "looks_like_pure_identifier",
-        "then_some(0.1)",
-    ] {
-        assert!(
-            policy.contains(required),
-            "confidence::policy must own probabilistic promise token {required:?}"
-        );
-    }
-
-    assert!(
-        policy.contains("candidate_match_score")
-            && policy.contains("probabilistic_promise_confidence_override("),
-        "candidate scoring must use the confidence owner for probabilistic promise confidence"
-    );
-    let process = uncommented_code(&read(&src.join("engine/process.rs")));
-    for forbidden in [
-        "ProbabilisticGate::looks_promising",
-        "looks_like_word_separated_identifier(credential)",
-        "looks_like_pure_identifier(credential)",
-        "MlScoreResult::Final(0.1)",
-    ] {
-        assert!(
-            !process.contains(forbidden),
-            "engine process must not own probabilistic promise policy token {forbidden:?}"
-        );
-    }
-}

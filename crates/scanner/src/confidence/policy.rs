@@ -96,7 +96,10 @@ pub(crate) struct CandidateMatchScorePolicy<'a> {
     #[cfg(not(feature = "ml"))]
     pub(crate) ml_enabled: bool,
     pub(crate) credential: &'a str,
+    /// Strong service match eligible for the structural anchor floor.
     pub(crate) is_named_detector: bool,
+    /// Any non-generic service regex, including weakly anchored patterns.
+    pub(crate) is_service_detector: bool,
     /// The matched pattern requires a distinctive literal infix (terraform
     /// `\.atlasv1\.`), a third anchor form alongside the keyword context anchor
     /// and the literal prefix, for named detectors that carry neither.
@@ -214,7 +217,11 @@ pub(crate) fn candidate_match_score(policy: CandidateMatchScorePolicy<'_>) -> Ml
 
     #[cfg(not(feature = "ml"))]
     let score_result = {
-        let _ = (policy.ml_enabled, policy.is_named_detector); // LAW10: cfg-only unused-field marker in no-ML build; heuristic confidence still emitted, recall-safe
+        let _ = (
+            policy.ml_enabled,
+            policy.is_named_detector,
+            policy.is_service_detector,
+        ); // cfg-only fields; heuristic confidence still emits without ML
         MlScoreResult::Final(heuristic_conf)
     };
 
@@ -225,7 +232,7 @@ pub(crate) fn candidate_match_score(policy: CandidateMatchScorePolicy<'_>) -> Ml
         };
         if let Some(confidence) = probabilistic_promise_confidence_override(
             policy.credential,
-            policy.is_named_detector,
+            policy.is_service_detector,
             policy.has_companion,
         ) {
             MlScoreResult::Final(confidence)
@@ -380,18 +387,18 @@ pub(crate) fn apply_empty_candidate_score_policy<'a>(
 #[cfg(feature = "ml")]
 pub(crate) fn probabilistic_promise_confidence_override(
     credential: &str,
-    is_named_detector: bool,
+    is_service_detector: bool,
     has_companion: bool,
 ) -> Option<f64> {
     if crate::probabilistic_gate::ProbabilisticGate::looks_promising(credential) {
         return None;
     }
-    let identifier_shaped =
-        crate::suppression::shape::looks_like_word_separated_identifier(credential)
-            || crate::suppression::shape::looks_like_pure_identifier(credential);
-    // A matched companion is independent detector-owned evidence. Do not let
-    // the generic identifier shortcut erase a required-companion proof.
-    (!is_named_detector || (identifier_shaped && !has_companion)).then_some(0.1)
+    // A service regex or matched companion is independent detector-owned
+    // evidence. The probabilistic gate may cheaply reject an unaccompanied
+    // generic candidate, but it must not bypass ML and manufacture a 0.1 score
+    // for either stronger path. Anchor strength is deliberately irrelevant:
+    // weak service patterns still prove which detector owns the candidate.
+    (!is_service_detector && !has_companion).then_some(0.1)
 }
 
 #[cfg(feature = "entropy")]
