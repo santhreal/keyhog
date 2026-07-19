@@ -796,7 +796,7 @@ impl CompiledScanner {
                             phase2_gpu_coverage = Some(catalog.coverage());
                             match scan_phase2_gpu_chunks_sharded(
                                 catalog,
-                                &**backend,
+                                backend,
                                 gpu_chunks,
                                 recover_dispatch_faults,
                             ) {
@@ -840,7 +840,7 @@ impl CompiledScanner {
                         phase2_gpu_coverage = Some(catalog.coverage());
                         match scan_phase2_gpu_refs_sharded(
                             catalog,
-                            &**backend,
+                            backend,
                             gpu_chunks.as_slice(),
                             recover_dispatch_faults,
                         ) {

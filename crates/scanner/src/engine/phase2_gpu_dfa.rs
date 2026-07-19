@@ -33,6 +33,7 @@ use std::sync::OnceLock;
 mod batch;
 mod candidates;
 mod lowering;
+mod resident;
 mod shard;
 mod workload;
 
@@ -162,7 +163,7 @@ impl Phase2GpuDfaCatalog {
 
     pub(crate) fn scan_admission_refs(
         &self,
-        backend: &dyn vyre::VyreBackend,
+        backend: &std::sync::Arc<dyn vyre::VyreBackend>,
         chunks: &[&keyhog_core::Chunk],
     ) -> std::result::Result<Phase2GpuDfaAdmission, String> {
         self.scan_admission_with_builder(backend, chunks.len(), |scratch| {
@@ -172,7 +173,7 @@ impl Phase2GpuDfaCatalog {
 
     pub(crate) fn scan_admission_chunks(
         &self,
-        backend: &dyn vyre::VyreBackend,
+        backend: &std::sync::Arc<dyn vyre::VyreBackend>,
         chunks: &[keyhog_core::Chunk],
     ) -> std::result::Result<Phase2GpuDfaAdmission, String> {
         self.scan_admission_with_builder(backend, chunks.len(), |scratch| {
@@ -182,7 +183,7 @@ impl Phase2GpuDfaCatalog {
 
     fn scan_admission_with_builder<F>(
         &self,
-        backend: &dyn vyre::VyreBackend,
+        backend: &std::sync::Arc<dyn vyre::VyreBackend>,
         chunk_count: usize,
         build_batch: F,
     ) -> std::result::Result<Phase2GpuDfaAdmission, String>
@@ -204,7 +205,7 @@ impl Phase2GpuDfaCatalog {
 
     fn scan_admission_with_scratch(
         &self,
-        backend: &dyn vyre::VyreBackend,
+        backend: &std::sync::Arc<dyn vyre::VyreBackend>,
         scratch: &mut Phase2GpuDfaScratch,
         chunk_count: usize,
     ) -> std::result::Result<Phase2GpuDfaAdmission, String> {
@@ -250,15 +251,17 @@ impl Phase2GpuDfaCatalogCache {
         always_active_indices: &[usize],
         _backend_id: Option<&'static str>,
     ) -> Option<&Phase2GpuDfaCatalog> {
-        self.catalog.get_or_init(|| {
-            let started = std::time::Instant::now();
-            let catalog = Phase2GpuDfaCatalog::build(phase2_patterns, always_active_indices);
-            let elapsed_ns = (started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64).max(1);
-            self.preparation_ns
-                .store(elapsed_ns, std::sync::atomic::Ordering::Release);
-            catalog
-        })
-        .as_ref()
+        self.catalog
+            .get_or_init(|| {
+                let started = std::time::Instant::now();
+                let catalog = Phase2GpuDfaCatalog::build(phase2_patterns, always_active_indices);
+                let elapsed_ns =
+                    (started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64).max(1);
+                self.preparation_ns
+                    .store(elapsed_ns, std::sync::atomic::Ordering::Release);
+                catalog
+            })
+            .as_ref()
     }
 
     pub(crate) fn preparation_ns(&self, _backend_id: Option<&'static str>) -> u128 {

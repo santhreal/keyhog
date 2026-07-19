@@ -22,18 +22,8 @@ pub(super) fn build_shards_recursive(
         }
         Err(error) if indices.len() > 1 => {
             let mid = indices.len() / 2;
-            build_shards_recursive(
-                phase2_patterns,
-                &indices[..mid],
-                shards,
-                uncovered_patterns,
-            );
-            build_shards_recursive(
-                phase2_patterns,
-                &indices[mid..],
-                shards,
-                uncovered_patterns,
-            );
+            build_shards_recursive(phase2_patterns, &indices[..mid], shards, uncovered_patterns);
+            build_shards_recursive(phase2_patterns, &indices[mid..], shards, uncovered_patterns);
             tracing::debug!(
                 target: "keyhog::gpu",
                 patterns = indices.len(),
@@ -68,15 +58,13 @@ fn build_shard(
     // Region admission replays an anchored DFA once from each byte origin. An
     // implicit search prefix would rescan earlier bytes from every origin and
     // is only appropriate for the old match-triple materializer.
-    let pipeline = vyre_libs::scan::build_regex_dfa_pipeline(
-        &source_refs,
-        1,
-        PHASE2_GPU_DFA_MAX_STATES,
-    )
-    .map_err(|error| error.to_string())?;
+    let pipeline =
+        vyre_libs::scan::build_regex_dfa_pipeline(&source_refs, 1, PHASE2_GPU_DFA_MAX_STATES)
+            .map_err(|error| error.to_string())?;
     Ok(Phase2GpuDfaShard {
         pipeline,
         phase2_indices: indices.to_vec(),
+        resident: super::resident::Phase2GpuDfaResident::default(),
     })
 }
 

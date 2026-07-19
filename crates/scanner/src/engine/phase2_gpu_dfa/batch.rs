@@ -9,6 +9,8 @@ pub(super) struct Phase2GpuDfaScratch {
     pub(super) haystack_len: usize,
     pub(super) region_starts: Vec<u32>,
     pub(super) dispatch: vyre_libs::scan::dispatch_io::ScanDispatchScratch,
+    pub(super) region_bytes: Vec<u8>,
+    pub(super) reset_bytes: Vec<u8>,
     pub(super) outputs: vyre::OutputBuffers,
 }
 
@@ -37,6 +39,10 @@ impl Drop for ZeroPhase2GpuDfaScratch<'_> {
         self.scratch.haystack_len = 0;
         self.scratch.region_starts.clear();
         crate::engine::gpu_literal_scratch::zero_scan_dispatch_scratch(&mut self.scratch.dispatch);
+        self.scratch.region_bytes.fill(0);
+        self.scratch.region_bytes.clear();
+        self.scratch.reset_bytes.fill(0);
+        self.scratch.reset_bytes.clear();
         for output in &mut self.scratch.outputs {
             output.fill(0);
             output.clear();

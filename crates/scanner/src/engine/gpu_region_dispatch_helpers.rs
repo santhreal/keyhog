@@ -44,7 +44,7 @@ fn injected_phase2_dispatch_failure() -> bool {
 
 fn scan_phase2_chunks(
     catalog: &Phase2GpuDfaCatalog,
-    backend: &dyn vyre::VyreBackend,
+    backend: &std::sync::Arc<dyn vyre::VyreBackend>,
     chunks: &[keyhog_core::Chunk],
 ) -> Result<Phase2GpuDfaAdmission, String> {
     #[cfg(test)]
@@ -56,7 +56,7 @@ fn scan_phase2_chunks(
 
 fn scan_phase2_refs(
     catalog: &Phase2GpuDfaCatalog,
-    backend: &dyn vyre::VyreBackend,
+    backend: &std::sync::Arc<dyn vyre::VyreBackend>,
     chunks: &[&keyhog_core::Chunk],
 ) -> Result<Phase2GpuDfaAdmission, String> {
     #[cfg(test)]
@@ -149,7 +149,7 @@ pub(super) fn append_phase2_gpu_admission(
 
 pub(super) fn scan_phase2_gpu_chunks_sharded(
     catalog: &Phase2GpuDfaCatalog,
-    backend: &dyn vyre::VyreBackend,
+    backend: &std::sync::Arc<dyn vyre::VyreBackend>,
     chunks: &[keyhog_core::Chunk],
     recover_dispatch_faults: bool,
 ) -> std::result::Result<Phase2GpuAdmissionOutcome, String> {
@@ -215,7 +215,7 @@ pub(super) fn scan_phase2_gpu_chunks_sharded(
 
 pub(super) fn scan_phase2_gpu_refs_sharded(
     catalog: &Phase2GpuDfaCatalog,
-    backend: &dyn vyre::VyreBackend,
+    backend: &std::sync::Arc<dyn vyre::VyreBackend>,
     chunks: &[&keyhog_core::Chunk],
     recover_dispatch_faults: bool,
 ) -> std::result::Result<Phase2GpuAdmissionOutcome, String> {
