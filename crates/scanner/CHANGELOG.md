@@ -4,6 +4,10 @@
 
 - Avoid collecting GPU phase timing timestamps unless performance tracing is
   enabled, removing profiling clock reads from the normal accelerated path.
+- Warn when a library caller supplies an admission plan for different input,
+  then recompute admission so the mismatch remains visible without losing
+  recall. Preserve the concrete GPU fault reason even if its diagnostic mutex
+  was poisoned by an earlier panic.
 - Resolve production entropy credential context from the active detector TOMLs
   and Tier-A keyword configuration at generation and suppression. Embedded
   compatibility keywords no longer widen a replacement detector corpus, and

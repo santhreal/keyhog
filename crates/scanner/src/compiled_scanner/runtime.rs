@@ -754,9 +754,17 @@ impl CompiledScanner {
         backend: crate::hw_probe::ScanBackend,
         plan: Option<&crate::engine::Phase1AdmissionPlan>,
     ) -> Vec<RawMatch> {
-        let admission = plan
-            .filter(|plan| plan.matches_chunks(std::slice::from_ref(chunk)))
-            .and_then(|plan| plan.admission_for(0));
+        let admission = match plan {
+            Some(p) if p.matches_chunks(std::slice::from_ref(chunk)) => p.admission_for(0),
+            Some(_) => {
+                // KH-1289: do not silently drop a mismatched admission plan.
+                tracing::warn!(
+                    "Phase1AdmissionPlan does not match live chunk identity; recomputing admission (recall preserved)"
+                );
+                None
+            }
+            None => None,
+        };
         self.scan_with_deadline_and_backend_and_admission(
             chunk,
             self.config.per_chunk_deadline(),

@@ -16,10 +16,13 @@ use super::CompiledScanner;
 impl CompiledScanner {
     pub(super) fn record_gpu_runtime_fault(&self, reason: impl Into<String>) {
         let reason = reason.into();
-        if let Ok(mut slot) = self.gpu_last_degrade_reason.lock() {
-            // LAW10: poison loses only the diagnostic string; the compatibility counter below still records the runtime fault.
-            *slot = Some(reason);
-        }
+        // Poison still stores the reason: a poisoned mutex must not drop the
+        // only diagnostic while the degrade counter still increments (KH-1290).
+        let mut slot = self
+            .gpu_last_degrade_reason
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *slot = Some(reason);
         self.gpu_degrade_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
