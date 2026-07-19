@@ -2,7 +2,7 @@
 //! the most specific, highest-confidence match. Eliminates duplicates.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use keyhog_core::RawMatch;
 
@@ -33,9 +33,11 @@ pub fn resolve_matches(matches: Vec<RawMatch>) -> Vec<RawMatch> {
 /// Checked match resolution for operator paths that must report rule failures
 /// instead of aborting through the compatibility API.
 pub fn try_resolve_matches(mut matches: Vec<RawMatch>) -> Result<Vec<RawMatch>, String> {
+    let resolution = embedded_resolution_index()?;
     try_resolve_matches_with_policy(
         &mut matches,
         ResolutionPolicy::Embedded {
+            resolution,
             private_key_block_detectors: None,
         },
     )?;
@@ -48,9 +50,11 @@ pub fn try_resolve_matches_with_private_key_blocks(
     mut matches: Vec<RawMatch>,
     private_key_block_detectors: &HashSet<String>,
 ) -> Result<Vec<RawMatch>, String> {
+    let resolution = embedded_resolution_index()?;
     try_resolve_matches_with_policy(
         &mut matches,
         ResolutionPolicy::Embedded {
+            resolution,
             private_key_block_detectors: Some(private_key_block_detectors),
         },
     )?;
@@ -68,9 +72,25 @@ pub(crate) fn try_resolve_matches_with_compiled_plan(
 #[derive(Clone, Copy)]
 enum ResolutionPolicy<'a> {
     Embedded {
+        resolution: &'a crate::detector_plan::DetectorResolutionIndex,
         private_key_block_detectors: Option<&'a HashSet<String>>,
     },
     Active(&'a crate::detector_plan::CompiledDetectorPlans),
+}
+
+static EMBEDDED_RESOLUTION_INDEX: LazyLock<
+    Result<crate::detector_plan::DetectorResolutionIndex, String>,
+> = LazyLock::new(|| {
+    let detectors = keyhog_core::load_embedded_detectors_or_fail()
+        .map_err(|error| format!("failed to load embedded detector resolution policy: {error}"))?;
+    crate::detector_plan::DetectorResolutionIndex::compile(&detectors)
+});
+
+fn embedded_resolution_index(
+) -> Result<&'static crate::detector_plan::DetectorResolutionIndex, String> {
+    EMBEDDED_RESOLUTION_INDEX
+        .as_ref()
+        .map_err(std::clone::Clone::clone)
 }
 
 impl ResolutionPolicy<'_> {
@@ -413,9 +433,15 @@ fn is_private_key_block_detector(detector_id: &str, policy: ResolutionPolicy<'_>
             Some(crate::detector_plan::DetectorResolutionClass::PrivateKeyBlock)
         ),
         ResolutionPolicy::Embedded {
+            resolution,
             private_key_block_detectors,
         } => private_key_block_detectors.map_or_else(
-            || crate::detector_ids::is_private_key_block_detector(detector_id),
+            || {
+                matches!(
+                    resolution.get(detector_id),
+                    Some(crate::detector_plan::DetectorResolutionClass::PrivateKeyBlock)
+                )
+            },
             |detectors| detectors.contains(detector_id),
         ),
     }
@@ -424,7 +450,15 @@ fn is_private_key_block_detector(detector_id: &str, policy: ResolutionPolicy<'_>
 fn is_entropy_detector(detector_id: &str, policy: ResolutionPolicy<'_>) -> bool {
     match policy {
         ResolutionPolicy::Active(plans) => plans.is_entropy(detector_id),
-        ResolutionPolicy::Embedded { .. } => crate::detector_ids::is_entropy_detector(detector_id),
+        ResolutionPolicy::Embedded { resolution, .. } => resolution.get(detector_id).map_or_else(
+            || crate::detector_ids::is_entropy_detector(detector_id),
+            |class| {
+                matches!(
+                    class,
+                    crate::detector_plan::DetectorResolutionClass::Entropy
+                )
+            },
+        ),
     }
 }
 
@@ -434,18 +468,14 @@ fn match_is_service_specific(matched: &RawMatch, policy: ResolutionPolicy<'_>) -
             plans.resolution_class(matched.detector_id.as_ref()),
             Some(crate::detector_plan::DetectorResolutionClass::Named)
         ),
-        ResolutionPolicy::Embedded { .. } => {
-            if is_private_key_block_detector(matched.detector_id.as_ref(), policy)
-                || is_entropy_detector(matched.detector_id.as_ref(), policy)
-            {
-                return false;
-            }
-            keyhog_core::detector_spec_by_id(matched.detector_id.as_ref()).map_or_else(
+        ResolutionPolicy::Embedded { resolution, .. } => {
+            resolution.get(matched.detector_id.as_ref()).map_or_else(
                 || {
                     matched.service.as_ref() != "generic"
                         && !crate::detector_ids::is_generic_detector(matched.detector_id.as_ref())
+                        && !crate::detector_ids::is_entropy_detector(matched.detector_id.as_ref())
                 },
-                |_| crate::detector_ids::is_service_anchored_detector(matched.detector_id.as_ref()),
+                |class| matches!(class, crate::detector_plan::DetectorResolutionClass::Named),
             )
         }
     }
@@ -726,9 +756,15 @@ fn resolve_direct_conflicts(group: Vec<RawMatch>, policy: ResolutionPolicy<'_>) 
 
 /// Compute the resolver priority used to break ties between overlapping matches.
 pub(crate) fn match_priority(m: &RawMatch) -> f64 {
+    let resolution = embedded_resolution_index().unwrap_or_else(|error| {
+        panic!(
+            "embedded detector resolution policy is invalid while computing match priority: {error}"
+        )
+    });
     match_priority_with_policy(
         m,
         ResolutionPolicy::Embedded {
+            resolution,
             private_key_block_detectors: None,
         },
     )

@@ -17,6 +17,43 @@ pub(crate) enum DetectorResolutionClass {
     PrivateKeyBlock,
 }
 
+/// Canonical detector and emitted-fallback classification compiled from the
+/// active detector corpus. Resolution never infers semantics from an ID when
+/// this index owns that identity.
+#[derive(Debug)]
+pub(crate) struct DetectorResolutionIndex {
+    by_id: HashMap<Arc<str>, DetectorResolutionClass>,
+}
+
+impl DetectorResolutionIndex {
+    pub(crate) fn compile(detectors: &[DetectorSpec]) -> Result<Self, String> {
+        let mut by_id = HashMap::with_capacity(detectors.len() * 2);
+        for detector in detectors {
+            let class = if detector.private_key_block {
+                DetectorResolutionClass::PrivateKeyBlock
+            } else if detector.kind == keyhog_core::DetectorKind::Phase2Generic {
+                DetectorResolutionClass::Generic
+            } else {
+                DetectorResolutionClass::Named
+            };
+            insert_resolution_class(&mut by_id, Arc::from(detector.id.as_str()), class)?;
+            if let Some(metadata) = &detector.entropy_fallback {
+                insert_resolution_class(
+                    &mut by_id,
+                    Arc::from(metadata.id.as_str()),
+                    DetectorResolutionClass::Entropy,
+                )?;
+            }
+        }
+        Ok(Self { by_id })
+    }
+
+    #[inline]
+    pub(crate) fn get(&self, detector_id: &str) -> Option<DetectorResolutionClass> {
+        self.by_id.get(detector_id).copied()
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct CompiledDetectorPlan {
     pub(crate) metadata: CompiledDetectorMetadata,
@@ -57,7 +94,7 @@ impl CompiledDetectorPlan {
 #[derive(Debug)]
 pub(crate) struct CompiledDetectorPlans {
     by_detector_index: Box<[CompiledDetectorPlan]>,
-    resolution_class_by_id: HashMap<Arc<str>, DetectorResolutionClass>,
+    resolution: DetectorResolutionIndex,
     validator_refs: Box<[ValidatorRef]>,
     validator_ref_offsets: [usize; 257],
 }
@@ -135,24 +172,7 @@ impl CompiledDetectorPlans {
                     })
                 })
                 .collect::<Result<Box<[_]>, String>>()?;
-        let mut resolution_class_by_id = HashMap::with_capacity(detectors.len() * 2);
-        for (detector, plan) in detectors.iter().zip(by_detector_index.iter()) {
-            let class = if detector.private_key_block {
-                DetectorResolutionClass::PrivateKeyBlock
-            } else if detector.kind == keyhog_core::DetectorKind::Phase2Generic {
-                DetectorResolutionClass::Generic
-            } else {
-                DetectorResolutionClass::Named
-            };
-            insert_resolution_class(&mut resolution_class_by_id, plan.metadata.0.clone(), class)?;
-            if let Some(metadata) = &plan.entropy_metadata {
-                insert_resolution_class(
-                    &mut resolution_class_by_id,
-                    metadata.0.clone(),
-                    DetectorResolutionClass::Entropy,
-                )?;
-            }
-        }
+        let resolution = DetectorResolutionIndex::compile(detectors)?;
         let mut validator_refs: [Vec<ValidatorRef>; 256] = std::array::from_fn(|_| Vec::new());
         for (detector_index, plan) in by_detector_index.iter().enumerate() {
             for (validator_index, prefix) in plan.validators.indexed_prefixes() {
@@ -177,7 +197,7 @@ impl CompiledDetectorPlans {
         validator_ref_offsets[256] = flat_validator_refs.len();
         Ok(Self {
             by_detector_index,
-            resolution_class_by_id,
+            resolution,
             validator_refs: flat_validator_refs.into_boxed_slice(),
             validator_ref_offsets,
         })
@@ -195,7 +215,7 @@ impl CompiledDetectorPlans {
 
     #[inline]
     pub(crate) fn resolution_class(&self, detector_id: &str) -> Option<DetectorResolutionClass> {
-        self.resolution_class_by_id.get(detector_id).copied()
+        self.resolution.get(detector_id)
     }
 
     #[inline]
