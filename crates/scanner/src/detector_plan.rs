@@ -132,7 +132,7 @@ impl CompiledDetectorPlans {
                 .map(|(detector, companions)| {
                     let execution = crate::detector_execution_policy::CompiledDetectorExecutionPolicy::compile(
                         detector,
-                    );
+                    )?;
                     let entropy = crate::entropy::policy::compile_entropy_policy_with_length(
                         detector,
                         execution.length,

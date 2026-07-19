@@ -1009,6 +1009,14 @@ fn validate_keywords(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
         issues.push(QualityIssue::Warning(
             "no keywords defined - pattern may produce false positives".into(),
         ));
+        return;
+    }
+    for (index, keyword) in spec.keywords.iter().enumerate() {
+        if keyword.is_empty() {
+            issues.push(QualityIssue::Error(format!(
+                "keyword {index} is empty; remove it or declare a non-empty detector-owned context literal"
+            )));
+        }
     }
 }
 

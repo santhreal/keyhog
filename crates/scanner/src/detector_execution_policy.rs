@@ -6,6 +6,48 @@
 
 use keyhog_core::{DetectorSpec, Severity};
 
+#[derive(Debug)]
+enum CompiledDetectorKeywordMatcher {
+    None,
+    One(Box<[u8]>),
+    Multiple(aho_corasick::AhoCorasick),
+}
+
+impl CompiledDetectorKeywordMatcher {
+    fn compile(detector: &DetectorSpec) -> Result<Self, String> {
+        if let Some(empty_index) = detector.keywords.iter().position(String::is_empty) {
+            return Err(format!(
+                "detector {:?} keyword {empty_index} is empty; remove it or declare a non-empty detector-owned context literal",
+                detector.id
+            ));
+        }
+        match detector.keywords.as_slice() {
+            [] => Ok(Self::None),
+            [keyword] => Ok(Self::One(keyword.as_bytes().into())),
+            keywords => aho_corasick::AhoCorasickBuilder::new()
+                // A compact NFA avoids hundreds of per-detector dense tables while replacing K full-buffer scans.
+                .kind(Some(aho_corasick::AhoCorasickKind::ContiguousNFA))
+                .build(keywords)
+                .map(Self::Multiple)
+                .map_err(|error| {
+                    format!(
+                        "detector {:?} keyword matcher could not compile: {error}",
+                        detector.id
+                    )
+                }),
+        }
+    }
+
+    #[inline]
+    fn is_match(&self, haystack: &[u8]) -> bool {
+        match self {
+            Self::None => false,
+            Self::One(keyword) => memchr::memmem::find(haystack, keyword).is_some(),
+            Self::Multiple(matcher) => matcher.is_match(haystack),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CandidateLengthRejection {
     TooShort,
@@ -69,14 +111,14 @@ pub(crate) struct CompiledDetectorExecutionPolicy {
     pub(crate) min_confidence: Option<f64>,
     pub(crate) severity: Severity,
     pub(crate) structural_password_slot: bool,
-    keywords: Box<[Box<[u8]>]>,
+    keywords: CompiledDetectorKeywordMatcher,
     #[cfg(any(feature = "entropy", test))]
     public_identifier_assignment_markers: Box<[Box<[u8]>]>,
 }
 
 impl CompiledDetectorExecutionPolicy {
-    pub(crate) fn compile(detector: &DetectorSpec) -> Self {
-        Self {
+    pub(crate) fn compile(detector: &DetectorSpec) -> Result<Self, String> {
+        Ok(Self {
             // Service is reporting taxonomy, not execution semantics. Anchored
             // HTTP/SQL/URL detectors legitimately report service = "generic"
             // but must not inherit the phase-2 entropy/suppression contract.
@@ -87,18 +129,14 @@ impl CompiledDetectorExecutionPolicy {
             min_confidence: detector.min_confidence,
             severity: detector.severity,
             structural_password_slot: detector.structural_password_slot,
-            keywords: detector
-                .keywords
-                .iter()
-                .map(|keyword| keyword.as_bytes().into())
-                .collect(),
+            keywords: CompiledDetectorKeywordMatcher::compile(detector)?,
             #[cfg(any(feature = "entropy", test))]
             public_identifier_assignment_markers: detector
                 .public_identifier_assignment_markers
                 .iter()
                 .map(|marker| marker.as_bytes().into())
                 .collect(),
-        }
+        })
     }
 
     /// True when the candidate's source line carries one of this detector's
@@ -119,9 +157,6 @@ impl CompiledDetectorExecutionPolicy {
         let same_buffer = chunk_data.len() == preprocessed.len()
             && std::ptr::eq(chunk_data.as_ptr(), preprocessed.as_ptr());
         let text_differs = !same_buffer && preprocessed != chunk_data;
-        self.keywords.iter().any(|keyword| {
-            memchr::memmem::find(chunk_data, keyword).is_some()
-                || (text_differs && memchr::memmem::find(preprocessed, keyword).is_some())
-        })
+        self.keywords.is_match(chunk_data) || (text_differs && self.keywords.is_match(preprocessed))
     }
 }
