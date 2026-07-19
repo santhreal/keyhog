@@ -38,7 +38,6 @@ mod workload;
 
 const PHASE2_GPU_DFA_MAX_MATCHES: u32 = 1 << 20;
 const PHASE2_GPU_DFA_MAX_STATES: usize = 16_384;
-const PHASE2_GPU_DFA_TARGET_SHARD_PATTERNS: usize = 16;
 
 fn report_phase2_gpu_catalog_loss(reason: impl std::fmt::Display) {
     let reason = reason.to_string();
@@ -149,15 +148,13 @@ impl Phase2GpuDfaCatalog {
         let use_subgroup_coalesce = program_kind.use_subgroup_coalesce();
         let mut shards = Vec::new();
         let mut uncovered_ascii_patterns = ascii_candidate_count.saturating_sub(candidates.len());
-        for chunk in candidates.chunks(PHASE2_GPU_DFA_TARGET_SHARD_PATTERNS) {
-            build_shards_recursive(
-                phase2_patterns,
-                chunk,
-                use_subgroup_coalesce,
-                &mut shards,
-                &mut uncovered_ascii_patterns,
-            );
-        }
+        build_shards_recursive(
+            phase2_patterns,
+            candidates,
+            use_subgroup_coalesce,
+            &mut shards,
+            &mut uncovered_ascii_patterns,
+        );
         let covered_patterns: usize = shards.iter().map(|shard| shard.phase2_indices.len()).sum();
         if shards.is_empty() {
             tracing::warn!(

@@ -14,6 +14,9 @@ pub(super) fn build_shards_recursive(
     if indices.is_empty() {
         return;
     }
+    // Start with the complete candidate set. A successful compilation gives
+    // one dispatch over the haystack; only an actual DFA/state-cap failure may
+    // split it into more dispatches.
     match build_shard(phase2_patterns, indices, use_subgroup_coalesce) {
         Ok(shard) => {
             shards.push(shard);

@@ -132,7 +132,7 @@ therefore cannot make the GPU result look favorable. A forced plain or keyword
 localizer filter, profiling, or perf tracing retains parity and degradation
 checks but cannot pass the release speed gate.
 
-Schema 7 records the selected GPU backend and both localization choices, the
+Schema 8 records the selected GPU backend and both localization choices, the
 fastest observed Hyperscan plan, every route-selection sample, and a separate
 held-out confidence interval for each Hyperscan plan. `crossover_passed` is
 based on the paired fastest-Hyperscan envelope, not whichever CPU route looks

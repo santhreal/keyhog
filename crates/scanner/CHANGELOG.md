@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Compile the phase-two VYRE regex-DFA admission catalog with state-cap-driven
+  shards. The GPU now rescans a batch only after the combined DFA proves a
+  split is necessary, instead of forcing another full-haystack dispatch for
+  every 16 patterns.
 - Apply the detector quality gate at the public scanner compilation boundary.
   Programmatic `DetectorSpec` corpora now reject invalid thresholds, regexes,
   identities, validators, and duplicate detector IDs before matcher or backend
