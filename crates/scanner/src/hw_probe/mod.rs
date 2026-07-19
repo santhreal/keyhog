@@ -187,15 +187,12 @@ pub fn probe_hardware() -> &'static HardwareCaps {
         #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
         let (has_avx2, has_avx512, has_neon) = (false, false, false);
 
-        let (gpu_available, gpu_name, gpu_vram_mb) = crate::gpu::gpu_probe();
-        let gpu_runtime_identity = crate::gpu::gpu_runtime_identity();
-
-        let gpu_is_software = gpu_name.as_deref().is_some_and(|name: &str| {
-            let lower = name.to_ascii_lowercase();
-            lower.contains("llvmpipe")
-                || lower.contains("lavapipe")
-                || lower.contains("swiftshader")
-        });
+        let gpu_probe = crate::gpu::gpu_probe();
+        let gpu_available = gpu_probe.available;
+        let gpu_name = gpu_probe.name;
+        let gpu_vram_mb = gpu_probe.buffer_limit_mb;
+        let gpu_runtime_identity = gpu_probe.runtime_identity;
+        let gpu_is_software = gpu_probe.is_software;
         if gpu_is_software {
             tracing::warn!(
                 gpu = ?gpu_name,

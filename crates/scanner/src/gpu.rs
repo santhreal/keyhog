@@ -223,15 +223,5 @@ pub(crate) fn batch_ml_inference_with_timeout<T: crate::ml_scorer::MlScoreInput>
 /// let _ = gpu_available();
 /// ```
 pub fn gpu_available() -> bool {
-    if gpu_disabled_by_policy() {
-        return false;
-    }
-    #[cfg(feature = "gpu")]
-    {
-        gpu_adapter_probe().is_some_and(|probe| !probe.is_software)
-    }
-    #[cfg(not(feature = "gpu"))]
-    {
-        false
-    }
+    gpu_probe().available
 }

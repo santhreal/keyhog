@@ -45,6 +45,15 @@ impl fmt::Display for GpuRuntimePolicy {
 
 static GPU_RUNTIME_POLICY: AtomicU8 = AtomicU8::new(GpuRuntimePolicy::Auto as u8);
 
+#[derive(Debug, Clone, Default)]
+pub(crate) struct GpuRuntimeProbe {
+    pub(crate) available: bool,
+    pub(crate) name: Option<String>,
+    pub(crate) buffer_limit_mb: Option<u64>,
+    pub(crate) runtime_identity: Option<String>,
+    pub(crate) is_software: bool,
+}
+
 /// Set the process-wide GPU runtime policy (`Auto`/`On`/`Off`) consulted by
 /// backend routing and GPU init.
 pub fn set_gpu_runtime_policy(policy: GpuRuntimePolicy) {
@@ -65,31 +74,21 @@ pub fn gpu_runtime_policy() -> GpuRuntimePolicy {
 /// between "adapter request blocks for minutes on broken driver stacks" and
 /// "scanner starts like every other CPU-only tool".
 #[must_use]
-pub(crate) fn gpu_probe() -> (bool, Option<String>, Option<u64>) {
+pub(crate) fn gpu_probe() -> GpuRuntimeProbe {
     if gpu_disabled_by_policy() {
-        return (false, None, None);
+        return GpuRuntimeProbe::default();
     }
     #[cfg(feature = "gpu")]
     if let Some(gpu) = super::gpu_adapter_probe() {
-        return (
-            !gpu.is_software,
-            Some(gpu.name.clone()),
-            Some(gpu.buffer_limit_mb),
-        );
+        return GpuRuntimeProbe {
+            available: !gpu.is_software,
+            name: Some(gpu.name.clone()),
+            buffer_limit_mb: Some(gpu.buffer_limit_mb),
+            runtime_identity: Some(gpu.runtime_identity.clone()),
+            is_software: gpu.is_software,
+        };
     }
-    (false, None, None)
-}
-
-pub(crate) fn gpu_runtime_identity() -> Option<String> {
-    if gpu_disabled_by_policy() {
-        return None;
-    }
-    #[cfg(feature = "gpu")]
-    {
-        return super::gpu_adapter_probe().map(|probe| probe.runtime_identity.clone());
-    }
-    #[cfg(not(feature = "gpu"))]
-    None
+    GpuRuntimeProbe::default()
 }
 
 /// True when the resolved runtime policy demands a usable GPU and a silent CPU
