@@ -17,8 +17,8 @@ pub enum GpuInitPolicy {
 }
 
 pub(crate) struct GpuBackendPeers {
-    cuda: OnceLock<Result<Arc<dyn vyre::VyreBackend>, String>>,
-    wgpu: OnceLock<Result<Arc<dyn vyre::VyreBackend>, String>>,
+    cuda: OnceLock<Result<AcquiredGpuPeer, String>>,
+    wgpu: OnceLock<Result<AcquiredGpuPeer, String>>,
     pub(crate) cuda_available: bool,
     pub(crate) wgpu_available: bool,
     pub(crate) cuda_device_identity: Option<String>,
@@ -26,6 +26,12 @@ pub(crate) struct GpuBackendPeers {
     pub(crate) wgpu_device_identity: Option<String>,
     pub(crate) wgpu_runtime_identity: Option<String>,
     pub(crate) wgpu_is_software: bool,
+}
+
+pub(crate) struct AcquiredGpuPeer {
+    pub(crate) backend: Arc<dyn vyre::VyreBackend>,
+    pub(crate) device_identity: Option<String>,
+    pub(crate) is_software: bool,
 }
 
 impl Default for GpuBackendPeers {
@@ -47,17 +53,23 @@ impl Default for GpuBackendPeers {
 impl GpuBackendPeers {
     pub(crate) fn get(&self, backend: ScanBackend) -> Option<&Arc<dyn vyre::VyreBackend>> {
         match backend {
-            ScanBackend::GpuCuda if self.cuda_available => {
-                self.cuda.get_or_init(acquire_cuda_peer).as_ref().ok()
-            }
-            ScanBackend::GpuWgpu if self.wgpu_available => {
-                self.wgpu.get_or_init(acquire_wgpu_peer).as_ref().ok()
-            }
+            ScanBackend::GpuCuda if self.cuda_available => self
+                .cuda
+                .get_or_init(acquire_cuda_peer)
+                .as_ref()
+                .ok()
+                .map(|peer| &peer.backend),
+            ScanBackend::GpuWgpu if self.wgpu_available => self
+                .wgpu
+                .get_or_init(acquire_wgpu_peer)
+                .as_ref()
+                .ok()
+                .map(|peer| &peer.backend),
             _ => None,
         }
     }
 
-    pub(crate) fn initialized(&self, backend: ScanBackend) -> Option<&Arc<dyn vyre::VyreBackend>> {
+    pub(crate) fn initialized(&self, backend: ScanBackend) -> Option<&AcquiredGpuPeer> {
         match backend {
             ScanBackend::GpuCuda => self.cuda.get().and_then(|result| result.as_ref().ok()),
             ScanBackend::GpuWgpu => self.wgpu.get().and_then(|result| result.as_ref().ok()),
@@ -83,7 +95,7 @@ impl GpuBackendPeers {
 }
 
 #[cfg(all(feature = "gpu", target_os = "linux"))]
-fn acquire_cuda_peer() -> Result<Arc<dyn vyre::VyreBackend>, String> {
+fn acquire_cuda_peer() -> Result<AcquiredGpuPeer, String> {
     let backend = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let cuda = vyre_driver_cuda::backend::CudaBackend::acquire()?;
         let boxed: Box<dyn vyre::VyreBackend> =
@@ -97,17 +109,21 @@ fn acquire_cuda_peer() -> Result<Arc<dyn vyre::VyreBackend>, String> {
         )
     })??;
     tracing::info!(target: "keyhog::routing", "selected CUDA peer backend acquired");
-    Ok(backend)
+    Ok(AcquiredGpuPeer {
+        backend,
+        device_identity: None,
+        is_software: false,
+    })
 }
 
 #[cfg(not(all(feature = "gpu", target_os = "linux")))]
-fn acquire_cuda_peer() -> Result<Arc<dyn vyre::VyreBackend>, String> {
+fn acquire_cuda_peer() -> Result<AcquiredGpuPeer, String> {
     Err("CUDA peer is not compiled for this platform".to_string())
 }
 
 #[cfg(feature = "gpu")]
-fn acquire_wgpu_peer() -> Result<Arc<dyn vyre::VyreBackend>, String> {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+fn acquire_wgpu_peer() -> Result<AcquiredGpuPeer, String> {
+    let backend = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
         vyre_driver_wgpu::WgpuBackend::shared,
     ))
     .map_err(|panic| {
@@ -116,12 +132,22 @@ fn acquire_wgpu_peer() -> Result<Arc<dyn vyre::VyreBackend>, String> {
             crate::error::panic_payload_detail(panic)
         )
     })?
-        .map(|backend| {
-            tracing::info!(target: "keyhog::routing", "selected WGPU peer backend acquired");
-            let backend: Arc<dyn vyre::VyreBackend> = backend;
-            backend
-        })
-        .map_err(|error| error.to_string())
+    .map_err(|error| error.to_string())?;
+    let info = backend.adapter_info();
+    let device_identity =
+        crate::gpu::gpu_adapter_device_identity(info, backend.device_limits().max_buffer_size);
+    let is_software = crate::gpu::is_software_adapter(info);
+    tracing::info!(
+        target: "keyhog::routing",
+        device_identity,
+        "selected WGPU peer backend acquired"
+    );
+    let backend: Arc<dyn vyre::VyreBackend> = backend;
+    Ok(AcquiredGpuPeer {
+        backend,
+        device_identity: Some(device_identity),
+        is_software,
+    })
 }
 
 #[cfg(all(feature = "gpu", target_os = "linux"))]
@@ -139,7 +165,7 @@ pub(crate) fn probe_cuda_peer() -> Result<vyre_driver_cuda::device::CudaDeviceCa
 }
 
 #[cfg(not(feature = "gpu"))]
-fn acquire_wgpu_peer() -> Result<Arc<dyn vyre::VyreBackend>, String> {
+fn acquire_wgpu_peer() -> Result<AcquiredGpuPeer, String> {
     Err("WGPU peer is not compiled in this build".to_string())
 }
 

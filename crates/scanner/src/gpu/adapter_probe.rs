@@ -5,6 +5,7 @@ use std::sync::OnceLock;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct GpuAdapterProbe {
     pub(crate) name: String,
+    pub(crate) device_identity: String,
     pub(crate) buffer_limit_mb: u64,
     pub(crate) runtime_identity: String,
     pub(crate) is_software: bool,
@@ -43,7 +44,7 @@ fn probe() -> Option<GpuAdapterProbe> {
 
     let selected = adapters
         .iter()
-        .filter(|adapter| !is_software(&adapter.info))
+        .filter(|adapter| !is_software_adapter(&adapter.info))
         .max_by_key(|adapter| {
             (
                 device_priority(adapter.info.device_type),
@@ -55,10 +56,27 @@ fn probe() -> Option<GpuAdapterProbe> {
     const SANE_BUFFER_LIMIT_MB: u64 = 256 * 1024;
     Some(GpuAdapterProbe {
         name: selected.info.name.clone(),
+        device_identity: gpu_adapter_device_identity(&selected.info, selected.max_buffer_size),
         buffer_limit_mb: (selected.max_buffer_size / (1024 * 1024)).min(SANE_BUFFER_LIMIT_MB),
         runtime_identity,
-        is_software: is_software(&selected.info),
+        is_software: is_software_adapter(&selected.info),
     })
+}
+
+pub(crate) fn gpu_adapter_device_identity(
+    info: &wgpu::AdapterInfo,
+    max_buffer_size: u64,
+) -> String {
+    format!(
+        "name={:?}:vendor={:08x}:device={:08x}:type={:?}:backend={:?}:driver={:?}:driver_info={:?}:max_buffer_size={max_buffer_size}",
+        info.name,
+        info.vendor,
+        info.device,
+        info.device_type,
+        info.backend,
+        info.driver,
+        info.driver_info,
+    )
 }
 
 fn adapter_identity(snapshot: &AdapterSnapshot) -> (String, u32, u32, String, String, String, u64) {
@@ -84,7 +102,7 @@ fn device_priority(device_type: wgpu::DeviceType) -> u8 {
     }
 }
 
-fn is_software(info: &wgpu::AdapterInfo) -> bool {
+pub(crate) fn is_software_adapter(info: &wgpu::AdapterInfo) -> bool {
     // VYRE accepts only discrete, integrated, and virtual GPU adapters.
     // `Other` is not proof of hardware compute and must not enter the same
     // autoroute candidate census that VYRE will later execute.

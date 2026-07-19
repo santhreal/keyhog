@@ -125,7 +125,7 @@ impl CompiledScanner {
             }
             if let Some(probe) = crate::gpu::gpu_adapter_probe() {
                 peers.wgpu_available = true;
-                peers.wgpu_device_identity = Some(probe.name.clone());
+                peers.wgpu_device_identity = Some(probe.device_identity.clone());
                 peers.wgpu_runtime_identity = Some(probe.runtime_identity.clone());
                 peers.wgpu_is_software = probe.is_software;
                 tracing::debug!(target: "keyhog::routing", "WGPU peer identity probed");

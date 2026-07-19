@@ -40,7 +40,9 @@ mod self_test;
 pub use self_test::*;
 
 #[cfg(feature = "gpu")]
-pub(crate) use adapter_probe::gpu_adapter_probe;
+pub(crate) use adapter_probe::{
+    gpu_adapter_device_identity, gpu_adapter_probe, is_software_adapter,
+};
 
 /// Split timers: accumulated wall time in feature extraction vs MoE scoring
 /// across all batch ML inference calls. Only the SCORING fraction is

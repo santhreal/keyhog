@@ -625,21 +625,26 @@ impl CompiledScanner {
                         ScanBackend::GpuWgpu => env!("KEYHOG_VYRE_WGPU_VERSION"),
                         _ => unreachable!("candidate list contains only GPU backends"),
                     }),
-                    device_identity: match backend {
-                        ScanBackend::GpuCuda => self.gpu_backends.cuda_device_identity.clone(),
-                        ScanBackend::GpuWgpu => self.gpu_backends.wgpu_device_identity.clone(),
-                        _ => None,
-                    },
+                    device_identity: acquired
+                        .and_then(|peer| peer.device_identity.clone())
+                        .or_else(|| match backend {
+                            ScanBackend::GpuCuda => self.gpu_backends.cuda_device_identity.clone(),
+                            ScanBackend::GpuWgpu => self.gpu_backends.wgpu_device_identity.clone(),
+                            _ => None,
+                        }),
                     runtime_identity: match backend {
                         ScanBackend::GpuCuda => self.gpu_backends.cuda_runtime_identity.clone(),
                         ScanBackend::GpuWgpu => self.gpu_backends.wgpu_runtime_identity.clone(),
                         _ => None,
                     },
-                    is_software: match backend {
-                        ScanBackend::GpuCuda => false,
-                        ScanBackend::GpuWgpu => self.gpu_backends.wgpu_is_software,
-                        _ => true,
-                    },
+                    is_software: acquired.map_or_else(
+                        || match backend {
+                            ScanBackend::GpuCuda => false,
+                            ScanBackend::GpuWgpu => self.gpu_backends.wgpu_is_software,
+                            _ => true,
+                        },
+                        |peer| peer.is_software,
+                    ),
                     acquisition_error,
                 }
             })

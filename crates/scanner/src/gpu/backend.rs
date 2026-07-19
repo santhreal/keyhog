@@ -211,7 +211,7 @@ fn init_gpu() -> Result<GpuContext, GpuInitError> {
 
     // Reject software fallback adapters. Not a real GPU, so no adapter is
     // "present" for notice purposes (keeps CI/llvmpipe hosts quiet).
-    if adapter_info.device_type == wgpu::DeviceType::Cpu {
+    if super::is_software_adapter(&adapter_info) {
         return Err(GpuInitError::no_adapter(format!(
             "GPU adapter is a software fallback ({} on {:?}); refusing to use",
             adapter_info.name, adapter_info.backend
