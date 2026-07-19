@@ -1,13 +1,10 @@
-//! Boundary contract for `has_low_alnum_ratio` (entropy::plausibility), the
-//! rejection gate that drops a candidate when fewer than half its characters are
-//! alphanumeric. The gate now counts BOTH numerator and denominator in
-//! characters; it previously divided the alphanumeric CHARACTER count by the
-//! BYTE length, which understated the ratio for any value holding multibyte
-//! letters and could wrongly reject a real non-ASCII secret. These tests pin the
-//! ASCII boundary (unchanged), the empty case, and, crucially, the multibyte
-//! cases that distinguish char-based from the old byte-based counting.
+//! These tests cover the detector-owned alphanumeric ratio gate. The gate counts
+//! characters on both sides of the ratio, including multibyte letters.
 
-use keyhog_scanner::testing::entropy_has_low_alnum_ratio_for_test as has_low_alnum_ratio;
+use keyhog_scanner::testing::{
+    entropy_has_low_alnum_ratio_for_test as has_low_alnum_ratio,
+    entropy_has_low_alnum_ratio_with_policy_for_test as has_low_alnum_ratio_with_policy,
+};
 
 // ── ASCII: char count == byte count, behaviour unchanged ────────────────────
 
@@ -41,6 +38,13 @@ fn all_dashes_is_low() {
 fn exactly_half_alnum_is_not_low() {
     // 2 of 4 chars alnum ⇒ ratio 0.5, not strictly below ⇒ not low.
     assert!(!has_low_alnum_ratio("ab!@"));
+}
+
+#[test]
+fn boundary_follows_detector_ratio() {
+    let candidate = "ab!@";
+    assert!(!has_low_alnum_ratio(candidate));
+    assert!(has_low_alnum_ratio_with_policy(candidate, 0.75));
 }
 
 #[test]

@@ -548,6 +548,10 @@ knob_changes_digest!(spec_hash_binds_plausibility_policy, |d| d.plausibility =
         isolated_symbolic_requires_non_underscore: true,
         isolated_alpha_only_min_symbols: 4,
         isolated_alpha_only_min_alpha_ratio: 0.6,
+        min_alnum_ratio: 0.5,
+        source_type_name_max_len: 40,
+        source_type_name_min_uppercase: 2,
+        url_path_high_entropy_min_len: 41,
         isolated_colon_left_min_len: 21,
         isolated_colon_right_min_len: 17,
         leading_slash_base64_entropy_floor: 4.9,
@@ -580,6 +584,10 @@ fn spec_hash_binds_isolated_symbolic_shape_policy_fields() {
         isolated_symbolic_requires_non_underscore: true,
         isolated_alpha_only_min_symbols: 3,
         isolated_alpha_only_min_alpha_ratio: 0.5,
+        min_alnum_ratio: 0.5,
+        source_type_name_max_len: 40,
+        source_type_name_min_uppercase: 2,
+        url_path_high_entropy_min_len: 41,
         isolated_colon_left_min_len: 21,
         isolated_colon_right_min_len: 17,
         leading_slash_base64_entropy_floor: 4.9,
@@ -640,6 +648,18 @@ fn spec_hash_binds_isolated_symbolic_shape_policy_fields() {
         "changing alpha-only alphabetic ratio must invalidate scan identity"
     );
 
+    let mut alnum_ratio_changed = base.clone();
+    alnum_ratio_changed
+        .plausibility
+        .as_mut()
+        .expect("plausibility baseline")
+        .min_alnum_ratio = 0.6;
+    assert_ne!(
+        compute_spec_hash(std::slice::from_ref(&base)),
+        compute_spec_hash(std::slice::from_ref(&alnum_ratio_changed)),
+        "changing the alphanumeric ratio must invalidate scan identity"
+    );
+
     let mut margin_base = base.clone();
     margin_base.entropy_roles = vec![EntropyDetectionRole::KeywordFree];
     margin_base
@@ -678,6 +698,15 @@ fn spec_hash_binds_detector_owned_plausibility_boundaries() {
         }),
         ("leading_slash_base64_min_len", |p| {
             p.leading_slash_base64_min_len += 1
+        }),
+        ("source_type_name_max_len", |p| {
+            p.source_type_name_max_len += 1
+        }),
+        ("source_type_name_min_uppercase", |p| {
+            p.source_type_name_min_uppercase += 1
+        }),
+        ("url_path_high_entropy_min_len", |p| {
+            p.url_path_high_entropy_min_len += 1
         }),
     ];
     for &(name, mutate) in mutations {

@@ -154,17 +154,8 @@ impl CompiledScanner {
         if value.starts_with(':') || value.contains("::") {
             return Some(GenericValueShapeStage::ScopeResolution);
         }
-        // Type-name / fully-qualified-path shape: starts with an
-        // uppercase letter, has ≥ 2 uppercase letters, has lowercase
-        // letters, length 8..=40, pure ASCII alphanumeric. Catches
-        // Rust/Java/C# type names like `K256SigningKey`,
-        // `ShopifyToken`, `P256VerifyingKey` (the digit prevented
-        // the suppression-pipeline pure-CamelCase filter from
-        // firing, because that filter requires no-digit).  Real
-        // credentials follow this regular alternating-case structure
-        // only as a coincidence; a 14-char value with two upper-case
-        // clusters and a digit triplet is overwhelmingly a type
-        // identifier.
+        // The owning detector sets the type-name length and uppercase evidence
+        // boundaries. The shared primitive supplies the source-symbol grammar.
         let type_name_policy_enabled = if value.bytes().any(|byte| byte.is_ascii_digit()) {
             owning_policy.reject_source_symbol_identifiers
         } else {
@@ -173,10 +164,11 @@ impl CompiledScanner {
         if type_name_policy_enabled
             && keep_identifier_gate_with_randomness(value, &randomness)
             && value.len() >= min_len
-            && value.len() <= 40
+            && value.len() <= owning_policy.source_type_name_max_len
             && value.as_bytes()[0].is_ascii_uppercase()
             && keyhog_core::ascii_ci::is_ascii_alphanumeric_str(value)
-            && value.bytes().filter(u8::is_ascii_uppercase).count() >= 2
+            && value.bytes().filter(u8::is_ascii_uppercase).count()
+                >= owning_policy.source_type_name_min_uppercase
             && value.bytes().any(|b| b.is_ascii_lowercase())
         {
             return Some(GenericValueShapeStage::TypeNameShape);
@@ -254,11 +246,10 @@ impl CompiledScanner {
         // URL / path-fragment shape: `user/settings/password` (gogs
         // template constants), `user/auth/forgot_passwd` (gogs auth
         // templates), `/api/v1/access_token` (alist OAuth URL). Keep the
-        // adjacent high-entropy base64 exemption here too for long opaque
-        // tokens that happen to contain `/`; keep the 40-char band on the
-        // path gate because it still contains random-byte decoys.
-        let high_entropy_long_punctuation_payload =
-            high_entropy_punctuation_payload && value.len() > 40;
+        // adjacent high-entropy exemption here for opaque tokens that contain
+        // `/`. The owning detector sets the minimum exemption length.
+        let high_entropy_long_punctuation_payload = high_entropy_punctuation_payload
+            && value.len() >= owning_policy.url_path_high_entropy_min_len;
         if !high_entropy_long_punctuation_payload
             && crate::suppression::shape::looks_like_url_or_path_segment(value)
         {

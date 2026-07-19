@@ -535,12 +535,18 @@ pub fn entropy_matches_universal_rejection_for_test(value: &str) -> bool {
     crate::entropy::plausibility::matches_universal_rejection(value)
 }
 
-/// The low-alphanumeric-ratio rejection gate (entropy::plausibility). `true`
-/// when fewer than half the value's CHARACTERS are alphanumeric. Exposed so a
-/// boundary test can pin its char-based (not byte-based) counting, which is the
-/// difference that keeps a multibyte-letter secret from being wrongly dropped.
+/// Apply the embedded isolated-bare owner's minimum alphanumeric ratio.
 pub fn entropy_has_low_alnum_ratio_for_test(value: &str) -> bool {
-    crate::entropy::plausibility::has_low_alnum_ratio(value)
+    let ratio = keyhog_core::detector_spec_by_id("generic-keyword-secret")
+        .expect("embedded generic-keyword-secret detector must load")
+        .plausibility
+        .expect("embedded generic-keyword-secret must own plausibility policy")
+        .min_alnum_ratio;
+    crate::entropy::plausibility::has_low_alnum_ratio(value, ratio)
+}
+
+pub fn entropy_has_low_alnum_ratio_with_policy_for_test(value: &str, min_ratio: f64) -> bool {
+    crate::entropy::plausibility::has_low_alnum_ratio(value, min_ratio)
 }
 
 /// Distinct-scalar counter (entropy::plausibility), the ASCII fast path

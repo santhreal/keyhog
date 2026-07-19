@@ -158,6 +158,10 @@ fn plausibility_policy_fields_reject_invalid_ranges() {
         isolated_symbolic_requires_non_underscore: true,
         isolated_alpha_only_min_symbols: 0,
         isolated_alpha_only_min_alpha_ratio: f64::NAN,
+        min_alnum_ratio: f64::NAN,
+        source_type_name_max_len: 0,
+        source_type_name_min_uppercase: 0,
+        url_path_high_entropy_min_len: 0,
         isolated_colon_left_min_len: 0,
         isolated_colon_right_min_len: 0,
         leading_slash_base64_entropy_floor: f64::NAN,
@@ -193,6 +197,18 @@ fn plausibility_policy_fields_reject_invalid_ranges() {
     assert!(issues.iter().any(|issue| matches!(
         issue,
         QualityIssue::Error(message) if message.contains("isolated_alpha_only_min_alpha_ratio")
+    )));
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("min_alnum_ratio")
+    )));
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("source_type_name_max_len")
+    )));
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("url_path_high_entropy_min_len")
     )));
     assert!(issues.iter().any(|issue| matches!(
         issue,

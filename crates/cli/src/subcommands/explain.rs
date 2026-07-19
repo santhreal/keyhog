@@ -364,6 +364,19 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
             "    isolated_alpha_only_min_alpha_ratio: {}",
             policy.isolated_alpha_only_min_alpha_ratio
         );
+        println!("    min_alnum_ratio: {}", policy.min_alnum_ratio);
+        println!(
+            "    source_type_name_max_len: {} bytes",
+            policy.source_type_name_max_len
+        );
+        println!(
+            "    source_type_name_min_uppercase: {}",
+            policy.source_type_name_min_uppercase
+        );
+        println!(
+            "    url_path_high_entropy_min_len: {} bytes",
+            policy.url_path_high_entropy_min_len
+        );
         println!(
             "    isolated_colon_left_min_len: {} bytes",
             policy.isolated_colon_left_min_len

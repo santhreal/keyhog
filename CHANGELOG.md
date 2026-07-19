@@ -6,6 +6,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Fixed
 
+- Generic plausibility now compiles its alphanumeric ratio, source type-name
+  limits, and URL/path high-entropy exemption length from the owning detector
+  TOML instead of scanner literals.
 - Isolated symbolic candidates now use the owning detector TOML's symbol count,
   non-underscore rule, alpha-only symbol count, and alphabetic ratio in every
   admission branch.

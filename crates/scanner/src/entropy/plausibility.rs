@@ -100,6 +100,7 @@ pub(crate) struct PlausibilityContext {
     reject_source_symbol_identifiers: bool,
     reject_dash_segmented_alnum: bool,
     mixed_alnum_min_len: usize,
+    min_alnum_ratio: f64,
     leading_slash_base64_entropy_floor: f64,
     leading_slash_base64_min_len: usize,
     entropy_shape: Option<keyhog_core::EntropyShapeSpec>,
@@ -130,6 +131,7 @@ impl PlausibilityContext {
             reject_source_symbol_identifiers: policy.reject_source_symbol_identifiers,
             reject_dash_segmented_alnum: policy.reject_dash_segmented_alnum,
             mixed_alnum_min_len: policy.mixed_alnum_min_len,
+            min_alnum_ratio: policy.min_alnum_ratio,
             leading_slash_base64_entropy_floor: policy.leading_slash_base64_entropy_floor,
             leading_slash_base64_min_len: policy.leading_slash_base64_min_len,
             entropy_shape: policy.entropy_shape,
@@ -169,7 +171,7 @@ fn passes_plausibility_checks(
     if matches_universal_rejection(value)
         || is_known_non_secret(value, context)
         || is_placeholder_ci(value, placeholder_keywords)
-        || has_low_alnum_ratio(value)
+        || has_low_alnum_ratio(value, context.min_alnum_ratio)
     {
         return false;
     }
@@ -196,17 +198,9 @@ pub(crate) fn matches_universal_rejection(value: &str) -> bool {
             && (value.as_bytes()[2] == b'\\' || value.as_bytes()[2] == b'/'))
 }
 
-pub(crate) fn has_low_alnum_ratio(value: &str) -> bool {
-    // Fewer than half the CHARACTERS are alphanumeric. Both numerator and
-    // denominator are counted in characters: a multibyte alphanumeric char (an
-    // accented letter, a CJK ideograph) is one alphanumeric unit, so dividing
-    // the char count by the BYTE length, as this once did, understates the
-    // ratio and would wrongly reject a real secret that contains non-ASCII
-    // letters. ASCII values are unaffected (char count == byte count there).
-    // The integer comparison `alnum * 2 < total` avoids a float division on this
-    // hot plausibility gate; an empty value has no alphanumerics and stays low.
-    // Single pass over the chars (was two: one for the total, one filtered for
-    // the alnum count) (the two counters are derived from the same iteration).
+pub(crate) fn has_low_alnum_ratio(value: &str, min_alnum_ratio: f64) -> bool {
+    // Count both sides in characters so multibyte letters do not reduce the
+    // detector-owned alphanumeric ratio.
     let mut total = 0usize;
     let mut alnum = 0usize;
     for ch in value.chars() {
@@ -218,7 +212,7 @@ pub(crate) fn has_low_alnum_ratio(value: &str) -> bool {
     if total == 0 {
         return true;
     }
-    alnum * 2 < total
+    (alnum as f64) < (total as f64) * min_alnum_ratio
 }
 
 pub(crate) fn passes_secret_strength_checks(value: &str, context: PlausibilityContext) -> bool {
@@ -338,7 +332,7 @@ fn is_isolated_leading_slash_base64_secret(
     };
     if value.len() < context.leading_slash_base64_min_len
         || is_placeholder_ci(value, placeholder_keywords)
-        || has_low_alnum_ratio(value)
+        || has_low_alnum_ratio(value, context.min_alnum_ratio)
     {
         return false;
     }

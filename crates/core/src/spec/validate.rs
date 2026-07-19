@@ -567,6 +567,18 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
                 plausibility.isolated_alpha_only_min_symbols,
             ),
             (
+                "plausibility.source_type_name_max_len",
+                plausibility.source_type_name_max_len,
+            ),
+            (
+                "plausibility.source_type_name_min_uppercase",
+                plausibility.source_type_name_min_uppercase,
+            ),
+            (
+                "plausibility.url_path_high_entropy_min_len",
+                plausibility.url_path_high_entropy_min_len,
+            ),
+            (
                 "plausibility.isolated_colon_left_min_len",
                 plausibility.isolated_colon_left_min_len,
             ),
@@ -592,6 +604,22 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
             issues.push(QualityIssue::Error(format!(
                 "plausibility.isolated_alpha_only_min_alpha_ratio must be finite and in (0.0, 1.0], found {}",
                 plausibility.isolated_alpha_only_min_alpha_ratio
+            )));
+        }
+        if !plausibility.min_alnum_ratio.is_finite()
+            || !(0.0..=1.0).contains(&plausibility.min_alnum_ratio)
+            || plausibility.min_alnum_ratio == 0.0
+        {
+            issues.push(QualityIssue::Error(format!(
+                "plausibility.min_alnum_ratio must be finite and in (0.0, 1.0], found {}",
+                plausibility.min_alnum_ratio
+            )));
+        }
+        if plausibility.source_type_name_min_uppercase > plausibility.source_type_name_max_len {
+            issues.push(QualityIssue::Error(format!(
+                "plausibility.source_type_name_min_uppercase ({}) must not exceed plausibility.source_type_name_max_len ({})",
+                plausibility.source_type_name_min_uppercase,
+                plausibility.source_type_name_max_len
             )));
         }
         if plausibility.min_unique_chars > plausibility.unique_chars_min_len {

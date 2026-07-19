@@ -480,6 +480,15 @@ pub struct DetectorPlausibilityPolicySpec {
     /// Minimum fraction of bytes that must be alphabetic in an isolated
     /// alpha-only symbolic shape.
     pub isolated_alpha_only_min_alpha_ratio: f64,
+    /// Minimum fraction of characters that must be alphanumeric.
+    pub min_alnum_ratio: f64,
+    /// Maximum byte length for a source type-name shape.
+    pub source_type_name_max_len: usize,
+    /// Minimum uppercase byte count for a source type-name shape.
+    pub source_type_name_min_uppercase: usize,
+    /// Minimum byte length at which a high-entropy punctuation payload may
+    /// bypass URL and path-shape suppression.
+    pub url_path_high_entropy_min_len: usize,
     /// Minimum byte length for the left component of `opaque:opaque` tokens.
     pub isolated_colon_left_min_len: usize,
     /// Minimum byte length for the right component of `opaque:opaque` tokens.
