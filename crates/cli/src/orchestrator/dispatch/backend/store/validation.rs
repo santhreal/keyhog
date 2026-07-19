@@ -205,7 +205,7 @@ fn validate_decision_route_evidence_at(
     }
     let Some(resolved) = decision.resolved_routing_route() else {
         return Err(
-            "cache decision has no confidence-separated fastest one-shot backend across every measured point"
+            "cache decision has no confidence-separated fastest one-shot route across every measured point"
                 .into(),
         );
     };
@@ -223,7 +223,7 @@ fn validate_decision_route_evidence_at(
     }
     let Some(persistent_route) = decision.resolved_persistent_route() else {
         return Err(
-            "cache decision has no confidence-separated fastest daemon backend across every measured point"
+            "cache decision has no confidence-separated fastest daemon route across every measured point"
                 .into(),
         );
     };

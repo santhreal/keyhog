@@ -121,7 +121,7 @@ pub(super) fn calibrate_fastest_correct_backend(
     );
     let Some(resolved) = decision.resolved_routing_route() else {
         return Err(AutorouteRoutingError::calibration_not_persisted(format!(
-            "calibration timing is inconclusive: no backend route's 95% confidence interval lies below every eligible peer backend; reduce competing host load and rerun calibration; evidence: {}",
+            "calibration timing is inconclusive: no execution route's 95% confidence interval lies below every eligible peer route; reduce competing host load and rerun calibration; evidence: {}",
             decision.confidence_diagnostic(false),
         )));
     };

@@ -80,10 +80,10 @@ scanner-global tuning and decode or recovery replays retain the selected route.
 
 Among parity-correct candidates, routing uses complete trial distributions,
 never a lucky fastest trial. The selected route's 95% confidence interval must
-lie below every route belonging to every peer backend. Equivalent localization
-plans inside the winning backend are not fake backend competitors; the lowest
-measured-median plan that preserves cross-backend proof is selected. Any
-cross-backend overlap is inconclusive and produces no autoroute decision.
+lie below every other eligible execution route. Phase-two localization plans
+are distinct routes even when they use the same backend, so overlapping
+same-backend timings are inconclusive rather than permission to choose the
+lowest median. Any route overlap produces no autoroute decision.
 Autoroute inspection prints this selection basis.
 
 `scan_coalesced_with_backend` already includes extraction, decode, built-in

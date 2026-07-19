@@ -160,10 +160,10 @@ pub(crate) struct AutorouteDecisionInspection {
     pub(crate) candidate_receipts: Vec<AutorouteCandidateReceiptInspection>,
     pub(crate) route_timings: Vec<AutorouteRouteTimingInspection>,
     /// Whether the one-shot route's 95% confidence interval is entirely below
-    /// every route of every peer backend. Valid decisions satisfy this proof.
+    /// every other eligible execution route. Valid decisions satisfy this proof.
     pub(crate) confidence_separated: bool,
     pub(crate) selection_basis: &'static str,
-    /// One-shot representative-time margin to the next peer backend.
+    /// One-shot representative-time margin to the next eligible route.
     pub(crate) selected_margin_ns: Option<u128>,
     /// Warm backend derived for a preinitialized persistent daemon.
     pub(crate) daemon_backend: String,

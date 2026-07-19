@@ -45,7 +45,7 @@ fn selected_route_margin_ns(
     let selected_time = candidates.iter().find(|(route, _)| *route == selected)?.1;
     candidates
         .iter()
-        .filter(|(route, _)| route.backend != selected.backend)
+        .filter(|(route, _)| *route != selected)
         .map(|(_, timing_ns)| *timing_ns)
         .min()
         .map(|next_time| next_time.saturating_sub(selected_time))
@@ -270,7 +270,7 @@ impl AutorouteCalibrationPoint {
         };
         intervals
             .iter()
-            .filter(|(route, _)| route.backend != selected.backend)
+            .filter(|(route, _)| *route != selected)
             .all(|(_, competitor_interval)| selected_interval.high_ns < competitor_interval.low_ns)
     }
 
@@ -292,8 +292,7 @@ impl AutorouteCalibrationPoint {
             .iter()
             .filter(|(route, interval)| {
                 intervals.iter().all(|(competitor_route, competitor)| {
-                    competitor_route.backend == route.backend
-                        || interval.high_ns < competitor.low_ns
+                    competitor_route == route || interval.high_ns < competitor.low_ns
                 })
             })
             .filter_map(|(route, _)| {
@@ -584,7 +583,7 @@ impl AutorouteDecision {
             ));
         }
         let expected_one_shot = self.resolved_routing_route().ok_or_else(|| {
-            "existing workload evidence does not resolve one one-shot backend across its measured points"
+            "existing workload evidence does not resolve one one-shot route across its measured points"
                 .to_string()
         })?;
         let measured_one_shot = point
@@ -598,7 +597,7 @@ impl AutorouteDecision {
             ));
         }
         let expected_daemon = self.resolved_persistent_route().ok_or_else(|| {
-            "existing workload evidence does not resolve one daemon backend across its measured points"
+            "existing workload evidence does not resolve one daemon route across its measured points"
                 .to_string()
         })?;
         let measured_daemon = point
@@ -606,7 +605,7 @@ impl AutorouteDecision {
             .ok_or_else(|| "new workload point does not resolve one daemon route".to_string())?;
         if expected_one_shot != measured_one_shot || expected_daemon != measured_daemon {
             return Err(format!(
-                "workload class changes fastest backend across measured points: existing one-shot={} daemon={}, new {}-byte/{}-chunk point one-shot={} daemon={}; split the workload identity at this crossover and recalibrate",
+                "workload class changes fastest route across measured points: existing one-shot={} daemon={}, new {}-byte/{}-chunk point one-shot={} daemon={}; split the workload identity at this crossover and recalibrate",
                 render_measured_route(expected_one_shot),
                 render_measured_route(expected_daemon),
                 point.sample_bytes,
@@ -810,10 +809,9 @@ impl AutorouteDecision {
     /// tampered or non-deterministic.
     ///
     /// A route resolves only when its 95% interval lies entirely below every
-    /// route of every peer backend. Equivalent plans within that backend are not
-    /// fake backend competitors; the lowest measured-median proven plan wins.
-    /// Cross-backend overlap is incomplete evidence, never permission to persist
-    /// a measured-median guess as the fastest backend.
+    /// other eligible execution route, including localization variants on the
+    /// same backend. Any overlap is incomplete evidence, never permission to
+    /// persist a measured-median guess as the fastest route.
     pub(super) fn resolved_routing_route(&self) -> Option<MeasuredRoute> {
         let selected = self
             .calibration_points
@@ -872,8 +870,8 @@ impl AutorouteDecision {
             .then_some(selected)
     }
 
-    /// True iff one backend is provably fastest. The resolved route's 95% CI
-    /// lies entirely below every route belonging to every peer backend.
+    /// True iff one complete execution route is provably fastest. The resolved
+    /// route's 95% CI lies entirely below every other eligible route.
     pub(super) fn has_separated_fastest_route(&self) -> bool {
         self.resolved_routing_route().is_some_and(|winner| {
             self.selected_route_has_non_overlapping_confidence_for(winner, false)

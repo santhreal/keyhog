@@ -2567,13 +2567,13 @@ fn exact_tie_is_inconclusive_and_cannot_be_persisted() {
     .expect_err("an exact tie must not become a persisted autoroute decision")
     .to_string();
     assert!(
-        error.contains("no confidence-separated fastest one-shot backend"),
+        error.contains("no confidence-separated fastest one-shot route"),
         "proof rejection should name the missing separated winner, got {error:?}"
     );
 }
 
 #[test]
-fn equivalent_plans_do_not_invalidate_a_proven_fastest_backend() {
+fn overlapping_same_backend_plans_are_inconclusive() {
     let timing = |ms| BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS);
     let decision = AutorouteDecision::from_peer_timing_evidence(
         ScanBackend::SimdCpu,
@@ -2594,13 +2594,49 @@ fn equivalent_plans_do_not_invalidate_a_proven_fastest_backend() {
         ),
     );
 
-    let selected = decision
-        .resolved_routing_route()
-        .expect("same-backend plan equivalence must not erase backend proof");
-    assert_eq!(selected.backend, ScanBackend::SimdCpu);
-    assert!(!selected.phase2_plain_localizer);
-    assert!(!selected.phase2_keyword_localizer);
-    assert!(decision.has_separated_fastest_route());
+    assert_eq!(
+        decision.resolved_routing_route(),
+        None,
+        "equal same-backend route timings do not prove which execution plan is fastest"
+    );
+    assert!(!decision.has_separated_fastest_route());
+}
+
+#[test]
+fn selected_margin_includes_the_next_same_backend_route() {
+    let timing = |ms| BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS);
+    let decision = AutorouteDecision::from_peer_timing_evidence(
+        ScanBackend::SimdCpu,
+        8 * 1024 * 1024,
+        1,
+        test_measurement_shape_evidence(8 * 1024 * 1024, 1),
+        7,
+        1,
+        route_timings(
+            timing(10),
+            Some(timing(30)),
+            None,
+            None,
+            Some(timing(15)),
+            Some(timing(40)),
+            None,
+            None,
+        ),
+    );
+
+    assert_eq!(
+        decision.resolved_routing_route(),
+        Some(MeasuredRoute {
+            backend: ScanBackend::SimdCpu,
+            phase2_plain_localizer: false,
+            phase2_keyword_localizer: false,
+        })
+    );
+    assert_eq!(
+        decision.selected_margin_ns(),
+        Some(5_000_000),
+        "the reported margin must measure the nearest complete route, not only another backend"
+    );
 }
 
 #[test]
@@ -3536,7 +3572,7 @@ fn calibration_envelope_retains_agreeing_points_and_rejects_a_crossover() {
             None,
         ))
         .expect_err("a measured winner change must split the workload identity");
-    assert!(error.contains("changes fastest backend across measured points"));
+    assert!(error.contains("changes fastest route across measured points"));
     assert!(error.contains("split the workload identity"));
 }
 

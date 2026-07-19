@@ -58,12 +58,11 @@ installer calibration, even when one `--git-diff` scan contains both.
 
 Performance selection uses the complete recorded distribution, not the single
 fastest sample. A route is eligible for persistence only when its 95% Student-t
-confidence interval is entirely below every route of every peer backend.
-Equivalent localization plans within that winning backend are not counted as
-separate backends; KeyHog chooses the lowest measured-median plan that preserves
-the cross-backend proof. Cross-backend overlap is inconclusive and produces no
-autoroute decision. KeyHog never turns an overlapping median, backend rank, or
-CPU/GPU preference into a claim that a backend is fastest. `keyhog backend
+confidence interval is entirely below every other eligible execution route.
+Localization variants on the same backend remain distinct candidates;
+same-backend overlap is as inconclusive as cross-backend overlap. KeyHog never
+turns an overlapping median, backend rank, or CPU/GPU preference into a claim
+that a route is fastest. `keyhog backend
 --autoroute` exposes the representative times and `selection_basis` for every
 valid decision.
 
@@ -436,9 +435,9 @@ meanings:
 | `sample_bytes_min`, `sample_bytes_max`, `sample_chunks_min`, `sample_chunks_max` | Exact measured envelope covered by the class. |
 | `measured_points` | Complete point-by-point projection: exact sample size, `measurement_generator`, `payload_digest`, `measurement_shape_digest`, timestamp, one-shot and daemon execution-plan winners, confidence status, every route timing, and every parity receipt. Use this array to distinguish same-sized probes and diagnose crossover behavior. |
 | `sample_bytes`, `sample_chunks`, `route_timings` | Concise size projection plus the complete generic route-timing array for the first point after sorting by bytes, chunks, then measurement-shape digest. Each timing identifies the backend, both localization choices, one-shot time, and warm time when applicable. `measured_points` is authoritative. |
-| `confidence_separated` | Whether the one-shot winner's 95% interval is entirely below every route of every peer backend at every measured point. |
+| `confidence_separated` | Whether the one-shot winner's 95% interval is entirely below every other eligible execution route at every measured point. |
 | `selection_basis` | `separated-95pct-confidence`. Inconclusive evidence is rejected instead of appearing as a routable decision. |
-| `selected_margin_ns` | Smallest one-shot representative-time margin to the next peer backend across all measured points; `null` when there is no peer. |
+| `selected_margin_ns` | Smallest one-shot representative-time margin to the next eligible route across all measured points; `null` when there is no peer route. |
 | `daemon_backend`, `daemon_phase2_plain_localizer`, `daemon_phase2_keyword_localizer` | Backend and both phase-two localization choices derived for a ready persistent daemon from warm evidence. |
 | `daemon_confidence_separated`, `daemon_selection_basis`, `daemon_selected_margin_ns` | Daemon-route counterparts, also aggregated conservatively across every measured point. |
 | `source_mixture` | Structured source-class components used by the workload identity: privacy-safe `source_class` for KeyHog-owned classes (`null` for unknown library-provided values), canonical execution-class digest, full-size versus payload provenance, reduced chunk/payload ratios, and maximum source-span bucket. The human-readable `workload` uses `<source_class>@<digest>` for known classes and `custom@<digest>` otherwise, so arbitrary source metadata is never echoed. JSON consumers should use these fields instead of parsing that string. |

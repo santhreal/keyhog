@@ -6,6 +6,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Fixed
 
+- Autoroute cache schema 45 requires the winning execution plan's confidence
+  interval to clear every eligible route, including localization variants on
+  the same backend; overlapping same-backend plans remain visibly inconclusive.
 - Non-finite GPU MoE confidence now invalidates and CPU-rescores the complete
   batch, then disables GPU MoE scoring for the process, instead of substituting
   0.5 and risking CPU/GPU detection drift (KH-1342).
