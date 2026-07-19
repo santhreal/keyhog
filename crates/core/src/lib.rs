@@ -39,6 +39,7 @@ mod config;
 /// Secure credential storage and redaction.
 mod credential;
 mod dedup;
+mod detector_file_io;
 mod display;
 /// Shared standard Base64 decode (wire / K8s), bounded for DoS safety.
 mod encoding;

@@ -3,6 +3,9 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+#[path = "src/detector_file_io.rs"]
+mod detector_file_io;
+
 #[derive(serde::Deserialize)]
 struct ConfigKeywords {
     known_prefixes: Vec<String>,
@@ -124,6 +127,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .join("rules/decoder-source-suffixes.toml")
             .display()
     );
+    println!("cargo:rerun-if-changed=src/detector_file_io.rs");
     println!(
         "cargo:warning=Embedded {} detectors ({} bytes)",
         entries.len(),
@@ -175,7 +179,7 @@ fn read_detector_entries(toml_paths: &[PathBuf]) -> io::Result<Vec<(String, Stri
     let mut entries = Vec::with_capacity(toml_paths.len());
     for path in toml_paths {
         let name = file_name(path)?;
-        let content = fs::read_to_string(path).map_err(|error| {
+        let content = detector_file_io::read_detector_toml_file(path).map_err(|error| {
             io::Error::new(
                 error.kind(),
                 format!(
