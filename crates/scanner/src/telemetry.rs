@@ -421,6 +421,9 @@ static BOUNDARY_RESULT_CARDINALITY_MISMATCHES: AtomicUsize = AtomicUsize::new(0)
 /// Multiline/structured reassembly produced a synthetic finding mapping whose
 /// source line was not present in the caller-provided line-offset table.
 static LINE_OFFSET_MAPPING_MISMATCHES: AtomicUsize = AtomicUsize::new(0);
+/// A configured per-chunk deadline elapsed before the scanner completed every
+/// detection and post-processing stage for that chunk.
+static CHUNK_DEADLINE_ABORTS: AtomicUsize = AtomicUsize::new(0);
 
 /// Scanner coverage gap recorded when a scanner-owned transform did not run to
 /// full coverage. These are not source skips: raw bytes still flow through the
@@ -433,18 +436,20 @@ pub(crate) enum ScannerCoverageGapEvent {
     InvalidPatternIndexSkip,
     BoundaryResultCardinalityMismatch,
     LineOffsetMappingMismatch,
+    ChunkDeadlineAbort,
 }
 
 impl ScannerCoverageGapEvent {
     /// Every variant, so the per-scan reset owner (`reset_for_scan`) can zero the
     /// full coverage-gap counter set without a new gap counter ever being forgotten.
-    pub(crate) const ALL: [Self; 6] = [
+    pub(crate) const ALL: [Self; 7] = [
         Self::StructuredParseFailure,
         Self::StructuredOversizeSkip,
         Self::DecodeTruncation,
         Self::InvalidPatternIndexSkip,
         Self::BoundaryResultCardinalityMismatch,
         Self::LineOffsetMappingMismatch,
+        Self::ChunkDeadlineAbort,
     ];
 
     pub(crate) fn counter(self) -> &'static AtomicUsize {
@@ -455,7 +460,68 @@ impl ScannerCoverageGapEvent {
             Self::InvalidPatternIndexSkip => &INVALID_PATTERN_INDEX_SKIPS,
             Self::BoundaryResultCardinalityMismatch => &BOUNDARY_RESULT_CARDINALITY_MISMATCHES,
             Self::LineOffsetMappingMismatch => &LINE_OFFSET_MAPPING_MISMATCHES,
+            Self::ChunkDeadlineAbort => &CHUNK_DEADLINE_ABORTS,
         }
+    }
+
+    const fn label(self) -> &'static str {
+        match self {
+            Self::StructuredParseFailure => "structured_parse_failures",
+            Self::StructuredOversizeSkip => "structured_oversize_skips",
+            Self::DecodeTruncation => "decode_truncations",
+            Self::InvalidPatternIndexSkip => "invalid_pattern_index_skips",
+            Self::BoundaryResultCardinalityMismatch => "boundary_result_cardinality_mismatches",
+            Self::LineOffsetMappingMismatch => "line_offset_mapping_mismatches",
+            Self::ChunkDeadlineAbort => "chunk_deadline_aborts",
+        }
+    }
+}
+
+/// Exact scanner-owned coverage-gap counters at one point in time.
+///
+/// Taking a saturating delta around a scan gives autoroute and other embedding
+/// surfaces a typed completeness receipt without resetting process-wide state.
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
+pub struct ScannerCoverageSnapshot {
+    counts: [usize; ScannerCoverageGapEvent::ALL.len()],
+}
+
+impl ScannerCoverageSnapshot {
+    #[must_use]
+    pub fn capture() -> Self {
+        Self {
+            counts: std::array::from_fn(|index| {
+                ScannerCoverageGapEvent::ALL[index]
+                    .counter()
+                    .load(Ordering::Relaxed)
+            }),
+        }
+    }
+
+    #[must_use]
+    pub fn saturating_delta(self, earlier: Self) -> Self {
+        Self {
+            counts: std::array::from_fn(|index| {
+                self.counts[index].saturating_sub(earlier.counts[index])
+            }),
+        }
+    }
+
+    #[must_use]
+    pub fn is_empty(self) -> bool {
+        self.counts.iter().all(|count| *count == 0)
+    }
+}
+
+impl std::fmt::Debug for ScannerCoverageSnapshot {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut gaps = formatter.debug_map();
+        for (event, count) in ScannerCoverageGapEvent::ALL.into_iter().zip(self.counts) {
+            if count > 0 {
+                gaps.entry(&event.label(), &count);
+            }
+        }
+        gaps.finish()
     }
 }
 
@@ -885,6 +951,16 @@ pub fn boundary_result_cardinality_mismatch_count() -> usize {
 #[cfg(feature = "multiline")]
 pub(crate) fn record_line_offset_mapping_mismatch() {
     let _receipt = record_scanner_coverage_gap(ScannerCoverageGapEvent::LineOffsetMappingMismatch);
+}
+
+/// Record that a configured deadline stopped a chunk before full coverage.
+pub(crate) fn record_chunk_deadline_abort() {
+    let _receipt = record_scanner_coverage_gap(ScannerCoverageGapEvent::ChunkDeadlineAbort);
+}
+
+/// Count of chunks that stopped before full coverage because their deadline elapsed.
+pub fn chunk_deadline_abort_count() -> usize {
+    CHUNK_DEADLINE_ABORTS.load(Ordering::Relaxed)
 }
 
 /// Count of synthetic multiline/structured mapping attribution mismatches this

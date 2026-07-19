@@ -40,7 +40,7 @@ pub(super) fn calibrate_fastest_correct_backend(
         phase2_keyword_localizer: false,
     };
     let reference_matches =
-        establish_scalar_reference(scanner, sample, admission_plan, reference_route);
+        establish_scalar_reference(scanner, sample, admission_plan, reference_route)?;
     let reference_key = canonical_matches(&reference_matches);
 
     let candidate_backends = eligible_backend_labels
@@ -222,14 +222,14 @@ fn establish_scalar_reference(
     sample: &[Chunk],
     admission_plan: Option<&Phase1AdmissionPlan>,
     route: MeasuredRoute,
-) -> Vec<Vec<keyhog_core::RawMatch>> {
+) -> Result<Vec<Vec<keyhog_core::RawMatch>>, AutorouteRoutingError> {
     // Establish the canonical finding set outside the rotated timed plan. The
     // always-present scalar engine is independent of optional accelerator
     // compilation and therefore remains the correctness oracle.
     scanner.clear_fragment_cache();
-    let reference = scan_calibration_backend(scanner, sample, route, admission_plan);
+    let reference = scan_calibration_backend(scanner, sample, route, admission_plan)?;
     scanner.clear_fragment_cache();
-    reference
+    Ok(reference)
 }
 
 #[cfg(test)]
@@ -341,7 +341,9 @@ fn measure_candidate_trial(
     } else {
         None
     };
-    let (matches, dur) = timed(|| scan_calibration_backend(scanner, sample, route, admission_plan));
+    let started = Instant::now();
+    let matches = scan_calibration_backend(scanner, sample, route, admission_plan)?;
+    let dur = started.elapsed();
     if let Some(before) = gpu_degrade_count_before {
         let after = scanner.runtime_status().gpu_degrade_count;
         if after != before {
@@ -458,19 +460,43 @@ fn scan_calibration_backend(
     sample: &[Chunk],
     route: MeasuredRoute,
     admission_plan: Option<&Phase1AdmissionPlan>,
-) -> Vec<Vec<keyhog_core::RawMatch>> {
-    scanner.scan_coalesced_with_backend_admission_and_route(
-        sample,
-        route.backend,
-        admission_plan,
-        route.execution_route(),
-    )
-}
-
-fn timed<T>(f: impl FnOnce() -> T) -> (T, Duration) {
-    let start = Instant::now();
-    let out = f();
-    (out, start.elapsed())
+) -> Result<Vec<Vec<keyhog_core::RawMatch>>, AutorouteRoutingError> {
+    let coverage_before = keyhog_scanner::telemetry::ScannerCoverageSnapshot::capture();
+    let outcome = scanner
+        .try_scan_coalesced_with_backend_admission_route_and_recovery(
+            sample,
+            route.backend,
+            admission_plan,
+            route.execution_route(),
+            false,
+        )
+        .map_err(|error| {
+            AutorouteRoutingError::candidate_backend_rejected(
+                route.backend,
+                format!("calibration dispatch failed: {error}"),
+            )
+        })?;
+    let coverage_gaps = keyhog_scanner::telemetry::ScannerCoverageSnapshot::capture()
+        .saturating_delta(coverage_before);
+    if !coverage_gaps.is_empty() {
+        return Err(AutorouteRoutingError::candidate_backend_rejected(
+            route.backend,
+            format!("calibration trial had incomplete scanner coverage: {coverage_gaps:?}"),
+        ));
+    }
+    if let Some(recovery) = outcome.recovery {
+        return Err(AutorouteRoutingError::candidate_backend_rejected(
+            route.backend,
+            format!(
+                "calibration trial required {} byte(s) of {} recovery after {} failed: {}",
+                recovery.recovered_bytes(),
+                recovery.recovery_backend.label(),
+                recovery.failed_backend.label(),
+                recovery.reason,
+            ),
+        ));
+    }
+    Ok(outcome.matches)
 }
 
 fn current_unix_time_ms() -> Result<u128, std::time::SystemTimeError> {

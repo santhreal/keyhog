@@ -1,6 +1,15 @@
 use super::*;
 use crate::hw_probe::ScanBackend;
 
+#[inline]
+fn scan_deadline_expired(deadline: Option<std::time::Instant>) -> bool {
+    let expired = crate::deadline::expired(deadline);
+    if expired {
+        crate::telemetry::record_chunk_deadline_abort();
+    }
+    expired
+}
+
 fn backend_driver_name(backend: ScanBackend) -> &'static str {
     match backend {
         ScanBackend::GpuCuda => "cuda",
@@ -844,7 +853,7 @@ impl CompiledScanner {
         admission: Option<crate::engine::Phase1Admission>,
         route: crate::ScanExecutionRoute,
     ) -> Vec<RawMatch> {
-        if crate::deadline::expired(deadline) {
+        if scan_deadline_expired(deadline) {
             return Vec::new();
         }
         self.require_selected_backend_stack(selected_backend);
@@ -872,19 +881,25 @@ impl CompiledScanner {
                     None,
                     route,
                 );
-                if crate::deadline::expired(deadline) {
+                if scan_deadline_expired(deadline) {
                     return matches;
                 }
                 self.post_process_matches(chunk, &mut matches, deadline, route);
+                if scan_deadline_expired(deadline) {
+                    return matches;
+                }
                 return matches;
             }
 
             if self.chunk_needs_decode_postprocess(chunk) {
-                if crate::deadline::expired(deadline) {
+                if scan_deadline_expired(deadline) {
                     return Vec::new();
                 }
                 let mut matches = Vec::new();
                 self.post_process_matches(chunk, &mut matches, deadline, route);
+                if scan_deadline_expired(deadline) {
+                    return matches;
+                }
                 return matches;
             }
             crate::telemetry::record_file_skipped();
@@ -904,10 +919,13 @@ impl CompiledScanner {
             self.scan_inner(chunk, selected_backend, deadline, route)
         };
 
-        if crate::deadline::expired(deadline) {
+        if scan_deadline_expired(deadline) {
             return matches;
         }
         self.post_process_matches(chunk, &mut matches, deadline, route);
+        if scan_deadline_expired(deadline) {
+            return matches;
+        }
 
         matches
     }
