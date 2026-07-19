@@ -526,13 +526,12 @@ pub(crate) fn batch_score_features(
 /// Buffers grow to the largest batch size seen (wgpu buffers are immutable in
 /// size, so we keep the high-water mark).
 ///
-/// Uses a global `Mutex<Vec<MoeBufferSet>>` instead of thread-local storage
+/// Uses one global mutex-protected spare instead of thread-local storage
 /// because `wgpu::Buffer::drop` accesses wgpu's own thread-local state, which
-/// panics during thread destruction. A global pool keeps buffers alive for the
-/// process lifetime. Contention is minimal: the mutex is held only during
-/// checkout/checkin (a Vec pop/push), not during GPU compute or readback.
+/// can panic during thread destruction. The largest idle set remains alive for
+/// reuse while redundant sets are destroyed outside the critical section.
 struct MoeBufferPool {
-    spare: Vec<MoeBufferSet>,
+    spare: Option<MoeBufferSet>,
 }
 
 /// A checked-out set of MoE dispatch buffers. The complete set is exclusive to
@@ -592,51 +591,56 @@ impl MoeDispatchLayout {
 
 impl MoeBufferPool {
     fn new() -> Self {
-        Self { spare: Vec::new() }
+        Self { spare: None }
     }
 
-    /// Try to pop a spare set from the pool that is large enough for
-    /// `batch_size`. Returns None if the pool is empty or all spare sets
-    /// are too small (in which case small sets are discarded).
-    fn try_checkout(&mut self, batch_size: usize) -> Option<MoeBufferSet> {
-        // Find a spare set large enough. Since all buffers grow to the
-        // high-water mark, the first one is usually big enough.
-        while let Some(set) = self.spare.pop() {
-            if set.alloc_batch_size >= batch_size {
-                return Some(set);
-            }
-            // Too small (discard. The larger allocation will replace it).
-        }
-        None
+    fn take_spare(&mut self) -> Option<MoeBufferSet> {
+        self.spare.take()
     }
 
-    fn checkin(&mut self, set: MoeBufferSet) {
-        // Keep only the largest set to bound memory. If the incoming set
-        // is smaller than an existing spare, discard the incoming set
-        // (it will be reallocated at the larger size next time).
-        if let Some(existing) = self.spare.last() {
-            if existing.alloc_batch_size >= set.alloc_batch_size {
-                // Existing spare is at least as large (drop the incoming).
-                return;
+    /// Retain the largest idle set and return the other one to be dropped by
+    /// the caller after it releases the mutex.
+    fn checkin(&mut self, incoming: MoeBufferSet) -> Option<MoeBufferSet> {
+        match self.spare.take() {
+            None => {
+                self.spare = Some(incoming);
+                None
+            }
+            Some(existing) if existing.alloc_batch_size >= incoming.alloc_batch_size => {
+                self.spare = Some(existing);
+                Some(incoming)
+            }
+            Some(existing) => {
+                self.spare = Some(incoming);
+                Some(existing)
             }
         }
-        self.spare.push(set);
     }
 }
 
 static MOE_BUFFER_POOL: std::sync::LazyLock<std::sync::Mutex<MoeBufferPool>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(MoeBufferPool::new()));
+static MOE_BUFFER_POOL_POISON_WARNED: AtomicBool = AtomicBool::new(false);
 
-fn return_moe_buffers(bufs: MoeBufferSet) {
+fn lock_moe_buffer_pool() -> std::sync::MutexGuard<'static, MoeBufferPool> {
     match MOE_BUFFER_POOL.lock() {
-        Ok(mut pool) => pool.checkin(bufs),
-        Err(error) => {
-            tracing::warn!(
-                %error,
-                "GPU MoE buffer pool is poisoned; dropping this reusable buffer set"
-            );
+        Ok(pool) => pool,
+        Err(poisoned) => {
+            if !MOE_BUFFER_POOL_POISON_WARNED.swap(true, Ordering::Relaxed) {
+                tracing::warn!(
+                    "GPU MoE buffer pool lock was poisoned; recovering the reusable buffer state"
+                );
+            }
+            poisoned.into_inner()
         }
     }
+}
+
+fn return_moe_buffers(bufs: MoeBufferSet) {
+    let discarded = lock_moe_buffer_pool().checkin(bufs);
+    // wgpu buffer destruction can enter driver code. Keep it outside the pool
+    // critical section so a driver panic cannot poison future checkouts.
+    drop(discarded);
 }
 
 /// Raw GPU MoE dispatch: upload features, run the compute shader, read back and
@@ -663,18 +667,16 @@ fn dispatch_moe_batch(
     // Checkout pooled buffers (reused across dispatches, eliminating
     // per-dispatch buffer allocation, the dominant non-GPU overhead for
     // large MoE batches in coalesced scanning). The global mutex is held
-    // only for the pop/push, not during GPU compute or readback.
-    let bufs = {
-        match MOE_BUFFER_POOL.lock() {
-            Ok(mut pool) => pool.try_checkout(batch_size),
-            Err(error) => {
-                tracing::warn!(
-                    %error,
-                    "GPU MoE buffer pool is poisoned; allocating an isolated buffer set"
-                );
-                None
-            }
+    // only while taking the spare, not during GPU compute or readback.
+    let spare = lock_moe_buffer_pool().take_spare();
+    let bufs = match spare {
+        Some(set) if set.alloc_batch_size >= batch_size => Some(set),
+        // Drop undersized buffers only after the mutex guard above is gone.
+        Some(set) => {
+            drop(set);
+            None
         }
+        None => None,
     };
     let bufs = match bufs {
         Some(set) => set,
@@ -769,6 +771,12 @@ fn dispatch_moe_batch(
     }
 
     encoder.copy_buffer_to_buffer(&bufs.output, 0, &bufs.staging, 0, layout.output_bytes);
+    // Feature rows encode candidate length, entropy, detector identity, and
+    // context signals. Clear the used input range in the same ordered GPU
+    // submission so a pooled high-water buffer never retains prior candidate
+    // evidence. The staging buffer contains only confidence scores.
+    encoder.clear_buffer(&bufs.input, 0, Some(layout.input_bytes));
+    encoder.clear_buffer(&bufs.params, 0, None);
     queue.submit(std::iter::once(encoder.finish()));
 
     // Read back results, slice only the portion we copied (the pooled
