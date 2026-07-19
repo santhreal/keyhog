@@ -70,6 +70,8 @@ mod unit;
 
 // ── Public API ──────────────────────────────────────────────────────
 pub(crate) mod api;
+/// Compiled detector-owned assignment-key admission index.
+mod assignment_keyword_matcher;
 /// Tier-B generic credential-assignment keyword vocabulary (phase-2 prefilter).
 pub(crate) mod assignment_keywords;
 /// Offline AWS account-ID recovery from an access-key ID (no network/verify).

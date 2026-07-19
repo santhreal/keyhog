@@ -5,6 +5,12 @@
 - Compiled detector-owned and scan-config entropy assignment keywords into one
   cached case-insensitive matcher, removing the per-line linear vocabulary walk
   from sparse source scans while preserving programmatic config changes.
+- Added one-pass multiline syntax admission before the precise concatenation
+  grammar, so ordinary large source windows no longer pay repeated full-text
+  searches for absent join markers.
+- Large-file multiline admission now consumes the same active generic-detector
+  and scan-config keyword index as entropy assignment discovery. Replacement
+  corpora no longer depend on five scanner-owned compatibility words.
 
 - Compile the phase-two VYRE regex-DFA admission catalog with state-cap-driven
   shards. The GPU now rescans a batch only after the combined DFA proves a

@@ -1,6 +1,6 @@
 use super::config::{
-    should_passthrough, source_line_offset_or_record_gap, LineMapping, MultilineConfig,
-    PreprocessedText,
+    exceeds_multiline_limits, should_passthrough, source_line_offset_or_record_gap, LineMapping,
+    MultilineConfig, PreprocessedText,
 };
 use super::string_extract::{extract_string_part, ContinuationType};
 use super::structural::collect_structural_fragments;
@@ -17,6 +17,25 @@ pub(crate) fn preprocess_multiline<'a>(
     config: &MultilineConfig,
     fragment_cache: &FragmentCache,
 ) -> PreprocessedText<'a> {
+    preprocess_multiline_inner(text, config, fragment_cache, false)
+}
+
+/// Production entry after the scanner's detector-owned admission index proved
+/// a multiline syntax candidate. Size and line bounds remain enforced here.
+pub(crate) fn preprocess_multiline_admitted<'a>(
+    text: impl Into<std::borrow::Cow<'a, str>>,
+    config: &MultilineConfig,
+    fragment_cache: &FragmentCache,
+) -> PreprocessedText<'a> {
+    preprocess_multiline_inner(text, config, fragment_cache, true)
+}
+
+fn preprocess_multiline_inner<'a>(
+    text: impl Into<std::borrow::Cow<'a, str>>,
+    config: &MultilineConfig,
+    fragment_cache: &FragmentCache,
+    admission_proven: bool,
+) -> PreprocessedText<'a> {
     // Accept anything convertible into `Cow<'a, str>` (`&str`, `String`,
     // `Cow`) so existing `&str` callers keep working while the scan hot path
     // hands in the chunk's already-borrowed `Cow` so a passthrough chunk is
@@ -28,7 +47,12 @@ pub(crate) fn preprocess_multiline<'a>(
     // every read-only analysis below goes through the `&str` view `text`.
     let text: &str = &text_owned;
 
-    if should_passthrough(text) {
+    let should_pass = if admission_proven {
+        exceeds_multiline_limits(text)
+    } else {
+        should_passthrough(text)
+    };
+    if should_pass {
         return passthrough_text(text_owned);
     }
 

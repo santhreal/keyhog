@@ -166,8 +166,22 @@ impl CompiledScanner {
         } else {
             #[cfg(feature = "multiline")]
             {
-                if crate::multiline::has_concatenation_indicators(&data_to_pp) {
-                    crate::multiline::preprocess_multiline(
+                let has_multiline_candidate =
+                    crate::multiline::config::has_concatenation_indicators_with_keyword_gate(
+                        &data_to_pp,
+                        |bytes| {
+                            self.assignment_keyword_matcher
+                                .lock()
+                                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                                .resolve(
+                                    &self.config.secret_keywords,
+                                    self.generic_owning_detector.policy_keywords(),
+                                )
+                                .matches(bytes)
+                        },
+                    );
+                if has_multiline_candidate {
+                    crate::multiline::preprocess_multiline_admitted(
                         data_to_pp,
                         &self.config.multiline,
                         &self.fragment_cache,

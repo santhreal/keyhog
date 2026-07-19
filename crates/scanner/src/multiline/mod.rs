@@ -23,6 +23,8 @@ pub(crate) use crate::types::LineMapping;
 #[cfg(feature = "multiline")]
 pub(crate) use preprocessor::preprocess_multiline;
 #[cfg(feature = "multiline")]
+pub(crate) use preprocessor::preprocess_multiline_admitted;
+#[cfg(feature = "multiline")]
 pub(crate) use string_extract::{
     extract_dot_concatenation, extract_plus_concatenation, filter_line_content,
 };

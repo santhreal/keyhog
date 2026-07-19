@@ -177,12 +177,64 @@ impl Default for MultilineConfig {
 /// across the three call sites.
 #[cfg(feature = "multiline")]
 pub(crate) fn has_function_concat_marker(s: &str) -> bool {
-    s.contains("paste0(") || s.contains("paste(") || s.contains("concat!(")
+    FUNCTION_CONCAT_MARKERS
+        .iter()
+        .any(|marker| s.contains(marker))
+}
+
+#[cfg(feature = "multiline")]
+const FUNCTION_CONCAT_MARKERS: &[&str] = &["paste0(", "paste(", "concat!("];
+
+#[cfg(feature = "multiline")]
+const IMPLICIT_CONCAT_MARKERS: &[&[u8]] = &[
+    b"\" \"", b"' '", b"\"\n\"", b"\"\n ", b"\"\n\t", b"'\n'", b"'\n ", b"'\n\t",
+];
+
+#[cfg(feature = "multiline")]
+const CONCAT_OPERATOR_MARKERS: &[&[u8]] = &[b"+", b".", b"`", b"\\"];
+
+/// One-pass admission for every byte shape that can reach the precise
+/// multiline grammar below. It replaces the no-hit path's repeated full-text
+/// searches without deciding that a concatenation is valid.
+#[cfg(feature = "multiline")]
+fn has_concat_candidate_bytes(bytes: &[u8]) -> bool {
+    static AC: std::sync::LazyLock<aho_corasick::AhoCorasick> = std::sync::LazyLock::new(|| {
+        aho_corasick::AhoCorasick::new(
+            CONCAT_OPERATOR_MARKERS
+                .iter()
+                .copied()
+                .chain(
+                    FUNCTION_CONCAT_MARKERS
+                        .iter()
+                        .map(|marker| marker.as_bytes()),
+                )
+                .chain(IMPLICIT_CONCAT_MARKERS.iter().copied()),
+        )
+        .unwrap_or_else(|error| {
+            panic!("static multiline concatenation marker index is invalid: {error}")
+        })
+    });
+    AC.find(bytes).is_some()
 }
 
 /// Check if text contains any concatenation indicators.
 #[cfg(feature = "multiline")]
 pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
+    has_concatenation_indicators_with_keyword_gate(text, |bytes| {
+        use crate::ascii_ci::ci_find;
+        ci_find(bytes, b"secret")
+            || ci_find(bytes, b"token")
+            || ci_find(bytes, b"password")
+            || ci_find(bytes, b"api_key")
+            || ci_find(bytes, b"credential")
+    })
+}
+
+#[cfg(feature = "multiline")]
+pub(crate) fn has_concatenation_indicators_with_keyword_gate(
+    text: &str,
+    large_file_has_keyword: impl FnOnce(&[u8]) -> bool,
+) -> bool {
     let trimmed = text.trim_start();
     // XML / HTML markup never carries a string-CONCATENATION continuation shape
     // (there is no `"a" + "b"` splice in element text), and is owned by its own
@@ -206,22 +258,17 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
 
     let bytes = text.as_bytes();
 
-    // For large files, only preprocess if secret-related keywords are present.
-    // The match is ASCII-case-insensitive: env-style credentials use all-caps
-    // keys (`SECRET=`, `API_TOKEN=`, `DB_PASSWORD=`) at least as often as the
-    // title/lowercase forms, and skipping their multiline-concat reassembly was
-    // a silent recall hole. `ci_find` jumps to first-byte candidates with
-    // memchr2 and only full-compares there, so this stays a fast prefilter.
+    // Large files require a credential keyword from the caller's active
+    // detector/config index. The compatibility wrapper above supplies the
+    // historical vocabulary; production supplies the compiled scanner index.
     if bytes.len() > LARGE_FILE_KEYWORD_GATE_BYTES {
-        use crate::ascii_ci::ci_find;
-        let has_secret_keyword = ci_find(bytes, b"secret")
-            || ci_find(bytes, b"token")
-            || ci_find(bytes, b"password")
-            || ci_find(bytes, b"api_key")
-            || ci_find(bytes, b"credential");
-        if !has_secret_keyword {
+        if !large_file_has_keyword(bytes) {
             return false;
         }
+    }
+
+    if !has_concat_candidate_bytes(bytes) {
+        return false;
     }
 
     let has_explicit_concat = text.contains("\" +") || text.contains("' +");
@@ -416,10 +463,7 @@ pub(super) fn starts_parenthesized_implicit_block(line: &str) -> bool {
 
 #[cfg(feature = "multiline")]
 fn has_implicit_concat_marker(bytes: &[u8]) -> bool {
-    const MARKERS: &[&[u8]] = &[
-        b"\" \"", b"' '", b"\"\n\"", b"\"\n ", b"\"\n\t", b"'\n'", b"'\n ", b"'\n\t",
-    ];
-    MARKERS
+    IMPLICIT_CONCAT_MARKERS
         .iter()
         .any(|marker| memchr::memmem::find(bytes, marker).is_some())
 }
@@ -456,9 +500,13 @@ fn has_var_ref_concat_line(line: &str) -> bool {
 
 #[cfg(feature = "multiline")]
 pub(crate) fn should_passthrough(text: &str) -> bool {
+    exceeds_multiline_limits(text) || !has_concatenation_indicators(text)
+}
+
+#[cfg(feature = "multiline")]
+pub(crate) fn exceeds_multiline_limits(text: &str) -> bool {
     text.len() > MAX_MULTILINE_PREPROCESS_BYTES
         || text
             .lines()
             .any(|line| line.len() > MAX_MULTILINE_LINE_BYTES)
-        || !has_concatenation_indicators(text)
 }

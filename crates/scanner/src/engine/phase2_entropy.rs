@@ -56,7 +56,7 @@ impl CompiledScanner {
         // operator's Tier-A list. The compatibility assignment vocabulary must
         // not widen a replacement corpus, including source-restricted scans.
         let keyword_matcher = self
-            .entropy_assignment_keyword_matcher
+            .assignment_keyword_matcher
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .resolve(

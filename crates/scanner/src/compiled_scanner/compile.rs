@@ -460,9 +460,8 @@ impl CompiledScanner {
             generic_assignment_re,
             generic_keyword_stems,
             generic_owning_detector,
-            #[cfg(feature = "entropy")]
-            entropy_assignment_keyword_matcher: std::sync::Mutex::new(
-                crate::entropy::keywords::AssignmentKeywordMatcherCache::default(),
+            assignment_keyword_matcher: std::sync::Mutex::new(
+                crate::assignment_keyword_matcher::AssignmentKeywordMatcherCache::default(),
             ),
             #[cfg(feature = "gpu")]
             ac_match_upper_bounds,
