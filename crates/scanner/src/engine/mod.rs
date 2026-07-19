@@ -283,6 +283,12 @@ pub struct CompiledScanner {
     /// preserves the exact first-match-by-exact-or-normalized semantics. Built
     /// ONCE at construction (see [`crate::generic_keyword_owner::GenericOwningDetectorIndex`]).
     pub(crate) generic_owning_detector: crate::generic_keyword_owner::GenericOwningDetectorIndex,
+    /// Lazily compiled union of Tier-A and detector-owned entropy assignment
+    /// keywords. The cache is keyed by exact lists because `config` remains a
+    /// public programmatic surface and may be mutated after scanner creation.
+    #[cfg(feature = "entropy")]
+    pub(crate) entropy_assignment_keyword_matcher:
+        std::sync::Mutex<crate::entropy::keywords::AssignmentKeywordMatcherCache>,
     /// Per-`ac_map` regex byte upper bound for GPU hit-local validation. `None`
     /// means the detector regex is unbounded or unparsable by the AST bounder,
     /// so GPU validation must keep the full prepared-chunk oracle.

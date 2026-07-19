@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Compiled detector-owned and scan-config entropy assignment keywords into one
+  cached case-insensitive matcher, removing the per-line linear vocabulary walk
+  from sparse source scans while preserving programmatic config changes.
+
 - Compile the phase-two VYRE regex-DFA admission catalog with state-cap-driven
   shards. The GPU now rescans a batch only after the combined DFA proves a
   split is necessary, instead of forcing another full-haystack dispatch for

@@ -55,11 +55,18 @@ impl CompiledScanner {
         // Production discovery uses only active detector TOML keywords and the
         // operator's Tier-A list. The compatibility assignment vocabulary must
         // not widen a replacement corpus, including source-restricted scans.
-        let keyword_assignment_lines =
-            crate::entropy::keywords::find_keyword_assignment_lines_with_policy(
-                &entropy_lines,
+        let keyword_matcher = self
+            .entropy_assignment_keyword_matcher
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .resolve(
                 &self.config.secret_keywords,
                 self.generic_owning_detector.policy_keywords(),
+            );
+        let keyword_assignment_lines =
+            crate::entropy::keywords::find_keyword_assignment_lines_with_matcher(
+                &entropy_lines,
+                &keyword_matcher,
             );
         let has_secret_keyword_line = !keyword_assignment_lines.is_empty();
         let path_entropy_appropriate = crate::entropy::is_entropy_appropriate_inner(
