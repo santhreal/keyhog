@@ -11,10 +11,11 @@ use super::store::{
 use super::workload::{
     autoroute_stable_bucket, autoroute_stable_decode_bucket, decode_workload_projection,
     decode_workload_sketch as decode_workload_sketch_with_plan, planned_decode_sample_bytes,
-    planned_decode_sample_quotas, source_class_id, source_mixture_key,
-    test_measurement_shape_evidence, validate_source_mixture_key, validate_workload_source_mixture,
-    workload_evidence_digest, workload_key as workload_key_with_plan, Phase1AdmissionKey,
-    SourceMixtureEntry, SourceMixtureKey, WorkloadKey,
+    planned_decode_sample_quotas, render_workload_key, source_class_id, source_class_label,
+    source_mixture_key, test_measurement_shape_evidence, validate_source_mixture_key,
+    validate_workload_source_mixture, workload_evidence_digest,
+    workload_key as workload_key_with_plan, Phase1AdmissionKey, SourceMixtureEntry,
+    SourceMixtureKey, WorkloadKey,
 };
 use super::*;
 
@@ -1381,6 +1382,56 @@ fn source_mixture_distinguishes_execution_subtypes_without_section_name_explosio
         "section names do not change the binary extraction execution shape"
     );
     assert_ne!(elf_text, pe_text, "binary formats remain distinct classes");
+
+    let exif_metadata = source_mixture_key(&[test_chunk_with_source(
+        "a".repeat(64),
+        "filesystem/image-metadata/exif",
+    )])
+    .expect("EXIF image metadata classifies");
+    let png_metadata = source_mixture_key(&[test_chunk_with_source(
+        "a".repeat(64),
+        "filesystem/image-metadata/png",
+    )])
+    .expect("PNG image metadata classifies");
+    assert_eq!(
+        exif_metadata, png_metadata,
+        "metadata decoder names do not change the image-metadata execution shape"
+    );
+    assert_ne!(
+        exif_metadata, plain,
+        "image metadata extraction remains distinct from ordinary filesystem input"
+    );
+}
+
+#[test]
+fn workload_rendering_names_only_bundled_source_classes() {
+    let known = workload_key(&[test_chunk_with_source("a".repeat(64), "filesystem")], 902)
+        .expect("known source classifies");
+    let known_digest = &known.source_mixture.entries[0].source_class_digest;
+    assert_eq!(source_class_label(known_digest), Some("filesystem"));
+    let known_rendered = render_workload_key(&known);
+    assert!(known_rendered.contains(&format!(
+        "filesystem@{}",
+        keyhog_core::hex_encode(known_digest)
+    )));
+
+    let private_source = "custom://token-do-not-echo";
+    let unknown = workload_key(
+        &[test_chunk_with_source("a".repeat(64), private_source)],
+        902,
+    )
+    .expect("library-provided source classifies");
+    let unknown_digest = &unknown.source_mixture.entries[0].source_class_digest;
+    assert_eq!(source_class_label(unknown_digest), None);
+    let unknown_rendered = render_workload_key(&unknown);
+    assert!(unknown_rendered.contains(&format!(
+        "custom@{}",
+        keyhog_core::hex_encode(unknown_digest)
+    )));
+    assert!(
+        !unknown_rendered.contains(private_source),
+        "arbitrary library metadata must not be echoed into operator-visible evidence"
+    );
 }
 
 #[test]
@@ -1430,7 +1481,7 @@ fn source_mixture_separates_inverse_shares_and_ignores_chunk_order() {
                     if index < filesystem_chunks {
                         "filesystem/windowed"
                     } else {
-                        "web:response"
+                        "web:js"
                     },
                 )
             })
@@ -1489,6 +1540,8 @@ fn source_mixture_validation_rejects_noncanonical_persisted_entries() {
                 .unwrap(),
         ],
     };
+    key.entries.sort();
+    key.entries.reverse();
     assert!(validate_source_mixture_key(&key).is_err());
     key.entries.sort();
     key.entries[0].chunk_ratio = 0;
@@ -1548,7 +1601,7 @@ fn exact_source_mixtures_survive_cache_replay_and_inspection() {
                     if index < filesystem_chunks {
                         "filesystem/windowed"
                     } else {
-                        "web:response"
+                        "web:js"
                     },
                 )
             })
@@ -1615,11 +1668,20 @@ fn exact_source_mixtures_survive_cache_replay_and_inspection() {
     let rows = &inspection.configs[0].decisions;
     assert_eq!(rows.len(), 2);
     assert_ne!(rows[0].workload, rows[1].workload);
-    assert!(rows
-        .iter()
-        .all(|row| { !row.workload.contains("filesystem") && !row.workload.contains("web") }));
+    assert!(rows.iter().all(|row| {
+        row.workload.contains("filesystem/windowed@") && row.workload.contains("web:js@")
+    }));
     for row in rows {
         assert_eq!(row.source_mixture.len(), 2);
+        let source_classes = row
+            .source_mixture
+            .iter()
+            .filter_map(|entry| entry.source_class.as_deref())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            source_classes,
+            BTreeSet::from(["filesystem/windowed", "web:js"])
+        );
         assert!(row
             .source_mixture
             .iter()
@@ -1639,6 +1701,9 @@ fn exact_source_mixtures_survive_cache_replay_and_inspection() {
         .is_some_and(|digest| {
             digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
         }));
+    assert!(json_entries
+        .iter()
+        .all(|entry| entry["source_class"].as_str().is_some()));
 
     let mut cache: AutorouteCache = serde_json::from_slice(
         &std::fs::read(&path).expect("read exact-mixture cache for binding tamper"),

@@ -11,7 +11,7 @@ use super::schema::AutorouteBuildFeatures;
 use super::validation::{current_unix_time_ms, validate_cache_structure_at};
 use crate::orchestrator::dispatch::backend::host::{host_identity_digest, render_host_profile};
 use crate::orchestrator::dispatch::backend::runtime_health::inspect_runtime_route_faults;
-use crate::orchestrator::dispatch::backend::workload::render_workload_key;
+use crate::orchestrator::dispatch::backend::workload::{render_workload_key, source_class_label};
 use crate::orchestrator::dispatch::backend::AUTOROUTE_CACHE_VERSION;
 
 #[cfg(test)]
@@ -221,6 +221,10 @@ pub(crate) struct AutorouteRouteTimingInspection {
 
 #[derive(Debug, Serialize)]
 pub(crate) struct AutorouteSourceMixtureInspection {
+    /// Privacy-safe canonical label for a KeyHog-owned source class. Unknown
+    /// library-provided labels remain `null`; their digest still identifies the
+    /// exact route class without echoing arbitrary metadata.
+    pub(crate) source_class: Option<&'static str>,
     pub(crate) source_class_digest: String,
     pub(crate) has_full_size: bool,
     pub(crate) chunk_ratio: u64,
@@ -597,6 +601,7 @@ fn inspect_autoroute_cache_for_build(
                     .entries
                     .iter()
                     .map(|entry| AutorouteSourceMixtureInspection {
+                        source_class: source_class_label(&entry.source_class_digest),
                         source_class_digest: keyhog_core::hex_encode(&entry.source_class_digest),
                         has_full_size: entry.has_full_size,
                         chunk_ratio: entry.chunk_ratio,

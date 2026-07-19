@@ -6,6 +6,7 @@ use keyhog_scanner::Phase1AdmissionSummary;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
+use std::sync::LazyLock;
 
 const AUTOROUTE_DECODE_SAMPLE_BYTES: usize = 64 * 1024;
 const AUTOROUTE_DECODE_SAMPLE_WINDOW_BYTES: usize = 64;
@@ -15,6 +16,66 @@ const AUTOROUTE_DECODE_MIN_CHUNK_SAMPLE: usize =
     AUTOROUTE_DECODE_SAMPLE_WINDOW_BYTES * AUTOROUTE_DECODE_MIN_STRATA;
 const MAX_SOURCE_MIXTURE_ENTRIES: usize = 64;
 pub(super) const MEASUREMENT_SHAPE_GENERATOR: &str = "keyhog-content-addressed-batch-v1";
+const BUNDLED_SOURCE_CLASSES: &str = include_str!("../../../../data/autoroute_source_classes.toml");
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SourceClassCatalogFile {
+    source_classes: SourceClassCatalog,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SourceClassCatalog {
+    classes: Vec<String>,
+}
+
+static CANONICAL_SOURCE_CLASSES: LazyLock<BTreeMap<[u8; 32], String>> = LazyLock::new(|| {
+    let catalog: SourceClassCatalogFile = toml::from_str(BUNDLED_SOURCE_CLASSES)
+        .unwrap_or_else(|error| panic!("data/autoroute_source_classes.toml is invalid: {error}"));
+    validate_source_class_catalog(&catalog.source_classes.classes)
+        .unwrap_or_else(|error| panic!("data/autoroute_source_classes.toml is invalid: {error}"));
+    catalog
+        .source_classes
+        .classes
+        .into_iter()
+        .map(|class| (source_class_id(&class), class))
+        .collect()
+});
+
+fn validate_source_class_catalog(classes: &[String]) -> Result<(), String> {
+    if classes.is_empty() {
+        return Err("source_classes.classes must not be empty".into());
+    }
+    let mut prior: Option<&str> = None;
+    let mut digests = std::collections::HashSet::with_capacity(classes.len());
+    for class in classes {
+        if class.is_empty()
+            || class.len() > 64
+            || !class.bytes().all(|byte| {
+                byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b':' | b'/')
+            })
+        {
+            return Err(format!(
+                "source class {class:?} must contain 1..=64 ASCII identifier bytes"
+            ));
+        }
+        if prior.is_some_and(|previous| previous >= class.as_str()) {
+            return Err(format!(
+                "source class {class:?} is duplicated or not bytewise sorted"
+            ));
+        }
+        if !digests.insert(source_class_id(class)) {
+            return Err(format!("source class {class:?} has a digest collision"));
+        }
+        prior = Some(class);
+    }
+    Ok(())
+}
+
+pub(super) fn source_class_label(digest: &[u8; 32]) -> Option<&'static str> {
+    CANONICAL_SOURCE_CLASSES.get(digest).map(String::as_str)
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct SourceRouteClass {
@@ -145,9 +206,14 @@ pub(super) fn render_workload_key(key: &WorkloadKey) -> String {
         .entries
         .iter()
         .map(|entry| {
+            let digest = keyhog_core::hex_encode(&entry.source_class_digest);
+            let source_class = source_class_label(&entry.source_class_digest).map_or_else(
+                || format!("custom@{digest}"),
+                |class| format!("{class}@{digest}"),
+            );
             format!(
                 "{}/{}/chunk_ratio={}/payload_ratio={}/max_span_log2={}",
-                keyhog_core::hex_encode(&entry.source_class_digest),
+                source_class,
                 if entry.has_full_size {
                     "full"
                 } else {
@@ -777,9 +843,14 @@ fn source_execution_class(chunk: &Chunk) -> Result<&str, WorkloadClassificationE
     if source_type.is_empty() {
         return Err(WorkloadClassificationError::missing_source_class(chunk));
     }
-    for dynamic_section_prefix in ["binary:elf:", "binary:pe:", "binary:macho:"] {
-        if source_type.starts_with(dynamic_section_prefix) {
-            return Ok(&source_type[..dynamic_section_prefix.len() - 1]);
+    for (dynamic_prefix, canonical_class) in [
+        ("binary:elf:", "binary:elf"),
+        ("binary:pe:", "binary:pe"),
+        ("binary:macho:", "binary:macho"),
+        ("filesystem/image-metadata/", "filesystem/image-metadata"),
+    ] {
+        if source_type.starts_with(dynamic_prefix) {
+            return Ok(canonical_class);
         }
     }
     Ok(source_type)

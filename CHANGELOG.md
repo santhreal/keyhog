@@ -49,6 +49,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   shape. Equal byte/chunk counts no longer overwrite distinct calibration
   representatives, and JSON inspection exposes the canonical generator plus
   payload and shape digests needed to reproduce crossover evidence.
+- Autoroute inspection now renders KeyHog-owned source execution classes by
+  privacy-safe canonical name alongside their digest. Unknown library-provided
+  metadata remains digest-only instead of being echoed into diagnostics.
 
 ## [0.5.41] - 2026-07-18
 
