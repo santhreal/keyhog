@@ -4,8 +4,9 @@ mod allowlist;
 mod dispatch;
 pub(crate) use dispatch::{
     automatic_backend_recovery_allowed, record_completed_backend_recovery,
-    record_completed_remote_autoroute_state_recovery, scan_selected_batch, AutorouteStateRecovery,
-    BackendRecoveryPlan, COALESCED_CHUNK_SCAN_CEILING_BYTES, COALESCED_CHUNK_SCAN_CEILING_MB,
+    record_completed_remote_autoroute_state_recovery, scan_selected_batch,
+    AutorouteMeasurementReceipt, AutorouteStateRecovery, BackendRecoveryPlan,
+    COALESCED_CHUNK_SCAN_CEILING_BYTES, COALESCED_CHUNK_SCAN_CEILING_MB,
 };
 mod postprocess;
 pub(crate) mod reporting;

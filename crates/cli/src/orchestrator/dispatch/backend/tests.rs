@@ -3342,12 +3342,17 @@ fn measured_router_clears_dirty_after_successful_cache_save() {
             .iter()
             .cloned()
             .collect::<Vec<_>>(),
-        vec![(
-            format!("{:016x}", router.config_digest),
-            host_identity_digest(&router.host_profile),
-            render_workload_key(&key),
-        )],
-        "the receipt must carry the exact host and canonical workload key that were persisted"
+        vec![AutorouteMeasurementReceipt {
+            config_digest: format!("{:016x}", router.config_digest),
+            host_identity: host_identity_digest(&router.host_profile),
+            workload: render_workload_key(&key),
+            measurement_shape_digest: keyhog_core::hex_encode(
+                &router.decisions[&key].calibration_points[0]
+                    .measurement_shape
+                    .shape_digest,
+            ),
+        }],
+        "the receipt must carry the exact host, workload, and measurement shape that were persisted"
     );
     router
         .save_cache()

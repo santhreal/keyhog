@@ -374,7 +374,7 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
 
     let mut idx = 0usize;
     let mut failed = 0usize;
-    let measured_route_classes = Arc::new(Mutex::new(BTreeSet::new()));
+    let measured_points = Arc::new(Mutex::new(BTreeSet::new()));
     for policy in &policy_flags {
         let policy_label = policy.unwrap_or("default policy"); // LAW10: documented default label only; it does not select a fallback backend
         let scan_args = calibration_scan_args(Some(transaction.staged_path()), *policy)
@@ -382,7 +382,7 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
         let mut orchestrator = ScanOrchestrator::new(scan_args)
             .with_context(|| format!("initializing {policy_label} calibration runtime"))?;
         orchestrator
-            .observe_autoroute_calibration_measurements(Arc::clone(&measured_route_classes))
+            .observe_autoroute_calibration_measurements(Arc::clone(&measured_points))
             .with_context(|| format!("observing {policy_label} calibration route receipts"))?;
         orchestrator
             .prepare_autoroute_calibration_gpu_artifact()
@@ -439,28 +439,53 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
                 .map_err(anyhow::Error::msg)?
         ),
     }
-    let measured_route_classes = measured_route_classes
+    let measured_points = measured_points
         .lock()
         .map_err(|_| {
             anyhow::anyhow!(
                 "autoroute measured-route observer lock was poisoned, so the calibration summary cannot be trusted; rerun `keyhog calibrate-autoroute`"
             )
         })?;
-    let persisted_route_classes = inspection
+    let persisted_points = inspection
         .configs
         .iter()
         .flat_map(|config| {
-            config.decisions.iter().map(|decision| {
-                (
-                    config.config_digest.clone(),
-                    config.host_identity.clone(),
-                    decision.workload.clone(),
-                )
+            config.decisions.iter().flat_map(|decision| {
+                decision.measured_points.iter().map(|point| {
+                    crate::orchestrator::AutorouteMeasurementReceipt {
+                        config_digest: config.config_digest.clone(),
+                        host_identity: config.host_identity.clone(),
+                        workload: decision.workload.clone(),
+                        measurement_shape_digest: point.measurement_shape_digest.clone(),
+                    }
+                })
             })
+        })
+        .collect::<BTreeSet<_>>();
+    let measured_route_classes = measured_points
+        .iter()
+        .map(|receipt| {
+            (
+                receipt.config_digest.clone(),
+                receipt.host_identity.clone(),
+                receipt.workload.clone(),
+            )
+        })
+        .collect::<BTreeSet<_>>();
+    let persisted_route_classes = persisted_points
+        .iter()
+        .map(|receipt| {
+            (
+                receipt.config_digest.clone(),
+                receipt.host_identity.clone(),
+                receipt.workload.clone(),
+            )
         })
         .collect::<BTreeSet<_>>();
     let (persisted_decisions, measured_unique_decisions) =
         calibration_summary_counts(&persisted_route_classes, &measured_route_classes)?;
+    let measured_point_count =
+        calibration_point_summary_count(&persisted_points, &measured_points)?;
     if persisted_decisions == 0 {
         anyhow::bail!(
             "autoroute calibration probes succeeded, but persisted cache readback contained no route decisions"
@@ -543,7 +568,7 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
         }
     }
     println!(
-        "{check} ran {green}{total}{reset} workload {probe_word} across {green}{passes}{reset} scan {policy_word}; measured {green}{measured_unique_decisions}{reset} unique route {class_word}; cache contains {green}{persisted_decisions}{reset} route {decision_word} \u{2192} {dim}{cache}{reset}",
+        "{check} ran {green}{total}{reset} workload {probe_word} across {green}{passes}{reset} scan {policy_word}; retained {green}{measured_point_count}{reset} measured {point_word} in {green}{measured_unique_decisions}{reset} route {class_word}; cache contains {green}{persisted_decisions}{reset} route {decision_word} \u{2192} {dim}{cache}{reset}",
         check = crate::style::pass("\u{2713}", &p),
         green = p.green,
         reset = p.reset,
@@ -558,6 +583,11 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
             "class"
         } else {
             "classes"
+        },
+        point_word = if measured_point_count == 1 {
+            "point"
+        } else {
+            "points"
         },
         passes = policy_flags.len(),
         policy_word = if policy_flags.len() == 1 { "policy" } else { "policies" },
@@ -588,6 +618,22 @@ fn calibration_summary_counts(
         );
     }
     Ok((persisted_route_classes.len(), measured_route_classes.len()))
+}
+
+fn calibration_point_summary_count(
+    persisted_points: &BTreeSet<crate::orchestrator::AutorouteMeasurementReceipt>,
+    measured_points: &BTreeSet<crate::orchestrator::AutorouteMeasurementReceipt>,
+) -> Result<usize> {
+    if let Some(missing) = measured_points.difference(persisted_points).next() {
+        anyhow::bail!(
+            "autoroute calibration measured shape {} for route class [{}], config {}, host {}, but final cache readback did not retain that measurement point",
+            missing.measurement_shape_digest,
+            missing.workload,
+            missing.config_digest,
+            missing.host_identity,
+        );
+    }
+    Ok(measured_points.len())
 }
 
 fn calibration_scan_args(autoroute_cache: Option<&Path>, policy: Option<&str>) -> Result<ScanArgs> {

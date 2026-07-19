@@ -129,11 +129,13 @@ order rotates across workload bands rather than giving one backend the same
 thermal position in every probe. The final count is the number of probes run,
 not the number of unique persisted route classes. Multiple representatives can
 share one logarithmic workload key. The summary separately reports unique route
-classes measured by this sweep and the total route decisions in the cache after a
-required readback check. The cache total can include valid decisions from prior
-calibration runs. The command also prints a cache route summary showing how many
-one-shot and daemon rows select a VYRE GPU route, plus the number of GPU candidate
-receipts measured. The command does **not**
+classes, exact measurement points retained by this sweep, and the total route
+decisions in the cache. The required readback checks every measured shape digest,
+not only the shared workload key. A missing representative prevents publication.
+The cache total can include valid decisions from prior calibration runs. The
+command also prints a cache route summary showing how many one-shot and daemon
+rows select a VYRE GPU route, plus the number of GPU candidate receipts measured.
+The command does **not**
 cover the git / docker / web source probes; those need environment orchestration
 (a repo, a running daemon, a served URL) that only the installer's
 `--calibrate` mode performs. Current installers delegate the complete core sweep

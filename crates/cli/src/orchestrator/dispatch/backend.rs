@@ -68,10 +68,19 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-/// Canonical `(config digest, exact host digest, rendered workload key)`
-/// receipts persisted by this calibration command. The host dimension prevents
-/// a shared cache's older generation from proving this host's calibration.
-pub(crate) type AutorouteMeasurementObserver = Arc<Mutex<BTreeSet<(String, String, String)>>>;
+/// Canonical persisted receipt for one exact calibration representative. The
+/// host dimension prevents an older shared-cache generation from proving this
+/// host's calibration, and the shape digest prevents one retained point from
+/// standing in for a different representative in the same workload class.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct AutorouteMeasurementReceipt {
+    pub(crate) config_digest: String,
+    pub(crate) host_identity: String,
+    pub(crate) workload: String,
+    pub(crate) measurement_shape_digest: String,
+}
+
+pub(crate) type AutorouteMeasurementObserver = Arc<Mutex<BTreeSet<AutorouteMeasurementReceipt>>>;
 
 // v45: confidence separation and reported margins compare complete execution
 // routes, including localization variants on the same backend. v44 could select
@@ -1157,13 +1166,25 @@ impl MeasuredBackendRouter {
             let mut observed = observer
                 .lock()
                 .map_err(|_| AutorouteRoutingError::measurement_observer_unavailable())?;
-            observed.extend(self.measured_this_run.iter().map(|key| {
-                (
-                    format!("{:016x}", self.config_digest),
-                    host_identity_digest(&self.host_profile),
-                    render_workload_key(key),
-                )
-            }));
+            let config_digest = format!("{:016x}", self.config_digest);
+            let host_identity = host_identity_digest(&self.host_profile);
+            for key in &self.measured_this_run {
+                let decision = self.decisions.get(key).ok_or_else(|| {
+                    AutorouteRoutingError::calibration_not_persisted(
+                        "autoroute measurement observer could not find a measured workload decision",
+                    )
+                })?;
+                for point in &decision.calibration_points {
+                    observed.insert(AutorouteMeasurementReceipt {
+                        config_digest: config_digest.clone(),
+                        host_identity: host_identity.clone(),
+                        workload: render_workload_key(key),
+                        measurement_shape_digest: keyhog_core::hex_encode(
+                            &point.measurement_shape.shape_digest,
+                        ),
+                    });
+                }
+            }
         }
         self.cache_dirty = false;
         Ok(())
