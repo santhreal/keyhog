@@ -18,6 +18,7 @@ pub(crate) use backend::inspect_autoroute_cache;
 pub(crate) use backend::AutorouteReadiness;
 pub(crate) use backend::AutorouteStateRecovery;
 pub(crate) use backend::BackendRecoveryPlan;
+pub(crate) use backend::StagedAutorouteCache;
 use backend::{is_gpu_backend, AutorouteRoutingError, BackendSelection, MeasuredBackendRouter};
 pub(crate) use backend::{AutorouteMeasurementObserver, CachedBackendRouter};
 use keyhog_core::{Chunk, RawMatch, Source};

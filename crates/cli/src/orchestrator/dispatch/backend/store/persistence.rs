@@ -1,13 +1,29 @@
 //! Locked, atomic persistence and multi-configuration cache merging.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::path::{Path, PathBuf};
 
 use super::super::evidence::AutorouteDecision;
 use super::super::host::AutorouteHostProfile;
+use super::super::runtime_health::{
+    filtered_runtime_health_snapshot, runtime_health_path, runtime_health_snapshot,
+    write_runtime_health_snapshot,
+};
 use super::super::workload::{
     validate_workload_source_mixture, workload_evidence_digest, WorkloadKey,
 };
 use super::super::AUTOROUTE_CACHE_VERSION;
+use super::artifact_identity::current_executable_sha256;
+use super::codec::{
+    parse_autoroute_cache, read_autoroute_cache_file, CacheParseError, AUTOROUTE_CACHE_FILE_BYTES,
+};
+use super::schema::{
+    AutorouteBuildFeatures, AutorouteCache, AutorouteConfigDecisions, PersistedAutorouteDecision,
+};
+use super::validation::{
+    validate_cache_global_identity, validate_cache_structure, validate_decision_route_evidence,
+    validate_decision_workload_binding,
+};
 
 /// Operator-relevant effect of a successful cache save.
 #[derive(Debug, PartialEq, Eq)]
@@ -21,17 +37,139 @@ struct MergeableConfigs {
     configs: Vec<AutorouteConfigDecisions>,
     outcome: AutorouteCacheSaveOutcome,
 }
-use super::artifact_identity::current_executable_sha256;
-use super::codec::{
-    parse_autoroute_cache, read_autoroute_cache_file, CacheParseError, AUTOROUTE_CACHE_FILE_BYTES,
-};
-use super::schema::{
-    AutorouteBuildFeatures, AutorouteCache, AutorouteConfigDecisions, PersistedAutorouteDecision,
-};
-use super::validation::{
-    validate_cache_global_identity, validate_cache_structure, validate_decision_route_evidence,
-    validate_decision_workload_binding,
-};
+
+/// One complete autoroute sweep staged away from the live cache.
+///
+/// Calibration can write hundreds of exact workload rows. Keeping those writes
+/// on a private path prevents a failed late probe from publishing a hybrid of
+/// new and old evidence. Publication compares both live cache and route-health
+/// bytes captured at begin time while holding their canonical state-file locks,
+/// so a concurrent writer or newly quarantined route is never overwritten.
+pub(crate) struct StagedAutorouteCache {
+    live_path: PathBuf,
+    staged_path: PathBuf,
+    baseline: Option<Vec<u8>>,
+    runtime_health_path: PathBuf,
+    runtime_health_baseline: Option<Vec<u8>>,
+}
+
+impl StagedAutorouteCache {
+    pub(crate) fn begin(
+        live_path: &Path,
+        staged_path: &Path,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        if live_path == staged_path {
+            return Err("autoroute staging path must differ from the live cache path".into());
+        }
+        match std::fs::symlink_metadata(staged_path) {
+            Ok(_) => {
+                return Err(format!(
+                    "autoroute staging path {} already exists; refusing to overwrite an unrelated artifact",
+                    staged_path.display()
+                )
+                .into());
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+        let _write_lock = keyhog_core::StateFileWriteLock::acquire(live_path)?;
+        let runtime_health_path = runtime_health_path(live_path);
+        let _runtime_health_lock = keyhog_core::StateFileWriteLock::acquire(&runtime_health_path)?;
+        let baseline = read_optional_cache_bytes(live_path)?;
+        let runtime_health_baseline = runtime_health_snapshot(live_path)
+            .map_err(|error| format!("cannot stage autoroute runtime health: {error}"))?;
+        if let Some(bytes) = baseline.as_deref() {
+            crate::atomic_file::write_bytes(staged_path, bytes)?;
+        }
+        Ok(Self {
+            live_path: live_path.to_path_buf(),
+            staged_path: staged_path.to_path_buf(),
+            baseline,
+            runtime_health_path,
+            runtime_health_baseline,
+        })
+    }
+
+    pub(crate) fn staged_path(&self) -> &Path {
+        &self.staged_path
+    }
+
+    pub(crate) fn publish(
+        self,
+        measured_routes: &BTreeSet<(String, String, String)>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let staged_bytes = read_autoroute_cache_file(&self.staged_path).map_err(|error| {
+            format!(
+                "cannot publish autoroute calibration because staged cache {} is unreadable: {error}; the live cache was not changed",
+                self.staged_path.display()
+            )
+        })?;
+        let staged_cache = parse_autoroute_cache(&staged_bytes).map_err(|error| {
+            format!(
+                "staged autoroute calibration is invalid: {}; the live cache was not changed",
+                error.diagnostic()
+            )
+        })?;
+        validate_cache_global_identity(
+            &staged_cache,
+            staged_cache.detector_digest,
+            &staged_cache.rules_digest,
+        )
+        .map_err(|error| {
+            format!(
+                "staged autoroute calibration identity is invalid: {error}; the live cache was not changed"
+            )
+        })?;
+        validate_cache_structure(&staged_cache).map_err(|error| {
+            format!(
+                "staged autoroute calibration structure is invalid: {error}; the live cache was not changed"
+            )
+        })?;
+        let filtered_runtime_health = filtered_runtime_health_snapshot(
+            &self.runtime_health_path,
+            self.runtime_health_baseline.as_deref(),
+            measured_routes,
+        )
+        .map_err(|error| {
+            format!(
+                "cannot publish autoroute calibration because runtime health cannot be updated safely: {error}; the live cache was not changed"
+            )
+        })?;
+
+        let _write_lock = keyhog_core::StateFileWriteLock::acquire(&self.live_path)?;
+        let _runtime_health_lock =
+            keyhog_core::StateFileWriteLock::acquire(&self.runtime_health_path)?;
+        let current = read_optional_cache_bytes(&self.live_path)?;
+        let current_runtime_health = runtime_health_snapshot(&self.live_path)
+            .map_err(|error| format!("cannot verify autoroute runtime health: {error}"))?;
+        if current != self.baseline || current_runtime_health != self.runtime_health_baseline {
+            return Err(format!(
+                "autoroute cache or runtime health at {} changed while calibration was running; the completed staged generation was not published and the concurrent live update was preserved. Rerun `keyhog calibrate-autoroute`",
+                self.live_path.display()
+            )
+            .into());
+        }
+        crate::atomic_file::write_bytes(&self.live_path, &staged_bytes)?;
+        if let Some(bytes) = filtered_runtime_health.as_deref() {
+            write_runtime_health_snapshot(&self.runtime_health_path, bytes).map_err(|error| {
+                format!(
+                    "the complete autoroute generation was published, but its measured runtime-health faults could not be cleared: {error}; scans remain conservatively quarantined until calibration is rerun"
+                )
+            })?;
+        }
+        Ok(())
+    }
+}
+
+fn read_optional_cache_bytes(
+    path: &Path,
+) -> Result<Option<Vec<u8>>, Box<dyn std::error::Error + Send + Sync>> {
+    match read_autoroute_cache_file(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
 
 pub(crate) fn load_autoroute_cache(
     path: &std::path::Path,
@@ -261,10 +399,13 @@ fn replacement(reason: String) -> MergeableConfigs {
 mod tests {
     use super::*;
     use crate::orchestrator::dispatch::backend::host::{host_identity_digest, render_host_profile};
+    use crate::orchestrator::dispatch::backend::runtime_health::{
+        inspect_runtime_route_faults, persist_runtime_route_fault, RuntimeHealthIdentity,
+    };
     use crate::orchestrator::dispatch::backend::store::inspection::inspect_autoroute_cache;
     use crate::orchestrator::dispatch::backend::workload::{
-        autoroute_stable_bucket, source_class_id, Phase1AdmissionKey, SourceMixtureEntry,
-        SourceMixtureKey,
+        autoroute_stable_bucket, render_workload_key, source_class_id, Phase1AdmissionKey,
+        SourceMixtureEntry, SourceMixtureKey,
     };
     use keyhog_scanner::ScanBackend;
 
@@ -374,6 +515,212 @@ mod tests {
             directory.path().is_dir(),
             "failed merge must leave the existing filesystem object untouched"
         );
+    }
+
+    #[test]
+    fn staged_generation_does_not_touch_live_cache_until_publish() {
+        let directory = tempfile::tempdir().expect("autoroute transaction directory");
+        let live = directory.path().join("autoroute.json");
+        let staged = directory.path().join("staged.json");
+        let host = cpu_host();
+        save_autoroute_cache(
+            &live,
+            DETECTOR_DIGEST,
+            RULES_DIGEST,
+            0xc001,
+            &host,
+            &decisions(4 * 1024, &host),
+        )
+        .expect("seed live cache");
+        let baseline = std::fs::read(&live).expect("read live baseline");
+
+        let transaction =
+            StagedAutorouteCache::begin(&live, &staged).expect("begin staged generation");
+        save_autoroute_cache(
+            transaction.staged_path(),
+            DETECTOR_DIGEST,
+            RULES_DIGEST,
+            0xc002,
+            &host,
+            &decisions(8 * 1024, &host),
+        )
+        .expect("write completed probe into staged cache");
+        assert_eq!(
+            std::fs::read(&live).expect("read untouched live cache"),
+            baseline,
+            "successful intermediate probes must not publish partial evidence"
+        );
+
+        transaction
+            .publish(&BTreeSet::new())
+            .expect("publish complete generation");
+        load_autoroute_cache(&live, DETECTOR_DIGEST, RULES_DIGEST, 0xc001, &host)
+            .expect("original config survives staged merge");
+        load_autoroute_cache(&live, DETECTOR_DIGEST, RULES_DIGEST, 0xc002, &host)
+            .expect("completed staged config publishes atomically");
+    }
+
+    #[test]
+    fn concurrent_live_update_prevents_staged_generation_from_overwriting_it() {
+        let directory = tempfile::tempdir().expect("autoroute conflict directory");
+        let live = directory.path().join("autoroute.json");
+        let staged = directory.path().join("staged.json");
+        let host = cpu_host();
+        save_autoroute_cache(
+            &live,
+            DETECTOR_DIGEST,
+            RULES_DIGEST,
+            0xd001,
+            &host,
+            &decisions(4 * 1024, &host),
+        )
+        .expect("seed live cache");
+
+        let transaction =
+            StagedAutorouteCache::begin(&live, &staged).expect("begin staged generation");
+        save_autoroute_cache(
+            transaction.staged_path(),
+            DETECTOR_DIGEST,
+            RULES_DIGEST,
+            0xd002,
+            &host,
+            &decisions(8 * 1024, &host),
+        )
+        .expect("write staged generation");
+        save_autoroute_cache(
+            &live,
+            DETECTOR_DIGEST,
+            RULES_DIGEST,
+            0xd003,
+            &host,
+            &decisions(16 * 1024, &host),
+        )
+        .expect("simulate concurrent live calibration");
+        let concurrent_bytes = std::fs::read(&live).expect("read concurrent live update");
+
+        let error = transaction
+            .publish(&BTreeSet::new())
+            .expect_err("stale staged baseline must not overwrite a concurrent writer")
+            .to_string();
+        assert!(error.contains("changed while calibration was running"));
+        assert_eq!(
+            std::fs::read(&live).expect("read preserved live update"),
+            concurrent_bytes,
+            "publish conflict must leave the live cache byte-identical"
+        );
+        load_autoroute_cache(&live, DETECTOR_DIGEST, RULES_DIGEST, 0xd003, &host)
+            .expect("concurrent config remains usable");
+        assert!(
+            load_autoroute_cache(&live, DETECTOR_DIGEST, RULES_DIGEST, 0xd002, &host).is_err(),
+            "staged-only config must not leak into the live cache on conflict"
+        );
+    }
+
+    #[test]
+    fn concurrent_runtime_fault_prevents_staged_generation_from_clearing_it() {
+        let directory = tempfile::tempdir().expect("autoroute health conflict directory");
+        let live = directory.path().join("autoroute.json");
+        let staged = directory.path().join("staged.json");
+        let host = cpu_host();
+        let route_workload = workload(4 * 1024);
+        save_autoroute_cache(
+            &live,
+            DETECTOR_DIGEST,
+            RULES_DIGEST,
+            0xe001,
+            &host,
+            &decisions(4 * 1024, &host),
+        )
+        .expect("seed live cache");
+        let live_baseline = std::fs::read(&live).expect("read live baseline");
+
+        let transaction =
+            StagedAutorouteCache::begin(&live, &staged).expect("begin staged generation");
+        save_autoroute_cache(
+            transaction.staged_path(),
+            DETECTOR_DIGEST,
+            RULES_DIGEST,
+            0xe002,
+            &host,
+            &decisions(8 * 1024, &host),
+        )
+        .expect("write staged generation");
+        let identity = RuntimeHealthIdentity::new(&live, 0xe001, host_identity_digest(&host));
+        persist_runtime_route_fault(
+            &identity,
+            &route_workload,
+            ScanBackend::SimdCpu.label(),
+            "injected runtime failure during calibration",
+        )
+        .expect("persist concurrent runtime fault");
+
+        let error = transaction
+            .publish(&BTreeSet::from([(
+                format!("{:016x}", 0xe001_u64),
+                host_identity_digest(&host),
+                render_workload_key(&route_workload),
+            )]))
+            .expect_err("concurrent runtime fault must block stale publication")
+            .to_string();
+        assert!(error.contains("runtime health"));
+        assert_eq!(
+            std::fs::read(&live).expect("read preserved cache"),
+            live_baseline,
+            "a concurrent fault must leave the live calibration byte-identical"
+        );
+    }
+
+    #[test]
+    fn completed_generation_clears_only_faults_for_routes_measured_by_the_sweep() {
+        let directory = tempfile::tempdir().expect("autoroute health filtering directory");
+        let live = directory.path().join("autoroute.json");
+        let staged = directory.path().join("staged.json");
+        let host = cpu_host();
+        let measured_workload = workload(4 * 1024);
+        let unrelated_workload = workload(8 * 1024);
+        let mut both_decisions = decisions(4 * 1024, &host);
+        both_decisions.extend(decisions(8 * 1024, &host));
+        save_autoroute_cache(
+            &live,
+            DETECTOR_DIGEST,
+            RULES_DIGEST,
+            0xe101,
+            &host,
+            &both_decisions,
+        )
+        .expect("seed live cache");
+        let identity = RuntimeHealthIdentity::new(&live, 0xe101, host_identity_digest(&host));
+        for (workload, reason) in [
+            (&measured_workload, "remeasured route fault"),
+            (&unrelated_workload, "unrelated route fault"),
+        ] {
+            persist_runtime_route_fault(&identity, workload, ScanBackend::SimdCpu.label(), reason)
+                .expect("persist route fault");
+        }
+
+        let transaction =
+            StagedAutorouteCache::begin(&live, &staged).expect("begin staged generation");
+        save_autoroute_cache(
+            transaction.staged_path(),
+            DETECTOR_DIGEST,
+            RULES_DIGEST,
+            0xe101,
+            &host,
+            &decisions(4 * 1024, &host),
+        )
+        .expect("remeasure one route in staged generation");
+        transaction
+            .publish(&BTreeSet::from([(
+                format!("{:016x}", 0xe101_u64),
+                host_identity_digest(&host),
+                render_workload_key(&measured_workload),
+            )]))
+            .expect("publish staged generation and matching health update");
+
+        let faults = inspect_runtime_route_faults(&live).expect("inspect filtered health");
+        assert_eq!(faults.len(), 1);
+        assert_eq!(faults[0].workload, unrelated_workload);
+        assert_eq!(faults[0].reason, "unrelated route fault");
     }
 
     #[test]

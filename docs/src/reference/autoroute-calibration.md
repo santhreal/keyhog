@@ -164,14 +164,25 @@ autoroute cache stores separate CUDA and WGPU cold and warm timing vectors, and
 `keyhog backend --autoroute` prints both. A failed driver is ineligible until it
 is repaired and calibration is rerun.
 
-Calibration saves take an exclusive sibling-file lock across the complete
-read/merge/atomic-write cycle. Separate calibration processes therefore
-accumulate compatible host, config, and workload decisions without a
-last-writer-wins loss; the operating system releases the lock if a writer exits
-or crashes. Only identity-compatible, structurally valid rows are preserved. If
-an existing cache is unreadable, incompatible, or invalid, calibration emits an
-unconditional stderr warning with the cache path and replacement reason, then
-starts a fresh cache; unrelated preset rows in that old file are not merged.
+Low-level calibration saves take an exclusive sibling-file lock across the
+complete read/merge/atomic-write cycle. The canonical `calibrate-autoroute`
+command adds a generation transaction around the full workload and preset
+sweep: every probe writes to an isolated cache, completed evidence is read back
+and validated there, and the live cache is replaced once only after the full
+sweep succeeds. A failed probe leaves the live cache byte-identical. Publication
+also compares both the live cache and its runtime-health artifact captured at
+sweep start while holding their canonical locks. If another process changed
+either one, KeyHog preserves the concurrent update and asks the operator to
+rerun instead of overwriting evidence or clearing a new route fault. A
+successful publication clears only the exact route faults remeasured by this
+sweep. The operating system releases a held lock if a writer exits or crashes.
+
+Only identity-compatible, structurally valid rows are preserved. A storage or
+permission error while reading an existing cache aborts without replacing it.
+A readable cache with an incompatible schema, invalid JSON, invalid structure,
+or a different build/corpus identity emits an unconditional stderr warning with
+the cache path and replacement reason, then starts a fresh staged generation;
+unrelated rows from that invalid artifact are not merged.
 
 One cache can be shared across hosts. Each route generation is keyed by the
 exact resolved config digest and host profile. Calibrating the same config on a

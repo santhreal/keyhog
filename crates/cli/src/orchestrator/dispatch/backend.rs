@@ -27,6 +27,7 @@
 //!   ├─ store ──────── cache facade (schema v44)
 //!   │    ├─ schema / artifact_identity / build_identity
 //!   │    └─ codec / validation / persistence / inspection
+//!   ├─ runtime_health ─ durable route quarantine and transactional snapshots
 //!   ├─ host ───────── host identity captured in each calibration record
 //!   └─ workload ───── workload bucketing + source-shape fingerprints
 //! ```
@@ -52,7 +53,7 @@ use self::store::{
     autoroute_cache_file_presence, load_autoroute_cache, save_autoroute_cache,
     AutorouteCacheSaveOutcome,
 };
-pub(crate) use self::store::{inspect_autoroute_cache, AutorouteReadiness};
+pub(crate) use self::store::{inspect_autoroute_cache, AutorouteReadiness, StagedAutorouteCache};
 pub(crate) use self::workload::source_route_class;
 use self::workload::{
     differing_workload_dimensions, measurement_shape_evidence, render_workload_key, workload_key,

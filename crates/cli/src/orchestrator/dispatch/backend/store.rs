@@ -13,6 +13,8 @@ pub(crate) use inspection::{inspect_autoroute_cache, AutorouteReadiness};
 pub(super) use persistence::{
     load_autoroute_cache, save_autoroute_cache, AutorouteCacheSaveOutcome,
 };
+// Staged cache is used by `calibrate_autoroute` via orchestrator re-export.
+pub(crate) use persistence::StagedAutorouteCache;
 
 #[cfg(test)]
 pub(super) use codec::AUTOROUTE_CACHE_FILE_BYTES;

@@ -336,6 +336,22 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
         .prefix("keyhog-autoroute-prime-")
         .tempdir()
         .context("could not create the autoroute calibration workspace")?;
+    let live_cache_path = cache_path.as_deref().ok_or_else(|| {
+        anyhow::anyhow!(
+            "autoroute calibration requires a writable cache file; `off`, `0`, and an empty path disable persistence"
+        )
+    })?;
+    let transaction = crate::orchestrator::StagedAutorouteCache::begin(
+        live_cache_path,
+        &workspace.path().join("autoroute-staged.json"),
+    )
+    .map_err(|e| anyhow::anyhow!("{e}"))
+    .with_context(|| {
+        format!(
+            "preparing an isolated autoroute calibration generation for {}",
+            live_cache_path.display()
+        )
+    })?;
 
     let workloads = core_workload_plan();
     // Default policy first (no preset flag), then each preset.
@@ -361,7 +377,7 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
     let measured_route_classes = Arc::new(Mutex::new(BTreeSet::new()));
     for policy in &policy_flags {
         let policy_label = policy.unwrap_or("default policy"); // LAW10: documented default label only; it does not select a fallback backend
-        let scan_args = calibration_scan_args(args.autoroute_cache.as_deref(), *policy)
+        let scan_args = calibration_scan_args(Some(transaction.staged_path()), *policy)
             .with_context(|| format!("constructing {policy_label} calibration runtime"))?;
         let mut orchestrator = ScanOrchestrator::new(scan_args)
             .with_context(|| format!("initializing {policy_label} calibration runtime"))?;
@@ -397,7 +413,7 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
         );
     }
 
-    let inspection = crate::orchestrator::inspect_autoroute_cache(cache_path.as_deref());
+    let inspection = crate::orchestrator::inspect_autoroute_cache(Some(transaction.staged_path()));
     if let Some(error) = inspection.error.as_deref() {
         anyhow::bail!(
             "autoroute calibration probes succeeded, but persisted cache readback failed: {error}"
@@ -443,6 +459,39 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
             })
         })
         .collect::<BTreeSet<_>>();
+    let (persisted_decisions, measured_unique_decisions) =
+        calibration_summary_counts(&persisted_route_classes, &measured_route_classes)?;
+    if persisted_decisions == 0 {
+        anyhow::bail!(
+            "autoroute calibration probes succeeded, but persisted cache readback contained no route decisions"
+        );
+    }
+    // Fresh calibration routers reject reuse until a workload key is measured
+    // in this run. Count their canonical post-save receipts. Existing rows
+    // under the same config digest or another host are cache inventory, not
+    // evidence that this invocation measured them.
+    if measured_unique_decisions == 0 {
+        anyhow::bail!(
+            "autoroute calibration probes succeeded, but persisted cache readback contained no newly measured route classes"
+        );
+    }
+    let cache_note = match args.autoroute_cache.as_deref() {
+        Some(path) => path.to_string(),
+        None => "the default autoroute cache".to_string(),
+    };
+    transaction
+        .publish(&measured_route_classes)
+        .map_err(|e| anyhow::anyhow!("{e}"))
+        .with_context(|| {
+            format!(
+                "publishing the complete autoroute calibration generation to {}",
+                live_cache_path.display()
+            )
+        })?;
+    let inspection = crate::orchestrator::inspect_autoroute_cache(Some(live_cache_path));
+    if let Some(error) = inspection.error.as_deref() {
+        anyhow::bail!("autoroute calibration published, but live cache readback failed: {error}");
+    }
     let quarantined_route_classes = inspection
         .configs
         .iter()
@@ -465,29 +514,9 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
         .count();
     if measured_still_quarantined > 0 {
         anyhow::bail!(
-            "autoroute calibration persisted timing evidence, but {measured_still_quarantined} route class(es) measured by this command remain runtime-quarantined; repair the runtime-health artifact and rerun calibration"
+            "autoroute calibration published timing evidence, but {measured_still_quarantined} route class(es) measured by this command remain runtime-quarantined; repair the runtime-health artifact and rerun calibration"
         );
     }
-    let (persisted_decisions, measured_unique_decisions) =
-        calibration_summary_counts(&persisted_route_classes, &measured_route_classes)?;
-    if persisted_decisions == 0 {
-        anyhow::bail!(
-            "autoroute calibration probes succeeded, but persisted cache readback contained no route decisions"
-        );
-    }
-    // Fresh calibration routers reject reuse until a workload key is measured
-    // in this run. Count their canonical post-save receipts. Existing rows
-    // under the same config digest or another host are cache inventory, not
-    // evidence that this invocation measured them.
-    if measured_unique_decisions == 0 {
-        anyhow::bail!(
-            "autoroute calibration probes succeeded, but persisted cache readback contained no newly measured route classes"
-        );
-    }
-    let cache_note = match args.autoroute_cache.as_deref() {
-        Some(path) => path.to_string(),
-        None => "the default autoroute cache".to_string(),
-    };
     let mut one_shot_gpu = 0usize;
     let mut daemon_gpu = 0usize;
     let mut vyre_gpu_receipts = 0usize;
@@ -561,7 +590,7 @@ fn calibration_summary_counts(
     Ok((persisted_route_classes.len(), measured_route_classes.len()))
 }
 
-fn calibration_scan_args(autoroute_cache: Option<&str>, policy: Option<&str>) -> Result<ScanArgs> {
+fn calibration_scan_args(autoroute_cache: Option<&Path>, policy: Option<&str>) -> Result<ScanArgs> {
     let mut argv = vec![
         OsString::from("keyhog-scan"),
         OsString::from("--autoroute-calibrate"),
@@ -570,7 +599,7 @@ fn calibration_scan_args(autoroute_cache: Option<&str>, policy: Option<&str>) ->
     ];
     if let Some(cache) = autoroute_cache {
         argv.push(OsString::from("--autoroute-cache"));
-        argv.push(OsString::from(cache));
+        argv.push(cache.as_os_str().to_owned());
     }
     if let Some(policy) = policy {
         argv.push(OsString::from(policy));

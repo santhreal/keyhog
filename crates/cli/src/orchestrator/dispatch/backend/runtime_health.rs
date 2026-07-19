@@ -1,8 +1,9 @@
 //! Durable runtime faults kept separate from immutable calibration evidence.
 
-use super::workload::{validate_workload_source_mixture, WorkloadKey};
+use super::workload::{render_workload_key, validate_workload_source_mixture, WorkloadKey};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 const RUNTIME_HEALTH_VERSION: u32 = 1;
@@ -157,13 +158,54 @@ pub(super) fn clear_runtime_route_faults<'a>(
 }
 
 fn read_artifact(path: &Path) -> Result<RuntimeHealthArtifact, String> {
-    let metadata = match std::fs::metadata(path) {
-        Ok(metadata) => metadata,
+    let bytes = read_artifact_bytes(path)?;
+    parse_artifact(path, bytes.as_deref())
+}
+
+pub(super) fn runtime_health_snapshot(cache_path: &Path) -> Result<Option<Vec<u8>>, String> {
+    let path = runtime_health_path(cache_path);
+    let bytes = read_artifact_bytes(&path)?;
+    parse_artifact(&path, bytes.as_deref())?;
+    Ok(bytes)
+}
+
+pub(super) fn filtered_runtime_health_snapshot(
+    path: &Path,
+    snapshot: Option<&[u8]>,
+    measured_routes: &std::collections::BTreeSet<(String, String, String)>,
+) -> Result<Option<Vec<u8>>, String> {
+    let Some(snapshot) = snapshot else {
+        return Ok(None);
+    };
+    let mut artifact = parse_artifact(path, Some(snapshot))?;
+    let fault_count = artifact.faults.len();
+    artifact.faults.retain(|fault| {
+        !measured_routes.contains(&(
+            format!("{:016x}", fault.config_digest),
+            fault.host_digest.clone(),
+            render_workload_key(&fault.workload),
+        ))
+    });
+    if artifact.faults.len() == fault_count {
+        return Ok(Some(snapshot.to_vec()));
+    }
+    Ok(Some(serialize_artifact(artifact)?))
+}
+
+pub(super) fn write_runtime_health_snapshot(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    crate::atomic_file::write_bytes(path, bytes).map_err(|error| {
+        format!(
+            "cannot persist runtime route-health artifact '{}': {error}",
+            path.display()
+        )
+    })
+}
+
+fn read_artifact_bytes(path: &Path) -> Result<Option<Vec<u8>>, String> {
+    let file = match std::fs::File::open(path) {
+        Ok(file) => file,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(RuntimeHealthArtifact {
-                version: RUNTIME_HEALTH_VERSION,
-                faults: Vec::new(),
-            });
+            return Ok(None);
         }
         Err(error) => {
             return Err(format!(
@@ -172,6 +214,12 @@ fn read_artifact(path: &Path) -> Result<RuntimeHealthArtifact, String> {
             ));
         }
     };
+    let metadata = file.metadata().map_err(|error| {
+        format!(
+            "cannot inspect runtime route-health artifact '{}': {error}",
+            path.display()
+        )
+    })?;
     if !metadata.is_file() {
         return Err(format!(
             "runtime route-health path '{}' is not a regular file",
@@ -186,13 +234,33 @@ fn read_artifact(path: &Path) -> Result<RuntimeHealthArtifact, String> {
             RUNTIME_HEALTH_MAX_BYTES
         ));
     }
-    let bytes = std::fs::read(path).map_err(|error| {
-        format!(
-            "cannot read runtime route-health artifact '{}': {error}",
-            path.display()
-        )
-    })?;
-    let artifact: RuntimeHealthArtifact = serde_json::from_slice(&bytes).map_err(|error| {
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    file.take(RUNTIME_HEALTH_MAX_BYTES.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .map_err(|error| {
+            format!(
+                "cannot read runtime route-health artifact '{}': {error}",
+                path.display()
+            )
+        })?;
+    if bytes.len() as u64 > RUNTIME_HEALTH_MAX_BYTES {
+        return Err(format!(
+            "runtime route-health artifact '{}' grew above the {} byte limit while reading",
+            path.display(),
+            RUNTIME_HEALTH_MAX_BYTES
+        ));
+    }
+    Ok(Some(bytes))
+}
+
+fn parse_artifact(path: &Path, bytes: Option<&[u8]>) -> Result<RuntimeHealthArtifact, String> {
+    let Some(bytes) = bytes else {
+        return Ok(RuntimeHealthArtifact {
+            version: RUNTIME_HEALTH_VERSION,
+            faults: Vec::new(),
+        });
+    };
+    let artifact: RuntimeHealthArtifact = serde_json::from_slice(bytes).map_err(|error| {
         format!(
             "runtime route-health artifact '{}' is invalid JSON: {error}",
             path.display()
@@ -261,7 +329,12 @@ fn validate_backend_and_reason(backend: &str, reason: &str) -> Result<(), String
     Ok(())
 }
 
-fn write_artifact(path: &Path, mut artifact: RuntimeHealthArtifact) -> Result<(), String> {
+fn write_artifact(path: &Path, artifact: RuntimeHealthArtifact) -> Result<(), String> {
+    let bytes = serialize_artifact(artifact)?;
+    write_runtime_health_snapshot(path, &bytes)
+}
+
+fn serialize_artifact(mut artifact: RuntimeHealthArtifact) -> Result<Vec<u8>, String> {
     artifact.version = RUNTIME_HEALTH_VERSION;
     artifact.faults.sort_by(|left, right| {
         left.config_digest
@@ -278,15 +351,10 @@ fn write_artifact(path: &Path, mut artifact: RuntimeHealthArtifact) -> Result<()
             RUNTIME_HEALTH_MAX_BYTES
         ));
     }
-    crate::atomic_file::write_bytes(path, &bytes).map_err(|error| {
-        format!(
-            "cannot persist runtime route-health artifact '{}': {error}",
-            path.display()
-        )
-    })
+    Ok(bytes)
 }
 
-fn runtime_health_path(cache_path: &Path) -> PathBuf {
+pub(super) fn runtime_health_path(cache_path: &Path) -> PathBuf {
     let mut path = cache_path.as_os_str().to_os_string();
     path.push(".runtime-health.json");
     PathBuf::from(path)

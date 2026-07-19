@@ -6,6 +6,11 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Fixed
 
+- `keyhog calibrate-autoroute` now writes its complete workload and preset
+  sweep to an isolated cache, validates the finished generation, and publishes
+  it once. A failed late probe leaves the live cache byte-identical, while a
+  concurrent cache or runtime-health update aborts publication instead of being
+  overwritten or incorrectly cleared.
 - Detector TOML validation now rejects inverted entropy tiers before scanner
   compilation, with exact diagnostics for `entropy_low > entropy_high` and
   `entropy_high > entropy_very_high`.
