@@ -36,6 +36,12 @@ has:
 - an **entropy score** + **confidence**
 - an optional **live verification** result if you pass `--verify`
 
+Most of what KeyHog offers is not visible from `keyhog scan .` alone: eleven
+source types (git history, GitHub/GitLab/Bitbucket orgs, S3/GCS/Azure buckets,
+docker images, whole-machine audits), seventeen subcommands, GPU acceleration,
+and always-on process hardening. [What KeyHog can do](./capabilities.md) is the
+map, with every capability linking to its chapter.
+
 The detector corpus ships as TOML files under `detectors/`. Run
 `keyhog detectors --format json` to inspect the exact corpus embedded in the
 installed binary. A custom `--detectors <DIR>` selects an explicit replacement
@@ -82,6 +88,13 @@ Three things, in order of how much they matter:
    density, cache state, CPU, GPU, driver, and storage. KeyHog records
    fastest-correct calibration for the installed host instead of treating a
    benchmark from another machine as a routing threshold.
+
+   VYRE CUDA and WGPU can match region presence for the whole compiled corpus
+   in one resident dispatch, then feed the same confirmation pipeline as the
+   CPU backends. An RTX 5090 diagnostic recorded a 24.6 ms VYRE CUDA median and
+   69.6 ms for Hyperscan with identical findings. That run did not attest a
+   clean source tree, so it is historical performance evidence rather than a
+   release crossover claim. See [Backends and routing](./backends.md).
 
 ## Get going
 
