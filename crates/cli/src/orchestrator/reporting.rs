@@ -321,9 +321,21 @@ pub(crate) fn report_backend_summary(
     let recovery_events = crate::BACKEND_RECOVERY_EVENTS.load(Ordering::Relaxed);
     let recovered_chunks = crate::BACKEND_RECOVERED_CHUNKS.load(Ordering::Relaxed);
     let recovered_bytes = crate::BACKEND_RECOVERED_BYTES.load(Ordering::Relaxed);
+    let recovery_summaries = crate::backend_recovery_summaries();
+    let invalid_autoroute_recovered = recovery_summaries
+        .iter()
+        .any(|summary| summary.failed_backend == "autoroute-invalid");
     let hw = keyhog_scanner::hw_probe::probe_hardware();
     let line = if let Some(backend) = backend_override {
         format!("backend: {} (forced via --backend)", backend.label())
+    } else if recovery_events > 0 && invalid_autoroute_recovered {
+        format!(
+            "backend: automatic routing included scalar correctness recovery for invalid autoroute state; recovered {recovered_chunks} chunk(s), {recovered_bytes} byte(s) across {recovery_events} event(s); scan coverage is complete; repair: keyhog calibrate-autoroute"
+        )
+    } else if recovery_events > 0 {
+        format!(
+            "backend: an automatic route faulted and completed through its measured recovery route; recovered {recovered_chunks} chunk(s), {recovered_bytes} byte(s) across {recovery_events} event(s); scan coverage is complete; repair: keyhog calibrate-autoroute"
+        )
     } else if gpu > 0 && non_gpu > 0 {
         format!(
             "backend: calibrated GPU route ({gpu} chunk(s)) + calibrated non-GPU route ({non_gpu} chunk(s)); inspect `keyhog backend --autoroute` for exact per-bucket routes"
@@ -342,13 +354,6 @@ pub(crate) fn report_backend_summary(
         "backend: calibrated non-GPU route (no hardware GPU available on this host)".to_string()
     };
 
-    let line = if recovery_events == 0 {
-        line
-    } else {
-        format!(
-            "{line}; recovered {recovered_chunks} chunk(s), {recovered_bytes} byte(s) across {recovery_events} routing recovery event(s)"
-        )
-    };
     let palette = terminal_palette(ansi, false);
     eprintln!("{}INFO{} {line}", palette.cyan, palette.reset);
 }
