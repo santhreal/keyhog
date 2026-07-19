@@ -535,7 +535,7 @@ inheritance audits, and quarterly developer-laptop sweeps.
 ## Lockdown mode (security-critical embeddings)
 
 For deployments where keyhog runs **on the same machine that holds the
-secrets** (e.g. paired with [EnvSeal](https://github.com/santhsecurity/envseal))
+secrets** (e.g. paired with [EnvSeal](https://crates.io/crates/envseal))
 and there is no trusted boundary between the scanner and the
 credentials it inspects:
 
