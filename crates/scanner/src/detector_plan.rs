@@ -95,14 +95,7 @@ impl CompiledDetectorPlan {
 pub(crate) struct CompiledDetectorPlans {
     by_detector_index: Box<[CompiledDetectorPlan]>,
     resolution: DetectorResolutionIndex,
-    validator_refs: Box<[ValidatorRef]>,
-    validator_ref_offsets: [usize; 257],
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ValidatorRef {
-    detector_index: usize,
-    validator_index: usize,
+    validator_index: crate::checksum::CompiledValidatorIndex,
 }
 
 impl CompiledDetectorPlans {
@@ -173,33 +166,13 @@ impl CompiledDetectorPlans {
                 })
                 .collect::<Result<Box<[_]>, String>>()?;
         let resolution = DetectorResolutionIndex::compile(detectors)?;
-        let mut validator_refs: [Vec<ValidatorRef>; 256] = std::array::from_fn(|_| Vec::new());
-        for (detector_index, plan) in by_detector_index.iter().enumerate() {
-            for (validator_index, prefix) in plan.validators.indexed_prefixes() {
-                let Some(first) = prefix.as_bytes().first().copied() else {
-                    continue;
-                };
-                let validator_ref = ValidatorRef {
-                    detector_index,
-                    validator_index,
-                };
-                if !validator_refs[first as usize].contains(&validator_ref) {
-                    validator_refs[first as usize].push(validator_ref);
-                }
-            }
-        }
-        let mut flat_validator_refs = Vec::new();
-        let mut validator_ref_offsets = [0usize; 257];
-        for (first, bucket) in validator_refs.into_iter().enumerate() {
-            validator_ref_offsets[first] = flat_validator_refs.len();
-            flat_validator_refs.extend(bucket);
-        }
-        validator_ref_offsets[256] = flat_validator_refs.len();
+        let validator_index = crate::checksum::CompiledValidatorIndex::compile(
+            by_detector_index.iter().map(|plan| &plan.validators),
+        );
         Ok(Self {
             by_detector_index,
             resolution,
-            validator_refs: flat_validator_refs.into_boxed_slice(),
-            validator_ref_offsets,
+            validator_index,
         })
     }
 
@@ -234,33 +207,14 @@ impl CompiledDetectorPlans {
         &self,
         credential: &str,
     ) -> crate::checksum::ChecksumConfidenceDecision {
-        let Some(first) = credential.as_bytes().first().copied() else {
-            return crate::checksum::ChecksumConfidenceDecision::not_applicable();
-        };
-        let mut invalid = None;
-        let mut unknown = None;
-        let mut structural = None;
-        let first = first as usize;
-        for validator_ref in &self.validator_refs
-            [self.validator_ref_offsets[first]..self.validator_ref_offsets[first + 1]]
-        {
-            let decision = self.by_detector_index[validator_ref.detector_index]
-                .validators
-                .validate_indexed(validator_ref.validator_index, credential);
-            match decision.result() {
-                crate::checksum::ChecksumResult::Valid => return decision,
-                crate::checksum::ChecksumResult::StructurallyValid => structural = Some(decision),
-                crate::checksum::ChecksumResult::Invalid => invalid = Some(decision),
-                crate::checksum::ChecksumResult::NotApplicable if decision.claims_family() => {
-                    unknown = Some(decision)
-                }
-                crate::checksum::ChecksumResult::NotApplicable => {}
-            }
-        }
-        structural
-            .or(unknown)
-            .or(invalid)
-            .unwrap_or_else(crate::checksum::ChecksumConfidenceDecision::not_applicable)
+        self.validator_index.validate_any(
+            credential,
+            |detector_index, validator_index, candidate| {
+                self.by_detector_index[detector_index]
+                    .validators
+                    .validate_indexed(validator_index, candidate)
+            },
+        )
     }
 }
 

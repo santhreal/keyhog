@@ -7,7 +7,7 @@
 
 mod compiled;
 
-pub(crate) use compiled::CompiledDetectorValidators;
+pub(crate) use compiled::{CompiledDetectorValidators, CompiledValidatorIndex};
 
 use std::sync::LazyLock;
 

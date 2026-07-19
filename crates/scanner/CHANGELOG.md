@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Use one compiled validator index for the active detector plan and the embedded
+  compatibility API, so prefix narrowing and validator-result precedence have
+  one implementation.
 - Avoid collecting GPU phase timing timestamps unless performance tracing is
   enabled, removing profiling clock reads from the normal accelerated path.
 - Warn when a library caller supplies an admission plan for different input,

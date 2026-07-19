@@ -200,37 +200,36 @@ pub(crate) struct CompiledDetectorValidators {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct CatalogRef {
-    detector_index: usize,
+struct ValidatorRef {
+    owner_index: usize,
     validator_index: usize,
 }
 
+/// First-byte index shared by the active detector plan and the embedded
+/// compatibility catalog. It owns both candidate narrowing and result
+/// precedence so validator lookup cannot drift between those surfaces.
 #[derive(Debug)]
-pub(crate) struct CompiledValidatorCatalog {
-    detector_ids: Box<[Box<str>]>,
-    validators: Box<[CompiledDetectorValidators]>,
-    refs: Box<[CatalogRef]>,
+pub(crate) struct CompiledValidatorIndex {
+    refs: Box<[ValidatorRef]>,
     ref_offsets: [usize; 257],
 }
 
-impl CompiledValidatorCatalog {
-    pub(crate) fn compile(detectors: &[keyhog_core::DetectorSpec]) -> Result<Self, String> {
-        let validators: Box<[_]> = detectors
-            .iter()
-            .map(CompiledDetectorValidators::compile)
-            .collect::<Result<_, _>>()?;
-        let mut refs: [Vec<CatalogRef>; 256] = std::array::from_fn(|_| Vec::new());
-        for (detector_index, set) in validators.iter().enumerate() {
+impl CompiledValidatorIndex {
+    pub(crate) fn compile<'a>(
+        validator_sets: impl IntoIterator<Item = &'a CompiledDetectorValidators>,
+    ) -> Self {
+        let mut refs: [Vec<ValidatorRef>; 256] = std::array::from_fn(|_| Vec::new());
+        for (owner_index, set) in validator_sets.into_iter().enumerate() {
             for (validator_index, prefix) in set.indexed_prefixes() {
                 let Some(first) = prefix.as_bytes().first().copied() else {
                     continue;
                 };
-                let catalog_ref = CatalogRef {
-                    detector_index,
+                let validator_ref = ValidatorRef {
+                    owner_index,
                     validator_index,
                 };
-                if !refs[first as usize].contains(&catalog_ref) {
-                    refs[first as usize].push(catalog_ref);
+                if !refs[first as usize].contains(&validator_ref) {
+                    refs[first as usize].push(validator_ref);
                 }
             }
         }
@@ -241,18 +240,17 @@ impl CompiledValidatorCatalog {
             flat_refs.extend(bucket);
         }
         ref_offsets[256] = flat_refs.len();
-        Ok(Self {
-            detector_ids: detectors
-                .iter()
-                .map(|detector| detector.id.clone().into_boxed_str())
-                .collect(),
-            validators,
+        Self {
             refs: flat_refs.into_boxed_slice(),
             ref_offsets,
-        })
+        }
     }
 
-    pub(crate) fn validate_any(&self, credential: &str) -> ChecksumConfidenceDecision {
+    pub(crate) fn validate_any(
+        &self,
+        credential: &str,
+        mut validate_indexed: impl FnMut(usize, usize, &str) -> ChecksumConfidenceDecision,
+    ) -> ChecksumConfidenceDecision {
         let Some(first) = credential.as_bytes().first().copied() else {
             return ChecksumConfidenceDecision::not_applicable();
         };
@@ -260,9 +258,12 @@ impl CompiledValidatorCatalog {
         let mut unknown = None;
         let mut structural = None;
         let first = first as usize;
-        for catalog_ref in &self.refs[self.ref_offsets[first]..self.ref_offsets[first + 1]] {
-            let decision = self.validators[catalog_ref.detector_index]
-                .validate_indexed(catalog_ref.validator_index, credential);
+        for validator_ref in &self.refs[self.ref_offsets[first]..self.ref_offsets[first + 1]] {
+            let decision = validate_indexed(
+                validator_ref.owner_index,
+                validator_ref.validator_index,
+                credential,
+            );
             match decision.result() {
                 ChecksumResult::Valid => return decision,
                 ChecksumResult::StructurallyValid => structural = Some(decision),
@@ -277,6 +278,38 @@ impl CompiledValidatorCatalog {
             .or(unknown)
             .or(invalid)
             .unwrap_or_else(ChecksumConfidenceDecision::not_applicable)
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct CompiledValidatorCatalog {
+    detector_ids: Box<[Box<str>]>,
+    validators: Box<[CompiledDetectorValidators]>,
+    index: CompiledValidatorIndex,
+}
+
+impl CompiledValidatorCatalog {
+    pub(crate) fn compile(detectors: &[keyhog_core::DetectorSpec]) -> Result<Self, String> {
+        let validators: Box<[_]> = detectors
+            .iter()
+            .map(CompiledDetectorValidators::compile)
+            .collect::<Result<_, _>>()?;
+        let index = CompiledValidatorIndex::compile(validators.iter());
+        Ok(Self {
+            detector_ids: detectors
+                .iter()
+                .map(|detector| detector.id.clone().into_boxed_str())
+                .collect(),
+            validators,
+            index,
+        })
+    }
+
+    pub(crate) fn validate_any(&self, credential: &str) -> ChecksumConfidenceDecision {
+        self.index
+            .validate_any(credential, |detector_index, validator_index, candidate| {
+                self.validators[detector_index].validate_indexed(validator_index, candidate)
+            })
     }
 
     pub(crate) fn validate_for_detector(
