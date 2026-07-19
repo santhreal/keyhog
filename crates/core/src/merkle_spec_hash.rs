@@ -124,6 +124,17 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
                     metadata.service
                 ));
             }
+            if let Some(confidence) = d.entropy_fallback_confidence {
+                entries.push(format!(
+                    "entropy-fallback-confidence:{}:{:016x}:{:016x}:{:016x}:{:016x}:{:016x}",
+                    d.id,
+                    confidence.low_entropy_max.to_bits(),
+                    confidence.high_entropy.to_bits(),
+                    confidence.very_high_entropy.to_bits(),
+                    confidence.keyword_lift.to_bits(),
+                    confidence.max_confidence.to_bits(),
+                ));
+            }
             let mut entropy_roles: Vec<&str> =
                 d.entropy_roles.iter().map(|role| role.as_str()).collect();
             entropy_roles.sort_unstable();
@@ -456,6 +467,7 @@ fn assert_scan_hash_field_inventory_is_exhaustive(detector: &DetectorSpec) {
         entropy_low: _,
         entropy_very_high: _,
         entropy_fallback: _,
+        entropy_fallback_confidence: _,
         entropy_roles: _,
         sensitive_path_entropy_very_high: _,
         entropy_shapes: _,

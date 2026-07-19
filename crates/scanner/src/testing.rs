@@ -2796,9 +2796,9 @@ pub fn generic_entropy_floor_for_test(
 }
 
 /// Test seam for [`crate::confidence::policy::entropy_fallback_confidence`].
-/// `keyword_present=false` selects the keyword-free label (no +0.10 lift); `true`
-/// passes a real keyword so the lift applies. Exposed to pin the NaN-sanitize
-/// contract (a NaN entropy must never launder into a 0.55 mid-tier confidence).
+/// `keyword_present=false` selects the keyword-free label; `true` applies the
+/// embedded generic-secret detector's declared keyword lift. Exposed to pin the
+/// NaN-sanitize contract without duplicating detector confidence values.
 #[cfg(feature = "entropy")]
 pub fn entropy_fallback_confidence_for_test(
     entropy: f64,
@@ -2811,11 +2811,15 @@ pub fn entropy_fallback_confidence_for_test(
     } else {
         crate::entropy::KEYWORD_FREE_LABEL
     };
+    let confidence = keyhog_core::detector_spec_by_id("generic-secret")
+        .and_then(|detector| detector.entropy_fallback_confidence)
+        .expect("embedded generic-secret detector must declare fallback confidence");
     crate::confidence::policy::entropy_fallback_confidence(
         entropy,
         keyword,
         entropy_high,
         entropy_very_high,
+        confidence,
     )
 }
 

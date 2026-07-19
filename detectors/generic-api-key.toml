@@ -17,6 +17,8 @@ keywords = ["api_key", "apikey", "api-key", "access_key", "accesskey", "secret_k
 entropy_high = 4.5
 entropy_low = 3.0
 entropy_very_high = 5.8
+# Map this detector's entropy evidence to report confidence without scanner defaults.
+entropy_fallback_confidence = { low_entropy_max = 0.55, high_entropy = 0.65, very_high_entropy = 0.75, keyword_lift = 0.1, max_confidence = 0.9 }
 sensitive_path_entropy_very_high = 5.8
 plausibility = { mixed_alnum_floor = 4.0, symbolic_entropy_floor = 3.5, second_half_entropy_floor = 2.5, second_half_min_len = 17, unique_chars_min_len = 17, min_unique_chars = 8, unanchored_hex_max_len = 10, identical_char_max_len = 4, structured_dotted_min_len = 40, mixed_alnum_min_len = 20, isolated_mixed_entropy_floor = 3.65, isolated_symbolic_min_len = 18, isolated_symbolic_min_symbols = 2, isolated_symbolic_requires_non_underscore = true, isolated_alpha_only_min_symbols = 3, isolated_alpha_only_min_alpha_ratio = 0.5, min_alnum_ratio = 0.5, source_type_name_max_len = 40, source_type_name_min_uppercase = 2, url_path_high_entropy_min_len = 41, isolated_colon_left_min_len = 20, isolated_colon_right_min_len = 16, leading_slash_base64_entropy_floor = 4.8, leading_slash_base64_min_len = 40, reject_repeated_blocks = true, allow_alphabetic_credential = true, reject_program_identifiers = true, reject_source_symbol_identifiers = true, reject_dash_segmented_alnum = true }
 # Specific API/key-material policy outranks broader generic secret bridges.

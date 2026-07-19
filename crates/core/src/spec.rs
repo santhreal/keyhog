@@ -154,6 +154,11 @@ pub struct DetectorSpec {
     /// scanner identity.
     #[serde(default)]
     pub entropy_fallback: Option<EntropyFallbackMetadata>,
+    /// Detector-owned confidence tiers for synthetic entropy findings. The
+    /// entropy engine supplies shared Shannon scoring, while each owning
+    /// detector declares how that evidence maps to report confidence.
+    #[serde(default)]
+    pub entropy_fallback_confidence: Option<EntropyFallbackConfidenceSpec>,
     /// Corpus-level entropy roles owned by this detector. Roles make the
     /// shared entropy engine data-driven: it resolves keyword-free,
     /// isolated-bare, and unclaimed-keyword candidates from detector TOML
@@ -625,6 +630,50 @@ pub struct EntropyFallbackMetadata {
     pub name: String,
     /// Service family attached to the synthetic finding.
     pub service: String,
+}
+
+/// Confidence mapping for one detector's synthetic entropy findings.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EntropyFallbackConfidenceSpec {
+    /// Maximum base confidence below the detector's high-entropy tier.
+    pub low_entropy_max: f64,
+    /// Base confidence at or above `entropy_high`.
+    pub high_entropy: f64,
+    /// Base confidence at or above `entropy_very_high`.
+    pub very_high_entropy: f64,
+    /// Confidence added when a detector keyword owns the candidate.
+    pub keyword_lift: f64,
+    /// Maximum confidence this fallback path may emit.
+    pub max_confidence: f64,
+}
+
+impl EntropyFallbackConfidenceSpec {
+    /// Validate probability bounds and monotonic evidence tiers.
+    pub fn validate(self) -> Result<(), &'static str> {
+        let values = [
+            self.low_entropy_max,
+            self.high_entropy,
+            self.very_high_entropy,
+            self.keyword_lift,
+            self.max_confidence,
+        ];
+        if values
+            .into_iter()
+            .any(|value| !value.is_finite() || !(0.0..=1.0).contains(&value))
+        {
+            return Err("all values must be finite probabilities in [0.0, 1.0]");
+        }
+        if self.low_entropy_max > self.high_entropy
+            || self.high_entropy > self.very_high_entropy
+            || self.very_high_entropy > self.max_confidence
+        {
+            return Err(
+                "confidence tiers must satisfy low_entropy_max <= high_entropy <= very_high_entropy <= max_confidence",
+            );
+        }
+        Ok(())
+    }
 }
 
 impl EntropyFallbackMetadata {

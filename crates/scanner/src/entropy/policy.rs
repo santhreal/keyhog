@@ -130,6 +130,8 @@ pub(crate) struct CompiledEntropyPolicy {
     pub(crate) entropy_low: f64,
     pub(crate) entropy_very_high: f64,
     #[cfg(feature = "entropy")]
+    pub(crate) fallback_confidence: keyhog_core::EntropyFallbackConfidenceSpec,
+    #[cfg(feature = "entropy")]
     pub(crate) sensitive_path_entropy_very_high: f64,
     pub(crate) mixed_alnum_floor: f64,
     pub(crate) symbolic_entropy_floor: f64,
@@ -265,6 +267,19 @@ impl CompiledEntropyPolicy {
         let entropy_high = Self::required(detector, "entropy_high", detector.entropy_high)?;
         let entropy_very_high =
             Self::required(detector, "entropy_very_high", detector.entropy_very_high)?;
+        #[cfg(feature = "entropy")]
+        let fallback_confidence = Self::required(
+            detector,
+            "entropy_fallback_confidence",
+            detector.entropy_fallback_confidence,
+        )?;
+        #[cfg(feature = "entropy")]
+        fallback_confidence.validate().map_err(|error| {
+            format!(
+                "detector {:?} entropy_fallback_confidence is invalid: {error}",
+                detector.id
+            )
+        })?;
         let sensitive_path_entropy_very_high = Self::required(
             detector,
             "sensitive_path_entropy_very_high",
@@ -342,6 +357,8 @@ impl CompiledEntropyPolicy {
             entropy_high,
             entropy_low,
             entropy_very_high,
+            #[cfg(feature = "entropy")]
+            fallback_confidence,
             #[cfg(feature = "entropy")]
             sensitive_path_entropy_very_high,
             mixed_alnum_floor: plausibility.mixed_alnum_floor,

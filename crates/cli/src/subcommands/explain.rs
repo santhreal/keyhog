@@ -269,6 +269,16 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
             metadata.service
         );
     }
+    if let Some(confidence) = d.entropy_fallback_confidence {
+        println!(
+            "    entropy_fallback_confidence: low_entropy_max={} high_entropy={} very_high_entropy={} keyword_lift={} max_confidence={}",
+            confidence.low_entropy_max,
+            confidence.high_entropy,
+            confidence.very_high_entropy,
+            confidence.keyword_lift,
+            confidence.max_confidence,
+        );
+    }
     if !d.entropy_roles.is_empty() {
         println!(
             "    entropy_roles: {}",

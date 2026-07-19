@@ -736,6 +736,24 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
             "active entropy owner must declare entropy_fallback metadata; omission would make synthetic finding identity ambiguous".into(),
         ));
     }
+    if entropy_owner && spec.entropy_fallback_confidence.is_none() {
+        issues.push(QualityIssue::Error(
+            "active entropy owner must declare entropy_fallback_confidence; omission would leave detector confidence in scanner literals".into(),
+        ));
+    }
+    if let Some(confidence) = spec.entropy_fallback_confidence {
+        if !entropy_owner {
+            issues.push(QualityIssue::Error(
+                "entropy_fallback_confidence requires an active detector-owned entropy policy"
+                    .into(),
+            ));
+        }
+        if let Err(error) = confidence.validate() {
+            issues.push(QualityIssue::Error(format!(
+                "entropy_fallback_confidence is invalid: {error}"
+            )));
+        }
+    }
     if let Some(metadata) = &spec.entropy_fallback {
         if !entropy_owner {
             issues.push(QualityIssue::Error(

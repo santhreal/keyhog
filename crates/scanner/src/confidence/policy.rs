@@ -1,5 +1,8 @@
 use crate::context;
 
+#[cfg(feature = "entropy")]
+const MAX_BYTE_SHANNON_ENTROPY: f64 = u8::BITS as f64;
+
 pub(crate) enum MlScoreResult {
     /// Score is final and the match can be pushed immediately.
     Final(f64),
@@ -408,31 +411,31 @@ pub(crate) fn entropy_fallback_confidence(
     keyword: &str,
     entropy_high: f64,
     entropy_very_high: f64,
+    confidence: keyhog_core::EntropyFallbackConfidenceSpec,
 ) -> f64 {
     // A NaN entropy is undefined evidence, never a real measurement
-    // (`shannon_entropy` is bounded to `[0, 8]`). Critically, `f64::min` IGNORES
-    // NaN, so the `0.55.min(entropy / 8.0)` fallback below would silently launder
-    // a NaN into a 0.55 mid-tier confidence (Law 10: no silent fallback). Collapse
-    // NaN to the zero-evidence case up front, loudly in debug so a broken upstream
-    // entropy is caught, conservatively (0.0) in release so it can never be
-    // credited as signal.
+    // (`shannon_entropy` is bounded to `[0, 8]`). Critically, `f64::min` ignores
+    // NaN, so the detector-owned low-tier cap would otherwise launder NaN into
+    // positive confidence. Collapse NaN to zero evidence before applying policy.
     debug_assert!(
         !entropy.is_nan(),
         "entropy_fallback_confidence received NaN entropy, broken upstream entropy computation"
     );
     let entropy = if entropy.is_nan() { 0.0 } else { entropy };
     // Keyword-free high-entropy candidates carry weaker evidence than
-    // keyword/isolated-token candidates, so only the latter get the historical
-    // +0.10 lift. The emit path owns routing; this owner owns the base score.
+    // keyword/isolated-token candidates, so only the latter get the detector's
+    // declared lift. The emit path owns routing; this owner owns the score map.
     let base_confidence = if entropy >= entropy_very_high {
-        0.75
+        confidence.very_high_entropy
     } else if entropy >= entropy_high {
-        0.65
+        confidence.high_entropy
     } else {
-        0.55_f64.min(entropy / 8.0)
+        confidence
+            .low_entropy_max
+            .min(entropy / MAX_BYTE_SHANNON_ENTROPY)
     };
     if keyword != crate::entropy::KEYWORD_FREE_LABEL {
-        (base_confidence + 0.1).min(0.90_f64)
+        (base_confidence + confidence.keyword_lift).min(confidence.max_confidence)
     } else {
         base_confidence
     }
