@@ -180,11 +180,12 @@ ladder or the installer calibration for source-specific probes. Use an explicit
 backend only when you intentionally want a diagnostic override.
 
 Calibration candidates and explicit backend overrides remain hard execution
-contracts. During a normal automatic scan, a runtime GPU fault is warned and
-only exact unprocessed intervals from the same stable snapshot are scanned
-through the confidence-separated fastest remaining peer. Completed GPU
-dispatches remain GPU-owned;
-recovered ranges, chunks, and bytes are reported. The exact workload route is
+contracts. During a normal automatic scan, an accelerated backend fault is
+warned and the same stable snapshot is scanned through the confidence-separated
+fastest remaining peer. GPU recovery replays only exact unprocessed intervals.
+A backend that fails before scanning replays the full stable batch. Completed
+dispatches remain owned by their original backend. Recovered ranges, chunks,
+and bytes are reported. The exact workload route is
 then quarantined in a bounded runtime-health artifact instead of silently
 selecting another backend. That artifact is separate from immutable timing
 evidence, survives restart, and clears the repaired workload only after

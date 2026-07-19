@@ -3,7 +3,7 @@
 mod allowlist;
 mod dispatch;
 pub(crate) use dispatch::{
-    automatic_gpu_recovery_allowed, record_completed_backend_recovery,
+    automatic_backend_recovery_allowed, record_completed_backend_recovery,
     record_completed_remote_autoroute_state_recovery, scan_selected_batch, AutorouteStateRecovery,
     BackendRecoveryPlan, COALESCED_CHUNK_SCAN_CEILING_BYTES, COALESCED_CHUNK_SCAN_CEILING_MB,
 };
@@ -352,10 +352,9 @@ pub(crate) struct DefaultScanRuntime {
     /// when that state is invalid. When `Some`, the per-file scan never consults
     /// the autoroute cache, so the runtime works on an uncalibrated binary.
     backend_override: Option<keyhog_scanner::ScanBackend>,
-    /// True only for an unforced production autoroute under the automatic GPU
-    /// policy. Explicit, required, and calibration dispatches are hard
-    /// contracts and must surface an accelerator fault instead of replaying it.
-    recover_automatic_gpu_faults: bool,
+    /// True for unforced production autoroute unless GPU execution is required.
+    /// Explicit, required, and calibration dispatches remain hard contracts.
+    recover_automatic_backend_faults: bool,
     /// Resolved suppression filter. `None` for the daemon runtime (which does its
     /// own client-side finalize via `into_parts`); `Some` for `keyhog watch`,
     /// installed by [`setup_default_scan_runtime`].
@@ -379,7 +378,7 @@ impl DefaultScanRuntime {
             detector_count: detectors.len(),
             worker_threads: rayon::current_num_threads(),
             backend_override: None,
-            recover_automatic_gpu_faults: automatic_gpu_recovery_allowed(
+            recover_automatic_backend_faults: automatic_backend_recovery_allowed(
                 None,
                 false,
                 keyhog_scanner::gpu::gpu_runtime_policy(),
@@ -431,7 +430,7 @@ impl DefaultScanRuntime {
         backend: Option<keyhog_scanner::ScanBackend>,
     ) -> Self {
         self.backend_override = backend;
-        self.recover_automatic_gpu_faults = automatic_gpu_recovery_allowed(
+        self.recover_automatic_backend_faults = automatic_backend_recovery_allowed(
             backend,
             false,
             keyhog_scanner::gpu::gpu_runtime_policy(),
@@ -610,7 +609,7 @@ impl DefaultScanRuntime {
             selection.execution_route,
             selection
                 .recovery_plan
-                .filter(|_| self.recover_automatic_gpu_faults),
+                .filter(|_| self.recover_automatic_backend_faults),
         )
         .with_context(|| {
             format!(

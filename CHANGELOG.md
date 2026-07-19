@@ -6,6 +6,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Fixed
 
+- Automatic autoroute recovery now covers Hyperscan/SIMD runtime faults as well
+  as GPU faults, replays the stable batch through the fastest remaining
+  measured-correct peer, and quarantines the failed workload route.
 - Generic plausibility now compiles its alphanumeric ratio, source type-name
   limits, and URL/path high-entropy exemption length from the owning detector
   TOML instead of scanner literals.

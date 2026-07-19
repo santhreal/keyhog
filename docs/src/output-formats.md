@@ -31,7 +31,7 @@ byte was recovered. Any
 source or scanner coverage gap overrides it to `partial`; recovery never masks
 incomplete input.
 
-After a selected GPU faults, the recovery backend is the confidence-separated
+After a selected accelerated backend faults, the recovery backend is the confidence-separated
 fastest remaining measured-correct peer for the same workload and runtime
 class. When no trustworthy route can be selected at all, the scalar correctness
 oracle completes the input and the receipt names `autoroute-invalid`; this is

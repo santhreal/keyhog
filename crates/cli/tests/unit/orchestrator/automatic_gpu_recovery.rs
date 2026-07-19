@@ -54,13 +54,21 @@ fn selected_gpu_failure_is_hard_when_recovery_is_not_allowed() {
 fn recovery_is_reserved_for_unforced_production_autoroute() {
     use keyhog_scanner::{gpu::GpuRuntimePolicy, ScanBackend};
 
-    assert!(API.automatic_gpu_recovery_allowed_for_test(None, false, GpuRuntimePolicy::Auto));
-    assert!(!API.automatic_gpu_recovery_allowed_for_test(None, false, GpuRuntimePolicy::Required));
-    assert!(!API.automatic_gpu_recovery_allowed_for_test(None, false, GpuRuntimePolicy::Disabled));
-    assert!(!API.automatic_gpu_recovery_allowed_for_test(
+    assert!(API.automatic_backend_recovery_allowed_for_test(None, false, GpuRuntimePolicy::Auto));
+    assert!(!API.automatic_backend_recovery_allowed_for_test(
+        None,
+        false,
+        GpuRuntimePolicy::Required
+    ));
+    assert!(API.automatic_backend_recovery_allowed_for_test(
+        None,
+        false,
+        GpuRuntimePolicy::Disabled
+    ));
+    assert!(!API.automatic_backend_recovery_allowed_for_test(
         Some(ScanBackend::GpuWgpu),
         false,
         GpuRuntimePolicy::Auto
     ));
-    assert!(!API.automatic_gpu_recovery_allowed_for_test(None, true, GpuRuntimePolicy::Auto));
+    assert!(!API.automatic_backend_recovery_allowed_for_test(None, true, GpuRuntimePolicy::Auto));
 }

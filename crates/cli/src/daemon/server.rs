@@ -538,7 +538,7 @@ async fn scan_text(
     let scanner = state.scanner.clone();
     let router = state.router.clone();
     let backend_override = state.backend_override;
-    let recover_automatic_gpu_faults = crate::orchestrator::automatic_gpu_recovery_allowed(
+    let recover_automatic_backend_faults = crate::orchestrator::automatic_backend_recovery_allowed(
         backend_override,
         false,
         keyhog_scanner::gpu::gpu_runtime_policy(),
@@ -587,7 +587,7 @@ async fn scan_text(
                     selection.execution_route,
                     selection
                         .recovery_plan
-                        .filter(|_| recover_automatic_gpu_faults),
+                        .filter(|_| recover_automatic_backend_faults),
                 )
                 .with_context(|| {
                     format!(
@@ -704,7 +704,7 @@ async fn scan_path(
     let scanner = state.scanner.clone();
     let router = state.router.clone();
     let backend_override = state.backend_override;
-    let recover_automatic_gpu_faults = crate::orchestrator::automatic_gpu_recovery_allowed(
+    let recover_automatic_backend_faults = crate::orchestrator::automatic_backend_recovery_allowed(
         backend_override,
         false,
         keyhog_scanner::gpu::gpu_runtime_policy(),
@@ -743,7 +743,7 @@ async fn scan_path(
                     selection.execution_route,
                     selection
                         .recovery_plan
-                        .filter(|_| recover_automatic_gpu_faults),
+                        .filter(|_| recover_automatic_backend_faults),
                 )
                 .with_context(|| {
                     format!(

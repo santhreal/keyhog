@@ -149,7 +149,7 @@ impl ScanOrchestrator {
         let scanner = Arc::clone(&self.scanner);
         let explicit_backend = self.effective_config.backend_override;
         let calibration_mode = self.effective_config.autoroute_calibration;
-        let recover_automatic_gpu_faults = super::automatic_gpu_recovery_allowed(
+        let recover_automatic_backend_faults = super::automatic_backend_recovery_allowed(
             explicit_backend,
             calibration_mode,
             self.effective_config.gpu_runtime_policy,
@@ -379,7 +379,7 @@ impl ScanOrchestrator {
                     selection.execution_route,
                     selection
                         .recovery_plan
-                        .filter(|_| recover_automatic_gpu_faults),
+                        .filter(|_| recover_automatic_backend_faults),
                 ) {
                     Ok(outcome) => outcome,
                     Err(error) => {

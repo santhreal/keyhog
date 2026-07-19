@@ -86,7 +86,7 @@ before the scan. On an eligible GPU host, the JSON includes `ok`, `status`, `exi
 means the binary is present but a required GPU capability or the production
 route failed; fail the GPU
 lane or intentionally start a separate explicit SIMD/CPU lane. Normal automatic
-scans recover a transient runtime dispatch fault against the same stable bytes
+scans recover a transient accelerated-backend fault against the same stable bytes
 and expose the recovered byte count; `--require-gpu` keeps absence or runtime
 failure as a hard lane contract. A runner without an
 eligible physical GPU instead returns one `gpu_adapter` probe with status

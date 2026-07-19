@@ -618,7 +618,7 @@ impl AutorouteDecision {
             ("one-shot", false, expected_one_shot),
             ("daemon", true, expected_daemon),
         ] {
-            if !expected_route.backend.is_gpu() {
+            if expected_route.backend == ScanBackend::CpuFallback {
                 continue;
             }
             let existing_recovery = self

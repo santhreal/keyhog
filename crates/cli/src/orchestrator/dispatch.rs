@@ -112,7 +112,7 @@ pub(super) fn finalize_source_outcome(src_chunks: usize, src_errored: bool) {
 struct CoalescedScannerWorker {
     scanner: Arc<CompiledScanner>,
     router: CoalescedBatchRouter,
-    recover_automatic_gpu_faults: bool,
+    recover_automatic_backend_faults: bool,
     perf_trace: bool,
 }
 
@@ -177,7 +177,7 @@ impl CoalescedScannerWorker {
         Self {
             scanner,
             router: CoalescedBatchRouter::Explicit(backend),
-            recover_automatic_gpu_faults: false,
+            recover_automatic_backend_faults: false,
             perf_trace,
         }
     }
@@ -187,7 +187,7 @@ impl CoalescedScannerWorker {
         config: CoalescedMeasuredRouterConfig,
         perf_trace: bool,
     ) -> Self {
-        let recover_automatic_gpu_faults = automatic_gpu_recovery_allowed(
+        let recover_automatic_backend_faults = automatic_backend_recovery_allowed(
             None,
             config.autoroute_calibration,
             config.gpu_runtime_policy,
@@ -207,7 +207,7 @@ impl CoalescedScannerWorker {
         Self {
             scanner,
             router: CoalescedBatchRouter::Measured(router),
-            recover_automatic_gpu_faults,
+            recover_automatic_backend_faults,
             perf_trace,
         }
     }
@@ -277,7 +277,7 @@ impl CoalescedScannerWorker {
             selection.execution_route,
             selection
                 .recovery_plan
-                .filter(|_| self.recover_automatic_gpu_faults),
+                .filter(|_| self.recover_automatic_backend_faults),
         )
         .map_err(|error| {
             AutorouteRoutingError::selected_backend_dispatch_failed(chosen_backend, error)
@@ -321,9 +321,9 @@ impl CoalescedScannerWorker {
 }
 
 /// Replay one stable batch through the fastest remaining calibrated peer after
-/// an automatically selected GPU faults. Explicit backend requests and
+/// an automatically selected accelerated backend faults. Explicit requests and
 /// calibration candidates never call this path.
-pub(crate) fn recover_automatic_gpu_batch(
+pub(crate) fn recover_automatic_backend_batch(
     scanner: &CompiledScanner,
     batch: &[Chunk],
     failed_backend: ScanBackend,
@@ -379,14 +379,14 @@ pub(crate) fn recover_automatic_gpu_batch(
 }
 
 #[inline]
-pub(crate) fn automatic_gpu_recovery_allowed(
+pub(crate) fn automatic_backend_recovery_allowed(
     explicit_backend: Option<ScanBackend>,
     calibration_mode: bool,
     gpu_runtime_policy: keyhog_scanner::gpu::GpuRuntimePolicy,
 ) -> bool {
     explicit_backend.is_none()
         && !calibration_mode
-        && gpu_runtime_policy == keyhog_scanner::gpu::GpuRuntimePolicy::Auto
+        && gpu_runtime_policy != keyhog_scanner::gpu::GpuRuntimePolicy::Required
 }
 
 pub(crate) struct SelectedBatchScan {
@@ -406,12 +406,6 @@ pub(crate) fn scan_selected_batch(
     execution_route: keyhog_scanner::ScanExecutionRoute,
     recovery_plan: Option<BackendRecoveryPlan>,
 ) -> keyhog_scanner::Result<SelectedBatchScan> {
-    if recovery_plan.is_some() && !backend.is_gpu() {
-        return Err(keyhog_scanner::ScanError::Config(format!(
-            "automatic GPU recovery plan was attached to non-GPU backend {}; recalibrate autoroute before scanning",
-            backend.label()
-        )));
-    }
     let degrade_before = backend.is_gpu().then(|| scanner.gpu_degrade_count());
     let (mut per_chunk, mut recovery) = match scanner
         .try_scan_coalesced_with_backend_admission_route_and_recovery(
@@ -422,13 +416,12 @@ pub(crate) fn scan_selected_batch(
             false,
         ) {
         Ok(outcome) => (outcome.matches, outcome.recovery),
-        Err(error) if backend.is_gpu() => match recovery_plan {
+        Err(error) => match recovery_plan {
             Some(recovery_plan) => {
-                recover_automatic_gpu_batch(scanner, batch, backend, &error, recovery_plan)?
+                recover_automatic_backend_batch(scanner, batch, backend, &error, recovery_plan)?
             }
             None => return Err(error),
         },
-        Err(error) => return Err(error),
     };
 
     if let Some(before) = degrade_before {
@@ -438,8 +431,13 @@ pub(crate) fn scan_selected_batch(
                 let error = keyhog_scanner::ScanError::Gpu(
                     "GPU dispatch completed through the scanner recall floor".to_string(),
                 );
-                (per_chunk, recovery) =
-                    recover_automatic_gpu_batch(scanner, batch, backend, &error, recovery_plan)?;
+                (per_chunk, recovery) = recover_automatic_backend_batch(
+                    scanner,
+                    batch,
+                    backend,
+                    &error,
+                    recovery_plan,
+                )?;
             } else {
                 return Err(keyhog_scanner::ScanError::Gpu(format!(
                     "selected backend {} degraded during dispatch (GPU degradation counter {before} -> {after}); explicit or required backend requests cannot be substituted",

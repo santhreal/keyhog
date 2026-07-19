@@ -2664,6 +2664,31 @@ fn automatic_recovery_uses_the_fastest_remaining_measured_backend() {
     .expect("recovery plan resolves")
     .expect("GPU route needs recovery plan");
     assert_eq!(plan.backend, ScanBackend::SimdCpu);
+
+    let simd_decision = AutorouteDecision::new(
+        ScanBackend::SimdCpu,
+        8 * 1024 * 1024,
+        1,
+        5,
+        Some(12),
+        None,
+    );
+    let simd_plan = automatic_recovery_plan(
+        Some(&simd_decision),
+        ScanBackend::SimdCpu,
+        AutorouteRuntimeClass::OneShot,
+    )
+    .expect("SIMD recovery plan resolves")
+    .expect("SIMD route needs a recovery plan");
+    assert_eq!(simd_plan.backend, ScanBackend::CpuFallback);
+
+    assert!(automatic_recovery_plan(
+        Some(&simd_decision),
+        ScanBackend::CpuFallback,
+        AutorouteRuntimeClass::OneShot,
+    )
+    .expect("scalar route recovery policy resolves")
+    .is_none());
 }
 
 #[test]

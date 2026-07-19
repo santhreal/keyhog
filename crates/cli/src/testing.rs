@@ -403,10 +403,10 @@ pub trait CliTestApi {
     fn disabled_gpu_dispatch_for_test(
         &self,
         body: &str,
-        recover_automatic_gpu_faults: bool,
+        recover_automatic_backend_faults: bool,
         _guard: &ScanRuntimeGuard,
     ) -> Result<Vec<String>>;
-    fn automatic_gpu_recovery_allowed_for_test(
+    fn automatic_backend_recovery_allowed_for_test(
         &self,
         explicit_backend: Option<keyhog_scanner::ScanBackend>,
         calibration_mode: bool,
@@ -1213,7 +1213,7 @@ impl CliTestApi for TestApi {
     fn disabled_gpu_dispatch_for_test(
         &self,
         body: &str,
-        recover_automatic_gpu_faults: bool,
+        recover_automatic_backend_faults: bool,
         _guard: &ScanRuntimeGuard,
     ) -> Result<Vec<String>> {
         crate::reset_scan_runtime_state();
@@ -1236,13 +1236,13 @@ impl CliTestApi for TestApi {
             keyhog_scanner::ScanBackend::GpuWgpu,
             None,
             scanner.execution_route_for_backend(keyhog_scanner::ScanBackend::GpuWgpu),
-            recover_automatic_gpu_faults.then_some(crate::orchestrator::BackendRecoveryPlan {
+            recover_automatic_backend_faults.then_some(crate::orchestrator::BackendRecoveryPlan {
                 backend: keyhog_scanner::ScanBackend::SimdCpu,
                 execution_route: scanner
                     .execution_route_for_backend(keyhog_scanner::ScanBackend::SimdCpu),
             }),
         )?;
-        if recover_automatic_gpu_faults && !outcome.recovered {
+        if recover_automatic_backend_faults && !outcome.recovered {
             anyhow::bail!("disabled GPU unexpectedly completed without recovery");
         }
         Ok(outcome
@@ -1252,13 +1252,13 @@ impl CliTestApi for TestApi {
             .map(|finding| finding.detector_id.as_ref().to_string())
             .collect())
     }
-    fn automatic_gpu_recovery_allowed_for_test(
+    fn automatic_backend_recovery_allowed_for_test(
         &self,
         explicit_backend: Option<keyhog_scanner::ScanBackend>,
         calibration_mode: bool,
         gpu_runtime_policy: keyhog_scanner::gpu::GpuRuntimePolicy,
     ) -> bool {
-        crate::orchestrator::automatic_gpu_recovery_allowed(
+        crate::orchestrator::automatic_backend_recovery_allowed(
             explicit_backend,
             calibration_mode,
             gpu_runtime_policy,

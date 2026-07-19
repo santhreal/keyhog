@@ -758,7 +758,7 @@ fn automatic_recovery_plan(
     selected_backend: ScanBackend,
     runtime_class: AutorouteRuntimeClass,
 ) -> Result<Option<BackendRecoveryPlan>, AutorouteRoutingError> {
-    if !selected_backend.is_gpu() {
+    if selected_backend == ScanBackend::CpuFallback {
         return Ok(None);
     }
     let persistent_runtime = runtime_class == AutorouteRuntimeClass::Persistent;
@@ -768,7 +768,7 @@ fn automatic_recovery_plan(
         })
         .ok_or_else(|| {
             AutorouteRoutingError::calibration_not_persisted(format!(
-                "autoroute selected {}, but its workload evidence does not resolve one fastest remaining measured-correct recovery peer across every calibration point; rerun `keyhog calibrate-autoroute` after repairing or splitting this workload class",
+                "autoroute selected accelerated backend {}, but its workload evidence does not resolve one fastest remaining measured-correct recovery peer across every calibration point; rerun `keyhog calibrate-autoroute` after repairing or splitting this workload class",
                 selected_backend.label()
             ))
         })?;

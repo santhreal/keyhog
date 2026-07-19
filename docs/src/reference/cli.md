@@ -135,7 +135,7 @@ minus the `limit-` prefix and with dashes changed to underscores.
 
 | Control                               | Effect                                                                |
 |---------------------------------------|-----------------------------------------------------------------------|
-| `keyhog scan --backend auto\|gpu-cuda\|gpu-cuda-region-presence\|gpu-wgpu\|gpu-wgpu-region-presence\|simd\|simd-regex\|cpu\|cpu-fallback` | Use persisted automatic routing (`auto`) or force one diagnostic backend. Descriptive labels are accepted spellings of the same peers shown in persisted evidence. Automatic GPU runtime faults visibly replay the stable batch and report recovered bytes; an explicit GPU override remains a hard contract and exits `12`. |
+| `keyhog scan --backend auto\|gpu-cuda\|gpu-cuda-region-presence\|gpu-wgpu\|gpu-wgpu-region-presence\|simd\|simd-regex\|cpu\|cpu-fallback` | Use persisted automatic routing (`auto`) or force one diagnostic backend. Descriptive labels are accepted spellings of the same peers shown in persisted evidence. Automatic accelerated-backend faults visibly replay stable bytes through the fastest remaining measured-correct peer. An explicit backend remains a hard contract. An explicit GPU failure exits `12`. |
 | `keyhog scan --gpu-batch-input-limit 512MB` | Override the VRAM-adaptive byte limit for one GPU region-presence batch (clamped to 128 MiB–1 GiB). |
 | `keyhog scan --max-file-size <SIZE>` | Bound one filesystem input (default 100 MiB); larger files are named in the coverage summary. |
 | `keyhog scan --regex-dfa-limit <SIZE>` | Bound each regex lazy-DFA cache (default 1 MiB); lowering the safety ceiling may force complex patterns onto the slower NFA path. |

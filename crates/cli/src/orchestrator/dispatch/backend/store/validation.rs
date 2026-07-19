@@ -3,6 +3,8 @@
 use std::collections::{BTreeSet, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use keyhog_scanner::ScanBackend;
+
 use super::super::evidence::{
     gpu_cold_warm_route_evidence, simd_cold_warm_route_evidence, AutorouteCalibrationPoint,
     AutorouteDecision, MeasuredRoute, MAX_AUTOROUTE_MEASURED_POINTS,
@@ -212,13 +214,14 @@ fn validate_decision_route_evidence_at(
     if selected_route != resolved {
         return Err("selected route is not the fastest persisted timing evidence".into());
     }
-    if selected_route.backend.is_gpu()
+    if selected_route.backend != ScanBackend::CpuFallback
         && decision
             .resolved_recovery_route(selected_route.backend, false)
             .is_none()
     {
         return Err(
-            "cache GPU decision has no unanimous fastest remaining one-shot recovery route".into(),
+            "cache accelerated decision has no unanimous fastest remaining one-shot recovery route"
+                .into(),
         );
     }
     let Some(persistent_route) = decision.resolved_persistent_route() else {
@@ -227,13 +230,14 @@ fn validate_decision_route_evidence_at(
                 .into(),
         );
     };
-    if persistent_route.backend.is_gpu()
+    if persistent_route.backend != ScanBackend::CpuFallback
         && decision
             .resolved_recovery_route(persistent_route.backend, true)
             .is_none()
     {
         return Err(
-            "cache GPU decision has no unanimous fastest remaining daemon recovery route".into(),
+            "cache accelerated decision has no unanimous fastest remaining daemon recovery route"
+                .into(),
         );
     }
     Ok(())

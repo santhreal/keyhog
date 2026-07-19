@@ -340,10 +340,10 @@ Hyperscan/SIMD, and GPU remain peers in both cases. See
 in-process retry policy, socket, and timeout semantics.
 
 Calibration never accepts a candidate that needs recovery. During an ordinary
-automatic scan, however, a transient GPU dispatch failure warns and replays the
-exact unprocessed ranges from the same stable snapshot through the scalar
-recovery path. Completed GPU shards are retained. Recovered work is counted
-separately, the affected workload route is quarantined, and the GPU fault
+automatic scan, an accelerated-backend fault warns and replays the same stable
+snapshot through the fastest remaining measured-correct peer. GPU recovery
+replays only exact unprocessed ranges and retains completed GPU shards.
+Recovered work is counted separately, the affected workload route is quarantined, and the backend fault
 is written to a bounded `<cache>.runtime-health.json` artifact. Runtime health
 is separate from immutable timing evidence and survives restart. A successful
 calibration commit clears only the workload identities remeasured in that

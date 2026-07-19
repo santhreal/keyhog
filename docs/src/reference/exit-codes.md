@@ -139,10 +139,11 @@ calibration candidate cannot execute. CPU/SIMD is not substituted for those
 explicit contracts. The distinct code lets CI identify a GPU runner/driver
 regression without scraping stderr.
 
-An automatically selected GPU that faults after routing is different: KeyHog
-warns, records the accelerator fault, and replays the same stable batch through
-the scalar recovery path. Completed dispatches are retained; only exact
-unprocessed ranges are replayed. A fully recovered scan keeps the ordinary
+An automatically selected accelerated backend that faults after routing is
+different. KeyHog warns, records the backend fault, and replays the same stable
+batch through the fastest remaining measured-correct peer. Completed GPU
+dispatches are retained, and only exact unprocessed GPU ranges are replayed. A
+fully recovered scan keeps the ordinary
 finding/clean exit semantics, reports `complete_after_recovery`, and names the
 recovered ranges, chunks, and bytes. If exact
 recovery cannot cover the requested input, the result is incomplete rather

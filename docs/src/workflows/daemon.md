@@ -57,10 +57,11 @@ to run `keyhog backend --self-test`, repair the driver/runtime, or start with
 `--backend simd` or `--backend cpu`. An invalid backend value or unrelated
 daemon configuration error remains exit `2`.
 
-After readiness, an automatically routed GPU fault does not kill the service or
-drop the request. The daemon warns, replays that request's stable text or file
-input only for the exact unprocessed ranges, records recovered ranges and bytes,
-quarantines that workload route, and keeps unrelated requests alive. Later
+After readiness, an automatically routed accelerated-backend fault does not kill
+the service or drop the request. The daemon warns and replays that request's
+stable text or file input through the fastest remaining measured-correct peer.
+GPU recovery replays only exact unprocessed ranges. The daemon records recovered
+ranges and bytes, quarantines that workload route, and keeps unrelated requests alive. Later
 requests for the quarantined workload warn and complete through scalar
 correctness recovery with recalibration guidance. Runtime route health is
 persisted separately from timing evidence, so restarting the daemon cannot
