@@ -540,7 +540,8 @@ impl CachedBackendRouter {
     }
 
     pub(crate) fn autoroute_state_is_invalid(&self) -> bool {
-        sole_compiled_backend().is_none() && self.decisions.is_empty()
+        sole_compiled_backend().is_none()
+            && (self.decisions.is_empty() || self.runtime_faults.is_poisoned())
     }
 
     pub(crate) fn autoroute_has_quarantined_routes(&self) -> bool {
@@ -626,21 +627,23 @@ impl CachedBackendRouter {
                 ));
             }
         };
-        if let Some(fault) = self
-            .runtime_faults
-            .lock()
-            .map_err(|_| AutorouteRoutingError {
-                message: "autoroute runtime route-health lock is poisoned; restart KeyHog before scanning again".to_string(),
-            })?
-            .get(&key)
-            .cloned()
-        {
-            let reason = AutorouteRoutingError::runtime_route_unhealthy(
-                &key,
-                self.runtime_class,
-                &fault,
-            )
-            .to_string();
+        let fault = match self.runtime_faults.lock() {
+            Ok(faults) => faults.get(&key).cloned(),
+            Err(_) => {
+                let reason = "autoroute runtime route-health state is unavailable after an internal panic; its persisted route cannot be trusted until KeyHog is restarted and `keyhog calibrate-autoroute` succeeds".to_string();
+                let announce = !self.recovery_announced.swap(true, Ordering::Relaxed);
+                return Ok(autoroute_state_recovery_selection(
+                    scanner,
+                    phase1_plan,
+                    reason,
+                    announce,
+                ));
+            }
+        };
+        if let Some(fault) = fault {
+            let reason =
+                AutorouteRoutingError::runtime_route_unhealthy(&key, self.runtime_class, &fault)
+                    .to_string();
             let announce = !self.recovery_announced.swap(true, Ordering::Relaxed);
             return Ok(autoroute_state_recovery_selection(
                 scanner,
@@ -698,18 +701,26 @@ impl CachedBackendRouter {
                 ),
             });
         }
-        self.runtime_faults
-            .lock()
-            .map_err(|_| AutorouteRoutingError {
-                message: "autoroute recovered the request, but the runtime route-health lock is poisoned; restart KeyHog before scanning again".to_string(),
-            })?
-            .insert(
-                identity.key.clone(),
-                RuntimeRouteFault {
-                    backend: recovery.failed_backend,
-                    reason: recovery.reason.clone(),
-                },
-            );
+        match self.runtime_faults.lock() {
+            Ok(mut faults) => {
+                faults.insert(
+                    identity.key.clone(),
+                    RuntimeRouteFault {
+                        backend: recovery.failed_backend,
+                        reason: recovery.reason.clone(),
+                    },
+                );
+            }
+            Err(_) => {
+                eprintln!(
+                    "keyhog: WARNING: recovered scan coverage is complete, but the in-process autoroute quarantine state is unavailable after an internal panic; restart KeyHog and run `keyhog calibrate-autoroute` before the next scan"
+                );
+                tracing::warn!(
+                    target: "keyhog::routing",
+                    "recovered findings retained without in-process autoroute quarantine"
+                );
+            }
+        }
         if let Some(runtime_health) = self.runtime_health.as_ref() {
             if let Err(error) = persist_runtime_route_fault(
                 runtime_health,
