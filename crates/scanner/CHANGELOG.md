@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Avoid collecting GPU phase timing timestamps unless performance tracing is
+  enabled, removing profiling clock reads from the normal accelerated path.
 - Resolve production entropy credential context from the active detector TOMLs
   and Tier-A keyword configuration at generation and suppression. Embedded
   compatibility keywords no longer widen a replacement detector corpus, and

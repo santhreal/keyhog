@@ -116,13 +116,13 @@ impl CompiledScanner {
         #[cfg(feature = "simd")]
         {
             let kh = super::profile::perf_trace_enabled();
-            let t_matcher = std::time::Instant::now();
+            let t_matcher = kh.then(std::time::Instant::now);
             let Some(matcher) = self.gpu_matcher() else {
                 return dispatch_failure(
                     "gpu literal matcher not built for coalesced region scan".to_string(),
                 );
             };
-            let matcher_s = t_matcher.elapsed();
+            let matcher_s = t_matcher.map_or(std::time::Duration::ZERO, |t| t.elapsed());
             let Some(backend) = self.gpu_backends.get(route) else {
                 return dispatch_failure(self.gpu_backend_unavailable_reason(route));
             };
@@ -144,7 +144,7 @@ impl CompiledScanner {
                     )
                 })
             })?;
-            let t_co = std::time::Instant::now();
+            let t_co = kh.then(std::time::Instant::now);
             let mut dis_s = std::time::Duration::ZERO;
             let mut derive_s_total = std::time::Duration::ZERO;
             let region_dispatch_profile = super::profile::span(super::profile::P::BackendDispatch);
@@ -227,7 +227,7 @@ impl CompiledScanner {
                 (),
                 String,
             >| {
-                let t_dis = std::time::Instant::now();
+                let t_dis = kh.then(std::time::Instant::now);
                 let expected_presence_words =
                     rows.checked_mul(presence_words).ok_or_else(|| {
                         "region-presence physical readback size overflows host usize".to_string()
@@ -249,7 +249,7 @@ impl CompiledScanner {
                         haystack,
                         region_starts,
                         |presence, literal_matches| {
-                            let t_derive = std::time::Instant::now();
+                            let t_derive = kh.then(std::time::Instant::now);
                             if presence.len() != expected_presence_words {
                                 return Err(format!(
                                     "region-presence readback for logical chunks {logical_start}..{} returned {} u32 word(s), need {expected_presence_words}",
@@ -378,12 +378,14 @@ impl CompiledScanner {
                                     }
                                 }
                             }
-                            derive_s = t_derive.elapsed();
+                            derive_s = t_derive.map_or(std::time::Duration::ZERO, |t| t.elapsed());
                             Ok(())
                         },
                     )
                 };
-                dis_s += t_dis.elapsed().saturating_sub(derive_s);
+                dis_s += t_dis
+                    .map_or(std::time::Duration::ZERO, |t| t.elapsed())
+                    .saturating_sub(derive_s);
                 derive_s_total += derive_s;
                 match result {
                     Ok(()) => Ok(()),
@@ -506,10 +508,11 @@ impl CompiledScanner {
                         },
                     );
                     if summary.is_ok() {
-                        let t_derive = std::time::Instant::now();
+                        let t_derive = kh.then(std::time::Instant::now);
                         derive_presence_row(&reduced)
                             .map_err(super::gpu_forced::SelectedGpuDispatchError::new)?;
-                        logical_derive_s += t_derive.elapsed();
+                        logical_derive_s +=
+                            t_derive.map_or(std::time::Duration::ZERO, |t| t.elapsed());
                     }
                     (summary, cursor + 1)
                 } else {
@@ -636,11 +639,11 @@ impl CompiledScanner {
                 ));
             }
             let co_s = t_co
-                .elapsed()
+                .map_or(std::time::Duration::ZERO, |t| t.elapsed())
                 .saturating_sub(dis_s)
                 .saturating_sub(derive_s_total);
             drop(region_dispatch_profile);
-            let t_floor = std::time::Instant::now();
+            let t_floor = kh.then(std::time::Instant::now);
             let full_recall_floor = self.tuning.gpu_recall_floor_enabled();
             let cpu_triggers = if full_recall_floor {
                 match self.try_simd_prefilter() {
@@ -711,7 +714,7 @@ impl CompiledScanner {
                     }
                 }
             }
-            let floor_s = t_floor.elapsed();
+            let floor_s = t_floor.map_or(std::time::Duration::ZERO, |t| t.elapsed());
 
             // Surface a GPU under-fire LOUDLY: the GPU DFA missed a real
             // detector match the CPU floor recovered. This is a VYRE literal-set
@@ -779,7 +782,7 @@ impl CompiledScanner {
                 Phase2GpuAdmissionWorkload::Empty
             };
             let phase2_dispatch_profile = super::profile::span(super::profile::P::BackendDispatch);
-            let t_phase2_gpu = std::time::Instant::now();
+            let t_phase2_gpu = kh.then(std::time::Instant::now);
             let mut phase2_gpu_empty_complete = false;
             let mut phase2_gpu_coverage = None;
             let phase2_gpu_admission = match phase2_gpu_workload {
@@ -876,7 +879,7 @@ impl CompiledScanner {
                     None => None,
                 },
             };
-            let phase2_gpu_s = t_phase2_gpu.elapsed();
+            let phase2_gpu_s = t_phase2_gpu.map_or(std::time::Duration::ZERO, |t| t.elapsed());
             drop(phase2_dispatch_profile);
 
             let trigger_bits: usize = triggers
@@ -885,7 +888,7 @@ impl CompiledScanner {
                 .map(|w| w.iter().map(|x| x.count_ones() as usize).sum::<usize>())
                 .sum();
 
-            let t_p2 = std::time::Instant::now();
+            let t_p2 = kh.then(std::time::Instant::now);
             let phase2_gpu_admitted = phase2_gpu_admission.as_ref().map_or(0usize, |admission| {
                 admission.admitted.iter().filter(|&&v| v).count()
             });
@@ -971,7 +974,7 @@ impl CompiledScanner {
                     derive_s_total.as_secs_f64(),
                     floor_s.as_secs_f64(),
                     phase2_gpu_s.as_secs_f64(),
-                    t_p2.elapsed().as_secs_f64(),
+                    t_p2.map_or(0.0, |t| t.elapsed().as_secs_f64()),
                     gpu_presence_bits,
                     gpu_underfire_recovered,
                     trigger_bits,
