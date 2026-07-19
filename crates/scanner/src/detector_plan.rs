@@ -97,6 +97,7 @@ pub(crate) struct CompiledDetectorPlans {
     resolution: DetectorResolutionIndex,
     validator_index: crate::checksum::CompiledValidatorIndex,
     decode_transforms: Arc<crate::decode::policy::CompiledDecodeTransformPolicy>,
+    decoder_plan: Arc<crate::decode::CompiledDecoderPlan>,
 }
 
 impl CompiledDetectorPlans {
@@ -104,6 +105,19 @@ impl CompiledDetectorPlans {
         detectors: &[DetectorSpec],
         interner: &crate::static_intern::StaticInterner,
         companions: Vec<Vec<crate::types::CompiledCompanion>>,
+    ) -> Result<Self, String> {
+        let decoder_plan = Arc::new(
+            crate::decode::CompiledDecoderPlan::snapshot()
+                .map_err(|error| format!("invalid decoder registry: {error}"))?,
+        );
+        Self::compile_with_decoder_plan(detectors, interner, companions, decoder_plan)
+    }
+
+    pub(crate) fn compile_with_decoder_plan(
+        detectors: &[DetectorSpec],
+        interner: &crate::static_intern::StaticInterner,
+        companions: Vec<Vec<crate::types::CompiledCompanion>>,
+        decoder_plan: Arc<crate::decode::CompiledDecoderPlan>,
     ) -> Result<Self, String> {
         if companions.len() != detectors.len() {
             return Err(format!(
@@ -177,6 +191,7 @@ impl CompiledDetectorPlans {
             resolution,
             validator_index,
             decode_transforms,
+            decoder_plan,
         })
     }
 
@@ -216,6 +231,17 @@ impl CompiledDetectorPlans {
         &self,
     ) -> Arc<crate::decode::policy::CompiledDecodeTransformPolicy> {
         Arc::clone(&self.decode_transforms)
+    }
+
+    #[inline]
+    #[cfg(feature = "decode")]
+    pub(crate) fn decoder_plan(&self) -> &crate::decode::CompiledDecoderPlan {
+        &self.decoder_plan
+    }
+
+    #[inline]
+    pub(crate) fn decoder_plan_arc(&self) -> Arc<crate::decode::CompiledDecoderPlan> {
+        Arc::clone(&self.decoder_plan)
     }
 
     /// Resolve a generic candidate against detector-declared validators. Named

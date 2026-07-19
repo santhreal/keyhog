@@ -33,12 +33,17 @@ impl CompiledScanner {
     ) -> Result<Self> {
         crate::entropy::policy::validate_feature_compatibility(&detectors)
             .map_err(crate::error::ScanError::Config)?;
+        let decoder_plan = Arc::new(crate::decode::CompiledDecoderPlan::snapshot().map_err(
+            |error| crate::error::ScanError::Config(format!("invalid decoder registry: {error}")),
+        )?);
         // LAW10: cfg-only Hyperscan tuning marker; no runtime effect.
         #[cfg(not(feature = "simd"))]
         let _tuning_config = tuning_config;
         let state = build_compile_state(&detectors)?;
-        let detector_digest =
-            super::detector_digest::from_spec_hash(keyhog_core::compute_spec_hash(&detectors));
+        let detector_digest = super::detector_digest::from_execution_plan(
+            keyhog_core::compute_spec_hash(&detectors),
+            decoder_plan.identity(),
+        );
         validate_compiled_pattern_detector_indices(
             &state.ac_map,
             &state.phase2_patterns,
@@ -343,12 +348,14 @@ impl CompiledScanner {
             static_intern_strings,
         ));
 
-        let detector_plans = crate::detector_plan::CompiledDetectorPlans::compile(
-            &detectors,
-            static_intern.as_ref(),
-            state.companions,
-        )
-        .map_err(crate::error::ScanError::Config)?;
+        let detector_plans =
+            crate::detector_plan::CompiledDetectorPlans::compile_with_decoder_plan(
+                &detectors,
+                static_intern.as_ref(),
+                state.companions,
+                decoder_plan,
+            )
+            .map_err(crate::error::ScanError::Config)?;
 
         // Pre-resolve the detector-wide weak-anchor base once. The per-pattern
         // bit is compiled beside its regex, so mixed detectors protect only the

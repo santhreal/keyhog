@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Snapshot the decoder registry when you compile a scanner. Decode execution
+  and autoroute admission now use that immutable plan, and its ordered decoder
+  names and versions contribute to the detector digest. Registering a decoder
+  after compilation cannot change an existing scanner. Invalid or duplicate
+  registrations through `try_register_decoder` return
+  `DecoderRegistrationError` instead of being ignored. The compatible
+  `register_decoder` entry point makes later scanner compilation fail on the
+  same error.
 - Compile reverse and Caesar admission from each active detector TOML's
   `decode_transforms` declaration. Custom corpora no longer inherit unrelated
   global prefixes, and detectors such as Databricks can recover `dapi` tokens

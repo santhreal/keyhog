@@ -1,7 +1,12 @@
-pub(super) fn from_spec_hash(spec_hash: [u8; 32]) -> u64 {
+pub(super) fn from_execution_plan(spec_hash: [u8; 32], decoder_plan_identity: u64) -> u64 {
     let mut hasher = blake3::Hasher::new();
-    update(&mut hasher, b"domain", b"keyhog-scanner-detector-digest-v2");
+    update(&mut hasher, b"domain", b"keyhog-scanner-detector-digest-v3");
     update(&mut hasher, b"spec_hash", &spec_hash);
+    update(
+        &mut hasher,
+        b"decoder_plan",
+        &decoder_plan_identity.to_le_bytes(),
+    );
 
     let mut bytes = [0u8; 8];
     bytes.copy_from_slice(&hasher.finalize().as_bytes()[..8]);

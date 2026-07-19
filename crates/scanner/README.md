@@ -42,6 +42,22 @@ scanner `entropy` feature. Scanner construction returns an actionable
 configuration error when the artifact cannot execute a declared mechanism. It
 never compiles a weaker detector under the same detector identity.
 
+Register custom decoders before you compile a scanner:
+
+```rust,ignore
+keyhog_scanner::decode::try_register_decoder(Box::new(MyDecoder))?;
+let scanner = CompiledScanner::compile(detectors)?;
+```
+
+`CompiledScanner` snapshots the ordered decoder set. Later registrations apply
+only to scanners compiled afterward. Your decoder inherits version `"1"` from
+the `Decoder` trait. Override `version` and increment it whenever the same input
+can produce different decoded chunks. Decoder names and versions form part of
+the scanner and autoroute identity. Empty descriptors, whitespace, non-ASCII
+descriptors, and duplicate names return `DecoderRegistrationError`.
+The compatibility `register_decoder` function keeps its unit return type. If it
+cannot register a decoder, the next scanner compilation returns that error.
+
 For example, `max_len = 512` admits a 512-byte candidate and rejects a
 513-byte candidate whole. Generic assignment, entropy fallback, and explicit
 regex envelopes use the same compiled inclusive bound before entropy or BPE

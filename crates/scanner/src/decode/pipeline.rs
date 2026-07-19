@@ -3,9 +3,45 @@ use keyhog_core::Chunk;
 use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 
+#[cfg(feature = "decode")]
 pub(crate) fn decode_chunk_with_policy(
     chunk: &Chunk,
     policy: &super::policy::CompiledDecodeTransformPolicy,
+    decoder_plan: &registry::CompiledDecoderPlan,
+    max_depth: usize,
+    validate: bool,
+    deadline: Option<std::time::Instant>,
+    screen: Option<&crate::alphabet_filter::AlphabetScreen>,
+) -> Vec<Chunk> {
+    decode_chunk_with_decoders(
+        chunk,
+        policy,
+        decoder_plan.decoders(),
+        max_depth,
+        validate,
+        deadline,
+        screen,
+    )
+}
+
+pub(crate) fn decode_chunk_with_active_decoders(
+    chunk: &Chunk,
+    policy: &super::policy::CompiledDecodeTransformPolicy,
+    max_depth: usize,
+    validate: bool,
+    deadline: Option<std::time::Instant>,
+    screen: Option<&crate::alphabet_filter::AlphabetScreen>,
+) -> Vec<Chunk> {
+    let decoders = registry::active_decoders();
+    decode_chunk_with_decoders(
+        chunk, policy, &decoders, max_depth, validate, deadline, screen,
+    )
+}
+
+fn decode_chunk_with_decoders(
+    chunk: &Chunk,
+    policy: &super::policy::CompiledDecodeTransformPolicy,
+    decoders: &[registry::RegisteredDecoder],
     max_depth: usize,
     validate: bool,
     deadline: Option<std::time::Instant>,
@@ -42,7 +78,6 @@ pub(crate) fn decode_chunk_with_policy(
     // RETURNED for scanning; this counter decides the recursion budget.
     let mut produced = 0usize;
 
-    let decoders = registry::active_decoders();
     // Defensive: drop any cache left by a prior `decode_chunk` that early-returned
     // (budget exhausted) before its final clear, so no stale (ptr,len) can be read.
     extractor::clear_shared_candidates();
@@ -212,10 +247,13 @@ pub(crate) use extractor::{extract_profile_dump, extract_profile_reset};
 pub(super) use extractor::{hash_fast, ExtractedValue};
 #[cfg(feature = "decode")]
 pub(crate) use registry::default_decoder_names;
-pub use registry::register_decoder;
+pub(crate) use registry::CompiledDecoderPlan;
 #[cfg(feature = "decode")]
-pub(crate) use registry::{decoder_admission, decoder_admission_sketch};
+pub(crate) use registry::{
+    active_decoder_admission_sketch, decoder_admission, decoder_admission_sketch,
+};
 pub(crate) use registry::{decoder_profile_dump, decoder_profile_reset};
+pub use registry::{register_decoder, try_register_decoder, DecoderRegistrationError};
 #[cfg(test)]
 pub(crate) use registry::{register_thread_decoder, ScopedDecoderRegistration};
 pub(crate) use splice::{bytecount_newlines, splice_decoded_payload_at};

@@ -265,6 +265,14 @@ active-corpus reverse and Caesar admission program. The decoders do not read the
 scanner-global confidence prefix list. A custom corpus therefore changes both
 matching and evasion recovery through the same detector digest.
 
+Scanner construction also snapshots the ordered decoder registry. Decode
+execution, decode admission, and autoroute workload sketches all read that same
+immutable snapshot. Each decoder supplies a stable name and version. Those
+descriptors contribute to the detector digest, so cached routing evidence does
+not survive a decoder-plan change. If you register a decoder after scanner
+construction, the existing scanner does not change. Compile another scanner to
+use the new decoder.
+
 **The rule.** Emission paths produce `CandidateMatch` values and typed signals;
 `adjudicate_match` owns the ordered suppression verdict. Path owners may compute
 context-specific facts (entropy shape, generic bridge boundaries, named

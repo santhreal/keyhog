@@ -65,6 +65,7 @@ impl CompiledScanner {
                 crate::decode::decode_chunk_with_policy(
                     chunk,
                     self.detector_plans.decode_transforms(),
+                    self.detector_plans.decoder_plan(),
                     self.config.max_decode_depth,
                     self.config.validate_decode,
                     deadline,
