@@ -639,9 +639,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let gpu_candidates = scanner.gpu_backend_candidates();
         for candidate in &gpu_candidates {
             println!(
-                "gpu-peer backend={} available={} eligible={} software={} driver={} version={} device={} runtime={} error={}",
+                "gpu-peer backend={} available={} acquired={} eligible={} software={} driver={} version={} device={} runtime={} error={}",
                 candidate.backend.label(),
                 candidate.available,
+                candidate.acquired,
                 candidate.is_eligible(),
                 candidate.is_software,
                 visible_peer_field(candidate.driver_id, "unavailable"),
@@ -663,8 +664,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         for &backend in &gpu_backends {
             assert!(
                 scanner.warm_backend(backend),
-                "{} was reported as acquired but failed its warm-up",
+                "{} passed the peer census but failed its warm-up",
                 backend.label()
+            );
+        }
+        // Refresh after warm-up. The initial list is a lightweight census;
+        // release evidence must record the peers that actually materialized.
+        let gpu_candidates = scanner.gpu_backend_candidates();
+        for &backend in &gpu_backends {
+            let candidate = gpu_candidates
+                .iter()
+                .find(|candidate| candidate.backend == backend)
+                .expect("censused GPU backend remains in the candidate list");
+            assert!(
+                candidate.is_acquired_eligible(),
+                "{} warmed without a complete acquired-peer receipt: {}",
+                backend.label(),
+                visible_peer_field(candidate.acquisition_error.as_deref(), "no diagnostic")
             );
         }
 
@@ -1055,7 +1071,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let selected_peer = gpu_candidates
                 .iter()
                 .find(|candidate| {
-                    candidate.backend == selected_gpu.backend && candidate.is_eligible()
+                    candidate.backend == selected_gpu.backend && candidate.is_acquired_eligible()
                 })
                 .ok_or_else(|| {
                     io::Error::new(
@@ -1140,7 +1156,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .iter()
                     .map(|candidate| GpuPeerArtifact {
                         backend: candidate.backend.label().to_owned(),
-                        acquired: candidate.available,
+                        acquired: candidate.acquired,
                         driver: visible_peer_field(candidate.driver_id, "unavailable").to_owned(),
                         driver_version: visible_peer_field(candidate.driver_version, "unavailable")
                             .to_owned(),

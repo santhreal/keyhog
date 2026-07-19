@@ -195,12 +195,18 @@ impl GpuBackendCandidateStatus {
                 .is_some_and(|value| !value.trim().is_empty())
     }
 
-    /// Whether this peer is executable hardware with complete reproducibility
-    /// identity. Autoroute and health paths consume this single eligibility
-    /// contract instead of combining acquisition with unrelated global probes.
+    /// Whether the lightweight census found hardware with complete identity.
+    /// This makes the peer eligible for materialization, but does not prove
+    /// that device acquisition has succeeded.
     #[must_use]
     pub fn is_eligible(&self) -> bool {
         self.available && !self.is_software && self.has_complete_identity()
+    }
+
+    /// Whether this exact peer has materialized and retains complete identity.
+    #[must_use]
+    pub fn is_acquired_eligible(&self) -> bool {
+        self.acquired && self.is_eligible()
     }
 }
 
