@@ -3,7 +3,7 @@
 ## Unreleased
 
 - Make the final backend summary identify invalid-autoroute scalar recovery and
-  measured runtime-fault recovery directly. Recovered work is no longer
+  runtime-fault recovery directly. Recovered work is no longer
   described as a calibrated non-GPU winner.
 - Let `calibrate-autoroute --policy` refresh one scan policy without rerunning
   every preset. The default remains the complete all-policy install sweep.

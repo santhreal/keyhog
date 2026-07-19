@@ -334,7 +334,7 @@ pub(crate) fn report_backend_summary(
         )
     } else if recovery_events > 0 {
         format!(
-            "backend: an automatic route faulted and completed through its measured recovery route; recovered {recovered_chunks} chunk(s), {recovered_bytes} byte(s) across {recovery_events} event(s); scan coverage is complete; repair: keyhog calibrate-autoroute"
+            "backend: an automatic route faulted and completed through exact recovery; recovered {recovered_chunks} chunk(s), {recovered_bytes} byte(s) across {recovery_events} event(s); scan coverage is complete; repair: keyhog calibrate-autoroute"
         )
     } else if gpu > 0 && non_gpu > 0 {
         format!(
