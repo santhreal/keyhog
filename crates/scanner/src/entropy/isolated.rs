@@ -14,6 +14,8 @@ struct IsolatedCandidatePolicy {
     symbolic_min_len: usize,
     symbolic_min_symbols: usize,
     symbolic_requires_non_underscore: bool,
+    alpha_only_min_symbols: usize,
+    alpha_only_min_alpha_ratio: f64,
     colon_left_min_len: usize,
     colon_right_min_len: usize,
 }
@@ -28,6 +30,8 @@ impl IsolatedCandidatePolicy {
             symbolic_min_len: policy.isolated_symbolic_min_len,
             symbolic_min_symbols: policy.isolated_symbolic_min_symbols,
             symbolic_requires_non_underscore: policy.isolated_symbolic_requires_non_underscore,
+            alpha_only_min_symbols: policy.isolated_alpha_only_min_symbols,
+            alpha_only_min_alpha_ratio: policy.isolated_alpha_only_min_alpha_ratio,
             colon_left_min_len: policy.isolated_colon_left_min_len,
             colon_right_min_len: policy.isolated_colon_right_min_len,
         }
@@ -300,7 +304,12 @@ fn symbolic_special_shape_candidate(
         && symbols >= candidate_policy.symbolic_min_symbols
         && (!candidate_policy.symbolic_requires_non_underscore || has_non_underscore_symbol)
         && (has_digit
-            || symbolic_alpha_only_opaque_candidate(candidate, candidate_policy.symbolic_min_len))
+            || symbolic_alpha_only_opaque_candidate(
+                candidate,
+                candidate_policy.symbolic_min_len,
+                candidate_policy.alpha_only_min_symbols,
+                candidate_policy.alpha_only_min_alpha_ratio,
+            ))
 }
 
 pub(super) fn isolated_special_shape_floor_met_with_policy(
@@ -735,7 +744,12 @@ fn isolated_bare_candidate(
     let has_alpha = candidate.bytes().any(|b| b.is_ascii_alphabetic());
     let has_digit = candidate.bytes().any(|b| b.is_ascii_digit());
     let no_digit_symbolic_token = !has_digit
-        && symbolic_alpha_only_opaque_candidate(candidate, candidate_policy.symbolic_min_len);
+        && symbolic_alpha_only_opaque_candidate(
+            candidate,
+            candidate_policy.symbolic_min_len,
+            candidate_policy.alpha_only_min_symbols,
+            candidate_policy.alpha_only_min_alpha_ratio,
+        );
     if !has_alpha || (!has_digit && !no_digit_symbolic_token) {
         return None;
     }
@@ -766,7 +780,7 @@ fn isolated_bare_candidate(
     let bang_led_symbolic_token = has_assignment_equals
         && candidate.starts_with('!')
         && !candidate.starts_with("!!")
-        && symbolic_isolated_bare_candidate(candidate);
+        && symbolic_isolated_bare_candidate(candidate, candidate_policy);
     if standard_token
         || colon_separated_opaque_candidate(
             candidate,
@@ -774,7 +788,7 @@ fn isolated_bare_candidate(
             candidate_policy.colon_right_min_len,
         )
         || no_digit_symbolic_token
-        || (!has_assignment_equals && symbolic_isolated_bare_candidate(candidate))
+        || (!has_assignment_equals && symbolic_isolated_bare_candidate(candidate, candidate_policy))
         || bang_led_symbolic_token
     {
         return Some(candidate);
@@ -810,7 +824,12 @@ pub(crate) fn colon_separated_opaque_candidate(
     })
 }
 
-pub(crate) fn symbolic_alpha_only_opaque_candidate(candidate: &str, min_len: usize) -> bool {
+fn symbolic_alpha_only_opaque_candidate(
+    candidate: &str,
+    min_len: usize,
+    min_symbols: usize,
+    min_alpha_ratio: f64,
+) -> bool {
     if candidate.len() < min_len || candidate.contains("://") {
         return false;
     }
@@ -835,25 +854,51 @@ pub(crate) fn symbolic_alpha_only_opaque_candidate(candidate: &str, min_len: usi
     }
     has_upper
         && has_lower
-        && punctuation >= 3
-        && alpha * 2 >= candidate.len()
+        && punctuation >= min_symbols
+        && (alpha as f64) >= (candidate.len() as f64) * min_alpha_ratio
         && crate::suppression::token_randomness::is_random_token(candidate)
 }
 
-pub(crate) fn symbolic_isolated_bare_candidate(candidate: &str) -> bool {
+pub(crate) fn symbolic_alpha_only_opaque_candidate_with_policy(
+    candidate: &str,
+    policy: &super::policy::CompiledEntropyPolicy,
+) -> bool {
+    let candidate_policy = IsolatedCandidatePolicy::from_compiled(policy);
+    symbolic_alpha_only_opaque_candidate(
+        candidate,
+        candidate_policy.symbolic_min_len,
+        candidate_policy.alpha_only_min_symbols,
+        candidate_policy.alpha_only_min_alpha_ratio,
+    )
+}
+
+fn symbolic_isolated_bare_candidate(
+    candidate: &str,
+    candidate_policy: IsolatedCandidatePolicy,
+) -> bool {
     if candidate.contains("://") || candidate.bytes().any(|b| matches!(b, b':' | b',')) {
         return false;
     }
     let mut symbol_count = 0usize;
+    let mut has_non_underscore_symbol = false;
     for b in candidate.bytes() {
         if matches!(b, b'"' | b'\'' | b'`') || !b.is_ascii_graphic() {
             return false;
         }
         if !b.is_ascii_alphanumeric() {
             symbol_count += 1;
+            has_non_underscore_symbol |= b != b'_';
         }
     }
-    symbol_count >= 2
+    symbol_count >= candidate_policy.symbolic_min_symbols
+        && (!candidate_policy.symbolic_requires_non_underscore || has_non_underscore_symbol)
+}
+
+pub(crate) fn symbolic_isolated_bare_candidate_with_policy(
+    candidate: &str,
+    policy: &super::policy::CompiledEntropyPolicy,
+) -> bool {
+    symbolic_isolated_bare_candidate(candidate, IsolatedCandidatePolicy::from_compiled(policy))
 }
 
 #[cfg(test)]

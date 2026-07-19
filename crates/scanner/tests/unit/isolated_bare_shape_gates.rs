@@ -1,18 +1,22 @@
-//! Boundary contract for the three isolated-bare candidate SHAPE gates in
-//! `entropy/isolated.rs`: the keyword-free admission gates that decide whether
-//! a bare token is even shaped like an opaque secret before the entropy floors
-//! run. Each carries hand-tuned magic lengths/counts (colon halves >=20/>=16,
-//! symbolic-alpha len>=18 + punctuation>=3 + alpha*2>=len, symbolic-bare
-//! symbol_count>=2) and had no direct tests, so a future edit could silently
-//! widen or narrow recall. These tests pin every threshold and char-class.
+//! These tests cover the three isolated-bare candidate shape gates in
+//! `entropy/isolated.rs`. The owning detector TOML defines each threshold.
+//! The scanner compiles those values before it admits a bare token.
 //!
 //! `symbolic_alpha_only_opaque` depends on the random-vs-dictionary token check;
 //! tests that hinge on it self-validate the precondition via `is_random_token`
 //! so a model change fails loudly here, not silently in the gate.
 
 use keyhog_scanner::testing::entropy_isolated::{
-    colon_separated_opaque, is_random_token, symbolic_alpha_only_opaque, symbolic_bare,
+    colon_separated_opaque, is_random_token, symbolic_alpha_only_opaque,
+    symbolic_alpha_only_opaque_with_policy, symbolic_bare, symbolic_bare_with_policy,
 };
+
+fn plausibility_policy() -> keyhog_core::DetectorPlausibilityPolicySpec {
+    keyhog_core::detector_spec_by_id("generic-keyword-secret")
+        .expect("embedded generic-keyword-secret detector must load")
+        .plausibility
+        .expect("embedded generic-keyword-secret must own plausibility policy")
+}
 
 // ── colon_separated_opaque_candidate ────────────────────────────────────────
 // Exactly one ':', not '://', left half >=20 and right half >=16, each
@@ -91,8 +95,8 @@ fn colon_separated_empty_fails() {
 }
 
 // ── symbolic_bare (symbolic_isolated_bare_candidate) ────────────────────────
-// No '://', no ':' or ',', every byte ASCII-graphic and not a quote, at least
-// two non-alphanumeric symbol bytes.
+// No '://', no ':' or ',', every byte ASCII-graphic and not a quote. Symbol
+// count and underscore policy come from the owning detector TOML.
 
 #[test]
 fn symbolic_bare_positive() {
@@ -102,6 +106,37 @@ fn symbolic_bare_positive() {
 #[test]
 fn symbolic_bare_exactly_two_symbols() {
     assert!(symbolic_bare("ab-cd_ef"));
+}
+
+#[test]
+fn symbolic_bare_two_underscores_fail_detector_non_underscore_policy() {
+    assert!(!symbolic_bare("ab_cd_ef"));
+}
+
+#[test]
+fn symbolic_bare_symbol_count_follows_detector_policy() {
+    let candidate = "ab-cd_ef";
+    assert!(symbolic_bare(candidate));
+    assert!(!symbolic_bare_with_policy(
+        candidate,
+        keyhog_core::DetectorPlausibilityPolicySpec {
+            isolated_symbolic_min_symbols: 3,
+            ..plausibility_policy()
+        },
+    ));
+}
+
+#[test]
+fn symbolic_bare_underscore_rule_follows_detector_policy() {
+    let candidate = "ab_cd_ef";
+    assert!(!symbolic_bare(candidate));
+    assert!(symbolic_bare_with_policy(
+        candidate,
+        keyhog_core::DetectorPlausibilityPolicySpec {
+            isolated_symbolic_requires_non_underscore: false,
+            ..plausibility_policy()
+        },
+    ));
 }
 
 #[test]
@@ -145,8 +180,9 @@ fn symbolic_bare_many_symbols() {
 }
 
 // ── symbolic_alpha_only_opaque_candidate ────────────────────────────────────
-// len>=18, no '://', every byte graphic and not a quote, NO digits, has upper +
-// lower, punctuation>=3, alpha*2>=len, AND reads as a random token.
+// The detector policy owns minimum length, symbol count, and alphabetic ratio.
+// The shape also requires mixed case, no digits, graphic unquoted bytes, and a
+// random-token result.
 
 /// 18 chars, no digits, 3 '-', upper X + lowercase, improbable letter runs.
 const SYM_ALPHA_OK: &str = "Xzqk-pvbg-wmjz-rql";
@@ -159,6 +195,30 @@ fn symbolic_alpha_positive_precondition_is_random() {
 #[test]
 fn symbolic_alpha_positive() {
     assert!(symbolic_alpha_only_opaque(SYM_ALPHA_OK));
+}
+
+#[test]
+fn symbolic_alpha_symbol_count_follows_detector_policy() {
+    assert!(symbolic_alpha_only_opaque(SYM_ALPHA_OK));
+    assert!(!symbolic_alpha_only_opaque_with_policy(
+        SYM_ALPHA_OK,
+        keyhog_core::DetectorPlausibilityPolicySpec {
+            isolated_alpha_only_min_symbols: 4,
+            ..plausibility_policy()
+        },
+    ));
+}
+
+#[test]
+fn symbolic_alpha_ratio_follows_detector_policy() {
+    assert!(symbolic_alpha_only_opaque(SYM_ALPHA_OK));
+    assert!(!symbolic_alpha_only_opaque_with_policy(
+        SYM_ALPHA_OK,
+        keyhog_core::DetectorPlausibilityPolicySpec {
+            isolated_alpha_only_min_alpha_ratio: 0.9,
+            ..plausibility_policy()
+        },
+    ));
 }
 
 #[test]
@@ -178,7 +238,7 @@ fn symbolic_alpha_with_quote_fails() {
 
 #[test]
 fn symbolic_alpha_too_few_punctuation_fails() {
-    // Only two '-' ⇒ punctuation count 2 < 3.
+    // This candidate has two punctuation bytes. The detector requires three.
     assert!(!symbolic_alpha_only_opaque("Xzqkpvbg-wmjz-rqlx"));
 }
 
@@ -194,7 +254,7 @@ fn symbolic_alpha_without_lowercase_fails() {
 
 #[test]
 fn symbolic_alpha_dictionary_word_is_not_random_fails() {
-    // Pronounceable English ⇒ the random-token gate rejects it.
+    // The random-token gate rejects this pronounceable English phrase.
     let word = "Inter-nal-Conf-data";
     assert!(!is_random_token(word));
     assert!(!symbolic_alpha_only_opaque(word));

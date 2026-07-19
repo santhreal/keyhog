@@ -546,6 +546,8 @@ knob_changes_digest!(spec_hash_binds_plausibility_policy, |d| d.plausibility =
         isolated_symbolic_min_len: 19,
         isolated_symbolic_min_symbols: 3,
         isolated_symbolic_requires_non_underscore: true,
+        isolated_alpha_only_min_symbols: 4,
+        isolated_alpha_only_min_alpha_ratio: 0.6,
         isolated_colon_left_min_len: 21,
         isolated_colon_right_min_len: 17,
         leading_slash_base64_entropy_floor: 4.9,
@@ -576,6 +578,8 @@ fn spec_hash_binds_isolated_symbolic_shape_policy_fields() {
         isolated_symbolic_min_len: 19,
         isolated_symbolic_min_symbols: 2,
         isolated_symbolic_requires_non_underscore: true,
+        isolated_alpha_only_min_symbols: 3,
+        isolated_alpha_only_min_alpha_ratio: 0.5,
         isolated_colon_left_min_len: 21,
         isolated_colon_right_min_len: 17,
         leading_slash_base64_entropy_floor: 4.9,
@@ -610,6 +614,30 @@ fn spec_hash_binds_isolated_symbolic_shape_policy_fields() {
         compute_spec_hash(std::slice::from_ref(&base)),
         compute_spec_hash(std::slice::from_ref(&underscore_changed)),
         "changing underscore admission must invalidate scan identity"
+    );
+
+    let mut alpha_symbols_changed = base.clone();
+    alpha_symbols_changed
+        .plausibility
+        .as_mut()
+        .expect("plausibility baseline")
+        .isolated_alpha_only_min_symbols = 4;
+    assert_ne!(
+        compute_spec_hash(std::slice::from_ref(&base)),
+        compute_spec_hash(std::slice::from_ref(&alpha_symbols_changed)),
+        "changing alpha-only symbol admission must invalidate scan identity"
+    );
+
+    let mut alpha_ratio_changed = base.clone();
+    alpha_ratio_changed
+        .plausibility
+        .as_mut()
+        .expect("plausibility baseline")
+        .isolated_alpha_only_min_alpha_ratio = 0.6;
+    assert_ne!(
+        compute_spec_hash(std::slice::from_ref(&base)),
+        compute_spec_hash(std::slice::from_ref(&alpha_ratio_changed)),
+        "changing alpha-only alphabetic ratio must invalidate scan identity"
     );
 
     let mut margin_base = base.clone();

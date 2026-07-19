@@ -3,7 +3,7 @@ use super::isolated::{collect_isolated_bare_candidates_inner, isolated_bare_keyw
 pub(crate) use super::isolated::{
     colon_separated_opaque_candidate, lower_dash_app_password_floor_met_with_policy,
     mixed_contiguous_token_floor_met, mixed_separator_token_floor_met,
-    symbolic_alpha_only_opaque_candidate, symbolic_isolated_bare_candidate,
+    symbolic_alpha_only_opaque_candidate_with_policy, symbolic_isolated_bare_candidate_with_policy,
 };
 #[cfg(feature = "entropy")]
 pub(crate) use super::isolated::{

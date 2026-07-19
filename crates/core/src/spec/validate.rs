@@ -563,6 +563,10 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
                 plausibility.isolated_symbolic_min_symbols,
             ),
             (
+                "plausibility.isolated_alpha_only_min_symbols",
+                plausibility.isolated_alpha_only_min_symbols,
+            ),
+            (
                 "plausibility.isolated_colon_left_min_len",
                 plausibility.isolated_colon_left_min_len,
             ),
@@ -580,6 +584,15 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
                     "{name} must be greater than zero"
                 )));
             }
+        }
+        if !plausibility.isolated_alpha_only_min_alpha_ratio.is_finite()
+            || !(0.0..=1.0).contains(&plausibility.isolated_alpha_only_min_alpha_ratio)
+            || plausibility.isolated_alpha_only_min_alpha_ratio == 0.0
+        {
+            issues.push(QualityIssue::Error(format!(
+                "plausibility.isolated_alpha_only_min_alpha_ratio must be finite and in (0.0, 1.0], found {}",
+                plausibility.isolated_alpha_only_min_alpha_ratio
+            )));
         }
         if plausibility.min_unique_chars > plausibility.unique_chars_min_len {
             issues.push(QualityIssue::Error(format!(

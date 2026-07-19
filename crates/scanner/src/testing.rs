@@ -3715,10 +3715,23 @@ pub mod entropy_scanner {
 /// pinned at their boundaries against silent recall regression.
 #[cfg(feature = "entropy")]
 pub mod entropy_isolated {
-    /// `entropy >= 3.65`, `len >= 20`, contains `_`, every non-`_` byte is
-    /// ASCII-alphanumeric, and the token has upper + lower + digit.
+    fn generic_keyword_policy() -> crate::entropy::policy::CompiledEntropyPolicy {
+        let detector = keyhog_core::detector_spec_by_id("generic-keyword-secret")
+            .expect("embedded generic-keyword-secret detector must load");
+        crate::entropy::policy::CompiledEntropyPolicy::compile(detector)
+            .expect("embedded generic-keyword-secret entropy policy must compile")
+    }
+
+    /// Apply the embedded isolated-bare owner's mixed-token floor and minimum
+    /// length to an underscore-separated mixed token.
     pub fn mixed_separator_token_floor_met(candidate: &str, entropy: f64) -> bool {
-        crate::entropy::scanner::mixed_separator_token_floor_met(candidate, entropy, 3.65, 20)
+        let policy = generic_keyword_policy();
+        crate::entropy::scanner::mixed_separator_token_floor_met(
+            candidate,
+            entropy,
+            policy.isolated_mixed_entropy_floor,
+            policy.keyword_free_min_len,
+        )
     }
 
     /// The shipped generic-secret TOML's lower-dash shape policy: four
@@ -3726,14 +3739,7 @@ pub mod entropy_isolated {
     /// digit), with at least one non-hex letter so a pure-hex UUID-ish token
     /// does not qualify.
     pub fn lower_dash_app_password_floor_met(candidate: &str, entropy: f64) -> bool {
-        let shape = keyhog_core::embedded_detector_specs()
-            .iter()
-            .find(|detector| {
-                detector
-                    .entropy_roles
-                    .contains(&keyhog_core::EntropyDetectionRole::KeywordFree)
-            })
-            .and_then(|detector| detector.entropy_shapes.first().copied());
+        let shape = generic_keyword_policy().entropy_shape;
         crate::entropy::scanner::lower_dash_app_password_floor_met_with_policy(
             candidate,
             entropy,
@@ -3741,13 +3747,16 @@ pub mod entropy_isolated {
         )
     }
 
-    /// `entropy >= 3.65`, `len >= 20`, every byte ASCII-alphanumeric (no
-    /// separator), upper + lower + digit, NOT all-hex, AND the token reads as a
-    /// random secret rather than a pronounceable identifier, the looser
-    /// no-separator sibling of [`mixed_separator_token_floor_met`], which trades
-    /// the `_`-structure signal for the `!all_hex` + randomness gates.
+    /// Apply the embedded isolated-bare owner's mixed-token floor and minimum
+    /// length to the contiguous mixed-token sibling.
     pub fn mixed_contiguous_token_floor_met(candidate: &str, entropy: f64) -> bool {
-        crate::entropy::scanner::mixed_contiguous_token_floor_met(candidate, entropy, 3.65, 20)
+        let policy = generic_keyword_policy();
+        crate::entropy::scanner::mixed_contiguous_token_floor_met(
+            candidate,
+            entropy,
+            policy.isolated_mixed_entropy_floor,
+            policy.keyword_free_min_len,
+        )
     }
 
     /// The randomness gate the contiguous floor depends on, exposed so a boundary
@@ -3798,25 +3807,59 @@ pub mod entropy_isolated {
     pub const MIN_DISTINCT_LETTERS: usize =
         crate::suppression::token_randomness::MIN_DISTINCT_LETTERS;
 
-    /// Shape gate: exactly one `:` (not `://`), left half >= 20 and right half
-    /// >= 16, each all-alphanumeric with at least one letter and one digit, the
-    /// `user:token` opaque-credential admission gate.
+    /// Apply the embedded isolated-bare owner's `opaque:opaque` component
+    /// lengths to an all-alphanumeric letter-plus-digit pair.
     pub fn colon_separated_opaque(candidate: &str) -> bool {
-        crate::entropy::scanner::colon_separated_opaque_candidate(candidate, 20, 16)
+        let policy = generic_keyword_policy();
+        crate::entropy::scanner::colon_separated_opaque_candidate(
+            candidate,
+            policy.isolated_colon_left_min_len,
+            policy.isolated_colon_right_min_len,
+        )
     }
 
-    /// Shape gate: len >= 18, no digits, every byte graphic and not a quote,
-    /// upper + lower, >= 3 punctuation bytes, alpha is at least half the length,
-    /// AND the token reads as random (the symbolic alpha-only opaque gate).
+    /// Apply the embedded isolated-bare owner's symbolic minimum length to an
+    /// alpha-only mixed-case opaque token.
     pub fn symbolic_alpha_only_opaque(candidate: &str) -> bool {
-        crate::entropy::scanner::symbolic_alpha_only_opaque_candidate(candidate, 18)
+        let policy = generic_keyword_policy();
+        crate::entropy::scanner::symbolic_alpha_only_opaque_candidate_with_policy(
+            candidate, &policy,
+        )
     }
 
-    /// Shape gate: no `://`, no `:` or `,`, every byte graphic and not a quote,
-    /// with at least two non-alphanumeric symbol bytes, the symbolic bare-token
-    /// admission gate.
+    pub fn symbolic_alpha_only_opaque_with_policy(
+        candidate: &str,
+        plausibility: keyhog_core::DetectorPlausibilityPolicySpec,
+    ) -> bool {
+        let mut detector = keyhog_core::detector_spec_by_id("generic-keyword-secret")
+            .expect("embedded generic-keyword-secret detector must load")
+            .clone();
+        detector.plausibility = Some(plausibility);
+        let policy = crate::entropy::policy::CompiledEntropyPolicy::compile(&detector)
+            .expect("test isolated-bare policy must compile");
+        crate::entropy::scanner::symbolic_alpha_only_opaque_candidate_with_policy(
+            candidate, &policy,
+        )
+    }
+
+    /// Apply the embedded isolated-bare owner's symbol-count and underscore
+    /// policy to a symbolic bare token.
     pub fn symbolic_bare(candidate: &str) -> bool {
-        crate::entropy::scanner::symbolic_isolated_bare_candidate(candidate)
+        let policy = generic_keyword_policy();
+        crate::entropy::scanner::symbolic_isolated_bare_candidate_with_policy(candidate, &policy)
+    }
+
+    pub fn symbolic_bare_with_policy(
+        candidate: &str,
+        plausibility: keyhog_core::DetectorPlausibilityPolicySpec,
+    ) -> bool {
+        let mut detector = keyhog_core::detector_spec_by_id("generic-keyword-secret")
+            .expect("embedded generic-keyword-secret detector must load")
+            .clone();
+        detector.plausibility = Some(plausibility);
+        let policy = crate::entropy::policy::CompiledEntropyPolicy::compile(&detector)
+            .expect("test isolated-bare policy must compile");
+        crate::entropy::scanner::symbolic_isolated_bare_candidate_with_policy(candidate, &policy)
     }
 }
 

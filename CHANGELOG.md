@@ -6,6 +6,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Fixed
 
+- Isolated symbolic candidates now use the owning detector TOML's symbol count,
+  non-underscore rule, alpha-only symbol count, and alphabetic ratio in every
+  admission branch.
 - GPU MoE dispatch now reuses its uniform buffer and bind group with each
   exclusive pooled buffer set, validates device buffer and workgroup limits
   before submission, and recovers from a poisoned pool without panicking.

@@ -475,6 +475,11 @@ pub struct DetectorPlausibilityPolicySpec {
     pub isolated_symbolic_min_symbols: usize,
     /// Require at least one symbolic byte other than underscore.
     pub isolated_symbolic_requires_non_underscore: bool,
+    /// Minimum number of symbol bytes in an isolated alpha-only symbolic shape.
+    pub isolated_alpha_only_min_symbols: usize,
+    /// Minimum fraction of bytes that must be alphabetic in an isolated
+    /// alpha-only symbolic shape.
+    pub isolated_alpha_only_min_alpha_ratio: f64,
     /// Minimum byte length for the left component of `opaque:opaque` tokens.
     pub isolated_colon_left_min_len: usize,
     /// Minimum byte length for the right component of `opaque:opaque` tokens.

@@ -156,6 +156,8 @@ fn plausibility_policy_fields_reject_invalid_ranges() {
         isolated_symbolic_min_len: 0,
         isolated_symbolic_min_symbols: 0,
         isolated_symbolic_requires_non_underscore: true,
+        isolated_alpha_only_min_symbols: 0,
+        isolated_alpha_only_min_alpha_ratio: f64::NAN,
         isolated_colon_left_min_len: 0,
         isolated_colon_right_min_len: 0,
         leading_slash_base64_entropy_floor: f64::NAN,
@@ -183,6 +185,14 @@ fn plausibility_policy_fields_reject_invalid_ranges() {
     assert!(issues.iter().any(|issue| matches!(
         issue,
         QualityIssue::Error(message) if message.contains("isolated_symbolic_min_symbols")
+    )));
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("isolated_alpha_only_min_symbols")
+    )));
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("isolated_alpha_only_min_alpha_ratio")
     )));
     assert!(issues.iter().any(|issue| matches!(
         issue,

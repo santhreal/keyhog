@@ -357,6 +357,14 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
             policy.isolated_symbolic_requires_non_underscore
         );
         println!(
+            "    isolated_alpha_only_min_symbols: {}",
+            policy.isolated_alpha_only_min_symbols
+        );
+        println!(
+            "    isolated_alpha_only_min_alpha_ratio: {}",
+            policy.isolated_alpha_only_min_alpha_ratio
+        );
+        println!(
             "    isolated_colon_left_min_len: {} bytes",
             policy.isolated_colon_left_min_len
         );
