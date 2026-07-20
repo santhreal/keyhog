@@ -36,46 +36,7 @@ impl Decoder for UrlDecoder {
     }
 
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
-        let mut decoded_chunks = Vec::new();
-        let mut batch_start = usize::MAX;
-        let mut batch_end = 0;
-        let mut replacements = Vec::new();
-        for line in line_views_with_offsets(&chunk.data) {
-            if !contains_percent_escape(line.text) {
-                continue;
-            }
-            let Ok(decoded) = url_decode(line.text) else {
-                // LAW10: recall-preserving; invalid decoded UTF-8 leaves the root line scanned.
-                continue;
-            };
-            if batch_start != usize::MAX
-                && line.end.saturating_sub(batch_start) > DECODE_REPLACEMENT_BATCH_SOURCE_BYTES
-            {
-                push_decoded_replacements_spliced(
-                    &mut decoded_chunks,
-                    chunk,
-                    batch_start,
-                    batch_end,
-                    &mut replacements,
-                    self.name(),
-                );
-                batch_start = usize::MAX;
-            }
-            if batch_start == usize::MAX {
-                batch_start = line.start;
-            }
-            batch_end = line.end;
-            replacements.push((line.start, line.end, decoded));
-        }
-        push_decoded_replacements_spliced(
-            &mut decoded_chunks,
-            chunk,
-            batch_start,
-            batch_end,
-            &mut replacements,
-            self.name(),
-        );
-        decoded_chunks
+        decode_filtered_lines(chunk, contains_percent_escape, url_decode, self.name())
     }
 }
 
@@ -167,6 +128,58 @@ fn line_views_with_offsets(text: &str) -> Vec<LineView<'_>> {
         .collect()
 }
 
+fn decode_filtered_lines<F, D>(
+    chunk: &Chunk,
+    filter: F,
+    mut decode: D,
+    decoder_name: &str,
+) -> Vec<Chunk>
+where
+    F: Fn(&str) -> bool,
+    D: FnMut(&str) -> Result<String, ()>,
+{
+    let mut decoded_chunks = Vec::new();
+    let mut batch_start = usize::MAX;
+    let mut batch_end = 0;
+    let mut replacements = Vec::new();
+    for line in line_views_with_offsets(&chunk.data) {
+        if !filter(line.text) {
+            continue;
+        }
+        let Ok(decoded) = decode(line.text) else {
+            // LAW10: recall-preserving; a failed trial leaves the root line scanned.
+            continue;
+        };
+        if batch_start != usize::MAX
+            && line.end.saturating_sub(batch_start) > DECODE_REPLACEMENT_BATCH_SOURCE_BYTES
+        {
+            push_decoded_replacements_spliced(
+                &mut decoded_chunks,
+                chunk,
+                batch_start,
+                batch_end,
+                &mut replacements,
+                decoder_name,
+            );
+            batch_start = usize::MAX;
+        }
+        if batch_start == usize::MAX {
+            batch_start = line.start;
+        }
+        batch_end = line.end;
+        replacements.push((line.start, line.end, decoded));
+    }
+    push_decoded_replacements_spliced(
+        &mut decoded_chunks,
+        chunk,
+        batch_start,
+        batch_end,
+        &mut replacements,
+        decoder_name,
+    );
+    decoded_chunks
+}
+
 fn strip_line_ending(segment: &str) -> &str {
     let line = segment.strip_suffix('\n').unwrap_or(segment); // LAW10: recall-preserving identity for final unterminated lines; whole-line bytes still flow to scanning.
     line.strip_suffix('\r').unwrap_or(line) // LAW10: recall-preserving identity when no CR is present; whole-line bytes still flow to scanning.
@@ -234,26 +247,7 @@ macro_rules! simple_decoder {
             }
 
             fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
-                let mut decoded_chunks = with_extracted_value_spans(&chunk.data, |candidates| {
-                    decode_candidate_refs_exact(
-                        chunk,
-                        candidates.iter().filter_map(|candidate| {
-                            ($filter)(candidate.value.as_str()).then_some(candidate)
-                        }),
-                        $decode,
-                        self.name(),
-                    )
-                });
-                let trimmed = chunk.data.trim();
-                if ($filter)(trimmed) && !trimmed.is_empty() {
-                    decoded_chunks.extend(decode_candidate_spans_exact(
-                        chunk,
-                        vec![ExtractedValue::synthetic(trimmed.to_string())],
-                        $decode,
-                        self.name(),
-                    ));
-                }
-                decoded_chunks
+                decode_filtered_lines(chunk, $filter, $decode, self.name())
             }
         }
     };

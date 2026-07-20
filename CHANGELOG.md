@@ -27,10 +27,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   source bytes and reporting every repair.
 - Build provenance watches Git reflogs as well as loose and packed refs, so
   consecutive same-branch candidate builds embed the exact checkout commit.
-- JSON escape and URL-percent decoding batch values into bounded source spans
-  while retaining exact physical lines and multiline private-key separators,
-  preventing generated JSON and percent-heavy source files from exhausting
-  per-root decode fan-out.
+- JSON strings and line-local URL-percent, HTML-entity, Unicode, and octal
+  escapes decode in bounded source batches while retaining physical lines and
+  multiline private-key separators. Dense generated source no longer creates
+  one recursive root per encoded value.
 - Default detector resolution priority no longer perturbs the canonical detector
   digest, while non-default collision policy remains cache-bound.
 - Generic vendor and exact-keyword tail suffixes now come from the owning

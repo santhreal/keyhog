@@ -278,3 +278,37 @@ fn html_unknown_named_entity_emits_no_named_layer() {
         "unknown named entity must yield zero html-named-entity layers; got {layers:?}"
     );
 }
+
+#[test]
+fn line_local_escape_decoders_batch_dense_source_without_branching() {
+    for (decoder, encoded, decoded) in [
+        ("html-named-entity", "&amp;value", "&value"),
+        ("html-numeric-entity", "&#65;value", "Avalue"),
+        ("unicode-escape", r"\u0041value", "Avalue"),
+        ("octal-escape", r"\101value", "Avalue"),
+    ] {
+        let text = (0..40)
+            .map(|index| format!("value{index}={encoded}\n"))
+            .collect::<String>();
+        let chunk = Chunk {
+            data: text.into(),
+            metadata: Default::default(),
+        };
+        let direct_layers = decode_chunk(&chunk, 2, false, None, None)
+            .into_iter()
+            .filter(|chunk| chunk.metadata.source_type.ends_with(&format!("/{decoder}")))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            direct_layers.len(),
+            1,
+            "{decoder} must emit one bounded batch, not one branch per line"
+        );
+        assert!(
+            direct_layers[0]
+                .data
+                .contains(&format!("value39={decoded}")),
+            "{decoder} batch must decode the final source line"
+        );
+    }
+}

@@ -244,6 +244,11 @@ def test_keyhog_parser_requires_complete_resolved_mode_envelope(tmp_path):
     assert scanners.KeyhogScanner._parse(output, config_id="deep") == []
     assert scanners.KeyhogScanner._read_scan_manifest(output)["preset"] == "deep"
 
+    recovered = json.loads(output.read_text())
+    recovered["scan_status"] = "complete_after_recovery"
+    output.write_text(json.dumps(recovered))
+    assert scanners.KeyhogScanner._parse(output, config_id="deep") == []
+
     output.write_text(
         json.dumps(
             {

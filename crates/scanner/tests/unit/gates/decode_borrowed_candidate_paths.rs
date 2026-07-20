@@ -94,11 +94,11 @@ fn hot_decoders_decode_borrowed_candidates_without_clone_collect() {
         "impl Decoder for QuotedPrintableDecoder",
     );
     assert!(
-        url_body.contains("line_views_with_offsets(&chunk.data)")
-            && url_body.contains("push_decoded_replacements_spliced(")
-            && url_body.contains("DECODE_REPLACEMENT_BATCH_SOURCE_BYTES")
+        url_body.contains("decode_filtered_lines(")
+            && url.contains("push_decoded_replacements_spliced(")
+            && url.contains("DECODE_REPLACEMENT_BATCH_SOURCE_BYTES")
             && !url_body.contains("decode_candidate_refs_exact("),
-        "URL decoder should decode percent-bearing lines through bounded replacement batches"
+        "URL decoder should use the shared bounded line-replacement batch"
     );
     let qp_body = impl_body(
         &url,

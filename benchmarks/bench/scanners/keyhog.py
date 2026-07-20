@@ -692,7 +692,7 @@ class KeyhogScanner(Scanner):
             ) from exc
         if isinstance(data, dict) and data.get("schema_version"):
             status = data.get("scan_status")
-            if status != "success":
+            if status not in {"success", "complete_after_recovery"}:
                 raise RuntimeError(
                     f"keyhog benchmark artifact has terminal scan_status={status!r} "
                     f"for {config_id or output}; refusing to score incomplete coverage"
