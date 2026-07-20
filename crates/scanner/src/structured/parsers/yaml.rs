@@ -4,18 +4,67 @@ use super::{
 };
 use serde::Deserialize;
 
+fn sanitize_helm_actions(text: &str) -> Option<String> {
+    let mut output = String::with_capacity(text.len());
+    let mut cursor = 0;
+    let mut changed = false;
+
+    while let Some(relative_start) = text[cursor..].find("{{") {
+        let start = cursor + relative_start;
+        let relative_end = text[start + 2..].find("}}")?;
+        let end = start + 2 + relative_end + 2;
+        output.push_str(&text[cursor..start]);
+
+        let line_start = text[..start].rfind('\n').map_or(0, |index| index + 1);
+        let line_end = text[end..]
+            .find('\n')
+            .map_or(text.len(), |index| end + index);
+        let whole_line =
+            text[line_start..start].trim().is_empty() && text[end..line_end].trim().is_empty();
+        let action_len = end - start;
+        if whole_line {
+            output.push('#');
+            output.extend(std::iter::repeat_n(' ', action_len - 1));
+        } else {
+            // `_` is YAML-safe in quoted or bare scalars and invalid standard base64.
+            output.extend(std::iter::repeat_n('_', action_len));
+        }
+        cursor = end;
+        changed = true;
+    }
+    output.push_str(&text[cursor..]);
+    changed.then_some(output)
+}
+
+fn deserialize_yaml_documents(
+    text: &str,
+) -> Result<Vec<serde_yaml::Value>, (serde_yaml::Error, Vec<serde_yaml::Value>)> {
+    let mut values = Vec::new();
+    for document in serde_yaml::Deserializer::from_str(text) {
+        match serde_yaml::Value::deserialize(document) {
+            Ok(value) => values.push(value),
+            Err(error) => return Err((error, values)),
+        }
+    }
+    Ok(values)
+}
+
 /// Return whether any valid YAML document is a Kubernetes Secret or contains
 /// one through a Kubernetes `List`. A parse error remains distinct from a valid
 /// non-Secret document so classification can route hinted malformed Secrets to
 /// the parser that records the coverage gap.
 pub(crate) fn contains_k8s_secret_document(text: &str) -> Result<bool, ()> {
-    for document in serde_yaml::Deserializer::from_str(text) {
-        let value = serde_yaml::Value::deserialize(document).map_err(|_| ())?;
-        if contains_k8s_secret_value(&value, 0) {
-            return Ok(true);
+    let values = match deserialize_yaml_documents(text) {
+        Ok(values) => values,
+        Err((_error, _partial)) => {
+            // LAW10: recall-preserving; only balanced Helm actions are sanitized, then the complete document must parse
+            let sanitized = sanitize_helm_actions(text).ok_or(())?;
+            deserialize_yaml_documents(&sanitized).map_err(|_| ())?
         }
-    }
-    Ok(false)
+    };
+    Ok(values
+        .iter()
+        .any(|value| contains_k8s_secret_value(value, 0)))
 }
 
 fn contains_k8s_secret_value(value: &serde_yaml::Value, depth: usize) -> bool {
@@ -291,6 +340,18 @@ fn parse_yaml_value(
     match serde_yaml::from_str(text) {
         Ok(value) => Some(value),
         Err(error) => {
+            if let Some(value) = sanitize_helm_actions(text)
+                .and_then(|sanitized| serde_yaml::from_str(&sanitized).ok())
+            // LAW10: fail-closed; invalid sanitization falls through to the counted original parse gap
+            {
+                tracing::warn!(
+                    target: "keyhog::structured",
+                    surface,
+                    "render-time Helm actions were replaced with inert YAML values; \
+                     every literal source byte remains covered"
+                );
+                return Some(value);
+            }
             if super::gap_is_real(decode_derived) {
                 super::record_structured_gap();
             }
@@ -306,41 +367,40 @@ fn parse_yaml_documents(
     lost_decode_surface: &'static str,
     decode_derived: bool,
 ) -> Option<Vec<serde_yaml::Value>> {
-    let mut values = Vec::new();
-    let mut parse_error = None;
-    // A parse error truncates the stream: libyaml cannot resync a multi-document
-    // YAML past a syntax error (every subsequent `parser.next()` re-returns the
-    // same error, continuing here would loop forever), so we keep the documents
-    // decoded BEFORE the failure and stop. The failing document and any after it
-    // are surfaced by `documents_parsed` below rather than dropped silently.
-    for document in serde_yaml::Deserializer::from_str(text) {
-        match serde_yaml::Value::deserialize(document) {
-            Ok(value) => values.push(value),
-            Err(error) => {
-                parse_error = Some(error);
-                break;
+    match deserialize_yaml_documents(text) {
+        Ok(values) => Some(values),
+        Err((error, values)) => {
+            if let Some(values) = sanitize_helm_actions(text)
+                .and_then(|sanitized| deserialize_yaml_documents(&sanitized).ok())
+            // LAW10: fail-closed; invalid sanitization falls through to the counted original parse gap
+            {
+                tracing::warn!(
+                    target: "keyhog::structured",
+                    surface,
+                    "render-time Helm actions were replaced with inert YAML values; \
+                     every literal source byte remains covered"
+                );
+                return Some(values);
+            }
+
+            // Record the file once and surface how many documents decoded before
+            // the stream stopped. libyaml cannot resynchronize after an error.
+            if super::gap_is_real(decode_derived) {
+                super::record_structured_gap();
+            }
+            report_yaml_parse_failure(
+                &error,
+                surface,
+                lost_decode_surface,
+                decode_derived,
+                values.len(),
+            );
+            if values.is_empty() {
+                None
+            } else {
+                Some(values)
             }
         }
-    }
-    let had_error = parse_error.is_some();
-    if let Some(error) = parse_error {
-        // Record the FILE once (not once per document) and surface how many
-        // documents decoded before the stream was truncated at the failure.
-        if super::gap_is_real(decode_derived) {
-            super::record_structured_gap();
-        }
-        report_yaml_parse_failure(
-            &error,
-            surface,
-            lost_decode_surface,
-            decode_derived,
-            values.len(),
-        );
-    }
-    if values.is_empty() && had_error {
-        None
-    } else {
-        Some(values)
     }
 }
 

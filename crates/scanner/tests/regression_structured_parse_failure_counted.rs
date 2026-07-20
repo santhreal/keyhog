@@ -81,6 +81,17 @@ fn malformed_structured_files_are_counted_valid_ones_are_not() {
         "a mixed-type Jupyter source array loses one decode-through fragment and must be counted"
     );
 
+    // Helm templates are render-time syntax, not malformed YAML content. The
+    // parser replaces actions with inert values while raw scanning still covers
+    // every literal byte, so placeholder-only Secret templates lose no surface.
+    let helm_k8s = "{{- if .Values.secret }}\napiVersion: v1\nkind: Secret\nmetadata:\n  name: app-{{ template \"app.name\" . }}-secret\ndata:\n  password: \"{{ .Values.password | b64enc }}\"\n{{- end }}\n";
+    scan(&scanner, helm_k8s, "/repo/templates/secret.yaml");
+    assert_eq!(
+        structured_parse_failure_count(),
+        4,
+        "balanced Helm actions must not create a structured coverage gap"
+    );
+
     // A VALID k8s Secret parses cleanly: the counter must NOT move, so the
     // warning only fires on genuine coverage gaps, never on healthy files.
     let good_k8s =

@@ -391,11 +391,13 @@ Browse detector authoring and inspection in the
 
 ## Why higher recall, fewer false positives
 
-- **Decode-through scanning.** Kubernetes `Secret` manifests, JWT payloads,
-  base64-wrapped envs, helm values, and docker-config `auth:` blobs. The
-  structured preprocessor decodes them in place and feeds every
-  downstream detector the plaintext, so detectors don't each need to
-  re-implement decoding. Decode-enabled scans also recover recognized,
+- **Decode-through scanning.** Kubernetes `Secret` manifests, Jupyter
+  notebooks, JWT payloads, base64-wrapped envs, Helm values, and docker-config
+  `auth:` blobs. The structured preprocessor treats balanced Helm actions as
+  inert render-time values and closes missing Jupyter delimiters at end of file,
+  so literal bytes and complete code cells remain covered. It decodes structured
+  values in place and feeds every downstream detector the plaintext. Detectors
+  do not each need to re-implement decoding. Decode-enabled scans also recover
   side-effect-free JavaScript byte-array XOR and AES-256-CBC expressions when
   all recovery material is embedded, including strict CryptoJS/OpenSSL salted
   passphrase wrappers. KeyHog never executes the source.

@@ -41,6 +41,12 @@ candidates; companions, validators, BPE, English bigram evidence, shape/context
 policy, and confidence then confirm, reject, or score them. Verification runs
 only after a candidate survives detection and reporting policy.
 
+Structured extraction accepts balanced Helm actions as render-time syntax. It
+replaces each action with an inert YAML value while retaining every literal
+source byte. A Jupyter notebook truncated at end of file is repaired only by
+closing its open string and container delimiters. Any other syntax error remains
+a counted coverage gap.
+
 ML participation is detector-owned through `[detector.ml]`. `lift` can raise a
 structural score but cannot veto a match, `blend` combines model and structural
 evidence, and `authoritative` lets the model decide an otherwise ambiguous

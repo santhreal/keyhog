@@ -5,6 +5,10 @@
 - Keep grown phase-two GPU DFA resident haystack capacities aligned to the
   declared 32-bit element ABI. Forced 8 MiB, 32-shard CUDA evidence now proves
   one haystack upload and exact admission parity against per-shard dispatch.
+- Recover balanced Helm template manifests by replacing render-time actions
+  with inert YAML values, and recover Jupyter notebooks truncated at end of file
+  by closing only open strings and containers. Other syntax errors remain
+  counted coverage gaps.
 
 - Compiled detector-owned and scan-config entropy assignment keywords into one
   cached case-insensitive matcher, removing the per-line linear vocabulary walk

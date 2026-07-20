@@ -285,23 +285,82 @@ fn extract_tfstate_attribute_scalars(
     }
 }
 
+/// Close only delimiters that are provably missing at EOF.
+///
+/// A truncated notebook often ends inside its final markdown string. Appending
+/// structural delimiters preserves every source byte and lets serde decode every
+/// complete code cell plus the available prefix of the final string. Any syntax
+/// error before EOF, dangling escape, or invalid repaired document is rejected.
+fn repair_truncated_json_eof(text: &str) -> Option<serde_json::Value> {
+    let mut containers = Vec::new();
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for byte in text.bytes() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else {
+                match byte {
+                    b'\\' => escaped = true,
+                    b'"' => in_string = false,
+                    _ => {}
+                }
+            }
+            continue;
+        }
+
+        match byte {
+            b'"' => in_string = true,
+            b'{' | b'[' => containers.push(byte),
+            b'}' if containers.pop() != Some(b'{') => return None,
+            b']' if containers.pop() != Some(b'[') => return None,
+            b'}' | b']' => {}
+            _ => {}
+        }
+    }
+
+    if escaped {
+        return None;
+    }
+
+    let mut repaired = String::with_capacity(text.len().checked_add(containers.len() + 1)?);
+    repaired.push_str(text);
+    if in_string {
+        repaired.push('"');
+    }
+    while let Some(container) = containers.pop() {
+        repaired.push(if container == b'{' { '}' } else { ']' });
+    }
+    serde_json::from_str(&repaired).ok() // LAW10: fail-closed; an invalid structural repair returns None and the caller surfaces the original parse gap
+}
+
 /// Parse Jupyter notebook JSON and extract code cell sources.
 pub(crate) fn parse_jupyter(text: &str, decode_derived: bool) -> Vec<ExtractedPair> {
     let value: serde_json::Value = match serde_json::from_str(text) {
-        Ok(v) => v,
-        Err(error) => {
-            // Law 10: a `.ipynb` that won't parse loses its code-cell
-            // decode-through (secrets pasted into notebook cells never become
-            // scannable lines). Count + warn only at depth 0; on a decode-derived
-            // buffer the failure is expected and loses nothing.
-            if super::gap_is_real(decode_derived) {
-                super::record_structured_gap();
-                tracing::warn!(target: "keyhog::structured", %error, "Jupyter notebook JSON parse failed; code cells will not be decoded-through");
-            } else {
-                tracing::debug!(target: "keyhog::structured", %error, "decode-derived buffer is not valid Jupyter JSON; nothing lost");
+        Ok(value) => value,
+        Err(error) => match repair_truncated_json_eof(text) {
+            Some(value) => {
+                tracing::warn!(
+                    target: "keyhog::structured",
+                    %error,
+                    "Jupyter notebook ended without closing delimiters; \
+                     decoded every available source byte after structural repair"
+                );
+                value
             }
-            return Vec::new();
-        }
+            None => {
+                // Law 10: malformed JSON loses its code-cell decode-through.
+                // Count and warn only at depth 0; a derived buffer was decoded.
+                if super::gap_is_real(decode_derived) {
+                    super::record_structured_gap();
+                    tracing::warn!(target: "keyhog::structured", %error, "Jupyter notebook JSON parse failed; code cells will not be decoded-through");
+                } else {
+                    tracing::debug!(target: "keyhog::structured", %error, "decode-derived buffer is not valid Jupyter JSON; nothing lost");
+                }
+                return Vec::new();
+            }
+        },
     };
     let cells = match value.get("cells") {
         Some(serde_json::Value::Array(arr)) => arr,

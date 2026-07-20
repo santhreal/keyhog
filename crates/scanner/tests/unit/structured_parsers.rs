@@ -237,6 +237,12 @@ fn parse_k8s_secret_non_secret_kind_returns_empty() {
     );
 }
 
+#[test]
+fn parse_k8s_secret_helm_actions_do_not_decode_placeholder_bytes() {
+    let text = "{{- if .Values.secret }}\napiVersion: v1\nkind: Secret\ndata:\n  password: \"{{ .Values.password | b64enc }}\"\n{{- end }}\n";
+    assert!(parse_k8s_secret(text).is_empty());
+}
+
 // ── parse_tfstate ────────────────────────────────────────────────────────────
 
 #[test]
@@ -331,6 +337,23 @@ fn parse_jupyter_markdown_cell_not_extracted() {
             .all(|p| !p.value.contains("should_not_be_extracted")),
         "markdown-cell content must not be extracted as a secret; got {pairs:?}"
     );
+}
+
+#[test]
+fn parse_jupyter_repairs_eof_after_complete_code_cell() {
+    let text = concat!(
+        r#"{"cells":[{"cell_type":"code","source":["API_KEY = 'pplx-exact-recovered-value'"]},{"cell_type":"markdown","source":["#,
+        "\"truncated final prose"
+    );
+    let pairs = parse_jupyter(text);
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].value, "API_KEY = 'pplx-exact-recovered-value'");
+}
+
+#[test]
+fn parse_jupyter_rejects_eof_after_dangling_escape() {
+    let text = concat!(r#"{"cells":[{"cell_type":"code","source":"secret"#, "\\");
+    assert!(parse_jupyter(text).is_empty());
 }
 
 #[test]
