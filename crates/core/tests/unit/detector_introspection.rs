@@ -18,6 +18,7 @@ fn introspection_uses_the_declared_spec_and_redacts_test_credentials() {
             required_literals: Vec::new(),
             client_safe: true,
             weak_anchor: false,
+            structural_password_slot: false,
         }],
         min_confidence: Some(0.91),
         entropy_high: Some(4.25),

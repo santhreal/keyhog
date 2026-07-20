@@ -18,6 +18,7 @@ fn compiled_scanner_accepts_minimal_detector() {
             required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
+            structural_password_slot: false,
         }],
         companions: vec![],
         verify: None,

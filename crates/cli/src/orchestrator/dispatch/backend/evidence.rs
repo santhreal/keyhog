@@ -161,7 +161,7 @@ impl BackendParityReceipt {
             .field_bool("phase2_plain_localizer", route.phase2_plain_localizer)
             .field_bool("phase2_keyword_localizer", route.phase2_keyword_localizer)
             .field_bool("peer_identity.present", peer_identity.is_some())
-            // LAW10: the preceding presence field distinguishes absence; the empty string is only the canonical digest payload for `None`.
+            // LAW10: canonical default; a preceding presence field distinguishes absence, and the empty string is only the digest payload for `None`.
             .field_str("peer_identity", peer_identity.unwrap_or(""))
             .field_u64("correctness_digest", correctness_digest)
             .field_usize("completed_trials", completed_trials)
@@ -747,7 +747,7 @@ impl AutorouteDecision {
             .calibration_points
             .into_iter()
             .next()
-            // LAW10: the exact two-element length was checked above; violation aborts construction rather than fabricating timing evidence.
+            // LAW10: fail-closed; the exact two-element length was checked above, so violation aborts rather than fabricating timing evidence.
             .unwrap_or_else(|| panic!("length checked"));
         if self.contains_measurement(&point.measurement_shape) {
             return Ok(());
@@ -870,7 +870,7 @@ impl AutorouteDecision {
     }
 
     pub(super) fn primary_point(&self) -> &AutorouteCalibrationPoint {
-        // LAW10: decisions are validated to contain evidence before construction; an invariant violation aborts rather than selecting a route without evidence.
+        // LAW10: fail-closed; validated decisions contain evidence, and an invariant violation aborts rather than selecting an unevidenced route.
         self.calibration_points.first().unwrap_or_else(|| {
             panic!("autoroute decisions are constructed and validated with evidence")
         })
@@ -880,7 +880,7 @@ impl AutorouteDecision {
     pub(super) fn primary_point_mut(&mut self) -> &mut AutorouteCalibrationPoint {
         self.calibration_points
             .first_mut()
-            // LAW10: test-only mutation requires the fixture's validated primary point and aborts on malformed test setup.
+            // LAW10: no runtime effect; test-only mutation aborts when its fixture lacks the validated primary point.
             .unwrap_or_else(|| panic!("test autoroute decision must contain evidence"))
     }
 
@@ -890,7 +890,7 @@ impl AutorouteDecision {
     pub(super) fn simd_baseline_ms(&self) -> u128 {
         self.primary_point()
             .baseline_timing_for_backend(ScanBackend::SimdCpu)
-            // LAW10: validated calibration requires the SIMD baseline; invariant failure aborts instead of substituting another timing.
+            // LAW10: fail-closed; validated calibration requires the SIMD baseline, and an invariant violation cannot substitute another timing.
             .unwrap_or_else(|| panic!("validated calibration contains the SIMD baseline route"))
             .median_ms()
     }

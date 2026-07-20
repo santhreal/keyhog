@@ -562,12 +562,12 @@ impl MoeDispatchLayout {
         let input_bytes = batch_size
             .checked_mul(INPUT_DIM)
             .and_then(|values| values.checked_mul(std::mem::size_of::<f32>()))
-            // LAW10: conversion failure flows into the explicit buffer-size overflow error below; it never selects another backend.
+            // LAW10: fail-closed; conversion failure reaches the explicit buffer-size overflow error and never selects another backend.
             .and_then(|bytes| u64::try_from(bytes).ok())
             .ok_or("GPU MoE input-buffer size overflow")?;
         let output_bytes = batch_size
             .checked_mul(std::mem::size_of::<f32>())
-            // LAW10: conversion failure flows into the explicit buffer-size overflow error below; it never selects another backend.
+            // LAW10: fail-closed; conversion failure reaches the explicit buffer-size overflow error and never selects another backend.
             .and_then(|bytes| u64::try_from(bytes).ok())
             .ok_or("GPU MoE output-buffer size overflow")?;
         let storage_limit = u64::from(limits.max_storage_buffer_binding_size);

@@ -28,6 +28,7 @@ fn collect_detector_signatures_unifies_primary_and_companion_regexes() {
             required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
+            structural_password_slot: false,
         }],
         companions: vec![keyhog_core::CompanionSpec {
             name: "secondary".into(),

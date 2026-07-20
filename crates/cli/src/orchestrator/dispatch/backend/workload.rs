@@ -32,10 +32,10 @@ struct SourceClassCatalog {
 
 static CANONICAL_SOURCE_CLASSES: LazyLock<BTreeMap<[u8; 32], String>> = LazyLock::new(|| {
     let catalog: SourceClassCatalogFile = toml::from_str(BUNDLED_SOURCE_CLASSES)
-        // LAW10: malformed embedded routing data aborts initialization with the exact parse error; no heuristic catalog is substituted.
+        // LAW10: fail-closed; malformed embedded routing data aborts initialization, and no heuristic catalog is substituted.
         .unwrap_or_else(|error| panic!("data/autoroute_source_classes.toml is invalid: {error}"));
     validate_source_class_catalog(&catalog.source_classes.classes)
-        // LAW10: semantically invalid embedded routing data aborts initialization with the exact validation error; no heuristic catalog is substituted.
+        // LAW10: fail-closed; semantically invalid routing data aborts initialization, and no heuristic catalog is substituted.
         .unwrap_or_else(|error| panic!("data/autoroute_source_classes.toml is invalid: {error}"));
     catalog
         .source_classes

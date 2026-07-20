@@ -39,7 +39,7 @@ fn route_timings(
         let Some(base) = base else {
             continue;
         };
-        // LAW10: test-only fixtures synthesize a slower plain timing when the caller intentionally omits it; production decisions never use this constructor.
+        // LAW10: no runtime effect; test-only fixtures synthesize omitted timing, and production decisions never use this constructor.
         let plain = plain.unwrap_or_else(|| {
             BackendTimingEvidence::constant_ms(
                 base.median_ms().saturating_add(1_000),
@@ -186,6 +186,7 @@ fn phase1_test_detectors() -> Vec<keyhog_core::DetectorSpec> {
             required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
+            structural_password_slot: false,
         }],
         keywords: vec!["ghp_".into()],
         min_confidence: Some(0.0),
@@ -2273,7 +2274,7 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
         "artifact mismatch must be explicit: {wrong_artifact}"
     );
 
-    // LAW10: test cleanup targets an intentionally disposable path; cleanup failure cannot affect scanner behavior or findings.
+    // LAW10: no runtime effect; cleanup targets a disposable test path and cannot affect scanner findings.
     std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
 }
 
@@ -4599,7 +4600,7 @@ fn autoroute_cache_rejects_an_empty_calibration_envelope() {
     .expect_err("an empty evidence envelope must never become a route")
     .to_string();
     assert!(error.contains("contains no measured calibration points"));
-    std::fs::remove_file(&path).ok(); // LAW10: best-effort test cleanup; absence is the asserted post-state and cannot affect production findings.
+    std::fs::remove_file(&path).ok(); // LAW10: no runtime effect; test cleanup cannot affect production findings
 }
 
 #[test]
@@ -6684,6 +6685,7 @@ fn live_calibration_measures_every_gpu_peer_before_resolving_or_refusing() {
             required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
+            structural_password_slot: false,
         }],
         keywords: vec!["KHGPUCAL".into()],
         ..keyhog_scanner::testing::named_detector_fixture_defaults()

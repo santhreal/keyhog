@@ -131,6 +131,7 @@ fn boundary_scanner() -> CompiledScanner {
             required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
+            structural_password_slot: false,
         }],
         keywords: vec!["AGORA_APP_ID".to_string()],
         ..keyhog_scanner::testing::named_detector_fixture_defaults()

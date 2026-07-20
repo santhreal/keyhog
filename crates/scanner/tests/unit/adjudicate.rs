@@ -210,7 +210,7 @@ fn process_stage_suppresses_anthropic_legacy_length() {
 
     assert_eq!(
         adjudicate_process_signal(
-            "shape-test-detector",
+            "anthropic-api-key",
             Some(&shape),
             credential,
             credential,

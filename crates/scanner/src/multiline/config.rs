@@ -210,7 +210,7 @@ fn has_concat_candidate_bytes(bytes: &[u8]) -> bool {
                 )
                 .chain(IMPLICIT_CONCAT_MARKERS.iter().copied()),
         )
-        // LAW10: malformed compiled-in marker policy aborts initialization; no reduced multiline matcher is substituted.
+        // LAW10: fail-closed; malformed compiled-in marker policy aborts initialization, and no reduced multiline matcher is substituted.
         .unwrap_or_else(|error| {
             panic!("static multiline concatenation marker index is invalid: {error}")
         })

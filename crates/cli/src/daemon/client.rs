@@ -221,7 +221,7 @@ impl Client {
 
     pub(crate) async fn recv_with_timeout(&mut self, timeout: Duration) -> Result<Response> {
         match tokio::time::timeout(timeout, self.transport.next()).await {
-            // LAW10: timeout is returned as an operator-facing hard error with a repair command; no local or alternate daemon route is selected.
+            // LAW10: fail-closed; timeout returns an operator-facing hard error with a repair command and selects no alternate route.
             Err(_) => bail!(
                 "daemon client: no response within {}s. The daemon may be stuck \
                  or overloaded. Try `keyhog daemon stop && keyhog daemon start`, \

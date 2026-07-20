@@ -182,7 +182,7 @@ impl CompiledScanner {
                 let result = plan.materialize();
                 self.simd_initialization_ns.store(
                     u64::try_from(started.elapsed().as_nanos())
-                        // LAW10: elapsed nanoseconds are telemetry only; saturation preserves monotonic timing without changing scan execution or findings.
+                        // LAW10: reporting-only telemetry saturation preserves monotonic timing without changing scan execution or findings.
                         .unwrap_or(u64::MAX)
                         .max(1),
                     std::sync::atomic::Ordering::Release,
@@ -910,7 +910,7 @@ impl CompiledScanner {
         // to a DECODE-ONLY pass instead of skipping. Bounded: only
         // encoded-looking rejected chunks pay the decode cost, so normal
         // traffic keeps the fast skip.
-        // LAW10: `None` means the caller did not precompute the identical admission predicate; this computes it once rather than changing routes or recall.
+        // LAW10: recall-preserving; `None` computes the identical admission predicate once rather than changing routes or findings.
         let admission = admission.unwrap_or_else(|| self.phase1_admission(chunk.data.as_bytes()));
         if admission != Phase1Admission::Admitted {
             if self.should_scan_no_hit_chunk(chunk, route) {

@@ -31,7 +31,7 @@ struct EmbeddedAssignmentPolicy {
 static ASSIGNMENT_POLICY: LazyLock<EmbeddedAssignmentPolicy> = LazyLock::new(|| {
     // LAW10: fail-closed/security; the embedded corpus is a build artifact and corruption aborts initialization rather than narrowing recall.
     let detectors = keyhog_core::load_embedded_detectors_or_fail()
-        // LAW10: embedded corpus corruption aborts matcher initialization with its exact error; no reduced vocabulary is substituted.
+        // LAW10: fail-closed; embedded corpus corruption aborts matcher initialization with its exact error, and no reduced vocabulary is substituted.
         .unwrap_or_else(|error| panic!("embedded detector corpus is corrupt: {error}"));
     EmbeddedAssignmentPolicy {
         // LAW10: fail-closed/security; an invalid embedded keyword policy aborts initialization rather than narrowing the assignment bridge.

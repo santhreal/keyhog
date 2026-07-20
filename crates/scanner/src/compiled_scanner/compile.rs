@@ -386,6 +386,18 @@ impl CompiledScanner {
             .map(|pattern| regex_match_byte_upper_bound(pattern.regex.as_str()))
             .collect();
 
+        let mut structural_confirmed_patterns = vec![Vec::new(); detectors.len()];
+        for (pattern_index, pattern) in state.ac_map.iter().enumerate() {
+            if pattern.structural_password_slot {
+                structural_confirmed_patterns[pattern.detector_index].push(pattern_index);
+            }
+        }
+        let mut structural_phase2_patterns = vec![Vec::new(); detectors.len()];
+        for (pattern_index, (pattern, _)) in state.phase2_patterns.iter().enumerate() {
+            if pattern.structural_password_slot {
+                structural_phase2_patterns[pattern.detector_index].push(pattern_index);
+            }
+        }
         let scanner = Self {
             detector_digest,
             ac,
@@ -417,6 +429,8 @@ impl CompiledScanner {
             pattern_boundary_context,
             prefix_propagation,
             phase2_patterns: state.phase2_patterns,
+            structural_confirmed_patterns,
+            structural_phase2_patterns,
             same_prefix_patterns,
             phase2_keyword_ac,
             phase2_keyword_to_patterns,

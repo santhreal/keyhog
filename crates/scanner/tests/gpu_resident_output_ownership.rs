@@ -31,6 +31,7 @@ fn resident_gpu_readback_reuse_preserves_owned_results_and_parity() {
             required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
+            structural_password_slot: false,
         }],
         keywords: vec!["KHRESIDENT".into()],
         ..keyhog_scanner::testing::named_detector_fixture_defaults()

@@ -216,6 +216,7 @@ fn production_wgpu_shards_the_8mib_overlapped_workload_with_cpu_parity() {
             required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
+            structural_password_slot: false,
         }],
         keywords: vec!["KHGPUWG".into()],
         match_confidence: keyhog_core::detector_spec_by_id("datadog-api-key")
@@ -310,6 +311,7 @@ fn production_cuda_windows_seam_tail_and_mixed_rows_with_cpu_parity() {
             required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
+            structural_password_slot: false,
         }],
         keywords: vec!["KHCUDAX_".into()],
         ..keyhog_scanner::testing::named_detector_fixture_defaults()

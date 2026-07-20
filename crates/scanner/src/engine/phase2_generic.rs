@@ -288,27 +288,50 @@ impl CompiledScanner {
                         crate::decode_structure::evidence(value).decoded_hex_text_len(),
                     );
 
-                let structural_password_slot = self
-                    .detector_plans
-                    .get(owning_detector_index)
-                    .execution
-                    .structural_password_slot;
+                let capture_proves_structural_slot = |pattern: &crate::types::CompiledPattern| {
+                    pattern.regex.get().captures_iter(line).any(|captures| {
+                        pattern
+                            .group
+                            .and_then(|group| captures.get(group))
+                            .is_some_and(|slot| {
+                                slot.start() == value_match.start()
+                                    && slot.end() == value_match.end()
+                            })
+                    })
+                };
+                let structural_password_slot = execution_policy.structural_password_slot
+                    || self.structural_confirmed_patterns[owning_detector_index]
+                        .iter()
+                        .any(|&index| capture_proves_structural_slot(&self.ac_map[index]))
+                    || self.structural_phase2_patterns[owning_detector_index]
+                        .iter()
+                        .any(|&index| {
+                            capture_proves_structural_slot(&self.phase2_patterns[index].0)
+                        });
 
                 // KH-L-0412: the generic-bridge shape gauntlet was the last
                 // SILENT suppression path. Record the firing gate's name so a
                 // dropped generic-secret candidate is visible to `--dogfood`
                 // (Law-10), then continue. Zero-cost when dogfood is off (the
                 // `is_dogfood_enabled()` atomic short-circuits before any work).
-                let shape_rejected = self.generic_value_shape_rejected(
-                    value,
-                    entropy,
-                    chunk,
-                    owning_detector_index,
-                    owning_policy,
-                    allow_canonical_hex_key,
-                    allow_encoded_text_secret,
-                    allow_decoded_hex_key_material,
-                );
+                let shape_rejected = if self
+                    .detector_plans
+                    .assignment_has_public_identifier(line.as_bytes(), value_match.start())
+                {
+                    Some(crate::adjudicate::GenericValueShapeStage::PublicIdentifierAssignment)
+                } else {
+                    self.generic_value_shape_rejected(
+                        value,
+                        entropy,
+                        chunk,
+                        owning_detector_index,
+                        structural_password_slot,
+                        owning_policy,
+                        allow_canonical_hex_key,
+                        allow_encoded_text_secret,
+                        allow_decoded_hex_key_material,
+                    )
+                };
 
                 // BPE "rare-not-random" gate. LAST, so it only tokenizes values
                 // that survived every cheaper generic shape gate (bounded cost),

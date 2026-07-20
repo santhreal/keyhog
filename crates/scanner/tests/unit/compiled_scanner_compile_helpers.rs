@@ -9,6 +9,7 @@ fn compiled_pattern(detector_index: usize) -> CompiledPattern {
         group: None,
         client_safe: false,
         weak_anchor: false,
+        structural_password_slot: false,
         match_proves_keyword_nearby: false,
         homoglyph_variant: false,
     }

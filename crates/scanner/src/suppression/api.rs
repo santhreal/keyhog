@@ -246,10 +246,10 @@ pub(crate) fn suppress_named_detector_finding_stage(
     // contract evasions. See task #41 + the 2026-05-27 audit.
     let apply_tier_b = (!service_anchored && !structural_password_slot) || weak_anchor;
 
-    // A structural-password-slot detector (`generic-password`, `url-credentials`,
-    // `sql-password`, `cli-password-flag`) proves the slot even when its service
-    // is generic. Skipping Tier-B randomness and mask gates keeps real random
-    // passwords, but requires two dedicated placeholder checks:
+    // A detector-wide or exact-pattern structural-password-slot policy proves
+    // the slot even when its service is generic. Skipping Tier-B randomness
+    // and mask gates keeps real random passwords, but requires two dedicated
+    // placeholder checks:
     //   1. the literal dictionary word (`://user:password@host`, `IDENTIFIED BY
     //      'secret'`, `--password welcome`), caught by the bigram model being
     //      CONFIDENT the value is pronounceable English; never a random token
@@ -264,8 +264,9 @@ pub(crate) fn suppress_named_detector_finding_stage(
     // (hex / prefixed key) is never a free-form word, and applying the gate to
     // all strong anchors wrongly suppressed hex keys whose a..f bigrams read as
     // English (rollbar, steam, matomo, …).
-    // A weak pattern does not prove the structural slot and retains Tier-B.
-    if structural_password_slot && !weak_anchor {
+    // Weak anchors retain Tier-B, but a declared structural slot must still pass
+    // these mask and placeholder checks before the broader gates run.
+    if structural_password_slot {
         if let Some(reason) = structural_password_slot_rejection(credential) {
             crate::adjudicate::record_example_suppression("pipeline", path, credential, reason);
             return shape_stage(reason);

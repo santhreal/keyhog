@@ -224,7 +224,7 @@ fn recover_xor_plaintexts(
             (Some(length_name), None) => length_name == key_name,
             (None, Some(length_literal)) => length_literal
                 .parse::<usize>()
-                // LAW10: a malformed literal length fails the structural proof and rejects the recovery candidate; no alternate key is tried.
+                // LAW10: fail-closed; a malformed literal length rejects the recovery candidate, and no alternate key is tried.
                 .ok()
                 .is_some_and(|length| length > 0),
             _ => false,
@@ -256,7 +256,7 @@ fn recover_xor_plaintexts(
             }
         };
         if key_length_literal.is_some()
-            // LAW10: a malformed or mismatched literal length rejects the recovery candidate; no alternate decoder is selected.
+            // LAW10: fail-closed; a malformed or mismatched literal length rejects the recovery candidate, and no alternate decoder is selected.
             && key_length_literal.and_then(|literal| literal.parse::<usize>().ok())
                 != Some(key.len())
         {

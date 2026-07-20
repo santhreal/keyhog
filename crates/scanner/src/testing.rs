@@ -141,7 +141,7 @@ pub fn match_priority_for_test(
 ) -> f64 {
     let service = keyhog_core::detector_spec_by_id(detector_id)
         .map(|spec| std::sync::Arc::from(spec.service.as_str()))
-        // LAW10: test-only synthetic IDs use the explicitly documented generic/test service fixture; production resolution never calls this facade.
+        // LAW10: no runtime effect; this test-only facade admits synthetic IDs and production resolution never calls it.
         .unwrap_or_else(|| {
             std::sync::Arc::from(
                 if crate::detector_ids::is_generic_or_entropy_detector(detector_id) {
@@ -3035,7 +3035,7 @@ pub fn queued_ml_features(
     entropy_channel: bool,
 ) -> Vec<f32> {
     let detector = keyhog_core::detector_spec_by_id(detector_id)
-        // LAW10: test-only feature helper aborts for an unknown detector; it cannot compute against a substituted policy.
+        // LAW10: fail-closed; the test-only feature helper aborts for an unknown detector and cannot substitute a policy.
         .unwrap_or_else(|| panic!("test detector {detector_id:?} must exist"));
     let detector_features =
         crate::ml_scorer::ml_features::CompiledDetectorMlFeatures::compile(detector);
@@ -3399,6 +3399,7 @@ pub(crate) fn phase2_keyword_ac_summary(regex: &str, keywords: Vec<String>) -> (
         group: None,
         client_safe: false,
         weak_anchor: false,
+        structural_password_slot: false,
         match_proves_keyword_nearby: false,
         homoglyph_variant: false,
     };
@@ -3795,7 +3796,7 @@ pub mod entropy_scanner {
         keyword: &str,
     ) -> Option<String> {
         let index = crate::generic_keyword_owner::GenericOwningDetectorIndex::build(detectors)
-            .unwrap_or_else(|error| panic!("test detector ownership policy is invalid: {error}")); // LAW10: test-only invalid fixture aborts with its error; no owner is substituted.
+            .unwrap_or_else(|error| panic!("test detector ownership policy is invalid: {error}")); // LAW10: fail-closed; an invalid fixture aborts and no owner is substituted.
         crate::entropy::scanner::active_policy_detector_index(&index, keyword)
             .and_then(|owner| detectors.get(owner))
             .map(|detector| detector.id.clone())
@@ -4556,7 +4557,7 @@ fn ml_score_for_detector_with_vocab(
     placeholder_keywords: &[String],
 ) -> f64 {
     let detector = keyhog_core::detector_spec_by_id(detector_id)
-        // LAW10: test-only scorer aborts for an unknown detector; it cannot compute against a substituted feature policy.
+        // LAW10: fail-closed; the test-only scorer aborts for an unknown detector and cannot substitute a feature policy.
         .unwrap_or_else(|| panic!("test detector {detector_id:?} must exist"));
     let features = crate::ml_scorer::compute_features_for_detector_with_config(
         text,

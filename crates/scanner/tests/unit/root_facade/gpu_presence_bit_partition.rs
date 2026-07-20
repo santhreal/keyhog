@@ -25,6 +25,7 @@ fn scanner_with_detector_and_phase2_keyword_and_anchor() -> CompiledScanner {
                         required_literals: Vec::new(),
                         client_safe: false,
                         weak_anchor: false,
+                        structural_password_slot: false,
                     },
                     PatternSpec {
                         regex: "([a-z]{4}[0-9]{4})".into(),
@@ -33,6 +34,7 @@ fn scanner_with_detector_and_phase2_keyword_and_anchor() -> CompiledScanner {
                         required_literals: Vec::new(),
                         client_safe: false,
                         weak_anchor: false,
+                        structural_password_slot: false,
                     },
                 ],
                 companions: Vec::new(),
@@ -54,6 +56,7 @@ fn scanner_with_detector_and_phase2_keyword_and_anchor() -> CompiledScanner {
                     required_literals: Vec::new(),
                     client_safe: false,
                     weak_anchor: false,
+                    structural_password_slot: false,
                 }],
                 companions: Vec::new(),
                 verify: None,

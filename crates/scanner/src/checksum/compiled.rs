@@ -277,7 +277,7 @@ impl CompiledValidatorIndex {
         structural
             .or(unknown)
             .or(invalid)
-            // LAW10: no applicable validator is an explicit policy outcome, not a failed validation; callers preserve the finding without a checksum adjustment.
+            // LAW10: recall-preserving; no applicable validator is an explicit policy outcome, and callers preserve the finding without a checksum adjustment.
             .unwrap_or_else(ChecksumConfidenceDecision::not_applicable)
     }
 }
@@ -322,7 +322,7 @@ impl CompiledValidatorCatalog {
             .iter()
             .position(|candidate| candidate.as_ref() == detector_id)
             .map(|index| self.validators[index].validate(credential, false))
-            // LAW10: no validator mapped to this pattern is an explicit detector-plan outcome, not a runtime validation failure.
+            // LAW10: recall-preserving; no validator mapped to this pattern is an explicit detector-plan outcome, not a runtime validation failure.
             .unwrap_or_else(ChecksumConfidenceDecision::not_applicable)
     }
 

@@ -27,7 +27,7 @@ static PRE_EXIT_HOOK: OnceLock<fn()> = OnceLock::new();
 /// The first successful registration wins; later calls are ignored so tests
 /// and nested hosts cannot overwrite the CLI hook silently.
 pub fn set_pre_exit_hook(hook: fn()) {
-    let _ = PRE_EXIT_HOOK.set(hook); // LAW10: first hook remains active; duplicate registration loses no scan or exit behavior
+    let _ = PRE_EXIT_HOOK.set(hook); // LAW10: recall-preserving; first-hook-wins keeps scan and exit behavior unchanged on duplicate registration
 }
 
 pub(crate) fn pre_exit_hook_for_test() -> Option<fn()> {

@@ -335,7 +335,7 @@ impl CachedBackendRouter {
         };
         let fault = match self.runtime_faults.lock() {
             Ok(faults) => faults.get(&key).cloned(),
-            // LAW10: poisoned route-health state enters the explicit autoroute recovery selection and surfaces its repair message to the operator.
+            // LAW10: loud operator error; poisoned route-health state enters explicit recovery and surfaces its repair message.
             Err(_) => {
                 let reason = "autoroute runtime route-health state is unavailable after an internal panic; its persisted route cannot be trusted until KeyHog is restarted and `keyhog calibrate-autoroute` succeeds".to_string();
                 let announce = !self.recovery_announced.swap(true, Ordering::Relaxed);
@@ -1027,7 +1027,7 @@ fn gpu_peer_identity(scanner: &CompiledScanner) -> Option<String> {
     };
     peers.sort_unstable();
     (!peers.is_empty()).then(|| {
-        // LAW10: serialization failure is structurally impossible for string-only peer identities and aborts instead of persisting an unbound route key.
+        // LAW10: fail-closed; impossible peer-identity serialization failure aborts instead of persisting an unbound route key.
         serde_json::to_string(&peers).unwrap_or_else(|e| {
             panic!("GPU peer identity contains only serializable string fields: {e}")
         })

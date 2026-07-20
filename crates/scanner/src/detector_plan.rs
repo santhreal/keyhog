@@ -124,6 +124,7 @@ pub(crate) struct CompiledDetectorPlans {
         Option<crate::engine::phase2_generic::keywords::GenericAssignmentKeywordPlan>,
     generic_named_assignment_keywords: Box<[Arc<str>]>,
     generic_ownership: crate::generic_keyword_owner::GenericOwningDetectorIndex,
+    public_identifier_assignment_markers: Box<[Box<[u8]>]>,
 }
 
 impl CompiledDetectorPlans {
@@ -230,6 +231,19 @@ impl CompiledDetectorPlans {
         );
         let decode_transforms =
             Arc::new(crate::decode::policy::CompiledDecodeTransformPolicy::compile(detectors)?);
+        let mut public_identifier_assignment_markers: Vec<Box<[u8]>> = Vec::new();
+        for marker in detectors
+            .iter()
+            .flat_map(|detector| &detector.public_identifier_assignment_markers)
+        {
+            let bytes = marker.as_bytes();
+            if !public_identifier_assignment_markers
+                .iter()
+                .any(|compiled| compiled.eq_ignore_ascii_case(bytes))
+            {
+                public_identifier_assignment_markers.push(bytes.into());
+            }
+        }
         Ok(Self {
             by_detector_index,
             resolution,
@@ -239,6 +253,8 @@ impl CompiledDetectorPlans {
             generic_assignment,
             generic_named_assignment_keywords,
             generic_ownership,
+            public_identifier_assignment_markers: public_identifier_assignment_markers
+                .into_boxed_slice(),
         })
     }
 
@@ -247,6 +263,35 @@ impl CompiledDetectorPlans {
         &self,
     ) -> Option<&crate::engine::phase2_generic::keywords::GenericAssignmentKeywordPlan> {
         self.generic_assignment.as_ref()
+    }
+
+    /// True when any detector-declared public identifier marker owns the
+    /// assignment whose value begins at `value_start`.
+    pub(crate) fn assignment_has_public_identifier(&self, line: &[u8], value_start: usize) -> bool {
+        let Some(prefix) = line.get(..value_start) else {
+            return false;
+        };
+        self.public_identifier_assignment_markers
+            .iter()
+            .any(|marker| {
+                let marker = marker.as_ref();
+                let mut cursor = 0;
+                while cursor < prefix.len() {
+                    let Some(relative) = crate::ascii_ci::ci_find_at(&prefix[cursor..], marker)
+                    else {
+                        break;
+                    };
+                    let end = cursor + relative + marker.len();
+                    if prefix[end..]
+                        .iter()
+                        .all(|byte| byte.is_ascii_whitespace() || matches!(byte, b'\'' | b'"'))
+                    {
+                        return true;
+                    }
+                    cursor += relative + 1;
+                }
+                false
+            })
     }
 
     #[inline]

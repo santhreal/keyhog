@@ -32,6 +32,7 @@ fn detector(regex: &str, group: Option<usize>) -> DetectorSpec {
             required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
+            structural_password_slot: false,
         }],
         companions: vec![],
         verify: None,
@@ -188,6 +189,7 @@ fn multi_pattern_detector_reports_the_offending_pattern_index() {
                 required_literals: Vec::new(),
                 client_safe: false,
                 weak_anchor: false,
+                structural_password_slot: false,
             },
             PatternSpec {
                 regex: r"token=(\w+)".into(),
@@ -196,6 +198,7 @@ fn multi_pattern_detector_reports_the_offending_pattern_index() {
                 required_literals: Vec::new(),
                 client_safe: false,
                 weak_anchor: false,
+                structural_password_slot: false,
             },
         ],
         companions: vec![],

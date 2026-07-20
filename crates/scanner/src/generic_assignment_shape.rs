@@ -69,6 +69,7 @@ impl CompiledScanner {
         entropy: f64,
         chunk: &Chunk,
         owning_detector_index: usize,
+        structural_password_slot: bool,
         owning_policy: &crate::entropy::policy::CompiledEntropyPolicy,
         // The keyword bridge proved this is complete pure-hex key material via
         // the owning detector's exact keyword/length policy, or via the legacy
@@ -78,12 +79,7 @@ impl CompiledScanner {
         allow_encoded_text_secret: bool,
         allow_decoded_hex_key_material: bool,
     ) -> Option<GenericValueShapeStage> {
-        if self
-            .detector_plans
-            .get(owning_detector_index)
-            .execution
-            .structural_password_slot
-        {
+        if structural_password_slot {
             if let Some(reason) = crate::suppression::api::structural_password_slot_rejection(value)
             {
                 return Some(GenericValueShapeStage::SharedShape(reason));

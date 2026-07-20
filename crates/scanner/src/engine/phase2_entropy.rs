@@ -227,7 +227,7 @@ impl CompiledScanner {
                 .detector_plans
                 .generic_ownership()
                 .canonical_index(&entropy_match.keyword)
-                // LAW10: intentional default; operator-added Tier-A keywords have no canonical TOML owner, so their already-resolved entropy owner remains authoritative.
+                // LAW10: canonical default; operator-added Tier-A keywords have no TOML owner, so their resolved entropy owner remains authoritative.
                 .unwrap_or(policy_detector_index);
             let transport_decoded = preprocessed.transport_decoded_for_offset(entropy_match.offset);
             let detector_owned_canonical_hex_key = {

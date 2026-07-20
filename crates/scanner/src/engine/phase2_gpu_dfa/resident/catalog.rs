@@ -263,7 +263,7 @@ impl ResidentState {
         for shard in &self.shards {
             reset_lengths.push(shard.used_presence_bytes(region_count)?);
         }
-        // LAW10: an empty reset set requires zero bytes; every non-empty shard contributes its exact reset length before this maximum is taken.
+        // LAW10: canonical default; an empty reset set requires zero bytes, while every non-empty shard contributes its exact reset length.
         let reset_bytes = reset_lengths.iter().copied().max().unwrap_or(0);
         scratch.reset_bytes.clear();
         scratch

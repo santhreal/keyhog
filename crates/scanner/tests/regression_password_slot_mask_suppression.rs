@@ -145,9 +145,14 @@ fn cli_alternating_two_letter_mask_suppressed() {
 
 #[test]
 fn url_digit_only_value_suppressed() {
+    let scanner = scanner();
+    let chunk = make_chunk("ftp://svc:12345678@host.example/x", "source", "probe.txt");
+    let findings = matches(&scanner, &chunk);
     assert!(
-        !family_surfaces("ftp://svc:12345678@host.example/x", "12345678"),
-        "a pure-digit URL userinfo value (0 distinct letters) must be dropped"
+        !findings
+            .iter()
+            .any(|(id, credential)| FAMILY.contains(&id.as_str()) && credential == "12345678"),
+        "a pure-digit URL userinfo value (0 distinct letters) must be dropped; got {findings:?}"
     );
 }
 

@@ -9,7 +9,7 @@ pub(crate) const REASSEMBLED_SUFFIX: &str = ":reassembled";
 pub(crate) fn policy_detector_id(detector_id: &str) -> &str {
     detector_id
         .strip_suffix(REASSEMBLED_SUFFIX)
-        .unwrap_or(detector_id)
+        .unwrap_or(detector_id) // LAW10: canonical default; an ID without the synthetic suffix retains its exact identity
 }
 pub(crate) const GENERIC_SECRET: &str = "generic-secret";
 pub(crate) const GENERIC_KEYWORD_SECRET: &str = "generic-keyword-secret";
@@ -283,13 +283,10 @@ mod detector_id_corpus_guard {
         assert!(!is_structural_password_slot_detector(GENERIC_SECRET));
     }
 
-    /// The structural-password-slot family membership is DECLARED in the detector
-    /// TOMLs (`structural_password_slot = true`), read back through
-    /// `DetectorSpec::structural_password_slot`. This pins the EXACT member set
-    /// against the embedded corpus, so adding/removing the flag on any detector
-    /// or a typo'd id, fails loudly here. The five ids are the whole family;
-    /// they are intentionally NOT scanner-code consts (no scanner path names
-    /// them individually), so this list is only the guard's expectation.
+    /// The detector-wide structural-password-slot family is declared in TOML
+    /// and applies to every pattern. Generic Password instead declares the bit
+    /// on its exact ODBC pattern, so its keyword bridge and sibling patterns
+    /// retain Tier-B shape gates.
     #[test]
     fn structural_password_slot_family_is_toml_declared() {
         use std::collections::BTreeSet;
@@ -302,7 +299,6 @@ mod detector_id_corpus_guard {
         let expected: BTreeSet<&str> = [
             "bearer-authorization",
             "cli-password-flag",
-            "generic-password",
             "sql-password",
             "url-credentials",
         ]
@@ -319,6 +315,21 @@ mod detector_id_corpus_guard {
                 "predicate must classify declared member `{id}` as a structural password slot"
             );
         }
+        let generic_password = specs
+            .iter()
+            .find(|spec| spec.id == "generic-password")
+            .expect("generic-password detector exists");
+        let structural_patterns: Vec<usize> = generic_password
+            .patterns
+            .iter()
+            .enumerate()
+            .filter_map(|(index, pattern)| pattern.structural_password_slot.then_some(index))
+            .collect();
+        assert_eq!(
+            structural_patterns,
+            vec![1],
+            "only the semicolon-delimited ODBC pattern proves a structural slot"
+        );
     }
 
     /// The weak-anchor family membership is DECLARED in the detector TOMLs
@@ -381,9 +392,14 @@ mod detector_id_corpus_guard {
             .filter(|s| s.private_key_block)
             .map(|s| s.id.as_str())
             .collect();
-        let expected: BTreeSet<&str> = ["github-app-private-key", "private-key", "ssh-private-key"]
-            .into_iter()
-            .collect();
+        let expected: BTreeSet<&str> = [
+            "github-app-private-key",
+            "google-artifact-registry-key",
+            "private-key",
+            "ssh-private-key",
+        ]
+        .into_iter()
+        .collect();
         assert_eq!(
             members, expected,
             "private_key_block TOML declarations drifted from the known family"

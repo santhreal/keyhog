@@ -112,6 +112,15 @@ impl ResolutionPolicy<'_> {
     }
 }
 
+fn source_intervals_comparable(policy: ResolutionPolicy<'_>, source: &str) -> bool {
+    #[cfg(feature = "decode")]
+    if let ResolutionPolicy::Active(plans) = policy {
+        return plans.decoded_source_parent(source).is_none();
+    }
+    let _ = (policy, source); // LAW10: no runtime effect; decode-disabled builds cannot compare decoded source views
+    true
+}
+
 fn try_resolve_matches_with_policy(
     matches: &mut Vec<RawMatch>,
     policy: ResolutionPolicy<'_>,
@@ -484,10 +493,15 @@ fn is_entropy_detector(detector_id: &str, policy: ResolutionPolicy<'_>) -> bool 
 fn detector_resolution_priority(detector_id: &str, policy: ResolutionPolicy<'_>) -> i16 {
     let detector_id = crate::detector_ids::policy_detector_id(detector_id);
     match policy {
-        ResolutionPolicy::Active(plans) => plans
-            .resolution_priority(detector_id)
-            .expect("active raw match detector must exist in the compiled resolution plan"),
-        // LAW10: intentional_default - embedded test-only resolution admits
+        ResolutionPolicy::Active(plans) => {
+            let Some(priority) = plans.resolution_priority(detector_id) else {
+                panic!(
+                    "active raw match detector `{detector_id}` is absent from the compiled resolution plan"
+                );
+            };
+            priority
+        }
+        // LAW10: canonical default; embedded test-only resolution admits
         // synthetic detector IDs, whose neutral priority changes no finding.
         ResolutionPolicy::Embedded { resolution, .. } => {
             // LAW10: absent explicit priority is the detector schema's canonical zero value; embedded policy lookup itself succeeded.
@@ -762,7 +776,17 @@ fn resolve_direct_conflicts(group: Vec<RawMatch>, policy: ResolutionPolicy<'_>) 
             .then_with(|| group[left.1].cmp(&group[right.1]))
     });
 
-    let mut dominant_containment = KeptIntervalIndex::new(&intervals);
+    let mut intervals_by_source: HashMap<Arc<str>, Vec<MatchInterval>> = HashMap::new();
+    for (matched, &interval) in group.iter().zip(&intervals) {
+        intervals_by_source
+            .entry(Arc::clone(&matched.location.source))
+            .or_default()
+            .push(interval);
+    }
+    let mut dominant_containment: HashMap<Arc<str>, KeptIntervalIndex> = intervals_by_source
+        .into_iter()
+        .map(|(source, intervals)| (source, KeptIntervalIndex::new(&intervals)))
+        .collect();
     let mut dominant_equivalent = KeptEquivalentEvidence::default();
     let mut retained = vec![false; group.len()];
     let mut pending_retained: Vec<(f64, usize)> = Vec::new();
@@ -777,14 +801,25 @@ fn resolve_direct_conflicts(group: Vec<RawMatch>, policy: ResolutionPolicy<'_>) 
             if priorities_tie(retained_priority, priority) {
                 break;
             }
-            dominant_containment.insert(intervals[retained_index]);
+            dominant_containment
+                .get_mut(&group[retained_index].location.source)
+                .expect("every match source has a containment index")
+                .insert(intervals[retained_index]);
             dominant_equivalent.insert(&group[retained_index], intervals[retained_index]);
             dominant_cursor += 1;
         }
 
         let interval = intervals[index];
-        retained[index] = !dominant_containment.has_containment_conflict(interval)
-            && !dominant_equivalent.overlaps(&group[index], interval);
+        let source = &group[index].location.source;
+        let skip_same_decoded_view = !source_intervals_comparable(policy, source);
+        let containment_conflict = dominant_containment
+            .iter()
+            .any(|(candidate_source, spans)| {
+                !(skip_same_decoded_view && candidate_source == source)
+                    && spans.has_containment_conflict(interval)
+            });
+        retained[index] =
+            !containment_conflict && !dominant_equivalent.overlaps(&group[index], interval);
         if retained[index] {
             pending_retained.push((priority, index));
         }
@@ -801,7 +836,7 @@ fn resolve_direct_conflicts(group: Vec<RawMatch>, policy: ResolutionPolicy<'_>) 
 
 /// Compute the resolver priority used to break ties between overlapping matches.
 pub(crate) fn match_priority(m: &RawMatch) -> f64 {
-    // LAW10: embedded policy corruption aborts resolution with the exact error; no alternate overlap ordering is used.
+    // LAW10: fail-closed; embedded policy corruption aborts resolution with its exact error, and no alternate overlap ordering is used.
     let resolution = embedded_resolution_index().unwrap_or_else(|error| {
         panic!(
             "embedded detector resolution policy is invalid while computing match priority: {error}"

@@ -177,7 +177,7 @@ pub(crate) fn apply_checksum_decision_confidence(
             confidence.max(
                 decision
                     .valid_confidence_floor()
-                    .unwrap_or(crate::checksum::CHECKSUM_VALID_FLOOR), // LAW10: documented compatibility API default; production compiled detector decisions always carry their TOML floor
+                    .unwrap_or(crate::checksum::CHECKSUM_VALID_FLOOR), // LAW10: canonical default for the compatibility API; compiled detector decisions carry their TOML floor
             ),
         ),
         crate::checksum::ChecksumResult::StructurallyValid => Some(confidence),
@@ -362,7 +362,7 @@ pub(crate) fn candidate_match_score(policy: CandidateMatchScorePolicy<'_>) -> Ml
 
     #[cfg(not(feature = "ml"))]
     let score_result = {
-        // LAW10: builds without ML intentionally execute the complete heuristic policy; this read keeps the compiled policy field contract uniform across feature sets.
+        // LAW10: no runtime effect; builds without ML execute the complete heuristic policy, and this read keeps the compiled field contract uniform.
         let _ = policy.ml_enabled;
         MlScoreResult::Final(heuristic_conf)
     };

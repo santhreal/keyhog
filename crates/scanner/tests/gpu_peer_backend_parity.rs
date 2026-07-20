@@ -57,6 +57,7 @@ fn every_available_gpu_peer_matches_the_cpu_reference() {
             required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
+            structural_password_slot: false,
         }],
         keywords: vec!["KHGPUPEER".into()],
         ..keyhog_scanner::testing::named_detector_fixture_defaults()
@@ -131,6 +132,7 @@ fn compilation_censuses_gpu_peers_without_materializing_execution_backends() {
             required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
+            structural_password_slot: false,
         }],
         keywords: vec!["KHGPULAZY".into()],
         ..keyhog_scanner::testing::named_detector_fixture_defaults()

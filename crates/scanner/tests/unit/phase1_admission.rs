@@ -15,6 +15,7 @@ fn scanner() -> CompiledScanner {
             required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
+            structural_password_slot: false,
         }],
         keywords: vec!["ghp_".into()],
         min_confidence: Some(0.0),
@@ -274,11 +275,11 @@ fn oversized_window_reduction_preserves_mixed_logical_rows() {
 #[test]
 fn oversized_prefixless_phase2_row_keeps_cpu_admission_authoritative() {
     const BYTES: usize = 8 * 1024 * 1024;
-    const TOKEN: &str = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn";
+    const TOKEN: &str = "Kp4Qx7Rm2Sn5Tb8Vw3YzH6Lc9Df1Gj4N";
     let mut config = ScannerConfig::default();
     config.min_confidence = 0.0;
-    let generic = keyhog_core::detector_spec_by_id("generic-keyword-secret")
-        .expect("embedded generic keyword detector")
+    let generic = keyhog_core::detector_spec_by_id("generic-secret")
+        .expect("embedded generic assignment detector")
         .clone();
     let scanner = CompiledScanner::compile(vec![generic])
         .expect("compile detector-owned generic plan")

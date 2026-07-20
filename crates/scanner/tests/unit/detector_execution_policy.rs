@@ -128,4 +128,10 @@ fn compiled_public_identifier_markers_preserve_boundary_bytes() {
     assert!(policy.line_has_public_identifier_assignment(b"SOLANA_ADDR=value"));
     assert!(!policy.line_has_public_identifier_assignment(b"SOLANA_ADDRESS=value"));
     assert!(!policy.line_has_public_identifier_assignment(b"SOLANA_ADDR: value"));
+    assert!(compiled.assignment_has_public_identifier(b"SOLANA_ADDR=value", b"SOLANA_ADDR=".len()));
+    let separate_assignment = b"SOLANA_ADDR=public SECRET=actual";
+    assert!(!compiled.assignment_has_public_identifier(
+        separate_assignment,
+        b"SOLANA_ADDR=public SECRET=".len()
+    ));
 }

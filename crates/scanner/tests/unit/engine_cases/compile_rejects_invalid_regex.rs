@@ -40,6 +40,7 @@ fn detector_with_regex(regex: &str) -> DetectorSpec {
             required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
+            structural_password_slot: false,
         }],
         companions: vec![],
         verify: None,

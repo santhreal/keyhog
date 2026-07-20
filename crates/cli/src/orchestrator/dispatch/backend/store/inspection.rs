@@ -271,7 +271,7 @@ fn route_timing_inspections(
         .map(|entry| {
             let route = entry
                 .measured_route()
-                // LAW10: cache validation rejects unsupported backends before inspection; invariant failure aborts rather than rewriting route evidence.
+                // LAW10: fail-closed; cache validation rejects unsupported backends, and invariant violation aborts rather than rewriting evidence.
                 .unwrap_or_else(|| panic!("validated route timing has a supported backend"));
             let (
                 cold_ns,
@@ -286,7 +286,7 @@ fn route_timing_inspections(
             {
                 let (cold_ns, warm, one_shot_ns) = point
                     .accelerator_cold_warm_route_for_measured(route)
-                    // LAW10: cache validation requires paired accelerator cold/warm evidence; invariant failure aborts rather than inventing a measurement.
+                    // LAW10: fail-closed; cache validation requires paired accelerator evidence, and invariant violation cannot invent a measurement.
                     .unwrap_or_else(|| {
                         panic!("validated accelerator route timing has cold/warm evidence")
                     });
@@ -530,7 +530,7 @@ fn inspect_autoroute_cache_for_build(
             };
             let one_shot_route = decision
                 .resolved_routing_route()
-                // LAW10: cache validation requires a one-shot route; invariant failure aborts inspection.
+                // LAW10: fail-closed; cache validation requires a one-shot route, and invariant violation aborts inspection.
                 .unwrap_or_else(|| panic!("validated decision has a one-shot route"));
             let exact_plan_confidence = decision.calibration_points.iter().all(|point| {
                 point.selected_route_has_exact_plan_confidence_for(one_shot_route, false)
@@ -546,35 +546,35 @@ fn inspect_autoroute_cache_for_build(
                 .iter()
                 .map(|point| point.sample_bytes)
                 .min()
-                // LAW10: validated decisions always contain the primary point; this is an invariant-preserving identity for a non-empty minimum.
+                // LAW10: same value; validated non-empty decisions make the primary point the minimum identity.
                 .unwrap_or(primary.sample_bytes);
             let sample_bytes_max = decision
                 .calibration_points
                 .iter()
                 .map(|point| point.sample_bytes)
                 .max()
-                // LAW10: validated decisions always contain the primary point; this is an invariant-preserving identity for a non-empty maximum.
+                // LAW10: same value; validated non-empty decisions make the primary point the maximum identity.
                 .unwrap_or(primary.sample_bytes);
             let sample_chunks_min = decision
                 .calibration_points
                 .iter()
                 .map(|point| point.sample_chunks)
                 .min()
-                // LAW10: validated decisions always contain the primary point; this is an invariant-preserving identity for a non-empty minimum.
+                // LAW10: same value; validated non-empty decisions make the primary point the minimum identity.
                 .unwrap_or(primary.sample_chunks);
             let sample_chunks_max = decision
                 .calibration_points
                 .iter()
                 .map(|point| point.sample_chunks)
                 .max()
-                // LAW10: validated decisions always contain the primary point; this is an invariant-preserving identity for a non-empty maximum.
+                // LAW10: same value; validated non-empty decisions make the primary point the maximum identity.
                 .unwrap_or(primary.sample_chunks);
             let calibrated_at_unix_ms = decision
                 .calibration_points
                 .iter()
                 .map(|point| point.calibrated_at_unix_ms)
                 .min()
-                // LAW10: validated decisions always contain the primary point; this is an invariant-preserving identity for a non-empty minimum.
+                // LAW10: same value; validated non-empty decisions make the primary point the minimum identity.
                 .unwrap_or(primary.calibrated_at_unix_ms);
             let measured_points = decision
                 .calibration_points
@@ -582,11 +582,11 @@ fn inspect_autoroute_cache_for_build(
                 .map(|point| {
                     let one_shot_route = point
                         .resolve_measured_route(false)
-                        // LAW10: cache validation requires a one-shot route at every point; invariant failure aborts inspection.
+                        // LAW10: fail-closed; cache validation requires a one-shot route at every point, and invariant violation aborts inspection.
                         .unwrap_or_else(|| panic!("validated point has a one-shot route"));
                     let daemon_route = point
                         .resolve_measured_route(true)
-                        // LAW10: cache validation requires a daemon route at every point; invariant failure aborts inspection.
+                        // LAW10: fail-closed; cache validation requires a daemon route at every point, and invariant violation aborts inspection.
                         .unwrap_or_else(|| panic!("validated point has a daemon route"));
                     AutorouteCalibrationPointInspection {
                         sample_bytes: point.sample_bytes,

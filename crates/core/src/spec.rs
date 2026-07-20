@@ -1431,6 +1431,11 @@ pub struct PatternSpec {
     /// applies the same policy to every pattern.
     #[serde(default)]
     pub weak_anchor: bool,
+    /// Treat matches from this exact regex as syntactically proven password
+    /// slots. Unlike the detector-level flag, this does not exempt generic
+    /// keyword-bridge candidates or sibling patterns from Tier-B shape gates.
+    #[serde(default)]
+    pub structural_password_slot: bool,
 }
 
 impl PatternSpec {

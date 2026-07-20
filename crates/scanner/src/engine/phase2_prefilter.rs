@@ -624,7 +624,7 @@ impl Phase2AlwaysActivePrefilter {
         allow_hyperscan: bool,
     ) {
         #[cfg(not(feature = "simd"))]
-        // LAW10: no-runtime-effect; without SIMD the parameter cannot affect execution and the CPU matcher below remains exact.
+        // LAW10: no runtime effect; without SIMD the parameter cannot affect execution and the CPU matcher below remains exact.
         let _ = allow_hyperscan;
         record_mark_call();
         let ascii = match_text.is_ascii();
@@ -842,7 +842,7 @@ impl Phase2AlwaysActivePrefilter {
         allow_hyperscan: bool,
     ) -> bool {
         #[cfg(not(feature = "simd"))]
-        // LAW10: no-runtime-effect; without SIMD the parameter cannot affect execution and the CPU matcher below remains exact.
+        // LAW10: no runtime effect; without SIMD the parameter cannot affect execution and the CPU matcher below remains exact.
         let _ = allow_hyperscan;
         let ascii = match_text.is_ascii();
         // Same no-candidate gate as `mark_matches`: on a pure-ASCII no-anchor chunk

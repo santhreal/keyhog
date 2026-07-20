@@ -16,6 +16,7 @@ fn gpu_stack_usable_false_without_literals() {
             required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
+            structural_password_slot: false,
         }],
         companions: vec![],
         verify: None,

@@ -257,8 +257,12 @@ fn generic_bridge_suppression_reasons_route_through_adjudicator() {
         "generic bridge canonical-hex placeholder content suppression must live in adjudicate, not the generic shape leaf"
     );
 
+    assert!(
+        !generic.contains("\"generic_named_detector_owned_keyword\"")
+            && !adjudicate.contains("\"generic_named_detector_owned_keyword\""),
+        "retired generic named-owner suppression reason must not be reintroduced"
+    );
     for reason in [
-        "generic_named_detector_owned_keyword",
         "generic_keyword_boundary",
         "bare_auth_unstructured",
         "generic_below_min_confidence",

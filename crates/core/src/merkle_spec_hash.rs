@@ -35,6 +35,9 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
                 if p.weak_anchor {
                     pattern_entry.push_str("|wa:true");
                 }
+                if p.structural_password_slot {
+                    pattern_entry.push_str("|sps:true");
+                }
                 entries.push(pattern_entry);
                 for (literal_index, literal) in p.required_literals.iter().enumerate() {
                     entries.push(format!(
@@ -581,6 +584,7 @@ fn assert_pattern_hash_field_inventory_is_exhaustive(pattern: &PatternSpec) {
         required_literals: _,
         client_safe: _,
         weak_anchor: _,
+        structural_password_slot: _,
     } = pattern;
 }
 

@@ -392,11 +392,11 @@ fn rule_suppressor_for_path<'a>(
             }
         }
     }
-    // LAW10: callers provide a non-empty root set and every root receives a suppressor; invariant violations abort instead of omitting a watched tree.
+    // LAW10: fail-closed; callers provide non-empty roots, and invariant violation aborts instead of omitting a watched tree.
     let key = best.unwrap_or(&roots[0]);
     suppressors
         .get(key)
-        // LAW10: every root is inserted into this map during setup; invariant violation aborts instead of scanning without suppression semantics.
+        // LAW10: fail-closed; every root receives a suppressor, and invariant violation aborts instead of scanning without suppression.
         .unwrap_or_else(|| panic!("every watch root has a suppressor entry"))
 }
 

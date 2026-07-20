@@ -526,7 +526,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 backend_recoveries: state.backend_recoveries.load(Ordering::Relaxed),
                 last_backend_fault: last_backend_fault.clone(),
             },
-            // LAW10: lock poisoning becomes an explicit daemon error response instructing the operator to restart; no health value is fabricated.
+            // LAW10: loud operator error; lock poisoning returns a restart instruction and fabricates no health value.
             Err(_) => Response::Error {
                 message: "daemon: backend-recovery health lock is poisoned; restart the daemon"
                     .to_string(),

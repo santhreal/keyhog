@@ -213,7 +213,7 @@ impl GenericOwningDetectorIndex {
             .or(self.vendor_suffix_fallback_index)?;
         let canonical_index = self
             .canonical_index_from(&kw_lower, normalized.as_deref())
-            // LAW10: no canonical-hex override means the already-resolved entropy owner remains authoritative; this does not bypass a failed policy lookup.
+            // LAW10: canonical default; no canonical-hex override leaves the already-resolved entropy owner authoritative.
             .unwrap_or(owning_index);
         Some(GenericDetectorResolution {
             owning_index,

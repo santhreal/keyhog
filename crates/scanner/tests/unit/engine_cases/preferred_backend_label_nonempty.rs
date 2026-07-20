@@ -15,6 +15,7 @@ fn no_backend_library_status_names_the_portable_reference() {
             required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
+            structural_password_slot: false,
         }],
         companions: vec![],
         verify: None,

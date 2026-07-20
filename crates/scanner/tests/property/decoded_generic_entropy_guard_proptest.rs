@@ -76,7 +76,7 @@ proptest! {
             .collect();
         prop_assert!(
             !recovered.is_empty(),
-            "decoded generic assignment was lost for token {token}: hits={hits:?}",
+            "decoded generic assignment was lost for token {token}: direct={direct:?}, hits={hits:?}",
         );
     }
 }

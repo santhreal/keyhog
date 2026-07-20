@@ -197,7 +197,7 @@ fn confirmed_suffix_gate_build_failure_warns() {
 
 #[test]
 fn prefilter_truncation_parse_failures_warn() {
-    let src = engine_src("phase2_truncate.rs");
+    let src = scanner_src("phase2_truncate.rs");
     assert!(
         src.contains("prefilter regex truncation parse failed"),
         "truncation parse failure must warn"

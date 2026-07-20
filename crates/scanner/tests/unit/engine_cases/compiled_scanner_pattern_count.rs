@@ -16,6 +16,7 @@ fn compiled_scanner_pattern_count() {
                 required_literals: Vec::new(),
                 client_safe: false,
                 weak_anchor: false,
+                structural_password_slot: false,
             },
             PatternSpec {
                 regex: "y".into(),
@@ -24,6 +25,7 @@ fn compiled_scanner_pattern_count() {
                 required_literals: Vec::new(),
                 client_safe: false,
                 weak_anchor: false,
+                structural_password_slot: false,
             },
         ],
         companions: vec![],

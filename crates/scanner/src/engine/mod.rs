@@ -257,6 +257,9 @@ pub struct CompiledScanner {
     #[cfg(feature = "gpu")]
     pub(crate) ac_match_upper_bounds: Vec<Option<usize>>,
     pub(crate) ac_map: Vec<CompiledPattern>,
+    /// Confirmed pattern indices whose exact capture proves a structural password
+    /// slot, partitioned by detector for bounded generic-bridge lookup.
+    pub(crate) structural_confirmed_patterns: Vec<Vec<usize>>,
     pub(crate) pattern_boundary_context: boundary::BoundaryContextBytes,
     /// Confirmed-pass suffix gate: AC over ac_map patterns' required suffix
     /// literals (every match ends with one). `ac_suffix_gate[i]` are pattern
@@ -275,6 +278,9 @@ pub struct CompiledScanner {
         Option<scan_postprocess::confirmed_anchor::ConfirmedAnchorIndex>,
     pub(crate) prefix_propagation: CsrU32,
     pub(crate) phase2_patterns: Vec<(CompiledPattern, Vec<String>)>,
+    /// Phase-2 pattern indices whose exact capture proves a structural password
+    /// slot, partitioned by detector for bounded generic-bridge lookup.
+    pub(crate) structural_phase2_patterns: Vec<Vec<usize>>,
     pub(crate) same_prefix_patterns: CsrU32,
     pub(crate) phase2_keyword_ac: Option<AhoCorasick>,
     pub(crate) phase2_keyword_to_patterns: CsrU32,

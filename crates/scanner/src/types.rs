@@ -489,6 +489,9 @@ pub(crate) struct CompiledPattern {
     pub client_safe: bool,
     /// Exact `PatternSpec::weak_anchor` decision compiled beside the regex.
     pub weak_anchor: bool,
+    /// Exact `PatternSpec::structural_password_slot` decision compiled beside
+    /// the regex.
+    pub structural_password_slot: bool,
     /// True when every possible match for this regex starts with one of the
     /// detector keywords. In that case `keyword_nearby` is proven by the match
     /// bytes and does not need an additional whole-chunk substring scan.

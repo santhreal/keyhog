@@ -14,6 +14,7 @@ fn prefixless_detector() -> DetectorSpec {
         required_literals: Vec::new(),
         client_safe: false,
         weak_anchor: false,
+        structural_password_slot: false,
     }], ..keyhog_scanner::testing::named_detector_fixture_defaults() }
 }
 
