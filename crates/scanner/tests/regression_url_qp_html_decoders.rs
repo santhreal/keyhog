@@ -286,6 +286,7 @@ fn line_local_escape_decoders_batch_dense_source_without_branching() {
         ("html-numeric-entity", "&#65;value", "Avalue"),
         ("unicode-escape", r"\u0041value", "Avalue"),
         ("octal-escape", r"\101value", "Avalue"),
+        ("quoted-printable", "=41value", "Avalue"),
     ] {
         let text = (0..40)
             .map(|index| format!("value{index}={encoded}\n"))

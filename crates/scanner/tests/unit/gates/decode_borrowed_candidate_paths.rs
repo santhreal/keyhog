@@ -106,11 +106,10 @@ fn hot_decoders_decode_borrowed_candidates_without_clone_collect() {
         "/// True if `s` contains",
     );
     assert!(
-        qp_body.contains("with_extracted_value_spans(&chunk.data")
-            && qp_body.contains("decode_candidate_refs_exact(")
-            && !qp_body.contains("extract_encoded_values(")
-            && !qp_body.contains("decode_candidates("),
-        "quoted-printable decoder should reuse the whole-chunk candidate view instead of re-extracting per line"
+        qp_body.contains("decode_line_replacements(")
+            && qp_body.contains("is_false_positive_context(")
+            && !qp_body.contains("decode_candidate_refs_exact("),
+        "quoted-printable decoder should batch admitted physical lines"
     );
     let mime_body = impl_body(
         &url,

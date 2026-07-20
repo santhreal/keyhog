@@ -1,7 +1,7 @@
 use super::base64::base64_decode;
 use super::pipeline::{
-    decode_candidate_refs_exact, decode_candidate_spans_exact, push_decoded_replacements_spliced,
-    with_extracted_value_spans, ExtractedValue, DECODE_REPLACEMENT_BATCH_SOURCE_BYTES,
+    decode_candidate_spans_exact, push_decoded_replacements_spliced, with_extracted_value_spans,
+    ExtractedValue, DECODE_REPLACEMENT_BATCH_SOURCE_BYTES,
 };
 use super::unicode_escape::unicode_escape_decode;
 use super::util::{hex_val, lazy_decoded_prefix};
@@ -61,49 +61,24 @@ impl Decoder for QuotedPrintableDecoder {
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
         let line_views = line_views_with_offsets(&chunk.data);
         let lines = line_views.iter().map(|line| line.text).collect::<Vec<_>>();
-
-        with_extracted_value_spans(&chunk.data, |candidates| {
-            let mut decoded_chunks = Vec::new();
-            for (line_idx, line) in line_views.iter().enumerate() {
-                // Cheap O(line) gate FIRST: real Quoted-Printable needs a
-                // `=XX` hex escape, and every candidate is a substring of this
-                // line, so a line with no `=XX` cannot yield ANY QP candidate.
-                // Reuse the whole-chunk extractor view below; per-line
-                // extraction misses the shared cache by pointer/len and
-                // recomputes the same candidates on every QP-shaped line.
-                if !has_qp_escape(line.text) {
-                    continue;
-                }
-                if context::is_false_positive_context(
+        let mut replacements = Vec::new();
+        for (line_index, line) in line_views.iter().enumerate() {
+            if !has_qp_escape(line.text)
+                || context::is_false_positive_context(
                     &lines,
-                    line_idx,
+                    line_index,
                     chunk.metadata.path.as_deref(),
-                ) {
-                    continue;
-                }
-
-                decoded_chunks.extend(decode_candidate_refs_exact(
-                    chunk,
-                    candidates.iter().filter_map(|candidate| {
-                        let (start, end) = candidate.span()?;
-                        (start >= line.start && end <= line.end && has_qp_escape(&candidate.value))
-                            .then_some(candidate)
-                    }),
-                    quoted_printable_decode,
-                    self.name(),
-                ));
-
-                if let Some(trimmed) = trimmed_line_candidate(line) {
-                    decoded_chunks.extend(decode_candidate_spans_exact(
-                        chunk,
-                        vec![trimmed],
-                        quoted_printable_decode,
-                        self.name(),
-                    ));
-                }
+                )
+            {
+                continue;
             }
-            decoded_chunks
-        })
+            let Ok(decoded) = quoted_printable_decode(line.text) else {
+                // LAW10: recall-preserving; a failed trial leaves the root line scanned.
+                continue;
+            };
+            replacements.push((line.start, line.end, decoded));
+        }
+        decode_line_replacements(chunk, replacements, self.name())
     }
 }
 
@@ -138,9 +113,6 @@ where
     F: Fn(&str) -> bool,
     D: FnMut(&str) -> Result<String, ()>,
 {
-    let mut decoded_chunks = Vec::new();
-    let mut batch_start = usize::MAX;
-    let mut batch_end = 0;
     let mut replacements = Vec::new();
     for line in line_views_with_offsets(&chunk.data) {
         if !filter(line.text) {
@@ -150,31 +122,46 @@ where
             // LAW10: recall-preserving; a failed trial leaves the root line scanned.
             continue;
         };
+        replacements.push((line.start, line.end, decoded));
+    }
+    decode_line_replacements(chunk, replacements, decoder_name)
+}
+
+fn decode_line_replacements(
+    chunk: &Chunk,
+    replacements: Vec<(usize, usize, String)>,
+    decoder_name: &str,
+) -> Vec<Chunk> {
+    let mut decoded_chunks = Vec::new();
+    let mut batch_start = usize::MAX;
+    let mut batch_end = 0;
+    let mut batch_replacements = Vec::new();
+    for (start, end, decoded) in replacements {
         if batch_start != usize::MAX
-            && line.end.saturating_sub(batch_start) > DECODE_REPLACEMENT_BATCH_SOURCE_BYTES
+            && end.saturating_sub(batch_start) > DECODE_REPLACEMENT_BATCH_SOURCE_BYTES
         {
             push_decoded_replacements_spliced(
                 &mut decoded_chunks,
                 chunk,
                 batch_start,
                 batch_end,
-                &mut replacements,
+                &mut batch_replacements,
                 decoder_name,
             );
             batch_start = usize::MAX;
         }
         if batch_start == usize::MAX {
-            batch_start = line.start;
+            batch_start = start;
         }
-        batch_end = line.end;
-        replacements.push((line.start, line.end, decoded));
+        batch_end = end;
+        batch_replacements.push((start, end, decoded));
     }
     push_decoded_replacements_spliced(
         &mut decoded_chunks,
         chunk,
         batch_start,
         batch_end,
-        &mut replacements,
+        &mut batch_replacements,
         decoder_name,
     );
     decoded_chunks
@@ -183,20 +170,6 @@ where
 fn strip_line_ending(segment: &str) -> &str {
     let line = segment.strip_suffix('\n').unwrap_or(segment); // LAW10: recall-preserving identity for final unterminated lines; whole-line bytes still flow to scanning.
     line.strip_suffix('\r').unwrap_or(line) // LAW10: recall-preserving identity when no CR is present; whole-line bytes still flow to scanning.
-}
-
-fn trimmed_line_candidate(line: &LineView<'_>) -> Option<ExtractedValue> {
-    let trimmed = line.text.trim();
-    if trimmed.is_empty() || !trimmed.contains('=') || !has_qp_escape(trimmed) {
-        return None;
-    }
-    let leading = line.text.len() - line.text.trim_start().len();
-    let trailing = line.text.trim_end().len();
-    Some(ExtractedValue::new(
-        trimmed.to_string(),
-        line.start + leading,
-        line.start + trailing,
-    ))
 }
 
 /// True if `s` contains at least one well-formed Quoted-Printable

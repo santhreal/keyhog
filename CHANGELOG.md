@@ -27,8 +27,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   source bytes and reporting every repair.
 - Build provenance watches Git reflogs as well as loose and packed refs, so
   consecutive same-branch candidate builds embed the exact checkout commit.
-- JSON strings and line-local URL-percent, HTML-entity, Unicode, and octal
-  escapes decode in bounded source batches while retaining physical lines and
+- JSON strings, quoted-printable text, and line-local URL-percent, HTML-entity,
+  Unicode, and octal escapes decode in bounded source batches while retaining
   multiline private-key separators. Dense generated source no longer creates
   one recursive root per encoded value.
 - Default detector resolution priority no longer perturbs the canonical detector
