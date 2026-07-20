@@ -45,6 +45,7 @@ pub mod regression_finding_multi_location;
 pub mod regression_finding_ordering;
 pub mod regression_finding_sarif_result;
 pub mod regression_finding_serde_roundtrip;
+pub mod regression_git_hash_matches_checkout;
 pub mod regression_html_report_coverage_panel;
 pub mod regression_html_report_scan_metadata_wired;
 pub mod regression_html_report_script_breakout_xss;
