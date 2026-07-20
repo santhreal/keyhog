@@ -30,12 +30,12 @@ fn compiler_gpu_literals_append_only_presence_segments_after_detector_literals()
     assert_eq!(
         built.as_ref(),
         &vec![
-            b"ghp_".to_vec(),
-            b"phasetwokey".to_vec(),
-            b"alwaysanchor".to_vec(),
-            b"confirmedanchor".to_vec(),
-            b"genericstem".to_vec(),
+            b"GhP_".to_vec(),
+            b"PhaseTwoKey".to_vec(),
+            b"AlwaysAnchor".to_vec(),
+            b"ConfirmedAnchor".to_vec(),
+            b"GenericStem".to_vec(),
         ],
-        "the fused GPU rows must preserve the canonical trigger, anchor, and generic-position segment order"
+        "the fused GPU rows must preserve canonical bytes and segment order"
     );
 }

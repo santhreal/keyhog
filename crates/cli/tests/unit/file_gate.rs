@@ -64,8 +64,7 @@ fn lib_scan_failure_counters_have_typed_owner() {
     );
     assert!(
         dispatch.contains("fn record_oversized_coalesced_chunk_skip(")
-            && fused.contains("super::record_oversized_coalesced_chunk_skip(&c)")
-            && fused.contains("COALESCED_CHUNK_SCAN_CEILING_BYTES"),
+            && fused.contains("super::classify_source_chunk"),
         "coalesced and fused oversized chunk drops must share one loud source-error recorder"
     );
     assert!(
@@ -91,13 +90,13 @@ fn scan_exit_precedence_keeps_system_failure_above_source_coverage_gap() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let run = std::fs::read_to_string(root.join("src/orchestrator/run.rs")).expect("read run");
     let findings_pos = run
-        .find("} else if has_new_entries {")
+        .find("} else if outcome.has_new_entries {")
         .expect("findings exit branch");
     let incremental_pos = run
-        .find("} else if incremental_cache_failed {")
+        .find("} else if outcome.incremental_cache_failed {")
         .expect("incremental cache exit branch");
     let source_gap_pos = run
-        .find("} else if source_coverage_incomplete {")
+        .find("} else if outcome.source_coverage_incomplete {")
         .expect("source coverage exit branch");
 
     assert!(
@@ -107,9 +106,8 @@ fn scan_exit_precedence_keeps_system_failure_above_source_coverage_gap() {
          cache failure when there are no findings."
     );
     assert!(
-        run.contains("let source_errors = crate::SOURCE_ERRORS.load")
-            && run.contains("source_errors + source_gaps + binary_gaps + scanner_coverage_gaps > 0"),
-        "source errors emitted by partial sources or orchestrator drops must make clean-looking scans exit as incomplete coverage"
+        run.contains("crate::reporting::CoverageCounts::current().fail_class_total()"),
+        "source, scanner, and orchestrator coverage gaps must reach the canonical FAIL-class total before a clean-looking scan can exit successfully"
     );
     let reporting = std::fs::read_to_string(root.join("src/orchestrator/reporting.rs"))
         .expect("read terminal reporting");
@@ -146,8 +144,8 @@ fn git_object_coverage_gaps_are_reported_separately() {
     let report = std::fs::read_to_string(root.join("src/reporting.rs")).expect("read report");
 
     assert!(
-        run.contains("counts.git_object_unreadable"),
-        "git object drops must make clean-looking scans exit as incomplete coverage through the central skip snapshot"
+        report.contains("Self::GitObjectUnreadable => c.git_object_unreadable"),
+        "git object drops must flow from the central skip snapshot into their distinct coverage category"
     );
     assert!(
         reporting.contains("CoverageGapKind::ALL") && reporting.contains("kind.severity()"),
@@ -407,7 +405,7 @@ fn daemon_frame_error() {
 #[cfg(unix)]
 #[test]
 fn daemon_protocol_happy() {
-    assert_eq!(WIRE_VERSION, 5);
+    assert_eq!(WIRE_VERSION, 6);
 }
 #[cfg(unix)]
 #[test]

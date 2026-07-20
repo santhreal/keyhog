@@ -347,7 +347,10 @@ pub(crate) fn require_non_empty_detectors(
 /// messages and on the fallback-to-embedded branch - kimi-dedup rows #4-6.
 // `pub` (was pub(crate)) so the relocated explain test loads the embedded
 // corpus through the same path production uses (no_inline_tests_in_src gate).
-pub(crate) fn load_detectors_or_embedded(path: &Path) -> Result<Vec<DetectorSpec>> {
+pub(crate) fn load_detectors_or_embedded(
+    path: impl AsRef<std::path::Path>,
+) -> Result<Vec<DetectorSpec>> {
+    let path = path.as_ref();
     validate_detector_path_for_scan(path)?;
     if path.exists() && path.is_dir() {
         let loaded = load_detectors(path).context("loading detectors from directory")?;

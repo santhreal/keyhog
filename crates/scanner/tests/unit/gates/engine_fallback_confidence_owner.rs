@@ -65,7 +65,6 @@ fn report_confidence_tail_routes_through_confidence_owner() {
             "super::scoring::ReportConfidencePolicy",
             "crate::adjudicate::MatchCtx::for_final_emit(",
             "crate::adjudicate::FinalEmitSignals::new(",
-            "crate::adjudicate::record_checksum_invalid_suppression(",
         ] {
             assert!(
                 !code.contains(forbidden),
@@ -112,18 +111,22 @@ fn report_confidence_tail_routes_through_confidence_owner() {
 #[test]
 fn engine_scoring_confidence_adjustments_use_confidence_owner() {
     let src = scanner_src();
-    let policy = uncommented_code(&read(&src.join("confidence/policy.rs")));
+    let policy = format!(
+        "{}\n{}",
+        uncommented_code(&read(&src.join("confidence/policy.rs"))),
+        uncommented_code(&read(&src.join("confidence/mod.rs")))
+    );
     for required in [
         "fn pre_ml_heuristic_confidence(",
         "struct MatchHeuristicConfidencePolicy",
         "fn match_heuristic_confidence(",
-        "compute_confidence",
+        "fn score(",
         "ConfidenceSignals",
         "fn apply_known_prefix_floor(",
         "known_prefix_confidence_floor",
         "confidence.max(floor)",
         "CodeContext::TestCode | context::CodeContext::Documentation",
-        "confidence_multiplier()",
+        "context_multiplier(",
     ] {
         assert!(
             policy.contains(required),
@@ -197,7 +200,7 @@ fn ml_pending_confidence_policy_routes_through_confidence_owner() {
         "ml_weight",
         "CodeContext::Comment",
         "CodeContext::TestCode",
-        "confidence_multiplier()",
+        "context_multiplier(",
     ] {
         assert!(
             policy.contains(required),

@@ -47,7 +47,7 @@ fn detector() -> DetectorSpec {
         }],
         keywords: vec!["ELPMAXE".into()],
         min_confidence: Some(0.0),
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }
 }
 

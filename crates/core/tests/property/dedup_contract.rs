@@ -83,7 +83,7 @@ fn spec_key(&(det, cred, ..): &MatchSpec) -> (String, String) {
 macro_rules! out_keys {
     ($out:expr) => {
         $out.iter()
-            .map(|m| (m.detector_id.to_string(), m.credential.to_string()))
+            .map(|m| (m.detector_id.to_string(), m.credential.as_str().to_string()))
             .collect::<Vec<(String, String)>>()
     };
 }
@@ -161,7 +161,7 @@ proptest! {
         }
         let out = dedup_matches(build(&specs), &DedupScope::Credential);
         for m in &out {
-            let key = (m.detector_id.to_string(), m.credential.to_string());
+            let key = (m.detector_id.to_string(), m.credential.as_str().to_string());
             let want = expected_max[&key];
             prop_assert_eq!(
                 m.confidence,

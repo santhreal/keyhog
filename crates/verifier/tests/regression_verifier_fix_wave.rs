@@ -31,9 +31,9 @@ fn retryable_http_status_matches_429_and_500_through_504_only() {
 // ── success contract is authoritative over the generic backstop ──────────────
 
 #[test]
-fn success_spec_is_explicit_only_when_a_condition_is_set() {
+fn success_spec_is_explicit_only_with_body_evidence() {
     assert!(!TestApi.success_spec_is_explicit_for_test(&SuccessSpec::default()));
-    assert!(TestApi.success_spec_is_explicit_for_test(&SuccessSpec {
+    assert!(!TestApi.success_spec_is_explicit_for_test(&SuccessSpec {
         status: Some(200),
         ..Default::default()
     }));

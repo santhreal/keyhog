@@ -240,6 +240,7 @@ pub(super) fn render_host_profile(host: &AutorouteHostProfile) -> String {
         } else {
             "no"
         },
+        // LAW10: this explicit host-label sentinel participates in the persisted identity digest; absence cannot alias a recorded Hyperscan runtime.
         host.hyperscan_runtime_identity.as_deref().unwrap_or("none"),
         host.gpu_name.as_deref().unwrap_or("none"), // LAW10: display-only host label; recall-safe
         host.gpu_runtime_backend.as_deref().unwrap_or("none"), // LAW10: display-only host label; recall-safe

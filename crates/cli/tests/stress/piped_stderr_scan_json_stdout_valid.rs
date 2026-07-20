@@ -1,6 +1,6 @@
 //! R5-D2 / KH-GAP-172: piping stderr must not break JSON stdout contract.
 
-use crate::e2e::support::{binary, write_temp_file};
+use crate::support::{binary, write_temp_file};
 use std::process::{Command, Stdio};
 
 #[test]

@@ -19,7 +19,7 @@ fn findings_for_path(scanner: &CompiledScanner, text: &str, path: &str) -> Vec<(
         .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
         .into_iter()
         .flatten()
-        .map(|m| (m.detector_id.to_string(), m.credential.to_string()))
+        .map(|m| (m.detector_id.to_string(), m.credential.as_str().to_string()))
         .collect()
 }
 
@@ -429,7 +429,7 @@ hygiene_token = "ohw_=uhihuhqfh_f11_fodvvlib_ydvw_qrgh_nlqgv(&[0x8;14])"
         .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
         .into_iter()
         .flatten()
-        .map(|m| (m.detector_id.to_string(), m.credential.to_string()))
+        .map(|m| (m.detector_id.to_string(), m.credential.as_str().to_string()))
         .collect();
     for credential in [
         "VYDTYDW-1000xqideudjhoydvydtydwi.jecb",

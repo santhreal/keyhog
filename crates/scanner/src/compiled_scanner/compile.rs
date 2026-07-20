@@ -42,10 +42,48 @@ impl CompiledScanner {
         #[cfg(not(feature = "simd"))]
         let _tuning_config = tuning_config;
         let state = build_compile_state(&detectors)?;
+        // Build the canonical detector execution plan before any backend
+        // projection. Backends consume only derived matcher inputs from this
+        // owner and never reinterpret detector TOML independently.
+        let static_intern_strings: Vec<&str> = detectors
+            .iter()
+            .flat_map(|detector| {
+                [
+                    detector.id.as_str(),
+                    detector.name.as_str(),
+                    detector.service.as_str(),
+                ]
+                .into_iter()
+                .chain(
+                    detector
+                        .entropy_fallback
+                        .as_ref()
+                        .into_iter()
+                        .flat_map(|metadata| {
+                            [
+                                metadata.id.as_str(),
+                                metadata.name.as_str(),
+                                metadata.service.as_str(),
+                            ]
+                        }),
+                )
+            })
+            .collect();
+        let static_intern = Arc::new(crate::static_intern::StaticInterner::from_detector_strings(
+            static_intern_strings,
+        ));
         let detector_digest = super::detector_digest::from_execution_plan(
             keyhog_core::compute_spec_hash(&detectors),
             decoder_plan.identity(),
         );
+        let detector_plans =
+            crate::detector_plan::CompiledDetectorPlans::compile_with_decoder_plan(
+                &detectors,
+                static_intern.as_ref(),
+                state.companions,
+                decoder_plan,
+            )
+            .map_err(crate::error::ScanError::Config)?;
         validate_compiled_pattern_detector_indices(
             &state.ac_map,
             &state.phase2_patterns,
@@ -170,30 +208,6 @@ impl CompiledScanner {
         // seeds the sparse active set without scanning the full phase-2 table.
         let phase2_always_active_indices = phase2_always_active_indices(&state.phase2_patterns);
 
-        let mut generic_assignment_max_len = None;
-        for detector in detectors
-            .iter()
-            .filter(|detector| detector.owns_entropy_policy())
-        {
-            let max_len = detector.max_len.ok_or_else(|| {
-                crate::error::ScanError::Config(format!(
-                    "generic entropy owner {:?} omits max_len; declare it in the detector TOML",
-                    detector.id
-                ))
-            })?;
-            generic_assignment_max_len = Some(
-                generic_assignment_max_len.map_or(max_len, |current: usize| current.max(max_len)),
-            );
-        }
-        let generic_keyword_plan = generic_assignment_max_len
-            .map(|_| {
-                crate::engine::phase2_generic::keywords::GenericAssignmentKeywordPlan::compile(
-                    &detectors,
-                )
-                .map_err(crate::error::ScanError::Config)
-            })
-            .transpose()?;
-
         // Three independent Aho-Corasick indices over the canonical compile
         // state. They share no mutable state and each is a pure function
         // of `state`, so they build concurrently on the rayon pool instead of
@@ -228,10 +242,11 @@ impl CompiledScanner {
         #[cfg(feature = "gpu")]
         let confirmed_anchor_literal_count = confirmed_anchor_literals.len();
         #[cfg(feature = "gpu")]
-        let generic_keyword_literals = match generic_keyword_plan.as_ref() {
-            Some(plan) => plan.stem_literals().map(str::to_owned).collect::<Vec<_>>(),
-            None => Vec::new(),
-        };
+        let generic_keyword_literals = detector_plans
+            .generic_assignment()
+            .map(|plan| plan.stem_literals().map(str::to_owned).collect::<Vec<_>>())
+            // LAW10: absence means the validated corpus has no generic assignment owner, so there is no generic matcher or recall surface to populate.
+            .unwrap_or_default();
         #[cfg(feature = "gpu")]
         let generic_keyword_literal_count = generic_keyword_literals.len();
         let gated = ac_suffix_gate.iter().filter(|g| !g.is_empty()).count();
@@ -318,47 +333,6 @@ impl CompiledScanner {
             "bigram bloom built (65536 slots / 8 KB direct table, lower popcount = stronger filter)"
         );
 
-        // Pre-intern detector metadata strings into the shared
-        // hash so per-scan `intern_metadata` calls hand out shared
-        // `Arc<str>` without touching the global allocator. Built
-        // once per scanner; lock-free on read.
-        let static_intern_strings: Vec<&str> = detectors
-            .iter()
-            .flat_map(|detector| {
-                [
-                    detector.id.as_str(),
-                    detector.name.as_str(),
-                    detector.service.as_str(),
-                ]
-                .into_iter()
-                .chain(
-                    detector
-                        .entropy_fallback
-                        .as_ref()
-                        .into_iter()
-                        .flat_map(|metadata| {
-                            [
-                                metadata.id.as_str(),
-                                metadata.name.as_str(),
-                                metadata.service.as_str(),
-                            ]
-                        }),
-                )
-            })
-            .collect();
-        let static_intern = Arc::new(crate::static_intern::StaticInterner::from_detector_strings(
-            static_intern_strings,
-        ));
-
-        let detector_plans =
-            crate::detector_plan::CompiledDetectorPlans::compile_with_decoder_plan(
-                &detectors,
-                static_intern.as_ref(),
-                state.companions,
-                decoder_plan,
-            )
-            .map_err(crate::error::ScanError::Config)?;
-
         // Pre-resolve the detector-wide weak-anchor base once. The per-pattern
         // bit is compiled beside its regex, so mixed detectors protect only the
         // patterns that declare the policy. Built before `detectors` is moved.
@@ -383,32 +357,6 @@ impl CompiledScanner {
                 missing_weak_anchor_floors.join(", ")
             )));
         }
-        let generic_named_assignment_keywords =
-            crate::generic_keyword_owner::build_generic_named_assignment_keywords(&detectors);
-        let (generic_assignment_re, generic_keyword_stems) = if let (Some(max_len), Some(plan)) =
-            (generic_assignment_max_len, generic_keyword_plan)
-        {
-            let alternation = crate::engine::phase2_generic::generic_keyword_alternation_from_with_vendor_fallback(
-                plan.keywords(),
-                plan.include_vendor_fallback(),
-            );
-            let generic_assignment_re =
-                crate::engine::phase2_generic::compile_generic_re_with_max(
-                    &alternation,
-                    max_len,
-                )
-                .map_err(|error| {
-                    crate::error::ScanError::Config(format!(
-                        "cannot compile the detector-owned generic assignment bridge: {error}. Fix the phase-2 generic detector keywords and max_len values"
-                    ))
-                })?;
-            (Some(generic_assignment_re), Some(plan.into_stems()))
-        } else {
-            (None, None)
-        };
-        let generic_owning_detector =
-            crate::generic_keyword_owner::GenericOwningDetectorIndex::build(&detectors)
-                .map_err(crate::error::ScanError::Config)?;
         // Resolve the detector-owned hot-prefix table once, then mark its exact
         // confirmed delegates. Limiting suppression to the delegate is
         // recall-safe when one detector has overlapping regexes at one offset.
@@ -456,10 +404,6 @@ impl CompiledScanner {
             autoroute_gpu_shared_cold_ns: std::sync::atomic::AtomicU64::new(0),
             static_intern,
             detector_plans,
-            generic_named_assignment_keywords,
-            generic_assignment_re,
-            generic_keyword_stems,
-            generic_owning_detector,
             assignment_keyword_matcher: std::sync::Mutex::new(
                 crate::assignment_keyword_matcher::AssignmentKeywordMatcherCache::default(),
             ),

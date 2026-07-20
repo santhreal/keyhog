@@ -43,6 +43,32 @@ pub fn read_crate_source(rel: &str) -> String {
         Err(error) => panic!("read crate source {}: {error}", path.display()),
     }
 }
+/// Complete defaults for programmatic named-detector fixtures.
+///
+/// The confidence policy comes from the embedded corpus so tests share the
+/// production schema instead of maintaining a second scoring default.
+pub fn named_detector_fixture_defaults() -> DetectorSpec {
+    let match_confidence = crate::embedded_detector_specs()
+        .iter()
+        .find_map(|spec| spec.match_confidence)
+        .expect("embedded detector confidence policy");
+    DetectorSpec {
+        match_confidence: Some(match_confidence),
+        ..Default::default()
+    }
+}
+/// Add a production-derived confidence policy to a detector TOML fixture.
+///
+/// Callers still exercise the real TOML parser and validator, while the
+/// detector-owned policy remains defined by the embedded corpus.
+pub fn detector_toml_with_fixture_confidence(source: &str) -> String {
+    let confidence = crate::embedded_detector_tomls()
+        .iter()
+        .flat_map(|(_, toml)| toml.lines())
+        .find(|line| line.starts_with("match_confidence = "))
+        .expect("embedded detector confidence TOML");
+    source.replacen("[detector]", &format!("[detector]\n{confidence}"), 1)
+}
 
 pub struct TestApi;
 

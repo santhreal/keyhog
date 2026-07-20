@@ -101,6 +101,7 @@ fn detector_required_literals_own_base_and_homoglyph_routes() {
 #[test]
 fn hyperscan_unsupported_confirmed_route_recovers_from_its_literal_plan() {
     let prefix = "~".repeat(520);
+    let regex_padding = "x".repeat(520);
     let credential = "RECOVER_A1b2C3d4E5f6G7h8I9j0";
     let scanner = CompiledScanner::compile_with_gpu_policy(
         vec![
@@ -110,12 +111,12 @@ fn hyperscan_unsupported_confirmed_route_recovers_from_its_literal_plan() {
                 service: "test".into(),
                 severity: Severity::High,
                 patterns: vec![PatternSpec {
-                    regex: format!("{prefix}({credential})"),
+                    regex: format!("(?x)# {regex_padding}\n~+({credential})"),
                     group: Some(1),
                     required_literals: vec!["RECOVER_".into()],
                     ..PatternSpec::default()
                 }],
-                ..DetectorSpec::default()
+                ..keyhog_scanner::testing::named_detector_fixture_defaults()
             },
             DetectorSpec {
                 id: "simd-supported-neighbor".into(),
@@ -127,7 +128,7 @@ fn hyperscan_unsupported_confirmed_route_recovers_from_its_literal_plan() {
                     group: Some(1),
                     ..PatternSpec::default()
                 }],
-                ..DetectorSpec::default()
+                ..keyhog_scanner::testing::named_detector_fixture_defaults()
             },
         ],
         keyhog_scanner::GpuInitPolicy::ForceDisabled,
@@ -161,7 +162,7 @@ fn hyperscan_unsupported_confirmed_route_recovers_from_its_literal_plan() {
             .map(|finding| {
                 (
                     finding.detector_id.to_string(),
-                    finding.credential.to_string(),
+                    finding.credential.as_str().to_string(),
                     finding.location.offset,
                 )
             })
@@ -339,7 +340,7 @@ fn structured_env_preprocessing_surfaces_key_value_via_scan() {
         verify: None,
         keywords: vec!["ghp_".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }])
     .unwrap();
     let chunk = Chunk {

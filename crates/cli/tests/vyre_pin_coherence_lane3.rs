@@ -2,7 +2,7 @@
 //!
 //! KeyHog consumes VYRE from crates.io, not from a path mirror and not from any
 //! retired repository `vendor/` snapshot. These tests pin the registry contract:
-//! all five runtime VYRE crates are exact `=0.6.4` pins, they stay in lockstep,
+//! all five runtime VYRE crates are exact `=0.6.5` pins, they stay in lockstep,
 //! no VYRE dependency carries `path =`, and repository `vendor/` does not exist.
 
 use std::path::{Path, PathBuf};
@@ -110,7 +110,7 @@ fn workspace_deps(cargo: &Value) -> &toml::value::Table {
         .expect("[workspace.dependencies] table")
 }
 
-const REQUIRED_VERSION: &str = "=0.6.4";
+const REQUIRED_VERSION: &str = "=0.6.5";
 
 /// (dep key in [workspace.dependencies], published package name).
 const VYRE: &[(&str, &str)] = &[
@@ -275,6 +275,6 @@ fn vyre_docs_match_registry_pin_contract() {
     assert_eq!(
         offending,
         Vec::<String>::new(),
-        "VYRE-facing docs must describe crates.io =0.6.4 pins, not retired path mirrors"
+        "VYRE-facing docs must describe crates.io =0.6.5 pins, not retired path mirrors"
     );
 }

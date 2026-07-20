@@ -65,6 +65,13 @@ fn scan_json(content: &str, extra_args: &[&str]) -> (Vec<serde_json::Value>, Opt
     // suppression heuristics so the entropy gate is what decides the outcome.
     let path = dir.path().join("settings_block.conf");
     std::fs::write(&path, content).expect("write fixture");
+    // Isolate the generic entropy owner from the stronger structural API-key
+    // detector that would otherwise win cross-detector resolution.
+    std::fs::write(
+        dir.path().join(".keyhog.toml"),
+        "[detector.generic-api-key]\nenabled = false\n",
+    )
+    .expect("write detector isolation config");
 
     let output = Command::new(binary())
         .arg("scan")
@@ -91,16 +98,16 @@ fn entropy_findings(findings: &[serde_json::Value]) -> Vec<String> {
     findings
         .iter()
         .filter_map(|f| f.get("detector_id").and_then(|v| v.as_str()))
-        .filter(|id| id.starts_with("entropy"))
+        .filter(|id| *id == "generic-keyword-secret")
         .map(|s| s.to_string())
         .collect()
 }
 
 /// The fixture below is `api_key = "<24-char mixed-case+digit value>"`.
 /// The value `aAbBcCdDeEfFgGhH12345678` has Shannon entropy ~4.585 bits/byte
-/// and is reported by the built-in `entropy-api-key` detector at the default
-/// `--entropy-threshold 4.5`. This is a precondition for the two assertions
-/// that follow (if this stops firing, the later tests are vacuous).
+/// and is reported by the built-in `generic-keyword-secret` entropy gate at
+/// `--entropy-threshold 4.5`. The isolation config above keeps the stronger
+/// structural detector from making this threshold contract vacuous.
 const GENERIC_FIXTURE: &str = "api_key = \"aAbBcCdDeEfFgGhH12345678\"\n";
 
 /// AUD-generalization-1: raising `--entropy-threshold` from 4.5 to 6.0 must
@@ -116,9 +123,9 @@ fn entropy_threshold_knob_governs_keyword_entropy_gate() {
     let base_entropy = entropy_findings(&base);
     assert_eq!(
         base_entropy,
-        vec!["entropy-api-key".to_string()],
+        vec!["generic-keyword-secret".to_string()],
         "precondition: at --entropy-threshold 4.5 the entropy-4.585 generic value \
-         must be reported as `entropy-api-key` (got {base_entropy:?}, exit {base_code:?})"
+         must be reported by the keyword entropy gate (got {base_entropy:?}, exit {base_code:?})"
     );
 
     // Conservative threshold: per the documented knob semantics this should
@@ -131,7 +138,7 @@ fn entropy_threshold_knob_governs_keyword_entropy_gate() {
         Vec::<String>::new(),
         "VECTOR-6 GENERALIZATION DEFECT: the documented Tier-A `--entropy-threshold` \
          knob (config.rs:52, .keyhog.toml.example:74) does not govern the keyword-anchored \
-         entropy gate. A value of entropy ~4.585 is still reported as `entropy-api-key` at \
+         generic entropy gate. A value of entropy ~4.585 is still reported at \
          --entropy-threshold 6.0. Found: {tight_entropy:?}"
     );
 }

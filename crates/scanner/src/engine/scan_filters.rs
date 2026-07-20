@@ -151,7 +151,7 @@ pub(crate) fn extend_known_prefix_credential<'a>(
     let original_end = match_end;
     let original_validation = validate(original, true);
     let (credential, match_end) = if original_validation.claims_family()
-        || crate::confidence::known_prefix_confidence_floor(credential).is_some()
+        || crate::confidence::known_prefix_body(credential).is_some()
     {
         let bytes = data.as_bytes();
         let mut end = match_end;

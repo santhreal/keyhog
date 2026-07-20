@@ -1,6 +1,6 @@
 //! R5-D2 / KH-GAP-166: SIGINT mid-scan must exit 130 with interrupt message.
 
-use crate::e2e::support::{binary, workspace_detectors};
+use crate::support::{binary, workspace_detectors};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 

@@ -1,6 +1,6 @@
 //! KH-GAP-145: SARIF tool driver `informationUri` pointed at github.com/keyhog/keyhog.
 
-use crate::e2e::support::binary;
+use crate::support::binary;
 use std::path::PathBuf;
 use std::process::Command;
 

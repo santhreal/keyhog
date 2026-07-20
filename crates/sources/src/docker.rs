@@ -442,7 +442,7 @@ pub(crate) fn rewrite_layer_chunks_for_test<I>(
     image: &str,
     layer_root: &Path,
     layer_name: &str,
-) -> Result<Vec<Chunk>, SourceError>
+) -> Result<Vec<Result<Chunk, SourceError>>, SourceError>
 where
     I: IntoIterator<Item = Result<Chunk, SourceError>>,
 {

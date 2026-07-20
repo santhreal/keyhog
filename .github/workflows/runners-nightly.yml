@@ -36,7 +36,17 @@ jobs:
         with:
           shared-key: runners-nightly
       - name: Install Vectorscan
-        run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
+        run: |
+
+          for i in 1 2 3 4 5; do
+
+            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
+
+            sleep $((i * 2))
+
+            if [ "$i" -eq 5 ]; then exit 1; fi
+
+          done
       - name: Full strict runner gate
         env:
           KEYHOG_ADVERSARIAL_STRICT: "1"

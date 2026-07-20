@@ -310,10 +310,9 @@ fn sensitive_string_debug_does_not_expose() {
 }
 
 #[test]
-fn sensitive_string_display_exposes() {
+fn sensitive_string_display_redacts() {
     let sensitive = SensitiveString::from("display_value");
-
-    assert_eq!(format!("{sensitive}"), "display_value");
+    assert_eq!(format!("{sensitive}"), "<redacted 13 bytes>");
 }
 
 #[test]

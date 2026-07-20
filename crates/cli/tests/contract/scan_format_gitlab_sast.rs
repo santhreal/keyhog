@@ -1,6 +1,6 @@
 //! Contract: `--format gitlab-sast` emits GitLab SAST report JSON.
 
-use crate::e2e::support::{binary, write_temp_file};
+use crate::support::{binary, write_temp_file};
 use std::process::Command;
 
 fn scan(path: &std::path::Path) -> std::process::Output {

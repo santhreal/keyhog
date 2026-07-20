@@ -14,7 +14,7 @@
 //! ladder, including a 512-byte file in the same stable bucket as the 1 KiB
 //! probe. No neighbouring-bucket interpolation is involved.
 
-use crate::e2e::support::binary;
+use crate::e2e::support::{autoroute_calibration_slot, binary};
 use std::process::Command;
 use tempfile::TempDir;
 
@@ -36,6 +36,7 @@ fn write_plain_bytes(path: &std::path::Path, bytes: usize) {
 
 #[test]
 fn calibrate_autoroute_primes_every_preset_for_a_later_scan() {
+    let _calibration_slot = autoroute_calibration_slot();
     let cache = TempDir::new().expect("cache home");
     let work = TempDir::new().expect("workdir");
     // Cargo may rebuild `CARGO_BIN_EXE_keyhog` while another test shard is

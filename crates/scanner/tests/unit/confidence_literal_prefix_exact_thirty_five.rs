@@ -1,6 +1,6 @@
 //! Literal prefix alone yields confidence 1.0 within its bucket.
 
-use keyhog_scanner::confidence::{compute_confidence, ConfidenceSignals};
+use keyhog_scanner::testing::confidence::{compute_confidence, ConfidenceSignals};
 
 #[test]
 fn confidence_literal_prefix_exact_thirty_five() {

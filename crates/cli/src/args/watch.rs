@@ -2,6 +2,9 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
+/// Default consecutive engine-failure budget before watch exits (KH-1334 / KH-1462).
+pub const DEFAULT_WATCH_MAX_CONSECUTIVE_SCAN_FAILURES: usize = 8;
+
 #[derive(Parser)]
 pub struct WatchArgs {
     /// Director(ies) to watch recursively. Pass several to monitor multiple
@@ -32,6 +35,20 @@ pub struct WatchArgs {
         )
     )]
     pub backend: Option<String>,
+    /// Maximum bytes per changed file (same default as `keyhog scan`, 100 MiB).
+    /// Pass `0` to use the built-in default. Oversized editor saves are skipped
+    /// with a loud error rather than OOM-ing the single-threaded watcher (KH-1461).
+    #[arg(long, value_name = "BYTES")]
+    pub max_file_size: Option<u64>,
+    /// Exit after this many consecutive per-file scan engine failures so a
+    /// wedged scanner cannot silently drop secrets under editor saves
+    /// (KH-1334 / KH-1462). Default 8.
+    #[arg(
+        long,
+        value_name = "N",
+        default_value_t = DEFAULT_WATCH_MAX_CONSECUTIVE_SCAN_FAILURES
+    )]
+    pub max_consecutive_failures: usize,
     /// Quiet mode: only print findings (suppress "watching X" status).
     #[arg(long)]
     pub quiet: bool,

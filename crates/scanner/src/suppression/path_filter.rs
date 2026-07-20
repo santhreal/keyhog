@@ -52,7 +52,17 @@ pub(crate) fn looks_like_secret_scanner_source(path: Option<&str>) -> bool {
     // raw path bytes against pre-lowered needles via `ci_find`. Same
     // ten-needle alternation, zero allocations.
     let bytes = p.as_bytes();
-    NEEDLES.iter().any(|n| ci_find(bytes, n.as_bytes()))
+    if !NEEDLES.iter().any(|n| ci_find(bytes, n.as_bytes())) {
+        return false;
+    }
+    // KH-1300: path needles alone suppress whole apps named `gitleaks-demo`.
+    // Require a detector-definition-shaped path segment as well.
+    // App configs named after scanners must not be suppressed, so only complete
+    // detector-definition directory segments count.
+    const DEF_SHAPE: &[&str] = &["detectors", "rules", "fixtures", "testdata", "patterns"];
+    DEF_SHAPE
+        .iter()
+        .any(|segment| contains_path_segment(p, segment))
 }
 
 /// True if `path` looks like a vendored 3rd-party JS/CSS/wasm bundle.

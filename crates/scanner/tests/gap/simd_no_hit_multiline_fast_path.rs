@@ -15,7 +15,7 @@ fn no_hit_multiline_text_uses_the_shared_phase_two_result_path() {
             required_literals: Vec::new(),
             ..Default::default()
         }],
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let scanner = CompiledScanner::compile(vec![detector]).expect("compile detector");
     let credential = "A1B2C3D4-E5F60718";

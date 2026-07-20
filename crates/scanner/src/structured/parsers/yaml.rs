@@ -4,6 +4,38 @@ use super::{
 };
 use serde::Deserialize;
 
+/// Return whether any valid YAML document is a Kubernetes Secret or contains
+/// one through a Kubernetes `List`. A parse error remains distinct from a valid
+/// non-Secret document so classification can route hinted malformed Secrets to
+/// the parser that records the coverage gap.
+pub(crate) fn contains_k8s_secret_document(text: &str) -> Result<bool, ()> {
+    for document in serde_yaml::Deserializer::from_str(text) {
+        let value = serde_yaml::Value::deserialize(document).map_err(|_| ())?;
+        if contains_k8s_secret_value(&value, 0) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn contains_k8s_secret_value(value: &serde_yaml::Value, depth: usize) -> bool {
+    if depth >= super::MAX_STRUCTURED_TRAVERSAL_DEPTH {
+        return false;
+    }
+    match yaml_kind(value) {
+        Some("Secret") => true,
+        Some("List") => value
+            .get("items")
+            .and_then(serde_yaml::Value::as_sequence)
+            .is_some_and(|items| {
+                items
+                    .iter()
+                    .any(|item| contains_k8s_secret_value(item, depth + 1))
+            }),
+        _ => false,
+    }
+}
+
 /// Parse a Kubernetes Secret YAML and decode base64 values under `data:`.
 ///
 /// Line-number lookup anchors on the key (`<key>:`) rather than the

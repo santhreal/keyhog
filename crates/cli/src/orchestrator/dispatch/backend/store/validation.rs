@@ -207,12 +207,12 @@ fn validate_decision_route_evidence_at(
     }
     let Some(resolved) = decision.resolved_routing_route() else {
         return Err(
-            "cache decision has no confidence-separated fastest one-shot route across every measured point"
+            "cache decision has no confidence-supported one-shot route across every measured point"
                 .into(),
         );
     };
     if selected_route != resolved {
-        return Err("selected route is not the fastest persisted timing evidence".into());
+        return Err("selected route is not supported by the persisted timing evidence".into());
     }
     if selected_route.backend != ScanBackend::CpuFallback
         && decision
@@ -220,15 +220,16 @@ fn validate_decision_route_evidence_at(
             .is_none()
     {
         return Err(
-            "cache accelerated decision has no unanimous fastest remaining one-shot recovery route"
+            "cache accelerated decision has no confidence-supported remaining one-shot recovery route"
                 .into(),
         );
     }
     let Some(persistent_route) = decision.resolved_persistent_route() else {
-        return Err(
-            "cache decision has no confidence-separated fastest daemon route across every measured point"
-                .into(),
-        );
+        return Err(format!(
+            "cache decision has no confidence-supported daemon route across every measured point; evidence: {}",
+            decision.confidence_diagnostic(true),
+        )
+        .into());
     };
     if persistent_route.backend != ScanBackend::CpuFallback
         && decision
@@ -236,7 +237,7 @@ fn validate_decision_route_evidence_at(
             .is_none()
     {
         return Err(
-            "cache accelerated decision has no unanimous fastest remaining daemon recovery route"
+            "cache accelerated decision has no confidence-supported remaining daemon recovery route"
                 .into(),
         );
     }
@@ -277,6 +278,17 @@ fn validate_point_route_evidence_at(
         {
             return Err(format!(
                 "cache decision has unexpected or non-canonical timing evidence for {:?}",
+                entry.backend
+            )
+            .into());
+        }
+        let peer_identity_present = entry
+            .peer_identity
+            .as_deref()
+            .is_some_and(|identity| !identity.trim().is_empty());
+        if route.backend.is_gpu() != peer_identity_present {
+            return Err(format!(
+                "cache decision timing evidence for {} must bind exactly one acquired GPU peer identity",
                 entry.backend
             )
             .into());
@@ -443,13 +455,21 @@ fn validate_point_route_evidence_at(
             phase2_plain_localizer: receipt.phase2_plain_localizer,
             phase2_keyword_localizer: receipt.phase2_keyword_localizer,
         };
-        let Some(timing) = point.timing_for_route(route) else {
+        let Some(timing_entry) = point.route_timing_for_route(route) else {
             return Err(format!(
                 "cache decision candidate receipt for {} has no timing evidence",
                 receipt.backend
             )
             .into());
         };
+        let timing = &timing_entry.timing;
+        if receipt.peer_identity != timing_entry.peer_identity {
+            return Err(format!(
+                "cache decision candidate receipt for {} is not bound to its timing peer identity",
+                receipt.backend
+            )
+            .into());
+        }
         if receipt.evidence_digest == 0
             || receipt.evidence_digest != receipt.expected_evidence_digest(route, timing)
         {

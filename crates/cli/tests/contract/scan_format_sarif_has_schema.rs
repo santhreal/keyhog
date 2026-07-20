@@ -1,6 +1,6 @@
 //! Contract: `--format sarif` includes `$schema` and `version`.
 
-use crate::e2e::support::{binary, write_temp_file};
+use crate::support::{binary, write_temp_file};
 use std::process::Command;
 
 #[test]

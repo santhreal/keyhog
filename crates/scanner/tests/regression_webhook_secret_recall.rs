@@ -50,7 +50,7 @@ fn scan(text: &str) -> Vec<(String, String)> {
     s.clear_fragment_cache();
     s.scan(&chunk)
         .into_iter()
-        .map(|m| (m.detector_id.to_string(), m.credential.to_string()))
+        .map(|m| (m.detector_id.to_string(), m.credential.as_str().to_string()))
         .collect()
 }
 
@@ -155,9 +155,13 @@ fn zapier_webhook_url_surfaces() {
 #[test]
 fn stripe_whsec_bare_surfaces() {
     let sec = format!("whsec_{}", alnum(40, 7));
+    let matches = scan(&sec);
     assert!(
-        surfaces_under(&sec, "stripe-webhook-signing-secret", &sec),
-        "a bare Stripe whsec_ signing secret must surface"
+        matches
+            .iter()
+            .any(|(id, credential)| id == "stripe-webhook-signing-secret"
+                && credential.contains(&sec)),
+        "a bare Stripe whsec_ signing secret must surface; got {matches:?}"
     );
 }
 

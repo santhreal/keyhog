@@ -43,11 +43,22 @@ fn gpu_moe_readback_uses_bounded_polling() {
         !backend.contains("receiver.recv()"),
         "GPU MoE readback must not use unbounded receiver.recv()"
     );
+    let dispatch = backend
+        .split_once("fn dispatch_moe_batch(")
+        .and_then(|(_, rest)| rest.split_once("\n}\n\n///").map(|(body, _)| body))
+        .expect("dispatch_moe_batch body must remain inspectable");
+    let checkout = dispatch
+        .split_once("let bufs = match bufs {")
+        .and_then(|(_, rest)| {
+            rest.split_once("// Each checked-out set")
+                .map(|(body, _)| body)
+        })
+        .expect("MoE buffer checkout and bind-group block must remain inspectable");
     assert!(
-        backend.contains("let params_buf = device.create_buffer_init")
-            && backend.contains("resource: params_buf.as_entire_binding()")
-            && !backend.contains("params_buf: wgpu::Buffer")
-            && !backend.contains("resource: gpu.params_buf.as_entire_binding()"),
-        "GPU MoE params must be owned per dispatch so concurrent batches cannot race batch_size"
+        checkout.contains("resource: params.as_entire_binding()")
+            && dispatch.contains("queue.write_buffer(&bufs.params")
+            && dispatch.contains("Each checked-out set owns its params buffer")
+            && !dispatch.contains("gpu.params_buf"),
+        "a checked-out GPU MoE buffer set must bind and upload its own params buffer so concurrent batches cannot race batch_size"
     );
 }

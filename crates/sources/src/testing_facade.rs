@@ -39,13 +39,11 @@ pub mod testing {
     pub fn starts_with_python_pickle_protocol2_for_test(bytes: &[u8]) -> bool {
         crate::magic::starts_with_python_pickle_protocol2(bytes)
     }
-    /// [`crate::magic::starts_with_gzip`] (docker feature).
-    #[cfg(feature = "docker")]
+    /// [`crate::magic::starts_with_gzip`].
     pub fn starts_with_gzip_for_test(bytes: &[u8]) -> bool {
         crate::magic::starts_with_gzip(bytes)
     }
-    /// [`crate::magic::starts_with_zstd_frame`] (docker feature).
-    #[cfg(feature = "docker")]
+    /// [`crate::magic::starts_with_zstd_frame`].
     pub fn starts_with_zstd_frame_for_test(bytes: &[u8]) -> bool {
         crate::magic::starts_with_zstd_frame(bytes)
     }
@@ -559,7 +557,10 @@ pub mod testing {
             image: &str,
             layer_root: &std::path::Path,
             layer_name: &str,
-        ) -> Result<Vec<keyhog_core::Chunk>, keyhog_core::SourceError>
+        ) -> Result<
+            Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>>,
+            keyhog_core::SourceError,
+        >
         where
             I: IntoIterator<Item = Result<keyhog_core::Chunk, keyhog_core::SourceError>>;
         #[cfg(feature = "docker")]
@@ -1439,7 +1440,10 @@ pub mod testing {
             image: &str,
             layer_root: &std::path::Path,
             layer_name: &str,
-        ) -> Result<Vec<keyhog_core::Chunk>, keyhog_core::SourceError>
+        ) -> Result<
+            Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>>,
+            keyhog_core::SourceError,
+        >
         where
             I: IntoIterator<Item = Result<keyhog_core::Chunk, keyhog_core::SourceError>>,
         {
@@ -1669,5 +1673,24 @@ pub mod testing {
                 .with_endpoint(endpoint)
                 .with_lookback_messages(lookback_messages)
         }
+    }
+    #[cfg(feature = "git")]
+    pub fn oversized_staged_header_path_outcome_for_test(
+        input: &[u8],
+        path_limit: usize,
+    ) -> (String, bool, Vec<u8>) {
+        let mut reader = std::io::Cursor::new(input);
+        let mut raw_path = Vec::new();
+        let outcome = crate::git::consume_oversized_staged_header_path(
+            &mut reader,
+            &mut raw_path,
+            path_limit,
+        );
+        let remainder = input[reader.position() as usize..].to_vec();
+        (
+            outcome.error.to_string(),
+            outcome.continue_later_records,
+            remainder,
+        )
     }
 }

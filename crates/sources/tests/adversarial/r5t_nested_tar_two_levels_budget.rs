@@ -40,7 +40,7 @@ fn r5t_nested_tar_two_levels_inner_entry_scanned() {
         errors.is_empty(),
         "nested tar recall fixture should not emit SourceErrors; got {errors:?}"
     );
-    let bodies: Vec<String> = chunks.iter().map(|c| c.data.to_string()).collect();
+    let bodies: Vec<String> = chunks.iter().map(|c| c.data.as_str().to_owned()).collect();
     assert!(
         bodies.iter().any(|b| b.contains("AKIAQYLPMN5HFIQR7XYA")),
         "nested tar inner entry must be scanned; got {bodies:?}"

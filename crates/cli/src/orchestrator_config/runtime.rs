@@ -105,51 +105,6 @@ pub(crate) fn gpu_runtime_policy_for_backend_override(
     Ok(policy)
 }
 
-#[cfg(test)]
-mod daemon_gpu_policy_tests {
-    use super::{gpu_runtime_policy_for_backend_override, gpu_runtime_policy_from_args};
-    use crate::args::ScanArgs;
-    use clap::Parser;
-    use keyhog_scanner::{gpu::GpuRuntimePolicy, ScanBackend};
-
-    #[test]
-    fn explicit_daemon_backend_owns_the_matching_gpu_policy() {
-        assert_eq!(
-            gpu_runtime_policy_for_backend_override(Some(ScanBackend::GpuCuda)).unwrap(),
-            GpuRuntimePolicy::Required,
-        );
-        assert_eq!(
-            gpu_runtime_policy_for_backend_override(Some(ScanBackend::GpuWgpu)).unwrap(),
-            GpuRuntimePolicy::Required,
-        );
-        assert_eq!(
-            gpu_runtime_policy_for_backend_override(Some(ScanBackend::SimdCpu)).unwrap(),
-            GpuRuntimePolicy::Disabled,
-        );
-        assert_eq!(
-            gpu_runtime_policy_for_backend_override(Some(ScanBackend::CpuFallback)).unwrap(),
-            GpuRuntimePolicy::Disabled,
-        );
-        assert_eq!(
-            gpu_runtime_policy_for_backend_override(None).unwrap(),
-            GpuRuntimePolicy::Auto,
-        );
-    }
-
-    #[test]
-    fn explicit_scan_gpu_peers_are_required() {
-        for backend in ["gpu-cuda", "gpu-wgpu"] {
-            let args = ScanArgs::try_parse_from(["scan", "--backend", backend, "--stdin"])
-                .expect("exact GPU route must parse");
-            assert_eq!(
-                gpu_runtime_policy_from_args(&args),
-                GpuRuntimePolicy::Required,
-                "explicit {backend} must never relax to automatic GPU policy"
-            );
-        }
-    }
-}
-
 /// True when the operator explicitly selected a CPU-only backend
 /// (`--backend cpu`/`--backend simd`). Such a scan never acquires the GPU, so
 /// the resolved policy is `Disabled`: this keeps `gpu_probe()` from creating a
@@ -387,39 +342,6 @@ pub(crate) mod testing {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{require_keyhog_owned_rayon_pool, thread_pool_needs_initialization};
-
-    #[test]
-    fn repeated_rayon_configuration_accepts_the_live_width() {
-        assert!(!thread_pool_needs_initialization(Some(16), 16, "test")
-            .expect("repeating the live Rayon width must be idempotent"));
-        assert!(thread_pool_needs_initialization(None, 16, "test")
-            .expect("an unconfigured pool must request initialization"));
-    }
-
-    #[test]
-    fn repeated_rayon_configuration_rejects_a_different_width() {
-        let error = thread_pool_needs_initialization(Some(16), 8, "test")
-            .expect_err("an initialized Rayon pool cannot honor a different width")
-            .to_string();
-        assert!(
-            error.contains("already has 16 threads") && error.contains("requested 8"),
-            "mismatch diagnostic must name the live and requested widths: {error}"
-        );
-    }
-
-    #[test]
-    fn externally_owned_same_width_rayon_pool_is_rejected() {
-        let error = require_keyhog_owned_rayon_pool(Err("already initialized"), 16, "test", || 16)
-            .expect_err("same-width external Rayon ownership must be rejected")
-            .to_string();
-        assert!(
-            error.contains("initialized outside KeyHog")
-                && error.contains("KeyHog-owned pool with 16 threads")
-                && error.contains("8 MiB worker stacks"),
-            "same-width external ownership must fail closed with the unverifiable setting: {error}"
-        );
-    }
-}
+// Sibling file (orchestrator_config/runtime_tests.rs), not runtime/ subdir.
+#[path = "runtime_tests.rs"]
+mod runtime_tests;

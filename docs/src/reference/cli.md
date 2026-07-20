@@ -246,6 +246,8 @@ keyhog watch                      # watch the current directory
 | `--detectors <PATH>` | directory path | installed or embedded corpus | Replace corpus discovery with an explicit detector TOML directory. An explicitly named missing or invalid directory is an error. |
 | `--cache-dir <DIR>` | directory path | unset | Override the Hyperscan compiled-database cache directory. |
 | `--backend <BACKEND>` | `auto`, `cpu` (`cpu-fallback`), `simd` (`simd-regex`), `gpu-cuda` (`gpu-cuda-region-presence`), or `gpu-wgpu` (`gpu-wgpu-region-presence`) | `auto` | Use persisted autoroute evidence or force one diagnostic backend. Missing, stale, invalid, or runtime-quarantined evidence triggers visible scalar recovery with complete byte coverage and a recalibration receipt. The aliases are accepted spellings of the same backend, not separate routing candidates. |
+| `--max-file-size <BYTES>` | byte count | 100 MiB | Skip an oversized changed file with a visible error. Pass `0` to restore the built-in default. |
+| `--max-consecutive-failures <N>` | count | `8` | Exit after this many consecutive per-file scanner failures. A successful scan resets the count. |
 | `--quiet` | flag | off | Print findings while suppressing watcher startup and status lines. |
 
 ## `keyhog hook <install|uninstall>`

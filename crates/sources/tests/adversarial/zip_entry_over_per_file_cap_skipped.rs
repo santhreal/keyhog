@@ -36,7 +36,10 @@ fn zip_entry_over_per_file_cap_skipped() {
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(512);
     let rows: Vec<_> = source.chunks().collect();
     let (chunks, errors) = split_chunk_results(&rows);
-    let bodies: Vec<String> = chunks.into_iter().map(|c| c.data.to_string()).collect();
+    let bodies: Vec<String> = chunks
+        .into_iter()
+        .map(|c| c.data.as_str().to_owned())
+        .collect();
 
     assert!(
         bodies.iter().any(|b| b.contains("SAFE=1")),

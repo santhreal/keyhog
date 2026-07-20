@@ -1,7 +1,7 @@
 //! KH-GAP-106: `backend --patterns` defaults to 1509 but the compiled scanner
 //! reports ~5769 patterns in the progress banner (routing matrix lies on fresh installs).
 
-use crate::e2e::support::binary;
+use crate::support::binary;
 use std::path::PathBuf;
 use std::process::Command;
 

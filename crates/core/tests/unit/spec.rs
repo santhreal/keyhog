@@ -34,7 +34,7 @@ fn valid_detector() -> DetectorSpec {
         verify: None,
         keywords: vec!["demo_".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_core::testing::named_detector_fixture_defaults()
     }
 }
 
@@ -207,6 +207,8 @@ fn spec_loader_and_validator_boundaries_are_explicit() {
         std::fs::read_to_string(manifest_dir.join("src/spec.rs")).expect("read spec root");
     let load_source =
         std::fs::read_to_string(manifest_dir.join("src/spec/load.rs")).expect("read spec loader");
+    let file_io_source = std::fs::read_to_string(manifest_dir.join("src/detector_file_io.rs"))
+        .expect("read detector file I/O owner");
     let validate_source = std::fs::read_to_string(manifest_dir.join("src/spec/validate.rs"))
         .expect("read spec validator");
 
@@ -216,13 +218,14 @@ fn spec_loader_and_validator_boundaries_are_explicit() {
     assert!(!spec_source.contains("pub const DETECTOR_TOML_FILE_BYTES"));
 
     assert!(load_source.contains("pub enum SpecError"));
-    assert!(load_source.contains("pub fn read_detector_toml_file"));
-    assert!(load_source.contains("pub const DETECTOR_TOML_FILE_BYTES"));
+    assert!(load_source.contains("pub use crate::detector_file_io::{"));
+    assert!(file_io_source.contains("pub fn read_detector_toml_file"));
+    assert!(file_io_source.contains("pub const DETECTOR_TOML_FILE_BYTES"));
     assert!(load_source.contains("fn discover_detector_tomls("));
     assert!(load_source.contains("fn parse_detector_files("));
     assert!(load_source.contains("fn assemble_detector_load("));
     assert!(load_source.contains("directory entry under"));
-    assert!(load_source.contains("detector TOML {} exceeds"));
+    assert!(file_io_source.contains("detector TOML {} exceeds"));
 
     let load_fn = load_source
         .split("pub(crate) fn load_detectors_with_gate(")

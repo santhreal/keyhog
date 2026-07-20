@@ -37,6 +37,36 @@ fn assert_found(text: &str, path: &str, expected: &str) {
 }
 
 #[test]
+fn k8s_classification_reads_the_yaml_kind_field() {
+    use keyhog_scanner::testing::structured_detects_k8s_secret;
+
+    for text in [
+        "apiVersion: v1\nkind : Secret\n",
+        "apiVersion: v1\nkind: 'Secret'\n",
+        "apiVersion: v1\nkind: \"Secret\"\n",
+        "---\nkind: ConfigMap\n---\nkind: Secret\n",
+    ] {
+        assert!(structured_detects_k8s_secret(text, Some("secret.yaml")));
+    }
+}
+
+#[test]
+fn k8s_classification_rejects_comments_and_scalar_prose() {
+    use keyhog_scanner::testing::structured_detects_k8s_secret;
+
+    for text in [
+        "# kind: Secret\nkind: ConfigMap\n",
+        "description: \"kind: Secret\"\nkind: ConfigMap\n",
+        "description: |\n  kind: Secret\nkind: ConfigMap\n",
+    ] {
+        assert!(!structured_detects_k8s_secret(
+            text,
+            Some("not-a-secret.yaml")
+        ));
+    }
+}
+
+#[test]
 fn k8s_secret_base64_aws_key() {
     // Kubernetes Secret `data:` values are base64. QUtJ... = AKIAQYLPMN5HFIQR7BBB.
     assert_found(

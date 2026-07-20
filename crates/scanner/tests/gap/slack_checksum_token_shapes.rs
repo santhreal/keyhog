@@ -11,9 +11,9 @@ use keyhog_scanner::testing::slack_checksum_verdict_for_test;
 
 #[test]
 fn bot_token_three_segment_is_valid() {
-    // xoxb-{10-15 digits}-{10-15 digits}-{15-40 alnum}
+    // xoxb-{10-15 digits}-{10-15 digits}-{24-40 alnum}
     assert_eq!(
-        slack_checksum_verdict_for_test("xoxb-1234567890-0987654321-abcdefghijklmnop"),
+        slack_checksum_verdict_for_test("xoxb-1234567890-0987654321-abcdefghijklmnopqrstuvwx"),
         "structurally-valid"
     );
 }
@@ -73,12 +73,12 @@ use proptest::prelude::*;
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(2_000))]
 
-    /// Canonical 3-segment bot token: `xoxb-{10-15 d}-{10-15 d}-{15-40 alnum}`.
+    /// Canonical 3-segment bot token: `xoxb-{10-15 d}-{10-15 d}-{24-40 alnum}`.
     #[test]
     fn bot_three_segment_is_valid(
         n1 in "[0-9]{10,15}",
         n2 in "[0-9]{10,15}",
-        secret in "[a-zA-Z][a-zA-Z0-9]{14,39}",
+        secret in "[a-zA-Z][a-zA-Z0-9]{23,39}",
     ) {
         let tok = format!("xoxb-{n1}-{n2}-{secret}");
         prop_assert_eq!(verdict(&tok), "structurally-valid");
@@ -115,19 +115,26 @@ proptest! {
         prop_assert_eq!(verdict(&tok), "invalid");
     }
 
-    /// User token, 3-segment and 4-segment (optional third numeric):
-    /// `xoxp-{10-15 d}-{10-15 d}(-{10-13 d})?-{24-40 alnum}`.
+    /// Current user token with three numeric IDs and a 32-byte hex secret.
     #[test]
-    fn user_token_is_valid(
+    fn user_token_with_third_numeric_id_is_valid(
         d1 in "[0-9]{10,15}",
         d2 in "[0-9]{10,15}",
-        mid in prop::option::of("[0-9]{10,13}"),
+        mid in "[0-9]{10,13}",
+        secret in "[a-f0-9]{32}",
+    ) {
+        let tok = format!("xoxp-{d1}-{d2}-{mid}-{secret}");
+        prop_assert_eq!(verdict(&tok), "structurally-valid");
+    }
+
+    /// Legacy user token with two numeric IDs and a 24-40-byte alphanumeric secret.
+    #[test]
+    fn legacy_user_token_is_valid(
+        d1 in "[0-9]{10,15}",
+        d2 in "[0-9]{10,15}",
         secret in "[a-zA-Z][a-zA-Z0-9]{23,39}",
     ) {
-        let tok = match &mid {
-            Some(m) => format!("xoxp-{d1}-{d2}-{m}-{secret}"),
-            None => format!("xoxp-{d1}-{d2}-{secret}"),
-        };
+        let tok = format!("xoxp-{d1}-{d2}-{secret}");
         prop_assert_eq!(verdict(&tok), "structurally-valid");
     }
 

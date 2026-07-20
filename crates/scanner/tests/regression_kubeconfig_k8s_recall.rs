@@ -132,8 +132,13 @@ fn kubeconfig_client_key_data_base64_pem_surfaces() {
 fn kubeconfig_client_key_data_attributed_to_private_key() {
     let body = format!("    client-key-data: {}\n", b64(PEM));
     assert!(
-        surfaces_under("kubeconfig", &kubeconfig(&body), "private-key", PEM_NEEDLE),
-        "the decoded client-key-data PEM must be attributed to the private-key detector"
+        surfaces_under(
+            "kubeconfig",
+            &kubeconfig(&body),
+            "ssh-private-key",
+            PEM_NEEDLE,
+        ),
+        "the decoded client-key-data PEM must be attributed to the SSH private-key detector"
     );
 }
 

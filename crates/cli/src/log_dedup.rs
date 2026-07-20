@@ -90,28 +90,37 @@ impl<S: Subscriber> Filter<S> for WarnRepeatLimit {
 /// from the stream, never from the operator.
 pub(crate) struct WarnDedupSummaryGuard;
 
+/// Print the per-callsite suppressed-WARN summary to stderr.
+///
+/// Called from [`WarnDedupSummaryGuard`]'s Drop on normal exit, and from the
+/// scanner `process_exit` pre-exit hook so `std::process::exit` hard-stops
+/// (selected-backend failures) still dump the summary (KH-1316).
+pub(crate) fn dump_warn_dedup_summary() {
+    let state = match WARN_REPEATS.lock() {
+        Ok(state) => state,
+        Err(poisoned) => {
+            eprintln!(
+                "keyhog: warning-dedup state was poisoned by a prior panic; reporting its recovered summary"
+            );
+            poisoned.into_inner()
+        }
+    };
+    for count in state.counts.values() {
+        if count.seen > WARN_REPEATS_SHOWN {
+            eprintln!(
+                "keyhog: warning at {} ({}) repeated {} more times (first {} shown)",
+                count.location,
+                count.target,
+                count.seen - WARN_REPEATS_SHOWN,
+                WARN_REPEATS_SHOWN,
+            );
+        }
+    }
+}
+
 impl Drop for WarnDedupSummaryGuard {
     fn drop(&mut self) {
-        let state = match WARN_REPEATS.lock() {
-            Ok(state) => state,
-            Err(poisoned) => {
-                eprintln!(
-                    "keyhog: warning-dedup state was poisoned by a prior panic; reporting its recovered summary"
-                );
-                poisoned.into_inner()
-            }
-        };
-        for count in state.counts.values() {
-            if count.seen > WARN_REPEATS_SHOWN {
-                eprintln!(
-                    "keyhog: warning at {} ({}) repeated {} more times (first {} shown)",
-                    count.location,
-                    count.target,
-                    count.seen - WARN_REPEATS_SHOWN,
-                    WARN_REPEATS_SHOWN,
-                );
-            }
-        }
+        dump_warn_dedup_summary();
     }
 }
 

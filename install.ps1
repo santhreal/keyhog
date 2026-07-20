@@ -325,7 +325,7 @@ function Test-ReleaseBundleComplete {
     foreach ($name in $required) {
         $url = "https://github.com/$Repo/releases/download/$Tag/$name"
         try {
-            Invoke-WebRequest -Uri $url -Method Head -UseBasicParsing -ErrorAction Stop | Out-Null
+            [void](Invoke-WebRequestWithRetry -Uri $url -Method Head -Attempts 3)
         } catch {
             return $false
         }
@@ -339,7 +339,7 @@ function Resolve-TagFromLatestRedirect {
     $url = "https://github.com/$Repo/releases/latest/download/$Name"
     $location = $null
     try {
-        $response = Invoke-WebRequest -Uri $url -Method Head -MaximumRedirection 0 -UseBasicParsing -ErrorAction Stop
+        $response = Invoke-WebRequestWithRetry -Uri $url -Method Head -MaximumRedirection 0 -Attempts 3
         if ($response.Headers -and $response.Headers.Location) {
             $location = [string]$response.Headers.Location
         }
@@ -422,6 +422,37 @@ function Get-CurrentVersion {
 # install flow
 # ============================================================
 
+function Invoke-WebRequestWithRetry {
+    # Shared retry for every GitHub CDN hit (HEAD and GET). Download-Asset
+    # already retried; HEAD probes used to fail closed on the first blip (KH-1309).
+    param(
+        [Parameter(Mandatory = $true)][string]$Uri,
+        [string]$OutPath,
+        [string]$Method = "Get",
+        [int]$MaximumRedirection = 5,
+        [int]$Attempts = 5
+    )
+    for ($i = 1; $i -le $Attempts; $i++) {
+        try {
+            $params = @{
+                Uri                = $Uri
+                Method             = $Method
+                UseBasicParsing    = $true
+                ErrorAction        = "Stop"
+                MaximumRedirection = $MaximumRedirection
+            }
+            if ($OutPath) { $params["OutFile"] = $OutPath }
+            return Invoke-WebRequest @params
+        } catch {
+            if ($i -ge $Attempts) { throw }
+            $delay = [math]::Min(2 * $i, 10)
+            Warn "  request attempt $i/$Attempts failed: $($_.Exception.Message)"
+            Dim  "  retrying in ${delay}s..."
+            Start-Sleep -Seconds $delay
+        }
+    }
+}
+
 function Download-Asset {
     param($Name, $OutPath)
     $url = Get-ReleaseAssetUrl -Name $Name
@@ -430,21 +461,8 @@ function Download-Asset {
     # Retry transient network failures. GitHub's CDN occasionally drops a
     # multi-MB transfer mid-stream ("The connection was closed unexpectedly"),
     # which failed the Windows install-from-scratch smoke even though the asset
-    # was present and correctly named. A single Invoke-WebRequest with no retry
-    # turns one flaky connection into a failed install.
-    $attempts = 5
-    for ($i = 1; $i -le $attempts; $i++) {
-        try {
-            Invoke-WebRequest -Uri $url -OutFile $OutPath -UseBasicParsing -ErrorAction Stop
-            return
-        } catch {
-            if ($i -ge $attempts) { throw }
-            $delay = [math]::Min(2 * $i, 10)
-            Warn "  download attempt $i/$attempts failed: $($_.Exception.Message)"
-            Dim  "  retrying in ${delay}s..."
-            Start-Sleep -Seconds $delay
-        }
-    }
+    # was present and correctly named.
+    [void](Invoke-WebRequestWithRetry -Uri $url -OutPath $OutPath -Method Get)
 }
 
 function Allow-UnverifiedInstall {

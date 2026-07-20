@@ -4,7 +4,6 @@ use crate::entropy::plausibility::{passes_secret_strength_checks, PlausibilityCo
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GenericBridgeSignal {
     KeywordBoundary,
-    NamedDetectorOwnedKeyword,
     BareAuthUnstructured,
     ValueShape(GenericValueShapeStage),
 }
@@ -13,7 +12,6 @@ impl GenericBridgeSignal {
     pub(super) const fn stage_id(self) -> StageId {
         match self {
             Self::KeywordBoundary => StageId::GenericKeywordBoundary,
-            Self::NamedDetectorOwnedKeyword => StageId::GenericNamedDetectorOwnedKeyword,
             Self::BareAuthUnstructured => StageId::BareAuthUnstructured,
             Self::ValueShape(stage) => StageId::GenericValueShape(stage),
         }

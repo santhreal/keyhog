@@ -19,8 +19,9 @@ pub(crate) struct ListBucketResult {
 #[serde(rename_all = "PascalCase")]
 pub(crate) struct ListObject {
     pub(crate) key: String,
+    /// None when the listing omitted Size (KH-1321); never collapse missing to 0.
     #[serde(default)]
-    pub(crate) size: u64,
+    pub(crate) size: Option<u64>,
 }
 
 pub(crate) fn parse_s3_listing(body: &str) -> Result<ListBucketResult, SourceError> {

@@ -43,7 +43,7 @@ fn production_adjudication_paths_thread_candidate_randomness_once() {
             .as_slice(),
         ),
         (
-            "engine/phase2_generic_shape.rs",
+            "generic_assignment_shape.rs",
             [
                 "TokenRandomness::for_candidate(value)",
                 "public_noncredential_shape_with_randomness(",

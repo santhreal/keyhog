@@ -487,7 +487,9 @@ pub struct ScanArgs {
     #[arg(long)]
     pub autoroute_calibrate: bool,
 
-    /// Output format
+    /// Output format. `json` is a bare findings array for pipelines; prefer
+    /// `json-envelope` for scan status, coverage gaps, and backend recoveries
+    /// in one document (KH-1435 / KH-1474).
     #[arg(long, default_value = "text", value_enum)]
     pub format: OutputFormat,
     #[arg(skip)]

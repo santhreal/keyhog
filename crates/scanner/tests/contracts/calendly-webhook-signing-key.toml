@@ -5,12 +5,12 @@ severity = "medium"
 
 [[positive]]
 text = "calendly signing_key \"Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S\""
-credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S\""
 reason = "Lowercase context with quoted 28-char signing key."
 
 [[positive]]
 text = "CALENDLY SIGNING_KEY 'Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5'"
-credential = "Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5"
+credential = "Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5'"
 reason = "Uppercase context with single-quoted 32-char signing key."
 
 [[negative]]
@@ -19,7 +19,7 @@ reason = "Body below 10 chars (must not match)."
 
 [[evasion]]
 text = "\"calendly signing_key 'Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S'\""
-credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S'\""
 reason = "Double-quoted JSON-style wrapper still surfaces the key."
 
 [perf]

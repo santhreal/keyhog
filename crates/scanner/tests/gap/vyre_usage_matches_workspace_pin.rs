@@ -44,7 +44,8 @@ fn vyre_integration_doc_matches_workspace_pin() {
     let version = workspace_vyre_pin(&manifest);
 
     assert!(
-        doc.contains(&format!("vyre v{version}")),
+        doc.to_ascii_lowercase()
+            .contains(&format!("vyre v{version}")),
         "VYRE integration reference must state the workspace pin v{version}"
     );
     assert!(

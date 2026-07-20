@@ -220,7 +220,7 @@ fn autoroute_calibration_leaves_incremental_cache_bytes_unchanged() {
             regex: r"STATIC_SECRET_[0-9]+".into(),
             ..Default::default()
         }],
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let scanner =
         Arc::new(CompiledScanner::compile(vec![detector.clone()]).expect("compile test detector"));

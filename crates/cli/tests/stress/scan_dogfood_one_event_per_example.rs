@@ -1,6 +1,6 @@
 //! R3-D / KH-GAP-091: `--dogfood` emits one event per suppressed credential.
 
-use crate::e2e::support::{binary, write_temp_file};
+use crate::support::{binary, write_temp_file};
 use std::process::Command;
 
 #[test]

@@ -8,7 +8,7 @@
 //! Docker integration matrix's bake: it catches a preset whose digest is never
 //! calibrated, or a save that overwrites a sibling preset's decision.
 
-use crate::e2e::support::binary;
+use crate::e2e::support::{autoroute_calibration_slot, binary};
 use std::process::Command;
 use tempfile::TempDir;
 
@@ -46,6 +46,7 @@ fn scan(
 
 #[test]
 fn every_documented_preset_resolves_after_calibration() {
+    let _calibration_slot = autoroute_calibration_slot();
     // The documented scan-policy presets (README "Autoroute Contract" + --help).
     // `--deep` is omitted only to bound calibration wall-clock; default, --fast
     // and --precision already span the digest extremes (entropy on/off, decode

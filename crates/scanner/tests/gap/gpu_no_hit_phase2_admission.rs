@@ -3,21 +3,18 @@ use keyhog_scanner::testing::scan_coalesced_phase2_with_admission_for_test;
 use keyhog_scanner::{CompiledScanner, ScannerConfig};
 
 fn prefixless_detector() -> DetectorSpec {
-    DetectorSpec {
-        id: "phase2-prefixless-fixture".into(),
-        name: "Phase Two Prefixless Fixture".into(),
-        service: "test".into(),
-        severity: Severity::High,
-        patterns: vec![PatternSpec {
-            regex: r"(?:^|[^A-Za-z0-9_-])([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}:fx)(?:$|[^A-Za-z0-9_-])".into(),
-            description: None,
-            group: Some(1),
-            required_literals: Vec::new(),
-            client_safe: false,
-            weak_anchor: false,
-        }],
-        ..Default::default()
-    }
+    DetectorSpec { id: "phase2-prefixless-fixture".into(),
+    name: "Phase Two Prefixless Fixture".into(),
+    service: "test".into(),
+    severity: Severity::High,
+    patterns: vec![PatternSpec {
+        regex: r"(?:^|[^A-Za-z0-9_-])([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}:fx)(?:$|[^A-Za-z0-9_-])".into(),
+        description: None,
+        group: Some(1),
+        required_literals: Vec::new(),
+        client_safe: false,
+        weak_anchor: false,
+    }], ..keyhog_scanner::testing::named_detector_fixture_defaults() }
 }
 
 #[test]
@@ -84,7 +81,7 @@ fn normalized_required_literal_reenters_phase_one_before_phase_two_admission() {
             required_literals: vec![":fx".into()],
             ..Default::default()
         }],
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let scanner = CompiledScanner::compile(vec![detector]).expect("compile detector");
     let chunks = [Chunk::from("value=0123abcd:\u{ff46}\u{ff58}")];

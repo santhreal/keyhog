@@ -16,20 +16,20 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 // ---------------------------------------------------------------------------
 
 /// `>= 24 GiB` VRAM (RTX 4090 / 5090, A100 / H100) -> 1 GiB input.
-const VRAM_MB_TIER_HIGH: u64 = 24 * 1024;
-const GPU_BATCH_INPUT_LIMIT_HIGH: usize = 1024 * 1024 * 1024;
+pub(crate) const VRAM_MB_TIER_HIGH: u64 = 24 * 1024;
+pub(crate) const GPU_BATCH_INPUT_LIMIT_HIGH: usize = 1024 * 1024 * 1024;
 /// `12 - 23 GiB` VRAM (RTX 3090, RTX 4080, M-Max) -> 512 MiB input.
-const VRAM_MB_TIER_MID: u64 = 12 * 1024;
-const GPU_BATCH_INPUT_LIMIT_MID: usize = 512 * 1024 * 1024;
+pub(crate) const VRAM_MB_TIER_MID: u64 = 12 * 1024;
+pub(crate) const GPU_BATCH_INPUT_LIMIT_MID: usize = 512 * 1024 * 1024;
 /// `8 - 11 GiB` VRAM (RTX 3080, RTX 4070, M-Pro) -> 256 MiB input.
-const VRAM_MB_TIER_LOW: u64 = 8 * 1024;
-const GPU_BATCH_INPUT_LIMIT_LOW: usize = 256 * 1024 * 1024;
+pub(crate) const VRAM_MB_TIER_LOW: u64 = 8 * 1024;
+pub(crate) const GPU_BATCH_INPUT_LIMIT_LOW: usize = 256 * 1024 * 1024;
 
 /// Conservative floor for hosts with low or unknown VRAM. Unknown must not
 /// inherit the 8-11 GiB tier: absence of adapter memory evidence is the same
 /// safety class as low-memory/iGPU/software adapters. Also the lower clamp bound
 /// for a Tier-A override (see [`set_gpu_batch_input_limit`]).
-const GPU_BATCH_INPUT_LIMIT_UNKNOWN: usize = 128 * 1024 * 1024;
+pub(crate) const GPU_BATCH_INPUT_LIMIT_UNKNOWN: usize = 128 * 1024 * 1024;
 
 /// Process-wide GPU batch-input override in bytes. `0` = unset (use the
 /// VRAM-adaptive table). Set ONCE at scan startup, before the first
@@ -124,97 +124,5 @@ pub(crate) fn gpu_batch_input_limit_for_vram_mb(gpu_vram_mb: Option<u64>) -> usi
         Some(mb) if mb >= VRAM_MB_TIER_MID => GPU_BATCH_INPUT_LIMIT_MID,
         Some(mb) if mb >= VRAM_MB_TIER_LOW => GPU_BATCH_INPUT_LIMIT_LOW,
         Some(_) | None => GPU_BATCH_INPUT_LIMIT_UNKNOWN,
-    }
-}
-
-#[cfg(test)]
-mod tier_a_tests {
-    use super::*;
-
-    const MIB: usize = 1024 * 1024;
-
-    #[test]
-    fn sizing_bounds_are_the_floor_and_cap() {
-        let (floor, cap) = gpu_batch_input_limit_bounds();
-        assert_eq!(floor, 128 * MIB, "floor is the 128 MiB unknown-host budget");
-        assert_eq!(cap, 1024 * MIB, "cap is the 1 GiB pre-compile ceiling");
-        assert_eq!(floor, GPU_BATCH_INPUT_LIMIT_UNKNOWN);
-        assert_eq!(cap, GPU_BATCH_INPUT_LIMIT_HIGH);
-    }
-
-    #[test]
-    fn override_clamps_into_sizing_bounds() {
-        // Below the floor is lifted to the floor; above the cap is pinned to the
-        // cap; an in-range value passes through untouched. This is the whole
-        // Tier-A contract, proven without touching the process-global cache.
-        assert_eq!(clamp_gpu_batch_input_limit(1), 128 * MIB);
-        assert_eq!(clamp_gpu_batch_input_limit(64 * MIB), 128 * MIB);
-        assert_eq!(clamp_gpu_batch_input_limit(300 * MIB), 300 * MIB);
-        assert_eq!(clamp_gpu_batch_input_limit(1024 * MIB), 1024 * MIB);
-        assert_eq!(clamp_gpu_batch_input_limit(usize::MAX), 1024 * MIB);
-    }
-
-    #[test]
-    fn vram_table_reads_only_the_named_owners() {
-        // Every arm maps to its named byte-budget owner at the exact threshold
-        // boundary and one MiB below it (no bare magic numbers remain inline).
-        assert_eq!(
-            gpu_batch_input_limit_for_vram_mb(Some(VRAM_MB_TIER_HIGH)),
-            GPU_BATCH_INPUT_LIMIT_HIGH
-        );
-        assert_eq!(
-            gpu_batch_input_limit_for_vram_mb(Some(VRAM_MB_TIER_HIGH - 1)),
-            GPU_BATCH_INPUT_LIMIT_MID
-        );
-        assert_eq!(
-            gpu_batch_input_limit_for_vram_mb(Some(VRAM_MB_TIER_MID)),
-            GPU_BATCH_INPUT_LIMIT_MID
-        );
-        assert_eq!(
-            gpu_batch_input_limit_for_vram_mb(Some(VRAM_MB_TIER_MID - 1)),
-            GPU_BATCH_INPUT_LIMIT_LOW
-        );
-        assert_eq!(
-            gpu_batch_input_limit_for_vram_mb(Some(VRAM_MB_TIER_LOW)),
-            GPU_BATCH_INPUT_LIMIT_LOW
-        );
-        assert_eq!(
-            gpu_batch_input_limit_for_vram_mb(Some(VRAM_MB_TIER_LOW - 1)),
-            GPU_BATCH_INPUT_LIMIT_UNKNOWN
-        );
-        assert_eq!(
-            gpu_batch_input_limit_for_vram_mb(Some(0)),
-            GPU_BATCH_INPUT_LIMIT_UNKNOWN
-        );
-        assert_eq!(
-            gpu_batch_input_limit_for_vram_mb(None),
-            GPU_BATCH_INPUT_LIMIT_UNKNOWN
-        );
-    }
-
-    #[test]
-    fn override_resolves_to_none_when_unset_and_clamped_when_set() {
-        // `gpu_batch_input_limit_override` reads the process-global; the default
-        // process state is unset. Set-then-reset around the assertions so this
-        // test does not leak override state into the cached `gpu_batch_input_limit`.
-        assert_eq!(
-            gpu_batch_input_limit_override(),
-            None,
-            "override is unset by default"
-        );
-        set_gpu_batch_input_limit(9 * 1024 * MIB); // above cap
-        assert_eq!(gpu_batch_input_limit_override(), Some(1024 * MIB));
-        set_gpu_batch_input_limit(200 * MIB); // in range
-        assert_eq!(gpu_batch_input_limit_override(), Some(200 * MIB));
-        set_gpu_batch_input_limit(0); // reset to unset
-        assert_eq!(gpu_batch_input_limit_override(), None);
-
-        // Resolving the adaptive default first must not freeze out a later
-        // explicit override. Only the hardware-derived value is cached.
-        let adaptive = gpu_batch_input_limit();
-        set_gpu_batch_input_limit(200 * MIB);
-        assert_eq!(gpu_batch_input_limit(), 200 * MIB);
-        set_gpu_batch_input_limit(0);
-        assert_eq!(gpu_batch_input_limit(), adaptive);
     }
 }

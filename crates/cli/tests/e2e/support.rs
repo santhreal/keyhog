@@ -2,8 +2,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-#[cfg(unix)]
-use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::sync::{LazyLock, Mutex, MutexGuard};
 use tempfile::TempDir;
 
 pub fn binary() -> PathBuf {
@@ -99,9 +98,15 @@ pub struct DaemonGuard {
 
 #[cfg(unix)]
 fn daemon_slot() -> MutexGuard<'static, ()> {
-    static DAEMON_SLOT: OnceLock<Mutex<()>> = OnceLock::new();
+    static DAEMON_SLOT: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
     DAEMON_SLOT
-        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+pub fn autoroute_calibration_slot() -> MutexGuard<'static, ()> {
+    static CALIBRATION_SLOT: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+    CALIBRATION_SLOT
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }

@@ -88,8 +88,8 @@ fn engine_named_detector_suppression_routes_through_adjudicator() {
         "engine/process.rs must route named-detector candidate decisions through the adjudicator recorder"
     );
     assert!(
-        !process.contains("crate::adjudicate::StageId::"),
-        "engine/process.rs must not name adjudicator stages directly"
+        !process.contains("StageId::NamedDetectorSuppression"),
+        "engine/process.rs must not construct named-detector adjudication stages directly"
     );
     assert!(
         process.contains("detector_plan.pattern_weak_anchor(entry.weak_anchor)")
@@ -138,12 +138,13 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
         );
     }
     assert!(
-        process.contains("ProcessCandidateSignals::from_checksum_policy(")
-            && !process.contains("ProcessCandidateSignals::from_checksum_invalid(")
-            && !process.contains("ProcessCandidateSignals::from_missing_required_companion(")
-            && process.contains("crate::adjudicate::record_missing_required_companion_suppression(")
+        process.contains("ProcessCandidateSignals::from_checksum_invalid(")
+            && process
+                .contains("crate::adjudicate::record_missing_required_companion_suppression(")
+            && !process.contains("StageId::ChecksumInvalid")
+            && !process.contains("StageId::MissingRequiredCompanion")
             && !process.contains("crate::confidence::policy::checksum_policy_for("),
-        "engine/process.rs checksum and required-companion drops must ask adjudicate to derive the process signal"
+        "engine/process.rs checksum and companion drops must ask adjudicate to derive the stage"
     );
     let shape = uncommented_code(&read(&src.join("suppression/shape/mod.rs")));
     assert!(
@@ -223,7 +224,7 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
 fn generic_bridge_suppression_reasons_route_through_adjudicator() {
     let src = scanner_src();
     let generic = uncommented_code(&read(&src.join("engine/phase2_generic.rs")));
-    let generic_shape = uncommented_code(&read(&src.join("engine/phase2_generic_shape.rs")));
+    let generic_shape = uncommented_code(&read(&src.join("generic_assignment_shape.rs")));
     let adjudicate = adjudicate_code(&src);
 
     assert!(
@@ -273,7 +274,6 @@ fn generic_bridge_suppression_reasons_route_through_adjudicator() {
     }
     for forbidden in [
         "StageId::GenericKeywordBoundary",
-        "StageId::GenericNamedDetectorOwnedKeyword",
         "StageId::BareAuthUnstructured",
         "StageId::GenericValueShape",
     ] {
@@ -308,7 +308,7 @@ fn generic_bridge_suppression_reasons_route_through_adjudicator() {
     ] {
         assert!(
             !generic_shape.contains(&format!("\"{reason}\"")),
-            "engine/phase2_generic_shape.rs must not own the {reason} suppression reason"
+            "generic_assignment_shape.rs must not own the {reason} suppression reason"
         );
         assert!(
             adjudicate.contains(&format!("\"{reason}\"")),

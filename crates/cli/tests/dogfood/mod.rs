@@ -19,9 +19,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 
-use crate::e2e::support::apply_default_scan_backend;
+use crate::support::apply_default_scan_backend;
 #[cfg(unix)]
-use crate::e2e::support::DaemonGuard;
+use crate::support::DaemonGuard;
 use serde::Deserialize;
 use tempfile::TempDir;
 

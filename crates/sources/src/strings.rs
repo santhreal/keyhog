@@ -10,12 +10,12 @@ pub(crate) const MIN_PRINTABLE_STRING_LEN: usize = 8;
 
 /// Extract printable ASCII strings of at least `min_len` from binary data.
 ///
-/// Covers two encodings: contiguous printable ASCII runs, and UTF-16LE "wide"
-/// strings (printable ASCII bytes interleaved with `0x00`), the dominant
-/// string encoding in Windows PE / .NET assemblies and many embedded
-/// resources, equivalent to `strings -e l`. The ASCII pass alone sees each
-/// wide char interrupted by its `0x00` and never accumulates a run, so without
-/// the UTF-16LE pass every wide-encoded secret in a binary is silently missed.
+/// Covers three encodings: contiguous printable ASCII runs, UTF-16LE "wide"
+/// strings (`X 00 Y 00 …`, Windows PE / .NET, `strings -e l`), and UTF-16BE
+/// (`00 X 00 Y …`, big-endian resources, `strings -e b`) (KH-1322). The ASCII
+/// pass alone sees each wide char interrupted by its `0x00` and never
+/// accumulates a run, so without the UTF-16 passes every wide-encoded secret
+/// in a binary is silently missed.
 pub(crate) fn extract_printable_strings(bytes: &[u8], min_len: usize) -> Vec<SensitiveString> {
     let mut strings = Vec::new();
     let mut current_string = String::with_capacity(64);
@@ -32,7 +32,22 @@ pub(crate) fn extract_printable_strings(bytes: &[u8], min_len: usize) -> Vec<Sen
     if current_string.len() >= min_len {
         strings.push(SensitiveString::from(current_string.as_str()));
     }
-    extract_utf16le_into(bytes, min_len, &mut strings);
+    let mut wide = extract_utf16_runs(bytes, min_len, true);
+    wide.extend(extract_utf16_runs(bytes, min_len, false));
+    wide.sort_unstable_by(|a, b| a.start.cmp(&b.start).then_with(|| b.end.cmp(&a.end)));
+    let mut covered_end = 0;
+    wide.retain(|run| {
+        if run.start < covered_end {
+            false
+        } else {
+            covered_end = run.end;
+            true
+        }
+    });
+    strings.extend(wide.into_iter().map(|run| run.value));
+    // KH-1397: LE+BE can recover the same printable run twice.
+    strings.sort_by(|a, b| a.as_ref().cmp(b.as_ref()));
+    strings.dedup_by(|a, b| a.as_ref() == b.as_ref());
     strings
 }
 
@@ -47,28 +62,46 @@ pub(crate) fn join_sensitive_strings(parts: &[SensitiveString], sep: &str) -> Se
     SensitiveString::from(joined)
 }
 
-/// Append UTF-16LE printable runs (`X 00 Y 00 …`) of at least `min_len` decoded
-/// chars to `out`. On a non-matching code unit the scan re-aligns by one byte,
-/// so wide runs starting at an odd offset are still recovered. Pure-ASCII
-/// regions never match (the high byte is non-zero), so this adds no spurious
-/// strings on text-shaped input.
-fn extract_utf16le_into(bytes: &[u8], min_len: usize, out: &mut Vec<SensitiveString>) {
+struct Utf16Run {
+    value: SensitiveString,
+    start: usize,
+    end: usize,
+}
+
+/// Recover UTF-16 printable runs and retain their byte spans. LE and BE scans
+/// can otherwise report shifted suffixes for the same bytes.
+fn extract_utf16_runs(bytes: &[u8], min_len: usize, little: bool) -> Vec<Utf16Run> {
+    let mut runs = Vec::new();
     let mut current = String::with_capacity(64);
+    let mut run_start = 0;
     let mut i = 0;
     while i + 1 < bytes.len() {
-        let (lo, hi) = (bytes[i], bytes[i + 1]);
+        let (a, b) = (bytes[i], bytes[i + 1]);
+        let (lo, hi) = if little { (a, b) } else { (b, a) };
         if hi == 0 && (lo.is_ascii_graphic() || lo == b' ' || lo == b'\t') {
+            if current.is_empty() {
+                run_start = i;
+            }
             current.push(lo as char);
             i += 2;
         } else {
             if current.len() >= min_len {
-                out.push(SensitiveString::from(current.as_str()));
+                runs.push(Utf16Run {
+                    value: SensitiveString::from(current.as_str()),
+                    start: run_start,
+                    end: i,
+                });
             }
             current.clear();
             i += 1;
         }
     }
     if current.len() >= min_len {
-        out.push(SensitiveString::from(current.as_str()));
+        runs.push(Utf16Run {
+            value: SensitiveString::from(current),
+            start: run_start,
+            end: i,
+        });
     }
+    runs
 }

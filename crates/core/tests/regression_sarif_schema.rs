@@ -276,7 +276,7 @@ fn run0_keys_are_results_tool_taxonomies_when_no_skips() {
 }
 
 /// With a non-empty skip summary, `runs[0].invocations` appears with the exact
-/// coverage-gap count and `executionSuccessful == true`.
+/// coverage-gap count and `executionSuccessful == false` (Partial is not green).
 #[test]
 fn run0_gains_invocations_with_skip_summary() {
     let json = render_sarif_with_skips(
@@ -298,8 +298,8 @@ fn run0_gains_invocations_with_skip_summary() {
     assert_eq!(arr.len(), 1, "one invocation entry");
     assert_eq!(
         arr[0]["executionSuccessful"].as_bool(),
-        Some(true),
-        "coverage gaps do not make the run a reporter failure"
+        Some(false),
+        "Partial coverage gaps must flip executionSuccessful (KH-1437)"
     );
     let notif = &arr[0]["toolExecutionNotifications"][0];
     assert_eq!(

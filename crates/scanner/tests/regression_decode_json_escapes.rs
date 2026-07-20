@@ -17,11 +17,11 @@
 //! Isolation technique (why each positive is attributable to the decode, not the
 //! raw bytes): the detector's structural ANCHOR is hidden behind an escape in the
 //! RAW text, the PEM `BEGIN` keeps its `I` as `I` (`BEGIN`), so the
-//! `private-key` regex, which needs a literal `BEGIN`, cannot fire on the parent
+//! `ssh-private-key` regex, which needs a literal `BEGIN`, cannot fire on the parent
 //! chunk NOR on the base64-decoder child (which never touches `\u`). Only the
 //! json / unicode-escape children, which restore `BEGIN`, can match, and they
 //! decode identically, so the pipeline's `(detector_id, credential)` dedup
-//! collapses them to exactly ONE `private-key` match. That lets `only()` assert
+//! collapses them to exactly ONE `ssh-private-key` match. That lets `only()` assert
 //! the full decoded credential unambiguously.
 //!
 //! DISTINCT FROM `regression_json_decoder_through` (iter7): that file proves the
@@ -31,8 +31,8 @@
 //! single full-table equality, plus the `\uXXXX` -> exact ASCII scalar and the
 //! astral scalar landing verbatim in the credential.
 //!
-//! HOST-INDEPENDENCE: every scan runs on `ScanBackend::CpuFallback`. `private-key`
-//! (keywords `BEGIN`/`PRIVATE KEY`) and `generic-password` (keyword `password`)
+//! HOST-INDEPENDENCE: every scan runs on `ScanBackend::CpuFallback`.
+//! `ssh-private-key` (keywords `BEGIN`/`PRIVATE KEY`) and `generic-password`
 //! are literal-anchored detectors, so their identity is the same on every host
 //! no assertion depends on Hyperscan/SIMD/GPU being present.
 
@@ -99,8 +99,11 @@ fn only(matches: &[RawMatch], id: &str) -> RawMatch {
     assert_eq!(
         hits.len(),
         1,
-        "expected exactly one `{id}` match, got {}",
-        hits.len()
+        "expected exactly one `{id}` match, got {} at {:?}",
+        hits.len(),
+        hits.iter()
+            .map(|hit| (&hit.location.source, hit.location.offset, hit.location.line))
+            .collect::<Vec<_>>()
     );
     hits[0].clone()
 }
@@ -180,13 +183,13 @@ fn u_escape_decodes_in_class_special_char() {
 
 // ─────────────────────────────────────────────────────────────────────────
 // Control-byte escapes -> the exact control byte inside a PEM credential.
-// (`private-key` captures the whole BEGIN…END block, so control bytes survive
+// (`ssh-private-key` captures the whole BEGIN…END block, so control bytes survive
 // where a `\S+`-class value would have been truncated.)
 // ─────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn tab_escape_is_0x09() {
-    let m = only(&scan(&pem_json("\\t")), "private-key");
+    let m = only(&scan(&pem_json("\\t")), "ssh-private-key");
     // A real horizontal tab (0x09) between the BEGIN line and the body.
     assert!(
         m.credential.as_ref().contains("PRIVATE KEY-----\tMIIBOgIB"),
@@ -202,7 +205,7 @@ fn tab_escape_is_0x09() {
 
 #[test]
 fn carriage_return_escape_is_0x0d() {
-    let m = only(&scan(&pem_json("\\r")), "private-key");
+    let m = only(&scan(&pem_json("\\r")), "ssh-private-key");
     assert!(
         m.credential.as_ref().contains("PRIVATE KEY-----\rMIIBOgIB"),
         "decoded \\r must be a real 0x0D: {:?}",
@@ -232,7 +235,7 @@ fn escaped_quote_becomes_literal_quote_and_does_not_terminate_string() {
     // The `\"` must be skipped by the string extractor (not read as the closer)
     // AND decode to a real 0x22 inside the block. If it terminated the string,
     // `BEGIN` would never be restored and there would be zero matches.
-    let m = only(&scan(&pem_json("\\\"")), "private-key");
+    let m = only(&scan(&pem_json("\\\"")), "ssh-private-key");
     assert!(
         m.credential.as_ref().contains("PRIVATE KEY-----\"MIIBOgIB"),
         "decoded \\\" must be a real quote inside the block: {:?}",
@@ -240,13 +243,13 @@ fn escaped_quote_becomes_literal_quote_and_does_not_terminate_string() {
     );
     // Exactly one match proves the escaped quote did not split the value into
     // two decodable strings.
-    assert_eq!(count_id(&scan(&pem_json("\\\"")), "private-key"), 1);
+    assert_eq!(count_id(&scan(&pem_json("\\\"")), "ssh-private-key"), 1);
 }
 
 #[test]
 fn double_backslash_collapses_to_single_backslash() {
     // JSON `\\` (two backslashes) decodes to exactly ONE backslash (0x5C).
-    let m = only(&scan(&pem_json("\\\\")), "private-key");
+    let m = only(&scan(&pem_json("\\\\")), "ssh-private-key");
     assert!(
         m.credential.as_ref().contains("PRIVATE KEY-----\\MIIBOgIB"),
         "decoded \\\\ must be a single backslash: {:?}",
@@ -278,7 +281,7 @@ fn valid_surrogate_pair_decodes_to_astral_scalar() {
     // `😀` is the UTF-16 pair for U+1F600 😀. `surrogate_pair_to_char`
     // must combine them into the single astral scalar, landing verbatim in the
     // block between the BEGIN line and the base64 body.
-    let m = only(&scan(&pem_json("\\uD83D\\uDE00")), "private-key");
+    let m = only(&scan(&pem_json("\\uD83D\\uDE00")), "ssh-private-key");
     assert!(
         m.credential
             .as_ref()
@@ -299,21 +302,21 @@ fn valid_surrogate_pair_decodes_to_astral_scalar() {
 fn non_hex_u_escape_aborts_whole_decode_no_match() {
     // `\uZZZZ`: 'Z' is not a hex digit -> `take_hex_digits` errors -> the whole
     // json (and unicode-escape) unescape returns Err -> no decoded child -> the
-    // `BEGIN` anchor stays broken -> zero private-key matches.
-    assert_eq!(count_id(&scan(&pem_json("\\uZZZZ")), "private-key"), 0);
+    // `BEGIN` anchor stays broken -> zero ssh-private-key matches.
+    assert_eq!(count_id(&scan(&pem_json("\\uZZZZ")), "ssh-private-key"), 0);
 }
 
 #[test]
 fn high_surrogate_without_low_aborts_no_match() {
     // `\uD83D` (high surrogate) followed by a plain 'x' instead of `\u<low>` is
     // an illegal pair -> Err -> no recovery.
-    assert_eq!(count_id(&scan(&pem_json("\\uD83Dx")), "private-key"), 0);
+    assert_eq!(count_id(&scan(&pem_json("\\uD83Dx")), "ssh-private-key"), 0);
 }
 
 #[test]
 fn lone_low_surrogate_aborts_no_match() {
     // `\uDC00` is a low surrogate with no preceding high surrogate -> never valid.
-    assert_eq!(count_id(&scan(&pem_json("\\uDC00")), "private-key"), 0);
+    assert_eq!(count_id(&scan(&pem_json("\\uDC00")), "ssh-private-key"), 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -324,10 +327,10 @@ fn lone_low_surrogate_aborts_no_match() {
 #[test]
 fn benign_control_escapes_fabricate_nothing() {
     // `\n`/`\t`/`\b`/`\f` over benign prose. Decoding them must not manufacture
-    // any private-key or generic-password finding, and nothing else either.
+    // any ssh-private-key or generic-password finding, and nothing else either.
     let json = "{\"note\":\"line one\\nline two\\tcol\\bx\\fdone here now\"}";
     let matches = scan(json);
-    assert_eq!(count_id(&matches, "private-key"), 0);
+    assert_eq!(count_id(&matches, "ssh-private-key"), 0);
     assert_eq!(count_id(&matches, "generic-password"), 0);
     assert_eq!(
         matches.len(),

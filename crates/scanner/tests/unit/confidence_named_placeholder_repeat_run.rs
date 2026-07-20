@@ -27,10 +27,9 @@ fn named_detector_all_x_placeholder_is_crushed() {
 
 #[test]
 fn named_detector_real_low_diversity_hex_key_survives() {
-    // A real 64-hex named-detector PAT (Linode-style): small alphabet → low
-    // char_diversity (0.25), but the longest single-character run is 1. It must
-    // NOT be penalized (the service anchor already proved it is the credential).
-    let hex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    // A non-repeating 64-hex named-detector PAT (Linode-style) has a small
+    // alphabet but no placeholder structure or degenerate character run.
+    let hex = "9f2a7c4e1b8d6305a6e9c2174f8b3d02c5a1e7f9468b2d30e4c79a15f6b803de";
     let adjusted = apply_post_ml_penalties(0.9, hex, true);
     assert!(
         (adjusted - 0.9).abs() < 1e-9,

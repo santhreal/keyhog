@@ -21,14 +21,13 @@
 # Common flags:
 #   --version=vX.Y.Z    pin a release tag (default: latest stable complete bundle)
 #   --install-dir=PATH  override the default install directory
-#   --from-file=PATH    install a pre-built/pre-downloaded keyhog binary instead
-#                       of downloading a release (offline / air-gapped installs,
-#                       and CI proving a freshly-built binary). Skips the GitHub
-#                       release lookup; still runs the full backup + atomic swap
-#                       + verify (`keyhog doctor`) + rollback path. Requires a
-#                       sibling PATH.sha256, PATH.gpu-literals.tar.gz, and
-#                       PATH.gpu-literals.tar.gz.sha256 unless --insecure is
-#                       explicit.
+#   --from-file=PATH    install a pre-downloaded complete host bundle instead of
+#                       downloading a release. Skips GitHub lookup, verifies
+#                       present sibling Minisign signatures and required SHA-256
+#                       files, then runs backup, atomic swap, `keyhog doctor`,
+#                       and rollback. Requires PATH.gpu-literals.tar.gz and its
+#                       proof siblings. --insecure can accept missing proof but
+#                       never a mismatch.
 #   --yes / -y          non-interactive: accept defaults, no prompts
 #   --insecure          allow an install only when release signature/checksum
 #                       proof is unavailable; fetched mismatches still fail
@@ -615,6 +614,31 @@ verify_release_signature() {
     return 1
 }
 
+# Verify a local artifact signature when a sibling `.minisig` is present.
+# Offline checksum-only bundles remain compatible; prerelease requires both.
+verify_local_signature_if_present() {
+    binary="$1"
+    sigfile="$2"
+    label="$3"
+    [ -f "$sigfile" ] || return 0
+    if [ ! -s "$sigfile" ]; then
+        err "Local Minisign signature is empty for $label: $sigfile"
+        return 1
+    fi
+    if ! command -v minisign >/dev/null 2>&1; then
+        err "minisign is required to verify the supplied local signature for $label."
+        print_minisign_install_hint
+        return 1
+    fi
+    if minisign -Vm "$binary" -P "$RELEASE_PUBLIC_KEY" -x "$sigfile" >/dev/null 2>&1; then
+        ok "Local Minisign signature verified for $label."
+        return 0
+    fi
+    err "Local Minisign signature verification failed for $label."
+    err "Refusing to install an artifact signed by the wrong key or modified after signing."
+    return 1
+}
+
 # Verify the SHA256 of $1 against the per-asset .sha256 file on the
 # release. Returns 0 on match. Missing proof fails closed unless the
 # operator explicitly chooses --insecure.
@@ -766,11 +790,16 @@ restore_gpu_programs_cache_backup() {
 stage_local_gpu_literal_sidecar() {
     local_sidecar="$FROM_FILE.gpu-literals.tar.gz"
     local_sum="$local_sidecar.sha256"
+    local_sig="$local_sidecar.minisig"
     sidecar_tmp=$(mktemp)
     if [ ! -f "$local_sidecar" ] || [ ! -s "$local_sidecar" ]; then
         rm -f "$sidecar_tmp"
         err "--from-file requires a sibling GPU literal sidecar: $local_sidecar"
         err "Refusing to install a local binary that would recompile shipped detector matchers at runtime."
+        return 1
+    fi
+    if ! verify_local_signature_if_present "$local_sidecar" "$local_sig" "GPU literal sidecar"; then
+        rm -f "$sidecar_tmp"
         return 1
     fi
     if [ -f "$local_sum" ]; then
@@ -859,38 +888,103 @@ rollback_staged_install_after_sidecar_failure() {
 }
 
 validate_gpu_literal_sidecar_archive() {
+    # Extract to an isolated temp dir and validate the real filesystem tree.
+    # Line-oriented `tar -tzf` can be spoofed by newline-bearing member names;
+    # find -print0 walks extracted names and cannot be split that way (KH-1312).
     archive="$1"
-    if ! tar -tzf "$archive" >/dev/null 2>&1; then
+    stage=$(mktemp -d -t keyhog-gpu-val-XXXXXX) || {
+        err "Could not create temporary directory to validate GPU literal sidecar."
+        return 1
+    }
+    listing="$stage/.keyhog-archive-list"
+    if ! tar -tzPf "$archive" > "$listing" 2>/dev/null; then
+        rm -rf "$stage"
         err "GPU literal artifact sidecar is not a readable tar.gz archive."
         return 1
     fi
-    if ! tar -tzf "$archive" | while IFS= read -r entry; do
+    unsafe_listing="$stage/.keyhog-archive-unsafe"
+    printf '0\n' > "$unsafe_listing"
+    while IFS= read -r entry || [ -n "$entry" ]; do
         case "$entry" in
-          ""|/*)
-            printf '%s\n' "$entry"
-            exit 1
+          ""|/*|../*|*/../*|*/..)
+            printf '1\n' > "$unsafe_listing"
+            break
             ;;
         esac
-        if printf '%s\n' "$entry" | grep -Eq '(^|[\\/])\.\.[[:space:].]*([\\/]|$)'; then
-            printf '%s\n' "$entry"
-            exit 1
-        fi
-    done >/dev/null; then
+    done < "$listing"
+    if [ "$(cat "$unsafe_listing" 2>/dev/null || printf '1')" != "0" ]; then
+        rm -rf "$stage"
         err "GPU literal artifact sidecar contains unsafe archive paths."
         return 1
     fi
-    if ! tar -tvzf "$archive" | while IFS= read -r listing; do
-        entry_kind=$(printf '%s' "$listing" | cut -c 1)
-        case "$entry_kind" in
-          l|h)
-            printf '%s\n' "$listing"
-            exit 1
+    verbose_listing="$stage/.keyhog-archive-types"
+    if ! tar -tvzf "$archive" > "$verbose_listing" 2>/dev/null; then
+        rm -rf "$stage"
+        err "GPU literal artifact sidecar is not a readable tar.gz archive."
+        return 1
+    fi
+    printf '0\n' > "$unsafe_listing"
+    while IFS= read -r detail || [ -n "$detail" ]; do
+        case "$detail" in
+          l*|h*)
+            printf '1\n' > "$unsafe_listing"
+            break
             ;;
         esac
-    done >/dev/null; then
+    done < "$verbose_listing"
+    if [ "$(cat "$unsafe_listing" 2>/dev/null || printf '1')" != "0" ]; then
+        rm -rf "$stage"
         err "GPU literal artifact sidecar contains link entries."
         return 1
     fi
+    if ! tar -xzf "$archive" -C "$stage" 2>/dev/null; then
+        rm -rf "$stage"
+        err "GPU literal artifact sidecar is not a readable tar.gz archive."
+        return 1
+    fi
+    # Defense in depth: reject any link the archive implementation materialized
+    # despite the pre-extraction member-type check.
+    if find "$stage" -type l -print -quit 2>/dev/null | grep -q .; then
+        rm -rf "$stage"
+        err "GPU literal artifact sidecar contains link entries."
+        return 1
+    fi
+    # Pass paths as `find -exec` arguments. POSIX `read` has no NUL-delimiter
+    # option, while shell positional arguments preserve every filename byte.
+    status_file="$stage/.keyhog-path-check"
+    printf '0\n' > "$status_file"
+    if ! find "$stage" -mindepth 1 -exec sh -c '
+        root=$1
+        status=$2
+        shift 2
+        for path do
+            case "$path" in
+              "$root"/*) ;;
+              *) printf "1\n" > "$status"; exit 1 ;;
+            esac
+            if [ -L "$path" ]; then
+                printf "1\n" > "$status"
+                exit 1
+            fi
+            rel=${path#"$root"/}
+            case "$rel" in
+              ""|/*|../*|*/../*|*/..)
+                printf "1\n" > "$status"
+                exit 1
+                ;;
+            esac
+        done
+    ' sh "$stage" "$status_file" {} + 2>/dev/null; then
+        printf '1\n' > "$status_file"
+    fi
+    check_status=$(cat "$status_file" 2>/dev/null || printf '1')
+    if [ "$check_status" != "0" ]; then
+        rm -rf "$stage"
+        err "GPU literal artifact sidecar contains unsafe archive paths."
+        return 1
+    fi
+    rm -rf "$stage"
+    return 0
 }
 
 install_verified_gpu_literal_sidecar() {
@@ -1008,6 +1102,11 @@ stage_and_install() {
     # PATH.sha256 unless the operator explicitly accepts an unverified local
     # artifact.
     if [ -n "$FROM_FILE" ]; then
+        if ! verify_local_signature_if_present "$FROM_FILE" "$FROM_FILE.minisig" "binary"; then
+            rm -f "$tmp"
+            trap - EXIT INT TERM
+            exit 1
+        fi
         if [ -f "$FROM_FILE.sha256" ]; then
             if ! verify_local_checksum "$tmp" "$FROM_FILE.sha256"; then
                 rm -f "$tmp"

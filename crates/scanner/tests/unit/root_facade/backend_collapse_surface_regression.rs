@@ -6,8 +6,8 @@
 //! stay removed. This file pins the positive live side: adaptive GPU batch
 //! sizing and the collapsed backend labels.
 
-use crate::engine::gpu_input_budget::gpu_batch_input_limit_for_vram_mb;
-use keyhog_scanner::engine::gpu_batch_input_limit;
+use crate::gpu_input_budget::gpu_batch_input_limit_for_vram_mb;
+use keyhog_scanner::gpu_batch_input_limit;
 use keyhog_scanner::hw_probe::testing::ScanBackend;
 
 // ---------------------------------------------------------------------------
@@ -94,7 +94,7 @@ fn scan_backend_is_exactly_the_four_real_engines() {
     sorted.dedup();
     assert_eq!(
         sorted.len(),
-        3,
+        4,
         "every backend label must be unique; got duplicates in {labels:?}"
     );
 }

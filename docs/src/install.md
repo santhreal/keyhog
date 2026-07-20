@@ -45,7 +45,7 @@ x86_64 has one accelerator-capable binary: Hyperscan plus VYRE's CUDA and WGPU
 drivers. CUDA/NVRTC use dynamic loading, so no build-time toolkit is required
 and the same artifact runs on GPU and CPU-only hosts. Backend probing and
 persisted autoroute evidence, not installer variants, decide execution. macOS and
-Windows assets use the portable scanner build without Hyperscan or GPU
+Windows assets use the portable no-system-library build without Hyperscan or GPU
 drivers.
 
 This path authenticates the versioned installer before execution. Changing the
@@ -100,9 +100,9 @@ if ($Actual -ne $Expected) { throw 'installer checksum mismatch' }
 ```
 
 Drops the binary in `%LOCALAPPDATA%\keyhog\bin\keyhog.exe`. Detects
-your GPU for diagnostics; the Windows installer ships the portable scanner
-build, with no Hyperscan, WGPU, or CUDA asset in the
-current release.
+your GPU for diagnostics; the Windows installer ships the portable
+no-system-library build, with no Hyperscan, WGPU, or CUDA asset in the current
+release.
 
 > **Heads up.** The Unix daemon mode is unavailable on Windows (it
 > relies on Unix-domain sockets). `keyhog scan`, `keyhog detectors`,
@@ -120,7 +120,7 @@ current release.
 | `GITHUB_TOKEN=...`                      | Optional auth for the fallback GitHub releases API lookup. The normal latest-asset path does not need it. |
 | `--yes` / `-y`                          | Accept the displayed defaults without prompting: PATH setup yes, optional completion and repository hook no. |
 | `--no-color`                            | Disable ANSI colors (e.g. for log capture).                   |
-| `--from-file=/path/to/asset`            | Offline / air-gapped install from a pre-downloaded complete host bundle. The installer requires sibling `.sha256` files unless `--insecure` accepts missing checksum proof; verify the downloaded `.minisig` files manually as shown below before invoking the local path. |
+| `--from-file=/path/to/asset`            | Offline / air-gapped install from a pre-downloaded complete host bundle. The installer verifies each present sibling `.minisig` against the pinned release key and requires sibling `.sha256` files unless `--insecure` accepts missing proof. A present but invalid signature always fails. |
 | `--calibrate`                           | Re-run the installer's visible autoroute calibration sweep against the already-installed binary, without replacing that binary. |
 | `--insecure`                            | Emergency-only: proceed when signature/checksum *proof is missing*. A present-but-wrong signature or checksum is always fatal, `--insecure` or not. |
 
@@ -276,14 +276,17 @@ obtain the complete host bundle from the
 | macOS aarch64 (Apple) | `keyhog-macos-aarch64`           |
 | Windows x86_64        | `keyhog-windows-x86_64.exe`      |
 
+Linux and Windows arm64 release assets are not produced. Use a listed platform
+for the verified installer flow.
+
 For an asset named `<asset>`, the complete host bundle is:
 
 - `<asset>`, `<asset>.sha256`, and `<asset>.minisig`;
 - `<asset>.gpu-literals.tar.gz`, its `.sha256`, and its `.minisig`.
 
-Verify both payload signatures with minisign and both SHA-256 files before
-installing. The offline installer path then performs its own checksum checks,
-safe sidecar extraction, atomic replacement, health check, and rollback:
+The offline installer verifies both sibling minisign signatures against the
+pinned release key, verifies both SHA-256 files, extracts the sidecar safely,
+replaces the binary atomically, checks health, and rolls back on failure:
 
 ```sh
 ASSET=/absolute/path/to/keyhog-linux-x86_64

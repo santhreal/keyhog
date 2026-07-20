@@ -7,12 +7,12 @@ severity = "critical"
 
 [[positive]]
 text = "-----BEGIN RSA PRIVATE KEY-----\nMIIEpQIBAAKCAQEA7n2K9xR4vQ1mWcZ8hLbF3jD5sT6yU0pN2aG4eH7iO9kB1lM3rV5wX8zC0dQ2fS4gJ6kP8mR0tU2wY4aB6cD8eF0gH2iJ4kL6mN8oP0qR2sT4uV6wX8yZ0aB2cD4eF6gH8iJ0kL2mN4oP6qR8sT0\n-----END RSA PRIVATE KEY-----"
-credential = "MIIEpQIBAAKCAQEA7n2K9xR4vQ1mWcZ8hLbF3jD5s"
+credential = "-----BEGIN RSA PRIVATE KEY-----\nMIIEpQIBAAKCAQEA7n2K9xR4vQ1mWcZ8hLbF3jD5sT6yU0pN2aG4eH7iO9kB1lM3rV5wX8zC0dQ2fS4gJ6kP8mR0tU2wY4aB6cD8eF0gH2iJ4kL6mN8oP0qR2sT4uV6wX8yZ0aB2cD4eF6gH8iJ0kL2mN4oP6qR8sT0\n-----END RSA PRIVATE KEY-----"
 reason = "Full RSA PEM block; the captured credential must include the key body (header-only markers no longer fire (full-block capture keeps distinct keys distinct under credential-scope dedup))."
 
 [[positive]]
 text = "PRIVATE_KEY=\"-----BEGIN RSA PRIVATE KEY-----\nMIIEpQIBAAKCAQEA7n2K9xR4vQ1mWcZ8hLbF3jD5sT6yU0pN2aG4eH7iO9kB1lM3rV5wX8zC0dQ2fS4gJ6kP8mR0tU2wY4aB6cD8eF0gH2iJ4kL6mN8oP0qR2sT4uV6wX8yZ0aB2cD4eF6gH8iJ0kL2mN4oP6qR8sT0\n-----END RSA PRIVATE KEY-----\""
-credential = "MIIEpQIBAAKCAQEA7n2K9xR4vQ1mWcZ8hLbF3jD5s"
+credential = "-----BEGIN RSA PRIVATE KEY-----\nMIIEpQIBAAKCAQEA7n2K9xR4vQ1mWcZ8hLbF3jD5sT6yU0pN2aG4eH7iO9kB1lM3rV5wX8zC0dQ2fS4gJ6kP8mR0tU2wY4aB6cD8eF0gH2iJ4kL6mN8oP0qR2sT4uV6wX8yZ0aB2cD4eF6gH8iJ0kL2mN4oP6qR8sT0\n-----END RSA PRIVATE KEY-----"
 reason = "Quoted-assignment variant of the full-block positive."
 
 [[negative]]

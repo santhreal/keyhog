@@ -134,6 +134,11 @@ impl CompiledMatchConfidencePolicy {
             | context::CodeContext::Unknown => None,
         }
     }
+
+    #[inline]
+    pub(crate) const fn post_match(&self) -> keyhog_core::DetectorPostMatchConfidenceSpec {
+        self.spec.post_match
+    }
 }
 
 pub(crate) enum MlScoreResult {
@@ -172,7 +177,7 @@ pub(crate) fn apply_checksum_decision_confidence(
             confidence.max(
                 decision
                     .valid_confidence_floor()
-                    .unwrap_or(crate::checksum::CHECKSUM_VALID_FLOOR),
+                    .unwrap_or(crate::checksum::CHECKSUM_VALID_FLOOR), // LAW10: documented compatibility API default; production compiled detector decisions always carry their TOML floor
             ),
         ),
         crate::checksum::ChecksumResult::StructurallyValid => Some(confidence),
@@ -180,8 +185,14 @@ pub(crate) fn apply_checksum_decision_confidence(
     }
 }
 
-pub(crate) fn apply_known_prefix_floor(confidence: f64, credential: &str) -> f64 {
-    if let Some(floor) = crate::confidence::known_prefix_confidence_floor(credential) {
+pub(crate) fn apply_known_prefix_floor(
+    confidence: f64,
+    credential: &str,
+    degenerate_run_min_length: usize,
+) -> f64 {
+    if let Some(floor) =
+        crate::confidence::known_prefix_confidence_floor(credential, degenerate_run_min_length)
+    {
         confidence.max(floor)
     } else {
         confidence
@@ -351,6 +362,7 @@ pub(crate) fn candidate_match_score(policy: CandidateMatchScorePolicy<'_>) -> Ml
 
     #[cfg(not(feature = "ml"))]
     let score_result = {
+        // LAW10: builds without ML intentionally execute the complete heuristic policy; this read keeps the compiled policy field contract uniform across feature sets.
         let _ = policy.ml_enabled;
         MlScoreResult::Final(heuristic_conf)
     };
@@ -377,9 +389,11 @@ pub(crate) fn candidate_match_score(policy: CandidateMatchScorePolicy<'_>) -> Ml
     };
 
     match score_result {
-        MlScoreResult::Final(confidence) => {
-            MlScoreResult::Final(apply_known_prefix_floor(confidence, policy.credential))
-        }
+        MlScoreResult::Final(confidence) => MlScoreResult::Final(apply_known_prefix_floor(
+            confidence,
+            policy.credential,
+            policy.confidence.post_match().degenerate_run_min_length,
+        )),
         #[cfg(feature = "ml")]
         MlScoreResult::Pending { .. } => score_result,
     }
@@ -395,6 +409,7 @@ pub(crate) struct ReportConfidencePolicy<'a> {
     pub(crate) allow_canonical_hex_key: bool,
     pub(crate) checksum: CredentialChecksumPolicy,
     pub(crate) calibration: Option<&'a keyhog_core::Calibration>,
+    pub(crate) post_match: keyhog_core::DetectorPostMatchConfidenceSpec,
 }
 
 /// Canonical precision for the public confidence contract. GPU MoE kernels
@@ -419,13 +434,19 @@ pub(crate) fn finalize_report_confidence(
         policy.is_named_detector,
         policy.allow_encoded_text_lift,
         policy.allow_canonical_hex_key,
+        policy.post_match,
     );
     let confidence = crate::confidence::apply_path_confidence_penalties(
         confidence,
         policy.file_path,
         policy.penalize_test_paths,
+        policy.post_match.fixture_path_multiplier,
     );
-    let confidence = apply_known_prefix_floor(confidence, policy.credential);
+    let confidence = apply_known_prefix_floor(
+        confidence,
+        policy.credential,
+        policy.post_match.degenerate_run_min_length,
+    );
     let confidence = crate::confidence::apply_calibration_multiplier(
         confidence,
         policy.detector_id,
@@ -446,6 +467,7 @@ pub(crate) struct MlConfidencePolicy {
     pub(crate) context_multiplier: f64,
     pub(crate) scan_comments: bool,
     pub(crate) penalize_test_paths: bool,
+    pub(crate) context_reapply_below: f64,
 }
 
 #[cfg(feature = "ml")]
@@ -470,7 +492,7 @@ pub(crate) fn ml_pending_confidence(policy: MlConfidencePolicy) -> f64 {
         }
         _ => false,
     };
-    if context_penalty_applies && confidence < 0.95 {
+    if context_penalty_applies && confidence < policy.context_reapply_below {
         confidence *= policy.context_multiplier;
     }
     confidence
@@ -492,6 +514,7 @@ pub(crate) fn ml_pending_match_confidence(
         context_multiplier: pending.context_multiplier,
         scan_comments,
         penalize_test_paths,
+        context_reapply_below: pending.post_match.ml_context_reapply_below,
     })
 }
 

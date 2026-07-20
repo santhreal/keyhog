@@ -66,7 +66,7 @@ fn phase2_generic(keywords: &[&str]) -> DetectorSpec {
         service: "generic".to_string(),
         kind: DetectorKind::Phase2Generic,
         keywords: keywords.iter().map(|k| k.to_string()).collect(),
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }
 }
 
@@ -167,13 +167,12 @@ fn derive_emits_a_separatorless_keyword_verbatim_once() {
 }
 
 #[test]
-fn derive_excludes_non_generic_service_detectors() {
-    // A named vendor detector, even one that is phase2-generic kind, must not
-    // contribute to the generic prefilter vocabulary.
+fn derive_includes_non_generic_service_with_explicit_entropy_ownership() {
+    // Service labels do not select execution. Explicit entropy ownership does.
     let mut aws = phase2_generic(&["aws_secret_marker"]);
     aws.service = "aws".to_string();
     let out = derive_assignment_keywords(&[aws, phase2_generic(&["secret"])]).unwrap();
-    assert!(!out.iter().any(|k| k == "aws_secret_marker"));
+    assert!(out.iter().any(|k| k == "aws_secret_marker"));
 }
 
 #[test]

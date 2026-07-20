@@ -70,7 +70,10 @@ fn install(force: bool) -> Result<ExitCode> {
     if hook_path.exists() {
         let existing = std::fs::read_to_string(&hook_path)
             .with_context(|| format!("reading existing hook at {}", hook_path.display()))?;
-        if existing.contains(HOOK_MARKER) && !force {
+        // Exact-byte match is the only "already installed" no-op. A marker
+        // alone is not enough: upgraded HOOK_CONTENT must rewrite so operators
+        // never keep a stale scan line after a keyhog upgrade (KH-1333).
+        if existing == HOOK_CONTENT && !force {
             let palette = crate::style::for_stderr();
             let msg = format!(
                 "KeyHog pre-commit hook is already installed at {}.",
@@ -79,7 +82,8 @@ fn install(force: bool) -> Result<ExitCode> {
             eprintln!("{}", crate::style::warn(&msg, &palette));
             return Ok(ExitCode::SUCCESS);
         }
-        if !force {
+        let is_keyhog_owned = existing.contains(HOOK_MARKER);
+        if !force && !is_keyhog_owned {
             anyhow::bail!(
                 "a pre-commit hook already exists at {}. Remove it manually, \
                  run `keyhog hook uninstall` if it was installed by KeyHog, \
@@ -87,6 +91,7 @@ fn install(force: bool) -> Result<ExitCode> {
                 hook_path.display()
             );
         }
+        // KeyHog-owned but bytes differ (or --force): fall through and rewrite.
     }
 
     let mut file = std::fs::OpenOptions::new()

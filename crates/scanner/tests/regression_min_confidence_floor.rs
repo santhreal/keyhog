@@ -40,10 +40,10 @@ const SGP_DETECTOR_ID: &str = "sourcegraph-access-token";
 /// The detector's own `test_positive` credential (`sgp_<40 hex>`, group 0).
 const SGP_TOKEN: &str = "sgp_210f1131b08e93adcfc3f05faa2d768ff883a61f";
 
-/// The detector's own `test_positive` line. Anchored context (`SRC_ACCESS_TOKEN=`)
-/// is the shape the contract harness fires on; under that context the observed
-/// confidence is ~0.70 (above the 0.40 global default).
-const CHUNK_TEXT: &str = "SRC_ACCESS_TOKEN=sgp_210f1131b08e93adcfc3f05faa2d768ff883a61f\n";
+/// The detector's own token without assignment context. The literal `sgp_`
+/// anchor still proves detector identity while leaving confidence below 1.0,
+/// which permits valid in-range floor values on both sides of the score.
+const CHUNK_TEXT: &str = "sgp_210f1131b08e93adcfc3f05faa2d768ff883a61f\n";
 
 /// The full shipped detector corpus, loaded once.
 fn load_base() -> Vec<DetectorSpec> {

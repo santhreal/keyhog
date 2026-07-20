@@ -9,7 +9,8 @@ fn custom_regex_detector_enforces_its_toml_minimum_length() {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(
         dir.path().join("min-length.toml"),
-        r#"
+        keyhog_core::testing::detector_toml_with_fixture_confidence(
+            r#"
 [detector]
 id = "detector-min-length-contract"
 name = "Detector Minimum Length Contract"
@@ -24,6 +25,7 @@ min_len = 32
 regex = 'length_contract_([A-Za-z0-9]{16,32})'
 group = 1
 "#,
+        ),
     )
     .expect("write custom detector");
 
@@ -42,7 +44,7 @@ group = 1
         .scan(&chunk)
         .into_iter()
         .filter(|finding| finding.detector_id.as_ref() == "detector-min-length-contract")
-        .map(|finding| finding.credential.to_string())
+        .map(|finding| finding.credential.as_str().to_string())
         .collect();
     assert_eq!(credentials, [EXACT]);
 }

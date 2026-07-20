@@ -167,8 +167,16 @@ requires `build_source_tree_state = "clean"`, `source_tree_state = "clean"`, and
 detector, configuration, host, runtime, workload, result count, peer, and trial
 identity. The build script watches the tracked and non-ignored source inventory,
 so cleaning a tree after compiling dirty source forces a rebuild before the
-artifact can qualify. Autoroute still requires calibration on the deployment
-host for the exact workload class.
+artifact can qualify.
+
+`scripts/prerelease.sh` runs this benchmark as a required gate. It first
+requires a clean source tree, writes evidence to a temporary artifact, and
+validates schema 8, the candidate commit, detector digests, complete feature
+set, acquired GPU identity, exact finding parity, non-degraded execution, 100
+held-out pairs, and a 95% ratio upper bound below 1.0. Historical, diagnostic,
+dirty, stale, or merely point-estimate evidence cannot pass prerelease.
+Autoroute still requires calibration on the deployment host for the exact
+workload class.
 
 ## When automatic routing has no decision
 

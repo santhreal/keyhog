@@ -381,7 +381,43 @@ impl ScanOrchestrator {
             );
         }
 
+        // Reliability outcomes gate baseline mutation (KH-504 / KH-1352).
+        // Panic, incremental-cache failure, or FAIL-class coverage gaps must
+        // not mint a "successful" baseline. Deliberate WARN skips (binary,
+        // over-max-size) do not poison baseline writes.
+        let scanner_panicked = crate::SCANNER_PANICKED.load(std::sync::atomic::Ordering::Relaxed);
+        let incremental_cache_failed =
+            crate::INCREMENTAL_CACHE_ERRORS.load(std::sync::atomic::Ordering::Relaxed) > 0;
+        let source_coverage_incomplete = source_coverage_incomplete();
+        let baseline_coverage_failed = baseline_coverage_untrustworthy();
+        let baseline_untrustworthy =
+            scanner_panicked || incremental_cache_failed || baseline_coverage_failed;
+
         if let Some(ref path) = self.args.create_baseline {
+            if baseline_untrustworthy {
+                let exit = resolve_scan_exit(ScanOutcome {
+                    autoroute_calibration: false,
+                    scanner_panicked,
+                    has_live_credentials: false,
+                    has_new_entries: false,
+                    incremental_cache_failed,
+                    source_coverage_incomplete: baseline_coverage_failed,
+                });
+                eprintln!(
+                    "error: refusing --create-baseline: scan is untrustworthy \
+                     (panic={}, coverage_failed={}, incremental_cache_failed={}). \
+                     Prior baseline left unchanged.",
+                    scanner_panicked, baseline_coverage_failed, incremental_cache_failed
+                );
+                for (reason, count) in crate::reporting::coverage_gap_summary(
+                    &crate::reporting::CoverageCounts::current(),
+                ) {
+                    if count > 0 {
+                        eprintln!("  coverage gap: {count} {reason}");
+                    }
+                }
+                return Ok(std::process::ExitCode::from(exit));
+            }
             let baseline = Baseline::from_findings(&findings);
             baseline.save(path)?;
             if show_progress {
@@ -391,10 +427,43 @@ impl ScanOrchestrator {
                     path.display()
                 );
             }
+            // Snapshot still writes even with findings (exit 0), but Live must
+            // not collapse to green: CI that combines --create-baseline --verify
+            // needs exit 10 (KH-1439).
+            let has_live = findings
+                .iter()
+                .any(|f| matches!(f.verification, VerificationResult::Live));
+            if has_live {
+                return Ok(std::process::ExitCode::from(EXIT_LIVE_CREDENTIALS));
+            }
             return Ok(std::process::ExitCode::SUCCESS);
         }
 
         let (report_findings, has_new_entries) = if let Some(ref path) = self.args.update_baseline {
+            if baseline_untrustworthy {
+                let exit = resolve_scan_exit(ScanOutcome {
+                    autoroute_calibration: false,
+                    scanner_panicked,
+                    has_live_credentials: false,
+                    has_new_entries: false,
+                    incremental_cache_failed,
+                    source_coverage_incomplete: baseline_coverage_failed,
+                });
+                eprintln!(
+                    "error: refusing --update-baseline: scan is untrustworthy \
+                     (panic={}, coverage_failed={}, incremental_cache_failed={}). \
+                     Prior baseline left byte-identical.",
+                    scanner_panicked, baseline_coverage_failed, incremental_cache_failed
+                );
+                for (reason, count) in crate::reporting::coverage_gap_summary(
+                    &crate::reporting::CoverageCounts::current(),
+                ) {
+                    if count > 0 {
+                        eprintln!("  coverage gap: {count} {reason}");
+                    }
+                }
+                return Ok(std::process::ExitCode::from(exit));
+            }
             let mut baseline = if path.exists() {
                 Baseline::load(path)?
             } else {
@@ -489,10 +558,6 @@ impl ScanOrchestrator {
             report_findings.len()
         );
 
-        let scanner_panicked = crate::SCANNER_PANICKED.load(std::sync::atomic::Ordering::Relaxed);
-        let incremental_cache_failed =
-            crate::INCREMENTAL_CACHE_ERRORS.load(std::sync::atomic::Ordering::Relaxed) > 0;
-        let source_coverage_incomplete = source_coverage_incomplete();
         let exit = resolve_scan_exit(ScanOutcome {
             autoroute_calibration: self.args.autoroute_calibrate,
             scanner_panicked,
@@ -537,31 +602,18 @@ pub(crate) fn scan_exit_code(findings: &[VerifiedFinding]) -> u8 {
     }
 }
 
+/// Incomplete exit 13 and baseline refusal share the CoverageGapKind FAIL set
+/// (KH-1347 / KH-1352). WARN skips (binary, over-max-size, deliberate exclude,
+/// advisory scanner truncations) must not flip a clean scan to exit 13.
 fn source_coverage_incomplete() -> bool {
-    let counts = keyhog_sources::skip_counts();
-    let source_errors = crate::SOURCE_ERRORS.load(std::sync::atomic::Ordering::Relaxed);
-    let source_gaps = counts.over_max_size
-        + counts.binary
-        + counts.unreadable
-        + counts.git_object_unreadable
-        + counts.archive_truncated
-        + counts.binary_section_name_unresolved
-        + counts.source_truncated
-        + counts.structured_source_parse_failures
-        + counts.archive_duplicate_scan_unavailable
-        + counts.git_lfs_pointer;
+    fail_class_coverage_gaps() > 0
+}
 
-    #[cfg(feature = "binary")]
-    let binary_gaps =
-        keyhog_sources::binary_degraded_to_strings() + keyhog_sources::binary_unreadable();
-    #[cfg(not(feature = "binary"))]
-    let binary_gaps = 0;
+fn baseline_coverage_untrustworthy() -> bool {
+    fail_class_coverage_gaps() > 0
+}
 
-    let scanner_coverage_gaps = keyhog_scanner::telemetry::structured_parse_failure_count()
-        + keyhog_scanner::telemetry::structured_oversize_skip_count()
-        + keyhog_scanner::telemetry::decode_truncation_count()
-        + keyhog_scanner::telemetry::invalid_pattern_index_skip_count()
-        + keyhog_scanner::telemetry::boundary_result_cardinality_mismatch_count();
-
-    source_errors + source_gaps + binary_gaps + scanner_coverage_gaps > 0
+fn fail_class_coverage_gaps() -> usize {
+    // Single owner: CoverageGapKind severity table via CoverageCounts (KH-1410).
+    crate::reporting::CoverageCounts::current().fail_class_total()
 }

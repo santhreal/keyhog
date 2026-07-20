@@ -20,7 +20,7 @@ fn pattern_regex_strs_includes_ac_and_phase2() {
         verify: None,
         keywords: vec!["abc".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let s = CompiledScanner::compile(vec![d]).unwrap();
     let strs = keyhog_scanner::testing::pattern_regex_strs(&s);

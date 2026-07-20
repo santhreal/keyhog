@@ -51,14 +51,27 @@ pub(in crate::decode) fn push_decoded_text_chunk_spliced_at(
     // Fast ASCII check: control chars are always in 0x00-0x1F range.
     // Byte-level iteration avoids UTF-8 decode overhead. Backspace (0x08) and
     // form-feed (0x0c) are ALLOWED: the json/unicode-escape decoders legitimately
-    // emit them from `\b`/`\f`, so rejecting them made those decode paths dead
-    // (a secret wrapped as `\b`/`\f` never reached the scanner).
-    let bytes = text.as_bytes();
-    if text.is_empty()
-        || bytes
-            .iter()
-            .any(|&b| b < 0x20 && !matches!(b, b'\n' | b'\r' | b'\t' | 0x08 | 0x0c))
+    // emit them from `\b`/`\f`. Other C0 controls (incl. NUL) used to drop the
+    // whole decoded payload (KH-1338); strip them and keep the rest so secrets
+    // around the control bytes still reach the scanner.
+    let text = if text.is_empty() {
+        return;
+    } else if text
+        .as_bytes()
+        .iter()
+        .any(|&b| b < 0x20 && !matches!(b, b'\n' | b'\r' | b'\t' | 0x08 | 0x0c))
     {
+        crate::telemetry::record_decode_truncation();
+        text.chars()
+            .filter(|c| {
+                let u = *c as u32;
+                u >= 0x20 || matches!(u, 0x0a | 0x0d | 0x09 | 0x08 | 0x0c)
+            })
+            .collect::<String>()
+    } else {
+        text
+    };
+    if text.is_empty() {
         return;
     }
 

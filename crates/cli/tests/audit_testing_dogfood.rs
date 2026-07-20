@@ -25,16 +25,11 @@ fn binary() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
 
-/// A generic key/value secret whose reported confidence sits strictly INSIDE the
-/// `(0.40, 0.99)` band: `--min-confidence 0.40` keeps it, `--min-confidence 0.99`
-/// drops it. The stream/min-confidence contract is only non-vacuous with such a
-/// straddle fixture (a 1.0-confidence finding can never be dropped by any floor).
-/// (As `api_key = "<this>"` it scores ~0.59 via `generic-secret`.) If a detector
-/// retune pushes it to >=0.99 or stops firing, the `run("0.40")`/`run("0.99")`
-/// preconditions below fail loudly, pick a new value back in the band, do not
-/// relax the asserts. The earlier `aAbBcCdDeEfFgGhH12345678` fixture drifted to
-/// `entropy-api-key` confidence 1.0 and made `--min-confidence 0.99` vacuous.
-const FIRING_LOW_CONFIDENCE_SECRET: &str = "hunter2hunter2hunter2xy";
+/// A real named token whose example-path confidence sits inside `(0.40, 0.99)`.
+/// The low-floor control keeps it and the strict floor drops it, so stream/report
+/// parity cannot pass vacuously. If detector scoring moves it outside the band,
+/// both preconditions below fail and require a new straddle fixture.
+const FIRING_LOW_CONFIDENCE_SECRET: &str = "ap_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d";
 
 /// Stripe's published docs example secret key. keyhog's bundled test-fixture
 /// suppression list silences this one (it is a tutorial copy, not a leak), so
@@ -83,12 +78,10 @@ fn count_stream_lines(stderr: &str) -> usize {
 #[test]
 fn stream_preview_must_not_show_findings_dropped_by_min_confidence() {
     let dir = TempDir::new().expect("tempdir");
-    let path = dir.path().join("c.txt");
-    std::fs::write(
-        &path,
-        format!("api_key = \"{FIRING_LOW_CONFIDENCE_SECRET}\"\n"),
-    )
-    .unwrap();
+    let fixture_dir = dir.path().join("examples");
+    std::fs::create_dir_all(&fixture_dir).expect("create example fixture directory");
+    let path = fixture_dir.join("sample.txt");
+    std::fs::write(&path, format!("{FIRING_LOW_CONFIDENCE_SECRET}\n")).unwrap();
 
     let run = |min_confidence: &str| {
         Command::new(binary())
@@ -113,7 +106,7 @@ fn stream_preview_must_not_show_findings_dropped_by_min_confidence() {
     assert_eq!(
         count_json_findings(&control_stdout),
         1,
-        "precondition: the fixture must produce one reportable generic-secret finding below the strict floor; stdout={control_stdout:?}; stderr={}",
+        "precondition: the fixture must produce one reportable Activepieces finding below the strict floor; stdout={control_stdout:?}; stderr={}",
         String::from_utf8_lossy(&control.stderr)
     );
 
@@ -127,7 +120,7 @@ fn stream_preview_must_not_show_findings_dropped_by_min_confidence() {
     assert_eq!(
         count_json_findings(&stdout),
         0,
-        "precondition: --min-confidence 0.99 must suppress the sub-0.99 generic-secret finding in the report; stdout={stdout:?}"
+        "precondition: --min-confidence 0.99 must suppress the sub-0.99 Activepieces finding in the report; stdout={stdout:?}"
     );
     assert_eq!(
         out.status.code(),

@@ -188,7 +188,7 @@ fn unreadable_subtree_does_not_abort_full_scan() {
     // row cannot short-circuit collection the way `collect::<Result<Vec,_>>()`
     // did.
     let (chunks, _errors) = crate::support::split_chunk_results(&rows);
-    let combined: String = chunks.iter().map(|c| c.data.to_string()).collect();
+    let combined: String = chunks.iter().map(|c| c.data.as_str().to_owned()).collect();
     assert!(
         combined.contains("AKIAIOSFODNN7READABLE"),
         "root-level readable file was lost: scan aborted on the locked sibling.\n\
@@ -625,7 +625,7 @@ fn compressed_gz_file_yields_decompressed_chunk() {
     let combined: String = chunks
         .iter()
         .filter(|c| c.metadata.source_type.as_ref() == "filesystem/compressed")
-        .map(|c| c.data.to_string())
+        .map(|c| c.data.as_str().to_owned())
         .collect();
     assert!(
         combined.contains("COMPRESSED_PAYLOAD_MARKER_98765"),

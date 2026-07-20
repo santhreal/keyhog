@@ -14,9 +14,9 @@ fn test_scan_timeout_respects_deadline() {
         severity: Severity::High,
         patterns: vec![PatternSpec {
             // A pattern known to be slow on certain inputs (though regex crate is mostly safe, we can simulate it)
-            regex: "(a+)+$".into(),
-            description: None,
-            group: None,
+            regex: "(a{32,})$".into(),
+            description: Some("long trailing run".into()),
+            group: Some(1),
             required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
@@ -25,7 +25,7 @@ fn test_scan_timeout_respects_deadline() {
         verify: None,
         keywords: vec!["a".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
 
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
@@ -80,9 +80,9 @@ fn test_inner_loop_deadline_aborts_many_match_pattern() {
         patterns: vec![PatternSpec {
             // Matches almost every character - fires once per byte
             // on the test chunk below.
-            regex: "[a-z]".into(),
+            regex: "([a-z])".into(),
             description: None,
-            group: None,
+            group: Some(1),
             required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
@@ -91,7 +91,7 @@ fn test_inner_loop_deadline_aborts_many_match_pattern() {
         verify: None,
         keywords: vec![],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
 
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
@@ -147,7 +147,7 @@ fn test_inner_loop_deadline_aborts_many_match_grouped_pattern() {
         verify: None,
         keywords: vec![],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
 
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
@@ -190,7 +190,7 @@ fn test_inner_loop_deadline_aborts_many_match_anchored_pattern() {
         verify: None,
         keywords: vec!["sk_live_".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
 
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
@@ -239,7 +239,7 @@ fn test_generic_assignment_deadline_aborts_inside_bridge() {
         verify: None,
         keywords: vec!["abc".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
 
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();

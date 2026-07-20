@@ -198,7 +198,7 @@ fn inline_detector(id: &str, regex: &str, keyword: &str) -> keyhog_core::Detecto
         // regardless of the global CLI min_confidence (this is a scanner-layer
         // test; we assert the scanner emits the finding).
         min_confidence: Some(0.1),
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }
 }
 

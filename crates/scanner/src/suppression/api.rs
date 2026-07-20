@@ -153,6 +153,19 @@ impl<'a> NamedDetectorSuppressionCtx<'a> {
     }
 }
 
+/// Dedicated precision gate for syntactically proven password slots.
+pub(crate) fn structural_password_slot_rejection(credential: &str) -> Option<&'static str> {
+    if credential.bytes().all(|byte| byte.is_ascii_alphabetic())
+        && super::token_randomness::is_confident_dictionary_word(credential)
+    {
+        Some("dictionary_word_placeholder")
+    } else if super::token_randomness::has_low_letter_diversity(credential) {
+        Some("low_letter_diversity_mask")
+    } else {
+        None
+    }
+}
+
 /// Named-detector suppression with explicit structural context.
 ///
 /// `NamedDetectorSuppressionCtx::weak_anchor` is produced by
@@ -161,6 +174,7 @@ impl<'a> NamedDetectorSuppressionCtx<'a> {
 /// generic keyword anchor with a broad / hash-shaped capture, so the
 /// shape-suppression gates that protect the `generic-*` / `entropy-*`
 /// fallbacks stay engaged instead of being bypassed.
+
 pub(crate) fn suppress_named_detector_finding(
     credential: &str,
     ctx: NamedDetectorSuppressionCtx<'_>,
@@ -230,14 +244,12 @@ pub(crate) fn suppress_named_detector_finding_stage(
     //
     // The previous flow applied Tier B universally and dropped 400+
     // contract evasions. See task #41 + the 2026-05-27 audit.
-    let apply_tier_b = !service_anchored || weak_anchor;
+    let apply_tier_b = (!service_anchored && !structural_password_slot) || weak_anchor;
 
-    // A structural-password-slot detector (`url-credentials`, `sql-password`,
-    // `cli-password-flag`) is strong-anchor and `is_service_anchored`, so the
-    // pipeline sets `bypass_shape_gates` and SKIPS both the Tier-B randomness
-    // floor below AND the Tier-B repetitive-run / repeated-block mask gates. That
-    // is correct for a random password (`://user:pxidztpv@host`, `IDENTIFIED BY
-    // 'argriyjqr'`) but surfaces two placeholder shapes a real secret never has:
+    // A structural-password-slot detector (`generic-password`, `url-credentials`,
+    // `sql-password`, `cli-password-flag`) proves the slot even when its service
+    // is generic. Skipping Tier-B randomness and mask gates keeps real random
+    // passwords, but requires two dedicated placeholder checks:
     //   1. the literal dictionary word (`://user:password@host`, `IDENTIFIED BY
     //      'secret'`, `--password welcome`), caught by the bigram model being
     //      CONFIDENT the value is pronounceable English; never a random token
@@ -252,16 +264,9 @@ pub(crate) fn suppress_named_detector_finding_stage(
     // (hex / prefixed key) is never a free-form word, and applying the gate to
     // all strong anchors wrongly suppressed hex keys whose a..f bigrams read as
     // English (rollbar, steam, matomo, …).
-    if structural_password_slot {
-        let placeholder_reason =
-            if super::token_randomness::is_confident_dictionary_word(credential) {
-                Some("dictionary_word_placeholder")
-            } else if super::token_randomness::has_low_letter_diversity(credential) {
-                Some("low_letter_diversity_mask")
-            } else {
-                None
-            };
-        if let Some(reason) = placeholder_reason {
+    // A weak pattern does not prove the structural slot and retains Tier-B.
+    if structural_password_slot && !weak_anchor {
+        if let Some(reason) = structural_password_slot_rejection(credential) {
             crate::adjudicate::record_example_suppression("pipeline", path, credential, reason);
             return shape_stage(reason);
         }
@@ -480,12 +485,11 @@ pub(crate) fn suppress_named_detector_finding_stage(
     {
         return Some(stage_id);
     }
-    // Generic detectors (generic-secret, generic-api-key, entropy-*)
-    // never use this bypass - their anchor is keyword-class, not
-    // service-specific, and shape gates are load-bearing for them.
-    // Weakly anchored named detectors (e.g. carbon-black-api-key) also do not
-    // bypass shape gates to prevent false positive traps from triggering.
-    let bypass_shape_gates = service_anchored && !weak_anchor;
+    // Generic detectors such as generic-secret, generic-api-key, and entropy-*
+    // retain shape gates because a keyword class is not a structural anchor.
+    // A strong service anchor or declared password slot bypasses them unless
+    // the exact pattern is explicitly weak.
+    let bypass_shape_gates = (service_anchored || structural_password_slot) && !weak_anchor;
     // Canonical pure-hex recall is an explicit detector-TOML decision. Strong
     // anchors already skip generic shape gates; weak anchors may bypass the
     // digest arms only when their compiled detector policy admits the length.

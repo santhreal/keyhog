@@ -1,5 +1,5 @@
 //! Behavioral + property truth for the pure helpers in
-//! `engine::phase2_truncate` that had NO direct coverage: `regex_prefix_anchorable`
+//! `phase2_truncate` that had NO direct coverage: `regex_prefix_anchorable`
 //! (the soundness precondition for prefix-anchored scanning) and the decode-focus
 //! UTF-8 window helpers `focus_floor_boundary` / `focus_ceil_boundary` /
 //! `truncate_src`.

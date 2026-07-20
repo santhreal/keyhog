@@ -27,7 +27,7 @@ name = "Stripe Secret Key"
 service = "stripe"
 severity = "critical"
 ml = { match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 5 }
-match_confidence = { literal_prefix_weight = 0.35, context_anchor_weight = 0.20, entropy_weight = 0.20, high_entropy_partial_weight = 0.12, moderate_entropy_threshold = 3.0, moderate_entropy_weight = 0.05, low_entropy_penalty_floor = 2.0, low_entropy_min_match_length = 10, low_entropy_penalty_multiplier = 0.60, keyword_nearby_weight = 0.10, sensitive_file_weight = 0.10, companion_weight = 0.05, very_high_entropy_margin = 1.2999999999999998, named_anchor_floor = 0.55, assignment_context_multiplier = 1.0, string_literal_context_multiplier = 0.9, unknown_context_multiplier = 0.8, documentation_context_multiplier = 0.3, comment_context_multiplier = 0.4, test_context_multiplier = 0.3, encrypted_context_multiplier = 0.05, soft_context_suppression_threshold = 0.5, encrypted_context_suppression_threshold = 0.8 }
+match_confidence = { literal_prefix_weight = 0.35, context_anchor_weight = 0.20, entropy_weight = 0.20, high_entropy_partial_weight = 0.12, moderate_entropy_threshold = 3.0, moderate_entropy_weight = 0.05, low_entropy_penalty_floor = 2.0, low_entropy_min_match_length = 10, low_entropy_penalty_multiplier = 0.60, keyword_nearby_weight = 0.10, sensitive_file_weight = 0.10, companion_weight = 0.05, very_high_entropy_margin = 1.2999999999999998, named_anchor_floor = 0.55, assignment_context_multiplier = 1.0, string_literal_context_multiplier = 0.9, unknown_context_multiplier = 0.8, documentation_context_multiplier = 0.3, comment_context_multiplier = 0.4, test_context_multiplier = 0.3, encrypted_context_multiplier = 0.05, soft_context_suppression_threshold = 0.5, encrypted_context_suppression_threshold = 0.8, post_match = { placeholder_multiplier = 0.05, minimum_byte_diversity = 0.1, low_diversity_multiplier = 0.1, maximum_repeat_ratio = 0.8, degenerate_run_min_length = 10, degenerate_repeat_multiplier = 0.1, fixture_path_multiplier = 0.5, ml_context_reapply_below = 0.95 } }
 validators = [{ type = "pattern-shape", prefixes = ["sk_live_", "sk_test_", "rk_live_", "rk_test_"], allow_overlong = false }]
 keywords = ["sk_live_", "sk_test_", "rk_live_", "rk_test_", "stripe"]
 simdsieve_prefixes = ["sk_live_", "sk_test_", "rk_live_", "rk_test_"]
@@ -129,7 +129,10 @@ define the long-value penalty. The seven context multipliers define how
 assignment, string-literal, unknown, documentation, comment, test, and encrypted
 source contexts affect this detector before and after model scoring. The two
 context-suppression thresholds decide when a comment, test, documentation, or
-encrypted candidate is too weak to report. A named detector declares
+encrypted candidate is too weak to report. The nested `post_match` policy owns
+the placeholder, byte-diversity, repeated-run, decoded-envelope, fixture-path,
+and post-model context adjustments. `data_envelope_multiplier` is present only
+when decoded payload evidence applies to that detector. A named detector declares
 `named_anchor_floor` and omits `low_promise_confidence`. A
 phase-two generic owner does the reverse. This lets the cheap promise gate
 reject only unaccompanied generic candidates. Missing, misplaced, non-finite,
@@ -459,6 +462,19 @@ only in the individual detector TOML and have no CLI or global-config override:
 *   **`private_key_block`** (bool, default `false`): The match spans an enclosing
     PEM/OpenSSH private-key block. Resolution suppresses lower-specificity child
     findings inside that span instead of reporting the key body repeatedly.
+*   **`generic_vendor_suffixes`** (string array, default empty): A phase-two
+    generic detector can own structural `<vendor>_<suffix>` assignments that no
+    exact keyword claims. Only one detector may declare this list. Entries are
+    lowercase ASCII alphanumeric tokens.
+*   **`generic_assignment_tail_suffixes`** (string array, default empty): The
+    same owner can admit suffix segments after an exact keyword, such as
+    `secret_key_base`. KeyHog compiles this list into the assignment matcher;
+    omission disables the extra tail grammar.
+*   **`resolution_priority`** (integer, default `0`): When two detectors claim
+    overlapping credentials, the higher value wins before generic class and
+    confidence tie-breakers. Use it only for demonstrably more specific
+    attribution, such as a GitHub App key over a generic PEM block. Equal values
+    keep the normal deterministic resolution order.
 *   **`[detector.credential_shape]`** (table, optional): A fail-closed byte-shape
     contract. It can declare `exact_length`, `prefix`, `body_min_length`, and
     `body_max_length`; candidates outside the declared shape are suppressed.

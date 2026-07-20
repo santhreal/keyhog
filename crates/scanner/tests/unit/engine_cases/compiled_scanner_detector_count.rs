@@ -20,8 +20,11 @@ fn compiled_scanner_detector_count() {
         verify: None,
         keywords: vec!["x".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
-    let s = CompiledScanner::compile(vec![d.clone(), d]).unwrap();
+    let mut second = d.clone();
+    second.id = "b".into();
+    second.name = "B".into();
+    let s = CompiledScanner::compile(vec![d, second]).unwrap();
     assert_eq!(s.runtime_status().detector_count, 2);
 }

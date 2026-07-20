@@ -36,7 +36,7 @@ impl ExtractedValue {
     }
 }
 fn extract_prof_enabled() -> bool {
-    crate::engine::profile::enabled()
+    crate::scan_profile::enabled()
 }
 pub(crate) fn extract_profile_dump() {
     use std::sync::atomic::Ordering::Relaxed;

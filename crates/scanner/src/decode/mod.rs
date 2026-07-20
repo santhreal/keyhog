@@ -500,6 +500,7 @@ impl DecodeWorkloadPlan {
     pub fn sketch(&self, chunk: &Chunk) -> DecodeAdmissionSketch {
         #[cfg(not(feature = "decode"))]
         {
+            // LAW10: decode-disabled builds expose `NONE` as their explicit admission contract; no decoder was compiled that could lose findings here.
             let _ = chunk;
             return DecodeAdmissionSketch::NONE;
         }

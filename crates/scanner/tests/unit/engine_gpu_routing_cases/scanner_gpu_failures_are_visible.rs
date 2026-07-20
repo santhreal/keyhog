@@ -245,34 +245,10 @@ fn phase2_keyword_ac_build_failure_warns() {
 
 #[test]
 fn static_prefilter_regexes_handle_build_failure_loudly() {
-    // Every static (LazyLock/OnceLock) regex/AC prefilter must handle a build
-    // failure LOUDLY, never silently return None via `.ok()` (that path is
-    // separately banned by `static_prefilter_regexes_no_raw_ok_swallow`). TWO
-    // loud forms qualify, and each file must exhibit exactly the one that fits
-    // its prefilter:
-    //  - WARN + recall-preserving degrade (`prefilter_degrade::warn_prefilter_disabled`),
-    //    correct ONLY when the prefilter is a superset filter whose absence loses
-    //    speed but not recall (the full scan still runs). `checksum/slack.rs`.
-    //  - Fail-closed PANIC (Law 10), correct for a compile-time-constant pattern
-    //    or embedded Tier-B automaton whose only failure mode is a build/data bug
-    //    AND whose absence would SILENTLY drop recall, so degrading is not an
-    //    option and it must refuse to run. `shared_regexes.rs` (ASSIGN_RE),
-    //    `unicode_hardening.rs` (evasion-anchor AC). `multiline/structural.rs`
-    //    also fail-closes; it is pinned precisely by
-    //    `structural_constant_regexes_fail_closed`.
-    // (`multiline/config.rs` was previously listed but builds NO static prefilter
-    // its "prefilter" is a memchr2 fast-path, nothing fallible to guard, so
-    // requiring a loud handler there was a stale contract.)
-    let warn_degrade = ["checksum/slack.rs"];
+    // Every static regex/AC prefilter must handle build failure loudly, never
+    // silently return `None` via `.ok()`. These embedded constant patterns are
+    // recall-load-bearing, so a malformed build must fail closed.
     let fail_closed = ["shared_regexes.rs", "unicode_hardening.rs"];
-    for file in warn_degrade {
-        let src = scanner_src(file);
-        assert!(
-            src.contains("prefilter_degrade::warn_prefilter_disabled"),
-            "{file} builds a recall-preserving prefilter, so it must call \
-             warn_prefilter_disabled (loud degrade) on build failure"
-        );
-    }
     for file in fail_closed {
         let src = scanner_src(file);
         assert!(
@@ -324,7 +300,6 @@ fn static_prefilter_regexes_no_raw_ok_swallow() {
         "multiline/structural.rs",
         "multiline/config.rs",
         "shared_regexes.rs",
-        "checksum/slack.rs",
         "unicode_hardening.rs",
     ];
     for file in files {
@@ -386,7 +361,7 @@ fn backend_affecting_config_parse_failures_are_loud() {
     let engine = compiled_scanner_src("runtime.rs");
     let scanner_config = scanner_src("scanner_config.rs");
     assert!(
-        engine.matches("self.config.per_chunk_deadline()").count() == 2
+        engine.matches("self.config.per_chunk_deadline()").count() == 3
             && scanner_config.contains("pub per_chunk_timeout_ms: Option<u64>")
             && scanner_config.contains("per_chunk_deadline(&self)")
             && !engine.contains("crate::env_config::per_chunk_deadline")

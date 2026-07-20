@@ -231,10 +231,38 @@ impl DetectorLoadState {
 
 fn log_load_summary(state: &DetectorLoadState) {
     if state.skipped > 0 {
-        tracing::warn!("skipped {} malformed detector files", state.skipped);
-    }
-    for error in &state.load_errors {
-        tracing::warn!("detector load issue: {error}");
+        // Aggregate into ONE actionable line instead of one warn! per file.
+        // An "unknown field" parse error means the detector TOML declares a
+        // field this binary's schema does not know, i.e. the corpus is newer
+        // than the binary; the fix is `keyhog update`, not editing the file.
+        let version_skew = state
+            .load_errors
+            .iter()
+            .filter(|error| error.contains("unknown field"))
+            .count();
+        let examples = state
+            .load_errors
+            .iter()
+            .take(3)
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .join(" | ");
+        if version_skew > 0 {
+            tracing::warn!(
+                "skipped {} detector file(s); {} declare a field this keyhog version \
+                 does not understand (the detector corpus is newer than the binary) - \
+                 run `keyhog update`. Examples: {examples}",
+                state.skipped,
+                version_skew
+            );
+        } else {
+            tracing::warn!(
+                "skipped {} malformed/unreadable detector file(s) - run \
+                 `keyhog detectors --detectors <DIR>` or -vv for the full list. \
+                 Examples: {examples}",
+                state.skipped
+            );
+        }
     }
     if state.gate_rejected > 0 {
         // Law 10: quality-gate rejections are not silent. The per-detector
@@ -275,17 +303,16 @@ fn read_detector_file(path: &Path) -> ReadDetectorOutcome {
     let contents = match read_detector_toml_file(path) {
         Ok(contents) => contents,
         Err(error) => {
-            // Bumped from `debug!` to `warn!`. A user with a broken
-            // permission/typoed-path detector deserves to see the
-            // reason at default log level - not "all detectors
-            // appeared to load" silently. The path is included so
-            // operators can grep for it.
+            // LAW10: reporting-only; per-file detail stays at debug! (visible
+            // with -vv), while `log_load_summary` warns and gated loads reject.
+            // One warn! per skipped file floods stderr on a version-skewed or
+            // partly-broken corpus (dozens of near-identical lines before any
+            // finding), which is the opposite of actionable.
             let message = format!("failed to read {}: {}", path.display(), error);
-            tracing::warn!(
+            tracing::debug!(
                 detector_path = %path.display(),
                 error = %error,
-                "skipping detector - fix the file's permissions or path \
-                 (run `keyhog detectors --detectors <DIR>` for the full skip list)"
+                "skipping detector - unreadable file" // LAW10: aggregate warning surfaces the skipped file count and examples; gated loads reject
             );
             return ReadDetectorOutcome::Skipped { message };
         }
@@ -297,18 +324,14 @@ fn read_detector_file(path: &Path) -> ReadDetectorOutcome {
             spec: Box::new(file.detector),
         },
         Err(error) => {
-            // Same rationale: a TOML parse error (line + column
-            // included by the toml crate's Display impl) needs to
-            // surface to the user. Default `debug!` hid these
-            // entirely under the keyhog=warn filter, so a single
-            // mistyped field would silently drop one detector
-            // from the corpus and never tell the user.
+            // LAW10: reporting-only; per-file TOML detail stays at debug!,
+            // while the summary warns with examples and gated loads reject the
+            // incomplete corpus.
             let message = format!("failed to parse {}: {}", path.display(), error);
-            tracing::warn!(
+            tracing::debug!(
                 detector_path = %path.display(),
                 error = %error,
-                "skipping detector - TOML parse failed, fix the syntax \
-                 in the file at the indicated line/column"
+                "skipping detector - TOML parse failed" // LAW10: aggregate warning surfaces the skipped file count and examples; gated loads reject
             );
             ReadDetectorOutcome::Skipped { message }
         }

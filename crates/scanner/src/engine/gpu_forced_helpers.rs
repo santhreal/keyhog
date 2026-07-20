@@ -41,7 +41,7 @@ pub(crate) fn gpu_forced_unavailable_message(
     }
     Some(format!(
         "{} selected but GPU stack unavailable ({}, gpu_literals={}, gpu_matcher={}) - \
-         silent CPU fallback is forbidden; repair this GPU driver and recalibrate autoroute, or explicitly choose another backend",
+         silent CPU fallback is forbidden; repair this GPU driver and recalibrate autoroute, or explicitly choose `--backend simd-regex` or `--backend cpu-fallback`",
         backend.label(),
         scanner.gpu_backend_unavailable_reason(backend),
         scanner.gpu_literals.is_some(),

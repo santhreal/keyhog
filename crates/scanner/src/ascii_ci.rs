@@ -212,11 +212,11 @@ impl Iterator for CiMatches<'_, '_> {
     }
 }
 
-/// True when `path` (POSIX or Windows shape) contains the path segment
-/// `segment` (e.g. matches `/<segment>/` OR `\<segment>\`). Walks `path`
-/// once via `memchr2_iter` over `/` and `\\` separator bytes - no
-/// allocations regardless of whether the path is case-mismatched or
-/// extremely long.
+/// True when `path` (POSIX or Windows shape) contains the complete path
+/// segment `segment`. Segment boundaries are the start or end of the path and
+/// either path separator. Walks `path` once via `memchr2_iter` over `/` and `\\`
+/// separator bytes, with no allocations regardless of whether the path is
+/// case-mismatched or extremely long.
 ///
 /// Used by the vendored-tree suppression check; called up to a dozen
 /// times per match before this fix would otherwise allocate two `String`
@@ -226,28 +226,27 @@ pub(crate) fn contains_path_segment(path: &str, segment: &str) -> bool {
     let bytes = path.as_bytes();
     let seg = segment.as_bytes();
     let n = seg.len();
-    if n == 0 || bytes.len() < n + 1 {
+    if n == 0 || bytes.len() < n {
         return false;
     }
-    // Leading segment at offset 0 of a RELATIVE path (`node_modules/foo`): there
-    // is no preceding separator, so the separator-anchored loop below, which
-    // only inspects bytes AFTER a `/` or `\\` - would never test it, silently
-    // skipping vendored-tree suppression on relative roots (`keyhog scan
-    // node_modules`). Require an immediately-following separator so a prefix like
-    // `node_modules2/` does NOT match (preserves the substring-safety contract).
-    if bytes[..n].eq_ignore_ascii_case(seg) && matches!(bytes[n], b'/' | b'\\') {
+    // A leading segment has no preceding separator. Accept it only when the
+    // following boundary is a separator or end-of-path, so `node_modules2`
+    // remains a distinct segment.
+    if bytes[..n].eq_ignore_ascii_case(seg)
+        && (bytes.len() == n || matches!(bytes[n], b'/' | b'\\'))
+    {
         return true;
     }
     for sep_idx in memchr::memchr2_iter(b'/', b'\\', bytes) {
         let body_start = sep_idx + 1;
         let body_end = body_start + n;
-        if body_end >= bytes.len() {
+        if body_end > bytes.len() {
             break;
         }
         if !bytes[body_start..body_end].eq_ignore_ascii_case(seg) {
             continue;
         }
-        if matches!(bytes[body_end], b'/' | b'\\') {
+        if body_end == bytes.len() || matches!(bytes[body_end], b'/' | b'\\') {
             return true;
         }
     }
@@ -309,4 +308,52 @@ pub(crate) fn contains_path_segment_two(path: &str, a: &str, b: &str) -> bool {
         }
     }
     false
+}
+
+thread_local! {
+    /// Per-thread reusable buffer for [`ascii_upper_scratch`]. `const`-initialised
+    /// so access is a direct `__thread` read (no lazy-init branch on the hot path).
+    static UPPER_SCRATCH: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
+
+/// A borrowed, ASCII-uppercased copy of an input string held in a thread-local
+/// buffer that is returned to the pool when the guard drops.
+///
+/// `str::to_ascii_uppercase()` allocates a fresh `String` on every call; on the
+/// per-candidate suppression path that is one transient allocation per credential
+/// adjudicated. This reuses one buffer per thread instead. ASCII-uppercasing
+/// never changes byte length or the position of any byte (non-ASCII bytes are
+/// left untouched), so the produced `&str` is byte-for-byte identical to
+/// `input.to_ascii_uppercase()` - callers that index or take word boundaries on
+/// it are unaffected.
+///
+/// Re-entrancy-safe: the buffer is *taken* out of the thread-local for the guard's
+/// lifetime, so a nested `ascii_upper_scratch` call (e.g. the decode-rescan path
+/// re-entering suppression) takes a fresh empty buffer and restores its own on
+/// drop; the outer guard's `&str` is never aliased or mutated by the inner call.
+pub(crate) struct AsciiUpperScratch(String);
+
+impl AsciiUpperScratch {
+    #[inline]
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Drop for AsciiUpperScratch {
+    #[inline]
+    fn drop(&mut self) {
+        UPPER_SCRATCH.with(|cell| *cell.borrow_mut() = std::mem::take(&mut self.0));
+    }
+}
+
+/// Uppercase `input` (ASCII only) into a reused thread-local buffer. See
+/// [`AsciiUpperScratch`] for the allocation-elision and re-entrancy contract.
+#[inline]
+pub(crate) fn ascii_upper_scratch(input: &str) -> AsciiUpperScratch {
+    let mut buf = UPPER_SCRATCH.with(|cell| std::mem::take(&mut *cell.borrow_mut()));
+    buf.clear();
+    buf.push_str(input);
+    buf.make_ascii_uppercase();
+    AsciiUpperScratch(buf)
 }

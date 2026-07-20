@@ -79,11 +79,11 @@ fn sensitive_string_deref_exposes_real_bytes() {
 }
 
 #[test]
-fn sensitive_string_display_exposes_bytes() {
-    // Display is the deliberate auditable surface (unlike Debug).
+fn sensitive_string_display_redacts_bytes() {
     let secret: SensitiveString = "ghp_realTokenBytes".into();
     let shown = format!("{secret}");
-    assert_eq!(shown, "ghp_realTokenBytes");
+    assert_eq!(shown, "<redacted 18 bytes>");
+    assert!(!shown.contains("ghp_realTokenBytes"));
 }
 
 #[test]

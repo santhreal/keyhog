@@ -1,6 +1,6 @@
 //! Contract: bogus `--severity` value exits 2 (user error).
 
-use crate::e2e::support::binary;
+use crate::support::binary;
 use std::process::Command;
 
 #[test]

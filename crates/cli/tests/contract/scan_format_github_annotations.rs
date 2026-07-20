@@ -1,6 +1,6 @@
 //! Contract: `--format github-annotations` emits GitHub workflow commands.
 
-use crate::e2e::support::{binary, write_temp_file};
+use crate::support::{binary, write_temp_file};
 use std::process::Command;
 
 fn scan(path: &std::path::Path) -> std::process::Output {

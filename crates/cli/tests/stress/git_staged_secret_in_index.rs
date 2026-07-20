@@ -1,6 +1,6 @@
 //! R5-D2 / KH-GAP-167: `--git-staged` must scan the index, not the worktree only.
 
-use crate::e2e::support::binary;
+use crate::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 

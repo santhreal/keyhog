@@ -5,7 +5,7 @@
 //! from the binary's own `detectors --format json` output rather than a literal that
 //! goes stale every time a detector is added.
 
-use crate::e2e::support::binary;
+use crate::support::binary;
 use std::process::Command;
 
 /// Embedded detector count = number of objects in `keyhog detectors --format json`,

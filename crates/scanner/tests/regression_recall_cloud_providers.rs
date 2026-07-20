@@ -252,7 +252,7 @@ fn gcp_service_account_pretty_json_exact_id_span_and_line() {
          \"client_email\": \"svc@demo-proj-7788.iam.gserviceaccount.com\"\n}}"
     );
     let m = only(&json, "vertexai-service-account");
-    let cred = m.credential.to_string();
+    let cred = m.credential.as_str().to_string();
     assert!(
         cred.starts_with("type"),
         "match span starts at the `type` anchor field, got {cred:?}"

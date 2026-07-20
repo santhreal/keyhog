@@ -27,7 +27,7 @@ import tomllib
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 ROOT_CARGO = REPO / "Cargo.toml"
-REQUIRED_VERSION = "0.6.4"
+REQUIRED_VERSION = "0.6.5"
 
 # Logical dep key in [workspace.dependencies] -> published crate name.
 VYRE_DEPS: dict[str, str] = {

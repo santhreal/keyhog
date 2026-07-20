@@ -1,8 +1,8 @@
 //! Regression: the parallel-CPU-scan + boundary-reassembly path has ONE owner.
 //!
-//! `scan_chunks_with_backend_internal` runs the CPU path in two situations:
-//! any non-GPU backend (or an empty batch), and the GPU-compiled-out / GPU-
-//! request degrade. Those were two byte-identical copies of
+//! `scan_chunks_with_backend_internal` delegates non-GPU work to one helper.
+//! A GPU route compiled without GPU support now fails closed instead of calling
+//! the CPU helper, so there is exactly one delegation.
 //!   `chunks.par_iter().map(|c| self.scan_with_backend(c, backend)).collect()`
 //!   `+ scan_chunk_boundaries(...)`
 //! that could drift apart, and the `scan_chunk_boundaries` seam pass is
@@ -36,18 +36,25 @@ fn cpu_scan_and_boundary_path_has_single_owner() {
         "the par_iter scan-map must appear exactly once (deduped into the helper), found {map_occurrences}"
     );
 
-    // The seam reassembly pass must run from the single owner.
+    // The seam reassembly pass must run from the single owner. The route-carrying
+    // variant threads the calibrated ScanExecutionRoute into the seam scan so the
+    // boundary pass uses the same backend the per-chunk scan did.
     assert!(
-        src.contains("super::boundary::scan_chunk_boundaries(self, chunks, &mut results)"),
+        src.contains(
+            "super::boundary::scan_chunk_boundaries_with_route(self, chunks, &mut results, route)"
+        ),
         "the boundary seam pass must be invoked from the CPU path owner"
     );
 
-    // Both branches must delegate to the helper rather than open-code the scan.
     let delegations = src
-        .matches("self.scan_chunks_cpu_parallel(chunks, backend, admission_plan)")
+        .matches("self.scan_chunks_cpu_parallel(chunks, backend, admission_plan, route)")
         .count();
     assert_eq!(
-        delegations, 2,
-        "both the non-GPU branch and the GPU-compiled-out branch must call the helper, found {delegations}"
+        delegations, 1,
+        "the non-GPU branch must call the helper once"
+    );
+    assert!(
+        src.contains("crate::process_exit::backend_unavailable("),
+        "a compiled-out GPU route must fail closed instead of delegating to CPU"
     );
 }

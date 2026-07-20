@@ -127,7 +127,10 @@ pub(super) fn suppression_stage_inner(
     // ASCII uppercase: every marker/needle compared against `upper` is ASCII, so
     // this is byte-identical for matching yet avoids the full Unicode case-fold
     // (allocation + length changes like `ß`→`SS`) on the suppression hot path.
-    let upper = credential.to_ascii_uppercase();
+    // The uppercased form lives in a reused thread-local buffer (no per-candidate
+    // allocation); the guard restores it when this frame returns.
+    let upper_scratch = crate::ascii_ci::ascii_upper_scratch(credential);
+    let upper = upper_scratch.as_str();
 
     // ── 1-2. Doc / placeholder / instructional / RFC7519 / known-prefix /
     //         DOC_MARKER substring scans.

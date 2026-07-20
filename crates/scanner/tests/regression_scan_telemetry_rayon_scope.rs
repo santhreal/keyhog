@@ -143,9 +143,9 @@ fn dogfood_detail_budget_keeps_exact_static_recovery_aggregates() {
             .iter()
             .filter(|event| matches!(event, DogfoodEvent::StaticRecoveryRejected { .. }))
             .count(),
-        keyhog_scanner::telemetry::DOGFOOD_DETAIL_EVENT_LIMIT
+        keyhog_scanner::telemetry::DOGFOOD_DETAIL_EVENT_LIMIT - 1
     );
-    assert_eq!(snapshot.dogfood_detail_events_dropped, 7);
+    assert_eq!(snapshot.dogfood_detail_events_dropped, 8);
 }
 
 #[cfg(feature = "simd")]

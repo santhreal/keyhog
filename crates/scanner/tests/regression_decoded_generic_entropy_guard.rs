@@ -40,7 +40,7 @@ fn scan_text(text: String, path: &str) -> Vec<RawMatch> {
 
 fn ids(hits: &[RawMatch]) -> Vec<(String, String)> {
     hits.iter()
-        .map(|m| (m.detector_id.to_string(), m.credential.to_string()))
+        .map(|m| (m.detector_id.to_string(), m.credential.as_str().to_string()))
         .collect()
 }
 
@@ -94,7 +94,8 @@ fn decoded_generic_assignment_and_vendor_key_both_survive() {
     // Decode ran + the vendor key survived (proves non-vacuity):
     assert!(
         hits.iter().any(|m| {
-            m.credential.as_ref().contains(PEM_NEEDLE) && m.detector_id.as_ref() == "private-key"
+            m.credential.as_ref().contains(PEM_NEEDLE)
+                && m.detector_id.as_ref() == "ssh-private-key"
         }),
         "decode-through must run and the vendor key must survive the guard \
          (it is scoped to the generic/entropy family only); got {:?}",
@@ -177,7 +178,7 @@ fn decoded_named_detector_with_entropy_like_id_uses_the_active_plan() {
         }],
         keywords: vec!["KHCUSTOM_".into()],
         min_confidence: Some(0.0),
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }])
     .expect("compile custom named detector");
     let chunk = Chunk {

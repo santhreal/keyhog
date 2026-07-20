@@ -4,10 +4,6 @@
 //! placeholder/degenerate-run skips), the NaN-safety barrier, and the shape
 //! penalty math (computed against the source weights, never `> 0.0`).
 
-use keyhog_scanner::confidence::{
-    compute_confidence, compute_confidence_with_threshold, is_sensitive_path,
-    known_prefix_confidence_floor, ConfidenceSignals, KNOWN_PREFIXES,
-};
 use keyhog_scanner::context::CodeContext;
 #[cfg(all(feature = "ml", feature = "gpu"))]
 use keyhog_scanner::testing::confidence::apply_empty_candidate_score_policy;
@@ -16,6 +12,10 @@ use keyhog_scanner::testing::confidence::{
     apply_known_prefix_floor, apply_path_confidence_penalties, apply_post_ml_penalties,
     char_diversity, contains_placeholder_word, finalize_confidence, match_heuristic_confidence,
     max_repeat_run, placeholder_words, pre_ml_heuristic_confidence,
+};
+use keyhog_scanner::testing::confidence::{
+    compute_confidence, compute_confidence_with_threshold, is_sensitive_path,
+    known_prefix_confidence_floor, ConfidenceSignals, KNOWN_PREFIXES,
 };
 #[cfg(feature = "ml")]
 use keyhog_scanner::testing::confidence::{
@@ -219,9 +219,9 @@ fn post_ml_placeholder_crushes_score() {
 
 #[test]
 fn post_ml_named_keeps_small_alphabet_secret() {
-    // 64-char hex (16 distinct symbols, diversity 0.25): a named detector keeps
-    // it (>= 0.1 diversity, no degenerate run) -> score unchanged.
-    let hex64 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    // A non-repeating 64-char hex value has 16 distinct symbols and no
+    // placeholder block structure, so a named detector keeps it unchanged.
+    let hex64 = "9f2a7c4e1b8d6305a6e9c2174f8b3d02c5a1e7f9468b2d30e4c79a15f6b803de";
     let out = apply_post_ml_penalties(0.9, hex64, true);
     assert!(
         (out - 0.9).abs() < 1e-9,
@@ -231,7 +231,7 @@ fn post_ml_named_keeps_small_alphabet_secret() {
 
 #[test]
 fn post_ml_weak_anchor_classification_uses_generic_shape_penalties() {
-    let hex64 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    let hex64 = "9f2a7c4e1b8d6305a6e9c2174f8b3d02c5a1e7f9468b2d30e4c79a15f6b803de";
     let named = apply_post_ml_penalties(0.9, hex64, true);
     let weak_anchor = apply_post_ml_penalties(0.9, hex64, false);
     assert!((named - 0.9).abs() < 1e-9, "named score drifted to {named}");
@@ -243,7 +243,7 @@ fn post_ml_weak_anchor_classification_uses_generic_shape_penalties() {
 
 #[test]
 fn post_ml_degenerate_run_penalized_even_for_named() {
-    // 16-char 'X' run -> degenerate -> *0.1 (absolute-run arm).
+    // The named-detector degenerate-run policy applies its 0.1 multiplier.
     let out = apply_post_ml_penalties(1.0, "AKIAXXXXXXXXXXXXXXXX", true);
     assert!((out - 0.1).abs() < 1e-9, "expected 0.1, got {out}");
 }

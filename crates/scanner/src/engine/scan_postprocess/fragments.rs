@@ -127,7 +127,12 @@ impl CompiledScanner {
                         return;
                     }
                     for m in &mut reassembled_matches {
-                        m.detector_id = format!("{}:reassembled", m.detector_id).into();
+                        m.detector_id = format!(
+                            "{}{}",
+                            m.detector_id,
+                            crate::detector_ids::REASSEMBLED_SUFFIX
+                        )
+                        .into();
                         // Stamp the finding's path from the CONTRIBUTING
                         // fragment, not the synthetic chunk (which
                         // cloned the outer chunk's metadata). A candidate can

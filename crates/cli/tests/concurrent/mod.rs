@@ -1,2 +1,2 @@
-//! Concurrency tests (stay in all_tests: they use crate::e2e::support).
+//! Concurrency tests (stay in all_tests: they use crate::support).
 pub mod parallel_scan_subprocess;

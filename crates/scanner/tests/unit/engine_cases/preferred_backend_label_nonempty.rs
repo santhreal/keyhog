@@ -20,7 +20,7 @@ fn no_backend_library_status_names_the_portable_reference() {
         verify: None,
         keywords: vec!["x".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let s = CompiledScanner::compile(vec![d]).unwrap();
     assert_eq!(s.runtime_status().preferred_backend, "cpu-fallback");

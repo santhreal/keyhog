@@ -286,11 +286,9 @@ fn sensitive_string_join() {
 }
 
 #[test]
-fn sensitive_string_display_exposes_but_debug_redacts() {
+fn sensitive_string_display_and_debug_redact() {
     let s = SensitiveString::from("leaky-content");
-    // Display intentionally exposes (auditable surface).
-    assert_eq!(format!("{s}"), "leaky-content");
-    // Debug must NOT leak.
+    assert_eq!(format!("{s}"), "<redacted 13 bytes>");
     let dbg = format!("{s:?}");
     assert!(!dbg.contains("leaky-content"), "Debug leaked: {dbg}");
     assert_eq!(dbg, "SensitiveString(<redacted 13 bytes>)");

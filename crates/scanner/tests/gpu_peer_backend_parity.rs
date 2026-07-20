@@ -59,7 +59,7 @@ fn every_available_gpu_peer_matches_the_cpu_reference() {
             weak_anchor: false,
         }],
         keywords: vec!["KHGPUPEER".into()],
-        ..DetectorSpec::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let scanner = CompiledScanner::compile(vec![detector]).expect("compile parity scanner");
     let chunk = Chunk {
@@ -133,7 +133,7 @@ fn compilation_censuses_gpu_peers_without_materializing_execution_backends() {
             weak_anchor: false,
         }],
         keywords: vec!["KHGPULAZY".into()],
-        ..DetectorSpec::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let scanner = CompiledScanner::compile(vec![detector]).expect("compile lazy-peer scanner");
     let before = scanner.gpu_backend_candidates();
@@ -162,6 +162,21 @@ fn compilation_censuses_gpu_peers_without_materializing_execution_backends() {
             .find(|candidate| candidate.backend == selected)
             .is_some_and(|candidate| candidate.acquired),
         "warming the selected peer must publish its initialized state: {after:?}"
+    );
+    let acquired_identity = scanner
+        .acquired_gpu_peer_identity(selected)
+        .expect("initialized peer must publish a persistable identity");
+    let selected_status = after
+        .iter()
+        .find(|candidate| candidate.backend == selected)
+        .expect("selected peer status");
+    assert!(
+        acquired_identity.contains(selected.label())
+            && selected_status
+                .device_identity
+                .as_deref()
+                .is_some_and(|identity| acquired_identity.contains(identity)),
+        "persisted identity must name the exact acquired peer: {acquired_identity}"
     );
     assert!(
         after

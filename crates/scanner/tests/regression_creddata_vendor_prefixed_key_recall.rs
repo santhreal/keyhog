@@ -46,7 +46,7 @@ fn matches(s: &CompiledScanner, chunk: &Chunk) -> Vec<(String, String, f64)> {
         .map(|m| {
             (
                 m.detector_id.to_string(),
-                m.credential.to_string(),
+                m.credential.as_str().to_string(),
                 m.confidence.unwrap_or(0.0),
             )
         })

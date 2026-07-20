@@ -234,8 +234,8 @@ impl BigramBloom {
     }
 
     /// Whether the table is saturated enough that `maybe_overlaps`
-    /// short-circuits to `true`.
-    #[cfg(test)]
+    /// short-circuits to `true`. Used by production density diagnostics
+    /// (`testing::production_bigram_prefilter_density`) and unit tests.
     pub(crate) fn is_saturated(&self) -> bool {
         self.saturated
     }

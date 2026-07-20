@@ -6,7 +6,7 @@
 
 schema_version = 1
 detector_id = "terraform-cloud-api-token"
-service = "terraform"
+service = "terraform-cloud"
 severity = "critical"
 
 # ---- POSITIVES (recall) ---------------------------------------------

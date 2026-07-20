@@ -21,8 +21,18 @@ fn backend_triggered_reuses_prepared_line_offsets_for_code_lines() {
     );
     assert!(
         backend_prepared.contains("fn code_lines_from_offsets")
-            && backend_prepared.contains("line.as_bytes().last() == Some(&b'\\r')")
-            && backend_prepared.contains("self.preprocessed.text.as_bytes() == self.chunk.data.as_bytes()"),
-        "PreparedChunk must own the byte-identical fast path and preserve str::lines() CRLF semantics"
+            && backend_prepared.contains("line.as_bytes().last() == Some(&b'\\r')"),
+        "PreparedChunk must own the offset-sliced line splitter and preserve str::lines() CRLF semantics"
+    );
+    // KH-1226: `line_offsets` describes `preprocessed.text`, so `code_lines` must
+    // ALWAYS slice `preprocessed.text` (never fall back to raw `chunk.data`), or a
+    // preprocessing byte-rewrite mis-attributes matches to the wrong source line.
+    assert!(
+        backend_prepared.contains("code_lines_from_offsets(&self.preprocessed.text, line_offsets)"),
+        "code_lines must slice preprocessed.text (the buffer line_offsets was computed on), not raw chunk.data"
+    );
+    assert!(
+        !backend_prepared.contains("self.chunk.data.lines().collect()"),
+        "code_lines must not fall back to walking raw chunk.data, which diverges from preprocessed.text line offsets"
     );
 }

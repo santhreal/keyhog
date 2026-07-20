@@ -20,7 +20,7 @@ fn scan_chunks_preserves_chunk_count() {
         verify: None,
         keywords: vec!["x".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let s = CompiledScanner::compile(vec![d]).unwrap();
     let chunks = vec![

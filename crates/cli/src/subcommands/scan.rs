@@ -14,7 +14,7 @@
 
 use crate::args::{DaemonMode, ScanArgs};
 #[cfg(unix)]
-use crate::exit_codes::{EXIT_CREDENTIALS_FOUND, EXIT_SOURCE_FAILED};
+use crate::exit_codes::{EXIT_CREDENTIALS_FOUND, EXIT_LIVE_CREDENTIALS, EXIT_SOURCE_FAILED};
 // Daemon module is unix-only - Windows has no `tokio::net::UnixListener`
 // or `std::os::unix::net::UnixStream`, so the whole `crate::daemon`
 // subtree is `#[cfg(unix)]`. See `lib.rs` for the rationale. On
@@ -23,7 +23,7 @@ use crate::exit_codes::{EXIT_CREDENTIALS_FOUND, EXIT_SOURCE_FAILED};
 #[cfg(unix)]
 use crate::daemon::client;
 #[cfg(unix)]
-use crate::daemon::protocol::{Request, Response, SourceCoverageGaps};
+use crate::daemon::protocol::{Request, RequiredOption, Response, SourceCoverageGaps};
 #[cfg(unix)]
 use crate::daemon::server::default_socket_path;
 use crate::orchestrator::ScanOrchestrator;
@@ -679,6 +679,26 @@ fn finish_daemon_scan(scan: DaemonScan, args: &ScanArgs) -> Result<ExitCode> {
         keyhog_core::embedded_detector_count(),
         None,
     );
+    // Merge daemon wire gaps into process-local skip counters so
+    // CoverageCounts / SARIF notifications match in-process scans (KH-1369).
+    if !source_coverage_gaps.is_empty() {
+        keyhog_sources::merge_skip_count_deltas(&keyhog_sources::SkipCounts {
+            over_max_size: source_coverage_gaps.over_max_size,
+            binary: source_coverage_gaps.binary,
+            excluded: 0,
+            unreadable: source_coverage_gaps.unreadable,
+            git_object_unreadable: source_coverage_gaps.git_object_unreadable,
+            archive_truncated: source_coverage_gaps.archive_truncated,
+            binary_section_name_unresolved: source_coverage_gaps.binary_section_name_unresolved,
+            source_truncated: source_coverage_gaps.source_truncated,
+            structured_source_parse_failures: source_coverage_gaps.structured_source_parse_failures,
+            archive_duplicate_scan_unavailable: source_coverage_gaps
+                .archive_duplicate_scan_unavailable,
+            git_lfs_pointer: source_coverage_gaps.git_lfs_pointer,
+        });
+    }
+    // Partial status when any gap (WARN or FAIL) was observed; exit 13 only
+    // for FAIL-class gaps so daemon matches local scan (KH-1368).
     if !source_coverage_gaps.is_empty() {
         report_metadata.scan_status = ScanCompletionStatus::Partial;
     }
@@ -687,16 +707,18 @@ fn finish_daemon_scan(scan: DaemonScan, args: &ScanArgs) -> Result<ExitCode> {
         crate::orchestrator::reporting::dump_dogfood_trace();
     }
 
-    if !source_coverage_gaps.is_empty() {
+    let fail_gaps = source_coverage_gaps.fail_class_total();
+    if fail_gaps > 0 {
         let palette = crate::style::for_stderr();
         eprintln!(
-            "{}: daemon input coverage was incomplete ({} source gap(s)); some requested bytes were not scanned.",
+            "{}: daemon input coverage was incomplete ({} FAIL-class gap(s), {} total gap(s)); some requested bytes were not scanned.",
             crate::style::warn("warning", &palette),
+            fail_gaps,
             source_coverage_gaps.total()
         );
     }
 
-    if findings.is_empty() && !source_coverage_gaps.is_empty() {
+    if findings.is_empty() && fail_gaps > 0 {
         let palette = crate::style::for_stderr();
         eprintln!(
             "{}: not reporting \"clean\" after incomplete daemon input coverage.",
@@ -706,7 +728,14 @@ fn finish_daemon_scan(scan: DaemonScan, args: &ScanArgs) -> Result<ExitCode> {
     } else if findings.is_empty() {
         Ok(ExitCode::SUCCESS)
     } else {
-        Ok(ExitCode::from(EXIT_CREDENTIALS_FOUND))
+        // Same live-vs-findings precedence as in-process `resolve_scan_exit`
+        // (KH-1379): a Live finding must exit 10, not collapse to exit 1.
+        let code = crate::orchestrator::scan_exit_code(&findings);
+        if code == EXIT_LIVE_CREDENTIALS {
+            Ok(ExitCode::from(EXIT_LIVE_CREDENTIALS))
+        } else {
+            Ok(ExitCode::from(EXIT_CREDENTIALS_FOUND))
+        }
     }
 }
 
@@ -763,7 +792,7 @@ fn unwrap_scan_results(resp: Response) -> Result<(Vec<RawMatch>, SourceCoverageG
             if !dogfood_events.is_empty() {
                 keyhog_scanner::telemetry::append_daemon_events(dogfood_events);
             }
-            if let Some(recovery) = backend_recovery {
+            if let RequiredOption::Some(recovery) = backend_recovery {
                 if recovery.failed_backend == "autoroute-invalid" {
                     let recovery_backend = keyhog_scanner::hw_probe::parse_backend_str(
                         &recovery.recovery_backend,

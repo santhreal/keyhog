@@ -63,6 +63,34 @@ impl BackendTimingEvidence {
     }
 }
 
+pub(crate) fn paired_candidate_is_faster_95(
+    candidate_trials_ns: &[u128],
+    competitor_trials_ns: &[u128],
+) -> bool {
+    let count = candidate_trials_ns.len().min(competitor_trials_ns.len());
+    if count < 2 {
+        return false;
+    }
+    let paired_differences = || {
+        candidate_trials_ns
+            .iter()
+            .zip(competitor_trials_ns)
+            .take(count)
+            .map(|(&candidate, &competitor)| competitor as f64 - candidate as f64)
+    };
+    let count_f64 = count as f64;
+    let mean = paired_differences().sum::<f64>() / count_f64;
+    let variance = paired_differences()
+        .map(|difference| {
+            let delta = difference - mean;
+            delta * delta
+        })
+        .sum::<f64>()
+        / (count_f64 - 1.0);
+    let half_width = two_sided_95_student_t_critical(count) * variance.sqrt() / count_f64.sqrt();
+    mean - half_width > 0.0
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct TimingConfidenceInterval {
     pub(crate) low_ns: u128,
@@ -91,5 +119,28 @@ impl TimingConfidenceInterval {
             low_ns: (mean - half_width).max(0.0).floor() as u128,
             high_ns: (mean + half_width).ceil() as u128,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::paired_candidate_is_faster_95;
+
+    #[test]
+    fn paired_difference_separates_shared_host_drift() {
+        let candidate = [100, 300, 120, 280, 140, 260, 160];
+        let competitor = [110, 310, 130, 290, 150, 270, 170];
+        assert!(paired_candidate_is_faster_95(&candidate, &competitor));
+    }
+
+    #[test]
+    fn paired_difference_rejects_ties_and_reversed_routes() {
+        let candidate = [100, 300, 120, 280, 140, 260, 160];
+        assert!(!paired_candidate_is_faster_95(&candidate, &candidate));
+        let faster_competitor = [90, 290, 110, 270, 130, 250, 150];
+        assert!(!paired_candidate_is_faster_95(
+            &candidate,
+            &faster_competitor
+        ));
     }
 }

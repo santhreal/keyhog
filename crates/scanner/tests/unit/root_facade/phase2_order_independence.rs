@@ -37,7 +37,7 @@ fn canonical(matches: &[Vec<RawMatch>]) -> Vec<(String, String, String)> {
         .map(|m| {
             (
                 m.detector_id.to_string(),
-                m.credential.to_string(),
+                m.credential.as_str().to_string(),
                 format!("{:?}", m.location),
             )
         })
@@ -199,7 +199,7 @@ fn push_match_eviction_keeps_highest_confidence_when_capped() {
 
     let kept: Vec<_> = scan_state_drain(vec![low, high, mid], LIMIT)
         .into_iter()
-        .map(|m| m.credential.to_string())
+        .map(|m| m.credential.as_str().to_string())
         .collect();
     assert_eq!(
         kept,

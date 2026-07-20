@@ -136,6 +136,8 @@ mod generic_secret_confidence_formula;
 mod github_checksum_token_structure;
 #[path = "gap/gitlab_checksum_body_length_floors.rs"]
 mod gitlab_checksum_body_length_floors;
+#[path = "gap/gpu_moe_readback_bounded.rs"]
+mod gpu_moe_readback_bounded;
 #[path = "gap/gpu_region_presence_anchorless_gap_surfaced.rs"]
 mod gpu_region_presence_anchorless_gap_surfaced;
 #[path = "gap/gpu_routing_profile_tier_table.rs"]
@@ -190,6 +192,9 @@ mod nightly_matrix_has_fourteen_runner_binaries;
 mod no_cwd_relative_source_reads;
 #[path = "gap/no_suppress_test_fixtures_clears_generic_fallback_haircut.rs"]
 mod no_suppress_test_fixtures_clears_generic_fallback_haircut;
+// KH-1308: folder-contract gate must run through gap_floor/all_tests.
+#[path = "gap/no_inline_tests_in_src.rs"]
+mod no_inline_tests_in_src;
 #[path = "gap/normalized_assignment_keyword_is_credential_exact.rs"]
 mod normalized_assignment_keyword_is_credential_exact;
 #[path = "gap/npm_checksum_token_structure.rs"]

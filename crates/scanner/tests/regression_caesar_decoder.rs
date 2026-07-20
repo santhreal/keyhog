@@ -167,6 +167,21 @@ fn caesar_credential_shape_gate_requires_known_provider_prefix() {
 }
 
 #[test]
+fn caesar_prefix_requires_a_token_boundary() {
+    let embedded = "zkvhf_Q0ktNJ7ZR9DJXjFNxWVQqUtFxo1rz4bakKqsZ06a";
+    assert!(
+        !decode_caesar::caesar_credential_shape_gate(embedded),
+        "an hf_ rotation embedded inside an alphabetic run is not a token"
+    );
+    assert!(decode_caesar::caesar_credential_shape_gate(
+        "hf_Q0ktNJ7ZR9DJXjFNxWVQqUtFxo1rz4bak"
+    ));
+    assert!(decode_caesar::caesar_credential_shape_gate(
+        "value=hf_Q0ktNJ7ZR9DJXjFNxWVQqUtFxo1rz4bak"
+    ));
+}
+
+#[test]
 fn decode_chunk_recovers_planted_caesar_credential() {
     let body = format!("api_token = \"{ENCODED_SHIFT3}\"\n");
     let out = CaesarDecoder.decode_chunk(&chunk(&body, "filesystem", Some("secrets.env")));

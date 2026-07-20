@@ -118,6 +118,25 @@ fn watch_honors_keyhogignore_path_exclusion() {
 }
 
 #[test]
+fn watch_honors_keyhogignore_toml_rule_suppressor() {
+    // Declarative `.keyhogignore.toml` must drop findings under `watch` the same
+    // way `keyhog scan` does after finalize (KH-1329).
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    std::fs::write(
+        dir.path().join(".keyhogignore.toml"),
+        "[[suppress]]\ndetector = \"aws-access-key\"\npath_contains = \".env\"\n",
+    )
+    .expect("write toml ignore");
+    let body = format!("AWS_ACCESS_KEY_ID = \"{AKIA}\"\n");
+    let ids =
+        testing::scan_file_surviving_detector_ids(dir.path(), "secrets.env", &body).expect("scan");
+    assert!(
+        !ids.iter().any(|id| id == AKIA_DETECTOR),
+        "watch must honor .keyhogignore.toml RuleSuppressor, but {AKIA_DETECTOR} survived: {ids:?}"
+    );
+}
+
+#[test]
 fn watch_honors_inline_ignore_suppression() {
     // An inline `keyhog:ignore` directive on the secret line must suppress the
     // finding in `watch` (the shared pipeline re-reads the file for the directive).
@@ -148,5 +167,35 @@ fn watch_honors_disabled_detector_config() {
     assert!(
         !ids.iter().any(|id| id == AKIA_DETECTOR),
         "watch must honor .keyhog.toml [detector] enabled=false, but {AKIA_DETECTOR} fired: {ids:?}"
+    );
+}
+
+#[test]
+fn multi_root_suppressor_selects_longest_prefix_root() {
+    // KH-1433: nested or multi-root watch must apply the deepest matching
+    // root's RuleSuppressor, not always the primary.
+    use keyhog_core::RuleSuppressor;
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+
+    let root_a = PathBuf::from("/tmp/watch-a");
+    let root_b = PathBuf::from("/tmp/watch-a/nested");
+    let roots = vec![root_a.clone(), root_b.clone()];
+    let mut map = HashMap::new();
+    map.insert(root_a.clone(), RuleSuppressor::default());
+    map.insert(root_b.clone(), RuleSuppressor::default());
+
+    let deep = PathBuf::from("/tmp/watch-a/nested/file.env");
+    let selected = testing::rule_suppressor_for_path(&deep, &roots, &map);
+    assert!(
+        std::ptr::eq(selected, map.get(&root_b).unwrap()),
+        "nested path must pick the nested root suppressor"
+    );
+
+    let shallow = PathBuf::from("/tmp/watch-a/other.env");
+    let selected = testing::rule_suppressor_for_path(&shallow, &roots, &map);
+    assert!(
+        std::ptr::eq(selected, map.get(&root_a).unwrap()),
+        "sibling path must pick the parent root suppressor"
     );
 }

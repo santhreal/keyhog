@@ -42,7 +42,7 @@ fn compiled_keyword_probe_checks_preprocessed_text_only_when_it_differs() {
         name: "Compiled keyword probe".to_string(),
         service: "generic".to_string(),
         keywords: vec!["api_key".to_string()],
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let compiled = super::compiled_detector_plans(&[detector]);
     let policy = &compiled.get(0).execution;
@@ -120,7 +120,7 @@ fn compiled_public_identifier_markers_preserve_boundary_bytes() {
         name: "Compiled marker boundary".to_string(),
         service: "generic".to_string(),
         public_identifier_assignment_markers: vec!["_ADDR=".to_string()],
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let compiled = super::compiled_detector_plans(&[detector]);
     let policy = &compiled.get(0).execution;

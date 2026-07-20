@@ -10,7 +10,7 @@ reason = "Canonical anchor + synthesized body satisfying detector's primary rege
 
 [[positive]]
 text = "heap.load(73405814=\"73405814\""
-credential = "73405814"
+credential = "73405814="
 reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]

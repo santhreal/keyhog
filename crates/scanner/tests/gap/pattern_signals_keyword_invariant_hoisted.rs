@@ -17,24 +17,20 @@
 #[test]
 fn keyword_nearby_buffer_comparison_is_hoisted_out_of_the_loop() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let src = std::fs::read_to_string(root.join("src/engine/scan_filters.rs"))
-        .expect("scan_filters.rs readable");
+    let src = std::fs::read_to_string(root.join("src/detector_execution_policy.rs"))
+        .expect("detector_execution_policy.rs readable");
 
-    let comparison = "preprocessed.text.as_bytes() != chunk.data.as_bytes()";
-    let occurrences = src.matches(comparison).count();
     assert_eq!(
-        occurrences, 1,
-        "the preprocessed-vs-chunk buffer comparison must appear exactly once \
-         (the hoisted `let text_differs` binding), not be re-inlined per keyword; \
-         found {occurrences} occurrence(s)"
-    );
-
-    assert!(
-        src.contains("let text_differs = preprocessed.text.as_bytes() != chunk.data.as_bytes();"),
-        "the buffer comparison must be hoisted into a single `text_differs` binding"
+        src.matches("preprocessed != chunk_data").count(),
+        1,
+        "the preprocessed-vs-source comparison must remain hoisted"
     );
     assert!(
-        src.contains("text_differs && preprocessed.text.contains(needle)"),
-        "the per-keyword closure must consume the hoisted `text_differs` flag"
+        src.contains("let same_buffer = chunk_data.len() == preprocessed.len()")
+            && src.contains("let text_differs = !same_buffer && preprocessed != chunk_data;")
+            && src.contains(
+                "self.keywords.is_match(chunk_data) || (text_differs && self.keywords.is_match(preprocessed))",
+            ),
+        "compiled keyword probes must compare buffers once and reuse the result"
     );
 }

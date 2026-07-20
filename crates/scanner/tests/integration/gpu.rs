@@ -44,7 +44,7 @@ fn gpu_batch_preserves_cross_chunk_reassembly() {
         verify: None,
         keywords: vec!["api_key".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }])
     .expect("compile scanner");
 

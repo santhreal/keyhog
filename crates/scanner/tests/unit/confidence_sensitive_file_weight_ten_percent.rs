@@ -1,6 +1,6 @@
 //! Sensitive file alone yields confidence 1.0 (only signal present).
 
-use keyhog_scanner::confidence::{compute_confidence, ConfidenceSignals};
+use keyhog_scanner::testing::confidence::{compute_confidence, ConfidenceSignals};
 
 #[test]
 fn confidence_sensitive_file_weight_ten_percent() {

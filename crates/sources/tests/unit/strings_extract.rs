@@ -31,6 +31,18 @@ fn extracts_utf16le_wide_string() {
 }
 
 #[test]
+fn extracts_utf16be_wide_string_without_shifted_duplicate() {
+    let out = TestApi.extract_printable_strings(b"\x00S\x00e\x00c\x00r\x00e\x00t", 5);
+    assert_eq!(as_strs(&out), vec!["Secret"]);
+}
+
+#[test]
+fn partially_overlapping_opposite_endian_suffix_is_not_synthetic() {
+    let out = TestApi.extract_printable_strings(b"S\x00e\x00c\x00r\x00e\x00t\x00X!", 5);
+    assert_eq!(as_strs(&out), vec!["Secret"]);
+}
+
+#[test]
 fn pure_ascii_text_yields_no_spurious_wide_strings() {
     let out = TestApi.extract_printable_strings(b"AKIAIOSFODNN7EXAMPLE", 8);
     assert_eq!(as_strs(&out), vec!["AKIAIOSFODNN7EXAMPLE"]);

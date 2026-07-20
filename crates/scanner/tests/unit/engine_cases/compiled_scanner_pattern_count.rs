@@ -30,7 +30,7 @@ fn compiled_scanner_pattern_count() {
         verify: None,
         keywords: vec!["x".into(), "y".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let s = CompiledScanner::compile(vec![d]).unwrap();
     assert!(s.runtime_status().pattern_count >= 2);

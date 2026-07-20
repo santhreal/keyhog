@@ -1,6 +1,6 @@
 //! Contract for `truncate_for_prefilter`: the prefilter input-truncation that
 //! keeps the always-active RegexSet on the lazy-DFA instead of falling to PikeVM
-//! on `{N,}`/`+`/`*` bodies. Moved out of `engine/phase2_truncate.rs` so
+//! on `{N,}`/`+`/`*` bodies. Moved out of `phase2_truncate.rs` so
 //! scanner src stays free of inline test modules (KH-GAP-004); driven through
 //! the crate-root re-export.
 //!

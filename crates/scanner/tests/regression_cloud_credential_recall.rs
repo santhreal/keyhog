@@ -57,7 +57,7 @@ fn surfaces(text: &str, needle: &str) -> bool {
     let chunk: Chunk = make_chunk(text, "filesystem", "cloud.conf");
     s.scan(&chunk)
         .into_iter()
-        .any(|m| m.credential.to_string().contains(needle))
+        .any(|m| m.credential.as_str().to_string().contains(needle))
 }
 
 /// Detector ids whose credential contains `needle`, for asserting attribution.
@@ -67,7 +67,7 @@ fn detectors_for(text: &str, needle: &str) -> Vec<String> {
     let chunk: Chunk = make_chunk(text, "filesystem", "cloud.conf");
     s.scan(&chunk)
         .into_iter()
-        .filter(|m| m.credential.to_string().contains(needle))
+        .filter(|m| m.credential.as_str().to_string().contains(needle))
         .map(|m| m.detector_id.to_string())
         .collect()
 }

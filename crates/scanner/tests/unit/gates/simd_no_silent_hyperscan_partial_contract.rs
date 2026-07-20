@@ -86,10 +86,9 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
         "present but invalid Hyperscan cache artifacts must be operator-visible before recompilation"
     );
     assert!(
-        engine_backend_prepared
-            .contains("HS compile returned unsupported pattern id outside the deduped AC table")
-            && engine_backend_prepared.contains("compiled scanner invariant violation")
-            && engine_backend_prepared.contains("refusing to disable the SIMD prefilter")
+        engine_backend_prepared.contains("Hyperscan returned unsupported pattern id")
+            && engine_backend_prepared.contains("canonical SIMD plan has only")
+            && engine_backend_prepared.contains("return Err(format!(")
             && !engine_backend_prepared.contains(".filter_map(|&hs_id| index_map.get(hs_id))")
             && phase2_hs.contains(
                 "HS always-active prefilter returned unsupported pattern id outside refs"
@@ -125,7 +124,7 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
         engine_scan.contains("scanner.scan_each_result(data")
             && engine_scan.contains("Result<Vec<Option<Vec<u64>>>, String>")
             && engine_scan.contains(".map_err(crate::error::ScanError::Simd)?")
-            && triggered.contains("scanner.scan_matches_result(text.as_bytes()")
+            && triggered.contains("scanner.scan_matches_result(_text.as_bytes()")
             && phase2_hs.contains("scan_each_result")
             && phase2_hs.contains("any_match_result")
             && phase2_prefilter
@@ -165,7 +164,7 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
         .expect("selected-backend degrade guard extractable");
     assert!(
         selected_simd_guard.contains("crate::process_exit::backend_unavailable(")
-            && selected_simd_guard.contains("silent cpu-fallback execution is forbidden")
+            && selected_simd_guard.contains("cpu-fallback execution is forbidden")
             && !selected_simd_guard.contains("warn_simd_auto_degrade")
             && !selected_simd_guard.contains("return ScanBackend::CpuFallback"),
         "selected simd-regex without a live prefilter must fail closed, not warn and reroute to cpu-fallback"

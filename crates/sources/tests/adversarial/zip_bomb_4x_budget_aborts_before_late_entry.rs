@@ -44,7 +44,7 @@ fn zip_bomb_4x_budget_aborts_before_late_entry() {
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(MAX_FILE_SIZE);
     let rows: Vec<_> = source.chunks().collect();
     let (chunks, errors) = split_chunk_results(&rows);
-    let bodies: Vec<String> = chunks.iter().map(|c| c.data.to_string()).collect();
+    let bodies: Vec<String> = chunks.iter().map(|c| c.data.as_str().to_owned()).collect();
 
     assert!(
         bodies.iter().any(|b| b.contains("OUTSIDE=ok")),

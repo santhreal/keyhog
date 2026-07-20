@@ -32,6 +32,18 @@ fn spec(id: &str, keywords: &[&str]) -> DetectorSpec {
     }
 }
 
+fn generic_spec(id: &str, keywords: &[&str]) -> DetectorSpec {
+    let mut detector = keyhog_core::detector_spec_by_id("generic-secret")
+        .expect("embedded generic-secret detector")
+        .clone();
+    detector.id = id.to_string();
+    detector.keywords = keywords
+        .iter()
+        .map(|keyword| (*keyword).to_string())
+        .collect();
+    detector
+}
+
 fn vocab_of(specs: &[DetectorSpec]) -> Vec<String> {
     build_service_vocabulary(specs)
 }
@@ -63,11 +75,11 @@ fn rule1_length_floor_drops_short_keeps_long() {
 
 #[test]
 fn rule2_generic_family_keyword_excluded_even_when_a_real_detector_shares_it() {
-    // "apikeyword" is declared by a `generic-*` spec → it is a credential ROLE
-    // word by definition and must not enter the vocabulary, even though a real
-    // vendor detector also lists it.
+    // "apikeyword" is declared by a detector that owns generic entropy policy,
+    // so it is a credential role word and must not enter the vocabulary even
+    // when a named vendor detector also lists it.
     let vocab = vocab_of(&[
-        spec("generic-api-key", &["apikeyword"]),
+        generic_spec("generic-api-key", &["apikeyword"]),
         spec("realvendor-token", &["apikeyword", "realname"]),
     ]);
     assert!(
@@ -88,7 +100,7 @@ fn rule2_substring_of_generic_word_is_excluded_but_superstring_is_kept() {
     //  * "vaultservicekey" ⊃ generic "servicekey" → only fires when the extra
     //    service-specific bytes are present → KEPT.
     let vocab = vocab_of(&[
-        spec("generic-secret", &["servicekey"]),
+        generic_spec("generic-secret", &["servicekey"]),
         spec("realvendor-a", &["service"]),
         spec("realvendor-b", &["vaultservicekey"]),
     ]);

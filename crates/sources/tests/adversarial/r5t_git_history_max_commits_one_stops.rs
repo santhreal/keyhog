@@ -16,7 +16,7 @@ fn r5t_git_history_max_commits_one_stops() {
         errors.is_empty(),
         "max_commits=1 git history scan should not emit SourceError rows: {errors:?}"
     );
-    let bodies: String = chunks.iter().map(|c| c.data.to_string()).collect();
+    let bodies: String = chunks.iter().map(|c| c.data.as_str().to_owned()).collect();
     assert!(
         bodies.contains("b=2"),
         "max_commits=1 must include only latest commit; got {bodies}"

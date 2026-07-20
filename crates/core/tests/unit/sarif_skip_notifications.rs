@@ -28,8 +28,8 @@ fn sarif_skip_summary_emits_tool_execution_notifications() {
     assert_eq!(invocations.len(), 1);
     assert_eq!(
         invocations[0]["executionSuccessful"].as_bool(),
-        Some(true),
-        "skipping files is expected, not an execution failure"
+        Some(false),
+        "coverage gaps flip executionSuccessful so gap-only runs are not green (KH-1437)"
     );
 
     let notes = invocations[0]["toolExecutionNotifications"]

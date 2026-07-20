@@ -255,16 +255,14 @@ fn credential_deserialize_ambiguous_tagged_forms_rejected() {
 }
 
 // ---------------------------------------------------------------------------
-// SensitiveString: Debug redacts, Display intentionally exposes
+// SensitiveString: Debug and Display redact; explicit access exposes
 // ---------------------------------------------------------------------------
 
 #[test]
-fn sensitive_string_debug_redacts_but_display_exposes() {
-    let s: SensitiveString = "mypassword".into(); // 10 bytes
-                                                  // `{:?}` is the compile-time leak guard: never the bytes.
+fn sensitive_string_formatting_redacts_and_explicit_access_exposes() {
+    let s: SensitiveString = "mypassword".into();
     assert_eq!(format!("{s:?}"), "SensitiveString(<redacted 10 bytes>)");
     assert!(!format!("{s:?}").contains("mypassword"));
-    // `{}` is the audited surface that deliberately yields the content.
-    assert_eq!(format!("{s}"), "mypassword");
+    assert_eq!(format!("{s}"), "<redacted 10 bytes>");
     assert_eq!(s.as_ref(), "mypassword");
 }

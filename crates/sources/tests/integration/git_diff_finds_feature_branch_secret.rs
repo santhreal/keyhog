@@ -70,7 +70,7 @@ fn git_diff_finds_feature_branch_secret() {
         commit.chars().all(|c| c.is_ascii_hexdigit()),
         "commit id must be hex, got {commit:?}"
     );
-    let bodies: Vec<String> = chunks.iter().map(|c| c.data.to_string()).collect();
+    let bodies: Vec<String> = chunks.iter().map(|c| c.data.as_str().to_owned()).collect();
     assert!(
         bodies
             .iter()

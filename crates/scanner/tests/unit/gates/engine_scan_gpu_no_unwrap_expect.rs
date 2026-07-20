@@ -3,31 +3,31 @@
 //! 78046450) into the files below; this gate now covers the whole set so the
 //! no-unwrap contract follows the code instead of a deleted path.
 
-/// `src/engine/`-relative files that together form the GPU phase-2 scan path
+/// `src/`-relative files that together form the GPU phase-2 scan path
 /// (region-presence dispatch + GPU stack setup / degrade / cache).
 const GPU_SCAN_SRCS: &[&str] = &[
-    "gpu_forced.rs",
-    "gpu_forced_helpers.rs",
-    "gpu_lazy.rs",
-    "gpu_lazy_helpers.rs",
-    "gpu_literal_scratch.rs",
-    "gpu_cache.rs",
-    "gpu_region_batch.rs",
-    "gpu_region_dispatch.rs",
-    "gpu_region_dispatch_helpers.rs",
-    "gpu_resident_evidence.rs",
+    "engine/gpu_forced.rs",
+    "engine/gpu_forced_helpers.rs",
+    "engine/gpu_lazy.rs",
+    "engine/gpu_lazy_helpers.rs",
+    "engine/gpu_literal_scratch.rs",
+    "gpu_matcher_cache.rs",
+    "engine/gpu_region_batch.rs",
+    "engine/gpu_region_dispatch.rs",
+    "engine/gpu_region_dispatch_helpers.rs",
+    "engine/gpu_resident_evidence.rs",
 ];
 
 /// Files permitted to contain a co-located `#[cfg(test)]` (or
 /// `#[cfg(all(test, ...))]`) module whose lines are excluded from the
-/// no-unwrap/expect gate.  These are crate-private modules where white-box
+/// no-unwrap/expect gate. These are crate-private modules where white-box
 /// inline tests are the correct choice (same rationale as
 /// `no_inline_tests_in_src::INLINE_TEST_ALLOWLIST`):
 ///
 /// - `gpu_region_dispatch.rs`: contains crate-private region batching and
 ///   bounded-validation helpers. Keeping their white-box tests co-located avoids
 ///   widening the public scanner API for source-only assertions.
-const INLINE_TEST_ALLOWLIST: &[&str] = &["gpu_region_dispatch.rs"];
+const INLINE_TEST_ALLOWLIST: &[&str] = &["engine/gpu_region_dispatch.rs"];
 
 /// Returns `true` when `line` starts a test-cfg annotation that gates an
 /// inline test module, either the plain `#[cfg(test)]` form or the
@@ -106,14 +106,14 @@ fn collect_unwrap_offenders(
 
 #[test]
 fn engine_scan_gpu_no_unwrap_expect() {
-    let base = concat!(env!("CARGO_MANIFEST_DIR"), "/src/engine/");
+    let base = concat!(env!("CARGO_MANIFEST_DIR"), "/src/");
     let mut offenders: Vec<(String, usize, String)> = Vec::new();
     for rel in GPU_SCAN_SRCS {
         let path = format!("{base}{rel}");
         let src = std::fs::read_to_string(&path).unwrap_or_else(|e| {
             panic!(
                 "GPU phase-2 source {rel} not readable ({e}); the file \
-                set was renamed - update GPU_SCAN_SRCS to match engine/"
+                set was renamed - update GPU_SCAN_SRCS to match src/"
             )
         });
         offenders.extend(collect_unwrap_offenders(rel, &src, INLINE_TEST_ALLOWLIST));
@@ -131,7 +131,7 @@ fn engine_scan_gpu_no_unwrap_expect() {
 /// fires loudly so the exemption cannot silently outlive its reason (Law 9).
 #[test]
 fn engine_scan_gpu_inline_test_allowlist_not_stale() {
-    let base = concat!(env!("CARGO_MANIFEST_DIR"), "/src/engine/");
+    let base = concat!(env!("CARGO_MANIFEST_DIR"), "/src/");
     for rel in INLINE_TEST_ALLOWLIST {
         let path = format!("{base}{rel}");
         let src = std::fs::read_to_string(&path).unwrap_or_else(|e| {

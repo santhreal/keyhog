@@ -381,9 +381,13 @@ fn layer_secret_surfaces_with_exact_digest_metadata_path() {
         .expect("unpacked layer filesystem chunks must drain without source errors");
     let rows: Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>> =
         fs_rows.into_iter().map(Ok).collect();
-    let rewritten = TestApi
+    let rewritten_rows = TestApi
         .docker_rewrite_layer_chunks(rows, "keyhog:test", &unpacked, &layer_name)
         .expect("layer chunk rewrite must succeed");
+    let rewritten: Vec<_> = rewritten_rows
+        .into_iter()
+        .map(|r| r.expect("rewrite rows must be Ok for clean layer fixture"))
+        .collect();
 
     let expected_path = format!("keyhog:test:blobs/sha256/{layer_hex}:secret.env");
     let secret_chunk = rewritten
@@ -436,11 +440,13 @@ fn rewrite_normalizes_nested_path_under_digest_label_and_clears_git_fields() {
         },
     };
 
-    let rewritten = TestApi
+    let rewritten_rows = TestApi
         .docker_rewrite_layer_chunks(vec![Ok(chunk)], "img:1.0", &layer_root, digest_label)
         .expect("nested rewrite must succeed");
-    assert_eq!(rewritten.len(), 1);
-    let out = &rewritten[0];
+    assert_eq!(rewritten_rows.len(), 1);
+    let out = rewritten_rows[0]
+        .as_ref()
+        .expect("nested rewrite row must be Ok");
     assert_eq!(
         out.metadata.path.as_deref(),
         Some("img:1.0:blobs/sha256/1111111111111111111111111111111111111111111111111111111111111111:usr/local/app/.env"),

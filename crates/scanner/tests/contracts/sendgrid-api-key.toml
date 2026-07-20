@@ -7,7 +7,7 @@
 schema_version = 1
 detector_id = "sendgrid-api-key"
 service = "sendgrid"
-severity = "critical"
+severity = "high"
 
 # ---- POSITIVES (recall) ---------------------------------------------
 

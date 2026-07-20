@@ -2,15 +2,13 @@
 //! out of range for its compiled regex is rejected at COMPILE time, for ANY
 //! detector source (the embedded corpus or a user `--detectors` overlay).
 //!
-//! `detector_capture_group_integrity.rs` is a CI guard that locks the EMBEDDED
-//! corpus clean. It cannot see a user-supplied overlay. The real defense is in
-//! `compiler_compile::compile_pattern`, which now checks
-//! `group < regex.captures_len()` and fails closed with
-//! `ScanError::CaptureGroupOutOfRange`. Without it, an out-of-range group is not
-//! a regex error, the pattern compiles, but at scan time
-//! `extract_grouped_matches` does `locs.get(group).unwrap_or((full_start,
-//! full_end))` and SILENTLY captures the whole match (keyword + separator +
-//! value) instead of the secret (Law 10: no silent fallback).
+//! `detector_capture_group_integrity.rs` locks the embedded corpus clean. The
+//! production defense is `CompiledScanner::compile`, which runs the detector
+//! corpus quality gate before
+//! compiling regex programs. The gate rejects `group` values outside the
+//! regex capture range and reports the detector, pattern index, declared group,
+//! and explicit capture count. This prevents a malformed programmatic detector
+//! from reaching any backend.
 //!
 //! These tests drive the real public `CompiledScanner::compile` / `scan` path
 //! (not a private seam), so they prove the shipped behaviour, and assert real
@@ -39,7 +37,7 @@ fn detector(regex: &str, group: Option<usize>) -> DetectorSpec {
         verify: None,
         keywords: vec!["secret".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }
 }
 
@@ -134,28 +132,22 @@ fn rejects_group_when_only_non_capturing_groups_are_present() {
 // ── error contract (context + fix) ──────────────────────────────────────────
 
 #[test]
-fn error_is_the_capture_group_out_of_range_variant() {
+fn error_is_a_corpus_quality_gate_configuration_error() {
     let err = compile_err(r"secret=(\w+)", Some(2));
-    assert!(matches!(err, ScanError::CaptureGroupOutOfRange { .. }));
+    assert!(matches!(err, ScanError::Config(_)));
 }
 
 #[test]
-fn error_carries_the_declared_group_and_captures_len() {
-    let err = compile_err(r"secret=(\w+)", Some(2));
-    match err {
-        ScanError::CaptureGroupOutOfRange {
-            group,
-            captures_len,
-            ..
-        } => {
-            assert_eq!(group, 2, "declared group must be reported verbatim");
-            assert_eq!(
-                captures_len, 2,
-                "one-group regex has captures_len 2 (group0 + group1)"
-            );
-        }
-        other => panic!("wrong variant: {other:?}"),
-    }
+fn error_carries_the_declared_group_and_explicit_capture_count() {
+    let error = compile_err(r"secret=(\w+)", Some(2)).to_string();
+    assert!(
+        error.contains("capture group 2 is out of range"),
+        "declared group must be reported verbatim: {error}"
+    );
+    assert!(
+        error.contains("regex has 1 capture groups (valid group indexes are 0..1)"),
+        "explicit capture count and valid indexes must be reported: {error}"
+    );
 }
 
 #[test]
@@ -210,15 +202,16 @@ fn multi_pattern_detector_reports_the_offending_pattern_index() {
         verify: None,
         keywords: vec!["secret".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
-    match CompiledScanner::compile(vec![det]).err() {
-        Some(ScanError::CaptureGroupOutOfRange { index, group, .. }) => {
-            assert_eq!(index, 1, "must report the second pattern as the offender");
-            assert_eq!(group, 2);
-        }
-        other => panic!("expected CaptureGroupOutOfRange at index 1, got {other:?}"),
-    }
+    let error = CompiledScanner::compile(vec![det])
+        .err()
+        .expect("second pattern must fail capture validation")
+        .to_string();
+    assert!(
+        error.contains("pattern 1 capture group 2 is out of range"),
+        "error must identify the second pattern and invalid group: {error}"
+    );
 }
 
 // ── the embedded corpus still compiles (no clean detector broken) ───────────

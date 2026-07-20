@@ -1,7 +1,7 @@
 //! R5-D2 / KH-GAP-165: `--lockdown --verify` must refuse with the verify
 //! incompatibility message before coredump preflight masks it.
 
-use crate::e2e::support::binary;
+use crate::support::binary;
 use std::process::Command;
 
 #[test]

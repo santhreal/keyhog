@@ -20,43 +20,34 @@ fn gpu_moe_honors_disabled_policy_before_adapter_probe() {
 }
 
 #[test]
-fn public_gpu_available_honors_disabled_policy_before_adapter_probe() {
+fn public_gpu_available_uses_the_policy_checked_probe() {
     let src = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/gpu.rs"));
     let fn_start = src
         .find("pub fn gpu_available() -> bool")
         .expect("gpu_available owner present");
     let body = &src[fn_start..];
-    let policy_gate = body
-        .find("gpu_disabled_by_policy()")
-        .expect("public gpu_available checks resolved GPU runtime policy");
-    let adapter_probe = body
-        .find("gpu_adapter_probe().is_some_and")
-        .expect("gpu_available still owns adapter availability check");
-
     assert!(
-        policy_gate < adapter_probe,
-        "gpu_available must return false for --no-gpu before get_gpu()/init_gpu can probe a \
-         broken adapter stack"
+        body.starts_with("pub fn gpu_available() -> bool {\n    gpu_probe().available\n}"),
+        "gpu_available must consume the policy-checked typed GPU probe"
     );
 }
 
 #[test]
-fn gpu_runtime_identity_honors_disabled_policy_before_adapter_probe() {
+fn gpu_probe_honors_disabled_policy_before_adapter_identity() {
     let src = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/gpu/policy.rs"));
     let fn_start = src
-        .find("pub(crate) fn gpu_runtime_identity() -> Option<String>")
-        .expect("gpu_runtime_identity owner present");
+        .find("pub(crate) fn gpu_probe() -> GpuRuntimeProbe")
+        .expect("gpu_probe owner present");
     let body = &src[fn_start..];
     let policy_gate = body
         .find("gpu_disabled_by_policy()")
-        .expect("gpu_runtime_identity checks resolved GPU runtime policy");
+        .expect("gpu_probe checks resolved GPU runtime policy");
     let adapter_probe = body
         .find("super::gpu_adapter_probe()")
-        .expect("gpu_runtime_identity still owns adapter identity check");
+        .expect("gpu_probe owns adapter identity collection");
 
     assert!(
         policy_gate < adapter_probe,
-        "gpu_runtime_identity must return None for --no-gpu before get_gpu()/init_gpu can probe \
-         a broken adapter stack"
+        "gpu_probe must return an empty receipt for --no-gpu before probing adapter identity"
     );
 }

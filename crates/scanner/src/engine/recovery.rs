@@ -59,6 +59,7 @@ impl BackendRecoveryReceipt {
     pub fn recovered_bytes(&self) -> u64 {
         self.ranges
             .iter()
+            // LAW10: this is a diagnostic byte counter only; saturation cannot alter recovery candidates or findings.
             .map(|range| u64::try_from(range.len()).unwrap_or(u64::MAX))
             .fold(0u64, u64::saturating_add)
     }
@@ -95,6 +96,8 @@ pub struct CoalescedScanOutcome {
     pub recovery: Option<BackendRecoveryReceipt>,
 }
 
+// Tests live in `tests/unit/engine_recovery.rs` (KH-1308).
+
 pub(crate) fn canonicalize_ranges(
     mut ranges: Vec<RecoveredInputRange>,
 ) -> Vec<RecoveredInputRange> {
@@ -111,48 +114,4 @@ pub(crate) fn canonicalize_ranges(
         canonical.push(range);
     }
     canonical
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn recovery_reason_is_printable_nonempty_and_bounded() {
-        let receipt = BackendRecoveryReceipt::new(
-            ScanBackend::GpuCuda,
-            ScanBackend::SimdCpu,
-            Vec::new(),
-            format!("device\nreset{}", "x".repeat(MAX_RECOVERY_REASON_BYTES * 2)),
-        );
-        assert!(!receipt.reason.is_empty());
-        assert!(receipt.reason.len() <= MAX_RECOVERY_REASON_BYTES);
-        assert!(!receipt.reason.chars().any(char::is_control));
-
-        let missing = BackendRecoveryReceipt::new(
-            ScanBackend::GpuCuda,
-            ScanBackend::SimdCpu,
-            Vec::new(),
-            String::new(),
-        );
-        assert_eq!(missing.reason, MISSING_RECOVERY_REASON);
-    }
-
-    #[test]
-    fn recovered_ranges_are_sorted_and_coalesced_per_chunk() {
-        let ranges = canonicalize_ranges(vec![
-            RecoveredInputRange::new(1, 8, 12),
-            RecoveredInputRange::new(0, 4, 9),
-            RecoveredInputRange::new(0, 0, 4),
-            RecoveredInputRange::new(1, 3, 10),
-            RecoveredInputRange::new(2, 7, 7),
-        ]);
-        assert_eq!(
-            ranges,
-            vec![
-                RecoveredInputRange::new(0, 0, 9),
-                RecoveredInputRange::new(1, 3, 12),
-            ]
-        );
-    }
 }

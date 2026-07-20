@@ -7,7 +7,7 @@
 schema_version = 1
 detector_id = "slack-webhook-url"
 service = "slack"
-severity = "critical"
+severity = "high"
 # README claim (top-level scalar, see every_contract_readme_claim_present):
 readme_claim = "Slack"
 

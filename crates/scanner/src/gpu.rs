@@ -53,14 +53,14 @@ static MOE_FEATURE_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU
 static MOE_SCORE_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// Gated by the unified scanner profile switch and dumped as part of
-/// [`crate::engine::profile_dump`].
+/// [`crate::profile_dump`].
 #[cfg(feature = "ml")]
 fn ml_split_prof_enabled() -> bool {
-    crate::engine::profile::enabled()
+    crate::scan_profile::enabled()
 }
 
 /// Print + reset the feature-vs-score split. Folded into the unified profiler:
-/// called from [`crate::engine::profile_dump`] (early-returns when no data).
+/// called from [`crate::profile_dump`] (early-returns when no data).
 pub(crate) fn ml_split_profile_dump() {
     use std::sync::atomic::Ordering::Relaxed;
     let f = MOE_FEATURE_NS.swap(0, Relaxed) as f64 / 1e6;

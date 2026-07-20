@@ -3,7 +3,7 @@
 Registry state below was verified on 2026-07-12. The source tree is `0.5.41`;
 all five public KeyHog crates remain at `0.5.40` until this publish chain
 completes. KeyHog pins the five VYRE runtime dependencies to the published
-`=0.6.4` release. Development-only or unrelated VYRE crates do not participate
+`=0.6.5` release. Development-only or unrelated VYRE crates do not participate
 in the KeyHog publish chain.
 
 ## What's live on crates.io
@@ -17,14 +17,14 @@ in the KeyHog publish chain.
 | `keyhog-verifier`| 0.5.40 |
 
 Current source directly pins `vyre`, `vyre-libs`, `vyre-driver-wgpu`,
-`vyre-driver-cuda`, and `vyre-runtime` at `=0.6.4`. Their transitive dependency
+`vyre-driver-cuda`, and `vyre-runtime` at `=0.6.5`. Their transitive dependency
 graph is resolved by Cargo and locked in `Cargo.lock`; it is not a second
 KeyHog-owned publish list.
 
 ## Publish chain (for the next cut)
 
 The KeyHog workspace pins all five runtime VYRE crates (`vyre`, `vyre-libs`,
-`vyre-driver-wgpu`, `vyre-driver-cuda`, `vyre-runtime`) at `=0.6.4` from
+`vyre-driver-wgpu`, `vyre-driver-cuda`, `vyre-runtime`) at `=0.6.5` from
 crates.io. The repository carries no VYRE source snapshot and nothing in the
 build resolves through a repository vendor tree.
 To cut a new KeyHog release:

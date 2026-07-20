@@ -140,7 +140,7 @@ fn gpu_recovery_fixture() -> (
             required_literals: vec!["tok_".into()],
             ..Default::default()
         }],
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let scanner = CompiledScanner::compile(vec![detector]).expect("compile recovery fixture");
     let backend = [
@@ -362,7 +362,7 @@ fn complete_always_active_negative_preserves_triggered_row_keyword_phase2_findin
             group: Some(1),
             ..Default::default()
         }],
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let scanner = CompiledScanner::compile(vec![detector]).expect("compile fixture detector");
     let chunk = keyhog_core::Chunk::from("credential = aB3dE5gH7jK9mN2pQ4sT6vW8xY1zC0fR");
@@ -417,7 +417,7 @@ fn normalized_triggered_rows_discard_raw_gpu_evidence_and_recompute_admission() 
                 group: Some(1),
                 ..Default::default()
             }],
-            ..Default::default()
+            ..keyhog_scanner::testing::named_detector_fixture_defaults()
         },
         keyhog_core::DetectorSpec {
             id: "normalized-required-fixture".into(),
@@ -430,7 +430,7 @@ fn normalized_triggered_rows_discard_raw_gpu_evidence_and_recompute_admission() 
                 required_literals: vec![":fx".into()],
                 ..Default::default()
             }],
-            ..Default::default()
+            ..keyhog_scanner::testing::named_detector_fixture_defaults()
         },
         keyhog_core::DetectorSpec {
             id: "normalized-phase2-keyword-fixture".into(),
@@ -443,7 +443,7 @@ fn normalized_triggered_rows_discard_raw_gpu_evidence_and_recompute_admission() 
                 group: Some(1),
                 ..Default::default()
             }],
-            ..Default::default()
+            ..keyhog_scanner::testing::named_detector_fixture_defaults()
         },
     ];
     let scanner = CompiledScanner::compile(detectors).expect("compile normalization fixtures");

@@ -131,7 +131,10 @@ fn rar15_40_unix_special_entry_emits_source_error_and_keeps_safe_sibling() {
         .chunks()
         .collect();
     let (chunks, errors) = split_chunk_results(&rows);
-    let bodies: Vec<_> = chunks.iter().map(|chunk| chunk.data.to_string()).collect();
+    let bodies: Vec<_> = chunks
+        .iter()
+        .map(|chunk| chunk.data.as_str().to_owned())
+        .collect();
     let rendered_errors: Vec<_> = errors.iter().map(|error| error.to_string()).collect();
 
     assert!(
@@ -194,7 +197,10 @@ fn rar50_unix_special_entry_emits_source_error_and_keeps_safe_sibling() {
         .chunks()
         .collect();
     let (chunks, errors) = split_chunk_results(&rows);
-    let bodies: Vec<_> = chunks.iter().map(|chunk| chunk.data.to_string()).collect();
+    let bodies: Vec<_> = chunks
+        .iter()
+        .map(|chunk| chunk.data.as_str().to_owned())
+        .collect();
     let rendered_errors: Vec<_> = errors.iter().map(|error| error.to_string()).collect();
 
     assert!(
@@ -261,7 +267,10 @@ fn rar15_40_solid_archive_scans_every_regular_member() {
         .chunks()
         .collect();
     let (chunks, errors) = split_chunk_results(&rows);
-    let bodies: Vec<_> = chunks.iter().map(|chunk| chunk.data.to_string()).collect();
+    let bodies: Vec<_> = chunks
+        .iter()
+        .map(|chunk| chunk.data.as_str().to_owned())
+        .collect();
 
     assert!(
         errors.is_empty(),
@@ -314,7 +323,10 @@ fn rar15_40_solid_special_entry_drains_before_safe_sibling() {
         .chunks()
         .collect();
     let (chunks, errors) = split_chunk_results(&rows);
-    let bodies: Vec<_> = chunks.iter().map(|chunk| chunk.data.to_string()).collect();
+    let bodies: Vec<_> = chunks
+        .iter()
+        .map(|chunk| chunk.data.as_str().to_owned())
+        .collect();
     let rendered_errors: Vec<_> = errors.iter().map(|error| error.to_string()).collect();
 
     assert!(
@@ -384,7 +396,10 @@ fn rar50_solid_archive_scans_every_regular_member() {
         .chunks()
         .collect();
     let (chunks, errors) = split_chunk_results(&rows);
-    let bodies: Vec<_> = chunks.iter().map(|chunk| chunk.data.to_string()).collect();
+    let bodies: Vec<_> = chunks
+        .iter()
+        .map(|chunk| chunk.data.as_str().to_owned())
+        .collect();
 
     assert!(
         errors.is_empty(),
@@ -433,7 +448,10 @@ fn rar50_solid_special_entry_drains_before_safe_sibling() {
         .chunks()
         .collect();
     let (chunks, errors) = split_chunk_results(&rows);
-    let bodies: Vec<_> = chunks.iter().map(|chunk| chunk.data.to_string()).collect();
+    let bodies: Vec<_> = chunks
+        .iter()
+        .map(|chunk| chunk.data.as_str().to_owned())
+        .collect();
     let rendered_errors: Vec<_> = errors.iter().map(|error| error.to_string()).collect();
 
     assert!(

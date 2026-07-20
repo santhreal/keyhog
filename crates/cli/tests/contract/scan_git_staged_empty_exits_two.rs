@@ -3,7 +3,7 @@
 #[cfg(feature = "git")]
 #[test]
 fn scan_git_staged_empty_exits_two() {
-    use crate::e2e::support::binary;
+    use crate::support::binary;
     use std::process::Command;
     use tempfile::TempDir;
 

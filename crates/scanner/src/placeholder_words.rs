@@ -162,10 +162,11 @@ pub(crate) fn contains_placeholder_word_with_entropy_hint(
     credential: &str,
     entropy_hint: Option<f64>,
 ) -> bool {
-    let upper = credential.to_ascii_uppercase();
+    let upper_scratch = crate::ascii_ci::ascii_upper_scratch(credential);
+    let upper = upper_scratch.as_str();
     words()
         .iter()
-        .any(|word| placeholder_word_suppresses(credential, &upper, word.upper(), entropy_hint))
+        .any(|word| placeholder_word_suppresses(credential, upper, word.upper(), entropy_hint))
 }
 
 pub(crate) fn contains_non_example_placeholder_word_with_entropy_hint(

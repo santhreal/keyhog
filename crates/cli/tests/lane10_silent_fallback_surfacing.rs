@@ -210,7 +210,7 @@ fn daemon_accept_loop_does_not_silently_break_on_error() {
 fn scan_daemon_fallback_warning_uses_resolved_daemon_mode() {
     let s = src("src/subcommands/scan.rs");
     let arm = s
-        .split("DaemonRoute::Opportunistic => match run_via_daemon")
+        .split("DaemonRoute::Opportunistic => {")
         .nth(1)
         .expect("scan.rs must have a DaemonRoute::Opportunistic arm");
     let fallback_arm = arm

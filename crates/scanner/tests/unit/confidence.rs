@@ -1,5 +1,5 @@
-use keyhog_scanner::confidence::{compute_confidence, ConfidenceSignals};
 use keyhog_scanner::entropy::{HIGH_ENTROPY_THRESHOLD, VERY_HIGH_ENTROPY_THRESHOLD};
+use keyhog_scanner::testing::confidence::{compute_confidence, ConfidenceSignals};
 #[test]
 fn high_confidence_with_prefix_and_entropy() {
     let signals = ConfidenceSignals {

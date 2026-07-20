@@ -48,10 +48,14 @@ pub(super) fn find_layer_archives(
         let entry = match entry {
             Ok(entry) => entry,
             Err(error) => {
+                // KH-1446: one unreadable walk entry must not abort layer
+                // discovery for the rest of the image archive.
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                return Err(SourceError::Other(format!(
-                    "failed to inspect docker image archive while discovering layer archives: {error}; docker image archive was not fully scanned"
-                )));
+                tracing::warn!(
+                    error = %error,
+                    "failed to inspect one docker image archive entry while discovering layer archives; continuing"
+                );
+                continue;
             }
         };
         if is_fallback_layer_archive_path(&entry.path) {
@@ -68,7 +72,7 @@ pub(super) fn rewrite_layer_chunks<I>(
     image: &str,
     layer_root: &Path,
     layer_name: &str,
-) -> Result<Vec<Chunk>, SourceError>
+) -> Result<Vec<Result<Chunk, SourceError>>, SourceError>
 where
     I: IntoIterator<Item = Result<Chunk, SourceError>>,
 {
@@ -83,14 +87,19 @@ where
             layer_root.display()
         ))
     })?;
+    // KH-1446: a single filesystem chunk Err must not abort the rest of the
+    // layer. Keep prior Ok rewrites, emit the error row, continue.
     let mut rewritten = Vec::new();
     for chunk in input_chunks {
         match chunk {
-            Ok(chunk) => rewritten.push(rewrite_chunk(chunk, image, &normalized_root, layer_name)?),
+            Ok(chunk) => match rewrite_chunk(chunk, image, &normalized_root, layer_name) {
+                Ok(rewritten_chunk) => rewritten.push(Ok(rewritten_chunk)),
+                Err(error) => rewritten.push(Err(error)),
+            },
             Err(error) => {
-                return Err(SourceError::Other(format!(
+                rewritten.push(Err(SourceError::Other(format!(
                     "docker layer {layer_name} scan failed: {error}"
-                )));
+                ))));
             }
         }
     }
@@ -122,7 +131,7 @@ fn scan_docker_layer(
         &layer_dir,
         &layer_name,
     ) {
-        Ok(chunks) => rows.extend(chunks.into_iter().map(Ok)),
+        Ok(chunk_rows) => rows.extend(chunk_rows),
         Err(error) => rows.push(Err(error)),
     }
     rows.extend(error_rows);

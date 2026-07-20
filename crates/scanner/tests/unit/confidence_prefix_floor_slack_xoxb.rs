@@ -1,6 +1,6 @@
 //! Slack bot prefix receives 0.8 confidence floor.
 
-use keyhog_scanner::confidence::known_prefix_confidence_floor;
+use keyhog_scanner::testing::confidence::known_prefix_confidence_floor;
 
 #[test]
 fn confidence_prefix_floor_slack_xoxb() {

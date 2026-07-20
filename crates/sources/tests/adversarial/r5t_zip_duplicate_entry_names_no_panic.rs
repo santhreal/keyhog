@@ -24,7 +24,7 @@ fn r5t_zip_duplicate_entry_names_no_panic() {
     let bodies: Vec<String> = FilesystemSource::new(dir.path().to_path_buf())
         .chunks()
         .map(|chunk| chunk.expect("duplicate-name zip must not emit source errors"))
-        .map(|chunk| chunk.data.to_string())
+        .map(|chunk| chunk.data.as_str().to_owned())
         .collect();
     assert!(
         bodies.iter().any(|body| body.contains("DUPLICATE_FIRST=1")),
@@ -60,7 +60,7 @@ fn duplicate_zip_with_fake_eocd_in_comment_scans_both_entries() {
     let bodies: Vec<String> = FilesystemSource::new(dir.path().to_path_buf())
         .chunks()
         .map(|chunk| chunk.expect("fake-comment duplicate zip must not emit source errors"))
-        .map(|chunk| chunk.data.to_string())
+        .map(|chunk| chunk.data.as_str().to_owned())
         .collect();
     assert!(
         bodies

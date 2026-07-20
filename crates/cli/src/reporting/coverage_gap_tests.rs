@@ -471,6 +471,7 @@ fn every_kind_is_zero_on_empty() {
 fn fail_severity_set_is_exact() {
     use CoverageGapKind::*;
     for kind in [
+        ScannerStructuredParseFailure,
         SourceError,
         NonBinaryUnreadable,
         GitObjectUnreadable,
@@ -482,6 +483,8 @@ fn fail_severity_set_is_exact() {
         GitLfsPointer,
         BinaryDegraded,
         BinaryUnreadable,
+        // KH-1347: line identity wrong → FAIL so incomplete exit shares this set.
+        ScannerLineOffsetMismatch,
     ] {
         assert_eq!(
             kind.severity(),
@@ -498,12 +501,10 @@ fn warn_severity_set_is_exact() {
         OverMaxSize,
         Binary,
         Excluded,
-        ScannerStructuredParseFailure,
         ScannerStructuredOversizeSkip,
         ScannerDecodeTruncation,
         ScannerInvalidPatternIndexSkip,
         ScannerBoundaryCardinalityMismatch,
-        ScannerLineOffsetMismatch,
     ] {
         assert_eq!(
             kind.severity(),
@@ -515,7 +516,7 @@ fn warn_severity_set_is_exact() {
 
 #[test]
 fn severity_partition_totals_all_kinds() {
-    // 11 FAIL + 9 WARN = 20, no kind is left unclassified, and the split is
+    // 12 FAIL + 8 WARN = 20, no kind is left unclassified, and the split is
     // pinned so a future re-classification is a deliberate, reviewed change.
     let fail = CoverageGapKind::ALL
         .iter()
@@ -525,9 +526,78 @@ fn severity_partition_totals_all_kinds() {
         .iter()
         .filter(|k| k.severity() == CoverageSeverity::Warn)
         .count();
-    assert_eq!(fail, 11, "expected 11 FAIL categories, got {fail}");
-    assert_eq!(warn, 9, "expected 9 WARN categories, got {warn}");
+    assert_eq!(fail, 12, "expected 12 FAIL categories, got {fail}");
+    assert_eq!(warn, 8, "expected 8 WARN categories, got {warn}");
     assert_eq!(fail + warn, CoverageGapKind::ALL.len());
+    assert_eq!(
+        CoverageGapKind::fail_class_kinds().count(),
+        fail,
+        "fail_class_kinds() must match severity()==Fail filter (KH-1410)"
+    );
+}
+
+/// Daemon `SourceCoverageGaps::fail_class_total` is the source-skip FAIL
+/// subset (no binary/scanner/source_errors). Pin it against skip-field FAIL
+/// kinds so protocol and CLI incomplete exits cannot diverge on those fields
+/// (KH-1463 partial lock).
+#[test]
+fn daemon_source_coverage_gaps_fail_class_matches_source_skip_fail_kinds() {
+    use crate::daemon::protocol::SourceCoverageGaps;
+    let gaps = SourceCoverageGaps {
+        over_max_size: 1,
+        binary: 1,
+        unreadable: 2,
+        git_object_unreadable: 3,
+        archive_truncated: 4,
+        binary_section_name_unresolved: 5,
+        source_truncated: 6,
+        structured_source_parse_failures: 7,
+        archive_duplicate_scan_unavailable: 8,
+        git_lfs_pointer: 9,
+    };
+    // WARN fields must not contribute.
+    assert_eq!(
+        gaps.fail_class_total(),
+        2 + 3 + 4 + 5 + 6 + 7 + 8 + 9,
+        "daemon fail_class_total must exclude over_max_size and binary"
+    );
+    assert_eq!(gaps.total(), gaps.fail_class_total() + 1 + 1);
+}
+
+/// KH-1410: hand-rolled incomplete-exit sums cannot drift from CoverageGapKind.
+#[test]
+fn fail_class_total_sums_only_fail_kinds() {
+    let counts = all_ones();
+    let via_kinds: usize = CoverageGapKind::fail_class_kinds()
+        .map(|k| k.count(&counts))
+        .sum();
+    assert_eq!(counts.fail_class_total(), via_kinds);
+    // WARN-only categories must not contribute.
+    for kind in CoverageGapKind::ALL {
+        if kind.severity() == CoverageSeverity::Warn {
+            // all_ones sets every counter to 1, so each WARN kind contributes 1
+            // to total but 0 to fail_class_total.
+            assert!(
+                kind.count(&counts) > 0,
+                "{kind:?} should be non-zero in all_ones fixture"
+            );
+        }
+    }
+    let warn_sum: usize = CoverageGapKind::ALL
+        .iter()
+        .filter(|k| k.severity() == CoverageSeverity::Warn)
+        .map(|k| k.count(&counts))
+        .sum();
+    let all_sum: usize = CoverageGapKind::ALL.iter().map(|k| k.count(&counts)).sum();
+    assert_eq!(
+        counts.fail_class_total() + warn_sum,
+        all_sum,
+        "FAIL+WARN partition must cover every kind count"
+    );
+    assert!(
+        counts.fail_class_total() < all_sum,
+        "WARN categories must be excluded from fail_class_total"
+    );
 }
 
 #[test]

@@ -1,6 +1,6 @@
 //! R5-D2 / KH-GAP-174: when GPU self-test passes, `--require-gpu` scan must exit 0.
 
-use crate::e2e::support::{binary, write_temp_file};
+use crate::support::{binary, write_temp_file};
 use std::process::Command;
 
 #[test]

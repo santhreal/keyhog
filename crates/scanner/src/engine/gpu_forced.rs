@@ -21,6 +21,7 @@ impl CompiledScanner {
         let mut slot = self
             .gpu_last_degrade_reason
             .lock()
+            // LAW10: reporting-only; poison does not invalidate the recorded degradation reason, and the operator-visible counter is incremented below.
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         *slot = Some(reason);
         self.gpu_degrade_count

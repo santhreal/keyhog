@@ -53,7 +53,7 @@ fn matches_for(scanner: &CompiledScanner, line: &str) -> Vec<(String, String)> {
         .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
         .into_iter()
         .flatten()
-        .map(|m| (m.detector_id.to_string(), m.credential.to_string()))
+        .map(|m| (m.detector_id.to_string(), m.credential.as_str().to_string()))
         .collect()
 }
 

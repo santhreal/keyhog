@@ -10,7 +10,8 @@
 //! grant/deny decisions (the exact recall/precision boundary this module owns).
 
 use keyhog_scanner::testing::confidence::{
-    known_prefix_body, known_prefix_confidence_floor, KNOWN_PREFIXES,
+    known_prefix_body, known_prefix_confidence_floor,
+    known_prefix_confidence_floor_with_degenerate_limit, KNOWN_PREFIXES,
 };
 
 // ── list integrity ───────────────────────────────────────────────────────
@@ -152,6 +153,15 @@ fn a_placeholder_word_credential_is_denied_the_floor() {
 fn a_degenerate_repeat_body_is_denied_the_floor() {
     // AKIA + a 16-char X run: a known-prefix placeholder, not a key body.
     assert_eq!(known_prefix_confidence_floor("AKIAXXXXXXXXXXXXXXXX"), None);
+}
+
+#[test]
+fn detector_owned_repeat_limit_denies_the_floor() {
+    assert_eq!(
+        known_prefix_confidence_floor_with_degenerate_limit("ghp_aaaaaa", 5),
+        None,
+        "the active detector's repeat limit must govern the known-prefix bypass",
+    );
 }
 
 #[test]

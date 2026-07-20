@@ -6,9 +6,61 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Fixed
 
+- Phase-two GPU DFA resident batches keep grown haystack capacities aligned to
+  the declared 32-bit element ABI, so 8 MiB coalesced scans dispatch on CUDA.
+- Prerelease now requires a signed release bundle for installer smoke tests and
+  a clean, candidate-bound 8 MiB GPU-versus-Hyperscan crossover artifact.
+- Offline installs verify sibling Minisign signatures when supplied and reject
+  empty, invalid, or wrong-key signatures before replacing an installed binary.
+- GPU literal sidecars reject absolute, parent-traversal, symbolic-link, and
+  hard-link members before extraction.
+- Known-prefix confidence and entropy fallback suppression now use each
+  detector TOML's `degenerate_run_min_length` instead of a scanner-wide limit.
+- Post-match placeholder, diversity, repeated-run, decoded-envelope,
+  fixture-path, and model-context confidence tuning now compiles from each
+  detector TOML instead of scanner literals.
+- Detector resolution priority, decoder ancestry, generic assignment suffixes,
+  entropy thresholds, and backend policy now compile into one typed detector
+  execution plan used by CPU, SIMD, and GPU result processing.
+- Default detector resolution priority no longer perturbs the canonical detector
+  digest, while non-default collision policy remains cache-bound.
+- Generic vendor and exact-keyword tail suffixes now come from the owning
+  detector TOML instead of a scanner regex literal.
+- Scanner profiling, generic-shape adjudication, segment attribution, regex
+  truncation, and GPU artifact/cache/input policy now live outside the runtime
+  engine, with exact complexity ratchets lowered to the new ownership boundary.
+- Oversized staged-diff headers now emit a recoverable coverage error while
+  preserving later staged records, and Docker archive extraction no longer
+  carries an unused archive-scope argument.
+- Installer support claims now name the exact released architectures. Linux and
+  Windows arm64 are explicitly unsupported and release selection tests lock that
+  contract.
+- Obsolete `bench-v1` artifacts and their unverifiable README claims are removed;
+  benchmark reports now render only current-schema evidence.
+- Decoded finding resolution preserves exact raw credential bytes when the same
+  detector matched that source coordinate. Otherwise, it prefers the shallowest
+  valid decoded representation.
+- Detector-definition suppression recognizes complete path segments at relative,
+  absolute, POSIX, and Windows boundaries without matching partial directory names.
+- Kubernetes Secret classification reads parsed YAML fields rather than matching
+  `kind: Secret` text in comments or scalar prose.
+- Scanner pre-exit hook registration is first-writer-wins without panicking, and
+  zlib admission rejects reserved CINFO window sizes.
+- Caesar decode admission now requires detector prefixes at token boundaries, so
+  an interior rotated prefix cannot synthesize a competing provider finding.
+- Grouped extraction keeps the participating alternate capture, service-specific
+  private-key detectors retain complete PEM blocks, and short detector aliases
+  require token boundaries so broader detectors cannot steal exact findings.
+- Scan telemetry scopes propagate into Rayon post-processing workers, so nested
+  compiled scans contribute to the owning scan receipt without global state.
 - Automatic autoroute recovery now covers Hyperscan/SIMD runtime faults as well
   as GPU faults, replays the stable batch through the fastest remaining
   measured-correct peer, and quarantines the failed workload route.
+- Autoroute uses paired same-backend timing when it can distinguish execution
+  plans. For a statistical tie, it prefers the typed plan's compiled default or
+  a stable tied plan whose interval remains below every peer backend plan.
+- GitHub Action scans publish reports before restoring scanner failures, and
+  unreadable findings reports fail closed even when findings are advisory.
 - Generic plausibility now compiles its alphanumeric ratio, source type-name
   limits, and URL/path high-entropy exemption length from the owning detector
   TOML instead of scanner literals.
@@ -18,10 +70,56 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - GPU MoE dispatch now reuses its uniform buffer and bind group with each
   exclusive pooled buffer set, validates device buffer and workgroup limits
   before submission, and recovers from a poisoned pool without panicking.
+- SARIF `executionSuccessful` is false when `keyhog.scan.status` is Partial (or
+  Failed/Cancelled), so consumers that only read that flag cannot treat
+  coverage-gap runs as green (KH-1437).
+- `.env` multiline / unclosed-quote reconstruction caps continuation joins at 64
+  lines so a missing closer cannot swallow later KEY=VALUE pairs (KH-1432).
+- `SensitiveString` `Display` redacts like `Credential` / `Debug`; plaintext is
+  only via `as_str` / `Deref` (KH-1424).
+- Oversized Git diff, history, and tag lines now emit an operator-visible source
+  error instead of only incrementing an internal truncation counter.
+- Oversized staged-diff headers emit an error row and preserve later staged
+  records instead of discarding the path-read outcome.
+- Binary string extraction removes shifted or partially overlapping UTF-16
+  LE/BE suffix duplicates by byte span while preserving both byte orders.
+- Empty PDFs with extraction errors retain their unreadable or truncation event
+  without also being counted as valid image-only binary skips.
+- `keyhog watch` accepts `--max-file-size` and `--max-consecutive-failures`
+  (Tier-A) instead of hardcoding 100 MiB / 8 (KH-1461, KH-1462).
+- Incomplete exit 13 and baseline refuse use `CoverageCounts::fail_class_total`
+  driven by the `CoverageGapKind` severity table, so FAIL-class sums cannot
+  drift from the canonical kind list (KH-1410).
+- `--create-baseline` still writes the snapshot when findings exist, but exits
+  10 when any finding is Live so verify+baseline CI cannot go green on live
+  credentials (KH-1439).
+- Docker layer rewrite continues after a single filesystem chunk error instead of
+  aborting the rest of the layer (KH-1446).
+- Filesystem reader-pool spawn failures print on stderr (not only `tracing::warn`)
+  so a degraded crew cannot hide without RUST_LOG (KH-1430).
+- Coalesced phase-2 trigger/chunk cardinality mismatch recomputes every trigger
+  row instead of truncating or silently padding, and prints on stderr (KH-1431).
+- S3 objects whose ListObjects size is missing use a `Range: bytes=0..cap-1` GET
+  so a multi-GB object cannot stream unbounded before the client cap (KH-1413).
+- JWT `iss`/`sub`/`aud` metadata is revealed under `--show-secrets` via
+  `finding_metadata_with_secrets` (still length-redacted by default) (KH-1458).
+- `keyhog watch` with multiple roots loads each root's `.keyhogignore.toml`
+  RuleSuppressor instead of sharing only the primary root's policy (KH-1433).
+- CRX/openpack extraction binds openpack entry/total caps to KeyHog scan budgets
+  and uses a finite 1000× compression-ratio ceiling instead of `f64::MAX`
+  (KH-1436).
+- Daemon client receive timeouts are per request kind: Health/Shutdown/Hello 5s,
+  ScanText 60s, ScanPath 300s (KH-1459).
+- Live/Dead verification findings merge offline JWT/AWS metadata (including
+  `--show-secrets` claim reveal) keyed by credential hash (KH-1487).
+- Docker image archives enforce the same per-entry byte cap as layer archives
+  (KH-1455).
 - Source construction now returns typed unknown-name, unavailable-feature, and
   invalid-configuration errors. Canonical source names use hyphens, and retired
   underscore aliases are rejected with their exact replacement instead of being
   accepted silently.
+- S3 listings that omit object Size still fetch the object instead of treating missing Size as empty (KH-1321).
+- Selecting SimdCpu/Hyperscan on a binary built without the `simd` feature hard-errors instead of silently scanning on CPU (KH-1291).
 - Autoroute cache schema 45 requires the winning execution plan's confidence
   interval to clear every eligible route, including localization variants on
   the same backend; overlapping same-backend plans remain visibly inconclusive.
@@ -32,6 +130,28 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   ML scoring even when the cheap probabilistic gate finds little randomness;
   only unaccompanied generic candidates may take the early 0.1-confidence path
   (KH-1343).
+- Secret-scanner path suppression requires a definition-shaped path segment so apps named after scanners keep being scanned (KH-1300).
+- README star history uses the shields.io stars badge instead of a hotlinked api.star-history.com SVG that often 404s on GitHub (KH-1264).
+- Image-only PDFs with no extractable text record a Binary coverage skip instead of disappearing silently (KH-1325).
+- Decoded payloads with C0 control bytes keep their printable content instead of being discarded entirely (KH-1338).
+- Strict adversarial CI on CPU runners uses `--features ci-lean` so cudarc is not loaded (KH-1302).
+- Binary string extraction recovers UTF-16BE wide strings in addition to UTF-16LE (KH-1322).
+- Incremental cache is not persisted when findings lack a file path, so pathless secrets cannot remain marked clean for the next run (KH-1296).
+- Kubernetes Secret structured detection parses the YAML `kind` field across
+  quoted, spaced, and multi-document forms without matching comments or scalar
+  prose (KH-1341, KH-1393).
+- Gzip/zlib decode-through rescans any non-empty inflated prefix when decompression hits the size cap or mid-stream error (KH-1339).
+- `keyhog watch` applies the same default max-file-size (100 MiB) as `keyhog scan` when reading changed files, instead of the 2 GiB TOCTOU-only ceiling (KH-1310).
+- Action source-build fallback on Linux uses `--features ci-lean` so hosted runners do not link the full GPU stack (KH-1304).
+- `keyhog watch` exits after eight consecutive per-file scan/read failures instead of staying healthy while dropping secrets (KH-1334).
+- Zlib decode-through accepts any RFC 1950 header with deflate method and valid FCHECK, not only the three common 78 01/9c/da pairs (KH-1340).
+- Daemon client scan/health/stop responses time out after 300s instead of hanging forever on a wedged peer (KH-1314).
+- Daemon connections require a Hello handshake as the first frame before Scan or Shutdown (KH-1337).
+- `.env` parser reconstructs multiline quoted values and backslash-continued bare values instead of truncating at the first line (KH-1346).
+- Live-verification status-only success specs no longer suppress the body error backstop, so HTTP 200 with an error JSON body is not classified Live (KH-1298).
+- JWT `iss`/`sub`/`aud` metadata in reports is length-redacted by default so claim values do not leak through finding metadata (KH-1350).
+- Dogfood product matrix writes scan reports under `$tmp/outputs` while fixtures live only under `$tmp/scan`, so the scanner cannot read its own growing report files (KH-1303).
+- Git history, diff, staged, and tag-message streams skip oversized plumbing lines with a counted SourceTruncated gap and continue (KH-1355).
 - `keyhog calibrate-autoroute` now writes its complete workload and preset
   sweep to an isolated cache, validates the finished generation, and publishes
   it once. A failed late probe leaves the live cache byte-identical, while a
@@ -57,6 +177,28 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Watch-mode burst dedup now binds the one-way credential hash and complete
   source location. Replacing a credential at the same detector and byte span
   emits immediately instead of being mistaken for a duplicate save event.
+- Composite Action initializes `v=""` under `set -u` so branch/SHA refs no
+  longer crash with unbound `v` before download or source-build (KH-1267).
+- Action `fail-on-findings: true` fails the job on process exit 1 even when the
+  report parses to zero findings (KH-1330).
+- `keyhog watch` applies `.keyhogignore.toml` `RuleSuppressor` after resolve,
+  matching `keyhog scan` (KH-1329). Watch dedup maps use bounded FIFO eviction
+  instead of O(N) retain spikes (KH-1311).
+- `keyhog hook install` rewrites KeyHog-owned hooks when bytes differ from the
+  current template; only an exact-byte match is "already installed" (KH-1333).
+- `--create-baseline` / `--update-baseline` refuse to write and exit non-zero
+  when the scan panicked, hit FAIL-class coverage gaps, or failed the
+  incremental cache (KH-1352).
+- Incomplete-coverage exit 13 uses the CoverageGapKind FAIL set only (including
+  line-offset mapping mismatches). Deliberate binary / over-max WARN skips no
+  longer flip a clean scan to exit 13 (KH-1347).
+- Missing or non-finite match confidence is treated as 0.0 for
+  `--min-confidence` and per-detector floors (KH-1351).
+- GPU runtime-fault accounting stores the degrade reason even when the diagnostic mutex is poisoned (KH-1290).
+- Daemon incomplete exit 13 uses FAIL-class source gaps only, matching local
+  scan (KH-1368). Daemon findings with `VerificationResult::Live` exit 10
+  instead of collapsing to exit 1 (KH-1379).
+- Daemon source coverage gaps merge into process-local skip counters before reporting so SARIF/human gap summaries match in-process scans (KH-1369).
 
 ### Changed
 

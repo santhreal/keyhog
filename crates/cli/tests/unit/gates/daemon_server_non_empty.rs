@@ -23,11 +23,18 @@ fn daemon_server_non_empty() {
             && !prod.contains("tracing::debug!(\"daemon: connection ended with error: {e:#}\");"),
         "daemon connection framing/protocol errors must be warn-visible, not debug-only"
     );
+    let await_position = prod
+        .find("match accept_task.await")
+        .expect("daemon shutdown awaits the accept task");
+    let cleanup_position = prod
+        .find("let cleanup = remove_daemon_socket_on_shutdown(socket_path)")
+        .expect("daemon shutdown records socket cleanup");
     assert!(
-        prod.contains(".context(\"daemon: accept loop task failed during shutdown\")?")
+        await_position < cleanup_position
+            && prod.contains("DaemonServiceFailure::AcceptLoopTask(join_error.to_string())")
             && prod.contains("fn remove_daemon_socket_on_shutdown(")
             && prod.contains("daemon: remove socket {} during shutdown"),
-        "daemon shutdown must surface accept-loop join and socket cleanup failures"
+        "daemon shutdown must preserve accept-loop failures and unlink only after termination"
     );
     assert!(
         !prod.contains("let _ = accept_task.await")

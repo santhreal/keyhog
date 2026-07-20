@@ -1,5 +1,11 @@
 use super::ExtractedPair;
 
+/// Cap on how many subsequent lines an unclosed quoted value or backslash
+/// continuation may swallow (KH-1432). Without a cap, a single missing closer
+/// at the top of a large `.env` would pull the rest of the file into one
+/// value and suppress every later KEY=VALUE pair.
+const MAX_ENV_VALUE_CONTINUATION_LINES: usize = 64;
+
 /// Parse KEY=VALUE lines from an .env file.
 ///
 /// Quoting styles recognised:
@@ -7,6 +13,9 @@ use super::ExtractedPair;
 /// - `` KEY=`value` `` backtick-quoted bodies (some shells + dotenv-cli
 ///   accept these).
 /// - Bare `KEY=value` with no quotes.
+/// - Quoted multiline values (`KEY="line1\nline2"`) and backslash-continued
+///   bare values (`KEY=part1\\\npart2`) (KH-1346), capped at
+///   [`MAX_ENV_VALUE_CONTINUATION_LINES`] joins (KH-1432).
 ///
 /// Inline comments are stripped on UNQUOTED values only. Sample seen in
 /// `.env` files: `DB_PASS=p4ssw0rd # rotate quarterly` -> value = `p4ssw0rd`.
@@ -14,28 +23,69 @@ use super::ExtractedPair;
 /// literal string including the hash.
 pub(crate) fn parse_env(text: &str) -> Vec<ExtractedPair> {
     let mut pairs = Vec::new();
-    for (line_idx, line) in text.lines().enumerate() {
-        let trimmed = line.trim();
+    let lines: Vec<&str> = text.lines().collect();
+    let mut i = 0usize;
+    while i < lines.len() {
+        let line_idx = i;
+        let trimmed = lines[i].trim();
+        i += 1;
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
         let after_export = strip_export_prefix(trimmed);
-        if let Some((key, value)) = after_export.split_once('=') {
-            let key = key.trim();
-            let value = value.trim();
-            if key.is_empty() {
-                continue;
-            }
-            let unquoted = unquote_env_value(value);
-            pairs.push(ExtractedPair {
-                context: key.to_string(),
-                value: unquoted,
-                line: line_idx + 1,
-                transport_decoded: false,
-            });
+        let Some((key, value_start)) = after_export.split_once('=') else {
+            continue;
+        };
+        let key = key.trim();
+        if key.is_empty() {
+            continue;
         }
+        let mut value = value_start.trim().to_string();
+        // Open quoted value without a closing quote on this line: keep joining
+        // subsequent lines until the quote closes, EOF, or the continuation
+        // cap (KH-1432). Past the cap, emit the partial value and resume
+        // parsing so later keys are not swallowed.
+        if let Some(quote) = open_quote_byte(&value) {
+            if closing_quote_idx(&value, quote).is_none() {
+                let mut joined = 0usize;
+                while i < lines.len() && joined < MAX_ENV_VALUE_CONTINUATION_LINES {
+                    value.push('\n');
+                    value.push_str(lines[i]);
+                    i += 1;
+                    joined += 1;
+                    if closing_quote_idx(&value, quote).is_some() {
+                        break;
+                    }
+                }
+            }
+        } else {
+            // Bare backslash continuations: `KEY=foo\\\nbar` → `foobar`.
+            let mut joined = 0usize;
+            while value.ends_with('\\')
+                && !value.ends_with("\\\\")
+                && i < lines.len()
+                && joined < MAX_ENV_VALUE_CONTINUATION_LINES
+            {
+                value.pop(); // drop trailing \
+                value.push_str(lines[i].trim_start());
+                i += 1;
+                joined += 1;
+            }
+        }
+        let unquoted = unquote_env_value(&value);
+        pairs.push(ExtractedPair {
+            context: key.to_string(),
+            value: unquoted,
+            line: line_idx + 1,
+            transport_decoded: false,
+        });
     }
     pairs
+}
+
+fn open_quote_byte(s: &str) -> Option<u8> {
+    let b = s.as_bytes().first().copied()?;
+    matches!(b, b'"' | b'\'' | b'`').then_some(b)
 }
 
 /// Strip a leading `export` keyword (`export KEY=VALUE`, accepted by POSIX

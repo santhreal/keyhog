@@ -19,7 +19,7 @@ fn corrupt_zip_truncated_fails_loud_and_scan_continues() {
         .chunks()
         .collect();
     let (chunks, errors) = split_chunk_results(&rows);
-    let bodies: Vec<String> = chunks.iter().map(|c| c.data.to_string()).collect();
+    let bodies: Vec<String> = chunks.iter().map(|c| c.data.as_str().to_owned()).collect();
     assert!(bodies.iter().any(|b| b.contains("OK=1")));
     assert_eq!(
         errors.len(),

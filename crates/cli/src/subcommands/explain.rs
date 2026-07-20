@@ -290,6 +290,20 @@ fn print_detection_policy(d: &DetectorSpec, style: &crate::style::Palette) {
             confidence.soft_context_suppression_threshold,
             confidence.encrypted_context_suppression_threshold,
         );
+        let post = confidence.post_match;
+        println!(
+            "      post_match: placeholder_multiplier={} minimum_byte_diversity={} low_diversity_multiplier={} maximum_repeat_ratio={} degenerate_run_min_length={} degenerate_repeat_multiplier={} data_envelope_multiplier={} fixture_path_multiplier={} ml_context_reapply_below={}",
+            post.placeholder_multiplier,
+            post.minimum_byte_diversity,
+            post.low_diversity_multiplier,
+            post.maximum_repeat_ratio,
+            post.degenerate_run_min_length,
+            post.degenerate_repeat_multiplier,
+            post.data_envelope_multiplier
+                .map_or_else(|| "none".into(), |value| value.to_string()),
+            post.fixture_path_multiplier,
+            post.ml_context_reapply_below,
+        );
     }
     macro_rules! optional_policy {
         ($name:literal, $value:expr, $unit:literal) => {

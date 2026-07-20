@@ -1,7 +1,7 @@
 schema_version = 1
 detector_id = "dropbox-access-token"
 service = "dropbox"
-severity = "critical"
+severity = "high"
 
 [[positive]]
 text = "sl.9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeFgHiJkLmNoPqRsTuVwXy1234567890AbCdEfGhIjKlMnOpQrStUv"

@@ -50,24 +50,22 @@ fn github_classic_not_applicable_variants() {
 }
 
 #[test]
-fn github_oauth_family_shares_classic_checksum() {
-    // gho_/ghu_/ghs_/ghr_ share the classic body: 30-char entropy + 6-char
-    // CRC32-base62 checksum, CRC over the entropy ONLY (prefix-independent). A
-    // correct classic checksum stays valid under every sibling prefix; a
-    // mismatch is rejected. Before this fix only ghp_ was validated, so
-    // fabricated gho_/ghu_/ghs_/ghr_ tokens slipped through as false positives.
+fn github_oauth_families_use_their_detector_owned_classic_checksum() {
+    // Each GitHub family owns its validator in detector TOML. The classic PAT
+    // wrapper only claims ghp_; the catalog dispatches sibling prefixes to
+    // their own detector plans.
     // `0uCPlr` == base62(crc32("A" * 30)); see `github_classic_all_as_valid`.
     const ENTROPY_AND_CK: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0uCPlr";
     for prefix in ["gho_", "ghu_", "ghs_", "ghr_"] {
         let valid = format!("{prefix}{ENTROPY_AND_CK}");
         assert_eq!(
-            GithubClassicPatValidator.validate(&valid),
+            validate_checksum(&valid),
             ChecksumResult::Valid,
             "{prefix} token with a correct classic checksum must validate"
         );
         let fabricated = format!("{prefix}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA000000");
         assert_eq!(
-            GithubClassicPatValidator.validate(&fabricated),
+            validate_checksum(&fabricated),
             ChecksumResult::Invalid,
             "{prefix} token with a wrong checksum must be rejected"
         );
@@ -124,21 +122,21 @@ fn slack_valid_and_invalid_variants() {
             "xox",
             "b-1234567890-1234567890-abcdefghijklmnopqrstuvwx"
         )),
-        ChecksumResult::Valid
+        ChecksumResult::StructurallyValid
     );
     assert_eq!(
         SlackTokenValidator.validate(concat!(
             "xox",
             "p-1234567890-1234567890-abcdefghijklmnopqrstuvwx"
         )),
-        ChecksumResult::Valid
+        ChecksumResult::StructurallyValid
     );
     assert_eq!(
         SlackTokenValidator.validate(concat!(
             "xox",
             "p-1234567890-1234567890-1234567890-abcdef1234567890abcdef1234567890"
         )),
-        ChecksumResult::Valid
+        ChecksumResult::StructurallyValid
     );
     assert_eq!(
         SlackTokenValidator.validate(concat!("xox", "b-nodashes")),
@@ -229,6 +227,7 @@ fn checksum_prefixes_are_backed_by_their_detector() {
         ("github_pat_", "github-pat-fine-grained"),
         ("glpat-", "gitlab-personal-access-token"),
         ("glcbt-", "gitlab-package-registry-token"),
+        ("gldt-", "gitlab-package-registry-token"),
         ("glrt-", "gitlab-runner-authentication-token"),
         ("npm_", "npm-access-token"),
         ("pypi-", "pypi-api-token"),

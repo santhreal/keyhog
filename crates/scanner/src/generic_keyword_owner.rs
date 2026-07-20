@@ -24,7 +24,7 @@ use std::sync::Arc;
 /// by default, regex detectors opt in through `entropy_policy_priority`, and the
 /// highest priority wins an overlap. Stable detector identity breaks an
 /// equal-priority tie. Structural vendor suffixes use the one detector that
-/// explicitly declares `generic_vendor_suffix_fallback`.
+/// declares a non-empty `generic_vendor_suffixes` list.
 #[derive(Debug, Default)]
 pub(crate) struct GenericOwningDetectorIndex {
     policy_exact: HashMap<String, PolicyOwner>,
@@ -133,10 +133,10 @@ impl GenericOwningDetectorIndex {
                 }
                 *slot = Some(index);
             }
-            if detector.generic_vendor_suffix_fallback {
+            if !detector.generic_vendor_suffixes.is_empty() {
                 if let Some(previous) = vendor_suffix_fallback_index {
                     return Err(format!(
-                        "generic vendor-suffix fallback is claimed by both {:?} and {:?}; exactly one detector TOML may own it",
+                        "generic vendor suffixes are claimed by both {:?} and {:?}; exactly one detector TOML may own them",
                         detectors[previous].id, detector.id
                     ));
                 }
@@ -213,6 +213,7 @@ impl GenericOwningDetectorIndex {
             .or(self.vendor_suffix_fallback_index)?;
         let canonical_index = self
             .canonical_index_from(&kw_lower, normalized.as_deref())
+            // LAW10: no canonical-hex override means the already-resolved entropy owner remains authoritative; this does not bypass a failed policy lookup.
             .unwrap_or(owning_index);
         Some(GenericDetectorResolution {
             owning_index,

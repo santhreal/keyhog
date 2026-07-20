@@ -51,7 +51,7 @@ fn matches(s: &CompiledScanner, chunk: &Chunk) -> Vec<String> {
     s.clear_fragment_cache();
     s.scan(chunk)
         .into_iter()
-        .map(|m| m.credential.to_string())
+        .map(|m| m.credential.as_str().to_string())
         .collect()
 }
 

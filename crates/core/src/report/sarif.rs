@@ -158,6 +158,8 @@ impl<W: Write + Send> SarifReporter<W> {
         // pointing at the same span). Dedup by the canonical
         // (file_path, line, offset) tuple - that's what makes two
         // locations "the same finding" for UI purposes.
+        // Include commit so the same path/line/offset in two commits stays two
+        // related locations (KH-1353).
         // Key on a cloned `Arc<str>` (a pointer/refcount bump, not a fresh
         // allocation) rather than `to_string()`; `Arc<str>` hashes/compares by
         // content, so dedup is unchanged while the per-location String alloc is
@@ -166,11 +168,19 @@ impl<W: Write + Send> SarifReporter<W> {
             Option<std::sync::Arc<str>>,
             Option<usize>,
             usize,
+            Option<std::sync::Arc<str>>,
         )> = std::collections::HashSet::new();
         finding
             .additional_locations
             .iter()
-            .filter(|loc| seen_related.insert((loc.file_path.clone(), loc.line, loc.offset)))
+            .filter(|loc| {
+                seen_related.insert((
+                    loc.file_path.clone(),
+                    loc.line,
+                    loc.offset,
+                    loc.commit.clone(),
+                ))
+            })
             .map(Self::location_to_sarif)
             .collect()
     }
@@ -440,8 +450,8 @@ impl<W: Write + Send> Reporter for SarifReporter<W> {
         // degradations as SARIF tool-execution notifications, so a platform
         // consuming the run knows the tree was not fully covered. A "no results"
         // run with coverage gaps is not a clean bill of health.
-        // `executionSuccessful` stays true: these notifications describe scan
-        // coverage, not a reporter failure.
+        // KH-1377: incomplete/Partial scans set executionSuccessful=false so
+        // consumers that only read that flag cannot treat gap-only runs as green.
         if !self.skip_summary.is_empty() {
             let notifications = self
                 .skip_summary
@@ -461,8 +471,18 @@ impl<W: Write + Send> Reporter for SarifReporter<W> {
                     },
                 })
                 .collect::<Vec<_>>();
+            // KH-1377 / KH-1437: Partial (coverage gaps) and terminal Failed/
+            // Cancelled all force executionSuccessful=false so consumers that
+            // only read that flag cannot treat gap-only runs as green. Success
+            // and CompleteAfterRecovery remain true; keyhog.scan.status still
+            // carries the finer Partial vs Failed distinction.
+            let execution_successful = matches!(
+                self.scan_status,
+                crate::ScanCompletionStatus::Success
+                    | crate::ScanCompletionStatus::CompleteAfterRecovery
+            );
             let invocations = [SarifInvocation {
-                execution_successful: true,
+                execution_successful,
                 tool_execution_notifications: notifications,
             }];
             write!(self.writer, ",\"invocations\":")?;

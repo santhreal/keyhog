@@ -11,12 +11,12 @@ severity = "critical"
 
 [[positive]]
 text = "---- BEGIN SSH2 ENCRYPTED PRIVATE KEY ----\nComment: \"2048-bit rsa\"\nP2/56wAAAgIAAAAmSSH2PRIVBODYssh2bodyssh2bodyssh2body0001\nHpW3RqwsULLotTK1HAIPDqATPve1M6CgtxzBSBRKasyo1SSqT21dxfF1yAUHk\n---- END SSH2 ENCRYPTED PRIVATE KEY ----"
-credential = "P2/56wAAAgIAAAAmSSH2PRIVBODYssh2bodyssh2bodyssh2body0001"
+credential = "---- BEGIN SSH2 ENCRYPTED PRIVATE KEY ----\nComment: \"2048-bit rsa\"\nP2/56wAAAgIAAAAmSSH2PRIVBODYssh2bodyssh2bodyssh2body0001\nHpW3RqwsULLotTK1HAIPDqATPve1M6CgtxzBSBRKasyo1SSqT21dxfF1yAUHk\n---- END SSH2 ENCRYPTED PRIVATE KEY ----"
 reason = "Encrypted ssh.com SSH2 private key; full-block capture contains the body."
 
 [[positive]]
 text = "---- BEGIN SSH2 PRIVATE KEY ----\nSubject: deploy\nUNENCSSH2BODYunencbodyunencbodyunencbody0002base64base64\n---- END SSH2 PRIVATE KEY ----"
-credential = "UNENCSSH2BODYunencbodyunencbodyunencbody0002base64base64"
+credential = "---- BEGIN SSH2 PRIVATE KEY ----\nSubject: deploy\nUNENCSSH2BODYunencbodyunencbodyunencbody0002base64base64\n---- END SSH2 PRIVATE KEY ----"
 reason = "Unencrypted SSH2 private key variant."
 
 [[negative]]
@@ -29,7 +29,7 @@ reason = "Format mention with no closing END block."
 
 [[evasion]]
 text = "cat <<EOF\n---- BEGIN SSH2 ENCRYPTED PRIVATE KEY ----\nComment: x\nEVADESSH2BODYevadebodyevadebodyevadebody0003base64\n---- END SSH2 ENCRYPTED PRIVATE KEY ----\nEOF"
-credential = "EVADESSH2BODYevadebodyevadebodyevadebody0003base64"
+credential = "---- BEGIN SSH2 ENCRYPTED PRIVATE KEY ----\nComment: x\nEVADESSH2BODYevadebodyevadebodyevadebody0003base64\n---- END SSH2 ENCRYPTED PRIVATE KEY ----"
 reason = "Heredoc envelope around a full SSH2 block."
 
 [perf]

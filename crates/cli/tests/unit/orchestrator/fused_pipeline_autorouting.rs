@@ -13,7 +13,7 @@ fn dispatch_autoroute_calibrates_missing_buckets_and_persists() {
         "/src/orchestrator/dispatch/fused.rs"
     ))
     .expect("dispatch/fused.rs readable");
-    let backend = std::fs::read_to_string(concat!(
+    let mut backend = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/orchestrator/dispatch/backend.rs"
     ))
@@ -30,6 +30,10 @@ fn dispatch_autoroute_calibrates_missing_buckets_and_persists() {
     .expect("dispatch/backend/evidence.rs readable");
     let backend_dir =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/orchestrator/dispatch/backend");
+    backend.push_str(
+        &std::fs::read_to_string(backend_dir.join("routing.rs"))
+            .expect("dispatch/backend/routing.rs readable"),
+    );
     for file in ["evidence/match_identity.rs", "evidence/timing.rs"] {
         evidence.push_str(
             &std::fs::read_to_string(backend_dir.join(file))
@@ -67,7 +71,7 @@ fn dispatch_autoroute_calibrates_missing_buckets_and_persists() {
     assert!(
         fused.contains("MeasuredBackendRouter::new")
             && fused.contains("CachedBackendRouter::new")
-            && fused.contains("router.choose(scanner_ref, None, &batch)")
+            && fused.contains("router.choose_with_plan(scanner_ref, None, &batch)")
             && fused.contains("routing_error")
             && !fused.contains("has_gpu_decision()")
             && !fused.contains("let backend = keyhog_scanner::hw_probe::ScanBackend::SimdCpu;"),
@@ -112,8 +116,10 @@ fn dispatch_autoroute_calibrates_missing_buckets_and_persists() {
             && calibration.contains("gpu_candidate_allowed")
             && backend.contains("eligible_backend_labels")
             && backend.contains("scanner.gpu_backend_candidates()")
-            && calibration.contains("ScanBackend::GpuCuda => gpu_cuda_timing = Some(measured)")
-            && calibration.contains("ScanBackend::GpuWgpu => gpu_wgpu_timing = Some(measured)"),
+            && calibration.contains("candidate_backends")
+            && calibration.contains(".into_iter()")
+            && calibration.contains("candidate_routes")
+            && calibration.contains("route_timings_with_cold_cost"),
         "explicit autoroute GPU calibration must measure each acquired CUDA and WGPU candidate independently; candidate census belongs to the router boundary and fixed heuristic thresholds must not decide whether calibration probes GPU"
     );
     assert!(

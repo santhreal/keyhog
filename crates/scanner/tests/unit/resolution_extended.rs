@@ -96,7 +96,7 @@ fn active_plan_does_not_infer_entropy_from_a_named_detector_id() {
         }],
         keywords: vec!["KHCUSTOM_".into()],
         min_confidence: Some(0.0),
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }])
     .expect("compile custom named detector");
     let first = make_match_at_offset(
@@ -153,6 +153,60 @@ fn active_plan_suppresses_its_entropy_fallback_near_named_evidence() {
         .expect("active detector plan resolves entropy evidence");
     assert_eq!(resolved.len(), 1, "resolved={resolved:?}");
     assert_eq!(resolved[0].detector_id.as_ref(), "npm-access-token");
+}
+
+#[test]
+fn active_plan_resolves_reassembled_findings_through_their_base_detector() {
+    let specs = keyhog_core::embedded_detector_specs()
+        .iter()
+        .filter(|spec| spec.id == "generic-secret")
+        .cloned()
+        .collect();
+    let scanner = CompiledScanner::compile(specs).expect("compile generic detector plan");
+    let reassembled = make_match_at(
+        "generic-secret:reassembled",
+        "joined-secret-value",
+        Some(0.9),
+        "joined.env",
+        4,
+    );
+
+    let resolved = scanner
+        .try_resolve_matches(vec![reassembled])
+        .expect("reassembled finding inherits its base detector policy");
+
+    assert_eq!(resolved.len(), 1);
+    assert_eq!(
+        resolved[0].detector_id.as_ref(),
+        "generic-secret:reassembled",
+        "policy lookup must not erase the operator-visible provenance suffix"
+    );
+}
+
+#[test]
+fn active_plan_rejects_reassembled_findings_with_an_unknown_base_detector() {
+    let specs = keyhog_core::embedded_detector_specs()
+        .iter()
+        .filter(|spec| spec.id == "generic-secret")
+        .cloned()
+        .collect();
+    let scanner = CompiledScanner::compile(specs).expect("compile generic detector plan");
+    let unknown = make_match_at(
+        "absent-detector:reassembled",
+        "joined-secret-value",
+        Some(0.9),
+        "joined.env",
+        4,
+    );
+
+    let error = scanner
+        .try_resolve_matches(vec![unknown])
+        .expect_err("unknown reassembled detector must still fail closed");
+
+    assert!(
+        error.contains("absent-detector:reassembled"),
+        "error must name the operator-visible synthetic detector id: {error}"
+    );
 }
 
 #[test]

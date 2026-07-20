@@ -47,6 +47,8 @@ mod workload;
 use self::calibration::calibrate_fastest_correct_backend;
 use self::evidence::AutorouteDecision;
 use self::host::{host_identity_digest, AutorouteHostProfile};
+#[cfg(test)]
+use self::routing::sole_compiled_backend;
 use self::routing::{
     automatic_recovery_plan, autoroute_required, autoroute_state_recovery_selection,
     direct_backend_selection, resolve_persisted_route, AutorouteRuntimeClass, RuntimeRouteFault,
@@ -88,6 +90,10 @@ pub(crate) struct AutorouteMeasurementReceipt {
 
 pub(crate) type AutorouteMeasurementObserver = Arc<Mutex<BTreeSet<AutorouteMeasurementReceipt>>>;
 
+// v47: short warm trials use bounded repeated execution, and paired same-backend
+// rounds retain shared host drift instead of requiring independent intervals.
+// v46: every GPU timing and parity receipt binds the exact acquired execution
+// peer, and replay materializes the selected route and rejects identity drift.
 // v45: confidence separation and reported margins compare complete execution
 // routes, including localization variants on the same backend. v44 could select
 // a same-backend median without proving that exact plan fastest.
@@ -143,7 +149,7 @@ pub(crate) type AutorouteMeasurementObserver = Arc<Mutex<BTreeSet<AutorouteMeasu
 // the top, per-resolved-config routing decisions under `configs` keyed by
 // config_digest, merge-on-save. Old single-config (v19 and earlier) caches are
 // rejected on the version gate and recalibrated.
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 45;
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 48;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_ACCELERATOR_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 
@@ -264,6 +270,7 @@ impl CachedBackendRouter {
         self.runtime_faults
             .lock()
             .map(|faults| !faults.is_empty())
+            // LAW10: unavailable quarantine state is treated as invalid, the conservative state that blocks persisted routing rather than trusting it.
             .unwrap_or(true)
     }
 
@@ -328,6 +335,7 @@ impl CachedBackendRouter {
         };
         let fault = match self.runtime_faults.lock() {
             Ok(faults) => faults.get(&key).cloned(),
+            // LAW10: poisoned route-health state enters the explicit autoroute recovery selection and surfaces its repair message to the operator.
             Err(_) => {
                 let reason = "autoroute runtime route-health state is unavailable after an internal panic; its persisted route cannot be trusted until KeyHog is restarted and `keyhog calibrate-autoroute` succeeds".to_string();
                 let announce = !self.recovery_announced.swap(true, Ordering::Relaxed);
@@ -369,6 +377,45 @@ impl CachedBackendRouter {
                 ));
             }
         };
+        if route.backend.is_gpu() {
+            let identity_check = self
+                .decisions
+                .get(&key)
+                .and_then(|decision| decision.peer_identity_for_route(route))
+                .ok_or_else(|| {
+                    format!(
+                        "persisted {} route has no single acquired GPU peer identity",
+                        route.backend.label()
+                    )
+                })
+                .and_then(|expected| {
+                    scanner
+                        .acquired_gpu_peer_identity(route.backend)
+                        .map_err(|error| {
+                            format!(
+                                "could not acquire persisted {} route peer: {error}",
+                                route.backend.label()
+                            )
+                        })
+                        .and_then(|actual| {
+                            (actual == expected).then_some(()).ok_or_else(|| {
+                                format!(
+                                    "persisted {} route peer identity changed; expected {expected:?}, acquired {actual:?}",
+                                    route.backend.label()
+                                )
+                            })
+                        })
+                });
+            if let Err(reason) = identity_check {
+                let announce = !self.recovery_announced.swap(true, Ordering::Relaxed);
+                return Ok(autoroute_state_recovery_selection(
+                    scanner,
+                    phase1_plan,
+                    reason,
+                    announce,
+                ));
+            }
+        }
         Ok(BackendSelection {
             backend: route.backend,
             phase1_plan: Some(phase1_plan),
@@ -407,6 +454,7 @@ impl CachedBackendRouter {
                     },
                 );
             }
+            // LAW10: recovery remains recall-complete and this state loss is emitted unconditionally to stderr before execution continues.
             Err(_) => {
                 eprintln!(
                     "keyhog: WARNING: recovered scan coverage is complete, but the in-process autoroute quarantine state is unavailable after an internal panic; restart KeyHog and run `keyhog calibrate-autoroute` before the next scan"
@@ -979,8 +1027,10 @@ fn gpu_peer_identity(scanner: &CompiledScanner) -> Option<String> {
     };
     peers.sort_unstable();
     (!peers.is_empty()).then(|| {
-        serde_json::to_string(&peers)
-            .expect("GPU peer identity contains only serializable string fields")
+        // LAW10: serialization failure is structurally impossible for string-only peer identities and aborts instead of persisting an unbound route key.
+        serde_json::to_string(&peers).unwrap_or_else(|e| {
+            panic!("GPU peer identity contains only serializable string fields: {e}")
+        })
     })
 }
 

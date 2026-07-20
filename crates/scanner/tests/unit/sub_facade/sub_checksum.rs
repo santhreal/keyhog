@@ -244,9 +244,9 @@ fn gitlab_bad_charset_invalid() {
 #[test]
 fn gitlab_runner_token_structurally_valid() {
     let v = GitlabTokenValidator;
-    // glrt- + 16-char floor body.
+    // glrt- + 20-character body floor.
     assert_eq!(
-        v.validate("glrt-abcdefghij012345"),
+        v.validate("glrt-abcdefghij0123456789"),
         ChecksumResult::StructurallyValid
     );
 }

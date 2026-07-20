@@ -2,4 +2,4 @@ description = "explain renders a detector's spec: name, severity, and regex patt
 args = ["explain", "aws-access-key"]
 exit_code = 0
 max_ms = 20000
-stdout_contains = ["aws-access-key", "AWS Access Key", "Critical", "(AKIA|ASIA)"]
+stdout_contains = ["aws-access-key", "AWS Access Key", "critical", "(AKIA|ASIA)"]

@@ -347,6 +347,7 @@ fn run_manifest_bash_step(step_name: &str, envs: &[(&str, &str)]) -> Output {
     let mut cmd = Command::new("bash");
     cmd.arg("-c").arg(block);
     cmd.env("ACTION_SOURCE_ROOT", source_root);
+    cmd.env("ACTION_RUNNER_EXIT_CODE", "0");
     for (key, value) in envs {
         cmd.env(key, value);
     }
@@ -657,6 +658,27 @@ fn composite_action_manifest_keeps_composite_runs_shape() {
 }
 
 #[test]
+fn root_and_nested_action_entrypoints_differ_only_by_relative_paths() {
+    let root =
+        fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../action.yml"))
+            .expect("read root action.yml");
+    let nested = fs::read_to_string(action_manifest()).expect("read nested action.yml");
+    let normalized_root = root
+        .replace(
+            "ACTION_SOURCE_ROOT: ${{ github.action_path }}",
+            "ACTION_SOURCE_ROOT: ${{ github.action_path }}/../../..",
+        )
+        .replace(
+            "${{ github.action_path }}/.github/actions/keyhog/run-scan.sh",
+            "${{ github.action_path }}/run-scan.sh",
+        );
+    assert_eq!(
+        normalized_root, nested,
+        "both published action entrypoints must execute one behavior"
+    );
+}
+
+#[test]
 fn action_runs_real_keyhog_and_counts_sarif_findings() {
     let dir = TempDir::new().expect("tempdir");
     let repo = dir.path().join("repo");
@@ -686,8 +708,8 @@ fn action_runs_real_keyhog_and_counts_sarif_findings() {
     );
     assert_eq!(
         output.status.code(),
-        Some(0),
-        "real keyhog findings exit must remain on action findings path; stdout={} stderr={}",
+        Some(1),
+        "standalone action runner must fail on real findings; stdout={} stderr={}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -728,8 +750,8 @@ fn action_quick_start_scans_the_checked_out_workspace_by_default() {
         run_action_with_path_prefix(&checked_out, binary_dir, &[("ACTION_INPUT_BACKEND", "cpu")]);
     assert_eq!(
         finding.status.code(),
-        Some(0),
-        "quick-start finding must use the action findings path; output={}",
+        Some(1),
+        "quick-start standalone runner must fail on findings; output={}",
         combined_output(&finding)
     );
     assert!(
@@ -782,8 +804,8 @@ fn action_runs_real_keyhog_and_counts_text_findings() {
     );
     assert_eq!(
         output.status.code(),
-        Some(0),
-        "real keyhog text findings exit must remain on action findings path; output={}",
+        Some(1),
+        "standalone action runner must fail on real text findings; output={}",
         combined_output(&output)
     );
 
@@ -829,8 +851,8 @@ exit 1
     let output = run_action(&dir, &[]);
     assert_eq!(
         output.status.code(),
-        Some(0),
-        "findings exit must allow artifact/upload/fail steps to run; stderr={}",
+        Some(1),
+        "standalone findings exit must fail after publishing receipt outputs; stderr={}",
         String::from_utf8_lossy(&output.stderr)
     );
 
@@ -1086,7 +1108,7 @@ exit 1
 }
 
 #[test]
-fn action_treats_malformed_findings_report_as_at_least_one_finding() {
+fn action_rejects_malformed_findings_report_even_when_findings_are_advisory() {
     let dir = TempDir::new().expect("tempdir");
     write_stub(
         &dir,
@@ -1105,11 +1127,11 @@ exit 1
 "#,
     );
 
-    let output = run_action(&dir, &[]);
+    let output = run_action(&dir, &[("ACTION_INPUT_FAIL_ON_FINDINGS", "false")]);
     assert_eq!(
         output.status.code(),
-        Some(0),
-        "malformed findings report should keep CI on findings path; stderr={}",
+        Some(3),
+        "malformed findings report must fail independently of findings policy; stderr={}",
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
@@ -1145,8 +1167,8 @@ exit 10
     let output = run_action(&dir, &[]);
     assert_eq!(
         output.status.code(),
-        Some(0),
-        "malformed live report should keep CI on findings path; output={}",
+        Some(10),
+        "malformed live report must preserve the live-credential failure; output={}",
         combined_output(&output)
     );
     assert!(
@@ -1863,6 +1885,25 @@ fn composite_action_artifact_name_is_partition_and_matrix_scoped() {
 }
 
 #[test]
+fn composite_action_uploads_receipts_before_enforcing_findings_failure() {
+    let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
+    let scan_step = manifest
+        .split("- name: Run scan")
+        .nth(1)
+        .and_then(|rest| rest.split("    - name:").next())
+        .expect("scan step exists");
+
+    assert!(
+        scan_step.contains("continue-on-error: true"),
+        "the standalone runner's expected findings failure must not skip report uploads"
+    );
+    assert!(
+        manifest.contains("- name: Fail when findings reported"),
+        "the composite must convert the published receipt into its final findings failure"
+    );
+}
+
+#[test]
 fn composite_action_sarif_upload_fails_closed_on_trusted_runs() {
     let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
     let upload_step = manifest
@@ -1926,9 +1967,8 @@ fn keyhog_workflow_covers_trusted_and_fork_sarif_permission_matrix() {
         .iter()
         .find_map(|step| {
             let step = step.as_mapping()?;
-            (yaml_get(step, "uses").and_then(serde_yaml::Value::as_str)
-                == Some("./.github/actions/keyhog"))
-            .then_some(step)
+            (yaml_get(step, "uses").and_then(serde_yaml::Value::as_str) == Some("./"))
+                .then_some(step)
         })
         .expect("scan job invokes the bundled composite action");
     let action_inputs = yaml_get(action_step, "with")
@@ -2043,6 +2083,18 @@ fn composite_action_fail_step_waits_for_scan_outputs() {
         fail_step.contains("steps.scan.outputs.exit-code == '10'"),
         "live credential failures must still run through the final fail step"
     );
+    assert!(
+        fail_step.contains("steps.scan.outputs.runner-exit-code != '0'"),
+        "a tolerated runner failure must be restored after report uploads"
+    );
+    assert!(
+        fail_step.contains("ACTION_RUNNER_EXIT_CODE: ${{ steps.scan.outputs.runner-exit-code }}"),
+        "the final gate must receive the exact standalone runner status"
+    );
+    assert!(
+        fail_step.contains("ACTION_SCAN_STATUS: ${{ steps.scan.outputs.scan-status }}"),
+        "the final gate must receive the wrapper's report-validation status"
+    );
 }
 
 #[test]
@@ -2117,6 +2169,52 @@ fn composite_action_fail_step_rejects_invalid_exit_code_without_reflection() {
     assert!(
         !combined.contains("::warning title=Owned::forged"),
         "invalid exit-code value must not be reflected into workflow commands; output={combined}"
+    );
+}
+
+#[test]
+fn composite_action_fail_step_preserves_pre_receipt_runner_failure() {
+    let output = run_manifest_bash_step(
+        "Fail when findings reported",
+        &[
+            ("ACTION_RUNNER_EXIT_CODE", "2"),
+            ("ACTION_FINDINGS", ""),
+            ("ACTION_EXIT_CODE", ""),
+        ],
+    );
+    let combined = combined_output(&output);
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "an early runner usage failure must survive report-upload choreography; output={combined}"
+    );
+    assert!(
+        combined.contains("before publishing its receipt"),
+        "the early runner failure must remain actionable; output={combined}"
+    );
+}
+
+#[test]
+fn composite_action_fail_step_preserves_post_receipt_runner_failure() {
+    let output = run_manifest_bash_step(
+        "Fail when findings reported",
+        &[
+            ("ACTION_RUNNER_EXIT_CODE", "3"),
+            ("ACTION_FINDINGS", "1"),
+            ("ACTION_EXIT_CODE", "1"),
+            ("ACTION_SCAN_STATUS", "failed"),
+            ("ACTION_SEVERITY", "high"),
+        ],
+    );
+    let combined = combined_output(&output);
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "a tolerated wrapper failure must be restored after uploads; output={combined}"
+    );
+    assert!(
+        combined.contains("after publishing a failed receipt"),
+        "the post-receipt runner failure must remain actionable; output={combined}"
     );
 }
 
@@ -2685,7 +2783,7 @@ done
             .filter(|field| !field.is_empty())
             .map(|field| String::from_utf8(field.to_vec()).expect("utf-8 argument"))
             .collect::<Vec<_>>();
-        let probe = runner_temp.join("keyhog-autoroute-probe-42-3.json");
+        let probe = runner_temp.join("keyhog-autoroute-probe-42-3-job-action.json");
         let expected = vec![
             "scan".to_string(),
             "--autoroute-calibrate".to_string(),
@@ -2784,7 +2882,7 @@ fn release_floating_tags_advance_only_after_signed_newest_stable_release() {
         );
         assert!(
             job.contains("Decide whether this is the newest stable release")
-                && job.contains("grep -E '^v[0-9]+\\.[0-9]+\\.[0-9]+$'")
+                && job.contains("scripts/is-newest-stable-tag.sh \"$KEYHOG_RELEASE_TAG\"")
                 && job.contains("steps.floating.outputs.advance == 'true'"),
             "{name} must reject prereleases and older manual reruns before moving a floating tag"
         );
@@ -3137,8 +3235,18 @@ exit 0
 fn keyhog_workflow_dogfoods_local_composite_action() {
     let workflow = fs::read_to_string(keyhog_workflow()).expect("read keyhog.yml");
     assert!(
-        workflow.contains("uses: ./.github/actions/keyhog"),
+        workflow.contains("uses: ./"),
         "repo CI must dogfood the bundled composite action, not a divergent inline scanner"
+    );
+    let root_action =
+        fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../action.yml"))
+            .expect("read root action.yml");
+    assert!(
+        root_action.contains("continue-on-error: true")
+            && root_action
+                .contains("bash \"${{ github.action_path }}/.github/actions/keyhog/run-scan.sh\"",)
+            && root_action.contains("steps.scan.outputs.runner-exit-code != '0'"),
+        "the root action must upload reports before restoring the standalone runner status"
     );
     assert!(
         workflow.contains("fail-on-findings: 'false'"),
@@ -3205,33 +3313,25 @@ fn differential_bench_smoke_fails_closed_before_scoring() {
 }
 
 #[test]
-fn differential_bench_installs_verified_keyhog_release_binary() {
+fn differential_bench_builds_checked_out_keyhog_release_binary() {
     let workflow =
         fs::read_to_string(differential_bench_workflow()).expect("read differential-bench.yml");
     let install = workflow
-        .split("- name: install keyhog (release binary)")
+        .split("- name: build checked-out keyhog (release binary)")
         .nth(1)
-        .and_then(|tail| tail.split("- name: install trufflehog").next())
-        .expect("keyhog release install step exists");
+        .and_then(|tail| tail.split("- name: install required competitors").next())
+        .expect("checked-out keyhog build step exists");
     assert!(
-        install.contains("asset=\"keyhog-linux-x86_64\""),
-        "differential bench must name the release asset once and verify that exact file"
+        install.contains("cargo build --locked --release -p keyhog --bin keyhog"),
+        "differential bench must measure the checked-out KeyHog source"
     );
     assert!(
-        install.contains("\"$url.sha256\""),
-        "differential bench must download the matching release checksum"
+        install.contains("install -m 0755 target/release/keyhog \"$HOME/.local/bin/keyhog\""),
+        "differential bench must install only the release artifact it just built"
     );
     assert!(
-        install.contains("sha256sum -c \"$asset.sha256\""),
-        "differential bench must verify the release checksum before PATH install"
-    );
-    assert!(
-        install.contains("install -m 0755 \"$RUNNER_TEMP/$asset\" \"$HOME/.local/bin/keyhog\""),
-        "differential bench must install only the verified temporary asset"
-    );
-    assert!(
-        !install.contains("-o \"$HOME/.local/bin/keyhog\""),
-        "differential bench must not curl a release binary straight into PATH"
+        install.contains("git rev-parse HEAD"),
+        "differential evidence must disclose the exact checked-out KeyHog commit"
     );
 }
 
@@ -3249,8 +3349,10 @@ fn differential_bench_scanner_versions_fail_closed() {
         "scanner version proof must fail the workflow on command failures"
     );
     assert!(
-        versions.contains("keyhog --version") && versions.contains("trufflehog --version"),
-        "scanner version proof must exercise the installed keyhog/trufflehog binaries"
+        versions.contains("keyhog --version")
+            && versions.contains("betterleaks --version")
+            && versions.contains("kingfisher --version"),
+        "scanner version proof must exercise every required installed competitor"
     );
     assert!(
         !versions.contains("set +e") && !versions.contains("|| true"),
@@ -3628,8 +3730,8 @@ exit 1
     );
     assert_eq!(
         output.status.code(),
-        Some(0),
-        "text findings exit should stay on findings path; stderr={}",
+        Some(1),
+        "standalone text findings must fail after counting the report; stderr={}",
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
@@ -3680,8 +3782,8 @@ exit 1
     );
     assert_eq!(
         output.status.code(),
-        Some(0),
-        "jsonl findings exit should stay on findings path; stderr={}",
+        Some(1),
+        "standalone JSONL findings must fail after counting the report; stderr={}",
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
@@ -3766,7 +3868,7 @@ exit 0
 }
 
 #[test]
-fn action_treats_non_object_findings_jsonl_as_at_least_one_finding() {
+fn action_rejects_non_object_findings_jsonl() {
     let dir = TempDir::new().expect("tempdir");
     write_stub(
         &dir,
@@ -3794,8 +3896,8 @@ exit 1
     );
     assert_eq!(
         output.status.code(),
-        Some(0),
-        "non-object findings jsonl should keep CI on findings path; output={}",
+        Some(3),
+        "non-object findings JSONL must fail report validation; output={}",
         combined_output(&output)
     );
     assert!(

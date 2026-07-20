@@ -198,7 +198,7 @@ pub fn collect_zip_slip_bodies<S: Source + ?Sized>(
 ) -> Vec<String> {
     collect_zip_slip_chunks(source, blocked_entry_hint)
         .into_iter()
-        .map(|chunk| chunk.data.to_string())
+        .map(|chunk| chunk.data.as_str().to_owned())
         .collect()
 }
 

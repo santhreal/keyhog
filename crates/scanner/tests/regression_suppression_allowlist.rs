@@ -48,7 +48,7 @@ fn gitleaks_scanner_source_path_is_suppressed() {
     assert!(
         named_detector_suppressed(
             CLEAN,
-            Some("/repo/scanners/gitleaks/config.toml"),
+            Some("/repo/scanners/gitleaks/rules/config.toml"),
             CodeContext::Assignment,
             FS,
             STRIPE,
@@ -63,13 +63,44 @@ fn trufflehog_scanner_source_path_is_suppressed() {
     assert!(
         named_detector_suppressed(
             CLEAN,
-            Some("/repo/tools/trufflehog/detectors.go"),
+            Some("/repo/tools/trufflehog/detectors/aws/detector.go"),
             CodeContext::Assignment,
             FS,
             STRIPE,
         ),
         "a value inside a trufflehog scanner source tree must be allowlisted (suppressed)"
     );
+}
+
+#[test]
+fn relative_detector_definition_segment_is_suppressed() {
+    for path in [
+        "detectors/gitleaks.toml",
+        r"RULES\trufflehog.toml",
+        "/repo/fixtures/gitleaks.yml",
+        r"C:\repo\testdata\gitleaks.yml",
+        "/repo/gitleaks/patterns",
+    ] {
+        assert!(
+            named_detector_suppressed(CLEAN, Some(path), CodeContext::Assignment, FS, STRIPE,),
+            "complete definition segment must suppress: {path}"
+        );
+    }
+}
+
+#[test]
+fn scanner_name_inside_an_application_segment_is_not_suppressed() {
+    for path in [
+        "detectors-old/gitleaks.toml",
+        "/repo/myrules/trufflehog.yml",
+        "/repo/fixtures2/gitleaks.yml",
+        "/repo/apps/gitleaks-demo/prod.env",
+    ] {
+        assert!(
+            !named_detector_suppressed(CLEAN, Some(path), CodeContext::Assignment, FS, STRIPE,),
+            "partial or absent definition segment must not suppress: {path}"
+        );
+    }
 }
 
 /// NEGATIVE TWIN: ordinary first-party source (`/repo/src/auth.rs`) is NOT on any

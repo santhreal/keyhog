@@ -18,7 +18,10 @@ fn pipeline_processes_chunks_across_multiple_sources() {
     ];
     let findings = scan_sources_for_test(&orch, sources, false, None).expect("scan sources");
     assert_eq!(findings.len(), 2);
-    let mut creds: Vec<String> = findings.iter().map(|f| f.credential.to_string()).collect();
+    let mut creds: Vec<String> = findings
+        .iter()
+        .map(|f| f.credential.as_str().to_string())
+        .collect();
     creds.sort();
     assert_eq!(creds, vec!["STATIC_SECRET_1", "STATIC_SECRET_2"]);
 }

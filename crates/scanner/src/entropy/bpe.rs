@@ -69,7 +69,8 @@ struct TokenCountCacheEntry {
 thread_local! {
     static TOKEN_COUNT_CACHE: RefCell<LruCache<u64, TokenCountCacheEntry>> = RefCell::new(
         LruCache::new(
-            NonZeroUsize::new(TOKEN_CACHE_ENTRIES).unwrap_or(NonZeroUsize::MIN)
+            NonZeroUsize::new(TOKEN_CACHE_ENTRIES)
+                .expect("TOKEN_CACHE_ENTRIES is a non-zero compile-time constant"),
         )
     );
     #[cfg(test)]

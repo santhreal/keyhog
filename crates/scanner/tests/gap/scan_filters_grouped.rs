@@ -271,16 +271,19 @@ fn segment_base64_padding_capped_at_two_extra_equals() {
     // uncaptured. Verifies the `pad < 2` ceiling in extend_base64_padding.
     let value = format!("{B64_BODY_31}===="); // 4 pad chars present
     let expected = format!("{B64_BODY_31}==="); // 1 captured + 2 extended
-    let creds = scan_creds(&format!("{SEGMENT_KEYWORD}={value}"));
+    let pairs = scan_pairs(&format!("{SEGMENT_KEYWORD}={value}"));
     assert!(
-        has_exact(&creds, &expected),
-        "extension must cap at 2 extra '=' -> {expected:?} (3 total), got {creds:?}"
+        pairs
+            .iter()
+            .any(|(credential, id)| id == "segment-write-key" && credential == &expected),
+        "Segment extension must cap at 2 extra '=' -> {expected:?}; got {pairs:?}"
     );
-    // No surfaced credential should carry all four '=' (would mean uncapped).
     let four = format!("{B64_BODY_31}====");
     assert!(
-        !has_exact(&creds, &four),
-        "credential {four:?} carries 4 '=': the pad<2 ceiling was not enforced"
+        !pairs
+            .iter()
+            .any(|(credential, id)| id == "segment-write-key" && credential == &four),
+        "Segment credential {four:?} carries 4 '=': the pad<2 ceiling was not enforced"
     );
 }
 
@@ -768,17 +771,19 @@ fn segment_value_credential_not_extended_past_base64_class() {
     // credential is therefore exactly `<body>=`, never extended into the
     // underscore tail.
     let value = format!("{B64_BODY_31}=");
-    let creds = scan_creds(&format!("{SEGMENT_KEYWORD}={value}_tail"));
+    let pairs = scan_pairs(&format!("{SEGMENT_KEYWORD}={value}_tail"));
     assert!(
-        has_exact(&creds, &value),
-        "segment credential must stop before the underscore tail -> {value:?}, got {creds:?}"
+        pairs
+            .iter()
+            .any(|(credential, id)| id == "segment-write-key" && credential == &value),
+        "Segment credential must stop before the underscore tail -> {value:?}; got {pairs:?}"
     );
-    // No surfaced credential should be the body fused with the underscore tail
-    // (i.e. `<body>=_tail`), which is what an erroneous prefix-walk would yield.
     let over_extended = format!("{B64_BODY_31}=_tail");
     assert!(
-        !has_exact(&creds, &over_extended),
-        "credential was extended past the base64 class into `_tail`: {creds:?}"
+        !pairs
+            .iter()
+            .any(|(credential, id)| id == "segment-write-key" && credential == &over_extended),
+        "Segment credential was extended past the base64 class: {pairs:?}"
     );
 }
 

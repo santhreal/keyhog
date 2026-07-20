@@ -105,7 +105,20 @@ pub(crate) fn anomalies_to_metadata(analysis: &JwtAnalysis) -> Option<BTreeMap<S
 /// regardless of route (no `jwt.alg_none` divergence between in-process and
 /// daemon). The keys use a `String`/`String` shape so a `VerifiedFinding`'s
 /// `HashMap<String, String>` metadata can absorb them directly.
+/// Default redacted claims (KH-1350). Prefer [`finding_metadata_with_secrets`]
+/// when `--show-secrets` is set so iss/sub/aud are revealed (KH-1458).
 pub fn finding_metadata(credential: &str) -> Option<std::collections::HashMap<String, String>> {
+    finding_metadata_with_secrets(credential, false)
+}
+
+/// JWT finding metadata. When `show_secrets` is false (default), iss/sub/aud
+/// are length-redacted (KH-1350). When true, claim values are included so an
+/// operator who already opted into plaintext credentials can inspect issuer
+/// and subject without re-decoding the JWT (KH-1458).
+pub fn finding_metadata_with_secrets(
+    credential: &str,
+    show_secrets: bool,
+) -> Option<std::collections::HashMap<String, String>> {
     let analysis = analyze(credential)?;
     // At most eight keys: jwt.alg + up to four claim keys (iss/sub/aud/exp) +
     // up to three anomaly keys (one alg anomaly, non_standard_typ, expired).
@@ -117,14 +130,36 @@ pub fn finding_metadata(credential: &str) -> Option<std::collections::HashMap<St
     // (`analyze` substitutes `<missing>` when the header omits it), so surface
     // it unconditionally for any real JWT.
     meta.insert("jwt.alg".to_string(), analysis.alg.clone());
+    // KH-1350 / KH-1458: redact iss/sub/aud by default; reveal under show_secrets.
     if let Some(iss) = &analysis.iss {
-        meta.insert("jwt.iss".to_string(), iss.clone());
+        meta.insert(
+            "jwt.iss".to_string(),
+            if show_secrets {
+                iss.clone()
+            } else {
+                redact_jwt_claim(iss)
+            },
+        );
     }
     if let Some(sub) = &analysis.sub {
-        meta.insert("jwt.sub".to_string(), sub.clone());
+        meta.insert(
+            "jwt.sub".to_string(),
+            if show_secrets {
+                sub.clone()
+            } else {
+                redact_jwt_claim(sub)
+            },
+        );
     }
     if let Some(aud) = &analysis.aud {
-        meta.insert("jwt.aud".to_string(), aud.clone());
+        meta.insert(
+            "jwt.aud".to_string(),
+            if show_secrets {
+                aud.clone()
+            } else {
+                redact_jwt_claim(aud)
+            },
+        );
     }
     if let Some(exp) = analysis.exp {
         meta.insert("jwt.exp".to_string(), exp.to_string());
@@ -140,6 +175,11 @@ pub fn finding_metadata(credential: &str) -> Option<std::collections::HashMap<St
     }
 
     Some(meta)
+}
+
+/// Redact a JWT claim for report metadata: keep length, drop the value.
+fn redact_jwt_claim(value: &str) -> String {
+    format!("<redacted {} chars>", value.chars().count())
 }
 
 /// Returns `true` when `s` looks like a JWT (three base64url segments).

@@ -2,6 +2,7 @@ pub mod aws_access_key_fires_on_canonical_shape;
 pub mod contracts_evasion_coverage_meets_minimum_floor;
 pub mod data_gov_api_key_contract_file_exists;
 pub mod detector_filename_maps_to_unique_id;
+pub mod detector_fixtures_generated;
 pub mod every_contract_schema_version_one;
 pub mod every_detector_has_at_least_one_pattern;
 pub mod every_detector_has_non_empty_name;

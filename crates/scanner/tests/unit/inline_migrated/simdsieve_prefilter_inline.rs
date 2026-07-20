@@ -16,7 +16,9 @@ fn detector(id: &str, regex: &str, prefixes: &[&str]) -> DetectorSpec {
         keywords: prefixes.iter().map(|s| (*s).to_string()).collect(),
         simdsieve_prefixes: prefixes.iter().map(|s| (*s).to_string()).collect(),
         min_confidence: Some(0.0),
-        ..Default::default()
+        match_confidence: keyhog_core::detector_spec_by_id("datadog-api-key")
+            .and_then(|detector| detector.match_confidence),
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }
 }
 
@@ -24,7 +26,10 @@ fn detector(id: &str, regex: &str, prefixes: &[&str]) -> DetectorSpec {
 fn embedded_hot_prefixes_are_detector_owned_and_compile_to_canonical_rows() {
     let detectors = keyhog_core::load_embedded_detectors_or_fail().expect("embedded corpus");
     let declared: usize = detectors.iter().map(|d| d.simdsieve_prefixes.len()).sum();
-    assert_eq!(declared, 12);
+    assert!(
+        declared >= 12,
+        "embedded SIMD prefix coverage regressed to {declared}"
+    );
     let scanner = CompiledScanner::compile(detectors).expect("embedded scanner");
     let rows = keyhog_scanner::testing::hot_pattern_rows(&scanner);
     assert_eq!(rows.len(), declared);

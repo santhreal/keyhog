@@ -85,7 +85,7 @@ fn readable_binary_is_not_counted_as_unreadable() {
         .collect::<Result<Vec<_>, _>>()
         .unwrap()
         .into_iter()
-        .map(|c| c.data.to_string())
+        .map(|c| c.data.as_str().to_owned())
         .collect();
     assert!(
         bodies.iter().any(|b| b.contains("AKIAQYLPMN5HFIQR7XYA")), // keyhog:ignore detector=aws-access-key (synthetic test fixture)

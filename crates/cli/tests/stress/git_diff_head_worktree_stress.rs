@@ -1,6 +1,6 @@
 //! R5-D2 / KH-GAP-168: `--git-diff HEAD` must include uncommitted worktree changes.
 
-use crate::e2e::support::binary;
+use crate::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 

@@ -1,6 +1,6 @@
 //! Contract: runtime exit 1 when unverified findings exist.
 
-use crate::e2e::support::scan_text_file;
+use crate::support::scan_text_file;
 
 #[test]
 fn scan_runtime_exit_one_on_planted_secret() {

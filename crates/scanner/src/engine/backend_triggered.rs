@@ -345,6 +345,7 @@ impl CompiledScanner {
     fn collect_triggered_patterns_simd(&self, _text: &str) -> Vec<u64> {
         #[cfg(feature = "simd")]
         {
+            // LAW10: fail-closed/security; backend_unavailable terminates the selected-backend scan with an operator-visible error.
             let prefilter = self.try_simd_prefilter().unwrap_or_else(|error| {
                 crate::process_exit::backend_unavailable(format!(
                     "selected Hyperscan trigger backend was not initialized: {error}"

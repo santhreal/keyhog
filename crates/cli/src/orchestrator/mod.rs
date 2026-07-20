@@ -1,6 +1,7 @@
 //! Core scanning orchestration logic for the KeyHog CLI.
 
 mod allowlist;
+pub(crate) use allowlist::load_rule_suppressor;
 mod dispatch;
 pub(crate) use dispatch::{
     automatic_backend_recovery_allowed, record_completed_backend_recovery,
@@ -17,8 +18,8 @@ use crate::args::ScanArgs;
 use crate::orchestrator_config::{
     auto_discover_detectors, autoroute_config_digest, backend_override_cli_value,
     configure_threads, gpu_runtime_policy_from_args, load_detectors_no_cache,
-    load_detectors_with_cache, parse_backend_override, resolve_scan_config,
-    resolved_scan_config_for_scanner, validate_explicit_detector_path,
+    load_detectors_or_embedded, load_detectors_with_cache, parse_backend_override,
+    resolve_scan_config, resolved_scan_config_for_scanner, validate_explicit_detector_path,
     ResolvedEngineRuntimeSettings, ResolvedScanConfig,
 };
 use crate::style;
@@ -752,6 +753,7 @@ fn setup_default_scan_runtime_with_rayon_policy(
     let mut effective_config = resolve_scan_config(&mut synthetic)?;
     validate_explicit_detector_path(&synthetic.detectors, synthetic.detectors_cli_explicit)?;
     let detectors_path = auto_discover_detectors(&synthetic.detectors)?;
+    let detectors_path_for_compile = detectors_path.clone();
     ResolvedEngineRuntimeSettings::from(&effective_config).apply();
 
     let hw = keyhog_scanner::hw_probe::probe_hardware();
@@ -780,7 +782,7 @@ fn setup_default_scan_runtime_with_rayon_policy(
         ))
     })?;
 
-    let mut detectors = crate::orchestrator_config::load_detectors_or_embedded(&detectors_path)?;
+    let mut detectors = load_detectors_or_embedded(detectors_path)?;
 
     // Apply `[detector.<id>] enabled = false`: drop the disabled detectors before
     // compilation so they never fire (mirrors `ScanOrchestrator::new`).
@@ -837,7 +839,7 @@ fn setup_default_scan_runtime_with_rayon_policy(
         .map_err(|error| {
             crate::orchestrator_config::detector_compile_failed(
                 subcommand_name,
-                &detectors_path,
+                &detectors_path_for_compile,
                 &error,
             )
         })?

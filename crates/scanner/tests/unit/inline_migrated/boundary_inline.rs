@@ -37,7 +37,9 @@ fn straddle_detector() -> DetectorSpec {
         verify: None,
         keywords: vec!["STRADDLE".into()],
         min_confidence: None,
-        ..Default::default()
+        match_confidence: keyhog_core::detector_spec_by_id("datadog-api-key")
+            .and_then(|detector| detector.match_confidence),
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }
 }
 

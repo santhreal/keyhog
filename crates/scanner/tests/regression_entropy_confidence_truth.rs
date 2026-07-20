@@ -323,18 +323,24 @@ fn production_named_confidence_uses_the_resolved_scan_entropy_threshold() {
     assert!(entropy > 3.0, "fixture must clear the moderate tier");
 
     let confidence = |entropy_threshold: f64| {
-        let detector = DetectorSpec {
+        let mut detector = DetectorSpec {
             id: ID.into(),
             name: "Custom Unanchored Token".into(),
             service: "custom".into(),
             severity: Severity::High,
             patterns: vec![PatternSpec {
-                regex: r"\b[A-Za-z0-9]{40}\b".into(),
+                regex: r"\b([A-Za-z0-9]{40})\b".into(),
+                group: Some(1),
                 ..Default::default()
             }],
             min_confidence: Some(0.0),
-            ..Default::default()
+            ..keyhog_scanner::testing::named_detector_fixture_defaults()
         };
+        detector
+            .match_confidence
+            .as_mut()
+            .expect("fixture confidence policy")
+            .named_anchor_floor = Some(0.0);
         let mut config = ScannerConfig::default();
         config.entropy_threshold = entropy_threshold;
         config.min_confidence = 0.0;
@@ -363,12 +369,12 @@ fn production_named_confidence_uses_the_resolved_scan_entropy_threshold() {
     let partial_tier = confidence(entropy - 0.5);
     let moderate_tier = confidence(entropy + 0.5);
     assert!(
-        (partial_tier - 0.096).abs() < EPS,
-        "partial entropy weight plus ordinary unknown-context adjustment must be exact: {partial_tier}"
+        (partial_tier - 0.256).abs() < EPS,
+        "capture-anchor plus partial entropy weight under unknown context must be exact: {partial_tier}"
     );
     assert!(
-        (moderate_tier - 0.04).abs() < EPS,
-        "moderate entropy weight plus ordinary unknown-context adjustment must be exact: {moderate_tier}"
+        (moderate_tier - 0.20).abs() < EPS,
+        "capture-anchor plus moderate entropy weight under unknown context must be exact: {moderate_tier}"
     );
 }
 

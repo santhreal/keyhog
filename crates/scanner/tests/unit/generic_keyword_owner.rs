@@ -163,7 +163,7 @@ fn generic_detector(id: &str, keywords: &[&str]) -> DetectorSpec {
         service: "generic".to_string(),
         kind: DetectorKind::Phase2Generic,
         keywords: keywords.iter().map(|k| k.to_string()).collect(),
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }
 }
 
@@ -175,7 +175,7 @@ fn generic_secret_detector() -> DetectorSpec {
         kind: DetectorKind::Phase2Generic,
         keywords: vec!["secret".to_string()],
         entropy_roles: vec![keyhog_core::EntropyDetectionRole::UnclaimedKeyword],
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }
 }
 
@@ -260,13 +260,13 @@ fn canonical_owner_is_stable_across_corpus_order() {
 }
 
 #[test]
-fn duplicate_vendor_suffix_fallback_is_rejected() {
+fn duplicate_vendor_suffix_owner_is_rejected() {
     let mut first = generic_detector("owner-a", &["secret"]);
-    first.generic_vendor_suffix_fallback = true;
+    first.generic_vendor_suffixes = vec!["key".into()];
     let mut second = generic_detector("owner-b", &["token"]);
-    second.generic_vendor_suffix_fallback = true;
+    second.generic_vendor_suffixes = vec!["token".into()];
     let error = GenericOwningDetectorIndex::build(&[first, second])
-        .expect_err("one fallback cannot have two owners");
+        .expect_err("one suffix list cannot have two owners");
     assert!(error.contains("claimed by both \"owner-a\" and \"owner-b\""));
 }
 
@@ -378,7 +378,7 @@ fn owning_index_uses_typed_phase2_ownership_not_reporting_service() {
         service: "stripe".to_string(),
         kind: DetectorKind::Phase2Generic,
         keywords: vec!["stripe_key".to_string()],
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let detectors = vec![named, generic_secret_detector()];
     let index = GenericOwningDetectorIndex::build(&detectors).expect("unique entropy roles");

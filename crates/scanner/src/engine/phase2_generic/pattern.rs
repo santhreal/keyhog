@@ -2,22 +2,31 @@
 
 const GENERIC_VALUE_CHARS: &str = r"a-zA-Z0-9/+=_.:!@#$%^&*-";
 
-/// Structural group-1 arm for bounded vendor-prefixed key names.
-pub(crate) const GENERIC_RE_VENDOR_SUFFIX_ARM: &str =
-    r"[a-z][a-z0-9]*(?:[._-][a-z0-9]+){0,2}[._-](?:key|secret|token)";
+const GENERIC_RE_VENDOR_PREFIX: &str = r"[a-z][a-z0-9]*(?:[._-][a-z0-9]+){0,2}[._-](?:";
+
+pub(crate) fn generic_vendor_suffix_arm(suffixes: &[String]) -> String {
+    let mut arm = String::from(GENERIC_RE_VENDOR_PREFIX);
+    for (index, suffix) in suffixes.iter().enumerate() {
+        if index != 0 {
+            arm.push('|');
+        }
+        arm.push_str(&regex::escape(suffix));
+    }
+    arm.push(')');
+    arm
+}
 
 /// Build group 1 from the single derived assignment-keyword vocabulary.
 pub(crate) fn generic_keyword_alternation() -> String {
-    generic_keyword_alternation_from(crate::assignment_keywords::assignment_keywords())
+    generic_keyword_alternation_from(
+        crate::assignment_keywords::assignment_keywords(),
+        crate::assignment_keywords::generic_vendor_suffixes(),
+    )
 }
 
-pub(crate) fn generic_keyword_alternation_from(keywords: &[String]) -> String {
-    generic_keyword_alternation_from_with_vendor_fallback(keywords, true)
-}
-
-pub(crate) fn generic_keyword_alternation_from_with_vendor_fallback(
+pub(crate) fn generic_keyword_alternation_from(
     keywords: &[String],
-    include_vendor_fallback: bool,
+    vendor_suffixes: &[String],
 ) -> String {
     let mut literals: Vec<&str> = keywords.iter().map(String::as_str).collect();
     literals.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
@@ -28,24 +37,49 @@ pub(crate) fn generic_keyword_alternation_from_with_vendor_fallback(
         }
         alternation.push_str(&regex::escape(literal));
     }
-    if include_vendor_fallback {
+    if !vendor_suffixes.is_empty() {
         if !alternation.is_empty() {
             alternation.push('|');
         }
-        alternation.push_str(GENERIC_RE_VENDOR_SUFFIX_ARM);
+        alternation.push_str(&generic_vendor_suffix_arm(vendor_suffixes));
     }
     alternation
 }
 
 /// Compile the bridge from a pre-built group-1 alternation.
+pub(crate) fn compile_generic_re_with_policy(
+    alternation: &str,
+    max_len: usize,
+    tail_suffixes: &[String],
+) -> std::result::Result<regex::Regex, regex::Error> {
+    let mut tail_alternation = String::new();
+    for (index, suffix) in tail_suffixes.iter().enumerate() {
+        if index != 0 {
+            tail_alternation.push('|');
+        }
+        tail_alternation.push_str(&regex::escape(suffix));
+    }
+    let assignment_tail = if tail_alternation.is_empty() {
+        format!(
+            r#"["'`]?\s*(?::\s*(?:&?[a-zA-Z_][a-zA-Z0-9_<>]{{0,31}}\s*[=:]\s*)?|=\s*)["'`]?([{GENERIC_VALUE_CHARS}]{{8,{max_len}}})(?:["'`]|$|[^{GENERIC_VALUE_CHARS}])"#
+        )
+    } else {
+        format!(
+            r#"(?:[._-]?(?:{tail_alternation})){{0,2}}["'`]?\s*(?::\s*(?:&?[a-zA-Z_][a-zA-Z0-9_<>]{{0,31}}\s*[=:]\s*)?|=\s*)["'`]?([{GENERIC_VALUE_CHARS}]{{8,{max_len}}})(?:["'`]|$|[^{GENERIC_VALUE_CHARS}])"#
+        )
+    };
+    regex::Regex::new(&format!("(?i)({alternation}){assignment_tail}"))
+}
+
 pub(crate) fn compile_generic_re_with_max(
     alternation: &str,
     max_len: usize,
 ) -> std::result::Result<regex::Regex, regex::Error> {
-    let assignment_tail = format!(
-        r#"(?:[._-]?(?:key|base|value|val|string|str|enc|raw|b64)){{0,2}}["'`]?\s*(?::\s*(?:&?[a-zA-Z_][a-zA-Z0-9_<>]{{0,31}}\s*[=:]\s*)?|=\s*)["'`]?([{GENERIC_VALUE_CHARS}]{{8,{max_len}}})(?:["'`]|$|[^{GENERIC_VALUE_CHARS}])"#
-    );
-    regex::Regex::new(&format!("(?i)({alternation}){assignment_tail}"))
+    compile_generic_re_with_policy(
+        alternation,
+        max_len,
+        crate::assignment_keywords::generic_assignment_tail_suffixes(),
+    )
 }
 
 /// Compile the bridge from the live derived vocabulary.
@@ -72,6 +106,10 @@ pub(crate) fn build_generic_re() -> Result<regex::Regex, String> {
     }
     let max_len = max_len
         .ok_or_else(|| "embedded detector corpus has no phase-2 generic detector".to_string())?;
-    compile_generic_re_with_max(&generic_keyword_alternation(), max_len)
-        .map_err(|error| format!("invalid generic assignment bridge: {error}"))
+    compile_generic_re_with_policy(
+        &generic_keyword_alternation(),
+        max_len,
+        crate::assignment_keywords::generic_assignment_tail_suffixes(),
+    )
+    .map_err(|error| format!("invalid generic assignment bridge: {error}"))
 }

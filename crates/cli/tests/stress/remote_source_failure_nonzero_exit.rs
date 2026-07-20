@@ -1,7 +1,7 @@
 //! KH-GAP-096: When a remote-only scan source fails to read, exit code should not
 //! be 0 (CI bots gate on exit status).
 
-use crate::e2e::support::binary;
+use crate::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 

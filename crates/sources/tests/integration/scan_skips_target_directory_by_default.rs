@@ -44,7 +44,7 @@ fn scan_skips_target_directory_by_default() {
         "surviving chunk must carry root path metadata, got {:?}",
         chunks[0].metadata.path
     );
-    let bodies: Vec<String> = chunks.iter().map(|c| c.data.to_string()).collect();
+    let bodies: Vec<String> = chunks.iter().map(|c| c.data.as_str().to_owned()).collect();
     assert!(bodies.iter().any(|b| b.contains("scan-root")));
     assert!(
         !bodies

@@ -103,7 +103,7 @@ fn scan(text: &str) -> Vec<(String, String)> {
     s.clear_fragment_cache();
     s.scan(&chunk)
         .into_iter()
-        .map(|m| (m.detector_id.to_string(), m.credential.to_string()))
+        .map(|m| (m.detector_id.to_string(), m.credential.as_str().to_string()))
         .collect()
 }
 fn surfaces_under(text: &str, detector: &str, needle: &str) -> bool {

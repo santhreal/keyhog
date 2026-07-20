@@ -26,6 +26,7 @@ fn asset_name_matches_release_convention() {
         Some("keyhog-windows-x86_64.exe")
     );
     // Unsupported (os, arch) pairs still yield None.
+    assert_eq!(API.asset_name("linux", "aarch64"), None);
     assert_eq!(API.asset_name("windows", "aarch64"), None);
     assert_eq!(API.asset_name("linux", "riscv64"), None);
 }

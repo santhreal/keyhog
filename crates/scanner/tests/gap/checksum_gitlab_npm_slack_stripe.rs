@@ -172,7 +172,7 @@ fn gitlab_glpat_space_in_body_invalid() {
     );
 }
 
-// ---- glcbt- / glrt- runner / CI-build band (floor 16) ----
+// ---- glcbt- CI-build floor 16 / glrt- runner floor 20 ----
 
 #[test]
 fn gitlab_glcbt_16_floor_valid() {
@@ -185,11 +185,13 @@ fn gitlab_glcbt_16_floor_valid() {
 }
 
 #[test]
-fn gitlab_glrt_16_floor_valid() {
+fn gitlab_glrt_16_below_detector_floor_invalid() {
+    // The glrt detector owns a 20-byte body floor. The compiled shape validator
+    // must use that pattern rather than the glcbt detector's 16-byte floor.
     let token = format!("glrt-{}", "A".repeat(16));
     assert_eq!(
         GitlabTokenValidator.validate(&token),
-        ChecksumResult::StructurallyValid
+        ChecksumResult::Invalid
     );
 }
 
@@ -204,8 +206,7 @@ fn gitlab_glcbt_64_ceiling_valid() {
 
 #[test]
 fn gitlab_glrt_15_below_floor_invalid() {
-    // glrt- body 15 (< 16) -> Invalid. Note: 15 < 20 so this proves the
-    // runner floor of 16, not the classic floor of 20, is in effect.
+    // glrt- body 15 is below the detector-owned 20-byte body floor.
     let token = format!("glrt-{}", "A".repeat(15));
     assert_eq!(
         GitlabTokenValidator.validate(&token),
@@ -214,10 +215,17 @@ fn gitlab_glrt_15_below_floor_invalid() {
 }
 
 #[test]
-fn gitlab_glrt_18_between_runner_and_classic_floor_valid() {
-    // 18 chars: below the classic glpat floor (20) but at/above the runner
-    // floor (16). For glrt- this MUST be Valid (the distinct floor matters).
-    let token = format!("glrt-{}", "A".repeat(18));
+fn gitlab_glrt_19_below_floor_invalid() {
+    let token = format!("glrt-{}", "A".repeat(19));
+    assert_eq!(
+        GitlabTokenValidator.validate(&token),
+        ChecksumResult::Invalid
+    );
+}
+
+#[test]
+fn gitlab_glrt_20_floor_valid() {
+    let token = format!("glrt-{}", "A".repeat(20));
     assert_eq!(
         GitlabTokenValidator.validate(&token),
         ChecksumResult::StructurallyValid
@@ -424,12 +432,12 @@ fn npm_crc_algorithm_self_consistency_loop() {
 
 #[test]
 fn slack_xoxb_min_segments_valid() {
-    // 10-digit, 10-digit, 15-char alnum: all minimum lengths -> Valid.
+    // 10-digit, 10-digit, 24-char alnum: all minimum lengths -> Valid.
     let token = format!(
         "xoxb-{}-{}-{}",
         "0".repeat(10),
         "1".repeat(10),
-        "a".repeat(15)
+        "a".repeat(24)
     );
     assert_eq!(
         SlackTokenValidator.validate(&token),
@@ -458,7 +466,9 @@ fn slack_xoxb_max_segments_valid() {
 fn slack_xoxb_mixed_case_alnum_segment_valid() {
     let token = format!(
         "xoxb-{}-{}-{}",
-        "123456789012", "210987654321", "AbCdEf0123456789Xyz"
+        "123456789012",
+        "210987654321",
+        format!("{}{}", "AbCdEf0123456789Xyz", "Q".repeat(5))
     );
     assert_eq!(
         SlackTokenValidator.validate(&token),
@@ -599,13 +609,13 @@ fn slack_xoxp_without_optional_group_min_valid() {
 
 #[test]
 fn slack_xoxp_with_optional_group_valid() {
-    // xoxp-{12}-{12}-{12 digits optional}-{30 alnum} -> Valid.
+    // xoxp-{12}-{12}-{12 digits}-{32 hex} -> Valid.
     let token = format!(
         "xoxp-{}-{}-{}-{}",
         "123456789012",
         "210987654321",
         "1".repeat(12),
-        "a".repeat(30)
+        "a".repeat(32)
     );
     assert_eq!(
         SlackTokenValidator.validate(&token),
@@ -615,13 +625,13 @@ fn slack_xoxp_with_optional_group_valid() {
 
 #[test]
 fn slack_xoxp_optional_group_min_10_digits_valid() {
-    // optional group lower bound is {10,13}: exactly 10 digits is Valid.
+    // The third numeric group lower bound is {10,13}; its secret is 32 hex.
     let token = format!(
         "xoxp-{}-{}-{}-{}",
         "0".repeat(10),
         "1".repeat(10),
         "2".repeat(10),
-        "b".repeat(24)
+        "b".repeat(32)
     );
     assert_eq!(
         SlackTokenValidator.validate(&token),
@@ -636,7 +646,7 @@ fn slack_xoxp_optional_group_max_13_digits_valid() {
         "0".repeat(10),
         "1".repeat(10),
         "2".repeat(13),
-        "b".repeat(24)
+        "b".repeat(32)
     );
     assert_eq!(
         SlackTokenValidator.validate(&token),

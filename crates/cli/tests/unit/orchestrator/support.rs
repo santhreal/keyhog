@@ -54,10 +54,8 @@ pub fn make_detector() -> DetectorSpec {
         verify: None,
         keywords: vec!["STATIC_SECRET".into()],
         min_confidence: None,
-        // Robust to future DetectorSpec field additions (this exhaustive literal
-        // was already stale, missing allowlist_paths/values, entropy_high, etc.);
-        // fall through to Default for any field not set explicitly above.
-        ..Default::default()
+        // Keep this fixture aligned with every required compiled detector policy.
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }
 }
 

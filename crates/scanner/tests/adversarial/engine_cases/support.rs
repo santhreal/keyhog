@@ -33,6 +33,29 @@ pub fn assert_detected(data: &str) {
     );
 }
 
+pub fn compile_test_scanner(mut detectors: Vec<DetectorSpec>) -> CompiledScanner {
+    for detector in &mut detectors {
+        let embedded = keyhog_core::detector_spec_by_id(&detector.id);
+        let baseline = embedded
+            .or_else(|| keyhog_core::detector_spec_by_id("datadog-api-key"))
+            .expect("embedded detector test policy");
+        detector.match_confidence = embedded
+            .and_then(|spec| spec.match_confidence)
+            .or(detector.match_confidence)
+            .or(baseline.match_confidence);
+        if detector.entropy_fallback.is_some() {
+            detector.ml = baseline.ml;
+            detector.entropy_fallback_confidence = detector
+                .entropy_fallback_confidence
+                .or(baseline.entropy_fallback_confidence);
+            detector.generic_assignment_confidence = detector
+                .generic_assignment_confidence
+                .or(baseline.generic_assignment_confidence);
+        }
+    }
+    CompiledScanner::compile(detectors).expect("complete test detector policies compile")
+}
+
 /// Build a simple token detector for testing.
 pub fn token_detector() -> DetectorSpec {
     DetectorSpec {
@@ -55,13 +78,13 @@ pub fn token_detector() -> DetectorSpec {
         verify: None,
         keywords: vec!["TESTKEY_".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }
 }
 
 /// Build a scanner with the test token detector.
 pub fn test_scanner() -> CompiledScanner {
-    CompiledScanner::compile(vec![token_detector()]).unwrap()
+    compile_test_scanner(vec![token_detector()])
 }
 
 /// A valid test credential that the token detector should match.

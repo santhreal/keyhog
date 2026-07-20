@@ -39,6 +39,7 @@ fn route_timings(
         let Some(base) = base else {
             continue;
         };
+        // LAW10: test-only fixtures synthesize a slower plain timing when the caller intentionally omits it; production decisions never use this constructor.
         let plain = plain.unwrap_or_else(|| {
             BackendTimingEvidence::constant_ms(
                 base.median_ms().saturating_add(1_000),
@@ -188,7 +189,7 @@ fn phase1_test_detectors() -> Vec<keyhog_core::DetectorSpec> {
         }],
         keywords: vec!["ghp_".into()],
         min_confidence: Some(0.0),
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }]
 }
 
@@ -857,6 +858,8 @@ fn valid_decision_for_host(host: &AutorouteHostProfile) -> AutorouteDecision {
             has(ScanBackend::GpuCuda).then(|| timing(1_030)),
             has(ScanBackend::GpuWgpu).then(|| timing(1_040)),
         ),
+        false,
+        false,
     )
 }
 
@@ -958,14 +961,14 @@ fn workload_key_distinguishes_equal_8mib_phase1_admission_classes() {
         &alphabet_batch,
         scanner.runtime_status().pattern_count,
         scanner.phase1_admission_summary(&alphabet_batch),
-        decode_disabled,
+        decode_disabled.clone(),
     )
     .expect("alphabet-rejected workload classifies");
     let bigram_key = workload_key_with_plan(
         &bigram_batch,
         scanner.runtime_status().pattern_count,
         scanner.phase1_admission_summary(&bigram_batch),
-        decode_disabled,
+        decode_disabled.clone(),
     )
     .expect("bigram-rejected workload classifies");
     let admitted_key = workload_key_with_plan(
@@ -1096,7 +1099,7 @@ fn disabled_or_ineligible_decode_work_contributes_exact_zero() {
         .collect::<Vec<_>>();
     let disabled = DecodeWorkloadPlan::from_limits(0, usize::MAX);
     assert_eq!(
-        decode_workload_sketch_with_plan(&batch, disabled)
+        decode_workload_sketch_with_plan(&batch, disabled.clone())
             .expect("disabled decode is classifiable"),
         DecodeAdmissionSketch::NONE,
         "disabled decode must neither consume sample budget nor project work"
@@ -1935,6 +1938,8 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
                 None,
                 Some(timing(gpu_ms + 1)),
             ),
+            false,
+            false,
         );
         decision.phase2_plain_localizer = true;
         decision
@@ -2268,6 +2273,7 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
         "artifact mismatch must be explicit: {wrong_artifact}"
     );
 
+    // LAW10: test cleanup targets an intentionally disposable path; cleanup failure cannot affect scanner behavior or findings.
     std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
 }
 
@@ -2567,13 +2573,13 @@ fn exact_tie_is_inconclusive_and_cannot_be_persisted() {
     .expect_err("an exact tie must not become a persisted autoroute decision")
     .to_string();
     assert!(
-        error.contains("no confidence-separated fastest one-shot route"),
+        error.contains("no confidence-supported one-shot route"),
         "proof rejection should name the missing separated winner, got {error:?}"
     );
 }
 
 #[test]
-fn overlapping_same_backend_plans_are_inconclusive() {
+fn same_backend_tie_with_overlapping_peer_is_inconclusive() {
     let timing = |ms| BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS);
     let decision = AutorouteDecision::from_peer_timing_evidence(
         ScanBackend::SimdCpu,
@@ -2584,22 +2590,211 @@ fn overlapping_same_backend_plans_are_inconclusive() {
         1,
         route_timings(
             timing(10),
-            Some(timing(30)),
+            Some(timing(10)),
             None,
             None,
             Some(timing(10)),
-            Some(timing(30)),
+            Some(timing(10)),
             None,
             None,
         ),
+        false,
+        false,
     );
 
     assert_eq!(
         decision.resolved_routing_route(),
         None,
-        "equal same-backend route timings do not prove which execution plan is fastest"
+        "a same-backend tie cannot resolve while a peer backend also overlaps"
     );
-    assert!(!decision.has_separated_fastest_route());
+    assert!(!decision.has_confidence_supported_route());
+}
+
+#[test]
+fn separated_backend_uses_compiled_default_when_same_backend_plans_tie() {
+    let timing = |ms| BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS);
+    let decision = AutorouteDecision::from_peer_timing_evidence(
+        ScanBackend::CpuFallback,
+        1,
+        1,
+        test_measurement_shape_evidence(1, 1),
+        7,
+        1,
+        route_timings(
+            timing(10_000),
+            Some(timing(10)),
+            None,
+            None,
+            Some(timing(10_000)),
+            Some(timing(10)),
+            None,
+            None,
+        ),
+        false,
+        false,
+    );
+
+    assert_eq!(
+        decision.resolved_routing_route(),
+        Some(MeasuredRoute {
+            backend: ScanBackend::CpuFallback,
+            phase2_plain_localizer: false,
+            phase2_keyword_localizer: false,
+        }),
+        "backend evidence may select the compiled default plan without inventing a nanosecond plan winner"
+    );
+    assert!(decision.has_confidence_supported_route());
+}
+
+#[test]
+fn peer_separated_nondefault_tie_uses_stable_typed_plan() {
+    let timing = |ms| BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS);
+    let mut timings = Vec::new();
+    for backend in [ScanBackend::CpuFallback, ScanBackend::SimdCpu] {
+        for phase2_plain_localizer in [false, true] {
+            for phase2_keyword_localizer in [false, true] {
+                let elapsed_ms = match backend {
+                    ScanBackend::CpuFallback => 30,
+                    ScanBackend::SimdCpu if phase2_plain_localizer => 10,
+                    ScanBackend::SimdCpu => 100,
+                    _ => unreachable!("fixture enumerates CPU and SIMD only"),
+                };
+                timings.push(RouteTimingEvidence::new(
+                    MeasuredRoute {
+                        backend,
+                        phase2_plain_localizer,
+                        phase2_keyword_localizer,
+                    },
+                    timing(elapsed_ms),
+                ));
+            }
+        }
+    }
+    let decision = AutorouteDecision::from_peer_timing_evidence(
+        ScanBackend::SimdCpu,
+        1,
+        1,
+        test_measurement_shape_evidence(1, 1),
+        7,
+        1,
+        timings,
+        false,
+        true,
+    );
+
+    assert_eq!(
+        decision.resolved_routing_route(),
+        Some(MeasuredRoute {
+            backend: ScanBackend::SimdCpu,
+            phase2_plain_localizer: true,
+            phase2_keyword_localizer: false,
+        }),
+        "a tied nondefault leader must resolve deterministically without claiming an exact winner"
+    );
+    assert_eq!(
+        decision.resolved_recovery_route(ScanBackend::SimdCpu, true),
+        Some(MeasuredRoute {
+            backend: ScanBackend::CpuFallback,
+            phase2_plain_localizer: false,
+            phase2_keyword_localizer: true,
+        }),
+        "a single remaining measured backend must retain its compiled default across a plan tie"
+    );
+}
+
+#[test]
+fn paired_backend_rounds_do_not_override_cross_backend_interval_overlap() {
+    let host_drift = [
+        10_000_000, 30_000_000, 12_000_000, 28_000_000, 14_000_000, 26_000_000, 16_000_000,
+    ];
+    let mut timings = Vec::new();
+    for backend in [ScanBackend::CpuFallback, ScanBackend::SimdCpu] {
+        for phase2_plain_localizer in [false, true] {
+            for phase2_keyword_localizer in [false, true] {
+                let trials = host_drift
+                    .iter()
+                    .map(|trial| {
+                        trial
+                            + if backend == ScanBackend::SimdCpu {
+                                1_000_000
+                            } else {
+                                0
+                            }
+                    })
+                    .collect::<Vec<_>>();
+                timings.push(RouteTimingEvidence::new(
+                    MeasuredRoute {
+                        backend,
+                        phase2_plain_localizer,
+                        phase2_keyword_localizer,
+                    },
+                    BackendTimingEvidence::from_trial_ns(trials).expect("valid timing rounds"),
+                ));
+            }
+        }
+    }
+    let decision = AutorouteDecision::from_peer_timing_evidence(
+        ScanBackend::CpuFallback,
+        1,
+        1,
+        test_measurement_shape_evidence(1, 1),
+        7,
+        1,
+        timings,
+        false,
+        true,
+    );
+
+    assert_eq!(
+        decision.resolved_routing_route(),
+        None,
+        "paired rounds must not replace the independent cross-backend confidence interval"
+    );
+}
+
+#[test]
+fn paired_same_backend_rounds_retain_shared_host_drift() {
+    let candidate_trials = vec![
+        10_000_000, 30_000_000, 12_000_000, 28_000_000, 14_000_000, 26_000_000, 16_000_000,
+    ];
+    let competitor_trials = candidate_trials
+        .iter()
+        .map(|trial| trial + 1_000_000)
+        .collect::<Vec<_>>();
+    let candidate =
+        BackendTimingEvidence::from_trial_ns(candidate_trials).expect("candidate trials");
+    let competitor =
+        BackendTimingEvidence::from_trial_ns(competitor_trials).expect("competitor trials");
+    let decision = AutorouteDecision::from_peer_timing_evidence(
+        ScanBackend::CpuFallback,
+        8 * 1024 * 1024,
+        1,
+        test_measurement_shape_evidence(8 * 1024 * 1024, 1),
+        7,
+        1,
+        route_timings(
+            BackendTimingEvidence::constant_ms(200, AUTOROUTE_CALIBRATION_TRIALS),
+            Some(candidate),
+            None,
+            None,
+            None,
+            Some(competitor),
+            None,
+            None,
+        ),
+        false,
+        false,
+    );
+
+    assert_eq!(
+        decision.resolved_routing_route(),
+        Some(MeasuredRoute {
+            backend: ScanBackend::CpuFallback,
+            phase2_plain_localizer: false,
+            phase2_keyword_localizer: false,
+        }),
+        "paired rounds must prove a stable plan delta even when marginal intervals share host drift"
+    );
 }
 
 #[test]
@@ -2622,6 +2817,8 @@ fn selected_margin_includes_the_next_same_backend_route() {
             None,
             None,
         ),
+        false,
+        false,
     );
 
     assert_eq!(
@@ -2665,14 +2862,8 @@ fn automatic_recovery_uses_the_fastest_remaining_measured_backend() {
     .expect("GPU route needs recovery plan");
     assert_eq!(plan.backend, ScanBackend::SimdCpu);
 
-    let simd_decision = AutorouteDecision::new(
-        ScanBackend::SimdCpu,
-        8 * 1024 * 1024,
-        1,
-        5,
-        Some(12),
-        None,
-    );
+    let simd_decision =
+        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 5, Some(12), None);
     let simd_plan = automatic_recovery_plan(
         Some(&simd_decision),
         ScanBackend::SimdCpu,
@@ -2711,7 +2902,7 @@ fn calibration_rejects_a_recovery_backend_crossover_inside_one_workload_class() 
             Some(5),
         ))
         .expect_err("recovery crossover must split the workload class");
-    assert!(error.contains("changes fastest remaining one-shot recovery route"));
+    assert!(error.contains("changes its confidence-supported remaining one-shot recovery route"));
 }
 
 #[test]
@@ -2738,7 +2929,7 @@ fn overlapping_confidence_produces_no_autoroute_decision() {
     );
 
     assert!(
-        !decision.has_separated_fastest_route(),
+        !decision.has_confidence_supported_route(),
         "fixture must retain overlapping 95% confidence intervals"
     );
     assert_eq!(decision.simd_baseline_ms(), 20);
@@ -3602,7 +3793,7 @@ fn calibration_envelope_retains_agreeing_points_and_rejects_a_crossover() {
             None,
         ))
         .expect_err("a measured winner change must split the workload identity");
-    assert!(error.contains("changes fastest route across measured points"));
+    assert!(error.contains("changes its confidence-supported route across measured points"));
     assert!(error.contains("split the workload identity"));
 }
 
@@ -4408,7 +4599,7 @@ fn autoroute_cache_rejects_an_empty_calibration_envelope() {
     .expect_err("an empty evidence envelope must never become a route")
     .to_string();
     assert!(error.contains("contains no measured calibration points"));
-    std::fs::remove_file(&path).ok();
+    std::fs::remove_file(&path).ok(); // LAW10: best-effort test cleanup; absence is the asserted post-state and cannot affect production findings.
 }
 
 #[test]
@@ -5385,6 +5576,78 @@ fn autoroute_cache_binds_every_timing_row_to_one_parity_receipt() {
 }
 
 #[test]
+fn autoroute_cache_binds_gpu_timings_and_receipts_to_one_acquired_peer() {
+    let path = std::env::temp_dir().join(format!(
+        "keyhog_autoroute_gpu_peer_identity_{}.json",
+        std::process::id()
+    ));
+    let digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let host = test_host(Some("NVIDIA GeForce RTX 5090"));
+    let key = test_workload_key();
+
+    let mut missing = AutorouteDecision::new(
+        ScanBackend::GpuWgpu,
+        8 * 1024 * 1024,
+        1,
+        12,
+        Some(20),
+        Some(7),
+    );
+    missing
+        .primary_point_mut()
+        .route_timings
+        .iter_mut()
+        .find(|entry| {
+            entry.backend == ScanBackend::GpuWgpu.label()
+                && !entry.phase2_plain_localizer
+                && !entry.phase2_keyword_localizer
+        })
+        .expect("GPU baseline timing")
+        .peer_identity = None;
+    write_tampered_decision_cache(
+        &path,
+        digest,
+        config_digest,
+        &host,
+        key.clone(),
+        missing,
+        "must bind exactly one acquired GPU peer identity",
+    );
+
+    let mut mismatched = AutorouteDecision::new(
+        ScanBackend::GpuWgpu,
+        8 * 1024 * 1024,
+        1,
+        12,
+        Some(20),
+        Some(7),
+    );
+    let receipt = mismatched
+        .primary_point_mut()
+        .candidate_receipts
+        .iter_mut()
+        .find(|receipt| {
+            receipt.backend == ScanBackend::GpuWgpu.label()
+                && !receipt.phase2_plain_localizer
+                && !receipt.phase2_keyword_localizer
+        })
+        .expect("GPU baseline parity receipt");
+    receipt.peer_identity = Some("different-acquired-peer".to_string());
+    write_tampered_decision_cache(
+        &path,
+        digest,
+        config_digest,
+        &host,
+        key,
+        mismatched,
+        "is not bound to its timing peer identity",
+    );
+
+    std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
+}
+
+#[test]
 fn autoroute_cache_requires_every_live_gpu_candidate_timing_and_receipt() {
     let dir = tempfile::tempdir().expect("autoroute GPU candidate census tempdir");
     let digest = 0x1234_5678_9ABC_DEF0u64;
@@ -5569,14 +5832,14 @@ fn autoroute_cache_rejects_selected_route_that_is_not_fastest() {
         &host,
         key.clone(),
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, Some(10), None),
-        "selected route is not the fastest persisted timing evidence",
+        "selected route is not supported by the persisted timing evidence",
     );
     let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host);
     assert!(
         loaded
-            .expect_err("selected route must match persisted fastest route")
+            .expect_err("selected route must match persisted confidence-supported route")
             .to_string()
-            .contains("selected route is not the fastest persisted timing evidence"),
+            .contains("selected route is not supported by the persisted timing evidence"),
         "autoroute cache load must not trust a route label that contradicts persisted timing evidence"
     );
 
@@ -5623,7 +5886,7 @@ fn autoroute_cache_rejects_selected_route_beaten_by_separated_confidence() {
         &host,
         key.clone(),
         bad,
-        "selected route is not the fastest persisted timing evidence",
+        "selected route is not supported by the persisted timing evidence",
     );
     let inspection = inspect_autoroute_cache(Some(&path));
     assert!(
@@ -5632,7 +5895,7 @@ fn autoroute_cache_rejects_selected_route_beaten_by_separated_confidence() {
             .as_deref()
             .is_some_and(|error| {
                 error.contains("structurally invalid")
-                    && error.contains("not the fastest persisted timing evidence")
+                    && error.contains("not supported by the persisted timing evidence")
             }),
         "inspection must surface invalid route evidence instead of silently omitting its row: {inspection:?}"
     );
@@ -5645,7 +5908,7 @@ fn autoroute_cache_rejects_selected_route_beaten_by_separated_confidence() {
         loaded
             .expect_err("a lucky-outlier backend must be rejected for the CI-faster route")
             .to_string()
-            .contains("selected route is not the fastest persisted timing evidence"),
+            .contains("selected route is not supported by the persisted timing evidence"),
         "autoroute cache load must route by confidence interval, not a single best_ns trial"
     );
 
@@ -5782,7 +6045,8 @@ fn persistent_daemon_route_uses_warm_gpu_evidence_but_one_shot_uses_cold_cost() 
         "a preinitialized daemon must select from warm GPU evidence"
     );
     assert!(
-        decision.has_separated_fastest_route() && decision.has_separated_fastest_persistent_route(),
+        decision.has_confidence_supported_route()
+            && decision.has_confidence_supported_persistent_route(),
         "the fixture must provide separated evidence for both runtime classes"
     );
     assert_eq!(
@@ -5861,6 +6125,8 @@ fn daemon_warm_routes_come_only_from_persisted_selected_backends() {
                 Some(timing(1_008)),
                 Some(timing(1_016)),
             ),
+            false,
+            false,
         ),
     );
     let router = CachedBackendRouter {
@@ -6264,6 +6530,8 @@ fn cuda_and_wgpu_are_independent_measured_candidates() {
             Some(timing(1_010)),
             Some(timing(1_015)),
         ),
+        false,
+        false,
     );
     assert_eq!(
         cuda_wins.resolved_routing_backend(),
@@ -6299,6 +6567,8 @@ fn cuda_and_wgpu_are_independent_measured_candidates() {
             Some(timing(1_016)),
             Some(timing(1_009)),
         ),
+        false,
+        false,
     );
     assert_eq!(
         wgpu_wins.resolved_routing_backend(),
@@ -6344,6 +6614,8 @@ fn phase2_plain_localizer_is_an_independent_measured_route_candidate() {
             None,
             None,
         ),
+        false,
+        false,
     );
 
     let route = decision
@@ -6389,6 +6661,8 @@ fn phase2_keyword_localizer_is_an_independent_measured_route_candidate() {
         7,
         1,
         timings,
+        false,
+        false,
     );
 
     assert_eq!(decision.resolved_routing_route(), Some(keyword_route));
@@ -6412,7 +6686,7 @@ fn live_calibration_measures_every_gpu_peer_before_resolving_or_refusing() {
             weak_anchor: false,
         }],
         keywords: vec!["KHGPUCAL".into()],
-        ..keyhog_core::DetectorSpec::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let scanner = CompiledScanner::compile(vec![detector]).expect("compile calibration scanner");
     let candidates = scanner.gpu_backend_candidates();

@@ -102,18 +102,18 @@ pub(crate) fn truncate_for_prefilter(src: &str) -> Option<String> {
 /// for the unstable `str::floor_char_boundary`). Used to snap the decode-focus
 /// window so a slice never splits a multi-byte codepoint.
 pub(crate) fn focus_floor_boundary(s: &str, idx: usize) -> usize {
-    super::floor_char_boundary(s, idx)
+    crate::engine::floor_char_boundary(s, idx)
 }
 
 pub(crate) fn focus_ceil_boundary(s: &str, idx: usize) -> usize {
-    super::ceil_char_boundary(s, idx)
+    crate::engine::ceil_char_boundary(s, idx)
 }
 
 pub(crate) fn truncate_src(s: &str, n: usize) -> String {
     if s.len() <= n {
         return s.to_string();
     }
-    let i = super::floor_char_boundary(s, n.min(s.len()));
+    let i = crate::engine::floor_char_boundary(s, n.min(s.len()));
     format!("{}…", &s[..i])
 }
 

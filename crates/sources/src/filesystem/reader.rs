@@ -149,6 +149,7 @@ pub(super) fn spawn_chunk_producer(
     };
 
     let mut spawned = 0usize;
+    let mut spawn_failures = 0usize;
     for i in 0..reader_count {
         let cursor = Arc::clone(&cursor);
         let tx = entry_tx.clone();
@@ -161,6 +162,13 @@ pub(super) fn spawn_chunk_producer(
         {
             Ok(_) => spawned += 1,
             Err(error) => {
+                spawn_failures = spawn_failures.saturating_add(1);
+                // KH-1430: tracing::warn alone is silent without RUST_LOG.
+                // Surface on stderr so a partial crew is operator-visible.
+                eprintln!(
+                    "keyhog: WARN failed to spawn file-reader thread {i}/{reader_count} \
+                     ({error}); continuing with fewer readers"
+                );
                 tracing::warn!(
                     %error,
                     reader = i,
@@ -168,6 +176,12 @@ pub(super) fn spawn_chunk_producer(
                 );
             }
         }
+    }
+    if spawn_failures > 0 && spawned > 0 {
+        eprintln!(
+            "keyhog: WARN filesystem reader pool degraded: {spawned}/{reader_count} threads \
+             spawned ({spawn_failures} spawn failures); scan continues slower (KH-1430)"
+        );
     }
 
     if spawned == 0 {
@@ -181,6 +195,9 @@ pub(super) fn spawn_chunk_producer(
             .spawn(move || run_reader_fb(cursor_fb, tx_fb, merkle_fb, skipped_fb))
             .is_err()
         {
+            eprintln!(
+                "keyhog: ERROR failed to spawn any filesystem reader thread; no files were scanned"
+            );
             let _send_result = entry_tx.send((
                 0,
                 vec![Err(SourceError::Other(
@@ -188,6 +205,11 @@ pub(super) fn spawn_chunk_producer(
                         .to_string(),
                 ))],
             ));
+        } else {
+            eprintln!(
+                "keyhog: WARN filesystem reader pool fell back to a single thread after \
+                 all primary spawns failed (KH-1430)"
+            );
         }
     }
 

@@ -459,9 +459,12 @@ macro_rules! knob_changes_digest {
 
 knob_changes_digest!(spec_hash_binds_kind, |d| d.kind =
     DetectorKind::Phase2Generic);
-knob_changes_digest!(spec_hash_binds_vendor_suffix_fallback, |d| d
-    .generic_vendor_suffix_fallback =
-    true);
+knob_changes_digest!(spec_hash_binds_vendor_suffixes, |d| d
+    .generic_vendor_suffixes =
+    vec!["secret".into()]);
+knob_changes_digest!(spec_hash_binds_assignment_tail_suffixes, |d| d
+    .generic_assignment_tail_suffixes =
+    vec!["value".into()]);
 knob_changes_digest!(spec_hash_binds_detector_ml_weight, |d| d.ml.weight = 0.73);
 knob_changes_digest!(spec_hash_binds_detector_ml_context_radius, |d| d
     .ml

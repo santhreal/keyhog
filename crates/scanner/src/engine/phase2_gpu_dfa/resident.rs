@@ -7,6 +7,8 @@ use vyre::VyreBackend;
 mod catalog;
 mod shard;
 
+#[cfg(test)]
+pub(super) use catalog::resident_capacity_for_test;
 pub(super) use catalog::Phase2GpuDfaCatalogResident;
 
 pub(super) const U32_BYTES: usize = std::mem::size_of::<u32>();

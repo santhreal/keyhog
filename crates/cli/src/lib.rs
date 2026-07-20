@@ -386,6 +386,9 @@ pub async fn cli_main() -> ExitCode {
             .init();
     }
     let _warn_dedup_summary = log_dedup::WarnDedupSummaryGuard;
+    // Scanner hard-stops call process::exit and skip Drop; flush the same
+    // warn-dedup summary the guard would print on normal exit (KH-1316).
+    keyhog_scanner::set_pre_exit_hook(log_dedup::dump_warn_dedup_summary);
 
     let cli = args::parse();
 

@@ -1,6 +1,6 @@
 schema_version = 1
 detector_id = "azure-service-bus-connection-string"
-service = "azure"
+service = "azure-service-bus"
 severity = "critical"
 
 [[positive]]

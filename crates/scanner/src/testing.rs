@@ -13,6 +13,11 @@ pub(crate) use crate::simd::backend::HsScanner;
 #[cfg(all(test, feature = "simd"))]
 pub(crate) const REGEX_SIZE_LIMIT_BYTES: usize = crate::types::REGEX_SIZE_LIMIT_BYTES;
 
+/// Complete defaults for programmatic named-detector fixtures.
+pub fn named_detector_fixture_defaults() -> keyhog_core::DetectorSpec {
+    keyhog_core::testing::named_detector_fixture_defaults()
+}
+
 pub fn pattern_regex_strs(scanner: &crate::CompiledScanner) -> Vec<&str> {
     scanner.pattern_regex_strs()
 }
@@ -136,6 +141,7 @@ pub fn match_priority_for_test(
 ) -> f64 {
     let service = keyhog_core::detector_spec_by_id(detector_id)
         .map(|spec| std::sync::Arc::from(spec.service.as_str()))
+        // LAW10: test-only synthetic IDs use the explicitly documented generic/test service fixture; production resolution never calls this facade.
         .unwrap_or_else(|| {
             std::sync::Arc::from(
                 if crate::detector_ids::is_generic_or_entropy_detector(detector_id) {
@@ -304,6 +310,12 @@ pub fn try_inflate_to_text_for_test(bytes: &[u8]) -> Option<String> {
     crate::decode::inflate::try_inflate_to_text(bytes)
 }
 
+/// Return whether bytes begin with a valid gzip or zlib container header.
+#[cfg(feature = "decode")]
+pub fn has_container_magic_for_test(bytes: &[u8]) -> bool {
+    crate::decode::inflate::has_container_magic(bytes)
+}
+
 /// The inflate output ceiling (`MAX_INFLATE_BYTES`, 16 MiB) exposed so an
 /// adversarial DoS test can assert the bomb-truncation bound against the real
 /// constant instead of a hardcoded copy (ONE-PLACE).
@@ -396,6 +408,14 @@ pub fn default_decoder_names_for_test() -> Vec<&'static str> {
     crate::decode::default_decoder_names()
 }
 
+/// Identity of the immutable decoder execution plan included in scanner cache
+/// identity. Exposed so contract tests can independently reproduce digest framing.
+pub fn decoder_plan_identity_for_test() -> Result<u64, String> {
+    crate::decode::CompiledDecoderPlan::snapshot()
+        .map(|plan| plan.identity())
+        .map_err(|error| error.to_string())
+}
+
 /// Test seam for the scanner's hard-exit code constants
 /// (crates/scanner/src/process_exit.rs). Returns
 /// `(REQUIRE_GPU_UNMET_EXIT_CODE, BACKEND_UNAVAILABLE_EXIT_CODE)`, which must
@@ -407,6 +427,13 @@ pub fn process_exit_codes_for_test() -> (i32, i32) {
         crate::process_exit::REQUIRE_GPU_UNMET_EXIT_CODE,
         crate::process_exit::BACKEND_UNAVAILABLE_EXIT_CODE,
     )
+}
+
+/// Register two pre-exit hooks and return the hook retained by the scanner.
+pub fn register_pre_exit_hooks_for_test(first: fn(), second: fn()) -> Option<fn()> {
+    crate::process_exit::set_pre_exit_hook(first);
+    crate::process_exit::set_pre_exit_hook(second);
+    crate::process_exit::pre_exit_hook_for_test()
 }
 
 /// Test seam for the decode-splice core: splice `decoded_text` into the bounded
@@ -537,7 +564,7 @@ pub fn entropy_matches_universal_rejection_for_test(value: &str) -> bool {
 
 /// Apply the embedded isolated-bare owner's minimum alphanumeric ratio.
 pub fn entropy_has_low_alnum_ratio_for_test(value: &str) -> bool {
-    let ratio = keyhog_core::detector_spec_by_id("generic-keyword-secret")
+    let ratio = keyhog_core::detector_spec_by_id(crate::detector_ids::GENERIC_KEYWORD_SECRET)
         .expect("embedded generic-keyword-secret detector must load")
         .plausibility
         .expect("embedded generic-keyword-secret must own plausibility policy")
@@ -1019,10 +1046,12 @@ pub fn generic_keyword_alternation_for_test() -> String {
     crate::engine::phase2_generic::generic_keyword_alternation()
 }
 
-/// The appended `<vendor>_key` structural arm literal, so a test can strip it back
-/// off the alternation to recover the pure derived-vocabulary set.
-pub fn generic_re_vendor_suffix_arm() -> &'static str {
-    crate::engine::phase2_generic::GENERIC_RE_VENDOR_SUFFIX_ARM
+/// The detector-owned `<vendor>_<suffix>` structural arm, so a test can strip it
+/// from the alternation and recover the pure derived-vocabulary set.
+pub fn generic_re_vendor_suffix_arm() -> String {
+    crate::engine::phase2_generic::generic_vendor_suffix_arm(
+        crate::assignment_keywords::generic_vendor_suffixes(),
+    )
 }
 
 /// Compile the shipped detector-owned generic bridge; panics (fail-closed) iff
@@ -1031,6 +1060,24 @@ pub fn force_generic_re() {
     if let Err(error) = crate::engine::phase2_generic::build_generic_re() {
         panic!("shipped generic assignment bridge failed to compile: {error}");
     }
+}
+
+/// Captures produced by the embedded detector-owned generic assignment matcher.
+pub fn generic_assignment_captures_for_test(line: &str) -> Vec<(String, String)> {
+    let detectors =
+        keyhog_core::load_embedded_detectors_or_fail().expect("embedded detector corpus");
+    let plan =
+        crate::engine::phase2_generic::keywords::GenericAssignmentKeywordPlan::compile(&detectors)
+            .expect("embedded generic assignment plan");
+    plan.matcher()
+        .captures_iter(line)
+        .filter_map(|captures| {
+            Some((
+                captures.get(1)?.as_str().to_owned(),
+                captures.get(2)?.as_str().to_owned(),
+            ))
+        })
+        .collect()
 }
 
 /// The derived assignment-keyword vocabulary (single owner), so a test can prove
@@ -1112,7 +1159,7 @@ pub fn telemetry_reset_zeroes_all_seeded_gap_counters() -> bool {
         .all(|gap| gap.counter().load(Ordering::Relaxed) == 0)
 }
 
-/// `(ALL.len(), all_six_variants_present)` for `ScannerCoverageGapEvent::ALL`: the
+/// `(ALL.len(), all_seven_variants_present)` for `ScannerCoverageGapEvent::ALL`: the
 /// reset owner iterates `ALL`, so a new variant added without extending `ALL` would
 /// silently escape the per-scan reset. Encapsulates the private variant set in-crate.
 pub fn telemetry_coverage_gap_all_completeness() -> (usize, bool) {
@@ -1124,6 +1171,7 @@ pub fn telemetry_coverage_gap_all_completeness() -> (usize, bool) {
         E::InvalidPatternIndexSkip,
         E::BoundaryResultCardinalityMismatch,
         E::LineOffsetMappingMismatch,
+        E::ChunkDeadlineAbort,
     ]
     .iter()
     .all(|variant| E::ALL.contains(variant));
@@ -1338,33 +1386,33 @@ pub fn path_has_any_component_for_test(path: &str, components: &[&str]) -> bool 
     crate::platform_compat::path_has_any_component(path, components)
 }
 
-/// `engine::phase2_truncate::regex_prefix_anchorable`: the soundness
+/// `phase2_truncate::regex_prefix_anchorable`: the soundness
 /// precondition for driving a pattern from prefix-anchor positions instead of a
 /// whole-chunk walk (finite, enumerable required-prefix set, every member >= 3
 /// bytes). A false TRUE would anchor a pattern that has no such prefix and
 /// silently miss matches; a false FALSE forfeits the fast path. Untested before.
 pub fn regex_prefix_anchorable_for_test(src: &str) -> bool {
-    crate::engine::phase2_truncate::regex_prefix_anchorable(src)
+    crate::phase2_truncate::regex_prefix_anchorable(src)
 }
 
-/// `engine::phase2_truncate::focus_floor_boundary`: round an index DOWN to the
+/// `phase2_truncate::focus_floor_boundary`: round an index DOWN to the
 /// nearest UTF-8 char boundary (the decode-focus window's lower snap). Exposed so
 /// the multibyte-boundary contract can be pinned directly.
 pub fn focus_floor_boundary_for_test(s: &str, idx: usize) -> usize {
-    crate::engine::phase2_truncate::focus_floor_boundary(s, idx)
+    crate::phase2_truncate::focus_floor_boundary(s, idx)
 }
 
-/// `engine::phase2_truncate::focus_ceil_boundary`: round an index UP to the
+/// `phase2_truncate::focus_ceil_boundary`: round an index UP to the
 /// nearest UTF-8 char boundary (the decode-focus window's upper snap).
 pub fn focus_ceil_boundary_for_test(s: &str, idx: usize) -> usize {
-    crate::engine::phase2_truncate::focus_ceil_boundary(s, idx)
+    crate::phase2_truncate::focus_ceil_boundary(s, idx)
 }
 
-/// `engine::phase2_truncate::truncate_src`: truncate `s` to at most `n` bytes on
+/// `phase2_truncate::truncate_src`: truncate `s` to at most `n` bytes on
 /// a char boundary, appending `…` when truncation occurred. Exposed so the
 /// boundary-safety + verbatim-when-short contract is pinned.
 pub fn truncate_src_for_test(s: &str, n: usize) -> String {
-    crate::engine::phase2_truncate::truncate_src(s, n)
+    crate::phase2_truncate::truncate_src(s, n)
 }
 
 /// `compiler::compiler_compile::compile_companion`: compile a `CompanionSpec`
@@ -1388,11 +1436,9 @@ pub fn compile_companion_for_test(
         .map_err(|e| e.to_string())
 }
 
-/// `simdsieve_prefilter::build_hot_pattern_validators`: build the per-hot-pattern
-/// validator regexes from a detector set, returning `is_some()` per slot. Pins
-/// the "loaded hot detector => Some, absent or pattern-less => None" mapping
-/// without exposing the compiled `Regex`. Order matches
-/// [`hot_pattern_detector_ids_for_test`].
+/// Build the per-detector SIMD-sieve validator regexes from a detector set,
+/// returning `is_some()` in detector order. A detector without declared
+/// `simdsieve_prefixes` has no validator.
 #[cfg(feature = "simdsieve")]
 pub fn hot_pattern_validator_is_some_for_test(
     detectors: &[keyhog_core::DetectorSpec],
@@ -1418,12 +1464,6 @@ pub fn hot_pattern_validator_matches_for_test(
                 .map(|re| re.is_match(sample))
         })
         .map_err(|e| e.to_string())
-}
-
-/// The canonical hot-pattern detector-id list, so a test can locate a slot.
-#[cfg(feature = "simdsieve")]
-pub fn hot_pattern_detector_ids_for_test() -> &'static [&'static str] {
-    *crate::simdsieve_prefilter::HOT_PATTERN_DETECTOR_IDS
 }
 
 /// Round-trip a `ScannerTuningConfig` override (`None`/`Some(true)`/`Some(false)`)
@@ -1749,16 +1789,48 @@ pub mod confidence {
         }
     }
 
-    pub fn compute_confidence(signals: &ConfidenceSignals) -> f64 {
-        let detector = keyhog_core::detector_spec_by_id("generic-secret")
+    fn generic_confidence() -> crate::confidence::policy::CompiledMatchConfidencePolicy {
+        let detector = keyhog_core::detector_spec_by_id(crate::detector_ids::GENERIC_SECRET)
             .expect("embedded generic-secret detector");
         crate::confidence::policy::CompiledMatchConfidencePolicy::compile(detector)
             .expect("embedded generic-secret match confidence")
-            .score(&signals.into(), crate::entropy::HIGH_ENTROPY_THRESHOLD)
+    }
+
+    #[cfg(test)]
+    fn named_confidence() -> crate::confidence::policy::CompiledMatchConfidencePolicy {
+        let detector = keyhog_core::detector_spec_by_id(crate::detector_ids::GITHUB_CLASSIC_PAT)
+            .expect("embedded GitHub classic PAT detector");
+        crate::confidence::policy::CompiledMatchConfidencePolicy::compile(detector)
+            .expect("embedded named-detector match confidence")
+    }
+
+    pub fn compute_confidence(signals: &ConfidenceSignals) -> f64 {
+        compute_confidence_with_threshold(signals, crate::entropy::HIGH_ENTROPY_THRESHOLD)
+    }
+
+    pub fn compute_confidence_with_threshold(
+        signals: &ConfidenceSignals,
+        entropy_threshold: f64,
+    ) -> f64 {
+        generic_confidence().score(&signals.into(), entropy_threshold)
+    }
+
+    pub fn is_sensitive_path(path: &str) -> bool {
+        crate::confidence::is_sensitive_path(path)
     }
 
     pub fn known_prefix_confidence_floor(credential: &str) -> Option<f64> {
-        crate::confidence::known_prefix_confidence_floor(credential)
+        crate::confidence::known_prefix_confidence_floor(
+            credential,
+            generic_confidence().post_match().degenerate_run_min_length,
+        )
+    }
+
+    pub fn known_prefix_confidence_floor_with_degenerate_limit(
+        credential: &str,
+        degenerate_run_min_length: usize,
+    ) -> Option<f64> {
+        crate::confidence::known_prefix_confidence_floor(credential, degenerate_run_min_length)
     }
 
     pub fn known_prefix_body(credential: &str) -> Option<&str> {
@@ -1824,7 +1896,16 @@ pub mod confidence {
     #[cfg(test)]
     pub(crate) fn apply_post_ml_penalties(score: f64, credential: &str, is_named: bool) -> f64 {
         crate::confidence::penalties::apply_post_ml_penalties_with_encoded_text_lift(
-            score, credential, is_named, false, false,
+            score,
+            credential,
+            is_named,
+            false,
+            false,
+            if is_named {
+                named_confidence().post_match()
+            } else {
+                generic_confidence().post_match()
+            },
         )
     }
 
@@ -1851,6 +1932,23 @@ pub mod confidence {
         penalize_test_paths: bool,
         allow_encoded_text_lift: bool,
     ) -> Option<f64> {
+        let post_match = keyhog_core::embedded_detector_specs()
+            .iter()
+            .find(|detector| {
+                detector.id == detector_id
+                    || detector
+                        .entropy_fallback
+                        .as_ref()
+                        .is_some_and(|fallback| fallback.id == detector_id)
+            })
+            .and_then(|detector| detector.match_confidence)
+            // LAW10: test-only helper aborts when its requested production policy is absent; it cannot score against a substituted policy.
+            .unwrap_or_else(|| {
+                panic!(
+                    "test confidence helper requires an embedded detector-owned policy for {detector_id:?}"
+                )
+            })
+            .post_match;
         crate::confidence::policy::finalize_report_confidence(
             confidence,
             crate::confidence::policy::ReportConfidencePolicy {
@@ -1862,6 +1960,7 @@ pub mod confidence {
                 allow_encoded_text_lift,
                 allow_canonical_hex_key: false,
                 checksum: crate::checksum::ChecksumConfidenceDecision::for_credential(credential),
+                post_match,
                 calibration: None,
             },
         )
@@ -1886,12 +1985,21 @@ pub mod confidence {
         path: Option<&str>,
         penalize: bool,
     ) -> f64 {
-        crate::confidence::penalties::apply_path_confidence_penalties(score, path, penalize)
+        crate::confidence::penalties::apply_path_confidence_penalties(
+            score,
+            path,
+            penalize,
+            generic_confidence().post_match().fixture_path_multiplier,
+        )
     }
 
     #[cfg(test)]
     pub(crate) fn apply_known_prefix_floor(score: f64, credential: &str) -> f64 {
-        crate::confidence::policy::apply_known_prefix_floor(score, credential)
+        crate::confidence::policy::apply_known_prefix_floor(
+            score,
+            credential,
+            generic_confidence().post_match().degenerate_run_min_length,
+        )
     }
 
     #[cfg(test)]
@@ -1901,7 +2009,7 @@ pub mod confidence {
         penalize_test_paths: bool,
     ) -> f64 {
         let confidence = crate::confidence::policy::CompiledMatchConfidencePolicy::compile(
-            keyhog_core::detector_spec_by_id("generic-secret")
+            keyhog_core::detector_spec_by_id(crate::detector_ids::GENERIC_SECRET)
                 .expect("embedded generic-secret detector"),
         )
         .expect("embedded generic-secret match confidence");
@@ -1915,13 +2023,13 @@ pub mod confidence {
 
     #[cfg(test)]
     pub(crate) fn match_heuristic_confidence(
-        signals: &crate::confidence::ConfidenceSignals,
+        signals: &ConfidenceSignals,
         entropy_threshold: f64,
         code_context: crate::context::CodeContext,
         penalize_test_paths: bool,
     ) -> f64 {
         let confidence = crate::confidence::policy::CompiledMatchConfidencePolicy::compile(
-            keyhog_core::detector_spec_by_id("generic-secret")
+            keyhog_core::detector_spec_by_id(crate::detector_ids::GENERIC_SECRET)
                 .expect("embedded generic-secret detector"),
         )
         .expect("embedded generic-secret match confidence");
@@ -1953,7 +2061,7 @@ pub mod confidence {
         penalize_test_paths: bool,
     ) -> f64 {
         let confidence = crate::confidence::policy::CompiledMatchConfidencePolicy::compile(
-            keyhog_core::detector_spec_by_id("generic-secret")
+            keyhog_core::detector_spec_by_id(crate::detector_ids::GENERIC_SECRET)
                 .expect("embedded generic-secret detector"),
         )
         .expect("embedded generic-secret match confidence");
@@ -1978,6 +2086,7 @@ pub mod confidence {
                 },
                 code_context,
                 context_multiplier: confidence.context_multiplier(code_context),
+                context_reapply_below: confidence.post_match().ml_context_reapply_below,
                 scan_comments,
                 penalize_test_paths,
             },
@@ -2001,9 +2110,9 @@ pub mod confidence {
         has_companion: bool,
     ) -> Option<f64> {
         let detector_id = if is_named_detector {
-            "aws-access-key"
+            crate::detector_ids::AWS_ACCESS_KEY
         } else {
-            "generic-secret"
+            crate::detector_ids::GENERIC_SECRET
         };
         let low_promise_confidence = keyhog_core::detector_spec_by_id(detector_id)
             .and_then(|detector| detector.match_confidence)
@@ -2589,7 +2698,7 @@ pub fn apply_named_detector_anchor_floor(
     has_anchor: bool,
 ) -> f64 {
     let floor = is_named_detector
-        .then(|| keyhog_core::detector_spec_by_id("aws-access-key"))
+        .then(|| keyhog_core::detector_spec_by_id(crate::detector_ids::AWS_ACCESS_KEY))
         .flatten()
         .and_then(|detector| detector.match_confidence)
         .and_then(|policy| policy.named_anchor_floor);
@@ -2752,7 +2861,7 @@ fn generic_api_key_entropy_policy_for_test(
 ) -> &'static crate::entropy::policy::CompiledEntropyPolicy {
     static POLICY: std::sync::LazyLock<crate::entropy::policy::CompiledEntropyPolicy> =
         std::sync::LazyLock::new(|| {
-            let detector = keyhog_core::detector_spec_by_id("generic-api-key")
+            let detector = keyhog_core::detector_spec_by_id(crate::detector_ids::GENERIC_API_KEY)
                 .expect("embedded generic-api-key detector must load");
             crate::entropy::policy::CompiledEntropyPolicy::compile(detector)
                 .expect("embedded generic-api-key entropy policy must compile")
@@ -2842,7 +2951,7 @@ pub fn entropy_fallback_confidence_for_test(
     } else {
         crate::entropy::KEYWORD_FREE_LABEL
     };
-    let confidence = keyhog_core::detector_spec_by_id("generic-secret")
+    let confidence = keyhog_core::detector_spec_by_id(crate::detector_ids::GENERIC_SECRET)
         .and_then(|detector| detector.entropy_fallback_confidence)
         .expect("embedded generic-secret detector must declare fallback confidence");
     crate::confidence::policy::entropy_fallback_confidence(
@@ -2872,7 +2981,7 @@ pub fn generic_secret_confidence_for_test(
         "assignment" => crate::context::CodeContext::Assignment,
         _ => crate::context::CodeContext::Unknown,
     };
-    let policy = keyhog_core::detector_spec_by_id("generic-secret")
+    let policy = keyhog_core::detector_spec_by_id(crate::detector_ids::GENERIC_SECRET)
         .and_then(|detector| detector.generic_assignment_confidence)
         .expect("embedded generic-secret detector must declare assignment confidence");
     crate::confidence::policy::generic_assignment_confidence(
@@ -2926,6 +3035,7 @@ pub fn queued_ml_features(
     entropy_channel: bool,
 ) -> Vec<f32> {
     let detector = keyhog_core::detector_spec_by_id(detector_id)
+        // LAW10: test-only feature helper aborts for an unknown detector; it cannot compute against a substituted policy.
         .unwrap_or_else(|| panic!("test detector {detector_id:?} must exist"));
     let detector_features =
         crate::ml_scorer::ml_features::CompiledDetectorMlFeatures::compile(detector);
@@ -3538,7 +3648,7 @@ pub(crate) fn mark_matches_gate_ns_per_call(
 /// tests migrated out of `src/engine/phase2.rs` (no-inline-tests gate).
 #[cfg(test)]
 pub(crate) fn truncate_for_prefilter(src: &str) -> Option<String> {
-    crate::engine::phase2_truncate::truncate_for_prefilter(src)
+    crate::phase2_truncate::truncate_for_prefilter(src)
 }
 
 #[cfg(test)]
@@ -3684,8 +3794,8 @@ pub mod entropy_scanner {
         detectors: &[keyhog_core::DetectorSpec],
         keyword: &str,
     ) -> Option<String> {
-        let index =
-            crate::generic_keyword_owner::GenericOwningDetectorIndex::build(detectors).ok()?;
+        let index = crate::generic_keyword_owner::GenericOwningDetectorIndex::build(detectors)
+            .unwrap_or_else(|error| panic!("test detector ownership policy is invalid: {error}")); // LAW10: test-only invalid fixture aborts with its error; no owner is substituted.
         crate::entropy::scanner::active_policy_detector_index(&index, keyword)
             .and_then(|owner| detectors.get(owner))
             .map(|detector| detector.id.clone())
@@ -3761,8 +3871,9 @@ pub mod entropy_scanner {
 #[cfg(feature = "entropy")]
 pub mod entropy_isolated {
     fn generic_keyword_policy() -> crate::entropy::policy::CompiledEntropyPolicy {
-        let detector = keyhog_core::detector_spec_by_id("generic-keyword-secret")
-            .expect("embedded generic-keyword-secret detector must load");
+        let detector =
+            keyhog_core::detector_spec_by_id(crate::detector_ids::GENERIC_KEYWORD_SECRET)
+                .expect("embedded generic-keyword-secret detector must load");
         crate::entropy::policy::CompiledEntropyPolicy::compile(detector)
             .expect("embedded generic-keyword-secret entropy policy must compile")
     }
@@ -3876,9 +3987,10 @@ pub mod entropy_isolated {
         candidate: &str,
         plausibility: keyhog_core::DetectorPlausibilityPolicySpec,
     ) -> bool {
-        let mut detector = keyhog_core::detector_spec_by_id("generic-keyword-secret")
-            .expect("embedded generic-keyword-secret detector must load")
-            .clone();
+        let mut detector =
+            keyhog_core::detector_spec_by_id(crate::detector_ids::GENERIC_KEYWORD_SECRET)
+                .expect("embedded generic-keyword-secret detector must load")
+                .clone();
         detector.plausibility = Some(plausibility);
         let policy = crate::entropy::policy::CompiledEntropyPolicy::compile(&detector)
             .expect("test isolated-bare policy must compile");
@@ -3898,9 +4010,10 @@ pub mod entropy_isolated {
         candidate: &str,
         plausibility: keyhog_core::DetectorPlausibilityPolicySpec,
     ) -> bool {
-        let mut detector = keyhog_core::detector_spec_by_id("generic-keyword-secret")
-            .expect("embedded generic-keyword-secret detector must load")
-            .clone();
+        let mut detector =
+            keyhog_core::detector_spec_by_id(crate::detector_ids::GENERIC_KEYWORD_SECRET)
+                .expect("embedded generic-keyword-secret detector must load")
+                .clone();
         detector.plausibility = Some(plausibility);
         let policy = crate::entropy::policy::CompiledEntropyPolicy::compile(&detector)
             .expect("test isolated-bare policy must compile");
@@ -3941,7 +4054,7 @@ pub mod entropy_keywords {
         is_credential_context: bool,
         policy: keyhog_core::DetectorPlausibilityPolicySpec,
     ) -> bool {
-        let mut detector = keyhog_core::detector_spec_by_id("generic-api-key")
+        let mut detector = keyhog_core::detector_spec_by_id(crate::detector_ids::GENERIC_API_KEY)
             .expect("embedded generic-api-key detector must load")
             .clone();
         detector.plausibility = Some(policy);
@@ -4397,15 +4510,61 @@ pub fn ml_score_for_detector(
     detector_id: &str,
     entropy_channel: bool,
 ) -> f64 {
+    ml_score_for_detector_with_vocab(
+        text,
+        context,
+        detector_id,
+        entropy_channel,
+        &[],
+        &[],
+        &[],
+        &[],
+    )
+}
+
+#[cfg(feature = "ml")]
+pub fn ml_score_for_detector_with_default_config(
+    text: &str,
+    context: &str,
+    detector_id: &str,
+    entropy_channel: bool,
+) -> f64 {
+    static CONFIG: std::sync::LazyLock<crate::ScannerConfig> =
+        std::sync::LazyLock::new(crate::ScannerConfig::default);
+    ml_score_for_detector_with_vocab(
+        text,
+        context,
+        detector_id,
+        entropy_channel,
+        &CONFIG.known_prefixes,
+        &CONFIG.secret_keywords,
+        &CONFIG.test_keywords,
+        &CONFIG.placeholder_keywords,
+    )
+}
+
+#[cfg(feature = "ml")]
+#[allow(clippy::too_many_arguments)]
+fn ml_score_for_detector_with_vocab(
+    text: &str,
+    context: &str,
+    detector_id: &str,
+    entropy_channel: bool,
+    known_prefixes: &[String],
+    secret_keywords: &[String],
+    test_keywords: &[String],
+    placeholder_keywords: &[String],
+) -> f64 {
     let detector = keyhog_core::detector_spec_by_id(detector_id)
+        // LAW10: test-only scorer aborts for an unknown detector; it cannot compute against a substituted feature policy.
         .unwrap_or_else(|| panic!("test detector {detector_id:?} must exist"));
     let features = crate::ml_scorer::compute_features_for_detector_with_config(
         text,
         context,
-        &[],
-        &[],
-        &[],
-        &[],
+        known_prefixes,
+        secret_keywords,
+        test_keywords,
+        placeholder_keywords,
         detector,
         if entropy_channel {
             crate::ml_scorer::MlCandidateChannel::Entropy
@@ -4668,6 +4827,24 @@ impl BigramBloom {
     pub(crate) fn saturated_for_test() -> Self {
         Self(crate::bigram_bloom::BigramBloom::saturated_for_test())
     }
+}
+
+/// Layer-0.5 bigram-prefilter density for the bundled production detector set:
+/// `(popcount, saturated)`. Compiles the shipped `embedded_detector_specs()` and
+/// reports the resulting 65536-slot table's bit population and whether it crossed
+/// the saturation threshold, at which [`crate::bigram_bloom::BigramBloom::maybe_overlaps`]
+/// degrades to always-admit and the documented Layer-0.5 prefilter becomes a
+/// no-op. Exposed so a regression test can pin that the shipped detector set does
+/// NOT saturate the table - a future detector addition that would silently
+/// disable the prefilter then fails loudly instead of shipping a filter that
+/// filters nothing.
+pub fn production_bigram_prefilter_density() -> (u32, bool) {
+    let scanner = crate::CompiledScanner::compile(keyhog_core::embedded_detector_specs().to_vec())
+        .expect("production detector set must compile");
+    (
+        scanner.bigram_bloom.popcount(),
+        scanner.bigram_bloom.is_saturated(),
+    )
 }
 
 pub fn looks_like_standard_base64_blob(credential: &str) -> bool {
@@ -4981,10 +5158,10 @@ pub(crate) mod decode_structure {
 
 pub mod segment_attribution {
     //! Doc-hidden test facade over the single owner
-    //! [`crate::engine::segment_attribution`]. Re-exports (no second hand-copied
-    //! body: ONE-PLACE / Law-11) so external tests reach the primitive at
+    //! [`crate::segment_attribution`]. Re-exports (no second hand-copied body:
+    //! ONE-PLACE / Law-11) so external tests reach the primitive at
     //! `keyhog_scanner::testing::segment_attribution::*`.
-    pub use crate::engine::segment_attribution::{
+    pub use crate::segment_attribution::{
         map_offsets_to_segments, AttributedMatch, GlobalMatch, Segment, SegmentAttributionError,
     };
 }
@@ -5252,6 +5429,12 @@ pub fn parse_tfstate_tuples(text: &str) -> Vec<(String, String, usize)> {
         .into_iter()
         .map(|pair| (pair.context, pair.value, pair.line))
         .collect()
+}
+
+/// Return whether structured classification identifies a parsed Kubernetes
+/// Secret document at `path`.
+pub fn structured_detects_k8s_secret(text: &str, path: Option<&str>) -> bool {
+    crate::structured::detects_k8s_secret_document(text, path)
 }
 
 /// Integration-test facade: the structured-oversize coverage-gap partition

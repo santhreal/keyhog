@@ -1,6 +1,6 @@
 //! compute_confidence never escapes [0, 1] for arbitrary signal tuples.
 
-use keyhog_scanner::confidence::{compute_confidence, ConfidenceSignals};
+use keyhog_scanner::testing::confidence::{compute_confidence, ConfidenceSignals};
 use proptest::prelude::*;
 
 #[test]

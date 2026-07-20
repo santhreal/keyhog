@@ -32,12 +32,21 @@ use base64::Engine as _;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::testing::decode_chunk;
+use keyhog_scanner::testing::{decode_chunk, has_container_magic_for_test};
 
 // The caps mirrored from `decode/pipeline.rs` (private consts). Pinned here so a
 // silent widening/narrowing of either guard fails this file.
 const MAX_DECODED_CHUNKS_PER_ROOT: usize = 1000;
 const MAX_DECODED_TOTAL_BYTES: usize = 64 * 1024 * 1024;
+
+#[test]
+fn zlib_header_rejects_reserved_cinfo() {
+    assert!(has_container_magic_for_test(&[0x78, 0x01]));
+    assert!(
+        !has_container_magic_for_test(&[0x88, 0x1c]),
+        "reserved CINFO=8 must be rejected even when FCHECK is valid"
+    );
+}
 
 // ── helpers ──────────────────────────────────────────────────────────
 

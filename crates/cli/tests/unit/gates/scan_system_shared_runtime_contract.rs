@@ -23,8 +23,12 @@ fn scan_system_uses_shared_scan_runtime_boundary() {
         "load_detectors_or_embedded(detectors_path)",
         "crate::orchestrator_config::detector_compile_failed(",
         "fn scan_chunk(&self, chunk: &Chunk)",
-        ".choose(self.backend_override, std::slice::from_ref(chunk))",
-        "self.scanner.scan_with_backend(chunk, backend)",
+        "self.router.choose_with_plan(",
+        "self.scanner.as_ref()",
+        "self.backend_override",
+        "std::slice::from_ref(chunk)",
+        "scan_selected_batch(",
+        "selection.execution_route",
     ] {
         assert!(
             orchestrator.contains(required),

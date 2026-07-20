@@ -52,23 +52,29 @@ fn is_block_comment_line(trimmed: &str) -> bool {
 }
 
 fn is_module_decl(trimmed: &str) -> bool {
-    if strip_keyword(trimmed, "mod").is_some() {
-        return true;
-    }
-    let Some(after_pub) = trimmed.strip_prefix("pub") else {
-        return false;
+    let declaration = if let Some(rest) = strip_keyword(trimmed, "mod") {
+        rest
+    } else {
+        let Some(after_pub) = trimmed.strip_prefix("pub") else {
+            return false;
+        };
+        let after_pub = after_pub.trim_start();
+        if let Some(rest) = strip_keyword(after_pub, "mod") {
+            rest
+        } else {
+            let Some(after_visibility) = after_pub.strip_prefix('(') else {
+                return false;
+            };
+            let Some((_, after_visibility)) = after_visibility.split_once(')') else {
+                return false;
+            };
+            let Some(rest) = strip_keyword(after_visibility.trim_start(), "mod") else {
+                return false;
+            };
+            rest
+        }
     };
-    let after_pub = after_pub.trim_start();
-    if strip_keyword(after_pub, "mod").is_some() {
-        return true;
-    }
-    let Some(after_visibility) = after_pub.strip_prefix('(') else {
-        return false;
-    };
-    let Some((_, after_visibility)) = after_visibility.split_once(')') else {
-        return false;
-    };
-    strip_keyword(after_visibility.trim_start(), "mod").is_some()
+    declaration.contains('{') || !declaration.contains(';')
 }
 
 fn strip_keyword<'a>(trimmed: &'a str, keyword: &str) -> Option<&'a str> {
@@ -92,15 +98,22 @@ mod tests {
             "#[cfg(test)]\npub(crate) mod nested {}",
             "#[cfg(test)]\npub(in crate::tests) mod scoped {}",
             "#[cfg(all(test, feature = \"x\"))]\n#[allow(dead_code)]\nmod with_attr {}",
-            "#[cfg(test)] mod same_line;",
+            "#[cfg(test)] mod same_line {}",
             "#[cfg(test)]\n/* allowed separator */\nmod after_block_comment {}",
             "#[cfg(test)]\npub(crate) mod\ttabbed {}",
+            "#[cfg(test)]\nmod split_across_lines\n{}",
         ] {
             assert!(
                 contains_inline_test_module_or_function(src),
                 "inline test module was missed: {src}"
             );
         }
+    }
+    #[test]
+    fn external_test_module_is_not_inline() {
+        assert!(!contains_inline_test_module_or_function(
+            "#[cfg(test)]\n#[path = \"external.rs\"]\nmod external;"
+        ));
     }
 
     #[test]

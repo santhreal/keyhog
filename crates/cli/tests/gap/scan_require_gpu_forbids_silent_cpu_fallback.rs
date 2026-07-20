@@ -1,7 +1,7 @@
 //! R3-D / KH-GAP-041 + KH-GAP-093: when GPU self-test fails, forced GPU scan
 //! with `--require-gpu` must not exit 0 after silent CPU fallback.
 
-use crate::e2e::support::{binary, workspace_detectors};
+use crate::support::{binary, workspace_detectors};
 use std::process::Command;
 
 #[test]

@@ -2,8 +2,9 @@
 //!
 //! `scan_phase2_patterns` (small chunks) and `scan_large_phase2_patterns` (large
 //! chunks) both walk the sparse active phase-2 set, running each pattern's
-//! `extract_matches` under the same `is_multiple_of(16)` deadline cadence and the
-//! same per-pattern profiling. Those were two byte-identical copies of that loop:
+//! `extract_matches` under the same `deadline::expired_on_cadence(..,
+//! COMPILED_PHASE2_DEADLINE_CADENCE)` deadline cadence and the same per-pattern
+//! profiling. Those were two byte-identical copies of that loop:
 //! a drift hazard where, e.g., changing the abort cadence on one path but not the
 //! other makes `--timeout` behave differently by chunk size. They are now one
 //! `extract_active_phase2_patterns` helper.
@@ -39,12 +40,20 @@ fn whole_chunk_phase2_extract_loop_has_single_owner() {
 
     // The deadline-cadence loop was open-coded three times: the two whole-chunk
     // paths (now collapsed into the helper) and the decode-focus path (kept,
-    // cursor-bounded). So the cadence marker must drop from 3 sites to 2 (helper
-    // + focus) (proving the two whole-chunk copies became one).
-    let cadence_sites = src.matches("tested.is_multiple_of(16)").count();
+    // cursor-bounded). The cadence now routes through the shared
+    // `deadline::expired_on_cadence` owner with the single-owner
+    // `COMPILED_PHASE2_DEADLINE_CADENCE` constant (KH-1233), so that constant must
+    // appear at exactly 2 sites (helper + focus), proving the two whole-chunk
+    // copies became one and the magic `16` is no longer inlined here.
+    let cadence_sites = src.matches("COMPILED_PHASE2_DEADLINE_CADENCE").count();
     assert_eq!(
         cadence_sites, 2,
         "the deadline-cadence loop must exist in exactly 2 sites (helper + focus), found {cadence_sites}"
+    );
+    assert!(
+        !src.contains("tested.is_multiple_of(16)"),
+        "the compiled phase-2 cadence must not re-inline the magic 16; use \
+         deadline::expired_on_cadence(.., COMPILED_PHASE2_DEADLINE_CADENCE)"
     );
 
     assert!(

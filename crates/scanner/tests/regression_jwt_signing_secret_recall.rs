@@ -42,7 +42,7 @@ fn scan(path: &str, text: &str) -> Vec<(String, String)> {
     let chunk: Chunk = make_chunk(text, "filesystem", path);
     s.scan(&chunk)
         .into_iter()
-        .map(|m| (m.detector_id.to_string(), m.credential.to_string()))
+        .map(|m| (m.detector_id.to_string(), m.credential.as_str().to_string()))
         .collect()
 }
 

@@ -16,7 +16,8 @@ use std::sync::Arc;
 #[cfg(feature = "entropy")]
 impl CompiledScanner {
     fn keyword_free_entropy_threshold(&self, sensitive_path: bool) -> Option<f64> {
-        self.generic_owning_detector
+        self.detector_plans
+            .generic_ownership()
             .keyword_free_owner_index()
             .and_then(|index| self.detector_plans.get(index).entropy.as_ref())
             .map(|policy| {
@@ -58,10 +59,11 @@ impl CompiledScanner {
         let keyword_matcher = self
             .assignment_keyword_matcher
             .lock()
+            // LAW10: recall-preserving; Mutex poison does not invalidate the matcher cache value, and retaining it avoids dropping entropy candidates.
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .resolve(
                 &self.config.secret_keywords,
-                self.generic_owning_detector.policy_keywords(),
+                self.detector_plans.generic_ownership().policy_keywords(),
             );
         let keyword_assignment_lines =
             crate::entropy::keywords::find_keyword_assignment_lines_with_matcher(
@@ -75,7 +77,8 @@ impl CompiledScanner {
             has_secret_keyword_line,
         );
         let generic_keyword_secret_policy = self
-            .generic_owning_detector
+            .detector_plans
+            .generic_ownership()
             .isolated_bare_owner_index()
             .and_then(|index| self.detector_plans.get(index).entropy.as_ref());
         let isolated_bare_candidate = !path_entropy_appropriate
@@ -124,7 +127,7 @@ impl CompiledScanner {
                 &keyword_assignment_lines,
                 &self.config,
                 Some(crate::entropy::scanner::ActiveDetectorPolicy::new(
-                    &self.generic_owning_detector,
+                    &self.detector_plans.generic_ownership(),
                     &self.detector_plans,
                 )),
                 &skip_lines,
@@ -181,7 +184,7 @@ impl CompiledScanner {
                 &self.config.placeholder_keywords,
                 Some(&skip_lines),
                 Some(crate::entropy::scanner::ActiveDetectorPolicy::new(
-                    &self.generic_owning_detector,
+                    &self.detector_plans.generic_ownership(),
                     &self.detector_plans,
                 )),
                 if restrict_source_entropy_to_assignments {
@@ -199,7 +202,7 @@ impl CompiledScanner {
             // table: an incomplete custom corpus fails closed instead of
             // silently relabelling the candidate as a built-in entropy class.
             let Some(policy_detector_index) = crate::entropy::scanner::active_policy_detector_index(
-                &self.generic_owning_detector,
+                &self.detector_plans.generic_ownership(),
                 &entropy_match.keyword,
             ) else {
                 tracing::error!(
@@ -221,8 +224,10 @@ impl CompiledScanner {
                 continue;
             };
             let canonical_detector_index = self
-                .generic_owning_detector
+                .detector_plans
+                .generic_ownership()
                 .canonical_index(&entropy_match.keyword)
+                // LAW10: intentional default; operator-added Tier-A keywords have no canonical TOML owner, so their already-resolved entropy owner remains authoritative.
                 .unwrap_or(policy_detector_index);
             let transport_decoded = preprocessed.transport_decoded_for_offset(entropy_match.offset);
             let detector_owned_canonical_hex_key = {
@@ -278,6 +283,10 @@ impl CompiledScanner {
                 bpe_bound,
                 compiled_policy,
                 execution_policy,
+                detector_plan
+                    .match_confidence
+                    .post_match()
+                    .degenerate_run_min_length,
             ) {
                 let entropy_ctx = crate::adjudicate::MatchCtx::for_entropy_fallback(
                     crate::adjudicate::EntropyFallbackSignal::ValueShape(shape_stage),
@@ -290,7 +299,7 @@ impl CompiledScanner {
                 continue;
             }
             if crate::generic_keyword_owner::entropy_candidate_owned_by_named_assignment(
-                &self.generic_named_assignment_keywords,
+                self.detector_plans.generic_named_assignment_keywords(),
                 &entropy_match.value,
                 entropy_value_line(&entropy_match, preprocessed, line_offsets),
             ) {
@@ -402,6 +411,7 @@ impl CompiledScanner {
                     detector_plan
                         .match_confidence
                         .context_suppression_threshold(crate::context::CodeContext::Unknown),
+                    detector_plan.match_confidence.post_match(),
                     ml_features,
                     policy.effective_weight(&self.config),
                     min_confidence_floor,
@@ -426,6 +436,7 @@ impl CompiledScanner {
                     context_suppression_threshold: detector_plan
                         .match_confidence
                         .context_suppression_threshold(crate::context::CodeContext::Unknown),
+                    post_match: detector_plan.match_confidence.post_match(),
                     file_path: chunk.metadata.path.as_deref(),
                     is_named_detector: false,
                     is_generic_detector: true,

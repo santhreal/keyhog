@@ -164,6 +164,7 @@ write_mock_autoroute_cache() {
 }
 case "$1" in
   --version) echo "KeyHog v9.9.9 (mock)" ;;
+  --help) echo "Usage: keyhog <COMMAND>"; echo "  scan"; exit 0 ;;
   doctor)    echo "mock doctor: healthy"; exit 0 ;;
   scan)
     case "${2:-}" in
@@ -240,6 +241,7 @@ write_mock_autoroute_cache() {
 }
 case "$1" in
   --version) echo "KeyHog v9.9.9 (mock)" ;;
+  --help) echo "Usage: keyhog <COMMAND>"; echo "  scan"; exit 0 ;;
   doctor)    echo "mock doctor: healthy"; exit 0 ;;
   scan)
     case "${2:-}" in
@@ -285,6 +287,7 @@ write_mock_autoroute_cache() {
 }
 case "$1" in
   --version) echo "KeyHog v9.9.9 (mock)" ;;
+  --help) echo "Usage: keyhog <COMMAND>"; echo "  scan"; exit 0 ;;
   doctor)    echo "mock doctor: healthy"; exit 0 ;;
   scan)
     case "$2" in
@@ -321,6 +324,7 @@ cat > "$FIX_DIR/fake_keyhog_slow_scan" <<'SH'
 #!/bin/sh
 case "$1" in
   --version) echo "KeyHog v9.9.9 (mock)" ;;
+  --help) echo "Usage: keyhog <COMMAND>"; echo "  scan"; exit 0 ;;
   doctor)    echo "mock doctor: healthy"; exit 0 ;;
   scan)
     case "${2:-}" in
@@ -391,6 +395,8 @@ tar -czPf "$FIX_DIR/gpu-literals-absolute.tar.gz" "$FIX_DIR/abs-lit.bin"
 printf '%s  fake_keyhog_healthy\n' "$(sha_of "$FIX_DIR/fake_keyhog_healthy")" > "$FIX_DIR/fake_keyhog_healthy.sha256"
 cp "$FIX_DIR/gpu-literals.tar.gz" "$FIX_DIR/fake_keyhog_healthy.gpu-literals.tar.gz"
 printf '%s  fake_keyhog_healthy.gpu-literals.tar.gz\n' "$(sha_of "$FIX_DIR/fake_keyhog_healthy.gpu-literals.tar.gz")" > "$FIX_DIR/fake_keyhog_healthy.gpu-literals.tar.gz.sha256"
+printf 'trusted local binary signature\n' > "$FIX_DIR/fake_keyhog_healthy.minisig"
+printf 'trusted local sidecar signature\n' > "$FIX_DIR/fake_keyhog_healthy.gpu-literals.tar.gz.minisig"
 cp "$FIX_DIR/fake_keyhog_healthy" "$FIX_DIR/local_keyhog_no_sidecar"
 printf '%s  local_keyhog_no_sidecar\n' "$(sha_of "$FIX_DIR/local_keyhog_no_sidecar")" > "$FIX_DIR/local_keyhog_no_sidecar.sha256"
 
@@ -640,7 +646,7 @@ reset_mocks() {
 printf '\n[1] argument & help parsing\n'
 out=$(sh "$INSTALL_SH" --help 2>&1); st=$?
 expect_status "1.1 --help exits 0" 0 "$st"
-expect_match  "1.2 --help shows curl-pipe"   "curl -fsSL"  "$out"
+expect_match  "1.2 --help shows authenticated install" "Authenticated install from one tagged release" "$out"
 expect_match  "1.3 --help shows --repair"    "\-\-repair"  "$out"
 expect_match  "1.4 --help shows --diagnose"  "\-\-diagnose" "$out"
 expect_match  "1.5 --help shows --uninstall" "\-\-uninstall" "$out"
@@ -651,12 +657,11 @@ out=$(sh "$INSTALL_SH" --bogus-flag 2>&1); st=$?
 expect_status "1.7 unknown flag exits 1" 1 "$st"
 expect_match  "1.8 unknown flag names it" "Unknown argument: --bogus-flag" "$out"
 out=$(sh "$INSTALL_SH" --another 2>&1); expect_match "1.9 unknown flag suggests --help" "\-\-help" "$out"
-# --help under the documented curl-pipe transport: $0 is "sh", not a readable
-# file. The old `sed "$0"` printed "sed: can't read sh" and NO help. Assert the
-# built-in fallback renders and no sed error leaks.
+# --help through stdin: $0 is `sh`, not a readable file. The built-in fallback
+# must render the authenticated tagged-release flow without a sed error.
 out=$(cat "$INSTALL_SH" | sh -s -- --help 2>&1)
-expect_match   "1.10 piped --help shows synopsis"   "KeyHog installer" "$out"
-expect_match   "1.11 piped --help shows quick install" "curl -fsSL" "$out"
+expect_match   "1.10 piped --help shows synopsis" "KeyHog installer" "$out"
+expect_match   "1.11 piped --help shows authenticated install" "verify with Minisign key" "$out"
 expect_nomatch "1.12 piped --help has no sed error" "can't read|No such file" "$out"
 
 # ======================================================================
@@ -873,6 +878,17 @@ out=$(run_install "$sb" "$h" -- --from-file="$FIX_DIR/fake_keyhog_healthy" --no-
 expect_status "6.4ai from-file with local GPU sidecar installs" 0 "$st"
 expect_match  "6.4aj from-file local GPU sidecar installs cache artifact" "Installed 1 GPU literal matcher artifact" "$out"
 expect_file   "6.4ak from-file local GPU sidecar seeds runtime cache" "$h/.cache/keyhog/programs/lit-mock.bin"
+expect_match  "6.4ak1 from-file verifies local binary signature" "Local Minisign signature verified for binary" "$out"
+expect_match  "6.4ak2 from-file verifies local sidecar signature" "Local Minisign signature verified for GPU literal sidecar" "$out"
+
+reset_mocks
+MOCK_SIG=invalid
+h=$(newhome)
+out=$(run_install "$sb" "$h" -- --from-file="$FIX_DIR/fake_keyhog_healthy" --no-prompt); st=$?
+expect_match  "6.4ak3 invalid local signature is refused" "Local Minisign signature verification failed for binary" "$out"
+expect_status "6.4ak4 invalid local signature exits 1" 1 "$st"
+expect_nofile "6.4ak5 invalid local signature cannot write binary" "$h/.local/bin/keyhog"
+reset_mocks
 rm -rf "$h"
 h=$(newhome)
 out=$(run_install "$sb" "$h" -- --from-file="$FIX_DIR/local_keyhog_no_sidecar" --no-prompt); st=$?
@@ -1426,7 +1442,7 @@ if [ -f install.ps1 ]; then
     fi
     if grep -q 'Show-AutorouteCalibrationSummary -ProbeCount' install.ps1 \
        && grep -q 'ConvertFrom-Json -ErrorAction Stop' install.ps1 \
-       && grep -q 'selected backend margin' install.ps1 \
+       && grep -q 'selected backend.*margin' install.ps1 \
        && grep -q 'TotalMilliseconds' install.ps1 \
        && grep -q 'PASS {0} ({1}ms)' install.ps1; then
         _record_pass "19.25 install.ps1 renders persisted autoroute calibration decisions"

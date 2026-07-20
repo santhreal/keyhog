@@ -363,7 +363,7 @@ fn detector(id: &str, regex: &str, keywords: Vec<String>) -> DetectorSpec {
         keywords,
         min_confidence: None,
         tests: Vec::new(),
-        ..Default::default()
+        ..keyhog_core::testing::named_detector_fixture_defaults()
     }
 }
 

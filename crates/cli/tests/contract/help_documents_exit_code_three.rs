@@ -1,6 +1,6 @@
 //! Contract: `--help` documents exit code 3 (system error).
 
-use crate::e2e::support::binary;
+use crate::support::binary;
 use std::process::Command;
 
 #[test]

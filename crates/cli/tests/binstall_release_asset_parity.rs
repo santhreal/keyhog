@@ -79,10 +79,8 @@ fn binstall_signing_key_matches_the_installers() {
     let root = repo_root();
     let cargo_toml = std::fs::read_to_string(root.join("crates/cli/Cargo.toml"))
         .expect("read crates/cli/Cargo.toml");
-    let install_sh =
-        std::fs::read_to_string(root.join("install.sh")).expect("read install.sh");
-    let install_ps1 =
-        std::fs::read_to_string(root.join("install.ps1")).expect("read install.ps1");
+    let install_sh = std::fs::read_to_string(root.join("install.sh")).expect("read install.sh");
+    let install_ps1 = std::fs::read_to_string(root.join("install.ps1")).expect("read install.ps1");
 
     // The one release public key, as pinned in install.sh.
     let key = install_sh

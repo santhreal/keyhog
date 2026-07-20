@@ -2,7 +2,7 @@
 //! not exit 0 / report "clean", the requested diff scan never ran, so a CI
 //! gate must see a failure, not a false all-clear.
 
-use crate::e2e::support::binary;
+use crate::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 

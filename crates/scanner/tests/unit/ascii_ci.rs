@@ -108,8 +108,8 @@ fn contains_path_segment_leading_negative_twin() {
         "node_modules"
     ));
     assert!(!contains_path_segment("nodemodules/foo.js", "node_modules"));
-    // Bare segment with nothing after (no trailing separator) is not a tree.
-    assert!(!contains_path_segment("node_modules", "node_modules"));
+    // A bare path is one complete terminal segment.
+    assert!(contains_path_segment("node_modules", "node_modules"));
 }
 
 #[test]

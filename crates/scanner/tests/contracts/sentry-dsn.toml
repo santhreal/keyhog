@@ -6,7 +6,7 @@
 schema_version = 1
 detector_id = "sentry-dsn"
 service = "sentry"
-severity = "critical"
+severity = "high"
 
 # ---- POSITIVES (recall) ---------------------------------------------
 

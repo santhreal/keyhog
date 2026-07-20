@@ -4,7 +4,7 @@
 //! autoroute-readiness contract, which intentionally requires persisted route
 //! evidence for the default daemon policy.
 
-use crate::e2e::support::binary;
+use crate::support::binary;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 use tempfile::TempDir;

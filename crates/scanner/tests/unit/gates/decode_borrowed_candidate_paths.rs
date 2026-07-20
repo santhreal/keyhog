@@ -28,8 +28,9 @@ fn hot_decoders_decode_borrowed_candidates_without_clone_collect() {
         "pub(super) struct Z85Decoder",
     );
     assert!(
-        base64_body.contains("visit_classified_base64_string_spans(&chunk.data, 12")
-            && !base64_body.contains("find_classified_base64_string_spans"),
+        base64_body.contains(
+            "visit_classified_base64_string_spans(\n            &chunk.data,\n            MIN_BASE64_CANDIDATE_LEN",
+        ) && !base64_body.contains("find_classified_base64_string_spans"),
         "base64 decoder should visit borrowed classified candidates directly"
     );
     let z85_body = impl_body(
@@ -38,7 +39,7 @@ fn hot_decoders_decode_borrowed_candidates_without_clone_collect() {
         "#[derive(Clone, Copy)]",
     );
     assert!(
-        z85_body.contains("visit_z85_string_spans(&chunk.data, 20")
+        z85_body.contains("visit_z85_string_spans(&chunk.data, MIN_Z85_CANDIDATE_LEN")
             && !z85_body.contains("find_z85_string_spans"),
         "Z85 decoder should visit borrowed candidates and allocate only when whitespace cleaning is needed"
     );
@@ -61,15 +62,12 @@ fn hot_decoders_decode_borrowed_candidates_without_clone_collect() {
         "/src/decode/reverse.rs"
     ))
     .expect("reverse source readable");
-    let reverse_body = impl_body(
-        &reverse,
-        "impl Decoder for ReverseDecoder",
-        "pub(crate) fn reverse_str",
-    );
+    let reverse_body = &reverse;
     assert!(
         reverse_body.contains("decode_candidate_refs_exact(")
-            && !reverse_body.contains(".cloned()")
-            && !reverse_body.contains(".collect()"),
+            && reverse_body
+                .contains("candidates\n                    .iter()\n                    .filter(")
+            && !reverse_body.contains(".cloned()"),
         "reverse decoder should stream borrowed candidates into decode"
     );
     let looks_reversible_body = impl_body(

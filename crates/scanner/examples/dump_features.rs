@@ -34,6 +34,7 @@ fn parse_list(decoded: &str) -> Vec<String> {
 }
 
 fn resolve_detector(id: &str) -> Option<&'static keyhog_core::DetectorSpec> {
+    // LAW10: an ID without the optional channel suffix is already the complete detector ID; no lookup failure is discarded.
     let finding_id = id.split(':').next().unwrap_or(id);
     keyhog_core::detector_spec_by_id(finding_id).or_else(|| {
         keyhog_core::embedded_detector_specs().iter().find(|spec| {
@@ -64,6 +65,7 @@ fn main() {
         let placeholder_keywords = parse_list(&b64_decode(fields[5]));
         let detector_id = b64_decode(fields[6]);
         let detector = resolve_detector(&detector_id)
+            // LAW10: this diagnostic exporter aborts with the unknown ID; it cannot emit features under a substituted detector policy.
             .unwrap_or_else(|| panic!("unknown detector or entropy owner {detector_id:?}"));
         let channel = match b64_decode(fields[7]).as_str() {
             "pattern" => keyhog_scanner::ml_scorer::MlCandidateChannel::Pattern,

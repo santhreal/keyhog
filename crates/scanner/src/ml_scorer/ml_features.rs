@@ -87,10 +87,10 @@ impl CompiledDetectorMlFeatures {
             // Active entropy owners and weak-anchor detectors declare these
             // values in their detector TOML. Other detectors retain the
             // detector-neutral model tiers used by the training API.
-            entropy_high: detector.entropy_high.unwrap_or(HIGH_ENTROPY_THRESHOLD),
+            entropy_high: detector.entropy_high.unwrap_or(HIGH_ENTROPY_THRESHOLD), // LAW10: documented model-neutral training tier for named detectors that do not own entropy admission
             entropy_very_high: detector
                 .entropy_very_high
-                .unwrap_or(VERY_HIGH_ENTROPY_THRESHOLD),
+                .unwrap_or(VERY_HIGH_ENTROPY_THRESHOLD), // LAW10: documented model-neutral training tier for named detectors that do not own entropy admission
         }
     }
 }

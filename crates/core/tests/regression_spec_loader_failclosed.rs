@@ -30,7 +30,8 @@ use keyhog_core::{
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 fn from_str(toml_str: &str) -> Result<Vec<DetectorSpec>, SpecError> {
-    CoreTestApi::load_detectors_from_str(&TestApi, toml_str)
+    let source = keyhog_core::testing::detector_toml_with_fixture_confidence(toml_str);
+    CoreTestApi::load_detectors_from_str(&TestApi, &source)
 }
 
 fn with_gate(dir: &std::path::Path, enforce: bool) -> Result<Vec<DetectorSpec>, SpecError> {
@@ -38,7 +39,8 @@ fn with_gate(dir: &std::path::Path, enforce: bool) -> Result<Vec<DetectorSpec>, 
 }
 
 fn write_toml(dir: &std::path::Path, file: &str, body: &str) {
-    std::fs::write(dir.join(file), body).expect("write detector toml fixture");
+    let source = keyhog_core::testing::detector_toml_with_fixture_confidence(body);
+    std::fs::write(dir.join(file), source).expect("write detector toml fixture");
 }
 
 const VALID_DETECTOR_TOML: &str = r#"
@@ -443,6 +445,73 @@ regex = "demo2_[A-Z0-9]{8}"
     assert!(
         specs.iter().all(|d| d.id == "demo"),
         "both loaded specs carry the colliding id"
+    );
+}
+
+/// Version-skew shape: a detector file carrying a field this binary's schema
+/// does not know (`future_only`) is a PARSE skip, not an assembly reject, so it
+/// behaves differently from the duplicate-id case above. With the gate ON the
+/// whole corpus fails closed naming the unknown field (today's behavior: a
+/// binary older than the corpus refuses rather than silently dropping recall,
+/// and `unknown field` and a typo like `sevrity` are indistinguishable at the
+/// serde layer, so neither can be waved through here). With the gate OFF the
+/// skew file is skipped and the VALID detector still loads: the skip is a
+/// counted drop of exactly the unparseable file, never a silent corpus-wide
+/// empty. Pinned so the future graceful-skew work (KH-1263) changes this
+/// contract deliberately, behind an explicit corpus schema-version signal,
+/// rather than by accident.
+#[test]
+fn dir_with_unknown_future_field_skips_that_file_gate_off_and_fails_closed_gate_on() {
+    let future_field = r#"
+[detector]
+id = "fromfuture"
+name = "From The Future"
+service = "future"
+severity = "high"
+ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
+future_only = { knob = 1 }
+keywords = ["future_"]
+
+[[detector.patterns]]
+regex = "future_[A-Z0-9]{8}"
+"#;
+    let dir = tempfile::tempdir().expect("tempdir");
+    write_toml(dir.path(), "good.toml", VALID_DETECTOR_TOML); // id = "demo", parses
+    write_toml(dir.path(), "future.toml", future_field); // unknown field, skipped
+
+    // gate ON → whole corpus rejected, the unknown field named. failed_count is
+    // exactly the one skew file, total counts both.
+    let err = load_detectors(dir.path())
+        .expect_err("an unknown-field corpus must fail closed under the enforced gate");
+    match &err {
+        SpecError::DetectorCorpusRejected {
+            detail,
+            failed_count,
+            total,
+            ..
+        } => {
+            assert_eq!(*failed_count, 1, "only the skew file failed");
+            assert_eq!(*total, 2, "both .toml files count toward total");
+            assert!(
+                detail.contains("unknown field") && detail.contains("future_only"),
+                "rejection detail must name the unknown field; got: {detail}"
+            );
+        }
+        other => panic!("expected DetectorCorpusRejected, got {other:?}"),
+    }
+
+    // gate OFF → the skew file is skipped, the valid detector still loads. This
+    // is the graceful path: exactly one file dropped, never a silent empty set.
+    let specs =
+        with_gate(dir.path(), false).expect("gate-off load returns the valid subset, not an error");
+    assert_eq!(
+        specs.len(),
+        1,
+        "exactly the parseable detector survives; the skew file is skipped, not fatal"
+    );
+    assert_eq!(
+        specs[0].id, "demo",
+        "the surviving detector is the valid one, not the skew file"
     );
 }
 

@@ -222,8 +222,14 @@ fn symbolic_alpha_ratio_follows_detector_policy() {
 }
 
 #[test]
-fn symbolic_alpha_len_17_too_short_fails() {
-    assert!(!symbolic_alpha_only_opaque("Xzqk-pvbg-wmjz-rq"));
+fn symbolic_alpha_length_follows_detector_policy() {
+    assert!(!symbolic_alpha_only_opaque_with_policy(
+        "Xzqk-pvbg-wmjz-rq",
+        keyhog_core::DetectorPlausibilityPolicySpec {
+            isolated_symbolic_min_len: 18,
+            ..plausibility_policy()
+        },
+    ));
 }
 
 #[test]

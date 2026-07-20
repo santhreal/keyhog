@@ -1,7 +1,7 @@
 //! KH-GAP-150: `keyhog scan --help` omitted EXIT CODES table present on
 //! top-level `keyhog --help`: CI persona gap for exit-code discovery.
 
-use crate::e2e::support::binary;
+use crate::support::binary;
 use std::process::Command;
 
 #[test]

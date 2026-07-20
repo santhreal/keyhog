@@ -923,6 +923,8 @@ mod threshold_tests {
             symbolic_min_len: 18,
             symbolic_min_symbols: 2,
             symbolic_requires_non_underscore: true,
+            alpha_only_min_symbols: 3,
+            alpha_only_min_alpha_ratio: 0.5,
             colon_left_min_len: 20,
             colon_right_min_len: 16,
         };

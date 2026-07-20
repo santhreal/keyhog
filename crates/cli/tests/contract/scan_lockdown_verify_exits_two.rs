@@ -1,6 +1,6 @@
 //! Contract: incompatible `--lockdown --verify` exits 2.
 
-use crate::e2e::support::binary;
+use crate::support::binary;
 use std::process::Command;
 
 #[test]

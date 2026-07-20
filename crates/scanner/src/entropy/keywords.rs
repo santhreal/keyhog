@@ -415,6 +415,7 @@ fn assignment_keyword_is_credential(keyword: &str) -> bool {
         len = len.saturating_sub(1);
     }
     std::str::from_utf8(&normalized[..len])
+        // LAW10: normalization writes only ASCII bytes; invalid UTF-8 is structurally impossible and conservative `false` cannot admit a candidate.
         .ok()
         .is_some_and(normalized_assignment_keyword_is_credential)
 }

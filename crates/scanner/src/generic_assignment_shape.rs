@@ -9,8 +9,9 @@
 //! `return Some(GenericValueShapeStage::...)` (KH-L-0412: the name feeds the
 //! `--dogfood` suppression trace; the caller records it, the predicate stays
 //! pure). Recall is guarded by the generic-secret bench gates.
-use super::*;
 use crate::adjudicate::GenericValueShapeStage;
+use crate::engine::CompiledScanner;
+use keyhog_core::Chunk;
 
 /// KH-L-0413: the identifier/type-name cluster (`pure_identifier_no_digit` /
 /// `pure_identifier` / `type_name_shape` / `word_separated_identifier`) drops
@@ -24,6 +25,29 @@ use crate::adjudicate::GenericValueShapeStage;
 use crate::suppression::token_randomness::{
     keep_identifier_gate_with_randomness, keep_word_separated_gate_with_randomness, TokenRandomness,
 };
+
+#[allow(clippy::too_many_arguments)]
+fn generic_assignment_known_example_stage(
+    value: &str,
+    chunk: &Chunk,
+    entropy: f64,
+    allow_canonical_hex_key: bool,
+    allow_ambiguous_base64_candidate: bool,
+    allow_encoded_text_secret: bool,
+    reject_repeated_blocks: bool,
+) -> Option<crate::adjudicate::StageId> {
+    let context = crate::suppression::api::KnownExampleSuppressionCtx::with_entropy(
+        chunk.metadata.path.as_deref(),
+        crate::context::CodeContext::Unknown,
+        Some(chunk.metadata.source_type.as_ref()),
+        entropy,
+        allow_canonical_hex_key,
+        allow_ambiguous_base64_candidate,
+        allow_encoded_text_secret,
+    )
+    .with_repeated_block_policy(reject_repeated_blocks);
+    crate::suppression::api::suppress_known_example_credential_stage(value, context)
+}
 
 impl CompiledScanner {
     /// `Some(gate)` iff a generic-secret candidate `value` (with precomputed
@@ -54,6 +78,36 @@ impl CompiledScanner {
         allow_encoded_text_secret: bool,
         allow_decoded_hex_key_material: bool,
     ) -> Option<GenericValueShapeStage> {
+        if self
+            .detector_plans
+            .get(owning_detector_index)
+            .execution
+            .structural_password_slot
+        {
+            if let Some(reason) = crate::suppression::api::structural_password_slot_rejection(value)
+            {
+                return Some(GenericValueShapeStage::SharedShape(reason));
+            }
+            let ambiguous =
+                crate::suppression::shape::generic_base64_candidate_is_ambiguous(value, entropy);
+            if let Some(stage) = generic_assignment_known_example_stage(
+                value,
+                chunk,
+                entropy,
+                allow_canonical_hex_key,
+                ambiguous,
+                allow_encoded_text_secret,
+                owning_policy.reject_repeated_blocks,
+            ) {
+                return Some(GenericValueShapeStage::SharedSuppression(stage.as_str()));
+            }
+            if crate::decode_structure::evidence(value).decoded_contains_placeholder()
+                && !allow_decoded_hex_key_material
+            {
+                return Some(GenericValueShapeStage::DecodedPlaceholder);
+            }
+            return None;
+        }
         if chunk.metadata.source_type.contains("/caesar") {
             return Some(GenericValueShapeStage::CaesarGenericFallback);
         }
@@ -66,9 +120,13 @@ impl CompiledScanner {
         // are two distinct thresholds and must not be conflated (a marshalled-binary
         // blob is a blob regardless of the generic-secret confidence floor).
         let configured_floor_owner = if self.config.generic_keyword_low_entropy {
-            self.generic_owning_detector.isolated_bare_owner_index()
+            self.detector_plans
+                .generic_ownership()
+                .isolated_bare_owner_index()
         } else {
-            self.generic_owning_detector.keyword_free_owner_index()
+            self.detector_plans
+                .generic_ownership()
+                .keyword_free_owner_index()
         };
         let floor_detector_index = match configured_floor_owner {
             Some(index) => index,
@@ -321,19 +379,15 @@ impl CompiledScanner {
         ) {
             return Some(stage);
         }
-        let example_ctx = crate::suppression::api::KnownExampleSuppressionCtx::with_entropy(
-            chunk.metadata.path.as_deref(),
-            crate::context::CodeContext::Unknown,
-            Some(chunk.metadata.source_type.as_ref()),
+        if let Some(stage_id) = generic_assignment_known_example_stage(
+            value,
+            chunk,
             entropy,
             allow_canonical_hex_key,
             allow_ambiguous_base64_candidate,
             allow_encoded_text_secret,
-        )
-        .with_repeated_block_policy(owning_policy.reject_repeated_blocks);
-        if let Some(stage_id) =
-            crate::suppression::api::suppress_known_example_credential_stage(value, example_ctx)
-        {
+            owning_policy.reject_repeated_blocks,
+        ) {
             return Some(GenericValueShapeStage::SharedSuppression(stage_id.as_str()));
         }
         // Decoded-form placeholder check: a docs sample that arrives

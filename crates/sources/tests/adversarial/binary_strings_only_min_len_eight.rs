@@ -21,7 +21,7 @@ fn binary_strings_only_min_len_eight() {
     );
     let joined = chunks
         .iter()
-        .map(|c| c.data.to_string())
+        .map(|c| c.data.as_str().to_owned())
         .collect::<Vec<_>>()
         .join(
             "

@@ -10,7 +10,7 @@
 //! AKIAEXAMPLEEXAMPLE12, sk_live_PLACEHOLDER, xoxb-...-EXAMPLE-TOKEN)
 //! collapsed to single digits with this gate in place.
 
-use keyhog_scanner::confidence::known_prefix_confidence_floor;
+use keyhog_scanner::testing::confidence::known_prefix_confidence_floor;
 
 #[test]
 fn placeholder_words_skip_the_floor() {

@@ -1,6 +1,6 @@
 //! Regex-DFA shard dispatch and direct region admission for phase-2 GPU scanning.
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(super) struct Phase2GpuDfaShard {
     pub(super) pipeline: vyre_libs::scan::RegexDfaPipeline,
     pub(super) phase2_indices: Vec<usize>,

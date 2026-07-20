@@ -127,6 +127,7 @@ fn run_autoroute_inspection(
         value["repair_command"] = health
             .repair_command()
             .map(|command| serde_json::Value::String(command.to_string()))
+            // LAW10: JSON `null` is the explicit serialized representation of an absent recovery command, not a hidden replacement.
             .unwrap_or(serde_json::Value::Null);
         println!("{}", serde_json::to_string_pretty(&value)?);
         return Ok(exit);
@@ -365,6 +366,7 @@ fn run_autoroute_inspection(
                     let warm = timing
                         .warm_ms
                         .map(|ms| format!("/warm={ms}ms"))
+                        // LAW10: an absent optional warm-up measurement has no display suffix; the measured cold route remains unchanged and visible.
                         .unwrap_or_default();
                     format!(
                         "{}[plain={},keyword={}]={}ms{warm}",
@@ -393,10 +395,12 @@ fn run_autoroute_inspection(
                     decision
                         .runtime_fault_backend
                         .as_deref()
+                        // LAW10: this display sentinel makes missing runtime-fault route metadata explicit in operator output.
                         .unwrap_or("unknown"),
                     decision
                         .runtime_fault_reason
                         .as_deref()
+                        // LAW10: this display sentinel makes missing runtime-fault evidence explicit in operator output.
                         .unwrap_or("not recorded"),
                 );
             }
@@ -759,6 +763,7 @@ fn collect_self_test_report(require_gpu: bool) -> BackendSelfTestReport {
     let has_wgpu = acquired_backends.contains(&keyhog_scanner::ScanBackend::GpuWgpu);
     let healthy_gpu_backends = region_presence
         .as_ref()
+        // LAW10: a region-presence error is emitted as the failing `gpu_region_presence` probe below; this list contains only successful peers.
         .ok()
         .map(|report| {
             report
@@ -767,6 +772,7 @@ fn collect_self_test_report(require_gpu: bool) -> BackendSelfTestReport {
                 .map(|peer| crate::orchestrator_config::backend_override_cli_value(peer.backend))
                 .collect()
         })
+        // LAW10: an errored region-presence report has no healthy peers and is surfaced as a failed self-test probe below.
         .unwrap_or_default();
 
     // Test 1: keyhog's MoE compute dispatch.

@@ -1,6 +1,6 @@
 //! Contract: `--format text` on a clean file exits 0.
 
-use crate::e2e::support::{binary, write_temp_file};
+use crate::support::{binary, write_temp_file};
 use std::process::Command;
 
 #[test]

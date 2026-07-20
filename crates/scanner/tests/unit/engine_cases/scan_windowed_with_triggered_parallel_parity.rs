@@ -23,7 +23,7 @@ fn detector() -> DetectorSpec {
         verify: None,
         keywords: vec!["tok_live_".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }
 }
 
@@ -34,7 +34,7 @@ fn canonical(matches: &[RawMatch]) -> Vec<(String, String, usize, Option<usize>)
         .map(|m| {
             (
                 m.detector_id.to_string(),
-                m.credential.to_string(),
+                m.credential.as_str().to_string(),
                 m.location.offset,
                 m.location.line,
             )

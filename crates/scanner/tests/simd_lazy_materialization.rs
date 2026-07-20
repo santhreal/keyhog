@@ -14,7 +14,7 @@ fn scanner() -> CompiledScanner {
             ..PatternSpec::default()
         }],
         keywords: vec!["KHSIMDLAZY".into()],
-        ..DetectorSpec::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }])
     .expect("compile scanner plan")
 }

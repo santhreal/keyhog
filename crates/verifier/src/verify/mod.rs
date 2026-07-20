@@ -62,15 +62,12 @@ pub(crate) fn retryable_http_status(status: u16) -> bool {
     status == 429 || (500..=504).contains(&status)
 }
 
-/// Whether a detector supplied a *meaningful* success contract (any matched
-/// condition, not the empty default). When true the contract is authoritative
-/// and the generic `body_indicates_error` backstop must not second-guess it.
+/// Whether a detector supplied a *body-aware* success contract. Status-only
+/// specs are NOT explicit (KH-1298 / KH-1374): HTTP 200 + `{"error":...}` must
+/// still run `body_indicates_error` so Live is not false-positive. Status alone
+/// is a weak signal without body/json_path constraints.
 pub(crate) fn success_spec_is_explicit(spec: &keyhog_core::SuccessSpec) -> bool {
-    spec.status.is_some()
-        || spec.status_not.is_some()
-        || spec.body_contains.is_some()
-        || spec.body_not_contains.is_some()
-        || spec.json_path.is_some()
+    spec.body_contains.is_some() || spec.body_not_contains.is_some() || spec.json_path.is_some()
 }
 
 /// Final live verdict for the single-step path. An explicit success contract is

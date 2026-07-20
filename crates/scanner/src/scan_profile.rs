@@ -205,14 +205,14 @@ fn read_reset() -> ([u64; N], [u64; N], [u64; N], u64, u64) {
 /// Discard all accumulated counters without printing (warm-up between runs).
 pub fn reset() {
     let _ = read_reset(); // LAW10: intentionally discards the swapped-out profiling counters (reset side-effect, warm-up between runs); telemetry-only, recall-irrelevant
-    super::scan_inner_profile::scan_inner_profile_reset();
-    super::scan_postprocess::decode_profile_reset();
+    crate::engine::scan_inner_profile::scan_inner_profile_reset();
+    crate::engine::scan_postprocess::decode_profile_reset();
     crate::decode::extract_profile_reset();
     crate::decode::decoder_profile_reset();
-    super::phase2_generic::generic_profile_reset();
-    super::phase2::phase2_mark_stats_reset();
-    super::phase2::hs_mark_timing_reset();
-    super::scan_postprocess::ml_batch_profile_reset();
+    crate::engine::phase2_generic::generic_profile_reset();
+    crate::engine::phase2::phase2_mark_stats_reset();
+    crate::engine::phase2::hs_mark_timing_reset();
+    crate::engine::scan_postprocess::ml_batch_profile_reset();
     crate::gpu::ml_split_profile_reset();
 }
 
@@ -303,10 +303,11 @@ pub fn dump(label: &str) {
     // is read BEFORE its reset below so a candidate-dense vs sparse corpus is
     // distinguishable: it answers whether the `phase2:prefilter` cost is cheap
     // gate-skips averaged with a few brutal RegexSet passes, or uniformly heavy.
-    let mark: super::phase2::MarkSnapshot = super::phase2::phase2_mark_stats();
+    let mark: crate::engine::phase2::MarkSnapshot = crate::engine::phase2::phase2_mark_stats();
     // Internal timing split of the HS-served portion (scan vs dropped host loop),
     // read before its reset below. Only printed when HS-mark time was recorded.
-    let hs_split: super::phase2::HsMarkSplit = super::phase2::hs_mark_timing_snapshot();
+    let hs_split: crate::engine::phase2::HsMarkSplit =
+        crate::engine::phase2::hs_mark_timing_snapshot();
 
     leaf(P::Preprocess as usize, scan_ns, "  ");
     leaf(P::Phase1Triggers as usize, scan_ns, "  ");
@@ -320,7 +321,7 @@ pub fn dump(label: &str) {
         // Attach the path decomposition directly under the prefilter leaf it
         // describes, so the dominant scan cost is diagnosable in place.
         if i == P::Phase2Prefilter as usize && mark.calls > 0 {
-            let line = super::phase2::format_mark_decomposition(&mark);
+            let line = crate::engine::phase2::format_mark_decomposition(&mark);
             if mark.is_consistent() {
                 eprintln!("        ↳ {line}");
             } else {
@@ -340,7 +341,7 @@ pub fn dump(label: &str) {
             if hs_split.any_recorded() {
                 eprintln!(
                     "          ↳ {}",
-                    super::phase2::format_hs_mark_split(&hs_split)
+                    crate::engine::phase2::format_hs_mark_split(&hs_split)
                 );
             }
         }
@@ -358,17 +359,17 @@ pub fn dump(label: &str) {
 
     // Fold in the auxiliary histograms recorded on the hot path. Each early-returns
     // when its counters are empty, so an unrelated run prints nothing extra.
-    super::scan_inner_profile::scan_inner_profile_dump();
-    super::scan_postprocess::decode_profile_dump();
+    crate::engine::scan_inner_profile::scan_inner_profile_dump();
+    crate::engine::scan_postprocess::decode_profile_dump();
     crate::decode::extract_profile_dump();
     crate::decode::decoder_profile_dump();
-    super::phase2_generic::generic_profile_dump();
-    super::scan_postprocess::ml_batch_profile_dump();
+    crate::engine::phase2_generic::generic_profile_dump();
+    crate::engine::scan_postprocess::ml_batch_profile_dump();
     crate::gpu::ml_split_profile_dump();
 
     // Reset the prefilter call counters now that they have been reported, so the
     // next dump reflects only its own run (the leaf NS/CALLS were already swapped
     // out by `read_reset`; this keeps the mark counters consistent with them).
-    super::phase2::phase2_mark_stats_reset();
-    super::phase2::hs_mark_timing_reset();
+    crate::engine::phase2::phase2_mark_stats_reset();
+    crate::engine::phase2::hs_mark_timing_reset();
 }

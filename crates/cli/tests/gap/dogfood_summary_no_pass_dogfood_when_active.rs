@@ -1,7 +1,7 @@
 //! KH-GAP-147: `--dogfood` scan still printed "Pass --dogfood to see them"
 //! even when --dogfood was already active.
 
-use crate::e2e::support::binary;
+use crate::support::binary;
 use std::path::PathBuf;
 use std::process::Command;
 

@@ -20,7 +20,7 @@ fn scan_scans_keyhogignore_path_when_source_hands_it_over() {
         verify: None,
         keywords: vec!["secret".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let s = CompiledScanner::compile(vec![d]).unwrap();
     let chunk = Chunk {

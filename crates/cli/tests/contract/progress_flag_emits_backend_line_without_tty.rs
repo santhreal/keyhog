@@ -1,6 +1,6 @@
 //! Contract: `--progress` must emit progress UI even when stderr is piped.
 
-use crate::e2e::support::{apply_default_scan_backend, binary, write_temp_file};
+use crate::support::{apply_default_scan_backend, binary, write_temp_file};
 use std::process::Command;
 
 #[test]

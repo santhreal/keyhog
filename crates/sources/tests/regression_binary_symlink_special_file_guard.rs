@@ -397,7 +397,7 @@ fn real_regular_binary_two_secrets_both_surface() {
 
     let rows = scan_rows(bin);
     let (chunks, _errors) = split_chunk_results(&rows);
-    let all: String = chunks.iter().map(|c| c.data.to_string()).collect();
+    let all: String = chunks.iter().map(|c| c.data.as_str().to_owned()).collect();
     assert!(all.contains(SENTINEL), "first secret must surface");
     assert!(all.contains(SENTINEL_B), "second secret must surface");
 }

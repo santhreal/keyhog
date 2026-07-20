@@ -57,12 +57,14 @@ impl GpuBackendPeers {
                 .cuda
                 .get_or_init(acquire_cuda_peer)
                 .as_ref()
+                // LAW10: acquisition failures remain stored in this `Result` and are exposed by runtime diagnostics; this accessor only asks whether a usable peer exists.
                 .ok()
                 .map(|peer| &peer.backend),
             ScanBackend::GpuWgpu if self.wgpu_available => self
                 .wgpu
                 .get_or_init(acquire_wgpu_peer)
                 .as_ref()
+                // LAW10: acquisition failures remain stored in this `Result` and are exposed by runtime diagnostics; this accessor only asks whether a usable peer exists.
                 .ok()
                 .map(|peer| &peer.backend),
             _ => None,
@@ -71,7 +73,9 @@ impl GpuBackendPeers {
 
     pub(crate) fn initialized(&self, backend: ScanBackend) -> Option<&AcquiredGpuPeer> {
         match backend {
+            // LAW10: acquisition errors remain stored for diagnostics; this accessor intentionally returns only successfully acquired peers.
             ScanBackend::GpuCuda => self.cuda.get().and_then(|result| result.as_ref().ok()),
+            // LAW10: WGPU acquisition errors remain stored for runtime diagnostics; this accessor returns only a successfully acquired peer.
             ScanBackend::GpuWgpu => self.wgpu.get().and_then(|result| result.as_ref().ok()),
             _ => None,
         }

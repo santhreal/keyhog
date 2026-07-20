@@ -33,7 +33,7 @@ fn resident_gpu_readback_reuse_preserves_owned_results_and_parity() {
             weak_anchor: false,
         }],
         keywords: vec!["KHRESIDENT".into()],
-        ..DetectorSpec::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let scanner = CompiledScanner::compile(vec![detector]).expect("compile resident scanner");
     let chunks = [

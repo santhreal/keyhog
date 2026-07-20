@@ -203,7 +203,7 @@ fn git_diff_hunk_flush_uses_resolved_git_blob_byte_cap() {
     );
     let joined = chunks
         .iter()
-        .map(|chunk| chunk.data.to_string())
+        .map(|chunk| chunk.data.as_str().to_owned())
         .collect::<Vec<_>>()
         .join("\n");
     for expected in ["line_one", "line_two", "line_three"] {

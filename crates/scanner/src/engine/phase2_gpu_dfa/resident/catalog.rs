@@ -72,12 +72,30 @@ impl ResidentCapacity {
                 "phase-2 GPU resident admission region capacity overflows u32 for {regions} regions. Fix: split the batch before dispatch."
             )
         })?;
+        if packed_haystack_bytes % U32_BYTES != 0 {
+            return Err(format!(
+                "phase-2 GPU resident admission haystack capacity is {packed_haystack_bytes} byte(s), not aligned to the {U32_BYTES}-byte GPU element ABI. Fix: pad the packed batch before resident preparation."
+            ));
+        }
+        if ceiling % U32_BYTES != 0 {
+            return Err(format!(
+                "Vyrë's phase-2 GPU scan ceiling {ceiling} is not aligned to the {U32_BYTES}-byte GPU element ABI. Fix: align the backend scan ceiling."
+            ));
+        }
         let growth = packed_haystack_bytes / 4;
-        let haystack_bytes = packed_haystack_bytes
-            .checked_add(growth)
-            .unwrap_or(ceiling)
-            .min(ceiling)
-            .max(U32_BYTES);
+        let grown = packed_haystack_bytes.checked_add(growth).ok_or_else(|| {
+            "phase-2 GPU resident haystack growth overflows host usize. Fix: lower the GPU batch cap."
+                .to_string()
+        })?;
+        let aligned = grown
+            .checked_add(U32_BYTES - 1)
+            .ok_or_else(|| {
+                "phase-2 GPU resident haystack alignment overflows host usize. Fix: lower the GPU batch cap."
+                    .to_string()
+            })?
+            / U32_BYTES
+            * U32_BYTES;
+        let haystack_bytes = aligned.min(ceiling).max(U32_BYTES);
         Ok(Self {
             haystack_bytes,
             regions: region_capacity,
@@ -93,6 +111,15 @@ impl ResidentCapacity {
             regions: self.regions.max(state.region_capacity),
         }
     }
+}
+
+#[cfg(test)]
+pub(in crate::engine::phase2_gpu_dfa) fn resident_capacity_for_test(
+    packed_haystack_bytes: usize,
+    regions: usize,
+) -> Result<(usize, u32), String> {
+    ResidentCapacity::for_batch(packed_haystack_bytes, regions)
+        .map(|capacity| (capacity.haystack_bytes, capacity.regions))
 }
 
 impl Phase2GpuDfaCatalogResident {
@@ -236,6 +263,7 @@ impl ResidentState {
         for shard in &self.shards {
             reset_lengths.push(shard.used_presence_bytes(region_count)?);
         }
+        // LAW10: an empty reset set requires zero bytes; every non-empty shard contributes its exact reset length before this maximum is taken.
         let reset_bytes = reset_lengths.iter().copied().max().unwrap_or(0);
         scratch.reset_bytes.clear();
         scratch

@@ -123,7 +123,22 @@ runs:
         ACTION_SOURCE_ROOT: ${{ github.action_path }}/../../..
       run: |
         set -euo pipefail
+        # Always initialize under `set -u` (KH-1267): branch/SHA refs never set
+        # `v` in older revisions and aborted with "v: unbound variable".
+        v=""
         release_required=false
+        workspace_version_from_cargo() {
+          local manifest="$1"
+          awk '
+            $0 == "[workspace.package]" { in_workspace_package = 1; next }
+            in_workspace_package && /^\[/ { exit }
+            in_workspace_package && $1 == "version" {
+              gsub(/\"/, "", $3)
+              print $3
+              exit
+            }
+          ' "$manifest"
+        }
         if [[ -n "${ACTION_VERSION:-}" ]]; then
           if ! normalized_tag="$(bash "$ACTION_SOURCE_ROOT/scripts/release-version.sh" "$ACTION_VERSION")"; then
             echo "::error title=KeyHog::Invalid version. Explicit version must be MAJOR.MINOR.PATCH with an optional prerelease suffix."
@@ -148,20 +163,23 @@ runs:
               echo "::error title=KeyHog::Floating release ref cannot resolve its exact version because Cargo.toml is unavailable."
               exit 2
             fi
-            v="$(awk '
-              $0 == "[workspace.package]" { in_workspace_package = 1; next }
-              in_workspace_package && /^\[/ { exit }
-              in_workspace_package && $1 == "version" {
-                gsub(/\"/, "", $3)
-                print $3
-                exit
-              }
-            ' "$manifest")"
+            v="$(workspace_version_from_cargo "$manifest")"
             if ! [[ "$v" =~ ^${major}[.][0-9]+[.][0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
               echo "::error title=KeyHog::Floating release ref does not match the exact version in Cargo.toml."
               exit 2
             fi
             release_required=true
+          else
+            # Branch / SHA / other non-release refs: source-build path. Record
+            # the workspace package version for logs only; never require assets.
+            manifest="$ACTION_SOURCE_ROOT/Cargo.toml"
+            if [[ -f "$manifest" ]]; then
+              v="$(workspace_version_from_cargo "$manifest")"
+            fi
+            if [[ -z "$v" ]]; then
+              v="source"
+            fi
+            release_required=false
           fi
         fi
         case "$v" in
@@ -395,8 +413,10 @@ runs:
         # the portable macOS release asset; Windows has no supported Hyperscan
         # package. Portable keeps every scanner data path and its portable
         # source-backend set without the Hyperscan link.
+        # KH-1304: Linux hosted runners cannot afford full default GPU link for
+        # Action source-build; ci-lean keeps sources/verify without GPU.
         case "$(uname -s)" in
-          Linux*) cargo build --locked --release -p keyhog ;;
+          Linux*) cargo build --locked --release -p keyhog --no-default-features --features ci-lean ;;
           *)
             cargo build --locked --release -p keyhog --no-default-features --features portable
             ;;
@@ -418,7 +438,9 @@ runs:
         ACTION_BASELINE: ${{ inputs.baseline }}
       run: |
         set -euo pipefail
-        probe="${RUNNER_TEMP}/keyhog-autoroute-probe-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}.json"
+        # Include job + action so concurrent matrix cells cannot clobber one
+        # shared probe file under the same RUN_ID (KH-1336).
+        probe="${RUNNER_TEMP}/keyhog-autoroute-probe-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-job}-${GITHUB_ACTION:-action}.json"
         trap 'rm -f -- "$probe"' EXIT
         config_args=(
           config
@@ -453,6 +475,9 @@ runs:
     - name: Run scan
       id: scan
       shell: bash
+      # run-scan.sh fails when used alone, while the composite must still upload
+      # its report before the receipt-driven final findings gate runs.
+      continue-on-error: true
       env:
         ACTION_SCAN_PATH: ${{ inputs.path }}
         ACTION_SEVERITY: ${{ inputs.severity }}
@@ -481,7 +506,12 @@ runs:
         if [[ -n "${ACTION_BACKEND:-}" ]]; then
           args+=(--backend "$ACTION_BACKEND")
         fi
+        set +e
         bash "${{ github.action_path }}/run-scan.sh" "${args[@]}"
+        runner_exit=$?
+        set -e
+        printf 'runner-exit-code=%s\n' "$runner_exit" >> "$GITHUB_OUTPUT"
+        exit "$runner_exit"
 
     - name: Check report exists before SARIF upload
       id: report-check
@@ -522,13 +552,34 @@ runs:
         if-no-files-found: warn
 
     - name: Fail when findings reported
-      if: steps.scan.outputs.findings != '' && steps.scan.outputs.exit-code != '' && ((inputs.fail-on-findings == 'true' && steps.scan.outputs.findings != '0') || steps.scan.outputs.exit-code == '10')
+      # The runner is tolerated long enough to upload its report. Re-emit every
+      # terminal scanner or wrapper failure here after those always-run steps.
+      if: always() && steps.scan.outputs.runner-exit-code != '' && (steps.scan.outputs.runner-exit-code != '0' || (steps.scan.outputs.findings != '' && steps.scan.outputs.exit-code != '' && ((inputs.fail-on-findings == 'true' && (steps.scan.outputs.findings != '0' || steps.scan.outputs.exit-code == '1')) || steps.scan.outputs.exit-code == '10')))
       shell: bash
       env:
+        ACTION_RUNNER_EXIT_CODE: ${{ steps.scan.outputs.runner-exit-code }}
         ACTION_FINDINGS: ${{ steps.scan.outputs.findings }}
         ACTION_EXIT_CODE: ${{ steps.scan.outputs.exit-code }}
+        ACTION_SCAN_STATUS: ${{ steps.scan.outputs.scan-status }}
         ACTION_SEVERITY: ${{ inputs.severity }}
       run: |
+        case "${ACTION_RUNNER_EXIT_CODE:-}" in
+          "" | *[!0-9]*)
+            echo "::error title=KeyHog::Invalid runner-exit-code output."
+            exit 3
+            ;;
+        esac
+        if [[ -z "${ACTION_FINDINGS:-}" || -z "${ACTION_EXIT_CODE:-}" ]]; then
+          echo "::error title=KeyHog::Scan runner exited ${ACTION_RUNNER_EXIT_CODE} before publishing its receipt."
+          exit "$ACTION_RUNNER_EXIT_CODE"
+        fi
+        case "$ACTION_RUNNER_EXIT_CODE" in
+          0 | 1 | 10) ;;
+          *)
+            echo "::error title=KeyHog::Scan runner exited ${ACTION_RUNNER_EXIT_CODE} after publishing a failed receipt."
+            exit "$ACTION_RUNNER_EXIT_CODE"
+            ;;
+        esac
         case "${ACTION_FINDINGS:-}" in
           "" | *[!0-9]*)
             echo "::error title=KeyHog::Invalid findings output."
@@ -546,9 +597,17 @@ runs:
             exit "$ACTION_EXIT_CODE"
             ;;
         esac
+        if [[ "${ACTION_SCAN_STATUS:-}" == "failed" && "$ACTION_EXIT_CODE" == "0" ]]; then
+          echo "::error title=KeyHog::Scan wrapper failed while validating the clean report."
+          exit 3
+        fi
         if [[ "$ACTION_EXIT_CODE" == "10" ]]; then
           echo "::error title=KeyHog::LIVE credential(s) confirmed by --verify (exit 10)."
           exit 10
+        fi
+        if [[ "$ACTION_EXIT_CODE" == "1" && "$ACTION_FINDINGS" == "0" ]]; then
+          echo "::error title=KeyHog::keyhog exited 1 (findings) but the report count is 0; treating as a findings failure (fail-on-findings)."
+          exit 1
         fi
         echo "::error title=KeyHog::${ACTION_FINDINGS} finding(s) at or above '${ACTION_SEVERITY}' severity. Set fail-on-findings:false to ignore."
         exit 1

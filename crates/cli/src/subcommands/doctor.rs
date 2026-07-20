@@ -340,7 +340,7 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
             Err(e) => {
                 healthy = false;
                 println!(
-                    "  gpu scan path  {}  GPU region-presence self-test failed; GPU routes are unavailable until fixed. Automatic scans with a persisted GPU route recover visibly through their measured-correct peer and quarantine the faulted route; required-GPU and explicit GPU scans fail. Fix the GPU path and recalibrate, or use an explicit CPU/SIMD backend for diagnostics.\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test` for the full GPU diagnostic{reset}",
+                    "  gpu scan path  {}  GPU region-presence self-test failed; GPU routes are unavailable until fixed. Automatic scans with a persisted GPU route recover visibly through their measured-correct peer and quarantine the faulted route; required-GPU and explicit GPU scans fail. auto scans fail closed rather than silently route to CPU/SIMD. Fix the GPU path and recalibrate, or use an explicit CPU/SIMD backend for diagnostics.\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test` for the full GPU diagnostic{reset}",
                     style::fail("FAIL", &palette)
                 );
             }

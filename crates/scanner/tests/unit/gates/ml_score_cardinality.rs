@@ -96,7 +96,7 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
             && scan_state.contains("fn entropy_candidate(")
             && scan_state.contains("fn push_detector_ml_pending(")
             && scan_state.contains("fn push_entropy_ml_pending(")
-            && scan_state.contains("fn for_each_named_pending_ml_line")
+            && scan_state.contains("fn for_each_pre_entropy_pending_ml_line")
             && process.contains("&& !weak_anchor")
             && process.contains("push_detector_ml_pending(")
             && entropy.contains("push_entropy_ml_pending(")
@@ -106,8 +106,8 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
             && !entropy.contains(".ml_pending.push(")
             && !process.contains(".ml_pending")
             && !entropy.contains(".ml_pending")
-            && process.contains("ml_enabled: self.config.ml_enabled")
-            && entropy.contains("if self.config.ml_enabled && self.config.entropy_ml_authoritative")
+            && process.contains("ml_mode: detector_ml_mode")
+            && entropy.contains(".filter(|_| self.config.ml_enabled && self.config.entropy_ml_authoritative)")
             && process.contains("crate::types::ml_features_for_candidate(")
             && entropy.contains("crate::types::ml_features_for_candidate(")
             && !process.contains("MlPendingMatch {")
@@ -145,9 +145,9 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
     );
     assert_eq!(queued.as_slice(), expected.as_slice());
     assert!(
-        gpu.contains("let score_features_on_cpu = || -> Vec<f64>")
-            && gpu.contains("scores.len() == candidates.len()")
-            && gpu.contains("crate::confidence::policy::ml_score_for_candidate_text(")
+        gpu.contains(
+            "let score_features_on_cpu =\n            || crate::ml_scorer::score_precomputed_batch_on_cpu",
+        ) && gpu.contains("scores.len() == candidates.len()")
             && gpu.contains("crate::confidence::policy::apply_empty_candidate_score_policy(")
             && !gpu.contains("*score = 0.0;")
             // The caller's malformed-score arm must surface the mismatch LOUDLY

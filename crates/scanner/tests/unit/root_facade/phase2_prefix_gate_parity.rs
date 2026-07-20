@@ -137,7 +137,7 @@ fn canonical(m: &[Vec<RawMatch>]) -> Vec<(String, String, String)> {
         .map(|x| {
             (
                 x.detector_id.to_string(),
-                x.credential.to_string(),
+                x.credential.as_str().to_string(),
                 format!("{:?}", x.location),
             )
         })
@@ -207,7 +207,7 @@ fn unicode_casefold_detector() -> DetectorSpec {
         }],
         keywords: Vec::new(),
         min_confidence: Some(0.0),
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }
 }
 

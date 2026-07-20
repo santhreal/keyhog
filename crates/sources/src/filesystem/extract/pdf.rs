@@ -69,6 +69,9 @@ pub(super) fn extract_pdf_chunks(
 
     let budget = pdf_decode_budget(max_size);
     let extracted = extract_pdf_text(&bytes, budget);
+    let extraction_had_error = extracted.recovered_after_error
+        || extracted.unreadable_gap.is_some()
+        || extracted.truncated;
     if extracted.recovered_after_error {
         let error = report_pdf_recovered_after_error(&path_display);
         if !emit(Err(error)) {
@@ -90,6 +93,11 @@ pub(super) fn extract_pdf_chunks(
 
     let text = extracted.text.trim();
     if text.is_empty() {
+        if !extraction_had_error {
+            // KH-1325: valid PDF with no extractable text (image-only) is not a
+            // silent clean miss; count it like other binary-without-strings skips.
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+        }
         return;
     }
     if !emit(Ok(Chunk {

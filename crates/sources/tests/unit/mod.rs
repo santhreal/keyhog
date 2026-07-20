@@ -33,6 +33,7 @@ pub mod cloud;
 pub mod file_gate;
 pub mod filesystem;
 pub mod filesystem_filter;
+pub mod filesystem_filter_generated;
 pub mod gates;
 pub mod git_diff;
 pub mod git_diff_head_worktree;
@@ -46,6 +47,7 @@ pub mod http;
 pub mod internal_contracts;
 pub mod lib;
 pub mod magic;
+pub mod magic_generated;
 #[cfg(any(
     feature = "git",
     feature = "docker",
@@ -55,8 +57,12 @@ pub mod magic;
 ))]
 pub mod process_excerpt;
 pub mod src_inline_skip_counter_isolation;
+#[cfg(feature = "web")]
+pub mod ssrf_generated;
 pub mod strings_extract;
 pub mod timeouts;
+#[cfg(feature = "web")]
+pub mod url_redaction_generated;
 #[cfg(feature = "web")]
 pub mod web_redact_url_userinfo_boundary;
 #[cfg(feature = "web")]

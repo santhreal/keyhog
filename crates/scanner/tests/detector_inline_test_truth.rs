@@ -204,6 +204,25 @@ fn every_inline_positive_fires_its_own_detector() {
 }
 
 #[test]
+fn agenta_assignment_is_not_a_tripadvisor_alias() {
+    let matches = scanner().scan(&make_chunk(
+        "AGENTA_API_KEY=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d",
+    ));
+    assert!(
+        matches
+            .iter()
+            .any(|matched| matched.detector_id.as_ref() == "agenta-api-key"),
+        "Agenta assignment must retain its detector: {matches:?}"
+    );
+    assert!(
+        !matches
+            .iter()
+            .any(|matched| matched.detector_id.as_ref() == "tripadvisor-api-key"),
+        "TA_API_KEY must require a word boundary: {matches:?}"
+    );
+}
+
+#[test]
 fn anchored_generic_service_detectors_remain_named_through_resolution() {
     let cases = load_inline_cases();
     let detectors = keyhog_core::embedded_detector_specs().to_vec();

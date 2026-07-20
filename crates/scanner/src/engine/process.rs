@@ -67,11 +67,20 @@ impl CompiledScanner {
         let line = match_line_number(preprocessed, line_offsets, credential_start);
         let execution_policy = &detector_plan.execution;
         let is_generic = execution_policy.is_generic;
+        // A declared structural slot is exact syntactic evidence even when the
+        // owning detector is generic, so generic probabilistic admission must
+        // not veto it before the slot-specific placeholder policy runs.
+        let apply_generic_candidate_gates =
+            is_generic && !execution_policy.structural_password_slot;
 
         let process_signals = crate::adjudicate::ProcessCandidateSignals::from_match(
-            is_generic,
+            apply_generic_candidate_gates,
             execution_policy.length,
             detector_plan.credential_shape.as_ref(),
+            detector_plan
+                .match_confidence
+                .post_match()
+                .degenerate_run_min_length,
             credential,
             data,
             credential_start,
@@ -320,6 +329,7 @@ impl CompiledScanner {
                         context_suppression_threshold: detector_plan
                             .match_confidence
                             .context_suppression_threshold(inferred_context),
+                        post_match: detector_plan.match_confidence.post_match(),
                         file_path: chunk.metadata.path.as_deref(),
                         is_named_detector,
                         is_generic_detector: is_generic,
@@ -391,6 +401,7 @@ impl CompiledScanner {
                     detector_plan
                         .match_confidence
                         .context_suppression_threshold(code_context),
+                    detector_plan.match_confidence.post_match(),
                     ml_features,
                     detector_ml_policy.effective_weight(&self.config),
                     min_confidence_floor,

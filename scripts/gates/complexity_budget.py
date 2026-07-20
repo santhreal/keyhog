@@ -30,7 +30,7 @@ SELECT = REPO / "crates" / "scanner" / "src" / "hw_probe" / "select.rs"
 # Pinned to the measured state on 2026-06-15. Lowering one as you simplify is
 # the whole point; raising one must be a conscious, reviewed exception.
 BUDGET = {
-    "phase2_lanes": 12,          # engine/phase2*.rs files (exact ratchet)
+    "phase2_lanes": 10,          # engine/phase2*.rs files (exact ratchet)
     "scan_backends": 4,          # ScanBackend:: variants (exact ratchet)
     # Raised 45 -> 48 (2026-06-27): prior work split three god-files into focused
     # single-responsibility modules per Law 5 (engine helper-owner splits, the GPU
@@ -39,22 +39,14 @@ BUDGET = {
     # budget below (11967/12000) still guards real bloat, so the file-count rise
     # from cohesive splits is not new divergent complexity. The ratchet stays
     # exact at the current count so further growth still fails.
-    "engine_files": 48,          # *.rs files under engine/ (exact ratchet)
-    # LOC carries a slim headroom so ordinary in-file edits don't trip it; the
-    # structural counts above are the real "new divergent path" signal. Lower
-    # all four as you collapse the engine.
-    # Raised 12000 -> 12200 (2026-06-28): the prior 12000 pin was breached by
-    # legitimate accumulated multi-agent in-file feature work (gpu_region_dispatch,
-    # the phase2 lanes). NOT new divergent complexity. The structural ratchets
-    # (phase2_lanes 12, scan_backends 4, engine_files 48) all still hold EXACTLY,
-    # so there is no new lane, backend, or god-file (the sprawl signal is green).
-    # Before re-pinning, the dead `CsrU32::from_rows` generic constructor was
-    # removed (Law 11: the four real builders all take the `From<Vec<Vec<usize>>>`
-    # path through `from_rows_sized`), dropping the measured value 12057 -> 12035.
-    # Re-pinned to 12035 + a slim ~1.4% headroom, tighter than the original ~3%
-    #, so this backstop keeps tightening pressure without red-flagging every
-    # ordinary in-file edit, which is exactly this budget's stated purpose.
-    "engine_loc": 12200,         # total non-blank LOC under engine/ (measured 12035)
+    "engine_files": 40,          # *.rs files under engine/ (exact ratchet)
+    # LOC is exact at the current measured state. Any growth must be paid for
+    # by removing equivalent engine complexity in the same change.
+    # Lowered 12200 -> 12123 (2026-07-19): profiling, segment attribution,
+    # generic-shape adjudication, regex truncation, and GPU artifact/cache/input
+    # policy now live at crate-level ownership boundaries instead of the runtime
+    # engine. The engine lost seven files and two phase-2 policy lanes.
+    "engine_loc": 12123,         # total non-blank LOC under engine/
 }
 
 

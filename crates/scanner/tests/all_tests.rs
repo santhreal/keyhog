@@ -2,12 +2,12 @@
 
 mod support;
 
+pub mod concurrent;
+pub mod contract;
 #[path = "gap/detector_length_policy_parity.rs"]
 pub mod detector_length_policy_parity;
 #[path = "gap/entropy_feature_policy_fails_closed.rs"]
 pub mod entropy_feature_policy_fails_closed;
-pub mod concurrent;
-pub mod contract;
 pub mod integration;
 pub mod regression;
 // Standalone `regression_*.rs` files are aggregated here so the single CI step
@@ -59,6 +59,8 @@ pub mod regression_billing_vendor_token_recall;
 pub mod regression_caesar_decoder;
 #[path = "regression_caesar_shift_all.rs"]
 pub mod regression_caesar_shift_all;
+#[path = "regression_capture_group_participation.rs"]
+pub mod regression_capture_group_participation;
 #[path = "regression_charclass_prefix_expansion_recall.rs"]
 pub mod regression_charclass_prefix_expansion_recall;
 #[path = "regression_checksum_boundary_no_downgrade.rs"]
@@ -137,8 +139,12 @@ pub mod regression_detector_identity_propagation;
 pub mod regression_detector_keyword_index;
 #[path = "regression_detector_min_len_runtime.rs"]
 pub mod regression_detector_min_len_runtime;
+#[path = "regression_detector_owned_keyword_separators.rs"]
+pub mod regression_detector_owned_keyword_separators;
 #[path = "regression_detector_registry_integrity.rs"]
 pub mod regression_detector_registry_integrity;
+#[path = "regression_detector_service_policy.rs"]
+pub mod regression_detector_service_policy;
 #[path = "regression_devplatform_monitoring_token_recall.rs"]
 pub mod regression_devplatform_monitoring_token_recall;
 #[path = "regression_devtool_vendor_token_recall.rs"]
@@ -227,8 +233,6 @@ pub mod regression_keyword_bridge;
 pub mod regression_keyword_bridge_floor;
 #[path = "regression_keyword_predicate_union.rs"]
 pub mod regression_keyword_predicate_union;
-#[path = "regression_detector_owned_keyword_separators.rs"]
-pub mod regression_detector_owned_keyword_separators;
 #[path = "regression_kubeconfig_k8s_recall.rs"]
 pub mod regression_kubeconfig_k8s_recall;
 #[path = "regression_leading_assertion_and_alternation_prefix_recall.rs"]

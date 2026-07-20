@@ -167,7 +167,7 @@ fn newline_escape_yields_real_newline_in_pem_credential() {
 \\nMIIBOgIBAAJBAKj34GkxFhD90vcNLYLInFEX6Ppy1tPf9Cnzj4p4WGeKLs1Pt8Qu\
 \\nKUpRKfFLfRYC9AIKjbJTWit+CqvjWYzvQwECAwEAAQJAIWPaVgC5bA8AjVWdjxNm\
 \\n-----END RSA PRIVATE KEY-----\"}";
-    let m = only(&scan(json), "private-key");
+    let m = only(&scan(json), "ssh-private-key");
     // The decoded credential carries a REAL 0x0A, not the literal `\n` pair.
     assert!(
         m.credential

@@ -129,7 +129,7 @@ fn healthy_zip_is_not_counted_as_truncated() {
         1,
         "single-entry healthy zip should emit one archive chunk, got {chunks:?}"
     );
-    let bodies: Vec<String> = chunks.iter().map(|c| c.data.to_string()).collect();
+    let bodies: Vec<String> = chunks.iter().map(|c| c.data.as_str().to_owned()).collect();
     assert_eq!(
         skip_counts().archive_truncated,
         0,
@@ -180,7 +180,7 @@ fn zip_with_unlimited_max_file_size_is_fully_extracted() {
         2,
         "two-entry unlimited zip should emit two archive chunks, got {chunks:?}"
     );
-    let bodies: Vec<String> = chunks.iter().map(|c| c.data.to_string()).collect();
+    let bodies: Vec<String> = chunks.iter().map(|c| c.data.as_str().to_owned()).collect();
 
     assert_eq!(
         skip_counts().archive_truncated,
@@ -239,7 +239,7 @@ fn symlinked_archive_in_tree_is_not_expanded_and_is_counted() {
         err.contains("refusing to scan archive symlink") && err.contains("link-swap exfiltration"),
         "refused archive symlink error must name the blocked coverage gap, got {err}"
     );
-    let bodies: Vec<String> = chunks.iter().map(|c| c.data.to_string()).collect();
+    let bodies: Vec<String> = chunks.iter().map(|c| c.data.as_str().to_owned()).collect();
 
     assert!(
         !bodies.iter().any(|b| b.contains("AKIAQYLPMN5HFIQR7XYA")),

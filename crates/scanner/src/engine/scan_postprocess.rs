@@ -7,19 +7,14 @@ use crate::types::MAX_SCAN_CHUNK_BYTES;
 use keyhog_core::SensitiveString;
 use keyhog_core::{Chunk, RawMatch};
 #[cfg(feature = "decode")]
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 #[cfg(feature = "decode")]
 use std::sync::atomic::Ordering::Relaxed;
 #[cfg(feature = "decode")]
 use std::sync::Arc;
 
-// Profiling + suffix-gate machinery, confirmed extraction, ML scoring, and the
-// cross-chunk fragment scan were
-// split into sibling satellites (Law 5). Re-export the public/crate interface
-// so external paths (`scan_postprocess::{decode_profile_dump,
-// build_confirmed_suffix_gate, ml_batch_profile_dump}`) keep resolving. The
-// confirmed-suffix-gate ENABLE/override toggle lives on the per-scanner
-// `ScannerTuning`; only the gate BUILDER remains in the suffix-gate satellite.
+// Re-export the post-processing satellites through their established engine paths.
+// Scanner tuning owns enablement; the suffix-gate satellite only builds the gate.
 #[cfg(feature = "decode")]
 use super::scan_postprocess_profile::{
     decode_prof_enabled, DECODE_GEN_NS, DECODE_PARENTS, DECODE_SCAN_NS, DECODE_SUBCHUNKS,
@@ -50,7 +45,8 @@ impl CompiledScanner {
         if crate::deadline::expired(deadline) {
             return;
         }
-        let pp_start = std::time::Instant::now();
+        let pp_start = tracing::enabled!(target: "keyhog::routing", tracing::Level::DEBUG)
+            .then(std::time::Instant::now);
         self.scan_cross_chunk_fragments(chunk, matches, deadline, route);
         if crate::deadline::expired(deadline) {
             return;
@@ -82,31 +78,29 @@ impl CompiledScanner {
                     DECODE_SUBCHUNKS.fetch_add(decoded_chunks.len() as u64, Relaxed);
                 }
             }
-            // No decodable payload (the common case for match-bearing plain
-            // source): the `seen` dedup set and decode rescan are dead work, so
-            // build neither. A match-bearing no-decode chunk pays nothing here.
+            // Avoid allocating dedup state when decoding produced no sub-chunks.
             if !decoded_chunks.is_empty() {
-                // Dedup keys reuse the shared zeroizing credential from `RawMatch`
-                // instead of cloning to `String`. For 50+ pre-existing matches per
-                // chunk this saves ~10-30 µs of allocator pressure per call. Built
-                // lazily above only when decode actually produced sub-chunks.
                 let mut seen: HashSet<(Arc<str>, SensitiveString)> = matches
                     .iter()
                     .map(|m| (Arc::clone(&m.detector_id), m.credential.clone()))
                     .collect();
-                // Buffer every surviving decoded match (after the per-sub-chunk
-                // example/reverse guards) before the (detector, credential) dedup.
-                // The SAME decoded credential can surface at more than one source
-                // offset: once from the original encoded run and once from the
-                // structured preprocessor's APPENDED copy (offset >= original_end+1,
-                // i.e. inside synthesized text that isn't in the real chunk). The
-                // dedup keeps only one alias, so WHICH offset wins must be the real,
-                // lowest one - not whichever the (cmp/scan-order-dependent) iteration
-                // happens to reach first. A higher synthetic-append offset is an
-                // invalid source coordinate (it can point past the real chunk).
-                // Sort offset-ascending so the dedup keeps the lowest source
-                // coordinate - the same primary-location rule dedup_cross_detector
-                // applies (Law 10: no order-dependent recall).
+                let mut raw_max_credential_len = HashMap::with_capacity(matches.len());
+                for raw in matches.iter() {
+                    let coordinate = (
+                        Arc::clone(&raw.detector_id),
+                        raw.location.file_path.clone(),
+                        raw.location.line,
+                        raw.location.offset,
+                    );
+                    raw_max_credential_len
+                        .entry(coordinate)
+                        .and_modify(|max_len: &mut usize| {
+                            *max_len = (*max_len).max(raw.credential.len());
+                        })
+                        .or_insert_with(|| raw.credential.len());
+                }
+                // Buffer, then sort by source offset so synthesized aliases cannot
+                // win `(detector, credential)` dedup over a real source coordinate.
                 let mut decoded_candidates: Vec<RawMatch> = Vec::new();
                 for decoded_chunk in decoded_chunks {
                     if crate::deadline::expired(deadline) {
@@ -128,25 +122,13 @@ impl CompiledScanner {
                         DECODE_SUBCHUNK_BYTES.fetch_add(decoded_chunk.data.len() as u64, Relaxed);
                     }
                     let scan_start = prof_decode.then(std::time::Instant::now);
-                    // Mark the rescan so the phase-2 profiler can separate sub-chunk
-                    // per-pass cost from parent-chunk cost (cheap thread-local swap).
+                    // Track recursive decode work separately and preserve the
+                    // calibrated route's explicit small-buffer backend.
                     let restore_rescan = super::profile::set_in_decode(true);
-                    // Decoded rescans execute the exact backend carried by the
-                    // measured route. Scalar candidates stay scalar; GPU routes
-                    // explicitly compose with scalar for these small buffers.
                     let decoded_backend = route.decode_backend;
                     let decoded_matches = if decoded_chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
                         self.scan_windowed(&decoded_chunk, decoded_backend, deadline, route)
                     } else {
-                        // Decoded sub-chunks are post-process recursion;
-                        // they're typically tiny (base64/hex/url payloads
-                        // sliced out of the outer chunk). NEVER route them
-                        // to the GPU literal-set: per-dispatch overhead
-                        // (driver init + queue submit + sync) is 10-100 ms,
-                        // and an exact GPU backend would otherwise force
-                        // every decoded chunk through that path. The composed
-                        // decode backend is part of calibration evidence rather
-                        // than a live-host choice made inside post-processing.
                         self.scan_inner(&decoded_chunk, decoded_backend, deadline, route)
                     };
                     super::profile::set_in_decode(restore_rescan);
@@ -157,10 +139,7 @@ impl CompiledScanner {
                         DECODE_SCAN_NS.fetch_add(t.elapsed().as_nanos() as u64, Relaxed);
                     }
                     for m in decoded_matches {
-                        // Entropy-only matches have no structural evidence on
-                        // synthesized bytes. Generic phase-2 matches do: their
-                        // detector-owned assignment keyword survived decoding
-                        // or the bounded parent splice, so retain them.
+                        // Generic decoded matches retain structural assignment evidence.
                         if crate::adjudicate::record_decoded_unanchored_entropy_suppression(
                             &m,
                             chunk.metadata.path.as_deref(),
@@ -186,17 +165,22 @@ impl CompiledScanner {
                         ) {
                             continue;
                         }
-                        decoded_candidates.push(m);
+                        // Keep exact raw findings unless decoding restores a longer value.
+                        let coordinate = (
+                            Arc::clone(&m.detector_id),
+                            m.location.file_path.clone(),
+                            m.location.line,
+                            m.location.offset,
+                        );
+                        if raw_max_credential_len
+                            .get(&coordinate)
+                            .is_none_or(|raw_len| *raw_len < m.credential.len())
+                        {
+                            decoded_candidates.push(m);
+                        }
                     }
                 }
-                // Prefer the lowest (real) source offset for each decoded
-                // (detector, credential): a stable offset-ascending sort puts the
-                // original encoded run ahead of any higher synthetic-append alias,
-                // and the first-wins `seen` dedup below then keeps the real one.
-                // Stable so equal-offset entries retain their (deterministic) scan
-                // order. `seen` is still seeded from the pre-decode `matches`, so a
-                // credential the base scan already reported suppresses every decoded
-                // alias as before.
+                // Lowest real source offset wins aliases; `seen` starts with raw findings.
                 decoded_candidates.sort_by_key(|m| m.location.offset);
                 for m in decoded_candidates {
                     let key = (Arc::clone(&m.detector_id), m.credential.clone());
@@ -204,13 +188,20 @@ impl CompiledScanner {
                         matches.push(m);
                     }
                 }
+                *matches = crate::resolution::try_resolve_matches_with_compiled_plan(
+                    std::mem::take(matches),
+                    &self.detector_plans,
+                )
+                .expect(
+                    "compiled detector resolution must remain valid after decoded finding merge",
+                );
             }
         }
         tracing::debug!(
             target: "keyhog::routing",
             chunk_bytes = chunk.data.len(),
             matches = matches.len(),
-            elapsed_ms = pp_start.elapsed().as_millis() as u64,
+            elapsed_ms = pp_start.map_or(0, |t| t.elapsed().as_millis() as u64),
             "post_process_matches_inner done",
         );
     }

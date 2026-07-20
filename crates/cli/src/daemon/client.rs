@@ -17,6 +17,22 @@ use tokio::net::UnixStream;
 /// results, so [`connect`] fails closed on a mismatch.
 const CLIENT_KEYHOG_VERSION: &str = env!("CARGO_PKG_VERSION");
 const DAEMON_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(2);
+/// Default ceiling for ScanPath (KH-1314). A wedged daemon must not hang the
+/// CLI forever. Per-kind ceilings in [`request_timeout`] (KH-1459).
+const DAEMON_REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
+const DAEMON_HEALTH_TIMEOUT: Duration = Duration::from_secs(5);
+const DAEMON_SCAN_TEXT_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Per-request-kind receive timeout (KH-1459). Health/Shutdown stay short so a
+/// stuck daemon does not block operator control; ScanPath keeps the 300s
+/// full-file budget; ScanText is mid-tier for pre-commit chunks.
+fn request_timeout(request: &Request) -> Duration {
+    match request {
+        Request::Hello | Request::Health | Request::Shutdown => DAEMON_HEALTH_TIMEOUT,
+        Request::ScanText { .. } => DAEMON_SCAN_TEXT_TIMEOUT,
+        Request::ScanPath { .. } => DAEMON_REQUEST_TIMEOUT,
+    }
+}
 
 /// Open a connection to the daemon and confirm wire, build, and detector-corpus
 /// compatibility with this client. Use this
@@ -158,6 +174,9 @@ pub(crate) mod testing {
     };
 }
 
+#[path = "client_tests.rs"]
+mod client_tests;
+
 pub struct Client {
     transport: frame::ClientTransport,
     /// The `keyhog_version` the daemon reported in its `Hello`. Set during
@@ -197,20 +216,31 @@ impl Client {
     }
 
     pub(crate) async fn recv(&mut self) -> Result<Response> {
-        match self.transport.next().await.transpose()? {
-            Some(r) => Ok(r),
-            None => bail!(
+        self.recv_with_timeout(DAEMON_REQUEST_TIMEOUT).await
+    }
+
+    pub(crate) async fn recv_with_timeout(&mut self, timeout: Duration) -> Result<Response> {
+        match tokio::time::timeout(timeout, self.transport.next()).await {
+            // LAW10: timeout is returned as an operator-facing hard error with a repair command; no local or alternate daemon route is selected.
+            Err(_) => bail!(
+                "daemon client: no response within {}s. The daemon may be stuck \
+                 or overloaded. Try `keyhog daemon stop && keyhog daemon start`, \
+                 or rerun with `--daemon=off`.",
+                timeout.as_secs()
+            ),
+            Ok(None) => bail!(
                 "daemon client: connection closed before response. \
                  The daemon may have crashed or been restarted mid-request. \
                  Try `keyhog daemon stop && keyhog daemon start`, or rerun \
                  the scan with `--daemon=off` to bypass the daemon path."
             ),
+            Ok(Some(frame)) => frame.context("daemon client: response frame error"),
         }
     }
 
     pub(crate) async fn round_trip(&mut self, request: &Request) -> Result<Response> {
         self.send(request).await?;
-        self.recv().await
+        self.recv_with_timeout(request_timeout(request)).await
     }
 }
 

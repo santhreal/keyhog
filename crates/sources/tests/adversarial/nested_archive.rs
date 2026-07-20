@@ -101,7 +101,7 @@ fn jar_archive_inner_text_is_scanned() {
         errors.is_empty(),
         ".jar archive payload should not emit SourceError rows: {errors:?}"
     );
-    let bodies: Vec<String> = chunks.iter().map(|c| c.data.to_string()).collect();
+    let bodies: Vec<String> = chunks.iter().map(|c| c.data.as_str().to_owned()).collect();
     assert!(
         bodies
             .iter()

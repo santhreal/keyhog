@@ -20,7 +20,7 @@ fn scan_does_not_cross_chunk_boundary() {
         verify: None,
         keywords: vec!["abc".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let s = CompiledScanner::compile(vec![d]).unwrap();
     let chunks = vec![

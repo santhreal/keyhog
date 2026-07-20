@@ -53,7 +53,10 @@ fn gitlink_tree_entry_is_counted_as_unscanned_coverage_gap() {
 
     let rows: Vec<_> = GitSource::new(repo.to_path_buf()).chunks().collect();
     let (chunks, errors) = split_chunk_results(&rows);
-    let bodies: Vec<_> = chunks.iter().map(|chunk| chunk.data.to_string()).collect();
+    let bodies: Vec<_> = chunks
+        .iter()
+        .map(|chunk| chunk.data.as_str().to_owned())
+        .collect();
 
     assert_eq!(
         errors.len(),

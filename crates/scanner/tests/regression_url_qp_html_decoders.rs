@@ -29,7 +29,7 @@ fn layers_for(text: &str, decoder: &str) -> Vec<String> {
     decode_chunk(&chunk, 2, false, None, None)
         .into_iter()
         .filter(|c| c.metadata.source_type.contains(decoder))
-        .map(|c| c.data.to_string())
+        .map(|c| c.data.as_str().to_owned())
         .collect()
 }
 

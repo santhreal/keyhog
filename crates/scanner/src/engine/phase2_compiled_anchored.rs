@@ -324,7 +324,11 @@ impl CompiledScanner {
                     if localize_keyword_anchors && anchor_idx.is_eligible(index) {
                         continue;
                     }
-                    if crate::deadline::expired_on_cadence(deadline, tested, 16) {
+                    if crate::deadline::expired_on_cadence(
+                        deadline,
+                        tested,
+                        crate::deadline::COMPILED_PHASE2_DEADLINE_CADENCE,
+                    ) {
                         break;
                     }
                     let (entry, _) = &this.phase2_patterns[index];

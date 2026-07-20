@@ -5,12 +5,12 @@ severity = "critical"
 
 [[positive]]
 text = "OKTA=00abcdefghijklmnopqrstuvwxyz1234567890abcd"
-credential = "00abcdefghijklmnopqrstuvwxyz1234567890abcd"
+credential = "OKTA=00abcdefghijklmnopqrstuvwxyz1234567890abcd"
 reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
 
 [[positive]]
 text = "OKTA=\"00abcdefghijklmnopqrstuvwxyz1234567890abcd\""
-credential = "00abcdefghijklmnopqrstuvwxyz1234567890abcd"
+credential = "OKTA=\"00abcdefghijklmnopqrstuvwxyz1234567890abcd"
 reason = "Quoted-value variant of the canonical positive."
 
 [[negative]]
@@ -23,7 +23,7 @@ reason = "EXAMPLE token marker inside the body (suppression gate strips it)."
 
 [[evasion]]
 text = "export OKTA=00abcdefghijklmnopqrstuvwxyz1234567890abcd"
-credential = "00abcdefghijklmnopqrstuvwxyz1234567890abcd"
+credential = "OKTA=00abcdefghijklmnopqrstuvwxyz1234567890abcd"
 reason = "Adversarial env_export envelope (credential must still surface under this detector)."
 
 [perf]

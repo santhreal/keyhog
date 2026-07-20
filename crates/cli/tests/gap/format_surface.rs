@@ -1138,10 +1138,11 @@ fn json_and_jsonl_agree_on_finding_count() {
         .lines()
         .filter(|l| !l.trim().is_empty())
         .filter(|l| {
-            serde_json::from_str::<serde_json::Value>(l)
-                .ok()
-                .and_then(|value| value.get("record_type").cloned())
-                .is_none()
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(l) {
+                value.get("record_type").is_none()
+            } else {
+                true
+            }
         })
         .count();
     assert_eq!(

@@ -343,7 +343,7 @@ pub(super) fn automatic_recovery_plan(
         })
         .ok_or_else(|| {
             AutorouteRoutingError::calibration_not_persisted(format!(
-                "autoroute selected accelerated backend {}, but its workload evidence does not resolve one fastest remaining measured-correct recovery peer across every calibration point; rerun `keyhog calibrate-autoroute` after repairing or splitting this workload class",
+                "autoroute selected accelerated backend {}, but its workload evidence does not resolve one confidence-supported remaining measured-correct recovery peer across every calibration point; rerun `keyhog calibrate-autoroute` after repairing or splitting this workload class",
                 selected_backend.label()
             ))
         })?;
@@ -361,7 +361,7 @@ fn backend_override_hint() -> String {
         .join("|")
 }
 
-fn sole_compiled_backend() -> Option<ScanBackend> {
+pub(super) fn sole_compiled_backend() -> Option<ScanBackend> {
     (!autoroute_required()).then_some(ScanBackend::CpuFallback)
 }
 

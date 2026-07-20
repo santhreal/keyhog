@@ -64,7 +64,9 @@ fn has_unambiguous_binary_prefix_rejects_text_and_empty_and_short() {
 #[test]
 fn starts_with_python_pickle_protocol2_matches_only_protocol2_magic() {
     assert!(starts_with_python_pickle_protocol2_for_test(b"\x80\x02foo"));
-    assert!(!starts_with_python_pickle_protocol2_for_test(b"\x80\x01foo"));
+    assert!(!starts_with_python_pickle_protocol2_for_test(
+        b"\x80\x01foo"
+    ));
     assert!(!starts_with_python_pickle_protocol2_for_test(b"\x80"));
     assert!(!starts_with_python_pickle_protocol2_for_test(b""));
 }
@@ -94,10 +96,16 @@ fn has_bmp_header_matches_bmp_structure_and_rejects_short_or_corrupt() {
     assert!(has_bmp_header_for_test(valid));
 
     let bad_offset = b"BM\x00\x00\x00\x00\x00\x00\x00\x00\x0d\x00\x00\x00";
-    assert!(!has_bmp_header_for_test(bad_offset), "offset < 14 must reject");
+    assert!(
+        !has_bmp_header_for_test(bad_offset),
+        "offset < 14 must reject"
+    );
 
     assert!(!has_bmp_header_for_test(b"BM"), "too short must reject");
-    assert!(!has_bmp_header_for_test(b"NB\x00\x00\x00\x00\x00\x00\x00\x00\x1e\x00\x00\x00"), "wrong signature");
+    assert!(
+        !has_bmp_header_for_test(b"NB\x00\x00\x00\x00\x00\x00\x00\x00\x1e\x00\x00\x00"),
+        "wrong signature"
+    );
     assert!(!has_bmp_header_for_test(b"BMnotzero"), "reserved non-zero");
 }
 
@@ -124,7 +132,10 @@ fn has_pe_header_matches_mz_pe_layout_and_rejects_short_or_corrupt() {
 fn has_bzip2_header_matches_bz_digit_prefix() {
     assert!(has_bzip2_header_for_test(b"BZh9"));
     assert!(has_bzip2_header_for_test(b"BZh1"));
-    assert!(!has_bzip2_header_for_test(b"BZh0"), "0 is not a valid block size digit");
+    assert!(
+        !has_bzip2_header_for_test(b"BZh0"),
+        "0 is not a valid block size digit"
+    );
     assert!(!has_bzip2_header_for_test(b"BZh"), "missing digit");
     assert!(!has_bzip2_header_for_test(b"BZx1"), "wrong magic");
     assert!(!has_bzip2_header_for_test(b""));

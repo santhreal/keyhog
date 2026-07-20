@@ -214,7 +214,10 @@ fn seven_zip_special_entries_emit_source_errors_and_keep_safe_sibling() {
         .chunks()
         .collect();
     let (chunks, errors) = split_chunk_results(&rows);
-    let bodies: Vec<_> = chunks.iter().map(|chunk| chunk.data.to_string()).collect();
+    let bodies: Vec<_> = chunks
+        .iter()
+        .map(|chunk| chunk.data.as_str().to_owned())
+        .collect();
 
     assert!(
         bodies
@@ -258,7 +261,10 @@ fn solid_seven_zip_special_entry_drains_before_safe_sibling() {
         .chunks()
         .collect();
     let (chunks, errors) = split_chunk_results(&rows);
-    let bodies: Vec<_> = chunks.iter().map(|chunk| chunk.data.to_string()).collect();
+    let bodies: Vec<_> = chunks
+        .iter()
+        .map(|chunk| chunk.data.as_str().to_owned())
+        .collect();
 
     assert!(
         bodies

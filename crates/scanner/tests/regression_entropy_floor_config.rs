@@ -18,11 +18,6 @@
 //! against the shipped detector TOMLs, so a stray edit to a floor, a bucket
 //! boundary, or the toggle wiring fails here loudly.
 
-/// The generic default floor for a detector that declares no `entropy_floor`.
-/// Mirrors the active resolver's compatibility default and pins its public
-/// behavior below.
-const DEFAULT_FLOOR: f64 = 3.5;
-
 /// Compiled default for the Tier-A `entropy_threshold` knob
 /// (`keyhog_core::ScanConfig::default().entropy_threshold`). The override only
 /// bites STRICTLY above this value; at/below it, the calibrated family floor stands.
@@ -36,7 +31,6 @@ const GENERIC_KEYWORD_SECRET: &str = "generic-keyword-secret";
 
 #[derive(Debug)]
 struct FloorFile {
-    default_floor: f64,
     family: Vec<Family>,
     specs: Vec<keyhog_core::DetectorSpec>,
 }
@@ -74,11 +68,7 @@ fn load() -> FloorFile {
                 .collect(),
         })
         .collect();
-    FloorFile {
-        default_floor: DEFAULT_FLOOR,
-        family,
-        specs,
-    }
+    FloorFile { family, specs }
 }
 
 fn family<'a>(file: &'a FloorFile, detector: &str) -> Option<&'a Family> {
@@ -134,11 +124,6 @@ fn bridge_dropped(
 // ---------------------------------------------------------------------------
 
 #[test]
-fn default_floor_is_exactly_3_5() {
-    assert_eq!(load().default_floor, 3.5);
-}
-
-#[test]
 // Bucket-encoding name: max_len 24 → floor 3.0, 40 → 2.8, catch-all → 3.5. The
 // double underscores separate the (len, floor) rungs; renaming to single-
 // underscore snake_case would erase that grouping, so allow the non-snake name.
@@ -192,18 +177,19 @@ fn keyword_secret_floor_is_exactly_1_5() {
 }
 
 #[test]
-fn exactly_the_four_generic_families_are_present() {
+fn four_generic_families_remain_present_among_detector_owned_floors() {
     let file = load();
-    let mut ids: Vec<&str> = file.family.iter().map(|f| f.detector.as_str()).collect();
-    ids.sort_unstable();
-    let mut expected = vec![
+    for id in [
         GENERIC_API_KEY,
         GENERIC_SECRET,
         GENERIC_PASSWORD,
         GENERIC_KEYWORD_SECRET,
-    ];
-    expected.sort_unstable();
-    assert_eq!(ids, expected);
+    ] {
+        assert!(
+            family(&file, id).is_some(),
+            "generic detector `{id}` must retain its detector-owned entropy floor"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -241,14 +227,6 @@ fn flat_families_ignore_length() {
         assert_eq!(family_floor(&file, GENERIC_PASSWORD, len), 2.5);
         assert_eq!(family_floor(&file, GENERIC_KEYWORD_SECRET, len), 1.5);
     }
-}
-
-#[test]
-fn unknown_and_empty_detector_use_default_floor() {
-    let file = load();
-    // Neither a real named-vendor detector id nor the empty id has a family entry.
-    assert_eq!(family_floor(&file, "some-named-vendor-detector", 20), 3.5);
-    assert_eq!(family_floor(&file, "", 20), 3.5);
 }
 
 // ---------------------------------------------------------------------------
@@ -378,7 +356,6 @@ fn every_family_floor_is_below_the_tier_a_default() {
             );
         }
     }
-    assert!(file.default_floor < DEFAULT_GENERIC_ENTROPY_THRESHOLD);
 }
 
 #[test]

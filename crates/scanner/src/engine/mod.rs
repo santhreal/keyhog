@@ -64,10 +64,9 @@ pub(crate) use boundary::scan_chunk_boundaries as scan_chunk_boundaries_for_test
 mod csr;
 pub(crate) use csr::CsrU32;
 mod extract;
-mod gpu_cache;
+pub(crate) use crate::gpu_matcher_cache as gpu_cache;
 #[cfg(all(test, feature = "gpu"))]
 pub(crate) use gpu_cache::gpu_matcher_cache_dir_from_base;
-mod gpu_artifacts;
 mod gpu_forced;
 pub(crate) use gpu_forced::require_selected_gpu_stack;
 mod gpu_forced_helpers;
@@ -87,7 +86,7 @@ pub(crate) use gpu_resident_evidence::GpuResidentLiteralSlot;
 mod gpu_stack;
 mod hot_patterns;
 pub(crate) mod phase2;
-mod phase2_anchor;
+pub(crate) mod phase2_anchor;
 #[cfg(test)]
 pub(crate) use phase2_anchor::required_prefix_literals as phase2_required_prefix_literals_for_test;
 pub(crate) use phase2_anchor::Phase2AnchorIndex;
@@ -107,29 +106,29 @@ pub(crate) mod phase2_entropy;
 #[path = "phase2/first_bigram.rs"]
 mod phase2_first_bigram;
 pub(crate) mod phase2_generic;
-mod phase2_generic_shape;
 #[cfg(feature = "gpu")]
 mod phase2_gpu_dfa;
 #[cfg(feature = "gpu")]
 pub(crate) use phase2_gpu_dfa::Phase2GpuDfaCatalogCache;
 #[cfg(feature = "simd")]
 mod phase2_hs;
+#[cfg(feature = "gpu")]
+pub(crate) use crate::gpu_input_budget;
 #[cfg(all(test, feature = "simd"))]
 pub(crate) use phase2_hs::hs_prefilter_requires_host_regex as hs_prefilter_requires_host_regex_for_test;
 #[cfg(all(test, feature = "simd"))]
 pub(crate) use phase2_hs::Phase2HsEngine;
-pub(crate) mod gpu_input_budget;
 mod phase2_prefilter;
-pub(crate) mod phase2_truncate;
+pub(crate) use crate::phase2_truncate;
 mod process;
-pub(crate) mod profile;
+pub(crate) use crate::scan_profile as profile;
 mod recovery;
 pub use recovery::{BackendRecoveryReceipt, CoalescedScanOutcome, RecoveredInputRange};
 mod scan;
 mod scan_coalesced;
 pub(crate) mod scan_filters;
-mod scan_inner_profile;
-mod scan_postprocess;
+pub(crate) mod scan_inner_profile;
+pub(crate) mod scan_postprocess;
 pub(crate) use scan_postprocess::{
     build_confirmed_suffix_gate, confirmed_anchor::ConfirmedAnchorIndex,
 };
@@ -144,12 +143,6 @@ mod scan_postprocess_ml;
 mod scan_postprocess_profile;
 #[path = "scan_postprocess/suffix_gate.rs"]
 mod scan_postprocess_suffix_gate;
-// Coalesced-attribution primitive. No production scan-pipeline consumer yet;
-// its only user is the doc-hidden `testing::segment_attribution` facade, which
-// now RE-EXPORTS this single owner (`pub use`) instead of carrying a second
-// hand-copied body (ONE-PLACE / Law-11). Kept `pub(crate)` with `pub` items so
-// the re-export can widen them to the testing facade's public surface.
-pub(crate) mod segment_attribution;
 pub(crate) mod trigger_bitmap;
 mod windowed;
 mod windowed_support;
@@ -167,20 +160,10 @@ pub(crate) use backend_prepared::{
 };
 #[cfg(test)]
 pub(crate) use boundary::scan_chunk_boundaries;
-pub use gpu_artifacts::{
-    compile_gpu_literal_artifacts, compile_gpu_literal_artifacts_default,
-    gpu_literal_artifact_cache_dir, GpuLiteralArtifact, GpuLiteralArtifacts,
-};
 #[cfg(test)]
 pub(crate) use gpu_forced_helpers::gpu_forced_unavailable_message;
-pub use gpu_input_budget::{
-    gpu_batch_input_limit, gpu_batch_input_limit_bounds, set_gpu_batch_input_limit,
-};
 #[cfg(test)]
 pub(crate) use phase2::{phase2_gate_stats_dump, phase2_mark_stats, phase2_mark_stats_reset};
-pub use profile::{
-    dump as profile_dump, reset as profile_reset, set_perf_trace_enabled, set_profile_enabled,
-};
 #[cfg(test)]
 pub(crate) use scan_inner_profile::scan_inner_profile_dump;
 #[cfg(test)]
@@ -263,26 +246,6 @@ pub struct CompiledScanner {
     /// detectors, but candidate execution reaches detector-local behavior only
     /// through this plan.
     pub(crate) detector_plans: crate::detector_plan::CompiledDetectorPlans,
-    /// Normalized assignment-key names owned by service-specific named
-    /// detectors, e.g. `segment_write_key`. The generic assignment bridge uses
-    /// this to avoid emitting a weaker generic finding for an LHS that a loaded
-    /// named detector explicitly owns.
-    pub(crate) generic_named_assignment_keywords: Vec<Arc<str>>,
-    /// Generic assignment candidate generator compiled from this scanner's
-    /// detector corpus. Both its keyword vocabulary and capture ceiling are
-    /// detector-owned, so custom corpora cannot drift from the shipped global
-    /// defaults or truncate an overlength credential prefix.
-    pub(crate) generic_assignment_re: Option<regex::Regex>,
-    /// Corpus-specific prefilter compiled from the same detector keywords as
-    /// `generic_assignment_re`. It must never read the embedded global corpus
-    /// when this scanner was constructed from custom detectors.
-    pub(crate) generic_keyword_stems: Option<phase2_generic::keywords::GenericKeywordStemSet>,
-    /// Compiled generic-assignment keyword → owning generic `Phase2Generic`
-    /// detector index. Replaces the per-candidate linear `detectors.iter()
-    /// .find(...)` scan in the generic value-shape path with an O(1) lookup that
-    /// preserves the exact first-match-by-exact-or-normalized semantics. Built
-    /// ONCE at construction (see [`crate::generic_keyword_owner::GenericOwningDetectorIndex`]).
-    pub(crate) generic_owning_detector: crate::generic_keyword_owner::GenericOwningDetectorIndex,
     /// Lazily compiled union of Tier-A and detector-owned generic assignment
     /// keywords, shared by entropy and multiline admission. The cache is keyed
     /// by exact lists because `config` remains publicly mutable.

@@ -108,11 +108,16 @@ pub(super) fn extract_openpack_archive(
         return;
     }
 
+    // KH-1436 / KH-1395: never use f64::MAX. Bind openpack entry/total caps to
+    // KeyHog's scan budgets so CRX bombs fail closed inside openpack before a
+    // full-entry inflate can OOM. Finite ratio still admits high-ratio but
+    // non-bomb Chrome packages; extreme ratios are rejected with a gap.
     let mut limits = openpack::Limits::default();
-    // KeyHog enforces its own decoded-byte scan budget below. Keep Openpack's
-    // bounded read defaults, but disable ratio rejection so a high-ratio archive
-    // still emits the safe prefix before KeyHog records a counted truncation.
-    limits.max_compression_ratio = f64::MAX;
+    limits.max_entry_uncompressed_size = per_entry_cap;
+    limits.max_total_uncompressed_size = total_budget.max(per_entry_cap);
+    // High but finite: 1000x covers typical CRX packing without allowing
+    // classic zip-bomb ratios (often >> 10k).
+    limits.max_compression_ratio = 1000.0;
     match openpack::OpenPack::open(path, limits) {
         Ok(pack) => match pack.entries() {
             Ok(entries) => {

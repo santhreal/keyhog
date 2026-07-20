@@ -1,7 +1,7 @@
 use keyhog_core::{DetectorSpec, DetectorTestSpec, DetectorValidatorSpec, PatternSpec, Severity};
 use keyhog_scanner::CompiledScanner;
 
-fn expected_digest(detectors: &[DetectorSpec]) -> u64 {
+fn expected_digest(detectors: &[DetectorSpec], decoder_plan_identity: u64) -> u64 {
     fn update(hasher: &mut blake3::Hasher, tag: &[u8], value: &[u8]) {
         hasher.update(&(tag.len() as u64).to_le_bytes());
         hasher.update(tag);
@@ -10,11 +10,16 @@ fn expected_digest(detectors: &[DetectorSpec]) -> u64 {
     }
 
     let mut hasher = blake3::Hasher::new();
-    update(&mut hasher, b"domain", b"keyhog-scanner-detector-digest-v2");
+    update(&mut hasher, b"domain", b"keyhog-scanner-detector-digest-v3");
     update(
         &mut hasher,
         b"spec_hash",
         &keyhog_core::compute_spec_hash(detectors),
+    );
+    update(
+        &mut hasher,
+        b"decoder_plan",
+        &decoder_plan_identity.to_le_bytes(),
     );
     let mut bytes = [0u8; 8];
     bytes.copy_from_slice(&hasher.finalize().as_bytes()[..8]);
@@ -40,7 +45,7 @@ fn detector(id: &str, regex: &str, keyword: &str) -> DetectorSpec {
         verify: None,
         keywords: vec![keyword.into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }
 }
 
@@ -75,7 +80,11 @@ fn compiled_scanner_detector_digest_is_stable_and_boundary_aware() {
     );
     assert_eq!(
         first,
-        expected_digest(&detectors),
+        expected_digest(
+            &detectors,
+            keyhog_scanner::testing::decoder_plan_identity_for_test()
+                .expect("decoder plan identity"),
+        ),
         "autoroute identity must project the canonical detector-spec hash through the versioned scanner contract"
     );
 

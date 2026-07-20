@@ -1,7 +1,7 @@
 //! KH-GAP-148: `scan --git-history` on a non-repo printed "Your code is clean"
 //! before bailing with source error (CI false-clean UX).
 
-use crate::e2e::support::binary;
+use crate::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 

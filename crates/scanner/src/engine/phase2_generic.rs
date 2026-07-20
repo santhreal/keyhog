@@ -13,8 +13,8 @@ use self::keywords::{
 use self::line_mapping::line_at_index;
 pub(crate) use self::metrics::{generic_profile_dump, generic_profile_reset};
 pub(crate) use self::pattern::{
-    build_generic_re, compile_generic_re_with_max, generic_keyword_alternation,
-    generic_keyword_alternation_from_with_vendor_fallback, GENERIC_RE_VENDOR_SUFFIX_ARM,
+    build_generic_re, compile_generic_re_with_max, compile_generic_re_with_policy,
+    generic_keyword_alternation, generic_keyword_alternation_from, generic_vendor_suffix_arm,
 };
 
 thread_local! {
@@ -35,8 +35,10 @@ impl CompiledScanner {
     ///   1. The variable name contains a secret-related keyword
     ///   2. The value clears the length-tiered Tier-B family entropy floor
     ///      (random-looking), tightened further by the `--entropy-threshold` knob
-    ///   3. No named detector already matched the same line
-    ///   4. The value is not a known placeholder/example
+    ///   3. The value is not a known placeholder/example
+    ///
+    /// Named findings do not claim an entire line. Overlapping evidence is
+    /// reconciled by the shared resolution pass after both paths execute.
     pub(crate) fn scan_generic_assignments(
         &self,
         preprocessed: &ScannerPreprocessedText<'_>,
@@ -48,26 +50,11 @@ impl CompiledScanner {
         generic_keyword_positions: Option<&[u32]>,
         deadline: Option<std::time::Instant>,
     ) {
-        let Some(generic_re) = self.generic_assignment_re.as_ref() else {
+        let Some(generic_plan) = self.detector_plans.generic_assignment() else {
             return;
         };
-        let Some(generic_keyword_stems) = self.generic_keyword_stems.as_ref() else {
-            tracing::error!(
-                "generic assignment regex exists without its compiled keyword prefilter"
-            );
-            return;
-        };
-
-        // Lines already carrying finalized named findings do not need a generic
-        // bridge echo. ML-pending candidates deliberately do NOT claim the line:
-        // the model may reject them, and suppressing the generic bridge before
-        // that verdict creates a recall hole. If the named candidate survives,
-        // the normal resolution pass removes the generic duplicate.
-        let covered_lines: std::collections::HashSet<usize> = scan_state
-            .matches
-            .iter()
-            .filter_map(|m| m.location.line)
-            .collect();
+        let generic_re = generic_plan.matcher();
+        let generic_keyword_stems = generic_plan.stems();
 
         // ONE chunk-level derived-stem scan instead of N per-line scans.
         // Profile showed scan_generic_assignments at ~500 µs/chunk -
@@ -133,12 +120,6 @@ impl CompiledScanner {
             let Some(&line_offset) = line_offsets.get(line_idx) else {
                 continue;
             };
-            let mapped_line =
-                crate::pipeline::match_line_number(preprocessed, line_offsets, line_offset);
-            let abs_line_num = absolute_line(chunk.metadata.base_line, mapped_line);
-            if covered_lines.contains(&abs_line_num) {
-                continue;
-            }
             let Some(raw_line) = line_at_index(scan_text, line_offsets, line_idx) else {
                 continue;
             };
@@ -204,27 +185,13 @@ impl CompiledScanner {
                     );
                     continue;
                 }
-                if crate::generic_keyword_owner::keyword_span_owned_by_named_detector(
-                    &self.generic_named_assignment_keywords,
-                    line,
-                    keyword_match.start(),
-                    keyword_match.end(),
-                ) {
-                    let generic_ctx = crate::adjudicate::MatchCtx::for_generic_bridge(
-                        crate::adjudicate::GenericBridgeSignal::NamedDetectorOwnedKeyword,
-                    );
-                    crate::adjudicate::record_suppression(
-                        chunk.metadata.path.as_deref(),
-                        keyword,
-                        &generic_ctx,
-                    );
-                    continue;
-                }
                 let value = value_match.as_str();
                 // Resolve the detector before any detector-specific value gate.
                 // The bare-auth bridge must use the same compiled TOML policy as
                 // the entropy, shape, and BPE stages below.
-                let Some(owner_resolution) = self.generic_owning_detector.resolve(keyword) else {
+                let Some(owner_resolution) =
+                    self.detector_plans.generic_ownership().resolve(keyword)
+                else {
                     tracing::error!(
                         keyword,
                         "compiled generic assignment matched without a detector owner; dropping candidate"
@@ -321,6 +288,12 @@ impl CompiledScanner {
                         crate::decode_structure::evidence(value).decoded_hex_text_len(),
                     );
 
+                let structural_password_slot = self
+                    .detector_plans
+                    .get(owning_detector_index)
+                    .execution
+                    .structural_password_slot;
+
                 // KH-L-0412: the generic-bridge shape gauntlet was the last
                 // SILENT suppression path. Record the firing gate's name so a
                 // dropped generic-secret candidate is visible to `--dogfood`
@@ -349,7 +322,10 @@ impl CompiledScanner {
                 // keyword/length policy is the stronger signal for that shape.
                 #[cfg(feature = "entropy")]
                 let shape_rejected = shape_rejected.or_else(|| {
-                    if allow_canonical_hex_key || allow_encoded_text_secret {
+                    if structural_password_slot
+                        || allow_canonical_hex_key
+                        || allow_encoded_text_secret
+                    {
                         return None;
                     }
                     owning_policy
@@ -513,6 +489,7 @@ impl CompiledScanner {
                         detector_plan
                             .match_confidence
                             .context_suppression_threshold(context),
+                        detector_plan.match_confidence.post_match(),
                         ml_features,
                         ml_policy.effective_weight(&self.config),
                         min_confidence_floor,
@@ -541,6 +518,7 @@ impl CompiledScanner {
                         context_suppression_threshold: detector_plan
                             .match_confidence
                             .context_suppression_threshold(context),
+                        post_match: detector_plan.match_confidence.post_match(),
                         file_path: chunk.metadata.path.as_deref(),
                         is_named_detector: false,
                         is_generic_detector: true,

@@ -13,6 +13,35 @@ fn git(repo: &std::path::Path, args: &[&str]) -> std::process::Output {
 }
 
 #[test]
+fn oversized_staged_header_emits_error_and_preserves_later_records() {
+    let input = b"oversized.env\0:later-header";
+    let (error, continue_later_records, remainder) =
+        keyhog_sources::testing::oversized_staged_header_path_outcome_for_test(input, 1024);
+    assert!(
+        error.contains("raw diff header exceeded")
+            && error.contains("oversized index entry was not scanned"),
+        "oversized header must produce an exact recoverable coverage error: {error}"
+    );
+    assert!(
+        continue_later_records,
+        "a consumed path leaves the iterator aligned for later staged records"
+    );
+    assert_eq!(remainder, b":later-header");
+}
+
+#[test]
+fn oversized_staged_header_without_path_fails_closed() {
+    let (error, continue_later_records, remainder) =
+        keyhog_sources::testing::oversized_staged_header_path_outcome_for_test(b"", 1024);
+    assert!(
+        error.contains("ended before the path for an oversized index entry"),
+        "missing path must retain the exact truncation cause: {error}"
+    );
+    assert!(!continue_later_records);
+    assert!(remainder.is_empty());
+}
+
+#[test]
 fn staged_chunks_stream_and_preserve_rows_before_a_later_object_error() {
     let dir = tempfile::TempDir::new().expect("tempdir");
     let repo = dir.path();

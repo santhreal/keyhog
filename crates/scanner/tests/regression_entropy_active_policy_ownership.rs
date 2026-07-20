@@ -13,6 +13,10 @@ const VALUE: &str = "a8Xk9mQ2pL5vR7tN3wE6yU1zAbCdEf0G";
 const KEYWORD_FREE_VALUE: &str = "hmWtQ96MawiACRuKvJHIUxNGZDg5z1bVFodOE@07lkfBynYs";
 
 fn detector(id: &str, keywords: &[&str], min_len: usize) -> DetectorSpec {
+    let baseline = keyhog_core::embedded_detector_specs()
+        .iter()
+        .find(|detector| detector.id == "generic-keyword-secret")
+        .expect("embedded generic assignment owner");
     DetectorSpec {
         id: id.to_string(),
         name: id.to_string(),
@@ -88,7 +92,11 @@ fn detector(id: &str, keywords: &[&str], min_len: usize) -> DetectorSpec {
             name: format!("{id} entropy"),
             service: "generic".to_string(),
         }),
-        ..Default::default()
+        ml: baseline.ml,
+        match_confidence: baseline.match_confidence,
+        entropy_fallback_confidence: baseline.entropy_fallback_confidence,
+        generic_assignment_confidence: baseline.generic_assignment_confidence,
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }
 }
 
@@ -134,7 +142,7 @@ fn full_scan_with_public_identifier_marker(marker_enabled: bool) -> Vec<String> 
             finding.detector_id.as_ref() == "entropy-public-marker-owner"
                 && finding.credential.as_ref() == KEYWORD_FREE_VALUE
         })
-        .map(|finding| finding.credential.to_string())
+        .map(|finding| finding.credential.as_str().to_string())
         .collect()
 }
 
@@ -180,7 +188,7 @@ fn scan_custom_canonical_hex(policy: bool) -> Vec<String> {
         .scan(&chunk)
         .into_iter()
         .filter(|finding| finding.credential.as_ref() == CANONICAL_HEX_KEY)
-        .map(|finding| finding.credential.to_string())
+        .map(|finding| finding.credential.as_str().to_string())
         .collect()
 }
 
@@ -209,7 +217,7 @@ fn active_entropy_owner_without_metadata_fails_compilation() {
     let message = error.to_string();
     assert!(
         message.contains("metadata-missing-owner")
-            && message.contains("omits [detector.entropy_fallback]"),
+            && message.contains("active entropy owner must declare entropy_fallback metadata"),
         "compile must explain the missing detector-owned identity: {message}"
     );
 }
@@ -223,7 +231,7 @@ fn active_entropy_owner_with_multiple_shapes_fails_instead_of_ignoring_policy() 
         .expect("multiple detector-owned shapes must not compile ambiguously");
     assert!(
         error.to_string().contains(
-            "ambiguous-shape-owner\" owns entropy detection and must declare exactly one"
+            "active entropy policy accepts exactly one detector.entropy_shapes entry, found 2"
         ),
         "compile error must identify the detector and exact cardinality contract: {error}"
     );
@@ -386,7 +394,7 @@ fn full_scan_plausibility_findings(
         .map(|finding| {
             (
                 finding.detector_id.to_string(),
-                finding.credential.to_string(),
+                finding.credential.as_str().to_string(),
                 finding.location.offset,
             )
         })
@@ -436,7 +444,7 @@ fn full_scan_bare_auth_findings(
         .map(|finding| {
             (
                 finding.detector_id.to_string(),
-                finding.credential.to_string(),
+                finding.credential.as_str().to_string(),
                 finding.location.offset,
             )
         })
@@ -482,7 +490,8 @@ fn bare_auth_owner_without_plausibility_policy_fails_construction() {
         Err(error) => error.to_string(),
     };
     assert!(
-        error.contains("plausibility-owner") && error.contains("omits [detector.plausibility]"),
+        error.contains("plausibility-owner")
+            && error.contains("active entropy owner must declare [detector.plausibility]"),
         "construction error must identify the missing owner policy: {error}"
     );
 }
@@ -656,7 +665,7 @@ fn scan_isolated_with_policy_mutation_and_threshold(
         .scan_with_backend(&chunk, ScanBackend::CpuFallback)
         .into_iter()
         .filter(|finding| finding.credential.as_ref() == value)
-        .map(|finding| finding.credential.to_string())
+        .map(|finding| finding.credential.as_str().to_string())
         .collect()
 }
 
@@ -702,7 +711,7 @@ fn isolated_shape_boundaries_are_exact_on_every_accelerated_backend() {
             .map(|finding| {
                 (
                     finding.detector_id.to_string(),
-                    finding.credential.to_string(),
+                    finding.credential.as_str().to_string(),
                 )
             })
             .collect::<Vec<_>>()
@@ -838,11 +847,12 @@ fn malformed_entropy_fallback_metadata_fails_compilation() {
             Ok(_) => panic!("malformed entropy fallback metadata must not compile"),
             Err(error) => error,
         };
+    let message = error.to_string();
     assert!(
-        error
-            .to_string()
-            .contains("invalid entropy_fallback metadata"),
-        "compile must explain malformed identity metadata: {error}"
+        message.contains("entropy_fallback.id")
+            && message.contains("entropy_fallback.name")
+            && message.contains("entropy_fallback.service"),
+        "compile must explain every malformed identity field: {message}"
     );
 }
 
@@ -970,7 +980,7 @@ fn full_scan_findings(bpe_enabled: bool, backend: ScanBackend) -> Vec<(String, S
         .map(|finding| {
             (
                 finding.detector_id.to_string(),
-                finding.credential.to_string(),
+                finding.credential.as_str().to_string(),
                 finding.location.offset,
             )
         })
@@ -1032,7 +1042,7 @@ fn full_scan_keyword_free_values(
     scanner
         .scan_with_backend(&chunk, backend)
         .into_iter()
-        .map(|finding| finding.credential.to_string())
+        .map(|finding| finding.credential.as_str().to_string())
         .collect()
 }
 
@@ -1045,8 +1055,8 @@ fn keyword_free_margin_contract_rejects_incomplete_custom_corpora() {
         .expect("a keyword-free owner without its margin must fail compilation")
         .to_string();
     assert!(
-        missing_error.contains("claims entropy role `keyword-free`")
-            && missing_error.contains("omits plausibility.keyword_free_operator_margin"),
+        missing_error.contains("detector claiming entropy role `keyword-free`")
+            && missing_error.contains("must declare plausibility.keyword_free_operator_margin"),
         "unexpected missing-margin error: {missing_error}"
     );
 
@@ -1061,8 +1071,8 @@ fn keyword_free_margin_contract_rejects_incomplete_custom_corpora() {
         .expect("a non-role owner with the margin must fail compilation")
         .to_string();
     assert!(
-        misplaced_error.contains("declares plausibility.keyword_free_operator_margin")
-            && misplaced_error.contains("without claiming entropy role `keyword-free`"),
+        misplaced_error.contains("plausibility.keyword_free_operator_margin is valid only")
+            && misplaced_error.contains("detector claiming entropy role `keyword-free`"),
         "unexpected misplaced-margin error: {misplaced_error}"
     );
 

@@ -27,9 +27,9 @@ fn scanner_with_detector_and_phase2_keyword_and_anchor() -> CompiledScanner {
                         weak_anchor: false,
                     },
                     PatternSpec {
-                        regex: "[a-z]{4}[0-9]{4}".into(),
+                        regex: "([a-z]{4}[0-9]{4})".into(),
                         description: None,
-                        group: None,
+                        group: Some(1),
                         required_literals: Vec::new(),
                         client_safe: false,
                         weak_anchor: false,
@@ -39,7 +39,7 @@ fn scanner_with_detector_and_phase2_keyword_and_anchor() -> CompiledScanner {
                 verify: None,
                 keywords: vec!["phasekw".into()],
                 min_confidence: None,
-                ..Default::default()
+                ..keyhog_scanner::testing::named_detector_fixture_defaults()
             },
             DetectorSpec {
                 tests: Vec::new(),
@@ -48,9 +48,9 @@ fn scanner_with_detector_and_phase2_keyword_and_anchor() -> CompiledScanner {
                 service: "test".into(),
                 severity: Severity::High,
                 patterns: vec![PatternSpec {
-                    regex: "[Aa][Nn][Cc][Hh][Oo][Rr][Kk][Ee][Yy][0-9]{4}".into(),
+                    regex: "([Aa][Nn][Cc][Hh][Oo][Rr][Kk][Ee][Yy][0-9]{4})".into(),
                     description: None,
-                    group: None,
+                    group: Some(1),
                     required_literals: Vec::new(),
                     client_safe: false,
                     weak_anchor: false,
@@ -59,7 +59,7 @@ fn scanner_with_detector_and_phase2_keyword_and_anchor() -> CompiledScanner {
                 verify: None,
                 keywords: Vec::new(),
                 min_confidence: None,
-                ..Default::default()
+                ..keyhog_scanner::testing::named_detector_fixture_defaults()
             },
         ],
         GpuInitPolicy::ForceDisabled,

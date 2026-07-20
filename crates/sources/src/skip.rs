@@ -207,6 +207,36 @@ pub fn skip_counts() -> SkipCounts {
     }
 }
 
+/// Merge remote (daemon) skip deltas into process-local counters so
+/// `CoverageCounts::current()` / SARIF notifications match the wire gaps
+/// (KH-1369). `excluded` is not on the daemon wire and is left unchanged.
+pub fn merge_skip_count_deltas(deltas: &SkipCounts) {
+    let add = |counter: &AtomicUsize, delta: usize| {
+        if delta > 0 {
+            counter.fetch_add(delta, Relaxed);
+        }
+    };
+    add(&SKIPPED_OVER_MAX_SIZE, deltas.over_max_size);
+    add(&SKIPPED_BINARY, deltas.binary);
+    add(&SKIPPED_UNREADABLE, deltas.unreadable);
+    add(&GIT_OBJECT_UNREADABLE, deltas.git_object_unreadable);
+    add(&SKIPPED_ARCHIVE_TRUNCATED, deltas.archive_truncated);
+    add(
+        &BINARY_SECTION_NAME_UNRESOLVED,
+        deltas.binary_section_name_unresolved,
+    );
+    add(&SOURCE_TRUNCATED, deltas.source_truncated);
+    add(
+        &STRUCTURED_SOURCE_PARSE_FAILURES,
+        deltas.structured_source_parse_failures,
+    );
+    add(
+        &ARCHIVE_DUPLICATE_SCAN_UNAVAILABLE,
+        deltas.archive_duplicate_scan_unavailable,
+    );
+    add(&GIT_LFS_POINTER, deltas.git_lfs_pointer);
+}
+
 /// Git commit/tree/blob objects that were referenced by Git metadata but not
 /// scanned because the object was unreadable or had the wrong kind.
 pub fn git_object_unreadable() -> usize {

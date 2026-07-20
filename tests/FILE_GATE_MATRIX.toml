@@ -233,6 +233,13 @@ adversarial = true
 e2e_linked = true
 
 [[module]]
+path = "crates/cli/src/orchestrator/dispatch/backend/runtime_health.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
 path = "crates/cli/src/orchestrator/dispatch/backend/workload.rs"
 boundary = true
 error = true
@@ -557,6 +564,11 @@ adversarial = true
 
 [[module]]
 path = "crates/core/src/dedup.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/core/src/detector_file_io.rs"
 error = true
 adversarial = true
 
@@ -1046,7 +1058,7 @@ error = true
 adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/gpu_cache.rs"
+path = "crates/scanner/src/gpu_matcher_cache.rs"
 error = true
 adversarial = true
 
@@ -1111,12 +1123,12 @@ error = true
 adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/profile.rs"
+path = "crates/scanner/src/scan_profile.rs"
 error = true
 adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/gpu_input_budget.rs"
+path = "crates/scanner/src/gpu_input_budget.rs"
 error = true
 adversarial = true
 
@@ -1146,7 +1158,7 @@ error = true
 adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/segment_attribution.rs"
+path = "crates/scanner/src/segment_attribution.rs"
 error = true
 adversarial = true
 
@@ -1880,7 +1892,7 @@ error = true
 adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/phase2_generic_shape.rs"
+path = "crates/scanner/src/generic_assignment_shape.rs"
 error = true
 adversarial = true
 
@@ -1895,7 +1907,7 @@ error = true
 adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/phase2_truncate.rs"
+path = "crates/scanner/src/phase2_truncate.rs"
 error = true
 adversarial = true
 
@@ -2080,7 +2092,7 @@ error = true
 adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/gpu_artifacts.rs"
+path = "crates/scanner/src/gpu_literal_artifacts.rs"
 error = true
 adversarial = true
 
@@ -2539,5 +2551,70 @@ adversarial = true
 
 [[module]]
 path = "crates/sources/src/github_collaboration.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/detector_plan.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/assignment_keyword_matcher.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/detector_key_material_policy.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/compiled_scanner/validation.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/decode/policy.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/gpu/adapter_probe.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/checksum/compiled.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/engine/gpu_resident_evidence.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/engine/phase2_gpu_dfa/resident.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/engine/phase2_gpu_dfa/resident/shard.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/engine/phase2_gpu_dfa/resident/catalog.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/engine/recovery.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/detector_execution_policy.rs"
 error = true
 adversarial = true

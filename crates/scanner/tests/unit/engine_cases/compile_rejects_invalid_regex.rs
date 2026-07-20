@@ -7,7 +7,7 @@ fn compile_rejects_invalid_regex() {
 }
 
 #[test]
-fn compile_rejects_regex_that_exceeds_scanner_builder_limits() {
+fn compile_rejects_regex_that_exceeds_corpus_limit() {
     let oversized_but_syntax_valid = (0..90_000)
         .map(|idx| format!("KEYHOGSIZE{idx:05}"))
         .collect::<Vec<_>>()
@@ -21,7 +21,7 @@ fn compile_rejects_regex_that_exceeds_scanner_builder_limits() {
 
     let message = error.to_string().to_ascii_lowercase();
     assert!(
-        message.contains("compiled regex exceeds size limit"),
+        message.contains("regex is too large") && message.contains("4096 byte limit"),
         "expected regex size-limit compile failure, got {error}"
     );
 }
@@ -45,6 +45,6 @@ fn detector_with_regex(regex: &str) -> DetectorSpec {
         verify: None,
         keywords: vec![],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }
 }

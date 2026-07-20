@@ -82,16 +82,19 @@ fn stripe_payload_must_be_all_ascii_alphanumeric() {
 }
 
 #[test]
-fn all_six_stripe_prefixes_claim_the_token() {
-    // sk/pk/rk x live/test all route to the Stripe validator and claim a valid
-    // shape (none falls through to NotApplicable or another validator).
-    for prefix in [
-        "sk_live_", "sk_test_", "pk_live_", "pk_test_", "rk_live_", "rk_test_",
-    ] {
+fn all_four_secret_stripe_prefixes_claim_the_token() {
+    for prefix in ["sk_live_", "sk_test_", "rk_live_", "rk_test_"] {
         assert_eq!(
             validate_checksum(&stripe_key(prefix, 24)),
             ChecksumResult::StructurallyValid,
             "prefix {prefix} must be claimed as a structurally-valid Stripe key"
+        );
+    }
+    for prefix in ["pk_live_", "pk_test_"] {
+        assert_eq!(
+            validate_checksum(&stripe_key(prefix, 24)),
+            ChecksumResult::NotApplicable,
+            "publishable prefix {prefix} must not be claimed by the secret-key validator"
         );
     }
 }

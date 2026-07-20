@@ -1,7 +1,7 @@
 //! KH-GAP-108: Operator-facing scan errors must not cite stale detector-list
 //! guidance when refusing an empty detector corpus.
 
-use crate::e2e::support::binary;
+use crate::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 

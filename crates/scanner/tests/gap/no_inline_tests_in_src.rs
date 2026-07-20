@@ -19,20 +19,6 @@ mod inline_gate;
 /// Crate-private modules permitted to keep co-located `#[cfg(test)]` white-box
 /// tests. Paths are relative to `src/`. Keep this list SHORT and justified.
 const INLINE_TEST_ALLOWLIST: &[&str] = &[
-    // Region batch construction and bounded-validation helpers are crate-private
-    // implementation details of the GPU trigger path. The co-located tests keep
-    // those helpers private instead of widening the scanner API for white-box
-    // source assertions.
-    "engine/gpu_region_dispatch.rs",
-    // GPU regex-DFA admission tests exercise private catalog packing, replay,
-    // region attribution, and shader-program selection helpers. Keeping those
-    // tests co-located preserves the crate boundary instead of making GPU
-    // admission internals pub(crate) solely for test placement.
-    "engine/phase2_gpu_dfa.rs",
-    // The root module has test-only imports used by crate-internal unit builds.
-    // These are not behavioral inline tests; moving them to `tests/` would not
-    // remove source-owned test logic, only break crate-local compilation seams.
-    "lib.rs",
     // Hardware-probe tests need the crate-private backend override hook and
     // live under a `testing` facade, not as hidden production behavior.
     "hw_probe/mod.rs",
@@ -53,30 +39,6 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // through the narrow `testing` facade instead of keeping that larger
     // concurrency regression in production source.
     "simd/backend/scan.rs",
-    // The GPU MoE wgpu dispatch is a crate-private accelerator path. Its
-    // regressions drive the private `dispatch_moe_batch` and
-    // `gpu_moe_parity_probe_features` directly: a per-dispatch GPU/CPU parity
-    // guard and the concurrent params-buffer race reproducer (the
-    // shared-batch_size clobber that aborted autoroute calibration). Both need
-    // the real device dispatch, so co-locating keeps `dispatch_moe_batch` and the
-    // probe builder private instead of exporting the GPU internals as `pub`
-    // solely for external test placement.
-    "gpu/backend.rs",
-    // The repeat-run precision heuristics (`is_degenerate_repeat`,
-    // `longest_repeat_run_len`, `max_repeat_run`) and the `DEGENERATE_RUN_LEN`
-    // threshold are private/`pub(crate)` to the confidence layer. The co-located
-    // tests pin the exact 9-vs-10 degenerate-run boundary and the byte-based
-    // run/ratio semantics that deny the confidence floor to placeholders; the
-    // items are deliberately not public, so external placement would force them
-    // `pub` solely for the test.
-    "confidence/penalties.rs",
-    // The credential-context keyword loader parses its Tier-B TOML through the
-    // crate-private `parse_credential_context_keywords` and exposes only a
-    // `pub(crate)` accessor over a `LazyLock`. The co-located tests pin a
-    // byte-identical parity against the legacy in-code array plus the fail-closed
-    // validator behaviour; the parser and the embedded TOML are deliberately not
-    // public, so external placement would force them `pub` solely for the test.
-    "credential_context_keywords.rs",
     // The detector-catalog helper `bundled_detector_ids` is a `#[cfg(test)]`
     // `pub(crate)` corpus loader, deliberately not part of the crate's public API,
     // so an external `tests/` target cannot reach it. Its co-located tests pin the
@@ -84,66 +46,16 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // (The former `validate_rule_detector_ids` rule-file id validator was removed
     // by the DET-0 migration, no rule file carries a detector-id list anymore.)
     "detector_catalog.rs",
-    // `CredentialShapeRule` keeps its length/prefix/body fields PRIVATE; the
-    // co-located tests construct fixtures through the `#[cfg(test)] pub(crate)`
-    // `exact_length_for_test` / `prefix_body_range_for_test` builders that set
-    // those private fields directly. Those builders are irreducibly co-located -
-    // they exist only to populate the private shape - so migrating the tests out
-    // would force the fields (or the builders) `pub` purely for test placement.
-    "credential_shapes.rs",
-    // The placeholder/doc-marker tests drive the crate-private `parse_vocab`
-    // parser, the private `validate_markers` helper, and the private
-    // `PlaceholderVocab` fields against the bundled `placeholder_words.toml`
-    // (uppercase-on-load, `_`/`-` separators, dup/empty/uppercase rejection, and
-    // the parity proof that the Tier-B `[doc_markers]` lists reproduce the old
-    // `INSTRUCTIONAL_FRAGMENTS` / `DOC_MARKER_SUBSTRINGS` consts exactly). The
-    // parser, vocab type, and marker validator are all crate-internal, the same
-    // white-box justification as other private Tier-B parsers.
-    "placeholder_words.rs",
-    // The assignment-keyword tests drive the crate-private `derive_assignment_keywords`
-    // builder and the private `ASSIGNMENT_KEYWORDS` static (separator expansion, case
-    // fold, the phase2-generic `kind` filter, cross-detector dedup, and the recall-
-    // parity proof that the vocab DERIVED from the generic detector specs is a superset
-    // of the 46 recall-critical prefilter triggers, plus the one-home check that no
-    // second vocab source exists). Builder and static are crate-internal, same
-    // white-box justification as `placeholder_words.rs`.
-    "assignment_keywords.rs",
-    // The scan-filter tests pin the private vendor-prefix and entropy-run byte
-    // predicates used by no-hit admission. Active corpus keyword routing is
-    // covered through the production scanner, so these white-box cases stay
-    // co-located rather than widening the engine's internal surface.
-    "engine/scan_filters.rs",
-    // The multiline secret-prefix tests drive the crate-private
-    // `parse_multiline_secret_prefixes` parser and the private
-    // `MULTILINE_SECRET_PREFIXES` static against the bundled
-    // `multiline_secret_prefixes.toml` (case-PRESERVING validation, dup/empty
-    // rejection, the deliberately-excluded short prefixes, a case-sensitive
-    // AC-build proof, and byte-for-byte parity with the old inline
-    // `AhoCorasick::new` array in scan_filters.rs). Parser and static are
-    // crate-internal (same white-box justification as `assignment_keywords.rs`).
-    "secret_prefixes.rs",
-    // The Tier-B list tests drive the crate-private `parse_token_list` primitive and
-    // its `ListPolicy` directly across both policies (lowercase-required vs
-    // case-preserving), pinning the shared charset/dup/empty/order contract that the
-    // assignment-keyword and secret-prefix loaders delegate to. The primitive and
-    // policy type are crate-internal, same white-box justification as
-    // `assignment_keywords.rs`.
-    "tier_b_list.rs",
-    // The path-filter tests pin the `pub(crate)` path classifiers
-    // (`path_is_ci_workflow_file`, `path_is_i18n_file`,
-    // `looks_like_raw_base64_file_path`, `looks_like_entropy_raw_base64_file_path`)
-    // with direct cross-platform boundary assertions. `tests/unit/` exercises only
-    // the truly-`pub` API (see `tests/unit/shape_canonical.rs`), so migrating these
-    // would force the crate-internal classifiers `pub` or weaken them to indirect
-    // tests - both worse than co-locating the white-box assertions.
-    "suppression/path_filter.rs",
-    // The canonical-shape tests pin the `pub(crate)` suppression predicates
-    // (`is_structured_dotted_token`, `looks_like_dashed_serial_key`,
-    // `looks_like_aws_iam_arn`, `looks_like_random_byte_base64_blob`) whose exact
-    // boundary behaviour is recall-load-bearing. They are crate-internal, not the
-    // public API `tests/unit/` can reach, so the direct boundary assertions stay
-    // co-located instead of widening the surface or weakening to indirect tests.
-    "suppression/shape/canonical.rs",
+    // `engine/backend_prepared.rs` co-locates white-box tests for the `pub(crate)`
+    // `PreparedChunk::code_lines` (KH-1226): they construct a `PreparedChunk` over
+    // its `pub(crate)` fields (`chunk`, `preprocessed`, `line_offsets`) via the
+    // `pub(crate) ScannerPreprocessedText::passthrough` constructor and assert that
+    // `code_lines` slices `preprocessed.text` (the buffer `line_offsets` was
+    // computed on) even when preprocessing rewrote the bytes. `PreparedChunk`, its
+    // fields, and `code_lines` are crate-internal, so external placement would
+    // force them `pub` solely for the test - the same white-box trade as the
+    // other `engine/*` entries.
+    "engine/backend_prepared.rs",
     // Sibling `suppression/shape/*` predicate modules with the SAME white-box
     // justification as `canonical.rs`: each pins one `pub(crate)` shape predicate
     // whose exact single-pass boundary is recall-load-bearing
@@ -155,18 +67,6 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     "suppression/shape/path.rs",
     "suppression/shape/prose.rs",
     "suppression/shape/public.rs",
-    // `suppression/shape/source.rs` pins the `pub(crate)`
-    // `looks_like_dotted_source_identifier` predicate and, critically, the
-    // `CREDENTIAL_KEYWORD_NEEDLES` unification intent (a camel-cased dotted
-    // candidate carrying a canonical `passwd` segment IS a source identifier)
-    // the same crate-internal shape-boundary justification as `canonical.rs`.
-    "suppression/shape/source.rs",
-    // `suppression/shape/mod.rs` co-locates `#[cfg(test)] pub(crate)` test seams
-    // (`public_noncredential_shape`) that construct the private `PublicShapeScope`
-    // dispatcher over private randomness state. Migrating would force the scope
-    // type and the dispatcher `pub` purely for placement, the white-box seam
-    // belongs with the shape family it fronts.
-    "suppression/shape/mod.rs",
     // The windowed-support tests pin the `pub(crate)` `absolute_offset`
     // overflow-to-`None` and `absolute_line` saturation arithmetic that composes
     // base+local coordinates for windowed reassembly. The helpers live behind a
@@ -179,13 +79,6 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // >high→verbatim) after unifying onto the shared override owner. Parity
     // proofs over a crate-private helper justify co-location.
     "entropy/isolated.rs",
-    // `entropy/bpe.rs` co-locates white-box tests for the `pub(crate)`
-    // `bytes_per_token` / `is_word_like_low_bpe` BPE gate: they assert the exact
-    // tiktoken bytes-per-token of the crate-private FP/secret taxonomies and the
-    // strictly-`>`-than-the-owner-const suppression boundary, crate-internal
-    // predicates unreachable from `tests/` (no public surface), same white-box
-    // justification as `entropy/isolated.rs`.
-    "entropy/bpe.rs",
     // NOTE: `entropy/plausibility.rs` was removed here, its inline `#[cfg(test)]`
     // tests were migrated to `tests/unit/entropy.rs` (they now exercise the
     // per-detector entropy-floor resolution through the PUBLIC
@@ -227,11 +120,6 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // `collect_generic_keyword_lines_from_positions`), crate-internal phase-2
     // reassembly heuristics whose boundary behaviour is recall-load-bearing.
     "engine/phase2_generic/keywords.rs",
-    // `engine/gpu_input_budget.rs` pins the private GPU sizing floor/cap consts
-    // (`GPU_BATCH_INPUT_LIMIT_UNKNOWN`/`_HIGH`, 128 MiB / 1 GiB) and the
-    // `clamp_gpu_batch_input_limit` override clamp, crate-internal pre-compile
-    // budget invariants, not public API.
-    "engine/gpu_input_budget.rs",
     // `engine/scan_postprocess/fragments.rs` pins the private reassembly floors
     // (`REASSEMBLY_MIN_ENTROPY` = 3.0, `REASSEMBLY_MIN_VALUE_LEN` = 16) and proves
     // the no-hit reassembly path reuses the SINGLE `reassembly_probe_data` owner
@@ -242,14 +130,6 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // exact ASCII/size decision boundary is recall-load-bearing and the predicate
     // is module-private (no public surface), so it can only be pinned in-module.
     "engine/phase2_prefilter.rs",
-    // `entropy/mod.rs` contains only the path bridge to its external unit-test
-    // module; behavioral entropy tests live under `tests/unit`.
-    "entropy/mod.rs",
-    // `generic_keyword_owner.rs` is the canonical owner of `leading_assignment_key`
-    // extraction; its tests pin the exact delimiter-run boundary (`=`/`:`/`~`/`.`)
-    // that every generic-keyword path delegates to. Co-located with the ONE-PLACE
-    // owner it defines, over crate-internal extraction internals.
-    "generic_keyword_owner.rs",
     // `scanner_config.rs` pins how the `*_effective()` resolvers fall back to the
     // COMPILED defaults (`FALLBACK_*_DEFAULT`) when a knob is unset, a
     // crate-internal Tier-A default-wiring contract asserted against private

@@ -5,12 +5,12 @@ severity = "critical"
 
 [[positive]]
 text = "HostName=prod-hub.azure-devices.net;SharedAccessKeyName=iothubowner;SharedAccessKey=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKpZQ"
-credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKpZQ"
+credential = "HostName=prod-hub.azure-devices.net;SharedAccessKeyName=iothubowner;SharedAccessKey=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKpZQ"
 reason = "Azure IoT Hub connection string with SharedAccessKey (44 base64)."
 
 [[positive]]
 text = "HostName=device-hub.azure-devices.net;DeviceId=device001;SharedAccessKey=Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9BVkQR"
-credential = "Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9BVkQR"
+credential = "HostName=device-hub.azure-devices.net;DeviceId=device001;SharedAccessKey=Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9BVkQR"
 reason = "Azure IoT Hub device connection string."
 
 [[negative]]

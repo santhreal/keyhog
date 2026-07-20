@@ -1013,10 +1013,25 @@ impl ScanOrchestrator {
             // the report (exit 0) - the exact "missed detection forever" this
             // index must not cause. Dropping the entry forces a re-scan + re-
             // report next time; clean files stay cached so the speedup holds.
+            // KH-1296: pathless findings must not leave their merkle keys clean.
+            // Count them and refuse to persist a clean cache when any finding
+            // cannot be forgotten by path.
+            let mut pathless_findings = 0usize;
             for m in findings {
                 if let Some(fp) = m.location.file_path.as_deref() {
                     idx.forget(std::path::Path::new(fp));
+                } else {
+                    pathless_findings = pathless_findings.saturating_add(1);
                 }
+            }
+            if pathless_findings > 0 {
+                eprintln!(
+                    "warning: incremental cache not updated: {pathless_findings} finding(s) \
+                     had no file path so their cache keys could not be forgotten; next scan \
+                     will re-read potentially secret-bearing inputs (KH-1296)"
+                );
+                let _receipt = crate::record_incremental_cache_persist_failed();
+                return;
             }
             if let Err(e) = idx.save_with_spec(path, &self.detector_spec_hash) {
                 tracing::warn!(error = %e, "failed to persist merkle index");

@@ -7,6 +7,7 @@ use keyhog_scanner::testing::entropy_scanner::{
 };
 use keyhog_scanner::testing::generic_entropy_floor_for_test;
 use keyhog_scanner::testing::is_likely_innocuous_line_for_test as innocuous_line;
+use keyhog_scanner::CompiledScanner;
 use std::sync::Arc;
 
 fn find_secrets(
@@ -444,15 +445,19 @@ fn plausibility_uses_shared_placeholder_markers() {
 
 #[test]
 fn detect_db_password_hex() {
-    let text = "DB_PASSWORD=8ae31cacf141669ddfb5da\n";
-    let matches = find_secrets(text, 8, 2, HIGH_ENTROPY_THRESHOLD);
+    let detector = keyhog_core::detector_spec_by_id("generic-password")
+        .expect("embedded generic-password detector")
+        .clone();
+    let scanner = CompiledScanner::compile(vec![detector]).expect("compile password policy");
+    let matches = scanner.scan(&keyhog_core::Chunk::from(
+        "DB_PASSWORD=8ae31cacf141669ddfb5da\n",
+    ));
     assert!(
-        !matches.is_empty(),
-        "Should detect hex password near DB_PASSWORD keyword. Got 0 matches."
-    );
-    assert!(
-        matches[0].value.contains("8ae31cac"),
-        "Should extract the password value"
+        matches.iter().any(|finding| {
+            finding.detector_id.as_ref() == "generic-password"
+                && finding.credential.as_str() == "8ae31cacf141669ddfb5da"
+        }),
+        "detector-owned password policy must admit a keyword-anchored hex value: {matches:?}"
     );
 }
 

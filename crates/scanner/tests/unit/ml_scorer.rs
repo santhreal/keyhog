@@ -74,7 +74,12 @@ fn score_cache_isolated_by_feature_vocabulary() {
 fn real_secret_scores_high() {
     let text = concat!("gh", "p_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij");
     let context = "GITHUB_TOKEN=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij";
-    let s = test_score(text, context);
+    let s = keyhog_scanner::testing::ml_score_for_detector_with_default_config(
+        text,
+        context,
+        "github-classic-pat",
+        false,
+    );
     assert!(s > 0.7, "Real GitHub PAT should score high, got {:.3}", s);
 }
 
@@ -82,15 +87,25 @@ fn real_secret_scores_high() {
 fn hash_scores_low() {
     let text = "d41d8cd98f00b204e9800998ecf8427e";
     let context = "checksum = d41d8cd98f00b204e9800998ecf8427e";
-    let s = test_score(text, context);
-    assert!(s < 0.5, "MD5 hash should score low, got {:.3}", s);
+    let s = keyhog_scanner::testing::ml_score_for_detector_with_default_config(
+        text,
+        context,
+        "generic-secret",
+        true,
+    );
+    assert!(s < 0.5, "MD5 hash should score low, got {s:.3}");
 }
 
 #[test]
 fn placeholder_scores_low() {
     let text = "YOUR_API_KEY_HERE";
     let context = "API_KEY=YOUR_API_KEY_HERE";
-    let s = test_score(text, context);
+    let s = keyhog_scanner::testing::ml_score_for_detector_with_default_config(
+        text,
+        context,
+        "generic-api-key",
+        false,
+    );
     assert!(s < 0.3, "Placeholder should score very low, got {:.3}", s);
 }
 
@@ -107,9 +122,14 @@ fn openai_key_scores_high() {
     // provider-prefixed credential under its env-var context must land
     // above 0.5 - otherwise the ML scorer is barely lifting confidence at
     // all over the no-info baseline.
-    let key = "sk-proj-EXAMPLE000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
+    let key = "sk-proj-aB3dE6gH9jK2mN5pQ8rS1tU4vW7xY0zA3cD6eF9h";
     let context = format!("OPENAI_API_KEY={key}");
-    let s = test_score(key, &context);
+    let s = keyhog_scanner::testing::ml_score_for_detector_with_default_config(
+        key,
+        &context,
+        "openai-api-key",
+        false,
+    );
     assert!(
         s > 0.5,
         "Realistic OpenAI key scored {:.3}, expected > 0.5 \
@@ -135,8 +155,18 @@ fn base64_binary_scores_below_real_secret() {
 
     let png_ctx = format!("API_KEY={png_b64}");
     let secret_ctx = format!("API_KEY={secret}");
-    let png_score = test_score(&png_b64, &png_ctx);
-    let secret_score = test_score(secret, &secret_ctx);
+    let png_score = keyhog_scanner::testing::ml_score_for_detector_with_default_config(
+        &png_b64,
+        &png_ctx,
+        "generic-secret",
+        true,
+    );
+    let secret_score = keyhog_scanner::testing::ml_score_for_detector_with_default_config(
+        secret,
+        &secret_ctx,
+        "generic-secret",
+        true,
+    );
 
     assert!(
         png_score < secret_score,
@@ -323,22 +353,14 @@ fn structured_nonsecret_battery() -> Vec<(&'static str, String, &'static str)> {
     ]
 }
 
-/// Score a battery entry through the production default-config MoE path: the
-/// real `ScanConfig::default()` keyword/prefix lists the scanner passes to
-/// `score_with_config` at runtime for generic/entropy candidates. These are the
-/// exact lists `ml/probe_entropy_separation.py` scores with (its
-/// `config_lists.DEFAULT_LISTS` mirror `ScanConfig::default()`), so this test is
-/// a faithful CI mirror of that oracle. No list is duplicated into the test
-/// it reads the canonical config.
+/// Score the generic entropy detector through its compiled, detector-conditioned
+/// production feature plan and the scanner's default feature vocabularies.
 fn battery_score(value: &str, context: &str) -> f64 {
-    let cfg = ScanConfig::default();
-    score_with_config(
+    keyhog_scanner::testing::ml_score_for_detector_with_default_config(
         value,
         context,
-        &cfg.known_prefixes,
-        &cfg.secret_keywords,
-        &cfg.test_keywords,
-        &cfg.placeholder_keywords,
+        "generic-secret",
+        true,
     )
 }
 

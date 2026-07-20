@@ -197,7 +197,7 @@ fn random_byte_base64_shape_lives_in_shape_owner() {
     let src = scanner_src();
     let shape = uncommented_code(&read(&src.join("suppression/shape/canonical.rs")));
     let shape_mod = uncommented_code(&read(&src.join("suppression/shape/mod.rs")));
-    let generic_shape = uncommented_code(&read(&src.join("engine/phase2_generic_shape.rs")));
+    let generic_shape = uncommented_code(&read(&src.join("generic_assignment_shape.rs")));
     let entropy_gates = uncommented_code(&read(&src.join("engine/phase2_entropy/gates.rs")));
 
     assert!(
@@ -340,7 +340,7 @@ fn aws_iam_arn_shape_lives_in_shape_owner() {
     let src = scanner_src();
     let shape = uncommented_code(&read(&src.join("suppression/shape/canonical.rs")));
     let shape_mod = uncommented_code(&read(&src.join("suppression/shape/mod.rs")));
-    let generic_shape = uncommented_code(&read(&src.join("engine/phase2_generic_shape.rs")));
+    let generic_shape = uncommented_code(&read(&src.join("generic_assignment_shape.rs")));
     let decision = uncommented_code(&read(&src.join("suppression/decision.rs")));
 
     assert!(

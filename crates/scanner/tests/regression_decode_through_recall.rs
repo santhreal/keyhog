@@ -188,7 +188,7 @@ fn pem_recovered_through_base64() {
         .iter()
         .find(|m| m.credential.as_ref().contains(PEM_NEEDLE))
         .expect("PEM private key recovered through base64");
-    assert_eq!(m.detector_id.as_ref(), "private-key");
+    assert_eq!(m.detector_id.as_ref(), "ssh-private-key");
 }
 
 #[test]

@@ -26,10 +26,8 @@ impl CompiledScanner {
         phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence<'_>>,
         route: crate::ScanExecutionRoute,
     ) {
-        if let Some(deadline) = deadline {
-            if std::time::Instant::now() >= deadline {
-                return;
-            }
+        if crate::deadline::expired(deadline) {
+            return;
         }
 
         // Shared-anchor fast path: one Aho-Corasick pass over all eligible
@@ -133,10 +131,8 @@ impl CompiledScanner {
         phase2_always_active_gpu_evidence: Option<Phase2AlwaysActiveGpuEvidence<'_>>,
         route: crate::ScanExecutionRoute,
     ) {
-        if let Some(deadline) = deadline {
-            if std::time::Instant::now() >= deadline {
-                return;
-            }
+        if crate::deadline::expired(deadline) {
+            return;
         }
         if self.phase2_patterns.is_empty() {
             return;
@@ -209,10 +205,12 @@ impl CompiledScanner {
             route,
             |this, active_patterns| {
                 for (tested, &index) in active_patterns.iter().enumerate() {
-                    if let Some(deadline) = deadline {
-                        if tested.is_multiple_of(16) && std::time::Instant::now() >= deadline {
-                            break;
-                        }
+                    if crate::deadline::expired_on_cadence(
+                        deadline,
+                        tested,
+                        crate::deadline::COMPILED_PHASE2_DEADLINE_CADENCE,
+                    ) {
+                        break;
                     }
                     let (entry, _keywords) = &this.phase2_patterns[index];
                     let t0 = if prof { Some(Instant::now()) } else { None };
@@ -506,10 +504,12 @@ impl CompiledScanner {
         prof: bool,
     ) {
         for (tested, &index) in active_patterns.iter().enumerate() {
-            if let Some(deadline) = deadline {
-                if tested.is_multiple_of(16) && std::time::Instant::now() >= deadline {
-                    break;
-                }
+            if crate::deadline::expired_on_cadence(
+                deadline,
+                tested,
+                crate::deadline::COMPILED_PHASE2_DEADLINE_CADENCE,
+            ) {
+                break;
             }
             let (entry, _) = &self.phase2_patterns[index];
             let t0 = if prof { Some(Instant::now()) } else { None };

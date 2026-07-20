@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
 # Internal prerelease gate + version bump for keyhog.
 #
-# This is NOT a publisher: it never tags, pushes, or uploads. It proves a
-# candidate is releasable (tests + bench gate + coherence + an install
-# smoke-test). With `--bump X.Y.Z`, it first rolls every canonical versioned
-# surface, then gates that exact candidate so the evidence matches the tag.
+# This is not a publisher: it never tags, pushes, or uploads. It proves a
+# candidate is releasable (tests + bench gate + coherence + shipped install
+# smoke). `--bump X.Y.Z` rolls every canonical versioned surface, but the
+# clean-tree GPU evidence gate remains red until you review and commit the bump,
+# then rerun this script against the signed bundle from that exact commit.
 #
-#   scripts/prerelease.sh                 # gate only (no version change)
-#   scripts/prerelease.sh --bump X.Y.Z    # bump the candidate, then gate it
-#   scripts/prerelease.sh --skip-rust     # skip the slow per-crate cargo gates
+#   scripts/prerelease.sh --release-candidate PATH
+#                                      # gate a signed release bundle
+#   scripts/prerelease.sh --bump X.Y.Z  # bump the candidate, then gate it
+#   scripts/prerelease.sh --skip-rust   # skip the slow per-crate cargo gates
 #
-# Knobs (env or flag): CARGO_TARGET_DIR, PROFILE (release-fast), SKIP_RUST=1.
+# Knobs: CARGO_TARGET_DIR, PROFILE, SKIP_RUST, KEYHOG_RELEASE_CANDIDATE.
 #
 # SC2317: the smoke-check functions below (installed_version_smoke, …) are invoked
 # INDIRECTLY through the `check` dispatcher (`check <label> <fn> <args>` runs
@@ -24,6 +26,7 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO" || exit 1
 
 BUMP=""
+RELEASE_CANDIDATE="${KEYHOG_RELEASE_CANDIDATE:-}"
 SKIP_RUST="${SKIP_RUST:-0}"
 PROFILE="${PROFILE:-release-fast}"
 : "${CARGO_TARGET_DIR:=/mnt/FlareTraining/santh-archive/cargo-target}"
@@ -33,6 +36,8 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --bump) BUMP="${2:?--bump needs X.Y.Z}"; shift ;;
     --bump=*) BUMP="${1#--bump=}" ;;
+    --release-candidate) RELEASE_CANDIDATE="${2:?--release-candidate needs PATH}"; shift ;;
+    --release-candidate=*) RELEASE_CANDIDATE="${1#--release-candidate=}" ;;
     --skip-rust) SKIP_RUST=1 ;;
     -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
@@ -49,6 +54,21 @@ check() {  # check <label> <cmd...>
   else printf '  \033[31mFAIL\033[0m %s\n' "$label"; fail=1; FAILED+=("$label"); fi
 }
 
+
+release_candidate_bundle_present() {
+  local candidate="$1" suffix
+  if [ -z "$candidate" ]; then
+    echo "provide --release-candidate PATH to the signed release binary" >&2
+    return 1
+  fi
+  for suffix in "" ".sha256" ".minisig" ".gpu-literals.tar.gz" \
+    ".gpu-literals.tar.gz.sha256" ".gpu-literals.tar.gz.minisig"; do
+    if [ ! -s "$candidate$suffix" ]; then
+      echo "signed release bundle is missing or empty: $candidate$suffix" >&2
+      return 1
+    fi
+  done
+}
 installed_version_smoke() {
   "$1" --version | grep -q KeyHog
 }
@@ -100,10 +120,9 @@ for finding in findings:
     if not isinstance(finding, dict):
         continue
     detector = str(finding.get("detector_id", "")).lower()
-    credential = str(finding.get("credential_redacted", "")).lower()
     location = finding.get("location") or {}
     file_path = str(location.get("file_path") or location.get("file") or "")
-    if ("aws" in detector or "akia2e0a8f3b244c9986" in credential) and file_path.endswith(leak):
+    if detector == "aws-access-key" and file_path.endswith(leak):
         raise SystemExit(0)
 
 print(f"scan report {report} did not contain the planted AWS finding for {leak}", file=sys.stderr)
@@ -155,6 +174,38 @@ if failures:
     print("\n".join(failures), file=sys.stderr)
     raise SystemExit(1)
 PY
+}
+
+run_gpu_crossover_gate() {
+  local source_status artifact head rc
+  source_status="$(git status --porcelain=v1 --untracked-files=all)" || {
+    echo "cannot inspect source state for the GPU crossover gate" >&2
+    return 1
+  }
+  if [ -n "$source_status" ]; then
+    echo "GPU crossover release evidence requires a clean source tree:" >&2
+    printf '%s\n' "$source_status" >&2
+    return 1
+  fi
+  artifact="$(mktemp "${TMPDIR:-/tmp}/keyhog-gpu-crossover.XXXXXX.toml")" || return 1
+  KH_BENCH_ARTIFACT="$artifact" cargo bench \
+    -p keyhog-scanner \
+    --bench gpu_vs_hs_8mib \
+    --features gpu \
+    --profile "$PROFILE" -- || {
+      rc=$?
+      rm -f "$artifact"
+      return "$rc"
+    }
+  head="$(git rev-parse --verify HEAD)" || {
+    rm -f "$artifact"
+    return 1
+  }
+  python3 -B scripts/gpu_crossover_artifact.py \
+    "$artifact" --git-hash "$head"
+  rc=$?
+  rm -f "$artifact"
+  return "$rc"
 }
 
 apply_version_bump() {
@@ -297,6 +348,9 @@ check "bench gate" bash -c "cd benchmarks && python3 -m bench gate \
   --corpus mirror --scanners keyhog --no-beat-competitors \
   --baseline baselines/mirror-keyhog-baseline.json --epsilon 0.005"
 
+step "bench: 8 MiB GPU versus fastest exact Hyperscan route"
+check "GPU crossover evidence" run_gpu_crossover_gate
+
 # ── 2. coherence gates ───────────────────────────────────────────────────────
 # README bench tables must be regenerable-identical. A prerelease gate with
 # stale generated claims is not release evidence.
@@ -320,21 +374,43 @@ else
   echo "  SKIP rust gates (--skip-rust)"
 fi
 
-# ── 4. install smoke, the install-flow gate ─────────────────────────────────
-# Build + install via the portable path (the one that works on every OS,
-# including arm64 macOS). Native TLS build prerequisites are documented by the
-# install guide and are present in the release-smoke image.
-step "install smoke: cargo install (portable) + version + real detection"
+# ── 4. shipped install-flow gate ─────────────────────────────────────────────
+# The release bundle must already contain the signed binary and GPU literal
+# sidecar that operators receive. Source builds cannot satisfy this gate.
+step "install smoke: signed release bundle + installer + product workflow"
 SMOKE="$(mktemp -d)"
-if cargo install --path crates/cli --root "$SMOKE/kh" --no-default-features --features portable --locked -q 2>"$SMOKE/build.log"; then
-  KHS="$SMOKE/kh/bin/keyhog"
-  check "installed --version" installed_version_smoke "$KHS"
-  # A live-shape AWS access-key pair (no checksum class (fires on shape)).
-  printf 'AWS_ACCESS_KEY_ID=AKIA2E0A8F3B244C9986\nAWS_SECRET_ACCESS_KEY=wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY01\n' > "$SMOKE/leak.env"
-  check "installed binary detects a planted secret" installed_detection_smoke \
-    "$KHS" "$SMOKE/leak.env" "$SMOKE/report.json" "$SMOKE/scan.stdout" "$SMOKE/scan.stderr"
+if release_candidate_bundle_present "$RELEASE_CANDIDATE"; then
+  mkdir -p "$SMOKE/home" "$SMOKE/kh/bin"
+  if HOME="$SMOKE/home" XDG_CACHE_HOME="$SMOKE/cache" sh install.sh \
+    --from-file="$RELEASE_CANDIDATE" \
+    --install-dir="$SMOKE/kh/bin" \
+    --yes --no-prompt --no-color >"$SMOKE/install.log" 2>&1; then
+    KHS="$SMOKE/kh/bin/keyhog"
+    check "installed --version" installed_version_smoke "$KHS"
+    check "installed doctor" "$KHS" doctor
+    # A live-shape AWS access-key pair (no checksum class, fires on shape).
+    printf 'AWS_ACCESS_KEY_ID=AKIA2E0A8F3B244C9986\nAWS_SECRET_ACCESS_KEY=wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY01\n' > "$SMOKE/leak.env"
+    check "installed binary detects a planted secret" installed_detection_smoke \
+      "$KHS" "$SMOKE/leak.env" "$SMOKE/report.json" "$SMOKE/scan.stdout" "$SMOKE/scan.stderr"
+    if HOME="$SMOKE/home" XDG_CACHE_HOME="$SMOKE/cache" sh install.sh \
+      --uninstall --install-dir="$SMOKE/kh/bin" \
+      --yes --no-prompt --no-color >"$SMOKE/uninstall.log" 2>&1 \
+      && [ ! -e "$KHS" ]; then
+      printf '  \033[32mPASS\033[0m shipped uninstall\n'
+    else
+      printf '  \033[31mFAIL\033[0m shipped uninstall\n'
+      fail=1
+      FAILED+=("shipped uninstall")
+    fi
+  else
+    printf '  \033[31mFAIL\033[0m signed bundle install, tail:\n'
+    tail -10 "$SMOKE/install.log"
+    fail=1
+    FAILED+=("signed bundle install")
+  fi
 else
-  printf '  \033[31mFAIL\033[0m cargo install (portable), tail:\n'; tail -5 "$SMOKE/build.log"; fail=1; FAILED+=("install smoke build")
+  fail=1
+  FAILED+=("signed release bundle")
 fi
 rm -rf "$SMOKE"
 

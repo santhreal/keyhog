@@ -31,14 +31,14 @@ struct DecoderRegistryState {
 }
 
 #[derive(Clone)]
-pub(super) enum RegisteredDecoder {
+pub(crate) enum RegisteredDecoder {
     Shared(Arc<dyn Decoder>),
     Reverse,
     Caesar,
 }
 
 impl RegisteredDecoder {
-    fn name(&self) -> &'static str {
+    pub(crate) fn name(&self) -> &'static str {
         match self {
             Self::Shared(decoder) => decoder.name(),
             Self::Reverse => "reverse",
@@ -150,7 +150,7 @@ impl CompiledDecoderPlan {
     }
 
     #[cfg(feature = "decode")]
-    pub(super) fn decoders(&self) -> &[RegisteredDecoder] {
+    pub(crate) fn decoders(&self) -> &[RegisteredDecoder] {
         &self.decoders
     }
 }
@@ -188,7 +188,7 @@ thread_local! {
 /// owner instead of one env knob per pass. Records which decoder dominates
 /// decode generation. Zero-cost unset.
 pub(super) fn profile_enabled() -> bool {
-    crate::engine::profile::enabled()
+    crate::scan_profile::enabled()
 }
 
 /// Fixed number of per-decoder profiler slots. The `DECODER_NS` / `DECODER_PRODUCED`

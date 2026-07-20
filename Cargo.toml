@@ -118,7 +118,7 @@ ahash = "=0.8.12"
 mimalloc = { version = "=0.1.52", default-features = false }
 
 # Performance libraries
-simdsieve = "=0.1.1"
+simdsieve = "=0.1.2"
 # VYRE 0.6.5 is published to crates.io and carries the fused resident literal,
 # megakernel, and segmentation APIs KeyHog imports. KeyHog consumes the five
 # runtime VYRE crates through exact registry pins only: no path overrides, no
@@ -191,7 +191,7 @@ status = "alpha"
 #                                                   backends, verification, and mimalloc
 # `--fast` is a runtime CLI flag (not Cargo `-F fast`; the `fast` feature is unused).
 # cargo build --release -F binary                -> add Ghidra decompiler + printable string extraction
-# cargo build --release -F full                  -> source/decompiler surface without accelerator features (native TLS remains)
+# cargo build --release -F full                  -> source/decompiler surface without accelerator/system-library features (native TLS remains)
 # cargo build --release --no-default-features    -> bare filesystem/stdin scanner surface
 # cargo build --release --no-default-features -F portable -> portable source-backend build without Hyperscan/GPU/CUDA/Ghidra build deps (native TLS remains)
 # cargo build --release --no-default-features -F ci       -> lean CI/embeddable scanner

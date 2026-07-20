@@ -20,7 +20,7 @@ fn warm_backend_cpu_paths_succeed() {
         verify: None,
         keywords: vec!["x".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let s = CompiledScanner::compile(vec![d]).unwrap();
     assert!(s.warm_backend(ScanBackend::CpuFallback));

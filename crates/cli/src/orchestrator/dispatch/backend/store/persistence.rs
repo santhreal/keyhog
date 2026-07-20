@@ -1,5 +1,6 @@
 //! Locked, atomic persistence and multi-configuration cache merging.
 
+use anyhow::{anyhow, Context, Result as AnyhowResult};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
@@ -54,32 +55,51 @@ pub(crate) struct StagedAutorouteCache {
 }
 
 impl StagedAutorouteCache {
-    pub(crate) fn begin(
-        live_path: &Path,
-        staged_path: &Path,
-    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+    pub(crate) fn begin(live_path: &Path, staged_path: &Path) -> AnyhowResult<Self> {
         if live_path == staged_path {
-            return Err("autoroute staging path must differ from the live cache path".into());
+            anyhow::bail!("autoroute staging path must differ from the live cache path");
         }
         match std::fs::symlink_metadata(staged_path) {
             Ok(_) => {
-                return Err(format!(
+                anyhow::bail!(
                     "autoroute staging path {} already exists; refusing to overwrite an unrelated artifact",
                     staged_path.display()
-                )
-                .into());
+                );
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.into()),
+            Err(error) => {
+                return Err(error).context(format!(
+                    "inspecting autoroute staging path {}",
+                    staged_path.display()
+                ));
+            }
         }
-        let _write_lock = keyhog_core::StateFileWriteLock::acquire(live_path)?;
+        let _write_lock = keyhog_core::StateFileWriteLock::acquire(live_path)
+            .map_err(|error| anyhow!("{error}"))
+            .with_context(|| {
+                format!(
+                    "acquiring autoroute cache write lock for {}",
+                    live_path.display()
+                )
+            })?;
         let runtime_health_path = runtime_health_path(live_path);
-        let _runtime_health_lock = keyhog_core::StateFileWriteLock::acquire(&runtime_health_path)?;
-        let baseline = read_optional_cache_bytes(live_path)?;
+        let _runtime_health_lock = keyhog_core::StateFileWriteLock::acquire(&runtime_health_path)
+            .map_err(|error| anyhow!("{error}"))
+            .with_context(|| {
+                format!(
+                    "acquiring autoroute runtime-health write lock for {}",
+                    runtime_health_path.display()
+                )
+            })?;
+        let baseline = read_optional_cache_bytes(live_path)
+            .map_err(|error| anyhow!("{error}"))
+            .with_context(|| format!("reading live autoroute cache {}", live_path.display()))?;
         let runtime_health_baseline = runtime_health_snapshot(live_path)
-            .map_err(|error| format!("cannot stage autoroute runtime health: {error}"))?;
+            .map_err(|error| anyhow!("cannot stage autoroute runtime health: {error}"))?;
         if let Some(bytes) = baseline.as_deref() {
-            crate::atomic_file::write_bytes(staged_path, bytes)?;
+            crate::atomic_file::write_bytes(staged_path, bytes).with_context(|| {
+                format!("seeding staged autoroute cache {}", staged_path.display())
+            })?;
         }
         Ok(Self {
             live_path: live_path.to_path_buf(),
@@ -97,15 +117,15 @@ impl StagedAutorouteCache {
     pub(crate) fn publish(
         self,
         measured_routes: &BTreeSet<(String, String, String)>,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let staged_bytes = read_autoroute_cache_file(&self.staged_path).map_err(|error| {
+    ) -> AnyhowResult<()> {
+        let staged_bytes = read_autoroute_cache_file(&self.staged_path).with_context(|| {
             format!(
-                "cannot publish autoroute calibration because staged cache {} is unreadable: {error}; the live cache was not changed",
+                "cannot publish autoroute calibration because staged cache {} is unreadable; the live cache was not changed",
                 self.staged_path.display()
             )
         })?;
         let staged_cache = parse_autoroute_cache(&staged_bytes).map_err(|error| {
-            format!(
+            anyhow!(
                 "staged autoroute calibration is invalid: {}; the live cache was not changed",
                 error.diagnostic()
             )
@@ -116,12 +136,12 @@ impl StagedAutorouteCache {
             &staged_cache.rules_digest,
         )
         .map_err(|error| {
-            format!(
+            anyhow!(
                 "staged autoroute calibration identity is invalid: {error}; the live cache was not changed"
             )
         })?;
         validate_cache_structure(&staged_cache).map_err(|error| {
-            format!(
+            anyhow!(
                 "staged autoroute calibration structure is invalid: {error}; the live cache was not changed"
             )
         })?;
@@ -131,28 +151,35 @@ impl StagedAutorouteCache {
             measured_routes,
         )
         .map_err(|error| {
-            format!(
+            anyhow!(
                 "cannot publish autoroute calibration because runtime health cannot be updated safely: {error}; the live cache was not changed"
             )
         })?;
 
-        let _write_lock = keyhog_core::StateFileWriteLock::acquire(&self.live_path)?;
+        let _write_lock = keyhog_core::StateFileWriteLock::acquire(&self.live_path)
+            .map_err(|error| anyhow!("{error}"))?;
         let _runtime_health_lock =
-            keyhog_core::StateFileWriteLock::acquire(&self.runtime_health_path)?;
-        let current = read_optional_cache_bytes(&self.live_path)?;
+            keyhog_core::StateFileWriteLock::acquire(&self.runtime_health_path)
+                .map_err(|error| anyhow!("{error}"))?;
+        let current =
+            read_optional_cache_bytes(&self.live_path).map_err(|error| anyhow!("{error}"))?;
         let current_runtime_health = runtime_health_snapshot(&self.live_path)
-            .map_err(|error| format!("cannot verify autoroute runtime health: {error}"))?;
+            .map_err(|error| anyhow!("cannot verify autoroute runtime health: {error}"))?;
         if current != self.baseline || current_runtime_health != self.runtime_health_baseline {
-            return Err(format!(
+            anyhow::bail!(
                 "autoroute cache or runtime health at {} changed while calibration was running; the completed staged generation was not published and the concurrent live update was preserved. Rerun `keyhog calibrate-autoroute`",
                 self.live_path.display()
-            )
-            .into());
+            );
         }
-        crate::atomic_file::write_bytes(&self.live_path, &staged_bytes)?;
+        crate::atomic_file::write_bytes(&self.live_path, &staged_bytes).with_context(|| {
+            format!(
+                "publishing staged autoroute cache to {}",
+                self.live_path.display()
+            )
+        })?;
         if let Some(bytes) = filtered_runtime_health.as_deref() {
             write_runtime_health_snapshot(&self.runtime_health_path, bytes).map_err(|error| {
-                format!(
+                anyhow!(
                     "the complete autoroute generation was published, but its measured runtime-health faults could not be cleared: {error}; scans remain conservatively quarantined until calibration is rerun"
                 )
             })?;

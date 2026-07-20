@@ -24,8 +24,8 @@ fn engine_profile_reset_clears_phase2_mark_stats() {
         .expect("phase2 mark stats source readable");
     let phase2 =
         std::fs::read_to_string(root.join("src/engine/phase2.rs")).expect("phase2 source readable");
-    let profile = std::fs::read_to_string(root.join("src/engine/profile.rs"))
-        .expect("engine profile source readable");
+    let profile = std::fs::read_to_string(root.join("src/scan_profile.rs"))
+        .expect("scan profile source readable");
 
     assert!(
         mark_stats.contains("#[cfg(not(test))]\npub(crate) fn phase2_mark_stats_reset()")
@@ -42,7 +42,7 @@ fn engine_profile_reset_clears_phase2_mark_stats() {
         "engine phase2 owner must re-export phase2_mark_stats_reset outside cfg(test)"
     );
     assert!(
-        profile.contains("super::phase2::phase2_mark_stats_reset();"),
-        "engine::profile::reset must clear phase2 mark stats between explicit profile runs"
+        profile.contains("crate::engine::phase2::phase2_mark_stats_reset();"),
+        "scan_profile::reset must clear phase2 mark stats between explicit profile runs"
     );
 }

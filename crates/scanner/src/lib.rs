@@ -115,27 +115,41 @@ pub mod entropy;
 pub(crate) mod error;
 /// Cross-chunk fragment reassembly cache.
 pub(crate) mod fragment_cache;
+/// Detector-owned generic assignment value-shape adjudication.
+mod generic_assignment_shape;
 /// Named-detector ownership for assignment-key fallback suppression.
 pub(crate) mod generic_keyword_owner;
 /// GPU-accelerated matching via wgpu.
 pub mod gpu;
+/// Scanner GPU batch input policy.
+pub(crate) mod gpu_input_budget;
+/// GPU literal artifact compilation from the typed detector plan.
+pub(crate) mod gpu_literal_artifacts;
+/// Persistent GPU matcher artifact cache.
+pub(crate) mod gpu_matcher_cache;
 /// Hardware capability detection and backend selection.
 pub mod hw_probe;
 /// Machine learning inference for secret scoring.
 pub mod ml_scorer;
 /// Multiline secret reassembly logic.
 pub(crate) mod multiline;
+/// Pure phase-two regex truncation and UTF-8 focus boundaries.
+pub(crate) mod phase2_truncate;
 pub(crate) mod placeholder_words;
 pub(crate) mod platform_compat;
 pub(crate) mod process_exit;
 /// Match resolution and deduplication.
 pub mod resolution;
+/// Process-wide scan profiling and diagnostics.
+pub(crate) mod scan_profile;
 /// Runtime match heap, interners, and ML pending queue for one scan.
 pub(crate) mod scan_state;
 /// Scanner configuration and state.
 pub(crate) mod scanner_config;
 /// Tier-B distinctive vendor secret-prefix vocabulary for the multiline no-hit gate.
 pub(crate) mod secret_prefixes;
+/// Coalesced match-to-input attribution primitive.
+pub(crate) mod segment_attribution;
 /// Static-string interner backed by a single-hash `ahash` map.
 /// Used by `CompiledScanner` to pre-intern detector metadata strings
 /// so the per-scan `ScanState` interner is hit only by dynamic
@@ -200,6 +214,10 @@ mod simdsieve_prefilter;
 pub(crate) mod shared_regexes;
 
 pub use api::*;
+/// Install a pre-exit hook for scanner hard-stops (`process::exit` paths).
+///
+/// The CLI uses this to dump rate-limited WARN summaries that Drop would skip.
+pub use process_exit::set_pre_exit_hook;
 
 /// Configure the Hyperscan compiled-database cache directory for this process.
 ///

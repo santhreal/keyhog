@@ -1,6 +1,6 @@
 //! Contract: `--exclude-paths` suppresses findings from excluded files.
 
-use crate::e2e::support::binary;
+use crate::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 

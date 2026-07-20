@@ -54,7 +54,7 @@ fn scan_findings(dir: &Path, batch_pipeline: bool) -> BTreeSet<(String, String, 
         .map(|m| {
             (
                 m.detector_id.to_string(),
-                m.credential.to_string(),
+                m.credential.as_str().to_string(),
                 m.location.file_path.as_deref().unwrap_or("").to_string(),
                 format!("{:?}", m.location.line),
             )

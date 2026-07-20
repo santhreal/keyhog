@@ -21,7 +21,7 @@ fn gpu_stack_usable_false_without_literals() {
         verify: None,
         keywords: vec!["x".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let s = CompiledScanner::compile(vec![d]).unwrap();
     let message = crate::engine::gpu_forced_unavailable_message(&s, ScanBackend::GpuWgpu)
@@ -32,7 +32,7 @@ fn gpu_stack_usable_false_without_literals() {
     );
     assert!(
         message.contains("silent CPU fallback is forbidden")
-            && message.contains("choose --backend simd/cpu")
+            && message.contains("`--backend simd-regex` or `--backend cpu-fallback`")
             && message.contains("recalibrate autoroute"),
         "forced GPU message must name valid recovery controls without suggesting auto can bypass broken calibration, got {message:?}"
     );

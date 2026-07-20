@@ -51,7 +51,7 @@ fn reassembly_scanner() -> CompiledScanner {
             weak_anchor: false,
         }],
         keywords: vec!["api_key".into()],
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }])
     .expect("compile demo scanner")
 }

@@ -17,6 +17,13 @@ fn length_policy(
     crate::detector_execution_policy::CompiledDetectorLengthPolicy { min_len, max_len }
 }
 
+fn post_match_policy(detector_id: &str) -> keyhog_core::DetectorPostMatchConfidenceSpec {
+    keyhog_core::detector_spec_by_id(detector_id)
+        .and_then(|detector| detector.match_confidence)
+        .map(|confidence| confidence.post_match)
+        .expect("embedded detector post-match confidence policy")
+}
+
 fn adjudicate_process_signal(
     detector_id: &str,
     credential_shape: Option<&crate::credential_shapes::CredentialShapeRule>,
@@ -34,6 +41,7 @@ fn adjudicate_process_signal(
             crate::detector_execution_policy::CompiledDetectorLengthPolicy::compile,
         ),
         credential_shape,
+        post_match_policy(detector_id).degenerate_run_min_length,
         credential,
         data,
         start,
@@ -60,6 +68,7 @@ fn adjudicate_final_emit(
         code_context,
         confidence,
         min_confidence_floor,
+        post_match_policy(detector_id).degenerate_run_min_length,
         penalize_test_paths,
     ));
     adjudicate_match(CandidateMatch::new(credential), &ctx)
@@ -84,6 +93,7 @@ fn process_stage_enforces_detector_minimum_length() {
         false,
         length_policy(Some(32), None),
         None,
+        post_match_policy(crate::detector_ids::GITHUB_CLASSIC_PAT).degenerate_run_min_length,
         credential,
         credential,
         0,
@@ -110,6 +120,7 @@ fn process_stage_keeps_candidate_at_detector_minimum_length() {
         false,
         length_policy(Some(32), None),
         None,
+        post_match_policy(crate::detector_ids::GITHUB_CLASSIC_PAT).degenerate_run_min_length,
         credential,
         credential,
         0,
@@ -141,6 +152,7 @@ fn process_stage_enforces_detector_maximum_length_without_truncation() {
             false,
             length_policy(None, Some(at_max.len())),
             None,
+            post_match_policy(crate::detector_ids::GITHUB_CLASSIC_PAT).degenerate_run_min_length,
             credential,
             credential,
             0,
@@ -170,6 +182,7 @@ fn process_stage_measures_detector_minimum_in_utf8_bytes() {
             false,
             length_policy(Some(min_len), None),
             None,
+            post_match_policy(crate::detector_ids::GITHUB_CLASSIC_PAT).degenerate_run_min_length,
             credential,
             credential,
             0,
@@ -319,21 +332,6 @@ fn process_stage_reports_service_anchored_candidate() {
             credential.len()
         ),
         Verdict::Reported(None)
-    );
-}
-
-#[test]
-fn generic_bridge_stage_reports_named_detector_owned_keyword() {
-    let credential = "segment_write_key";
-    let ctx = MatchCtx::for_generic_bridge(GenericBridgeSignal::NamedDetectorOwnedKeyword);
-
-    assert_eq!(
-        adjudicate_match(CandidateMatch::new(credential), &ctx),
-        Verdict::Suppressed(StageId::GenericNamedDetectorOwnedKeyword)
-    );
-    assert_eq!(
-        StageId::GenericNamedDetectorOwnedKeyword.as_str(),
-        "generic_named_detector_owned_keyword"
     );
 }
 
@@ -534,6 +532,9 @@ fn final_emit_stage_reports_final_confidence() {
 
 #[test]
 fn final_report_candidate_returns_adjudicator_reported_confidence() {
+    let confidence = keyhog_core::detector_spec_by_id("datadog-api-key")
+        .and_then(|detector| detector.match_confidence)
+        .expect("embedded Datadog confidence policy");
     assert_eq!(
         crate::adjudicate::finalize_report_candidate(
             Some("service/config.rs"),
@@ -544,6 +545,8 @@ fn final_report_candidate_returns_adjudicator_reported_confidence() {
                 confidence: 0.91,
                 min_confidence_floor: 0.40,
                 penalize_test_paths: true,
+                context_suppression_threshold: Some(confidence.soft_context_suppression_threshold,),
+                post_match: confidence.post_match,
                 file_path: Some("service/config.rs"),
                 is_named_detector: true,
                 is_generic_detector: false,
@@ -672,5 +675,22 @@ fn named_detector_stage_reports_service_anchored_identifier() {
     assert_eq!(
         adjudicate_match(CandidateMatch::new("getParameter"), &ctx),
         Verdict::Reported(None)
+    );
+}
+
+#[cfg(feature = "entropy")]
+#[test]
+fn entropy_example_suppression_uses_detector_owned_repeat_limit() {
+    assert_eq!(
+        crate::adjudicate::entropy_fallback_example_suppression_stage(
+            "ghp_Q7vNaaaaaa2xK8cP4m",
+            "token",
+            4.0,
+            None,
+            None,
+            5,
+            true,
+        ),
+        Some(EntropyShapeStage::SuppressionStage("repetitive_run")),
     );
 }

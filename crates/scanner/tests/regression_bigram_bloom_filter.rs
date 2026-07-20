@@ -17,7 +17,13 @@
 //!
 //! Every assertion is a concrete `bool`. No is_empty()/is_ok() shape checks.
 
-use keyhog_scanner::testing::BigramBloom;
+use keyhog_scanner::testing::{production_bigram_prefilter_density, BigramBloom};
+
+/// The saturation threshold `maybe_overlaps` short-circuits on:
+/// `popcount * 5 >= 65536 * 3` i.e. `popcount >= 39322` of 65536 slots (60%,
+/// `SATURATION_NUMERATOR/DENOMINATOR = 3/5`). At or above it the prefilter
+/// degrades to always-admit.
+const BIGRAM_SATURATION_FLOOR: u32 = 39322;
 
 /// Convenience: build a bloom from `&str` prefixes.
 fn bloom(prefixes: &[&str]) -> BigramBloom {
@@ -323,5 +329,52 @@ fn saturated_table_short_circuits_absent_bigram_to_true() {
         saturated.maybe_overlaps(probe),
         true,
         "saturated table must short-circuit an absent bigram to true",
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Production effectiveness: the SHIPPED detector set must not saturate the
+// Layer-0.5 prefilter, or `maybe_overlaps` always admits and the documented
+// prefilter is a no-op (KH-1237). The construction tests above prove the
+// mechanism; this proves the mechanism is actually load-bearing in production.
+// ─────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn production_detector_set_does_not_saturate_the_layer_0_5_bigram_prefilter() {
+    let (popcount, saturated) = production_bigram_prefilter_density();
+
+    // Measured population of the bundled `embedded_detector_specs()` table.
+    // Printed so density drift is visible in `--nocapture` runs and the band
+    // below can be re-pinned when the detector set changes materially.
+    eprintln!(
+        "production bigram prefilter: popcount={popcount} of 65536 slots \
+         ({:.1}% full; saturation floor {BIGRAM_SATURATION_FLOOR})",
+        popcount as f64 * 100.0 / 65536.0
+    );
+
+    assert!(
+        !saturated,
+        "the bundled detector set SATURATES the Layer-0.5 bigram prefilter \
+         (popcount {popcount} >= {BIGRAM_SATURATION_FLOOR}/65536): `maybe_overlaps` \
+         always admits, so Layer 0.5 filters nothing yet is documented as a \
+         prefilter. Enlarge the table or drop Layer 0.5 rather than ship a no-op."
+    );
+    // Real-value bound (Law 6): the population must sit strictly below the
+    // saturation floor with headroom. This is the load-bearing invariant - a
+    // future detector addition that pushes the table toward saturation trips
+    // here and is reviewed instead of silently disabling the prefilter.
+    assert!(
+        popcount < BIGRAM_SATURATION_FLOOR,
+        "production bigram prefilter popcount {popcount} reached the saturation \
+         floor {BIGRAM_SATURATION_FLOOR}; the prefilter is degrading to a no-op"
+    );
+    // The table must also be genuinely populated: a near-empty table would mean
+    // the alphabet/keyword literals were dropped before insertion (a build bug),
+    // not that the filter is strong.
+    assert!(
+        popcount > 1_000,
+        "production bigram prefilter is nearly empty (popcount {popcount}); \
+         expected thousands of set bits from the bundled detector literals - \
+         literals may have been dropped before insertion"
     );
 }

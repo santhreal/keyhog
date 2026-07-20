@@ -176,10 +176,12 @@ impl CompiledScanner {
                 continue;
             }
 
-            // Resolve the configured capture group, falling back to the full
-            // match when the group didn't participate (e.g. a top-level
-            // alternation where one branch lacks the inner group).
-            let initial_range = locs.get(group).unwrap_or((full_start, full_end)); // LAW10: bounds-checked lookup; out-of-range => documented default (total fn), recall-safe
+            // A configured capture is the detector's credential contract. If an
+            // alternation matched without that capture, this match has no
+            // detector-owned credential and must not substitute wrapper bytes.
+            let Some(initial_range) = locs.get(group) else {
+                continue;
+            };
 
             // Variable-name heuristic: if the captured group looks like a
             // variable name rather than a secret, scan the other groups for a

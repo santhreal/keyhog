@@ -25,9 +25,9 @@ fn catastrophic_backtracking_input_does_not_hang() {
         verify: None,
         keywords: vec!["token".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
-    let scanner = CompiledScanner::compile(vec![detector]).unwrap();
+    let scanner = compile_test_scanner(vec![detector]);
 
     // Input designed to cause backtracking in NFA engines.
     let adversarial = format!("token={}\n", "a".repeat(100_000));

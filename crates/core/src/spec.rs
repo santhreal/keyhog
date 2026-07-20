@@ -241,11 +241,15 @@ pub struct DetectorSpec {
     /// declare it.
     #[serde(default)]
     pub max_len: Option<usize>,
-    /// Own the structural `<vendor>_(key|secret|token)` assignment arm when no
-    /// exact detector keyword claims it. At most one phase-2 generic detector
-    /// may declare this capability; omission disables unlisted vendor suffixes.
+    /// Structural assignment suffixes for `<vendor>_<suffix>` names not claimed
+    /// by an exact keyword. At most one phase-2 generic detector may declare a
+    /// non-empty list; omission disables unlisted vendor suffixes.
     #[serde(default)]
-    pub generic_vendor_suffix_fallback: bool,
+    pub generic_vendor_suffixes: Vec<String>,
+    /// Optional suffix segments accepted after an exact assignment keyword.
+    /// At most one phase-2 generic detector may declare a non-empty list.
+    #[serde(default)]
+    pub generic_assignment_tail_suffixes: Vec<String>,
     /// Per-detector path-exclusion regexes (betterleaks-style allowlist): a match
     /// whose FILE PATH matches any of these is suppressed. Owned per detector.
     #[serde(default)]
@@ -306,6 +310,13 @@ pub struct DetectorSpec {
     /// no code edit (and the whole story lives in the detector file).
     #[serde(default)]
     pub private_key_block: bool,
+    /// Explicit detector specificity used when overlapping findings compete.
+    ///
+    /// Higher values win. The default `0` preserves equal standing; detectors
+    /// that intentionally wrap a broader detector declare their precedence here
+    /// instead of relying on detector ID spelling or input order.
+    #[serde(default)]
+    pub resolution_priority: i16,
     /// Per-detector credential shape constraint (see [`CredentialShape`]), OWNED
     /// HERE per the architecture law (was `rules/detector-credential-shapes.toml`).
     /// `None` (the default) means the detector declares no shape constraint.
@@ -497,11 +508,64 @@ pub struct DetectorMatchConfidenceSpec {
     pub soft_context_suppression_threshold: f64,
     /// Hard-suppression threshold for encrypted or sealed context.
     pub encrypted_context_suppression_threshold: f64,
+    /// Detector-owned policy applied after optional model scoring.
+    pub post_match: DetectorPostMatchConfidenceSpec,
+}
+
+/// Detector-local confidence penalties applied after optional model scoring.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DetectorPostMatchConfidenceSpec {
+    /// Multiplier for a surface or decoded placeholder word.
+    pub placeholder_multiplier: f64,
+    /// Minimum unique-byte ratio before the value receives a diversity penalty.
+    pub minimum_byte_diversity: f64,
+    /// Multiplier for values below `minimum_byte_diversity`.
+    pub low_diversity_multiplier: f64,
+    /// Maximum repeated-byte run ratio before the value receives a penalty.
+    pub maximum_repeat_ratio: f64,
+    /// Absolute repeated-byte run length that receives a penalty regardless of ratio.
+    pub degenerate_run_min_length: usize,
+    /// Multiplier for values exceeding either repeated-byte limit.
+    pub degenerate_repeat_multiplier: f64,
+    /// Multiplier for decoded data envelopes. Omit it when the detector's
+    /// anchored credential shape makes this evidence inapplicable.
+    pub data_envelope_multiplier: Option<f64>,
+    /// Multiplier for findings under fixture or example path components.
+    pub fixture_path_multiplier: f64,
+    /// Reapply the source-context multiplier to model scores below this floor.
+    pub ml_context_reapply_below: f64,
+}
+
+impl DetectorPostMatchConfidenceSpec {
+    /// Validate ratios, multipliers, and the repeated-run boundary.
+    pub fn validate(self) -> Result<(), &'static str> {
+        if [
+            self.placeholder_multiplier,
+            self.minimum_byte_diversity,
+            self.low_diversity_multiplier,
+            self.maximum_repeat_ratio,
+            self.degenerate_repeat_multiplier,
+            self.fixture_path_multiplier,
+            self.ml_context_reapply_below,
+        ]
+        .into_iter()
+        .chain(self.data_envelope_multiplier)
+        .any(|value| !value.is_finite() || !(0.0..=1.0).contains(&value))
+        {
+            return Err("post-match ratios and multipliers must be finite values in [0.0, 1.0]");
+        }
+        if self.degenerate_run_min_length == 0 {
+            return Err("post-match degenerate_run_min_length must be greater than zero");
+        }
+        Ok(())
+    }
 }
 
 impl DetectorMatchConfidenceSpec {
     /// Validate probabilities, entropy domains, and evidence ordering.
     pub fn validate(self) -> Result<(), &'static str> {
+        self.post_match.validate()?;
         let probabilities = [
             self.literal_prefix_weight,
             self.context_anchor_weight,

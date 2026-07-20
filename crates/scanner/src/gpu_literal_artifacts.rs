@@ -5,12 +5,13 @@
 //! them with VYRE's own wire format, so install/release calibration can persist
 //! matcher artifacts without reimplementing scanner compile semantics.
 
-use super::{gpu_cache, phase2_anchor, phase2_generic, scan_postprocess};
 use crate::compiler::{
     build_compile_state, build_gpu_literals, build_phase2_keyword_ac, phase2_always_active_indices,
     validate_compiled_pattern_detector_indices,
 };
+use crate::engine::{phase2_anchor, phase2_generic, scan_postprocess};
 use crate::error::{Result, ScanError};
+use crate::gpu_matcher_cache as gpu_cache;
 use crate::scanner_config::ScannerTuningConfig;
 use keyhog_core::DetectorSpec;
 use std::sync::Arc;

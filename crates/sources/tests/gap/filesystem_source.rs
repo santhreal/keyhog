@@ -71,7 +71,7 @@ fn chunks_of(dir: &Path) -> Vec<keyhog_core::Chunk> {
 /// Concatenate every chunk's text so a body-substring assertion is robust to
 /// chunk ordering (the walk is parallel and unordered).
 fn combined_body(chunks: &[keyhog_core::Chunk]) -> String {
-    chunks.iter().map(|c| c.data.to_string()).collect()
+    chunks.iter().map(|c| c.data.as_str().to_owned()).collect()
 }
 
 #[cfg(unix)]

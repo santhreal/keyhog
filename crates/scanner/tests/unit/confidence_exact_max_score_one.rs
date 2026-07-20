@@ -1,6 +1,6 @@
 //! All signals present yields confidence exactly 1.0.
 
-use keyhog_scanner::confidence::{compute_confidence, ConfidenceSignals};
+use keyhog_scanner::testing::confidence::{compute_confidence, ConfidenceSignals};
 
 #[test]
 fn confidence_exact_max_score_one() {

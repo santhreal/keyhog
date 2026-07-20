@@ -23,9 +23,9 @@ fn pure_placeholder_not_flagged() {
         verify: None,
         keywords: vec!["AKIA".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
-    let scanner = CompiledScanner::compile(vec![detector]).unwrap();
+    let scanner = compile_test_scanner(vec![detector]);
     let chunk = make_chunk("aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n");
     let matches = scanner.scan(&chunk);
     // The known example credential should be suppressed.
@@ -64,9 +64,9 @@ fn example_suppression_is_recorded_in_telemetry() {
         verify: None,
         keywords: vec!["AKIA".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
-    let scanner = CompiledScanner::compile(vec![detector]).unwrap();
+    let scanner = compile_test_scanner(vec![detector]);
     let chunk = make_chunk("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n");
     let matches = scanner.scan(&chunk);
     assert!(
@@ -101,9 +101,9 @@ fn dogfood_captures_redacted_event() {
         verify: None,
         keywords: vec!["AKIA".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
-    let scanner = CompiledScanner::compile(vec![detector]).unwrap();
+    let scanner = compile_test_scanner(vec![detector]);
     let chunk = make_chunk("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n");
     // Capture via a THREAD-LOCAL scoped telemetry trace, not the process-global
     // enable_dogfood()/drain_events() path. Under parallel test execution another
@@ -174,9 +174,9 @@ fn github_pat_example_suppressed() {
         verify: None,
         keywords: vec!["ghp_".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
-    let scanner = CompiledScanner::compile(vec![detector]).unwrap();
+    let scanner = compile_test_scanner(vec![detector]);
     let chunk = make_chunk("token = ghp_example_0001_xxxxxxxxxxxxxxxxxxxx\n");
     let matches = scanner.scan(&chunk);
     assert!(
@@ -346,9 +346,9 @@ fn dogfood_records_engine_probabilistic_gate_drop() {
         service: "generic".into(),
         severity: Severity::Medium,
         patterns: vec![PatternSpec {
-            regex: "[a-z]{16}".into(),
+            regex: r"secret\s*=\s*([a-z]{16})".into(),
             description: None,
-            group: None,
+            group: Some(1),
             required_literals: Vec::new(),
             client_safe: false,
             weak_anchor: false,
@@ -423,9 +423,9 @@ fn dogfood_records_engine_probabilistic_gate_drop() {
             name: "Generic Secret Entropy".into(),
             service: "generic".into(),
         }),
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
-    let scanner = CompiledScanner::compile(vec![detector]).unwrap();
+    let scanner = compile_test_scanner(vec![detector]);
     // 16 identical chars: matches the regex, has a "secret" keyword anchor, but
     // is the lowest-diversity value possible -> the probabilistic gate rejects it.
     let chunk = make_chunk("secret = aaaaaaaaaaaaaaaa\n");

@@ -357,7 +357,6 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
         live_cache_path,
         &workspace.path().join("autoroute-staged.json"),
     )
-    .map_err(|e| anyhow::anyhow!("{e}"))
     .with_context(|| {
         format!(
             "preparing an isolated autoroute calibration generation for {}",
@@ -515,7 +514,6 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
     };
     transaction
         .publish(&measured_route_classes)
-        .map_err(|e| anyhow::anyhow!("{e}"))
         .with_context(|| {
             format!(
                 "publishing the complete autoroute calibration generation to {}",

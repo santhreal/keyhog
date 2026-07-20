@@ -78,6 +78,14 @@ fn decode_at(source: String, base_offset: usize) -> Vec<Chunk> {
         },
     })
 }
+fn assert_single_spliced_recovery(decoded: &[Chunk]) {
+    assert_eq!(decoded.len(), 1);
+    assert_eq!(decoded[0].data.matches(SECRET).count(), 1);
+    assert_eq!(
+        decoded[0].metadata.source_type.as_ref(),
+        "test/javascript-static"
+    );
+}
 
 fn reverse_base64_literal(plaintext: &str) -> String {
     let reversed: String = plaintext.chars().rev().collect();
@@ -400,15 +408,13 @@ fn cryptojs_recovery_rejects_base64url_ciphertext() {
 #[test]
 fn recovers_static_xor_byte_arrays() {
     let decoded = decode(xor_program(false, true));
-    assert_eq!(decoded.len(), 1);
-    assert_eq!(decoded[0].data.as_ref(), SECRET);
+    assert_single_spliced_recovery(&decoded);
 }
 
 #[test]
 fn recovers_static_xor_hex_byte_arrays() {
     let decoded = decode(hex_xor_program());
-    assert_eq!(decoded.len(), 1);
-    assert_eq!(decoded[0].data.as_ref(), SECRET);
+    assert_single_spliced_recovery(&decoded);
 }
 
 #[test]
@@ -423,16 +429,14 @@ fn rejects_out_of_range_hex_byte_array_elements() {
 #[test]
 fn recovers_base64_json_xor_byte_arrays() {
     let decoded = decode(xor_program(true, true));
-    assert_eq!(decoded.len(), 1);
-    assert_eq!(decoded[0].data.as_ref(), SECRET);
+    assert_single_spliced_recovery(&decoded);
 }
 
 #[test]
 fn recovers_xor_with_whitespace_around_member_access() {
     let source = xor_program(false, true).replace("String.fromCharCode", "String . fromCharCode");
     let decoded = decode(source);
-    assert_eq!(decoded.len(), 1);
-    assert_eq!(decoded[0].data.as_ref(), SECRET);
+    assert_single_spliced_recovery(&decoded);
 }
 
 #[test]
@@ -460,8 +464,7 @@ fn recovers_bound_buffer_aes_256_cbc() {
             "return Buffer.concat([decipher.update(payload), decipher.final()]).toString('utf8');",
         );
     let decoded = decode(source.to_string());
-    assert_eq!(decoded.len(), 1);
-    assert_eq!(decoded[0].data.as_ref(), SECRET);
+    assert_single_spliced_recovery(&decoded);
 }
 
 #[test]
@@ -477,8 +480,7 @@ fn recovers_joined_inline_buffer_aes_256_cbc() {
         "_dec.final()]).toString('utf8');",
     );
     let decoded = decode(source.to_string());
-    assert_eq!(decoded.len(), 1);
-    assert_eq!(decoded[0].data.as_ref(), SECRET);
+    assert_single_spliced_recovery(&decoded);
 }
 
 #[test]

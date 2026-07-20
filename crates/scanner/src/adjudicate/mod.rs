@@ -55,6 +55,7 @@ impl ProcessCandidateSignals {
         is_generic_detector: bool,
         detector_length: crate::detector_execution_policy::CompiledDetectorLengthPolicy,
         credential_shape: Option<&crate::credential_shapes::CredentialShapeRule>,
+        degenerate_run_min_length: usize,
         credential: &str,
         data: &str,
         credential_start: usize,
@@ -85,7 +86,11 @@ impl ProcessCandidateSignals {
             return Self::suppress(StageId::HexDigestFragment);
         }
         if is_generic_detector
-            && crate::confidence::known_prefix_confidence_floor(credential).is_none()
+            && crate::confidence::known_prefix_confidence_floor(
+                credential,
+                degenerate_run_min_length,
+            )
+            .is_none()
             && !crate::probabilistic_gate::ProbabilisticGate::looks_promising(credential)
         {
             return Self::suppress(StageId::ProbabilisticGateNotPromising);
@@ -172,6 +177,7 @@ fn final_emit_suppression_stage(
     confidence: f64,
     min_confidence_floor: f64,
     penalize_test_paths: bool,
+    degenerate_run_min_length: usize,
     context_suppression_threshold: Option<f64>,
 ) -> Option<StageId> {
     let context_hard_suppression_applies =
@@ -188,7 +194,11 @@ fn final_emit_suppression_stage(
     // lookup would silently replace the policy that actually compiled.
     if confidence < min_confidence_floor {
         if is_generic_detector {
-            if crate::confidence::known_prefix_confidence_floor(credential).is_some()
+            if crate::confidence::known_prefix_confidence_floor(
+                credential,
+                degenerate_run_min_length,
+            )
+            .is_some()
                 && !crate::probabilistic_gate::ProbabilisticGate::looks_promising(credential)
             {
                 return Some(StageId::ProbabilisticGateNotPromising);
@@ -208,6 +218,7 @@ pub(crate) struct FinalEmitSignals {
     confidence: f64,
     min_confidence_floor: f64,
     penalize_test_paths: bool,
+    degenerate_run_min_length: usize,
     context_suppression_threshold: Option<f64>,
 }
 
@@ -218,6 +229,7 @@ impl FinalEmitSignals {
         code_context: crate::context::CodeContext,
         confidence: f64,
         min_confidence_floor: f64,
+        degenerate_run_min_length: usize,
         penalize_test_paths: bool,
     ) -> Self {
         Self::with_context_suppression_threshold(
@@ -225,6 +237,7 @@ impl FinalEmitSignals {
             code_context,
             confidence,
             min_confidence_floor,
+            degenerate_run_min_length,
             penalize_test_paths,
             code_context.hard_suppression_threshold(),
         )
@@ -235,6 +248,7 @@ impl FinalEmitSignals {
         code_context: crate::context::CodeContext,
         confidence: f64,
         min_confidence_floor: f64,
+        degenerate_run_min_length: usize,
         penalize_test_paths: bool,
         context_suppression_threshold: Option<f64>,
     ) -> Self {
@@ -243,6 +257,7 @@ impl FinalEmitSignals {
             code_context,
             confidence,
             min_confidence_floor,
+            degenerate_run_min_length,
             penalize_test_paths,
             context_suppression_threshold,
         }
@@ -257,6 +272,7 @@ pub(crate) struct ReportAdjudicationPolicy<'a> {
     pub(crate) min_confidence_floor: f64,
     pub(crate) penalize_test_paths: bool,
     pub(crate) context_suppression_threshold: Option<f64>,
+    pub(crate) post_match: keyhog_core::DetectorPostMatchConfidenceSpec,
     pub(crate) file_path: Option<&'a str>,
     pub(crate) is_named_detector: bool,
     /// Compiled from the active detector's TOML `kind = "phase2-generic"`, or
@@ -480,6 +496,7 @@ pub(crate) fn finalize_report_candidate(
             allow_canonical_hex_key: policy.allow_canonical_hex_key,
             checksum: policy.checksum,
             calibration: policy.calibration,
+            post_match: policy.post_match,
         },
     ) else {
         record_checksum_invalid_suppression(path, credential);
@@ -492,6 +509,7 @@ pub(crate) fn finalize_report_candidate(
             policy.code_context,
             confidence,
             policy.min_confidence_floor,
+            policy.post_match.degenerate_run_min_length,
             policy.penalize_test_paths,
             policy.context_suppression_threshold,
         ));
@@ -695,6 +713,7 @@ fn final_emit_stage(candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> StageO
         signals.confidence,
         signals.min_confidence_floor,
         signals.penalize_test_paths,
+        signals.degenerate_run_min_length,
         signals.context_suppression_threshold,
     ) {
         return StageOutcome::Suppress(stage_id);

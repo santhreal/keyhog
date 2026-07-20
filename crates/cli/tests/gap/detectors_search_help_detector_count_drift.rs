@@ -9,7 +9,7 @@
 //! adding or removing a detector can never silently desync the advertised
 //! corpus size from the corpus actually compiled in.
 
-use crate::e2e::support::binary;
+use crate::support::binary;
 use std::process::Command;
 
 /// Embedded detector count = number of objects in `keyhog detectors --format json`.

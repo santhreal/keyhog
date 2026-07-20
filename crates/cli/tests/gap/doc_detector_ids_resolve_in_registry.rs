@@ -94,6 +94,10 @@ fn shipped_markdown_docs(root: &std::path::Path) -> Vec<PathBuf> {
             let path = entry.path();
             if path.is_dir() {
                 stack.push(path);
+            } else if path.file_name().is_some_and(|n| n == "HANDOFF.md") {
+                // Internal handoff notes are not shipped user docs and may
+                // reference detectors under design that do not yet exist.
+                continue;
             } else if path.extension().is_some_and(|ext| ext == "md") {
                 docs.push(path);
             }

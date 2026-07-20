@@ -67,7 +67,8 @@ pub(crate) fn oversize_skip_is_counted(
     path: Option<&str>,
     decode_derived: bool,
 ) -> bool {
-    !decode_derived && detect_format(text, path).is_some_and(StructuredFormat::uses_decode_through)
+    !decode_derived
+        && detect_format(text, path, false).is_some_and(StructuredFormat::uses_decode_through)
 }
 
 /// Detect format by path and/or content, parse it, and build a preprocessed text.
@@ -116,10 +117,53 @@ pub(crate) fn preprocess<'a>(
     Some(build_preprocessed_text(text, pairs))
 }
 
-/// Detect which structured format `text`/`path` is, without parsing it. Pure
-/// path/content sniffing, used both by `detect_and_parse` (to dispatch) and by
-/// the size cap (to decide whether an oversized skip is a real recall gap).
-fn detect_format(text: &str, path: Option<&str>) -> Option<StructuredFormat> {
+fn trim_quoted_yaml_scalar(value: &str) -> &str {
+    let value = value.trim();
+    if value.len() >= 2
+        && matches!(
+            (value.as_bytes()[0], value.as_bytes()[value.len() - 1]),
+            (b'\'', b'\'') | (b'"', b'"')
+        )
+    {
+        &value[1..value.len() - 1]
+    } else {
+        value
+    }
+}
+
+/// Allocation-free conservative hint used only after the structured parse-size
+/// cap has already been exceeded. Root-level field syntax prevents comments and
+/// indented block-scalar prose from impersonating a Kubernetes `kind` field.
+fn contains_k8s_secret_field_hint(text: &str) -> bool {
+    text.lines().any(|line| {
+        if line.as_bytes().first().is_some_and(u8::is_ascii_whitespace) {
+            return false;
+        }
+        let line = line.trim();
+        if line.starts_with('#') {
+            return false;
+        }
+        let Some((key, value)) = line.split_once(':') else {
+            return false;
+        };
+        if trim_quoted_yaml_scalar(key) != "kind" {
+            return false;
+        }
+        let value = value.split_once(" #").map_or(value, |(value, _)| value);
+        trim_quoted_yaml_scalar(value) == "Secret"
+    })
+}
+
+pub(crate) fn detects_k8s_secret_document(text: &str, path: Option<&str>) -> bool {
+    detect_format(text, path, true) == Some(StructuredFormat::K8sSecret)
+}
+
+/// Detect which structured format `text`/`path` is. When `parse_yaml` is true,
+/// Kubernetes YAML is parsed far enough to identify the actual `kind` field.
+/// Oversized input passes false and uses the allocation-free conservative field
+/// hint below, so deciding whether to count a lost decode surface cannot bypass
+/// the parse-size bound.
+fn detect_format(text: &str, path: Option<&str>, parse_yaml: bool) -> Option<StructuredFormat> {
     // ASCII case-insensitive byte compares - every chunk runs through this
     // detector to decide whether a structured parser applies. The previous
     // flow built a fully-lowercased copy of the path on every call.
@@ -154,7 +198,18 @@ fn detect_format(text: &str, path: Option<&str>) -> Option<StructuredFormat> {
         return Some(StructuredFormat::Env);
     }
 
-    if (ends_ci(b".yaml") || ends_ci(b".yml")) && text.contains("kind: Secret") {
+    if (ends_ci(b".yaml") || ends_ci(b".yml"))
+        && if parse_yaml {
+            match parsers::contains_k8s_secret_document(text) {
+                Ok(is_secret) => is_secret,
+                // LAW10: a hinted malformed Secret is deliberately routed to
+                // parse_k8s_secret, which records the operator-visible gap.
+                Err(()) => contains_k8s_secret_field_hint(text),
+            }
+        } else {
+            contains_k8s_secret_field_hint(text)
+        }
+    {
         return Some(StructuredFormat::K8sSecret);
     }
 
@@ -190,7 +245,7 @@ fn detect_and_parse(
     path: Option<&str>,
     decode_derived: bool,
 ) -> Option<Vec<ExtractedPair>> {
-    Some(match detect_format(text, path)? {
+    Some(match detect_format(text, path, true)? {
         StructuredFormat::Env => parsers::parse_env(text),
         StructuredFormat::K8sSecret => parsers::parse_k8s_secret(text, decode_derived),
         StructuredFormat::DockerCompose => parsers::parse_docker_compose(text, decode_derived),

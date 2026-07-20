@@ -5,7 +5,7 @@
 schema_version = 1
 detector_id = "huggingface-api-key"
 service = "huggingface"
-severity = "critical"
+severity = "high"
 
 # ---- POSITIVES (recall) ---------------------------------------------
 

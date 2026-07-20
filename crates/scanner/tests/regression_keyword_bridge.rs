@@ -286,20 +286,66 @@ fn custom_phase2_corpus_does_not_invent_a_generic_secret_fallback() {
 }
 
 #[test]
+fn detector_owned_suffix_lists_change_only_the_compiled_assignment_grammar() {
+    let mut detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");
+    let owner = detectors
+        .iter_mut()
+        .find(|detector| detector.id == "generic-secret")
+        .expect("shipped generic-secret detector");
+    owner.generic_vendor_suffixes = vec!["credential".into()];
+    owner.generic_assignment_tail_suffixes = vec!["material".into()];
+    let scanner = CompiledScanner::compile(detectors).expect("compile custom suffix policy");
+
+    assert!(
+        find(
+            &scan(
+                &scanner,
+                &format!("acme_credential = \"{HIGH_ENTROPY_VALUE}\"")
+            ),
+            HIGH_ENTROPY_VALUE,
+        )
+        .is_some(),
+        "custom vendor suffix must enter the compiled bridge"
+    );
+    assert!(
+        find(
+            &scan(
+                &scanner,
+                &format!("secret_material = \"{HIGH_ENTROPY_VALUE}\"")
+            ),
+            HIGH_ENTROPY_VALUE,
+        )
+        .is_some(),
+        "custom exact-keyword tail suffix must enter the compiled bridge"
+    );
+    assert!(
+        find(
+            &scan(
+                &scanner,
+                &format!("acme_unlisted = \"{HIGH_ENTROPY_VALUE}\"")
+            ),
+            HIGH_ENTROPY_VALUE,
+        )
+        .is_none(),
+        "an undeclared suffix must stay outside the bridge"
+    );
+}
+
+#[test]
 fn multiple_vendor_suffix_owners_fail_scanner_construction() {
     let mut detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");
     let password = detectors
         .iter_mut()
         .find(|detector| detector.id == "generic-password")
         .expect("shipped generic-password detector");
-    password.generic_vendor_suffix_fallback = true;
+    password.generic_vendor_suffixes = vec!["credential".into()];
 
     let error = match CompiledScanner::compile(detectors) {
         Ok(_) => panic!("multiple structural vendor owners must not compile"),
         Err(error) => error.to_string(),
     };
     assert!(
-        error.contains("multiple detectors declare generic_vendor_suffix_fallback"),
+        error.contains("both declare generic_vendor_suffixes"),
         "construction error must identify the conflicting detector-owned capability: {error}"
     );
 }

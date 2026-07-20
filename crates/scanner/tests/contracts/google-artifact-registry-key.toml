@@ -8,13 +8,17 @@ severity = "critical"
 
 [[positive]]
 text = """{"type": "service_account", "private_key": "-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----"}"""
-credential = "-----BEGIN PRIVATE KEY-----"
-reason = "Hand-tuned positive matching detector regex (R2-F adversarial batch)."
+credential = """-----BEGIN PRIVATE KEY-----
+MIIE
+-----END PRIVATE KEY-----"""
+reason = "Service-specific attribution preserves the complete PEM credential."
 
 [[positive]]
 text = """_json_key={"type":"service_account","private_key":"-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----"}"""
-credential = "-----BEGIN PRIVATE KEY-----"
-reason = "Quoted-value variant of the canonical positive."
+credential = """-----BEGIN PRIVATE KEY-----
+MIIE
+-----END PRIVATE KEY-----"""
+reason = "Quoted-value variant preserves the complete PEM credential."
 
 [[negative]]
 text = "_json_key=short"
@@ -26,8 +30,8 @@ reason = "Keyword context without valid credential body."
 
 [[evasion]]
 text = '# docker login -u _json_key -p {"type":"service_account","private_key":"-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----"}'
-credential = "-----BEGIN PRIVATE KEY-----"
-reason = "Comment-adjacent GAR JSON key material."
+credential = "-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----"
+reason = "Comment-adjacent GAR JSON retains service attribution and the full key."
 
 [perf]
 fixture_bytes = 4096

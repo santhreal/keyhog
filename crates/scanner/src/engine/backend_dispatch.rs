@@ -59,11 +59,16 @@ impl CompiledScanner {
         {
             self.scan_coalesced_gpu_region_presence(chunks, backend, route)
         }
-        // GPU compiled out: the public entry guard rejects a selected GPU route
-        // before this internal compatibility arm can execute.
+        // GPU compiled out: never silent-CPU while the selected route is GPU
+        // (KH-1407). Public entry should reject earlier; this is fail-closed.
         #[cfg(not(feature = "gpu"))]
         {
-            self.scan_chunks_cpu_parallel(chunks, backend, admission_plan, route)
+            // LAW10: no-runtime-effect; this cfg-only binding exists solely to type-check parameters before the branch fails closed below.
+            let _ = (chunks, admission_plan, route);
+            crate::process_exit::backend_unavailable(format!(
+                "{} selected but this scanner build has no GPU support",
+                backend.label()
+            ));
         }
     }
 
@@ -173,10 +178,11 @@ impl CompiledScanner {
                             let matcher = self
                                 .assignment_keyword_matcher
                                 .lock()
+                                // LAW10: recall-preserving; Mutex poison does not invalidate the matcher cache value, so resolution continues with the complete cached matcher.
                                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                                 .resolve(
                                     &self.config.secret_keywords,
-                                    self.generic_owning_detector.policy_keywords(),
+                                    self.detector_plans.generic_ownership().policy_keywords(),
                                 );
                             matcher.matches(bytes)
                         },

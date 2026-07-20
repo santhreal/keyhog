@@ -72,7 +72,7 @@ fn shadowed_inner_literal_is_ac_confirmed_with_variant_skipped() {
     assert!(
         gp.unwrap().credential.contains("0123456789abcdefABCDEFxyz"),
         "generic-password must extract the secret value, got {:?}",
-        gp.unwrap().credential.to_string()
+        gp.unwrap().credential.as_str().to_string()
     );
     // NOTE: the downstream precision win this fix also delivers. `MAILGUN_API_KEY=
     // key-…` classifying as mailgun-api-key (CRITICAL) instead of the mislabelled

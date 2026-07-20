@@ -330,8 +330,8 @@ fn stripe_non_alnum_body_is_invalid() {
 
 #[test]
 fn slack_well_formed_bot_token_is_valid() {
-    // Matches ^xoxb-[0-9]{10,15}-[0-9]{10,15}-[a-zA-Z0-9]{15,40}$
-    let token = "xoxb-1234567890-1234567890-abcdefghijklmnopqrst";
+    // Matches xoxb-{10-15 digits}-{10-15 digits}-{24-40 alphanumeric}.
+    let token = "xoxb-1234567890-1234567890-abcdefghijklmnopqrstuvwx";
     assert_eq!(validate_checksum(token), ChecksumResult::StructurallyValid);
     // Slack has no public checksum proof, so confidence passes through.
     assert_eq!(checksum_adjusted_confidence(0.1, token), Some(0.1));
@@ -371,14 +371,14 @@ fn gitlab_glpat_64_char_body_is_valid() {
 }
 
 #[test]
-fn gitlab_glrt_16_char_body_is_valid() {
-    let token = format!("glrt-{}", "a".repeat(16));
+fn gitlab_glrt_20_char_body_is_valid() {
+    let token = format!("glrt-{}", "a".repeat(20));
     assert_eq!(validate_checksum(&token), ChecksumResult::StructurallyValid);
 }
 
 #[test]
-fn gitlab_glrt_15_char_body_is_invalid() {
-    let token = format!("glrt-{}", "a".repeat(15));
+fn gitlab_glrt_19_char_body_is_invalid() {
+    let token = format!("glrt-{}", "a".repeat(19));
     assert_eq!(validate_checksum(&token), ChecksumResult::Invalid);
 }
 
@@ -813,7 +813,7 @@ fn whitespace_padded_valid_token_loses_validation() {
 fn first_matching_validator_wins_no_double_adjudication() {
     // Slack is structurally adjudicated exactly once, but no public checksum
     // exists, so its input confidence must not be promoted to proof.
-    let token = "xoxb-1234567890-1234567890-abcdefghijklmnopqrst";
+    let token = "xoxb-1234567890-1234567890-abcdefghijklmnopqrstuvwx";
     assert_eq!(validate_checksum(token), ChecksumResult::StructurallyValid);
     assert_eq!(checksum_adjusted_confidence(0.0, token), Some(0.0));
 }

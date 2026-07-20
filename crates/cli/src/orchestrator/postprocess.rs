@@ -19,10 +19,14 @@ use keyhog_core::{DedupScope, DedupedMatch, RawMatch, VerificationResult, Verifi
 /// merging keeps the contract simple and means a future analyzer is one more
 /// `extend` here rather than another divergent construction site. Returns an
 /// empty map when no analyzer matched (the common case).
+/// Offline structural metadata for a finding's credential. JWT iss/sub/aud
+/// follow `show_secrets` (KH-1458); default redacts those claims (KH-1350).
 pub(crate) fn offline_finding_metadata(
     credential: &str,
+    show_secrets: bool,
 ) -> std::collections::HashMap<String, String> {
-    let mut meta = keyhog_scanner::jwt::finding_metadata(credential).unwrap_or_default(); // LAW10: missing/non-string field => empty/placeholder; recall-safe
+    let mut meta = keyhog_scanner::jwt::finding_metadata_with_secrets(credential, show_secrets)
+        .unwrap_or_default(); // LAW10: missing/non-string field => empty/placeholder; recall-safe
     if let Some(aws_meta) = keyhog_scanner::aws::finding_metadata(credential) {
         meta.extend(aws_meta);
     }
@@ -165,7 +169,8 @@ pub(crate) fn render_credential(
     show_secrets: bool,
 ) -> std::borrow::Cow<'static, str> {
     if show_secrets {
-        credential.to_string().into()
+        // Display redacts (KH-1424); intentional reveal uses as_str.
+        credential.as_str().to_owned().into()
     } else {
         keyhog_core::redact(credential)
     }
@@ -180,7 +185,7 @@ pub(crate) fn skipped_findings_from_deduped(
         .map(|m| {
             let severity = m.severity;
             let credential_redacted = render_credential(&m.credential, show_secrets);
-            let metadata = offline_finding_metadata(&m.credential);
+            let metadata = offline_finding_metadata(m.credential.as_str(), show_secrets);
             let mut finding =
                 VerifiedFinding::from_deduped(m, severity, VerificationResult::Skipped, metadata);
             finding.credential_redacted = credential_redacted;
@@ -269,17 +274,24 @@ pub(crate) fn filter_and_resolve_matches(
             if suppresses_allowlist_match(allowlist, m) {
                 return false;
             }
-            if let Some(conf) = m.confidence {
-                // Per-detector floor from `.keyhog.toml`
-                // `[detector.<id>] min_confidence` takes precedence and
-                // applies unconditionally. Falls back to the global floor.
-                if let Some(floor) = filter.detector_min_confidence.get(m.detector_id.as_ref()) {
-                    if conf < *floor {
-                        return false;
-                    }
-                } else if conf < filter.min_confidence {
+            // Missing/NaN confidence is 0.0 for the floor (KH-1351): unknown
+            // quality must not bypass --min-confidence or per-detector floors.
+            let conf = match m.confidence.filter(|confidence| confidence.is_finite()) {
+                Some(confidence) => confidence,
+                None => {
+                    tracing::warn!(
+                        detector = %m.detector_id,
+                        "finding has no finite confidence; applying the conservative zero-confidence floor"
+                    );
+                    0.0
+                }
+            };
+            if let Some(floor) = filter.detector_min_confidence.get(m.detector_id.as_ref()) {
+                if conf < *floor {
                     return false;
                 }
+            } else if conf < filter.min_confidence {
+                return false;
             }
             if let Some(min_severity) = filter.min_severity {
                 if m.severity < min_severity {
@@ -455,16 +467,38 @@ impl ScanOrchestrator {
             None
         };
 
+        // KH-1487: retain offline JWT/AWS metadata by credential_hash before
+        // verify_all consumes DedupedMatch plaintext; merge after so Live/Dead
+        // rows get jwt.* under --show-secrets the same as Skipped.
+        let offline_by_hash: std::collections::HashMap<_, _> = verify_candidates
+            .iter()
+            .map(|m| {
+                (
+                    m.credential_hash,
+                    offline_finding_metadata(m.credential.as_str(), show_secrets),
+                )
+            })
+            .collect();
         let mut findings = verifier.verify_all(verify_candidates).await;
         if let Some(guard) = progress_guard {
             guard.stop();
         }
         verifier.shutdown_oob().await;
+        for finding in &mut findings {
+            if let Some(offline) = offline_by_hash.get(&finding.credential_hash) {
+                for (key, value) in offline {
+                    finding
+                        .metadata
+                        .entry(key.clone())
+                        .or_insert_with(|| value.clone());
+                }
+            }
+        }
 
         for m in skip_candidates {
             let severity = m.severity;
             let credential_redacted = render_credential(&m.credential, show_secrets);
-            let metadata = offline_finding_metadata(&m.credential);
+            let metadata = offline_finding_metadata(m.credential.as_str(), show_secrets);
             let mut finding = keyhog_core::VerifiedFinding::from_deduped(
                 m,
                 severity,

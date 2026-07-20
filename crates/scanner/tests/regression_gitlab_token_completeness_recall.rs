@@ -33,7 +33,7 @@ fn surfaces(text: &str, token: &str) -> bool {
     let chunk: Chunk = make_chunk(text, "filesystem", "gitlab.env");
     s.scan(&chunk)
         .into_iter()
-        .any(|m| m.credential.to_string().contains(token))
+        .any(|m| m.credential.as_str().to_string().contains(token))
 }
 
 /// Detector ids of every finding produced for `text` (unfiltered).
@@ -105,7 +105,7 @@ fn gldt_deploy_token_still_surfaces() {
 #[test]
 fn glrt_runner_token_still_surfaces() {
     // glrt- pattern 1 captures EXACTLY 20 body chars, so use a 20-char body.
-    let t = "glrt-Cd5Ef8Gh1Ij4Kl7Mn0O";
+    let t = "glrt-Cd5Ef8Gh1Ij4Kl7Mn0Op";
     assert!(surfaces(&format!("RUNNER_TOKEN={t}\n"), t));
 }
 

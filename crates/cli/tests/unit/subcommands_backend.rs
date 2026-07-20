@@ -13,7 +13,7 @@ fn backend_self_test_json_preserves_failing_region_presence_probe() {
     assert_eq!(parsed["status"], "fail");
     assert_eq!(parsed["exit_code"], 4);
     assert_eq!(parsed["gpu_name"], "NVIDIA GeForce RTX 5090");
-    assert_eq!(parsed["recommended_backend"], "simd-regex");
+    assert_eq!(parsed["route_selection"], "not_measured");
     assert_eq!(parsed["probes"][1]["status"], "known");
     assert_eq!(parsed["probes"][2]["name"], "gpu_region_presence");
     assert_eq!(parsed["probes"][2]["status"], "fail");

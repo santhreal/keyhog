@@ -23,7 +23,7 @@ fn compiled_scanner_accepts_minimal_detector() {
         verify: None,
         keywords: vec!["abc".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let scanner = CompiledScanner::compile(vec![det]);
     assert!(

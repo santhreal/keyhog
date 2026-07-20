@@ -176,17 +176,18 @@ proptest! {
         prop_assert_eq!(&*back, s.as_str());
     }
 
-    /// The security asymmetry: `Debug` REDACTS to a length-only form (never the
-    /// bytes, it backs `Chunk::data`, which can be raw secret material), while
-    /// `Display` INTENTIONALLY exposes the content (the auditable surface).
+    /// Both `Debug` and `Display` redact (KH-1424). Plaintext is only via
+    /// `as_str` / `Deref` so every intentional reveal is auditable.
     #[test]
-    fn prop_sensitive_debug_redacts_but_display_exposes(s in any::<String>()) {
+    fn prop_sensitive_debug_and_display_redact(s in any::<String>()) {
         let ss = SensitiveString::from(s.as_str());
-        prop_assert_eq!(
-            format!("{ss:?}"),
-            format!("SensitiveString(<redacted {} bytes>)", s.len())
-        );
-        prop_assert_eq!(format!("{ss}"), s.clone());
+        let debug = format!("{ss:?}");
+        let display = format!("{ss}");
+        let expect_debug = format!("SensitiveString(<redacted {} bytes>)", s.len());
+        let expect_display = format!("<redacted {} bytes>", s.len());
+        prop_assert_eq!(debug, expect_debug);
+        prop_assert_eq!(display, expect_display);
+        prop_assert_eq!(ss.as_str(), s.as_str());
     }
 }
 

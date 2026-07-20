@@ -182,6 +182,7 @@ impl CompiledScanner {
                 let result = plan.materialize();
                 self.simd_initialization_ns.store(
                     u64::try_from(started.elapsed().as_nanos())
+                        // LAW10: elapsed nanoseconds are telemetry only; saturation preserves monotonic timing without changing scan execution or findings.
                         .unwrap_or(u64::MAX)
                         .max(1),
                     std::sync::atomic::Ordering::Release,
@@ -528,8 +529,8 @@ impl CompiledScanner {
             let _ = p.regex.get().find(WARM_SAMPLE); // LAW10: forces lazy-static/regex eager init (warm-up); not a fallback
         });
         crate::shared_regexes::warm_runtime_regexes();
-        if let Some(generic_assignment_re) = &self.generic_assignment_re {
-            let _ = generic_assignment_re.find(WARM_SAMPLE); // LAW10: warm-up result is intentionally discarded; this eagerly initializes the exact regex used by later scans
+        if let Some(generic_assignment) = self.detector_plans.generic_assignment() {
+            let _ = generic_assignment.matcher().find(WARM_SAMPLE); // LAW10: warm-up result is intentionally discarded; this eagerly initializes the exact regex used by later scans
         }
         crate::multiline::warm_runtime_regexes();
     }
@@ -649,6 +650,43 @@ impl CompiledScanner {
                 }
             })
             .collect()
+    }
+
+    /// Materialize one GPU route and return the identity of the exact peer that
+    /// will execute it. Autoroute persists this value with timing evidence.
+    pub fn acquired_gpu_peer_identity(
+        &self,
+        backend: crate::hw_probe::ScanBackend,
+    ) -> std::result::Result<String, String> {
+        if !backend.is_gpu() {
+            return Err(format!("{} is not a GPU backend", backend.label()));
+        }
+        if !self.warm_backend(backend) {
+            return Err(self.gpu_backend_unavailable_reason(backend));
+        }
+        let candidate = self
+            .gpu_backend_candidates()
+            .into_iter()
+            .find(|candidate| candidate.backend == backend)
+            .ok_or_else(|| format!("{} is not a compiled GPU peer", backend.label()))?;
+        if !candidate.is_acquired_eligible() {
+            return Err(self.gpu_backend_unavailable_reason(backend));
+        }
+        let identity = (
+            candidate.backend.label(),
+            candidate.driver_id.expect("acquired eligible driver id"),
+            candidate
+                .driver_version
+                .expect("acquired eligible driver version"),
+            candidate
+                .device_identity
+                .expect("acquired eligible device identity"),
+            candidate
+                .runtime_identity
+                .expect("acquired eligible runtime identity"),
+        );
+        serde_json::to_string(&identity)
+            .map_err(|error| format!("GPU peer identity serialization failed: {error}"))
     }
 
     pub(crate) fn gpu_backend_unavailable_reason(
@@ -872,6 +910,7 @@ impl CompiledScanner {
         // to a DECODE-ONLY pass instead of skipping. Bounded: only
         // encoded-looking rejected chunks pay the decode cost, so normal
         // traffic keeps the fast skip.
+        // LAW10: `None` means the caller did not precompute the identical admission predicate; this computes it once rather than changing routes or recall.
         let admission = admission.unwrap_or_else(|| self.phase1_admission(chunk.data.as_bytes()));
         if admission != Phase1Admission::Admitted {
             if self.should_scan_no_hit_chunk(chunk, route) {

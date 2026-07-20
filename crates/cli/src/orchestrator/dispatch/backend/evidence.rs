@@ -38,6 +38,20 @@ impl MeasuredRoute {
     }
 }
 
+fn paired_route_trials_are_faster(selected: &[u128], competitor: &[u128]) -> bool {
+    if selected.len().abs_diff(competitor.len()) > 1 {
+        return false;
+    }
+    let shared_rounds = selected.len().min(competitor.len());
+    if shared_rounds == 0 {
+        return false;
+    }
+    timing::paired_candidate_is_faster_95(
+        &selected[selected.len() - shared_rounds..],
+        &competitor[competitor.len() - shared_rounds..],
+    )
+}
+
 fn selected_route_margin_ns(
     selected: MeasuredRoute,
     candidates: &[(MeasuredRoute, u128)],
@@ -88,20 +102,32 @@ pub(super) struct BackendParityReceipt {
     pub(super) backend: String,
     pub(super) phase2_plain_localizer: bool,
     pub(super) phase2_keyword_localizer: bool,
+    pub(super) peer_identity: Option<String>,
     pub(super) correctness_digest: u64,
     pub(super) completed_trials: usize,
     pub(super) evidence_digest: u64,
 }
 
 impl BackendParityReceipt {
-    fn new(route: MeasuredRoute, correctness_digest: u64, timing: &BackendTimingEvidence) -> Self {
+    fn new(
+        route: MeasuredRoute,
+        peer_identity: Option<&str>,
+        correctness_digest: u64,
+        timing: &BackendTimingEvidence,
+    ) -> Self {
         let completed_trials = timing.trials_ns.len();
-        let evidence_digest =
-            Self::evidence_digest_for(route, correctness_digest, completed_trials, timing);
+        let evidence_digest = Self::evidence_digest_for(
+            route,
+            peer_identity,
+            correctness_digest,
+            completed_trials,
+            timing,
+        );
         Self {
             backend: route.backend.label().to_string(),
             phase2_plain_localizer: route.phase2_plain_localizer,
             phase2_keyword_localizer: route.phase2_keyword_localizer,
+            peer_identity: peer_identity.map(str::to_owned),
             correctness_digest,
             completed_trials,
             evidence_digest,
@@ -115,6 +141,7 @@ impl BackendParityReceipt {
     ) -> u64 {
         Self::evidence_digest_for(
             route,
+            self.peer_identity.as_deref(),
             self.correctness_digest,
             self.completed_trials,
             timing,
@@ -123,6 +150,7 @@ impl BackendParityReceipt {
 
     fn evidence_digest_for(
         route: MeasuredRoute,
+        peer_identity: Option<&str>,
         correctness_digest: u64,
         completed_trials: usize,
         timing: &BackendTimingEvidence,
@@ -132,6 +160,9 @@ impl BackendParityReceipt {
             .field_str("backend", route.backend.label())
             .field_bool("phase2_plain_localizer", route.phase2_plain_localizer)
             .field_bool("phase2_keyword_localizer", route.phase2_keyword_localizer)
+            .field_bool("peer_identity.present", peer_identity.is_some())
+            // LAW10: the preceding presence field distinguishes absence; the empty string is only the canonical digest payload for `None`.
+            .field_str("peer_identity", peer_identity.unwrap_or(""))
             .field_u64("correctness_digest", correctness_digest)
             .field_usize("completed_trials", completed_trials)
             .field_usize("timing.trials_ns.len", timing.trials_ns.len());
@@ -165,15 +196,30 @@ pub(super) struct RouteTimingEvidence {
     pub(super) backend: String,
     pub(super) phase2_plain_localizer: bool,
     pub(super) phase2_keyword_localizer: bool,
+    pub(super) peer_identity: Option<String>,
     pub(super) timing: BackendTimingEvidence,
 }
 
 impl RouteTimingEvidence {
+    #[cfg(test)]
     pub(super) fn new(route: MeasuredRoute, timing: BackendTimingEvidence) -> Self {
+        let peer_identity = route
+            .backend
+            .is_gpu()
+            .then(|| format!("test-peer:{}", route.backend.label()));
+        Self::new_with_peer_identity(route, timing, peer_identity)
+    }
+
+    pub(super) fn new_with_peer_identity(
+        route: MeasuredRoute,
+        timing: BackendTimingEvidence,
+        peer_identity: Option<String>,
+    ) -> Self {
         Self {
             backend: route.backend.label().to_string(),
             phase2_plain_localizer: route.phase2_plain_localizer,
             phase2_keyword_localizer: route.phase2_keyword_localizer,
+            peer_identity,
             timing,
         }
     }
@@ -199,6 +245,8 @@ pub(super) struct AutorouteCalibrationPoint {
     pub(super) sample_bytes: u64,
     pub(super) sample_chunks: usize,
     pub(super) measurement_shape: MeasurementShapeEvidence,
+    pub(super) compiled_default_phase2_plain_localizer: bool,
+    pub(super) compiled_default_phase2_keyword_localizer: bool,
     pub(super) candidate_receipts: Vec<BackendParityReceipt>,
     pub(super) calibrated_at_unix_ms: u128,
     pub(super) route_timings: Vec<RouteTimingEvidence>,
@@ -213,10 +261,17 @@ impl AutorouteCalibrationPoint {
             .collect()
     }
 
-    pub(super) fn timing_for_route(&self, route: MeasuredRoute) -> Option<&BackendTimingEvidence> {
+    pub(super) fn route_timing_for_route(
+        &self,
+        route: MeasuredRoute,
+    ) -> Option<&RouteTimingEvidence> {
         self.route_timings
             .iter()
             .find(|entry| entry.measured_route() == Some(route))
+    }
+
+    pub(super) fn timing_for_route(&self, route: MeasuredRoute) -> Option<&BackendTimingEvidence> {
+        self.route_timing_for_route(route)
             .map(|entry| &entry.timing)
     }
 
@@ -255,23 +310,20 @@ impl AutorouteCalibrationPoint {
         }
     }
 
-    pub(super) fn selected_route_has_non_overlapping_confidence_for(
+    pub(super) fn selected_route_has_confidence_for(
         &self,
         selected: MeasuredRoute,
         persistent_runtime: bool,
     ) -> bool {
-        let intervals = self.route_confidence_intervals_for(persistent_runtime);
-        let Some((_, selected_interval)) = intervals
-            .iter()
-            .find(|(route, _)| *route == selected)
-            .copied()
-        else {
-            return false;
-        };
-        intervals
-            .iter()
-            .filter(|(route, _)| *route != selected)
-            .all(|(_, competitor_interval)| selected_interval.high_ns < competitor_interval.low_ns)
+        self.resolve_measured_route(persistent_runtime) == Some(selected)
+    }
+
+    pub(super) fn selected_route_has_exact_plan_confidence_for(
+        &self,
+        selected: MeasuredRoute,
+        persistent_runtime: bool,
+    ) -> bool {
+        self.route_is_confidence_winner(selected, persistent_runtime, None)
     }
 
     pub(super) fn resolve_measured_route(&self, persistent_runtime: bool) -> Option<MeasuredRoute> {
@@ -283,21 +335,13 @@ impl AutorouteCalibrationPoint {
         persistent_runtime: bool,
         excluded_backend: Option<ScanBackend>,
     ) -> Option<MeasuredRoute> {
-        let intervals = self
-            .route_confidence_intervals_for(persistent_runtime)
-            .into_iter()
-            .filter(|(route, _)| Some(route.backend) != excluded_backend)
-            .collect::<Vec<_>>();
-        intervals
+        let candidates = self.route_candidates_for_runtime(persistent_runtime);
+        candidates
             .iter()
-            .filter(|(route, interval)| {
-                intervals.iter().all(|(competitor_route, competitor)| {
-                    competitor_route == route || interval.high_ns < competitor.low_ns
-                })
-            })
-            .filter_map(|(route, _)| {
-                self.route_median_ns(*route, persistent_runtime)
-                    .map(|median_ns| (*route, median_ns))
+            .copied()
+            .filter(|(route, _)| Some(route.backend) != excluded_backend)
+            .filter(|(route, _)| {
+                self.route_is_confidence_winner(*route, persistent_runtime, excluded_backend)
             })
             .min_by_key(|(route, median_ns)| {
                 (
@@ -307,6 +351,127 @@ impl AutorouteCalibrationPoint {
                 )
             })
             .map(|(route, _)| route)
+            .or_else(|| {
+                self.resolve_peer_separated_tied_route(persistent_runtime, excluded_backend)
+            })
+    }
+
+    fn resolve_peer_separated_tied_route(
+        &self,
+        persistent_runtime: bool,
+        excluded_backend: Option<ScanBackend>,
+    ) -> Option<MeasuredRoute> {
+        let intervals = self
+            .route_confidence_intervals_for(persistent_runtime)
+            .into_iter()
+            .filter(|(route, _)| Some(route.backend) != excluded_backend)
+            .collect::<Vec<_>>();
+        intervals
+            .iter()
+            .filter(|(selected, selected_interval)| {
+                let has_peer = intervals
+                    .iter()
+                    .any(|(route, _)| route.backend != selected.backend);
+                (has_peer || excluded_backend.is_some())
+                    && intervals
+                        .iter()
+                        .filter(|(route, _)| route.backend != selected.backend)
+                        .all(|(_, competitor_interval)| {
+                            selected_interval.high_ns < competitor_interval.low_ns
+                        })
+                    && intervals
+                        .iter()
+                        .filter(|(route, _)| {
+                            route.backend == selected.backend && *route != *selected
+                        })
+                        .all(|(competitor, _)| {
+                            let Some(selected_trials) =
+                                self.route_trial_ns_for(*selected, persistent_runtime)
+                            else {
+                                return false;
+                            };
+                            let Some(competitor_trials) =
+                                self.route_trial_ns_for(*competitor, persistent_runtime)
+                            else {
+                                return false;
+                            };
+                            !paired_route_trials_are_faster(&competitor_trials, &selected_trials)
+                        })
+            })
+            .min_by_key(|(route, _)| {
+                (
+                    route.phase2_plain_localizer != self.compiled_default_phase2_plain_localizer
+                        || route.phase2_keyword_localizer
+                            != self.compiled_default_phase2_keyword_localizer,
+                    route.phase2_plain_localizer,
+                    route.phase2_keyword_localizer,
+                )
+            })
+            .map(|(route, _)| *route)
+    }
+
+    fn route_trial_ns_for(
+        &self,
+        route: MeasuredRoute,
+        persistent_runtime: bool,
+    ) -> Option<Vec<u128>> {
+        if route.backend == ScanBackend::SimdCpu || route.backend.is_gpu() {
+            let (cold_ns, warm_timing, _) = self.accelerator_cold_warm_route_for_measured(route)?;
+            Some(
+                warm_timing
+                    .trials_ns
+                    .into_iter()
+                    .map(|warm_ns| {
+                        if persistent_runtime {
+                            warm_ns
+                        } else {
+                            cold_ns.max(warm_ns)
+                        }
+                    })
+                    .collect(),
+            )
+        } else {
+            self.timing_for_route(route)
+                .map(|timing| timing.trials_ns.clone())
+        }
+    }
+
+    fn route_is_confidence_winner(
+        &self,
+        selected: MeasuredRoute,
+        persistent_runtime: bool,
+        excluded_backend: Option<ScanBackend>,
+    ) -> bool {
+        let intervals = self
+            .route_confidence_intervals_for(persistent_runtime)
+            .into_iter()
+            .filter(|(route, _)| Some(route.backend) != excluded_backend)
+            .collect::<Vec<_>>();
+        let Some((_, selected_interval)) = intervals
+            .iter()
+            .find(|(route, _)| *route == selected)
+            .copied()
+        else {
+            return false;
+        };
+        intervals
+            .iter()
+            .filter(|(route, _)| *route != selected)
+            .all(|(competitor, competitor_interval)| {
+                if competitor.backend != selected.backend {
+                    return selected_interval.high_ns < competitor_interval.low_ns;
+                }
+                let Some(selected_trials) = self.route_trial_ns_for(selected, persistent_runtime)
+                else {
+                    return false;
+                };
+                let Some(competitor_trials) =
+                    self.route_trial_ns_for(*competitor, persistent_runtime)
+                else {
+                    return false;
+                };
+                paired_route_trials_are_faster(&selected_trials, &competitor_trials)
+            })
     }
 
     fn route_median_ns(&self, route: MeasuredRoute, persistent_runtime: bool) -> Option<u128> {
@@ -379,6 +544,7 @@ impl AutorouteDecision {
             .filter_map(|entry| {
                 Some(BackendParityReceipt::new(
                     entry.measured_route()?,
+                    entry.peer_identity.as_deref(),
                     correctness_digest,
                     &entry.timing,
                 ))
@@ -477,6 +643,8 @@ impl AutorouteDecision {
                     sample_bytes,
                     sample_chunks,
                 ),
+                compiled_default_phase2_plain_localizer: false,
+                compiled_default_phase2_keyword_localizer: false,
                 candidate_receipts,
                 calibrated_at_unix_ms: 1,
                 route_timings,
@@ -515,6 +683,8 @@ impl AutorouteDecision {
                     sample_bytes,
                     sample_chunks,
                 ),
+                compiled_default_phase2_plain_localizer: false,
+                compiled_default_phase2_keyword_localizer: false,
                 candidate_receipts,
                 calibrated_at_unix_ms,
                 route_timings,
@@ -531,6 +701,8 @@ impl AutorouteDecision {
         correctness_digest: u64,
         calibrated_at_unix_ms: u128,
         mut route_timings: Vec<RouteTimingEvidence>,
+        compiled_default_phase2_plain_localizer: bool,
+        compiled_default_phase2_keyword_localizer: bool,
     ) -> Self {
         Self::canonicalize_route_timings(&mut route_timings);
         let candidate_receipts = Self::candidate_receipts(correctness_digest, &route_timings);
@@ -542,6 +714,8 @@ impl AutorouteDecision {
                 sample_bytes,
                 sample_chunks,
                 measurement_shape,
+                compiled_default_phase2_plain_localizer,
+                compiled_default_phase2_keyword_localizer,
                 candidate_receipts,
                 calibrated_at_unix_ms,
                 route_timings,
@@ -573,7 +747,8 @@ impl AutorouteDecision {
             .calibration_points
             .into_iter()
             .next()
-            .expect("length checked");
+            // LAW10: the exact two-element length was checked above; violation aborts construction rather than fabricating timing evidence.
+            .unwrap_or_else(|| panic!("length checked"));
         if self.contains_measurement(&point.measurement_shape) {
             return Ok(());
         }
@@ -605,7 +780,7 @@ impl AutorouteDecision {
             .ok_or_else(|| "new workload point does not resolve one daemon route".to_string())?;
         if expected_one_shot != measured_one_shot || expected_daemon != measured_daemon {
             return Err(format!(
-                "workload class changes fastest route across measured points: existing one-shot={} daemon={}, new {}-byte/{}-chunk point one-shot={} daemon={}; split the workload identity at this crossover and recalibrate",
+                "workload class changes its confidence-supported route across measured points: existing one-shot={} daemon={}, new {}-byte/{}-chunk point one-shot={} daemon={}; split the workload identity at this crossover and recalibrate",
                 render_measured_route(expected_one_shot),
                 render_measured_route(expected_daemon),
                 point.sample_bytes,
@@ -639,7 +814,7 @@ impl AutorouteDecision {
                 })?;
             if existing_recovery != measured_recovery {
                 return Err(format!(
-                    "workload class changes fastest remaining {runtime_label} recovery route after {}: existing={}, new {}-byte/{}-chunk point={}; split the workload identity at this recovery crossover and recalibrate",
+                    "workload class changes its confidence-supported remaining {runtime_label} recovery route after {}: existing={}, new {}-byte/{}-chunk point={}; split the workload identity at this recovery crossover and recalibrate",
                     expected_route.backend.label(),
                     render_measured_route(existing_recovery),
                     point.sample_bytes,
@@ -671,17 +846,42 @@ impl AutorouteDecision {
         })
     }
 
-    pub(super) fn primary_point(&self) -> &AutorouteCalibrationPoint {
+    pub(super) fn peer_identity_for_route(&self, route: MeasuredRoute) -> Option<&str> {
+        let first = self
+            .calibration_points
+            .first()?
+            .route_timings
+            .iter()
+            .find(|entry| entry.measured_route() == Some(route))?
+            .peer_identity
+            .as_deref();
         self.calibration_points
-            .first()
-            .expect("autoroute decisions are constructed and validated with evidence")
+            .iter()
+            .all(|point| {
+                point
+                    .route_timings
+                    .iter()
+                    .find(|entry| entry.measured_route() == Some(route))
+                    .and_then(|entry| entry.peer_identity.as_deref())
+                    == first
+            })
+            .then_some(first)
+            .flatten()
+    }
+
+    pub(super) fn primary_point(&self) -> &AutorouteCalibrationPoint {
+        // LAW10: decisions are validated to contain evidence before construction; an invariant violation aborts rather than selecting a route without evidence.
+        self.calibration_points.first().unwrap_or_else(|| {
+            panic!("autoroute decisions are constructed and validated with evidence")
+        })
     }
 
     #[cfg(test)]
     pub(super) fn primary_point_mut(&mut self) -> &mut AutorouteCalibrationPoint {
         self.calibration_points
             .first_mut()
-            .expect("test autoroute decision must contain evidence")
+            // LAW10: test-only mutation requires the fixture's validated primary point and aborts on malformed test setup.
+            .unwrap_or_else(|| panic!("test autoroute decision must contain evidence"))
     }
 
     // Derived evidence is computed on demand, never persisted a second time.
@@ -690,7 +890,8 @@ impl AutorouteDecision {
     pub(super) fn simd_baseline_ms(&self) -> u128 {
         self.primary_point()
             .baseline_timing_for_backend(ScanBackend::SimdCpu)
-            .expect("validated calibration contains the SIMD baseline route")
+            // LAW10: validated calibration requires the SIMD baseline; invariant failure aborts instead of substituting another timing.
+            .unwrap_or_else(|| panic!("validated calibration contains the SIMD baseline route"))
             .median_ms()
     }
 
@@ -788,17 +989,17 @@ impl AutorouteDecision {
         else {
             return false;
         };
-        self.selected_route_has_non_overlapping_confidence_for(route, false)
+        self.selected_route_has_confidence_for(route, false)
     }
 
-    fn selected_route_has_non_overlapping_confidence_for(
+    fn selected_route_has_confidence_for(
         &self,
         selected: MeasuredRoute,
         persistent_runtime: bool,
     ) -> bool {
-        self.calibration_points.iter().all(|point| {
-            point.selected_route_has_non_overlapping_confidence_for(selected, persistent_runtime)
-        })
+        self.calibration_points
+            .iter()
+            .all(|point| point.selected_route_has_confidence_for(selected, persistent_runtime))
     }
 
     /// The single deterministic source of truth for which route a persisted
@@ -809,9 +1010,9 @@ impl AutorouteDecision {
     /// tampered or non-deterministic.
     ///
     /// A route resolves only when its 95% interval lies entirely below every
-    /// other eligible execution route, including localization variants on the
-    /// same backend. Any overlap is incomplete evidence, never permission to
-    /// persist a measured-median guess as the fastest route.
+    /// peer backend and every paired same-backend timing difference proves it
+    /// faster. Any paired interval spanning zero is incomplete evidence, never
+    /// permission to persist a measured-median guess.
     pub(super) fn resolved_routing_route(&self) -> Option<MeasuredRoute> {
         let selected = self
             .calibration_points
@@ -870,20 +1071,19 @@ impl AutorouteDecision {
             .then_some(selected)
     }
 
-    /// True iff one complete execution route is provably fastest. The resolved
-    /// route's 95% CI lies entirely below every other eligible route.
-    pub(super) fn has_separated_fastest_route(&self) -> bool {
-        self.resolved_routing_route().is_some_and(|winner| {
-            self.selected_route_has_non_overlapping_confidence_for(winner, false)
-        })
+    /// True when evidence resolves one execution route. Exact paired timing
+    /// selects a plan when measurable. If same-backend plans are indistinguishable,
+    /// confidence-separated backend evidence selects the compiled default plan.
+    pub(super) fn has_confidence_supported_route(&self) -> bool {
+        self.resolved_routing_route()
+            .is_some_and(|winner| self.selected_route_has_confidence_for(winner, false))
     }
 
-    /// Persistent-daemon counterpart of [`Self::has_separated_fastest_route`],
-    /// evaluated with warm GPU evidence.
-    pub(super) fn has_separated_fastest_persistent_route(&self) -> bool {
-        self.resolved_persistent_route().is_some_and(|winner| {
-            self.selected_route_has_non_overlapping_confidence_for(winner, true)
-        })
+    /// Persistent-daemon counterpart of [`Self::has_confidence_supported_route`],
+    /// evaluated with warm accelerator evidence.
+    pub(super) fn has_confidence_supported_persistent_route(&self) -> bool {
+        self.resolved_persistent_route()
+            .is_some_and(|winner| self.selected_route_has_confidence_for(winner, true))
     }
 
     pub(super) fn confidence_diagnostic(&self, persistent_runtime: bool) -> String {

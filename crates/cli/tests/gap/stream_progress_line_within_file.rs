@@ -1,6 +1,6 @@
 //! KH-GAP-097: `--stream` progress lines must not cite line numbers beyond file length.
 
-use crate::e2e::support::binary;
+use crate::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 

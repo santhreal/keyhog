@@ -225,7 +225,7 @@ fn filesystem_text_map(repo: &Path) -> BTreeMap<String, String> {
                 .as_deref()
                 .map(|path| normalize_chunk_path(repo, path))
                 .expect("filesystem chunk path");
-            (path, chunk.data.to_string())
+            (path, chunk.data.as_str().to_owned())
         })
         .collect()
 }
@@ -238,7 +238,7 @@ fn git_head_text_map(repo: &Path) -> BTreeMap<String, String> {
         .filter(|chunk| chunk.metadata.source_type.as_ref() == "git/head")
         .map(|chunk| {
             let path = chunk.metadata.path.clone().expect("git head chunk path");
-            (path.replace('\\', "/"), chunk.data.to_string())
+            (path.replace('\\', "/"), chunk.data.as_str().to_owned())
         })
         .collect()
 }
@@ -329,7 +329,7 @@ fn empty_blob_emits_empty_chunk_with_zero_size() {
     let chunks = collect_git_chunks_without_source_errors(&repo, 1);
     let c = chunk_for(&chunks, "empty.txt").expect("empty.txt chunk emitted");
     assert_eq!(c.data.len(), 0, "empty blob -> empty data");
-    assert_eq!(c.data.to_string(), "");
+    assert_eq!(c.data.as_str(), "");
     assert_eq!(
         c.metadata.size_bytes,
         Some(0),
@@ -468,7 +468,7 @@ fn valid_utf8_blob_kept_byte_for_byte() {
 
     let chunks = collect_git_chunks_without_source_errors(&repo, 1);
     let c = chunk_for(&chunks, "u.txt").expect("u.txt present");
-    assert_eq!(c.data.to_string(), content, "valid UTF-8 must be verbatim");
+    assert_eq!(c.data.as_str(), content, "valid UTF-8 must be verbatim");
     assert!(
         !c.data.contains('\u{FFFD}'),
         "no lossy replacement for valid UTF-8"
@@ -1755,7 +1755,7 @@ fn without_max_commits_full_history_is_walked() {
     let bodies: Vec<String> = GitSource::new(repo.clone())
         .chunks() // no with_max_commits
         .map(|r| r.expect("chunk ok"))
-        .map(|c| c.data.to_string())
+        .map(|c| c.data.as_str().to_owned())
         .collect();
     assert!(
         bodies

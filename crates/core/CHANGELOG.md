@@ -7,6 +7,8 @@
   and detects files that grow past the cap during a read.
 - Add detector-owned `decode_transforms` policy for reverse and Caesar
   admission, validate its literal prefixes, and bind it into detector identity.
+- Bind non-default detector resolution priority into detector identity without
+  changing the canonical digest of detectors that use the default policy.
 
 - Add `complete_after_recovery` as a complete scan terminal state, preserve
   bounded backend-recovery evidence across report formats, and advance the

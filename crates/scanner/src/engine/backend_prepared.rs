@@ -33,11 +33,15 @@ impl<'a> PreparedChunk<'a> {
     }
 
     pub(crate) fn code_lines(&self, line_offsets: &[usize]) -> Vec<&str> {
-        if self.preprocessed.text.as_bytes() == self.chunk.data.as_bytes() {
-            code_lines_from_offsets(&self.chunk.data, line_offsets)
-        } else {
-            self.chunk.data.lines().collect()
-        }
+        // `line_offsets` describes `preprocessed.text` (see `line_offsets()`), and
+        // match line numbers are derived from those same offsets, so the per-line
+        // slices used for comment/documentation context inference MUST come from
+        // `preprocessed.text` too. Slicing raw `chunk.data` when preprocessing
+        // rewrote the bytes (structured extraction, multiline join) drifts the
+        // line text against the offset table, misclassifying which line a match
+        // sits on. On the passthrough path the two buffers are byte-identical, so
+        // this is also the single line-walk shared with `line_offsets`.
+        code_lines_from_offsets(&self.preprocessed.text, line_offsets)
     }
 }
 
@@ -267,5 +271,55 @@ impl SimdPhase1CompilePlan {
             "Hyperscan phase-one backend ready"
         );
         Ok(prefilter)
+    }
+}
+
+#[cfg(test)]
+mod code_lines_tests {
+    use super::*;
+    use keyhog_core::Chunk;
+    use std::sync::OnceLock;
+
+    // KH-1226: `line_offsets` is computed on `preprocessed.text`, and every match
+    // line number is derived from that same offset table, so `code_lines` must
+    // slice `preprocessed.text` even when preprocessing rewrote the bytes.
+    // Slicing raw `chunk.data` there drifted the per-line comment/documentation
+    // context text against the offsets, misclassifying which line a match sits
+    // on. This pins the aligned-buffer contract.
+    #[test]
+    fn code_lines_follow_preprocessed_text_not_raw_chunk_when_bytes_differ() {
+        let raw = "AAAAAA\nBBBBBB\nCCCCCC";
+        let preprocessed_text = "xxx\nyyy\nzzz";
+        assert_ne!(raw.as_bytes(), preprocessed_text.as_bytes());
+
+        let chunk: Chunk = raw.to_string().into();
+        let prepared = PreparedChunk {
+            chunk: &chunk,
+            preprocessed: ScannerPreprocessedText::passthrough(preprocessed_text),
+            line_offsets: OnceLock::new(),
+        };
+
+        let offsets = prepared.line_offsets().to_vec();
+        let lines = prepared.code_lines(&offsets);
+        // Lines come from the preprocessed buffer the offsets describe, one entry
+        // per offset, never the raw chunk lines that would misalign context.
+        assert_eq!(lines, ["xxx", "yyy", "zzz"]);
+        assert!(!lines.iter().any(|l| l.starts_with('A')));
+    }
+
+    // Passthrough (preprocessed == raw): the same aligned slice, exercised through
+    // the single offset table shared with `line_offsets()`.
+    #[test]
+    fn code_lines_passthrough_slices_shared_offset_table() {
+        let text = "key = one\nother = two\nlast = three";
+        let chunk: Chunk = text.to_string().into();
+        let prepared = PreparedChunk {
+            chunk: &chunk,
+            preprocessed: ScannerPreprocessedText::passthrough(text),
+            line_offsets: OnceLock::new(),
+        };
+        let offsets = prepared.line_offsets().to_vec();
+        let lines = prepared.code_lines(&offsets);
+        assert_eq!(lines, ["key = one", "other = two", "last = three"]);
     }
 }

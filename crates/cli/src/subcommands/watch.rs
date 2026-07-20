@@ -18,13 +18,14 @@
 //! they can always invoke `keyhog scan` separately.
 
 use crate::args::WatchArgs;
+use crate::orchestrator::load_rule_suppressor;
 use crate::orchestrator::{setup_default_scan_runtime, DefaultScanRuntime};
 use crate::skip_dirs::SkipDirPolicy;
 use crate::style;
 use anyhow::{Context, Result};
-use keyhog_core::{Chunk, ChunkMetadata};
+use keyhog_core::{Chunk, ChunkMetadata, RuleSuppressor};
 use notify::{Event, EventKind, RecursiveMode, Watcher};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::channel;
@@ -36,7 +37,11 @@ use std::time::{Duration, Instant};
 /// not one per inotify event. A genuine later edit (different content) is
 /// always re-scanned because the content hash changes.
 const DEDUP_WINDOW: Duration = Duration::from_millis(750);
+/// Soft prune cadence: when the map is small this only runs occasionally.
 const DEDUP_PRUNE_INTERVAL: usize = 128;
+/// Hard cap on dedup map entries. When exceeded, drop oldest keys via FIFO
+/// order (O(1) amortized per insert) instead of scanning every entry (KH-1311).
+const DEDUP_MAX_ENTRIES: usize = 4096;
 
 /// FNV-1a 64-bit offset basis and prime for the cheap pre-scan raw-content
 /// filter. The post-scan finding identity uses the framed stable hasher because
@@ -50,6 +55,8 @@ struct WatchDedupeState {
     /// Pre-scan dedup keyed on RAW content hash: skips the scan when a burst
     /// event re-reads byte-identical content (the cheap common case).
     entries: HashMap<PathBuf, (Instant, u64)>,
+    /// Insertion order for `entries` so overflow eviction is O(1) amortized.
+    entry_order: VecDeque<PathBuf>,
     /// Post-scan dedup keyed on the FINDING-SET fingerprint: a single save fires
     /// a CREATE+MODIFY(+CLOSE_WRITE) burst, and a read taken mid-write can return
     /// bytes that differ from the final read (e.g. missing the trailing newline)
@@ -57,7 +64,30 @@ struct WatchDedupeState {
     /// collapses that to one print while a genuine edit (different findings)
     /// still prints.
     finding_entries: HashMap<PathBuf, (Instant, [u8; 32])>,
+    /// Insertion order for `finding_entries`.
+    finding_order: VecDeque<PathBuf>,
     scans_since_prune: usize,
+}
+
+fn cap_map_fifo<V>(
+    map: &mut HashMap<PathBuf, V>,
+    order: &mut VecDeque<PathBuf>,
+    path: &std::path::Path,
+    value: V,
+) {
+    if map.contains_key(path) {
+        map.insert(path.to_path_buf(), value);
+        return;
+    }
+    map.insert(path.to_path_buf(), value);
+    order.push_back(path.to_path_buf());
+    while map.len() > DEDUP_MAX_ENTRIES {
+        if let Some(old) = order.pop_front() {
+            map.remove(&old);
+        } else {
+            break;
+        }
+    }
 }
 
 pub(crate) fn run(args: WatchArgs) -> Result<()> {
@@ -66,6 +96,17 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
     // accepts the same multi-root form, so every "run keyhog scan <roots>"
     // hint below stays copy-pasteable for one, two, or many watched trees.
     let roots_hint = roots_hint(&watch_roots);
+    // Tier-A knobs (KH-1461 / KH-1462): `0` or omitted max-file-size keeps the
+    // scan default; consecutive-failure budget defaults via clap.
+    let max_file_size = match args.max_file_size {
+        None | Some(0) => keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES,
+        Some(n) => n,
+    };
+    let max_consecutive_failures = if args.max_consecutive_failures == 0 {
+        crate::args::DEFAULT_WATCH_MAX_CONSECUTIVE_SCAN_FAILURES
+    } else {
+        args.max_consecutive_failures
+    };
 
     // Parse the explicit backend BEFORE compiling the scanner so an invalid
     // value fails fast. With it set, the per-file scan forces that backend and
@@ -88,6 +129,25 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
     )?
     .prepare_persistent_watch(backend_override)?;
     let detector_count = scan_runtime.detector_count();
+    // KH-1433: per-root `.keyhogignore.toml` RuleSuppressor map so multi-root
+    // watch applies each tree's declarative suppressions (not only primary).
+    // `.keyhog.toml` detector config still anchors on the primary root via
+    // setup_default_scan_runtime (secondary-root full config is open).
+    let mut rule_suppressors: HashMap<PathBuf, RuleSuppressor> =
+        HashMap::with_capacity(watch_roots.len());
+    for root in &watch_roots {
+        rule_suppressors.insert(root.clone(), load_rule_suppressor(Some(root))?);
+    }
+    if watch_roots.len() > 1 && !args.quiet {
+        let palette = style::for_stderr();
+        eprintln!(
+            "{} keyhog watch: loaded per-root .keyhogignore.toml for {} roots; \
+             .keyhog.toml detector config still uses primary root {}",
+            style::warn("WARN", &palette),
+            watch_roots.len(),
+            watch_roots[0].display()
+        );
+    }
 
     if !args.quiet {
         eprintln!(
@@ -158,6 +218,7 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
     // without this would print every finding twice (KH-GAP-109).
     let mut recently_scanned = WatchDedupeState::default();
     let skip_dirs = SkipDirPolicy::load()?;
+    let mut consecutive_scan_failures = 0usize;
 
     for event in rx {
         let event = match event {
@@ -194,11 +255,42 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
             if path.is_dir() || should_skip(&path, &skip_dirs) {
                 continue;
             }
-            scan_file(&scan_runtime, &path, &mut recently_scanned)
-                .with_context(|| format!("scan changed path {}", path.display()))?;
+            let rule_suppressor = rule_suppressor_for_path(&path, &watch_roots, &rule_suppressors);
+            match scan_file(
+                &scan_runtime,
+                rule_suppressor,
+                &path,
+                max_file_size,
+                &mut recently_scanned,
+            ) {
+                Ok(WatchScanOutcome::Ok) => {
+                    consecutive_scan_failures = 0;
+                }
+                Ok(WatchScanOutcome::EngineFailure) => {
+                    consecutive_scan_failures = consecutive_scan_failures.saturating_add(1);
+                    if consecutive_scan_failures >= max_consecutive_failures {
+                        anyhow::bail!(
+                            "keyhog watch: {consecutive_scan_failures} consecutive per-file \
+                             scan failures (limit {max_consecutive_failures}); exiting so a \
+                             wedged scanner cannot silently drop secrets under editor saves \
+                             (KH-1334). Fix the scanner fault and restart watch, or run \
+                             `keyhog scan {roots_hint}` for a full rescan."
+                        );
+                    }
+                }
+                Err(e) => {
+                    return Err(e).with_context(|| format!("scan changed path {}", path.display()));
+                }
+            }
         }
     }
     Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WatchScanOutcome {
+    Ok,
+    EngineFailure,
 }
 
 /// Resolve the requested watch roots into the canonical directory set the
@@ -272,19 +364,49 @@ fn content_hash(data: &[u8]) -> u64 {
 /// OOMs the single-threaded watcher; (2) no special-file guard, so a FIFO
 /// created in the tree, which itself fires an inotify CREATE event, is opened
 /// blocking and HANGS the event loop forever, wedging the whole watcher; (3) no
-/// `O_NOFOLLOW`, so a symlink is followed out of the watched root. `0` selects
-/// the walker's hard 2 GiB TOCTOU sanity cap (watch carries no `--max-file-size`
-/// budget); a special file returns `InvalidInput` and an oversized file
-/// `InvalidData`, both surfaced loudly by `scan_file`'s existing error arm.
-fn read_watched_file(path: &std::path::Path) -> std::io::Result<Vec<u8>> {
-    keyhog_sources::read_file_safe_bytes(path, 0)
+/// `O_NOFOLLOW`, so a symlink is followed out of the watched root. Cap defaults
+/// to the same max-file-size as `keyhog scan` (KH-1310 / KH-1461); a special
+/// file returns `InvalidInput` and an oversized file `InvalidData`, both
+/// surfaced loudly by `scan_file`'s existing error arm.
+fn read_watched_file(path: &std::path::Path, max_file_size: u64) -> std::io::Result<Vec<u8>> {
+    keyhog_sources::read_file_safe_bytes(path, max_file_size)
+}
+
+/// Longest-prefix root match for multi-root watch (KH-1433). Falls back to the
+/// first root's suppressor when a path is outside every watched tree (TOCTOU
+/// move / external path); never panics.
+fn rule_suppressor_for_path<'a>(
+    path: &std::path::Path,
+    roots: &[PathBuf],
+    suppressors: &'a HashMap<PathBuf, RuleSuppressor>,
+) -> &'a RuleSuppressor {
+    let mut best: Option<&PathBuf> = None;
+    for root in roots {
+        if path.starts_with(root) {
+            match best {
+                None => best = Some(root),
+                Some(current) if root.as_os_str().len() > current.as_os_str().len() => {
+                    best = Some(root);
+                }
+                _ => {}
+            }
+        }
+    }
+    // LAW10: callers provide a non-empty root set and every root receives a suppressor; invariant violations abort instead of omitting a watched tree.
+    let key = best.unwrap_or(&roots[0]);
+    suppressors
+        .get(key)
+        // LAW10: every root is inserted into this map during setup; invariant violation aborts instead of scanning without suppression semantics.
+        .unwrap_or_else(|| panic!("every watch root has a suppressor entry"))
 }
 
 fn scan_file(
     scan_runtime: &DefaultScanRuntime,
+    rule_suppressor: &RuleSuppressor,
     path: &std::path::Path,
+    max_file_size: u64,
     recently_scanned: &mut WatchDedupeState,
-) -> Result<()> {
+) -> Result<WatchScanOutcome> {
     // Read BYTES (not `read_to_string`) through the walker's guarded read (see
     // `read_watched_file`) and decode through the SAME path the `keyhog scan`
     // walker uses. `read_to_string` failed on the first non-UTF-8 byte and
@@ -293,7 +415,7 @@ fn scan_file(
     // recall divergence between the two entry points (Law 10). Now both share
     // the guarded read + `decode_file_bytes`, so watch recovers the same
     // secrets and can neither hang on a FIFO nor OOM on a huge file.
-    let bytes = match read_watched_file(path) {
+    let bytes = match read_watched_file(path, max_file_size) {
         Ok(b) => b,
         Err(error) => {
             // A file that VANISHED between the inotify event and our read is a
@@ -308,8 +430,9 @@ fn scan_file(
                     path.display(),
                     error.kind()
                 );
+                return Ok(WatchScanOutcome::EngineFailure);
             }
-            return Ok(());
+            return Ok(WatchScanOutcome::Ok);
         }
     };
 
@@ -318,17 +441,17 @@ fn scan_file(
     // edit must always be re-scanned even if lossy UTF-8 maps both versions to
     // the same string.
     if suppress_duplicate_event(path, &bytes, Instant::now(), recently_scanned) {
-        return Ok(());
+        return Ok(WatchScanOutcome::Ok);
     }
 
     // `None` => the bytes are binary (no text to scan): an intentional,
     // documented skip that matches the scan walker's binary policy, not a
     // failure (so no warning, consistent with `keyhog scan`).
     let Some(data) = keyhog_sources::decode_file_bytes(&bytes) else {
-        return Ok(());
+        return Ok(WatchScanOutcome::Ok);
     };
     if data.is_empty() {
-        return Ok(());
+        return Ok(WatchScanOutcome::Ok);
     }
     // Bind watch to the same full-source-size provenance as the ordinary
     // filesystem source. Autoroute keys distinguish a complete file from a
@@ -359,7 +482,7 @@ fn scan_file(
         Err(error) => {
             let palette = style::for_stderr();
             eprintln!("{} keyhog watch: {error}", style::fail("FAIL", &palette));
-            return Ok(());
+            return Ok(WatchScanOutcome::EngineFailure);
         }
     };
     // Route scanner matches through the SAME suppression + resolution pipeline
@@ -372,9 +495,15 @@ fn scan_file(
         Err(error) => {
             let palette = style::for_stderr();
             eprintln!("{} keyhog watch: {error}", style::fail("FAIL", &palette));
-            return Ok(());
+            return Ok(WatchScanOutcome::EngineFailure);
         }
     };
+    // Declarative `.keyhogignore.toml` (RuleSuppressor) — same post-filter
+    // surface `keyhog scan` applies after finalize (KH-1329).
+    let matches: Vec<_> = matches
+        .into_iter()
+        .filter(|m| !rule_suppressor.matches_raw_match(m))
+        .collect();
     // Second dedup layer: the content pre-check above only suppresses a re-read
     // of byte-identical content, but a save's burst can read different
     // intermediate bytes that still produce the same findings. Collapse those to
@@ -386,7 +515,7 @@ fn scan_file(
         Instant::now(),
         recently_scanned,
     ) {
-        return Ok(());
+        return Ok(WatchScanOutcome::Ok);
     }
     for m in matches {
         crate::style::print_diagnostic_finding(
@@ -400,7 +529,7 @@ fn scan_file(
         )
         .with_context(|| format!("write watch finding for {}", path.display()))?;
     }
-    Ok(())
+    Ok(WatchScanOutcome::Ok)
 }
 
 fn suppress_duplicate_event(
@@ -415,20 +544,32 @@ fn suppress_duplicate_event(
             return true;
         }
     }
-    recently_scanned
-        .entries
-        .insert(path.to_path_buf(), (now, hash));
+    cap_map_fifo(
+        &mut recently_scanned.entries,
+        &mut recently_scanned.entry_order,
+        path,
+        (now, hash),
+    );
     recently_scanned.scans_since_prune = recently_scanned.scans_since_prune.saturating_add(1);
     if recently_scanned.scans_since_prune >= DEDUP_PRUNE_INTERVAL {
-        // Evict stale entries periodically so the maps cannot grow without
-        // bound, without making every event pay an O(active_paths) scan.
+        // Cheap time prune only when under the hard cap; overflow already uses
+        // FIFO eviction so we never O(N) retain a multi-thousand-path map.
         recently_scanned.scans_since_prune = 0;
-        recently_scanned
-            .entries
-            .retain(|_, (last, _)| now.saturating_duration_since(*last) < DEDUP_WINDOW);
-        recently_scanned
-            .finding_entries
-            .retain(|_, (last, _)| now.saturating_duration_since(*last) < DEDUP_WINDOW);
+        if recently_scanned.entries.len() < DEDUP_MAX_ENTRIES / 2 {
+            recently_scanned
+                .entries
+                .retain(|_, (last, _)| now.saturating_duration_since(*last) < DEDUP_WINDOW);
+            recently_scanned
+                .finding_entries
+                .retain(|_, (last, _)| now.saturating_duration_since(*last) < DEDUP_WINDOW);
+            // Rebuild order queues after retain (rare small-map path).
+            recently_scanned
+                .entry_order
+                .retain(|p| recently_scanned.entries.contains_key(p));
+            recently_scanned
+                .finding_order
+                .retain(|p| recently_scanned.finding_entries.contains_key(p));
+        }
     }
     false
 }
@@ -479,9 +620,12 @@ fn suppress_duplicate_findings(
             return true;
         }
     }
-    recently_scanned
-        .finding_entries
-        .insert(path.to_path_buf(), (now, fingerprint));
+    cap_map_fifo(
+        &mut recently_scanned.finding_entries,
+        &mut recently_scanned.finding_order,
+        path,
+        (now, fingerprint),
+    );
     false
 }
 
@@ -489,7 +633,6 @@ pub(crate) mod testing {
     use anyhow::Result;
     use std::path::{Path, PathBuf};
     use std::time::{Duration, Instant};
-
     pub(crate) fn content_hash(data: &[u8]) -> u64 {
         super::content_hash(data)
     }
@@ -503,6 +646,16 @@ pub(crate) mod testing {
     /// Format watched roots into the `keyhog scan <hint>` remediation string.
     pub(crate) fn roots_hint(roots: &[PathBuf]) -> String {
         super::roots_hint(roots)
+    }
+
+    /// Longest-prefix root selection for multi-root RuleSuppressor maps (KH-1433).
+    #[cfg(test)]
+    pub(crate) fn rule_suppressor_for_path<'a>(
+        path: &Path,
+        roots: &[PathBuf],
+        suppressors: &'a std::collections::HashMap<PathBuf, keyhog_core::RuleSuppressor>,
+    ) -> &'a keyhog_core::RuleSuppressor {
+        super::rule_suppressor_for_path(path, roots, suppressors)
     }
 
     pub(crate) fn duplicate_event_decisions(
@@ -543,6 +696,7 @@ pub(crate) mod testing {
         file_name: &str,
         body: &str,
     ) -> Result<Vec<String>> {
+        use crate::orchestrator::load_rule_suppressor;
         use keyhog_core::{Chunk, ChunkMetadata};
         let file_path = root.join(file_name);
         std::fs::write(&file_path, body)?;
@@ -577,8 +731,10 @@ pub(crate) mod testing {
         };
         let matches = runtime.scan_chunk(&chunk)?;
         let filtered = runtime.filter_and_resolve(matches)?;
+        let rule_suppressor = load_rule_suppressor(Some(root))?;
         Ok(filtered
             .iter()
+            .filter(|m| !rule_suppressor.matches_raw_match(m))
             .map(|m| m.detector_id.as_ref().to_string())
             .collect())
     }

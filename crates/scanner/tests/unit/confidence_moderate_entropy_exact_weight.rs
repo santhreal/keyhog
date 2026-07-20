@@ -1,6 +1,6 @@
 //! Moderate entropy tier earns exactly 0.05/0.20 = 0.25 confidence.
 
-use keyhog_scanner::confidence::{compute_confidence, ConfidenceSignals};
+use keyhog_scanner::testing::confidence::{compute_confidence, ConfidenceSignals};
 
 #[test]
 fn confidence_moderate_entropy_exact_weight() {

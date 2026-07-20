@@ -6,7 +6,7 @@
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
-use keyhog_scanner::jwt::finding_metadata;
+use keyhog_scanner::jwt::{finding_metadata, finding_metadata_with_secrets};
 use keyhog_scanner::testing::jwt::{analyze, anomalies_to_metadata, looks_like_jwt, JwtAnomaly};
 
 /// Assemble a `header.payload.sig` JWT from raw JSON, base64url-no-pad encoded.
@@ -179,9 +179,20 @@ fn finding_metadata_surfaces_alg_and_claims() {
     );
     let meta = finding_metadata(&jwt).expect("real JWT yields metadata");
     assert_eq!(meta.get("jwt.alg").map(String::as_str), Some("ES256"));
-    assert_eq!(meta.get("jwt.iss").map(String::as_str), Some("issuer"));
-    assert_eq!(meta.get("jwt.sub").map(String::as_str), Some("subj"));
+    // KH-1350: default redacts iss/sub.
+    assert_eq!(
+        meta.get("jwt.iss").map(String::as_str),
+        Some("<redacted 6 chars>")
+    );
+    assert_eq!(
+        meta.get("jwt.sub").map(String::as_str),
+        Some("<redacted 4 chars>")
+    );
     assert_eq!(meta.get("jwt.exp").map(String::as_str), Some("64060588800"));
+    // KH-1458: show_secrets reveals claim values.
+    let revealed = finding_metadata_with_secrets(&jwt, true).expect("reveal");
+    assert_eq!(revealed.get("jwt.iss").map(String::as_str), Some("issuer"));
+    assert_eq!(revealed.get("jwt.sub").map(String::as_str), Some("subj"));
 }
 
 #[test]

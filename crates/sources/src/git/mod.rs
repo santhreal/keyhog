@@ -11,6 +11,7 @@ mod history;
 mod source;
 mod staged;
 mod tag_messages;
+pub(crate) use staged::consume_oversized_staged_header_path;
 
 /// Resolve `git` to an absolute path inside a trusted system bin dir.
 /// SECURITY: kimi-wave1 audit finding 3.PATH-git. Refuses to fall back
@@ -170,7 +171,9 @@ pub(crate) fn record_git_cap_once(
         surface: "history".into(),
         target: source_name.into(),
         kind: SourceCoverageGapKind::Truncated,
-        detail: format!("{source_name} was truncated; {reason}; {remaining_description} were not scanned"),
+        detail: format!(
+            "{source_name} was truncated; {reason}; {remaining_description} were not scanned"
+        ),
     })
 }
 
@@ -184,17 +187,28 @@ pub(crate) fn git_output_line_truncated_error(
     cap: usize,
     consumed: usize,
 ) -> SourceError {
+    record_git_output_line_truncated(source_name, line_kind, cap, consumed);
+    SourceError::Other(format!(
+        "{source_name} output was truncated: {line_kind} exceeded the {cap}-byte line cap after {consumed} bytes; the full line was not scanned"
+    ))
+}
+
+/// Count + warn for an oversized git plumbing line without aborting the stream
+/// (KH-1355). Callers that can skip a single line and continue use this.
+pub(crate) fn record_git_output_line_truncated(
+    source_name: &str,
+    line_kind: &str,
+    cap: usize,
+    consumed: usize,
+) {
     tracing::warn!(
         %source_name,
         %line_kind,
         cap,
         consumed,
-        "git output line exceeded the configured byte cap; full line was NOT scanned"
+        "git output line exceeded the configured byte cap; full line was NOT scanned; stream continues"
     );
     let _event = crate::record_skip_event(crate::SourceSkipEvent::SourceTruncated);
-    SourceError::Other(format!(
-        "{source_name} output was truncated: {line_kind} exceeded the {cap}-byte line cap after {consumed} bytes; the full line was not scanned"
-    ))
 }
 
 pub(crate) fn drain_trimmed_hunk(buffer: &mut Vec<u8>) -> Option<String> {

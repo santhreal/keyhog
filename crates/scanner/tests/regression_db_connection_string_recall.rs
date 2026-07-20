@@ -14,19 +14,7 @@
 mod support;
 
 use keyhog_core::Chunk;
-use keyhog_scanner::CompiledScanner;
-use std::sync::OnceLock;
 use support::contracts::{make_chunk, scanner};
-
-/// One shared compiled scanner for the whole file: `scanner()` recompiles all
-/// detectors per call, so caching keeps the suite fast. `CompiledScanner` is
-/// `Send + Sync` (the CLI holds it behind an `Arc`); the harness runs these
-/// `#[test]`s serially (`--test-threads=1`) so the per-scan fragment-cache clear
-/// never races.
-fn shared() -> &'static CompiledScanner {
-    static SCANNER: OnceLock<CompiledScanner> = OnceLock::new();
-    SCANNER.get_or_init(scanner)
-}
 
 /// True iff scanning `text` surfaces `password`: i.e. some finding's credential
 /// CONTAINS it. Connection-string detectors (postgres/mysql/redis/…) capture the
@@ -35,22 +23,22 @@ fn shared() -> &'static CompiledScanner {
 /// password-only `url-credentials` match in resolution. The recall contract is
 /// only that the password value reaches a finding, not which detector owns it.
 fn password_surfaces(text: &str, password: &str) -> bool {
-    let s = shared();
+    let s = scanner();
     s.clear_fragment_cache();
     let chunk: Chunk = make_chunk(text, "filesystem", "conn.conf");
     s.scan(&chunk)
         .into_iter()
-        .any(|m| m.credential.to_string().contains(password))
+        .any(|m| m.credential.as_str().contains(password))
 }
 
 /// The detector ids whose credential contains `password`, for asserting routing.
 fn detectors_for(text: &str, password: &str) -> Vec<String> {
-    let s = shared();
+    let s = scanner();
     s.clear_fragment_cache();
     let chunk: Chunk = make_chunk(text, "filesystem", "conn.conf");
     s.scan(&chunk)
         .into_iter()
-        .filter(|m| m.credential.to_string().contains(password))
+        .filter(|m| m.credential.as_str().to_string().contains(password))
         .map(|m| m.detector_id.to_string())
         .collect()
 }

@@ -6,16 +6,26 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 #[cfg(feature = "ml")]
+fn confidence_policy() -> keyhog_core::DetectorMatchConfidenceSpec {
+    keyhog_core::detector_spec_by_id("datadog-api-key")
+        .and_then(|detector| detector.match_confidence)
+        .expect("embedded Datadog confidence policy")
+}
+#[cfg(feature = "ml")]
 fn push_pattern_pending(
     state: &mut ScanState,
     raw: RawMatch,
     confidence: f64,
     features: [f32; keyhog_scanner::ml_scorer::NUM_FEATURES],
 ) -> bool {
+    let policy = confidence_policy();
     state.push_detector_ml_pending(
         raw,
         confidence,
         keyhog_scanner::context::CodeContext::Assignment,
+        policy.assignment_context_multiplier,
+        Some(policy.soft_context_suppression_threshold),
+        policy.post_match,
         features,
         0.35,
         0.2,
@@ -61,7 +71,7 @@ fn push_match_keeps_highest_confidence_when_capped() {
     let kept: Vec<_> = state
         .into_matches()
         .into_iter()
-        .map(|m| m.credential.to_string())
+        .map(|m| m.credential.as_str().to_string())
         .collect();
     assert_eq!(kept, ["high", "mid"]);
 }
@@ -115,7 +125,7 @@ fn push_match_lazy_builds_only_for_admitted_candidates() {
     let kept: Vec<_> = state
         .into_matches()
         .into_iter()
-        .map(|m| m.credential.to_string())
+        .map(|m| m.credential.as_str().to_string())
         .collect();
     assert_eq!(kept, ["admitted"]);
 }
@@ -211,9 +221,13 @@ fn pending_ml_queue_keeps_pattern_and_entropy_evidence_separate() {
     let raw = raw_match(0.7, "candidate", 11);
 
     assert!(push_pattern_pending(&mut state, raw.clone(), 0.7, features));
+    let policy = confidence_policy();
     assert!(state.push_entropy_ml_pending(
         raw,
         0.7,
+        policy.unknown_context_multiplier,
+        Some(policy.soft_context_suppression_threshold),
+        policy.post_match,
         features,
         0.35,
         0.2,

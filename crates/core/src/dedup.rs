@@ -577,6 +577,12 @@ fn file_scope_identity(location: &MatchLocation) -> FileScopeIdentity {
 /// is a confusing duplicate, not two findings. Used as the per-group seen-set
 /// element so additional_locations membership is O(1) instead of an O(K)
 /// linear scan.
+///
+/// Offset is intentionally excluded (KH-1438): synthetic multiline/decode
+/// windows re-emit the same secret at different byte offsets on the same
+/// logical line. Including offset would re-inflate those as additional
+/// locations. Distinct commits still keep separate identities so history
+/// scans do not collapse cross-revision hits.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct LocationIdentity {
     source: Arc<str>,

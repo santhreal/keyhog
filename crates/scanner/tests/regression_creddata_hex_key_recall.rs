@@ -37,7 +37,7 @@ fn credentials_for(scanner: &CompiledScanner, line: &str) -> Vec<String> {
         .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
         .into_iter()
         .flatten()
-        .map(|m| m.credential.to_string())
+        .map(|m| m.credential.as_str().to_string())
         .collect()
 }
 

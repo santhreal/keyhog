@@ -140,9 +140,8 @@ impl CompiledScanner {
             let (credential, credential_start, credential_end): (&str, usize, usize) = match group {
                 Some(group) => {
                     let groups_total = locs.len();
-                    let (mut cs, mut ce) = match locs.get(group) {
-                        Some(range) => range,
-                        None => (left_context_len, whole.end()),
+                    let Some((mut cs, mut ce)) = locs.get(group) else {
+                        continue;
                     };
                     // Group 0 belongs to the detector regex, not the synthetic
                     // left-context byte that lets boundary assertions see the

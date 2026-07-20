@@ -89,13 +89,11 @@ pub(crate) fn has_bzip2_header(bytes: &[u8]) -> bool {
 }
 
 #[inline]
-#[cfg(feature = "docker")]
 pub(crate) fn starts_with_gzip(bytes: &[u8]) -> bool {
     bytes.starts_with(GZIP_PREFIX)
 }
 
 #[inline]
-#[cfg(feature = "docker")]
 pub(crate) fn starts_with_zstd_frame(bytes: &[u8]) -> bool {
     bytes.starts_with(ZSTD_FRAME_MAGIC)
 }

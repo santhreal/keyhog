@@ -24,6 +24,9 @@ use super::evidence::{
 use super::workload::MeasurementShapeEvidence;
 use super::{is_gpu_backend, AutorouteRoutingError, AUTOROUTE_CALIBRATION_TRIALS};
 
+const MIN_WARM_TRIAL_WINDOW: Duration = Duration::from_millis(10);
+const MAX_WARM_TRIAL_REPETITIONS: u32 = 1_024;
+
 pub(super) fn calibrate_fastest_correct_backend(
     scanner: &CompiledScanner,
     _pattern_count: usize,
@@ -110,6 +113,7 @@ pub(super) fn calibrate_fastest_correct_backend(
         ));
     }
 
+    let compiled_default_route = scanner.default_execution_route();
     let mut decision = AutorouteDecision::from_peer_timing_evidence(
         ScanBackend::CpuFallback,
         sample_bytes,
@@ -118,10 +122,12 @@ pub(super) fn calibrate_fastest_correct_backend(
         correctness_digest,
         calibrated_at_unix_ms,
         route_timings,
+        compiled_default_route.phase2_plain_localizer,
+        compiled_default_route.phase2_keyword_localizer,
     );
     let Some(resolved) = decision.resolved_routing_route() else {
         return Err(AutorouteRoutingError::calibration_not_persisted(format!(
-            "calibration timing is inconclusive: no execution route's 95% confidence interval lies below every eligible peer route; reduce competing host load and rerun calibration; evidence: {}",
+            "calibration timing is inconclusive: neither one exact route nor one backend with its compiled default plan is confidence-supported at 95%; reduce competing host load and rerun calibration; evidence: {}",
             decision.confidence_diagnostic(false),
         )));
     };
@@ -189,7 +195,22 @@ fn route_timings_with_cold_cost(
                 ));
             }
         }
-        route_timings.push(RouteTimingEvidence::new(route, measured));
+        let peer_identity = if backend.is_gpu() {
+            Some(
+                scanner
+                    .acquired_gpu_peer_identity(backend)
+                    .map_err(|error| {
+                        AutorouteRoutingError::candidate_backend_rejected(backend, error)
+                    })?,
+            )
+        } else {
+            None
+        };
+        route_timings.push(RouteTimingEvidence::new_with_peer_identity(
+            route,
+            measured,
+            peer_identity,
+        ));
     }
     Ok(route_timings)
 }
@@ -276,6 +297,7 @@ fn measure_candidate_routes(
                 1,
             )?);
         } else {
+            // LAW10: only the warm-up timing value is discarded; trial errors propagate through `?` and abort calibration.
             let _ =
                 measure_candidate_trial(scanner, sample, *route, reference_key, admission_plan, 0)?;
         }
@@ -284,6 +306,7 @@ fn measure_candidate_routes(
         .iter()
         .filter(|(route, _)| route.backend.is_gpu())
     {
+        // LAW10: only the warm-up timing value is discarded; trial errors propagate through `?` and abort calibration.
         let _ = measure_candidate_trial(scanner, sample, *route, reference_key, admission_plan, 0)?;
     }
 
@@ -335,69 +358,105 @@ fn measure_candidate_trial(
 ) -> Result<Duration, AutorouteRoutingError> {
     let backend = route.backend;
     let reported_trial = trial.max(1);
-    scanner.clear_fragment_cache();
+    let preserve_single_dispatch =
+        reported_trial == 1 && (backend == ScanBackend::SimdCpu || backend.is_gpu());
     let gpu_degrade_count_before = if is_gpu_backend(backend) {
         Some(scanner.runtime_status().gpu_degrade_count)
     } else {
         None
     };
-    let started = Instant::now();
-    let matches = scan_calibration_backend(scanner, sample, route, admission_plan)?;
-    let dur = started.elapsed();
-    if let Some(before) = gpu_degrade_count_before {
-        let after = scanner.runtime_status().gpu_degrade_count;
-        if after != before {
-            tracing::error!(
-                target: "keyhog::routing",
-                backend = backend.label(),
-                gpu_degrade_count_before = before,
-                gpu_degrade_count_after = after,
-                "backend rejected by autoroute GPU degrade check"
-            );
-            scanner.clear_fragment_cache();
-            return Err(AutorouteRoutingError::candidate_backend_rejected(
-                backend,
-                format!("GPU degrade count changed from {before} to {after} during calibration"),
-            ));
-        }
-    }
-    if let Err(error) =
-        calibration_candidate_parity_result(backend, reported_trial, &matches, reference_key)
-    {
-        let trial_key = canonical_matches(&matches);
-        let only_in_reference_count =
-            sorted_calibration_difference_count(reference_key, &trial_key);
-        let only_in_trial_count = sorted_calibration_difference_count(&trial_key, reference_key);
-        let differing_fields = differing_canonical_match_fields(reference_key, &trial_key);
-        if backend == ScanBackend::CpuFallback {
-            tracing::error!(
-                target: "keyhog::routing",
-                backend = backend.label(),
-                trial = reported_trial,
-                reference_match_count = reference_key.len(),
-                trial_match_count = trial_key.len(),
-                only_in_reference_count,
-                only_in_trial_count,
-                differing_fields = ?differing_fields,
-                "reference backend produced inconsistent calibration results; autoroute calibration aborted"
-            );
-        } else {
-            tracing::error!(
-                target: "keyhog::routing",
-                backend = backend.label(),
-                trial = reported_trial,
-                reference_match_count = reference_key.len(),
-                trial_match_count = trial_key.len(),
-                only_in_reference_count,
-                only_in_trial_count,
-                differing_fields = ?differing_fields,
-                "backend rejected by autoroute parity check"
-            );
-        }
+    let mut total = Duration::ZERO;
+    let mut repetitions = 0_u32;
+
+    loop {
         scanner.clear_fragment_cache();
-        return Err(error);
+        let started = Instant::now();
+        let matches = scan_calibration_backend(scanner, sample, route, admission_plan)?;
+        total = total.saturating_add(started.elapsed());
+        repetitions += 1;
+
+        if let Some(before) = gpu_degrade_count_before {
+            let after = scanner.runtime_status().gpu_degrade_count;
+            if after != before {
+                tracing::error!(
+                    target: "keyhog::routing",
+                    backend = backend.label(),
+                    gpu_degrade_count_before = before,
+                    gpu_degrade_count_after = after,
+                    "backend rejected by autoroute GPU degrade check"
+                );
+                scanner.clear_fragment_cache();
+                return Err(AutorouteRoutingError::candidate_backend_rejected(
+                    backend,
+                    format!(
+                        "GPU degrade count changed from {before} to {after} during calibration"
+                    ),
+                ));
+            }
+        }
+        validate_calibration_candidate_matches(
+            scanner,
+            backend,
+            reported_trial,
+            &matches,
+            reference_key,
+        )?;
+
+        if preserve_single_dispatch
+            || total >= MIN_WARM_TRIAL_WINDOW
+            || repetitions >= MAX_WARM_TRIAL_REPETITIONS
+        {
+            break;
+        }
     }
-    Ok(dur)
+
+    Ok(total / repetitions)
+}
+
+fn validate_calibration_candidate_matches(
+    scanner: &CompiledScanner,
+    backend: ScanBackend,
+    reported_trial: usize,
+    matches: &[Vec<keyhog_core::RawMatch>],
+    reference_key: &[CanonicalMatch<'_>],
+) -> Result<(), AutorouteRoutingError> {
+    let Err(error) =
+        calibration_candidate_parity_result(backend, reported_trial, matches, reference_key)
+    else {
+        return Ok(());
+    };
+
+    let trial_key = canonical_matches(matches);
+    let only_in_reference_count = sorted_calibration_difference_count(reference_key, &trial_key);
+    let only_in_trial_count = sorted_calibration_difference_count(&trial_key, reference_key);
+    let differing_fields = differing_canonical_match_fields(reference_key, &trial_key);
+    if backend == ScanBackend::CpuFallback {
+        tracing::error!(
+            target: "keyhog::routing",
+            backend = backend.label(),
+            trial = reported_trial,
+            reference_match_count = reference_key.len(),
+            trial_match_count = trial_key.len(),
+            only_in_reference_count,
+            only_in_trial_count,
+            differing_fields = ?differing_fields,
+            "reference backend produced inconsistent calibration results; autoroute calibration aborted"
+        );
+    } else {
+        tracing::error!(
+            target: "keyhog::routing",
+            backend = backend.label(),
+            trial = reported_trial,
+            reference_match_count = reference_key.len(),
+            trial_match_count = trial_key.len(),
+            only_in_reference_count,
+            only_in_trial_count,
+            differing_fields = ?differing_fields,
+            "backend rejected by autoroute parity check"
+        );
+    }
+    scanner.clear_fragment_cache();
+    Err(error)
 }
 
 fn sorted_calibration_difference_count<T: Ord>(left: &[T], right: &[T]) -> usize {

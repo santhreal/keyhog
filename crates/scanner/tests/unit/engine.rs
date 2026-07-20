@@ -27,7 +27,7 @@ fn demo_detector() -> DetectorSpec {
         verify: None,
         keywords: vec!["abc".into()],
         min_confidence: Some(0.0),
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }
 }
 
@@ -50,7 +50,7 @@ fn mx_api_detector() -> DetectorSpec {
         verify: None,
         keywords: vec!["MX_API_KEY".into(), "api_key".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }
 }
 
@@ -73,7 +73,7 @@ fn service_context_detector() -> DetectorSpec {
         verify: None,
         keywords: vec!["HARDTOK".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }
 }
 
@@ -581,7 +581,7 @@ fn strong_secret_assignment_surfaces_printable_base64_transport_value() {
 #[test]
 fn boundary_scan_uses_bounded_detector_match_width_past_1024_bytes() {
     let mut detector = demo_detector();
-    detector.patterns[0].regex = r"LONG_[A-Za-z0-9]{1500}_END".into();
+    detector.patterns[0].regex = r"LONG_[A-Za-z0-9]{800}MID[A-Za-z0-9]{800}_END".into();
     detector.keywords = vec!["LONG_".into()];
     let mut config = ScannerConfig::default();
     config.entropy_enabled = false;
@@ -591,7 +591,7 @@ fn boundary_scan_uses_bounded_detector_match_width_past_1024_bytes() {
         .unwrap()
         .with_config(config);
 
-    let secret = format!("LONG_{}_END", repeated_alnum(1500));
+    let secret = format!("LONG_{}MID{}_END", repeated_alnum(800), repeated_alnum(800));
     let split_at = 1200;
     let mut left = "prefix\n".to_string();
     left.push_str(&secret[..split_at]);
@@ -753,9 +753,12 @@ fn generic_assignment_prefilter_collects_gpu_position_lines_once() {
 // the keyword bridge (which isolates the keyword change from the entropy path).
 #[test]
 fn generic_assignment_bridges_bare_pass_abbreviation() {
-    let scanner =
-        CompiledScanner::compile(vec![demo_detector(), embedded_detector("generic-secret")])
-            .unwrap();
+    let scanner = CompiledScanner::compile(vec![
+        demo_detector(),
+        embedded_detector("generic-secret"),
+        embedded_detector("generic-keyword-secret"),
+    ])
+    .unwrap();
     let value = "k7m2p9q4t6w1x8z3v5";
     for key in ["GRAPHITE_PASS", "DB_PASS", "jenkins_pass", "ses.pass"] {
         let matches = scanner.scan(&chunk(&format!("{key} = \"{value}\"")));
@@ -859,7 +862,7 @@ fn generic_keyword_low_entropy_knob_gates_low_entropy_values() {
     );
 }
 
-// ── engine/segment_attribution.rs ───────────────────────────────────
+// ── segment_attribution.rs ──────────────────────────────────────────
 // Covered in segment_attribution.rs unit module.
 
 // ── engine/boundary.rs ──────────────────────────────────────────────

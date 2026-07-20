@@ -1,9 +1,9 @@
 //! Precision regression for the structural-password-slot family masks.
 //!
-//! The `url-credentials` / `sql-password` / `cli-password-flag` detectors are
-//! strong-anchor AND `is_service_anchored`, so the suppression pipeline sets
-//! `bypass_shape_gates = true` and SKIPS the Tier-B repetitive-run / repeated-
-//! block mask gates that normally drop a redaction mask. `is_confident_dictionary_word`
+//! The `generic-password` / `url-credentials` / `sql-password` /
+//! `cli-password-flag` detectors prove a structural slot, so the suppression
+//! pipeline skips the Tier-B repetitive-run / repeated-block mask gates that
+//! normally drop a redaction mask. `is_confident_dictionary_word`
 //! cannot catch a mask: `xxxxxxxx` / `12345678` have improbable English bigrams,
 //! so the model is (correctly) NOT confident they are words, so without a second
 //! guard the strong anchor surfaces every `--password xxxxxxxx` / `IDENTIFIED BY
@@ -25,13 +25,18 @@ use support::contracts::{make_chunk, scanner};
 use keyhog_core::Chunk;
 use keyhog_scanner::CompiledScanner;
 
-const FAMILY: [&str; 3] = ["url-credentials", "sql-password", "cli-password-flag"];
+const FAMILY: [&str; 4] = [
+    "generic-password",
+    "url-credentials",
+    "sql-password",
+    "cli-password-flag",
+];
 
 fn matches(s: &CompiledScanner, chunk: &Chunk) -> Vec<(String, String)> {
     s.clear_fragment_cache();
     s.scan(chunk)
         .into_iter()
-        .map(|m| (m.detector_id.to_string(), m.credential.to_string()))
+        .map(|m| (m.detector_id.to_string(), m.credential.as_str().to_string()))
         .collect()
 }
 
@@ -79,6 +84,14 @@ fn cli_single_char_mask_suppressed() {
     assert!(
         !family_surfaces("deploy --password xxxxxxxx", "xxxxxxxx"),
         "a single-letter --password mask must be dropped"
+    );
+}
+
+#[test]
+fn generic_assignment_single_char_mask_suppressed() {
+    assert!(
+        !family_surfaces("Pwd=xxxxxxxxxxxx", "xxxxxxxxxxxx"),
+        "a single-letter generic password mask must be dropped"
     );
 }
 
@@ -162,6 +175,14 @@ fn cli_repeated_zero_mask_suppressed() {
     );
 }
 
+#[test]
+fn generic_assignment_digit_only_value_suppressed() {
+    assert!(
+        !family_surfaces("Pwd=123456789012", "123456789012"),
+        "a pure-digit generic password value must be dropped"
+    );
+}
+
 // ── RECALL the family must KEEP, genuine random passwords (≥3 distinct) ─────
 
 #[test]
@@ -200,6 +221,18 @@ fn cli_low_alpha_password_still_surfaces() {
             "i8cr1w!"
         ),
         "a 4-distinct-letter low-alpha --password value must STILL surface"
+    );
+}
+
+#[test]
+fn generic_assignment_mixed_password_still_surfaces() {
+    assert!(
+        surfaces_under(
+            "Driver={PostgreSQL};Pwd=Odbc5ecretPwLong22Yz;",
+            "generic-password",
+            "Odbc5ecretPwLong22Yz"
+        ),
+        "a mixed structural password must not be reclassified as a type name"
     );
 }
 

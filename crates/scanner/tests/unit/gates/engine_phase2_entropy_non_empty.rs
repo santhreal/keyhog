@@ -27,7 +27,7 @@ fn engine_phase2_entropy_non_empty() {
         "is_entropy_appropriate_inner(",
         "has_isolated_bare_secret_candidate_with_lines_and_policy(",
         "has_lower_dash_app_password_candidate_with_precomputed_keywords_and_policy(",
-        "find_entropy_secrets_with_precomputed_keywords_and_policy(",
+        "find_classified_entropy_secrets_with_precomputed_keywords_and_policy(",
     ] {
         assert!(
             prod.contains(required),

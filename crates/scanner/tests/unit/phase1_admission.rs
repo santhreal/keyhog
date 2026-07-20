@@ -18,6 +18,8 @@ fn scanner() -> CompiledScanner {
         }],
         keywords: vec!["ghp_".into()],
         min_confidence: Some(0.0),
+        match_confidence: keyhog_core::detector_spec_by_id("github-classic-pat")
+            .and_then(|detector| detector.match_confidence),
         ..Default::default()
     }])
     .expect("phase-1 admission scanner compiles")
@@ -275,7 +277,12 @@ fn oversized_prefixless_phase2_row_keeps_cpu_admission_authoritative() {
     const TOKEN: &str = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn";
     let mut config = ScannerConfig::default();
     config.min_confidence = 0.0;
-    let scanner = scanner().with_config(config);
+    let generic = keyhog_core::detector_spec_by_id("generic-keyword-secret")
+        .expect("embedded generic keyword detector")
+        .clone();
+    let scanner = CompiledScanner::compile(vec![generic])
+        .expect("compile detector-owned generic plan")
+        .with_config(config);
     let mut data = "x".repeat(BYTES);
     let assignment = format!("secretKey=\"{TOKEN}\"\n");
     data.replace_range(BYTES - assignment.len().., &assignment);

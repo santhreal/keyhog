@@ -27,7 +27,7 @@ fn backend_self_test_json_skip_contract() {
     assert_eq!(parsed["status"], "skip");
     assert_eq!(parsed["exit_code"], 0);
     assert_eq!(parsed["gpu_available"], false);
-    assert_eq!(parsed["recommended_backend"], "simd-regex");
+    assert_eq!(parsed["route_selection"], "not_measured");
     assert_eq!(parsed["probes"][0]["name"], "gpu_adapter");
     assert_eq!(parsed["probes"][0]["status"], "skip");
 }

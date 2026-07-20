@@ -132,50 +132,9 @@ pub(crate) fn max_repeat_run(credential: &str) -> f64 {
     longest_repeat_run_len(credential) as f64 / len as f64
 }
 
-/// Absolute run length at/above which a credential is a degenerate placeholder
-/// regardless of detector class: no real high-entropy secret body carries a run
-/// of this many identical characters (probability for a base32/hex/base64 body
-/// is vanishing), while synthetic placeholders (`AKIAXXXXXXXXXXXXXXXX`,
-/// `key=00000000000000`, `aaaa…`) routinely do. Length-agnostic, so it catches
-/// fixed-prefix placeholders whose prefix dilutes [`max_repeat_run`] below the
-/// per-class ratio gate.
-const DEGENERATE_RUN_LEN: usize = 10;
-
-/// True if `credential` contains a degenerate single-character run (>=
-/// [`DEGENERATE_RUN_LEN`] identical bytes), a placeholder/padding artifact no
-/// real secret body carries. Single source of truth for the run heuristic:
-/// consumed by [`apply_post_ml_penalties`] (both detector classes) AND by
-/// `prefixes::known_prefix_confidence_floor` (so a known-prefix placeholder like
-/// `AKIAXXXXXXXXXXXXXXXX` is NOT floored back to 0.8 after the penalty crushes
-/// it (exactly parallel to the placeholder-word skip)).
-pub(crate) fn is_degenerate_repeat(credential: &str) -> bool {
-    longest_repeat_run_len(credential) >= DEGENERATE_RUN_LEN
+pub(crate) fn is_degenerate_repeat_at(credential: &str, minimum_run_length: usize) -> bool {
+    longest_repeat_run_len(credential) >= minimum_run_length
 }
-
-/// Multiplier applied when a credential literally contains a placeholder word
-/// (`EXAMPLE`, `PLACEHOLDER`, …) on its surface or decoded form: it is a doc
-/// sample, not a live secret. Single owner for the placeholder-word slam so the
-/// surface-form and decoded-form paths cannot drift to different factors.
-const PLACEHOLDER_WORD_PENALTY: f64 = 0.05;
-
-/// Multiplier applied when a value's byte alphabet is so small it is effectively
-/// one repeated symbol (`char_diversity` below the per-class floor), a padding /
-/// placeholder artifact, not a real high-entropy secret body. Shared by the named
-/// and generic detector branches (same magnitude, different diversity threshold).
-const LOW_DIVERSITY_PENALTY: f64 = 0.1;
-
-/// Multiplier applied when a value's SHAPE is degenerate: a single-character run
-/// that is a large fraction of the token or long in absolute terms
-/// ([`is_degenerate_repeat`]). No real secret body carries such a run. Shared by
-/// the named and generic detector branches.
-const DEGENERATE_SHAPE_PENALTY: f64 = 0.1;
-
-/// Multiplier applied when decode-through proves the value is a DATA ENVELOPE,
-/// not a credential: it base64/hex-decodes to a binary asset (magic bytes) or a
-/// full protobuf message, is a uniform random-base64 blob, or is a double-base64
-/// wrapper. Slammed hardest, no service publishes a secret in this shape, so
-/// all three data-envelope arms share one factor.
-const DATA_ENVELOPE_PENALTY: f64 = 0.02;
 
 /// Apply post-ML penalties based on placeholder, diversity, repetition, and
 /// decoded-envelope evidence.
@@ -197,6 +156,7 @@ pub(crate) fn apply_post_ml_penalties_with_encoded_text_lift(
     is_named: bool,
     allow_encoded_text_secret: bool,
     allow_canonical_hex_key: bool,
+    policy: keyhog_core::DetectorPostMatchConfidenceSpec,
 ) -> f64 {
     if credential.is_empty() {
         return score;
@@ -216,7 +176,7 @@ pub(crate) fn apply_post_ml_penalties_with_encoded_text_lift(
         && !has_decoded_placeholder
         && has_credential_url_userinfo_without_placeholder(credential);
     if (has_surface_placeholder || has_decoded_placeholder) && !placeholder_is_only_url_host {
-        adjusted *= PLACEHOLDER_WORD_PENALTY;
+        adjusted *= policy.placeholder_multiplier;
     }
     if is_named {
         // Named detectors: a small-alphabet body (64-char hex has ≤ 16 distinct
@@ -224,25 +184,29 @@ pub(crate) fn apply_post_ml_penalties_with_encoded_text_lift(
         // credential, not an FP - the service anchor already proved it. Only
         // penalize DEGENERATE values (effectively one repeated character), which
         // no real key has, so a Linode 64-hex PAT survives but `aaaa…aaaa` dies.
-        if char_diversity(credential) < 0.1 {
-            adjusted *= LOW_DIVERSITY_PENALTY;
+        if char_diversity(credential) < policy.minimum_byte_diversity {
+            adjusted *= policy.low_diversity_multiplier;
         }
         // Degenerate repeat: a run that is either a large FRACTION of the token
-        // (ratio > 0.8) OR long in ABSOLUTE terms (>= DEGENERATE_RUN_LEN). The
+        // ratio or absolute limit compiled from this detector's TOML. The
         // absolute arm is load-bearing because even the service anchor cannot
         // rescue an all-`X` body: `(?-i)(AKIA|ASIA)[0-9A-Z]{16}` matches
         // `AKIAXXXXXXXXXXXXXXXX`, whose 4-char prefix dilutes the ratio to exactly
         // 0.8 (NOT > 0.8) while its 16-char `X` run is plainly synthetic. One
         // penalty either way (no double-count with the ratio arm).
-        if max_repeat_run(credential) > 0.8 || is_degenerate_repeat(credential) {
-            adjusted *= DEGENERATE_SHAPE_PENALTY;
+        if max_repeat_run(credential) > policy.maximum_repeat_ratio
+            || is_degenerate_repeat_at(credential, policy.degenerate_run_min_length)
+        {
+            adjusted *= policy.degenerate_repeat_multiplier;
         }
     } else {
-        if !allow_canonical_hex_key && char_diversity(credential) < 0.3 {
-            adjusted *= LOW_DIVERSITY_PENALTY;
+        if !allow_canonical_hex_key && char_diversity(credential) < policy.minimum_byte_diversity {
+            adjusted *= policy.low_diversity_multiplier;
         }
-        if max_repeat_run(credential) > 0.5 || is_degenerate_repeat(credential) {
-            adjusted *= DEGENERATE_SHAPE_PENALTY;
+        if max_repeat_run(credential) > policy.maximum_repeat_ratio
+            || is_degenerate_repeat_at(credential, policy.degenerate_run_min_length)
+        {
+            adjusted *= policy.degenerate_repeat_multiplier;
         }
         // Decode-through coherence (generic detectors only). A generic
         // high-entropy candidate that base64/hex-decodes to an identifiable
@@ -253,7 +217,9 @@ pub(crate) fn apply_post_ml_penalties_with_encoded_text_lift(
         // detector (skipped here) and effectively never on a real generic
         // secret. This is keyhog's decode-through advantage feeding scoring.
         if !allow_canonical_hex_key && decode_evidence.is_binary_payload() {
-            adjusted *= DATA_ENVELOPE_PENALTY;
+            if let Some(multiplier) = policy.data_envelope_multiplier {
+                adjusted *= multiplier;
+            }
         }
         // Uniform random-base64 blob (44+ chars, all-base64 alphabet, with
         // `+`/`/`, padding, or high alphabet diversity). The alphabet check
@@ -270,7 +236,9 @@ pub(crate) fn apply_post_ml_penalties_with_encoded_text_lift(
             && !allow_encoded_text_secret
             && crate::decode_structure::looks_like_uniform_base64_blob(credential)
         {
-            adjusted *= DATA_ENVELOPE_PENALTY;
+            if let Some(multiplier) = policy.data_envelope_multiplier {
+                adjusted *= multiplier;
+            }
         }
         // Double-base64 wrapper (k8s `data:` shape: outer base64 decodes to
         // bytes that are themselves all standard-base64 alphabet, length
@@ -281,7 +249,9 @@ pub(crate) fn apply_post_ml_penalties_with_encoded_text_lift(
             && !allow_encoded_text_secret
             && decode_evidence.decoded_is_base64_blob()
         {
-            adjusted *= DATA_ENVELOPE_PENALTY;
+            if let Some(multiplier) = policy.data_envelope_multiplier {
+                adjusted *= multiplier;
+            }
         }
     }
     finalize_confidence(adjusted)
@@ -329,6 +299,7 @@ pub(crate) fn apply_path_confidence_penalties(
     score: f64,
     path: Option<&str>,
     penalize: bool,
+    fixture_path_multiplier: f64,
 ) -> f64 {
     // Even when there's no path to inspect, the score must still pass
     // through the NaN-safety barrier - a NaN entering this function
@@ -348,7 +319,11 @@ pub(crate) fn apply_path_confidence_penalties(
                 .any(|word| component.eq_ignore_ascii_case(word.lower()))
     });
 
-    let adjusted = if is_fixture_like { score * 0.5 } else { score };
+    let adjusted = if is_fixture_like {
+        score * fixture_path_multiplier
+    } else {
+        score
+    };
     finalize_confidence(adjusted)
 }
 

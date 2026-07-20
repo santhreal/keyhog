@@ -88,7 +88,7 @@ Private-MAC: 8a1b2c3d4e5f60718293a4b5c6d7e8f901234567
         let chunks = history_chunks(&repo);
         let text: String = chunks
             .iter()
-            .map(|c| c.data.to_string())
+            .map(|c| c.data.as_str().to_owned())
             .collect::<Vec<_>>()
             .join("\n");
         assert!(

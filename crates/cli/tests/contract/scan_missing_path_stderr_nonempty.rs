@@ -1,6 +1,6 @@
 //! Contract: missing scan path exits 2 and prints actionable stderr.
 
-use crate::e2e::support::binary;
+use crate::support::binary;
 use std::process::Command;
 
 #[test]

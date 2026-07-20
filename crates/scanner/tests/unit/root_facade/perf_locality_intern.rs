@@ -22,7 +22,7 @@ fn detector(id: &str, name: &str, service: &str, regex: &str, keyword: &str) -> 
         }],
         keywords: vec![keyword.to_string()],
         min_confidence: Some(0.1),
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }
 }
 

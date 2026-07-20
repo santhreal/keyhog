@@ -7,6 +7,7 @@ static UNIVERSAL_REJECTIONS: LazyLock<UniversalRejectionRules> = LazyLock::new(|
     UniversalRejectionRules::parse(include_str!(
         "../../../../rules/entropy-universal-rejections.toml"
     ))
+    // LAW10: malformed embedded rejection policy aborts initialization with the exact error; no reduced suppression policy is substituted.
     .unwrap_or_else(|error| {
         panic!(
             "rules/entropy-universal-rejections.toml is invalid: {error}. Fix the bundled \

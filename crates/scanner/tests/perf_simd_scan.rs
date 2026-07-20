@@ -78,7 +78,7 @@ fn make_chunk(data: &str) -> Chunk {
 
 fn finding_keys(ms: &[RawMatch]) -> BTreeSet<(String, String)> {
     ms.iter()
-        .map(|m| (m.detector_id.to_string(), m.credential.to_string()))
+        .map(|m| (m.detector_id.to_string(), m.credential.as_str().to_string()))
         .collect()
 }
 

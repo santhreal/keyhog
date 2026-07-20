@@ -62,7 +62,8 @@ fn build_sources_rejects_partial_github_source_even_with_filesystem_path() {
     args.github_org = Some("acme".to_string());
     let text = build_sources_error(&args);
     assert!(
-        text.contains("GitHub organization source") && text.contains("--github-token"),
+        (text.contains("GitHub source") || text.contains("GitHub organization source"))
+            && text.contains("--github-token"),
         "partial GitHub source error must name the missing companion flag; got: {text}"
     );
 }

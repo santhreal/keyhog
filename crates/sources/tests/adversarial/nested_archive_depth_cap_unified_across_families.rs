@@ -71,7 +71,7 @@ fn scan_outer(file_name: &str, outer_bytes: &[u8]) -> (Vec<String>, Vec<String>)
     let source = FilesystemSource::new(dir.path().to_path_buf());
     let rows: Vec<_> = source.chunks().collect();
     let (chunks, errors) = split_chunk_results(&rows);
-    let bodies: Vec<String> = chunks.iter().map(|c| c.data.to_string()).collect();
+    let bodies: Vec<String> = chunks.iter().map(|c| c.data.as_str().to_owned()).collect();
     let error_texts: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
     (bodies, error_texts)
 }

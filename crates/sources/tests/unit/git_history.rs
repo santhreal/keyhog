@@ -145,7 +145,7 @@ fn git_history_hunk_flush_uses_resolved_git_blob_byte_cap() {
     );
     let joined = chunks
         .iter()
-        .map(|chunk| chunk.data.to_string())
+        .map(|chunk| chunk.data.as_str().to_owned())
         .collect::<Vec<_>>()
         .join("\n");
     for expected in ["hist_one", "hist_two", "hist_three"] {

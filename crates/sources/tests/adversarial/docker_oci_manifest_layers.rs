@@ -278,7 +278,8 @@ fn docker_zstd_layer_refuses_window_above_budget() {
 #[test]
 fn docker_layer_filesystem_error_propagates() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let err = TestApi
+    // KH-1446: a single chunk Err is a row, not a fatal rewrite abort.
+    let rows = TestApi
         .docker_rewrite_layer_chunks(
             vec![Err(keyhog_core::SourceError::Other(
                 "layer reader failed".into(),
@@ -287,7 +288,11 @@ fn docker_layer_filesystem_error_propagates() {
             dir.path(),
             "layer.tar",
         )
-        .expect_err("layer source error must propagate");
+        .expect("rewrite must continue with error rows");
+    assert_eq!(rows.len(), 1);
+    let err = rows[0]
+        .as_ref()
+        .expect_err("layer source error must be a row");
     assert!(
         err.to_string().contains("layer reader failed"),
         "unexpected docker layer error: {err}"
@@ -326,7 +331,9 @@ fn docker_layer_rewrite_preserves_offsets_and_rejects_bad_paths() {
         )
         .expect("rewrite");
     assert_eq!(rewritten.len(), 1);
-    let chunk = &rewritten[0];
+    let chunk = rewritten[0]
+        .as_ref()
+        .expect("happy-path rewrite row must be Ok");
     assert_eq!(chunk.metadata.source_type.as_ref(), "docker");
     assert_eq!(
         chunk.metadata.path.as_deref(),
@@ -342,14 +349,17 @@ fn docker_layer_rewrite_preserves_offsets_and_rejects_bad_paths() {
         data: "x".into(),
         metadata: keyhog_core::ChunkMetadata::default(),
     };
-    let err = TestApi
+    let rows = TestApi
         .docker_rewrite_layer_chunks(
             vec![Ok(missing_path)],
             "keyhog:test",
             &layer_root,
             "layer.tar",
         )
-        .expect_err("missing path must fail");
+        .expect("missing path is a row error, not rewrite abort");
+    let err = rows[0]
+        .as_ref()
+        .expect_err("missing path must fail as a row");
     assert!(
         err.to_string().contains("without a file path"),
         "unexpected missing-path error: {err}"
@@ -363,17 +373,62 @@ fn docker_layer_rewrite_preserves_offsets_and_rejects_bad_paths() {
             ..Default::default()
         },
     };
-    let err = TestApi
+    let rows = TestApi
         .docker_rewrite_layer_chunks(
             vec![Ok(outside_chunk)],
             "keyhog:test",
             &layer_root,
             "layer.tar",
         )
-        .expect_err("outside path must fail");
+        .expect("outside path is a row error, not rewrite abort");
+    let err = rows[0]
+        .as_ref()
+        .expect_err("outside path must fail as a row");
     assert!(
         err.to_string().contains("outside layer root"),
         "unexpected outside-root error: {err}"
+    );
+}
+
+/// KH-1446: an early Err row must not drop later Ok chunks in the same layer.
+#[cfg(feature = "docker")]
+#[test]
+fn docker_layer_rewrite_continues_after_early_chunk_error() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let layer_root = dir.path().join("layer");
+    std::fs::create_dir(&layer_root).expect("mkdir layer");
+    let file = layer_root.join("ok.env");
+    std::fs::write(&file, b"OK=1\n").expect("write");
+    let ok_chunk = keyhog_core::Chunk {
+        data: "OK=1\n".into(),
+        metadata: keyhog_core::ChunkMetadata {
+            path: Some(file.display().to_string().into()),
+            ..Default::default()
+        },
+    };
+    let rows = TestApi
+        .docker_rewrite_layer_chunks(
+            vec![
+                Err(keyhog_core::SourceError::Other("early fail".into())),
+                Ok(ok_chunk),
+            ],
+            "keyhog:test",
+            &layer_root,
+            "layer.tar",
+        )
+        .expect("mixed rows must rewrite without abort");
+    assert_eq!(rows.len(), 2);
+    assert!(
+        rows[0]
+            .as_ref()
+            .err()
+            .is_some_and(|e| e.to_string().contains("early fail")),
+        "first row must remain the early error"
+    );
+    let ok = rows[1].as_ref().expect("second row must still rewrite");
+    assert_eq!(
+        ok.metadata.path.as_deref(),
+        Some("keyhog:test:layer.tar:ok.env")
     );
 }
 

@@ -24,7 +24,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
 
-use crate::e2e::support::apply_default_scan_backend;
+use crate::support::apply_default_scan_backend;
 use tempfile::TempDir;
 
 fn binary() -> PathBuf {

@@ -53,7 +53,7 @@ fn synthetic_hot_scanner(hot_prefix: bool) -> CompiledScanner {
         keywords: vec!["ZEPHYR_".into()],
         simdsieve_prefixes: hot_prefix.then(|| "ZEPHYR_".into()).into_iter().collect(),
         min_confidence: Some(0.0),
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }])
     .expect("synthetic non-Stripe hot detector compiles")
 }

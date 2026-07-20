@@ -9,9 +9,10 @@
 //!    while a scan was in flight no longer leak credentials to the next
 //!    allocator request, swap, or post-mortem core dump.
 //! 2. Refuses `Debug` / `Display` printing - every leak path through `{:?}`
-//!    or `{}` becomes `<redacted N bytes>` instead of the bytes themselves.
-//!    Raw byte access stays crate-internal; integration tests reach it only
-//!    through the hidden `testing` facade.
+//!    or `{}` becomes `<redacted N bytes>` instead of the bytes themselves
+//!    (`Credential` and `SensitiveString` both redact Display, KH-1424).
+//!    Raw byte access is via `expose_secret` / `SensitiveString::as_str`;
+//!    integration tests reach it only through the intentional surface.
 //! 3. Is `Clone` and serializable via `serde` (uses the inner zeroizing
 //!    bytes for `Serialize`, decodes back to a fresh `Credential` for
 //!    `Deserialize`). The serialization channel is the responsibility of
@@ -260,7 +261,11 @@ impl SensitiveString {
         }
     }
 
-    pub(crate) fn as_str(&self) -> &str {
+    /// Explicit plaintext access. `Display`/`Debug` redact (KH-1424); every
+    /// intentional reveal goes through this method (or `Deref`/`AsRef`) so
+    /// `git grep as_str` / format surfaces stay auditable.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
         self.inner.as_str()
     }
 }
@@ -334,8 +339,10 @@ impl From<&String> for SensitiveString {
 }
 
 impl std::fmt::Display for SensitiveString {
+    /// Same redaction as `Debug` / `Credential::Display` (KH-1424). Plaintext
+    /// leaves only through [`Self::as_str`] / `Deref` / `AsRef`.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
+        write!(f, "<redacted {} bytes>", self.inner.len())
     }
 }
 
@@ -346,9 +353,7 @@ impl std::fmt::Debug for SensitiveString {
     /// emitted `SensitiveString("<raw content>")`, leaking those bytes into
     /// any `{:?}` print, `tracing::debug!(?chunk)` span, or panic message.
     /// Mirror the `Credential::Debug` byte-count redaction (kimi-wave1
-    /// finding 1.1). Note: `Display` intentionally still exposes the bytes -
-    /// callers that genuinely need the content format with `{}`, which is the
-    /// auditable surface; `{:?}` must never be one.
+    /// finding 1.1). `Display` also redacts (KH-1424); use [`Self::as_str`].
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "SensitiveString(<redacted {} bytes>)", self.inner.len())
     }

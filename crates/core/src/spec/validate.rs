@@ -74,8 +74,39 @@ pub fn validate_detector(spec: &DetectorSpec) -> Vec<QualityIssue> {
     validate_decoded_hex_key_material_lengths(spec, &mut issues);
     validate_canonical_hex_key_material(spec, &mut issues);
     validate_credential_shape(spec, &mut issues);
+    validate_generic_assignment_suffixes(spec, &mut issues);
     validate_detector_allowlists(spec, &mut issues);
     issues
+}
+fn validate_generic_assignment_suffixes(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
+    for (field, suffixes) in [
+        ("generic_vendor_suffixes", &spec.generic_vendor_suffixes),
+        (
+            "generic_assignment_tail_suffixes",
+            &spec.generic_assignment_tail_suffixes,
+        ),
+    ] {
+        if !suffixes.is_empty() && spec.kind != crate::DetectorKind::Phase2Generic {
+            issues.push(QualityIssue::Error(format!(
+                "{field} is only valid for a phase2-generic detector"
+            )));
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for suffix in suffixes {
+            if suffix.is_empty()
+                || suffix != &suffix.to_ascii_lowercase()
+                || !suffix.bytes().all(|byte| byte.is_ascii_alphanumeric())
+            {
+                issues.push(QualityIssue::Error(format!(
+                    "{field} entry {suffix:?} must be non-empty lowercase ASCII alphanumeric"
+                )));
+            } else if !seen.insert(suffix.as_str()) {
+                issues.push(QualityIssue::Error(format!(
+                    "{field} contains duplicate suffix {suffix:?}"
+                )));
+            }
+        }
+    }
 }
 
 fn validate_decode_transforms(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
@@ -459,12 +490,6 @@ fn validate_thresholds(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
     if spec.max_len.is_some() && !spec.owns_entropy_policy() {
         issues.push(QualityIssue::Error(
             "max_len is only valid for detectors that own generic entropy policy".to_string(),
-        ));
-    }
-    if spec.generic_vendor_suffix_fallback && spec.kind != crate::DetectorKind::Phase2Generic {
-        issues.push(QualityIssue::Error(
-            "generic_vendor_suffix_fallback is only valid for a phase2-generic detector"
-                .to_string(),
         ));
     }
     if let Some(mc) = spec.min_confidence {

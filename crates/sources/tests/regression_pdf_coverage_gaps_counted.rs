@@ -151,6 +151,11 @@ fn pdf_extraction_failures_emit_source_errors_and_count_unreadable_gaps() {
         2,
         "encrypted PDFs and corrupt FlateDecode streams must both be surfaced as unreadable coverage gaps"
     );
+    assert_eq!(
+        skip_counts().binary,
+        0,
+        "errored empty PDF extraction must not also be reported as a valid image-only PDF"
+    );
 }
 
 #[test]

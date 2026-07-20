@@ -49,7 +49,7 @@ fn decode_evidence_feeds_ml_confidence_and_fallback_paths() {
     for relative in [
         "src/confidence/penalties.rs",
         "src/engine/phase2_entropy/gates.rs",
-        "src/engine/phase2_generic_shape.rs",
+        "src/generic_assignment_shape.rs",
     ] {
         let code = uncommented(&source(relative));
         assert!(

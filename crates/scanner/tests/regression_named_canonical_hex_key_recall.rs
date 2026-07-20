@@ -48,7 +48,7 @@ fn matches_for(body: &str) -> Vec<(String, String)> {
         .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
         .into_iter()
         .flatten()
-        .map(|m| (m.detector_id.to_string(), m.credential.to_string()))
+        .map(|m| (m.detector_id.to_string(), m.credential.as_str().to_string()))
         .collect()
 }
 
@@ -82,7 +82,7 @@ fn alchemy_matches_with_declared_hex_policy(declare_policy: bool) -> Vec<String>
             },
         })
         .into_iter()
-        .map(|finding| finding.credential.to_string())
+        .map(|finding| finding.credential.as_str().to_string())
         .collect()
 }
 

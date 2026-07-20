@@ -49,6 +49,25 @@ fn report_phase2_gpu_catalog_loss(reason: impl std::fmt::Display) {
         );
     }
 }
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Phase2GpuDfaProgramKind {
+    CudaCompatible,
+    SubgroupCoalesced,
+}
+
+impl Phase2GpuDfaProgramKind {
+    fn for_backend_id(backend_id: Option<&str>) -> Self {
+        if backend_id == Some("cuda") {
+            Self::CudaCompatible
+        } else {
+            Self::SubgroupCoalesced
+        }
+    }
+
+    const fn use_subgroup_coalesce(self) -> bool {
+        matches!(self, Self::SubgroupCoalesced)
+    }
+}
 
 #[derive(Debug)]
 pub(crate) struct Phase2GpuDfaCatalog {
@@ -89,6 +108,7 @@ impl Phase2GpuDfaCatalog {
     fn build(
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
         always_active_indices: &[usize],
+        program_kind: Phase2GpuDfaProgramKind,
     ) -> Option<Self> {
         let all_candidates =
             prefixless_always_active_candidates(phase2_patterns, always_active_indices);
@@ -98,6 +118,7 @@ impl Phase2GpuDfaCatalog {
             candidates.len(),
             all_candidates.len().saturating_sub(candidates.len()),
             &candidates,
+            program_kind,
         )
     }
 
@@ -106,6 +127,7 @@ impl Phase2GpuDfaCatalog {
         ascii_candidate_count: usize,
         excluded_ascii_redundant_patterns: usize,
         candidates: &[usize],
+        program_kind: Phase2GpuDfaProgramKind,
     ) -> Option<Self> {
         if candidates.is_empty() {
             return (ascii_candidate_count == 0).then_some(Self {
@@ -121,6 +143,7 @@ impl Phase2GpuDfaCatalog {
         build_shards_recursive(
             phase2_patterns,
             candidates,
+            program_kind.use_subgroup_coalesce(),
             &mut shards,
             &mut uncovered_ascii_patterns,
         );
@@ -162,6 +185,20 @@ impl Phase2GpuDfaCatalog {
             excluded_ascii_redundant_patterns,
             resident: resident::Phase2GpuDfaCatalogResident::default(),
         })
+    }
+
+    #[cfg(test)]
+    fn single_shard_catalogs_for_test(&self) -> Vec<Self> {
+        self.shards
+            .iter()
+            .cloned()
+            .map(|shard| Self {
+                shards: vec![shard],
+                uncovered_ascii_patterns: self.uncovered_ascii_patterns,
+                excluded_ascii_redundant_patterns: self.excluded_ascii_redundant_patterns,
+                resident: resident::Phase2GpuDfaCatalogResident::default(),
+            })
+            .collect()
     }
 
     pub(crate) fn scan_admission_refs(
@@ -253,12 +290,16 @@ impl Phase2GpuDfaCatalogCache {
         &self,
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
         always_active_indices: &[usize],
-        _backend_id: Option<&'static str>,
+        backend_id: Option<&'static str>,
     ) -> Option<&Phase2GpuDfaCatalog> {
         self.catalog
             .get_or_init(|| {
                 let started = std::time::Instant::now();
-                let catalog = Phase2GpuDfaCatalog::build(phase2_patterns, always_active_indices);
+                let catalog = Phase2GpuDfaCatalog::build(
+                    phase2_patterns,
+                    always_active_indices,
+                    Phase2GpuDfaProgramKind::for_backend_id(backend_id),
+                );
                 let elapsed_ns =
                     (started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64).max(1);
                 self.preparation_ns

@@ -92,8 +92,8 @@ fn planted_secret() -> String {
     concat!("AKIA", "QYLPMN5HFIQR7XYA").to_string()
 }
 
-/// A generic key/value secret that reports below a 0.99 confidence floor.
-const LOW_CONFIDENCE_SECRET: &str = "aAbBcCdDeEfFgGhH12345678";
+/// A real named token that test/example context scores below a 0.99 floor.
+const LOW_CONFIDENCE_SECRET: &str = "ap_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d";
 
 /// Isolated daemon with its own `XDG_RUNTIME_DIR`, so `default_socket_path()`
 /// (used by both `daemon start` and `scan --daemon`) resolves to a per-test
@@ -262,15 +262,37 @@ fn daemon_route_honors_config_min_confidence_floor() {
     let daemon = Daemon::start();
     let work = TempDir::new().expect("work tempdir");
 
+    let fixture_dir = work.path().join("examples");
+    std::fs::create_dir_all(&fixture_dir).expect("create example fixture directory");
+    let path = write_fixture(
+        &fixture_dir,
+        "sample.txt",
+        &format!("{LOW_CONFIDENCE_SECRET}\n"),
+    );
+
+    let baseline = scan(&daemon, &path, "--daemon=off");
+    let baseline_findings = findings(&baseline, "in-process baseline");
+    assert_eq!(
+        baseline_findings.len(),
+        1,
+        "baseline must detect exactly the planted Activepieces token; got {baseline_findings:?}"
+    );
+    assert_eq!(
+        baseline_findings[0]["detector_id"], "activepieces-api-key",
+        "baseline must preserve detector ownership"
+    );
+    let baseline_confidence = baseline_findings[0]["confidence"]
+        .as_f64()
+        .expect("baseline confidence is numeric");
+    assert!(
+        baseline_confidence < 0.99,
+        "fixture must remain below the configured floor; got {baseline_confidence}"
+    );
+
     write_fixture(
         work.path(),
         ".keyhog.toml",
         "[scan]\nmin_confidence = 0.99\n",
-    );
-    let path = write_fixture(
-        work.path(),
-        "config.txt",
-        &format!("api_key = \"{LOW_CONFIDENCE_SECRET}\"\n"),
     );
 
     // Reference: in-process honors the config floor and suppresses.
@@ -278,7 +300,7 @@ fn daemon_route_honors_config_min_confidence_floor() {
     let in_process_findings = findings(&in_process, "in-process(--daemon=off)");
     assert!(
         in_process_findings.is_empty(),
-        "control: in-process path must suppress the sub-0.99 generic secret under a \
+        "control: in-process path must suppress the sub-0.99 named token under a \
          .keyhog.toml min_confidence=0.99 floor; got {in_process_findings:?}"
     );
     assert_eq!(

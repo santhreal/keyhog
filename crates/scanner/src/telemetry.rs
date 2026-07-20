@@ -1152,7 +1152,9 @@ pub mod testing {
         let telemetry = Arc::clone(telemetry);
         let _ = std::thread::spawn(move || {
             // LAW10: this cfg(test) helper has no production runtime effect; it joins an expected panic to poison a disposable scoped buffer.
-            let _events = telemetry.events.lock().expect("lock fresh event buffer");
+            let Ok(_events) = telemetry.events.lock() else {
+                panic!("fresh telemetry event buffer was already poisoned");
+            };
             panic!("poison scoped telemetry event buffer");
         })
         .join();

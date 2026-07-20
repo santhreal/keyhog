@@ -26,6 +26,7 @@ pub(crate) fn entropy_match_suppression_stage(
     bpe_max_bytes_per_token: Option<f64>,
     compiled_policy: &crate::entropy::policy::CompiledEntropyPolicy,
     execution_policy: &crate::detector_execution_policy::CompiledDetectorExecutionPolicy,
+    degenerate_run_min_length: usize,
 ) -> Option<EntropyShapeStage> {
     match execution_policy.length.rejection(entropy_match.value.len()) {
         Some(crate::detector_execution_policy::CandidateLengthRejection::TooShort) => {
@@ -80,6 +81,7 @@ pub(crate) fn entropy_match_suppression_stage(
         entropy_match.entropy,
         chunk.metadata.path.as_deref(),
         Some(chunk.metadata.source_type.as_ref()),
+        degenerate_run_min_length,
         canonical_lift,
     ) {
         return Some(stage);

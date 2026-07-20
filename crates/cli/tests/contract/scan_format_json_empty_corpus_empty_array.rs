@@ -1,6 +1,6 @@
 //! Contract: `--format json-envelope` on a clean corpus emits an empty versioned envelope.
 
-use crate::e2e::support::{binary, write_temp_file};
+use crate::support::{binary, write_temp_file};
 use std::process::Command;
 
 #[test]

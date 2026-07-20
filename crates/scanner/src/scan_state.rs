@@ -88,6 +88,8 @@ pub(crate) struct MlPendingMatch {
     pub(crate) context_multiplier: f64,
     /// Detector-owned hard-suppression threshold for `code_context`.
     pub(crate) context_suppression_threshold: Option<f64>,
+    /// Detector-owned penalties applied after optional model scoring.
+    pub(crate) post_match: keyhog_core::DetectorPostMatchConfidenceSpec,
     /// Exact serve-path features computed while source context is still local.
     pub(crate) ml_features: [f32; crate::ml_scorer::NUM_FEATURES],
     /// Producer class baked into the feature vector. Keeping it typed here
@@ -127,6 +129,7 @@ impl MlPendingMatch {
         code_context: crate::context::CodeContext,
         context_multiplier: f64,
         context_suppression_threshold: Option<f64>,
+        post_match: keyhog_core::DetectorPostMatchConfidenceSpec,
         ml_features: [f32; crate::ml_scorer::NUM_FEATURES],
         ml_weight: f64,
         min_confidence_floor: f64,
@@ -143,6 +146,7 @@ impl MlPendingMatch {
             code_context,
             context_multiplier,
             context_suppression_threshold,
+            post_match,
             ml_features,
             channel: crate::ml_scorer::MlCandidateChannel::Pattern,
             ml_weight,
@@ -162,6 +166,7 @@ impl MlPendingMatch {
         heuristic_conf: f64,
         context_multiplier: f64,
         context_suppression_threshold: Option<f64>,
+        post_match: keyhog_core::DetectorPostMatchConfidenceSpec,
         ml_features: [f32; crate::ml_scorer::NUM_FEATURES],
         ml_weight: f64,
         min_confidence_floor: f64,
@@ -175,6 +180,7 @@ impl MlPendingMatch {
             code_context: crate::context::CodeContext::Unknown,
             context_multiplier,
             context_suppression_threshold,
+            post_match,
             ml_features,
             channel: crate::ml_scorer::MlCandidateChannel::Entropy,
             ml_weight,
@@ -197,6 +203,7 @@ impl MlPendingMatch {
             && self.context_multiplier.to_bits() == other.context_multiplier.to_bits()
             && self.context_suppression_threshold.map(f64::to_bits)
                 == other.context_suppression_threshold.map(f64::to_bits)
+            && post_match_execution_eq(self.post_match, other.post_match)
             && self.ml_features == other.ml_features
             && self.ml_weight.to_bits() == other.ml_weight.to_bits()
             && self.min_confidence_floor.to_bits() == other.min_confidence_floor.to_bits()
@@ -207,6 +214,24 @@ impl MlPendingMatch {
             && self.checksum == other.checksum
             && self.ml_mode == other.ml_mode
     }
+}
+
+#[cfg(feature = "ml")]
+fn post_match_execution_eq(
+    left: keyhog_core::DetectorPostMatchConfidenceSpec,
+    right: keyhog_core::DetectorPostMatchConfidenceSpec,
+) -> bool {
+    left.placeholder_multiplier.to_bits() == right.placeholder_multiplier.to_bits()
+        && left.minimum_byte_diversity.to_bits() == right.minimum_byte_diversity.to_bits()
+        && left.low_diversity_multiplier.to_bits() == right.low_diversity_multiplier.to_bits()
+        && left.maximum_repeat_ratio.to_bits() == right.maximum_repeat_ratio.to_bits()
+        && left.degenerate_run_min_length == right.degenerate_run_min_length
+        && left.degenerate_repeat_multiplier.to_bits()
+            == right.degenerate_repeat_multiplier.to_bits()
+        && left.data_envelope_multiplier.map(f64::to_bits)
+            == right.data_envelope_multiplier.map(f64::to_bits)
+        && left.fixture_path_multiplier.to_bits() == right.fixture_path_multiplier.to_bits()
+        && left.ml_context_reapply_below.to_bits() == right.ml_context_reapply_below.to_bits()
 }
 
 #[cfg(feature = "ml")]
@@ -441,6 +466,7 @@ impl ScanState {
         code_context: crate::context::CodeContext,
         context_multiplier: f64,
         context_suppression_threshold: Option<f64>,
+        post_match: keyhog_core::DetectorPostMatchConfidenceSpec,
         ml_features: [f32; crate::ml_scorer::NUM_FEATURES],
         ml_weight: f64,
         min_confidence_floor: f64,
@@ -457,6 +483,7 @@ impl ScanState {
             code_context,
             context_multiplier,
             context_suppression_threshold,
+            post_match,
             ml_features,
             ml_weight,
             min_confidence_floor,
@@ -476,6 +503,7 @@ impl ScanState {
         heuristic_conf: f64,
         context_multiplier: f64,
         context_suppression_threshold: Option<f64>,
+        post_match: keyhog_core::DetectorPostMatchConfidenceSpec,
         ml_features: [f32; crate::ml_scorer::NUM_FEATURES],
         ml_weight: f64,
         min_confidence_floor: f64,
@@ -488,6 +516,7 @@ impl ScanState {
             heuristic_conf,
             context_multiplier,
             context_suppression_threshold,
+            post_match,
             ml_features,
             ml_weight,
             min_confidence_floor,

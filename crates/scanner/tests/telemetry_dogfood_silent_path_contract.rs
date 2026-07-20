@@ -34,7 +34,7 @@ fn example_suppression_silent_path_returns_before_dogfood_work() {
         "keyhog_core::sha256_hash",
         "mark_suppression_event_emitted",
         "keyhog_core::redact",
-        "events.lock()",
+        "push_dogfood_detail",
     ] {
         let expensive_at = body
             .find(expensive)

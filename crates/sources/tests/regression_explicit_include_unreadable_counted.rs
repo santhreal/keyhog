@@ -75,7 +75,7 @@ fn explicitly_included_unreadable_path_is_counted_not_silently_dropped() {
         "single readable explicit include should emit one chunk, got {chunks:?}"
     );
     assert_eq!(chunks[0].metadata.source_type.as_ref(), "filesystem");
-    let bodies: Vec<String> = chunks.iter().map(|c| c.data.to_string()).collect();
+    let bodies: Vec<String> = chunks.iter().map(|c| c.data.as_str().to_owned()).collect();
     assert!(
         bodies.iter().any(|b| b.contains("AKIAQYLPMN5HFIQR7XYA")),
         "a real included file must still be scanned; got {bodies:?}"

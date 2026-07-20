@@ -18,7 +18,10 @@ fn scan_fixture(name: &str, bytes: Vec<u8>) -> (Vec<String>, Vec<String>, Vec<St
         .collect();
     let (chunks, errors) = support::split_chunk_results(&rows);
 
-    let bodies = chunks.iter().map(|chunk| chunk.data.to_string()).collect();
+    let bodies = chunks
+        .iter()
+        .map(|chunk| chunk.data.as_str().to_owned())
+        .collect();
     let paths = chunks
         .iter()
         .filter_map(|chunk| chunk.metadata.path.as_deref().map(String::from))

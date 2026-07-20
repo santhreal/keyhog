@@ -4,8 +4,47 @@ use keyhog_scanner::CompiledScanner;
 const ALLOWLISTED: &str = "m7_Q2vN9xK4cP8rT6wY3zH5s";
 const RETAINED: &str = "n8_R3wP7yL5dQ9sV2xZ4cJ6t";
 
+const MATCH_CONFIDENCE_POLICY: &str = r#"match_confidence = { literal_prefix_weight = 0.35, context_anchor_weight = 0.20, entropy_weight = 0.20, high_entropy_partial_weight = 0.12, moderate_entropy_threshold = 3.0, moderate_entropy_weight = 0.05, low_entropy_penalty_floor = 2.0, low_entropy_min_match_length = 10, low_entropy_penalty_multiplier = 0.60, keyword_nearby_weight = 0.10, sensitive_file_weight = 0.10, companion_weight = 0.05, very_high_entropy_margin = 1.3, named_anchor_floor = 0.55, assignment_context_multiplier = 1.0, string_literal_context_multiplier = 0.9, unknown_context_multiplier = 0.8, documentation_context_multiplier = 0.3, comment_context_multiplier = 0.4, test_context_multiplier = 0.3, encrypted_context_multiplier = 0.05, soft_context_suppression_threshold = 0.5, encrypted_context_suppression_threshold = 0.8, post_match = { placeholder_multiplier = 0.05, minimum_byte_diversity = 0.1, low_diversity_multiplier = 0.1, maximum_repeat_ratio = 0.8, degenerate_run_min_length = 10, degenerate_repeat_multiplier = 0.1, fixture_path_multiplier = 0.5, ml_context_reapply_below = 0.95 } }"#;
+
+const GENERIC_MATCH_CONFIDENCE_POLICY: &str = r#"match_confidence = { literal_prefix_weight = 0.35, context_anchor_weight = 0.20, entropy_weight = 0.20, high_entropy_partial_weight = 0.12, moderate_entropy_threshold = 3.0, moderate_entropy_weight = 0.05, low_entropy_penalty_floor = 2.0, low_entropy_min_match_length = 10, low_entropy_penalty_multiplier = 0.60, keyword_nearby_weight = 0.10, sensitive_file_weight = 0.10, companion_weight = 0.05, very_high_entropy_margin = 1.3, low_promise_confidence = 0.10, assignment_context_multiplier = 1.0, string_literal_context_multiplier = 0.9, unknown_context_multiplier = 0.8, documentation_context_multiplier = 0.3, comment_context_multiplier = 0.4, test_context_multiplier = 0.3, encrypted_context_multiplier = 0.05, soft_context_suppression_threshold = 0.5, encrypted_context_suppression_threshold = 0.8, post_match = { placeholder_multiplier = 0.05, minimum_byte_diversity = 0.3, low_diversity_multiplier = 0.1, maximum_repeat_ratio = 0.5, degenerate_run_min_length = 10, degenerate_repeat_multiplier = 0.1, data_envelope_multiplier = 0.02, fixture_path_multiplier = 0.5, ml_context_reapply_below = 0.95 } }
+entropy_fallback_confidence = { low_entropy_max = 0.55, high_entropy = 0.65, very_high_entropy = 0.75, keyword_lift = 0.1, max_confidence = 0.9 }"#;
+const GENERIC_ASSIGNMENT_CONFIDENCE_POLICY: &str = r#"
+[detector.generic_assignment_confidence]
+ordinary_base = 0.60
+test_base = 0.25
+documentation_base = 0.30
+comment_base = 0.30
+scanned_comment_base = 0.60
+entropy_reference = 3.5
+entropy_gain_per_bit = 0.10
+entropy_lift_max = 0.25
+length_reference = 16
+length_gain_per_byte = 0.005
+length_lift_max = 0.15
+max_confidence = 0.95
+"#;
+
 fn load_detector(name: &str, toml: &str) -> DetectorSpec {
     let dir = tempfile::tempdir().expect("tempdir");
+    let is_generic = toml.contains(r#"kind = "phase2-generic""#);
+    let match_policy = if is_generic {
+        GENERIC_MATCH_CONFIDENCE_POLICY
+    } else {
+        MATCH_CONFIDENCE_POLICY
+    };
+    let mut toml = toml
+        .replacen(
+            "[detector]\n",
+            &format!("[detector]\n{match_policy}\n"),
+            1,
+        )
+        .replace(
+            "isolated_symbolic_requires_non_underscore = true,",
+            "isolated_symbolic_requires_non_underscore = true, isolated_alpha_only_min_symbols = 3, isolated_alpha_only_min_alpha_ratio = 0.5, min_alnum_ratio = 0.5, source_type_name_max_len = 40, source_type_name_min_uppercase = 2, url_path_high_entropy_min_len = 41,",
+        );
+    if is_generic {
+        toml.push_str(GENERIC_ASSIGNMENT_CONFIDENCE_POLICY);
+    }
     std::fs::write(dir.path().join(name), toml).expect("write custom detector");
     let mut detectors = keyhog_core::load_detectors(dir.path()).expect("load custom detector");
     assert_eq!(detectors.len(), 1, "fixture must load exactly one detector");
@@ -25,7 +64,7 @@ fn scan_credentials(scanner: &CompiledScanner, text: &str, detector_id: &str) ->
         .scan(&chunk)
         .into_iter()
         .filter(|finding| finding.detector_id.as_ref() == detector_id)
-        .map(|finding| finding.credential.to_string())
+        .map(|finding| finding.credential.as_str().to_string())
         .collect()
 }
 

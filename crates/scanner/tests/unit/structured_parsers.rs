@@ -94,6 +94,32 @@ fn parse_env_empty_value_not_extracted_as_secret() {
     );
 }
 
+/// KH-1432: an unclosed quote must not swallow the rest of a large .env past
+/// the continuation cap; later KEY=VALUE pairs must still parse.
+#[test]
+fn parse_env_unclosed_quote_does_not_swallow_later_keys_past_cap() {
+    let mut text = String::from("OPEN=\"line0\n");
+    for i in 1..=80 {
+        text.push_str(&format!("swallowed_line_{i}\n"));
+    }
+    text.push_str("LATER_KEY=recovered_after_cap\n");
+    let pairs = parse_env(&text);
+    let later: Vec<_> = pairs
+        .iter()
+        .filter(|p| p.context.contains("LATER_KEY"))
+        .collect();
+    assert_eq!(
+        later.len(),
+        1,
+        "LATER_KEY after unclosed-quote flood must still parse; got {pairs:?}"
+    );
+    assert_eq!(later[0].value.as_str(), "recovered_after_cap");
+    assert!(
+        pairs.iter().any(|p| p.context.contains("OPEN")),
+        "OPEN key must still be emitted (partial value); got {pairs:?}"
+    );
+}
+
 // ── parse_docker_compose ──────────────────────────────────────────────────────
 
 #[test]
@@ -156,6 +182,7 @@ fn parse_k8s_secret_empty_returns_empty() {
 fn parse_k8s_secret_base64_data_extracted() {
     // Kubernetes secrets store values as base64
     use base64::Engine;
+
     let b64_val = base64::engine::general_purpose::STANDARD.encode(b"fake_k8s_secret_value");
     let text = format!("apiVersion: v1\nkind: Secret\ndata:\n  my-key: {b64_val}\n");
     let pairs = parse_k8s_secret(&text);

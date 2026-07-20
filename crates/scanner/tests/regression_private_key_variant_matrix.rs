@@ -50,6 +50,38 @@ fn scan(text: &str) -> Vec<keyhog_core::RawMatch> {
     scanner.scan(&chunk)
 }
 
+fn detector_regex_matches(text: &str, detector_id: &str) -> bool {
+    keyhog_core::load_detectors(&detector_dir())
+        .expect("load detectors")
+        .into_iter()
+        .find(|detector| detector.id == detector_id)
+        .expect("requested detector exists")
+        .patterns
+        .iter()
+        .any(|pattern| {
+            regex::Regex::new(&pattern.regex)
+                .expect("validated detector regex compiles")
+                .is_match(text)
+        })
+}
+
+fn scan_detector(text: &str, detector_id: &str) -> Vec<keyhog_core::RawMatch> {
+    let detector = keyhog_core::load_detectors(&detector_dir())
+        .expect("load detectors")
+        .into_iter()
+        .find(|detector| detector.id == detector_id)
+        .expect("requested detector exists");
+    let scanner = CompiledScanner::compile(vec![detector]).expect("compile detector");
+    scanner.scan(&Chunk {
+        data: text.into(),
+        metadata: ChunkMetadata {
+            source_type: "filesystem".into(),
+            path: Some("secrets.pem".into()),
+            ..Default::default()
+        },
+    })
+}
+
 /// The `private-key` capture for `text`, if the detector fired.
 fn private_key_capture(text: &str) -> Option<String> {
     scan(text)
@@ -182,11 +214,25 @@ fn pgp_block_is_private_key_only_not_ssh_private_key() {
 
 #[test]
 fn json_escaped_newline_pem_still_fires() {
-    // Cloud service-account keys ship the PEM with LITERAL `\n` escapes inside a
-    // JSON string. `[\s\S]*?` spans the escape bytes, so the closed block is
-    // still detected (the dominant real-world private-key shape).
+    // Cloud service-account keys ship the PEM with literal `\n` escapes inside
+    // a JSON string. The service-specific detector owns this collision and must
+    // retain the complete closed block.
     let text = r#"{"type":"service_account","private_key":"-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqESCAPEDBODYZZ9\n-----END PRIVATE KEY-----\n"}"#;
-    let capture = private_key_capture(text).expect("JSON-escaped PEM must fire");
+    assert!(
+        detector_regex_matches(text, "google-artifact-registry-key"),
+        "the service detector regex must accept the raw JSON fixture"
+    );
+    assert!(
+        scan_detector(text, "google-artifact-registry-key")
+            .iter()
+            .any(|matched| matched.detector_id.as_ref() == "google-artifact-registry-key"),
+        "the service detector must match the raw JSON before overlap resolution"
+    );
+    let capture = scan(text)
+        .into_iter()
+        .find(|matched| matched.detector_id.as_ref() == "google-artifact-registry-key")
+        .expect("JSON-escaped service-account PEM must retain service attribution")
+        .credential;
     assert!(capture.contains("ESCAPEDBODYZZ9"), "captured: {capture:?}");
 }
 

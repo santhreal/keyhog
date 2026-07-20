@@ -22,7 +22,7 @@ fn multiple_secrets_on_same_line_all_detected() {
         verify: None,
         keywords: vec!["xoxb-".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let detector2 = DetectorSpec {
         kind: Default::default(),
@@ -44,9 +44,9 @@ fn multiple_secrets_on_same_line_all_detected() {
         verify: None,
         keywords: vec!["AKIA".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
-    let scanner = CompiledScanner::compile(vec![detector1, detector2]).unwrap();
+    let scanner = compile_test_scanner(vec![detector1, detector2]);
     let aws_key = format!("AKIA{}", "R7VXNPLMQ3HSKWJT");
     let chunk = make_chunk(&format!(
         "SLACK=xoxb-1234567890-1234567890-abcdefghijABCDEFGHIJklmn AWS={aws_key}\n"

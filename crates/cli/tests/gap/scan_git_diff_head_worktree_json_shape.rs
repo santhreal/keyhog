@@ -1,6 +1,6 @@
 //! R3-D / KH-GAP-092: `--git-diff HEAD` JSON finding shape on worktree secret.
 
-use crate::e2e::support::binary;
+use crate::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 

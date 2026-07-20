@@ -29,6 +29,7 @@ pub use maintenance::{
 pub use scan::{CliDedupScope, DaemonMode, OutputFormat, ScanArgs, SeverityFilter};
 pub use scan_system::{parse_space_bytes, ScanSystemArgs};
 pub use watch::WatchArgs;
+pub use watch::DEFAULT_WATCH_MAX_CONSECUTIVE_SCAN_FAILURES;
 
 use clap::{FromArgMatches, Parser};
 use std::ffi::OsString;

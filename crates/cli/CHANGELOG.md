@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Keep the daemon socket linked for the full accept-loop lifetime. Shutdown
+  removes it only after the listener terminates.
+- Bind every persisted GPU timing and parity receipt to the exact acquired
+  execution peer. Route replay now rejects changed or missing adapter identity.
 - Make the final backend summary identify invalid-autoroute scalar recovery and
   runtime-fault recovery directly. Recovered work is no longer
   described as a calibrated non-GPU winner.

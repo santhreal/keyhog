@@ -1,6 +1,6 @@
 [package]
 name = "keyhog"
-description = "keyhog: detects leaked credentials in source trees, git history, and cloud storage"
+description.workspace = true
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,7 +11,7 @@ homepage = "https://santh.dev"
 documentation = "https://docs.rs/keyhog"
 keywords.workspace = true
 categories.workspace = true
-readme = "README.md"
+readme.workspace = true
 
 [package.metadata.santh]
 status = "alpha"
@@ -94,6 +94,7 @@ mimalloc = ["dep:mimalloc"]
 # GPU-less runners; runners-nightly keeps `gpu` on real GPU hosts.
 ci-lean = [
     "keyhog-scanner/ci-lean",
+    "simd",
     "git",
     "web",
     "github",

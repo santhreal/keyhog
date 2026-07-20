@@ -435,4 +435,22 @@ publish_receipt
 
 if [[ "$keyhog_exit" == "10" ]]; then
   gha_error "LIVE credential(s) confirmed by --verify (exit 10)."
+  # Always fail the script on live credentials so standalone/script-only CI
+  # cannot stay green when the composite fail step is skipped (KH-1331).
+  exit 10
+fi
+
+if [[ "$scan_status" == "failed" ]]; then
+  gha_error "Scan report validation failed; refusing to treat an unreadable findings report as advisory."
+  exit 3
+fi
+
+# When fail-on-findings is true, propagate exit 1 from the process (and from a
+# non-zero report count). The composite Action also gates on this, but the
+# script must not claim success if used alone.
+if [[ "$fail_on_findings" == "true" ]]; then
+  if [[ "$keyhog_exit" == "1" || "$findings" != "0" ]]; then
+    gha_error "Found ${findings} finding(s) (fail-on-findings=true)."
+    exit 1
+  fi
 fi

@@ -103,12 +103,12 @@ const REASON_TABLE: &[(&str, &str)] = &[
         "bare_hex_digest",
     ),
     (
-        "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
+        "0f1e2d3c4b5a69788796a5b4c3d2e1f01a2b3c4d5e6f70819283746556473829",
         "bare_hex_digest",
     ),
     // labelled hash digest (decision.rs §5b, prefixed form)
     (
-        "sha256:0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
+        "sha256:0f1e2d3c4b5a69788796a5b4c3d2e1f01a2b3c4d5e6f70819283746556473829",
         "labelled_hash_digest",
     ),
     // UUID v4 (decision.rs §5b)

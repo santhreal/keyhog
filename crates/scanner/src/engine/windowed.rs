@@ -34,10 +34,8 @@ impl CompiledScanner {
         let line_offsets = crate::compute_line_offsets(chunk_text);
 
         while offset < chunk_text.len() {
-            if let Some(deadline) = deadline {
-                if std::time::Instant::now() > deadline {
-                    break;
-                }
+            if crate::deadline::expired(deadline) {
+                break;
             }
             let end = window_end_offset(chunk_text, offset, MAX_SCAN_CHUNK_BYTES);
             let window_chunk = window_chunk(chunk, offset, end);
@@ -94,10 +92,8 @@ impl CompiledScanner {
             .map(|&(offset, end)| {
                 crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
                     let window_len = end - offset;
-                    if let Some(deadline) = deadline {
-                        if std::time::Instant::now() > deadline {
-                            return (offset, window_len, Vec::new());
-                        }
+                    if crate::deadline::expired(deadline) {
+                        return (offset, window_len, Vec::new());
                     }
                     let window_chunk = window_chunk(chunk, offset, end);
                     let prepared = self.prepare_chunk(&window_chunk);

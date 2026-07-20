@@ -100,12 +100,16 @@ impl CompiledScanner {
                         );
                     }
                     let mut i = 0usize;
+                    let mut deadline_tick = 0usize;
                     while i < candidates.len() {
-                        if let Some(deadline) = deadline {
-                            if std::time::Instant::now() > deadline {
-                                break;
-                            }
+                        if crate::deadline::expired_on_cadence(
+                            deadline,
+                            deadline_tick,
+                            crate::deadline::HOT_LOOP_DEADLINE_CADENCE,
+                        ) {
+                            break;
                         }
+                        deadline_tick += 1;
                         let pat_idx = candidates[i].0 as usize;
                         let mut j = i + 1;
                         while j < candidates.len() && candidates[j].0 as usize == pat_idx {
@@ -191,11 +195,13 @@ impl CompiledScanner {
                 });
             }
         }
-        for &pat_idx in confirmed_patterns {
-            if let Some(deadline) = deadline {
-                if std::time::Instant::now() > deadline {
-                    break;
-                }
+        for (deadline_tick, &pat_idx) in confirmed_patterns.iter().enumerate() {
+            if crate::deadline::expired_on_cadence(
+                deadline,
+                deadline_tick,
+                crate::deadline::HOT_LOOP_DEADLINE_CADENCE,
+            ) {
+                break;
             }
             // Skip a gated ac_map pattern whose required suffix literal is absent.
             if !suffix_allows(pat_idx) {

@@ -4,6 +4,10 @@
 
 - Declare the filesystem and git-diff sources' contiguous chunk-identity
   ordering contract for safe provenance-aware autoroute batching.
+- Surface oversized Git diff, history, and tag lines as counted source errors
+  instead of silently continuing after telemetry.
+- Remove shifted UTF-16 LE/BE suffix duplicates by comparing recovered byte
+  spans while preserving valid strings in both byte orders.
 
 - Let all four WebSource DNS-screening workers wait on and consume the bounded
   job queue concurrently instead of serializing receives behind one mutex.

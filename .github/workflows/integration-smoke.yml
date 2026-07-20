@@ -38,8 +38,13 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "${RUNNER_OS}" == "Linux" ]]; then
-            sudo apt-get update -qq
-            sudo apt-get install -y --no-install-recommends libhyperscan5 minisign
+            for i in 1 2 3 4 5; do
+              sudo apt-get update -qq \
+                && sudo apt-get install -y --no-install-recommends libhyperscan5 minisign \
+                && break
+              sleep $((i * 2))
+              if [ "$i" -eq 5 ]; then exit 1; fi
+            done
           else
             brew install minisign
           fi

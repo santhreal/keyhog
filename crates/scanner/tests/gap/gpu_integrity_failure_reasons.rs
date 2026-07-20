@@ -60,8 +60,8 @@ fn gpu_dispatch_failures_preserve_operator_visible_reasons() {
     let trigger = engine_src("src/engine/backend_triggered.rs");
     for needle in [
         "gpu literal matcher not built for coalesced region scan",
-        "no gpu backend acquired for coalesced region dispatch",
-        "region-presence dispatch error: {error}",
+        "self.gpu_backend_unavailable_reason(route)",
+        "return dispatch_failure(error)",
         "region-presence readback length mismatch",
     ] {
         assert!(
@@ -71,7 +71,7 @@ fn gpu_dispatch_failures_preserve_operator_visible_reasons() {
     }
     for needle in [
         "gpu literal matcher not built for this scanner",
-        "no gpu backend acquired for per-chunk trigger dispatch",
+        "self.gpu_backend_unavailable_reason(route)",
         "gpu presence scan failed: {error}",
     ] {
         assert!(

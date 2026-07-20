@@ -32,3 +32,14 @@ fn the_two_hard_exit_codes_are_distinct() {
         "the require-GPU and backend-unavailable hard exits must be distinguishable by exit code"
     );
 }
+
+fn first_hook() {}
+fn second_hook() {}
+
+#[test]
+fn repeated_pre_exit_registration_preserves_first_hook_without_panicking() {
+    let retained =
+        keyhog_scanner::testing::register_pre_exit_hooks_for_test(first_hook, second_hook)
+            .expect("first hook must be retained");
+    assert_eq!(retained as usize, first_hook as usize);
+}

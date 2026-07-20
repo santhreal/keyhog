@@ -243,13 +243,14 @@ async fn finish_daemon_service(
     socket_path: &Path,
     accept_task: tokio::task::JoinHandle<std::result::Result<(), DaemonServiceFailure>>,
 ) -> Result<()> {
-    let terminal_outcome = match accept_task.await {
-        Ok(outcome) => outcome,
-        Err(error) => Err(DaemonServiceFailure::AcceptLoopTask(error.to_string())),
+    let terminal_outcome: std::result::Result<(), DaemonServiceFailure> = match accept_task.await {
+        Ok(inner) => inner,
+        Err(join_error) => Err(DaemonServiceFailure::AcceptLoopTask(join_error.to_string())),
     };
     let cleanup = remove_daemon_socket_on_shutdown(socket_path);
     match (terminal_outcome, cleanup) {
-        (Ok(()), cleanup) => cleanup,
+        (Ok(()), Ok(())) => Ok(()),
+        (Ok(()), Err(cleanup_error)) => Err(cleanup_error.into()),
         (Err(failure), Ok(())) => Err(anyhow::Error::new(failure)),
         (Err(failure), Err(cleanup_error)) => Err(anyhow::Error::new(failure).context(format!(
             "daemon socket cleanup also failed: {cleanup_error:#}"
@@ -454,6 +455,9 @@ async fn handle_connection(state: Arc<ServerState>, stream: UnixStream) -> Resul
     trust::verify_accepted_peer(&stream)?;
     let mut transport = frame::server_transport(stream);
     let read_timeout = state.request_read_timeout;
+    // KH-1337: first frame on a connection must be Hello so wire/corpus
+    // identity is established before Scan/Shutdown.
+    let mut hello_ok = false;
     loop {
         // Bound the per-request read so a half-frame / slowloris stall (a peer
         // that announces a frame length then sends the body slowly or never)
@@ -478,6 +482,19 @@ async fn handle_connection(state: Arc<ServerState>, stream: UnixStream) -> Resul
                 );
             }
         };
+        if !hello_ok {
+            if !matches!(request, Request::Hello) {
+                transport
+                    .send(Response::Error {
+                        message: "daemon: first request on a connection must be Hello \
+                             (wire and corpus identity handshake required before scan or shutdown)"
+                            .to_string(),
+                    })
+                    .await?;
+                break;
+            }
+            hello_ok = true;
+        }
         let response = dispatch(&state, request).await;
         let is_shutdown_ack = matches!(response, Response::Shutdown);
         transport.send(response).await?;
@@ -509,6 +526,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 backend_recoveries: state.backend_recoveries.load(Ordering::Relaxed),
                 last_backend_fault: last_backend_fault.clone(),
             },
+            // LAW10: lock poisoning becomes an explicit daemon error response instructing the operator to restart; no health value is fabricated.
             Err(_) => Response::Error {
                 message: "daemon: backend-recovery health lock is poisoned; restart the daemon"
                     .to_string(),
@@ -826,7 +844,7 @@ fn scan_results_response(
         static_recovery_rejections: telemetry.static_recovery_rejections,
         dogfood_detail_events_dropped: telemetry.dogfood_detail_events_dropped,
         source_coverage_gaps,
-        backend_recovery,
+        backend_recovery: backend_recovery.into(),
     }
 }
 
@@ -933,56 +951,9 @@ fn source_coverage_gaps_since(before: keyhog_sources::SkipCounts) -> SourceCover
         git_lfs_pointer: after.git_lfs_pointer.saturating_sub(before.git_lfs_pointer),
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn autoroute_state_recovery_receipt_covers_every_nonempty_daemon_chunk() {
-        let chunks = vec![
-            Chunk {
-                data: "first".into(),
-                metadata: ChunkMetadata::default(),
-            },
-            Chunk {
-                data: String::new().into(),
-                metadata: ChunkMetadata::default(),
-            },
-            Chunk {
-                data: "second-secret".into(),
-                metadata: ChunkMetadata::default(),
-            },
-        ];
-        let recovery = crate::orchestrator::AutorouteStateRecovery {
-            reason: "missing proof".to_string(),
-            announce: true,
-        };
-
-        let status = autoroute_state_recovery_status(&chunks, ScanBackend::CpuFallback, &recovery);
-
-        assert_eq!(status.failed_backend, "autoroute-invalid");
-        assert_eq!(status.recovery_backend, "cpu-fallback");
-        assert_eq!(status.recovered_chunks, 2);
-        assert_eq!(status.recovered_bytes, 18);
-        assert_eq!(
-            status.recovered_ranges,
-            vec![
-                RecoveredInputRangeStatus {
-                    chunk_index: 0,
-                    byte_start: 0,
-                    byte_end: 5,
-                },
-                RecoveredInputRangeStatus {
-                    chunk_index: 2,
-                    byte_start: 0,
-                    byte_end: 13,
-                },
-            ]
-        );
-        assert_eq!(status.reason, "missing proof");
-    }
-}
+// Sibling file (daemon/server_tests.rs), not server/ subdir.
+#[path = "server_tests.rs"]
+mod server_tests;
 
 #[doc(hidden)]
 pub(crate) mod testing {

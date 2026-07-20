@@ -1,6 +1,6 @@
 //! R5-D2 / KH-GAP-173: empty directory corpus exits 0 with JSON `[]`.
 
-use crate::e2e::support::binary;
+use crate::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 

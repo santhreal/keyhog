@@ -5,6 +5,7 @@ use std::sync::LazyLock;
 /// Detector-corpus-specific line prefilter compiled once with the scanner.
 /// Keeping this beside the generated assignment regex prevents custom or
 /// reduced detector corpora from being filtered by the embedded corpus.
+#[derive(Debug)]
 pub(crate) struct GenericKeywordStemSet {
     stems: Vec<Box<str>>,
     by_first: [Vec<usize>; 256],
@@ -59,53 +60,65 @@ impl GenericKeywordStemSet {
 /// Canonical detector-corpus inputs for generic assignment extraction and its
 /// CPU/GPU line prefilters. Compiling these together prevents a custom detector
 /// keyword from reaching the regex while remaining absent from VYRE evidence.
+#[derive(Debug)]
 pub(crate) struct GenericAssignmentKeywordPlan {
-    keywords: Vec<String>,
-    include_vendor_fallback: bool,
+    matcher: regex::Regex,
     stems: GenericKeywordStemSet,
 }
 
 impl GenericAssignmentKeywordPlan {
     pub(crate) fn compile(detectors: &[keyhog_core::DetectorSpec]) -> Result<Self, String> {
         let keywords = crate::assignment_keywords::derive_assignment_keywords(detectors)?;
-        let vendor_fallback_owners = detectors
+        let vendor_suffixes =
+            crate::assignment_keywords::derive_generic_vendor_suffixes(detectors)?;
+        let tail_suffixes =
+            crate::assignment_keywords::derive_generic_assignment_tail_suffixes(detectors)?;
+        let mut max_len = None;
+        for detector in detectors
             .iter()
-            .filter(|detector| detector.generic_vendor_suffix_fallback)
-            .count();
-        if vendor_fallback_owners > 1 {
-            return Err(
-                "multiple detectors declare generic_vendor_suffix_fallback; exactly one detector may own the structural vendor-suffix arm"
-                    .to_string(),
-            );
+            .filter(|detector| detector.owns_entropy_policy())
+        {
+            let detector_max_len = detector.max_len.ok_or_else(|| {
+                format!(
+                    "generic entropy owner {:?} omits max_len; declare it in the detector TOML",
+                    detector.id
+                )
+            })?;
+            max_len = Some(max_len.map_or(detector_max_len, |current: usize| {
+                current.max(detector_max_len)
+            }));
         }
-        let include_vendor_fallback = vendor_fallback_owners == 1;
+        let max_len = max_len.ok_or_else(|| {
+            "assignment keywords require at least one generic entropy owner".to_string()
+        })?;
+        let alternation = super::generic_keyword_alternation_from(&keywords, &vendor_suffixes);
+        let matcher =
+            super::compile_generic_re_with_policy(&alternation, max_len, &tail_suffixes).map_err(
+                |error| {
+                    format!(
+                        "cannot compile the detector-owned generic assignment bridge: {error}. Fix the phase-2 generic detector keywords, suffixes, and max_len values"
+                    )
+                },
+            )?;
         let stems = GenericKeywordStemSet::compile(
             keywords
                 .iter()
                 .map(String::as_str)
-                .chain(include_vendor_fallback.then_some("key")),
+                .chain(vendor_suffixes.iter().map(String::as_str)),
         );
-        Ok(Self {
-            keywords,
-            include_vendor_fallback,
-            stems,
-        })
+        Ok(Self { matcher, stems })
     }
 
-    pub(crate) fn keywords(&self) -> &[String] {
-        &self.keywords
+    pub(crate) fn matcher(&self) -> &regex::Regex {
+        &self.matcher
     }
 
-    pub(crate) fn include_vendor_fallback(&self) -> bool {
-        self.include_vendor_fallback
+    pub(crate) fn stems(&self) -> &GenericKeywordStemSet {
+        &self.stems
     }
 
     pub(crate) fn stem_literals(&self) -> impl ExactSizeIterator<Item = &str> {
         self.stems.literals()
-    }
-
-    pub(crate) fn into_stems(self) -> GenericKeywordStemSet {
-        self.stems
     }
 }
 

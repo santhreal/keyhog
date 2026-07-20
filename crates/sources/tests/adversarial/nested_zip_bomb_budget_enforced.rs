@@ -66,7 +66,7 @@ fn nested_zip_bomb_budget_enforced() {
         .chunks()
         .collect();
     let (chunks, errors) = split_chunk_results(&rows);
-    let bodies: Vec<String> = chunks.iter().map(|c| c.data.to_string()).collect();
+    let bodies: Vec<String> = chunks.iter().map(|c| c.data.as_str().to_owned()).collect();
 
     let archive_truncated = skip_counts().archive_truncated;
     assert!(

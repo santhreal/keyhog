@@ -36,8 +36,8 @@ pub use crate::{
     limits::{SourceLimits, DEFAULT_SOURCE_LIMITS},
     safe_read::read_file_safe_bytes,
     skip::{
-        git_object_unreadable, reset_skipped_over_max_size, skip_counts, ScanCounterScope,
-        SkipCounts,
+        git_object_unreadable, merge_skip_count_deltas, reset_skipped_over_max_size, skip_counts,
+        ScanCounterScope, SkipCounts,
     },
 };
 

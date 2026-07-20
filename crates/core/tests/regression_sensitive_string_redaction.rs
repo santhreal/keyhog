@@ -131,7 +131,7 @@ fn redact_multibyte_sixteen_cjk_uses_edge_two() {
 }
 
 // ------------------------------------------------------------------
-// SensitiveString: Debug redacts, Display exposes (by design)
+// SensitiveString: Debug and Display redact
 // ------------------------------------------------------------------
 
 #[test]
@@ -146,17 +146,13 @@ fn sensitive_string_debug_redacts_and_hides_secret() {
 }
 
 #[test]
-fn sensitive_string_display_exposes_content_by_design() {
-    // NEGATIVE TWIN: unlike Credential, SensitiveString::Display is the
-    // *auditable exposure surface* and returns the bytes verbatim (documented
-    // intent in credential.rs). Pin that so a future "redact Display too"
-    // change is a deliberate, reviewed decision rather than silent.
+fn sensitive_string_display_redacts_content_by_design() {
     let ss = SensitiveString::from("supersecret");
     let disp = format!("{ss}");
-    assert_eq!(disp, "supersecret");
-    // Empty stays empty (no "****" masking on the SensitiveString path).
+    assert_eq!(disp, "<redacted 11 bytes>");
+    assert!(!disp.contains("supersecret"));
     let empty = SensitiveString::from("");
-    assert_eq!(format!("{empty}"), "");
+    assert_eq!(format!("{empty}"), "<redacted 0 bytes>");
 }
 
 #[test]
@@ -175,8 +171,7 @@ fn sensitive_string_debug_counts_bytes_not_chars() {
     // char count. "café" = 4 chars but 5 bytes.
     let ss = SensitiveString::from("café");
     assert_eq!(format!("{ss:?}"), "SensitiveString(<redacted 5 bytes>)");
-    // Display still exposes the exact multibyte content.
-    assert_eq!(format!("{ss}"), "café");
+    assert_eq!(format!("{ss}"), "<redacted 5 bytes>");
     // Empty -> zero bytes.
     let empty = SensitiveString::from("");
     assert_eq!(format!("{empty:?}"), "SensitiveString(<redacted 0 bytes>)");

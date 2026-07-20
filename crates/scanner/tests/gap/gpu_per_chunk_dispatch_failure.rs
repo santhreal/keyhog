@@ -33,7 +33,7 @@ fn per_chunk_gpu_failure_is_hard_and_reason_carrying() {
     // Each distinct off-GPU cause must carry its own operator-visible reason.
     assert!(
         src.contains("gpu literal matcher not built for this scanner")
-            && src.contains("no gpu backend acquired for per-chunk trigger dispatch")
+            && src.contains("self.gpu_backend_unavailable_reason(route)")
             && src.contains("gpu presence scan failed:"),
         "each off-GPU cause (no matcher / no backend / failed dispatch) must carry a concrete reason"
     );

@@ -2,8 +2,8 @@
 
 use keyhog::daemon::frame;
 use keyhog::daemon::protocol::{
-    BackendRecoveryStatus, RecoveredInputRangeStatus, Request, Response, SourceCoverageGaps,
-    WIRE_VERSION,
+    BackendRecoveryStatus, RecoveredInputRangeStatus, Request, RequiredOption, Response,
+    SourceCoverageGaps, WIRE_VERSION,
 };
 use std::collections::BTreeMap;
 use tokio::io::AsyncWriteExt;
@@ -95,7 +95,7 @@ async fn daemon_scan_text_roundtrip_carries_matches() {
             static_recovery_rejections: BTreeMap::new(),
             dogfood_detail_events_dropped: 0,
             source_coverage_gaps: Default::default(),
-            backend_recovery: None,
+            backend_recovery: RequiredOption::None,
         },
     )
     .await
@@ -120,7 +120,7 @@ fn daemon_wire_v6_requires_every_scan_result_integrity_field() {
         static_recovery_rejections: BTreeMap::new(),
         dogfood_detail_events_dropped: 0,
         source_coverage_gaps: SourceCoverageGaps::default(),
-        backend_recovery: None,
+        backend_recovery: RequiredOption::None,
     };
     let complete = serde_json::to_value(complete).expect("serialize complete response");
 
@@ -168,7 +168,7 @@ fn daemon_scan_results_source_coverage_gaps_roundtrip_exactly() {
             binary: 1,
             ..Default::default()
         },
-        backend_recovery: Some(BackendRecoveryStatus {
+        backend_recovery: RequiredOption::Some(BackendRecoveryStatus {
             failed_backend: "gpu-cuda-region-presence".into(),
             recovery_backend: "cpu-fallback".into(),
             recovered_ranges: vec![RecoveredInputRangeStatus {
@@ -193,6 +193,17 @@ fn daemon_scan_results_source_coverage_gaps_roundtrip_exactly() {
         } => {
             assert_eq!(source_coverage_gaps.binary, 1);
             assert_eq!(source_coverage_gaps.total(), 1);
+            // KH-1368: WARN-class binary alone must not trip FAIL incomplete.
+            assert!(source_coverage_gaps.fail_class_empty());
+            assert_eq!(
+                SourceCoverageGaps {
+                    unreadable: 2,
+                    binary: 9,
+                    ..Default::default()
+                }
+                .fail_class_total(),
+                2
+            );
             assert_eq!(static_recovery_rejections["json_base64"], 3);
             assert_eq!(dogfood_detail_events_dropped, 7);
             let recovery = backend_recovery.expect("recovery status");

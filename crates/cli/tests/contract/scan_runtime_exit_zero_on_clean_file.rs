@@ -1,6 +1,6 @@
 //! Contract: runtime exit 0 when no secrets are found.
 
-use crate::e2e::support::scan_text_file;
+use crate::support::scan_text_file;
 
 #[test]
 fn scan_runtime_exit_zero_on_clean_file() {

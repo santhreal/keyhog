@@ -14,13 +14,9 @@ fn file_gate_matrix_has_current_rows() {
         rows, paths,
         "every FILE_GATE_MATRIX path row must be inside an explicit [[module]] table"
     );
-    // 480 = the current module inventory. The count had drifted stale (docker
-    // and other module rows were added without bumping this contract), and the
-    // orchestrator inline-test migration adds five sibling `tests.rs` rows
-    // `orchestrator/tests.rs`, `orchestrator/dispatch/tests.rs`,
-    // `orchestrator/reporting/tests.rs`, `subcommands/backend/tests.rs`, and
-    // `subcommands/watch/tests.rs`, each a real cli/src file that
-    // `file_gate_matrix_lists_every_cli_src_module` requires be listed.
-    // Reconcile to the true total so the force-awareness contract is accurate.
-    assert_eq!(rows, 480, "expected 480 module rows, got {rows}");
+    // 501 = the current module inventory. The count drifts whenever source
+    // files are added or removed; `file_gate_matrix_lists_every_cli_src_module`
+    // below guards that every real cli/src file is listed, so this hard-coded
+    // total just forces a conscious reconcile when the tree changes.
+    assert_eq!(rows, 501, "expected 501 module rows, got {rows}");
 }

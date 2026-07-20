@@ -61,16 +61,17 @@ pub(crate) const KNOWN_PREFIX_CONFIDENCE_FLOOR: f64 = 0.8;
 /// key, Slack bot token, and Stripe secret key prefix families all
 /// surfaced through this exact path; this single guard kills them.
 ///
-/// The same lift-back defeated the degenerate-repeat penalty: a known-prefix
-/// placeholder like `AKIAXXXXXXXXXXXXXXXX` (16-char `X` run) was crushed to
-/// ~0.08 by `apply_post_ml_penalties` and then floored back to 0.8 here. The
-/// `is_degenerate_repeat` skip (CredData dogfood 2026-06-03) closes that hole
-/// the same way - a 10+ identical-char run is never a real key body.
+/// The same lift-back can defeat the detector-owned degenerate-repeat penalty.
+/// The caller supplies the active detector plan's absolute run threshold so a
+/// custom TOML policy cannot be replaced by a scanner-wide constant.
 #[must_use]
-pub(crate) fn known_prefix_confidence_floor(credential: &str) -> Option<f64> {
+pub(crate) fn known_prefix_confidence_floor(
+    credential: &str,
+    degenerate_run_min_length: usize,
+) -> Option<f64> {
     if super::penalties::contains_placeholder_word(credential)
         || crate::decode_structure::evidence(credential).decoded_contains_placeholder()
-        || super::penalties::is_degenerate_repeat(credential)
+        || super::penalties::is_degenerate_repeat_at(credential, degenerate_run_min_length)
     {
         return None;
     }

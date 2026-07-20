@@ -52,6 +52,6 @@ impl CompiledDetectorMlPolicy {
 impl CompiledDetectorMlPolicy {
     #[inline]
     pub(crate) fn effective_weight(self, config: &crate::types::ScannerConfig) -> f64 {
-        config.ml_weight_override.unwrap_or(self.weight)
+        config.ml_weight_override.unwrap_or(self.weight) // LAW10: explicit precedence, absent CLI/config override preserves the compiled detector TOML weight
     }
 }

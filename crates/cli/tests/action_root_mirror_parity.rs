@@ -29,8 +29,7 @@ fn repo_root() -> PathBuf {
 const SOURCE_ROOT_FROM_INNER: &str = "${{ github.action_path }}/../../..";
 const SOURCE_ROOT_AT_ROOT: &str = "${{ github.action_path }}";
 const RUN_SCAN_FROM_INNER: &str = "${{ github.action_path }}/run-scan.sh";
-const RUN_SCAN_AT_ROOT: &str =
-    "${{ github.action_path }}/.github/actions/keyhog/run-scan.sh";
+const RUN_SCAN_AT_ROOT: &str = "${{ github.action_path }}/.github/actions/keyhog/run-scan.sh";
 
 #[test]
 fn root_action_is_the_locked_mirror_of_the_inner_action() {

@@ -61,7 +61,7 @@ fn credentials_for(line: &str) -> Vec<String> {
             .into_iter()
             .flatten()
         {
-            out.push(m.credential.to_string());
+            out.push(m.credential.as_str().to_string());
         }
     }
     out

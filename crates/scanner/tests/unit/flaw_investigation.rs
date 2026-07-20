@@ -42,7 +42,7 @@ fn test_nested_base64_decoding_gating() {
         verify: None,
         keywords: vec!["ghp_".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }];
 
     let scanner = CompiledScanner::compile(detectors).unwrap();

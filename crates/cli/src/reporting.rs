@@ -46,56 +46,113 @@ fn report_with<W: std::io::Write + 'static + Send>(
     findings: &[VerifiedFinding],
     metadata: &ScanReportMetadata,
 ) -> Result<()> {
-    if matches!(format, OutputFormat::Csv) {
-        let coverage_gap_summary = coverage_gap_summary(&CoverageCounts::current());
-        keyhog_core::write_csv_coverage_report(
-            w,
-            ScanReport::new(findings).with_metadata(metadata),
-            &coverage_gap_summary,
-        )?;
-        return Ok(());
-    }
-    let format = match format {
-        OutputFormat::Text => ReportFormat::Text {
-            color,
-            // Pass the example-suppression count so the empty-findings
-            // summary distinguishes "no matches at all" from
-            // "matched + suppressed N as known examples". Structured
-            // formats (JSON/JSONL/SARIF) don't render prose, so the
+    // One match owns every format. CSV uses write_csv_coverage_report (coverage
+    // columns + gap summary); other formats go through write_scan_report.
+    let report = ScanReport::new(findings).with_metadata(metadata);
+    match format {
+        OutputFormat::Csv => {
+            let coverage_gap_summary = coverage_gap_summary(&CoverageCounts::current());
+            keyhog_core::write_csv_coverage_report(w, report, &coverage_gap_summary)?;
+            Ok(())
+        }
+        OutputFormat::Text => {
+            // Pass the example-suppression count so the empty-findings summary
+            // distinguishes "no matches at all" from "matched + suppressed N as
+            // known examples". Structured formats don't render prose, so the
             // count goes via --dogfood for those callers.
-            example_suppressions: keyhog_scanner::telemetry::example_suppression_count(),
-            dogfood_active: keyhog_scanner::telemetry::is_dogfood_enabled(),
-        },
-        OutputFormat::Json => ReportFormat::Json,
-        OutputFormat::JsonEnvelope => ReportFormat::JsonEnvelope {
-            coverage_gap_summary: coverage_gap_summary(&CoverageCounts::current()),
-        },
-        OutputFormat::Jsonl => ReportFormat::Jsonl,
-        OutputFormat::JsonlEnvelope => ReportFormat::JsonlEnvelope {
-            coverage_gap_summary: coverage_gap_summary(&CoverageCounts::current()),
-        },
-        OutputFormat::Sarif => ReportFormat::Sarif {
-            skip_summary: coverage_gap_summary(&CoverageCounts::current()),
-        },
-        OutputFormat::Csv => ReportFormat::Csv,
-        OutputFormat::GithubAnnotations => ReportFormat::GithubAnnotationsCoverage {
-            skip_summary: coverage_gap_summary(&CoverageCounts::current()),
-        },
-        OutputFormat::GitlabSast => ReportFormat::GitlabSastCoverage {
-            scan_started_at: metadata.scan_started_at.clone(),
-            scan_finished_at: metadata.scan_finished_at.clone(),
-            skip_summary: coverage_gap_summary(&CoverageCounts::current()),
-        },
-        OutputFormat::Html => ReportFormat::Html {
-            skip_summary: coverage_gap_summary(&CoverageCounts::current()),
-            metadata: None,
-        },
-        OutputFormat::Junit => ReportFormat::JunitCoverage {
-            skip_summary: coverage_gap_summary(&CoverageCounts::current()),
-        },
-    };
-    keyhog_core::write_scan_report(w, format, ScanReport::new(findings).with_metadata(metadata))?;
-    Ok(())
+            keyhog_core::write_scan_report(
+                w,
+                ReportFormat::Text {
+                    color,
+                    example_suppressions: keyhog_scanner::telemetry::example_suppression_count(),
+                    dogfood_active: keyhog_scanner::telemetry::is_dogfood_enabled(),
+                },
+                report,
+            )?;
+            Ok(())
+        }
+        OutputFormat::Json => {
+            keyhog_core::write_scan_report(w, ReportFormat::Json, report)?;
+            Ok(())
+        }
+        OutputFormat::JsonEnvelope => {
+            keyhog_core::write_scan_report(
+                w,
+                ReportFormat::JsonEnvelope {
+                    coverage_gap_summary: coverage_gap_summary(&CoverageCounts::current()),
+                },
+                report,
+            )?;
+            Ok(())
+        }
+        OutputFormat::Jsonl => {
+            keyhog_core::write_scan_report(w, ReportFormat::Jsonl, report)?;
+            Ok(())
+        }
+        OutputFormat::JsonlEnvelope => {
+            keyhog_core::write_scan_report(
+                w,
+                ReportFormat::JsonlEnvelope {
+                    coverage_gap_summary: coverage_gap_summary(&CoverageCounts::current()),
+                },
+                report,
+            )?;
+            Ok(())
+        }
+        OutputFormat::Sarif => {
+            keyhog_core::write_scan_report(
+                w,
+                ReportFormat::Sarif {
+                    skip_summary: coverage_gap_summary(&CoverageCounts::current()),
+                },
+                report,
+            )?;
+            Ok(())
+        }
+        OutputFormat::GithubAnnotations => {
+            keyhog_core::write_scan_report(
+                w,
+                ReportFormat::GithubAnnotationsCoverage {
+                    skip_summary: coverage_gap_summary(&CoverageCounts::current()),
+                },
+                report,
+            )?;
+            Ok(())
+        }
+        OutputFormat::GitlabSast => {
+            keyhog_core::write_scan_report(
+                w,
+                ReportFormat::GitlabSastCoverage {
+                    scan_started_at: metadata.scan_started_at.clone(),
+                    scan_finished_at: metadata.scan_finished_at.clone(),
+                    skip_summary: coverage_gap_summary(&CoverageCounts::current()),
+                },
+                report,
+            )?;
+            Ok(())
+        }
+        OutputFormat::Html => {
+            keyhog_core::write_scan_report(
+                w,
+                ReportFormat::Html {
+                    skip_summary: coverage_gap_summary(&CoverageCounts::current()),
+                    metadata: None,
+                },
+                report,
+            )?;
+            Ok(())
+        }
+        OutputFormat::Junit => {
+            keyhog_core::write_scan_report(
+                w,
+                ReportFormat::JunitCoverage {
+                    skip_summary: coverage_gap_summary(&CoverageCounts::current()),
+                },
+                report,
+            )?;
+            Ok(())
+        }
+    }
 }
 
 /// Build the minimal metadata used when a caller reports findings outside a
@@ -410,7 +467,8 @@ mod tests {
     }
 
     #[test]
-    fn resolved_scan_manifest_is_diffable_across_presets_and_overrides() {
+    fn resolved_scan_manifest_is_diffable_across_presets_and_overrides(
+    ) -> Result<(), serde_json::Error> {
         let default_args = ScanArgs::parse_from(["keyhog"]);
         let deep_args = ScanArgs::parse_from(["keyhog", "--deep", "--decode-depth", "3"]);
         let default_manifest =
@@ -430,9 +488,10 @@ mod tests {
             .iter()
             .any(|key| key == "max_decode_depth"));
 
-        let encoded = serde_json::to_string(&deep_manifest).expect("manifest serializes");
+        let encoded = serde_json::to_string(&deep_manifest)?;
         assert!(encoded.contains("\"preset\":\"deep\""));
         assert!(encoded.contains("\"max_decode_depth\":\"3\""));
+        Ok(())
     }
 }
 
@@ -488,6 +547,15 @@ impl CoverageCounts {
             binary_degraded: binary_degraded_count(),
             binary_unreadable: binary_unreadable_count(),
         }
+    }
+
+    /// Sum of every FAIL-class [`CoverageGapKind`] count (KH-1410). Incomplete
+    /// exit 13 and baseline refuse use this single sum so they cannot drift
+    /// from the severity table.
+    pub(crate) fn fail_class_total(&self) -> usize {
+        CoverageGapKind::fail_class_kinds()
+            .map(|kind| kind.count(self))
+            .sum()
     }
 }
 
@@ -587,6 +655,14 @@ impl CoverageGapKind {
         Self::BinaryUnreadable,
     ];
 
+    /// FAIL-class kinds only (KH-1410). Incomplete exit 13, baseline refuse,
+    /// and `SourceCoverageGaps::fail_class_total` must agree with this set.
+    pub(crate) fn fail_class_kinds() -> impl Iterator<Item = CoverageGapKind> {
+        Self::ALL
+            .into_iter()
+            .filter(|k| k.severity() == CoverageSeverity::Fail)
+    }
+
     /// This category's count from a snapshot. `NonBinaryUnreadable` excludes
     /// unreadable binaries (their own category) so the same dropped file is never
     /// counted twice across the two surfaces.
@@ -622,20 +698,23 @@ impl CoverageGapKind {
     /// every non-zero gap identically.
     pub(crate) fn severity(self) -> CoverageSeverity {
         match self {
-            // Advisory/deliberate skips, plus partial decode-through gaps the raw
-            // scan still covered → yellow WARN.
+            // Deliberate skips and bounded decode-through gaps whose raw bytes
+            // remain fully covered render as advisory WARN.
             Self::OverMaxSize
             | Self::Binary
             | Self::Excluded
-            | Self::ScannerStructuredParseFailure
             | Self::ScannerStructuredOversizeSkip
             | Self::ScannerDecodeTruncation
             | Self::ScannerInvalidPatternIndexSkip
-            | Self::ScannerBoundaryCardinalityMismatch
-            | Self::ScannerLineOffsetMismatch => CoverageSeverity::Warn,
-            // Genuine "these bytes were NOT covered" → red FAIL: a clean bill is
-            // unsafe while any of these is non-zero.
-            Self::SourceError
+            | Self::ScannerBoundaryCardinalityMismatch => CoverageSeverity::Warn,
+            // Genuine "these bytes were NOT covered" (or line identity is wrong)
+            // → red FAIL: a clean bill is unsafe while any of these is non-zero.
+            // Line-offset mismatch is FAIL so incomplete exit 13 and SARIF
+            // consumers share one FAIL set (KH-1347).
+            // Structured parse failure loses encoded-value coverage and must
+            // fail closed rather than bless the raw-only scan as complete.
+            Self::ScannerStructuredParseFailure
+            | Self::SourceError
             | Self::NonBinaryUnreadable
             | Self::GitObjectUnreadable
             | Self::ArchiveTruncated
@@ -645,7 +724,8 @@ impl CoverageGapKind {
             | Self::ArchiveDuplicateScanUnavailable
             | Self::GitLfsPointer
             | Self::BinaryDegraded
-            | Self::BinaryUnreadable => CoverageSeverity::Fail,
+            | Self::BinaryUnreadable
+            | Self::ScannerLineOffsetMismatch => CoverageSeverity::Fail,
         }
     }
 
@@ -822,7 +902,7 @@ impl CoverageGapKind {
 /// human sees is a false-clean (Law 10). This previously drifted, the SARIF
 /// path omitted unreadable *binaries* and the structured decode-through
 /// oversize skip (so both are explicit entries below).
-fn coverage_gap_summary(counts: &CoverageCounts) -> Vec<(String, usize)> {
+pub(crate) fn coverage_gap_summary(counts: &CoverageCounts) -> Vec<(String, usize)> {
     CoverageGapKind::ALL
         .iter()
         .map(|kind| (kind.sarif_reason().to_string(), kind.count(counts)))

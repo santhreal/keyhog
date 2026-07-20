@@ -202,6 +202,7 @@ pub(crate) struct AutorouteRouteTimingInspection {
     pub(crate) backend: String,
     pub(crate) phase2_plain_localizer: bool,
     pub(crate) phase2_keyword_localizer: bool,
+    pub(crate) peer_identity: Option<String>,
     /// Primary persisted evidence in measurement order.
     pub(crate) trials_ns: Vec<u128>,
     /// First materialization/dispatch cost for SIMD and GPU routes.
@@ -237,16 +238,27 @@ pub(crate) struct AutorouteCandidateReceiptInspection {
     pub(crate) backend: String,
     pub(crate) phase2_plain_localizer: bool,
     pub(crate) phase2_keyword_localizer: bool,
+    pub(crate) peer_identity: Option<String>,
     pub(crate) correctness_digest: String,
     pub(crate) completed_trials: usize,
     pub(crate) evidence_digest: String,
 }
 
-fn selection_basis(confidence_separated: bool) -> &'static str {
-    if confidence_separated {
-        "separated-95pct-confidence"
+fn selection_basis(
+    exact_plan_confidence: bool,
+    selected_plain_localizer: bool,
+    selected_keyword_localizer: bool,
+    default_plain_localizer: bool,
+    default_keyword_localizer: bool,
+) -> &'static str {
+    if exact_plan_confidence {
+        "exact-plan-paired-95pct-confidence"
+    } else if selected_plain_localizer == default_plain_localizer
+        && selected_keyword_localizer == default_keyword_localizer
+    {
+        "peer-separated-compiled-default-plan"
     } else {
-        "inconclusive-no-route"
+        "peer-separated-statistically-tied-plan"
     }
 }
 
@@ -259,7 +271,8 @@ fn route_timing_inspections(
         .map(|entry| {
             let route = entry
                 .measured_route()
-                .expect("validated route timing has a supported backend");
+                // LAW10: cache validation rejects unsupported backends before inspection; invariant failure aborts rather than rewriting route evidence.
+                .unwrap_or_else(|| panic!("validated route timing has a supported backend"));
             let (
                 cold_ns,
                 one_shot_ns,
@@ -273,7 +286,10 @@ fn route_timing_inspections(
             {
                 let (cold_ns, warm, one_shot_ns) = point
                     .accelerator_cold_warm_route_for_measured(route)
-                    .expect("validated accelerator route timing has cold/warm evidence");
+                    // LAW10: cache validation requires paired accelerator cold/warm evidence; invariant failure aborts rather than inventing a measurement.
+                    .unwrap_or_else(|| {
+                        panic!("validated accelerator route timing has cold/warm evidence")
+                    });
                 let warm_ci95 = warm.confidence_interval_95_ns();
                 (
                     Some(cold_ns),
@@ -300,6 +316,7 @@ fn route_timing_inspections(
                 backend: entry.backend.clone(),
                 phase2_plain_localizer: entry.phase2_plain_localizer,
                 phase2_keyword_localizer: entry.phase2_keyword_localizer,
+                peer_identity: entry.peer_identity.clone(),
                 trials_ns: entry.timing.trials_ns.clone(),
                 cold_ns,
                 one_shot_ns,
@@ -511,38 +528,53 @@ fn inspect_autoroute_cache_for_build(
                 out.configs.clear();
                 return out;
             };
-            let confidence_separated = decision.has_separated_fastest_route();
-            let daemon_confidence_separated = decision.has_separated_fastest_persistent_route();
+            let one_shot_route = decision
+                .resolved_routing_route()
+                // LAW10: cache validation requires a one-shot route; invariant failure aborts inspection.
+                .unwrap_or_else(|| panic!("validated decision has a one-shot route"));
+            let exact_plan_confidence = decision.calibration_points.iter().all(|point| {
+                point.selected_route_has_exact_plan_confidence_for(one_shot_route, false)
+            });
+            let daemon_exact_plan_confidence = decision.calibration_points.iter().all(|point| {
+                point.selected_route_has_exact_plan_confidence_for(daemon_route, true)
+            });
+            let confidence_separated = decision.has_confidence_supported_route();
+            let daemon_confidence_separated = decision.has_confidence_supported_persistent_route();
             let primary = decision.primary_point();
             let sample_bytes_min = decision
                 .calibration_points
                 .iter()
                 .map(|point| point.sample_bytes)
                 .min()
+                // LAW10: validated decisions always contain the primary point; this is an invariant-preserving identity for a non-empty minimum.
                 .unwrap_or(primary.sample_bytes);
             let sample_bytes_max = decision
                 .calibration_points
                 .iter()
                 .map(|point| point.sample_bytes)
                 .max()
+                // LAW10: validated decisions always contain the primary point; this is an invariant-preserving identity for a non-empty maximum.
                 .unwrap_or(primary.sample_bytes);
             let sample_chunks_min = decision
                 .calibration_points
                 .iter()
                 .map(|point| point.sample_chunks)
                 .min()
+                // LAW10: validated decisions always contain the primary point; this is an invariant-preserving identity for a non-empty minimum.
                 .unwrap_or(primary.sample_chunks);
             let sample_chunks_max = decision
                 .calibration_points
                 .iter()
                 .map(|point| point.sample_chunks)
                 .max()
+                // LAW10: validated decisions always contain the primary point; this is an invariant-preserving identity for a non-empty maximum.
                 .unwrap_or(primary.sample_chunks);
             let calibrated_at_unix_ms = decision
                 .calibration_points
                 .iter()
                 .map(|point| point.calibrated_at_unix_ms)
                 .min()
+                // LAW10: validated decisions always contain the primary point; this is an invariant-preserving identity for a non-empty minimum.
                 .unwrap_or(primary.calibrated_at_unix_ms);
             let measured_points = decision
                 .calibration_points
@@ -550,10 +582,12 @@ fn inspect_autoroute_cache_for_build(
                 .map(|point| {
                     let one_shot_route = point
                         .resolve_measured_route(false)
-                        .expect("validated point has a one-shot route");
+                        // LAW10: cache validation requires a one-shot route at every point; invariant failure aborts inspection.
+                        .unwrap_or_else(|| panic!("validated point has a one-shot route"));
                     let daemon_route = point
                         .resolve_measured_route(true)
-                        .expect("validated point has a daemon route");
+                        // LAW10: cache validation requires a daemon route at every point; invariant failure aborts inspection.
+                        .unwrap_or_else(|| panic!("validated point has a daemon route"));
                     AutorouteCalibrationPointInspection {
                         sample_bytes: point.sample_bytes,
                         sample_chunks: point.sample_chunks,
@@ -572,12 +606,9 @@ fn inspect_autoroute_cache_for_build(
                         daemon_phase2_plain_localizer: daemon_route.phase2_plain_localizer,
                         daemon_phase2_keyword_localizer: daemon_route.phase2_keyword_localizer,
                         one_shot_confidence_separated: point
-                            .selected_route_has_non_overlapping_confidence_for(
-                                one_shot_route,
-                                false,
-                            ),
+                            .selected_route_has_confidence_for(one_shot_route, false),
                         daemon_confidence_separated: point
-                            .selected_route_has_non_overlapping_confidence_for(daemon_route, true),
+                            .selected_route_has_confidence_for(daemon_route, true),
                         route_timings: route_timing_inspections(point),
                         candidate_receipts: point
                             .candidate_receipts
@@ -586,6 +617,7 @@ fn inspect_autoroute_cache_for_build(
                                 backend: receipt.backend.clone(),
                                 phase2_plain_localizer: receipt.phase2_plain_localizer,
                                 phase2_keyword_localizer: receipt.phase2_keyword_localizer,
+                                peer_identity: receipt.peer_identity.clone(),
                                 correctness_digest: format!("{:016x}", receipt.correctness_digest),
                                 completed_trials: receipt.completed_trials,
                                 evidence_digest: format!("{:016x}", receipt.evidence_digest),
@@ -629,6 +661,7 @@ fn inspect_autoroute_cache_for_build(
                         backend: receipt.backend.clone(),
                         phase2_plain_localizer: receipt.phase2_plain_localizer,
                         phase2_keyword_localizer: receipt.phase2_keyword_localizer,
+                        peer_identity: receipt.peer_identity.clone(),
                         correctness_digest: format!("{:016x}", receipt.correctness_digest),
                         completed_trials: receipt.completed_trials,
                         evidence_digest: format!("{:016x}", receipt.evidence_digest),
@@ -636,13 +669,25 @@ fn inspect_autoroute_cache_for_build(
                     .collect(),
                 route_timings: route_timing_inspections(primary),
                 confidence_separated,
-                selection_basis: selection_basis(confidence_separated),
+                selection_basis: selection_basis(
+                    exact_plan_confidence,
+                    one_shot_route.phase2_plain_localizer,
+                    one_shot_route.phase2_keyword_localizer,
+                    primary.compiled_default_phase2_plain_localizer,
+                    primary.compiled_default_phase2_keyword_localizer,
+                ),
                 selected_margin_ns: decision.selected_margin_ns(),
                 daemon_backend: daemon_route.backend.label().to_string(),
                 daemon_phase2_plain_localizer: daemon_route.phase2_plain_localizer,
                 daemon_phase2_keyword_localizer: daemon_route.phase2_keyword_localizer,
                 daemon_confidence_separated,
-                daemon_selection_basis: selection_basis(daemon_confidence_separated),
+                daemon_selection_basis: selection_basis(
+                    daemon_exact_plan_confidence,
+                    daemon_route.phase2_plain_localizer,
+                    daemon_route.phase2_keyword_localizer,
+                    primary.compiled_default_phase2_plain_localizer,
+                    primary.compiled_default_phase2_keyword_localizer,
+                ),
                 daemon_selected_margin_ns: decision.persistent_selected_margin_ns(),
                 runtime_quarantined: runtime_fault.is_some(),
                 runtime_fault_backend: runtime_fault.map(|(backend, _)| backend.clone()),

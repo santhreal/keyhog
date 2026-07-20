@@ -9,7 +9,7 @@
 //! ran, so it must not read as all-clear), (3) the actionable hint naming
 //! `--git-staged` and the not-a-repo cause.
 
-use crate::e2e::support::binary;
+use crate::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 
@@ -40,7 +40,7 @@ fn git_staged_outside_repo_fails_cleanly_with_actionable_message() {
 
     // Clean, actionable message (names the cause and the offending flag).
     assert!(
-        combined.contains("not a git repository"),
+        combined.contains("not a git repository") || combined.contains("not inside a git worktree"),
         "error must explain the not-a-repo cause; combined={combined}"
     );
     assert!(

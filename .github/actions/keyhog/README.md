@@ -31,6 +31,10 @@ also keep the artifact so the failed job is still diagnosable.
 Set `upload-sarif: 'false'` when the workflow cannot grant
 `security-events: write`. The artifact upload remains available.
 
+The scan step records its report before the Action restores a findings or live
+credential exit status. A missing, malformed, or unreadable report always fails
+the job, including when `fail-on-findings` is `false`.
+
 `analysis-category` is the stable identity for one Code Scanning partition.
 Keep it unchanged across commits so GitHub updates that partition. Give every
 KeyHog scan of the same commit a distinct category so monorepo and matrix
@@ -133,7 +137,7 @@ literal artifacts before scanning. Linux also installs the Hyperscan runtime.
 
 | OS | arch | Prebuilt binary | Branch/SHA source build |
 | --- | --- | --- | --- |
-| Linux | x86_64 | yes (full features) | yes |
+| Linux | x86_64 | yes (full features) | yes (`ci-lean` feature) |
 | macOS | aarch64 | yes (no Hyperscan) | yes (`portable` feature) |
 | macOS | x86_64 | yes (no Hyperscan) | yes (`portable` feature) |
 | Windows | x86_64 | yes (portable feature set) | yes (`portable` feature) |
@@ -143,16 +147,16 @@ inputs require the complete signed binary and GPU literal bundle. The floating
 tag resolves the exact version from its checked-out manifest. Missing,
 malformed, or unverifiable release payloads fail closed instead of silently
 source-building different code. Branch/SHA action refs skip the release lookup
-and build from source. The Action intentionally uses the portable feature set
-for release refs of the form `vMAJOR.MINOR.PATCH` with an optional prerelease
-suffix; build metadata (`+...`) is rejected because no matching release asset
-namespace is published. It uses that portable feature set for both macOS
-prebuilts and branch/SHA source fallbacks. A manual macOS source build can use
-Hyperscan after `brew install vectorscan pkg-config`; that is a different build
-from the Action asset. Both include entropy, multiline reassembly, ML scoring,
-decode-through, and the portable git, web, hosted-Git, cloud, and Docker source
-backends. Ghidra binary extraction remains opt-in and is absent from the
-portable asset.
+and build from source. Linux source fallbacks use `ci-lean`, including the SIMD
+backend. macOS and Windows source fallbacks use the `portable` feature. Release
+refs of the form `vMAJOR.MINOR.PATCH` may include a prerelease suffix. Build
+metadata (`+...`) is rejected because no matching release asset namespace is
+published. macOS prebuilts also use the portable feature set. A manual macOS
+source build can use Hyperscan after `brew install vectorscan pkg-config`; that
+is a different build from the Action asset. Both feature sets include entropy,
+multiline reassembly, ML scoring, decode-through, and the portable git, web,
+hosted-Git, cloud, and Docker source backends. Ghidra binary extraction remains
+opt-in and is absent from the portable asset.
 
 ## Recipes
 

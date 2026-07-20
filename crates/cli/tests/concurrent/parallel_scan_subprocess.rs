@@ -1,6 +1,6 @@
 //! Spawn parallel `keyhog scan` subprocesses; each must emit independent valid JSON.
 
-use crate::e2e::support::binary;
+use crate::support::binary;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Barrier};
 use std::thread;

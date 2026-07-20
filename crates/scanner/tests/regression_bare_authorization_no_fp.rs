@@ -89,7 +89,7 @@ fn detector_credential(
     matches
         .iter()
         .find(|m| m.detector_id.as_ref() == detector_id)
-        .map(|m| m.credential.to_string())
+        .map(|m| m.credential.as_str().to_string())
 }
 
 // ---------------------------------------------------------------------------

@@ -9,7 +9,7 @@ fn custom_detector_identity_reaches_the_exact_scan_finding() {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(
         dir.path().join("identity-propagation.toml"),
-        format!(
+        keyhog_core::testing::detector_toml_with_fixture_confidence(&format!(
             r#"
 [detector]
 id = "{DETECTOR_ID}"
@@ -24,7 +24,7 @@ min_confidence = 0.0
 regex = 'identity_contract_([A-Za-z0-9]{{32}})'
 group = 1
 "#
-        ),
+        )),
     )
     .expect("write custom detector");
 

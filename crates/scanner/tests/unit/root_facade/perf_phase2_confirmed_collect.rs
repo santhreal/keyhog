@@ -303,7 +303,7 @@ fn inline_detector_full(
         patterns: vec![inline_pattern(regex)],
         keywords: vec![keyword.to_string()],
         min_confidence,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }
 }
 
@@ -446,7 +446,7 @@ fn findings_independent_of_catalog_size() {
     // Reduce each to its (detector_id, credential) identity set and compare.
     let ident = |ms: &[RawMatch]| -> std::collections::BTreeSet<(String, String)> {
         ms.iter()
-            .map(|m| (m.detector_id.to_string(), m.credential.to_string()))
+            .map(|m| (m.detector_id.to_string(), m.credential.as_str().to_string()))
             .collect()
     };
     let small_set = ident(&small_matches);
@@ -510,7 +510,7 @@ fn coalesced_and_per_chunk_findings_match() {
 
     let ident = |ms: &[RawMatch]| -> std::collections::BTreeSet<(String, String)> {
         ms.iter()
-            .map(|m| (m.detector_id.to_string(), m.credential.to_string()))
+            .map(|m| (m.detector_id.to_string(), m.credential.as_str().to_string()))
             .collect()
     };
 

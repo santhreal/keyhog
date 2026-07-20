@@ -27,13 +27,18 @@ fn is_gzip_magic(bytes: &[u8]) -> bool {
     bytes.len() >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b
 }
 
-/// True iff `bytes` begins with a zlib stream header. The second byte encodes
-/// FLEVEL|FCHECK; the three common compression levels produce `78 01` (no/low),
-/// `78 9c` (default), and `78 da` (best). Restricting to these avoids treating
-/// arbitrary `0x78` ('x') text as a zlib stream.
+/// True iff `bytes` begins with a valid zlib stream header (RFC 1950).
+/// CM must be 8 (deflate), CINFO must name a supported window size (`<= 7`),
+/// and CMF/FLG must satisfy the FCHECK modulo-31 rule. This admits all valid
+/// FLEVEL values while rejecting reserved window sizes and arbitrary text.
 #[must_use]
 fn is_zlib_magic(bytes: &[u8]) -> bool {
-    bytes.len() >= 2 && bytes[0] == 0x78 && matches!(bytes[1], 0x01 | 0x9c | 0xda)
+    if bytes.len() < 2 {
+        return false;
+    }
+    let cmf = bytes[0];
+    let flg = bytes[1];
+    (cmf & 0x0f) == 8 && (cmf >> 4) <= 7 && (u16::from(cmf) * 256 + u16::from(flg)) % 31 == 0
 }
 
 /// Whether a decoded prefix reaches the bounded compression mechanism.
@@ -69,8 +74,21 @@ pub(crate) fn try_inflate_to_text(bytes: &[u8]) -> Option<String> {
     } else {
         return None;
     };
+    // Cap hit or mid-stream UnexpectedEof can still leave a useful prefix in
+    // `out` (KH-1339). Rescan that window; original compressed bytes also stay
+    // in the parent scan path.
     let container = match inflate_result {
         Ok(container) => container,
+        Err(error) if !out.is_empty() => {
+            crate::telemetry::record_decode_truncation();
+            tracing::warn!(
+                compressed_bytes = bytes.len(),
+                inflated_prefix = out.len(),
+                %error,
+                "compressed decode truncated or failed mid-stream; rescanning inflated prefix"
+            );
+            "truncated"
+        }
         Err(error) => {
             tracing::warn!(
                 compressed_bytes = bytes.len(),

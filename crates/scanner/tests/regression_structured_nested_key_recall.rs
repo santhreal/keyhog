@@ -40,7 +40,7 @@ fn surfaces_in(path: &str, text: &str, needle: &str) -> bool {
     let chunk: Chunk = make_chunk(text, "filesystem", path);
     s.scan(&chunk)
         .into_iter()
-        .any(|m| m.credential.to_string().contains(needle))
+        .any(|m| m.credential.as_str().to_string().contains(needle))
 }
 
 fn nothing_in(path: &str, text: &str, needle: &str) -> bool {
@@ -49,7 +49,7 @@ fn nothing_in(path: &str, text: &str, needle: &str) -> bool {
     let chunk: Chunk = make_chunk(text, "filesystem", path);
     !s.scan(&chunk)
         .into_iter()
-        .any(|m| m.credential.to_string().contains(needle))
+        .any(|m| m.credential.as_str().to_string().contains(needle))
 }
 
 // ── TOML: nested tables, dotted keys, array-of-tables ─────────────────────────

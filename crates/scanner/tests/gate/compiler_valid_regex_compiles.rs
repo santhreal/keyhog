@@ -23,7 +23,7 @@ fn build_compile_state_accepts_valid_detector() {
         verify: None,
         keywords: vec!["abc".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let error = compile_state_error(&[det]);
     assert!(

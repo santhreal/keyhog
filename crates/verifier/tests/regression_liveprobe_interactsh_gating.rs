@@ -59,7 +59,7 @@ fn base_detector() -> DetectorSpec {
             ..Default::default()
         }],
         keywords: vec!["demo_".into()],
-        ..Default::default()
+        ..keyhog_core::testing::named_detector_fixture_defaults()
     }
 }
 

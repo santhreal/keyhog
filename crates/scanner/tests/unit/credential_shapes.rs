@@ -110,16 +110,16 @@ fn build_maps_per_detector_shapes_to_compiled_rules() {
     let aws = DetectorSpec {
         id: aws_access_key_id(),
         credential_shape: Some(shape(Some(20), None, None, None)),
-        ..DetectorSpec::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let anthropic = DetectorSpec {
         id: anthropic_api_key_id(),
         credential_shape: Some(shape(None, Some("sk-ant-api03-"), Some(80), Some(120))),
-        ..DetectorSpec::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let no_shape = DetectorSpec {
         id: "no-shape-detector".to_string(),
-        ..DetectorSpec::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
 
     let aws_rule = compile_detector_shape_rule(&aws).unwrap();
@@ -141,8 +141,8 @@ fn build_fails_closed_on_a_malformed_shape() {
     // error (fail-closed), never a silent skip.
     let bad = DetectorSpec {
         id: "bad-shape".to_string(),
-        credential_shape: Some(shape(None, Some("sk-"), None, None)), // prefix, no length
-        ..DetectorSpec::default()
+        credential_shape: Some(shape(None, Some("sk-"), None, None)),
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let err = compile_detector_shape_rule(&bad).unwrap_err();
     assert!(err.contains("prefix but no length constraint"));

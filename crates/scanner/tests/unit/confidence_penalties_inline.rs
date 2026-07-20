@@ -1,19 +1,27 @@
-//! Boundary lock for the repeat-run precision heuristics. `is_degenerate_repeat`
-//! is the single source of truth deciding whether a value's longest identical-
-//! byte run marks it as a placeholder/padding artifact, it denies the
-//! known-prefix confidence floor and drives the post-ML shape penalty. Its
-//! `DEGENERATE_RUN_LEN = 10` boundary is a real detection contract (9 identical
-//! chars is a plausible key body; 10 is not), so pin it exactly, along with the
-//! run-length and ratio primitives it is built from. These `pub(crate)`/private
-//! items are unreachable from an external `tests/` target, so the white-box
-//! tests live here.
+//! Boundary lock for detector-owned repeat-run precision heuristics.
+//! `is_degenerate_repeat_at` applies each compiled detector's absolute run
+//! threshold. The generic detector policy's `degenerate_run_min_length = 10`
+//! boundary is a real detection contract (9 identical chars is a plausible key
+//! body; 10 is not), so pin it exactly alongside custom thresholds and the
+//! run-length and ratio primitives.
+//! These `pub(crate)` and private items are unreachable from an external
+//! `tests/` target, so the white-box tests live here.
 
 use super::{
     apply_path_confidence_penalties, apply_post_ml_penalties_with_encoded_text_lift,
-    is_degenerate_repeat, longest_repeat_run_len, max_repeat_run, DATA_ENVELOPE_PENALTY,
-    DEGENERATE_RUN_LEN, DEGENERATE_SHAPE_PENALTY, FIXTURE_PATH_COMPONENTS, LOW_DIVERSITY_PENALTY,
-    PLACEHOLDER_WORD_PENALTY,
+    is_degenerate_repeat_at, longest_repeat_run_len, max_repeat_run, FIXTURE_PATH_COMPONENTS,
 };
+
+fn post_match_policy() -> keyhog_core::DetectorPostMatchConfidenceSpec {
+    keyhog_core::detector_spec_by_id("generic-secret")
+        .and_then(|detector| detector.match_confidence)
+        .map(|confidence| confidence.post_match)
+        .expect("embedded generic-secret post-match policy")
+}
+
+fn is_degenerate_repeat(credential: &str) -> bool {
+    is_degenerate_repeat_at(credential, post_match_policy().degenerate_run_min_length)
+}
 
 // ── Tier-B fixture-path component loader (rules/example-path-components.toml) ─
 #[test]
@@ -37,19 +45,34 @@ fn fixture_path_components_load_the_union_superset() {
 #[test]
 fn path_haircut_fires_for_fixture_dirs_and_halves_confidence() {
     // A `samples/` component (added by the union) must trigger the 0.5 haircut.
-    let scored = apply_path_confidence_penalties(0.8, Some("src/samples/config.rs"), true);
+    let scored = apply_path_confidence_penalties(
+        0.8,
+        Some("src/samples/config.rs"),
+        true,
+        post_match_policy().fixture_path_multiplier,
+    );
     assert!(
         (scored - 0.4).abs() < 1e-9,
         "expected 0.8 × 0.5 = 0.4 for a samples/ path, got {scored}"
     );
     // A `fixtures/` component (from the suppression side of the union) too.
-    let scored = apply_path_confidence_penalties(0.8, Some("a/fixtures/b.rs"), true);
+    let scored = apply_path_confidence_penalties(
+        0.8,
+        Some("a/fixtures/b.rs"),
+        true,
+        post_match_policy().fixture_path_multiplier,
+    );
     assert!((scored - 0.4).abs() < 1e-9, "fixtures/ path, got {scored}");
 }
 
 #[test]
 fn path_haircut_does_not_fire_for_ordinary_source() {
-    let scored = apply_path_confidence_penalties(0.8, Some("src/handlers/auth.rs"), true);
+    let scored = apply_path_confidence_penalties(
+        0.8,
+        Some("src/handlers/auth.rs"),
+        true,
+        post_match_policy().fixture_path_multiplier,
+    );
     assert!(
         (scored - 0.8).abs() < 1e-9,
         "ordinary source path must not be haircut, got {scored}"
@@ -59,7 +82,12 @@ fn path_haircut_does_not_fire_for_ordinary_source() {
 #[test]
 fn path_haircut_is_disabled_when_penalize_is_false() {
     // `--no-suppress-test-fixtures` clears the haircut even in a fixtures dir.
-    let scored = apply_path_confidence_penalties(0.8, Some("a/fixtures/b.rs"), false);
+    let scored = apply_path_confidence_penalties(
+        0.8,
+        Some("a/fixtures/b.rs"),
+        false,
+        post_match_policy().fixture_path_multiplier,
+    );
     assert!(
         (scored - 0.8).abs() < 1e-9,
         "penalize=false must keep full confidence, got {scored}"
@@ -68,27 +96,42 @@ fn path_haircut_is_disabled_when_penalize_is_false() {
 
 #[test]
 fn path_haircut_sanitizes_nan_even_without_a_path() {
-    assert_eq!(apply_path_confidence_penalties(f64::NAN, None, true), 0.0);
+    assert_eq!(
+        apply_path_confidence_penalties(
+            f64::NAN,
+            None,
+            true,
+            post_match_policy().fixture_path_multiplier,
+        ),
+        0.0
+    );
 }
 
-// ── the hoisted post-ML penalty multipliers are pinned ───────────────────
+// ── detector-owned post-ML policy values are pinned ─────────────────────
 #[test]
-fn penalty_multiplier_constants_are_pinned() {
-    assert_eq!(PLACEHOLDER_WORD_PENALTY, 0.05);
-    assert_eq!(LOW_DIVERSITY_PENALTY, 0.1);
-    assert_eq!(DEGENERATE_SHAPE_PENALTY, 0.1);
-    assert_eq!(DATA_ENVELOPE_PENALTY, 0.02);
+fn generic_detector_penalty_policy_is_pinned() {
+    let policy = post_match_policy();
+    assert_eq!(policy.placeholder_multiplier, 0.05);
+    assert_eq!(policy.low_diversity_multiplier, 0.1);
+    assert_eq!(policy.degenerate_repeat_multiplier, 0.1);
+    assert_eq!(policy.data_envelope_multiplier, Some(0.02));
 }
 
 #[test]
 fn generic_degenerate_low_diversity_value_takes_both_shape_penalties() {
-    // 16 identical non-base64 bytes: char_diversity = 1/16 < 0.3 (LOW_DIVERSITY)
-    // AND a 16-long run ≥ DEGENERATE_RUN_LEN with ratio 1.0 > 0.5
-    // (DEGENERATE_SHAPE). '!' is outside the base64 alphabet, so no
-    // data-envelope arm fires. Generic detector (is_named = false).
+    // 16 identical non-base64 bytes fall below the detector-owned diversity
+    // floor and exceed its detector-owned repeat-run ratio and length limits.
+    // `!` is outside the base64 alphabet, so no data-envelope arm fires.
     let value = "!".repeat(16);
-    let scored = apply_post_ml_penalties_with_encoded_text_lift(1.0, &value, false, false, false);
-    // 1.0 × LOW_DIVERSITY_PENALTY × DEGENERATE_SHAPE_PENALTY = 0.1 × 0.1 = 0.01.
+    let scored = apply_post_ml_penalties_with_encoded_text_lift(
+        1.0,
+        &value,
+        false,
+        false,
+        false,
+        post_match_policy(),
+    );
+    // The detector policy applies 0.1 low-diversity and repeat multipliers.
     assert!(
         (scored - 0.01).abs() < 1e-9,
         "expected 0.01 (0.1 × 0.1), got {scored}"
@@ -145,10 +188,16 @@ fn run_len_is_byte_based_not_char_based() {
     assert_eq!(longest_repeat_run_len("\u{e9}\u{e9}\u{e9}"), 1);
 }
 
-// ── the DEGENERATE_RUN_LEN threshold is exactly 10 ───────────────────────
+// ── the generic detector's run threshold is exactly 10 ─────────────────
 #[test]
-fn degenerate_run_len_constant_is_ten() {
-    assert_eq!(DEGENERATE_RUN_LEN, 10);
+fn generic_degenerate_run_min_length_is_ten() {
+    assert_eq!(post_match_policy().degenerate_run_min_length, 10);
+}
+
+#[test]
+fn custom_detector_repeat_limit_is_applied_exactly() {
+    assert!(!is_degenerate_repeat_at("aaaa", 5));
+    assert!(is_degenerate_repeat_at("aaaaa", 5));
 }
 
 #[test]

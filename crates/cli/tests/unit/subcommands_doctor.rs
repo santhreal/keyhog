@@ -33,7 +33,7 @@ fn doctor_gpu_self_test_failure_is_unhealthy() {
         "/src/subcommands/doctor.rs"
     ));
     let gpu_branch = source
-        .split("match keyhog_scanner::gpu::gpu_region_presence_self_test()")
+        .split("let region_presence = keyhog_scanner::gpu::gpu_region_presence_self_test();")
         .nth(1)
         .and_then(|tail| {
             tail.split("match keyhog_scanner::gpu::vyre_gpu_self_test()")

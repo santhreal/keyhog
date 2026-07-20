@@ -122,7 +122,7 @@ const BASE_SCAN_LONG_FLAGS: &[&str] = &[
     "profile",
     "progress",
     "quiet",
-    "rate",
+    // removed; the field is now `verify_rate` and the flag is `--verify-rate`.
     "regex-dfa-limit",
     "reader-threads",
     "require-gpu",
@@ -163,8 +163,14 @@ fn expected_scan_long_flags() -> BTreeSet<String> {
     }
     #[cfg(feature = "github")]
     {
+        add("github-collaboration");
+        add("github-discussions");
+        add("github-gists");
+        add("github-issues");
         add("github-org");
+        add("github-pull-requests");
         add("github-token");
+        add("github-wiki");
     }
     #[cfg(feature = "gitlab")]
     {
@@ -251,6 +257,7 @@ fn expected_scan_long_flags() -> BTreeSet<String> {
         add("allow-script-verify");
         add("verify");
         add("verify-batch");
+        add("verify-concurrency");
         add("verify-oob");
         add("verify-rate");
         add("oob-server");

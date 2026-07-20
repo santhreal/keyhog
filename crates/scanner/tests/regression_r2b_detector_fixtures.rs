@@ -372,7 +372,7 @@ fn r2b_top50_candidates_are_detected() {
             &[
                 (
                     r#"_json_key="{\"type\":\"service_account\",\"private_key\":\"-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----\"}""#,
-                    "-----BEGIN PRIVATE KEY-----",
+                    r#"-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----"#,
                 ),
             ],
         ),
@@ -481,7 +481,7 @@ fn r2b_retry_fixtures_are_detected() {
         (
             "google-artifact-registry-key",
             r#"{"type": "service_account", "private_key": "-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----"}"#,
-            "-----BEGIN PRIVATE KEY-----",
+            r#"-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----"#,
         ),
         (
             "jumio-api-credentials",

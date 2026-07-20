@@ -171,7 +171,7 @@ fn canonical(matches: &[Vec<RawMatch>]) -> Vec<Key> {
         .map(|m| {
             (
                 m.detector_id.to_string(),
-                m.credential.to_string(),
+                m.credential.as_str().to_string(),
                 format!("{:?}", m.location),
             )
         })

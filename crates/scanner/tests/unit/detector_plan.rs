@@ -126,7 +126,7 @@ fn unified_plan_rejects_unordered_detector_entropy_tiers() {
     };
     assert!(error.contains("generic-secret"), "missing owner: {error}");
     assert!(
-        error.contains("entropy_low <= entropy_high <= entropy_very_high"),
-        "missing ordering fix: {error}"
+        error.contains("entropy_high 6 must not exceed entropy_very_high 5"),
+        "missing ordering violation: {error}"
     );
 }

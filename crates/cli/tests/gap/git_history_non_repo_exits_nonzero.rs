@@ -1,6 +1,6 @@
 //! KH-GAP-096: Remote/git-only scan sources must not exit 0 when the source fails.
 
-use crate::e2e::support::binary;
+use crate::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 

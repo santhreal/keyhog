@@ -103,6 +103,7 @@ fn hex_preview(bytes: &[u8]) -> String {
 #[test]
 fn impossible_admission_implies_zero_output_for_every_builtin_decoder() {
     let decoders = super::default_decoders();
+    let policy = crate::decode::policy::bundled_compat_policy();
     let mut impossible_counts: BTreeMap<&'static str, usize> =
         decoders.iter().map(|decoder| (decoder.name(), 0)).collect();
     let mut rng = FixedRng(0x9e37_79b9_7f4a_7c15);
@@ -114,12 +115,12 @@ fn impossible_admission_implies_zero_output_for_every_builtin_decoder() {
         super::super::extractor::prime_shared_candidates(&chunk.data);
 
         for decoder in &decoders {
-            match decoder.admission(&chunk) {
+            match decoder.admission(&chunk, policy) {
                 DecodeAdmission::Impossible => {
                     *impossible_counts
                         .get_mut(decoder.name())
                         .expect("default decoder name was counted") += 1;
-                    let decoded = decoder.decode_chunk(&chunk);
+                    let decoded = decoder.decode_chunk(&chunk, policy);
                     assert!(
                         decoded.is_empty(),
                         "decoder={} returned Impossible but emitted {} chunks; case={case_index}; \
@@ -195,7 +196,9 @@ impl Decoder for UnknownSketchDecoder {
 fn custom_decoder_unknown_is_conservative_and_visible() {
     let _registration = super::register_thread_decoder(Box::new(UnknownSketchDecoder));
     let chunk = chunk(0, b"c.u.s.t.o.m");
-    let sketch = super::decoder_admission_sketch(&chunk);
+    let policy = crate::decode::policy::bundled_compat_policy();
+    let plan = super::CompiledDecoderPlan::snapshot().expect("valid decoder registry snapshot");
+    let sketch = super::decoder_admission_sketch(&chunk, policy, &plan);
 
     assert!(sketch.has_unknown());
     assert_eq!(sketch.candidate_count(), u16::MAX);

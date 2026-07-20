@@ -147,6 +147,37 @@ struct StagedChunkIter {
     done: bool,
 }
 
+pub(crate) struct OversizedStagedHeaderOutcome {
+    pub(crate) error: SourceError,
+    pub(crate) continue_later_records: bool,
+}
+
+pub(crate) fn consume_oversized_staged_header_path(
+    reader: &mut impl std::io::BufRead,
+    raw_path: &mut Vec<u8>,
+    path_limit: usize,
+) -> OversizedStagedHeaderOutcome {
+    match super::read_capped_record(reader, raw_path, path_limit, 0) {
+        Ok(0) => OversizedStagedHeaderOutcome {
+            error: SourceError::Git(
+                "git raw staged diff ended before the path for an oversized index entry".into(),
+            ),
+            continue_later_records: false,
+        },
+        Ok(_) => OversizedStagedHeaderOutcome {
+            error: SourceError::Git(format!(
+                "git staged raw diff header exceeded the {}-byte limit; the oversized index entry was not scanned",
+                super::GIT_PLUMBING_LINE_BYTES
+            )),
+            continue_later_records: true,
+        },
+        Err(error) => OversizedStagedHeaderOutcome {
+            error: SourceError::Io(error),
+            continue_later_records: false,
+        },
+    }
+}
+
 impl StagedChunkIter {
     fn new(
         repo_path: &Path,
@@ -245,12 +276,23 @@ impl Iterator for StagedChunkIter {
                 Err(error) => return self.stop(SourceError::Io(error)),
             };
             if header_bytes > super::GIT_PLUMBING_LINE_BYTES {
-                return self.stop(super::git_output_line_truncated_error(
+                // KH-1355: drop this index record (and its following path field)
+                // then continue so later staged paths still scan.
+                super::record_git_output_line_truncated(
                     "git staged source",
                     "raw diff header",
                     super::GIT_PLUMBING_LINE_BYTES,
                     header_bytes,
-                ));
+                );
+                let outcome = consume_oversized_staged_header_path(
+                    &mut self.reader,
+                    &mut self.raw_path,
+                    self.limits.git_line_bytes,
+                );
+                if !outcome.continue_later_records {
+                    self.done = true;
+                }
+                return Some(Err(outcome.error));
             }
             strip_record_delimiter(&mut self.header);
             let object_id = match parse_staged_object_id(&self.header) {
@@ -273,12 +315,13 @@ impl Iterator for StagedChunkIter {
                 Err(error) => return self.stop(SourceError::Io(error)),
             };
             if path_bytes > self.limits.git_line_bytes {
-                return self.stop(super::git_output_line_truncated_error(
+                super::record_git_output_line_truncated(
                     "git staged source",
                     "staged path",
                     self.limits.git_line_bytes,
                     path_bytes,
-                ));
+                );
+                continue;
             }
             strip_record_delimiter(&mut self.raw_path);
             if self.raw_path.is_empty() {

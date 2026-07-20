@@ -17,12 +17,18 @@ pub(crate) enum DetectorResolutionClass {
     PrivateKeyBlock,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DetectorResolutionPolicy {
+    class: DetectorResolutionClass,
+    priority: i16,
+}
+
 /// Canonical detector and emitted-fallback classification compiled from the
 /// active detector corpus. Resolution never infers semantics from an ID when
 /// this index owns that identity.
 #[derive(Debug)]
 pub(crate) struct DetectorResolutionIndex {
-    by_id: HashMap<Arc<str>, DetectorResolutionClass>,
+    by_id: HashMap<Arc<str>, DetectorResolutionPolicy>,
 }
 
 impl DetectorResolutionIndex {
@@ -36,12 +42,22 @@ impl DetectorResolutionIndex {
             } else {
                 DetectorResolutionClass::Named
             };
-            insert_resolution_class(&mut by_id, Arc::from(detector.id.as_str()), class)?;
+            insert_resolution_policy(
+                &mut by_id,
+                Arc::from(detector.id.as_str()),
+                DetectorResolutionPolicy {
+                    class,
+                    priority: detector.resolution_priority,
+                },
+            )?;
             if let Some(metadata) = &detector.entropy_fallback {
-                insert_resolution_class(
+                insert_resolution_policy(
                     &mut by_id,
                     Arc::from(metadata.id.as_str()),
-                    DetectorResolutionClass::Entropy,
+                    DetectorResolutionPolicy {
+                        class: DetectorResolutionClass::Entropy,
+                        priority: detector.resolution_priority,
+                    },
                 )?;
             }
         }
@@ -50,7 +66,12 @@ impl DetectorResolutionIndex {
 
     #[inline]
     pub(crate) fn get(&self, detector_id: &str) -> Option<DetectorResolutionClass> {
-        self.by_id.get(detector_id).copied()
+        self.by_id.get(detector_id).map(|policy| policy.class)
+    }
+
+    #[inline]
+    pub(crate) fn priority(&self, detector_id: &str) -> Option<i16> {
+        self.by_id.get(detector_id).map(|policy| policy.priority)
     }
 }
 
@@ -99,6 +120,10 @@ pub(crate) struct CompiledDetectorPlans {
     validator_index: crate::checksum::CompiledValidatorIndex,
     decode_transforms: Arc<crate::decode::policy::CompiledDecodeTransformPolicy>,
     decoder_plan: Arc<crate::decode::CompiledDecoderPlan>,
+    generic_assignment:
+        Option<crate::engine::phase2_generic::keywords::GenericAssignmentKeywordPlan>,
+    generic_named_assignment_keywords: Box<[Arc<str>]>,
+    generic_ownership: crate::generic_keyword_owner::GenericOwningDetectorIndex,
 }
 
 impl CompiledDetectorPlans {
@@ -185,6 +210,20 @@ impl CompiledDetectorPlans {
                     })
                 })
                 .collect::<Result<Box<[_]>, String>>()?;
+        let generic_assignment = by_detector_index
+            .iter()
+            .any(|plan| plan.execution.is_generic)
+            .then(|| {
+                crate::engine::phase2_generic::keywords::GenericAssignmentKeywordPlan::compile(
+                    detectors,
+                )
+            })
+            .transpose()?;
+        let generic_named_assignment_keywords =
+            crate::generic_keyword_owner::build_generic_named_assignment_keywords(detectors)
+                .into_boxed_slice();
+        let generic_ownership =
+            crate::generic_keyword_owner::GenericOwningDetectorIndex::build(detectors)?;
         let resolution = DetectorResolutionIndex::compile(detectors)?;
         let validator_index = crate::checksum::CompiledValidatorIndex::compile(
             by_detector_index.iter().map(|plan| &plan.validators),
@@ -197,7 +236,29 @@ impl CompiledDetectorPlans {
             validator_index,
             decode_transforms,
             decoder_plan,
+            generic_assignment,
+            generic_named_assignment_keywords,
+            generic_ownership,
         })
+    }
+
+    #[inline]
+    pub(crate) fn generic_assignment(
+        &self,
+    ) -> Option<&crate::engine::phase2_generic::keywords::GenericAssignmentKeywordPlan> {
+        self.generic_assignment.as_ref()
+    }
+
+    #[inline]
+    pub(crate) fn generic_named_assignment_keywords(&self) -> &[Arc<str>] {
+        &self.generic_named_assignment_keywords
+    }
+
+    #[inline]
+    pub(crate) fn generic_ownership(
+        &self,
+    ) -> &crate::generic_keyword_owner::GenericOwningDetectorIndex {
+        &self.generic_ownership
     }
 
     #[inline]
@@ -216,6 +277,11 @@ impl CompiledDetectorPlans {
     }
 
     #[inline]
+    pub(crate) fn resolution_priority(&self, detector_id: &str) -> Option<i16> {
+        self.resolution.priority(detector_id)
+    }
+
+    #[inline]
     pub(crate) fn is_entropy(&self, detector_id: &str) -> bool {
         matches!(
             self.resolution_class(detector_id),
@@ -229,6 +295,33 @@ impl CompiledDetectorPlans {
         &self,
     ) -> &crate::decode::policy::CompiledDecodeTransformPolicy {
         &self.decode_transforms
+    }
+
+    #[inline]
+    #[cfg(feature = "decode")]
+    pub(crate) fn decoded_source_parent<'a>(&self, source: &'a str) -> Option<&'a str> {
+        let (parent, decoder_name) = source.rsplit_once('/')?;
+        self.decoder_plan
+            .decoders()
+            .iter()
+            .any(|decoder| decoder.name() == decoder_name)
+            .then_some(parent)
+    }
+
+    #[inline]
+    #[cfg(not(feature = "decode"))]
+    pub(crate) fn decoded_source_parent<'a>(&self, _source: &'a str) -> Option<&'a str> {
+        None
+    }
+
+    pub(crate) fn decoded_source_depth(&self, source: &str) -> usize {
+        let mut depth = 0;
+        let mut current = source;
+        while let Some(parent) = self.decoded_source_parent(current) {
+            depth += 1;
+            current = parent;
+        }
+        depth
     }
 
     #[inline]
@@ -268,14 +361,14 @@ impl CompiledDetectorPlans {
     }
 }
 
-fn insert_resolution_class(
-    classes: &mut HashMap<Arc<str>, DetectorResolutionClass>,
+fn insert_resolution_policy(
+    policies: &mut HashMap<Arc<str>, DetectorResolutionPolicy>,
     detector_id: Arc<str>,
-    class: DetectorResolutionClass,
+    policy: DetectorResolutionPolicy,
 ) -> Result<(), String> {
-    if let Some(existing) = classes.insert(detector_id.clone(), class) {
+    if let Some(existing) = policies.insert(detector_id.clone(), policy) {
         return Err(format!(
-            "compiled detector identity {detector_id:?} has conflicting resolution classes {existing:?} and {class:?}"
+            "compiled detector identity {detector_id:?} has conflicting resolution policies {existing:?} and {policy:?}"
         ));
     }
     Ok(())

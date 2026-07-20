@@ -36,7 +36,10 @@ fn zip_symlink_entry_emits_source_error() {
     let source = FilesystemSource::new(dir.path().to_path_buf());
     let rows: Vec<_> = source.chunks().collect();
     let (chunks, errors) = split_chunk_results(&rows);
-    let bodies: Vec<_> = chunks.iter().map(|chunk| chunk.data.to_string()).collect();
+    let bodies: Vec<_> = chunks
+        .iter()
+        .map(|chunk| chunk.data.as_str().to_owned())
+        .collect();
 
     assert!(
         bodies

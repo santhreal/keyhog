@@ -22,6 +22,14 @@ pub(crate) fn cadence_tick(iteration: usize, cadence: usize) -> bool {
 /// own tighter cadence on purpose and is intentionally NOT this constant).
 pub(crate) const HOT_LOOP_DEADLINE_CADENCE: usize = 64;
 
+/// Re-check cadence for the compiled phase-2 per-pattern loops
+/// (`phase2_compiled`, `phase2_compiled_anchored`). Each iteration runs a full
+/// compiled-regex extraction, so these loops re-check the deadline four times
+/// more often than the generic hot loops to keep an adversarial single-pattern
+/// storm from overrunning the timeout by a wide margin. Single owner for the
+/// value so the three compiled-phase call sites cannot drift apart.
+pub(crate) const COMPILED_PHASE2_DEADLINE_CADENCE: usize = 16;
+
 #[inline]
 pub(crate) fn expired_on_cadence(
     deadline: Option<Instant>,

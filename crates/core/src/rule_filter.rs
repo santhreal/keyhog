@@ -44,7 +44,7 @@ use std::sync::Arc;
 use serde::Deserialize;
 use vyre_libs::rule::{evaluate_formula, RuleCondition, RuleEvaluationContext, RuleFormula};
 
-use crate::{Severity, VerifiedFinding};
+use crate::{RawMatch, Severity, VerifiedFinding};
 
 /// Parsed `.keyhogignore.toml` - a list of `[[suppress]]` rules,
 /// each compiled into a `RuleFormula`.
@@ -161,6 +161,39 @@ impl RuleSuppressor {
     /// suppressions, which matches `Self::empty()`'s contract).
     #[must_use]
     pub fn matches(&self, finding: &VerifiedFinding) -> bool {
+        self.matches_identity(
+            finding.detector_id.as_ref(),
+            finding.service.as_ref(),
+            finding.severity,
+            finding.location.file_path.as_deref(),
+            &finding.credential_hash,
+        )
+    }
+
+    /// Same predicate as [`Self::matches`] for a pre-verify [`RawMatch`].
+    /// Used by `keyhog watch`, which filters before building VerifiedFinding.
+    #[must_use]
+    pub fn matches_raw_match(&self, matched: &RawMatch) -> bool {
+        self.matches_identity(
+            matched.detector_id.as_ref(),
+            matched.service.as_ref(),
+            matched.severity,
+            matched.location.file_path.as_deref(),
+            &matched.credential_hash,
+        )
+    }
+
+    /// Shared rule evaluation over the identity fields every suppress surface
+    /// has (detector, service, severity, path, credential hash).
+    #[must_use]
+    pub fn matches_identity(
+        &self,
+        detector_id: &str,
+        service: &str,
+        severity: crate::Severity,
+        file_path: Option<&str>,
+        credential_hash: &crate::CredentialHash,
+    ) -> bool {
         if self.rules.is_empty() {
             return false;
         }
@@ -168,15 +201,12 @@ impl RuleSuppressor {
         // file_path yields `""`, which a path-scoped suppression rule will not
         // match, so the finding is LESS likely to be suppressed and MORE likely
         // to be reported. A missing path can never silently drop a real finding.
-        let path = finding.location.file_path.as_deref().unwrap_or(""); // LAW10: missing/non-string field => empty/placeholder; recall-safe
-                                                                        // `Finding.credential_hash` is the raw 32 bytes; rule predicates match
-                                                                        // against the hex form (see the module-doc example). Hex-encode into a
-                                                                        // local that outlives `ctx`'s borrow below.
-        let credential_hash_hex = crate::finding::hex_encode(&finding.credential_hash);
+        let path = file_path.unwrap_or(""); // LAW10: missing/non-string field => empty/placeholder; recall-safe
+        let credential_hash_hex = crate::finding::hex_encode(credential_hash);
         let ctx = FindingContext {
-            detector_id: finding.detector_id.as_ref(),
-            service: finding.service.as_ref(),
-            severity: finding.severity,
+            detector_id,
+            service,
+            severity,
             path,
             credential_hash: &credential_hash_hex,
         };

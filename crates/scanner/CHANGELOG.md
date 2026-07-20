@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Keep grown phase-two GPU DFA resident haystack capacities aligned to the
+  declared 32-bit element ABI. Forced 8 MiB, 32-shard CUDA evidence now proves
+  one haystack upload and exact admission parity against per-shard dispatch.
+
 - Compiled detector-owned and scan-config entropy assignment keywords into one
   cached case-insensitive matcher, removing the per-line linear vocabulary walk
   from sparse source scans while preserving programmatic config changes.
@@ -21,6 +25,9 @@
   identities, validators, and duplicate detector IDs before matcher or backend
   construction. TOML-loaded and in-memory detectors share the same acceptance
   rules.
+- Preserve the participating alternate capture in grouped extraction, keep
+  service-specific PEM blocks intact through collision resolution, and require
+  token boundaries on short detector aliases.
 - Snapshot the decoder registry when you compile a scanner. Decode execution
   and autoroute admission now use that immutable plan, and its ordered decoder
   names and versions contribute to the detector digest. Registering a decoder
@@ -109,6 +116,9 @@
 
 - Score entropy fallback findings from the owning detector TOML's compiled
   `entropy_high` and `entropy_very_high` tiers instead of scanner-global tiers.
+- Apply detector-owned known-example, repeated-block, and ambiguous-encoding
+  policy to structural password fields. Random connection-string passwords
+  remain visible while examples and placeholders stay suppressed.
 
 - Resolve entropy versus named findings from the active compiled detector plan,
   not detector-ID spelling. Custom named detectors whose IDs resemble a
@@ -338,7 +348,7 @@
   Its structured failure remains available to health reporters while normal
   selected-GPU scan entry points map the same failure to exit `12`.
 - Rename the VRAM-adaptive live buffer budget to `gpu_batch_input_limit` and
-  move its owner to `engine/gpu_input_budget.rs`.
+  move its owner to `gpu_input_budget.rs`.
 - Remove detector-ID constants used only by their own tests; runtime-specific
   identifiers remain centralized only where production scanner behavior
   consumes them, while detector membership stays in detector TOML.

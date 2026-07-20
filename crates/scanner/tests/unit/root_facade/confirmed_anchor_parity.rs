@@ -97,7 +97,7 @@ fn canonical(matches: &[Vec<RawMatch>]) -> Vec<(String, String, String)> {
         .map(|m| {
             (
                 m.detector_id.to_string(),
-                m.credential.to_string(),
+                m.credential.as_str().to_string(),
                 format!("{:?}", m.location),
             )
         })
@@ -133,7 +133,7 @@ fn boundary_scanner() -> CompiledScanner {
             weak_anchor: false,
         }],
         keywords: vec!["AGORA_APP_ID".to_string()],
-        ..DetectorSpec::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }])
     .expect("boundary scanner compiles")
     .with_config(config)
@@ -145,7 +145,7 @@ fn boundary_credentials(scanner: &CompiledScanner, text: &str) -> Vec<String> {
         .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
         .into_iter()
         .flatten()
-        .map(|m| m.credential.to_string())
+        .map(|m| m.credential.as_str().to_string())
         .collect()
 }
 

@@ -3,11 +3,16 @@
 pub(crate) const GENERIC_PREFIX: &str = "generic-";
 pub(crate) const ENTROPY_PREFIX: &str = "entropy-";
 
-#[cfg(test)]
+pub(crate) const REASSEMBLED_SUFFIX: &str = ":reassembled";
+
+#[inline]
+pub(crate) fn policy_detector_id(detector_id: &str) -> &str {
+    detector_id
+        .strip_suffix(REASSEMBLED_SUFFIX)
+        .unwrap_or(detector_id)
+}
 pub(crate) const GENERIC_SECRET: &str = "generic-secret";
-#[cfg(test)]
 pub(crate) const GENERIC_KEYWORD_SECRET: &str = "generic-keyword-secret";
-#[cfg(test)]
 pub(crate) const GENERIC_API_KEY: &str = "generic-api-key";
 #[cfg(test)]
 pub(crate) const GENERIC_PASSWORD: &str = "generic-password";
@@ -16,6 +21,7 @@ pub(crate) const ENTROPY: &str = "entropy";
 
 pub(crate) const PRIVATE_KEY: &str = "private-key";
 
+pub(crate) const AWS_ACCESS_KEY: &str = "aws-access-key";
 pub(crate) const GITHUB_CLASSIC_PAT: &str = "github-classic-pat";
 // Names the real `detectors/github-pat-fine-grained.toml` id. (Superseded the
 // phantom `github-fine-grained-pat` const value, which matched NO detector.)
@@ -271,9 +277,8 @@ mod detector_id_corpus_guard {
         assert!(is_private_key_fallback(PRIVATE_KEY));
         assert!(!is_private_key_fallback(GITHUB_CLASSIC_PAT));
 
-        // Structural password slot family: a service-anchored / generic detector
-        // is never a member (membership itself is corpus-declared, pinned by
-        // `structural_password_slot_family_is_toml_declared`).
+        // Unrelated generic detectors are not members. Membership itself is
+        // corpus-declared and pinned below.
         assert!(!is_structural_password_slot_detector(GITHUB_CLASSIC_PAT));
         assert!(!is_structural_password_slot_detector(GENERIC_SECRET));
     }
@@ -282,9 +287,9 @@ mod detector_id_corpus_guard {
     /// TOMLs (`structural_password_slot = true`), read back through
     /// `DetectorSpec::structural_password_slot`. This pins the EXACT member set
     /// against the embedded corpus, so adding/removing the flag on any detector
-    /// or a typo'd id, fails loudly here. The four ids are the whole family; they
-    /// are intentionally NOT scanner-code consts (no scanner path names them
-    /// individually), so the list lives once, here, as the guard's expectation.
+    /// or a typo'd id, fails loudly here. The five ids are the whole family;
+    /// they are intentionally NOT scanner-code consts (no scanner path names
+    /// them individually), so this list is only the guard's expectation.
     #[test]
     fn structural_password_slot_family_is_toml_declared() {
         use std::collections::BTreeSet;
@@ -297,6 +302,7 @@ mod detector_id_corpus_guard {
         let expected: BTreeSet<&str> = [
             "bearer-authorization",
             "cli-password-flag",
+            "generic-password",
             "sql-password",
             "url-credentials",
         ]

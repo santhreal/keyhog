@@ -146,8 +146,7 @@ fn backend_limits_keep_wgpu_inside_its_portable_grid() {
     );
     assert_eq!(
         region_presence_batch_byte_limit("cuda"),
-        REGION_PRESENCE_BATCH_BYTE_LIMIT
-            .min(crate::engine::gpu_input_budget::gpu_batch_input_limit())
+        REGION_PRESENCE_BATCH_BYTE_LIMIT.min(crate::gpu_input_budget::gpu_batch_input_limit())
     );
     assert_eq!(WGPU_BYTE_SCAN_DISPATCH_LIMIT, 8_388_480);
     assert_eq!(
@@ -219,7 +218,9 @@ fn production_wgpu_shards_the_8mib_overlapped_workload_with_cpu_parity() {
             weak_anchor: false,
         }],
         keywords: vec!["KHGPUWG".into()],
-        ..DetectorSpec::default()
+        match_confidence: keyhog_core::detector_spec_by_id("datadog-api-key")
+            .and_then(|embedded| embedded.match_confidence),
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let scanner = CompiledScanner::compile(vec![detector]).expect("compile WGPU shard scanner");
     if !crate::hw_probe::probe_hardware().gpu_available {
@@ -311,7 +312,7 @@ fn production_cuda_windows_seam_tail_and_mixed_rows_with_cpu_parity() {
             weak_anchor: false,
         }],
         keywords: vec!["KHCUDAX_".into()],
-        ..DetectorSpec::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let scanner = CompiledScanner::compile(vec![detector]).expect("compile CUDA window scanner");
     let cuda = scanner

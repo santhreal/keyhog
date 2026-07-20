@@ -41,7 +41,7 @@ impl<W: Write + Send> CsvReporter<W> {
             scan_status,
             backend_recoveries: metadata
                 .map(|value| value.backend_recoveries.as_slice())
-                .unwrap_or_default(),
+                .unwrap_or_default(), // LAW10: absent report metadata means an empty display-only recovery list; findings still emit
             coverage_gap_summary: coverage_gap_summary
                 .iter()
                 .map(|(reason, count)| CsvCoverageGap {

@@ -8,7 +8,7 @@
 //! finding's metadata, so pinning its exact key/value output proves the capacity
 //! reserve is byte-identical (capacity is unobservable through HashMap contents).
 
-use keyhog_scanner::jwt::finding_metadata;
+use keyhog_scanner::jwt::{finding_metadata, finding_metadata_with_secrets};
 
 // Header {"alg":"HS256","typ":"JWT"} . payload {"iss":...,"sub":...,"exp":9999999999} . sig
 const HS256_JWT: &str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2lzc3Vlci5leGFtcGxlIiwic3ViIjoidXNlci0xMjMiLCJleHAiOjk5OTk5OTk5OTl9.AAAA";
@@ -21,11 +21,15 @@ const ALGNONE_JWT: &str = "eyJhbGciOiJub25lIn0.eyJzdWIiOiJzIn0.AAAA";
 fn finding_metadata_surfaces_exact_claims_for_real_jwt() {
     let meta = finding_metadata(HS256_JWT).expect("a structurally valid JWT yields metadata");
     assert_eq!(meta.get("jwt.alg").map(String::as_str), Some("HS256"));
+    // KH-1350: default redacts identity claims.
     assert_eq!(
         meta.get("jwt.iss").map(String::as_str),
-        Some("https://issuer.example")
+        Some("<redacted 22 chars>")
     );
-    assert_eq!(meta.get("jwt.sub").map(String::as_str), Some("user-123"));
+    assert_eq!(
+        meta.get("jwt.sub").map(String::as_str),
+        Some("<redacted 8 chars>")
+    );
     assert_eq!(meta.get("jwt.exp").map(String::as_str), Some("9999999999"));
     // HS256 is a known alg, typ=JWT is standard, exp is far future: no anomalies,
     // so exactly the four claim keys above.
@@ -34,13 +38,26 @@ fn finding_metadata_surfaces_exact_claims_for_real_jwt() {
         4,
         "no spurious anomaly keys for a clean HS256 JWT"
     );
+    let revealed =
+        finding_metadata_with_secrets(HS256_JWT, true).expect("show_secrets yields claims");
+    assert_eq!(
+        revealed.get("jwt.iss").map(String::as_str),
+        Some("https://issuer.example")
+    );
+    assert_eq!(
+        revealed.get("jwt.sub").map(String::as_str),
+        Some("user-123")
+    );
 }
 
 #[test]
 fn logout_typ_is_standard_no_non_standard_anomaly() {
     let meta = finding_metadata(LOGOUT_JWT).expect("logout+jwt is a valid JWT");
     assert_eq!(meta.get("jwt.alg").map(String::as_str), Some("HS256"));
-    assert_eq!(meta.get("jwt.sub").map(String::as_str), Some("s"));
+    assert_eq!(
+        meta.get("jwt.sub").map(String::as_str),
+        Some("<redacted 1 chars>")
+    );
     assert!(
         !meta.contains_key("jwt.non_standard_typ"),
         "logout+jwt is in the standard typ set and must not be flagged"
@@ -56,7 +73,10 @@ fn alg_none_surfaces_the_unsigned_anomaly() {
         meta.get("jwt.alg_none").map(String::as_str),
         Some("true (unsigned token: RFC 7519 §6 risk)")
     );
-    assert_eq!(meta.get("jwt.sub").map(String::as_str), Some("s"));
+    assert_eq!(
+        meta.get("jwt.sub").map(String::as_str),
+        Some("<redacted 1 chars>")
+    );
     assert_eq!(meta.len(), 3, "jwt.alg + jwt.sub + jwt.alg_none");
 }
 

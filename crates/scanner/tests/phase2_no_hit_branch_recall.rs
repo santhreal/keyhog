@@ -93,7 +93,10 @@ fn kubernetes_bootstrap_token_fires_in_direct_scan() {
         "direct scan must already find the bootstrap token. matches: {:?}",
         matches
             .iter()
-            .map(|m| (m.detector_id.as_ref().to_string(), m.credential.to_string()))
+            .map(|m| (
+                m.detector_id.as_ref().to_string(),
+                m.credential.as_str().to_string()
+            ))
             .collect::<Vec<_>>(),
     );
 }
@@ -155,7 +158,10 @@ fn kubernetes_bootstrap_token_fires_in_coalesced_no_hit_branch() {
          phase 1 produces 0 literal-prefix hits). Matches: {:?}",
         matches
             .iter()
-            .map(|m| (m.detector_id.as_ref().to_string(), m.credential.to_string()))
+            .map(|m| (
+                m.detector_id.as_ref().to_string(),
+                m.credential.as_str().to_string()
+            ))
             .collect::<Vec<_>>(),
     );
 }
@@ -187,7 +193,10 @@ fn kubernetes_bootstrap_token_canonical_kubeadm_join_fires() {
          scan_coalesced no-hit branch. Matches: {:?}",
         matches
             .iter()
-            .map(|m| (m.detector_id.as_ref().to_string(), m.credential.to_string()))
+            .map(|m| (
+                m.detector_id.as_ref().to_string(),
+                m.credential.as_str().to_string()
+            ))
             .collect::<Vec<_>>(),
     );
 }
@@ -285,7 +294,7 @@ fn detector_owned_keyword_free_minimum_enters_coalesced_no_hit_path() {
     let finding_key = |finding: &keyhog_core::RawMatch| {
         (
             finding.detector_id.to_string(),
-            finding.credential.to_string(),
+            finding.credential.as_str().to_string(),
             finding.location.offset,
         )
     };

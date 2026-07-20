@@ -7,7 +7,7 @@
 //! unhealthy states are a health gate (exit 4); a single-backend build reports
 //! its direct route and remains healthy without a cache.
 
-use crate::e2e::support::binary;
+use crate::e2e::support::{autoroute_calibration_slot, binary};
 use std::process::Command;
 use tempfile::TempDir;
 
@@ -204,6 +204,7 @@ fn backend_autoroute_inspects_explicit_cache_path() {
 /// freshly-written cache as matching this build.
 #[test]
 fn backend_autoroute_shows_calibrated_decisions_after_calibration() {
+    let _calibration_slot = autoroute_calibration_slot();
     let cache = TempDir::new().unwrap();
     let work = TempDir::new().unwrap();
     let target = work.path().join("c.txt");
@@ -280,8 +281,9 @@ fn backend_autoroute_shows_calibrated_decisions_after_calibration() {
     assert!(
         matches!(
             decision["selection_basis"].as_str(),
-            Some("separated-95pct-confidence")
-                | Some("lowest-measured-median-among-overlapping-confidence")
+            Some("exact-plan-paired-95pct-confidence")
+                | Some("peer-separated-compiled-default-plan")
+                | Some("peer-separated-statistically-tied-plan")
         ),
         "inspection must disclose the one-shot selection rule; json={value}"
     );

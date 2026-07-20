@@ -190,7 +190,7 @@ fn war_with_multiple_entries_all_surface() {
     let archive: String = chunks
         .iter()
         .filter(|c| c.metadata.source_type.as_ref() == "filesystem/archive")
-        .map(|c| c.data.to_string())
+        .map(|c| c.data.as_str().to_owned())
         .collect();
     assert!(
         archive.contains(SECRET),

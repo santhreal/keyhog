@@ -1,62 +1,25 @@
-//! Octal escape decoder must reject truncated sequences (e.g., `\0` with no digits).
+//! C-style octal escapes accept one to three octal digits and stop before the
+//! first non-octal byte.
 
-use keyhog_core::Chunk;
-use keyhog_scanner::testing::decode_chunk;
+use keyhog_scanner::testing::octal_escape_decode_for_test;
 
 #[test]
-fn octal_escape_requires_three_digits() {
-    // A single backslash followed by one octal digit is NOT a valid octal escape.
-    // The decoder should require exactly 3 octal digits: `\000` through `\377`.
-    // Input `\0` alone should be treated as backslash followed by literal `0`,
-    // NOT as an octal escape, and thus decode_chunk should NOT emit a chunk
-    // with octal in its source_type.
-    let text = r"prefix\0suffix";
-    let chunk = Chunk {
-        data: text.into(),
-        metadata: Default::default(),
-    };
-    let decoded = decode_chunk(&chunk, 1, false, None, None);
-    // No octal-escape decoded chunk should be emitted.
-    assert!(
-        !decoded
-            .iter()
-            .any(|c| c.metadata.source_type.contains("octal")),
-        "single-digit \\0 must not trigger octal-escape decoder"
-    );
+fn octal_escape_accepts_one_digit() {
+    let decoded = octal_escape_decode_for_test(r"prefix\0suffix")
+        .expect("single-digit C octal escape must decode");
+    assert_eq!(decoded.as_bytes(), b"prefix\0suffix");
 }
 
 #[test]
-fn octal_escape_truncated_at_eol() {
-    // Octal escape that starts but cannot complete (not enough chars at EOF).
-    let text = r"secret=\07";
-    let chunk = Chunk {
-        data: text.into(),
-        metadata: Default::default(),
-    };
-    let decoded = decode_chunk(&chunk, 1, false, None, None);
-    // Should not emit octal chunk; the truncated sequence is invalid.
-    assert!(
-        !decoded
-            .iter()
-            .any(|c| c.metadata.source_type.contains("octal")),
-        "truncated octal escape at EOF must be rejected"
-    );
+fn octal_escape_accepts_two_digits_at_eol() {
+    let decoded =
+        octal_escape_decode_for_test(r"secret=\07").expect("two-digit C octal escape must decode");
+    assert_eq!(decoded.as_bytes(), b"secret=\x07");
 }
 
 #[test]
-fn octal_escape_requires_all_three_digits_valid() {
-    // `\089` is invalid: 8 and 9 are not octal digits.
-    let text = r"value=\089";
-    let chunk = Chunk {
-        data: text.into(),
-        metadata: Default::default(),
-    };
-    let decoded = decode_chunk(&chunk, 1, false, None, None);
-    // Should not emit octal chunk.
-    assert!(
-        !decoded
-            .iter()
-            .any(|c| c.metadata.source_type.contains("octal")),
-        "octal escape with invalid digits (8,9) must be rejected"
-    );
+fn octal_escape_stops_before_non_octal_digits() {
+    let decoded = octal_escape_decode_for_test(r"value=\089")
+        .expect("valid octal prefix must decode before non-octal digits");
+    assert_eq!(decoded.as_bytes(), b"value=\089");
 }

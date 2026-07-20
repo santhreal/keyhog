@@ -8,7 +8,7 @@
 schema_version = 1
 detector_id = "notion-api-key"
 service = "notion"
-severity = "critical"
+severity = "high"
 
 # ---- POSITIVES (recall) ---------------------------------------------
 

@@ -17,7 +17,10 @@ fn tmp_file_with(extension: &str, bytes: &[u8]) -> (tempfile::TempDir, std::path
     (dir, path, size)
 }
 
-fn rows_for(extension: &str, bytes: &[u8]) -> Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>> {
+fn rows_for(
+    extension: &str,
+    bytes: &[u8],
+) -> Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>> {
     let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
     let (_dir, path, size) = tmp_file_with(extension, bytes);

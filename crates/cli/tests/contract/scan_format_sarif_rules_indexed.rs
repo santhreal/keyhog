@@ -1,6 +1,6 @@
 //! Contract: `--format sarif` tool.driver.rules includes all ruleIds referenced in results.
 
-use crate::e2e::support::{binary, write_temp_file};
+use crate::support::{binary, write_temp_file};
 use std::collections::HashSet;
 use std::process::Command;
 

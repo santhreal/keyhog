@@ -91,10 +91,23 @@ jobs:
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       - name: Install Vectorscan
-        run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
+        run: |
+
+          for i in 1 2 3 4 5; do
+
+            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
+
+            sleep $((i * 2))
+
+            if [ "$i" -eq 5 ]; then exit 1; fi
+
+          done
       - name: Strict runner gate (PR subset)
+        # KH-1302: CPU-only ubuntu-latest cannot load libcuda; ci-lean keeps
+        # adversarial contracts off the GPU default feature set.
         run: |
           cargo test -p keyhog-scanner --profile release-fast \
+            --no-default-features --features ci-lean \
             --test contracts_runner \
             --test adversarial_explosion_runner \
             --test encoding_explosion_runner \
@@ -128,7 +141,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       - name: Install Vectorscan
-        run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
+        run: |
+
+          for i in 1 2 3 4 5; do
+
+            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
+
+            sleep $((i * 2))
+
+            if [ "$i" -eq 5 ]; then exit 1; fi
+
+          done
       - run: cargo test -p keyhog-core --lib
       - run: cargo check -p keyhog-core --all-targets
       # Hosted runners have no accelerator. Keep this broad library gate on the
@@ -215,7 +238,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       - name: Install Vectorscan
-        run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
+        run: |
+
+          for i in 1 2 3 4 5; do
+
+            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
+
+            sleep $((i * 2))
+
+            if [ "$i" -eq 5 ]; then exit 1; fi
+
+          done
       # Full detection path (Hyperscan/simd + simdsieve hot path + ML/decode/
       # multiline) MINUS the GPU dispatch stack, via the `ci-lean` feature.
       # These runners are GPU-less, so the GPU dispatch suites
@@ -426,7 +459,7 @@ jobs:
       # underscore (or over-escaped `\s`). Audits the live corpus + proves the
       # recall gain end to end.
       - name: keyword-separator canonicalization recall contract
-        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_keyword_separator_canonicalization
+        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_detector_owned_keyword_separators
       - name: RawMatch total-order gate
         run: cargo test -p keyhog-core --test new_core_finding_dedup --profile release-fast
 
@@ -474,7 +507,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       - name: Install Vectorscan
-        run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
+        run: |
+
+          for i in 1 2 3 4 5; do
+
+            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
+
+            sleep $((i * 2))
+
+            if [ "$i" -eq 5 ]; then exit 1; fi
+
+          done
       - name: portable (no Hyperscan or GPU build libraries)
         run: cargo check -p keyhog --no-default-features --features portable
       - name: portable runtime dogfood (scalar CPU, real exclusions)
@@ -572,7 +615,17 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       - name: Install Vectorscan
-        run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
+        run: |
+
+          for i in 1 2 3 4 5; do
+
+            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
+
+            sleep $((i * 2))
+
+            if [ "$i" -eq 5 ]; then exit 1; fi
+
+          done
       # No `-D warnings`: lints are reported but do not fail the step.
       - run: cargo clippy -p keyhog-core -p keyhog-scanner -p keyhog
 
@@ -583,8 +636,11 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Install install-script linters
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends shellcheck shfmt
+          for i in 1 2 3 4 5; do
+            sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends shellcheck shfmt && break
+            sleep $((i * 2))
+            if [ "$i" -eq 5 ]; then exit 1; fi
+          done
       - name: Install PSScriptAnalyzer
         shell: pwsh
         run: Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force
@@ -635,7 +691,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       - name: Install Vectorscan
-        run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
+        run: |
+
+          for i in 1 2 3 4 5; do
+
+            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
+
+            sleep $((i * 2))
+
+            if [ "$i" -eq 5 ]; then exit 1; fi
+
+          done
       - name: Install nightly toolchain
         run: rustup toolchain install nightly --profile minimal
       - name: Install cargo-fuzz
@@ -717,7 +783,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       - name: Install Vectorscan
-        run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
+        run: |
+
+          for i in 1 2 3 4 5; do
+
+            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
+
+            sleep $((i * 2))
+
+            if [ "$i" -eq 5 ]; then exit 1; fi
+
+          done
       # release-fast (thin LTO, codegen-units=16) is the profile built for
       # exactly this gate: -O3 validation + smoke without the multi-minute
       # fat-LTO link. The shipped fat-LTO `--release` build is still gated on
@@ -754,8 +830,11 @@ jobs:
       # local-checksum gate). `expect` enables the premium interactive case.
       - name: install-from-build proof (Linux)
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends expect
+          for i in 1 2 3 4 5; do
+            sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends expect && break
+            sleep $((i * 2))
+            if [ "$i" -eq 5 ]; then exit 1; fi
+          done
           bash tests/install/linux/install_from_local_build.sh target/release-fast/keyhog
 
       # Dogfood the installed product paths, not only scanner unit tests. Each
@@ -793,7 +872,17 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - name: Install Vectorscan
-        run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
+        run: |
+
+          for i in 1 2 3 4 5; do
+
+            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
+
+            sleep $((i * 2))
+
+            if [ "$i" -eq 5 ]; then exit 1; fi
+
+          done
 
       - name: Publish subcrates then CLI
         env:

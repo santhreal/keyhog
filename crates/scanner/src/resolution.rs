@@ -15,6 +15,7 @@ const CONFIDENCE_WEIGHT: f64 = 5.0;
 const MAX_CREDENTIAL_PRIORITY_LENGTH: usize = 200;
 const CREDENTIAL_LENGTH_WEIGHT: f64 = 0.01;
 const KNOWN_PREFIX_SERVICE_BONUS: f64 = 5.0;
+const DECODED_EVIDENCE_PRIORITY: f64 = 1.0;
 
 /// Resolve overlapping matches: for each credential text region,
 /// keep only the best match. Also suppress duplicate entropy findings when
@@ -99,10 +100,8 @@ impl ResolutionPolicy<'_> {
             return Ok(());
         };
         for matched in matches {
-            if plans
-                .resolution_class(matched.detector_id.as_ref())
-                .is_none()
-            {
+            let detector_id = crate::detector_ids::policy_detector_id(matched.detector_id.as_ref());
+            if plans.resolution_class(detector_id).is_none() {
                 return Err(format!(
                     "finding references detector id {:?}, which is absent from the active compiled detector plan",
                     matched.detector_id
@@ -121,7 +120,7 @@ fn try_resolve_matches_with_policy(
     if matches.len() <= SINGLE_MATCH_COUNT {
         return Ok(());
     }
-    let source_families = SourceFamilyIndex::new(matches);
+    let source_families = SourceFamilyIndex::new(matches, policy);
     suppress_matches_nested_in_private_key_blocks(matches, policy, &source_families);
     suppress_entropy_duplicates_near_named_detectors(matches, policy, &source_families);
     *matches = resolve_match_groups(std::mem::take(matches), policy, &source_families);
@@ -186,19 +185,37 @@ fn match_span(
 
 struct SourceFamilyIndex {
     sources: HashSet<Arc<str>>,
+    decoded_parents: HashMap<Arc<str>, Arc<str>>,
 }
 
 impl SourceFamilyIndex {
-    fn new(matches: &[RawMatch]) -> Self {
+    fn new(matches: &[RawMatch], policy: ResolutionPolicy<'_>) -> Self {
+        let sources: HashSet<Arc<str>> = matches
+            .iter()
+            .map(|matched| matched.location.source.clone())
+            .collect();
+        let mut decoded_parents = HashMap::new();
+        if let ResolutionPolicy::Active(plans) = policy {
+            for source in &sources {
+                let mut family = source.as_ref();
+                while let Some(parent) = plans.decoded_source_parent(family) {
+                    family = parent;
+                }
+                if family != source.as_ref() {
+                    decoded_parents.insert(Arc::clone(source), Arc::from(family));
+                }
+            }
+        }
         Self {
-            sources: matches
-                .iter()
-                .map(|matched| matched.location.source.clone())
-                .collect(),
+            sources,
+            decoded_parents,
         }
     }
 
     fn family_for(&self, source: &Arc<str>) -> Arc<str> {
+        if let Some(parent) = self.decoded_parents.get(source) {
+            return Arc::clone(parent);
+        }
         // Decoder and extraction views append `/...` to their parent source.
         // Collapse only to an ancestor that is present in this match batch.
         // Opaque sibling namespaces such as `git/tag` and `git/unreachable`
@@ -206,8 +223,8 @@ impl SourceFamilyIndex {
         let mut family = source.clone();
         let mut candidate = source.as_ref();
         while let Some((parent, _)) = candidate.rsplit_once('/') {
-            if let Some(ancestor) = self.sources.get(parent) {
-                family = ancestor.clone();
+            if let Some(existing) = self.sources.get(parent) {
+                family = Arc::clone(existing);
             }
             candidate = parent;
         }
@@ -427,6 +444,7 @@ fn suppress_entropy_duplicates_near_named_detectors(
 }
 
 fn is_private_key_block_detector(detector_id: &str, policy: ResolutionPolicy<'_>) -> bool {
+    let detector_id = crate::detector_ids::policy_detector_id(detector_id);
     match policy {
         ResolutionPolicy::Active(plans) => matches!(
             plans.resolution_class(detector_id),
@@ -448,6 +466,7 @@ fn is_private_key_block_detector(detector_id: &str, policy: ResolutionPolicy<'_>
 }
 
 fn is_entropy_detector(detector_id: &str, policy: ResolutionPolicy<'_>) -> bool {
+    let detector_id = crate::detector_ids::policy_detector_id(detector_id);
     match policy {
         ResolutionPolicy::Active(plans) => plans.is_entropy(detector_id),
         ResolutionPolicy::Embedded { resolution, .. } => resolution.get(detector_id).map_or_else(
@@ -462,22 +481,48 @@ fn is_entropy_detector(detector_id: &str, policy: ResolutionPolicy<'_>) -> bool 
     }
 }
 
+fn detector_resolution_priority(detector_id: &str, policy: ResolutionPolicy<'_>) -> i16 {
+    let detector_id = crate::detector_ids::policy_detector_id(detector_id);
+    match policy {
+        ResolutionPolicy::Active(plans) => plans
+            .resolution_priority(detector_id)
+            .expect("active raw match detector must exist in the compiled resolution plan"),
+        // LAW10: intentional_default - embedded test-only resolution admits
+        // synthetic detector IDs, whose neutral priority changes no finding.
+        ResolutionPolicy::Embedded { resolution, .. } => {
+            // LAW10: absent explicit priority is the detector schema's canonical zero value; embedded policy lookup itself succeeded.
+            resolution.priority(detector_id).unwrap_or(0)
+        }
+    }
+}
+
+fn decoded_evidence_priority(source: &str, policy: ResolutionPolicy<'_>) -> f64 {
+    let depth = match policy {
+        ResolutionPolicy::Active(plans) => plans.decoded_source_depth(source),
+        ResolutionPolicy::Embedded { .. } => 0,
+    };
+    if depth == 0 {
+        0.0
+    } else {
+        DECODED_EVIDENCE_PRIORITY / depth as f64
+    }
+}
+
 fn match_is_service_specific(matched: &RawMatch, policy: ResolutionPolicy<'_>) -> bool {
+    let detector_id = crate::detector_ids::policy_detector_id(matched.detector_id.as_ref());
     match policy {
         ResolutionPolicy::Active(plans) => matches!(
-            plans.resolution_class(matched.detector_id.as_ref()),
+            plans.resolution_class(detector_id),
             Some(crate::detector_plan::DetectorResolutionClass::Named)
         ),
-        ResolutionPolicy::Embedded { resolution, .. } => {
-            resolution.get(matched.detector_id.as_ref()).map_or_else(
-                || {
-                    matched.service.as_ref() != "generic"
-                        && !crate::detector_ids::is_generic_detector(matched.detector_id.as_ref())
-                        && !crate::detector_ids::is_entropy_detector(matched.detector_id.as_ref())
-                },
-                |class| matches!(class, crate::detector_plan::DetectorResolutionClass::Named),
-            )
-        }
+        ResolutionPolicy::Embedded { resolution, .. } => resolution.get(detector_id).map_or_else(
+            || {
+                matched.service.as_ref() != "generic"
+                    && !crate::detector_ids::is_generic_detector(detector_id)
+                    && !crate::detector_ids::is_entropy_detector(detector_id)
+            },
+            |class| matches!(class, crate::detector_plan::DetectorResolutionClass::Named),
+        ),
     }
 }
 
@@ -756,6 +801,7 @@ fn resolve_direct_conflicts(group: Vec<RawMatch>, policy: ResolutionPolicy<'_>) 
 
 /// Compute the resolver priority used to break ties between overlapping matches.
 pub(crate) fn match_priority(m: &RawMatch) -> f64 {
+    // LAW10: embedded policy corruption aborts resolution with the exact error; no alternate overlap ordering is used.
     let resolution = embedded_resolution_index().unwrap_or_else(|error| {
         panic!(
             "embedded detector resolution policy is invalid while computing match priority: {error}"
@@ -772,7 +818,9 @@ pub(crate) fn match_priority(m: &RawMatch) -> f64 {
 
 fn match_priority_with_policy(m: &RawMatch, policy: ResolutionPolicy<'_>) -> f64 {
     let mut priority = ENTROPY_MATCH_PRIORITY;
+    priority += f64::from(detector_resolution_priority(m.detector_id.as_ref(), policy));
 
+    priority += decoded_evidence_priority(m.location.source.as_ref(), policy);
     // Service-specific detectors beat generic/entropy fallbacks. A
     // high-confidence generic password that captures only the URL password
     // must not outrank a lower-confidence database-URL detector on the same
@@ -793,8 +841,7 @@ fn match_priority_with_policy(m: &RawMatch, policy: ResolutionPolicy<'_>) -> f64
         (m.credential.len().min(MAX_CREDENTIAL_PRIORITY_LENGTH) as f64) * CREDENTIAL_LENGTH_WEIGHT;
 
     // Prefer specific detectors over generic ones for credentials with known prefixes.
-    if crate::confidence::known_prefix_confidence_floor(&m.credential).is_some() && service_specific
-    {
+    if crate::confidence::known_prefix_body(&m.credential).is_some() && service_specific {
         priority += KNOWN_PREFIX_SERVICE_BONUS;
     }
 

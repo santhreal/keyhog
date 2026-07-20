@@ -72,7 +72,7 @@ proptest! {
             .filter(|m| {
                 m.credential.as_ref() == token && is_anchored_generic(m.detector_id.as_ref())
             })
-            .map(|m| (m.detector_id.to_string(), m.credential.to_string()))
+            .map(|m| (m.detector_id.to_string(), m.credential.as_str().to_string()))
             .collect();
         prop_assert!(
             !recovered.is_empty(),

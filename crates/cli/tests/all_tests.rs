@@ -3,18 +3,23 @@
 // orphaned (empty mod.rs) and, for adversarial, each test spawns the keyhog
 // binary, folding 75 of those into this already-large binary is the
 // OOM-SIGKILL driver. Standalone binaries bound peak memory and link size.
+//
+// Heavy binary-spawning suites (`e2e`, `reliability`, `stress`, `dogfood`, and
+// `gap`) are split into standalone `tests/*_all.rs` integration-test binaries.
+// This keeps `all_tests` a fast contract/unit/gate aggregator that finishes in
+// CI time; the process-spawning suites still run via explicit `--test` steps.
 pub mod concurrent;
 pub mod contract;
-pub mod dogfood;
-pub mod e2e;
-pub mod gap;
+// `gap` is intentionally absent here; see `tests/gap_all.rs`.
 pub mod gate;
 pub mod integration;
 pub mod regression;
-pub mod reliability;
-pub mod stress;
 pub mod unit;
 pub mod unit_daemon_stdin_replay;
+
+// Shared e2e support helpers used by contract/gap/concurrent tests.
+#[path = "e2e/support.rs"]
+pub mod support;
 
 // Top-level standalone `tests/*.rs` that are PURE (in-process; they do NOT spawn
 // the keyhog binary), so folding them into this aggregator does not grow the
@@ -32,6 +37,7 @@ pub mod lane10_installer_orphan_reap;
 pub mod lane10_silent_fallback_surfacing;
 pub mod platform_compat;
 pub mod regression_ambient_source_env_ignored;
+pub mod regression_cli_daemon_hook_lifecycle_e2e;
 pub mod regression_daemon_frame_incremental_read;
 pub mod regression_daemon_frame_streaming_and_eof;
 pub mod regression_incremental_cache_config_wiring;

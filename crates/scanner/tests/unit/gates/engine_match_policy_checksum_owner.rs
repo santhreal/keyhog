@@ -38,7 +38,8 @@ fn engine_emitters_do_not_call_checksum_policy_primitives_directly() {
 
     let process = uncommented_code(&read(&src.join("engine/process.rs")));
     assert!(
-        process.contains("ProcessCandidateSignals::from_checksum_policy(")
+        process.contains("ProcessCandidateSignals::from_checksum_invalid(")
+            && !process.contains("StageId::ChecksumInvalid")
             && !process.contains("crate::confidence::policy::checksum_policy_for("),
         "engine process must ask adjudicate to derive checksum-invalid process signals"
     );

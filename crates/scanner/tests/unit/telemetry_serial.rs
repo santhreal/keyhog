@@ -41,8 +41,8 @@ fn reset_for_scan_zeroes_every_coverage_gap_counter() {
 fn coverage_gap_event_all_covers_every_variant() {
     let (len, all_present) = keyhog_scanner::testing::telemetry_coverage_gap_all_completeness();
     assert_eq!(
-        len, 6,
-        "ScannerCoverageGapEvent::ALL must list all 6 variants"
+        len, 7,
+        "ScannerCoverageGapEvent::ALL must list all 7 variants"
     );
     assert!(
         all_present,

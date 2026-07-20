@@ -173,10 +173,9 @@ impl CompiledScanner {
         backend: crate::hw_probe::ScanBackend,
         plan: Option<&super::Phase1AdmissionPlan>,
         route: crate::ScanExecutionRoute,
+        #[cfg_attr(not(feature = "gpu"), allow(unused_variables))]
         recover_gpu_dispatch_faults: bool,
     ) -> crate::error::Result<super::CoalescedScanOutcome> {
-        #[cfg(not(feature = "gpu"))]
-        let _ = recover_gpu_dispatch_faults;
         let expected_residual_backend = if backend.is_gpu() {
             crate::hw_probe::ScanBackend::CpuFallback
         } else {
@@ -266,6 +265,7 @@ impl CompiledScanner {
     ) -> crate::error::Result<Vec<Vec<keyhog_core::RawMatch>>> {
         #[cfg(not(feature = "simd"))]
         {
+            // LAW10: no-runtime-effect; this cfg-only binding precedes a fail-closed unsupported-backend error.
             let _ = (chunks, admission_plan, route);
             return Err(crate::error::ScanError::Simd(
                 "selected SimdCpu/Hyperscan backend but this binary was built without the `simd` feature; rebuild with simd or choose --backend cpu".to_string(),
@@ -407,22 +407,26 @@ impl CompiledScanner {
         }
         let data = text.as_bytes();
         let keyword_admits = self
-            .generic_keyword_stems
-            .as_ref()
-            .is_some_and(|stems| stems.is_match(data))
+            .detector_plans
+            .generic_assignment()
+            .is_some_and(|plan| plan.stems().is_match(data))
             || has_secret_keyword_fast(data);
         if keyword_admits {
             return true;
         }
         #[cfg(feature = "entropy")]
-        let isolated_bare_owner_index = self.generic_owning_detector.isolated_bare_owner_index();
+        let isolated_bare_owner_index = self
+            .detector_plans
+            .generic_ownership()
+            .isolated_bare_owner_index();
         #[cfg(feature = "entropy")]
         let isolated_bare_policy = isolated_bare_owner_index
             .and_then(|index| self.detector_plans.get(index).entropy.as_ref())
             .copied();
         #[cfg(feature = "entropy")]
         let keyword_free_min_len = self
-            .generic_owning_detector
+            .detector_plans
+            .generic_ownership()
             .keyword_free_owner_index()
             .and_then(|index| self.detector_plans.get(index).entropy.as_ref())
             .and_then(|policy| {
@@ -499,7 +503,7 @@ impl CompiledScanner {
     fn normalize_coalesced_phase2_triggers(
         &self,
         chunks: &[keyhog_core::Chunk],
-        mut triggers: Vec<Option<Vec<u64>>>,
+        triggers: Vec<Option<Vec<u64>>>,
         route: crate::ScanExecutionRoute,
     ) -> Vec<Option<Vec<u64>>> {
         let chunk_count = chunks.len();
@@ -508,27 +512,33 @@ impl CompiledScanner {
             return triggers;
         }
 
-        tracing::warn!(
+        // KH-1431: cardinality mismatch used to warn-and-truncate/pad. Truncation
+        // can drop trigger rows (recall loss). Fail closed: recompute every row
+        // from chunk bytes so no trigger is silently discarded, and surface on
+        // stderr so the operator sees the invariant break without RUST_LOG.
+        eprintln!(
+            "keyhog: ERROR coalesced phase-2 trigger row count mismatch \
+             (chunks={chunk_count}, trigger_rows={trigger_count}); recomputing \
+             all trigger rows from chunk bytes (KH-1431)"
+        );
+        tracing::error!(
             chunks = chunk_count,
             trigger_rows = trigger_count,
-            "coalesced phase-2 trigger row count mismatch; normalizing rows before shared phase-2"
+            "coalesced phase-2 trigger row count mismatch; recomputing all rows (fail closed)"
         );
-        if trigger_count > chunk_count {
-            triggers.truncate(chunk_count);
-            return triggers;
-        }
-
-        triggers.reserve(chunk_count - trigger_count);
-        for chunk in chunks.iter().skip(trigger_count) {
+        crate::telemetry::record_boundary_result_cardinality_mismatch();
+        drop(triggers);
+        let mut recomputed = Vec::with_capacity(chunk_count);
+        for chunk in chunks {
             let triggered =
                 self.collect_triggered_patterns_for_backend(&chunk.data, route.decode_backend);
             if triggered.iter().any(|&word| word != 0) {
-                triggers.push(Some(triggered));
+                recomputed.push(Some(triggered));
             } else {
-                triggers.push(None);
+                recomputed.push(None);
             }
         }
-        triggers
+        recomputed
     }
 
     /// [`scan_coalesced_phase2`](Self::scan_coalesced_phase2) with an optional
@@ -554,7 +564,8 @@ impl CompiledScanner {
         use rayon::prelude::*;
 
         let triggers = self.normalize_coalesced_phase2_triggers(chunks, triggers, route);
-        let phase2_start = std::time::Instant::now();
+        let perf_trace = super::profile::perf_trace_enabled();
+        let phase2_start = perf_trace.then(std::time::Instant::now);
         let telemetry = crate::telemetry::capture_scan_telemetry();
         struct CoalescedChunkOutput {
             state: Option<crate::types::ScanState>,
@@ -658,7 +669,8 @@ impl CompiledScanner {
                     // rows, run the shared stem prefilter instead of composing
                     // that gap with unrelated complete phase-2 absence.
                     let generic_assignment_absence_proven =
-                        self.generic_assignment_re.is_none() || generic_keyword_positions.is_some();
+                        self.detector_plans.generic_assignment().is_none()
+                            || generic_keyword_positions.is_some();
                     if !admitted_by_phase2_gpu
                         && !admitted_by_phase2_keyword_hint
                         && !admitted_by_phase2_always_anchor
@@ -731,22 +743,24 @@ impl CompiledScanner {
             .into_par_iter()
             .zip(chunks.par_iter())
             .map(|(mut output, chunk)| {
-                if output.needs_postprocess {
-                    self.post_process_coalesced_matches(chunk, &mut output.matches, route);
-                }
-                output.matches
+                crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
+                    if output.needs_postprocess {
+                        self.post_process_coalesced_matches(chunk, &mut output.matches, route);
+                    }
+                    output.matches
+                })
             })
             .collect();
 
-        let phase2_elapsed = phase2_start.elapsed();
-        let boundary_start = std::time::Instant::now();
+        let phase2_elapsed = phase2_start.map(|t| t.elapsed());
+        let boundary_start = perf_trace.then(std::time::Instant::now);
         super::boundary::scan_chunk_boundaries_with_route(self, chunks, &mut results, route);
-        if super::profile::perf_trace_enabled() {
+        if perf_trace {
             eprintln!(
                 "perf-trace scan_coalesced_phase2: chunks={} p2={:.3}s boundary={:.3}s",
                 chunks.len(),
-                phase2_elapsed.as_secs_f64(),
-                boundary_start.elapsed().as_secs_f64()
+                phase2_elapsed.map_or(0.0, |d| d.as_secs_f64()),
+                boundary_start.map_or(0.0, |t| t.elapsed().as_secs_f64())
             );
         }
         results

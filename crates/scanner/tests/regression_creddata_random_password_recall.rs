@@ -51,7 +51,7 @@ fn credentials_for_backend(
 ) -> Vec<String> {
     matches_for_backend(scanner, line, backend)
         .into_iter()
-        .map(|m| m.credential.to_string())
+        .map(|m| m.credential.as_str().to_string())
         .collect()
 }
 
@@ -82,7 +82,7 @@ fn finding_keys_for_backend(
         .map(|finding| {
             (
                 finding.detector_id.to_string(),
-                finding.credential.to_string(),
+                finding.credential.as_str().to_string(),
                 finding.location.offset,
             )
         })

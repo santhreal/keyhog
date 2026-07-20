@@ -41,7 +41,7 @@ fn extracted_runs(bytes: &[u8]) -> Vec<String> {
     for row in &rows {
         if let Ok(chunk) = row {
             if chunk.metadata.source_type.as_ref() == "binary:strings" {
-                let body = chunk.data.to_string();
+                let body = chunk.data.as_str().to_owned();
                 for line in body.split('\n') {
                     lines.push(line.to_string());
                 }

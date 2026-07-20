@@ -109,7 +109,7 @@ fn tar_over_cap_entry_emits_source_error_and_keeps_safe_sibling() {
     assert!(
         chunks
             .iter()
-            .any(|chunk| chunk.data.to_string().contains("AKIAQYLPMN5HFIQR7XYA")),
+            .any(|chunk| chunk.data.as_str().contains("AKIAQYLPMN5HFIQR7XYA")),
         "safe tar sibling must still be scanned; chunks={chunks:?}"
     );
     assert_eq!(
@@ -180,7 +180,7 @@ fn tar_symlink_entry_emits_source_error_and_keeps_safe_sibling() {
     assert!(
         chunks
             .iter()
-            .any(|chunk| chunk.data.to_string().contains("AKIAQYLPMN5HFIQR7XYA")),
+            .any(|chunk| chunk.data.as_str().contains("AKIAQYLPMN5HFIQR7XYA")),
         "safe tar sibling must still be scanned; chunks={chunks:?}"
     );
     assert!(

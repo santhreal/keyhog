@@ -20,7 +20,7 @@ fn partial_alternation_detector() -> DetectorSpec {
         verify: None,
         keywords: vec![],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }
 }
 
@@ -65,7 +65,7 @@ fn loaded_hot_detector_without_matching_ac_prefix_degrades_gracefully_and_still_
         }],
         keywords: vec!["ghp".into()],
         min_confidence: Some(0.1),
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
 
     let scanner = CompiledScanner::compile(vec![detector])

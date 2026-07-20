@@ -87,7 +87,7 @@ impl CompiledDecodeTransformPolicy {
     pub(crate) fn caesar_matches_plaintext(&self, candidate: &str) -> bool {
         self.caesar_plain_prefixes
             .as_ref()
-            .is_some_and(|prefixes| prefixes.is_match(candidate))
+            .is_some_and(|prefixes| has_token_boundary_match(prefixes, candidate))
     }
 
     pub(crate) fn matched_caesar_shifts(&self, candidate: &str) -> [bool; 26] {
@@ -100,6 +100,17 @@ impl CompiledDecodeTransformPolicy {
         }
         shifts
     }
+}
+
+#[inline]
+fn has_token_boundary_match(prefixes: &AhoCorasick, candidate: &str) -> bool {
+    prefixes.find_overlapping_iter(candidate).any(|matched| {
+        matched.start() == 0
+            || !matches!(
+                candidate.as_bytes()[matched.start() - 1],
+                b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_'
+            )
+    })
 }
 
 fn policy_identity(reverse: &BTreeSet<String>, caesar: &BTreeSet<&str>) -> u64 {

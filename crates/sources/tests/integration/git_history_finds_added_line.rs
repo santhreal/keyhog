@@ -36,7 +36,7 @@ NEW_TOKEN=ghp_historyLineAdded00000001
         2,
         "two commits with added lines should emit two history chunks, got {chunks:?}"
     );
-    let bodies: Vec<String> = chunks.iter().map(|c| c.data.to_string()).collect();
+    let bodies: Vec<String> = chunks.iter().map(|c| c.data.as_str().to_owned()).collect();
     let secret_chunk = chunks
         .iter()
         .copied()

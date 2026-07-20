@@ -97,7 +97,7 @@ pub(super) fn collect_structural_fragments(
             let (array_joined, contains_only_static_strings) = join_inline_array_strings(line);
             let target_is_credential = fragment_assignment_name_is_credential_like(target_name);
             let joined_has_known_prefix =
-                crate::confidence::known_prefix_confidence_floor(&array_joined).is_some();
+                crate::confidence::known_prefix_body(&array_joined).is_some();
             let known_prefix_static_join = contains_only_static_strings
                 && inline_array_has_matching_empty_join(line)
                 && joined_has_known_prefix;
@@ -307,7 +307,7 @@ fn resolve_concat_reference(
         joined.push_str(&value.1);
     }
     (concat_target_name_is_credential_like(target_name)
-        || crate::confidence::known_prefix_confidence_floor(&joined).is_some())
+        || crate::confidence::known_prefix_body(&joined).is_some())
     .then_some(joined)
 }
 

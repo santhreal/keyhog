@@ -350,8 +350,14 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
             if d.private_key_block {
                 entries.push(format!("pkb:{}", d.id));
             }
-            if d.generic_vendor_suffix_fallback {
-                entries.push(format!("gvsf:{}", d.id));
+            if d.resolution_priority != 0 {
+                entries.push(format!("rp:{}:{}", d.id, d.resolution_priority));
+            }
+            for suffix in &d.generic_vendor_suffixes {
+                entries.push(format!("gvs:{}:{}", d.id, suffix));
+            }
+            for suffix in &d.generic_assignment_tail_suffixes {
+                entries.push(format!("gats:{}:{}", d.id, suffix));
             }
             if d.ml != crate::DetectorMlPolicySpec::default() {
                 entries.push(format!(
@@ -395,6 +401,23 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
                     confidence.encrypted_context_multiplier.to_bits(),
                     confidence.soft_context_suppression_threshold.to_bits(),
                     confidence.encrypted_context_suppression_threshold.to_bits(),
+                ));
+                let post = confidence.post_match;
+                entries.push(format!(
+                    "post-match-confidence:{}:{:016x}:{:016x}:{:016x}:{:016x}:{}:{:016x}:{}:{:016x}:{:016x}",
+                    d.id,
+                    post.placeholder_multiplier.to_bits(),
+                    post.minimum_byte_diversity.to_bits(),
+                    post.low_diversity_multiplier.to_bits(),
+                    post.maximum_repeat_ratio.to_bits(),
+                    post.degenerate_run_min_length,
+                    post.degenerate_repeat_multiplier.to_bits(),
+                    post.data_envelope_multiplier.map_or_else(
+                        || "none".into(),
+                        |value| format!("{:016x}", value.to_bits())
+                    ),
+                    post.fixture_path_multiplier.to_bits(),
+                    post.ml_context_reapply_below.to_bits(),
                 ));
             }
             for (validator_index, validator) in d.validators.iter().enumerate() {
@@ -534,13 +557,15 @@ fn assert_scan_hash_field_inventory_is_exhaustive(detector: &DetectorSpec) {
         keyword_free_min_len: _,
         min_len: _,
         max_len: _,
-        generic_vendor_suffix_fallback: _,
+        generic_vendor_suffixes: _,
+        generic_assignment_tail_suffixes: _,
         allowlist_paths: _,
         allowlist_values: _,
         stopwords: _,
         public_identifier_assignment_markers: _,
         structural_password_slot: _,
         weak_anchor: _,
+        resolution_priority: _,
         private_key_block: _,
         credential_shape: _,
         tests: _,

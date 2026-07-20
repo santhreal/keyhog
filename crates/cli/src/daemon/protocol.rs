@@ -144,7 +144,7 @@ pub enum Response {
         source_coverage_gaps: SourceCoverageGaps,
         /// Exact completed recovery for this request, when a selected route
         /// faulted or autoroute state was invalid. `None` means no recovery.
-        backend_recovery: Option<BackendRecoveryStatus>,
+        backend_recovery: RequiredOption<BackendRecoveryStatus>,
     },
     Health {
         uptime_secs: u64,
@@ -170,6 +170,98 @@ pub struct BackendRecoveryStatus {
     pub recovered_chunks: usize,
     pub recovered_bytes: u64,
     pub reason: String,
+}
+/// Like `Option`, but the field must be present on the wire. The `None`
+/// variant serializes to `null` and deserializes from `null`; an absent
+/// field is a deserialization error so older peers cannot silently downgrade
+/// a v6 `ScanResults` frame to a no-fault execution.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RequiredOption<T> {
+    None,
+    Some(T),
+}
+
+impl<T> RequiredOption<T> {
+    pub fn is_none(&self) -> bool {
+        matches!(self, RequiredOption::None)
+    }
+
+    pub fn is_some(&self) -> bool {
+        matches!(self, RequiredOption::Some(_))
+    }
+
+    pub fn expect(self, msg: &str) -> T {
+        match self {
+            RequiredOption::Some(v) => v,
+            RequiredOption::None => panic!("{msg}"),
+        }
+    }
+}
+
+impl<T> From<Option<T>> for RequiredOption<T> {
+    fn from(opt: Option<T>) -> Self {
+        opt.map_or(RequiredOption::None, RequiredOption::Some)
+    }
+}
+
+impl<T> From<RequiredOption<T>> for Option<T> {
+    fn from(req: RequiredOption<T>) -> Self {
+        match req {
+            RequiredOption::None => None,
+            RequiredOption::Some(v) => Some(v),
+        }
+    }
+}
+
+impl<T: Serialize> Serialize for RequiredOption<T> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            RequiredOption::None => serializer.serialize_none(),
+            RequiredOption::Some(v) => v.serialize(serializer),
+        }
+    }
+}
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for RequiredOption<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct RequiredOptionVisitor<T> {
+            marker: std::marker::PhantomData<T>,
+        }
+        impl<'de, T: Deserialize<'de>> serde::de::Visitor<'de> for RequiredOptionVisitor<T> {
+            type Value = RequiredOption<T>;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a required optional value")
+            }
+            fn visit_none<E>(self) -> Result<Self::Value, E> {
+                Ok(RequiredOption::None)
+            }
+            fn visit_unit<E>(self) -> Result<Self::Value, E> {
+                Ok(RequiredOption::None)
+            }
+            fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
+            where
+                M: serde::de::MapAccess<'de>,
+            {
+                let de = serde::de::value::MapAccessDeserializer::new(map);
+                T::deserialize(de).map(RequiredOption::Some)
+            }
+            fn visit_seq<S>(self, seq: S) -> Result<Self::Value, S::Error>
+            where
+                S: serde::de::SeqAccess<'de>,
+            {
+                let de = serde::de::value::SeqAccessDeserializer::new(seq);
+                T::deserialize(de).map(RequiredOption::Some)
+            }
+        }
+        deserializer.deserialize_any(RequiredOptionVisitor {
+            marker: std::marker::PhantomData,
+        })
+    }
+}
+
+impl<T> Default for RequiredOption<T> {
+    fn default() -> Self {
+        RequiredOption::None
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -207,8 +299,25 @@ impl SourceCoverageGaps {
             + self.git_lfs_pointer
     }
 
+    /// CoverageGapKind FAIL set only (KH-1347 / KH-1368). WARN skips
+    /// (binary, over_max_size) do not flip incomplete exit 13.
+    pub fn fail_class_total(self) -> usize {
+        self.unreadable
+            + self.git_object_unreadable
+            + self.archive_truncated
+            + self.binary_section_name_unresolved
+            + self.source_truncated
+            + self.structured_source_parse_failures
+            + self.archive_duplicate_scan_unavailable
+            + self.git_lfs_pointer
+    }
+
     pub fn is_empty(self) -> bool {
         self.total() == 0
+    }
+
+    pub fn fail_class_empty(self) -> bool {
+        self.fail_class_total() == 0
     }
 }
 

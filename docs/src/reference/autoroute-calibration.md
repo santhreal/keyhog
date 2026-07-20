@@ -57,20 +57,25 @@ full-size untracked files therefore calibrate as separate route classes during
 installer calibration, even when one `--git-diff` scan contains both.
 
 Performance selection uses the complete recorded distribution, not the single
-fastest sample. A route is eligible for persistence only when its 95% Student-t
-confidence interval is entirely below every other eligible execution route.
-Localization variants on the same backend remain distinct candidates;
-same-backend overlap is as inconclusive as cross-backend overlap. KeyHog never
-turns an overlapping median, backend rank, or CPU/GPU preference into a claim
-that a route is fastest. `keyhog backend
---autoroute` exposes the representative times and `selection_basis` for every
-valid decision.
+fastest sample. All candidates are measured in the same rotated rounds, so
+KeyHog compares paired per-round differences at 95% Student-t confidence. If
+those differences prove one exact plan faster than every peer plan,
+`selection_basis` is `exact-plan-paired-95pct-confidence`. If same-backend plans
+remain tied, KeyHog chooses the compiled default when it is among the tied
+leaders. Otherwise, it chooses a stable typed plan from that tied set. The
+chosen plan's interval must remain below every plan on each peer backend.
+Inspection reports `peer-separated-compiled-default-plan` or
+`peer-separated-statistically-tied-plan`. All other overlaps are inconclusive
+and are rejected.
 
-Calibration records 7 trials per route. Accelerator evidence retains its real
-cold dispatch; steady and warm rounds rotate route order so host drift is shared
-across peers. If cross-backend confidence still overlaps, calibration stops with
-host-load guidance plus every route's median and 95% interval instead of
-spending unbounded install time or guessing.
+Calibration records 7 normalized timing trials per route. A warm trial repeats
+short candidate executions until their combined timing reaches 10 ms. It stops
+after 1,024 executions and records the per-execution average. This keeps
+scheduler resolution from dominating small workloads without extending large
+workloads. Accelerator evidence retains one real cold dispatch. Steady and warm
+rounds rotate route order so host drift is shared across peers. If confidence
+still overlaps, calibration stops with host-load guidance plus every route's
+median and 95% interval instead of spending unbounded install time or guessing.
 
 Because the decision is *measured*, it must be recorded before `--backend auto`
 (the default) can claim a fastest route. A fresh install has no decisions yet,
@@ -449,8 +454,8 @@ meanings:
 | `sample_bytes_min`, `sample_bytes_max`, `sample_chunks_min`, `sample_chunks_max` | Exact measured envelope covered by the class. |
 | `measured_points` | Complete point-by-point projection: exact sample size, `measurement_generator`, `payload_digest`, `measurement_shape_digest`, timestamp, one-shot and daemon execution-plan winners, confidence status, every route timing, and every parity receipt. Use this array to distinguish same-sized probes and diagnose crossover behavior. |
 | `sample_bytes`, `sample_chunks`, `route_timings` | Concise size projection plus the complete generic route-timing array for the first point after sorting by bytes, chunks, then measurement-shape digest. Each timing identifies the backend, both localization choices, one-shot time, and warm time when applicable. `measured_points` is authoritative. |
-| `confidence_separated` | Whether the one-shot winner's 95% interval is entirely below every other eligible execution route at every measured point. |
-| `selection_basis` | `separated-95pct-confidence`. Inconclusive evidence is rejected instead of appearing as a routable decision. |
+| `confidence_separated` | Whether one-shot evidence supports the route at every measured point, either as an exact paired-plan winner or as a statistically tied plan separated from every peer backend plan. |
+| `selection_basis` | `exact-plan-paired-95pct-confidence`, `peer-separated-compiled-default-plan`, or `peer-separated-statistically-tied-plan`. Inconclusive evidence is rejected instead of appearing as a routable decision. |
 | `selected_margin_ns` | Smallest one-shot representative-time margin to the next eligible route across all measured points; `null` when there is no peer route. |
 | `daemon_backend`, `daemon_phase2_plain_localizer`, `daemon_phase2_keyword_localizer` | Backend and both phase-two localization choices derived for a ready persistent daemon from warm evidence. |
 | `daemon_confidence_separated`, `daemon_selection_basis`, `daemon_selected_margin_ns` | Daemon-route counterparts, also aggregated conservatively across every measured point. |

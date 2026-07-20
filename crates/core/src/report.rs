@@ -703,7 +703,7 @@ pub fn write_scan_report<W: Write + Send>(
 fn report_recoveries(metadata: Option<&ScanReportMetadata>) -> Vec<ScanBackendRecoverySummary> {
     metadata
         .map(|value| value.backend_recoveries.clone())
-        .unwrap_or_default()
+        .unwrap_or_default() // LAW10: absent report metadata means no recovery rows; findings and coverage status are unchanged
 }
 
 fn resolve_report_status(

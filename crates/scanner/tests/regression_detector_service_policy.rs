@@ -16,7 +16,7 @@ fn scanner_for(service: &str) -> CompiledScanner {
             ..PatternSpec::default()
         }],
         keywords: vec!["opaque".into()],
-        ..DetectorSpec::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }])
     .expect("compile custom detector")
 }
@@ -83,7 +83,7 @@ fn active_resolution_uses_custom_typed_plan_and_rejects_unknown_identity() {
             ..PatternSpec::default()
         }],
         keywords: vec!["opaque".into()],
-        ..DetectorSpec::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let generic = keyhog_core::detector_spec_by_id("generic-secret")
         .expect("embedded generic owner")

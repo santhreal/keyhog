@@ -1,4 +1,4 @@
-use keyhog_scanner::confidence::known_prefix_confidence_floor;
+use keyhog_scanner::testing::confidence::known_prefix_confidence_floor;
 #[test]
 fn known_prefix_floor_matches_expected_prefixes() {
     // Bodies must be NON-degenerate. The floor is deliberately withheld from

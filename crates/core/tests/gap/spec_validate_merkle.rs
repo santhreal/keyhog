@@ -53,8 +53,24 @@ fn clean_detector(id: &str) -> DetectorSpec {
         keywords: vec!["demo_".into()],
         min_confidence: None,
         tests: Vec::new(),
-        ..Default::default()
+        ..keyhog_core::testing::named_detector_fixture_defaults()
     }
+}
+
+/// A phase-2 generic detector template borrowed from the real `generic-secret`
+/// detector. It already carries the entropy-owner fields the quality gate
+/// requires for `kind = "phase2-generic"`, so tests can focus on
+/// `canonical_hex_key_material` rules.
+fn clean_generic_detector(id: &str) -> DetectorSpec {
+    let mut d = keyhog_core::detector_spec_by_id("generic-secret")
+        .cloned()
+        .expect("generic-secret detector must be embedded");
+    d.id = id.into();
+    d.name = "Canonical Hex Test".into();
+    d.service = "demo".into();
+    d.keywords.clear();
+    d.canonical_hex_key_material.clear();
+    d
 }
 
 /// Count Error vs Warning issues in a quality-gate result.
@@ -230,48 +246,22 @@ keywords = ["demo_"]
 
 #[test]
 fn phase2_generic_may_add_structured_regex_envelopes() {
-    let toml = r#"
-[detector]
-id = "generic-demo"
-name = "Generic Demo"
-service = "generic"
-severity = "medium"
-ml = { match_mode = "blend", entropy_mode = "authoritative", weight = 0.5, context_radius_lines = 5 }
-kind = "phase2-generic"
-keywords = ["secret"]
-entropy_high = 4.5
-entropy_low = 3.0
-entropy_very_high = 5.8
-sensitive_path_entropy_very_high = 5.8
-plausibility = { mixed_alnum_floor = 4.0, symbolic_entropy_floor = 3.5, second_half_entropy_floor = 2.5, second_half_min_len = 17, unique_chars_min_len = 17, min_unique_chars = 8, unanchored_hex_max_len = 10, identical_char_max_len = 4, structured_dotted_min_len = 40, mixed_alnum_min_len = 20, isolated_mixed_entropy_floor = 3.65, isolated_symbolic_min_len = 18, isolated_symbolic_min_symbols = 2, isolated_symbolic_requires_non_underscore = true, isolated_colon_left_min_len = 20, isolated_colon_right_min_len = 16, leading_slash_base64_entropy_floor = 4.8, leading_slash_base64_min_len = 40, reject_repeated_blocks = true, allow_alphabetic_credential = true, reject_program_identifiers = true, reject_source_symbol_identifiers = true, reject_dash_segmented_alnum = true }
-keyword_free_min_len = 20
-min_len = 8
-max_len = 80
-entropy_policy_priority = 0
-bpe_enabled = false
-entropy_floor = [{ floor = 1.5 }]
-
-[[detector.entropy_shapes]]
-charset = "lower-alnum"
-entropy_floor = 3.9
-special_min_length = 16
-grouping = { group_count = 4, group_length = 4, separator = "-" }
-require_non_hex_alpha = true
-require_group_alpha_digit = true
-
-[detector.entropy_fallback]
-class = "generic"
-id = "entropy-generic-demo"
-name = "Generic Demo Entropy"
-service = "generic"
+    let (_, generic_toml) =
+        keyhog_core::testing::CoreTestApi::embedded_detector_tomls(&keyhog_core::testing::TestApi)
+            .iter()
+            .find(|(name, _)| *name == "generic-secret.toml")
+            .expect("generic-secret detector TOML must be embedded");
+    let toml = format!(
+        r#"{generic_toml}
 
 [[detector.patterns]]
-regex = '"secret"\s*:\s*"([A-Za-z0-9]{12,80})"'
+regex = '"secret"\s*:\s*"([A-Za-z0-9]{{12,80}})"'
 group = 1
-"#;
+"#
+    );
     let detectors = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
         &keyhog_core::testing::TestApi,
-        toml,
+        &toml,
     )
     .expect("hybrid phase2-generic detector must parse");
     let issues = keyhog_core::validate_detector(&detectors[0]);
@@ -796,9 +786,7 @@ fn canonical_hex_key_material_requires_owned_valid_policy() {
         "canonical_hex_key_material is only valid for kind = \"phase2-generic\""
     ));
 
-    let mut generic = clean_detector("canonical-hex-generic");
-    generic.kind = DetectorKind::Phase2Generic;
-    generic.patterns.clear();
+    let mut generic = clean_generic_detector("canonical-hex-generic");
     generic.keywords = vec!["signing_key".into()];
     generic.canonical_hex_key_material = vec![policy];
     assert!(
@@ -827,9 +815,7 @@ fn canonical_hex_key_material_requires_owned_valid_policy() {
 
 #[test]
 fn canonical_hex_key_material_rejects_ambiguous_or_invalid_tables() {
-    let mut detector = clean_detector("invalid-canonical-hex");
-    detector.kind = DetectorKind::Phase2Generic;
-    detector.patterns.clear();
+    let mut detector = clean_generic_detector("invalid-canonical-hex");
     detector.keywords = vec!["signing_key".into()];
     detector.canonical_hex_key_material = vec![
         CanonicalHexKeyMaterialSpec {
@@ -1783,9 +1769,10 @@ keywords = ["rt_"]
 [[detector.patterns]]
 regex = "rt_[A-Z0-9]{8}"
 "#;
+    let toml = keyhog_core::testing::detector_toml_with_fixture_confidence(toml);
     let loaded = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
         &keyhog_core::testing::TestApi,
-        toml,
+        &toml,
     )
     .expect("rt toml parses");
     let hand = DetectorSpec {
@@ -1810,7 +1797,7 @@ regex = "rt_[A-Z0-9]{8}"
         // the genuinely non-hashed fields (name/service).
         min_confidence: None,
         tests: Vec::new(),
-        ..Default::default()
+        ..keyhog_core::testing::named_detector_fixture_defaults()
     };
     assert_eq!(
         compute_spec_hash(&loaded),

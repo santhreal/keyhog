@@ -583,7 +583,12 @@ fn forced_daemon_dogfood_prints_the_request_trace() {
     let stderr = String::from_utf8(out.stderr).expect("dogfood stderr is UTF-8");
     let payload = stderr
         .lines()
-        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter_map(
+            |line| match serde_json::from_str::<serde_json::Value>(line) {
+                Ok(value) => Some(value),
+                Err(_) => None,
+            },
+        )
         .find(|value| value.get("dogfood").is_some())
         .unwrap_or_else(|| panic!("daemon dogfood JSON missing from stderr: {stderr}"));
     let dogfood = &payload["dogfood"];

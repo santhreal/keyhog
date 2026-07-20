@@ -277,6 +277,7 @@ impl CompiledValidatorIndex {
         structural
             .or(unknown)
             .or(invalid)
+            // LAW10: no applicable validator is an explicit policy outcome, not a failed validation; callers preserve the finding without a checksum adjustment.
             .unwrap_or_else(ChecksumConfidenceDecision::not_applicable)
     }
 }
@@ -321,6 +322,7 @@ impl CompiledValidatorCatalog {
             .iter()
             .position(|candidate| candidate.as_ref() == detector_id)
             .map(|index| self.validators[index].validate(credential, false))
+            // LAW10: no validator mapped to this pattern is an explicit detector-plan outcome, not a runtime validation failure.
             .unwrap_or_else(ChecksumConfidenceDecision::not_applicable)
     }
 
@@ -470,6 +472,7 @@ fn validate_base64_payload(
     });
     match decoded_len {
         Ok(decoded_len) if decoded_len >= min_decoded_len => ChecksumResult::Valid,
+        // LAW10: malformed or undersized decoded payloads fail closed as `Invalid`; no finding is accepted through another validator.
         Ok(_) | Err(_) => ChecksumResult::Invalid,
     }
 }

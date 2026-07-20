@@ -22,23 +22,37 @@ use std::sync::LazyLock;
 /// separator between segments. Kept in ONE place so expansion never drifts.
 const KEYWORD_SEPARATORS: [char; 3] = ['_', '-', '.'];
 
-static ASSIGNMENT_KEYWORDS: LazyLock<Vec<String>> = LazyLock::new(|| {
-    // Law 10: the detector corpus is baked into the binary by `build.rs`; a parse
-    // failure is a BUILD/SOURCE bug, never a runtime condition an operator can act
-    // on, so fail closed (panic) rather than ship a silently-narrowed prefilter.
-    let detectors = match keyhog_core::load_embedded_detectors_or_fail() {
-        Ok(detectors) => detectors,
-        Err(error) => panic!(
-            "embedded detector corpus is corrupt: {error}. The generic assignment-keyword \
-             prefilter is derived from it; refusing to run without the generic-credential \
-             prefilter truth."
-        ),
-    };
-    match derive_assignment_keywords(&detectors) {
-        Ok(keywords) => keywords,
-        Err(error) => panic!(
-            "cannot derive the generic assignment-keyword vocabulary: {error}. Fix the bundled \
-             generic phase-2 detector specs (the single home for this vocabulary)."
+struct EmbeddedAssignmentPolicy {
+    keywords: Vec<String>,
+    vendor_suffixes: Vec<String>,
+    tail_suffixes: Vec<String>,
+}
+
+static ASSIGNMENT_POLICY: LazyLock<EmbeddedAssignmentPolicy> = LazyLock::new(|| {
+    // LAW10: fail-closed/security; the embedded corpus is a build artifact and corruption aborts initialization rather than narrowing recall.
+    let detectors = keyhog_core::load_embedded_detectors_or_fail()
+        // LAW10: embedded corpus corruption aborts matcher initialization with its exact error; no reduced vocabulary is substituted.
+        .unwrap_or_else(|error| panic!("embedded detector corpus is corrupt: {error}"));
+    EmbeddedAssignmentPolicy {
+        // LAW10: fail-closed/security; an invalid embedded keyword policy aborts initialization rather than narrowing the assignment bridge.
+        keywords: derive_assignment_keywords(&detectors).unwrap_or_else(|error| {
+            panic!(
+                "cannot derive the generic assignment-keyword vocabulary: {error}. Fix the bundled generic phase-2 detector specs"
+            )
+        }),
+        // LAW10: fail-closed/security; an invalid embedded suffix policy aborts initialization rather than narrowing the assignment bridge.
+        vendor_suffixes: derive_generic_vendor_suffixes(&detectors).unwrap_or_else(|error| {
+            panic!(
+                "cannot derive generic vendor assignment suffixes: {error}. Fix the bundled generic phase-2 detector specs"
+            )
+        }),
+        // LAW10: fail-closed/security; an invalid embedded tail policy aborts initialization rather than narrowing the assignment bridge.
+        tail_suffixes: derive_generic_assignment_tail_suffixes(&detectors).unwrap_or_else(
+            |error| {
+                panic!(
+                    "cannot derive generic assignment tail suffixes: {error}. Fix the bundled generic phase-2 detector specs"
+                )
+            },
         ),
     }
 });
@@ -46,7 +60,15 @@ static ASSIGNMENT_KEYWORDS: LazyLock<Vec<String>> = LazyLock::new(|| {
 /// The embedded generic credential-assignment keywords (lowercase, first-seen
 /// order). Runtime scanners compile their own projection from the active corpus.
 pub(crate) fn assignment_keywords() -> &'static [String] {
-    &ASSIGNMENT_KEYWORDS
+    &ASSIGNMENT_POLICY.keywords
+}
+
+pub(crate) fn generic_vendor_suffixes() -> &'static [String] {
+    &ASSIGNMENT_POLICY.vendor_suffixes
+}
+
+pub(crate) fn generic_assignment_tail_suffixes() -> &'static [String] {
+    &ASSIGNMENT_POLICY.tail_suffixes
 }
 
 /// Union the `keywords` of every generic entropy-policy owner, lowercase them,
@@ -97,6 +119,66 @@ pub(crate) fn derive_assignment_keywords(
             what: "assignment keyword",
             require_lowercase: true,
             separators: b"_-.",
+        },
+    )
+}
+
+pub(crate) fn derive_generic_vendor_suffixes(
+    detectors: &[DetectorSpec],
+) -> Result<Vec<String>, String> {
+    derive_unique_phase2_suffixes(
+        detectors,
+        |detector| &detector.generic_vendor_suffixes,
+        "generic_vendor_suffixes",
+        "generic vendor suffix",
+    )
+}
+
+pub(crate) fn derive_generic_assignment_tail_suffixes(
+    detectors: &[DetectorSpec],
+) -> Result<Vec<String>, String> {
+    derive_unique_phase2_suffixes(
+        detectors,
+        |detector| &detector.generic_assignment_tail_suffixes,
+        "generic_assignment_tail_suffixes",
+        "generic assignment tail suffix",
+    )
+}
+
+fn derive_unique_phase2_suffixes(
+    detectors: &[DetectorSpec],
+    select: for<'a> fn(&'a DetectorSpec) -> &'a [String],
+    field: &str,
+    what: &'static str,
+) -> Result<Vec<String>, String> {
+    let mut owner: Option<&DetectorSpec> = None;
+    for detector in detectors {
+        if select(detector).is_empty() {
+            continue;
+        }
+        if detector.kind != keyhog_core::DetectorKind::Phase2Generic {
+            return Err(format!(
+                "detector {:?} declares {field} but is not phase2-generic",
+                detector.id
+            ));
+        }
+        if let Some(previous) = owner {
+            return Err(format!(
+                "detectors {:?} and {:?} both declare {field}; exactly one phase2-generic detector may own the list",
+                previous.id, detector.id
+            ));
+        }
+        owner = Some(detector);
+    }
+    let Some(owner) = owner else {
+        return Ok(Vec::new());
+    };
+    crate::tier_b_list::parse_token_list(
+        select(owner).to_vec(),
+        &crate::tier_b_list::ListPolicy {
+            what,
+            require_lowercase: true,
+            separators: b"",
         },
     )
 }

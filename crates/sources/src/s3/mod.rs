@@ -333,8 +333,10 @@ fn download_s3_listing_page(
     fetch_pool.install(|| {
         page.par_iter()
             .map(|object| -> Result<Option<Chunk>, SourceError> {
-                if object.size == 0 {
-                    return Ok(None);
+                // KH-1321: missing Size is not empty; only skip true 0-byte objects.
+                match object.size {
+                    Some(0) => return Ok(None),
+                    Some(_) | None => {}
                 }
                 if !crate::cloud::is_probably_text_object_key(&object.key) {
                     tracing::warn!(
@@ -369,36 +371,47 @@ fn fetch_object_chunk(
     base_url: &str,
     bucket: &str,
     key: &str,
-    object_size: u64,
+    listed_size: Option<u64>,
     aws_auth: Option<&AwsSigV4Config>,
     max_object_bytes: u64,
 ) -> Result<Option<Chunk>, SourceError> {
-    if object_size > max_object_bytes {
-        // Law 10: an over-cap object is dropped from the scan, an UNKNOWN, not a
-        // clean object. The old `tracing::debug!` was invisible at default
-        // verbosity, so a secret in an oversized object vanished with no trace.
-        // Surface loudly + count it (as over-max-size, the matching category the
-        // CLI already reports) so end-of-scan coverage reflects the drop.
-        tracing::warn!(
-            bucket,
-            key,
-            object_size,
-            cap = max_object_bytes,
-            "skipping S3 object: listed size exceeds the per-object byte cap; NOT scanned",
-        );
-        return Err(crate::cloud::record_unscanned_object_skip(
-            crate::SourceSkipEvent::OverMaxSize,
-            "S3 object",
-            "object",
-            &format!("s3://{bucket}/{key}"),
-            format!("listed size {object_size} exceeds the per-object byte cap {max_object_bytes}"),
-        ));
+    if let Some(object_size) = listed_size {
+        if object_size > max_object_bytes {
+            // Law 10: an over-cap object is dropped from the scan, an UNKNOWN, not a
+            // clean object. The old `tracing::debug!` was invisible at default
+            // verbosity, so a secret in an oversized object vanished with no trace.
+            // Surface loudly + count it (as over-max-size, the matching category the
+            // CLI already reports) so end-of-scan coverage reflects the drop.
+            tracing::warn!(
+                bucket,
+                key,
+                object_size,
+                cap = max_object_bytes,
+                "skipping S3 object: listed size exceeds the per-object byte cap; NOT scanned",
+            );
+            return Err(crate::cloud::record_unscanned_object_skip(
+                crate::SourceSkipEvent::OverMaxSize,
+                "S3 object",
+                "object",
+                &format!("s3://{bucket}/{key}"),
+                format!(
+                    "listed size {object_size} exceeds the per-object byte cap {max_object_bytes}"
+                ),
+            ));
+        }
     }
 
     let encoded_key = crate::cloud::encode_object_key_path(key);
     let url = format!("{}/{}", base_url.trim_end_matches('/'), encoded_key);
     let display_path = format!("s3://{bucket}/{key}");
-    let request = client.get(&url);
+    // KH-1413: when ListObjects omitted Size, request at most the cap via
+    // Range so the network path cannot stream a multi-GB object before the
+    // client-side capped reader stops.
+    let mut request = client.get(&url);
+    if listed_size.is_none() && max_object_bytes > 0 {
+        let end = max_object_bytes.saturating_sub(1);
+        request = request.header("Range", format!("bytes=0-{end}"));
+    }
     let request = if let Some(auth) = aws_auth {
         auth.sign(request, &url)?
     } else {

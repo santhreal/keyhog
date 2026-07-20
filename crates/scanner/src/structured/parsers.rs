@@ -17,7 +17,7 @@ pub(crate) use env::parse_env;
 pub(crate) use hcl::parse_hcl;
 pub(crate) use json::{parse_jupyter, parse_tfstate};
 pub(crate) use line::resolve_line_number_options;
-pub(crate) use yaml::{parse_docker_compose, parse_k8s_secret};
+pub(crate) use yaml::{contains_k8s_secret_document, parse_docker_compose, parse_k8s_secret};
 
 /// Pure query: is a structured-format parse/shape gap a REAL lost decode surface?
 ///

@@ -26,9 +26,9 @@ fn known_prefix_credential_always_detected_despite_low_confidence_context() {
         verify: None,
         keywords: vec!["sk_live_".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
-    let scanner = CompiledScanner::compile(vec![detector]).unwrap();
+    let scanner = compile_test_scanner(vec![detector]);
 
     // Place inside a comment block - a context that normally suppresses low-confidence matches.
     let chunk = make_chunk(&format!(
@@ -141,9 +141,9 @@ fn checksum_valid_known_prefix_survives_post_scoring_penalties() {
         verify: None,
         keywords: vec!["ghp_".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
-    let scanner = CompiledScanner::compile(vec![detector]).unwrap();
+    let scanner = compile_test_scanner(vec![detector]);
     let chunk = make_chunk(&format!("GITHUB_TOKEN={}\n", credential));
     let matches = scanner.scan(&chunk);
 

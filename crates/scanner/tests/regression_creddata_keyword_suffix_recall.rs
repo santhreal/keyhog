@@ -33,34 +33,11 @@ fn scanner() -> CompiledScanner {
     CompiledScanner::compile(detectors).expect("compile scanner")
 }
 
-/// Scan one line via the CPU fallback path (where the keyword bridge runs) and
-/// return the captured credential strings. Each call clears the fragment cache
-/// so identical values across tests are not deduplicated.
-fn credentials_for(scanner: &CompiledScanner, line: &str) -> Vec<String> {
-    let chunk = Chunk {
-        data: line.into(),
-        metadata: ChunkMetadata::default(),
-    };
-    scanner.clear_fragment_cache();
-    scanner
-        .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
-        .into_iter()
-        .flatten()
-        .filter(|m| m.detector_id.as_ref() == "generic-secret")
-        .map(|m| m.credential.to_string())
-        .collect()
-}
-
-fn caught(scanner: &CompiledScanner, line: &str, value: &str) -> bool {
-    credentials_for(scanner, line).iter().any(|c| c == value)
-}
-
-/// Like `caught`, but accepts the whole detectorless generic-bridge FAMILY
-/// (`generic-secret` / `generic-password` / `entropy-api-key`). A bare
-/// secret-family keyword (`secret = <v>`, zero suffixes) routes to
-/// `generic-password` / `entropy-api-key` rather than `generic-secret`: the
-/// label follows the detector set, but the VALUE still surfaces. Recall, not the
-/// specific generic label, is the backward-compat contract this locks.
+/// Accept the whole detectorless generic-bridge family.
+/// A bare secret-family keyword may resolve to the generic API-key, password,
+/// secret, or entropy owner according to the compiled detector priorities. The
+/// value surfacing, not a particular generic label, is the compatibility
+/// contract this locks.
 fn caught_by_generic_family(scanner: &CompiledScanner, line: &str, value: &str) -> bool {
     let chunk = Chunk {
         data: line.into(),
@@ -74,10 +51,20 @@ fn caught_by_generic_family(scanner: &CompiledScanner, line: &str, value: &str) 
         .filter(|m| {
             matches!(
                 m.detector_id.as_ref(),
-                "generic-secret" | "generic-password" | "entropy-api-key"
+                "generic-secret"
+                    | "generic-api-key"
+                    | "generic-password"
+                    | "generic-keyword-secret"
+                    | "entropy-api-key"
             )
         })
         .any(|m| m.credential.as_ref() == value)
+}
+
+fn bridge_captures(line: &str, value: &str) -> bool {
+    keyhog_scanner::testing::generic_assignment_captures_for_test(line)
+        .iter()
+        .any(|(_, captured)| captured == value)
 }
 
 // All value literals below are VERIFIED to surface under a bare `secret = "<v>"`
@@ -90,37 +77,37 @@ fn secret_preserving_suffix_forms_are_surfaced() {
     // `secret` + `_key` (the canonical Django/Flask SECRET_KEY).
     let v1 = "8GS8FNrJgo1uN08yXk9mP2qR";
     assert!(
-        caught(&s, &format!("DJANGO_SECRET_KEY = \"{v1}\""), v1),
+        caught_by_generic_family(&s, &format!("DJANGO_SECRET_KEY = \"{v1}\""), v1),
         "SECRET_KEY (secret + _key suffix) must bridge"
     );
     // `secret` + `_key` + `_base` (two stacked suffixes. Rails secret_key_base).
     let v2 = "aB3xK9mN2pQ7rS5tU8vW1xY4";
     assert!(
-        caught(&s, &format!("secret_key_base = \"{v2}\""), v2),
+        caught_by_generic_family(&s, &format!("secret_key_base = \"{v2}\""), v2),
         "secret_key_base (secret + key + base, two suffixes) must bridge"
     );
     // `credential` + `_value` (JSON spec fixtures).
     let v3 = "jvyyoeaftqdonwtyXk9mP2qR";
     assert!(
-        caught(&s, &format!("\"credential_value\": \"{v3}\""), v3),
+        caught_by_generic_family(&s, &format!("\"credential_value\": \"{v3}\""), v3),
         "credential_value (credential + _value suffix) must bridge"
     );
     // `token` + `_value`.
     let v4 = "opu1hymphguprytXk9mP2qR7";
     assert!(
-        caught(&s, &format!("token_value = \"{v4}\""), v4),
+        caught_by_generic_family(&s, &format!("token_value = \"{v4}\""), v4),
         "token_value (token + _value suffix) must bridge"
     );
     // `private_key` + `_raw`.
     let v5 = "5a407ca8f8eb83Xk9mP2qR7s";
     assert!(
-        caught(&s, &format!("private_key_raw = \"{v5}\""), v5),
+        caught_by_generic_family(&s, &format!("private_key_raw = \"{v5}\""), v5),
         "private_key_raw (private_key + _raw suffix) must bridge"
     );
     // `secret` + `_string`.
     let v6 = "7mK2pQ9rT5xV8zXk9mPaB3cd";
     assert!(
-        caught(&s, &format!("secret_string = \"{v6}\""), v6),
+        caught_by_generic_family(&s, &format!("secret_string = \"{v6}\""), v6),
         "secret_string (secret + _string suffix) must bridge"
     );
     // Backward compatibility: the bare keyword (zero suffixes) still bridges.
@@ -137,24 +124,23 @@ fn secret_preserving_suffix_forms_are_surfaced() {
 
 #[test]
 fn identifier_and_metadata_suffixes_do_not_bridge() {
-    let s = scanner();
     // The suffix allowlist EXCLUDES `_type`, `_hash`, `_id`: these denote a
     // non-secret (OAuth metadata, a digest, an identifier). Each value is verified
     // to surface under a bare keyword, so the ONLY reason for no-catch here is the
     // deliberately-excluded suffix (never the entropy floor or a shape gate).
     let v1 = "Wj3kZ9mP2qR7sT4vXa8bC1dE";
     assert!(
-        !caught(&s, &format!("token_type = \"{v1}\""), v1),
+        !bridge_captures(&format!("token_type = \"{v1}\""), v1),
         "token_type (excluded `_type` suffix) must NOT bridge. OAuth metadata, not a secret"
     );
     let v2 = "Lq8nR4tW7xZ2mK9pV5sB3jH6";
     assert!(
-        !caught(&s, &format!("password_hash = \"{v2}\""), v2),
+        !bridge_captures(&format!("password_hash = \"{v2}\""), v2),
         "password_hash (excluded `_hash` suffix) must NOT bridge, a digest, not the password"
     );
     let v3 = "Pf6dG9kM2qZ7xW4rT8sV5nB3";
     assert!(
-        !caught(&s, &format!("secret_key_id = \"{v3}\""), v3),
+        !bridge_captures(&format!("secret_key_id = \"{v3}\""), v3),
         "secret_key_id (excluded trailing `_id`) must NOT bridge, an identifier, not a key"
     );
 }

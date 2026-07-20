@@ -21,7 +21,7 @@ fn detector() -> DetectorSpec {
         verify: None,
         keywords: vec!["kh_history_secret_".into()],
         min_confidence: None,
-        ..Default::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     }
 }
 
