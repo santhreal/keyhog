@@ -38,6 +38,7 @@ fn create_minimal_detectors() -> Vec<DetectorSpec> {
                 required_literals: Vec::new(),
                 client_safe: false,
                 weak_anchor: false,
+                structural_password_slot: false,
             },
             PatternSpec {
                 regex: "sk-[a-zA-Z0-9]{48}".into(),
@@ -46,6 +47,7 @@ fn create_minimal_detectors() -> Vec<DetectorSpec> {
                 required_literals: Vec::new(),
                 client_safe: false,
                 weak_anchor: false,
+                structural_password_slot: false,
             },
         ],
         companions: Vec::new(),

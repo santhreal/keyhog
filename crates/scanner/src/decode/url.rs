@@ -1,7 +1,7 @@
 use super::base64::base64_decode;
 use super::pipeline::{
-    decode_candidate_refs_exact, decode_candidate_spans_exact, with_extracted_value_spans,
-    ExtractedValue,
+    decode_candidate_refs_exact, decode_candidate_spans_exact, push_decoded_replacements_spliced,
+    with_extracted_value_spans, ExtractedValue, DECODE_REPLACEMENT_BATCH_SOURCE_BYTES,
 };
 use super::unicode_escape::unicode_escape_decode;
 use super::util::{hex_val, lazy_decoded_prefix};
@@ -36,56 +36,47 @@ impl Decoder for UrlDecoder {
     }
 
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
-        if !chunk.data.contains('%') {
-            return Vec::new();
-        }
-        with_extracted_value_spans(&chunk.data, |candidates| {
-            let mut decoded_chunks = decode_candidate_refs_exact(
-                chunk,
-                candidates
-                    .iter()
-                    .filter_map(|candidate| candidate.value.contains('%').then_some(candidate)),
-                url_decode,
-                self.name(),
-            );
-            let synthetic = percent_assignment_tail_candidates(&chunk.data, candidates);
-            decoded_chunks.extend(decode_candidate_spans_exact(
-                chunk,
-                synthetic,
-                url_decode,
-                self.name(),
-            ));
-            decoded_chunks
-        })
-    }
-}
-
-fn percent_assignment_tail_candidates(
-    text: &str,
-    borrowed_candidates: &[ExtractedValue],
-) -> Vec<ExtractedValue> {
-    let mut synthetic = Vec::new();
-    // Also pick up percent-only assignment tails the pct_block accumulator
-    // can miss when the `%` run abuts a quote or delimiter mid-chunk.
-    for line in text.lines() {
-        for (lhs, rhs) in line.split_once('=').into_iter().chain(
-            line.split_once(':')
-                .into_iter()
-                .filter(|(l, _)| !l.contains("://") && !l.starts_with("http")),
-        ) {
-            let _ = lhs; // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
-            let rhs = rhs.trim().trim_matches('"').trim_matches('\'');
-            if rhs.starts_with('%')
-                && rhs.len() >= 6
-                && contains_percent_escape(rhs)
-                && !borrowed_candidates.iter().any(|c| c.value.as_str() == rhs)
-                && !synthetic.iter().any(|c: &ExtractedValue| c.value == rhs)
-            {
-                synthetic.push(ExtractedValue::synthetic(rhs.to_string()));
+        let mut decoded_chunks = Vec::new();
+        let mut batch_start = usize::MAX;
+        let mut batch_end = 0;
+        let mut replacements = Vec::new();
+        for line in line_views_with_offsets(&chunk.data) {
+            if !contains_percent_escape(line.text) {
+                continue;
             }
+            let Ok(decoded) = url_decode(line.text) else {
+                // LAW10: recall-preserving; invalid decoded UTF-8 leaves the root line scanned.
+                continue;
+            };
+            if batch_start != usize::MAX
+                && line.end.saturating_sub(batch_start) > DECODE_REPLACEMENT_BATCH_SOURCE_BYTES
+            {
+                push_decoded_replacements_spliced(
+                    &mut decoded_chunks,
+                    chunk,
+                    batch_start,
+                    batch_end,
+                    &mut replacements,
+                    self.name(),
+                );
+                batch_start = usize::MAX;
+            }
+            if batch_start == usize::MAX {
+                batch_start = line.start;
+            }
+            batch_end = line.end;
+            replacements.push((line.start, line.end, decoded));
         }
+        push_decoded_replacements_spliced(
+            &mut decoded_chunks,
+            chunk,
+            batch_start,
+            batch_end,
+            &mut replacements,
+            self.name(),
+        );
+        decoded_chunks
     }
-    synthetic
 }
 
 impl Decoder for QuotedPrintableDecoder {

@@ -18,27 +18,13 @@ pub(crate) use self::pattern::{
 };
 
 thread_local! {
-    /// Per-thread pool for the `lines_with_keyword` scratch buffer.
-    ///
-    /// `scan_generic_assignments` runs on every chunk and previously did a
-    /// fresh `Vec::new()` + grow per chunk. Across a 100k-file scan on rayon
-    /// workers that is a flood of tiny allocations. Pool one buffer per worker:
-    /// take it out, fill it, drain it, hand it back - resized once, resliced
-    /// thereafter. Mirrors `ACTIVE_PATTERNS_POOL` / `TRIGGER_POOL`.
+    /// Reuses one keyword-line buffer per worker to avoid an allocation per chunk.
     static KEYWORD_LINES_POOL: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
 }
 
 impl CompiledScanner {
-    /// Scan for generic `SECRET_NAME = "high_entropy_value"` patterns.
-    /// This is the precision-gated equivalent of Gitleaks's `generic-api-key`.
-    /// Only fires when:
-    ///   1. The variable name contains a secret-related keyword
-    ///   2. The value clears the length-tiered Tier-B family entropy floor
-    ///      (random-looking), tightened further by the `--entropy-threshold` knob
-    ///   3. The value is not a known placeholder/example
-    ///
-    /// Named findings do not claim an entire line. Overlapping evidence is
-    /// reconciled by the shared resolution pass after both paths execute.
+    /// Scans generic assignments after keyword, entropy, and placeholder admission.
+    /// Named and generic evidence is reconciled by the shared resolution pass.
     pub(crate) fn scan_generic_assignments(
         &self,
         preprocessed: &ScannerPreprocessedText<'_>,
@@ -56,21 +42,11 @@ impl CompiledScanner {
         let generic_re = generic_plan.matcher();
         let generic_keyword_stems = generic_plan.stems();
 
-        // ONE chunk-level derived-stem scan instead of N per-line scans.
-        // Profile showed scan_generic_assignments at ~500 µs/chunk -
-        // dominant non-ML cost. The keyword owner derives the same compact stem
-        // set from the generic keyword list, walks bytes once, tracks line
-        // numbers during the pass, and skips the rest of a line after the first
-        // stem hit because the heavier regex needs only a per-line admission
-        // decision.
+        // Derive candidate lines in one chunk-level stem scan before regex extraction.
         let scan_text: &str = &preprocessed.text;
         let identity_offsets = std::ptr::eq(scan_text.as_ptr(), chunk.data.as_ptr())
             && scan_text.len() == chunk.data.len();
-        // Borrow the pooled scratch buffer for the duration of this scan.
-        // `take` leaves an empty Vec in the cell so the heavy consume loop
-        // below does not hold a live RefCell borrow (which would conflict
-        // with any re-entrant pool use); the buffer is returned at function
-        // exit, preserving its capacity for the next chunk on this worker.
+        // Take ownership so the RefCell is not borrowed during the consume loop.
         let mut lines_with_keyword = KEYWORD_LINES_POOL.with(|cell| cell.take());
         lines_with_keyword.clear();
         let profile_enabled = super::profile::enabled();
@@ -93,8 +69,7 @@ impl CompiledScanner {
             metrics::record_prefilter_call(lines_with_keyword.len());
         }
         if lines_with_keyword.is_empty() {
-            // Return the (now-empty) buffer to the pool before bailing so its
-            // capacity survives for the next chunk.
+            // Preserve buffer capacity across chunks.
             KEYWORD_LINES_POOL.with(|cell| cell.replace(lines_with_keyword));
             return;
         }
@@ -123,21 +98,8 @@ impl CompiledScanner {
             let Some(raw_line) = line_at_index(scan_text, line_offsets, line_idx) else {
                 continue;
             };
-            // The chunk-level AC told us this line has a keyword;
-            // proceed straight to the heavy regex extraction.
-            //
-            // Evasion-resistant extraction: the named-detector path matches on
-            // the homoglyph/zero-width-normalized chunk text, but this generic
-            // fallback historically captured from the raw line, so a soft hyphen
-            // (U+00AD) or other zero-width byte planted *inside* a value
-            // truncated the capture (`abcde12345abcde<U+00AD>12345` ->
-            // `abcde12345abcde`). Normalize the candidate line the same way
-            // before extraction so an evaded secret is recovered whole. The Cow
-            // borrows for pure-ASCII lines (the 99% case), so there is no alloc
-            // and no behavior change off the evasion path. Line indexing, the
-            // keyword AC prefilter, context inference and the reported offset all
-            // remain in raw coordinates; only the captured value is de-evaded,
-            // and an in-value zero-width never shifts the value's start offset.
+            // Extract from normalized text so in-value zero-width characters cannot
+            // truncate the candidate. Pure ASCII remains borrowed and offsets stay raw.
             let normalized_line = crate::unicode_hardening::normalize_homoglyphs(raw_line);
             let line: &str = &normalized_line;
 
@@ -288,32 +250,18 @@ impl CompiledScanner {
                         crate::decode_structure::evidence(value).decoded_hex_text_len(),
                     );
 
-                let capture_proves_structural_slot = |pattern: &crate::types::CompiledPattern| {
-                    pattern.regex.get().captures_iter(line).any(|captures| {
-                        pattern
-                            .group
-                            .and_then(|group| captures.get(group))
-                            .is_some_and(|slot| {
-                                slot.start() == value_match.start()
-                                    && slot.end() == value_match.end()
-                            })
-                    })
+                let exact_structural_slot = |pattern: &crate::types::CompiledPattern| {
+                    pattern.captures_exact_slot(line, value_match.start(), value_match.end())
                 };
                 let structural_password_slot = execution_policy.structural_password_slot
                     || self.structural_confirmed_patterns[owning_detector_index]
                         .iter()
-                        .any(|&index| capture_proves_structural_slot(&self.ac_map[index]))
+                        .any(|&index| exact_structural_slot(&self.ac_map[index]))
                     || self.structural_phase2_patterns[owning_detector_index]
                         .iter()
-                        .any(|&index| {
-                            capture_proves_structural_slot(&self.phase2_patterns[index].0)
-                        });
+                        .any(|&index| exact_structural_slot(&self.phase2_patterns[index].0));
 
-                // KH-L-0412: the generic-bridge shape gauntlet was the last
-                // SILENT suppression path. Record the firing gate's name so a
-                // dropped generic-secret candidate is visible to `--dogfood`
-                // (Law-10), then continue. Zero-cost when dogfood is off (the
-                // `is_dogfood_enabled()` atomic short-circuits before any work).
+                // Surface every generic shape rejection through dogfood accounting.
                 let shape_rejected = if self
                     .detector_plans
                     .assignment_has_public_identifier(line.as_bytes(), value_match.start())
@@ -333,16 +281,8 @@ impl CompiledScanner {
                     )
                 };
 
-                // BPE "rare-not-random" gate. LAST, so it only tokenizes values
-                // that survived every cheaper generic shape gate (bounded cost),
-                // mirroring the entropy path. Word-like values (dotted API paths,
-                // prose, XML) are non-secrets. Mirror-safe: verified 0 word-like
-                // generic TP on the mirror corpus, so recall is untouched. Gated on
-                // `entropy` (the tokenizer rides that feature); when off, generic
-                // FP simply aren't BPE-filtered. Detector-owned canonical hex
-                // key material skips this language-likeness test: hexadecimal
-                // subwords tokenize efficiently by construction, and the exact
-                // keyword/length policy is the stronger signal for that shape.
+                // Apply the costlier BPE language-likeness gate last. Structural,
+                // encoded-text, and canonical-hex evidence bypasses this heuristic.
                 #[cfg(feature = "entropy")]
                 let shape_rejected = shape_rejected.or_else(|| {
                     if structural_password_slot

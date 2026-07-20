@@ -94,12 +94,11 @@ fn hot_decoders_decode_borrowed_candidates_without_clone_collect() {
         "impl Decoder for QuotedPrintableDecoder",
     );
     assert!(
-        url_body.contains("if !chunk.data.contains('%')")
-            && url_body.contains("decode_candidate_refs_exact(")
-            && url_body.contains("percent_assignment_tail_candidates(")
-            && !url_body.contains(".cloned()")
-            && !url_body.contains(".collect::<Vec<_>>()"),
-        "URL decoder should skip no-percent chunks before extraction, stream shared percent candidates, and own only synthetic assignment tails"
+        url_body.contains("line_views_with_offsets(&chunk.data)")
+            && url_body.contains("push_decoded_replacements_spliced(")
+            && url_body.contains("DECODE_REPLACEMENT_BATCH_SOURCE_BYTES")
+            && !url_body.contains("decode_candidate_refs_exact("),
+        "URL decoder should decode percent-bearing lines through bounded replacement batches"
     );
     let qp_body = impl_body(
         &url,

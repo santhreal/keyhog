@@ -6,34 +6,75 @@ use serde::Deserialize;
 
 fn sanitize_helm_actions(text: &str) -> Option<String> {
     let mut output = String::with_capacity(text.len());
-    let mut cursor = 0;
+    let mut active = true;
+    let mut control_stack = Vec::new();
     let mut changed = false;
 
-    while let Some(relative_start) = text[cursor..].find("{{") {
-        let start = cursor + relative_start;
-        let relative_end = text[start + 2..].find("}}")?;
-        let end = start + 2 + relative_end + 2;
-        output.push_str(&text[cursor..start]);
-
-        let line_start = text[..start].rfind('\n').map_or(0, |index| index + 1);
-        let line_end = text[end..]
-            .find('\n')
-            .map_or(text.len(), |index| end + index);
-        let whole_line =
-            text[line_start..start].trim().is_empty() && text[end..line_end].trim().is_empty();
-        let action_len = end - start;
-        if whole_line {
-            output.push('#');
-            output.extend(std::iter::repeat_n(' ', action_len - 1));
-        } else {
-            // `_` is YAML-safe in quoted or bare scalars and invalid standard base64.
-            output.extend(std::iter::repeat_n('_', action_len));
+    for line in text.split_inclusive('\n') {
+        if let Some(action) = whole_line_helm_action(line) {
+            let Some(keyword) = action.split_ascii_whitespace().next() else {
+                comment_helm_line(&mut output, line);
+                changed = true;
+                continue;
+            };
+            match keyword {
+                "if" | "range" | "with" => control_stack.push(active),
+                "else" => active = false,
+                "end" => active = control_stack.pop()?,
+                _ => {}
+            }
+            comment_helm_line(&mut output, line);
+            changed = true;
+            continue;
         }
-        cursor = end;
-        changed = true;
+        if !active {
+            comment_helm_line(&mut output, line);
+            changed = true;
+            continue;
+        }
+
+        let mut cursor = 0;
+        while let Some(relative_start) = line[cursor..].find("{{") {
+            let start = cursor + relative_start;
+            let relative_end = line[start + 2..].find("}}")?;
+            let end = start + 2 + relative_end + 2;
+            output.push_str(&line[cursor..start]);
+            output.extend(std::iter::repeat_n('_', end - start));
+            cursor = end;
+            changed = true;
+        }
+        output.push_str(&line[cursor..]);
     }
-    output.push_str(&text[cursor..]);
+    if !control_stack.is_empty() {
+        return None;
+    }
     changed.then_some(output)
+}
+
+fn whole_line_helm_action(line: &str) -> Option<&str> {
+    let trimmed = line.trim();
+    let mut action = trimmed.strip_prefix("{{")?.strip_suffix("}}")?.trim();
+    if action.contains("}}") || action.contains("{{") {
+        return None;
+    }
+    if let Some(stripped) = action.strip_prefix('-') {
+        action = stripped.trim_start();
+    }
+    if let Some(stripped) = action.strip_suffix('-') {
+        action = stripped.trim_end();
+    }
+    Some(action)
+}
+
+fn comment_helm_line(output: &mut String, line: &str) {
+    let content_len = line.strip_suffix('\n').map_or(line.len(), str::len);
+    if content_len > 0 {
+        output.push('#');
+        output.extend(std::iter::repeat_n(' ', content_len - 1));
+    }
+    if line.ends_with('\n') {
+        output.push('\n');
+    }
 }
 
 fn deserialize_yaml_documents(

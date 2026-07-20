@@ -326,8 +326,8 @@ fn lone_low_surrogate_aborts_no_match() {
 
 #[test]
 fn benign_control_escapes_fabricate_nothing() {
-    // `\n`/`\t`/`\b`/`\f` over benign prose. Decoding them must not manufacture
-    // any ssh-private-key or generic-password finding, and nothing else either.
+    // Control-only escapes cannot reveal credential bytes, so the JSON decoder
+    // does not create a derived layer for this benign prose.
     let json = "{\"note\":\"line one\\nline two\\tcol\\bx\\fdone here now\"}";
     let matches = scan(json);
     assert_eq!(count_id(&matches, "ssh-private-key"), 0);
@@ -336,5 +336,25 @@ fn benign_control_escapes_fabricate_nothing() {
         matches.len(),
         0,
         "benign escaped JSON must yield no findings: {matches:#?}"
+    );
+}
+
+#[test]
+fn control_only_json_strings_do_not_exhaust_decode_fanout() {
+    use std::fmt::Write;
+    let mut json = String::from("[");
+    for index in 0..1_100 {
+        write!(json, "\"ordinary source line {index}\\n\",").expect("write to String");
+    }
+    json.push(']');
+    let chunk = Chunk {
+        data: json.into(),
+        metadata: ChunkMetadata::default(),
+    };
+    let decoded = keyhog_scanner::testing::decode_chunk(&chunk, 3, true, None, None);
+    assert!(
+        decoded.is_empty(),
+        "control-only JSON escapes must not produce recursive decode roots: {} emitted",
+        decoded.len()
     );
 }

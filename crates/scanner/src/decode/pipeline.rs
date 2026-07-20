@@ -258,6 +258,7 @@ pub use registry::{register_decoder, try_register_decoder, DecoderRegistrationEr
 pub(crate) use registry::{register_thread_decoder, ScopedDecoderRegistration};
 pub(crate) use splice::{bytecount_newlines, splice_decoded_payload_at};
 pub(super) use splice::{
-    decode_candidate_refs_exact, decode_candidate_spans_exact, push_decoded_text_chunk,
-    push_decoded_text_chunk_spliced, push_decoded_text_chunk_spliced_at,
+    decode_candidate_refs_exact, decode_candidate_spans_exact, push_decoded_replacements_spliced,
+    push_decoded_text_chunk, push_decoded_text_chunk_spliced_at,
+    DECODE_REPLACEMENT_BATCH_SOURCE_BYTES,
 };

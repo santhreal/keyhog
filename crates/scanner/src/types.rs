@@ -508,6 +508,16 @@ pub(crate) struct CompiledPattern {
     pub homoglyph_variant: bool,
 }
 
+impl CompiledPattern {
+    pub(crate) fn captures_exact_slot(&self, line: &str, start: usize, end: usize) -> bool {
+        self.regex.get().captures_iter(line).any(|captures| {
+            self.group
+                .and_then(|group| captures.get(group))
+                .is_some_and(|slot| slot.start() == start && slot.end() == end)
+        })
+    }
+}
+
 /// An optional compiled companion pattern for a detector.
 #[derive(Debug)]
 pub(crate) struct CompiledCompanion {

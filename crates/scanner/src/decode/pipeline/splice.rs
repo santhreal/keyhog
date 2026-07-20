@@ -1,6 +1,34 @@
 use super::extractor::ExtractedValue;
 use keyhog_core::{Chunk, ChunkMetadata};
 
+pub(in crate::decode) const DECODE_REPLACEMENT_BATCH_SOURCE_BYTES: usize = 64 * 1024;
+
+pub(in crate::decode) fn push_decoded_replacements_spliced(
+    decoded_chunks: &mut Vec<Chunk>,
+    chunk: &Chunk,
+    span_start: usize,
+    span_end: usize,
+    replacements: &mut Vec<(usize, usize, String)>,
+    decoder_name: &str,
+) {
+    if replacements.is_empty() {
+        return;
+    }
+    let mut decoded_span = chunk.data[span_start..span_end].to_owned();
+    for (start, end, decoded) in replacements.drain(..).rev() {
+        debug_assert!(span_start <= start && start <= end && end <= span_end);
+        decoded_span.replace_range(start - span_start..end - span_start, &decoded);
+    }
+    push_decoded_text_chunk_spliced_at(
+        decoded_chunks,
+        chunk,
+        Some((span_start, span_end)),
+        &chunk.data[span_start..span_end],
+        decoded_span,
+        decoder_name,
+    );
+}
+
 pub(in crate::decode) fn push_decoded_text_chunk(
     decoded_chunks: &mut Vec<Chunk>,
     chunk: &Chunk,

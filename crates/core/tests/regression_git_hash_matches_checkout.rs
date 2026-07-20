@@ -13,7 +13,12 @@ fn embedded_git_hash_matches_checkout_head() {
     }
 
     let output = Command::new("git")
-        .args(["-C", workspace.to_str().expect("workspace path is UTF-8"), "rev-parse", "HEAD"])
+        .args([
+            "-C",
+            workspace.to_str().expect("workspace path is UTF-8"),
+            "rev-parse",
+            "HEAD",
+        ])
         .output()
         .expect("git must be available in a source-checkout test");
     assert!(output.status.success(), "git rev-parse HEAD must succeed");

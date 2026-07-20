@@ -189,6 +189,32 @@ fn all_non_hex_percent_escape_emits_no_url_layer() {
     );
 }
 
+#[test]
+fn many_percent_encoded_lines_decode_in_one_bounded_batch() {
+    let text = (0..40)
+        .map(|index| {
+            format!("url{index}=https://gitlab.example/api/v4/projects/foo%2Fbar/archive\n")
+        })
+        .collect::<String>();
+    let chunk = Chunk {
+        data: text.into(),
+        metadata: Default::default(),
+    };
+    let direct_url_layers = decode_chunk(&chunk, 2, false, None, None)
+        .into_iter()
+        .filter(|decoded| decoded.metadata.source_type.ends_with("/url"))
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        direct_url_layers.len(),
+        1,
+        "one source batch must not branch once per encoded line"
+    );
+    assert!(direct_url_layers[0]
+        .data
+        .contains("url39=https://gitlab.example/api/v4/projects/foo/bar/archive"));
+}
+
 // ---------------------------------------------------------------------------
 // The candidate extractor keeps the literal `+` inside a percent candidate
 // ---------------------------------------------------------------------------

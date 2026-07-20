@@ -92,6 +92,32 @@ fn malformed_structured_files_are_counted_valid_ones_are_not() {
         "balanced Helm actions must not create a structured coverage gap"
     );
 
+    // Conditional branches can repeat a mapping key before Helm renders one
+    // branch. Recovery selects one syntactically complete branch rather than
+    // presenting duplicate keys to the strict YAML parser.
+    let branched_helm_k8s = concat!(
+        "{{- if .Values.secret }}\n",
+        "apiVersion: v1\n",
+        "kind: Secret\n",
+        "data:\n",
+        "  {{- if .Values.password }}\n",
+        "  password: ZmFrZV9oZWxtX3NlY3JldA==\n",
+        "  {{- else }}\n",
+        "  password: \"{{ randAlphaNum 10 | b64enc }}\"\n",
+        "  {{- end }}\n",
+        "{{- end }}\n",
+    );
+    scan(
+        &scanner,
+        branched_helm_k8s,
+        "/repo/templates/branched-secret.yaml",
+    );
+    assert_eq!(
+        structured_parse_failure_count(),
+        4,
+        "duplicate keys across balanced Helm branches must not create a coverage gap"
+    );
+
     // A VALID k8s Secret parses cleanly: the counter must NOT move, so the
     // warning only fires on genuine coverage gaps, never on healthy files.
     let good_k8s =
