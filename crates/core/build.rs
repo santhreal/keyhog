@@ -305,14 +305,24 @@ fn stamp_git_hash(manifest_dir: &Path) {
         .unwrap_or(manifest_dir);
     let git_dir = workspace_root.join(".git");
 
-    // Re-run when HEAD moves (checkout / new commit on the same branch). HEAD
-    // is usually `ref: refs/heads/<branch>`, so the branch ref file holds the
-    // SHA that actually changes per commit - watch both. `.git/packed-refs`
-    // covers a freshly cloned tree whose loose ref has been packed away.
+    // Re-run when HEAD moves. Git updates loose refs through atomic replacement,
+    // which can evade a cached inode watch, while reflogs append in place. Watch
+    // both representations plus packed refs so same-branch commits, checkouts,
+    // detached HEAD, and freshly packed clones all invalidate the stamp.
     let head_file = git_dir.join("HEAD");
     println!("cargo:rerun-if-changed={}", head_file.display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        git_dir.join("logs/HEAD").display()
+    );
     if let Some(ref_path) = head_ref_path(&git_dir) {
         println!("cargo:rerun-if-changed={}", ref_path.display());
+        if let Ok(relative_ref) = ref_path.strip_prefix(&git_dir) {
+            println!(
+                "cargo:rerun-if-changed={}",
+                git_dir.join("logs").join(relative_ref).display()
+            );
+        }
     }
     println!(
         "cargo:rerun-if-changed={}",

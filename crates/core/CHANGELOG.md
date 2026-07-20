@@ -5,6 +5,8 @@
 - Use one bounded detector TOML reader in both the runtime loader and the build
   script. Embedded-corpus generation now enforces the same 16 MiB per-file cap
   and detects files that grow past the cap during a read.
+- Watch Git HEAD reflogs as well as loose and packed refs when stamping build
+  provenance. A same-branch commit now invalidates stale candidate identity.
 - Add detector-owned `decode_transforms` policy for reverse and Caesar
   admission, validate its literal prefixes, and bind it into detector identity.
 - Bind non-default detector resolution priority into detector identity without
