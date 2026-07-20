@@ -22,6 +22,11 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Detector resolution priority, decoder ancestry, generic assignment suffixes,
   entropy thresholds, and backend policy now compile into one typed detector
   execution plan used by CPU, SIMD, and GPU result processing.
+- Structured scanning repairs truncated Jupyter JSON at EOF and sanitizes
+  balanced Helm render actions before YAML parsing, while scanning the original
+  source bytes and reporting every repair.
+- Build provenance watches Git reflogs as well as loose and packed refs, so
+  consecutive same-branch candidate builds embed the exact checkout commit.
 - Default detector resolution priority no longer perturbs the canonical detector
   digest, while non-default collision policy remains cache-bound.
 - Generic vendor and exact-keyword tail suffixes now come from the owning
