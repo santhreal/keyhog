@@ -33,9 +33,10 @@ fn parse_sensitive_path_markers(raw: &str) -> Result<Vec<String>, String> {
 /// `rules/sensitive-path-markers.toml` so operators extend coverage by editing
 /// data, not code. Panics on invalid embedded Tier-B data (a build-time bug).
 static SENSITIVE_PATH_MARKERS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    match parse_sensitive_path_markers(include_str!(
-        "../../../../rules/sensitive-path-markers.toml"
-    )) {
+    match parse_sensitive_path_markers(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/sensitive-path-markers.toml"
+    ))) {
         Ok(markers) => markers,
         Err(error) => panic!(
             "rules/sensitive-path-markers.toml is invalid: {error}. \

@@ -187,7 +187,10 @@ fn parse_ml_feature_markers(raw: &str) -> Result<MlFeatureMarkers, String> {
 }
 
 static ML_FEATURE_MARKERS: std::sync::LazyLock<MlFeatureMarkers> = std::sync::LazyLock::new(|| {
-    match parse_ml_feature_markers(include_str!("../../../../rules/ml-feature-markers.toml")) {
+    match parse_ml_feature_markers(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/ml-feature-markers.toml"
+    ))) {
         Ok(parsed) => parsed,
         Err(error) => panic!(
             "rules/ml-feature-markers.toml is invalid: {error}. \

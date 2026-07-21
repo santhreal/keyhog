@@ -17,9 +17,10 @@ fn parse_fixture_path_components(raw: &str) -> Result<Vec<String>, String> {
 /// previously diverged: this owner carried `sample`/`samples` but not
 /// `fixture`/`fixtures`, the suppression owner the reverse).
 static FIXTURE_PATH_COMPONENTS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    match parse_fixture_path_components(include_str!(
-        "../../../../rules/example-path-components.toml"
-    )) {
+    match parse_fixture_path_components(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/example-path-components.toml"
+    ))) {
         Ok(components) => components,
         Err(error) => panic!(
             "rules/example-path-components.toml is invalid: {error}. \

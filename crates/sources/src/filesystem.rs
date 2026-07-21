@@ -185,9 +185,10 @@ fn parse_expandable_symlink_extensions(raw: &str) -> Result<Vec<String>, String>
 }
 
 static EXPANDABLE_SYMLINK_EXTS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    match parse_expandable_symlink_extensions(include_str!(
-        "../../../rules/expandable-symlink-extensions.toml"
-    )) {
+    match parse_expandable_symlink_extensions(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/expandable-symlink-extensions.toml"
+    ))) {
         Ok(extensions) => extensions,
         Err(error) => panic!(
             "rules/expandable-symlink-extensions.toml is invalid: {error}. \

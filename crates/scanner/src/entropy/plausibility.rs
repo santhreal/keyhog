@@ -4,9 +4,10 @@ use super::shannon_entropy;
 
 /// Tier-B structural non-secret rules compiled once from the single data owner.
 static UNIVERSAL_REJECTIONS: LazyLock<UniversalRejectionRules> = LazyLock::new(|| {
-    UniversalRejectionRules::parse(include_str!(
-        "../../../../rules/entropy-universal-rejections.toml"
-    ))
+    UniversalRejectionRules::parse(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/entropy-universal-rejections.toml"
+    )))
     // LAW10: fail-closed; malformed embedded rejection policy aborts initialization, and no reduced suppression policy is substituted.
     .unwrap_or_else(|error| {
         panic!(

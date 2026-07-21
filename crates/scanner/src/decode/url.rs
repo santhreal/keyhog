@@ -378,7 +378,10 @@ static HTML_NAMED_ENTITIES: std::sync::LazyLock<std::collections::HashMap<String
         struct EntitiesFile {
             entities: std::collections::BTreeMap<String, String>,
         }
-        let raw = include_str!("../../../../rules/html-named-entities.toml");
+        let raw = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/rules/html-named-entities.toml"
+        ));
         let parsed: EntitiesFile = match toml::from_str(raw) {
             Ok(parsed) => parsed,
             Err(error) => panic!(

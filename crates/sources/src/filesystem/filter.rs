@@ -3,7 +3,10 @@ use std::collections::{BTreeSet, HashSet};
 use std::sync::LazyLock;
 
 static DEFAULT_EXCLUDES: LazyLock<DefaultExcludeRules> = LazyLock::new(|| {
-    match parse_default_excludes(include_str!("../../../../rules/default_excludes.toml")) {
+    match parse_default_excludes(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/default_excludes.toml"
+    ))) {
         Ok(rules) => rules,
         Err(error) => {
             panic!(

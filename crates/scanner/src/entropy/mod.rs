@@ -93,9 +93,10 @@ fn parse_config_file_extensions(raw: &str) -> Result<(Vec<Vec<u8>>, Vec<Vec<u8>>
 /// a runtime hostile-input risk (and fails closed (Law 10), naming the file).
 static CONFIG_EXTENSION_LISTS: std::sync::LazyLock<(Vec<Vec<u8>>, Vec<Vec<u8>>)> =
     std::sync::LazyLock::new(|| {
-        match parse_config_file_extensions(include_str!(
-            "../../../../rules/config-file-extensions.toml"
-        )) {
+        match parse_config_file_extensions(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/rules/config-file-extensions.toml"
+        ))) {
             Ok(lists) => lists,
             Err(error) => panic!(
                 "rules/config-file-extensions.toml is invalid: {error}. Fix the bundled Tier-B \
@@ -149,9 +150,10 @@ fn parse_credential_file_names(raw: &str) -> Result<(Vec<Vec<u8>>, Vec<Vec<u8>>)
 /// naming the file, since a parse failure is a build defect in bundled data.
 static CREDENTIAL_FILE_NAME_LISTS: std::sync::LazyLock<(Vec<Vec<u8>>, Vec<Vec<u8>>)> =
     std::sync::LazyLock::new(|| {
-        match parse_credential_file_names(include_str!(
-            "../../../../rules/credential-file-names.toml"
-        )) {
+        match parse_credential_file_names(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/rules/credential-file-names.toml"
+        ))) {
             Ok(lists) => lists,
             Err(error) => panic!(
                 "rules/credential-file-names.toml is invalid: {error}. Fix the bundled Tier-B \

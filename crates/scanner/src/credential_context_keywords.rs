@@ -12,8 +12,10 @@ use crate::tier_b_list::{parse_token_list, ListPolicy};
 use serde::Deserialize;
 use std::sync::LazyLock;
 
-const CREDENTIAL_CONTEXT_KEYWORDS_TOML: &str =
-    include_str!("../../../rules/credential_context_keywords.toml");
+const CREDENTIAL_CONTEXT_KEYWORDS_TOML: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/rules/credential_context_keywords.toml"
+));
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

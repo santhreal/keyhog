@@ -66,7 +66,10 @@ pub(crate) fn seed_source_types_leaked() -> Vec<&'static str> {
 /// `keyhog_sources::Source::name()` implementations.
 pub(crate) static SEED_SOURCE_TYPES: std::sync::LazyLock<Vec<String>> =
     std::sync::LazyLock::new(|| {
-        match parse_seed_source_types(include_str!("../../../rules/seed-source-types.toml")) {
+        match parse_seed_source_types(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/rules/seed-source-types.toml"
+        ))) {
             Ok(source_types) => source_types,
             Err(error) => panic!(
                 "rules/seed-source-types.toml is invalid: {error}. \

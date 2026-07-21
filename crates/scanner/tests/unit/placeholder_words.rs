@@ -209,8 +209,11 @@ fn parse_vocab_preserves_word_validation_empty_list_rejected() {
 fn bundled_file_parses_and_matches_accessors() {
     // The real bundled file parses cleanly and a fresh parse equals the VOCAB
     // accessors (no drift between the cached static and the parser).
-    let vocab = parse_vocab(include_str!("../../../../rules/placeholder_words.toml"))
-        .expect("bundled file valid");
+    let vocab = parse_vocab(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/placeholder_words.toml"
+    )))
+    .expect("bundled file valid");
     assert_eq!(
         vocab.instructional_fragments.as_slice(),
         instructional_fragments()
@@ -369,8 +372,11 @@ fn parse_vocab_without_entropy_section_parses_empty() {
 
 #[test]
 fn bundled_entropy_markers_match_accessors() {
-    let vocab = parse_vocab(include_str!("../../../../rules/placeholder_words.toml"))
-        .expect("bundled file valid");
+    let vocab = parse_vocab(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/placeholder_words.toml"
+    )))
+    .expect("bundled file valid");
     assert_eq!(
         vocab.entropy_ci_substrings.as_slice(),
         entropy_marker_ci_substrings()

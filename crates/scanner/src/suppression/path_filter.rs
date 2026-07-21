@@ -20,7 +20,10 @@ fn parse_path_filter_lists(raw: &str) -> Result<PathFilterLists, String> {
 /// the whole file twice at startup. Fail-closed (Law 10): invalid bundled
 /// metadata panics loudly at first use.
 static PATH_FILTER_LISTS: std::sync::LazyLock<PathFilterLists> = std::sync::LazyLock::new(|| {
-    match parse_path_filter_lists(include_str!("../../../../rules/path-filter-lists.toml")) {
+    match parse_path_filter_lists(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/path-filter-lists.toml"
+    ))) {
         Ok(lists) => lists,
         Err(error) => panic!(
             "rules/path-filter-lists.toml is invalid: {error}. \

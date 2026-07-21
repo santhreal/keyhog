@@ -71,9 +71,10 @@ fn parse_program_source_extensions(raw: &str) -> Result<Vec<String>, String> {
 /// Caesar-decoding pure noise. Matched against the suffix of
 /// `chunk.metadata.path` after ASCII-lowercasing and slash normalization.
 static PROGRAM_SOURCE_CODE_EXTENSIONS: LazyLock<Vec<String>> = LazyLock::new(|| {
-    match parse_program_source_extensions(include_str!(
-        "../../../../rules/program-source-extensions.toml"
-    )) {
+    match parse_program_source_extensions(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/program-source-extensions.toml"
+    ))) {
         Ok(extensions) => extensions,
         Err(error) => panic!(
             "rules/program-source-extensions.toml is invalid: {error}. \
@@ -97,7 +98,10 @@ fn parse_caesar_noise_lists(raw: &str) -> Result<CaesarNoiseLists, String> {
 /// (the previous two statics each `include_str!`'d + parsed the whole file).
 /// Fail-closed (Law 10): invalid bundled metadata panics loudly at first use.
 static CAESAR_NOISE_LISTS: LazyLock<CaesarNoiseLists> = LazyLock::new(|| {
-    match parse_caesar_noise_lists(include_str!("../../../../rules/caesar-noise-lists.toml")) {
+    match parse_caesar_noise_lists(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/caesar-noise-lists.toml"
+    ))) {
         Ok(lists) => lists,
         Err(error) => panic!(
             "rules/caesar-noise-lists.toml is invalid: {error}. \

@@ -487,8 +487,10 @@ static JUPYTER_TEXT_OUTPUT_MIME_TYPES: std::sync::LazyLock<Vec<String>> =
         // cannot reach this parse. A panic here indicates a build-time defect in the
         // bundled `rules/jupyter-mime-types.toml`, not a runtime hostile-input risk
         // fail-closed (Law 10), naming the file so the build owner knows what to fix.
-        match parse_jupyter_mime_types(include_str!("../../../../../rules/jupyter-mime-types.toml"))
-        {
+        match parse_jupyter_mime_types(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/rules/jupyter-mime-types.toml"
+        ))) {
             Ok(mime_types) => mime_types,
             Err(error) => panic!(
                 "rules/jupyter-mime-types.toml is invalid: {error}. \

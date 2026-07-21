@@ -12,7 +12,10 @@ struct CuratedPrefixes {
 /// `every_curated_prefix_triggers` test fails loudly. Ordered by vendor to
 /// mirror the source list.
 static CURATED_PREFIXES: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    let raw = include_str!("../../../../rules/curated-prefixes.toml");
+    let raw = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/curated-prefixes.toml"
+    ));
     match toml::from_str::<CuratedPrefixes>(raw) {
         Ok(parsed) => parsed.prefixes,
         Err(error) => panic!(

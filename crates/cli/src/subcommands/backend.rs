@@ -52,7 +52,10 @@ fn parse_gpu_lowering_gap_rules(raw: &str) -> Result<GpuLoweringGapRules, String
 /// whose production region-presence scans are correct (Law 10: never
 /// silently degrade a hardcoded/bundled classification into a scanner-off state).
 pub(crate) static GPU_LOWERING_GAP_RULES: LazyLock<GpuLoweringGapRules> = LazyLock::new(|| {
-    match parse_gpu_lowering_gap_rules(include_str!("../../../../rules/gpu-lowering-gaps.toml")) {
+    match parse_gpu_lowering_gap_rules(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/gpu-lowering-gaps.toml"
+    ))) {
         Ok(rules) => {
             assert!(
                 !rules.lowering_gap_markers.is_empty()

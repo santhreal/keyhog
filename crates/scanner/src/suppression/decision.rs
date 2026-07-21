@@ -27,7 +27,10 @@ fn parse_fake_sequences(raw: &str) -> Result<Vec<String>, String> {
 }
 
 static FAKE_SEQUENCES: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    match parse_fake_sequences(include_str!("../../../../rules/fake-sequences.toml")) {
+    match parse_fake_sequences(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/fake-sequences.toml"
+    ))) {
         Ok(sequences) => sequences,
         Err(error) => panic!(
             "rules/fake-sequences.toml is invalid: {error}. \
@@ -48,9 +51,10 @@ fn parse_example_path_components(raw: &str) -> Result<Vec<String>, String> {
 }
 
 static EXAMPLE_PATH_COMPONENTS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    match parse_example_path_components(include_str!(
-        "../../../../rules/example-path-components.toml"
-    )) {
+    match parse_example_path_components(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/example-path-components.toml"
+    ))) {
         Ok(components) => components,
         Err(error) => panic!(
             "rules/example-path-components.toml is invalid: {error}. \

@@ -26,9 +26,10 @@ struct MultilineSecretPrefixSection {
 }
 
 static MULTILINE_SECRET_PREFIXES: LazyLock<Vec<String>> = LazyLock::new(|| {
-    match parse_multiline_secret_prefixes(include_str!(
-        "../../../rules/multiline_secret_prefixes.toml"
-    )) {
+    match parse_multiline_secret_prefixes(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/multiline_secret_prefixes.toml"
+    ))) {
         Ok(prefixes) => prefixes,
         Err(error) => panic!(
             "rules/multiline_secret_prefixes.toml is invalid: {error}. Fix the bundled Tier-B \

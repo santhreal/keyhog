@@ -48,9 +48,10 @@ fn parse_openpack_extensions(raw: &str) -> Result<Vec<String>, String> {
 }
 
 static OPENPACK_EXTS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    match parse_openpack_extensions(include_str!(
-        "../../../../../rules/openpack-extensions.toml"
-    )) {
+    match parse_openpack_extensions(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/openpack-extensions.toml"
+    ))) {
         Ok(extensions) => extensions,
         Err(error) => panic!(
             "rules/openpack-extensions.toml is invalid: {error}. \

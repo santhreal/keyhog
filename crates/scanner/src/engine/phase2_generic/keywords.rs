@@ -282,9 +282,10 @@ pub(crate) fn encoded_text_secret_anchors() -> &'static [String] {
 }
 
 static ENCODED_TEXT_SECRET_ANCHORS: LazyLock<Vec<String>> = LazyLock::new(|| {
-    match parse_encoded_text_secret_anchors(include_str!(
-        "../../../../../rules/encoded-text-secret-anchors.toml"
-    )) {
+    match parse_encoded_text_secret_anchors(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/encoded-text-secret-anchors.toml"
+    ))) {
         Ok(anchors) => anchors,
         Err(error) => panic!(
             "rules/encoded-text-secret-anchors.toml is invalid: {error}. Fix the bundled Tier-B \

@@ -190,7 +190,10 @@ fn parse_prose_connectors(raw: &str) -> Result<Vec<String>, String> {
 }
 
 static PROSE_CONNECTORS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    match parse_prose_connectors(include_str!("../../../../../rules/prose-connectors.toml")) {
+    match parse_prose_connectors(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/prose-connectors.toml"
+    ))) {
         Ok(connectors) => connectors,
         Err(error) => panic!(
             "rules/prose-connectors.toml is invalid: {error}. \
@@ -211,9 +214,10 @@ fn parse_regex_sigil_suffixes(raw: &str) -> Result<Vec<String>, String> {
 }
 
 static REGEX_SIGIL_SUFFIXES: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    match parse_regex_sigil_suffixes(include_str!(
-        "../../../../../rules/regex-sigil-suffixes.toml"
-    )) {
+    match parse_regex_sigil_suffixes(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/regex-sigil-suffixes.toml"
+    ))) {
         Ok(suffixes) => suffixes,
         Err(error) => panic!(
             "rules/regex-sigil-suffixes.toml is invalid: {error}. \

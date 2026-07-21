@@ -24,7 +24,10 @@ struct Wrapper {
 // external test crates (confidence_known_prefix_contract, decode_caesar parity)
 // that assert against the list; those re-exports need a `pub` source.
 pub static KNOWN_PREFIXES: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    match parse_known_prefixes(include_str!("../../../../rules/known-prefixes.toml")) {
+    match parse_known_prefixes(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/known-prefixes.toml"
+    ))) {
         Ok(prefixes) => prefixes,
         Err(error) => panic!(
             "rules/known-prefixes.toml is invalid: {error}. \

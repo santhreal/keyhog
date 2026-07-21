@@ -42,7 +42,10 @@ fn parse_inline_comment_markers(raw: &str) -> Result<Vec<String>, String> {
 }
 
 static INLINE_COMMENT_MARKERS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    match parse_inline_comment_markers(include_str!("../../../rules/inline-comment-markers.toml")) {
+    match parse_inline_comment_markers(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/inline-comment-markers.toml"
+    ))) {
         Ok(markers) => markers,
         Err(error) => panic!(
             "rules/inline-comment-markers.toml is invalid: {error}. \

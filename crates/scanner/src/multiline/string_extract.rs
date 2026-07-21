@@ -80,7 +80,10 @@ struct AssignmentNameClasses {
 
 static ASSIGNMENT_NAME_CLASSES: std::sync::LazyLock<AssignmentNameClasses> =
     std::sync::LazyLock::new(|| {
-        let raw = include_str!("../../../../rules/multiline-assignment-name-classes.toml");
+        let raw = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/rules/multiline-assignment-name-classes.toml"
+        ));
         match toml::from_str::<AssignmentNameClasses>(raw) {
             Ok(parsed)
                 if !parsed.ambiguous_fragment.is_empty()
@@ -167,7 +170,10 @@ fn parse_fragment_suffixes(raw: &str) -> Result<Vec<String>, String> {
 }
 
 static FRAGMENT_SUFFIXES: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    match parse_fragment_suffixes(include_str!("../../../../rules/fragment-suffixes.toml")) {
+    match parse_fragment_suffixes(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/fragment-suffixes.toml"
+    ))) {
         Ok(suffixes) => suffixes,
         Err(error) => panic!(
             "rules/fragment-suffixes.toml is invalid: {error}. \
@@ -388,9 +394,10 @@ static VAR_DECL_KEYWORD_PREFIXES: std::sync::LazyLock<Vec<String>> =
         // reach this parse. A failure here is a build-time defect in the bundled
         // Tier-B file, not a runtime hostile-input risk, fail closed (Law 10),
         // naming the file so the build owner knows what to fix.
-        match parse_var_decl_keywords(include_str!(
-            "../../../../rules/multiline-var-decl-keywords.toml"
-        )) {
+        match parse_var_decl_keywords(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/rules/multiline-var-decl-keywords.toml"
+        ))) {
             Ok(prefixes) => prefixes,
             Err(error) => panic!(
                 "rules/multiline-var-decl-keywords.toml is invalid: {error}. \

@@ -82,7 +82,10 @@ fn parse_public_words(raw: &str) -> Result<Vec<String>, String> {
 }
 
 static PUBLIC_WORDS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    match parse_public_words(include_str!("../../../../../rules/public-words.toml")) {
+    match parse_public_words(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/public-words.toml"
+    ))) {
         Ok(words) => words,
         Err(error) => panic!(
             "rules/public-words.toml is invalid: {error}. \
@@ -107,7 +110,10 @@ fn parse_public_shape_lists(raw: &str) -> Result<PublicShapeLists, String> {
 /// re-parsing the whole file three times at startup. Fail-closed (Law 10):
 /// invalid bundled metadata panics loudly at first use.
 static PUBLIC_SHAPE_LISTS: std::sync::LazyLock<PublicShapeLists> = std::sync::LazyLock::new(|| {
-    match parse_public_shape_lists(include_str!("../../../../../rules/public-shape-lists.toml")) {
+    match parse_public_shape_lists(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/public-shape-lists.toml"
+    ))) {
         Ok(lists) => lists,
         Err(error) => panic!(
             "rules/public-shape-lists.toml is invalid: {error}. \

@@ -102,37 +102,87 @@ fn main() -> io::Result<()> {
 }
 
 fn stamp_gpu_driver_versions(manifest_dir: &Path) -> io::Result<()> {
-    let workspace_manifest = manifest_dir.join("../..").join("Cargo.toml");
-    println!("cargo:rerun-if-changed={}", workspace_manifest.display());
-    let source = fs::read_to_string(&workspace_manifest)?;
-    let manifest = toml::from_str::<toml::Value>(&source).map_err(|error| {
-        invalid_data(format!(
-            "cannot parse workspace Cargo.toml for GPU driver identity: {error}"
-        ))
-    })?;
+    let crate_manifest_path = manifest_dir.join("Cargo.toml");
+    println!("cargo:rerun-if-changed={}", crate_manifest_path.display());
+    let crate_manifest = parse_manifest(&crate_manifest_path, "scanner crate")?;
+    let workspace_manifest_path = manifest_dir.join("../..").join("Cargo.toml");
+    let workspace_manifest = if workspace_manifest_path.is_file() {
+        println!(
+            "cargo:rerun-if-changed={}",
+            workspace_manifest_path.display()
+        );
+        Some(parse_manifest(&workspace_manifest_path, "workspace")?)
+    } else {
+        None
+    };
+
     for (dependency, variable) in [
         ("vyre-driver-cuda", "KEYHOG_VYRE_CUDA_VERSION"),
         ("vyre-driver-wgpu", "KEYHOG_VYRE_WGPU_VERSION"),
     ] {
-        let version = manifest
-            .get("workspace")
-            .and_then(|value| value.get("dependencies"))
-            .and_then(|value| value.get(dependency))
-            .and_then(|value| value.get("version"))
-            .and_then(toml::Value::as_str)
+        let version = dependency_version(&crate_manifest, dependency)
+            .or_else(|| {
+                workspace_manifest
+                    .as_ref()
+                    .and_then(|manifest| workspace_dependency_version(manifest, dependency))
+            })
             .ok_or_else(|| {
                 invalid_data(format!(
-                    "workspace dependency {dependency} must declare an exact version for autoroute identity"
+                    "dependency {dependency} must declare an exact version in the packaged crate or workspace manifest for autoroute identity"
                 ))
             })?;
         let exact = version.strip_prefix('=').ok_or_else(|| {
             invalid_data(format!(
-                "workspace dependency {dependency} version {version:?} is not exact; use =x.y.z so autoroute identity is reproducible"
+                "dependency {dependency} version {version:?} is not exact; use =x.y.z so autoroute identity is reproducible"
             ))
         })?;
         println!("cargo:rustc-env={variable}={exact}");
     }
     Ok(())
+}
+
+fn parse_manifest(path: &Path, role: &str) -> io::Result<toml::Value> {
+    let source = fs::read_to_string(path)?;
+    toml::from_str(&source).map_err(|error| {
+        invalid_data(format!(
+            "cannot parse {role} Cargo.toml at {} for GPU driver identity: {error}",
+            path.display()
+        ))
+    })
+}
+
+fn dependency_version<'a>(manifest: &'a toml::Value, dependency: &str) -> Option<&'a str> {
+    manifest
+        .get("dependencies")
+        .and_then(|value| value.get(dependency))
+        .and_then(|value| value.get("version"))
+        .and_then(toml::Value::as_str)
+        .or_else(|| {
+            manifest
+                .get("target")
+                .and_then(toml::Value::as_table)
+                .and_then(|targets| {
+                    targets.values().find_map(|target| {
+                        target
+                            .get("dependencies")
+                            .and_then(|value| value.get(dependency))
+                            .and_then(|value| value.get("version"))
+                            .and_then(toml::Value::as_str)
+                    })
+                })
+        })
+}
+
+fn workspace_dependency_version<'a>(
+    manifest: &'a toml::Value,
+    dependency: &str,
+) -> Option<&'a str> {
+    manifest
+        .get("workspace")
+        .and_then(|value| value.get("dependencies"))
+        .and_then(|value| value.get(dependency))
+        .and_then(|value| value.get("version"))
+        .and_then(toml::Value::as_str)
 }
 
 fn stamp_source_tree_state(manifest_dir: &Path) -> io::Result<()> {

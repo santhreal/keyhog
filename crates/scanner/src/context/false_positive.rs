@@ -527,9 +527,10 @@ fn parse_false_positive_markers(raw: &str) -> Result<Vec<String>, String> {
 }
 
 static CORS_HEADERS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    match parse_false_positive_markers(include_str!(
-        "../../../../rules/false-positive-markers.toml"
-    )) {
+    match parse_false_positive_markers(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/false-positive-markers.toml"
+    ))) {
         Ok(cors_headers) => cors_headers,
         Err(error) => panic!(
             "rules/false-positive-markers.toml is invalid: {error}. \

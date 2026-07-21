@@ -232,7 +232,10 @@ fn parse_source_type_terms(raw: &str) -> Result<Vec<String>, String> {
 }
 
 static SOURCE_TYPE_TERMS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    match parse_source_type_terms(include_str!("../../../../../rules/source-type-terms.toml")) {
+    match parse_source_type_terms(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/source-type-terms.toml"
+    ))) {
         Ok(terms) => terms,
         Err(error) => panic!(
             "rules/source-type-terms.toml is invalid: {error}. \
@@ -253,7 +256,10 @@ fn parse_source_receivers(raw: &str) -> Result<Vec<String>, String> {
 }
 
 static SOURCE_RECEIVERS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    match parse_source_receivers(include_str!("../../../../../rules/source-receivers.toml")) {
+    match parse_source_receivers(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/source-receivers.toml"
+    ))) {
         Ok(receivers) => receivers,
         Err(error) => panic!(
             "rules/source-receivers.toml is invalid: {error}. \

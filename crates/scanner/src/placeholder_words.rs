@@ -85,7 +85,10 @@ pub(crate) struct PlaceholderVocab {
 }
 
 static VOCAB: LazyLock<PlaceholderVocab> = LazyLock::new(|| {
-    match parse_vocab(include_str!("../../../rules/placeholder_words.toml")) {
+    match parse_vocab(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/placeholder_words.toml"
+    ))) {
         Ok(vocab) => {
             // Fail closed (Law 10): the bundled file MUST carry both marker
             // vocabularies. An empty list would silently disable a whole

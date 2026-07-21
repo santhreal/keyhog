@@ -14,7 +14,10 @@ struct InferenceMarkers {
     assignment_operators: Vec<String>,
 }
 
-const INFERENCE_MARKERS_TOML: &str = include_str!("../../../../rules/inference-markers.toml");
+const INFERENCE_MARKERS_TOML: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/rules/inference-markers.toml"
+));
 
 /// Parse the bundled Tier-B inference-marker lists. Returns an error rather than
 /// panicking so the single `INFERENCE_MARKERS` owner below is the one fail-closed

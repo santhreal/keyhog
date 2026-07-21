@@ -346,7 +346,10 @@ static IMPORT_LINE_PREFIXES: LazyLock<Vec<String>> = LazyLock::new(|| {
     struct Prefixes {
         prefixes: Vec<String>,
     }
-    let raw = include_str!("../../../../rules/import-line-prefixes.toml");
+    let raw = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/import-line-prefixes.toml"
+    ));
     match toml::from_str::<Prefixes>(raw) {
         Ok(parsed) if !parsed.prefixes.is_empty() => parsed.prefixes,
         Ok(_) => panic!(
@@ -511,7 +514,10 @@ fn parse_credential_keyword_field(key_material: bool) -> Vec<&'static [u8]> {
         compact: Vec<String>,
         key_material: Vec<String>,
     }
-    let raw = include_str!("../../../../rules/credential-keywords.toml");
+    let raw = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/credential-keywords.toml"
+    ));
     let vocab: Vocab = match toml::from_str(raw) {
         Ok(vocab) => vocab,
         Err(error) => panic!(
