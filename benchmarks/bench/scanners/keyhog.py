@@ -658,14 +658,19 @@ class KeyhogScanner(Scanner):
         detail = (stderr or stdout or "").strip()
         if len(detail) > 1200:
             detail = detail[-1200:]
+        measurement = (
+            f"wall_ms={stats.wall_ms:.0f}, peak_rss_kb={stats.peak_rss_kb}, "
+            f"timed_out={stats.timed_out}"
+        )
         if stats.timed_out:
             raise TimeoutError(
                 f"keyhog {phase} timed out after {timeout}s for {cfg.config_id}; "
-                "the scan was terminated and produced no parity result"
+                f"{measurement}; the scan was terminated and produced no parity result"
                 + (f": {detail}" if detail else "")
             )
         raise RuntimeError(
-            f"keyhog {phase} exited {stats.exit_code} for {cfg.config_id}: {detail}"
+            f"keyhog {phase} exited {stats.exit_code} for {cfg.config_id}; "
+            f"{measurement}" + (f": {detail}" if detail else "")
         )
 
     @staticmethod

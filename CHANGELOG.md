@@ -44,6 +44,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   from re-entering a worker's borrowed phase-two scratch state.
 - Chef's generic `api-token` header anchor now requires a token boundary, so it
   cannot replace an exact Snyk UUID finding through overlap resolution.
+- Benchmark process failures include measured wall time, peak RSS, and watchdog
+  state, distinguishing resource kills from finite timeout failures.
 - Default detector resolution priority no longer perturbs the canonical detector
   digest, while non-default collision policy remains cache-bound.
 - Generic vendor and exact-keyword tail suffixes now come from the owning
