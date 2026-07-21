@@ -38,6 +38,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   inputs, so terminal success proves every corpus file reached scanning.
 - CUDA and WGPU positioned-literal evidence use the same 8 MiB shard ceiling,
   keeping dense corpus match replay exact without backend substitution.
+- Full-corpus accelerated parity checks allow twenty minutes per backend, so a
+  cold or contended release host does not kill a healthy exact scan.
 - Default detector resolution priority no longer perturbs the canonical detector
   digest, while non-default collision policy remains cache-bound.
 - Generic vendor and exact-keyword tail suffixes now come from the owning

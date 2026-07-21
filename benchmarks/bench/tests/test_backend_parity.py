@@ -52,7 +52,7 @@ _ACCELERATED = ["gpu-cuda", "gpu-wgpu"]
 # CredData is a 1 GiB, 11k-file end-to-end corpus.  This is a recall gate, not
 # a microbenchmark: give slow/cold hosts enough time to produce a real result,
 # while retaining a finite watchdog for hangs.
-_ACCELERATED_TIMEOUT_SECONDS = 600
+_ACCELERATED_TIMEOUT_SECONDS = 1_200
 
 
 def _finding_keys(findings) -> set[tuple]:
