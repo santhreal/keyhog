@@ -20,8 +20,8 @@ binary until it has its own parity proof.
 Each GPU driver is tested for exact detector/value/location parity when that
 peer is acquired. An unacquired peer is skipped loudly, never substituted.
 
-Speed: one scan per checked backend over CredData. Belongs in the bench/nightly
-lane, not the fast unit lane.
+Speed: one deterministic scan plus bounded accelerated shards over CredData.
+Belongs in the bench/nightly lane, not the fast unit lane.
 
 Requires: the CredData corpus on disk + a keyhog binary (KEYHOG_BIN or a release
 build). Both checked; absence skips the module with the reason.
@@ -53,6 +53,43 @@ _ACCELERATED = ["gpu-cuda", "gpu-wgpu"]
 # a microbenchmark: give slow/cold hosts enough time to produce a real result,
 # while retaining a finite watchdog for hangs.
 _ACCELERATED_TIMEOUT_SECONDS = 1_200
+_ACCELERATED_SHARD_SOURCE_BYTES = 256 * 1024 * 1024
+
+
+def _pack_accelerated_scan_roots(
+    entries: list[tuple[pathlib.Path, int]],
+    byte_limit: int = _ACCELERATED_SHARD_SOURCE_BYTES,
+) -> list[tuple[pathlib.Path, ...]]:
+    """Pack disjoint roots into stable source-bounded scan processes."""
+    if byte_limit <= 0:
+        raise ValueError("accelerated scan shard byte limit must be positive")
+    shards: list[tuple[pathlib.Path, ...]] = []
+    current: list[pathlib.Path] = []
+    current_bytes = 0
+    for path, size in entries:
+        if size < 0:
+            raise ValueError(f"accelerated scan root size must be non-negative: {path}")
+        if current and current_bytes + size > byte_limit:
+            shards.append(tuple(current))
+            current = []
+            current_bytes = 0
+        current.append(path)
+        current_bytes += size
+    if current:
+        shards.append(tuple(current))
+    return shards
+
+
+def _tree_bytes(path: pathlib.Path) -> int:
+    if path.is_file():
+        return path.stat().st_size
+    return sum(candidate.stat().st_size for candidate in path.rglob("*") if candidate.is_file())
+
+
+def _accelerated_scan_roots(root: pathlib.Path) -> list[tuple[pathlib.Path, ...]]:
+    entries = sorted(root.iterdir(), key=lambda path: path.name)
+    measured = [(path, _tree_bytes(path)) for path in entries]
+    return _pack_accelerated_scan_roots(measured)
 
 
 def _finding_keys(findings) -> set[tuple]:
@@ -86,6 +123,22 @@ def test_finding_identity_includes_detector_offset_and_confidence():
         {**base, "confidence": 0.74},
     ]
     assert len(_finding_keys(variants)) == 4
+
+
+def test_accelerated_scan_root_packing_is_stable_and_source_bounded():
+    roots = [
+        (pathlib.Path("/corpus/a"), 100),
+        (pathlib.Path("/corpus/b"), 156),
+        (pathlib.Path("/corpus/c"), 1),
+        (pathlib.Path("/corpus/d"), 300),
+    ]
+    assert _pack_accelerated_scan_roots(roots, 256) == [
+        (pathlib.Path("/corpus/a"), pathlib.Path("/corpus/b")),
+        (pathlib.Path("/corpus/c"),),
+        (pathlib.Path("/corpus/d"),),
+    ]
+    with pytest.raises(ValueError, match="positive"):
+        _pack_accelerated_scan_roots(roots, 0)
 
 
 def _current_keyhog_binary() -> str:
@@ -217,40 +270,61 @@ def _scan(
     timeout: int = 3600,
 ) -> set[tuple]:
     cfg = ScannerConfig(backend=backend, cache="off", daemon="off", mode="full")
-    findings, _stats = KeyhogScanner(binary=binary).run(
+    findings, stats = KeyhogScanner(binary=binary).run(
         root,
         cfg,
         extra_env=extra_env,
         extra_args=extra_args,
         timeout=timeout,
     )
+    print(
+        f"\n[parity] backend={backend} wall_ms={stats.wall_ms:.0f} "
+        f"peak_rss_kb={stats.peak_rss_kb}"
+    )
     return _finding_keys(findings)
+
+
+def _scan_accelerated(binary: str, backend: str) -> set[tuple]:
+    roots = _accelerated_scan_roots(_CORPUS.scan_root)
+    if not roots:
+        pytest.fail("CredData accelerated parity root contains no scan entries")
+
+    findings: set[tuple] = set()
+    for index, shard in enumerate(roots):
+        shard_findings = _scan(
+            binary,
+            backend,
+            shard[0],
+            extra_args=[str(path) for path in shard[1:]],
+            timeout=_ACCELERATED_TIMEOUT_SECONDS,
+        )
+        duplicates = findings & shard_findings
+        if duplicates:
+            pytest.fail(
+                f"accelerated parity shards overlap at shard {index}: "
+                f"{sorted(duplicates, key=repr)[:3]}"
+            )
+        findings.update(shard_findings)
+    return findings
 
 
 @pytest.fixture(scope="session")
 def backend_findings(creddata_simd_findings):
-    """Scan the corpus once per backend. Deterministic backends are required;
-    an accelerated backend is recorded as None only when preflight proves the
-    hardware adapter is absent (printed loudly, never silently dropped)."""
+    """Scan the deterministic corpus once and both GPUs in bounded source
+    shards. An accelerated backend is absent only when preflight proves it."""
     binary = _current_keyhog_binary()
 
     out: dict[str, set | None] = {
         _DETERMINISTIC[0]: _finding_keys(creddata_simd_findings)
     }
 
-    ref = out[_DETERMINISTIC[0]]
     for b in _ACCELERATED:
-        if b in _ACCELERATED and not _gpu_preflight(binary, b):
+        if not _gpu_preflight(binary, b):
             print(f"\n[parity] backend {b!r} was not acquired; SKIPPED (loud).")
             out[b] = None
             continue
         try:
-            got = _scan(
-                binary,
-                b,
-                _CORPUS.scan_root,
-                timeout=_ACCELERATED_TIMEOUT_SECONDS,
-            )
+            got = _scan_accelerated(binary, b)
         except TimeoutError as exc:
             pytest.fail(
                 f"accelerated backend {b!r} timed out; this is an execution "
@@ -262,7 +336,7 @@ def backend_findings(creddata_simd_findings):
                 f"the preflight passed, so this is an execution defect: {exc}"
             )
         # Preflight proved the backend exists and --require-gpu forbids CPU
-        # fallback.  Even an empty successful result is therefore a real parity
+        # fallback. Even an empty successful result is therefore a real parity
         # result; the differential assertion below must score it, not skip it.
         out[b] = got
     return out
