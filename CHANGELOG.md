@@ -31,6 +31,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   Unicode, and octal escapes decode in bounded source batches while retaining
   multiline private-key separators. Dense generated source no longer creates
   one recursive root per encoded value.
+  Disallowed decoded C0 controls become token separators instead of truncation
+  events, preserving adjacent printable spans without joining tokens.
 - Default detector resolution priority no longer perturbs the canonical detector
   digest, while non-default collision policy remains cache-bound.
 - Generic vendor and exact-keyword tail suffixes now come from the owning

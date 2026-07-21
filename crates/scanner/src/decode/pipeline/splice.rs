@@ -76,12 +76,9 @@ pub(in crate::decode) fn push_decoded_text_chunk_spliced_at(
     text: String,
     decoder_name: &str,
 ) {
-    // Fast ASCII check: control chars are always in 0x00-0x1F range.
-    // Byte-level iteration avoids UTF-8 decode overhead. Backspace (0x08) and
-    // form-feed (0x0c) are ALLOWED: the json/unicode-escape decoders legitimately
-    // emit them from `\b`/`\f`. Other C0 controls (incl. NUL) used to drop the
-    // whole decoded payload (KH-1338); strip them and keep the rest so secrets
-    // around the control bytes still reach the scanner.
+    // Backspace and form feed are legitimate JSON/Unicode escape output.
+    // Replace other C0 controls with token separators: dropping the decoded
+    // view loses printable siblings, while deletion joins unrelated tokens.
     let text = if text.is_empty() {
         return;
     } else if text
@@ -89,11 +86,13 @@ pub(in crate::decode) fn push_decoded_text_chunk_spliced_at(
         .iter()
         .any(|&b| b < 0x20 && !matches!(b, b'\n' | b'\r' | b'\t' | 0x08 | 0x0c))
     {
-        crate::telemetry::record_decode_truncation();
         text.chars()
-            .filter(|c| {
-                let u = *c as u32;
-                u >= 0x20 || matches!(u, 0x0a | 0x0d | 0x09 | 0x08 | 0x0c)
+            .map(|c| {
+                if c < ' ' && !matches!(c, '\n' | '\r' | '\t' | '\u{0008}' | '\u{000c}') {
+                    ' '
+                } else {
+                    c
+                }
             })
             .collect::<String>()
     } else {

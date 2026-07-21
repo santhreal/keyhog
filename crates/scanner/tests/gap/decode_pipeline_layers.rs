@@ -610,54 +610,47 @@ fn pipeline_spliced_decode_base_line_tracks_window_start() {
 }
 
 #[test]
-fn pipeline_never_emits_nul_byte_decodes_under_either_validate_mode() {
-    // base64 of bytes containing a NUL. `push_decoded_text_chunk_spliced`
-    // rejects any decoded text with a control byte < 0x20 (except \n\r\t),
-    // which includes NUL (0x00). So NO decoder ever emits a NUL-bearing chunk,
-    // independent of the `validate` flag.
+fn pipeline_replaces_nul_with_separator_under_either_validate_mode() {
     let blob = b64_standard(b"AB\0CDEFGH");
-    // Sanity: the blob really does base64-decode to bytes containing a NUL.
     assert!(base64_decode(&blob).unwrap().contains(&0u8));
 
     let c = chunk(&format!("k=\"{blob}\""));
     let validated = decode_chunk(&c, 3, true, None, None);
     let unvalidated = decode_chunk(&c, 3, false, None, None);
 
-    assert!(
-        validated.iter().all(|d| !d.data.as_bytes().contains(&0u8)),
-        "no decoded chunk may contain a NUL byte (validate=true)"
-    );
-    assert!(
-        unvalidated
-            .iter()
-            .all(|d| !d.data.as_bytes().contains(&0u8)),
-        "no decoded chunk may contain a NUL byte (validate=false): the push \
-         helper's control-byte filter already drops it"
-    );
-    // FINDING: decode_chunk's own `validate && contains(0u8)` guard
-    // (pipeline.rs:163-165) is unreachable for NUL bytes because every decoder
-    // funnels through push_decoded_text_chunk_spliced, which already rejects
-    // control bytes < 0x20. The validate flag therefore does not change the
-    // output for this NUL input.
+    for (mode, decoded) in [
+        ("validate=true", &validated),
+        ("validate=false", &unvalidated),
+    ] {
+        assert!(
+            decoded.iter().all(|d| !d.data.as_bytes().contains(&0u8)),
+            "{mode} must not emit NUL bytes"
+        );
+        assert!(
+            decoded.iter().any(|d| d.data.contains("AB CDEFGH")),
+            "{mode} must retain both printable spans without joining them"
+        );
+    }
     assert_eq!(
         validated.len(),
         unvalidated.len(),
-        "validate flag is a no-op for NUL inputs (the spliced-push filter \
-         already removed them upstream)"
+        "control normalization must not depend on validation mode"
     );
 }
 
 #[test]
-fn pipeline_drops_other_control_byte_decodes() {
-    // A decoded payload carrying 0x01 (SOH) is dropped by the push helper's
-    // control-byte filter for BOTH validate modes -> not surfaced.
+fn pipeline_replaces_other_control_bytes_with_separators() {
     let blob = b64_standard(b"AB\x01CDEFGH");
     assert!(base64_decode(&blob).unwrap().contains(&0x01u8));
     let c = chunk(&format!("k=\"{blob}\""));
     let out = decode_chunk(&c, 3, false, None, None);
     assert!(
         out.iter().all(|d| !d.data.as_bytes().contains(&0x01u8)),
-        "decoded chunks carrying control byte 0x01 must be dropped by the push filter"
+        "decoded chunks must not retain SOH"
+    );
+    assert!(
+        out.iter().any(|d| d.data.contains("AB CDEFGH")),
+        "SOH must become a separator rather than deleting either printable span"
     );
 }
 

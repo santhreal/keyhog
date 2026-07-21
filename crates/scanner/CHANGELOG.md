@@ -13,6 +13,8 @@
   HTML-entity, Unicode, and octal escapes into bounded source spans instead of
   emitting one recursive root per value. Physical lines and multiline
   private-key separators remain intact.
+  Disallowed decoded C0 controls become token separators instead of truncation
+  events, preserving adjacent printable spans without joining tokens.
 
 - Compiled detector-owned and scan-config entropy assignment keywords into one
   cached case-insensitive matcher, removing the per-line linear vocabulary walk
