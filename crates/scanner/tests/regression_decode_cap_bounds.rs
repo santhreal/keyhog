@@ -4,20 +4,16 @@
 //! Pins the two DoS / OOM guards enforced by `decode_chunk`'s BFS fan-out loop:
 //!
 //!   * `MAX_DECODED_CHUNKS_PER_ROOT` (1000): the number of unique decoded
-//!     sub-chunks produced from ONE root chunk is bounded, so a high-fan-out
-//!     input (thousands of distinct base64 blobs) can never make the pipeline
-//!     emit an unbounded chunk stream. On the screen-`None` path every produced
-//!     chunk is returned, so the returned count is EXACTLY the cap (1000) once
-//!     the fan-out would cross it (never 1001+, never a panic).
-//!   * `MAX_DECODED_TOTAL_BYTES` (64 MiB): the summed byte length of the
-//!     returned decoded chunks never exceeds 64 MiB, even when the decodable
-//!     input (base64-of-gzip that inflates to 16 MiB per blob) would otherwise
-//!     expand to > 64 MiB. The over-cap chunk is dropped BEFORE being pushed,
-//!     so the returned total is `<= 64 MiB` with no OOM.
+//!     sub-chunks produced from one root remains bounded. Dense independent
+//!     Base64 values share bounded source/output batches, so ordinary generated
+//!     files remain far below the guard instead of truncating at it.
+//!   * `MAX_DECODED_TOTAL_BYTES` (64 MiB): the summed byte length of returned
+//!     decoded chunks never exceeds 64 MiB, even when Base64-wrapped gzip data
+//!     would expand past the ceiling. Replacement batches are output-bounded,
+//!     so useful earlier batches reach scanning before the guard fires.
 //!
-//! Every assertion pins a concrete value (exact count 1000 / 5 / 3 / 0, a hard
-//! byte bound, a decoded-plaintext substring), never a bare `is_empty()` /
-//! `len() > 0` shape check.
+//! Assertions pin concrete batch counts, hard byte bounds, and exact decoded
+//! plaintext. They do not use non-empty output as a correctness oracle.
 //!
 //! HOST-INDEPENDENCE: these caps live in the scalar BFS pipeline itself; they
 //! do not depend on Hyperscan/SIMD/GPU. The base64 / gzip-inflate decoders
@@ -109,15 +105,34 @@ fn count_ge_bytes(chunks: &[Chunk], min: usize) -> usize {
 // ── chunk-count cap (MAX_DECODED_CHUNKS_PER_ROOT = 1000) ─────────────
 
 #[test]
-fn chunk_cap_returns_exactly_1000_on_high_fanout() {
-    // 1300 distinct base64 candidates > the 1000 cap. On the screen-`None`
-    // path every produced chunk is returned until the (1001st) increment trips
-    // the guard and returns WITHOUT pushing, so the returned count is exactly
-    // the cap (deterministic regardless of decoder ordering).
+fn dense_base64_candidates_form_one_bounded_batch() {
     let text = quoted_b64_lines((0..1300).map(|i| format!("SECRETPAYLOAD{i:05}")));
     let out = decode_chunk(&root_chunk(text), 1, false, None, None);
-    assert_eq!(out.len(), MAX_DECODED_CHUNKS_PER_ROOT);
-    assert_eq!(out.len(), 1000);
+    assert_eq!(out.len(), 1);
+    assert_eq!(count_source_suffix(&out, "/base64"), 1);
+    assert!(out[0].data.contains("SECRETPAYLOAD00000"));
+    assert!(out[0].data.contains("SECRETPAYLOAD01299"));
+}
+
+#[test]
+fn dense_hex_candidates_form_one_bounded_batch() {
+    let mut text = String::new();
+    for index in 0..1300 {
+        let plaintext = format!("HEXSECRET{index:05}");
+        let encoded = plaintext
+            .bytes()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        text.push_str(&format!("value{index}=\"{encoded}\"\n"));
+    }
+    let out = decode_chunk(&root_chunk(text), 1, false, None, None);
+    assert_eq!(count_source_suffix(&out, "/hex"), 1);
+    let batch = out
+        .iter()
+        .find(|chunk| chunk.metadata.source_type.ends_with("/hex"))
+        .expect("hex batch exists");
+    assert!(batch.data.contains("HEXSECRET00000"));
+    assert!(batch.data.contains("HEXSECRET01299"));
 }
 
 #[test]
@@ -137,21 +152,17 @@ fn chunk_cap_bounds_total_bytes_far_under_byte_cap() {
 }
 
 #[test]
-fn chunk_cap_every_returned_chunk_is_a_decoded_variant() {
-    // The root chunk itself is never returned: `decode_chunk` returns ONLY
-    // decoder outputs, whose source_type is `"decodecap/<decoder>"`. Every
-    // returned chunk therefore carries a `/` and none equals the bare root
-    // source_type.
+fn every_dense_batch_is_a_decoded_variant() {
     let text = quoted_b64_lines((0..1300).map(|i| format!("SECRETPAYLOAD{i:05}")));
     let out = decode_chunk(&root_chunk(text), 1, false, None, None);
-    assert_eq!(out.len(), 1000);
-    let non_decoded = out
-        .iter()
-        .filter(|c| {
-            !c.metadata.source_type.contains('/') || c.metadata.source_type.as_ref() == "decodecap"
-        })
-        .count();
-    assert_eq!(non_decoded, 0, "no root/undecoded chunk may be returned");
+    assert_eq!(out.len(), 1);
+    assert!(
+        out.iter().all(|chunk| {
+            chunk.metadata.source_type.ends_with("/base64")
+                && chunk.metadata.source_type.as_ref() != "decodecap"
+        }),
+        "the root chunk itself must never be returned"
+    );
 }
 
 #[test]
@@ -169,21 +180,14 @@ fn chunk_cap_holds_under_pathological_caesar_fanout() {
 }
 
 #[test]
-fn within_chunk_cap_fifty_candidates_all_decode() {
-    // 50 distinct base64 candidates are well under the 1000 cap, so NONE are
-    // dropped: exactly 50 chunks carry the `/base64` decoder suffix and every
-    // plaintext is recovered verbatim.
+fn fifty_candidates_share_one_batch_without_losing_plaintext() {
     let plaintexts: Vec<String> = (0..50).map(|i| format!("APIKEYVALUE{i:04}")).collect();
     let text = quoted_b64_lines(plaintexts.iter().cloned());
     let out = decode_chunk(&root_chunk(text), 1, false, None, None);
-    assert!(
-        out.len() < MAX_DECODED_CHUNKS_PER_ROOT,
-        "50 candidates stay under the cap"
-    );
     assert_eq!(
         count_source_suffix(&out, "/base64"),
-        50,
-        "each of the 50 base64 candidates decodes to exactly one chunk"
+        1,
+        "dense candidates must share one bounded Base64 batch"
     );
     for pt in &plaintexts {
         assert!(
@@ -198,9 +202,7 @@ fn within_chunk_cap_fifty_candidates_all_decode() {
 }
 
 #[test]
-fn sub_cap_base64_chunk_count_equals_distinct_inputs() {
-    // Five distinct base64 candidates -> exactly five `/base64` decoded chunks
-    // at depth 0 (max_depth=1 stops any depth-1 re-decode from adding more).
+fn five_base64_inputs_share_one_batch_and_all_decode() {
     let plaintexts = [
         "alpha-credential-01",
         "bravo-credential-02",
@@ -210,7 +212,10 @@ fn sub_cap_base64_chunk_count_equals_distinct_inputs() {
     ];
     let text = quoted_b64_lines(plaintexts.iter().map(|s| s.to_string()));
     let out = decode_chunk(&root_chunk(text), 1, false, None, None);
-    assert_eq!(count_source_suffix(&out, "/base64"), 5);
+    assert_eq!(count_source_suffix(&out, "/base64"), 1);
+    for plaintext in plaintexts {
+        assert!(out[0].data.contains(plaintext), "missing {plaintext}");
+    }
 }
 
 // ── total-byte cap (MAX_DECODED_TOTAL_BYTES = 64 MiB) ────────────────

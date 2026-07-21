@@ -1,5 +1,7 @@
 use super::limits::{MAX_HEX_INPUT_LEN, MIN_HEX_CANDIDATE_LEN};
-use super::pipeline::{decode_candidate_refs_exact, with_extracted_value_spans, ExtractedValue};
+use super::pipeline::{
+    push_batched_decoded_replacements, with_extracted_value_spans, ExtractedValue,
+};
 use super::{DecodeAdmissionSketch, Decoder, EncodedString};
 use keyhog_core::Chunk;
 
@@ -31,16 +33,19 @@ impl Decoder for HexDecoder {
 
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
         with_extracted_value_spans(&chunk.data, |candidates| {
-            decode_candidate_refs_exact(
-                chunk,
-                candidates.iter().filter_map(|candidate| {
-                    is_hex_candidate(candidate, MIN_HEX_CANDIDATE_LEN).then_some(candidate)
-                }),
-                |value| {
-                    hex_decode(value).and_then(|decoded| String::from_utf8(decoded).map_err(|_| ()))
-                },
-                self.name(),
-            )
+            let replacements = candidates
+                .iter()
+                .filter(|candidate| is_hex_candidate(candidate, MIN_HEX_CANDIDATE_LEN))
+                .filter_map(|candidate| {
+                    let decoded = hex_decode(&candidate.value).ok()?;
+                    // LAW10: binary output is not source text; the encoded span
+                    // remains scanned unchanged.
+                    let text = String::from_utf8(decoded).ok()?;
+                    let (start, end) = candidate.span();
+                    Some((start, end, text))
+                })
+                .collect();
+            push_batched_decoded_replacements(chunk, replacements, self.name())
         })
     }
 }

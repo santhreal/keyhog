@@ -1,7 +1,7 @@
 use super::base64::base64_decode;
 use super::pipeline::{
-    decode_candidate_spans_exact, push_decoded_replacements_spliced, with_extracted_value_spans,
-    ExtractedValue, DECODE_REPLACEMENT_BATCH_SOURCE_BYTES,
+    decode_candidate_spans_exact, push_batched_decoded_replacements, with_extracted_value_spans,
+    ExtractedValue,
 };
 use super::unicode_escape::unicode_escape_decode;
 use super::util::{hex_val, lazy_decoded_prefix};
@@ -78,7 +78,7 @@ impl Decoder for QuotedPrintableDecoder {
             };
             replacements.push((line.start, line.end, decoded));
         }
-        decode_line_replacements(chunk, replacements, self.name())
+        push_batched_decoded_replacements(chunk, replacements, self.name())
     }
 }
 
@@ -124,47 +124,7 @@ where
         };
         replacements.push((line.start, line.end, decoded));
     }
-    decode_line_replacements(chunk, replacements, decoder_name)
-}
-
-fn decode_line_replacements(
-    chunk: &Chunk,
-    replacements: Vec<(usize, usize, String)>,
-    decoder_name: &str,
-) -> Vec<Chunk> {
-    let mut decoded_chunks = Vec::new();
-    let mut batch_start = usize::MAX;
-    let mut batch_end = 0;
-    let mut batch_replacements = Vec::new();
-    for (start, end, decoded) in replacements {
-        if batch_start != usize::MAX
-            && end.saturating_sub(batch_start) > DECODE_REPLACEMENT_BATCH_SOURCE_BYTES
-        {
-            push_decoded_replacements_spliced(
-                &mut decoded_chunks,
-                chunk,
-                batch_start,
-                batch_end,
-                &mut batch_replacements,
-                decoder_name,
-            );
-            batch_start = usize::MAX;
-        }
-        if batch_start == usize::MAX {
-            batch_start = start;
-        }
-        batch_end = end;
-        batch_replacements.push((start, end, decoded));
-    }
-    push_decoded_replacements_spliced(
-        &mut decoded_chunks,
-        chunk,
-        batch_start,
-        batch_end,
-        &mut batch_replacements,
-        decoder_name,
-    );
-    decoded_chunks
+    push_batched_decoded_replacements(chunk, replacements, decoder_name)
 }
 
 fn strip_line_ending(segment: &str) -> &str {

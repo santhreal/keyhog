@@ -322,13 +322,7 @@ fn base64ish_line_value(line: &str, line_start: usize) -> (usize, &str) {
     (line_start + start, &line[start..end])
 }
 
-fn candidate_inside_spans(
-    candidate_span: Option<(usize, usize)>,
-    spans: &[(usize, usize)],
-) -> bool {
-    let Some((start, end)) = candidate_span else {
-        return false;
-    };
+fn candidate_inside_spans((start, end): (usize, usize), spans: &[(usize, usize)]) -> bool {
     spans
         .iter()
         .any(|(span_start, span_end)| *span_start <= start && end <= *span_end)

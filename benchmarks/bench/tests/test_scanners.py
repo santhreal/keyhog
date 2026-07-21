@@ -398,6 +398,9 @@ def test_keyhog_gpu_benchmark_rows_use_exact_gpu_policy(tmp_path, backend):
     assert gpu_cmd[gpu_cmd.index("--backend") + 1] == backend
     assert "--no-gpu" not in auto_cmd
     assert "--no-gpu" in simd_cmd
+    assert "--no-default-excludes" in gpu_cmd
+    assert "--no-default-excludes" in auto_cmd
+    assert "--no-default-excludes" in simd_cmd
     detector_index = auto_cmd.index("--detectors")
     assert pathlib.Path(auto_cmd[detector_index + 1]) == keyhog_adapter._DETECTOR_CORPUS
     assert scanner.detector_corpus_sha256() == keyhog_adapter.compute_detector_corpus_sha256(
@@ -418,6 +421,7 @@ def test_keyhog_single_file_perf_command_keeps_daemon_fixture_policy(tmp_path):
     )
 
     assert "--no-suppress-test-fixtures" not in cmd
+    assert "--no-default-excludes" not in cmd
 
 
 def test_keyhog_presets_are_explicit_and_matrix_owned(tmp_path):

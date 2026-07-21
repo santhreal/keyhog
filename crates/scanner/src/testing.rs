@@ -195,7 +195,10 @@ pub fn extract_encoded_value_spans_for_test(text: &str) -> Vec<(String, usize, u
     crate::decode::with_extracted_value_spans(text, |spans| {
         spans
             .iter()
-            .filter_map(|v| v.span().map(|(s, e)| (v.value.clone(), s, e)))
+            .map(|value| {
+                let (start, end) = value.span();
+                (value.value.clone(), start, end)
+            })
             .collect()
     })
 }

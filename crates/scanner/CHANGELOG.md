@@ -9,12 +9,12 @@
   branch and replacing render-time actions with inert YAML values. Recover
   Jupyter notebooks truncated at end of file by closing only open strings and
   containers. Other syntax errors remain counted coverage gaps.
-- Batch JSON strings, quoted-printable text, and line-local URL-percent,
-  HTML-entity, Unicode, and octal escapes into bounded source spans instead of
-  emitting one recursive root per value. Physical lines and multiline
-  private-key separators remain intact.
-  Disallowed decoded C0 controls become token separators instead of truncation
-  events, preserving adjacent printable spans without joining tokens.
+- Batch Base64 and hexadecimal values, JSON strings, quoted-printable text, and
+  line-local URL-percent, HTML-entity, Unicode, and octal escapes into bounded
+  source and output spans instead of emitting one recursive root per value.
+  Physical lines and multiline private-key separators remain intact. Disallowed
+  controls become token separators instead of truncation events, preserving
+  adjacent printable spans without joining tokens.
 
 - Compiled detector-owned and scan-config entropy assignment keywords into one
   cached case-insensitive matcher, removing the per-line linear vocabulary walk

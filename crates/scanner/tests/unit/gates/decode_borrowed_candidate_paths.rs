@@ -52,9 +52,10 @@ fn hot_decoders_decode_borrowed_candidates_without_clone_collect() {
         "pub fn find_hex_strings",
     );
     assert!(
-        hex_body.contains("decode_candidate_refs_exact(")
+        hex_body.contains("push_batched_decoded_replacements(")
+            && hex_body.contains(".iter()")
             && !hex_body.contains("find_hex_string_spans(&chunk.data"),
-        "hex decoder should decode borrowed candidate refs instead of clone-collecting spans"
+        "hex decoder should batch decoded borrowed candidate spans"
     );
 
     let reverse = std::fs::read_to_string(concat!(
@@ -95,8 +96,7 @@ fn hot_decoders_decode_borrowed_candidates_without_clone_collect() {
     );
     assert!(
         url_body.contains("decode_filtered_lines(")
-            && url.contains("push_decoded_replacements_spliced(")
-            && url.contains("DECODE_REPLACEMENT_BATCH_SOURCE_BYTES")
+            && url.contains("push_batched_decoded_replacements(")
             && !url_body.contains("decode_candidate_refs_exact("),
         "URL decoder should use the shared bounded line-replacement batch"
     );
@@ -106,7 +106,7 @@ fn hot_decoders_decode_borrowed_candidates_without_clone_collect() {
         "/// True if `s` contains",
     );
     assert!(
-        qp_body.contains("decode_line_replacements(")
+        qp_body.contains("push_batched_decoded_replacements(")
             && qp_body.contains("is_false_positive_context(")
             && !qp_body.contains("decode_candidate_refs_exact("),
         "quoted-printable decoder should batch admitted physical lines"

@@ -2,6 +2,7 @@ use super::extractor::ExtractedValue;
 use keyhog_core::{Chunk, ChunkMetadata};
 
 pub(in crate::decode) const DECODE_REPLACEMENT_BATCH_SOURCE_BYTES: usize = 64 * 1024;
+const DECODE_REPLACEMENT_BATCH_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
 
 pub(in crate::decode) fn push_decoded_replacements_spliced(
     decoded_chunks: &mut Vec<Chunk>,
@@ -27,6 +28,51 @@ pub(in crate::decode) fn push_decoded_replacements_spliced(
         decoded_span,
         decoder_name,
     );
+}
+pub(in crate::decode) fn push_batched_decoded_replacements(
+    chunk: &Chunk,
+    replacements: Vec<(usize, usize, String)>,
+    decoder_name: &str,
+) -> Vec<Chunk> {
+    let mut decoded_chunks = Vec::new();
+    let mut batch_start = usize::MAX;
+    let mut batch_end = 0;
+    let mut batch_decoded_bytes = 0usize;
+    let mut batch_replacements = Vec::new();
+    for (start, end, decoded) in replacements {
+        let exceeds_source_bound = batch_start != usize::MAX
+            && end.saturating_sub(batch_start) > DECODE_REPLACEMENT_BATCH_SOURCE_BYTES;
+        let exceeds_output_bound = !batch_replacements.is_empty()
+            && batch_decoded_bytes.saturating_add(decoded.len())
+                > DECODE_REPLACEMENT_BATCH_OUTPUT_BYTES;
+        if exceeds_source_bound || exceeds_output_bound {
+            push_decoded_replacements_spliced(
+                &mut decoded_chunks,
+                chunk,
+                batch_start,
+                batch_end,
+                &mut batch_replacements,
+                decoder_name,
+            );
+            batch_start = usize::MAX;
+            batch_decoded_bytes = 0;
+        }
+        if batch_start == usize::MAX {
+            batch_start = start;
+        }
+        batch_end = end;
+        batch_decoded_bytes = batch_decoded_bytes.saturating_add(decoded.len());
+        batch_replacements.push((start, end, decoded));
+    }
+    push_decoded_replacements_spliced(
+        &mut decoded_chunks,
+        chunk,
+        batch_start,
+        batch_end,
+        &mut batch_replacements,
+        decoder_name,
+    );
+    decoded_chunks
 }
 
 pub(in crate::decode) fn push_decoded_text_chunk(
@@ -256,7 +302,7 @@ where
             push_decoded_text_chunk_spliced_at(
                 &mut decoded_chunks,
                 chunk,
-                candidate.span(),
+                Some(candidate.span()),
                 &candidate.value,
                 text,
                 decoder_name,

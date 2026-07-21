@@ -15,10 +15,12 @@ Maps a :class:`ScannerConfig` to keyhog CLI flags:
   explicit presets, full pipeline otherwise.
 
 Labeled-corpus in-process scoring parity flags are present:
-``--format json-envelope --show-secrets --no-suppress-test-fixtures --no-config`` plus
-an explicit repository detector corpus. ``--no-config`` blocks ancestor config
-discovery, while ``--detectors`` blocks installed-corpus discovery. Findings are
-written to ``--output`` so GNU time's RSS report never crosses the JSON.
+``--format json-envelope --show-secrets --no-suppress-test-fixtures
+--no-default-excludes --no-config`` plus an explicit repository detector corpus.
+``--no-config`` blocks ancestor config discovery, while ``--detectors`` blocks
+installed-corpus discovery. Disabling default exclusions makes every benchmark
+corpus file part of the scored coverage contract. Findings are written to
+``--output`` so GNU time's RSS report never crosses the JSON.
 
 The default config (``variants()[0]``) is ``simd-nocache-nodaemon-full`` 
 the deterministic build the README leaderboard cites.
@@ -413,7 +415,7 @@ class KeyhogScanner(Scanner):
                "--backend", cfg.backend,
                "--output", str(output)]
         if not root.is_file():
-            cmd.append("--no-suppress-test-fixtures")
+            cmd += ["--no-suppress-test-fixtures", "--no-default-excludes"]
         # Optional report-floor override. None (every leaderboard config) means
         # the compiled shipped default floor is scored, byte-identical to
         # before this knob existed. The ML harvest sets it LOW so it captures

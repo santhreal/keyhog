@@ -10,29 +10,17 @@ static EXTRACT_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::
 #[derive(Clone, Debug)]
 pub(crate) struct ExtractedValue {
     pub(crate) value: String,
-    pub(crate) start: Option<usize>,
-    pub(crate) end: Option<usize>,
+    pub(crate) start: usize,
+    pub(crate) end: usize,
 }
 
 impl ExtractedValue {
     pub(crate) fn new(value: String, start: usize, end: usize) -> Self {
-        Self {
-            value,
-            start: Some(start),
-            end: Some(end),
-        }
+        Self { value, start, end }
     }
 
-    pub(crate) fn synthetic(value: String) -> Self {
-        Self {
-            value,
-            start: None,
-            end: None,
-        }
-    }
-
-    pub(crate) fn span(&self) -> Option<(usize, usize)> {
-        Some((self.start?, self.end?))
+    pub(crate) fn span(&self) -> (usize, usize) {
+        (self.start, self.end)
     }
 }
 fn extract_prof_enabled() -> bool {

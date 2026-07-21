@@ -2,7 +2,8 @@ use super::limits::{
     MAX_BASE64_INPUT_LEN, MAX_Z85_INPUT_LEN, MIN_BASE64_CANDIDATE_LEN, MIN_Z85_CANDIDATE_LEN,
 };
 use super::pipeline::{
-    push_decoded_text_chunk_spliced_at, with_extracted_value_spans, ExtractedValue,
+    push_batched_decoded_replacements, push_decoded_text_chunk_spliced_at,
+    with_extracted_value_spans, ExtractedValue,
 };
 use super::{DecodeAdmissionSketch, Decoder, EncodedString};
 use keyhog_core::Chunk;
@@ -19,50 +20,27 @@ impl Decoder for Base64Decoder {
     }
 
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
-        let mut decoded_chunks = Vec::new();
+        let mut replacements = Vec::new();
         visit_classified_base64_string_spans(
             &chunk.data,
             MIN_BASE64_CANDIDATE_LEN,
             |b64_match, variant| {
-                if let Ok(decoded) = base64_decode_with_variant(&b64_match.value, variant) {
-                    // LAW10: failed trial decode means this span is not valid base64; recall-preserving (the original chunk stays scanned unchanged).
-                    // Pre-UTF8-gate decode-through: a base64 blob whose decoded
-                    // bytes are a gzip/zlib stream (`secret -> gzip -> base64`
-                    // exfil) is not valid UTF-8, so the plain `from_utf8` gate
-                    // below would drop it. Try a bounded inflate first; when it
-                    // yields UTF-8 text, emit that so the compressed credential is
-                    // rescanned. Non-container / malformed / binary-output bytes
-                    // fall through to the normal UTF-8 path unchanged.
-                    if let Some(inflated) = crate::decode::inflate::try_inflate_to_text(&decoded) {
-                        push_decoded_text_chunk_spliced_at(
-                            &mut decoded_chunks,
-                            chunk,
-                            b64_match.span(),
-                            &b64_match.value,
-                            inflated,
-                            self.name(),
-                        );
-                    } else if let Ok(text) = String::from_utf8(decoded) {
-                        // LAW10: non-UTF8 decoded bytes are not source text; recall-preserving (the original encoded text stays scanned unchanged).
-                        // Splice the decoded text back over the original
-                        // base64 blob in the parent so companion context
-                        // (e.g. `aws_secret = "…"`) stays adjacent to the
-                        // decoded credential. Without this the decoded
-                        // chunk is bare-bytes-only and every detector
-                        // anchored on an adjacent keyword misses.
-                        push_decoded_text_chunk_spliced_at(
-                            &mut decoded_chunks,
-                            chunk,
-                            b64_match.span(),
-                            &b64_match.value,
-                            text,
-                            self.name(),
-                        );
-                    }
+                let Ok(decoded) = base64_decode_with_variant(&b64_match.value, variant) else {
+                    // LAW10: failed trial decode is recall-preserving; the original candidate-bearing chunk stays scanned unchanged.
+                    return;
+                };
+                // Compressed payloads must inflate before the UTF-8 gate.
+                let text = crate::decode::inflate::try_inflate_to_text(&decoded)
+                    .or_else(|| String::from_utf8(decoded).ok());
+                // LAW10: non-UTF-8 output is not source text; the encoded span
+                // remains scanned unchanged.
+                if let Some(text) = text {
+                    let (start, end) = b64_match.span();
+                    replacements.push((start, end, text));
                 }
             },
         );
-        decoded_chunks
+        push_batched_decoded_replacements(chunk, replacements, self.name())
     }
 }
 
@@ -87,7 +65,7 @@ impl Decoder for Z85Decoder {
                     push_decoded_text_chunk_spliced_at(
                         &mut decoded_chunks,
                         chunk,
-                        z_match.span(),
+                        Some(z_match.span()),
                         value.as_ref(),
                         text.trim_end_matches('\0').to_string(),
                         self.name(),
