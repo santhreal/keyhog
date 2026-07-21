@@ -560,25 +560,43 @@ impl HsScanner {
         cache_key: &str,
         cache_dir: &std::path::Path,
     ) -> Vec<Result<(BlockDatabase, Vec<usize>), String>> {
+        if shard_count == 1 {
+            return shard_pats
+                .into_iter()
+                .enumerate()
+                .map(|(shard_idx, pats)| {
+                    Self::compile_cached_shard(pats, shard_count, shard_idx, cache_key, cache_dir)
+                })
+                .collect();
+        }
+
         use rayon::prelude::*;
         shard_pats
             .into_par_iter()
             .enumerate()
             .map(|(shard_idx, pats)| {
-                let shard_key = Self::shard_cache_key(cache_key, shard_count, shard_idx, &pats);
-                let cache_path = cache_dir.join(keyhog_core::hyperscan_cache_filename(&shard_key));
-
-                if let Some((db, dropped)) =
-                    Self::load_cached_shard(&cache_path, shard_idx, pats.len())
-                {
-                    return Ok((db, dropped));
-                }
-
-                let (db, dropped) = Self::compile_hs_db(&pats)?;
-                Self::persist_cached_shard(&db, &dropped, &cache_path, shard_idx);
-                Ok((db, dropped))
+                Self::compile_cached_shard(pats, shard_count, shard_idx, cache_key, cache_dir)
             })
             .collect()
+    }
+
+    fn compile_cached_shard(
+        pats: Vec<Pattern>,
+        shard_count: usize,
+        shard_idx: usize,
+        cache_key: &str,
+        cache_dir: &std::path::Path,
+    ) -> Result<(BlockDatabase, Vec<usize>), String> {
+        let shard_key = Self::shard_cache_key(cache_key, shard_count, shard_idx, &pats);
+        let cache_path = cache_dir.join(keyhog_core::hyperscan_cache_filename(&shard_key));
+
+        if let Some((db, dropped)) = Self::load_cached_shard(&cache_path, shard_idx, pats.len()) {
+            return Ok((db, dropped));
+        }
+
+        let (db, dropped) = Self::compile_hs_db(&pats)?;
+        Self::persist_cached_shard(&db, &dropped, &cache_path, shard_idx);
+        Ok((db, dropped))
     }
 
     fn shard_cache_key(
