@@ -276,7 +276,7 @@ fn parse_json_error_keys(raw: &str) -> Result<Vec<String>, String> {
 }
 
 static JSON_ERROR_KEYS: LazyLock<Vec<String>> = LazyLock::new(|| {
-    match parse_json_error_keys(include_str!("../../../../rules/json-error-keys.toml")) {
+    match parse_json_error_keys(include_str!("../../rules/json-error-keys.toml")) {
         Ok(keys) => keys,
         Err(error) => panic!(
             "rules/json-error-keys.toml is invalid: {error}. \
