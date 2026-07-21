@@ -60,6 +60,7 @@ const TOKENS: &[&str] = &[
     "secret: 'topSecretValue0123456789'",
     "password=Hunter2Hunter2Hunter2xx",
     "-----BEGIN RSA PRIVATE KEY-----\nMIIBOgIBAAJBAKj34GkxFhD90vcNLYLInFEX6Ppy1tPf9Cnzj4p4WGeKLs1Pt8Q\n-----END RSA PRIVATE KEY-----",
+    "Authorization: snyk-api-token=01234567-89ab-cdef-0123-456789abcdef",
 ];
 
 const DETECTOR_IDS: &[&str] = &[
@@ -74,6 +75,7 @@ const DETECTOR_IDS: &[&str] = &[
     "aws-access-key",
     "private-key",
     "generic-password",
+    "snyk-api-token",
 ];
 
 const DEFAULT_PARITY_N: usize = 256;

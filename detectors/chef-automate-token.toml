@@ -25,7 +25,7 @@ description = "Chef Automate API token with context anchor"
 group = 1
 
 [[detector.patterns]]
-regex = "api-token[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
+regex = "(?:^|[^a-zA-Z0-9_-])api-token[=:\\s\"'']+([a-zA-Z0-9_-]{20,})"
 description = "Chef Automate api-token header value"
 group = 1
 
@@ -37,3 +37,7 @@ group = 1
 [[detector.tests]]
 test_positive = "CHEF_AUTOMATE_TOKEN=Kp4Qx7Rm2Sn5Tb8Vw3YzK"
 test_negative = "CHEF_AUTOMATE_TOKEN=short"
+
+[[detector.tests]]
+test_positive = "Authorization: api-token=Kp4Qx7Rm2Sn5Tb8Vw3YzK"
+test_negative = "Authorization: snyk-api-token=01234567-89ab-cdef-0123-456789abcdef"

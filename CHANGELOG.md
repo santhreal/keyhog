@@ -42,6 +42,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   cold or contended release host does not kill a healthy exact scan.
 - Single-shard Hyperscan databases compile inline, preventing nested Rayon work
   from re-entering a worker's borrowed phase-two scratch state.
+- Chef's generic `api-token` header anchor now requires a token boundary, so it
+  cannot replace an exact Snyk UUID finding through overlap resolution.
 - Default detector resolution priority no longer perturbs the canonical detector
   digest, while non-default collision policy remains cache-bound.
 - Generic vendor and exact-keyword tail suffixes now come from the owning
