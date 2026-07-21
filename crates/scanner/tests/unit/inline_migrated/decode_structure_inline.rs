@@ -104,6 +104,16 @@ fn decodes_to_printable_text_accepts_base64_wrapped_secret_text() {
 }
 
 #[test]
+fn decodes_to_printable_text_rejects_double_base64_data_envelope() {
+    let inner = "UqrqCinZZWZP7BFSto0S5BmfnK/vCAFIZHVGs7WQLYu7CUr0+w==";
+    let outer = base64::engine::general_purpose::STANDARD.encode(inner);
+    assert!(
+        !decodes_to_printable_text(&outer),
+        "base64-of-base64 is a data envelope, not encoded credential text",
+    );
+}
+
+#[test]
 fn decodes_to_printable_text_rejects_binary_bytes() {
     let raw: [u8; 12] = [
         0x00, 0x01, 0x02, 0xff, 0xfe, 0x80, 0x7f, 0x10, 0x11, 0x12, 0x13, 0x14,

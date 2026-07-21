@@ -247,11 +247,13 @@ pub(crate) fn is_byte_distribution_base64_blob(
 /// printable text, not a binary asset or protobuf envelope.
 #[must_use]
 pub(crate) fn decodes_to_printable_text(candidate: &str) -> bool {
-    let structure = evidence(candidate).structure();
+    let evidence = evidence(candidate);
+    let structure = evidence.structure();
     structure.decodable
         && structure.decoded_len >= 8
         && structure.printable_ratio >= 0.85
         && !structure.is_binary_payload()
+        && !evidence.decoded_is_base64_blob()
 }
 
 /// Decode `candidate` (base64 standard, base64 url-safe, or hex) and describe
