@@ -105,6 +105,46 @@ print(checksum.lower())
 PY
 }
 
+download_registry_archive() {
+    python3 -B - "$1" "$VERSION" "$2" <<'PY'
+import hashlib
+import os
+import pathlib
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+crate, version, destination = sys.argv[1:]
+url = "https://crates.io/api/v1/crates/{}/{}/download".format(
+    urllib.parse.quote(crate, safe=""), urllib.parse.quote(version, safe="")
+)
+request = urllib.request.Request(
+    url,
+    headers={"User-Agent": f"keyhog-release-gate/{version} (security@santh.dev)"},
+)
+destination = pathlib.Path(destination)
+temporary = destination.with_suffix(destination.suffix + ".download")
+digest = hashlib.sha256()
+try:
+    with urllib.request.urlopen(request, timeout=30) as response, temporary.open("wb") as output:
+        for chunk in iter(lambda: response.read(1024 * 1024), b""):
+            digest.update(chunk)
+            output.write(chunk)
+except urllib.error.HTTPError as error:
+    temporary.unlink(missing_ok=True)
+    if error.code == 404:
+        raise SystemExit(4)
+    raise SystemExit(f"cannot download {crate} {version} from crates.io: HTTP {error.code}")
+except Exception as error:
+    temporary.unlink(missing_ok=True)
+    raise SystemExit(f"cannot download {crate} {version} from crates.io: {error}")
+os.replace(temporary, destination)
+print(digest.hexdigest())
+PY
+}
+
+
 # Pull the version out of the workspace Cargo.toml so the echo lines
 # stay accurate without a per-release edit. `awk` over the [workspace.package]
 # table is enough - the version key is unique within Cargo.toml.
@@ -128,14 +168,34 @@ preflight() {
 package_and_verify() {
     local crate="$1"
     local archive="$PACKAGE_TARGET/package/${crate}-${VERSION}.crate"
-    echo "==> packaging $crate in isolated target $PACKAGE_TARGET"
-    CARGO_TARGET_DIR="$PACKAGE_TARGET" cargo package \
-        --no-verify \
-        --locked \
-        --package "$crate"
-    if [[ ! -f "$archive" ]]; then
-        echo "error: cargo package did not create expected archive $archive" >&2
-        return 1
+    local downloaded_digest
+    local remote_digest
+    local download_status
+    mkdir -p "$(dirname "$archive")"
+    echo "==> checking crates.io for an existing $crate v$VERSION archive"
+    if downloaded_digest="$(download_registry_archive "$crate" "$archive")"; then
+        remote_digest="$(registry_sha256 "$crate")"
+        if [[ "$downloaded_digest" != "$remote_digest" ]]; then
+            echo "error: downloaded $crate archive checksum does not match crates.io metadata" >&2
+            printf 'Downloaded SHA-256: %s\nRegistry SHA-256:   %s\n' \
+                "$downloaded_digest" "$remote_digest" >&2
+            return 1
+        fi
+        echo "==> using immutable crates.io archive for already-published $crate v$VERSION"
+    else
+        download_status=$?
+        if [[ "$download_status" -ne 4 ]]; then
+            return "$download_status"
+        fi
+        echo "==> packaging $crate in isolated target $PACKAGE_TARGET"
+        CARGO_TARGET_DIR="$PACKAGE_TARGET" cargo package \
+            --no-verify \
+            --locked \
+            --package "$crate"
+        if [[ ! -f "$archive" ]]; then
+            echo "error: cargo package did not create expected archive $archive" >&2
+            return 1
+        fi
     fi
     python3 -B "$ROOT/scripts/gates/package_licenses.py" "$archive"
     archive_sha256 "$archive" > "$archive.verified.sha256"
