@@ -146,18 +146,23 @@ fn backend_limits_keep_wgpu_inside_its_portable_grid() {
     );
     assert_eq!(
         region_presence_batch_byte_limit("cuda"),
-        REGION_PRESENCE_BATCH_BYTE_LIMIT.min(crate::gpu_input_budget::gpu_batch_input_limit())
+        WGPU_BYTE_SCAN_DISPATCH_LIMIT.min(crate::gpu_input_budget::gpu_batch_input_limit())
     );
     assert_eq!(WGPU_BYTE_SCAN_DISPATCH_LIMIT, 8_388_480);
     assert_eq!(
         region_presence_batch_byte_limit_for_input_budget("cuda", 128 * 1024 * 1024),
-        128 * 1024 * 1024,
-        "CUDA dispatches must honor the live low-VRAM batch budget below VYRE's hard ceiling"
+        WGPU_BYTE_SCAN_DISPATCH_LIMIT,
+        "CUDA positioned-match shards must stay within the exact replay-safe portable grid"
     );
     assert_eq!(
         region_presence_batch_byte_limit_for_input_budget("wgpu", 128 * 1024 * 1024),
         WGPU_BYTE_SCAN_DISPATCH_LIMIT,
-        "WGPU's portable grid ceiling remains stricter than the low-VRAM budget"
+        "WGPU and CUDA share one exact positioned-match shard ceiling"
+    );
+    assert_eq!(
+        region_presence_batch_byte_limit_for_input_budget("cuda", 4 * 1024 * 1024),
+        4 * 1024 * 1024,
+        "a smaller live VRAM budget remains authoritative"
     );
 
     let exact = [

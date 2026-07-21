@@ -36,6 +36,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   events, preserving adjacent printable spans without joining tokens.
 - Differential corpus benchmarks disable default file exclusions for directory
   inputs, so terminal success proves every corpus file reached scanning.
+- CUDA and WGPU positioned-literal evidence use the same 8 MiB shard ceiling,
+  keeping dense corpus match replay exact without backend substitution.
 - Default detector resolution priority no longer perturbs the canonical detector
   digest, while non-default collision policy remains cache-bound.
 - Generic vendor and exact-keyword tail suffixes now come from the owning

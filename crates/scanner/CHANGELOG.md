@@ -15,6 +15,8 @@
   Physical lines and multiline private-key separators remain intact. Disallowed
   controls become token separators instead of truncation events, preserving
   adjacent printable spans without joining tokens.
+- CUDA and WGPU positioned-literal evidence use the same 8 MiB shard ceiling,
+  keeping dense corpus match replay exact without backend substitution.
 
 - Compiled detector-owned and scan-config entropy assignment keywords into one
   cached case-insensitive matcher, removing the per-line linear vocabulary walk

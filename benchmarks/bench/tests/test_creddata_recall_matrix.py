@@ -28,6 +28,7 @@ Requirements (both checked, both LOUD on absence, never a silent green):
 
 from __future__ import annotations
 
+import re
 import pytest
 
 from bench.corpora.creddata import CredDataCorpus
@@ -76,14 +77,36 @@ def scan_result(creddata_simd_findings):
 # 2-positive category recalling 0 is noise, not a blind class).
 
 _CATEGORY_MIN_POSITIVES = 25
-# These CredData labels identify public resources, not credentials. KeyHog may
-# use them as context around a secret, but treating their absence as secret
-# recall blindness would reward noisy detectors that report ordinary domains
-# and bucket names as findings.
+# CredData also labels public vendor identifiers as positive "credentials":
+# WeChat App IDs, Twilio resource SIDs, and UUID idempotency/request tokens.
+# None authorizes a request without a separate secret. Reporting them would
+# reward identifier noise rather than credential recall.
 _PUBLIC_IDENTIFIER_CATEGORIES = frozenset({
     "AWS S3 Bucket",
     "Firebase Domain",
+    "Tencent WeChat API App ID",
+    "Twilio Credentials",
+    "UUID:Token",
 })
+
+@pytest.mark.skipif(
+    not _AVAILABLE,
+    reason="CredData corpus not on disk, public-identifier classification cannot run")
+def test_excluded_vendor_categories_contain_only_public_identifier_shapes():
+    shape_by_category = {
+        "Tencent WeChat API App ID": re.compile(r"wx[0-9a-f]{16}").fullmatch,
+        "Twilio Credentials": re.compile(r"(?:AC|CA|SM|MM|PN)[0-9a-f]{32}").fullmatch,
+        "UUID:Token": re.compile(
+            r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}"
+        ).fullmatch,
+    }
+    for category, matches in shape_by_category.items():
+        category_records = _POSITIVES_BY_CATEGORY.get(category, [])
+        assert category_records, f"missing classified category {category}"
+        assert all(matches(record.secret) for record in category_records), (
+            f"{category} now contains an authenticating value; remove it from "
+            "_PUBLIC_IDENTIFIER_CATEGORIES and add detector coverage"
+        )
 
 _POSITIVES_BY_CATEGORY: dict[str, list] = {}
 for _r in _POSITIVES:
