@@ -108,6 +108,7 @@ PY
 download_registry_archive() {
     python3 -B - "$1" "$VERSION" "$2" <<'PY'
 import hashlib
+import json
 import os
 import pathlib
 import sys
@@ -116,13 +117,28 @@ import urllib.parse
 import urllib.request
 
 crate, version, destination = sys.argv[1:]
-url = "https://crates.io/api/v1/crates/{}/{}/download".format(
-    urllib.parse.quote(crate, safe=""), urllib.parse.quote(version, safe="")
-)
-request = urllib.request.Request(
-    url,
-    headers={"User-Agent": f"keyhog-release-gate/{version} (security@santh.dev)"},
-)
+escaped_crate = urllib.parse.quote(crate, safe="")
+escaped_version = urllib.parse.quote(version, safe="")
+headers = {"User-Agent": f"keyhog-release-gate/{version} (security@santh.dev)"}
+metadata_url = f"https://crates.io/api/v1/crates/{escaped_crate}/{escaped_version}"
+try:
+    with urllib.request.urlopen(
+        urllib.request.Request(metadata_url, headers=headers), timeout=30
+    ) as response:
+        metadata = json.load(response)
+except urllib.error.HTTPError as error:
+    if error.code == 404:
+        raise SystemExit(4)
+    raise SystemExit(f"cannot query {crate} {version} on crates.io: HTTP {error.code}")
+except Exception as error:
+    raise SystemExit(f"cannot query {crate} {version} on crates.io: {error}")
+
+expected_digest = metadata.get("version", {}).get("checksum")
+if not isinstance(expected_digest, str) or len(expected_digest) != 64:
+    raise SystemExit(f"crates.io returned no valid SHA-256 for {crate} {version}")
+
+url = f"https://crates.io/api/v1/crates/{escaped_crate}/{escaped_version}/download"
+request = urllib.request.Request(url, headers=headers)
 destination = pathlib.Path(destination)
 temporary = destination.with_suffix(destination.suffix + ".download")
 digest = hashlib.sha256()
@@ -131,16 +147,18 @@ try:
         for chunk in iter(lambda: response.read(1024 * 1024), b""):
             digest.update(chunk)
             output.write(chunk)
-except urllib.error.HTTPError as error:
-    temporary.unlink(missing_ok=True)
-    if error.code == 404:
-        raise SystemExit(4)
-    raise SystemExit(f"cannot download {crate} {version} from crates.io: HTTP {error.code}")
 except Exception as error:
     temporary.unlink(missing_ok=True)
     raise SystemExit(f"cannot download {crate} {version} from crates.io: {error}")
+downloaded_digest = digest.hexdigest()
+if downloaded_digest != expected_digest.lower():
+    temporary.unlink(missing_ok=True)
+    raise SystemExit(
+        f"downloaded {crate} {version} checksum {downloaded_digest} "
+        f"does not match crates.io metadata {expected_digest.lower()}"
+    )
 os.replace(temporary, destination)
-print(digest.hexdigest())
+print(downloaded_digest)
 PY
 }
 
