@@ -46,8 +46,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   cannot replace an exact Snyk UUID finding through overlap resolution.
 - Benchmark process failures include measured wall time, peak RSS, and watchdog
   state, distinguishing resource kills from finite timeout failures.
-- Accelerated CredData parity packs disjoint top-level roots into source-bounded
-  processes and rejects overlap before comparing the complete finding union.
+- CredData backend parity packs disjoint top-level roots into identical
+  source-bounded processes and rejects overlap before comparing complete unions.
 - Default detector resolution priority no longer perturbs the canonical detector
   digest, while non-default collision policy remains cache-bound.
 - Generic vendor and exact-keyword tail suffixes now come from the owning

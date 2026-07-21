@@ -6,9 +6,9 @@ findings only on THAT path, invisibly. The "validator bypass on the fast path"
 bug class is exactly this: the fast path skips a per-match policy the slow path
 applies, so the two disagree and nobody notices.
 
-This gate scans the real CredData corpus through the deterministic SIMD
-reference, then requires accelerated backends to return the exact same finding
-identity set.
+This gate packs the real CredData corpus into stable source-bounded partitions,
+then requires deterministic SIMD, CUDA, and WGPU to return the exact same
+finding identity set over those byte-identical invocations.
 Autoroute is cache-keyed by calibrated workload buckets, so the product-path
 autoroute proof is a separate bounded calibration/replay test in this module;
 the CredData fixture must not live-calibrate an unbounded set of per-batch keys
@@ -20,8 +20,8 @@ binary until it has its own parity proof.
 Each GPU driver is tested for exact detector/value/location parity when that
 peer is acquired. An unacquired peer is skipped loudly, never substituted.
 
-Speed: one deterministic scan plus bounded accelerated shards over CredData.
-Belongs in the bench/nightly lane, not the fast unit lane.
+Speed: one stable set of bounded corpus shards per checked backend. Belongs in
+the bench/nightly lane, not the fast unit lane.
 
 Requires: the CredData corpus on disk + a keyhog binary (KEYHOG_BIN or a release
 build). Both checked; absence skips the module with the reason.
@@ -309,13 +309,13 @@ def _scan_accelerated(binary: str, backend: str) -> set[tuple]:
 
 
 @pytest.fixture(scope="session")
-def backend_findings(creddata_simd_findings):
-    """Scan the deterministic corpus once and both GPUs in bounded source
-    shards. An accelerated backend is absent only when preflight proves it."""
+def backend_findings():
+    """Scan SIMD and both GPUs through identical source-bounded shards. An
+    accelerated backend is absent only when preflight proves it."""
     binary = _current_keyhog_binary()
 
     out: dict[str, set | None] = {
-        _DETERMINISTIC[0]: _finding_keys(creddata_simd_findings)
+        _DETERMINISTIC[0]: _scan_accelerated(binary, _DETERMINISTIC[0])
     }
 
     for b in _ACCELERATED:
