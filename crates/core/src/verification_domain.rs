@@ -21,7 +21,7 @@ struct ServicesFile {
 static EXACT_ONLY_SHARED_TENANT_SUFFIXES: std::sync::LazyLock<Vec<String>> =
     std::sync::LazyLock::new(|| {
         let parsed = toml::from_str::<SharedTenantSuffixes>(include_str!(
-            "../../../rules/shared-tenant-suffixes.toml"
+            "../rules/shared-tenant-suffixes.toml"
         ))
         .unwrap_or_else(|error| { // LAW10: bundled Tier-B parse failure is loud and fail-closed during policy initialization.
             panic!(
@@ -41,7 +41,7 @@ pub fn builtin_service_domains() -> &'static HashMap<&'static str, &'static [&'s
         std::sync::OnceLock::new();
     MAP.get_or_init(|| {
         let parsed: ServicesFile = toml::from_str(include_str!(
-            "../../../rules/service-verification-domains.toml"
+            "../rules/service-verification-domains.toml"
         ))
         .unwrap_or_else(|error| { // LAW10: bundled Tier-B parse failure is loud and fail-closed during policy initialization.
             panic!(
