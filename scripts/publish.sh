@@ -132,7 +132,6 @@ package_and_verify() {
     CARGO_TARGET_DIR="$PACKAGE_TARGET" cargo package \
         --no-verify \
         --locked \
-        --registry crates-io \
         --package "$crate"
     if [[ ! -f "$archive" ]]; then
         echo "error: cargo package did not create expected archive $archive" >&2
