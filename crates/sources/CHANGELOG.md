@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.43 - 2026-07-22
 
 - Declare the filesystem and git-diff sources' contiguous chunk-identity
   ordering contract for safe provenance-aware autoroute batching.

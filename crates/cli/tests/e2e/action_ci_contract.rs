@@ -460,7 +460,7 @@ esac
                 output_path.to_str().expect("UTF-8 output path"),
             ),
             ("ACTION_ASSET_NAME", "keyhog-linux-x86_64"),
-            ("ACTION_RESOLVED_VERSION", "0.5.42"),
+            ("ACTION_RESOLVED_VERSION", "0.5.43"),
             ("ACTION_RELEASE_REQUIRED", "true"),
             ("RUNNER_OS", "Linux"),
             (
@@ -2445,7 +2445,7 @@ fn composite_action_authenticated_bundle_executes_all_six_exact_downloads() {
         combined_output(&output)
     );
     let urls = fs::read_to_string(dir.path().join("curl.log")).expect("read curl log");
-    let base = "https://github.com/santhreal/keyhog/releases/download/v0.5.42/";
+    let base = "https://github.com/santhreal/keyhog/releases/download/v0.5.43/";
     let expected = [
         "keyhog-linux-x86_64",
         "keyhog-linux-x86_64.sha256",

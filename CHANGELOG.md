@@ -2,7 +2,7 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.5.43] - 2026-07-22
 
 ### Fixed
 

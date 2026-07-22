@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.43 - 2026-07-22
 
 - Use one bounded detector TOML reader in both the runtime loader and the build
   script. Embedded-corpus generation now enforces the same 16 MiB per-file cap

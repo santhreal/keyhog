@@ -8,7 +8,7 @@ credentials.
 $ keyhog scan .
     K E Y H O G
     ───────────
-    v0.5.42 · secret scanner · 923 detectors
+    v0.5.43 · secret scanner · 923 detectors
     by santh
 
   ┌    CRITICAL ─── Stripe Secret Key
@@ -116,7 +116,7 @@ prerequisite commands live in the [install guide](./install.md#pinned-verified-i
 
 ```sh
 # Linux / macOS, pinned and authenticated before execution
-TAG=v0.5.42
+TAG=v0.5.43
 BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
 PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
 curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.43 - 2026-07-22
 
 - Compile the portable CLI on Windows by gating Unix daemon test seams, using
   the platform process-exit path, and importing drive constants from their

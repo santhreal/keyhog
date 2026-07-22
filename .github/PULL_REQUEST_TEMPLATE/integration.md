@@ -101,7 +101,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history; drop if you only scan working tree
-      - uses: santhreal/keyhog/.github/actions/keyhog@v0.5.42
+      - uses: santhreal/keyhog/.github/actions/keyhog@v0.5.43
         with:
           path: .
           severity: high

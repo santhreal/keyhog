@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.43 - 2026-07-22
 
 - Keep grown phase-two GPU DFA resident haystack capacities aligned to the
   declared 32-bit element ABI. Forced 8 MiB, 32-shard CUDA evidence now proves
