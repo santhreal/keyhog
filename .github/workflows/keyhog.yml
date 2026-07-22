@@ -4,9 +4,9 @@ name: keyhog
 # Action. Runtime errors fail the job. Findings upload to Code Scanning and
 # fail only when `.github/keyhog-strict` is present.
 #
-# Hosted GitHub runners have no usable GPU. Use explicit scan arguments such as
-# `--no-gpu` for CPU/SIMD-only hosted CI, or `--require-gpu` on self-hosted GPU
-# runners where a driver regression should fail closed.
+# Hosted GitHub runners have no usable GPU and one-shot jobs do not amortize
+# workload calibration. Pin the SIMD backend here; self-hosted GPU workflows
+# should opt into `backend: auto` or an explicit GPU peer.
 
 on:
   push:
@@ -43,6 +43,7 @@ jobs:
           # No version override: a branch/SHA action ref builds and exercises
           # this exact checkout. Release artifacts have separate signed smokes.
           path: .
+          backend: simd
           severity: high
           format: sarif
           upload-sarif: 'true'

@@ -3238,6 +3238,10 @@ fn keyhog_workflow_dogfoods_local_composite_action() {
         workflow.contains("uses: ./"),
         "repo CI must dogfood the bundled composite action, not a divergent inline scanner"
     );
+    assert!(
+        workflow.contains("backend: simd"),
+        "hosted one-shot dogfood must pin SIMD instead of spending the job on autoroute calibration"
+    );
     let root_action =
         fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../action.yml"))
             .expect("read root action.yml");
