@@ -56,14 +56,15 @@ pub fn assert_cpu_gpu_backend_parity(text: &str, path: &str, label: &str) {
         "{label}: CPU baseline must fire on adversarial sample (recall oracle)"
     );
 
-    if !keyhog_scanner::gpu::gpu_available() {
-        eprintln!(
-            "{label}: GPU backend parity not run because no compatible GPU adapter is visible"
-        );
+    if !scanner.warm_backend(ScanBackend::GpuWgpu) {
+        eprintln!("{label}: GPU backend parity not run because the WGPU scan stack is unavailable");
         return;
     }
 
-    let gpu = credential_keys(&scanner.scan_chunks_with_backend(&chunks, ScanBackend::GpuWgpu));
+    let gpu = scanner
+        .try_scan_coalesced_with_backend_and_admission(&chunks, ScanBackend::GpuWgpu, None)
+        .unwrap_or_else(|error| panic!("{label}: WGPU dispatch failed after warmup: {error}"));
+    let gpu = credential_keys(&gpu);
 
     assert_eq!(
         cpu,

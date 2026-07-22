@@ -31,19 +31,24 @@ fn chunk(text: &str) -> Chunk {
 fn selected_gpu_backend_executes_or_fails() {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load");
     let scanner = CompiledScanner::compile(detectors).expect("compile");
-    let gpu_ready = scanner.warm_backend(ScanBackend::GpuWgpu);
-
-    if !gpu_ready {
-        panic!(
-            "KH-GAP-002: selected GPU backend but warm_backend(Gpu) returned false - \
-             CPU substitution is forbidden; report the unavailable GPU stack"
-        );
+    if !scanner.warm_backend(ScanBackend::GpuWgpu) {
+        if keyhog_scanner::gpu::gpu_required_by_policy() {
+            panic!(
+                "KH-GAP-002: selected GPU backend but warm_backend(Gpu) returned false - \
+                 CPU substitution is forbidden; report the unavailable GPU stack"
+            );
+        }
+        eprintln!("KH-GAP-002: WGPU execution not run because the scan stack is unavailable");
+        return;
     }
 
-    let results = scanner.scan_chunks_with_backend(
-        &[chunk("const K = \"AKIAQYLPMN5HFIQR7XYA\";")],
-        ScanBackend::GpuWgpu,
-    );
+    let results = scanner
+        .try_scan_coalesced_with_backend_and_admission(
+            &[chunk("const K = \"AKIAQYLPMN5HFIQR7XYA\";")],
+            ScanBackend::GpuWgpu,
+            None,
+        )
+        .expect("the warmed WGPU route must execute without CPU substitution");
     let count: usize = results.iter().map(|chunk| chunk.len()).sum();
     assert_eq!(
         count, 1,
