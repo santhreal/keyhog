@@ -493,7 +493,7 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
                  Rebuilding this calibration pass without GPU candidates; rerun \
                  `keyhog calibrate-autoroute --policy {}` after GPU resources recover.",
                 crate::style::warn("warning:", &p),
-                policy.unwrap_or("default"),
+                policy.unwrap_or("default"), // LAW10: absent preset is the documented default policy, not an execution fallback.
             );
             let scan_args = calibration_scan_args(Some(transaction.staged_path()), *policy, false)
                 .with_context(|| {

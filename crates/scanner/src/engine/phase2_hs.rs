@@ -73,6 +73,7 @@ impl HsSubEngine {
             // at compile (→ silent fallback to RegexSet). Byte mode keeps them on
             // the fast path; findings parity holds (`..._findings_parity`).
             utf8: false,
+            parallel_prepare: false,
         };
         let (scanner, unsupported) = match HsScanner::compile_with_opts(&refs, opts) {
             Ok(v) => v,

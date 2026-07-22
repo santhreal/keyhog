@@ -582,8 +582,8 @@ fn inspect_autoroute_cache_for_build(
                 .map(|point| {
                     let one_shot_route = point
                         .resolve_measured_route(false)
-                        .unwrap_or(one_shot_route);
-                    let daemon_route = point.resolve_measured_route(true).unwrap_or(daemon_route);
+                        .unwrap_or(one_shot_route); // LAW10: reporting-only fallback to the validated decision route; execution never reads inspection rows.
+                    let daemon_route = point.resolve_measured_route(true).unwrap_or(daemon_route); // LAW10: reporting-only fallback to the validated decision route; execution never reads inspection rows.
                     AutorouteCalibrationPointInspection {
                         sample_bytes: point.sample_bytes,
                         sample_chunks: point.sample_chunks,

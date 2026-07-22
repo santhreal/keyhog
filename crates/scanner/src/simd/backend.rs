@@ -294,7 +294,7 @@ impl Drop for HsScanner {
 /// `regex` reference exactly, and it only needs to know "did pattern P match
 /// at all", so `SINGLEMATCH` fires each pattern once and stops, removing the
 /// broad-pattern callback storm that is why the phase-2 prefilter never used HS.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 pub(crate) struct HsCompileOpts<'a> {
     /// Set `HS_FLAG_SINGLEMATCH` on every pattern (fire once, then retire).
     pub(crate) singlematch: bool,
@@ -317,6 +317,23 @@ pub(crate) struct HsCompileOpts<'a> {
     /// automaton AND byte- (not codepoint-) match semantics. UTF8 mode
     /// matches the `regex` reference and keeps the automaton small.
     pub(crate) utf8: bool,
+    /// Allow Rayon to prepare pattern objects in parallel. Lazy phase-2
+    /// compilation disables this because it begins while a scan worker owns
+    /// thread-local phase-2 scratch; nested work stealing could re-enter that
+    /// non-reentrant scratch borrow.
+    pub(crate) parallel_prepare: bool,
+}
+
+impl Default for HsCompileOpts<'_> {
+    fn default() -> Self {
+        Self {
+            singlematch: false,
+            caseless: None,
+            shard_target: None,
+            utf8: false,
+            parallel_prepare: true,
+        }
+    }
 }
 
 struct PreparedPatterns {
@@ -366,10 +383,8 @@ impl HsScanner {
             },
         }
 
-        let prepared: Vec<PrepResult> = patterns
-            .par_iter()
-            .enumerate()
-            .map(|(i, &(det_idx, pat_idx, regex, has_group))| {
+        let prepare =
+            |(i, &(det_idx, pat_idx, regex, has_group)): (usize, &(usize, usize, &str, bool))| {
                 if regex.len() > MAX_HS_PATTERN_LEN {
                     return PrepResult::Unsupported { index: i };
                 }
@@ -386,8 +401,12 @@ impl HsScanner {
                         error: error.to_string(),
                     },
                 }
-            })
-            .collect();
+            };
+        let prepared: Vec<PrepResult> = if opts.parallel_prepare {
+            patterns.par_iter().enumerate().map(prepare).collect()
+        } else {
+            patterns.iter().enumerate().map(prepare).collect()
+        };
 
         let mut hs_pats = Vec::new();
         let mut pattern_map = Vec::new();
@@ -468,6 +487,7 @@ impl HsScanner {
             caseless,
             shard_target: _,
             utf8,
+            parallel_prepare: _,
         } = opts;
         let mut h = Sha256::new();
         for p in hs_pats {
@@ -560,7 +580,12 @@ impl HsScanner {
         cache_key: &str,
         cache_dir: &std::path::Path,
     ) -> Vec<Result<(BlockDatabase, Vec<usize>), String>> {
-        if shard_count == 1 {
+        // Lazy phase-2 compilation can begin while a Rayon scan worker holds
+        // thread-local active-pattern scratch. Nested parallel compilation
+        // lets that worker steal another scan job and re-enter the scratch
+        // borrow. Compile inline on workers; cold startup keeps parallel shard
+        // compilation when entered from a non-worker coordinator thread.
+        if shard_count == 1 || rayon::current_thread_index().is_some() {
             return shard_pats
                 .into_iter()
                 .enumerate()
