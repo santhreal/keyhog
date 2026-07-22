@@ -12,6 +12,7 @@ mod caesar_skips_source_code_paths;
 mod caesar_source_path_zero_alloc_parity;
 mod decode_chunk_base64_splice_consumes_padding;
 mod decode_chunk_base64_splices_companion_anchor;
+mod decode_chunk_canonicalizes_independent_replacement_order;
 mod decode_chunk_dedups_identical_outputs;
 mod decode_chunk_duplicate_base64_splices_each_occurrence;
 mod decode_chunk_empty_input;

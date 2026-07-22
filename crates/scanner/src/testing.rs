@@ -4478,6 +4478,13 @@ pub fn decode_chunk(
 ) -> Vec<keyhog_core::Chunk> {
     crate::decode::decode_chunk(chunk, max_depth, validate, deadline, screen.map(|s| &s.0))
 }
+/// Exercise the decode BFS with ten independent replacement regions through
+/// four layers. Canonical source-order traversal yields
+/// C(10,1)+C(10,2)+C(10,3)+C(10,4) = 385 states; permutation traversal reaches
+/// the 1,000-chunk safety cap before completing the same state space.
+pub fn canonical_decode_order_probe_for_test() -> Result<usize, String> {
+    crate::decode::canonical_decode_order_probe_for_test()
+}
 
 /// Benchmark-only admission probe for the fail-open custom-decoder default.
 #[cfg(feature = "decode")]

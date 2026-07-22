@@ -30,7 +30,7 @@ pub(crate) use base64::{
     contains_non_padding_equals, is_standard_base64_byte, standard_base64_shape,
 };
 pub use hex::{find_hex_strings, hex_decode};
-pub(crate) use pipeline::CompiledDecoderPlan;
+pub(crate) use pipeline::{canonical_decode_order_probe_for_test, CompiledDecoderPlan};
 pub(crate) use pipeline::{
     bytecount_newlines, decoder_profile_dump, decoder_profile_reset, extract_profile_dump,
     extract_profile_reset, splice_decoded_payload_at, with_extracted_value_spans,

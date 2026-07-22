@@ -60,7 +60,13 @@ fn decode_chunk_with_decoders(
     // precondition, not as a pipeline-wide recall hazard.
     let mut decoded_chunks: Vec<Arc<Chunk>> = Vec::new();
     let root = Arc::new(chunk.clone());
-    let mut queue = VecDeque::from([(Arc::clone(&root), 0usize)]);
+    // Decode independent source regions in nondecreasing source order. Without
+    // this cursor, companion-context splices explore every permutation of the
+    // same independent replacements (A→B and B→A), exhausting the bounded
+    // fan-out before later nested payloads are reached. Equal offsets remain
+    // eligible so true same-value nesting (base64(base64(secret))) still works.
+    let root_decode_cursor = chunk.metadata.base_offset;
+    let mut queue = VecDeque::from([(Arc::clone(&root), 0usize, root_decode_cursor)]);
     // 128-bit content key instead of the full payload to save memory on large
     // files. A single 64-bit FNV would silently drop a genuinely-distinct
     // decoded payload on a hash collision (an unannotated recall loss, Law 10);
@@ -82,7 +88,7 @@ fn decode_chunk_with_decoders(
     // (budget exhausted) before its final clear, so no stale (ptr,len) can be read.
     extractor::clear_shared_candidates();
 
-    while let Some((current, depth)) = queue.pop_front() {
+    while let Some((current, depth, decode_cursor)) = queue.pop_front() {
         if crate::deadline::expired(deadline) {
             // LAW10: deadline truncation is counted as a typed scanner coverage gap and reported by CLI/reporting surfaces.
             tracing::debug!(
@@ -149,6 +155,19 @@ fn decode_chunk_with_decoders(
                     extractor::clear_shared_candidates();
                     return unwrap_decoded_chunks(decoded_chunks);
                 }
+                let decoded_offset = decoded
+                    .metadata
+                    .decoded_span
+                    .map_or(decoded.metadata.base_offset, |(start, _)| {
+                        decoded.metadata.base_offset.saturating_add(start)
+                    });
+                if decoded_offset < decode_cursor {
+                    // The same independent regions have a canonical
+                    // nondecreasing traversal. Dropping this reverse-order
+                    // permutation does not drop a decoded state; the earlier
+                    // region's branch reaches it in source order.
+                    continue;
+                }
                 if seen.insert(dedup_key(decoded.data.as_bytes())) {
                     // Optional sanitization (kimi-wave1 audit finding 5.1).
                     // When `validate=true`, drop decoded chunks containing
@@ -186,6 +205,14 @@ fn decode_chunk_with_decoders(
                         // LAW10: cap truncation is counted as a typed scanner coverage gap and reported by CLI/reporting surfaces.
                         tracing::debug!(
                             path = ?chunk.metadata.path,
+                            decoder = decoder.name(),
+                            depth,
+                            produced,
+                            total_bytes,
+                            current_bytes = current.data.len(),
+                            decoded_bytes = decoded.data.len(),
+                            max_chunks = MAX_DECODED_CHUNKS_PER_ROOT,
+                            max_total_bytes = MAX_DECODED_TOTAL_BYTES,
                             "decode depth/size cap reached: chunk truncated to limit"
                         );
                         crate::telemetry::record_decode_truncation();
@@ -195,10 +222,10 @@ fn decode_chunk_with_decoders(
 
                     if passes_screen {
                         let shared = Arc::new(decoded);
-                        queue.push_back((Arc::clone(&shared), depth + 1));
+                        queue.push_back((Arc::clone(&shared), depth + 1, decoded_offset));
                         decoded_chunks.push(shared);
                     } else {
-                        queue.push_back((Arc::new(decoded), depth + 1));
+                        queue.push_back((Arc::new(decoded), depth + 1, decoded_offset));
                     }
                 }
             }
@@ -237,6 +264,50 @@ fn dedup_key(data: &[u8]) -> u128 {
     hi.write(DEDUP_KEY_SALT);
     hi.write(data);
     (u128::from(hi.finish()) << 64) | u128::from(lo)
+}
+
+pub(crate) fn canonical_decode_order_probe_for_test() -> Result<usize, String> {
+    struct IndependentMarkerDecoder;
+
+    impl super::Decoder for IndependentMarkerDecoder {
+        fn name(&self) -> &'static str {
+            "canonical-order-probe"
+        }
+
+        fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
+            const ENCODED: [&str; 10] = [
+                "E00", "E01", "E02", "E03", "E04", "E05", "E06", "E07", "E08", "E09",
+            ];
+            const DECODED: [&str; 10] = [
+                "D00", "D01", "D02", "D03", "D04", "D05", "D06", "D07", "D08", "D09",
+            ];
+
+            let mut outputs = Vec::new();
+            for (encoded, decoded) in ENCODED.into_iter().zip(DECODED) {
+                if let Some(start) = chunk.data.find(encoded) {
+                    splice::push_decoded_text_chunk_spliced_at(
+                        &mut outputs,
+                        chunk,
+                        Some((start, start + encoded.len())),
+                        encoded,
+                        decoded.to_owned(),
+                        self.name(),
+                    );
+                }
+            }
+            outputs
+        }
+    }
+
+    let chunk = Chunk {
+        data: "E00 E01 E02 E03 E04 E05 E06 E07 E08 E09".into(),
+        metadata: Default::default(),
+    };
+    let policy = super::policy::CompiledDecodeTransformPolicy::compile(&[])?;
+    let decoders = [registry::RegisteredDecoder::Shared(Arc::new(
+        IndependentMarkerDecoder,
+    ))];
+    Ok(decode_chunk_with_decoders(&chunk, &policy, &decoders, 4, false, None, None).len())
 }
 
 mod extractor;
