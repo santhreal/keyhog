@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.44 - 2026-07-22
+
+- Republish the core library in the corrected five-crate release chain after
+  the Windows GPU literal artifact generator fix.
+
 ## 0.5.43 - 2026-07-22
 
 - Use one bounded detector TOML reader in both the runtime loader and the build

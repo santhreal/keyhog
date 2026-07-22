@@ -2,6 +2,14 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.44] - 2026-07-22
+
+### Fixed
+
+- The Windows GPU literal artifact generator now passes UTF-16 prefixes to
+  `slice::strip_prefix` as slices. CI compiles both Windows release feature
+  closures before a tag is cut.
+
 ## [0.5.43] - 2026-07-22
 
 ### Fixed

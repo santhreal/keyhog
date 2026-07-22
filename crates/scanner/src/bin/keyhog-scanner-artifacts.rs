@@ -152,7 +152,7 @@ fn split_equals_os(arg: &OsStr, flag: &str) -> Option<OsString> {
     let mut prefix: Vec<u16> = flag.encode_utf16().collect();
     prefix.push('=' as u16);
     let wide: Vec<u16> = arg.encode_wide().collect();
-    wide.strip_prefix(&prefix).map(OsString::from_wide)
+    wide.strip_prefix(prefix.as_slice()).map(OsString::from_wide)
 }
 
 #[cfg(not(any(unix, windows)))]

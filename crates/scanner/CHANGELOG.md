@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.44 - 2026-07-22
+
+- Compile the GPU literal artifact generator on Windows by passing its UTF-16
+  option prefix to `slice::strip_prefix` as a slice.
+
 ## 0.5.43 - 2026-07-22
 
 - Keep grown phase-two GPU DFA resident haystack capacities aligned to the

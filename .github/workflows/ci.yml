@@ -503,9 +503,12 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      # Keep the tag workflow's exact Windows feature closure green on every
-      # change instead of discovering platform-gating failures after tagging.
-      - run: cargo build --locked --release -p keyhog --no-default-features --features portable
+      # Keep both Windows feature closures used by the tag workflow green on
+      # every change instead of discovering platform failures after tagging.
+      - name: Build portable CLI
+        run: cargo build --locked --release -p keyhog --no-default-features --features portable
+      - name: Build GPU literal artifacts
+        run: cargo build --locked --release -p keyhog-scanner --bin keyhog-scanner-artifacts --no-default-features --features ml,entropy,decode,multiline
 
   feature-matrix:
     name: Feature matrix sanity check

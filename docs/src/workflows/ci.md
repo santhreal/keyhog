@@ -119,7 +119,7 @@ Use the verified installer when the workflow must own installation explicitly:
           sudo apt-get install -y --no-install-recommends libhyperscan5 minisign
       - name: Install KeyHog
         run: |
-          TAG=v0.5.43
+          TAG=v0.5.44
           BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
           PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
           curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
@@ -193,7 +193,7 @@ keyhog:
   image: ubuntu:24.04
   before_script:
     - apt-get update -qq && apt-get install -y --no-install-recommends curl libhyperscan5 minisign
-    - export TAG=v0.5.43
+    - export TAG=v0.5.44
     - export BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
     - export PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
     - curl -fSLO "$BASE/install.sh" && curl -fSLO "$BASE/install.sh.minisig"
@@ -232,7 +232,7 @@ jobs:
           command: |
             sudo apt-get update -qq
             sudo apt-get install -y --no-install-recommends libhyperscan5 minisign
-            TAG=v0.5.43
+            TAG=v0.5.44
             BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
             PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
             curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
@@ -266,7 +266,7 @@ steps:
     commands:
       - apt-get update -qq
       - apt-get install -y --no-install-recommends curl libhyperscan5 minisign
-      - export TAG=v0.5.43
+      - export TAG=v0.5.44
       - export BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
       - export PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
       - curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
@@ -341,7 +341,7 @@ steps:
     command: |
       sudo apt-get update -qq
       sudo apt-get install -y --no-install-recommends curl libhyperscan5 minisign
-      TAG=v0.5.43
+      TAG=v0.5.44
       BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
       PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
       curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
@@ -368,7 +368,7 @@ pipeline {
                 sh '''
                     sudo apt-get update -qq
                     sudo apt-get install -y --no-install-recommends curl libhyperscan5 minisign
-                    TAG=v0.5.43
+                    TAG=v0.5.44
                     BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
                     PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
                     curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
@@ -394,7 +394,7 @@ Pin and authenticate the installer before execution. The installer then pins
 the binary to the same release:
 
 ```sh
-TAG=v0.5.43
+TAG=v0.5.44
 BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
 PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
 curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"

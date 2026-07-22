@@ -1,12 +1,13 @@
 # crates.io publishing
 
-Registry state below was verified on 2026-07-21. The source tree and current
-coherent release are `0.5.43`. The v0.5.42 crates remain on crates.io, but its
-GitHub release did not publish because the Windows portable build failed.
-Version 0.5.43 repairs that build. The v0.5.41 publication stopped after four
-libraries reached crates.io because the immutable `keyhog-sources` archive
-failed under the CLI feature graph. No `keyhog` v0.5.41 CLI or GitHub tag was
-published.
+Registry state below was verified on 2026-07-22. The complete published crate
+chain is `0.5.43`; the source tree prepares `0.5.44`. The v0.5.43 GitHub release
+did not publish because its Windows GPU literal artifact generator failed after
+the portable CLI compiled. Version 0.5.44 repairs that feature closure. The
+v0.5.42 GitHub release did not publish because its Windows portable build
+failed. The v0.5.41 publication stopped after four libraries reached crates.io
+because the immutable `keyhog-sources` archive failed under the CLI feature
+graph. No `keyhog` v0.5.41 CLI or GitHub tag was published.
 
 ## What's live on crates.io
 

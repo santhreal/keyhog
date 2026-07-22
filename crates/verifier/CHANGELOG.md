@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.44 - 2026-07-22
+
+- Republish verifier backends in the corrected five-crate release chain after
+  the Windows GPU literal artifact generator fix.
+
 ## 0.5.43 - 2026-07-22
 
 - Preserve redacted response-stream and UTF-8 causes in verification errors

@@ -37,7 +37,7 @@ By default, output is human-readable:
 $ keyhog scan .
 K E Y H O G
 ───────────
-    v0.5.43 · secret scanner · 923 detectors
+    v0.5.44 · secret scanner · 923 detectors
 by santh
 
   ⚡ 16 cores | GPU: NVIDIA GeForce RTX 5090 | SIMD: AVX-512 | Hyperscan | 923 detectors (5963 patterns) io_uring | backend=simd-regex | gpu=none
@@ -115,7 +115,7 @@ the artifact without scraping console progress.
   "metadata": {
     "scan_id": "0123456789abcdef0123456789abcdef",
     "scan_status": "success",
-    "keyhog_version": "0.5.43",
+    "keyhog_version": "0.5.44",
     "git_hash": "<build-commit>",
     "detector_digest": "923-<digest>",
     "config_digest": "<effective-config-digest>",

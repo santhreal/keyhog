@@ -2,7 +2,7 @@
 # Canonical endpoint: https://santh.dev/keyhog/install.ps1
 #
 # Authenticated install from one tagged release:
-#   $Tag = 'v0.5.43'
+#   $Tag = 'v0.5.44'
 #   $Base = "https://github.com/santhreal/keyhog/releases/download/$Tag"
 #   $PublicKey = 'RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
 #   iwr "$Base/install.ps1" -OutFile keyhog-install.ps1

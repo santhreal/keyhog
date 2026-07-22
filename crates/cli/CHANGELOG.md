@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.44 - 2026-07-22
+
+- Republish the CLI in the corrected five-crate release chain after the
+  Windows GPU literal artifact generator fix.
+
 ## 0.5.43 - 2026-07-22
 
 - Compile the portable CLI on Windows by gating Unix daemon test seams, using
