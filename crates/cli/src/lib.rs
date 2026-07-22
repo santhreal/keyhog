@@ -305,7 +305,12 @@ fn exit_now(code: u8) -> ! {
     let _ = std::io::stderr().flush();
     // SAFETY: `_exit` is async-signal-safe and terminates immediately. All
     // operator-visible output has already been produced and flushed above.
-    unsafe { libc::_exit(i32::from(code)) }
+    #[cfg(unix)]
+    unsafe {
+        libc::_exit(i32::from(code))
+    }
+    #[cfg(not(unix))]
+    std::process::exit(i32::from(code))
 }
 
 pub async fn cli_main() -> ExitCode {

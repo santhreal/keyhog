@@ -344,8 +344,9 @@ pub(crate) mod testing {
 
 #[cfg(target_os = "windows")]
 fn windows_drives(include_network: bool) -> Result<Vec<PathBuf>> {
-    use windows_sys::Win32::Storage::FileSystem::{
-        GetDriveTypeW, GetLogicalDrives, DRIVE_FIXED, DRIVE_RAMDISK, DRIVE_REMOTE,
+    use windows_sys::Win32::Storage::FileSystem::{GetDriveTypeW, GetLogicalDrives};
+    use windows_sys::Win32::System::WindowsProgramming::{
+        DRIVE_FIXED, DRIVE_RAMDISK, DRIVE_REMOTE,
     };
 
     let filters = load_mount_filters()?;

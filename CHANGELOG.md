@@ -4,6 +4,11 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## [Unreleased]
 
+### Fixed
+
+- Windows portable release builds now gate Unix-only daemon test seams, use the
+  generated windows-sys drive-constant module, and compile before a tag is cut.
+
 ## [0.5.42] - 2026-07-21
 
 ### Fixed

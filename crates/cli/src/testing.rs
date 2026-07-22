@@ -174,11 +174,17 @@ pub trait CliTestApi {
     );
     fn filter_inline_suppressions(&self, matches: Vec<RawMatch>) -> Vec<RawMatch>;
     fn format_bytes(&self, n: u64) -> String;
+    #[cfg(unix)]
     fn ensure_private_socket_dir(&self, parent: &Path) -> Result<()>;
+    #[cfg(unix)]
     fn remove_stale_socket_if_trusted(&self, socket_path: &Path) -> Result<()>;
+    #[cfg(unix)]
     fn validate_socket_for_connect(&self, socket_path: &Path) -> Result<()>;
+    #[cfg(unix)]
     fn current_uid(&self) -> libc::uid_t;
+    #[cfg(unix)]
     fn connected_peer_uid(&self, stream: &tokio::net::UnixStream) -> Result<libc::uid_t>;
+    #[cfg(unix)]
     fn verify_accepted_peer(&self, stream: &tokio::net::UnixStream) -> Result<()>;
     fn render_credential(
         &self,
@@ -194,8 +200,11 @@ pub trait CliTestApi {
         fixture: DaemonTerminalFixture,
     ) -> Pin<Box<dyn Future<Output = Result<()>>>>;
     fn cli_error_exit_code(&self, error: &anyhow::Error) -> u8;
+    #[cfg(unix)]
     fn daemon_client_version<'a>(&self, client: &'a crate::daemon::client::Client) -> &'a str;
+    #[cfg(unix)]
     fn daemon_client_is_stale(&self, client: &crate::daemon::client::Client) -> bool;
+    #[cfg(unix)]
     fn daemon_client_round_trip<'a>(
         &self,
         client: &'a mut crate::daemon::client::Client,
@@ -649,21 +658,27 @@ impl CliTestApi for TestApi {
     fn format_bytes(&self, n: u64) -> String {
         crate::format::format_bytes(n)
     }
+    #[cfg(unix)]
     fn ensure_private_socket_dir(&self, parent: &Path) -> Result<()> {
         crate::daemon::server::testing::ensure_private_socket_dir(parent)
     }
+    #[cfg(unix)]
     fn remove_stale_socket_if_trusted(&self, socket_path: &Path) -> Result<()> {
         crate::daemon::server::testing::remove_stale_socket_if_trusted(socket_path)
     }
+    #[cfg(unix)]
     fn validate_socket_for_connect(&self, socket_path: &Path) -> Result<()> {
         crate::daemon::client::testing::validate_socket_for_connect(socket_path)
     }
+    #[cfg(unix)]
     fn current_uid(&self) -> libc::uid_t {
         crate::daemon::client::testing::current_uid()
     }
+    #[cfg(unix)]
     fn connected_peer_uid(&self, stream: &tokio::net::UnixStream) -> Result<libc::uid_t> {
         crate::daemon::client::testing::connected_peer_uid(stream)
     }
+    #[cfg(unix)]
     fn verify_accepted_peer(&self, stream: &tokio::net::UnixStream) -> Result<()> {
         crate::daemon::server::testing::verify_accepted_peer(stream)
     }
@@ -691,12 +706,15 @@ impl CliTestApi for TestApi {
     fn cli_error_exit_code(&self, error: &anyhow::Error) -> u8 {
         crate::cli_error_exit_code(error)
     }
+    #[cfg(unix)]
     fn daemon_client_version<'a>(&self, client: &'a crate::daemon::client::Client) -> &'a str {
         client.daemon_version()
     }
+    #[cfg(unix)]
     fn daemon_client_is_stale(&self, client: &crate::daemon::client::Client) -> bool {
         client.is_stale()
     }
+    #[cfg(unix)]
     fn daemon_client_round_trip<'a>(
         &self,
         client: &'a mut crate::daemon::client::Client,

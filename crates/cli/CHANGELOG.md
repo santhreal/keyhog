@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Compile the portable CLI on Windows by gating Unix daemon test seams, using
+  the platform process-exit path, and importing drive constants from their
+  generated windows-sys module.
+
 - Keep the daemon socket linked for the full accept-loop lifetime. Shutdown
   removes it only after the listener terminates.
 - Bind every persisted GPU timing and parity receipt to the exact acquired
