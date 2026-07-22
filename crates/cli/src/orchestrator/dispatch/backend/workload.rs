@@ -2,7 +2,7 @@
 
 use keyhog_core::Chunk;
 use keyhog_scanner::decode::{DecodeAdmissionSketch, DecodeWorkloadPlan};
-use keyhog_scanner::Phase1AdmissionSummary;
+use keyhog_scanner::{Phase1AdmissionSummary, Phase2KeywordTriggerSummary};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -96,6 +96,7 @@ pub(super) struct WorkloadKey {
     pub(super) max_file_bucket: u8,
     pub(super) pattern_bucket: u8,
     pub(super) phase1: Phase1AdmissionKey,
+    pub(super) phase2_keyword_triggers: Phase2KeywordTriggerKey,
     pub(super) decode_kind_mask: u32,
     pub(super) decode_candidate_count_bucket: u8,
     pub(super) decode_candidate_bytes_bucket: u8,
@@ -138,6 +139,9 @@ pub(super) fn differing_workload_dimensions(
     if requested.phase1 != calibrated.phase1 {
         dimensions.push("phase1_admission");
     }
+    if requested.phase2_keyword_triggers != calibrated.phase2_keyword_triggers {
+        dimensions.push("phase2_keyword_triggers");
+    }
     if requested.decode_kind_mask != calibrated.decode_kind_mask {
         dimensions.push("decode_kind");
     }
@@ -170,6 +174,24 @@ pub(super) struct SourceMixtureEntry {
     pub(super) chunk_ratio: u64,
     pub(super) payload_ratio: u64,
     pub(super) max_span_bucket: u8,
+}
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Phase2KeywordTriggerKey {
+    pub(super) chunks_bucket: u8,
+    pub(super) bytes_bucket: u8,
+    pub(super) count_bucket: u8,
+}
+
+impl Phase2KeywordTriggerKey {
+    fn from_summary(summary: Phase2KeywordTriggerSummary) -> Self {
+        Self {
+            chunks_bucket: autoroute_stable_bucket(summary.keyword_trigger_chunks),
+            bytes_bucket: autoroute_stable_bucket(summary.keyword_trigger_bytes),
+            count_bucket: autoroute_stable_bucket(summary.keyword_trigger_count),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -233,8 +255,9 @@ pub(super) fn render_workload_key(key: &WorkloadKey) -> String {
          phase1_alphabet_rejected_chunks_log2={} phase1_alphabet_rejected_bytes_log2={} \
          phase1_bigram_rejected_chunks_log2={} phase1_bigram_rejected_bytes_log2={} \
          phase1_admitted_chunks_log2={} phase1_admitted_bytes_log2={} \
-         decode_kinds={:08x} decode_candidates_log2={} decode_bytes_log2={} \
-         decode_unknown={} source_mixture=[{}]",
+         phase2_keyword_trigger_chunks_log2={} phase2_keyword_trigger_bytes_log2={} \
+         phase2_keyword_trigger_count_log2={} decode_kinds={:08x} \
+         decode_candidates_log2={} decode_bytes_log2={} decode_unknown={} source_mixture=[{}]",
         key.bytes_bucket,
         key.chunks_bucket,
         key.max_file_bucket,
@@ -245,6 +268,9 @@ pub(super) fn render_workload_key(key: &WorkloadKey) -> String {
         key.phase1.bigram_rejected_bytes_bucket,
         key.phase1.admitted_chunks_bucket,
         key.phase1.admitted_bytes_bucket,
+        key.phase2_keyword_triggers.chunks_bucket,
+        key.phase2_keyword_triggers.bytes_bucket,
+        key.phase2_keyword_triggers.count_bucket,
         key.decode_kind_mask,
         key.decode_candidate_count_bucket,
         key.decode_candidate_bytes_bucket,
@@ -336,6 +362,7 @@ pub(super) fn workload_key(
     batch: &[Chunk],
     pattern_count: usize,
     phase1_admission: Phase1AdmissionSummary,
+    phase2_keyword_triggers: Phase2KeywordTriggerSummary,
     decode_plan: DecodeWorkloadPlan,
 ) -> Result<WorkloadKey, WorkloadClassificationError> {
     let bytes: u64 = batch.iter().map(|c| c.data.len() as u64).sum();
@@ -357,6 +384,7 @@ pub(super) fn workload_key(
         max_file_bucket: autoroute_stable_bucket(max_file),
         pattern_bucket: log2_bucket(pattern_count as u64),
         phase1: Phase1AdmissionKey::from_summary(phase1_admission),
+        phase2_keyword_triggers: Phase2KeywordTriggerKey::from_summary(phase2_keyword_triggers),
         decode_kind_mask,
         decode_candidate_count_bucket,
         decode_candidate_bytes_bucket,
@@ -622,6 +650,18 @@ pub(super) fn workload_evidence_digest(key: &WorkloadKey) -> [u8; 32] {
             "phase1.admitted_bytes_bucket",
             u64::from(key.phase1.admitted_bytes_bucket),
         )
+        .field_u64(
+            "phase2_keyword_triggers.chunks_bucket",
+            u64::from(key.phase2_keyword_triggers.chunks_bucket),
+        )
+        .field_u64(
+            "phase2_keyword_triggers.bytes_bucket",
+            u64::from(key.phase2_keyword_triggers.bytes_bucket),
+        )
+        .field_u64(
+            "phase2_keyword_triggers.count_bucket",
+            u64::from(key.phase2_keyword_triggers.count_bucket),
+        )
         .field_u64("decode_kind_mask", u64::from(key.decode_kind_mask))
         .field_u64(
             "decode_candidate_count_bucket",
@@ -859,6 +899,18 @@ fn validate_workload_buckets(key: &WorkloadKey) -> Result<(), String> {
         ),
         ("phase1_admitted_chunks", key.phase1.admitted_chunks_bucket),
         ("phase1_admitted_bytes", key.phase1.admitted_bytes_bucket),
+        (
+            "phase2_keyword_trigger_chunks",
+            key.phase2_keyword_triggers.chunks_bucket,
+        ),
+        (
+            "phase2_keyword_trigger_bytes",
+            key.phase2_keyword_triggers.bytes_bucket,
+        ),
+        (
+            "phase2_keyword_trigger_count",
+            key.phase2_keyword_triggers.count_bucket,
+        ),
     ];
     if let Some((name, bucket)) = scalar_buckets
         .into_iter()

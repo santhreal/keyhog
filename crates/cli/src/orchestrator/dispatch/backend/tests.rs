@@ -14,8 +14,8 @@ use super::workload::{
     planned_decode_sample_quotas, render_workload_key, source_class_id, source_class_label,
     source_mixture_key, test_measurement_shape_evidence, validate_source_mixture_key,
     validate_workload_source_mixture, workload_evidence_digest,
-    workload_key as workload_key_with_plan, Phase1AdmissionKey, SourceMixtureEntry,
-    SourceMixtureKey, WorkloadKey,
+    workload_key as workload_key_with_plan, Phase1AdmissionKey, Phase2KeywordTriggerKey,
+    SourceMixtureEntry, SourceMixtureKey, WorkloadKey,
 };
 use super::*;
 
@@ -157,6 +157,7 @@ fn workload_key(
         batch,
         pattern_count,
         all_admitted_phase1(batch),
+        keyhog_scanner::Phase2KeywordTriggerSummary::default(),
         test_decode_workload_plan(),
     )
 }
@@ -370,6 +371,11 @@ fn test_workload_key() -> WorkloadKey {
         chunks_bucket: 1,
         max_file_bucket: 24,
         pattern_bucket: 5,
+        phase2_keyword_triggers: Phase2KeywordTriggerKey {
+            chunks_bucket: 0,
+            bytes_bucket: 0,
+            count_bucket: 0,
+        },
         phase1: Phase1AdmissionKey {
             alphabet_rejected_chunks_bucket: 0,
             alphabet_rejected_bytes_bucket: 0,
@@ -643,10 +649,12 @@ fn cached_router_replays_cpu_identity_when_runtime_policy_disables_gpu() {
         "filesystem",
     )];
     let pattern_count = scanner.runtime_status().pattern_count;
+    let admission_plan = scanner.phase1_admission_plan(&batch);
     let key = workload_key_with_plan(
         &batch,
         pattern_count,
-        scanner.phase1_admission_summary(&batch),
+        admission_plan.summary(),
+        admission_plan.phase2_keyword_triggers(),
         scanner.decode_workload_plan(),
     )
     .expect("CPU-policy workload classified");
@@ -1020,24 +1028,30 @@ fn workload_key_distinguishes_equal_8mib_phase1_admission_classes() {
     let bigram_batch = vec![test_chunk("g".repeat(BYTES))];
     let admitted_batch = vec![test_chunk(repeated_to_len("gh ", BYTES))];
 
+    let alphabet_admission = scanner.phase1_admission_plan(&alphabet_batch);
+    let bigram_admission = scanner.phase1_admission_plan(&bigram_batch);
+    let admitted_admission = scanner.phase1_admission_plan(&admitted_batch);
     let alphabet_key = workload_key_with_plan(
         &alphabet_batch,
         scanner.runtime_status().pattern_count,
-        scanner.phase1_admission_summary(&alphabet_batch),
+        alphabet_admission.summary(),
+        alphabet_admission.phase2_keyword_triggers(),
         decode_disabled.clone(),
     )
     .expect("alphabet-rejected workload classifies");
     let bigram_key = workload_key_with_plan(
         &bigram_batch,
         scanner.runtime_status().pattern_count,
-        scanner.phase1_admission_summary(&bigram_batch),
+        bigram_admission.summary(),
+        bigram_admission.phase2_keyword_triggers(),
         decode_disabled.clone(),
     )
     .expect("bigram-rejected workload classifies");
     let admitted_key = workload_key_with_plan(
         &admitted_batch,
         scanner.runtime_status().pattern_count,
-        scanner.phase1_admission_summary(&admitted_batch),
+        admitted_admission.summary(),
+        admitted_admission.phase2_keyword_triggers(),
         decode_disabled,
     )
     .expect("admitted workload classifies");
@@ -1052,6 +1066,73 @@ fn workload_key_distinguishes_equal_8mib_phase1_admission_classes() {
             "the equal-layout classes must differ only by scanner-owned phase-1 admission"
         );
     }
+}
+
+#[test]
+fn workload_key_distinguishes_equal_size_phase2_keyword_trigger_density() {
+    const BYTES: usize = 64 * 1024;
+    const TRIGGER: &str = "ghp_ABCDEFGH";
+
+    let scanner = phase1_test_scanner();
+    let decode_disabled = keyhog_scanner::decode::DecodeWorkloadPlan::from_limits(0, usize::MAX);
+    let mut sparse = TRIGGER.to_string();
+    sparse.push_str(&"x".repeat(BYTES - sparse.len()));
+    let sparse_batch = vec![test_chunk(sparse)];
+    let dense_batch = vec![test_chunk(repeated_to_len(TRIGGER, BYTES))];
+    let sparse_admission = scanner.phase1_admission_plan(&sparse_batch);
+    let dense_admission = scanner.phase1_admission_plan(&dense_batch);
+
+    assert_eq!(
+        sparse_admission.summary(),
+        dense_admission.summary(),
+        "the regression pair must have identical direct-literal admission"
+    );
+    let sparse_triggers = sparse_admission.phase2_keyword_triggers();
+    let dense_triggers = dense_admission.phase2_keyword_triggers();
+    assert_eq!(
+        (
+            sparse_triggers.keyword_trigger_chunks,
+            sparse_triggers.keyword_trigger_bytes,
+        ),
+        (
+            dense_triggers.keyword_trigger_chunks,
+            dense_triggers.keyword_trigger_bytes,
+        ),
+        "both one-chunk batches contain phase-2 keywords across the same byte count"
+    );
+    assert!(
+        dense_triggers.keyword_trigger_count > sparse_triggers.keyword_trigger_count,
+        "the dense payload must exercise more keyword-localized phase-2 work"
+    );
+
+    let sparse_key = workload_key_with_plan(
+        &sparse_batch,
+        scanner.runtime_status().pattern_count,
+        sparse_admission.summary(),
+        sparse_triggers,
+        decode_disabled.clone(),
+    )
+    .expect("sparse phase-2 workload classifies");
+    let dense_key = workload_key_with_plan(
+        &dense_batch,
+        scanner.runtime_status().pattern_count,
+        dense_admission.summary(),
+        dense_triggers,
+        decode_disabled,
+    )
+    .expect("dense phase-2 workload classifies");
+
+    assert_eq!(sparse_key.bytes_bucket, dense_key.bytes_bucket);
+    assert_eq!(sparse_key.chunks_bucket, dense_key.chunks_bucket);
+    assert_eq!(sparse_key.max_file_bucket, dense_key.max_file_bucket);
+    assert_eq!(sparse_key.pattern_bucket, dense_key.pattern_bucket);
+    assert_eq!(sparse_key.phase1, dense_key.phase1);
+    assert_eq!(sparse_key.source_mixture, dense_key.source_mixture);
+    assert_ne!(
+        sparse_key.phase2_keyword_triggers.count_bucket,
+        dense_key.phase2_keyword_triggers.count_bucket,
+        "autoroute must not reuse sparse phase-2 timing evidence for trigger-dense input"
+    );
 }
 
 #[test]
@@ -1167,8 +1248,14 @@ fn disabled_or_ineligible_decode_work_contributes_exact_zero() {
         DecodeAdmissionSketch::NONE,
         "disabled decode must neither consume sample budget nor project work"
     );
-    let key = workload_key_with_plan(&batch, 902, all_admitted_phase1(&batch), disabled)
-        .expect("disabled decode workload remains classifiable");
+    let key = workload_key_with_plan(
+        &batch,
+        902,
+        all_admitted_phase1(&batch),
+        keyhog_scanner::Phase2KeywordTriggerSummary::default(),
+        disabled,
+    )
+    .expect("disabled decode workload remains classifiable");
     assert_eq!(
         (
             key.decode_kind_mask,
@@ -3905,10 +3992,12 @@ fn cached_router_uses_visible_scalar_recovery_for_invalid_autoroute_state() {
         "token = abc\n".repeat(64),
         "filesystem",
     )];
+    let hit_admission = scanner.phase1_admission_plan(&hit_batch);
     let hit_key = workload_key_with_plan(
         &hit_batch,
         pattern_count,
-        scanner.phase1_admission_summary(&hit_batch),
+        hit_admission.summary(),
+        hit_admission.phase2_keyword_triggers(),
         test_decode_workload_plan(),
     )
     .expect("hit workload classified");
@@ -3916,10 +4005,12 @@ fn cached_router_uses_visible_scalar_recovery_for_invalid_autoroute_state() {
         "token = abc\n".repeat(4096),
         "filesystem",
     )];
+    let miss_admission = scanner.phase1_admission_plan(&miss_batch);
     let miss_key = workload_key_with_plan(
         &miss_batch,
         pattern_count,
-        scanner.phase1_admission_summary(&miss_batch),
+        miss_admission.summary(),
+        miss_admission.phase2_keyword_triggers(),
         test_decode_workload_plan(),
     )
     .expect("miss workload classified");

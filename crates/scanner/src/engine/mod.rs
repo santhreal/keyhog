@@ -212,7 +212,9 @@ pub(crate) const MAX_INNER_LOOP_ITERS: usize = 1_000_000;
 pub(crate) const BIGRAM_BLOOM_MIN_CHUNK_BYTES: usize = 64;
 
 pub(crate) use phase1_admission::Phase1Admission;
-pub use phase1_admission::{Phase1AdmissionPlan, Phase1AdmissionSummary};
+pub use phase1_admission::{
+    Phase1AdmissionPlan, Phase1AdmissionSummary, Phase2KeywordTriggerSummary,
+};
 
 pub struct CompiledScanner {
     /// Versioned projection of the canonical validated scan-execution hash.

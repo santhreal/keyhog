@@ -8,7 +8,7 @@ pub use crate::compiled_scanner::{
 };
 pub use crate::engine::{
     BackendRecoveryReceipt, CoalescedScanOutcome, CompiledScanner, Phase1AdmissionPlan,
-    Phase1AdmissionSummary, RecoveredInputRange,
+    Phase1AdmissionSummary, Phase2KeywordTriggerSummary, RecoveredInputRange,
 };
 pub use crate::error::{Result, ScanError};
 pub use crate::gpu_input_budget::{

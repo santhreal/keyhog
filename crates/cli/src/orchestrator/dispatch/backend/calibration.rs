@@ -135,6 +135,9 @@ pub(super) fn calibrate_fastest_correct_backend(
     decision.phase2_plain_localizer = resolved.phase2_plain_localizer;
     decision.phase2_keyword_localizer = resolved.phase2_keyword_localizer;
 
+    let keyword_triggers = admission_plan
+        .map(Phase1AdmissionPlan::phase2_keyword_triggers)
+        .unwrap_or_default();
     tracing::info!(
         target: "keyhog::routing",
         backend = resolved.backend.label(),
@@ -142,6 +145,9 @@ pub(super) fn calibrate_fastest_correct_backend(
         phase2_keyword_localizer = resolved.phase2_keyword_localizer,
         sample_chunks = sample.len(),
         sample_bytes,
+        keyword_trigger_chunks = keyword_triggers.keyword_trigger_chunks,
+        keyword_trigger_bytes = keyword_triggers.keyword_trigger_bytes,
+        keyword_trigger_count = keyword_triggers.keyword_trigger_count,
         simd_baseline_ms = decision.simd_baseline_ms(),
         cpu_baseline_ms = decision.cpu_baseline_ms(),
         gpu_considered = gpu_candidate_allowed,

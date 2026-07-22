@@ -432,7 +432,7 @@ mod tests {
     use crate::orchestrator::dispatch::backend::store::inspection::inspect_autoroute_cache;
     use crate::orchestrator::dispatch::backend::workload::{
         autoroute_stable_bucket, render_workload_key, source_class_id, Phase1AdmissionKey,
-        SourceMixtureEntry, SourceMixtureKey,
+        Phase2KeywordTriggerKey, SourceMixtureEntry, SourceMixtureKey,
     };
     use keyhog_scanner::ScanBackend;
 
@@ -493,6 +493,11 @@ mod tests {
                 bigram_rejected_bytes_bucket: 0,
                 admitted_chunks_bucket: autoroute_stable_bucket(1),
                 admitted_bytes_bucket: bytes_bucket,
+            },
+            phase2_keyword_triggers: Phase2KeywordTriggerKey {
+                chunks_bucket: 0,
+                bytes_bucket: 0,
+                count_bucket: 0,
             },
             decode_kind_mask: 0,
             decode_candidate_count_bucket: 0,

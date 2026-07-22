@@ -27,6 +27,19 @@ pub struct Phase1AdmissionSummary {
     pub admitted_bytes: u64,
 }
 
+/// Exact phase-2 keyword-trigger density for one routed scan batch.
+///
+/// Keyword localization changes the amount of phase-2 work only when the
+/// compiled keyword automaton fires. Autoroute buckets this scanner-owned
+/// summary so sparse and trigger-dense payloads cannot reuse timing evidence.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Phase2KeywordTriggerSummary {
+    pub keyword_trigger_chunks: u64,
+    pub keyword_trigger_bytes: u64,
+    pub keyword_trigger_count: u64,
+}
+
 /// Exact per-chunk phase-1 admissions computed while an autoroute key is
 /// built. The plan is intentionally opaque: callers can only reuse it through
 /// the scanner method that verifies the same chunk slice shape. GPU region
@@ -37,12 +50,18 @@ pub struct Phase1AdmissionPlan {
     admissions: Vec<Phase1Admission>,
     chunk_shapes: Vec<(usize, usize)>,
     summary: Phase1AdmissionSummary,
+    phase2_keyword_triggers: Phase2KeywordTriggerSummary,
 }
 
 impl Phase1AdmissionPlan {
     #[must_use]
     pub fn summary(&self) -> Phase1AdmissionSummary {
         self.summary
+    }
+
+    #[must_use]
+    pub fn phase2_keyword_triggers(&self) -> Phase2KeywordTriggerSummary {
+        self.phase2_keyword_triggers
     }
 
     #[inline]
@@ -129,6 +148,15 @@ impl CompiledScanner {
         Phase1Admission::Admitted
     }
 
+    #[inline]
+    fn phase2_keyword_trigger_count(&self, data: &str) -> u64 {
+        self.phase2_keyword_ac.as_ref().map_or(0, |keyword_ac| {
+            keyword_ac
+                .find_iter(data)
+                .fold(0u64, |count, _| count.saturating_add(1))
+        })
+    }
+
     /// Classify direct-literal phase-1 work with the exact compiled prefilters
     /// production scanning uses. Decode work is intentionally separate and is
     /// represented by the scanner's decode workload plan.
@@ -184,6 +212,7 @@ impl CompiledScanner {
                 .map(|chunk| {
                     (
                         self.phase1_admission(chunk.data.as_bytes()),
+                        self.phase2_keyword_trigger_count(&chunk.data),
                         chunk.data.as_bytes().as_ptr() as usize,
                         chunk.data.len(),
                     )
@@ -195,6 +224,7 @@ impl CompiledScanner {
                 .map(|chunk| {
                     (
                         self.phase1_admission(chunk.data.as_bytes()),
+                        self.phase2_keyword_trigger_count(&chunk.data),
                         chunk.data.as_bytes().as_ptr() as usize,
                         chunk.data.len(),
                     )
@@ -202,10 +232,18 @@ impl CompiledScanner {
                 .collect::<Vec<_>>()
         };
         let mut summary = Phase1AdmissionSummary::default();
+        let mut phase2_keyword_triggers = Phase2KeywordTriggerSummary::default();
         let mut admissions = Vec::with_capacity(classified.len());
         let mut chunk_shapes = Vec::with_capacity(classified.len());
-        for (admission, ptr, len) in classified {
+        for (admission, keyword_trigger_count, ptr, len) in classified {
             summary.record(admission, len as u64);
+            if keyword_trigger_count != 0 {
+                phase2_keyword_triggers.keyword_trigger_chunks += 1;
+                phase2_keyword_triggers.keyword_trigger_bytes += len as u64;
+                phase2_keyword_triggers.keyword_trigger_count = phase2_keyword_triggers
+                    .keyword_trigger_count
+                    .saturating_add(keyword_trigger_count);
+            }
             admissions.push(admission);
             chunk_shapes.push((ptr, len));
         }
@@ -213,6 +251,7 @@ impl CompiledScanner {
             admissions,
             chunk_shapes,
             summary,
+            phase2_keyword_triggers,
         }
     }
 }

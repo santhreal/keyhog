@@ -96,6 +96,10 @@ fn autoroute_detector_digest(rules_digest: &str) -> u64 {
     hasher.finish_u64()
 }
 
+// v50: workload identity records exact phase-2 keyword-trigger density
+// (triggered chunks, bytes, and hit count) so calibration rows cannot alias
+// batches with equal byte/chunk/source buckets but radically different
+// localized regex work. v49 caches lack these fields and are recalibrated.
 // v49: the cache-level detector identity projects the canonical, pre-policy
 // rules digest. Per-preset detector mutations remain isolated by config_digest,
 // so all documented scan policies can coexist in one multi-config cache.
@@ -158,7 +162,7 @@ fn autoroute_detector_digest(rules_digest: &str) -> u64 {
 // the top, per-resolved-config routing decisions under `configs` keyed by
 // config_digest, merge-on-save. Old single-config (v19 and earlier) caches are
 // rejected on the version gate and recalibrated.
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 49;
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 50;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_ACCELERATOR_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 
@@ -327,6 +331,7 @@ impl CachedBackendRouter {
             batch,
             self.pattern_count,
             phase1_plan.summary(),
+            phase1_plan.phase2_keyword_triggers(),
             self.decode_workload_plan.clone(),
         ) {
             Ok(key) => key,
@@ -591,6 +596,7 @@ impl MeasuredBackendRouter {
             batch,
             self.pattern_count,
             phase1_plan.summary(),
+            phase1_plan.phase2_keyword_triggers(),
             self.decode_workload_plan.clone(),
         ) {
             Ok(key) => key,
