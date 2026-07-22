@@ -19,12 +19,12 @@
 # Usage:
 #     scripts/publish.sh                       # publish for real
 #     WAIT_BETWEEN_PUBLISH=60 scripts/publish.sh   # slower
-#     PACKAGE_BUILD_JOBS=8 scripts/publish.sh       # wider verification builds
+#     PACKAGE_BUILD_JOBS=4 scripts/publish.sh       # wider verification builds
 
 set -euo pipefail
 
 WAIT_BETWEEN_PUBLISH="${WAIT_BETWEEN_PUBLISH:-45}"
-PACKAGE_BUILD_JOBS="${PACKAGE_BUILD_JOBS:-4}"
+PACKAGE_BUILD_JOBS="${PACKAGE_BUILD_JOBS:-1}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 PUBLISH_TIER_1=(keyhog-core)
@@ -190,7 +190,7 @@ PY
         return 1
     fi
     echo "==> building immutable crates.io archive for $crate with every feature"
-    CARGO_TARGET_DIR="$PACKAGE_TARGET/registry-build" cargo build \
+    CARGO_PROFILE_DEV_DEBUG=0 CARGO_TARGET_DIR="$PACKAGE_TARGET/registry-build" cargo build \
         --locked \
         --all-features \
         --jobs "$PACKAGE_BUILD_JOBS" \
@@ -243,7 +243,7 @@ package_and_verify() {
             return "$download_status"
         fi
         echo "==> packaging $crate in isolated target $PACKAGE_TARGET"
-        CARGO_TARGET_DIR="$PACKAGE_TARGET" cargo package \
+        CARGO_PROFILE_DEV_DEBUG=0 CARGO_TARGET_DIR="$PACKAGE_TARGET" cargo package \
             --locked \
             --all-features \
             --jobs "$PACKAGE_BUILD_JOBS" \
@@ -277,7 +277,7 @@ publish() {
     verified_digest="$(<"$digest_file")"
     echo
     echo "==> cargo publish --locked --registry crates-io -p $crate"
-    if CARGO_TARGET_DIR="$PACKAGE_TARGET" cargo publish \
+    if CARGO_PROFILE_DEV_DEBUG=0 CARGO_TARGET_DIR="$PACKAGE_TARGET" cargo publish \
         --locked --jobs "$PACKAGE_BUILD_JOBS" --registry crates-io -p "$crate" 2>&1 | tee "$log"; then
         echo "==> $crate published."
         sleep "$WAIT_BETWEEN_PUBLISH"

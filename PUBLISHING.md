@@ -36,8 +36,9 @@ To cut a KeyHog release:
 3. Run `scripts/publish.sh`. The script packages and builds every crate with all
    features before its tier uploads. It downloads and verifies immutable
    registry archives when you resume a partial run.
-   Verification builds use four jobs by default to bound peak memory. Set
-   `PACKAGE_BUILD_JOBS` only when the release host can sustain wider builds.
+   Verification builds use one job and omit development debug metadata by
+   default to bound peak memory. Set `PACKAGE_BUILD_JOBS` only when the release
+   host can sustain wider builds.
 4. Tag the exact published commit (`git tag v0.5.X && git push origin v0.5.X`).
    The tag starts the signed GitHub release workflow used by `install.sh`.
 
