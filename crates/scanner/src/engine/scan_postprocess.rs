@@ -7,7 +7,7 @@ use crate::types::MAX_SCAN_CHUNK_BYTES;
 use keyhog_core::SensitiveString;
 use keyhog_core::{Chunk, RawMatch};
 #[cfg(feature = "decode")]
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 #[cfg(feature = "decode")]
 use std::sync::atomic::Ordering::Relaxed;
 #[cfg(feature = "decode")]
@@ -80,25 +80,15 @@ impl CompiledScanner {
             }
             // Avoid allocating dedup state when decoding produced no sub-chunks.
             if !decoded_chunks.is_empty() {
+                // Decoding is monotonic: a transform may add evidence, but it
+                // must never erase a finding already established on source
+                // bytes. Keep the raw set so conflict resolution over the
+                // combined evidence can be unioned back into it below.
+                let raw_findings = matches.clone();
                 let mut seen: HashSet<(Arc<str>, SensitiveString)> = matches
                     .iter()
                     .map(|m| (Arc::clone(&m.detector_id), m.credential.clone()))
                     .collect();
-                let mut raw_max_credential_len = HashMap::with_capacity(matches.len());
-                for raw in matches.iter() {
-                    let coordinate = (
-                        Arc::clone(&raw.detector_id),
-                        raw.location.file_path.clone(),
-                        raw.location.line,
-                        raw.location.offset,
-                    );
-                    raw_max_credential_len
-                        .entry(coordinate)
-                        .and_modify(|max_len: &mut usize| {
-                            *max_len = (*max_len).max(raw.credential.len());
-                        })
-                        .or_insert_with(|| raw.credential.len());
-                }
                 // Buffer, then sort by source offset so synthesized aliases cannot
                 // win `(detector, credential)` dedup over a real source coordinate.
                 let mut decoded_candidates: Vec<RawMatch> = Vec::new();
@@ -165,19 +155,7 @@ impl CompiledScanner {
                         ) {
                             continue;
                         }
-                        // Keep exact raw findings unless decoding restores a longer value.
-                        let coordinate = (
-                            Arc::clone(&m.detector_id),
-                            m.location.file_path.clone(),
-                            m.location.line,
-                            m.location.offset,
-                        );
-                        if raw_max_credential_len
-                            .get(&coordinate)
-                            .is_none_or(|raw_len| *raw_len < m.credential.len())
-                        {
-                            decoded_candidates.push(m);
-                        }
+                        decoded_candidates.push(m);
                     }
                 }
                 // Lowest real source offset wins aliases; `seen` starts with raw findings.
@@ -188,13 +166,25 @@ impl CompiledScanner {
                         matches.push(m);
                     }
                 }
-                *matches = crate::resolution::try_resolve_matches_with_compiled_plan(
+                let resolved = crate::resolution::try_resolve_matches_with_compiled_plan(
                     std::mem::take(matches),
                     &self.detector_plans,
                 )
                 .expect(
                     "compiled detector resolution must remain valid after decoded finding merge",
                 );
+                let mut merged = raw_findings;
+                let mut merged_seen: HashSet<(Arc<str>, SensitiveString)> = merged
+                    .iter()
+                    .map(|m| (Arc::clone(&m.detector_id), m.credential.clone()))
+                    .collect();
+                for m in resolved {
+                    let key = (Arc::clone(&m.detector_id), m.credential.clone());
+                    if merged_seen.insert(key) {
+                        merged.push(m);
+                    }
+                }
+                *matches = merged;
             }
         }
         tracing::debug!(

@@ -271,7 +271,7 @@ pub(crate) fn is_strong_keyword_anchored_encoded_text_secret(keyword: &str, valu
                 is_normalized_compact_separator,
             )
         });
-    strong_anchor && crate::decode_structure::decodes_to_printable_text(value)
+    strong_anchor && crate::decode_structure::decodes_to_printable_text_with_strong_anchor(value)
 }
 
 /// The encoded-printable-text credential anchor vocabulary, loaded from Tier-B

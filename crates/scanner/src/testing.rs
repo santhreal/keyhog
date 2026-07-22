@@ -3215,7 +3215,7 @@ pub fn scan_state_drain(
     state.into_matches()
 }
 
-#[cfg(any(feature = "entropy", feature = "simdsieve"))]
+#[cfg(feature = "entropy")]
 pub fn scan_state_lazy_duplicate_probe_for_test() -> (bool, bool, Vec<keyhog_core::RawMatch>) {
     fn raw_match(confidence: f64) -> keyhog_core::RawMatch {
         scan_state_probe_match("duplicate", 7, confidence)
@@ -3262,7 +3262,7 @@ pub fn scan_state_lazy_duplicate_probe_for_test() -> (bool, bool, Vec<keyhog_cor
     (worse_built, better_built, state.into_matches())
 }
 
-#[cfg(any(feature = "entropy", feature = "simdsieve"))]
+#[cfg(feature = "entropy")]
 pub fn scan_state_lazy_overestimated_priority_probe_for_test() -> (bool, Vec<keyhog_core::RawMatch>)
 {
     const LIMIT: usize = 1;
@@ -3289,7 +3289,7 @@ pub fn scan_state_lazy_overestimated_priority_probe_for_test() -> (bool, Vec<key
     (built, state.into_matches())
 }
 
-#[cfg(any(feature = "entropy", feature = "simdsieve"))]
+#[cfg(feature = "entropy")]
 pub fn scan_state_lazy_identity_tiebreak_probe_for_test() -> (bool, Vec<keyhog_core::RawMatch>) {
     const LIMIT: usize = 1;
     let mut state = crate::scan_state::ScanState::default();
@@ -3319,7 +3319,7 @@ pub fn scan_state_lazy_identity_tiebreak_probe_for_test() -> (bool, Vec<keyhog_c
     (built, state.into_matches())
 }
 
-#[cfg(any(feature = "entropy", feature = "simdsieve"))]
+#[cfg(feature = "entropy")]
 fn scan_state_probe_match(
     credential: &'static str,
     offset: usize,
@@ -5174,6 +5174,10 @@ pub(crate) mod decode_structure {
 
     pub(crate) fn decodes_to_printable_text(candidate: &str) -> bool {
         crate::decode_structure::decodes_to_printable_text(candidate)
+    }
+
+    pub(crate) fn decodes_to_printable_text_with_strong_anchor(candidate: &str) -> bool {
+        crate::decode_structure::decodes_to_printable_text_with_strong_anchor(candidate)
     }
 
     pub(crate) fn is_encoded_binary(candidate: &str) -> bool {

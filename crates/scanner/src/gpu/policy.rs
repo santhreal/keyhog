@@ -28,6 +28,16 @@ impl GpuRuntimePolicy {
         }
     }
 
+    #[must_use]
+    pub const fn is_disabled(self) -> bool {
+        matches!(self, Self::Disabled)
+    }
+
+    #[must_use]
+    pub const fn is_required(self) -> bool {
+        matches!(self, Self::Required)
+    }
+
     fn from_u8(value: u8) -> Self {
         match value {
             1 => Self::Disabled,
@@ -95,7 +105,7 @@ pub(crate) fn gpu_probe() -> GpuRuntimeProbe {
 /// fallback is forbidden.
 #[must_use]
 pub fn gpu_required_by_policy() -> bool {
-    gpu_runtime_policy() == GpuRuntimePolicy::Required
+    gpu_runtime_policy().is_required()
 }
 
 /// Require-GPU preflight, independent of backend routing.
@@ -128,5 +138,5 @@ pub fn require_gpu_preflight() -> Result<(), String> {
 }
 
 pub(crate) fn gpu_disabled_by_policy() -> bool {
-    matches!(gpu_runtime_policy(), GpuRuntimePolicy::Disabled)
+    gpu_runtime_policy().is_disabled()
 }

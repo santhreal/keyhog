@@ -179,6 +179,52 @@ fn extract_encoded_value_spans_raw(text: &str) -> Vec<ExtractedValue> {
         }
     }
 
+    fn push_b64_subruns(
+        values: &mut Vec<ExtractedValue>,
+        text: &str,
+        container_start: usize,
+        container_end: usize,
+    ) {
+        let container = &text[container_start..container_end];
+        if container.starts_with("=?") && container.ends_with("?=") {
+            return;
+        }
+
+        let mut run_start = None;
+        for (relative_index, byte) in text.as_bytes()[container_start..container_end]
+            .iter()
+            .copied()
+            .enumerate()
+        {
+            let index = container_start + relative_index;
+            if crate::decode::is_base64_candidate_byte(byte) {
+                run_start.get_or_insert(index);
+                continue;
+            }
+            if let Some(start) = run_start.take() {
+                if index.saturating_sub(start) >= MIN_B64_BLOCK_LEN
+                    && (start != container_start || index != container_end)
+                {
+                    values.push(ExtractedValue::new(
+                        text[start..index].to_string(),
+                        start,
+                        index,
+                    ));
+                }
+            }
+        }
+        if let Some(start) = run_start {
+            if container_end.saturating_sub(start) >= MIN_B64_BLOCK_LEN && start != container_start
+            {
+                values.push(ExtractedValue::new(
+                    text[start..container_end].to_string(),
+                    start,
+                    container_end,
+                ));
+            }
+        }
+    }
+
     fn flush_pct(
         values: &mut Vec<ExtractedValue>,
         pct_block: &mut String,
@@ -246,6 +292,7 @@ fn extract_encoded_value_spans_raw(text: &str) -> Vec<ExtractedValue> {
                 } else if current == quote {
                     if cleaned.len() >= MIN_EXTRACTED_VALUE_LEN {
                         if let Some(start) = value_start {
+                            push_b64_subruns(&mut values, text, start, value_end);
                             values.push(ExtractedValue::new(cleaned, start, value_end));
                         }
                     }
@@ -259,8 +306,29 @@ fn extract_encoded_value_spans_raw(text: &str) -> Vec<ExtractedValue> {
             continue;
         }
 
+        // An `=` after a credential-length alphabet run may be base64 padding,
+        // not an assignment delimiter. Admit only the two legal terminal
+        // shapes (`xx==` or `xxx=`); ordinary `key=value` still takes the
+        // assignment branch.
+        let equals_is_base64_padding = ch == '='
+            && b64_block.len() >= MIN_B64_BLOCK_LEN
+            && match text.as_bytes().get(idx + 1).copied() {
+                Some(b'=') => b64_block.len() % 4 == 2,
+                None => b64_block.len() % 4 == 3,
+                Some(next) if !crate::decode::is_base64_candidate_byte(next) => {
+                    b64_block.len() % 4 == 3
+                }
+                Some(_) => false,
+            };
+        if equals_is_base64_padding {
+            b64_end = idx + ch.len_utf8();
+            b64_block.push(ch);
+            chars.next();
+            continue;
+        }
+
         // ── Assignment values (key=value / key: value) ──────────────
-        if ch == ':' || ch == '=' {
+        if (ch == ':' || ch == '=') && !equals_is_base64_padding {
             flush_b64(&mut values, &mut b64_block, &mut b64_start, b64_end);
             flush_pct(
                 &mut values,
@@ -295,6 +363,7 @@ fn extract_encoded_value_spans_raw(text: &str) -> Vec<ExtractedValue> {
             }
             if cleaned.len() >= MIN_EXTRACTED_VALUE_LEN {
                 if let Some(start) = value_start {
+                    push_b64_subruns(&mut values, text, start, value_end);
                     values.push(ExtractedValue::new(cleaned, start, value_end));
                 }
             }
@@ -343,12 +412,17 @@ fn extract_encoded_value_spans_raw(text: &str) -> Vec<ExtractedValue> {
             b64_start.get_or_insert(idx);
             b64_end = idx + ch.len_utf8();
             b64_block.push(ch);
-        } else if !ch.is_whitespace() {
+        } else if matches!(ch, '\r' | '\n') {
+            // A padded candidate is complete by definition; the physical
+            // newline belongs to the surrounding document, not the blob.
+            if b64_block.ends_with('=') {
+                flush_b64(&mut values, &mut b64_block, &mut b64_start, b64_end);
+            }
+        } else {
             flush_b64(&mut values, &mut b64_block, &mut b64_start, b64_end);
         }
-        // whitespace inside a b64 block is skipped (line continuations) WITHOUT
-        // advancing b64_end: the span must end at the last real base64 char, not
-        // past trailing whitespace.
+        // Unpadded physical line wraps may split one base64 blob. Horizontal
+        // whitespace separates ordinary tokens and terminates the candidate.
 
         chars.next();
     }

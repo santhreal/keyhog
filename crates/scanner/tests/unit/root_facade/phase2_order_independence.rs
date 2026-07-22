@@ -9,7 +9,7 @@ use support::paths::{corpus_dir, corpus_files, detector_dir};
 
 use keyhog_core::{Chunk, ChunkMetadata, MatchLocation, RawMatch, Severity};
 use keyhog_scanner::testing::scan_state_drain;
-#[cfg(any(feature = "entropy", feature = "simdsieve"))]
+#[cfg(feature = "entropy")]
 use keyhog_scanner::testing::{
     scan_state_lazy_duplicate_probe_for_test, scan_state_lazy_identity_tiebreak_probe_for_test,
     scan_state_lazy_overestimated_priority_probe_for_test,
@@ -247,7 +247,7 @@ fn push_match_duplicate_identity_keeps_best_single_slot() {
 }
 
 #[test]
-#[cfg(any(feature = "entropy", feature = "simdsieve"))]
+#[cfg(feature = "entropy")]
 fn push_match_lazy_duplicate_identity_skips_worse_build_and_replaces_better() {
     let (worse_built, better_built, kept) = scan_state_lazy_duplicate_probe_for_test();
     assert!(
@@ -268,7 +268,7 @@ fn push_match_lazy_duplicate_identity_skips_worse_build_and_replaces_better() {
 }
 
 #[test]
-#[cfg(any(feature = "entropy", feature = "simdsieve"))]
+#[cfg(feature = "entropy")]
 fn push_match_lazy_rechecks_built_match_before_replacing_worst() {
     let (built, kept) = scan_state_lazy_overestimated_priority_probe_for_test();
     assert!(
@@ -284,7 +284,7 @@ fn push_match_lazy_rechecks_built_match_before_replacing_worst() {
 }
 
 #[test]
-#[cfg(any(feature = "entropy", feature = "simdsieve"))]
+#[cfg(feature = "entropy")]
 fn push_match_lazy_builds_equal_priority_before_identity_tiebreak() {
     let (built, kept) = scan_state_lazy_identity_tiebreak_probe_for_test();
     assert!(

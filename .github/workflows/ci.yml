@@ -588,7 +588,7 @@ jobs:
           echo "::group::keyhog-scanner --no-default-features (zero features)"
           cargo check -p keyhog-scanner --no-default-features
           echo "::endgroup::"
-          for f in ml entropy decode multiline simd simd_scan simdsieve ci-lean; do
+          for f in ml entropy decode multiline simd simdsieve ci-lean; do
             echo "::group::keyhog-scanner --features $f"
             cargo check -p keyhog-scanner --no-default-features --features "$f"
             echo "::endgroup::"

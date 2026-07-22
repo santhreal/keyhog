@@ -86,7 +86,7 @@ fn hyperscan_compile_with_opts_delegates_compile_stages() {
         .next()
         .expect("compile_cache_key boundary present");
     for required in [
-        "let HsCompileOpts {\n            singlematch,\n            caseless,\n            shard_target: _,\n            utf8,\n        } = opts;",
+        "let HsCompileOpts {\n            singlematch,\n            caseless,\n            shard_target: _,\n            utf8,\n            parallel_prepare: _,\n        } = opts;",
         "h.update(if singlematch { b\"SM1\" } else { b\"SM0\" });",
         "h.update(if utf8 { b\"U81\" } else { b\"U80\" });",
         "None => h.update(b\"CLall\")",

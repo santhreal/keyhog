@@ -238,6 +238,7 @@ fn every_positive_swept_through_every_encoding() {
     //                     decode-pipeline regression isn't masked by
     //                     shape-collision noise.
     let mut per_enc: BTreeMap<&'static str, (usize, usize, usize)> = BTreeMap::new();
+    let mut per_enc_misses: BTreeMap<&'static str, BTreeMap<String, usize>> = BTreeMap::new();
 
     for (_path, c) in &contracts {
         for p in &c.positive {
@@ -253,6 +254,12 @@ fn every_positive_swept_through_every_encoding() {
                 bucket.0 += 1;
                 if decode_hit {
                     bucket.1 += 1;
+                } else {
+                    *per_enc_misses
+                        .entry(enc.label())
+                        .or_default()
+                        .entry(c.detector_id.clone())
+                        .or_default() += 1;
                 }
                 if incidental_hit {
                     bucket.2 += 1;
@@ -309,8 +316,25 @@ fn every_positive_swept_through_every_encoding() {
             .unwrap_or(false)
             && dec_pct < floor
         {
+            let mut miss_counts: Vec<_> = per_enc_misses
+                .get(enc)
+                .into_iter()
+                .flat_map(|counts| counts.iter())
+                .collect();
+            miss_counts.sort_unstable_by(|(left_id, left_count), (right_id, right_count)| {
+                right_count
+                    .cmp(left_count)
+                    .then_with(|| left_id.cmp(right_id))
+            });
+            let top_misses = miss_counts
+                .into_iter()
+                .take(12)
+                .map(|(detector_id, count)| format!("{detector_id}={count}"))
+                .collect::<Vec<_>>()
+                .join(", ");
             decoded_misses.push(format!(
-                "{enc} decode-hit {dec_pct:.1}% dropped below floor {floor:.1}%"
+                "{enc} decode-hit {dec_pct:.1}% dropped below floor {floor:.1}% \
+                 (top misses: {top_misses})"
             ));
         }
     }

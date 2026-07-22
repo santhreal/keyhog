@@ -604,6 +604,13 @@ fn battery_scoring_is_fast() {
         .chain(structured_nonsecret_battery())
         .map(|(_, v, ctx)| (v, ctx))
         .collect();
+    if cfg!(debug_assertions) {
+        eprintln!(
+            "battery_scoring_is_fast: debug profile keeps the shipped-model battery assertions only; \
+             run this test with --release for the per-call performance ceiling"
+        );
+        return;
+    }
     let start = std::time::Instant::now();
     for _ in 0..2000 {
         for (v, ctx) in &battery {

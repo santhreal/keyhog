@@ -244,16 +244,32 @@ pub(crate) fn is_byte_distribution_base64_blob(
 }
 
 /// True when a base64/base64url/hex-shaped candidate decodes to ordinary
-/// printable text, not a binary asset or protobuf envelope.
+/// printable text, not a binary asset, protobuf envelope, or another opaque
+/// base64 blob. This conservative form is for generic/weakly anchored paths:
+/// an outer Kubernetes `data:` wrapper must not promote arbitrary inner data
+/// into a credential.
 #[must_use]
 pub(crate) fn decodes_to_printable_text(candidate: &str) -> bool {
+    decodes_to_printable_text_inner(candidate, false)
+}
+
+/// Printable decode admission for a value whose assignment key already proves
+/// a credential slot. Base64-shaped provider credentials are indistinguishable
+/// from nested data by shape alone, so only this strong-anchor path may retain
+/// them; generic paths use [`decodes_to_printable_text`] above.
+#[must_use]
+pub(crate) fn decodes_to_printable_text_with_strong_anchor(candidate: &str) -> bool {
+    decodes_to_printable_text_inner(candidate, true)
+}
+
+fn decodes_to_printable_text_inner(candidate: &str, allow_nested_base64: bool) -> bool {
     let evidence = evidence(candidate);
     let structure = evidence.structure();
     structure.decodable
         && structure.decoded_len >= 8
         && structure.printable_ratio >= 0.85
         && !structure.is_binary_payload()
-        && !evidence.decoded_is_base64_blob()
+        && (allow_nested_base64 || !evidence.decoded_is_base64_blob())
 }
 
 /// Decode `candidate` (base64 standard, base64 url-safe, or hex) and describe

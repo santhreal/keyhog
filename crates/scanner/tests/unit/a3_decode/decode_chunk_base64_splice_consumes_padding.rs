@@ -2,6 +2,7 @@
 //! unpadded prefix first.
 
 use keyhog_core::Chunk;
+use keyhog_scanner::decode::find_base64_strings;
 use keyhog_scanner::testing::decode_chunk;
 
 #[test]
@@ -18,6 +19,13 @@ fn base64_splice_consumes_padding_from_parent() {
             data: text.into(),
             metadata: Default::default(),
         };
+        let candidates = find_base64_strings(&chunk.data, 12);
+        assert!(
+            candidates
+                .iter()
+                .any(|candidate| { candidate.value == "Slc1VUstVE1aSTItV0lDREMtVDAwN00tSUFWT1A=" }),
+            "padded assignment must remain a base64 candidate"
+        );
 
         let decoded = decode_chunk(&chunk, 2, false, None, None);
 

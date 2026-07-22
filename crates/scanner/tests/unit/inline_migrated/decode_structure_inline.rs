@@ -3,7 +3,8 @@
 
 use base64::Engine as _;
 use keyhog_scanner::testing::decode_structure::{
-    decoded_is_base64_blob, decodes_to_printable_text, looks_like_uniform_base64_blob,
+    decoded_is_base64_blob, decodes_to_printable_text,
+    decodes_to_printable_text_with_strong_anchor, looks_like_uniform_base64_blob,
 };
 
 // Round 1 FP-killer: base64-protobuf cause #1, #2, #4, #7. Pure-alphanumeric
@@ -110,6 +111,16 @@ fn decodes_to_printable_text_rejects_double_base64_data_envelope() {
     assert!(
         !decodes_to_printable_text(&outer),
         "base64-of-base64 is a data envelope, not encoded credential text",
+    );
+}
+
+#[test]
+fn strong_credential_anchor_accepts_base64_shaped_decoded_secret() {
+    let inner = "UqrqCinZZWZP7BFSto0S5BmfnK/vCAFIZHVGs7WQLYu7CUr0+w==";
+    let outer = base64::engine::general_purpose::STANDARD.encode(inner);
+    assert!(
+        decodes_to_printable_text_with_strong_anchor(&outer),
+        "an explicit credential slot must preserve a base64-shaped provider secret"
     );
 }
 
