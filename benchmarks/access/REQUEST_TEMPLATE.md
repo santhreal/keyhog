@@ -17,7 +17,7 @@ publicly with full citation.
 
 A few specifics so you can decide if this is a fit:
 
-* **Tool**: keyhog v0.5.41, Rust. 922 embedded detectors plus
+* **Tool**: keyhog v0.5.42, Rust. 922 embedded detectors plus
   generic-entropy scanning, decode-through pipeline (base64/hex/
   url-percent/json/gzip/z85/rot13), live verification for a subset
   of credential families. MIT/Apache-2.0 dual licensed.

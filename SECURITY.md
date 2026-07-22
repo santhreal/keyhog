@@ -40,7 +40,7 @@ GHSA advisories are filed under the appropriate Santh GitHub
 organization. We coordinate CVE assignment via GitHub's CNA when a
 fix ships.
 
-## RustSec Advisory Assessment (v0.5.41)
+## RustSec Advisory Assessment (v0.5.42)
 
 A `cargo audit` of `Cargo.lock` surfaces four accepted advisories total (one
 vulnerability and three informational warnings across the workspace and VYRE).

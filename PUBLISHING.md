@@ -1,46 +1,43 @@
 # crates.io publishing
 
-Registry state below was verified on 2026-07-12. The source tree is `0.5.41`;
-all five public KeyHog crates remain at `0.5.40` until this publish chain
-completes. KeyHog pins the five VYRE runtime dependencies to the published
-`=0.6.5` release. Development-only or unrelated VYRE crates do not participate
-in the KeyHog publish chain.
+Registry state below was verified on 2026-07-21. The source tree and current
+coherent release are `0.5.42`. The v0.5.41 publication stopped after four
+libraries reached crates.io because the immutable `keyhog-sources` archive
+failed under the CLI feature graph. No `keyhog` v0.5.41 CLI or GitHub tag was
+published.
 
 ## What's live on crates.io
 
 | crate | version |
 | --- | --- |
-| `keyhog`         | 0.5.40 |
-| `keyhog-core`    | 0.5.40 |
-| `keyhog-scanner` | 0.5.40 |
-| `keyhog-sources` | 0.5.40 |
-| `keyhog-verifier`| 0.5.40 |
+| `keyhog`         | 0.5.42 |
+| `keyhog-core`    | 0.5.42 |
+| `keyhog-scanner` | 0.5.42 |
+| `keyhog-sources` | 0.5.42 |
+| `keyhog-verifier`| 0.5.42 |
 
 Current source directly pins `vyre`, `vyre-libs`, `vyre-driver-wgpu`,
 `vyre-driver-cuda`, and `vyre-runtime` at `=0.6.5`. Their transitive dependency
 graph is resolved by Cargo and locked in `Cargo.lock`; it is not a second
 KeyHog-owned publish list.
 
-## Publish chain (for the next cut)
+## Publish chain
 
 The KeyHog workspace pins all five runtime VYRE crates (`vyre`, `vyre-libs`,
-`vyre-driver-wgpu`, `vyre-driver-cuda`, `vyre-runtime`) at `=0.6.5` from
-crates.io. The repository carries no VYRE source snapshot and nothing in the
-build resolves through a repository vendor tree.
-To cut a new KeyHog release:
+`vyre-driver-wgpu`, `vyre-driver-cuda`, and `vyre-runtime`) at `=0.6.5` from
+crates.io. The repository carries no VYRE source snapshot. Nothing in the build
+resolves through a repository vendor tree.
 
-1. **Bump the workspace version** in `Cargo.toml` (`[workspace.package] version`).
-2. **Run `cargo publish` in dependency order.** Do not start a dependent publish
-   until crates.io has indexed the exact dependency version:
-   ```sh
-   cargo publish -p keyhog-core
-   cargo publish -p keyhog-verifier   # depends on keyhog-core
-   cargo publish -p keyhog-sources    # depends on keyhog-core + keyhog-verifier
-   cargo publish -p keyhog-scanner    # depends on keyhog-core + vyre crates
-   cargo publish -p keyhog            # depends on all four
-   ```
-3. **Tag the release** (`git tag v0.5.X && git push origin v0.5.X`) so
-   `install.sh` can resolve the matching GitHub Release assets.
+To cut a KeyHog release:
+
+1. Bump the workspace package version and exact KeyHog dependency versions in
+   `Cargo.toml`.
+2. Run the prerelease suite against the release commit.
+3. Run `scripts/publish.sh`. The script packages and builds every crate with all
+   features before its tier uploads. It downloads and verifies immutable
+   registry archives when you resume a partial run.
+4. Tag the exact published commit (`git tag v0.5.X && git push origin v0.5.X`).
+   The tag starts the signed GitHub release workflow used by `install.sh`.
 
 ## If VYRE bumps minor
 

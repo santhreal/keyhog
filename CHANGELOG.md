@@ -4,8 +4,16 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ## [Unreleased]
 
+## [0.5.42] - 2026-07-21
+
 ### Fixed
 
+- Published crates bundle their canonical Tier-B rule data and resolve GPU
+  driver identity from either workspace or normalized package manifests, so
+  standalone crates compile outside the KeyHog workspace.
+- The release publisher uses stable Cargo, verifies every crate with all
+  features before upload, and validates immutable crates.io archives when a
+  partial release is resumed.
 - Phase-two GPU DFA resident batches keep grown haystack capacities aligned to
   the declared 32-bit element ABI, so 8 MiB coalesced scans dispatch on CUDA.
 - Prerelease now requires a signed release bundle for installer smoke tests and
@@ -1724,7 +1732,7 @@ Silicon M4 Pro: `vyre_ac_kernel PASS (backend=wgpu)`.
 
 ### Metrics / repo hygiene
 
-- **Daily star tracker.** `metrics/stars.json` records `{date, count}` snapshots; `.github/workflows/record-stars.yml` runs at 07:17 UTC, calls the GitHub API for the current count, dedupes per date, and commits if changed. README gains a live stars badge linking to star-history.com. wafrift gets the same tracker (see `santhsecurity/wafrift`).
+- **Daily star tracker.** `metrics/stars.json` records `{date, count}` snapshots; `.github/workflows/record-stars.yml` runs at 07:17 UTC, calls the GitHub API for the current count, dedupes per date, and commits if changed. README gains a live stars badge linking to star-history.com. wafrift gets the same tracker (see `santhreal/wafrift`).
 - **README backend table accuracy.** Removed the stale "cudagrep NVMe -> VRAM DMA" claim. The actual code routes the GPU path through vyre (WGPU cross-platform, optional CUDA feature) with no cudagrep or warpstate references anywhere in the tree.
 
 ## v0.5.29 - 2026-05-27 - HAR (HTTP Archive) auto-expansion + http/wire docs + Bazel scaffolding untracked
@@ -1799,7 +1807,7 @@ Total client-safe-tagged detectors now: 7 (Sentry DSN both patterns, Mapbox `pk.
 
 ### Repo hygiene
 
-- **Untrack coordination / plan / audit scratch files.** Per the new Santh STANDARD `prod-repo doc bleed` rule, standalone repos like `santhsecurity/keyhog` track exactly README + SPEC + CHANGELOG + `docs/`. The 31 internal coordination files (`coordination/` round briefs, `ROUNDS.md`, `TESTING_PROGRAM.md`, `KEYHOG_LINUX_QUALITY_PROGRAM.md`, `WAVE10_AGENT_PUSH.md`, `GAP_FINDINGS.toml`, `TODO.md`) were untracked from git and added to `.gitignore`. Files stay on disk via the backup `santhsecurity/Santh` monorepo - they just stop polluting the prod repo a crates.io / GitHub-Pages reader sees. Extended `.gitignore` with `WAVE*.md`, `*_AUDIT*.md`, `*_PROGRAM.md`, `plan.md`, `.audits/`, `plans/` patterns so future scratch files are caught at write-time.
+- **Untrack coordination / plan / audit scratch files.** Per the new Santh STANDARD `prod-repo doc bleed` rule, standalone repos like `santhreal/keyhog` track exactly README + SPEC + CHANGELOG + `docs/`. The 31 internal coordination files (`coordination/` round briefs, `ROUNDS.md`, `TESTING_PROGRAM.md`, `KEYHOG_LINUX_QUALITY_PROGRAM.md`, `WAVE10_AGENT_PUSH.md`, `GAP_FINDINGS.toml`, `TODO.md`) were untracked from git and added to `.gitignore`. Files stay on disk via the backup `santhreal/Santh` monorepo - they just stop polluting the prod repo a crates.io / GitHub-Pages reader sees. Extended `.gitignore` with `WAVE*.md`, `*_AUDIT*.md`, `*_PROGRAM.md`, `plan.md`, `.audits/`, `plans/` patterns so future scratch files are caught at write-time.
 
 ### Build / test
 
@@ -2570,7 +2578,7 @@ dropped primary firing alone - verified before edit.
 ### Added
 
 - **GitHub Action that actually works.** `uses:
-  santhsecurity/keyhog/.github/actions/keyhog@v0.5.10` now installs
+  santhreal/keyhog/.github/actions/keyhog@v0.5.10` now installs
   the Rust toolchain + Vectorscan/Hyperscan and builds keyhog,
   *or* downloads a prebuilt binary from the matching GitHub
   Release when one exists. Previously the action ran

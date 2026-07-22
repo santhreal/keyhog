@@ -9,7 +9,7 @@ permissions:
 
 steps:
   - uses: actions/checkout@v4
-  - uses: santhreal/keyhog/.github/actions/keyhog@v0.5.41
+  - uses: santhreal/keyhog/.github/actions/keyhog@v0.5.42
 ```
 
 The Action scans the checked-out workspace, fails on `high` or above, writes
@@ -43,12 +43,12 @@ workflow fail through SARIF or artifact upload. Categories use 1-64 lowercase
 letters, digits, dots, underscores, or dashes and start and end alphanumeric.
 
 ```yaml
-- uses: santhreal/keyhog/.github/actions/keyhog@v0.5.41
+- uses: santhreal/keyhog/.github/actions/keyhog@v0.5.42
   with:
     path: services/api
     analysis-category: services-api
 
-- uses: santhreal/keyhog/.github/actions/keyhog@v0.5.41
+- uses: santhreal/keyhog/.github/actions/keyhog@v0.5.42
   with:
     path: services/web
     analysis-category: services-web
@@ -60,7 +60,7 @@ Keep the checkout step and permissions from the complete job above, then add
 inputs to the KeyHog step:
 
 ```yaml
-- uses: santhreal/keyhog/.github/actions/keyhog@v0.5.41
+- uses: santhreal/keyhog/.github/actions/keyhog@v0.5.42
   with:
     path: .                     # file or directory to scan
     severity: high              # info | client-safe | low | medium | high | critical
@@ -87,7 +87,7 @@ git add keyhog-baseline.json && git commit -m "chore: keyhog baseline"
 ```
 
 ```yaml
-- uses: santhreal/keyhog/.github/actions/keyhog@v0.5.41
+- uses: santhreal/keyhog/.github/actions/keyhog@v0.5.42
   with:
     baseline: keyhog-baseline.json
 ```
@@ -96,7 +96,7 @@ git add keyhog-baseline.json && git commit -m "chore: keyhog baseline"
 
 ```yaml
 - id: keyhog
-  uses: santhreal/keyhog/.github/actions/keyhog@v0.5.41
+  uses: santhreal/keyhog/.github/actions/keyhog@v0.5.42
   with:
     fail-on-findings: 'false'
 

@@ -417,7 +417,7 @@ mod tests {
             scan_id: String::new(),
             scan_status: ScanCompletionStatus::Success,
             backend_recoveries: Vec::new(),
-            keyhog_version: "0.5.41".to_string(),
+            keyhog_version: env!("CARGO_PKG_VERSION").to_string(),
             git_hash: "test-git".to_string(),
             detector_digest: "test-detectors".to_string(),
             config_digest: Some("0000000000000001".to_string()),

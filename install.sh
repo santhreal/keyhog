@@ -4,7 +4,7 @@
 # Canonical endpoint: https://santh.dev/keyhog/install.sh
 #
 # Authenticated install from one tagged release:
-#   TAG=v0.5.41
+#   TAG=v0.5.42
 #   BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
 #   PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
 #   curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"

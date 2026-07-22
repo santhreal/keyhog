@@ -167,7 +167,7 @@ does not need Hyperscan).
 
 ```bash
 # Linux / macOS, pinned and authenticated before execution
-TAG=v0.5.41
+TAG=v0.5.42
 BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
 PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
 curl -fSLO "$BASE/install.sh"
@@ -228,7 +228,7 @@ against the release-side checksum file. The offline `--from-file` path also
 verifies sibling `.minisig` files when present and rejects invalid signatures.
 Passing `--insecure` can accept missing proof, but it never accepts a mismatch.
 
-Pin a version with `KEYHOG_VERSION=v0.5.41`. Change the install dir with
+Pin a version with `KEYHOG_VERSION=v0.5.42`. Change the install dir with
 `--install-dir=/usr/local/bin`. Runtime backend policy belongs to
 `keyhog scan --backend ...`, `[system].gpu`, and autoroute calibration, not the
 installer asset name.

@@ -1250,7 +1250,7 @@ dependencies = [
 
 [[package]]
 name = "keyhog-core"
-version = "0.5.41"
+version = "0.5.42"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1291,7 +1291,7 @@ dependencies = [
 
 [[package]]
 name = "keyhog-scanner"
-version = "0.5.41"
+version = "0.5.42"
 dependencies = [
  "ahash",
  "aho-corasick",
@@ -1333,7 +1333,7 @@ dependencies = [
 
 [[package]]
 name = "keyhog-sources"
-version = "0.5.41"
+version = "0.5.42"
 dependencies = [
  "base64 0.22.1",
  "blake3",
