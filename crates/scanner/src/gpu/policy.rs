@@ -122,7 +122,11 @@ pub fn gpu_required_by_policy() -> bool {
 /// `std::process::exit` from the library - keeps embedders alive (finding
 /// M12).
 pub fn require_gpu_preflight() -> Result<(), String> {
-    if !gpu_required_by_policy() {
+    require_gpu_preflight_with_policy(gpu_runtime_policy())
+}
+
+pub(crate) fn require_gpu_preflight_with_policy(policy: GpuRuntimePolicy) -> Result<(), String> {
+    if !policy.is_required() {
         return Ok(());
     }
 

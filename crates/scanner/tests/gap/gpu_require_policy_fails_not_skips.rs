@@ -9,41 +9,15 @@
 //! GPU-less host without exercising a compiled GPU path.
 #![cfg(feature = "gpu")]
 
-use keyhog_scanner::gpu::{
-    gpu_available, gpu_runtime_policy, set_gpu_runtime_policy, GpuRuntimePolicy,
-};
-
-fn gpu_required_gate() {
-    if keyhog_scanner::gpu::gpu_runtime_policy() != GpuRuntimePolicy::Required {
-        return;
-    }
-
-    if !gpu_available() {
-        panic!(
-            "Fix: --require-gpu requested but no compatible GPU adapter - \
-             fail loudly with probe detail instead of skipping GPU gates"
-        );
-    }
-}
-
-struct GpuPolicyGuard(GpuRuntimePolicy);
-
-impl GpuPolicyGuard {
-    fn set(policy: GpuRuntimePolicy) -> Self {
-        let prior = gpu_runtime_policy();
-        set_gpu_runtime_policy(policy);
-        Self(prior)
-    }
-}
-
-impl Drop for GpuPolicyGuard {
-    fn drop(&mut self) {
-        set_gpu_runtime_policy(self.0);
-    }
-}
+use keyhog_scanner::gpu::GpuRuntimePolicy;
+use keyhog_scanner::testing::require_gpu_preflight_with_policy_for_test;
 
 #[test]
 fn gpu_require_policy_fails_not_skips() {
-    let _policy = GpuPolicyGuard::set(GpuRuntimePolicy::Required);
-    gpu_required_gate();
+    if let Err(error) = require_gpu_preflight_with_policy_for_test(GpuRuntimePolicy::Required) {
+        panic!(
+            "Fix: --require-gpu requested but no compatible GPU adapter - \
+             fail loudly with probe detail instead of skipping GPU gates: {error}"
+        );
+    }
 }

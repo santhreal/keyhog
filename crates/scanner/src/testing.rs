@@ -419,6 +419,15 @@ pub fn decoder_plan_identity_for_test() -> Result<u64, String> {
         .map_err(|error| error.to_string())
 }
 
+/// Exercise require-GPU preflight without mutating the process-wide runtime
+/// policy. Monolithic library tests run concurrently, so a global Required
+/// policy could make an unrelated scan terminate with exit 12.
+pub fn require_gpu_preflight_with_policy_for_test(
+    policy: crate::gpu::GpuRuntimePolicy,
+) -> Result<(), String> {
+    crate::gpu::require_gpu_preflight_with_policy(policy)
+}
+
 /// Test seam for the scanner's hard-exit code constants
 /// (crates/scanner/src/process_exit.rs). Returns
 /// `(REQUIRE_GPU_UNMET_EXIT_CODE, BACKEND_UNAVAILABLE_EXIT_CODE)`, which must
