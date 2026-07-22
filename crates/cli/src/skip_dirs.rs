@@ -18,9 +18,10 @@ fn parse_git_discovery_keep_components(raw: &str) -> Result<Vec<String>, String>
 
 static GIT_DISCOVERY_KEEP_COMPONENTS: std::sync::LazyLock<Vec<String>> =
     std::sync::LazyLock::new(|| {
-        match parse_git_discovery_keep_components(include_str!(
-            "../../../rules/git-discovery-keep-components.toml"
-        )) {
+        match parse_git_discovery_keep_components(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/rules/git-discovery-keep-components.toml"
+        ))) {
             Ok(components) => components,
             Err(error) => panic!(
                 "rules/git-discovery-keep-components.toml is invalid: {error}. \

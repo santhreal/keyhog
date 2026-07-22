@@ -18,9 +18,10 @@ fn parse_inline_suppression_directives(raw: &str) -> Result<Vec<String>, String>
 
 static INLINE_SUPPRESSION_DIRECTIVES: std::sync::LazyLock<Vec<String>> =
     std::sync::LazyLock::new(|| {
-        match parse_inline_suppression_directives(include_str!(
-            "../../../rules/inline-suppression-directives.toml"
-        )) {
+        match parse_inline_suppression_directives(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/rules/inline-suppression-directives.toml"
+        ))) {
             Ok(directives) => directives,
             Err(error) => panic!(
                 "rules/inline-suppression-directives.toml is invalid: {error}. \
