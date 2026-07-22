@@ -2,6 +2,14 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.45] - 2026-07-22
+
+### Fixed
+
+- Signed release publication now discovers drafts and mutates assets by
+  immutable release ID. First publication and interrupted reruns remain private
+  until exact signed-manifest validation succeeds.
+
 ## [0.5.44] - 2026-07-22
 
 ### Fixed

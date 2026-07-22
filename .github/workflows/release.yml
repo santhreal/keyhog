@@ -410,55 +410,57 @@ jobs:
             echo "signed $f.minisig"
           done
 
-          # Every release stays private while its asset set is mutated. This
-          # includes reruns: leaving an existing release published while assets
-          # are deleted/replaced exposes a transient partial or mixed manifest.
-          created_draft=false
-          republish=false
-          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            # A draft left by an interrupted publication must also become
-            # public once this run proves the complete signed manifest.
-            republish=true
-            is_draft="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"
-            if [[ "$is_draft" != true ]]; then
-              gh release edit "$tag" --draft=true --repo "$GITHUB_REPOSITORY"
-            fi
-          else
-            create_args=(--draft --title "$tag" \
-              --notes "Prebuilt keyhog binaries for $tag. See CHANGELOG.md.")
-            if [[ "$tag" == *-* ]]; then
-              create_args+=(--prerelease)
-            fi
-            gh release create "$tag" "${create_args[@]}" --repo "$GITHUB_REPOSITORY"
-            created_draft=true
-          fi
-
-          mapfile -t published < <(gh api --paginate \
-            "repos/$GITHUB_REPOSITORY/releases/tags/$tag" \
-            --jq '.assets[].name')
+          # Every release stays private while its asset set is mutated. Drafts
+          # are not discoverable through releases/tags/{tag}, so all mutation
+          # and validation address the immutable release ID.
           final=("${expected[@]}")
           for payload in "${payloads[@]}"; do
             final+=("$payload.minisig")
           done
-          for asset in "${published[@]}"; do
-            keep=false
-            for wanted in "${final[@]}"; do
-              if [[ "$asset" == "$wanted" ]]; then
-                keep=true
-                break
-              fi
-            done
-            if [[ ("$asset" == keyhog-* || "$asset" == install.sh* || "$asset" == install.ps1*) && "$keep" == false ]]; then
-              gh release delete-asset "$tag" "$asset" \
-                --repo "$GITHUB_REPOSITORY" --yes
+          mapfile -t release_ids < <(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq ".[] | select(.tag_name == \"$tag\") | .id")
+          if (( ${#release_ids[@]} > 1 )); then
+            echo "ERROR: multiple GitHub releases claim tag $tag" >&2
+            exit 1
+          fi
+          if (( ${#release_ids[@]} == 1 )); then
+            release_id="${release_ids[0]}"
+          else
+            prerelease=false
+            if [[ "$tag" == *-* ]]; then
+              prerelease=true
             fi
+            release_id="$(gh api --method POST \
+              "repos/$GITHUB_REPOSITORY/releases" \
+              -f tag_name="$tag" \
+              -f name="$tag" \
+              -f body="Prebuilt keyhog binaries for $tag. See CHANGELOG.md." \
+              -F draft=true \
+              -F prerelease="$prerelease" \
+              --jq .id)"
+          fi
+          gh api --method PATCH \
+            "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+            -F draft=true >/dev/null
+
+          mapfile -t published_asset_ids < <(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/releases/$release_id/assets?per_page=100" \
+            --jq '.[].id')
+          for asset_id in "${published_asset_ids[@]}"; do
+            gh api --method DELETE \
+              "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id"
           done
-          gh release upload "$tag" "${final[@]}" \
-            --repo "$GITHUB_REPOSITORY" --clobber
+          for asset in "${final[@]}"; do
+            gh api --method POST \
+              -H "Content-Type: application/octet-stream" \
+              "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$release_id/assets?name=$asset" \
+              --input "$asset" >/dev/null
+          done
 
           mapfile -t actual < <(gh api --paginate \
-            "repos/$GITHUB_REPOSITORY/releases/tags/$tag" \
-            --jq '.assets[].name' | sort)
+            "repos/$GITHUB_REPOSITORY/releases/$release_id/assets?per_page=100" \
+            --jq '.[].name' | sort)
           mapfile -t wanted < <(printf '%s\n' "${final[@]}" | sort)
           if [[ "${actual[*]}" != "${wanted[*]}" ]]; then
             echo "ERROR: published release manifest does not equal the signed expected manifest" >&2
@@ -466,9 +468,9 @@ jobs:
             printf 'actual:   %s\n' "${actual[*]}" >&2
             exit 1
           fi
-          if [[ "$created_draft" == true || "$republish" == true ]]; then
-            gh release edit "$tag" --draft=false --repo "$GITHUB_REPOSITORY"
-          fi
+          gh api --method PATCH \
+            "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+            -F draft=false >/dev/null
 
   # Publish the container image to GHCR so `docker run ghcr.io/santhreal/
   # keyhog:<ver>` (and `:latest`) works - the third consumption mode alongside

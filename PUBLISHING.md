@@ -1,23 +1,24 @@
 # crates.io publishing
 
 Registry state below was verified on 2026-07-22. The complete published crate
-chain is `0.5.43`; the source tree prepares `0.5.44`. The v0.5.43 GitHub release
-did not publish because its Windows GPU literal artifact generator failed after
-the portable CLI compiled. Version 0.5.44 repairs that feature closure. The
-v0.5.42 GitHub release did not publish because its Windows portable build
-failed. The v0.5.41 publication stopped after four libraries reached crates.io
-because the immutable `keyhog-sources` archive failed under the CLI feature
-graph. No `keyhog` v0.5.41 CLI or GitHub tag was published.
+chain is `0.5.44`; the source tree prepares `0.5.45`. The v0.5.44 GitHub release
+did not publish because the signer addressed its draft through a tag endpoint
+that exposes only published releases. Version 0.5.45 addresses draft mutation
+and validation by immutable release ID. The v0.5.43 GitHub release failed in
+the Windows GPU literal artifact generator, and v0.5.42 failed in the Windows
+portable build. The v0.5.41 publication stopped after four libraries reached
+crates.io because its immutable `keyhog-sources` archive failed under the CLI
+feature graph. No `keyhog` v0.5.41 CLI or GitHub tag was published.
 
 ## What's live on crates.io
 
 | crate | version |
 | --- | --- |
-| `keyhog`         | 0.5.43 |
-| `keyhog-core`    | 0.5.43 |
-| `keyhog-scanner` | 0.5.43 |
-| `keyhog-sources` | 0.5.43 |
-| `keyhog-verifier`| 0.5.43 |
+| `keyhog`         | 0.5.44 |
+| `keyhog-core`    | 0.5.44 |
+| `keyhog-scanner` | 0.5.44 |
+| `keyhog-sources` | 0.5.44 |
+| `keyhog-verifier`| 0.5.44 |
 
 Current source directly pins `vyre`, `vyre-libs`, `vyre-driver-wgpu`,
 `vyre-driver-cuda`, and `vyre-runtime` at `=0.6.5`. Their transitive dependency

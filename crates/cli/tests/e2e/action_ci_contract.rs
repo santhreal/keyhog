@@ -460,7 +460,7 @@ esac
                 output_path.to_str().expect("UTF-8 output path"),
             ),
             ("ACTION_ASSET_NAME", "keyhog-linux-x86_64"),
-            ("ACTION_RESOLVED_VERSION", "0.5.44"),
+            ("ACTION_RESOLVED_VERSION", "0.5.45"),
             ("ACTION_RELEASE_REQUIRED", "true"),
             ("RUNNER_OS", "Linux"),
             (
@@ -2445,7 +2445,7 @@ fn composite_action_authenticated_bundle_executes_all_six_exact_downloads() {
         combined_output(&output)
     );
     let urls = fs::read_to_string(dir.path().join("curl.log")).expect("read curl log");
-    let base = "https://github.com/santhreal/keyhog/releases/download/v0.5.44/";
+    let base = "https://github.com/santhreal/keyhog/releases/download/v0.5.45/";
     let expected = [
         "keyhog-linux-x86_64",
         "keyhog-linux-x86_64.sha256",
@@ -3487,14 +3487,17 @@ fn release_stages_privately_and_publishes_only_the_exact_signed_manifest() {
         "matrix jobs must stage privately instead of exposing unsigned release assets"
     );
     assert!(
-        publish.contains("gh release create \"$tag\" \"${create_args[@]}\"")
-            && publish.contains("create_args=(--draft")
-            && publish.contains("gh release edit \"$tag\" --draft=true")
+        publish.contains("\"repos/$GITHUB_REPOSITORY/releases?per_page=100\"")
+            && publish.contains("if (( ${#release_ids[@]} == 1 ))")
+            && publish.contains("\"repos/$GITHUB_REPOSITORY/releases/$release_id\"")
+            && publish.contains("-F draft=true")
+            && publish.contains("-F draft=false")
             && publish.contains(
-                "republish=true\n            is_draft=\"$(gh release view \"$tag\""
+                "\"https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$release_id/assets?name=$asset\""
             )
-            && publish.contains("gh release edit \"$tag\" --draft=false"),
-        "new, published-rerun, and interrupted-draft releases must remain private until the signed manifest is complete, then publish"
+            && !publish.contains("releases/tags/$tag")
+            && !publish.contains("gh release "),
+        "new, published-rerun, and interrupted-draft releases must mutate by release ID, remain private until the signed manifest is complete, then publish"
     );
     assert!(
         publish.contains("staged release manifest is missing")

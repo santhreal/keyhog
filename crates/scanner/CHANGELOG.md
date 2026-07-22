@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.45 - 2026-07-22
+
+- Republish the scanner in the release chain whose signed asset publication
+  addresses GitHub drafts by immutable release ID.
+
 ## 0.5.44 - 2026-07-22
 
 - Compile the GPU literal artifact generator on Windows by passing its UTF-16
