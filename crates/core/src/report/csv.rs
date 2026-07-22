@@ -50,9 +50,9 @@ impl<W: Write + Send> CsvReporter<W> {
                 })
                 .collect(),
         };
-        write!(
+        writeln!(
             writer,
-            "# keyhog.scan.metadata={}\n",
+            "# keyhog.scan.metadata={}",
             serde_json::to_string(&preamble)?
         )?;
         write_header(&mut writer)?;
@@ -106,7 +106,7 @@ impl<W: Write + Send> Reporter for CsvReporter<W> {
             escape_csv(&finding.service),
             escape_csv(finding.severity.as_str()),
             escape_csv(&finding.credential_redacted),
-            escape_csv(&crate::hex_encode(&finding.credential_hash)),
+            escape_csv(&crate::hex_encode(finding.credential_hash)),
             escape_csv(&super::companions_json(finding)?),
             escape_csv(&finding.location.source),
             escape_csv(file_path_str),

@@ -30,7 +30,7 @@ Behavior that gets you removed:
 ## Scope
 
 This applies in every space the project owns: GitHub repos under
-`santhsecurity/`, official documentation sites, the blog, and any chat
+`santhreal/`, official documentation sites, the blog, and any chat
 channel labeled as keyhog or Santh. It also applies when you represent the
 project externally (talks, demos, recordings).
 

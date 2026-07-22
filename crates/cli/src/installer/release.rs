@@ -441,17 +441,21 @@ async fn read_limited_response(
     Ok(body)
 }
 
-/// End-to-end scan-engine self-test: compile a synthetic one-detector scanner,
-/// plant a matching secret, and confirm it round-trips through compile -> scan
-/// -> extract -> report. Uses a unique non-generic prefix so it neither
-/// collides with a real detector nor trips example/placeholder suppression.
+/// End-to-end CPU/SIMD scan-engine self-test: compile a synthetic one-detector
+/// scanner without acquiring GPU drivers, plant a matching secret, and confirm
+/// it round-trips through compile -> scan -> extract -> report. GPU health has
+/// its own doctor probes. Uses a unique prefix so it neither collides with a
+/// real detector nor trips example or placeholder suppression.
 pub(crate) fn scan_engine_self_test() -> Result<bool> {
     const PLANTED: &str = "KHDOCTOR_A1b2C3d4E5f6";
     let detector =
         toml::from_str::<DetectorFile>(include_str!("../../data/doctor-self-test-detector.toml"))
             .context("bundled doctor self-test detector TOML is invalid")?
             .detector;
-    let scanner = CompiledScanner::compile(vec![detector])?;
+    let scanner = CompiledScanner::compile_with_gpu_policy(
+        vec![detector],
+        keyhog_scanner::GpuInitPolicy::ForceDisabled,
+    )?;
     let chunk = Chunk {
         data: format!("api_secret = {PLANTED}").into(),
         metadata: ChunkMetadata {

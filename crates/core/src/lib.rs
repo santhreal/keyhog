@@ -189,6 +189,7 @@ fn parse_embedded_detector(name: &str, toml_content: &str) -> Result<DetectorSpe
 /// and holding their own copy of every spec. Fails closed on a corrupt embedded
 /// corpus: a bundled TOML that will not parse is a build/source defect, never a
 /// silent empty set (Law 10).
+#[allow(clippy::panic)] // Corrupt compiled-in detectors must stop startup.
 pub fn embedded_detector_specs() -> &'static [DetectorSpec] {
     static SPECS: std::sync::LazyLock<Vec<DetectorSpec>> =
         std::sync::LazyLock::new(|| match load_embedded_detectors_or_fail() {

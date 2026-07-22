@@ -164,12 +164,13 @@ impl<W: Write + Send> SarifReporter<W> {
         // allocation) rather than `to_string()`; `Arc<str>` hashes/compares by
         // content, so dedup is unchanged while the per-location String alloc is
         // gone.
-        let mut seen_related: std::collections::HashSet<(
+        type RelatedLocationKey = (
             Option<std::sync::Arc<str>>,
             Option<usize>,
             usize,
             Option<std::sync::Arc<str>>,
-        )> = std::collections::HashSet::new();
+        );
+        let mut seen_related = std::collections::HashSet::<RelatedLocationKey>::new();
         finding
             .additional_locations
             .iter()

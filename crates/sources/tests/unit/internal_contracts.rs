@@ -573,7 +573,7 @@ fn binary_resolved_section_name_passes_through_without_counting() {
 #[cfg(feature = "github")]
 #[test]
 fn github_repo_name_and_clone_url_contracts() {
-    for ok in ["santhsecurity", "SanthSecurity", "santh-security", "a0"].into_iter() {
+    for ok in ["santhreal", "SanthSecurity", "santh-security", "a0"].into_iter() {
         assert!(
             TestApi.validate_org_name(ok).is_ok(),
             "should accept org {ok:?}"
@@ -712,12 +712,12 @@ fn github_org_rewrite_preserves_offsets_and_requires_real_repo_relative_path() {
     };
 
     let rewritten = TestApi
-        .github_org_rewrite_chunk_path(chunk, "santhsecurity", "keyhog", dir.path())
+        .github_org_rewrite_chunk_path(chunk, "santhreal", "keyhog", dir.path())
         .expect("rewrite succeeds");
     assert_eq!(rewritten.metadata.source_type.as_ref(), "github-org");
     assert_eq!(
         rewritten.metadata.path.as_deref(),
-        Some("santhsecurity/keyhog/src/secret.env")
+        Some("santhreal/keyhog/src/secret.env")
     );
     assert_eq!(rewritten.metadata.base_offset, 8192);
     assert_eq!(rewritten.metadata.base_line, 77);
@@ -737,7 +737,7 @@ fn github_org_rewrite_fails_loud_for_missing_or_outside_paths() {
         metadata: keyhog_core::ChunkMetadata::default(),
     };
     let err = TestApi
-        .github_org_rewrite_chunk_path(missing_path_chunk, "santhsecurity", "keyhog", dir.path())
+        .github_org_rewrite_chunk_path(missing_path_chunk, "santhreal", "keyhog", dir.path())
         .expect_err("missing path must be an error");
     assert!(
         err.to_string().contains("without a file path"),
@@ -752,7 +752,7 @@ fn github_org_rewrite_fails_loud_for_missing_or_outside_paths() {
         },
     };
     let err = TestApi
-        .github_org_rewrite_chunk_path(outside_chunk, "santhsecurity", "keyhog", dir.path())
+        .github_org_rewrite_chunk_path(outside_chunk, "santhreal", "keyhog", dir.path())
         .expect_err("outside path must be an error");
     assert!(
         err.to_string().contains("outside clone root"),
@@ -769,7 +769,7 @@ fn github_org_scan_repo_chunks_propagates_source_errors() {
             vec![Err(keyhog_core::SourceError::Other(
                 "reader exploded".into(),
             ))],
-            "santhsecurity",
+            "santhreal",
             "keyhog",
             dir.path(),
         )
@@ -788,7 +788,7 @@ fn github_org_listing_cap_counts_and_fails_loud() {
     // not, intermittently zeroing a concurrent test's counters).
     let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
-    let err = TestApi.github_org_listing_truncated_error("santhsecurity", 100_000, 1_000);
+    let err = TestApi.github_org_listing_truncated_error("santhreal", 100_000, 1_000);
     assert!(
         err.to_string()
             .contains("refusing to scan a partial organization"),
@@ -804,7 +804,7 @@ fn github_org_listing_cap_counts_and_fails_loud() {
 #[cfg(feature = "gitlab")]
 #[test]
 fn gitlab_group_validation_and_listing_cap_contracts() {
-    for ok in ["santhsecurity", "platform/sub-group", "a.b_c-d"].into_iter() {
+    for ok in ["santhreal", "platform/sub-group", "a.b_c-d"].into_iter() {
         assert!(
             TestApi.validate_gitlab_group_path(ok).is_ok(),
             "should accept group {ok:?}"
@@ -823,7 +823,7 @@ fn gitlab_group_validation_and_listing_cap_contracts() {
     // not, intermittently zeroing a concurrent test's counters).
     let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
-    let err = TestApi.gitlab_group_listing_truncated_error("santhsecurity", 100_000, 1_000);
+    let err = TestApi.gitlab_group_listing_truncated_error("santhreal", 100_000, 1_000);
     assert!(
         err.to_string()
             .contains("partial group repository collection"),
@@ -839,7 +839,7 @@ fn gitlab_group_validation_and_listing_cap_contracts() {
 #[cfg(feature = "bitbucket")]
 #[test]
 fn bitbucket_workspace_validation_and_listing_cap_contracts() {
-    for ok in ["santhsecurity", "platform-team", "team_1"].into_iter() {
+    for ok in ["santhreal", "platform-team", "team_1"].into_iter() {
         assert!(
             TestApi.validate_bitbucket_workspace(ok).is_ok(),
             "should accept workspace {ok:?}"
@@ -858,7 +858,7 @@ fn bitbucket_workspace_validation_and_listing_cap_contracts() {
     // not, intermittently zeroing a concurrent test's counters).
     let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
-    let err = TestApi.bitbucket_workspace_listing_truncated_error("santhsecurity", 100_000, 1_000);
+    let err = TestApi.bitbucket_workspace_listing_truncated_error("santhreal", 100_000, 1_000);
     assert!(
         err.to_string()
             .contains("partial workspace repository collection"),

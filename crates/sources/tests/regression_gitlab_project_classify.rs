@@ -54,7 +54,7 @@ fn group_refusal_message(group: &str) -> String {
 fn group_path_accepts_flat_nested_and_charset_namespaces() {
     // Flat namespace, a two-segment subgroup namespace, and the full
     // [A-Za-z0-9._-] segment alphabet must all classify as valid GitLab groups.
-    assert_group_accepted("santhsecurity");
+    assert_group_accepted("santhreal");
     assert_group_accepted("platform/sub-group");
     assert_group_accepted("platform/sub-group/team-alpha");
     assert_group_accepted("a.b_c-d");
@@ -207,11 +207,11 @@ fn listing_truncated_error_exact_message_and_variant() {
     // The page cap turns a partial GitLab group listing into a loud refusal so
     // unseen projects are never silently reported clean. Platform is "GitLab",
     // owner-kind is "group"; the numbers are echoed verbatim.
-    let err = TestApi.gitlab_group_listing_truncated_error("santhsecurity", 250, 3);
+    let err = TestApi.gitlab_group_listing_truncated_error("santhreal", 250, 3);
     match err {
         SourceError::Other(msg) => assert_eq!(
             msg,
-            "GitLab group repository listing for santhsecurity exceeded 3 pages \
+            "GitLab group repository listing for santhreal exceeded 3 pages \
              (250 repositories); refusing to scan a partial group repository collection \
              because unseen repositories would be reported clean"
                 .to_string(),

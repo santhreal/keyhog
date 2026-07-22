@@ -1061,6 +1061,22 @@ function Invoke-AutorouteCalibration {
                 Dim "  Install is complete; this is expected on portable (Windows/macOS) builds."
                 return $true
             }
+            # Reinstalls of the same build on the same host reuse a complete,
+            # validated calibration generation. Any inspection/parse failure
+            # falls through to a fresh sweep.
+            try {
+                $autorouteStateText = (& $BinPath backend --autoroute --json 2> $null | Out-String)
+                if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($autorouteStateText)) {
+                    $autorouteState = $autorouteStateText | ConvertFrom-Json
+                    if ($autorouteState.calibration_required -eq $false) {
+                        Ok "  Existing autoroute calibration is complete for this build and host."
+                        return $true
+                    }
+                }
+            } catch {
+                # Reporting-only readiness probe; malformed or incompatible
+                # output triggers the full fail-closed calibration below.
+            }
             $configArgs = if ($scanHelp -match '--no-config') {
                 @('--no-config')
             } else {

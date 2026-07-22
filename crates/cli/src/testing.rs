@@ -322,6 +322,7 @@ pub trait CliTestApi {
     ) -> anyhow::Error;
     fn render_failing_region_presence_probe_json(&self) -> Result<String>;
     fn doctor_canonicalize_for_shadow_check(&self, path: PathBuf) -> PathBuf;
+    fn doctor_should_run_gpu_self_tests(&self, gpu_available: bool, gpu_is_software: bool) -> bool;
     fn canonical_scan_args(&self) -> &'static str;
     fn hook_content(&self) -> &'static str;
     fn watch_content_hash(&self, data: &[u8]) -> u64;
@@ -1017,6 +1018,12 @@ impl CliTestApi for TestApi {
     }
     fn doctor_canonicalize_for_shadow_check(&self, path: PathBuf) -> PathBuf {
         crate::subcommands::doctor::testing::canonicalize_for_shadow_check(path)
+    }
+    fn doctor_should_run_gpu_self_tests(&self, gpu_available: bool, gpu_is_software: bool) -> bool {
+        crate::subcommands::doctor::testing::should_run_gpu_self_tests(
+            gpu_available,
+            gpu_is_software,
+        )
     }
     fn canonical_scan_args(&self) -> &'static str {
         crate::subcommands::hook::testing::CANONICAL_SCAN_ARGS

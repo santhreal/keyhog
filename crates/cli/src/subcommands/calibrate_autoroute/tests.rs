@@ -14,6 +14,47 @@ fn scan_policy_plan_covers_every_digest_changing_preset() {
 }
 
 #[test]
+fn isolated_policy_children_use_stable_cli_values() {
+    assert_eq!(
+        policy_cli_value(AutorouteCalibrationPolicy::Default),
+        "default"
+    );
+    assert_eq!(policy_cli_value(AutorouteCalibrationPolicy::Fast), "fast");
+    assert_eq!(policy_cli_value(AutorouteCalibrationPolicy::Deep), "deep");
+    assert_eq!(
+        policy_cli_value(AutorouteCalibrationPolicy::Precision),
+        "precision"
+    );
+}
+
+#[test]
+fn only_inconclusive_timing_failures_are_retryable() {
+    assert!(retryable_inconclusive_calibration(&anyhow::anyhow!(
+        "cache decision has no confidence-supported daemon route across every measured point"
+    )));
+    assert!(retryable_inconclusive_calibration(&anyhow::anyhow!(
+        "calibration timing is inconclusive: intervals overlap"
+    )));
+    assert!(!retryable_inconclusive_calibration(&anyhow::anyhow!(
+        "autoroute cache path is not writable"
+    )));
+}
+
+#[test]
+fn calibration_runtime_explicitly_disables_gpu_when_no_physical_adapter_exists() {
+    let args = calibration_scan_args(None, None, false).expect("internal scan args");
+    assert!(args.no_gpu);
+    assert!(!args.autoroute_gpu);
+}
+
+#[test]
+fn calibration_runtime_admits_gpu_only_when_requested() {
+    let args = calibration_scan_args(None, None, true).expect("internal scan args");
+    assert!(!args.no_gpu);
+    assert!(args.autoroute_gpu);
+}
+
+#[test]
 fn measured_route_count_deduplicates_aliases_and_excludes_a_seeded_row() {
     let digest = "00000000000000aa";
     let host = "host-identity-a";

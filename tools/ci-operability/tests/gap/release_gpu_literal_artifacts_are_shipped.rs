@@ -22,7 +22,9 @@ fn release_workflow_builds_uploads_and_signs_gpu_literal_artifacts() {
             && text.contains("name: unsigned-${{ matrix.asset }}")
             && text.contains("cp -a \"$GITHUB_WORKSPACE/dist/.\" \"$workdir/\"")
             && text.contains("final+=(\"$payload.minisig\")")
-            && text.contains("gh release upload \"$tag\" \"${final[@]}\"")
+            && text.contains("releases/$release_id/assets?name=$asset")
+            && text.contains("\"repos/$GITHUB_REPOSITORY/releases/$release_id\"")
+            && text.contains("-F draft=false")
             && text
                 .contains("published release manifest does not equal the signed expected manifest"),
         "release.yml must stage the GPU literal bundle privately, then publish it only through the exact signed manifest"

@@ -25,7 +25,7 @@ macro_rules! ssrf_url_cases {
 
 ssrf_url_cases! {
     public_0: "http://example.com/" => false;
-    public_1: "https://github.com/santhsecurity/keyhog" => false;
+    public_1: "https://github.com/santhreal/keyhog" => false;
     public_2: "http://1.1.1.1/" => false;
     public_3: "https://1.1.1.1:443/" => false;
     private_0: "http://127.0.0.1/" => true;

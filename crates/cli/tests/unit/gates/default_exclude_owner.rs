@@ -31,7 +31,9 @@ fn default_exclude_classification_is_source_owned() {
         "CLI must not mirror source-owned default exclude patterns"
     );
     assert!(
-        source_filter.contains("include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/rules/default_excludes.toml\"))")
+        source_filter.contains("include_str!(concat!(")
+            && source_filter.contains("env!(\"CARGO_MANIFEST_DIR\")")
+            && source_filter.contains("\"/rules/default_excludes.toml\"")
             && source_filter.contains("fn parse_default_excludes")
             && source_filter.contains("fn is_default_excluded")
             && !source_filter.contains("const SKIP_DIRS")

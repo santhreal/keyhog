@@ -90,6 +90,15 @@ pub(crate) struct AutorouteMeasurementReceipt {
 
 pub(crate) type AutorouteMeasurementObserver = Arc<Mutex<BTreeSet<AutorouteMeasurementReceipt>>>;
 
+fn autoroute_detector_digest(rules_digest: &str) -> u64 {
+    let mut hasher = crate::stable_hash::StableHasher::new("autoroute-detector-corpus");
+    hasher.field_str("rules_digest", rules_digest);
+    hasher.finish_u64()
+}
+
+// v49: the cache-level detector identity projects the canonical, pre-policy
+// rules digest. Per-preset detector mutations remain isolated by config_digest,
+// so all documented scan policies can coexist in one multi-config cache.
 // v47: short warm trials use bounded repeated execution, and paired same-backend
 // rounds retain shared host drift instead of requiring independent intervals.
 // v46: every GPU timing and parity receipt binds the exact acquired execution
@@ -149,7 +158,7 @@ pub(crate) type AutorouteMeasurementObserver = Arc<Mutex<BTreeSet<AutorouteMeasu
 // the top, per-resolved-config routing decisions under `configs` keyed by
 // config_digest, merge-on-save. Old single-config (v19 and earlier) caches are
 // rejected on the version gate and recalibrated.
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 48;
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 49;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_ACCELERATOR_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 
@@ -206,8 +215,7 @@ impl CachedBackendRouter {
         autoroute_cache_path: Result<Option<PathBuf>, String>,
         scanner: &CompiledScanner,
     ) -> Self {
-        let runtime_status = scanner.runtime_status();
-        let detector_digest = runtime_status.detector_digest;
+        let detector_digest = autoroute_detector_digest(&rules_digest);
         let gpu_participates = gpu_participates && keyhog_scanner::hw_probe::gpu_backend_compiled();
         let gpu_peer_identity = gpu_participates
             .then(|| gpu_peer_identity(scanner))
@@ -499,8 +507,7 @@ impl MeasuredBackendRouter {
         measurement_observer: Option<AutorouteMeasurementObserver>,
         scanner: &CompiledScanner,
     ) -> Self {
-        let runtime_status = scanner.runtime_status();
-        let detector_digest = runtime_status.detector_digest;
+        let detector_digest = autoroute_detector_digest(&rules_digest);
         // A GPU-excluded runtime or diagnostic calibration neither measures nor
         // persists a GPU route, so physical GPU identity is not part of that
         // cache. Eligible normal routing and all-candidate calibration retain
@@ -853,11 +860,17 @@ impl MeasuredBackendRouter {
                         "autoroute measurement observer could not find a measured workload decision",
                     )
                 })?;
+                let workload = render_workload_key(key);
+                observed.retain(|receipt| {
+                    receipt.config_digest != config_digest
+                        || receipt.host_identity != host_identity
+                        || receipt.workload != workload
+                });
                 for point in &decision.calibration_points {
                     observed.insert(AutorouteMeasurementReceipt {
                         config_digest: config_digest.clone(),
                         host_identity: host_identity.clone(),
-                        workload: render_workload_key(key),
+                        workload: workload.clone(),
                         measurement_shape_digest: keyhog_core::hex_encode(
                             &point.measurement_shape.shape_digest,
                         ),

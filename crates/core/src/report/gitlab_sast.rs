@@ -235,7 +235,7 @@ fn keyhog_tool() -> GitlabTool {
 fn vulnerability_object(finding: &VerifiedFinding) -> Result<GitlabVulnerability<'_>, ReportError> {
     let file = gitlab_file(finding)?;
     let start_line = gitlab_start_line(finding)?;
-    let credential_hash = crate::hex_encode(&finding.credential_hash);
+    let credential_hash = crate::hex_encode(finding.credential_hash);
     let id = format!(
         "keyhog:{}:{}:{}:{}",
         finding.detector_id, credential_hash, file, start_line

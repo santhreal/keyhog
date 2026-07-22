@@ -4559,23 +4559,48 @@ fn ml_score_for_detector_with_vocab(
     test_keywords: &[String],
     placeholder_keywords: &[String],
 ) -> f64 {
-    let detector = keyhog_core::detector_spec_by_id(detector_id)
-        // LAW10: fail-closed; the test-only scorer aborts for an unknown detector and cannot substitute a feature policy.
-        .unwrap_or_else(|| panic!("test detector {detector_id:?} must exist"));
-    let features = crate::ml_scorer::compute_features_for_detector_with_config(
-        text,
-        context,
-        known_prefixes,
-        secret_keywords,
-        test_keywords,
-        placeholder_keywords,
-        detector,
-        if entropy_channel {
-            crate::ml_scorer::MlCandidateChannel::Entropy
-        } else {
-            crate::ml_scorer::MlCandidateChannel::Pattern
-        },
+    type CompiledTestPolicy = (
+        &'static str,
+        crate::ml_scorer::ml_features::CompiledDetectorMlFeatures,
     );
+    static POLICIES: std::sync::LazyLock<
+        std::collections::HashMap<&'static str, CompiledTestPolicy>,
+    > = std::sync::LazyLock::new(|| {
+        keyhog_core::embedded_detector_specs()
+            .iter()
+            .map(|detector| {
+                (
+                    detector.id.as_str(),
+                    (
+                        detector.service.as_str(),
+                        crate::ml_scorer::ml_features::CompiledDetectorMlFeatures::compile(
+                            detector,
+                        ),
+                    ),
+                )
+            })
+            .collect()
+    });
+    let (detector_service, detector_features) = POLICIES
+        .get(detector_id)
+        // LAW10: fail closed; the test scorer cannot invent a policy.
+        .unwrap_or_else(|| panic!("test detector {detector_id:?} must exist"));
+    let features =
+        crate::ml_scorer::ml_features::compute_features_for_compiled_detector_with_config(
+            text,
+            context,
+            known_prefixes,
+            secret_keywords,
+            test_keywords,
+            placeholder_keywords,
+            detector_service,
+            *detector_features,
+            if entropy_channel {
+                crate::ml_scorer::MlCandidateChannel::Entropy
+            } else {
+                crate::ml_scorer::MlCandidateChannel::Pattern
+            },
+        );
     crate::ml_scorer::score_features(&features)
 }
 

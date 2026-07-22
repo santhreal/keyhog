@@ -18,6 +18,9 @@ struct ServicesFile {
     services: std::collections::BTreeMap<String, Vec<String>>,
 }
 
+// Bundled policy corruption is a source defect. Initialization must fail
+// closed, so this deliberate panic is not an operator-input shortcut.
+#[allow(clippy::panic)]
 static EXACT_ONLY_SHARED_TENANT_SUFFIXES: std::sync::LazyLock<Vec<String>> =
     std::sync::LazyLock::new(|| {
         let parsed = toml::from_str::<SharedTenantSuffixes>(include_str!(
@@ -35,6 +38,7 @@ static EXACT_ONLY_SHARED_TENANT_SUFFIXES: std::sync::LazyLock<Vec<String>> =
         )
     });
 
+#[allow(clippy::panic)] // Bundled policy corruption must stop verification.
 /// Built-in service to verification-domain policy.
 pub fn builtin_service_domains() -> &'static HashMap<&'static str, &'static [&'static str]> {
     static MAP: std::sync::OnceLock<HashMap<&'static str, &'static [&'static str]>> =
@@ -169,6 +173,7 @@ pub fn host_is_allowed(host: &str, allowlist: &[String]) -> bool {
     })
 }
 
+#[allow(clippy::panic)] // Invalid bundled policy cannot be represented safely.
 fn validated_domain_entries(entries: Vec<String>, context: &str, allow_empty: bool) -> Vec<String> {
     assert!(
         allow_empty || !entries.is_empty(),

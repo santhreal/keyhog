@@ -95,7 +95,7 @@ MODULE.bazel.lock
 WORKSPACE
 WORKSPACE.bazel
 # Top-level scratch/audit/plan files that belong in the backup monorepo
-# (santhsecurity/Santh) and local audit scratch, not in the standalone prod repo.
+# (santhreal/Santh) and local audit scratch, not in the standalone prod repo.
 /ROUNDS.md
 /TODO.md
 /TESTING_PROGRAM.md

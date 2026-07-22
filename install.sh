@@ -1405,6 +1405,14 @@ prime_autoroute_cache() {
         warn "  Autoroute calibration not supported by this build (no --autoroute-calibrate flag); using the binary's compiled-in routing."
         return 0
     fi
+    # A reinstall of the same build on the same host can reuse a complete,
+    # validated calibration generation. Avoid repeating the expensive sweep;
+    # malformed/partial inspection output falls through to a fresh calibration.
+    if autoroute_state="$("$bin" backend --autoroute --json 2>/dev/null)" &&
+       printf '%s\n' "$autoroute_state" | grep -q '"calibration_required":[[:space:]]*false'; then
+        ok "  Existing autoroute calibration is complete for this build and host."
+        return 0
+    fi
     if printf '%s' "$scan_help" | grep -q -- '--no-config'; then
         cfg_flag="--no-config"
         cfg_file=""

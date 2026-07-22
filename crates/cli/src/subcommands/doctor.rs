@@ -37,6 +37,10 @@ fn current_exe_for_shadow_check() -> Option<std::path::PathBuf> {
         .map(canonicalize_for_shadow_check)
 }
 
+const fn should_run_gpu_self_tests(gpu_available: bool, gpu_is_software: bool) -> bool {
+    gpu_available && !gpu_is_software
+}
+
 pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
     let mut healthy = true;
     let mut warned = false;
@@ -319,12 +323,12 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
     // manual override of a broken default, not health.)
     // Skipped on no-GPU / software-renderer hosts (matches backend --self-test's
     // SKIP path, so a headless CI box stays green).
-    let region_presence = keyhog_scanner::gpu::gpu_region_presence_self_test();
-    let acquired_backends: Vec<_> = match &region_presence {
-        Ok(report) => report.peers.iter().map(|peer| peer.backend).collect(),
-        Err(error) => error.acquired_backends.clone(),
-    };
-    if !acquired_backends.is_empty() || (hw.gpu_available && !hw.gpu_is_software) {
+    if should_run_gpu_self_tests(hw.gpu_available, hw.gpu_is_software) {
+        let region_presence = keyhog_scanner::gpu::gpu_region_presence_self_test();
+        let acquired_backends: Vec<_> = match &region_presence {
+            Ok(report) => report.peers.iter().map(|peer| peer.backend).collect(),
+            Err(error) => error.acquired_backends.clone(),
+        };
         match region_presence {
             Ok(report) => {
                 for peer in report.peers {
@@ -431,6 +435,10 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
 pub(crate) mod testing {
     pub(crate) fn canonicalize_for_shadow_check(path: std::path::PathBuf) -> std::path::PathBuf {
         super::canonicalize_for_shadow_check(path)
+    }
+
+    pub(crate) fn should_run_gpu_self_tests(gpu_available: bool, gpu_is_software: bool) -> bool {
+        super::should_run_gpu_self_tests(gpu_available, gpu_is_software)
     }
 }
 

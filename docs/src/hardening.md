@@ -38,7 +38,7 @@ into a core file.
 ## Lockdown mode
 
 When KeyHog runs on the same machine that holds the secrets, for example paired
-with [EnvSeal](https://github.com/santhsecurity/envseal), there is no trusted
+with [EnvSeal](https://github.com/santhreal/envseal), there is no trusted
 boundary between the scanner and the credentials. `keyhog scan . --lockdown`
 adds the protections that carry a real cost:
 

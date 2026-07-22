@@ -124,10 +124,10 @@ fn hot_decoders_decode_borrowed_candidates_without_clone_collect() {
     );
     let macro_body = impl_body(&url, "macro_rules! simple_decoder", "simple_decoder!(");
     assert!(
-        macro_body.contains("decode_candidate_refs_exact(")
-            && !macro_body.contains(".cloned()")
+        macro_body.contains("decode_filtered_lines(")
+            && !macro_body.contains("decode_candidate_refs_exact(")
             && !macro_body.contains(".collect::<Vec<_>>()"),
-        "simple escape/entity decoders should stream borrowed candidates"
+        "simple escape/entity decoders should batch borrowed physical lines"
     );
 
     for (name, marker, end_marker) in [

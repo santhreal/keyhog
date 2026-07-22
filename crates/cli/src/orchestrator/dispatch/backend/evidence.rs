@@ -410,6 +410,42 @@ impl AutorouteCalibrationPoint {
             .map(|(route, _)| *route)
     }
 
+    fn resolve_noninferior_route(&self, persistent_runtime: bool) -> Option<MeasuredRoute> {
+        let candidates = self.route_candidates_for_runtime(persistent_runtime);
+        let fastest_backend = candidates
+            .iter()
+            .min_by_key(|(route, median_ns)| {
+                let backend_preference = match route.backend {
+                    ScanBackend::CpuFallback => 0u8,
+                    ScanBackend::SimdCpu => 1,
+                    ScanBackend::GpuCuda => 2,
+                    ScanBackend::GpuWgpu => 3,
+                    _ => 4,
+                };
+                (*median_ns, backend_preference)
+            })?
+            .0
+            .backend;
+        let selected = candidates
+            .iter()
+            .filter(|(route, _)| route.backend == fastest_backend)
+            .min_by_key(|(route, median_ns)| {
+                (
+                    *median_ns,
+                    route.phase2_plain_localizer,
+                    route.phase2_keyword_localizer,
+                )
+            })?
+            .0;
+        let intervals = self.route_confidence_intervals_for(persistent_runtime);
+        let selected_interval = intervals.iter().find(|(route, _)| *route == selected)?.1;
+        intervals
+            .iter()
+            .filter(|(route, _)| route.backend != selected.backend)
+            .all(|(_, interval)| interval.high_ns >= selected_interval.low_ns)
+            .then_some(selected)
+    }
+
     fn route_trial_ns_for(
         &self,
         route: MeasuredRoute,
@@ -1009,18 +1045,21 @@ impl AutorouteDecision {
     /// mode has its own route and timing), so a cache that names any other route is rejected as
     /// tampered or non-deterministic.
     ///
-    /// A route resolves only when its 95% interval lies entirely below every
-    /// peer backend and every paired same-backend timing difference proves it
-    /// faster. Any paired interval spanning zero is incomplete evidence, never
-    /// permission to persist a measured-median guess.
+    /// Prefer a route whose 95% interval lies entirely below every peer and
+    /// whose paired same-backend trials prove its exact plan faster. When peer
+    /// intervals overlap, retain the lowest-median typed route only if no peer
+    /// backend is confidence-proven faster. Exact ties resolve to the
+    /// lower-complexity backend instead of making installation nondeterministic.
     pub(super) fn resolved_routing_route(&self) -> Option<MeasuredRoute> {
-        let selected = self
-            .calibration_points
-            .first()?
-            .resolve_measured_route(false)?;
+        let resolve = |point: &AutorouteCalibrationPoint| {
+            point
+                .resolve_measured_route(false)
+                .or_else(|| point.resolve_noninferior_route(false))
+        };
+        let selected = resolve(self.calibration_points.first()?)?;
         self.calibration_points
             .iter()
-            .all(|point| point.resolve_measured_route(false) == Some(selected))
+            .all(|point| resolve(point) == Some(selected))
             .then_some(selected)
     }
 
@@ -1033,14 +1072,21 @@ impl AutorouteDecision {
     /// accelerator state. The persisted trials contain both the real first GPU
     /// dispatch and the warm trials; daemon routing uses only the warm interval,
     /// while one-shot routing conservatively includes cold cost.
+    ///
+    /// Exact confidence separation wins first. If warm peer intervals overlap,
+    /// use the same conservative non-inferiority rule as one-shot routing:
+    /// select the lowest-median typed route only when no peer backend is
+    /// confidence-proven faster.
     pub(super) fn resolved_persistent_route(&self) -> Option<MeasuredRoute> {
-        let selected = self
-            .calibration_points
-            .first()?
-            .resolve_measured_route(true)?;
+        let resolve = |point: &AutorouteCalibrationPoint| {
+            point
+                .resolve_measured_route(true)
+                .or_else(|| point.resolve_noninferior_route(true))
+        };
+        let selected = resolve(self.calibration_points.first()?)?;
         self.calibration_points
             .iter()
-            .all(|point| point.resolve_measured_route(true) == Some(selected))
+            .all(|point| resolve(point) == Some(selected))
             .then_some(selected)
     }
 

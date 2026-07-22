@@ -36,6 +36,7 @@ pub fn crate_source_path(rel: &str) -> PathBuf {
 ///
 /// Panics with the resolved absolute path when the file is missing, so a typo
 /// in `rel` is an obvious failure rather than a silent empty string.
+#[allow(clippy::panic)] // Test setup must expose the resolved missing path.
 pub fn read_crate_source(rel: &str) -> String {
     let path = crate_source_path(rel);
     match std::fs::read_to_string(&path) {
@@ -47,6 +48,7 @@ pub fn read_crate_source(rel: &str) -> String {
 ///
 /// The confidence policy comes from the embedded corpus so tests share the
 /// production schema instead of maintaining a second scoring default.
+#[allow(clippy::expect_used)] // Absence means the bundled fixture corpus is corrupt.
 pub fn named_detector_fixture_defaults() -> DetectorSpec {
     let match_confidence = crate::embedded_detector_specs()
         .iter()
@@ -61,6 +63,7 @@ pub fn named_detector_fixture_defaults() -> DetectorSpec {
 ///
 /// Callers still exercise the real TOML parser and validator, while the
 /// detector-owned policy remains defined by the embedded corpus.
+#[allow(clippy::expect_used)] // Absence means the bundled fixture corpus is corrupt.
 pub fn detector_toml_with_fixture_confidence(source: &str) -> String {
     let confidence = crate::embedded_detector_tomls()
         .iter()

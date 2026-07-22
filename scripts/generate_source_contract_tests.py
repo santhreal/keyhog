@@ -141,7 +141,7 @@ def magic_cases() -> str:
 def ssrf_cases() -> str:
     public = [
         "http://example.com/",
-        "https://github.com/santhsecurity/keyhog",
+        "https://github.com/santhreal/keyhog",
         "http://1.1.1.1/",
         "https://1.1.1.1:443/",
     ]

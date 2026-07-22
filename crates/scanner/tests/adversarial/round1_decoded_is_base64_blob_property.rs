@@ -7,16 +7,15 @@
 //! be all-base64-alphabet text) collapsed to a generic-secret finding
 //! with the outer base64 wrapper as the credential. Mirror v32 had 7
 //! such FPs in yaml/k8s-secret fixtures. The fix adds
-//! `decoded_is_base64_blob`: decode the candidate, check whether the
-//! decoded bytes are all printable AND all base64-alphabet AND length
-//! >= 32. If so, the candidate is a binary-data envelope, not a
-//! credential.
+//! `decoded_is_base64_blob`: decode the candidate, then require the decoded
+//! text to satisfy the canonical uniform-random-base64 shape gate. This keeps
+//! Base64-wrapped printable secrets and hex key material live while rejecting
+//! realistic `base64(base64(random_bytes))` data envelopes.
 //!
-//! Adversarial style: PROPTEST 1k iterations. Property A (positive truth
-//! soundness): outer = base64(inner) where inner is itself any
-//! all-base64-alphabet string of length >= 32 MUST be flagged
-//! `decoded_is_base64_blob`. Property B (false-positive ceiling): outer =
-//! base64(random_bytes_with_non_alphabet_bytes) MUST NOT be flagged.
+//! Adversarial style: PROPTEST 1k iterations. Property A (positive truth):
+//! outer = base64(base64(random bytes)) MUST be flagged as a data envelope.
+//! Property B (false-positive ceiling): outer = base64(random bytes containing
+//! non-alphabet bytes) MUST NOT be flagged.
 
 use base64::Engine as _;
 use keyhog_scanner::testing::decode_structure::decoded_is_base64_blob;
@@ -25,18 +24,18 @@ use proptest::prelude::*;
 proptest! {
     #![proptest_config(ProptestConfig { cases: 1_000, .. ProptestConfig::default() })]
 
-    /// Property A: outer = base64(<inner all-base64-alphabet, len >= 32>)
-    /// MUST be flagged. Covers the entire k8s `data:` wrapper shape.
+    /// Property A: a realistic Kubernetes `data:` envelope wraps an already
+    /// base64-encoded random binary payload. The outer layer must be flagged.
     #[test]
     fn double_base64_wrapper_is_flagged(
-        inner in "[A-Za-z0-9+/]{32,80}",
+        mut raw in prop::collection::vec(any::<u8>(), 32..80usize),
     ) {
-        let outer = base64::engine::general_purpose::STANDARD
-            .encode(inner.as_bytes());
+        raw[..3].copy_from_slice(&[0xfb, 0xff, 0xff]);
+        let inner = base64::engine::general_purpose::STANDARD.encode(&raw);
+        let outer = base64::engine::general_purpose::STANDARD.encode(inner.as_bytes());
         prop_assert!(
             decoded_is_base64_blob(&outer),
-            "base64-of-base64 (inner len={}) must be flagged as a blob; \
-             outer={outer}",
+            "base64(base64(random bytes)) with inner len={} must be flagged; outer={outer}",
             inner.len()
         );
     }

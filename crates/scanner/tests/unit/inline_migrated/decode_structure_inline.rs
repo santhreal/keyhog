@@ -67,8 +67,8 @@ fn looks_like_uniform_base64_blob_rejects_low_diversity_alnum() {
 // This is categorically a binary-data wrapper, not a credential.
 #[test]
 fn decoded_is_base64_blob_detects_double_b64() {
-    let inner = "A".repeat(40);
-    let outer = base64::engine::general_purpose::STANDARD.encode(inner.as_bytes());
+    let inner = "UqrqCinZZWZP7BFSto0S5BmfnK/vCAFIZHVGs7WQLYu7CUr0+w==";
+    let outer = base64::engine::general_purpose::STANDARD.encode(inner);
     assert!(
         decoded_is_base64_blob(&outer),
         "base64-of-base64 (k8s data: shape) must be flagged as a \

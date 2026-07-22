@@ -28,7 +28,7 @@ use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
+use std::process::{Command, ExitCode};
 use std::sync::{Arc, Mutex};
 
 /// This binary's own scan-policy preset flags, swept in addition to the default
@@ -39,6 +39,7 @@ use std::sync::{Arc, Mutex};
 /// `args::scan`; the `every_documented_preset_resolves` e2e gate fails if a
 /// preset is missing a calibrated decision.
 const SCAN_POLICY_PRESETS: &[&str] = &["--fast", "--deep", "--precision"];
+const MAX_INCONCLUSIVE_CALIBRATION_ATTEMPTS: usize = 3;
 
 fn selected_policy_flags(policy: AutorouteCalibrationPolicy) -> Vec<Option<&'static str>> {
     match policy {
@@ -325,6 +326,89 @@ fn calibration_block(seed: &str) -> Vec<u8> {
     block.into_bytes()
 }
 
+fn retryable_inconclusive_calibration(error: &anyhow::Error) -> bool {
+    let diagnostic = format!("{error:#}");
+    diagnostic.contains("calibration timing is inconclusive")
+        || diagnostic.contains("no confidence-supported one-shot route")
+        || diagnostic.contains("no confidence-supported daemon route")
+}
+
+fn policy_cli_value(policy: AutorouteCalibrationPolicy) -> &'static str {
+    match policy {
+        AutorouteCalibrationPolicy::Default => "default",
+        AutorouteCalibrationPolicy::Fast => "fast",
+        AutorouteCalibrationPolicy::Deep => "deep",
+        AutorouteCalibrationPolicy::Precision => "precision",
+        AutorouteCalibrationPolicy::All => "all",
+    }
+}
+
+fn run_all_policies_in_isolated_processes(args: &CalibrateAutorouteArgs) -> Result<ExitCode> {
+    let executable =
+        std::env::current_exe().context("resolving keyhog for isolated autoroute calibration")?;
+    for policy in [
+        AutorouteCalibrationPolicy::Default,
+        AutorouteCalibrationPolicy::Fast,
+        AutorouteCalibrationPolicy::Deep,
+        AutorouteCalibrationPolicy::Precision,
+    ] {
+        let mut command = Command::new(&executable);
+        command
+            .arg("calibrate-autoroute")
+            .arg("--policy")
+            .arg(policy_cli_value(policy));
+        if args.quiet {
+            command.arg("--quiet");
+        }
+        if let Some(cache) = args.autoroute_cache.as_deref() {
+            command.arg("--autoroute-cache").arg(cache);
+        }
+        let status = command.status().with_context(|| {
+            format!(
+                "starting isolated {} autoroute calibration",
+                policy_cli_value(policy)
+            )
+        })?;
+        if !status.success() {
+            anyhow::bail!(
+                "isolated {} autoroute calibration failed with {status}; earlier policy generations remain valid, but the complete sweep was not published",
+                policy_cli_value(policy)
+            );
+        }
+    }
+
+    let cache_path =
+        crate::autoroute_cache_path::resolve_autoroute_cache_path(args.autoroute_cache.as_deref())
+            .map_err(anyhow::Error::msg)?;
+    let inspection = crate::orchestrator::inspect_autoroute_cache(cache_path.as_deref());
+    if !matches!(
+        inspection.readiness(),
+        crate::orchestrator::AutorouteReadiness::Ready
+            | crate::orchestrator::AutorouteReadiness::Quarantined
+    ) {
+        anyhow::bail!(
+            "isolated policy calibrations completed, but combined cache readiness is {}; repair: `{}`",
+            inspection.readiness().as_str(),
+            inspection
+                .readiness()
+                .required_repair_command()
+                .map_err(anyhow::Error::msg)?
+        );
+    }
+    let decisions = inspection
+        .configs
+        .iter()
+        .map(|config| config.decision_count)
+        .sum::<usize>();
+    let palette = crate::style::for_stdout();
+    println!(
+        "{} ran {} workload probes across 4 scan policies in isolated policy processes; combined cache contains {decisions} route decisions",
+        crate::style::pass("PASS", &palette),
+        core_workload_plan().len() * 4
+    );
+    Ok(ExitCode::SUCCESS)
+}
+
 pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
     // Calibration EXISTS to persist routing decisions; `--autoroute-cache off`
     // disables persistence, so every probe would fail closed ("calibration did
@@ -341,6 +425,10 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
              default cache, or pass a writable file path."
         );
     }
+    if args.policy == AutorouteCalibrationPolicy::All {
+        return run_all_policies_in_isolated_processes(&args);
+    }
+
     let cache_path =
         crate::autoroute_cache_path::resolve_autoroute_cache_path(args.autoroute_cache.as_deref())
             .map_err(anyhow::Error::msg)?;
@@ -383,18 +471,46 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
     let mut idx = 0usize;
     let mut failed = 0usize;
     let measured_points = Arc::new(Mutex::new(BTreeSet::new()));
+    let hardware = keyhog_scanner::hw_probe::probe_hardware();
+    let physical_gpu_available = hardware.gpu_available && !hardware.gpu_is_software;
     for policy in &policy_flags {
         let policy_label = policy.unwrap_or("default policy"); // LAW10: documented default label only; it does not select a fallback backend
-        let scan_args = calibration_scan_args(Some(transaction.staged_path()), *policy)
-            .with_context(|| format!("constructing {policy_label} calibration runtime"))?;
+        let scan_args = calibration_scan_args(
+            Some(transaction.staged_path()),
+            *policy,
+            physical_gpu_available,
+        )
+        .with_context(|| format!("constructing {policy_label} calibration runtime"))?;
         let mut orchestrator = ScanOrchestrator::new(scan_args)
             .with_context(|| format!("initializing {policy_label} calibration runtime"))?;
+        if let Err(error) = orchestrator.prepare_autoroute_calibration_gpu_artifact() {
+            if !physical_gpu_available {
+                return Err(anyhow::anyhow!(error))
+                    .with_context(|| format!("preparing {policy_label} calibration runtime"));
+            }
+            eprintln!(
+                "    {} {policy_label} GPU calibration preparation failed: {error}. \
+                 Rebuilding this calibration pass without GPU candidates; rerun \
+                 `keyhog calibrate-autoroute --policy {}` after GPU resources recover.",
+                crate::style::warn("warning:", &p),
+                policy.unwrap_or("default"),
+            );
+            let scan_args = calibration_scan_args(Some(transaction.staged_path()), *policy, false)
+                .with_context(|| {
+                    format!("constructing {policy_label} CPU/SIMD calibration runtime")
+                })?;
+            orchestrator = ScanOrchestrator::new(scan_args).with_context(|| {
+                format!("initializing {policy_label} CPU/SIMD calibration runtime")
+            })?;
+            orchestrator
+                .prepare_autoroute_calibration_gpu_artifact()
+                .with_context(|| {
+                    format!("preparing {policy_label} CPU/SIMD calibration runtime")
+                })?;
+        }
         orchestrator
             .observe_autoroute_calibration_measurements(Arc::clone(&measured_points))
             .with_context(|| format!("observing {policy_label} calibration route receipts"))?;
-        orchestrator
-            .prepare_autoroute_calibration_gpu_artifact()
-            .with_context(|| format!("preparing {policy_label} shared GPU calibration artifact"))?;
         let mut sweep = ProbeSweep {
             orchestrator: &mut orchestrator,
             workspace: workspace.path(),
@@ -405,11 +521,37 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
         };
         for workload in &workloads {
             idx += 1;
-            if let Err(error) = sweep.run_probe(workload, idx) {
-                failed += 1;
-                // The probe already printed its FAIL line; surface the cause
-                // loudly (Law 10) rather than swallowing it behind the counter.
-                eprintln!("    {} {error:#}", crate::style::fail("reason:", &p));
+            let mut attempt = 1usize;
+            loop {
+                let measured_before = measured_points
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("autoroute measurement observer lock poisoned"))?
+                    .clone();
+                match sweep.run_probe(workload, idx) {
+                    Ok(()) => break,
+                    Err(error)
+                        if attempt < MAX_INCONCLUSIVE_CALIBRATION_ATTEMPTS
+                            && retryable_inconclusive_calibration(&error) =>
+                    {
+                        *measured_points.lock().map_err(|_| {
+                            anyhow::anyhow!("autoroute measurement observer lock poisoned")
+                        })? = measured_before;
+                        attempt += 1;
+                        eprintln!(
+                            "    {} inconclusive timing evidence; retrying {}/{}: {error:#}",
+                            crate::style::warn("retry:", &p),
+                            attempt,
+                            MAX_INCONCLUSIVE_CALIBRATION_ATTEMPTS,
+                        );
+                    }
+                    Err(error) => {
+                        failed += 1;
+                        // The probe already printed its FAIL line; surface the cause
+                        // loudly (Law 10) rather than swallowing it behind the counter.
+                        eprintln!("    {} {error:#}", crate::style::fail("reason:", &p));
+                        break;
+                    }
+                }
             }
         }
     }
@@ -643,11 +785,19 @@ fn calibration_point_summary_count(
     Ok(measured_points.len())
 }
 
-fn calibration_scan_args(autoroute_cache: Option<&Path>, policy: Option<&str>) -> Result<ScanArgs> {
+fn calibration_scan_args(
+    autoroute_cache: Option<&Path>,
+    policy: Option<&str>,
+    include_gpu: bool,
+) -> Result<ScanArgs> {
     let mut argv = vec![
         OsString::from("keyhog-scan"),
         OsString::from("--autoroute-calibrate"),
-        OsString::from("--autoroute-gpu"),
+        OsString::from(if include_gpu {
+            "--autoroute-gpu"
+        } else {
+            "--no-gpu"
+        }),
         OsString::from("--no-config"),
     ];
     if let Some(cache) = autoroute_cache {

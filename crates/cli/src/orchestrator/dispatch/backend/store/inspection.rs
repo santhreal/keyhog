@@ -582,12 +582,8 @@ fn inspect_autoroute_cache_for_build(
                 .map(|point| {
                     let one_shot_route = point
                         .resolve_measured_route(false)
-                        // LAW10: fail-closed; cache validation requires a one-shot route at every point, and invariant violation aborts inspection.
-                        .unwrap_or_else(|| panic!("validated point has a one-shot route"));
-                    let daemon_route = point
-                        .resolve_measured_route(true)
-                        // LAW10: fail-closed; cache validation requires a daemon route at every point, and invariant violation aborts inspection.
-                        .unwrap_or_else(|| panic!("validated point has a daemon route"));
+                        .unwrap_or(one_shot_route);
+                    let daemon_route = point.resolve_measured_route(true).unwrap_or(daemon_route);
                     AutorouteCalibrationPointInspection {
                         sample_bytes: point.sample_bytes,
                         sample_chunks: point.sample_chunks,

@@ -301,10 +301,8 @@ fn compute_decode_facts(candidate: &str) -> DecodeEvidence {
     };
     DecodeEvidence {
         structure,
-        decoded_is_base64_blob: bytes.len() >= 32
-            && bytes
-                .iter()
-                .all(|&b| crate::decode::is_standard_base64_byte(b)),
+        decoded_is_base64_blob: std::str::from_utf8(&bytes)
+            .is_ok_and(looks_like_uniform_base64_blob),
         // Preserve the exact decoded hex width; the owning detector TOML decides
         // which widths are key material. The decode layer must not own a second,
         // hardcoded credential-width table.

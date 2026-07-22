@@ -667,7 +667,7 @@ fn cached_router_replays_cpu_identity_when_runtime_policy_disables_gpu() {
     )]);
     save_autoroute_cache(
         &path,
-        scanner.runtime_status().detector_digest,
+        autoroute_detector_digest(test_rules_digest()),
         test_rules_digest(),
         config_digest,
         &host,
@@ -862,6 +862,68 @@ fn valid_decision_for_host(host: &AutorouteHostProfile) -> AutorouteDecision {
         false,
         false,
     )
+}
+#[test]
+fn autoroute_detector_digest_tracks_canonical_rules_not_resolved_policy() {
+    let digest = autoroute_detector_digest(test_rules_digest());
+    assert_eq!(digest, autoroute_detector_digest(test_rules_digest()));
+    assert_ne!(
+        digest,
+        autoroute_detector_digest(
+            "1123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        )
+    );
+}
+
+#[test]
+fn policy_specific_scanner_plans_share_one_cache_corpus_identity() {
+    let base_detectors = phase1_test_detectors();
+    let base_scanner = CompiledScanner::compile_with_gpu_policy(
+        base_detectors.clone(),
+        keyhog_scanner::GpuInitPolicy::ForceDisabled,
+    )
+    .expect("compile base scanner");
+    let mut policy_detectors = base_detectors;
+    policy_detectors[0].min_confidence = Some(0.99);
+    let policy_scanner = CompiledScanner::compile_with_gpu_policy(
+        policy_detectors,
+        keyhog_scanner::GpuInitPolicy::ForceDisabled,
+    )
+    .expect("compile policy scanner");
+    assert_ne!(
+        base_scanner.runtime_status().detector_digest,
+        policy_scanner.runtime_status().detector_digest,
+        "fixture must exercise distinct resolved scanner identities"
+    );
+
+    let base_router = MeasuredBackendRouter::new(
+        test_hw_caps(),
+        base_scanner.runtime_status().pattern_count,
+        test_rules_digest().to_string(),
+        1,
+        false,
+        false,
+        false,
+        Ok(None),
+        None,
+        &base_scanner,
+    );
+    let policy_router = MeasuredBackendRouter::new(
+        test_hw_caps(),
+        policy_scanner.runtime_status().pattern_count,
+        test_rules_digest().to_string(),
+        2,
+        false,
+        false,
+        false,
+        Ok(None),
+        None,
+        &policy_scanner,
+    );
+    assert_eq!(
+        base_router.detector_digest, policy_router.detector_digest,
+        "resolved policies must coexist beneath one canonical cache corpus"
+    );
 }
 
 fn test_rules_digest() -> &'static str {
@@ -2544,7 +2606,7 @@ fn multi_config_cache_upserts_same_bucket_without_duplicating() {
 }
 
 #[test]
-fn exact_tie_is_inconclusive_and_cannot_be_persisted() {
+fn exact_peer_tie_selects_the_lower_complexity_backend_deterministically() {
     let dir = tempfile::TempDir::new().expect("tempdir for tie calibration");
     let path = dir.path().join("tie-autoroute-cache.json");
     let digest = 0x0FF1_CE00_0FF1_CE00u64;
@@ -2552,18 +2614,18 @@ fn exact_tie_is_inconclusive_and_cannot_be_persisted() {
     let host = test_host(Some("NVIDIA GeForce RTX 5090"));
     let key = test_workload_key();
 
-    // SimdCpu and the GPU route measure identically (20ms). No timing evidence
-    // proves either peer fastest, regardless of engagement overhead.
+    // SimdCpu and the GPU route measure identically (20ms). Neither peer is
+    // proven faster, so the stable lower-complexity route wins.
     let tie_to_simd =
         AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 20, None, Some(20));
     assert_eq!(
         tie_to_simd.resolved_routing_backend(),
-        None,
-        "an exact timing tie cannot prove one fastest route"
+        Some(ScanBackend::SimdCpu),
+        "an exact peer tie must resolve deterministically without preferring GPU complexity"
     );
     let mut decisions = HashMap::new();
     decisions.insert(key.clone(), tie_to_simd);
-    let error = save_autoroute_cache(
+    save_autoroute_cache(
         &path,
         digest,
         test_rules_digest(),
@@ -2571,16 +2633,17 @@ fn exact_tie_is_inconclusive_and_cannot_be_persisted() {
         &host,
         &decisions,
     )
-    .expect_err("an exact tie must not become a persisted autoroute decision")
-    .to_string();
-    assert!(
-        error.contains("no confidence-supported one-shot route"),
-        "proof rejection should name the missing separated winner, got {error:?}"
+    .expect("a non-inferior deterministic tie decision must persist");
+    let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host)
+        .expect("the deterministic tie decision must reload");
+    assert_eq!(
+        loaded.get(&key).and_then(AutorouteDecision::backend),
+        Some(ScanBackend::SimdCpu)
     );
 }
 
 #[test]
-fn same_backend_tie_with_overlapping_peer_is_inconclusive() {
+fn same_backend_tie_with_overlapping_peer_uses_noninferior_compiled_default() {
     let timing = |ms| BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS);
     let decision = AutorouteDecision::from_peer_timing_evidence(
         ScanBackend::SimdCpu,
@@ -2605,8 +2668,12 @@ fn same_backend_tie_with_overlapping_peer_is_inconclusive() {
 
     assert_eq!(
         decision.resolved_routing_route(),
-        None,
-        "a same-backend tie cannot resolve while a peer backend also overlaps"
+        Some(MeasuredRoute {
+            backend: ScanBackend::CpuFallback,
+            phase2_plain_localizer: false,
+            phase2_keyword_localizer: false,
+        }),
+        "an exact overlap must select the lower-complexity backend's compiled default"
     );
     assert!(!decision.has_confidence_supported_route());
 }
@@ -3499,7 +3566,12 @@ fn measured_router_clears_dirty_after_successful_cache_save() {
     );
     let mut measured_this_run = HashSet::new();
     measured_this_run.insert(key.clone());
-    let observer = Arc::new(Mutex::new(BTreeSet::new()));
+    let observer = Arc::new(Mutex::new(BTreeSet::from([AutorouteMeasurementReceipt {
+        config_digest: "a55ad00dcafebeef".to_string(),
+        host_identity: host_identity_digest(&host),
+        workload: render_workload_key(&key),
+        measurement_shape_digest: "superseded-shape".to_string(),
+    }])));
     let mut router = MeasuredBackendRouter {
         pattern_count: 902,
         decode_workload_plan: test_decode_workload_plan(),
@@ -3544,7 +3616,7 @@ fn measured_router_clears_dirty_after_successful_cache_save() {
                     .shape_digest,
             ),
         }],
-        "the receipt must carry the exact host, workload, and measurement shape that were persisted"
+        "the receipt must replace superseded evidence and carry the exact host, workload, and measurement shape that were persisted"
     );
     router
         .save_cache()
@@ -6059,6 +6131,48 @@ fn persistent_daemon_route_uses_warm_gpu_evidence_but_one_shot_uses_cold_cost() 
         decision.persistent_selected_margin_ns(),
         Some(9_000_000),
         "warm GPU beats persistent SIMD by 9 ms"
+    );
+}
+
+#[test]
+fn persistent_daemon_keeps_one_shot_route_when_warm_peer_is_not_proven_faster() {
+    let simd = BackendTimingEvidence::from_trial_ns(vec![
+        100_000_000,
+        18_000_000,
+        22_000_000,
+        19_000_000,
+        21_000_000,
+        18_500_000,
+        21_500_000,
+    ])
+    .expect("SIMD cold/warm timing evidence");
+    let cpu =
+        BackendTimingEvidence::from_trial_ns(vec![20_000_000; 7]).expect("CPU timing evidence");
+    let decision = AutorouteDecision::from_timing_evidence(
+        ScanBackend::CpuFallback,
+        1,
+        1,
+        0xC01D,
+        1,
+        simd,
+        Some(cpu),
+        None,
+    );
+
+    assert_eq!(
+        decision.resolved_routing_backend(),
+        Some(ScanBackend::CpuFallback),
+        "cold Hyperscan materialization makes CPU the proven one-shot route"
+    );
+    assert_eq!(
+        decision.primary_point().resolve_measured_route(true),
+        None,
+        "the fixture must exercise the non-inferior one-shot fallback rather than an exact warm winner"
+    );
+    assert_eq!(
+        decision.resolved_persistent_backend(),
+        Some(ScanBackend::CpuFallback),
+        "overlapping warm evidence must retain the proven route instead of making calibration unusable"
     );
 }
 

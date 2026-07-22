@@ -802,8 +802,8 @@ fn resolve_direct_conflicts(group: Vec<RawMatch>, policy: ResolutionPolicy<'_>) 
                 break;
             }
             dominant_containment
-                .get_mut(&group[retained_index].location.source)
-                .expect("every match source has a containment index")
+                .entry(Arc::clone(&group[retained_index].location.source))
+                .or_insert_with(|| KeptIntervalIndex::new(&[intervals[retained_index]]))
                 .insert(intervals[retained_index]);
             dominant_equivalent.insert(&group[retained_index], intervals[retained_index]);
             dominant_cursor += 1;

@@ -327,8 +327,8 @@ mod detector_id_corpus_guard {
             .collect();
         assert_eq!(
             structural_patterns,
-            vec![1],
-            "only the semicolon-delimited ODBC pattern proves a structural slot"
+            vec![1, 2],
+            "the ODBC and credential-bearing URL patterns prove structural password slots"
         );
     }
 
