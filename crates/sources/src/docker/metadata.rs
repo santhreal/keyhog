@@ -39,9 +39,10 @@ fn parse_docker_root_metadata_files(raw: &str) -> Result<Vec<String>, String> {
 
 static DOCKER_ROOT_METADATA_FILES: std::sync::LazyLock<Vec<String>> =
     std::sync::LazyLock::new(|| {
-        match parse_docker_root_metadata_files(include_str!(
-            "../../../../rules/docker-root-metadata-files.toml"
-        )) {
+        match parse_docker_root_metadata_files(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/rules/docker-root-metadata-files.toml"
+        ))) {
             Ok(files) => files,
             Err(error) => panic!(
                 "rules/docker-root-metadata-files.toml is invalid: {error}. \

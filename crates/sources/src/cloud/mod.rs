@@ -584,9 +584,10 @@ fn parse_binary_object_extensions(raw: &str) -> Result<Vec<String>, String> {
 }
 
 static BINARY_OBJECT_EXTS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    match parse_binary_object_extensions(include_str!(
-        "../../../../rules/binary-object-extensions.toml"
-    )) {
+    match parse_binary_object_extensions(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/rules/binary-object-extensions.toml"
+    ))) {
         Ok(extensions) => extensions,
         Err(error) => panic!(
             "rules/binary-object-extensions.toml is invalid: {error}. \

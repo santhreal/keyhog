@@ -162,6 +162,39 @@ print(downloaded_digest)
 PY
 }
 
+verify_registry_archive_build() {
+    local crate="$1"
+    local archive="$2"
+    local unpack_root="$PACKAGE_TARGET/registry-source/$crate"
+    local manifest="$unpack_root/${crate}-${VERSION}/Cargo.toml"
+    rm -rf -- "$unpack_root"
+    mkdir -p "$unpack_root"
+    python3 -B - "$archive" "$unpack_root" <<'PY'
+import pathlib
+import sys
+import tarfile
+
+archive, destination = map(pathlib.Path, sys.argv[1:])
+destination = destination.resolve()
+with tarfile.open(archive, "r:gz") as package:
+    for member in package.getmembers():
+        target = (destination / member.name).resolve()
+        if not target.is_relative_to(destination):
+            raise SystemExit(f"unsafe archive path in {archive}: {member.name}")
+    package.extractall(destination, filter="data")
+PY
+    if [[ ! -f "$manifest" ]]; then
+        echo "error: $archive does not contain expected manifest $manifest" >&2
+        return 1
+    fi
+    echo "==> building immutable crates.io archive for $crate with every feature"
+    CARGO_TARGET_DIR="$PACKAGE_TARGET/registry-build" cargo build \
+        --locked \
+        --all-features \
+        --manifest-path "$manifest"
+}
+
+
 
 # Pull the version out of the workspace Cargo.toml so the echo lines
 # stay accurate without a per-release edit. `awk` over the [workspace.package]
@@ -200,6 +233,7 @@ package_and_verify() {
             return 1
         fi
         echo "==> using immutable crates.io archive for already-published $crate v$VERSION"
+        verify_registry_archive_build "$crate" "$archive"
     else
         download_status=$?
         if [[ "$download_status" -ne 4 ]]; then
@@ -207,8 +241,8 @@ package_and_verify() {
         fi
         echo "==> packaging $crate in isolated target $PACKAGE_TARGET"
         CARGO_TARGET_DIR="$PACKAGE_TARGET" cargo package \
-            --no-verify \
             --locked \
+            --all-features \
             --package "$crate"
         if [[ ! -f "$archive" ]]; then
             echo "error: cargo package did not create expected archive $archive" >&2
