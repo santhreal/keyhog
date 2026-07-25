@@ -4,7 +4,7 @@ use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
 use keyhog_scanner::{CompiledScanner, ScanBackend, ScanError};
 
 const CHILD_ENV: &str = "KEYHOG_COMPILED_SCANNER_BACKEND_ERROR_CHILD";
-const TEST_NAME: &str = "selected_backend_failure_returns_error_without_terminating_host";
+const TEST_NAME: &str = "regression_compiled_scanner_backend_errors::selected_backend_failure_returns_error_without_terminating_host";
 const CHILD_ALIVE_MARKER: &str = "compiled-scanner-host-remained-alive";
 
 fn scanner_and_matching_chunk() -> (CompiledScanner, Chunk) {
@@ -27,7 +27,7 @@ fn scanner_and_matching_chunk() -> (CompiledScanner, Chunk) {
         verify: None,
         keywords: vec!["tok".into()],
         min_confidence: Some(0.1),
-        ..DetectorSpec::default()
+        ..keyhog_scanner::testing::named_detector_fixture_defaults()
     };
     let scanner = CompiledScanner::compile(vec![detector]).expect("regression detector compiles");
     let chunk = Chunk {
@@ -73,7 +73,11 @@ fn selected_backend_failure_returns_error_without_terminating_host() {
         let matches = scanner
             .scan_with_backend(&chunk, ScanBackend::CpuFallback)
             .expect("the host can keep using the scanner after the backend error");
-        assert_eq!(matches.len(), 1, "continued host execution must remain useful");
+        assert_eq!(
+            matches.len(),
+            1,
+            "continued host execution must remain useful"
+        );
         println!("{CHILD_ALIVE_MARKER}");
         return;
     }
@@ -116,5 +120,9 @@ fn fallible_backend_scan_preserves_success_results() {
         .expect("CPU fallback remains available");
 
     assert_eq!(selected, reference);
-    assert_eq!(selected.len(), 1, "the comparison must exercise a real finding");
+    assert_eq!(
+        selected.len(),
+        1,
+        "the comparison must exercise a real finding"
+    );
 }

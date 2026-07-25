@@ -440,14 +440,15 @@ fn scan_backend_checked(
 ) -> (Duration, Vec<Vec<RawMatch>>) {
     scanner.clear_fragment_cache();
     let started = Instant::now();
-    let mut results = scanner
-        .scan_coalesced_with_backend_admission_and_route(
-            chunks,
-            route.backend,
-            None,
-            route.execution_route(),
-        )
-        .unwrap_or_else(|error| panic!("{label} backend scan failed closed: {error}"));
+    let mut results = match scanner.scan_coalesced_with_backend_admission_and_route(
+        chunks,
+        route.backend,
+        None,
+        route.execution_route(),
+    ) {
+        Ok(results) => results,
+        Err(error) => panic!("{label} backend scan failed closed: {error}"),
+    };
     let elapsed = started.elapsed();
     canonicalize_results(&mut results);
     if results != expected {
@@ -723,14 +724,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             phase2_plain_localizer: false,
             phase2_keyword_localizer: false,
         };
-        let mut reference = scanner
-            .scan_coalesced_with_backend_admission_and_route(
-                &chunks,
-                reference_route.backend,
-                None,
-                reference_route.execution_route(),
-            )
-            .unwrap_or_else(|error| panic!("exact Hyperscan reference scan failed: {error}"));
+        let mut reference = match scanner.scan_coalesced_with_backend_admission_and_route(
+            &chunks,
+            reference_route.backend,
+            None,
+            reference_route.execution_route(),
+        ) {
+            Ok(results) => results,
+            Err(error) => panic!("exact Hyperscan reference scan failed: {error}"),
+        };
         canonicalize_results(&mut reference);
         for &route in &candidate_routes {
             let degrade_before = scanner.gpu_degrade_count();
