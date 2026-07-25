@@ -10,18 +10,14 @@
 //! plant a known-shape secret, the scanner WILL find it regardless
 //! of surrounding context."
 //!
-//! Case counts: 10_000+ per invariant (CLAUDE.md per-rule contract
-//! item 6 "property tests"). The previous 256-case budget was a
-//! smoke test, not a contract. Bumping the budget by 40× turned up
-//! the AC kernel scale bug (task #56) within the first run on a
-//! 1 GiB corpus - proptest is a cheap surface for these kinds of
-//! coverage gaps when the case count is real.
-//!
-//! Why not 100k: per-case build of `CompiledScanner` is the
-//! dominant cost (regex compile + AC trie + GPU literal set). At
-//! 10k cases × 256 detectors compile-once-per-fixture-set, the
-//! suite runs in <90s on a 5090, which is the right CI budget for
-//! a property test that runs on every PR.
+//! Case counts: 10_000 per invariant (CLAUDE.md per-rule contract item 6
+//! "property tests"). Randomized bodies stay small because input-shape diversity,
+//! not repeatedly rescanning the maximum length, is the property-testing value.
+//! Dedicated deterministic cases below pin every former maximum-length boundary.
+//! Combining 10_000 cases with 8-16 KiB bodies made the debug CI suite retain
+//! more than 4.9 GiB and run for more than fourteen minutes before completing
+//! the first property. The bounded distribution preserves case diversity while
+//! making the full library gate reliable.
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
 use keyhog_scanner::CompiledScanner;
 use proptest::prelude::*;
@@ -64,7 +60,7 @@ fn fuzz_detectors() -> Vec<DetectorSpec> {
             service: "fuzz".into(),
             severity: Severity::Critical,
             patterns: vec![PatternSpec {
-                regex: r"AKIA[0-9A-Z]{16}".into(),
+                regex: r"(?-i)(AKIA|ASIA)[0-9A-Z]{16}\b".into(),
                 description: None,
                 group: None,
                 required_literals: Vec::new(),
@@ -74,7 +70,7 @@ fn fuzz_detectors() -> Vec<DetectorSpec> {
             }],
             companions: vec![],
             verify: None,
-            keywords: vec!["AKIA".into()],
+            keywords: vec!["AKIA".into(), "ASIA".into()],
             min_confidence: None,
             ..keyhog_scanner::testing::named_detector_fixture_defaults()
         },
@@ -153,21 +149,23 @@ proptest! {
         ..ProptestConfig::default()
     })]
 
-    /// Random bytes (any 0..16 KiB length, fully arbitrary u8 content).
-    /// The scan must complete without panic for every input.
+    /// Random bytes (any 0..256 length, fully arbitrary u8 content).
+    /// The scan must complete without panic for every input. A dedicated test
+    /// below pins the 16 KiB boundary without multiplying it by 10,000 cases.
     #[test]
     fn scanner_does_not_panic_on_random_bytes(
-        bytes in proptest::collection::vec(any::<u8>(), 0..16_384)
+        bytes in proptest::collection::vec(any::<u8>(), 0..256)
     ) {
         let chunk = make_chunk(bytes);
         let _ = FUZZ_SCANNER.scan(&chunk);
     }
 
-    /// Random ASCII (printable-ish range) - exercises the regex path
-    /// hard since most matches will be plausibly secret-shaped.
+    /// Random ASCII (printable-ish range) exercises the regex path hard because
+    /// most matches are plausibly secret-shaped. A dedicated test below pins
+    /// the former 8 KiB maximum.
     #[test]
     fn scanner_does_not_panic_on_random_ascii(
-        text in "[\\x20-\\x7e]{0,8192}"
+        text in "[\\x20-\\x7e]{0,256}"
     ) {
         let chunk = Chunk {
             data: text.into(),
@@ -197,41 +195,34 @@ proptest! {
 }
 
 proptest! {
-    // Positive-correctness tests: smaller case budget because each
-    // case rebuilds + scans, and a bug here will fire with very few
-    // cases (the contract is broken for *all* inputs of this shape,
-    // not just rare ones). 2 000 cases is more than enough to find
-    // surrounding-context interactions.
+    // Positive-correctness tests use the same 10,000-case contract as the
+    // panic-safety properties. Random surroundings stay bounded; dedicated
+    // maximum-length cases below pin the size boundaries separately.
     #![proptest_config(ProptestConfig {
-        cases: 2_000,
+        cases: 10_000,
         max_shrink_iters: 1024,
         ..ProptestConfig::default()
     })]
 
-    /// Strong correctness gate: an AWS-shaped key planted anywhere
-    /// in an arbitrary text payload MUST be surfaced (under SOME
-    /// detector - cross-detector dedup is allowed to relabel).
-    /// This is the real product contract - "if the secret is
-    /// there, keyhog finds it" - and it survives:
-    ///   * arbitrary plaintext before/after,
-    ///   * arbitrary whitespace runs,
-    ///   * the planted key landing at offset 0 or end-of-buffer.
+    /// Strong correctness gate: a self-delimited AWS-shaped key planted in
+    /// arbitrary text MUST be surfaced under some detector. AWS access-key IDs
+    /// are exactly 20 bytes, so the generated context is separated by newlines;
+    /// an adjacent uppercase alphanumeric byte would extend the token and make
+    /// it invalid by the production detector contract. Dedicated cases below
+    /// pin start-of-buffer and end-of-buffer placement.
     ///
-    /// The 16 hex chars after AKIA are randomised across cases so
-    /// the property doesn't trivially pass on one specific token.
-    /// We check `credential` for the literal token, not the
-    /// detector_id, because cross-detector dedup can fold the
-    /// aws-access-key finding into an overlapping fuzz-grouped
-    /// match - the credential string is what the end user sees in
-    /// the report.
+    /// The 16 characters after AKIA are randomized across cases so the property
+    /// does not trivially pass on one token. We check `credential` for the
+    /// literal token rather than detector ID because cross-detector resolution
+    /// may relabel an overlapping finding; the credential is what users see.
     #[test]
     fn aws_key_is_always_found_regardless_of_surroundings(
-        prefix in "[a-zA-Z0-9_\\-\\s]{0,4096}",
-        suffix in "[a-zA-Z0-9_\\-\\s]{0,4096}",
+        prefix in "[a-zA-Z0-9_\\-\\s]{0,256}",
+        suffix in "[a-zA-Z0-9_\\-\\s]{0,256}",
         random_tail in "[0-9A-Z]{16}",
     ) {
         let token = format!("AKIA{random_tail}");
-        let body = format!("{prefix}{token}{suffix}");
+        let body = format!("{prefix}\n{token}\n{suffix}");
         let chunk = make_text_chunk(body);
         let matches = CORRECTNESS_SCANNER.scan(&chunk);
         prop_assert!(
@@ -250,7 +241,7 @@ proptest! {
     /// (rayon nondeterminism) without violating the contract.
     #[test]
     fn scan_is_idempotent_across_repeat_calls(
-        bytes in proptest::collection::vec(any::<u8>(), 0..8_192),
+        bytes in proptest::collection::vec(any::<u8>(), 0..256),
     ) {
         let chunk = make_chunk(bytes);
         let key = |ms: Vec<keyhog_core::RawMatch>| -> std::collections::BTreeSet<(String, String, usize)> {
@@ -277,7 +268,7 @@ proptest! {
     /// secret lived past the filter window.)
     #[test]
     fn prefix_padding_does_not_drop_finding(
-        pad_len in 0..4_096usize,
+        pad_len in 0..256usize,
     ) {
         // Pure ASCII space padding: no incidental matches possible.
         let padding: String = " ".repeat(pad_len);
@@ -289,4 +280,104 @@ proptest! {
             "padding of len {pad_len} dropped the {secret} finding"
         );
     }
+}
+
+/// Locks out size-distribution shrinkage by proving the full scanner accepts
+/// the original 16 KiB arbitrary-byte ceiling without panic.
+#[test]
+fn scanner_does_not_panic_at_random_byte_size_boundary() {
+    let mut state = 0x9e37_79b9_u32;
+    let bytes = (0..16_384)
+        .map(|_| {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            (state >> 24) as u8
+        })
+        .collect();
+    let _ = FUZZ_SCANNER.scan(&make_chunk(bytes));
+}
+
+/// Locks out a fast-test loophole by exercising the regex-heavy printable
+/// ASCII path at the original 8 KiB ceiling.
+#[test]
+fn scanner_does_not_panic_at_ascii_size_boundary() {
+    let text: String = (0..8_192)
+        .map(|index| char::from(b' ' + (index % 95) as u8))
+        .collect();
+    let _ = FUZZ_SCANNER.scan(&make_text_chunk(text));
+}
+
+/// Locks out context truncation by proving a planted key survives the original
+/// maximum 4 KiB prefix and suffix in one production scan.
+#[test]
+fn aws_key_survives_maximum_surrounding_context() {
+    let token = "AKIAQYLPMN5HFIQR7XYA";
+    let body = format!("{} {token} {}", "a".repeat(4_095), "z".repeat(4_095));
+    let matches = CORRECTNESS_SCANNER.scan(&make_text_chunk(body));
+    assert!(
+        finds_token_anywhere(&matches, token),
+        "planted key at the maximum context boundary was not surfaced"
+    );
+}
+
+/// Locks out chunk-edge blind spots while preserving the exact 20-byte AWS
+/// token contract at both the start and end of the scanned buffer.
+#[test]
+fn aws_key_is_found_at_both_chunk_edges() {
+    let token = "AKIAQYLPMN5HFIQR7XYA";
+    for body in [format!("{token}\ncontext"), format!("context\n{token}")] {
+        let matches = CORRECTNESS_SCANNER.scan(&make_text_chunk(body));
+        assert!(
+            finds_token_anywhere(&matches, token),
+            "chunk-edge AWS access-key ID was not surfaced: {matches:?}"
+        );
+    }
+}
+
+/// Locks out case-insensitive prefix shadowing: an adjacent mixed-case `Aki`
+/// must not consume the start of a canonical uppercase AWS access-key ID.
+#[test]
+fn mixed_case_prefix_does_not_shadow_canonical_aws_key() {
+    let token = "AKIA00A000A0AA0A0A00";
+    let matches = CORRECTNESS_SCANNER.scan(&make_text_chunk(format!("Aki{token}")));
+    assert!(
+        finds_token_anywhere(&matches, token),
+        "mixed-case prefix shadowed the canonical AWS access-key ID: {matches:?}"
+    );
+}
+
+/// Locks out state leaks that only appear on larger chunks by comparing exact
+/// finding identities across repeated scans at the original 8 KiB ceiling.
+#[test]
+fn scan_is_idempotent_at_size_boundary() {
+    let bytes = (0..8_192).map(|index| (index % 251) as u8).collect();
+    let chunk = make_chunk(bytes);
+    let key = |matches: Vec<keyhog_core::RawMatch>| {
+        matches
+            .into_iter()
+            .map(|finding| {
+                (
+                    finding.detector_id.as_ref().to_string(),
+                    finding.credential.as_ref().to_string(),
+                    finding.location.offset,
+                )
+            })
+            .collect::<std::collections::BTreeSet<_>>()
+    };
+    assert_eq!(
+        key(FUZZ_SCANNER.scan(&chunk)),
+        key(FUZZ_SCANNER.scan(&chunk))
+    );
+}
+
+/// Locks out prefix-window regressions at the property distribution boundary:
+/// the largest formerly generated padding must not hide a following secret.
+#[test]
+fn maximum_prefix_padding_does_not_drop_finding() {
+    let secret = concat!("AK", "IAQYLPMN5HFIQR7XYA");
+    let chunk = make_text_chunk(format!("{}{secret}", " ".repeat(4_095)));
+    let matches = FUZZ_SCANNER.scan(&chunk);
+    assert!(
+        finds_token_anywhere(&matches, secret),
+        "4,095 bytes of prefix padding dropped the planted secret"
+    );
 }

@@ -158,7 +158,9 @@ jobs:
       # complete CPU/SIMD detection stack; real GPU execution and parity belong
       # to the GPU-labelled fleet lane, where an unavailable adapter is a hard
       # configuration failure instead of a false failure on GitHub hardware.
-      - run: cargo test -p keyhog-scanner --lib --no-default-features --features ci-lean
+      # Several library contracts compile the complete detector corpus. Bound
+      # test concurrency so high-core runners do not multiply that resident set.
+      - run: cargo test -p keyhog-scanner --lib --no-default-features --features ci-lean -- --test-threads=4
       - run: cargo test -p keyhog --lib
       # verifier + sources inline unit tests: previously only their `--test`
       # aggregators ran in CI, so a lib-internal unit test (e.g. the
