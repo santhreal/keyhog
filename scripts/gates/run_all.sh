@@ -148,6 +148,8 @@ run "Org audit unit tests: Markdown section parser stays code-fence aware" \
   python3 -m unittest scripts.tests.test_org_audit -v
 run "tests_wired unit tests: CI-orphan model (path/mod/--test/all-targets/pkg)" \
   python3 -m unittest scripts.tests.test_tests_wired -v
+run "Release publisher tests: draft recovery and exact-manifest atomicity" \
+  python3 -m unittest scripts.tests.test_publish_release_assets -v
 run "Org audit: stale claims / LOC-cap bloat / evidence wiring" \
   python3 scripts/org_audit.py
 run "Install static analysis: shell + PowerShell parser/linter coverage" \
