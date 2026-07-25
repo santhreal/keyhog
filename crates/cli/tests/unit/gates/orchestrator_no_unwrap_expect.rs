@@ -10,10 +10,19 @@ fn orchestrator_no_unwrap_expect() {
     collect_rust_sources(&root, &mut files);
     files.sort();
     let external_test_modules = externally_split_test_modules(&files);
+    let external_test_module_dirs: Vec<_> = external_test_modules
+        .iter()
+        .map(|path| path.with_extension(""))
+        .filter(|path| path.is_dir())
+        .collect();
 
     let mut offenders: Vec<(String, usize, String)> = Vec::new();
     for path in files {
-        if external_test_modules.contains(&path) {
+        if external_test_modules.contains(&path)
+            || external_test_module_dirs
+                .iter()
+                .any(|directory| path.starts_with(directory))
+        {
             continue;
         }
         let display = path
@@ -63,57 +72,75 @@ fn orchestrator_no_unwrap_expect() {
 }
 
 fn externally_split_test_modules(files: &[PathBuf]) -> BTreeSet<PathBuf> {
+    let sources: Vec<_> = files
+        .iter()
+        .map(|owner| {
+            let source = std::fs::read_to_string(owner)
+                .unwrap_or_else(|error| panic!("{} source readable: {error}", owner.display()));
+            (owner, source)
+        })
+        .collect();
     let mut test_modules = BTreeSet::new();
-    for owner in files {
-        let source = std::fs::read_to_string(owner)
-            .unwrap_or_else(|error| panic!("{} source readable: {error}", owner.display()));
-        let mut pending_cfg_test = false;
-        let mut explicit_path: Option<&str> = None;
-        for line in source.lines() {
-            let trimmed = line.trim();
-            if trimmed == "#[cfg(test)]" {
-                pending_cfg_test = true;
-                explicit_path = None;
-                continue;
-            }
-            if !pending_cfg_test {
-                continue;
-            }
-            if let Some(path) = trimmed
-                .strip_prefix("#[path = \"")
-                .and_then(|rest| rest.strip_suffix("\"]"))
-            {
-                explicit_path = Some(path);
-                continue;
-            }
-            if trimmed.starts_with("#[") {
-                continue;
-            }
-            if let Some(name) = trimmed
-                .strip_prefix("mod ")
-                .and_then(|rest| rest.strip_suffix(';'))
-            {
-                let parent = owner.parent().expect("Rust source has parent directory");
-                let candidate = explicit_path.map_or_else(
-                    || {
-                        if owner.file_name().and_then(|name| name.to_str()) == Some("mod.rs") {
-                            parent.join(format!("{name}.rs"))
-                        } else {
-                            parent
-                                .join(owner.file_stem().expect("Rust source has a file stem"))
-                                .join(format!("{name}.rs"))
-                        }
-                    },
-                    |path| parent.join(path),
-                );
-                if candidate.is_file() {
-                    test_modules.insert(candidate);
+
+    loop {
+        let before = test_modules.len();
+        for (owner, source) in &sources {
+            let inherited_test_module = test_modules.contains(*owner);
+            let mut pending_cfg_test = false;
+            let mut explicit_path: Option<&str> = None;
+            for line in source.lines() {
+                let trimmed = line.trim();
+                if trimmed.is_empty() || trimmed.starts_with("//") {
+                    continue;
                 }
+                if trimmed == "#[cfg(test)]" {
+                    pending_cfg_test = true;
+                    explicit_path = None;
+                    continue;
+                }
+                if !inherited_test_module && !pending_cfg_test {
+                    continue;
+                }
+                if let Some(path) = trimmed
+                    .strip_prefix("#[path = \"")
+                    .and_then(|rest| rest.strip_suffix("\"]"))
+                {
+                    explicit_path = Some(path);
+                    continue;
+                }
+                if trimmed.starts_with("#[") {
+                    continue;
+                }
+                if let Some(name) = trimmed
+                    .strip_prefix("mod ")
+                    .and_then(|rest| rest.strip_suffix(';'))
+                {
+                    let parent = owner.parent().expect("Rust source has parent directory");
+                    let candidate = explicit_path.map_or_else(
+                        || {
+                            if owner.file_name().and_then(|name| name.to_str()) == Some("mod.rs") {
+                                parent.join(format!("{name}.rs"))
+                            } else {
+                                parent
+                                    .join(owner.file_stem().expect("Rust source has a file stem"))
+                                    .join(format!("{name}.rs"))
+                            }
+                        },
+                        |path| parent.join(path),
+                    );
+                    if candidate.is_file() {
+                        test_modules.insert(candidate);
+                    }
+                }
+                pending_cfg_test = false;
+                explicit_path = None;
             }
-            pending_cfg_test = false;
-            explicit_path = None;
+        }
+        if test_modules.len() == before {
+            break;
         }
     }
+
     test_modules
 }
 
