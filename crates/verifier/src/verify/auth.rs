@@ -6,7 +6,7 @@ use reqwest::Client;
 
 use crate::interpolate::{
     interpolate_http_value, missing_companion_field, missing_companion_refs,
-    resolve_and_sanitize_field,
+    resolve_and_sanitize_field, CompanionKey,
 };
 use crate::verify::{build_aws_probe, missing_companion_error, RequestBuildResult};
 
@@ -14,7 +14,7 @@ pub(crate) async fn build_request_for_auth(
     request: reqwest::RequestBuilder,
     auth: &AuthSpec,
     credential: &str,
-    companions: &HashMap<String, String>,
+    companions: &HashMap<impl CompanionKey, String>,
     timeout: Duration,
     client: &Client,
     allow_private_ips: bool,
@@ -136,7 +136,15 @@ pub(crate) async fn build_request_for_auth(
                     transient: false,
                 };
             }
-            let variables = companions.clone();
+            let variables: HashMap<String, String> = companions
+                .iter()
+                .map(|(name, value)| {
+                    (
+                        std::borrow::Borrow::<str>::borrow(name).to_string(),
+                        value.clone(),
+                    )
+                })
+                .collect();
             match codewalk::sandbox::execute_script(
                 engine.as_str(),
                 code,
@@ -164,7 +172,7 @@ pub(crate) async fn build_request_for_auth(
 
 fn missing_auth_fields<const N: usize>(
     fields: [&str; N],
-    companions: &HashMap<String, String>,
+    companions: &HashMap<impl CompanionKey, String>,
 ) -> Vec<String> {
     let mut missing = Vec::new();
     for field in fields {

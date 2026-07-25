@@ -21,6 +21,7 @@ pub(crate) use backend::BackendRecoveryPlan;
 pub(crate) use backend::StagedAutorouteCache;
 use backend::{is_gpu_backend, AutorouteRoutingError, BackendSelection, MeasuredBackendRouter};
 pub(crate) use backend::{
+    autoroute_engine_identity, autoroute_executable_identity, autoroute_gpu_artifact_identity,
     AutorouteMeasurementObserver, AutorouteMeasurementReceipt, CachedBackendRouter,
 };
 use keyhog_core::{Chunk, RawMatch, Source};
@@ -167,6 +168,9 @@ impl CoalescedBatchRouter {
         selection: &BackendSelection,
         recovery: &keyhog_scanner::BackendRecoveryReceipt,
     ) -> std::result::Result<(), AutorouteRoutingError> {
+        if recovery.is_phase1_admission_recovery() {
+            return Ok(());
+        }
         match self {
             Self::Explicit(_) => Ok(()),
             Self::Measured(router) => router.quarantine_recovered_route(selection, recovery),
@@ -342,25 +346,17 @@ pub(crate) fn recover_automatic_backend_batch(
         )));
     }
     let admission = (!recovery_plan.backend.is_gpu()).then(|| scanner.phase1_admission_plan(batch));
-    let recovery_degrade_before = recovery_plan
-        .backend
-        .is_gpu()
-        .then(|| scanner.gpu_degrade_count());
-    let outcome = scanner.try_scan_coalesced_with_backend_admission_route_and_recovery(
-        batch,
-        recovery_plan.backend,
-        admission.as_ref(),
-        recovery_plan.execution_route,
-        false,
-    )?;
-    if let Some(before) = recovery_degrade_before {
-        let after = scanner.gpu_degrade_count();
-        if after != before {
-            return Err(keyhog_scanner::ScanError::Gpu(format!(
-                "calibrated recovery backend {} degraded during dispatch (GPU degradation counter {before} -> {after}); scan coverage cannot be certified complete",
-                recovery_plan.backend.label()
-            )));
-        }
+    let outcome = scanner.scan_coalesced_with_backend_admission_route_and_recovery(batch,
+    recovery_plan.backend,
+    admission.as_ref(),
+    recovery_plan.execution_route,
+    false,)?;
+    if outcome.gpu_recovery_receipts != 0 {
+        return Err(keyhog_scanner::ScanError::Gpu(format!(
+            "calibrated recovery backend {} emitted {} GPU recovery receipt(s) during this dispatch; scan coverage cannot be certified complete",
+            recovery_plan.backend.label(),
+            outcome.gpu_recovery_receipts
+        )));
     }
     let ranges = batch
         .iter()
@@ -408,44 +404,43 @@ pub(crate) fn scan_selected_batch(
     execution_route: keyhog_scanner::ScanExecutionRoute,
     recovery_plan: Option<BackendRecoveryPlan>,
 ) -> keyhog_scanner::Result<SelectedBatchScan> {
-    let degrade_before = backend.is_gpu().then(|| scanner.gpu_degrade_count());
-    let (mut per_chunk, mut recovery) = match scanner
-        .try_scan_coalesced_with_backend_admission_route_and_recovery(
-            batch,
-            backend,
-            admission_plan,
-            execution_route,
-            false,
-        ) {
-        Ok(outcome) => (outcome.matches, outcome.recovery),
+    let (mut per_chunk, mut recovery, gpu_recovery_receipts) = match scanner.scan_coalesced_with_backend_admission_route_and_recovery(batch,
+    backend,
+    admission_plan,
+    execution_route,
+    false,) {
+        Ok(outcome) => (
+            outcome.matches,
+            outcome.recovery,
+            outcome.gpu_recovery_receipts,
+        ),
         Err(error) => match recovery_plan {
             Some(recovery_plan) => {
-                recover_automatic_backend_batch(scanner, batch, backend, &error, recovery_plan)?
+                let (per_chunk, recovery) =
+                    recover_automatic_backend_batch(scanner, batch, backend, &error, recovery_plan)?;
+                (per_chunk, recovery, 0)
             }
             None => return Err(error),
         },
     };
 
-    if let Some(before) = degrade_before {
-        let after = scanner.gpu_degrade_count();
-        if recovery.is_none() && after != before {
-            if let Some(recovery_plan) = recovery_plan {
-                let error = keyhog_scanner::ScanError::Gpu(
-                    "GPU dispatch completed through the scanner recall floor".to_string(),
-                );
-                (per_chunk, recovery) = recover_automatic_backend_batch(
-                    scanner,
-                    batch,
-                    backend,
-                    &error,
-                    recovery_plan,
-                )?;
-            } else {
-                return Err(keyhog_scanner::ScanError::Gpu(format!(
-                    "selected backend {} degraded during dispatch (GPU degradation counter {before} -> {after}); explicit or required backend requests cannot be substituted",
-                    backend.label()
-                )));
-            }
+    if recovery.is_none() && gpu_recovery_receipts != 0 {
+        if let Some(recovery_plan) = recovery_plan {
+            let error = keyhog_scanner::ScanError::Gpu(format!(
+                "GPU dispatch completed with {gpu_recovery_receipts} request-scoped recovery receipt(s)"
+            ));
+            (per_chunk, recovery) = recover_automatic_backend_batch(
+                scanner,
+                batch,
+                backend,
+                &error,
+                recovery_plan,
+            )?;
+        } else {
+            return Err(keyhog_scanner::ScanError::Gpu(format!(
+                "selected backend {} emitted {gpu_recovery_receipts} GPU recovery receipt(s) during this dispatch; explicit or required backend requests cannot be substituted",
+                backend.label()
+            )));
         }
     }
 
@@ -466,23 +461,8 @@ pub(crate) fn record_completed_backend_recovery(receipt: &keyhog_scanner::Backen
     crate::BACKEND_RECOVERY_EVENTS.fetch_add(1, Ordering::Relaxed);
     crate::BACKEND_RECOVERED_CHUNKS.fetch_add(recovered_chunks, Ordering::Relaxed);
     crate::BACKEND_RECOVERED_BYTES.fetch_add(recovered_bytes, Ordering::Relaxed);
-    crate::record_backend_recovery_summary(keyhog_core::ScanBackendRecoverySummary {
-        events: 1,
-        failed_backend: receipt.failed_backend.label().to_string(),
-        recovery_backend: receipt.recovery_backend.label().to_string(),
-        recovered_ranges: receipt.ranges.len(),
-        recovered_chunks,
-        recovered_bytes,
-        reason: receipt.reason.clone(),
-        repair_command: "keyhog calibrate-autoroute".to_string(),
-    });
-    eprintln!(
-        "keyhog: WARNING: automatic backend {} faulted ({}); recovered {} exact range(s) across {recovered_chunks} chunk(s), {recovered_bytes} byte(s), through {}; scan coverage is complete; repair: keyhog calibrate-autoroute",
-        receipt.failed_backend.label(),
-        receipt.reason,
-        receipt.ranges.len(),
-        receipt.recovery_backend.label(),
-    );
+    crate::record_backend_recovery_summary(completed_recovery_summary(receipt));
+    eprintln!("{}", completed_recovery_terminal_message(receipt));
     tracing::debug!(
         target: "keyhog::routing",
         failed_backend = receipt.failed_backend.label(),
@@ -491,8 +471,51 @@ pub(crate) fn record_completed_backend_recovery(receipt: &keyhog_scanner::Backen
         chunks = recovered_chunks,
         bytes = recovered_bytes,
         reason = %receipt.reason,
-        "automatic backend fault recovered with complete byte coverage",
+        admission_plan_recovery = receipt.is_phase1_admission_recovery(),
+        "exact recovery completed with complete byte coverage",
     );
+}
+
+fn completed_recovery_summary(
+    receipt: &keyhog_scanner::BackendRecoveryReceipt,
+) -> keyhog_core::ScanBackendRecoverySummary {
+    keyhog_core::ScanBackendRecoverySummary {
+        events: 1,
+        failed_backend: receipt.failed_backend.label().to_string(),
+        recovery_backend: receipt.recovery_backend.label().to_string(),
+        recovered_ranges: receipt.ranges.len(),
+        recovered_chunks: receipt.recovered_chunks(),
+        recovered_bytes: receipt.recovered_bytes(),
+        reason: receipt.reason.clone(),
+        repair_command: if receipt.is_phase1_admission_recovery() {
+            "rerun the scan; report persistent admission-plan identity mismatches".to_string()
+        } else {
+            "keyhog calibrate-autoroute".to_string()
+        },
+    }
+}
+
+fn completed_recovery_terminal_message(
+    receipt: &keyhog_scanner::BackendRecoveryReceipt,
+) -> String {
+    let recovered_chunks = receipt.recovered_chunks();
+    let recovered_bytes = receipt.recovered_bytes();
+    if receipt.is_phase1_admission_recovery() {
+        format!(
+            "keyhog: WARNING: {}; recovered {} exact range(s) across {recovered_chunks} chunk(s), {recovered_bytes} byte(s), through {}; scan coverage is complete",
+            receipt.reason,
+            receipt.ranges.len(),
+            receipt.recovery_backend.label(),
+        )
+    } else {
+        format!(
+            "keyhog: WARNING: automatic backend {} faulted ({}); recovered {} exact range(s) across {recovered_chunks} chunk(s), {recovered_bytes} byte(s), through {}; scan coverage is complete; repair: keyhog calibrate-autoroute",
+            receipt.failed_backend.label(),
+            receipt.reason,
+            receipt.ranges.len(),
+            receipt.recovery_backend.label(),
+        )
+    }
 }
 
 pub(crate) fn record_completed_autoroute_state_recovery(

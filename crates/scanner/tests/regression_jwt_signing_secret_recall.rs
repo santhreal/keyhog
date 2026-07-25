@@ -41,6 +41,7 @@ fn scan(path: &str, text: &str) -> Vec<(String, String)> {
     s.clear_fragment_cache();
     let chunk: Chunk = make_chunk(text, "filesystem", path);
     s.scan(&chunk)
+        .expect("JWT signing-secret regression scan should succeed")
         .into_iter()
         .map(|m| (m.detector_id.to_string(), m.credential.as_str().to_string()))
         .collect()

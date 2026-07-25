@@ -33,6 +33,7 @@ field = "match"
 
 [detector.verify.success]
 status = 200
+policy = "status_with_error_backstop"
 
 [[detector.tests]]
 test_positive = "DAILY_API_KEY = a223af74096e28e3dda4f9d71fd2d696644154aeb843d9d779616433e1e04344"

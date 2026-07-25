@@ -29,6 +29,7 @@ template = "{{match}}"
 
 [detector.verify.success]
 status = 200
+policy = "status_with_error_backstop"
 
 [[detector.tests]]
 test_positive = "LOGZIO_API_TOKEN=ea3a3ee0cee5c612686ea0c6af0baffc"

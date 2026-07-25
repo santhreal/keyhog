@@ -259,7 +259,10 @@ fn make_raw_match(
         severity,
         credential: keyhog_core::SensitiveString::from(credential),
         credential_hash: credential_hash(credential).into(),
-        companions,
+        companions: companions
+            .into_iter()
+            .map(|(name, value)| (Arc::from(name), value))
+            .collect(),
         location: MatchLocation {
             source: Arc::from("test"),
             file_path: Some(Arc::from(file_path)),

@@ -29,6 +29,7 @@ template = "Token token={{match}}"
 
 [detector.verify.success]
 status = 200
+policy = "status_with_error_backstop"
 
 [[detector.tests]]
 test_positive = "PAGERDUTY_API_KEY=k7p4qx9rm2sn5tb8vw3yz0a6b8c4d1f3"

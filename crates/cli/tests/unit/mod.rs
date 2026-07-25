@@ -6,8 +6,6 @@ pub mod cli_misc;
 // daemon module + wire tests are unix-only (Unix-domain sockets).
 #[cfg(unix)]
 pub mod daemon_trust;
-#[cfg(unix)]
-pub mod daemon_wire;
 pub mod detectors_brace_fix;
 pub mod exit_codes;
 pub mod file_gate;

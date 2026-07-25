@@ -2,7 +2,10 @@
 //! one request/response pair at a time over a Unix socket.
 
 use crate::daemon::frame;
-use crate::daemon::protocol::{response_kind, Request, Response, WIRE_VERSION};
+use crate::daemon::protocol::{
+    response_kind, Request, Response, WarmBackendStatus, WIRE_VERSION,
+};
+use crate::daemon::warm_identity;
 use crate::daemon::trust;
 use anyhow::{bail, Context, Result};
 use futures_util::{SinkExt, StreamExt};
@@ -40,8 +43,22 @@ fn request_timeout(request: &Request) -> Duration {
 /// otherwise keep serving scans with its OLD detector corpus, silently
 /// returning stale results to the upgraded client. Returns the live stream
 /// split into reader and writer halves.
-pub async fn connect(socket_path: &Path) -> Result<Client> {
-    connect_inner(socket_path, true).await
+pub(crate) async fn connect(socket_path: &Path) -> Result<Client> {
+    connect_inner(socket_path, true, None).await
+}
+/// Open a scan connection while validating against the detector corpus the
+/// client actually selected. The expected digest is client-derived; the
+/// daemon's Hello value is never used as its own expectation.
+pub(crate) async fn connect_with_detector_rules_digest(
+    socket_path: &Path,
+    expected_detector_rules_digest: String,
+) -> Result<Client> {
+    connect_inner(
+        socket_path,
+        true,
+        Some(expected_detector_rules_digest),
+    )
+    .await
 }
 
 /// Connect WITHOUT the build/corpus staleness rejection. Wire compatibility
@@ -51,11 +68,31 @@ pub async fn connect(socket_path: &Path) -> Result<Client> {
 /// (the whole point of `stop` on a stale daemon is to clear it; refusing on a
 /// version mismatch would strand it). The wire-version gate still applies
 /// because a wire-incompatible daemon cannot be framed at all.
-pub async fn connect_any_version(socket_path: &Path) -> Result<Client> {
-    connect_inner(socket_path, false).await
+pub(crate) async fn connect_any_version(socket_path: &Path) -> Result<Client> {
+    connect_inner(socket_path, false, None).await
 }
 
-async fn connect_inner(socket_path: &Path, require_same_version: bool) -> Result<Client> {
+#[cfg(test)]
+/// Return the exact client-owned portion of the warm-route identity.
+pub(crate) fn current_warm_backend_identity(
+    detector_rules_digest: String,
+) -> Result<crate::daemon::protocol::WarmBackendIdentity> {
+    warm_identity::client_identity(detector_rules_digest)
+}
+
+pub(crate) fn current_warm_backend_mismatches(
+    status: &WarmBackendStatus,
+) -> Result<Vec<String>> {
+    let detector_rules_digest = embedded_detector_rules_digest()?;
+    let expected = warm_identity::client_identity(detector_rules_digest)?;
+    Ok(warm_identity::validate_for_client(status, &expected))
+}
+
+async fn connect_inner(
+    socket_path: &Path,
+    require_same_version: bool,
+    expected_detector_rules_digest: Option<String>,
+) -> Result<Client> {
     trust::validate_socket_for_connect(socket_path)?;
     // 1 s connect ceiling so a stale socket file with no listener
     // fails fast instead of blocking the CLI for the kernel's
@@ -77,6 +114,7 @@ async fn connect_inner(socket_path: &Path, require_same_version: bool) -> Result
         daemon_version: String::new(),
         backend_policy: String::new(),
         stale_reason: None,
+        warm_backend: None,
     };
 
     // Hello handshake gates the connection on wire compatibility. A
@@ -106,6 +144,7 @@ async fn connect_inner(socket_path: &Path, require_same_version: bool) -> Result
             git_hash,
             detector_rules_digest,
             backend_policy,
+            warm_backend,
             ..
         } if wire_version == WIRE_VERSION => {
             validate_backend_policy(&backend_policy)?;
@@ -116,8 +155,20 @@ async fn connect_inner(socket_path: &Path, require_same_version: bool) -> Result
             // the upgraded client OLD-corpus results, a silent recall/precision
             // divergence the wire check cannot catch. Refuse so the scan path
             // never depends on whether a stale daemon happens to be running.
-            let expected_rules_digest = embedded_detector_rules_digest()?;
-            let mut mismatches = Vec::new();
+            let expected_rules_digest = match expected_detector_rules_digest {
+                Some(digest) => digest,
+                None => embedded_detector_rules_digest()?,
+            };
+            let expected_warm_identity = if require_same_version {
+                warm_identity::client_identity(expected_rules_digest.clone())?
+            } else {
+                warm_identity::client_control_identity(
+                    expected_rules_digest.clone(),
+                    &warm_backend.identity.binary_sha256,
+                )
+            };
+            let mut mismatches =
+                warm_identity::validate_for_client(&warm_backend, &expected_warm_identity);
             if keyhog_version != CLIENT_KEYHOG_VERSION {
                 mismatches.push(format!(
                     "package version daemon={keyhog_version}, client={CLIENT_KEYHOG_VERSION}"
@@ -129,27 +180,32 @@ async fn connect_inner(socket_path: &Path, require_same_version: bool) -> Result
                     keyhog_core::git_hash()
                 ));
             }
-            if detector_rules_digest != expected_rules_digest {
+            if detector_rules_digest != warm_backend.identity.detector_rules_digest {
                 mismatches.push(format!(
-                    "detector rules daemon={detector_rules_digest}, client={expected_rules_digest}"
+                    "daemon Hello identity is inconsistent: detector_rules_digest={detector_rules_digest}, warm_backend.detector_rules_digest={}",
+                    warm_backend.identity.detector_rules_digest
                 ));
             }
             let stale_reason = (!mismatches.is_empty()).then(|| mismatches.join("; "));
-            if require_same_version && stale_reason.is_some() {
-                bail!(
-                    "daemon identity mismatch at {}: {}. It may hold a different build, \
-                     detector corpus, or scan pipeline and would return stale scan results. Restart it with \
-                     `keyhog daemon stop && keyhog daemon start`, or pass `--daemon=off` to \
-                     scan in-process.",
-                    socket_path.display(),
-                    stale_reason.as_deref().unwrap_or("unknown identity mismatch"), // LAW10: reporting-only fallback inside an already fail-closed identity-mismatch error
-                );
+            if require_same_version {
+                if let Some(reason) = stale_reason.as_deref() {
+                    bail!(
+                        "daemon identity mismatch at {}: {}. It may hold a different build, \
+                         detector corpus, scan pipeline, accelerator artifact, or resolved config and \
+                         would return stale scan results. Restart it with \
+                         `keyhog daemon stop && keyhog daemon start`, or pass `--daemon=off` to \
+                         scan in-process.",
+                        socket_path.display(),
+                        reason,
+                    );
+                }
             }
             // Record the daemon's reported version so callers that tolerate a
             // mismatch (`status`) can still surface staleness to the operator.
             client.daemon_version = keyhog_version;
             client.backend_policy = backend_policy;
             client.stale_reason = stale_reason;
+            client.warm_backend = Some(warm_backend);
             Ok(client)
         }
         Response::Hello {
@@ -177,7 +233,7 @@ pub(crate) mod testing {
 #[path = "client_tests.rs"]
 mod client_tests;
 
-pub struct Client {
+pub(crate) struct Client {
     transport: frame::ClientTransport,
     /// The `keyhog_version` the daemon reported in its `Hello`. Set during
     /// `connect`/`connect_any_version`. Lets `daemon status` warn loudly when a
@@ -186,6 +242,7 @@ pub struct Client {
     /// Canonical daemon-owned route policy received in the Hello handshake.
     backend_policy: String,
     stale_reason: Option<String>,
+    warm_backend: Option<WarmBackendStatus>,
 }
 
 impl Client {
@@ -200,15 +257,20 @@ impl Client {
         &self.backend_policy
     }
 
-    /// `true` when the daemon package, Git build, or detector rules differ from
-    /// this client. `connect` refuses such a daemon; `connect_any_version`
-    /// tolerates it so status/stop can diagnose and clear stale state.
+    /// `true` when warm initialization is incomplete or any package, engine,
+    /// executable, Git build, detector, or resolved-config identity differs.
+    /// `connect` refuses such a daemon; `connect_any_version` tolerates it so
+    /// status/stop can diagnose and clear stale state.
     pub(crate) fn is_stale(&self) -> bool {
         self.stale_reason.is_some()
     }
 
     pub(crate) fn stale_reason(&self) -> Option<&str> {
         self.stale_reason.as_deref()
+    }
+
+    pub(crate) fn warm_backend_status(&self) -> Option<&WarmBackendStatus> {
+        self.warm_backend.as_ref()
     }
 
     pub(crate) async fn send(&mut self, request: &Request) -> Result<()> {

@@ -30,7 +30,7 @@ fn stripe_hot_and_confirmed_paths_share_nonzero_base_offset() {
             base_line,
             ..Default::default()
         },
-    });
+    }).expect("scanner call should succeed");
 
     let stripe: Vec<_> = matches
         .iter()

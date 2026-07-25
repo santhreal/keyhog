@@ -191,29 +191,38 @@ fn precision_mode_rejects_entropy_threshold_override_at_clap_level() {
     );
 }
 
-/// Precision mode enforces the floor even on detectors with no per-detector override.
-/// A detector without a configured min_confidence uses the global floor (0.85).
-/// This test plants a credential that matches a detector but scores below 0.85,
-/// and asserts precision drops it.
+/// Precision clamps embedded detector floors as well as operator overrides.
+/// AbuseIPDB declares a 0.25 detector floor and this anchored credential reports
+/// at exactly 0.795, so default admits it and precision's 0.85 floor rejects it.
 #[test]
-fn precision_mode_global_floor_0_85_on_unspecified_detectors() {
-    // A weak generic password credential (no service-specific detector, so it uses
-    // the generic-password detector, which typically has low confidence).
-    let fixture = "PASSWORD = \"admin123\"\n";
+fn precision_mode_clamps_embedded_detector_floor_to_0_85() {
+    let fixture = concat!(
+        "ABUSEIPDB_API_KEY=",
+        "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz",
+        "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz\n",
+    );
+
+    // Regression: pin the candidate below the documented boundary so scoring
+    // drift cannot make a passing floor test meaningless.
+    let (default_out, _, default_code) = scan_with_args(fixture, &["--format", "json"]);
+    assert_eq!(default_code, Some(1));
+    let default: serde_json::Value = serde_json::from_str(&default_out).expect("default JSON");
+    assert!(default.as_array().expect("array").iter().any(|finding| {
+        finding.get("detector_id").and_then(|value| value.as_str())
+            == Some("abuseipdb-api-key")
+            && finding.get("confidence").and_then(|value| value.as_f64()) == Some(0.795)
+    }));
 
     let (prec_out, _e, prec_code) = scan_with_args(fixture, &["--precision", "--format", "json"]);
-
-    // Under precision mode (floor 0.85), this weak password must be dropped.
     assert_eq!(
         prec_code,
         Some(0),
-        "precision mode must drop weak generic passwords (below 0.85 floor)"
+        "precision must clamp the detector-owned 0.25 floor to 0.85"
     );
-    let findings: serde_json::Value = serde_json::from_str(&prec_out).expect("JSON");
-    let arr = findings.as_array().expect("array");
+    let findings: serde_json::Value = serde_json::from_str(&prec_out).expect("precision JSON");
     assert!(
-        arr.is_empty(),
-        "precision must reject the weak generic password; got {arr:?}"
+        findings.as_array().expect("array").is_empty(),
+        "precision must reject the 0.795 AbuseIPDB finding; got {findings}"
     );
 }
 

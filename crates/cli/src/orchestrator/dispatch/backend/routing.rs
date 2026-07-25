@@ -126,8 +126,9 @@ impl AutorouteRoutingError {
             message: format!(
                 "autoroute calibration did not persist a routing decision: {error}. \
                  Calibration records must be durable before auto routing can be trusted. \
-                 Fix the cache path/permissions and rerun `install.sh --calibrate` or \
-                 `install.ps1 -Calibrate`."
+                 Fix the cache path or permissions and rerun `keyhog calibrate-autoroute`. \
+                 Use an explicit `--backend` only for a diagnostic scan; it does not replace \
+                 autoroute evidence."
             ),
         }
     }

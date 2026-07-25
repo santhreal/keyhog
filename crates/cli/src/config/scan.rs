@@ -1,7 +1,7 @@
 use super::limits::apply_limits_section;
 use super::schema::{ConfigFile, ScanSection};
 use super::sections::config_relative_path;
-use crate::args::ScanArgs;
+use crate::args::{DetectorMode, ScanArgs};
 use crate::value_parsers::{
     parse_byte_size, parse_dedup_scope, parse_entropy_bpe_max_bytes_per_token,
     parse_entropy_threshold, parse_min_confidence, parse_ml_threshold, parse_ml_weight,
@@ -9,6 +9,16 @@ use crate::value_parsers::{
     SEVERITY_ACCEPTED,
 };
 use std::path::{Path, PathBuf};
+const DETECTOR_MODE_ACCEPTED: &str = "expected one of replace, overlay";
+
+fn parse_detector_mode(value: &str) -> Option<DetectorMode> {
+    match value {
+        "replace" => Some(DetectorMode::Replace),
+        "overlay" => Some(DetectorMode::Overlay),
+        _ => None,
+    }
+}
+
 
 /// Reject a user-supplied keyword list that contains an empty entry.
 ///
@@ -399,7 +409,7 @@ pub(super) fn apply_top_level_scan_fields(
 ) {
     // Apply config values only when no explicit CLI flag was given.
     let cli_preset_selected = args.fast || args.deep || args.precision;
-    if let Some(ref detectors_str) = config.detectors {
+    if let Some(detectors_str) = &config.detectors {
         if !args.detectors_cli_explicit && args.detectors == PathBuf::from("detectors") {
             args.detectors = config_relative_path(config_path, detectors_str);
             // This bit records an explicitly selected corpus, regardless of
@@ -407,6 +417,17 @@ pub(super) fn apply_top_level_scan_fields(
             // The daemon owns its startup corpus and cannot honor a per-scan
             // config corpus without proving that identity in the protocol.
             args.detectors_cli_explicit = true;
+        }
+    }
+    if let Some(mode) = &config.detectors_mode {
+        match parse_detector_mode(mode) {
+            Some(mode) if args.detectors_mode.is_none() => args.detectors_mode = Some(mode),
+            Some(_) => {}
+            None => config_errors.push(super::invalid_config_value(
+                "detectors_mode",
+                mode,
+                DETECTOR_MODE_ACCEPTED,
+            )),
         }
     }
 

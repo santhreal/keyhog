@@ -16,6 +16,15 @@ pub(super) use persistence::{
 // Staged cache is used by `calibrate_autoroute` via orchestrator re-export.
 pub(crate) use persistence::StagedAutorouteCache;
 
+pub(super) fn current_engine_identity() -> String {
+    schema::AutorouteBuildFeatures::current().describe()
+}
+
+pub(super) fn current_executable_identity(
+) -> Result<&'static str, Box<dyn std::error::Error + Send + Sync>> {
+    artifact_identity::current_executable_sha256()
+}
+
 #[cfg(test)]
 pub(super) use codec::AUTOROUTE_CACHE_FILE_BYTES;
 #[cfg(test)]

@@ -58,13 +58,52 @@ fn calibrate_autoroute_primes_every_preset_for_a_later_scan() {
         .env("RAYON_NUM_THREADS", "4")
         .output()
         .expect("spawn keyhog calibrate-autoroute");
-    assert!(
-        out.status.success(),
-        "calibrate-autoroute must exit 0; got {:?}\nSTDOUT:\n{}\nSTDERR:\n{}",
-        out.status.code(),
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr),
-    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    match out.status.code() {
+        Some(0) => {}
+        Some(2) => {
+            // Regression: statistically overlapping timings are a legitimate
+            // fail-closed result, not permission to publish an arbitrary winner
+            // or to make this command claim success.
+            assert!(
+                stderr.contains("inconclusive timing evidence")
+                    && stderr.contains("no confidence-supported"),
+                "exit 2 is reserved here for measured inconclusive evidence; stderr={stderr}"
+            );
+            assert_eq!(
+                stderr.lines().last(),
+                Some(
+                    "error: isolated default autoroute calibration failed with exit status: 2; \
+                     earlier policy generations remain valid, but the complete sweep was not \
+                     published. Remediation: rerun `keyhog calibrate-autoroute` on an idle host; \
+                     use an explicit `--backend` only for a diagnostic scan"
+                ),
+                "inconclusive calibration must expose the exact retry and diagnostic remediation"
+            );
+            assert!(
+                !stdout.contains("Calibration complete"),
+                "inconclusive calibration must not print a success summary; stdout={stdout}"
+            );
+            let inspection = Command::new(&stable_binary)
+                .args(["backend", "--autoroute", "--json"])
+                .env("XDG_CACHE_HOME", cache.path())
+                .output()
+                .expect("inspect cache after inconclusive calibration");
+            let value: serde_json::Value = serde_json::from_slice(&inspection.stdout)
+                .expect("autoroute inspection JSON after inconclusive calibration");
+            assert_eq!(
+                value["present"],
+                serde_json::json!(false),
+                "failed generation must not be published; json={value}"
+            );
+            return;
+        }
+        code => panic!(
+            "calibrate-autoroute must either publish (exit 0) or fail closed on inconclusive \
+             timing (exit 2); got {code:?}\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}"
+        ),
+    }
 
     // Verify against SEPARATE files at calibrated ladder sizes (4 KiB and
     // 64 KiB single files). After one sweep, a plain auto scan with each

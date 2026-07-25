@@ -51,7 +51,10 @@ fn raw_match(credential: &str, companions: HashMap<String, String>) -> RawMatch 
         severity: Severity::Critical,
         credential: SensitiveString::from(credential),
         credential_hash: sha256_hash(credential),
-        companions,
+        companions: companions
+            .into_iter()
+            .map(|(name, value)| (Arc::from(name), value))
+            .collect(),
         location: loc(),
         entropy: Some(4.5),
         confidence: Some(0.9),

@@ -462,13 +462,36 @@ fn start_daemon(dir: &Path) -> (std::process::Child, PathBuf) {
 #[cfg(unix)]
 #[test]
 fn daemon_start_status_stop_reports_exact_lines_and_codes() {
+    use sha2::{Digest, Sha256};
+    use std::os::unix::fs::PermissionsExt;
     use std::time::{Duration, Instant};
-    let _daemon_slot = daemon_slot();
 
+    let _daemon_slot = daemon_slot();
     let dir = TempDir::new().unwrap();
     let (mut child, socket) = start_daemon(dir.path());
 
-    // status against a live daemon: exit 0, exact leading status line.
+    // The real status client and daemon authenticate one another through peer
+    // credentials. The private parent and 0600 socket are independent,
+    // user-visible defenses around that authenticated connection.
+    assert_eq!(
+        std::fs::metadata(dir.path())
+            .expect("daemon socket parent metadata")
+            .permissions()
+            .mode()
+            & 0o777,
+        0o700,
+        "the daemon socket parent must remain private"
+    );
+    assert_eq!(
+        std::fs::metadata(&socket)
+            .expect("daemon socket metadata")
+            .permissions()
+            .mode()
+            & 0o777,
+        0o600,
+        "the credential-streaming daemon socket must remain user-only"
+    );
+
     let status = Command::new(keyhog())
         .args(["daemon", "status", "--socket"])
         .arg(&socket)
@@ -480,24 +503,148 @@ fn daemon_start_status_stop_reports_exact_lines_and_codes() {
         "status against a live daemon must exit 0; stderr={}",
         String::from_utf8_lossy(&status.stderr)
     );
-    let stdout = String::from_utf8_lossy(&status.stdout);
-    assert!(
-        stdout.starts_with("keyhog daemon: uptime "),
-        "status line must start with the exact uptime prefix; got: {stdout}"
-    );
-    assert!(
-        stdout.contains(" scans served · ")
-            && stdout.contains(" active · ")
-            && stdout.contains(" detectors"),
-        "status line must carry the served/active/detectors columns; got: {stdout}"
-    );
-    assert!(
-        stdout.contains("backend policy: forced cpu-fallback")
-            && stdout.contains("daemon startup diagnostic override"),
-        "status must disclose the daemon-owned forced backend policy; got: {stdout}"
+    assert_eq!(
+        status.stderr,
+        b"",
+        "a current, ready daemon must not emit a stale/authentication warning"
     );
 
-    // stop: exit 0, exact confirmation on stderr.
+    let stdout = std::str::from_utf8(&status.stdout).expect("daemon status stdout is UTF-8");
+    let lines: Vec<_> = stdout.lines().collect();
+    let [warm_line, uptime_line, scope_line, policy_line, health_line] = lines.as_slice() else {
+        panic!(
+            "daemon status must emit exactly the five v8 operator lines in order; got:\n{stdout}"
+        );
+    };
+
+    // v8 intentionally puts the warm-route identity before uptime so readiness
+    // cannot be hidden below a healthy-looking process counter.
+    let warm_fields: Vec<_> = warm_line.split(" · ").collect();
+    let [readiness, generation_field, engine_field, binary_field, detectors_field, config_field, gpu_field] =
+        warm_fields.as_slice()
+    else {
+        panic!("warm-backend line must contain every ordered identity field; got: {warm_line}");
+    };
+    assert_eq!(*readiness, "warm backend: ready");
+
+    let generation = generation_field
+        .strip_prefix("generation ")
+        .expect("ordered daemon generation field");
+    let generation_tail = generation
+        .strip_prefix(&format!("{}-after-", child.id()))
+        .expect("generation must identify this daemon process and a post-epoch start");
+    let (started_ns, sequence) = generation_tail
+        .split_once('-')
+        .expect("generation must carry clock and sequence identities");
+    let is_lower_hex = |value: &str, width: usize| {
+        value.len() == width
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    };
+    assert!(
+        is_lower_hex(started_ns, 32),
+        "generation clock identity must be 32 lowercase hex digits; got {started_ns}"
+    );
+    assert_eq!(
+        sequence, "0000000000000000",
+        "the first warm generation in this daemon process must use sequence zero"
+    );
+
+    let engine = engine_field
+        .strip_prefix("engine ")
+        .expect("ordered engine identity field");
+    let engine_parts: Vec<_> = engine.split(' ').collect();
+    let [cli_features, scanner_features, source_features, verifier_features] =
+        engine_parts.as_slice()
+    else {
+        panic!("engine identity must name cli/scanner/source/verifier feature sets; got {engine}");
+    };
+    for (part, label) in [
+        (*cli_features, "cli"),
+        (*scanner_features, "scanner"),
+        (*source_features, "sources"),
+        (*verifier_features, "verifier"),
+    ] {
+        let values = part
+            .strip_prefix(&format!("{label}=["))
+            .and_then(|value| value.strip_suffix(']'))
+            .unwrap_or_else(|| panic!("engine identity field must be `{label}=[…]`; got {part}"));
+        let entries: Vec<_> = values.split(',').collect();
+        assert!(
+            !entries.is_empty()
+                && entries.iter().all(|entry| !entry.is_empty())
+                && entries.windows(2).all(|pair| pair[0] < pair[1]),
+            "{label} engine identities must be non-empty, unique, and sorted; got {values}"
+        );
+    }
+
+    let binary_identity = binary_field
+        .strip_prefix("binary ")
+        .expect("ordered binary identity field");
+    let executable = std::fs::read(keyhog()).expect("read tested keyhog binary");
+    assert_eq!(
+        binary_identity,
+        format!("{:x}", Sha256::digest(executable)),
+        "status must attest the exact binary that served this connection"
+    );
+
+    let detector_identity = detectors_field
+        .strip_prefix("detectors ")
+        .expect("ordered detector identity field");
+    let embedded_detectors =
+        keyhog_core::load_embedded_detectors_or_fail().expect("load embedded detector identity");
+    assert_eq!(
+        embedded_detectors.len(),
+        923,
+        "the lifecycle must use the canonical embedded detector corpus"
+    );
+    assert_eq!(
+        detector_identity,
+        keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&embedded_detectors)),
+        "status must attest the exact detector corpus loaded by the daemon"
+    );
+
+    let config_identity = config_field
+        .strip_prefix("config ")
+        .expect("ordered resolved-config identity field");
+    assert!(
+        is_lower_hex(config_identity, 16),
+        "resolved-config identity must be 16 lowercase hex digits; got {config_identity}"
+    );
+    assert_eq!(
+        *gpu_field, "GPU artifact none",
+        "a forced CPU daemon must not claim a GPU artifact identity"
+    );
+
+    let uptime = uptime_line
+        .strip_prefix("keyhog daemon: uptime ")
+        .and_then(|line| {
+            line.strip_suffix("s · 0 scans served · 0 active · 923 detectors")
+        })
+        .and_then(|seconds| seconds.parse::<u64>().ok())
+        .unwrap_or_else(|| panic!("uptime line must carry exact idle counters; got {uptime_line}"));
+    assert!(
+        uptime <= 30,
+        "a newly ready daemon must report a fresh uptime, got {uptime}s"
+    );
+    assert_eq!(
+        *scope_line,
+        "scan scope: eligible stdin/single-file scans before baseline, Merkle skip-cache, and verification; directories, git/remote sources, policy changes, baseline, and --verify run in-process."
+    );
+    assert_eq!(
+        *policy_line,
+        "backend policy: forced cpu-fallback (daemon startup diagnostic override)"
+    );
+    assert_eq!(
+        *health_line, "backend health: no recovered runtime faults",
+        "an idle forced-CPU daemon must report the exact clean recovery state"
+    );
+    assert!(
+        stdout.ends_with('\n'),
+        "daemon status must terminate its final operator line"
+    );
+
     let stop = Command::new(keyhog())
         .args(["daemon", "stop", "--socket"])
         .arg(&socket)
@@ -509,13 +656,21 @@ fn daemon_start_status_stop_reports_exact_lines_and_codes() {
         "daemon stop must exit 0; stderr={}",
         String::from_utf8_lossy(&stop.stderr)
     );
-    assert!(
-        String::from_utf8_lossy(&stop.stderr).contains("keyhog daemon stopped"),
-        "stop must print the exact confirmation; stderr={}",
-        String::from_utf8_lossy(&stop.stderr)
+    assert_eq!(
+        stop.stdout, b"",
+        "daemon stop must reserve stdout for machine-readable command output"
+    );
+    assert_eq!(
+        stop.stderr, b"keyhog daemon stopped\n",
+        "daemon stop must print exactly one confirmation line"
     );
 
-    let _ = child.wait();
+    let child_status = child.wait().expect("reap stopped daemon");
+    assert_eq!(
+        child_status.code(),
+        Some(0),
+        "a confirmed graceful stop must make the daemon process exit 0"
+    );
     let deadline = Instant::now() + Duration::from_secs(10);
     while socket.exists() && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(50));

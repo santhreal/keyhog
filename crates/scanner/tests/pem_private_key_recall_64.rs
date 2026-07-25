@@ -39,7 +39,9 @@ fn scan() -> Vec<keyhog_core::RawMatch> {
             ..Default::default()
         },
     };
-    scanner.scan(&chunk)
+    scanner
+        .scan(&chunk)
+        .expect("private-key YAML scan should succeed")
 }
 
 #[test]

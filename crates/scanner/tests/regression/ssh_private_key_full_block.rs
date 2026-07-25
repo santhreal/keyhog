@@ -30,7 +30,9 @@ fn scan_fixture(text: &str) -> Vec<keyhog_core::RawMatch> {
             ..Default::default()
         },
     };
-    scanner.scan(&chunk)
+    scanner
+        .scan(&chunk)
+        .expect("SSH private-key full-block scan should succeed")
 }
 
 #[test]

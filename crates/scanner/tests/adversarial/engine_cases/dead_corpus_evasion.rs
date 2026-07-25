@@ -272,7 +272,7 @@ unrelated = 'foo' + 'bar'
             ..Default::default()
         },
     };
-    let matches = production_scanner().scan(&chunk);
+    let matches = production_scanner().scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
     assert_detected(&matches, "synthetic two-fragment AWS", AWS_ACCESS_KEY);
 }
 
@@ -333,6 +333,6 @@ fn evasion_full_file_scan_uses_production_scanner() {
                 ..Default::default()
             },
         };
-        let _ = scanner.scan(&chunk);
+        let _ = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
     }
 }

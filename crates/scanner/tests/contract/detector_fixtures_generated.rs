@@ -17,6 +17,12 @@ fn scanner() -> &'static CompiledScanner {
     &SCANNER
 }
 
+fn scan_fixture(chunk: &Chunk) -> Vec<keyhog_core::RawMatch> {
+    scanner()
+        .scan(chunk)
+        .expect("generated detector contract scan succeeds")
+}
+
 macro_rules! positive_fixture {
     ($name:ident, $detector:literal, $text:expr, $credential:expr) => {
         #[test]
@@ -33,7 +39,7 @@ macro_rules! positive_fixture {
             let scanner = scanner();
             scanner.clear_fragment_cache();
             let expected: &str = $credential;
-            let matches = scanner.scan(&chunk);
+            let matches = scan_fixture(&chunk);
             let found: Vec<&str> = matches
                 .iter()
                 .map(|m| m.credential.as_ref())
@@ -62,7 +68,7 @@ macro_rules! negative_fixture {
             };
             let scanner = scanner();
             scanner.clear_fragment_cache();
-            let matches = scanner.scan(&chunk);
+            let matches = scan_fixture(&chunk);
             let detector_ids: Vec<&str> = matches.iter().map(|m| m.detector_id.as_ref()).collect();
             assert!(
                 !detector_ids.iter().any(|id| *id == $detector),

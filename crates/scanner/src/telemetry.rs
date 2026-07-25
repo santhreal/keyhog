@@ -60,8 +60,8 @@ pub enum DogfoodEvent {
         reason: Cow<'static, str>,
     },
     /// A bounded static-recovery grammar recognized a candidate expression but
-    /// rejected malformed or unsupported literal data. The original source is
-    /// still scanned. No source bytes are retained in this event.
+    /// rejected malformed data, an unsafe construct, or a resource limit. The
+    /// original source is still scanned. No source bytes are retained.
     StaticRecoveryRejected {
         path: Option<String>,
         expression_offset: usize,
@@ -71,7 +71,7 @@ pub enum DogfoodEvent {
 }
 
 /// Typed reasons emitted when bounded static recovery cannot evaluate a
-/// recognized JavaScript literal expression.
+/// recognized JavaScript expression.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StaticRecoveryRejection {
     LiteralByteArrayElement,
@@ -87,10 +87,14 @@ pub(crate) enum StaticRecoveryRejection {
     AesCiphertextBlockLength,
     AesPadding,
     AesPlaintextUtf8,
+    UnsupportedCall,
+    DynamicPropertyAccess,
+    MalformedExpression,
+    ResourceLimit,
 }
 
 impl StaticRecoveryRejection {
-    const ALL: [Self; 13] = [
+    const ALL: [Self; 17] = [
         Self::LiteralByteArrayElement,
         Self::JsonBase64,
         Self::JsonUtf8,
@@ -104,6 +108,10 @@ impl StaticRecoveryRejection {
         Self::AesCiphertextBlockLength,
         Self::AesPadding,
         Self::AesPlaintextUtf8,
+        Self::UnsupportedCall,
+        Self::DynamicPropertyAccess,
+        Self::MalformedExpression,
+        Self::ResourceLimit,
     ];
 
     const fn index(self) -> usize {
@@ -121,7 +129,15 @@ impl StaticRecoveryRejection {
             Self::AesCiphertextBlockLength => 10,
             Self::AesPadding => 11,
             Self::AesPlaintextUtf8 => 12,
+            Self::UnsupportedCall => 13,
+            Self::DynamicPropertyAccess => 14,
+            Self::MalformedExpression => 15,
+            Self::ResourceLimit => 16,
         }
+    }
+
+    const fn is_unsupported(self) -> bool {
+        matches!(self, Self::UnsupportedCall | Self::DynamicPropertyAccess)
     }
 
     pub(crate) const fn as_str(self) -> &'static str {
@@ -139,8 +155,23 @@ impl StaticRecoveryRejection {
             Self::AesCiphertextBlockLength => "aes_ciphertext_block_length",
             Self::AesPadding => "aes_padding",
             Self::AesPlaintextUtf8 => "aes_plaintext_utf8",
+            Self::UnsupportedCall => "unsupported_call",
+            Self::DynamicPropertyAccess => "dynamic_property_access",
+            Self::MalformedExpression => "malformed_expression",
+            Self::ResourceLimit => "resource_limit",
         }
     }
+}
+
+/// Aggregate disposition of bounded JavaScript constant-recovery constructs.
+///
+/// Counts saturate rather than wrap. Retained dogfood details are independently
+/// bounded, so this status remains exact when the detail budget is exhausted.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StaticRecoveryStatus {
+    pub supported: u64,
+    pub unsupported: u64,
+    pub erroneous: u64,
 }
 
 /// Maximum retained detail events per scan. Aggregate counters continue past
@@ -194,6 +225,9 @@ fn recover_telemetry_lock<'a, T>(mutex: &'a Mutex<T>) -> std::sync::MutexGuard<'
 #[derive(Default)]
 struct StaticRecoveryTelemetry {
     counts: [AtomicU64; StaticRecoveryRejection::ALL.len()],
+    supported: AtomicU64,
+    unsupported: AtomicU64,
+    erroneous: AtomicU64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -215,16 +249,17 @@ impl StaticRecoveryTelemetry {
     }
 
     fn add(&self, reason: StaticRecoveryRejection, amount: u64) {
-        let counter = &self.counts[reason.index()];
-        let mut current = counter.load(Ordering::Relaxed);
-        while current != u64::MAX {
-            let next = current.saturating_add(amount);
-            match counter.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed)
-            {
-                Ok(_) => return,
-                Err(observed) => current = observed,
-            }
-        }
+        saturating_add_atomic(&self.counts[reason.index()], amount);
+        let disposition = if reason.is_unsupported() {
+            &self.unsupported
+        } else {
+            &self.erroneous
+        };
+        saturating_add_atomic(disposition, amount);
+    }
+
+    fn record_supported(&self, amount: u64) {
+        saturating_add_atomic(&self.supported, amount);
     }
 
     fn snapshot(&self) -> BTreeMap<String, u64> {
@@ -237,9 +272,31 @@ impl StaticRecoveryTelemetry {
             .collect()
     }
 
+    fn status(&self) -> StaticRecoveryStatus {
+        StaticRecoveryStatus {
+            supported: self.supported.load(Ordering::Relaxed),
+            unsupported: self.unsupported.load(Ordering::Relaxed),
+            erroneous: self.erroneous.load(Ordering::Relaxed),
+        }
+    }
+
     fn reset(&self) {
         for count in &self.counts {
             count.store(0, Ordering::Relaxed);
+        }
+        self.supported.store(0, Ordering::Relaxed);
+        self.unsupported.store(0, Ordering::Relaxed);
+        self.erroneous.store(0, Ordering::Relaxed);
+    }
+}
+
+fn saturating_add_atomic(counter: &AtomicU64, amount: u64) {
+    let mut current = counter.load(Ordering::Relaxed);
+    while current != u64::MAX {
+        let next = current.saturating_add(amount);
+        match counter.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_) => return,
+            Err(observed) => current = observed,
         }
     }
 }
@@ -308,6 +365,7 @@ impl ScanTelemetry {
             dogfood_detail_events_dropped: self.detail_events_dropped.load(Ordering::Relaxed)
                 as u64,
             static_recovery_rejections: self.static_recovery.snapshot(),
+            static_recovery_status: self.static_recovery.status(),
         }
     }
 }
@@ -317,6 +375,7 @@ pub struct ScanTelemetrySnapshot {
     pub dogfood_events: Vec<DogfoodEvent>,
     pub dogfood_detail_events_dropped: u64,
     pub static_recovery_rejections: BTreeMap<String, u64>,
+    pub static_recovery_status: StaticRecoveryStatus,
 }
 
 thread_local! {
@@ -727,11 +786,11 @@ pub(crate) fn record_static_recovery_rejection(
     expression_offset: usize,
     reason: StaticRecoveryRejection,
 ) {
-    if !is_dogfood_enabled() {
-        return;
-    }
     if let Some(t) = current_scan_telemetry() {
         t.static_recovery.record(reason);
+        if !t.is_dogfood_enabled() {
+            return;
+        }
         if !mark_static_recovery_event_emitted(
             &t.emitted_suppression_events,
             &t.detail_events_dropped,
@@ -750,6 +809,9 @@ pub(crate) fn record_static_recovery_rejection(
     }
     let t = cell();
     t.static_recovery.record(reason);
+    if !t.dogfood_enabled.load(Ordering::Relaxed) {
+        return;
+    }
     if !mark_static_recovery_event_emitted(
         &t.emitted_suppression_events,
         &t.detail_events_dropped,
@@ -764,6 +826,20 @@ pub(crate) fn record_static_recovery_rejection(
         &t.detail_events_dropped,
         static_recovery_event(metadata, expression_offset, reason),
     );
+}
+
+/// Record successfully recovered static expressions in the bounded status.
+#[cfg(feature = "decode")]
+pub(crate) fn record_static_recovery_supported(count: usize) {
+    if count == 0 {
+        return;
+    }
+    let amount = u64::try_from(count).unwrap_or(u64::MAX); // LAW10: usize is at most 64 bits on every supported target, so this fallback is unreachable; saturation stays conservative if that target contract ever expands.
+    if let Some(t) = current_scan_telemetry() {
+        t.static_recovery.record_supported(amount);
+    } else {
+        cell().static_recovery.record_supported(amount);
+    }
 }
 
 #[cfg(feature = "decode")]
@@ -1011,14 +1087,17 @@ fn append_event_details<I: IntoIterator<Item = DogfoodEvent>>(
 /// Merge exact dogfood aggregates returned by a compatible daemon scan.
 ///
 /// Detail events are transported separately through [`append_daemon_events`]. This
-/// method validates every typed rejection reason before mutating process state,
-/// so a response from an incompatible newer daemon fails instead of producing
-/// a plausible but incomplete trace.
+/// method validates every typed rejection reason and the disposition conservation
+/// invariant before mutating process state, so a response from an incompatible
+/// daemon fails instead of producing a plausible but incomplete trace.
 pub fn merge_daemon_aggregates(
     static_recovery_rejections: &BTreeMap<String, u64>,
+    static_recovery_status: StaticRecoveryStatus,
     detail_events_dropped: u64,
 ) -> Result<(), String> {
     let mut resolved = Vec::with_capacity(static_recovery_rejections.len());
+    let mut unsupported = 0_u64;
+    let mut erroneous = 0_u64;
     for (name, count) in static_recovery_rejections {
         let Some(reason) = StaticRecoveryRejection::ALL
             .iter()
@@ -1029,10 +1108,38 @@ pub fn merge_daemon_aggregates(
                 "daemon returned unknown static-recovery rejection reason {name:?}; restart it with this KeyHog build"
             ));
         };
+        let disposition = if reason.is_unsupported() {
+            &mut unsupported
+        } else {
+            &mut erroneous
+        };
+        *disposition = disposition.checked_add(*count).ok_or_else(|| {
+            format!(
+                "daemon static-recovery {kind} reason counts overflowed u64",
+                kind = if reason.is_unsupported() {
+                    "unsupported"
+                } else {
+                    "erroneous"
+                }
+            )
+        })?;
         resolved.push((reason, *count));
+    }
+    if unsupported != static_recovery_status.unsupported
+        || erroneous != static_recovery_status.erroneous
+    {
+        return Err(format!(
+            "daemon static-recovery aggregate conservation failed: \
+             reasons unsupported={unsupported}, erroneous={erroneous}; \
+             status unsupported={}, erroneous={}",
+            static_recovery_status.unsupported, static_recovery_status.erroneous
+        ));
     }
 
     let telemetry = cell();
+    telemetry
+        .static_recovery
+        .record_supported(static_recovery_status.supported);
     for (reason, count) in resolved {
         telemetry.static_recovery.add(reason, count);
     }
@@ -1058,6 +1165,12 @@ pub fn merge_daemon_aggregates(
 /// aggregates.
 pub fn static_recovery_rejection_counts() -> BTreeMap<String, u64> {
     cell().static_recovery.snapshot()
+}
+
+/// Aggregate supported, unsupported, and erroneous static-recovery counts for
+/// the current process scan.
+pub fn static_recovery_status() -> StaticRecoveryStatus {
+    cell().static_recovery.status()
 }
 
 /// Number of dogfood detail events omitted after the bounded trace filled.

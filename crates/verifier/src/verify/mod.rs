@@ -62,12 +62,21 @@ pub(crate) fn retryable_http_status(status: u16) -> bool {
     status == 429 || (500..=504).contains(&status)
 }
 
-/// Whether a detector supplied a *body-aware* success contract. Status-only
-/// specs are NOT explicit (KH-1298 / KH-1374): HTTP 200 + `{"error":...}` must
-/// still run `body_indicates_error` so Live is not false-positive. Status alone
-/// is a weak signal without body/json_path constraints.
+/// Whether the success policy makes a matched response authoritative over the
+/// generic provider-error body backstop. Stable body-positive evidence and an
+/// explicitly reviewed authoritative status do; conservative status contracts
+/// deliberately keep the error backstop enabled.
 pub(crate) fn success_spec_is_explicit(spec: &keyhog_core::SuccessSpec) -> bool {
-    spec.body_contains.is_some() || spec.body_not_contains.is_some() || spec.json_path.is_some()
+    match spec.policy {
+        Some(keyhog_core::SuccessPolicy::StatusAuthoritative) => true,
+        Some(keyhog_core::SuccessPolicy::BodyPositive) => {
+            spec.body_contains
+                .as_deref()
+                .is_some_and(|needle| !needle.is_empty())
+                || spec.json_path.is_some()
+        }
+        Some(keyhog_core::SuccessPolicy::StatusWithErrorBackstop) | None => false,
+    }
 }
 
 /// Final live verdict for the single-step path. An explicit success contract is

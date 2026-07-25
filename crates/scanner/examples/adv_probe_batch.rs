@@ -2,12 +2,12 @@ use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
 use std::path::PathBuf;
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     d.pop();
     d.pop();
     d.push("detectors");
-    let s = CompiledScanner::compile(keyhog_core::load_detectors(&d).unwrap()).unwrap();
+    let s = CompiledScanner::compile(keyhog_core::load_detectors(&d)?)?;
     let texts = [
         "SPOTIFY_CLIENT_ID=0123456789abcdef0123456789abcdef",
         "spotify_client_id=0123456789abcdef0123456789abcdef",
@@ -24,7 +24,7 @@ fn main() {
                 path: Some("t.txt".into()),
                 ..Default::default()
             },
-        });
+        })?;
         println!("--- {text}");
         for x in &m {
             println!("  {} {}", x.detector_id, x.credential.as_ref());
@@ -33,4 +33,5 @@ fn main() {
             println!("  (none)");
         }
     }
+    Ok(())
 }

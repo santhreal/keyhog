@@ -187,7 +187,9 @@ fn scan_text(text: &str) -> Vec<RawMatch> {
             ..Default::default()
         },
     };
-    scanner().scan(&chunk)
+    scanner()
+        .scan(&chunk)
+        .expect("decode-density regression scan should succeed")
 }
 
 fn surfaces_needle(text: &str) -> bool {

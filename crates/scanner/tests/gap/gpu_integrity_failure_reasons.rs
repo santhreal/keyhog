@@ -82,10 +82,10 @@ fn gpu_dispatch_failures_preserve_operator_visible_reasons() {
     let failure = engine_src("src/engine/gpu_forced_helpers.rs");
     assert!(
         dispatch.contains("SelectedGpuDispatchError::new(reason)")
-            && dispatch.contains("fail_selected_gpu_dispatch_error(self, error)")
-            && trigger.contains("fail_selected_gpu_dispatch(self, &reason)")
-            && failure.contains("scanner.record_gpu_runtime_fault(error.reason())"),
-        "all GPU dispatch failures must use the one reason-recording hard-failure owner"
+            && trigger.contains("self.record_gpu_runtime_fault(reason.clone())")
+            && trigger.contains("Err(crate::error::ScanError::Gpu(reason))")
+            && failure.contains("pub(crate) struct SelectedGpuDispatchError"),
+        "all GPU dispatch failures must retain their reason in a typed Result path"
     );
 }
 

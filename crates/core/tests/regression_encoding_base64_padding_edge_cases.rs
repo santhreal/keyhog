@@ -4,10 +4,9 @@
 //! The previous implementation used `take_while(|c| c != b'=')`, which stopped
 //! at the FIRST `=` and silently dropped everything after it. That made
 //! `"QUJ=Q0Q="` decode to just `"AB"` (the bytes after the embedded `=` were
-//! thrown away with no error), a silent-accept that corrupts a credential
-//! round-trip through `Credential`'s serde. These tests pin the corrected,
-//! fail-closed behavior with EXACT byte oracles, and pin that the legitimate
-//! trailing-padding forms still succeed unchanged.
+//! thrown away with no error), corrupting historical tagged binary credential
+//! input during deserialization. These tests pin the corrected, fail-closed
+//! decoder with EXACT byte oracles and pin legitimate trailing padding.
 
 use keyhog_core::decode_standard_base64;
 
@@ -87,10 +86,9 @@ fn legitimate_trailing_padding_still_decodes_exact_bytes() {
 }
 
 #[test]
-fn credential_b64_roundtrip_is_not_silently_corrupted() {
-    // The motivating case: a credential whose base64 happens to contain an
-    // interior `=` must error on decode rather than round-trip to a TRUNCATED,
-    // wrong value. "QUI=Q0Q=" is exactly such a string.
+fn credential_b64_input_is_not_silently_corrupted() {
+    // Historical tagged credential input containing an interior `=` must error
+    // on decode rather than deserialize to a truncated, wrong value.
     assert!(
         decode_standard_base64("QUI=Q0Q=").is_err(),
         "interior '=' must fail closed, never decode to a truncated credential"

@@ -199,6 +199,126 @@ static ML_FEATURE_MARKERS: std::sync::LazyLock<MlFeatureMarkers> = std::sync::La
     }
 });
 
+/// Logical model context assembled from borrowed source ownership.
+///
+/// Production candidates keep the path and bounded source window as separate
+/// borrows, avoiding the former per-candidate `file:{path}\n{window}` clone.
+/// Public training/parity entry points use `combined`, which preserves their
+/// existing contiguous-context API.
+#[derive(Clone, Copy)]
+struct FeatureContext<'a> {
+    file_path: Option<&'a str>,
+    text: &'a str,
+}
+
+impl<'a> FeatureContext<'a> {
+    const fn combined(text: &'a str) -> Self {
+        Self {
+            file_path: None,
+            text,
+        }
+    }
+
+    const fn from_source_window(text: &'a str, file_path: Option<&'a str>) -> Self {
+        Self { file_path, text }
+    }
+
+    fn len(self) -> usize {
+        self.file_path
+            .map_or(self.text.len(), |path| 6 + path.len() + self.text.len())
+    }
+
+    fn byte_at(self, index: usize) -> Option<u8> {
+        let Some(path) = self.file_path else {
+            return self.text.as_bytes().get(index).copied();
+        };
+        match index {
+            0..=4 => b"file:".get(index).copied(),
+            _ if index < 5 + path.len() => path.as_bytes().get(index - 5).copied(),
+            _ if index == 5 + path.len() => Some(b'\n'),
+            _ => self
+                .text
+                .as_bytes()
+                .get(index.saturating_sub(6 + path.len()))
+                .copied(),
+        }
+    }
+
+    fn contains(self, needle: &[u8]) -> bool {
+        if needle.is_empty() {
+            return true;
+        }
+        if self.any_segment(|segment| {
+            segment
+                .windows(needle.len())
+                .any(|window| window == needle)
+        }) {
+            return true;
+        }
+        self.contains_across_boundaries(needle, |left, right| left == right)
+    }
+
+    fn contains_ascii_case_insensitive(self, needle: &[u8]) -> bool {
+        if needle.is_empty() {
+            return false;
+        }
+        if self.any_segment(|segment| crate::ascii_ci::ci_find_nonempty(segment, needle)) {
+            return true;
+        }
+        self.contains_across_boundaries(needle, |left, right| {
+            left.eq_ignore_ascii_case(&right)
+        })
+    }
+
+    fn contains_ascii_case_insensitive_across_boundaries(self, needle: &[u8]) -> bool {
+        !needle.is_empty()
+            && self.contains_across_boundaries(needle, |left, right| {
+                left.eq_ignore_ascii_case(&right)
+            })
+    }
+
+    fn contains_across_boundaries(
+        self,
+        needle: &[u8],
+        eq: impl Fn(u8, u8) -> bool,
+    ) -> bool {
+        let Some(path) = self.file_path else {
+            return false;
+        };
+        let context_len = self.len();
+        if needle.len() > context_len {
+            return false;
+        }
+        let boundaries = [5, 5 + path.len(), 6 + path.len()];
+        boundaries.into_iter().any(|boundary| {
+            let first_start = boundary.saturating_sub(needle.len().saturating_sub(1));
+            (first_start..boundary).any(|start| {
+                start + needle.len() <= context_len
+                    && needle.iter().enumerate().all(|(offset, &expected)| {
+                        self.byte_at(start + offset)
+                            .is_some_and(|actual| eq(actual, expected))
+                    })
+            })
+        })
+    }
+
+    fn any_segment(self, mut predicate: impl FnMut(&[u8]) -> bool) -> bool {
+        match self.file_path {
+            Some(path) => {
+                predicate(b"file:")
+                    || predicate(path.as_bytes())
+                    || predicate(b"\n")
+                    || predicate(self.text.as_bytes())
+            }
+            None => predicate(self.text.as_bytes()),
+        }
+    }
+
+    fn starts_with_comment_prefix(self) -> bool {
+        self.file_path.is_none() && context_starts_with_comment_prefix(self.text)
+    }
+}
+
 /// Entry point for feature-extraction unit tests.
 #[cfg(all(test, feature = "ml"))]
 pub(crate) fn compute_features_public(text: &str, context: &str) -> [f32; NUM_FEATURES] {
@@ -224,7 +344,7 @@ pub fn compute_features_with_config(
 ) -> [f32; NUM_FEATURES] {
     compute_features_internal(
         text,
-        context,
+        FeatureContext::combined(context),
         known_prefixes,
         secret_keywords,
         test_keywords,
@@ -278,7 +398,7 @@ pub(crate) fn compute_features_for_compiled_detector_with_config(
 ) -> [f32; NUM_FEATURES] {
     compute_features_internal(
         text,
-        context,
+        FeatureContext::combined(context),
         known_prefixes,
         secret_keywords,
         test_keywords,
@@ -289,9 +409,38 @@ pub(crate) fn compute_features_for_compiled_detector_with_config(
     )
 }
 
+/// Compute serve-path features directly from the borrowed source window and
+/// optional file path, without materializing their logical concatenation.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn compute_features_for_compiled_detector_from_source_window(
+    text: &str,
+    source_window: &str,
+    file_path: Option<&str>,
+    known_prefixes: &[String],
+    secret_keywords: &[String],
+    test_keywords: &[String],
+    placeholder_keywords: &[String],
+    detector_service: &str,
+    detector_features: CompiledDetectorMlFeatures,
+    channel: MlCandidateChannel,
+) -> [f32; NUM_FEATURES] {
+    compute_features_internal(
+        text,
+        FeatureContext::from_source_window(source_window, file_path),
+        known_prefixes,
+        secret_keywords,
+        test_keywords,
+        placeholder_keywords,
+        Some(detector_service),
+        Some(detector_features),
+        Some(channel),
+    )
+
+}
+
 fn compute_features_internal(
     text: &str,
-    context: &str,
+    context: FeatureContext<'_>,
     known_prefixes: &[String],
     secret_keywords: &[String],
     test_keywords: &[String],
@@ -308,20 +457,13 @@ fn compute_features_internal(
     let mut f = [0.0f32; NUM_FEATURES];
     let len = text.len();
     let text_bytes = text.as_bytes();
-    let context_bytes = context.as_bytes();
     let ent = shannon_entropy(text_bytes);
     let text_summary = summarize_text_bytes(text_bytes);
     apply_length_features(&mut f, len);
     apply_entropy_features(&mut f, ent, detector_features);
     apply_character_features(&mut f, &text_summary);
     apply_prefix_features(&mut f, text, known_prefixes);
-    apply_context_features(
-        &mut f,
-        context,
-        context_bytes,
-        secret_keywords,
-        test_keywords,
-    );
+    apply_context_features(&mut f, context, secret_keywords, test_keywords);
     apply_placeholder_features(
         &mut f,
         text,
@@ -331,13 +473,13 @@ fn compute_features_internal(
         placeholder_keywords,
     );
     apply_structure_features(&mut f, &text_summary, text_bytes);
-    apply_file_type_feature(&mut f, context, context_bytes);
-    apply_extra_features(&mut f, context, context_bytes);
+    apply_file_type_feature(&mut f, context);
+    apply_extra_features(&mut f, context);
     apply_decode_structure_feature(&mut f, text);
-    apply_service_context_feature(&mut f, context_bytes);
+    apply_service_context_feature(&mut f, context);
     apply_detector_features(
         &mut f,
-        context_bytes,
+        context,
         detector_service,
         detector_features,
         channel,
@@ -347,7 +489,7 @@ fn compute_features_internal(
 
 fn apply_detector_features(
     features: &mut [f32; NUM_FEATURES],
-    context: &[u8],
+    context: FeatureContext<'_>,
     detector_service: Option<&str>,
     detector: Option<CompiledDetectorMlFeatures>,
     channel: Option<MlCandidateChannel>,
@@ -357,7 +499,7 @@ fn apply_detector_features(
     };
     features[ACTIVE_SERVICE_CONTEXT_FEATURE_INDEX] =
         binary_feature(detector_service.is_some_and(|service| {
-            super::service_vocab::context_names_detector_service(service, context)
+            context.contains_ascii_case_insensitive(service.as_bytes())
         }));
     features[GENERIC_DETECTOR_FEATURE_INDEX] = binary_feature(detector.generic_detector);
     features[WEAK_ANCHOR_FEATURE_INDEX] = binary_feature(detector.weak_anchor);
@@ -404,21 +546,28 @@ fn apply_decode_structure_feature(features: &mut [f32; NUM_FEATURES], text: &str
 /// the UUID/opaque-shape features: a service-named context makes an
 /// otherwise-generic value credible; a generic-role-word-only context
 /// (feature 17 without this one) marks it an identifier.
-fn apply_service_context_feature(features: &mut [f32; NUM_FEATURES], context_bytes: &[u8]) {
-    features[SERVICE_CONTEXT_FEATURE_INDEX] =
-        binary_feature(super::service_vocab::context_names_service(context_bytes));
+fn apply_service_context_feature(
+    features: &mut [f32; NUM_FEATURES],
+    context: FeatureContext<'_>,
+) {
+    let names_service = context.any_segment(super::service_vocab::context_names_service)
+        || (context.file_path.is_some()
+            && super::service_vocab::service_vocabulary().iter().any(|service| {
+                context.contains_ascii_case_insensitive_across_boundaries(service.as_bytes())
+            }));
+    features[SERVICE_CONTEXT_FEATURE_INDEX] = binary_feature(names_service);
 }
 
 /// File-context fragments that imply this match is in test/fixture code.
 /// Hoisted to a `const` so we don't allocate four Strings on every ML call.
 const TEST_FILE_CONTEXT_FRAGMENTS: &[&[u8]] = &[b"test", b"mock", b"fixture", b"spec"];
 
-fn apply_extra_features(features: &mut [f32; NUM_FEATURES], context: &str, context_bytes: &[u8]) {
-    let is_in_comment = context_starts_with_comment_prefix(context);
+fn apply_extra_features(features: &mut [f32; NUM_FEATURES], context: FeatureContext<'_>) {
+    let is_in_comment = context.starts_with_comment_prefix();
     let has_assignment = has_assignment_operator(context);
     let is_test_file_context = TEST_FILE_CONTEXT_FRAGMENTS
         .iter()
-        .any(|needle| crate::ascii_ci::ci_find_nonempty(context_bytes, needle));
+        .any(|needle| context.contains_ascii_case_insensitive(needle));
 
     features[COMMENT_CONTEXT_FEATURE_INDEX] = binary_feature(is_in_comment);
     features[ASSIGNMENT_OPERATOR_FEATURE_INDEX] = binary_feature(has_assignment);
@@ -468,21 +617,16 @@ fn apply_prefix_features(
 
 fn apply_context_features(
     features: &mut [f32; NUM_FEATURES],
-    context: &str,
-    context_bytes: &[u8],
+    context: FeatureContext<'_>,
     secret_keywords: &[String],
     test_keywords: &[String],
 ) {
     features[16] = binary_feature(has_assignment_operator(context));
-    features[17] = binary_feature(contains_any_ascii_case_insensitive(
-        context_bytes,
-        secret_keywords,
-    ));
-    features[18] = binary_feature(contains_any_ascii_case_insensitive(
-        context_bytes,
-        test_keywords,
-    ));
-    features[19] = binary_feature(context_starts_with_comment_prefix(context));
+    features[17] =
+        binary_feature(context_contains_any_ascii_case_insensitive(context, secret_keywords));
+    features[18] =
+        binary_feature(context_contains_any_ascii_case_insensitive(context, test_keywords));
+    features[19] = binary_feature(context.starts_with_comment_prefix());
 }
 
 fn apply_placeholder_features(
@@ -517,82 +661,92 @@ fn apply_structure_features(
     features[27] = (summary.dash_count as f32 / MAX_DASH_COUNT_NORMALIZATION).min(1.0);
 }
 
-fn apply_file_type_feature(
-    features: &mut [f32; NUM_FEATURES],
-    context: &str,
-    context_bytes: &[u8],
-) {
-    let file_type = infer_file_type(context, context_bytes);
+fn apply_file_type_feature(features: &mut [f32; NUM_FEATURES], context: FeatureContext<'_>) {
+    let file_type = infer_file_type(context);
     features[FILE_TYPE_OFFSET + file_type] = 1.0;
 }
 
-fn infer_file_type(context: &str, context_bytes: &[u8]) -> usize {
-    if is_binary_context(context_bytes) {
+fn infer_file_type(context: FeatureContext<'_>) -> usize {
+    if is_binary_context(context) {
         return BINARY_FILE_TYPE_INDEX;
     }
-    if is_ci_context(context_bytes) {
+    if is_ci_context(context) {
         return CI_FILE_TYPE_INDEX;
     }
-    if is_infra_context(context, context_bytes) {
+    if is_infra_context(context) {
         return INFRA_FILE_TYPE_INDEX;
     }
-    if is_source_context(context, context_bytes) {
+    if is_source_context(context) {
         return SOURCE_FILE_TYPE_INDEX;
     }
-    if is_config_context(context, context_bytes) {
+    if is_config_context(context) {
         return CONFIG_FILE_TYPE_INDEX;
     }
     OTHER_FILE_TYPE_INDEX
 }
 
-fn is_binary_context(context_bytes: &[u8]) -> bool {
-    contains_any_ascii_case_insensitive(context_bytes, &ML_FEATURE_MARKERS.binary_markers)
+fn is_binary_context(context: FeatureContext<'_>) -> bool {
+    context_contains_any_ascii_case_insensitive(context, &ML_FEATURE_MARKERS.binary_markers)
 }
 
-fn is_ci_context(context_bytes: &[u8]) -> bool {
-    contains_any_ascii_case_insensitive(context_bytes, &ML_FEATURE_MARKERS.ci_markers)
+fn is_ci_context(context: FeatureContext<'_>) -> bool {
+    context_contains_any_ascii_case_insensitive(context, &ML_FEATURE_MARKERS.ci_markers)
 }
 
-fn is_infra_context(context: &str, context_bytes: &[u8]) -> bool {
-    context.contains("from ")
-        || contains_any_ascii_case_insensitive(context_bytes, &ML_FEATURE_MARKERS.infra_markers)
+fn is_infra_context(context: FeatureContext<'_>) -> bool {
+    context.contains(b"from ")
+        || context_contains_any_ascii_case_insensitive(context, &ML_FEATURE_MARKERS.infra_markers)
 }
 
-fn is_source_context(context: &str, context_bytes: &[u8]) -> bool {
-    contains_any(context, &ML_FEATURE_MARKERS.source_markers)
-        || contains_any_ascii_case_insensitive(context_bytes, &ML_FEATURE_MARKERS.source_extensions)
+fn is_source_context(context: FeatureContext<'_>) -> bool {
+    context_contains_any(context, &ML_FEATURE_MARKERS.source_markers)
+        || context_contains_any_ascii_case_insensitive(
+            context,
+            &ML_FEATURE_MARKERS.source_extensions,
+        )
 }
 
-fn is_config_context(context: &str, context_bytes: &[u8]) -> bool {
+fn is_config_context(context: FeatureContext<'_>) -> bool {
     has_unquoted_equals(context)
-        || contains_any_ascii_case_insensitive(context_bytes, &ML_FEATURE_MARKERS.config_markers)
+        || context_contains_any_ascii_case_insensitive(context, &ML_FEATURE_MARKERS.config_markers)
 }
 
-fn has_unquoted_equals(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    for (idx, byte) in bytes.iter().enumerate() {
-        if *byte != b'=' {
+fn has_unquoted_equals(value: FeatureContext<'_>) -> bool {
+    let len = value.len();
+    for idx in 0..len {
+        if value.byte_at(idx) != Some(b'=') {
             continue;
         }
-
-        let prev = if idx > 0 { bytes[idx - 1] } else { 0 };
-        let next = if idx + 1 < bytes.len() {
-            bytes[idx + 1]
-        } else {
-            0
-        };
-        if prev != b'\'' && prev != b'"' && next != b'\'' && next != b'"' {
+        let prev = idx.checked_sub(1).and_then(|offset| value.byte_at(offset));
+        let next = value.byte_at(idx + 1);
+        if prev != Some(b'\'')
+            && prev != Some(b'"')
+            && next != Some(b'\'')
+            && next != Some(b'"')
+        {
             return true;
         }
     }
     false
 }
 
-fn has_assignment_operator(value: &str) -> bool {
-    if has_unquoted_equals(value) {
-        return true;
-    }
-    value.contains(": ")
+fn has_assignment_operator(value: FeatureContext<'_>) -> bool {
+    has_unquoted_equals(value) || value.contains(b": ")
+}
+
+fn context_contains_any(context: FeatureContext<'_>, needles: &[String]) -> bool {
+    needles
+        .iter()
+        .any(|needle| context.contains(needle.as_bytes()))
+}
+
+fn context_contains_any_ascii_case_insensitive(
+    context: FeatureContext<'_>,
+    needles: &[String],
+) -> bool {
+    needles
+        .iter()
+        .any(|needle| context.contains_ascii_case_insensitive(needle.as_bytes()))
 }
 
 /// Whether `context`, trimmed, begins with one of the recognized comment
@@ -658,12 +812,6 @@ fn contains_any_ascii_case_insensitive(haystack: &[u8], needles: &[String]) -> b
     needles
         .iter()
         .any(|needle| crate::ascii_ci::ci_find_nonempty(haystack, needle.as_bytes()))
-}
-
-fn contains_any(haystack: &str, needles: &[String]) -> bool {
-    needles
-        .iter()
-        .any(|needle| haystack.contains(needle.as_str()))
 }
 
 fn binary_feature(value: bool) -> f32 {

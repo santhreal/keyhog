@@ -100,7 +100,10 @@ fn scan_at_floor(detectors: &[keyhog_core::DetectorSpec], floor: f64) -> BTreeSe
     let scanner = CompiledScanner::compile(detectors.to_vec())
         .expect("scanner compile")
         .with_config(config);
-    collect_keys(&scanner.scan_coalesced(&corpus()))
+    let results = scanner
+        .scan_coalesced(&corpus())
+        .expect("confidence-floor corpus scan should succeed");
+    collect_keys(&results)
 }
 
 #[test]

@@ -100,5 +100,76 @@ pub(crate) fn looks_binary_for_test(bytes: &[u8]) -> bool {
     decode::looks_binary(bytes)
 }
 
-#[cfg(test)]
-mod tests;
+pub(crate) fn decode_text_file_for_test(bytes: &[u8]) -> Option<String> {
+    decode::decode_text_file(bytes)
+}
+
+pub(crate) fn decode_text_file_owned_or_bytes_for_test(
+    bytes: Vec<u8>,
+) -> Result<String, Vec<u8>> {
+    decode::decode_text_file_owned_or_bytes(bytes)
+}
+
+pub(crate) fn looks_binary_prefix_for_test(bytes: &[u8]) -> bool {
+    decode::looks_binary_prefix(bytes)
+}
+
+pub(crate) fn slice_into_windows_with_offsets_for_test(
+    bytes: &[u8],
+    window_size: usize,
+    overlap: usize,
+) -> Vec<(usize, String)> {
+    window::slice_into_windows(bytes, window_size, overlap)
+        .into_iter()
+        .map(|window| (window.offset, window.text))
+        .collect()
+}
+
+pub(crate) fn read_file_windowed_mmap_for_test(
+    path: &std::path::Path,
+    window_size: usize,
+    overlap: usize,
+) -> Option<Vec<(usize, String)>> {
+    window::read_file_windowed_mmap(path, window_size, overlap)
+        .map(|windows| windows.into_iter().map(|window| (window.offset, window.text)).collect())
+}
+
+pub(crate) enum ForEachWindowedMmapTestOutcome {
+    Consumed,
+    Fallback,
+}
+
+pub(crate) fn for_each_file_windowed_mmap_for_test<F>(
+    path: &std::path::Path,
+    window_size: usize,
+    overlap: usize,
+    mut emit: F,
+) -> ForEachWindowedMmapTestOutcome
+where
+    F: FnMut(Result<(usize, String), String>) -> bool,
+{
+    match window::for_each_file_windowed_mmap(path, window_size, overlap, |row| {
+        emit(row.map(|window| (window.offset, window.text))
+            .map_err(|error| error.to_string()))
+    }) {
+        window::WindowedMmapOutcome::Consumed => ForEachWindowedMmapTestOutcome::Consumed,
+        window::WindowedMmapOutcome::Fallback(_) => ForEachWindowedMmapTestOutcome::Fallback,
+    }
+}
+
+pub(crate) fn read_file_buffered_text_for_test(
+    path: &std::path::Path,
+    size_hint: u64,
+) -> Option<String> {
+    match raw::read_file_buffered(path, size_hint)? {
+        raw::BufferedFileRead::Text(text) => Some(text),
+        _ => None,
+    }
+}
+
+pub(crate) fn read_file_prefix_safe_for_test(
+    path: &std::path::Path,
+    buf: &mut [u8],
+) -> std::io::Result<usize> {
+    raw::read_file_prefix_safe(path, buf)
+}

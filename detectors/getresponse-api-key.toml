@@ -36,6 +36,7 @@ url = "https://api.getresponse.com/v3/accounts"
 allowed_domains = ["api.getresponse.com"]
 [detector.verify.success]
 status = 200
+policy = "status_with_error_backstop"
 
 [[detector.verify.headers]]
 name = "X-Auth-Token"

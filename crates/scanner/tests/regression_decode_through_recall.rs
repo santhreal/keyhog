@@ -107,7 +107,9 @@ fn scan_raw(text: &str, path: &str) -> Vec<RawMatch> {
             ..Default::default()
         },
     };
-    scanner().scan(&chunk)
+    scanner()
+        .scan(&chunk)
+        .expect("decode-through recall scan should succeed")
 }
 
 /// Embed `encoded` in a config value and scan; return the surfaced matches.

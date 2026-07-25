@@ -76,14 +76,12 @@ fn phase2_order_independence() {
         keyhog_scanner::testing::set_phase2_reverse(&scanner, Some(false));
         scanner.clear_fragment_cache();
         let normal = canonical(
-            &scanner
-                .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback),
+            &scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback).expect("selected backend scan succeeds"),
         );
         keyhog_scanner::testing::set_phase2_reverse(&scanner, Some(true));
         scanner.clear_fragment_cache();
         let reversed = canonical(
-            &scanner
-                .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback),
+            &scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback).expect("selected backend scan succeeds"),
         );
         if normal != reversed {
             diverged += 1;

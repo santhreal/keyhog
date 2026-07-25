@@ -22,7 +22,8 @@ fn boundary_reassembly_cardinality_mismatch_is_counted() {
     let chunks = vec![chunk("left", 0), chunk("right", 4)];
     let mut per_chunk_results: Vec<Vec<RawMatch>> = vec![Vec::new()];
 
-    scan_chunk_boundaries_for_test(&scanner, &chunks, &mut per_chunk_results);
+    scan_chunk_boundaries_for_test(&scanner, &chunks, &mut per_chunk_results)
+        .expect("cardinality mismatch boundary scan should return successfully");
 
     assert_eq!(
         boundary_result_cardinality_mismatch_count(),

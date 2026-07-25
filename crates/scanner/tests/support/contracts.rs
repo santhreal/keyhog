@@ -148,6 +148,7 @@ pub fn surfaces(scanner: &CompiledScanner, chunk: &Chunk, credential: &str) -> b
     scanner.clear_fragment_cache();
     scanner
         .scan(chunk)
+        .expect("contract surface probe scan succeeds")
         .iter()
         .any(|m| m.credential.as_ref().contains(credential))
 }
@@ -186,10 +187,14 @@ pub fn credential_sufficient(
 ) -> bool {
     let chunk = make_chunk(&primary.credential, source_type, "sufficiency-probe.txt");
     scanner.clear_fragment_cache();
-    scanner.scan(&chunk).iter().any(|m| {
+    scanner
+        .scan(&chunk)
+        .expect("credential-sufficiency probe scan succeeds")
+        .iter()
+        .any(|m| {
         m.credential.as_ref().contains(primary.credential.as_str())
             && !keyhog_scanner::is_entropy_detector(m.detector_id.as_ref())
-    })
+        })
 }
 
 /// Probe every primary once and return the parallel credential-sufficiency

@@ -37,7 +37,7 @@
 //! - `scan` / `scan_with_backend` / `scan_with_deadline*` .... compiled_scanner/runtime.rs
 //! - `scan_inner` ................................................................................ scan.rs
 //! - `scan_coalesced` / `compute_coalesced_triggers` / `scan_coalesced_phase2` .................. scan_coalesced.rs
-//! - `scan_chunks_with_backend_internal` (CPU-vs-GPU batch routing) .. backend_dispatch.rs
+//! - `scan_chunks_with_backend_internal_admission_and_route` (CPU-vs-GPU batch routing) .. backend_dispatch.rs
 //! - `scan_coalesced_gpu_region_presence` (GPU trigger production) ... gpu_region_dispatch.rs
 //! - GPU region reporting/throughput helpers ................. gpu_region_dispatch_helpers.rs
 //! - `scan_prepared_with_triggered` / `collect_triggered_patterns_*` . backend_triggered.rs
@@ -68,7 +68,7 @@ pub(crate) use crate::gpu_matcher_cache as gpu_cache;
 #[cfg(all(test, feature = "gpu"))]
 pub(crate) use gpu_cache::gpu_matcher_cache_dir_from_base;
 mod gpu_forced;
-pub(crate) use gpu_forced::require_selected_gpu_stack;
+#[cfg(any(feature = "gpu", test))]
 mod gpu_forced_helpers;
 mod gpu_lazy;
 mod gpu_lazy_helpers;
@@ -139,6 +139,8 @@ mod scan_postprocess_fragments;
 #[cfg(feature = "ml")]
 #[path = "scan_postprocess/ml.rs"]
 mod scan_postprocess_ml;
+#[cfg(all(test, feature = "ml"))]
+pub(crate) use scan_postprocess_ml::finalize_pending_match_for_test;
 #[path = "scan_postprocess/profile.rs"]
 mod scan_postprocess_profile;
 #[path = "scan_postprocess/suffix_gate.rs"]
@@ -211,7 +213,9 @@ pub(crate) const MAX_INNER_LOOP_ITERS: usize = 1_000_000;
 /// used to hardcode a bare `64`).
 pub(crate) const BIGRAM_BLOOM_MIN_CHUNK_BYTES: usize = 64;
 
-pub(crate) use phase1_admission::Phase1Admission;
+pub(crate) use phase1_admission::{
+    Phase1Admission, Phase1AdmissionPlanIdentityError,
+};
 pub use phase1_admission::{
     Phase1AdmissionPlan, Phase1AdmissionSummary, Phase2KeywordTriggerSummary,
 };

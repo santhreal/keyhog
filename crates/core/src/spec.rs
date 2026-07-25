@@ -16,7 +16,10 @@ use serde::ser::Error as _;
 use serde::{Deserialize, Serialize};
 
 pub use evidence::{ProviderEvidenceRole, ProviderEvidenceSensitivity};
-pub use load::{load_detectors, read_detector_toml_file, SpecError, DETECTOR_TOML_FILE_BYTES};
+pub use load::{
+    load_detector_corpus, load_detectors, read_detector_toml_file, LoadedDetectorCorpus,
+    SpecError, DETECTOR_TOML_FILE_BYTES,
+};
 pub use validate::{validate_detector, QualityIssue};
 
 /// Metadata field specification for verification results.
@@ -1779,6 +1782,20 @@ impl<'de> Deserialize<'de> for ScriptEngine {
     }
 }
 
+/// How a verifier response establishes a successful credential check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SuccessPolicy {
+    /// Stable response-body evidence must match.
+    BodyPositive,
+    /// The accepted status is necessary, then the generic provider-error body
+    /// backstop must still reject populated error signals.
+    StatusWithErrorBackstop,
+    /// The provider protocol makes the accepted status authoritative even when
+    /// the response body is empty or unstable.
+    StatusAuthoritative,
+}
+
 /// Criteria for a successful verification response.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
@@ -1789,6 +1806,11 @@ pub struct SuccessSpec {
     #[serde(default)]
     /// Reject if this status code is returned.
     pub status_not: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Explicit response-success policy. Shipped detector contracts must
+    /// classify this; `None` exists only for backwards-compatible decoding and
+    /// is rejected by detector quality validation.
+    pub policy: Option<SuccessPolicy>,
     #[serde(default)]
     /// Response body must contain this substring.
     pub body_contains: Option<String>,
@@ -1801,6 +1823,42 @@ pub struct SuccessSpec {
     #[serde(default)]
     /// Expected value at \`json_path\`.
     pub equals: Option<String>,
+}
+
+/// Migrate unambiguous schema-v1 status-only success contracts to the
+/// conservative explicit policy.
+///
+/// Returns the number of contracts migrated so the loader can surface legacy
+/// normalization. Body-constrained, no-status, and already-classified contracts
+/// remain untouched and will pass or fail normal validation without guessing.
+pub(crate) fn migrate_legacy_success_policies(detector: &mut DetectorSpec) -> usize {
+    let Some(verify) = detector.verify.as_mut() else {
+        return 0;
+    };
+
+    let mut migrated = verify
+        .success
+        .as_mut()
+        .is_some_and(migrate_legacy_success_policy) as usize;
+    for step in &mut verify.steps {
+        migrated += migrate_legacy_success_policy(&mut step.success) as usize;
+    }
+    migrated
+}
+
+fn migrate_legacy_success_policy(success: &mut SuccessSpec) -> bool {
+    let is_unambiguous_status_only = success.policy.is_none()
+        && success.status.is_some()
+        && success.body_contains.is_none()
+        && success.body_not_contains.is_none()
+        && success.json_path.is_none()
+        && success.equals.is_none();
+    if !is_unambiguous_status_only {
+        return false;
+    }
+
+    success.policy = Some(SuccessPolicy::StatusWithErrorBackstop);
+    true
 }
 
 /// Severity level for a finding.
@@ -2007,6 +2065,30 @@ pub enum HttpMethod {
     Patch,
     #[serde(rename = "HEAD")]
     Head,
+}
+
+/// Canonical file name for the directory-scoped detector corpus manifest.
+pub const DETECTOR_CORPUS_MANIFEST_FILE: &str = "corpus.toml";
+
+/// Oldest legacy detector schema this binary can migrate deterministically.
+pub const DETECTOR_CORPUS_MIN_SCHEMA_VERSION: u32 = 1;
+
+/// Detector schema authored and enforced by this binary.
+pub const DETECTOR_CORPUS_SCHEMA_VERSION: u32 = 2;
+
+/// Highest newer detector schema this binary may inspect additively.
+///
+/// A corpus beyond this one-version compatibility window is rejected before
+/// any detector is loaded.
+pub const DETECTOR_CORPUS_MAX_FORWARD_SCHEMA_VERSION: u32 =
+    DETECTOR_CORPUS_SCHEMA_VERSION + 1;
+
+/// Directory-scoped compatibility contract for detector TOML files.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DetectorCorpusManifest {
+    /// Schema version shared by every detector file in the directory.
+    pub schema_version: u32,
 }
 
 /// Wrapping struct for a detector TOML file.

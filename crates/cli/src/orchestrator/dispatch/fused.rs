@@ -23,6 +23,9 @@ impl ActiveBackendRouter {
         selection: &super::backend::BackendSelection,
         recovery: &keyhog_scanner::BackendRecoveryReceipt,
     ) -> std::result::Result<(), AutorouteRoutingError> {
+        if recovery.is_phase1_admission_recovery() {
+            return Ok(());
+        }
         match self {
             Self::Explicit(_) => Ok(()),
             Self::Cached(router) => router.quarantine_recovered_route(selection, recovery),

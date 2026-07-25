@@ -40,10 +40,12 @@ pub fn gpu_self_test() -> Result<GpuSelfTest, String> {
     {
         GPU_SELF_TEST_CACHE
             .get_or_init(|| {
-                let gpu = super::backend::get_gpu().ok_or_else(|| {
-                    "GPU adapter unavailable; install or enable a non-software GPU adapter and driver"
-                        .to_string()
-                })?;
+                let gpu = super::backend::get_gpu()
+                    .map_err(|error| error.to_string())?
+                    .ok_or_else(|| {
+                        "GPU adapter unavailable; install or enable a non-software GPU adapter and driver"
+                            .to_string()
+                    })?;
 
                 // PARITY, not "in range". The prior check scored ALL-ZERO feature
                 // vectors and only asserted each result was finite and within
@@ -265,7 +267,12 @@ fn gpu_region_presence_self_test_impl(
     // CPU baseline on the SAME detector+chunk. This is the oracle: it proves the
     // planted secret is detectable AT ALL on this build, so a low GPU count means
     // a real GPU phase-1 divergence rather than an invalid/suppressed probe.
-    let cpu_results = scanner.scan_chunks_with_backend(&[make_chunk()], ScanBackend::CpuFallback);
+    let cpu_results = scanner
+        .scan_chunks_with_backend(&[make_chunk()], ScanBackend::CpuFallback)
+        .map_err(|error| GpuRegionPresenceSelfTestFailure {
+            acquired_backends: acquired_backends.clone(),
+            message: format!("CPU baseline dispatch failed during GPU self-test: {error}"),
+        })?;
     let cpu_total: usize = cpu_results.iter().map(Vec::len).sum();
     if cpu_total == 0 {
         return Err(GpuRegionPresenceSelfTestFailure {
@@ -289,11 +296,9 @@ fn gpu_region_presence_self_test_impl(
             continue;
         };
         let degrade_before = scanner.runtime_status().gpu_degrade_count;
-        let results = match scanner.try_scan_coalesced_gpu_region_presence(
-            &[make_chunk()],
-            route,
-            scanner.execution_route_for_backend(route),
-        ) {
+        let results = match scanner.scan_coalesced_gpu_region_presence(&[make_chunk()],
+        route,
+        scanner.execution_route_for_backend(route),) {
             Ok(results) => results,
             Err(error) => {
                 failures.push(format!(

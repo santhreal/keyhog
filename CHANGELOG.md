@@ -2,6 +2,41 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.46] - 2026-07-24
+
+### Added
+
+- `scan --detectors-mode replace|overlay` makes custom detector composition
+  explicit. Overlay mode retains embedded rules, rejects detector ID collisions,
+  and reports the effective corpus digest and provenance.
+- Benchmark reports now resolve one declared canonical run set and expose exact
+  executable, detector, corpus, host, and static-recovery provenance.
+
+### Changed
+
+- Scanner library entry points return typed errors for unavailable or failed
+  selected backends. The CLI alone maps terminal failures to process exit codes.
+- The daemon protocol is version 8. Secret-bearing wire adapters remain private,
+  warm routes bind the engine and artifact identity, and recovery metadata is
+  conserved across daemon boundaries.
+- Verifier success behavior is detector-owned through explicit conservative,
+  body-positive, and status-authoritative policies.
+
+### Fixed
+
+- `Credential` and `SensitiveString` redact through `Display` and reject
+  implicit serialization. Plaintext access requires an explicit private
+  boundary.
+- Decoder output is streamed through one bounded sink, and UTF-8 detector policy
+  mapping no longer slices strings at non-character byte offsets.
+- Calibration persistence preserves concurrent writers with private Unix file
+  modes. Admission-plan mismatch recovery now emits an operator-visible receipt.
+- Release and crate publication bind the candidate commit, version, signatures,
+  assets, package graph, and registry verification before public mutation.
+- Release version updates preserve measured benchmark identities while updating
+  operator pins. GHCR version and `latest` tags wait for the signed candidate
+  product smoke before public mutation.
+
 ## [0.5.45] - 2026-07-22
 
 ### Fixed

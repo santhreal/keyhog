@@ -1,8 +1,7 @@
 //! Post-match processing: raw match construction and placeholder suppression.
 
 use crate::types::*;
-use keyhog_core::{Chunk, MatchLocation, RawMatch, Severity};
-use std::collections::HashMap;
+use keyhog_core::{Chunk, CompanionMap, MatchLocation, RawMatch, Severity};
 use std::sync::Arc;
 
 fn source_adjusted_severity(source_type: &str, severity: Severity) -> Severity {
@@ -16,6 +15,63 @@ fn source_adjusted_severity(source_type: &str, severity: Severity) -> Severity {
     }
 }
 
+#[cfg(feature = "ml")]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_pending_raw_match(
+    detector_severity: Severity,
+    metadata: (Arc<str>, Arc<str>, Arc<str>),
+    chunk: &Chunk,
+    credential: &str,
+    companions: CompanionMap,
+    offset: usize,
+    line: usize,
+    ent: f64,
+    scan_state: &mut ScanState,
+    pattern_client_safe: bool,
+) -> crate::scan_state::PendingRawMatch {
+    let (detector_id, detector_name, service) = metadata;
+    let severity = if pattern_client_safe {
+        keyhog_core::Severity::ClientSafe
+    } else {
+        source_adjusted_severity(&chunk.metadata.source_type, detector_severity)
+    };
+    crate::scan_state::PendingRawMatch {
+        detector_id,
+        detector_name,
+        service,
+        severity,
+        credential: scan_state.intern_credential(credential),
+        companions,
+        location: MatchLocation {
+            source: scan_state.intern_metadata(&chunk.metadata.source_type),
+            file_path: chunk
+                .metadata
+                .path
+                .as_ref()
+                .map(|path| scan_state.intern_metadata(path)),
+            line: Some(line + chunk.metadata.base_line),
+            offset: offset + chunk.metadata.base_offset,
+            commit: chunk
+                .metadata
+                .commit
+                .as_ref()
+                .map(|commit| scan_state.intern_metadata(commit)),
+            author: chunk
+                .metadata
+                .author
+                .as_ref()
+                .map(|author| scan_state.intern_metadata(author)),
+            date: chunk
+                .metadata
+                .date
+                .as_ref()
+                .map(|date| scan_state.intern_metadata(date)),
+        },
+        entropy: Some(ent),
+    }
+}
+
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_raw_match(
     detector_severity: Severity,
@@ -26,7 +82,7 @@ pub(crate) fn build_raw_match(
     metadata: (Arc<str>, Arc<str>, Arc<str>),
     chunk: &Chunk,
     credential: &str,
-    companions: HashMap<String, String>,
+    companions: CompanionMap,
     offset: usize,
     line: usize,
     ent: f64,
@@ -102,6 +158,56 @@ pub(crate) fn build_raw_match(
     }
 }
 
+#[cfg(feature = "ml")]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_pending_synthetic_raw_match(
+    metadata: (Arc<str>, Arc<str>, Arc<str>),
+    severity: Severity,
+    chunk: &Chunk,
+    credential: &str,
+    absolute_offset: usize,
+    absolute_line: Option<usize>,
+    entropy: Option<f64>,
+    scan_state: &mut ScanState,
+) -> crate::scan_state::PendingRawMatch {
+    let (detector_id, detector_name, service) = metadata;
+    crate::scan_state::PendingRawMatch {
+        detector_id,
+        detector_name,
+        service,
+        severity: source_adjusted_severity(&chunk.metadata.source_type, severity),
+        credential: scan_state.intern_credential(credential),
+        companions: CompanionMap::new(),
+        location: MatchLocation {
+            source: scan_state.intern_metadata(&chunk.metadata.source_type),
+            file_path: chunk
+                .metadata
+                .path
+                .as_ref()
+                .map(|path| scan_state.intern_metadata(path)),
+            line: absolute_line,
+            offset: absolute_offset,
+            commit: chunk
+                .metadata
+                .commit
+                .as_ref()
+                .map(|commit| scan_state.intern_metadata(commit)),
+            author: chunk
+                .metadata
+                .author
+                .as_ref()
+                .map(|author| scan_state.intern_metadata(author)),
+            date: chunk
+                .metadata
+                .date
+                .as_ref()
+                .map(|date| scan_state.intern_metadata(date)),
+        },
+        entropy,
+    }
+}
+
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_synthetic_raw_match(
     metadata: (Arc<str>, Arc<str>, Arc<str>),
@@ -123,7 +229,7 @@ pub(crate) fn build_synthetic_raw_match(
         severity,
         credential_hash: crate::sha256_hash(credential),
         credential: scan_state.intern_credential(credential),
-        companions: HashMap::new(),
+        companions: CompanionMap::new(),
         location: MatchLocation {
             source: scan_state.intern_metadata(&chunk.metadata.source_type),
             file_path: chunk

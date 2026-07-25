@@ -75,7 +75,9 @@ fn test_window_boundary_detection() {
         },
     };
 
-    let results = scanner.scan_coalesced(&[chunk_a, chunk_b]);
+    let results = scanner
+        .scan_coalesced(&[chunk_a, chunk_b])
+        .expect("window-boundary coalesced scan should succeed");
 
     let mut found = false;
     let secret_offset = pad_a_len; // file-level offset where the secret starts

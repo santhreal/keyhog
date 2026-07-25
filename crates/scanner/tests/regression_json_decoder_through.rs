@@ -55,7 +55,9 @@ fn scan(text: &str) -> Vec<RawMatch> {
             ..Default::default()
         },
     };
-    scanner().scan(&chunk)
+    scanner()
+        .scan(&chunk)
+        .expect("JSON decode-through regression scan succeeds")
 }
 
 fn count_id(matches: &[RawMatch], id: &str) -> usize {

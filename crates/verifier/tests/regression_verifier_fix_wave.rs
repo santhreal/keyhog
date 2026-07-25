@@ -6,7 +6,7 @@
 //!   * cache metadata retention is deterministic (identity fields first),
 //!   * the inflight-dedup cap bypass is surfaced (loud counter), not silent.
 
-use keyhog_core::SuccessSpec;
+use keyhog_core::{SuccessPolicy, SuccessSpec};
 use keyhog_verifier::testing::{
     TestApi, TestVerificationCache as VerificationCache, VerifierTestApi, VerifierTestCache,
 };
@@ -30,19 +30,35 @@ fn retryable_http_status_matches_429_and_500_through_504_only() {
 
 // ── success contract is authoritative over the generic backstop ──────────────
 
+/// Regression: only stable body-positive evidence or an explicitly reviewed
+/// authoritative status may suppress the generic response-error backstop;
+/// conservative status contracts must keep it enabled.
 #[test]
-fn success_spec_is_explicit_only_with_body_evidence() {
+fn success_spec_is_explicit_only_with_authoritative_evidence() {
     assert!(!TestApi.success_spec_is_explicit_for_test(&SuccessSpec::default()));
     assert!(!TestApi.success_spec_is_explicit_for_test(&SuccessSpec {
         status: Some(200),
+        policy: Some(SuccessPolicy::StatusWithErrorBackstop),
+        ..Default::default()
+    }));
+    assert!(TestApi.success_spec_is_explicit_for_test(&SuccessSpec {
+        status: Some(202),
+        policy: Some(SuccessPolicy::StatusAuthoritative),
         ..Default::default()
     }));
     assert!(TestApi.success_spec_is_explicit_for_test(&SuccessSpec {
         json_path: Some("$.ok".into()),
+        policy: Some(SuccessPolicy::BodyPositive),
         ..Default::default()
     }));
     assert!(TestApi.success_spec_is_explicit_for_test(&SuccessSpec {
         body_contains: Some("login".into()),
+        policy: Some(SuccessPolicy::BodyPositive),
+        ..Default::default()
+    }));
+    assert!(!TestApi.success_spec_is_explicit_for_test(&SuccessSpec {
+        body_not_contains: Some("error".into()),
+        policy: Some(SuccessPolicy::BodyPositive),
         ..Default::default()
     }));
 }

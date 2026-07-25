@@ -23,6 +23,10 @@ pub enum AutorouteCalibrationPolicy {
 /// workload-shaped cold-state measurement, and persisted route selection.
 /// External source classes that need repositories, services, containers, or
 /// remote endpoints remain installer-owned.
+///
+/// Statistically overlapping route timings are inconclusive: the command exits
+/// 2 and publishes no generation rather than choosing an unproved winner.
+/// Rerun on an idle host. An explicit `--backend` remains diagnostic only.
 #[derive(Parser)]
 pub struct CalibrateAutorouteArgs {
     /// Override the persistent autoroute cache file every probe writes to.

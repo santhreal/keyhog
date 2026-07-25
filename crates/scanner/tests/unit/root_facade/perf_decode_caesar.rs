@@ -185,7 +185,9 @@ fn caesar_runfree_chunk_must_be_gated_not_fanned_out() {
     // future fixture edit sneaks in a token whose shift hits a prefix, the
     // fan-out would run AND this assert would fire, either way the test stays
     // honest.
-    let produced = decoder.decode_chunk(&chunk);
+    let produced = decoder
+        .decode_chunk(&chunk)
+        .expect("bounded inert Caesar decode should succeed");
     assert!(
         produced.is_empty(),
         "fixture invariant broken: decode_chunk emitted {} chunk(s); this input \
@@ -195,7 +197,11 @@ fn caesar_runfree_chunk_must_be_gated_not_fanned_out() {
     );
 
     // Warm caches/branch predictors before timing.
-    let _ = decoder.decode_chunk(&chunk);
+    std::hint::black_box(
+        decoder
+            .decode_chunk(&chunk)
+            .expect("bounded warmup Caesar decode should succeed"),
+    );
     let _ = longest_alpha_run(&data);
 
     // Pair both measurements WITHIN each rep and keep the rep with the smallest
@@ -212,7 +218,9 @@ fn caesar_runfree_chunk_must_be_gated_not_fanned_out() {
     let (mut caesar_ns, mut scan_ns) = (0u128, 0u128);
     for _ in 0..REPS {
         let c_start = Instant::now();
-        let out = decoder.decode_chunk(&chunk);
+        let out = decoder
+            .decode_chunk(&chunk)
+            .expect("bounded timed Caesar decode should succeed");
         let caesar = c_start.elapsed().as_nanos();
         std::hint::black_box(out);
 

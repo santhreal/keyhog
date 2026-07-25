@@ -50,14 +50,12 @@ fn confirmed_pattern_profile_mirror() {
 
     for (i, c) in chunks_16k.iter().enumerate() {
         let chunk = chunk_of(c, &format!("16k-{i}"));
-        let _ = scanner
-            .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback);
+        let _ = scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback).expect("selected backend scan succeeds");
     }
     scanner.confirmed_profile_dump("warmup-discard");
     for (i, c) in chunks_16k.iter().enumerate() {
         let chunk = chunk_of(c, &format!("16k-{i}"));
-        let _ = scanner
-            .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback);
+        let _ = scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback).expect("selected backend scan succeeds");
     }
     eprintln!("regime B: {} 16-KiB chunks", chunks_16k.len());
     scanner.confirmed_profile_dump("mirror-16kib");

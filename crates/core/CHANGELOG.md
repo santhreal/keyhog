@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.5.46 - 2026-07-24
+
+- Make implicit serde serialization of `Credential` and `SensitiveString`
+  fail before emitting secret bytes. `RawMatch`, `DedupedMatch`, and `Chunk`
+  therefore require an explicit protected conversion instead of serializing
+  plaintext, while historical plaintext and tagged deserialization still work.
+- Add canonical `corpus.toml` schema identity. Schema 1 keeps its conservative
+  verifier-policy migration, schema 2 requires explicit policy, and forward or
+  malformed schemas fail with typed errors. Detector digests and scan report
+  metadata bind the manifest bytes and schema so caches, daemon evidence, and
+  autoroute evidence cannot cross corpus semantics.
+- Add `complete_after_recovery` as a complete scan terminal state and preserve
+  bounded backend-recovery evidence across the current JSON and JSONL report
+  contracts.
+
+- Add detector-owned `plausibility.keyword_free_operator_margin`, validate it
+  only for the `keyword-free` entropy role, and bind it into detector identity.
+
+- Add an opt-in source ordering contract for contiguous chunk identities so
+  dispatchers can split routing batches without assuming concrete source types.
+
+- Add shared overflow-safe median and paired confidence primitives for
+  autoroute calibration and release crossover evidence.
+
 ## 0.5.45 - 2026-07-22
 
 - Republish the core library in the release chain whose signed asset
@@ -21,19 +45,6 @@
   admission, validate its literal prefixes, and bind it into detector identity.
 - Bind non-default detector resolution priority into detector identity without
   changing the canonical digest of detectors that use the default policy.
-
-- Add `complete_after_recovery` as a complete scan terminal state, preserve
-  bounded backend-recovery evidence across report formats, and advance the
-  versioned JSON contract to 1.7 and JSONL contract to 1.8.
-
-- Add detector-owned `plausibility.keyword_free_operator_margin`, validate it
-  only for the `keyword-free` entropy role, and bind it into detector identity.
-
-- Add an opt-in source ordering contract for contiguous chunk identities so
-  dispatchers can split routing batches without assuming concrete source types.
-
-- Add shared overflow-safe median and paired confidence primitives for
-  autoroute calibration and release crossover evidence.
 
 ## 0.2.1
 

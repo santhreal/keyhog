@@ -39,6 +39,7 @@ mod config;
 /// Secure credential storage and redaction.
 mod credential;
 mod dedup;
+mod detector_corpus;
 mod detector_file_io;
 mod display;
 /// Shared standard Base64 decode (wire / K8s), bounded for DoS safety.
@@ -68,6 +69,10 @@ pub mod winpath;
 use std::borrow::Cow;
 
 pub use api::*;
+pub use detector_corpus::{
+    compose_detector_corpus, compute_detector_corpus_digest,
+    compute_detector_corpus_digest_for_schema, DetectorCorpusError, DetectorCorpusMode,
+};
 /// Auto-fix suggestion logic for SARIF output.
 mod auto_fix;
 /// Bayesian confidence calibration for detectors.
@@ -239,12 +244,14 @@ pub fn git_hash() -> &'static str {
     env!("GIT_HASH")
 }
 
-/// Digest identifying the EXACT embedded detector set compiled into this binary
-/// (`<count>-<fnv1a_hex>`). Stamped by `build.rs` via
-/// `cargo:rustc-env=KEYHOG_DETECTOR_DIGEST`. Lets the benchmark and `--version`
-/// assert the running binary's detectors match the on-disk `detectors/` tree
-/// the authoritative answer to "what got compiled in" when cargo's
-/// `rerun-if-changed` can't be trusted across in-place TOML edits.
+/// Effective digest identifying the EXACT embedded detector set and the
+/// directory-scoped `corpus.toml` schema contract compiled into this binary
+/// (`<detector-count>-<fnv1a_hex>`). Binding the manifest ensures caches,
+/// benchmarks, and autoroute evidence invalidate when parsing compatibility
+/// semantics change even if detector TOML bytes do not. Stamped by `build.rs`
+/// via `cargo:rustc-env=KEYHOG_DETECTOR_DIGEST`, this is the authoritative
+/// answer to "which effective corpus was compiled in" when cargo's
+/// `rerun-if-changed` cannot be trusted across in-place TOML edits.
 #[inline]
 pub fn detector_digest() -> &'static str {
     env!("KEYHOG_DETECTOR_DIGEST")

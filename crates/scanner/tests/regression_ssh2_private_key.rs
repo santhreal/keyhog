@@ -24,7 +24,9 @@ fn scan(text: &str) -> Vec<RawMatch> {
             ..Default::default()
         },
     };
-    scanner.scan(&chunk)
+    scanner
+        .scan(&chunk)
+        .expect("SSH2 private-key scan should succeed")
 }
 
 fn ssh2(text: &str) -> Option<RawMatch> {

@@ -49,10 +49,12 @@ fn scan_1mb_with_all_detectors_under_100ms() {
     let chunk = make_chunk(&generate_1mb_text());
 
     // Warm up: first scan triggers lazy HS scratch allocation.
-    let _ = scanner.scan(&chunk);
+    scanner
+        .scan(&chunk)
+        .expect("performance warmup scan should succeed");
 
     let start = Instant::now();
-    let matches = scanner.scan(&chunk);
+    let matches = scanner.scan(&chunk).expect("scanner call should succeed");
     let elapsed = start.elapsed();
 
     // Debug builds are ~100x slower due to unoptimized regex + HS cold compilation.
@@ -150,7 +152,7 @@ fn cpu_fallback_completes_under_2s_on_4mib_corpus() {
     }
 
     let start = Instant::now();
-    let results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback);
+    let results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
     let elapsed = start.elapsed();
     let limit_ms = if cfg!(debug_assertions) {
         30_000

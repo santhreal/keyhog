@@ -14,8 +14,9 @@ use crate::args::DoctorArgs;
 use crate::exit_codes::EXIT_DOCTOR_UNHEALTHY;
 use crate::installer::scan_engine_self_test;
 use crate::style::{self, Palette};
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
 use keyhog_scanner::hw_probe::{probe_hardware, simd_label};
+use keyhog_scanner::{BigramPrefilterState, BigramPrefilterStatus, CompiledScanner};
 use std::process::ExitCode;
 
 fn canonicalize_for_shadow_check(path: std::path::PathBuf) -> std::path::PathBuf {
@@ -41,7 +42,240 @@ const fn should_run_gpu_self_tests(gpu_available: bool, gpu_is_software: bool) -
     gpu_available && !gpu_is_software
 }
 
-pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
+#[derive(Debug, Eq, PartialEq)]
+pub(super) struct BloomEvidenceSummary {
+    pub(super) corpus_name: String,
+    pub(super) corpus_revision: String,
+    pub(super) input_count: u64,
+    pub(super) eligible_input_count: u64,
+    pub(super) rejected_input_count: u64,
+    pub(super) rejection_basis_points: u16,
+    pub(super) unavailable_reason_counts: std::collections::BTreeMap<String, u64>,
+    pub(super) finding_count: u64,
+    pub(super) findings_sha256: String,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub(super) struct BloomOperatorDiagnostic {
+    pub(super) density: String,
+    pub(super) corpus_rejection: String,
+    pub(super) finding_parity: String,
+    pub(super) state: &'static str,
+    pub(super) action: Option<&'static str>,
+    pub(super) warned: bool,
+    pub(super) unhealthy: bool,
+}
+
+fn format_basis_points(value: u16) -> String {
+    format!("{}.{:02}%", value / 100, value % 100)
+}
+
+fn is_lower_hex(value: &str, len: usize) -> bool {
+    value.len() == len
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+pub(super) fn load_bloom_evidence(
+    path: &std::path::Path,
+    status: BigramPrefilterStatus,
+    detector_corpus_sha256: &str,
+    scanner_detector_digest: u64,
+) -> Result<BloomEvidenceSummary> {
+    let bytes = std::fs::read(path)
+        .with_context(|| format!("read Bloom evidence {}", path.display()))?;
+    let receipt: crate::bloom_diagnostic::BloomCorpusResult = serde_json::from_slice(&bytes)
+        .with_context(|| format!("parse Bloom evidence {}", path.display()))?;
+    if receipt.schema_version != "bloom-evidence-v1" {
+        bail!(
+            "Bloom evidence schema {:?} is unsupported",
+            receipt.schema_version
+        );
+    }
+    if receipt.corpus_name.trim().is_empty() || receipt.corpus_revision.trim().is_empty() {
+        bail!("Bloom evidence must name its corpus and revision");
+    }
+    for (name, digest) in [
+        ("fixture", receipt.fixture_sha256.as_str()),
+        ("corpus", receipt.corpus_sha256.as_str()),
+        (
+            "detector corpus",
+            receipt.detector_corpus_sha256.as_str(),
+        ),
+        (
+            "enabled findings",
+            receipt.enabled_findings_sha256.as_str(),
+        ),
+        (
+            "bypassed findings",
+            receipt.bypass_findings_sha256.as_str(),
+        ),
+    ] {
+        if !is_lower_hex(digest, 64) {
+            bail!("Bloom evidence {name} digest is not lowercase SHA-256");
+        }
+    }
+    if receipt.detector_corpus_sha256 != detector_corpus_sha256 {
+        bail!("Bloom evidence was measured with a different detector corpus");
+    }
+    if receipt.scanner_detector_digest != format!("{scanner_detector_digest:016x}") {
+        bail!("Bloom evidence was measured with a different compiled scanner");
+    }
+    if receipt.input_count == 0
+        || receipt.declared_input_count
+            != receipt
+                .input_count
+                .saturating_add(receipt.unavailable_input_count)
+        || receipt.eligible_input_count > receipt.input_count
+        || receipt.rejected_input_count > receipt.eligible_input_count
+        || receipt.admitted_input_count.saturating_add(receipt.rejected_input_count)
+            != receipt.input_count
+        || u64::from(receipt.rejection_basis_points)
+            != receipt.rejected_input_count.saturating_mul(10_000) / receipt.input_count
+    {
+        bail!("Bloom evidence input accounting is inconsistent");
+    }
+    if receipt
+        .unavailable_reason_counts
+        .keys()
+        .any(|reason| reason != "source-file-missing")
+        || receipt
+            .unavailable_reason_counts
+            .values()
+            .copied()
+            .sum::<u64>()
+            != receipt.unavailable_input_count
+    {
+        bail!("Bloom evidence unavailable reason accounting is inconsistent");
+    }
+    if receipt.rejected_input_count == 0 {
+        bail!("Bloom evidence rejected zero named corpus inputs");
+    }
+    let expected_state = match status.state {
+        BigramPrefilterState::Healthy => "healthy",
+        BigramPrefilterState::Saturated => "saturated-fail-open",
+        BigramPrefilterState::Invalid => "invalid-fail-open",
+    };
+    if receipt.state != expected_state
+        || receipt.populated_slots != status.populated_slots
+        || receipt.total_slots != status.total_slots
+        || receipt.saturation_threshold_slots != status.saturation_threshold_slots
+        || receipt.density_basis_points != status.density_basis_points
+    {
+        bail!("Bloom evidence prefilter state does not match this scanner");
+    }
+    if !receipt.findings_identical
+        || receipt.enabled_finding_count != receipt.bypass_finding_count
+        || receipt.enabled_findings_sha256 != receipt.bypass_findings_sha256
+    {
+        bail!("Bloom evidence does not prove exact enabled/bypassed finding parity");
+    }
+    Ok(BloomEvidenceSummary {
+        corpus_name: receipt.corpus_name,
+        corpus_revision: receipt.corpus_revision,
+        input_count: receipt.input_count,
+        eligible_input_count: receipt.eligible_input_count,
+        rejected_input_count: receipt.rejected_input_count,
+        rejection_basis_points: receipt.rejection_basis_points,
+        unavailable_reason_counts: receipt.unavailable_reason_counts,
+        finding_count: receipt.enabled_finding_count,
+        findings_sha256: receipt.enabled_findings_sha256,
+    })
+}
+
+pub(super) fn bloom_operator_diagnostic(
+    status: BigramPrefilterStatus,
+    evidence: Option<&BloomEvidenceSummary>,
+) -> BloomOperatorDiagnostic {
+    let density = format!(
+        "{} ({}/{} slots; saturates at {})",
+        format_basis_points(status.density_basis_points),
+        status.populated_slots,
+        status.total_slots,
+        status.saturation_threshold_slots
+    );
+    let corpus_rejection = evidence.map_or_else(
+        || "UNMEASURED (provide --bloom-evidence from `make -C benchmarks bloom`)".to_string(),
+        |receipt| {
+            let unavailable = receipt
+                .unavailable_reason_counts
+                .iter()
+                .map(|(reason, count)| format!("{reason}={count}"))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!(
+                "{} ({}/{} inputs; {} bloom-eligible; {}@{}; unavailable {})",
+                format_basis_points(receipt.rejection_basis_points),
+                receipt.rejected_input_count,
+                receipt.input_count,
+                receipt.eligible_input_count,
+                receipt.corpus_name,
+                receipt.corpus_revision,
+                unavailable,
+            )
+        },
+    );
+    let finding_parity = evidence.map_or_else(
+        || "UNPROVEN (no real-corpus differential receipt loaded)".to_string(),
+        |receipt| {
+            format!(
+                "IDENTICAL ({} findings; sha256 {})",
+                receipt.finding_count, receipt.findings_sha256
+            )
+        },
+    );
+    let (state, action, warned, unhealthy) = match status.state {
+        BigramPrefilterState::Healthy
+            if evidence.is_some_and(|receipt| receipt.rejected_input_count > 0) =>
+        {
+            ("HEALTHY / CORPUS-PROVEN", None, false, false)
+        }
+        BigramPrefilterState::Healthy if evidence.is_some() => (
+            "HEALTHY / NO CORPUS REJECTION",
+            Some(
+                "the measured corpus was rejected at 0%; review literal growth or retire this prefilter if representative corpora remain at 0%",
+            ),
+            true,
+            false,
+        ),
+        BigramPrefilterState::Healthy => (
+            "HEALTHY / CORPUS UNMEASURED",
+            Some(
+                "run `make -C benchmarks bloom`, then pass its result with --bloom-evidence",
+            ),
+            true,
+            false,
+        ),
+        BigramPrefilterState::Saturated => (
+            "SATURATED / FAIL-OPEN",
+            Some(
+                "downstream scanning remains enabled for recall; reduce literal-prefix density or enlarge the table to restore filtering",
+            ),
+            true,
+            false,
+        ),
+        BigramPrefilterState::Invalid => (
+            "INVALID / FAIL-OPEN",
+            Some(
+                "downstream scanning remains enabled for recall; repair or rebuild this binary before relying on prefilter performance",
+            ),
+            false,
+            true,
+        ),
+    };
+    BloomOperatorDiagnostic {
+        density,
+        corpus_rejection,
+        finding_parity,
+        state,
+        action,
+        warned,
+        unhealthy,
+    }
+}
+
+pub(crate) fn run(args: DoctorArgs) -> Result<ExitCode> {
     let mut healthy = true;
     let mut warned = false;
     let palette = style::for_stdout();
@@ -190,6 +424,70 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
     } else {
         healthy = false;
         println!("  embedded       {red}0 - corpus missing from binary{reset}");
+    }
+
+    // Density is live scanner state. Effectiveness and recall safety come only
+    // from a digest-bound real-corpus receipt; a tiny built-in sample must not
+    // be promoted to production evidence.
+    let detectors = keyhog_core::embedded_detector_specs().to_vec();
+    let detector_corpus_sha256: Result<String> =
+        keyhog_core::compute_detector_corpus_digest(&detectors)
+            .map(keyhog_core::hex_encode)
+            .map_err(Into::into);
+    let scanner = CompiledScanner::compile(detectors).map_err(Into::into);
+    match (detector_corpus_sha256, scanner) {
+        (Ok(detector_corpus_sha256), Ok(scanner)) => {
+            let status = scanner.bigram_prefilter_status();
+            let evidence = args
+                .bloom_evidence
+                .as_deref()
+                .map(|path| {
+                    load_bloom_evidence(
+                        path,
+                        status,
+                        &detector_corpus_sha256,
+                        scanner.runtime_status().detector_digest,
+                    )
+                })
+                .transpose();
+            let loaded_evidence = match &evidence {
+                Ok(receipt) => receipt.as_ref(),
+                Err(error) => {
+                    eprintln!("Bloom evidence unavailable: {error:#}");
+                    None
+                }
+            };
+            let diagnostic = bloom_operator_diagnostic(status, loaded_evidence);
+            let state_color = if diagnostic.unhealthy {
+                red
+            } else if diagnostic.warned {
+                yellow
+            } else {
+                green
+            };
+            println!("  bloom density  {}", diagnostic.density);
+            println!(
+                "  bloom state    {state_color}{}{reset}",
+                diagnostic.state
+            );
+            println!("  bloom reject   {}", diagnostic.corpus_rejection);
+            println!("  bloom parity   {}", diagnostic.finding_parity);
+            if let Err(error) = evidence {
+                healthy = false;
+                println!("  bloom evidence {red}INVALID{reset}  {dim}{error:#}{reset}");
+            }
+            if let Some(action) = diagnostic.action {
+                println!("  bloom action   {dim}{action}{reset}");
+            }
+            healthy &= !diagnostic.unhealthy;
+            warned |= diagnostic.warned;
+        }
+        (Err(error), _) | (_, Err(error)) => {
+            healthy = false;
+            println!(
+                "  bloom state    {red}INVALID / FAIL-OPEN{reset}  {dim}scanner compilation failed: {error}; repair or rebuild this binary{reset}"
+            );
+        }
     }
 
     // ── Autoroute calibration coverage ────────────────────────────────

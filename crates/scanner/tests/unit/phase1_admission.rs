@@ -58,6 +58,12 @@ fn canonical(findings: &[Vec<keyhog_core::RawMatch>]) -> Vec<(usize, String, usi
     rows
 }
 
+fn canonical_result(
+    findings: keyhog_scanner::Result<Vec<Vec<keyhog_core::RawMatch>>>,
+) -> Vec<(usize, String, usize, String)> {
+    canonical(&findings.expect("phase-one admission scan succeeds"))
+}
+
 #[test]
 fn phase1_summary_distinguishes_equal_size_admission_classes() {
     const BYTES: usize = 192;
@@ -97,12 +103,12 @@ fn phase1_summary_distinguishes_equal_size_admission_classes() {
     ];
     let plan = scanner.phase1_admission_plan(&planned);
     assert_eq!(
-        canonical(&scanner.scan_coalesced_with_backend_and_admission(
+        canonical_result(scanner.scan_coalesced_with_backend_and_admission(
             &planned,
             ScanBackend::CpuFallback,
             Some(&plan),
         )),
-        canonical(&scanner.scan_coalesced_with_backend(&planned, ScanBackend::CpuFallback)),
+        canonical_result(scanner.scan_coalesced_with_backend(&planned, ScanBackend::CpuFallback),),
         "reusing the route admission plan must preserve scalar findings"
     );
 }
@@ -131,8 +137,11 @@ fn phase1_summary_parallel_fold_preserves_admission_totals() {
     );
 }
 
+/// Proves every acquired backend preserves seam and tail findings for all
+/// phase-one admission classes without concurrent adapter interference.
 #[test]
 fn phase1_admission_classes_preserve_backend_findings_at_eight_mib() {
+    let _gpu_test_guard = crate::testing::gpu_test_lock();
     const BYTES: usize = 8 * 1024 * 1024;
     const WGPU_GRID_BYTES: usize = 8_388_480;
     const SEAM_CREDENTIAL: &str = "ghp_A1b2C3d4";
@@ -156,7 +165,7 @@ fn phase1_admission_classes_preserve_backend_findings_at_eight_mib() {
     ];
 
     let reference =
-        canonical(&scanner.scan_coalesced_with_backend(&batch, ScanBackend::CpuFallback));
+        canonical_result(scanner.scan_coalesced_with_backend(&batch, ScanBackend::CpuFallback));
     assert_eq!(
         reference,
         vec![
@@ -176,14 +185,15 @@ fn phase1_admission_classes_preserve_backend_findings_at_eight_mib() {
         "the fixture must prove exact seam and tail findings after two rejected phase-one classes"
     );
     assert_eq!(
-        canonical(&scanner.scan_coalesced_with_backend(&batch, ScanBackend::SimdCpu)),
+        canonical_result(scanner.scan_coalesced_with_backend(&batch, ScanBackend::SimdCpu)),
         reference,
         "Hyperscan/SIMD must preserve scalar findings across phase-one admission classes"
     );
     #[cfg(feature = "gpu")]
     {
-        let direct_reference =
-            canonical(&[scanner.scan_with_backend(&batch[2], ScanBackend::CpuFallback)]);
+        let direct_reference = canonical(&[scanner
+            .scan_with_backend(&batch[2], ScanBackend::CpuFallback)
+            .expect("selected backend scan succeeds")]);
         let candidates = scanner.gpu_backend_candidates();
         let hardware = keyhog_scanner::hw_probe::probe_hardware();
         let wgpu_acquired = candidates
@@ -204,13 +214,15 @@ fn phase1_admission_classes_preserve_backend_findings_at_eight_mib() {
         );
         for candidate in acquired {
             assert_eq!(
-                canonical(&scanner.scan_coalesced_with_backend(&batch, candidate.backend)),
+                canonical_result(scanner.scan_coalesced_with_backend(&batch, candidate.backend),),
                 reference,
                 "{} must preserve scalar findings across phase-one admission classes",
                 candidate.backend.label()
             );
             assert_eq!(
-                canonical(&[scanner.scan_with_backend(&batch[2], candidate.backend)]),
+                canonical(&[scanner
+                    .scan_with_backend(&batch[2], candidate.backend)
+                    .expect("selected GPU per-chunk scan succeeds")]),
                 direct_reference,
                 "{} per-chunk API must preserve seam and tail findings",
                 candidate.backend.label()
@@ -219,8 +231,11 @@ fn phase1_admission_classes_preserve_backend_findings_at_eight_mib() {
     }
 }
 
+/// Proves oversized mixed rows retain their logical order and exact findings
+/// on every acquired backend while GPU fixtures are serialized.
 #[test]
 fn oversized_window_reduction_preserves_mixed_logical_rows() {
+    let _gpu_test_guard = crate::testing::gpu_test_lock();
     const BYTES: usize = 8 * 1024 * 1024;
     const WGPU_GRID_BYTES: usize = 8_388_480;
     const SEAM_CREDENTIAL: &str = "ghp_M3n4B5v6";
@@ -241,7 +256,7 @@ fn oversized_window_reduction_preserves_mixed_logical_rows() {
         chunk("ghp_Z9y8X7w6!".into()),
     ];
     let reference =
-        canonical(&scanner.scan_coalesced_with_backend(&batch, ScanBackend::CpuFallback));
+        canonical_result(scanner.scan_coalesced_with_backend(&batch, ScanBackend::CpuFallback));
     assert_eq!(
         reference.len(),
         3,
@@ -253,7 +268,7 @@ fn oversized_window_reduction_preserves_mixed_logical_rows() {
     );
     assert_eq!(reference[1].2, seam_start);
     assert_eq!(
-        canonical(&scanner.scan_coalesced_with_backend(&batch, ScanBackend::SimdCpu)),
+        canonical_result(scanner.scan_coalesced_with_backend(&batch, ScanBackend::SimdCpu)),
         reference
     );
 
@@ -264,7 +279,7 @@ fn oversized_window_reduction_preserves_mixed_logical_rows() {
         .filter(|candidate| candidate.available)
     {
         assert_eq!(
-            canonical(&scanner.scan_coalesced_with_backend(&batch, candidate.backend)),
+            canonical_result(scanner.scan_coalesced_with_backend(&batch, candidate.backend)),
             reference,
             "{} changed logical row order or findings",
             candidate.backend.label()
@@ -272,8 +287,11 @@ fn oversized_window_reduction_preserves_mixed_logical_rows() {
     }
 }
 
+/// Proves prefixless phase-two admission remains CPU-authoritative and exact
+/// across acquired GPU peers without shared-adapter test races.
 #[test]
 fn oversized_prefixless_phase2_row_keeps_cpu_admission_authoritative() {
+    let _gpu_test_guard = crate::testing::gpu_test_lock();
     const BYTES: usize = 8 * 1024 * 1024;
     const TOKEN: &str = "Kp4Qx7Rm2Sn5Tb8Vw3YzH6Lc9Df1Gj4N";
     let mut config = ScannerConfig::default();
@@ -296,7 +314,7 @@ fn oversized_prefixless_phase2_row_keeps_cpu_admission_authoritative() {
     );
     let batch = vec![chunk(data)];
     let reference =
-        canonical(&scanner.scan_coalesced_with_backend(&batch, ScanBackend::CpuFallback));
+        canonical_result(scanner.scan_coalesced_with_backend(&batch, ScanBackend::CpuFallback));
     assert!(
         reference.iter().any(|row| row.3 == TOKEN),
         "CPU no-hit admission must find the tail token: {reference:?}"
@@ -309,7 +327,7 @@ fn oversized_prefixless_phase2_row_keeps_cpu_admission_authoritative() {
         .filter(|candidate| candidate.available)
     {
         assert_eq!(
-            canonical(&scanner.scan_coalesced_with_backend(&batch, candidate.backend)),
+            canonical_result(scanner.scan_coalesced_with_backend(&batch, candidate.backend)),
             reference,
             "{} lost the oversized prefixless phase-two row",
             candidate.backend.label()

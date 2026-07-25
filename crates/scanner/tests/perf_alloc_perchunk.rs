@@ -151,8 +151,9 @@ fn passthrough_chunk(target_bytes: usize) -> Chunk {
 fn scan_alloc_bytes(scanner: &CompiledScanner, chunk: &Chunk) -> usize {
     BYTES_ALLOCATED.store(0, Ordering::Relaxed);
     COUNTING.store(true, Ordering::Relaxed);
-    let matches = scanner.scan(chunk);
+    let result = scanner.scan(chunk);
     COUNTING.store(false, Ordering::Relaxed);
+    let matches = result.expect("allocation-probe scan should succeed");
     // Keep the result observably alive so the scan can't be optimized away,
     // and assert the fixture really is a no-match passthrough so the alloc
     // signal is the preprocessing copy, not match post-processing.
@@ -187,8 +188,12 @@ fn passthrough_prepare_does_not_copy_whole_chunk_body() {
     // copy cost. Run each size twice up front so the measured pass below sees
     // only steady-state per-chunk allocation.
     for _ in 0..2 {
-        let _ = scanner.scan(&chunk_n);
-        let _ = scanner.scan(&chunk_2n);
+        scanner
+            .scan(&chunk_n)
+            .expect("base-size allocation warmup should succeed");
+        scanner
+            .scan(&chunk_2n)
+            .expect("double-size allocation warmup should succeed");
     }
 
     // Best-of-K on the COUNTER: take the minimum allocation reading across K

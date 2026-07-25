@@ -7,7 +7,7 @@
 //! Actual startup and request latency depend on the detector corpus, backend,
 //! cache state, host, and input.
 //!
-//! Surface:
+//! Public surface:
 //! - `keyhog daemon start` - bind the socket, compile the scanner,
 //!   accept connections forever (until `daemon stop`).
 //! - `keyhog daemon stop` - send `Shutdown` to the running daemon,
@@ -18,11 +18,43 @@
 //!   daemon; errors if no daemon is up.
 //! - `keyhog scan ... --daemon=off` - force in-process scan even when
 //!   a daemon is up.
+//!
+//! The wire protocol is deliberately not library API. Its scan response owns
+//! plaintext findings and is serializable only inside this crate, after both
+//! endpoints authenticate the connected Unix peer.
+//!
+//! ```compile_fail
+//! // External crates must not be able to name or serialize the plaintext DTO.
+//! let response: keyhog::daemon::protocol::Response = todo!();
+//! let _ = serde_json::to_string(&response);
+//! ```
 
-pub mod client;
-pub mod frame;
-pub mod protocol;
-pub mod server;
+pub(crate) mod client;
+pub(crate) mod frame;
+pub(crate) mod protocol;
+pub(crate) mod server;
+mod warm_identity;
+#[cfg(test)]
+#[path = "client_staleness_tests.rs"]
+mod client_staleness_tests;
+#[cfg(test)]
+#[path = "frame_incremental_tests.rs"]
+mod frame_incremental_tests;
+#[cfg(test)]
+#[path = "frame_streaming_tests.rs"]
+mod frame_streaming_tests;
+#[cfg(test)]
+#[path = "path_resolution_tests.rs"]
+mod path_resolution_tests;
+#[cfg(test)]
+#[path = "protected_wire_tests.rs"]
+mod protected_wire_tests;
+#[cfg(test)]
+#[path = "warm_identity_tests.rs"]
+mod warm_identity_tests;
+#[cfg(test)]
+#[path = "wire_tests.rs"]
+mod wire_tests;
 mod trust;
 
 pub use server::default_socket_path;

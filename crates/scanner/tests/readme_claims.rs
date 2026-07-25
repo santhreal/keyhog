@@ -126,7 +126,9 @@ openai_key = openai_a + openai_b
             ..Default::default()
         },
     };
-    let matches = scanner.scan(&chunk);
+    let matches = scanner
+        .scan(&chunk)
+        .expect("README multiline claim scan should succeed");
     let any_reassembled_or_openai = matches.iter().any(|m| {
         m.detector_id.as_ref().contains(":reassembled")
             || m.detector_id.as_ref().contains("openai")
@@ -168,7 +170,9 @@ data:
             ..Default::default()
         },
     };
-    let matches = scanner.scan(&chunk);
+    let matches = scanner
+        .scan(&chunk)
+        .expect("README AWS recall claim scan should succeed");
     let any_aws = matches.iter().any(|m| {
         m.detector_id.as_ref().contains("aws")
             || m.service.as_ref().contains("aws")
@@ -209,7 +213,9 @@ fn readme_claim_entropy_fallback_finds_password_assignment() {
             ..Default::default()
         },
     };
-    let matches = scanner.scan(&chunk);
+    let matches = scanner
+        .scan(&chunk)
+        .expect("README entropy claim scan should succeed");
     let any_entropy_finding = matches.iter().any(|m| {
         m.detector_id.as_ref().contains("entropy")
             || m.detector_id.as_ref().contains("generic")
@@ -249,7 +255,9 @@ github.com/spf13/cobra v1.5.0/go.mod h1:bchYw9AY9p2r7+QchPjKDuO7gNZh0EwGjEX9p4Xb
             ..Default::default()
         },
     };
-    let matches = scanner.scan(&chunk);
+    let matches = scanner
+        .scan(&chunk)
+        .expect("README Go checksum claim scan should succeed");
     // The h1:… payload is a Go module integrity hash, not a secret.
     // The engine should NOT surface it.
     let any_finding_on_h1_hash = matches.iter().any(|m| {

@@ -40,8 +40,7 @@ fn detector_fires_on_own_regex(
                 ..Default::default()
             },
         };
-        let hit = scanner
-            .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+        let hit = scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback).expect("selected backend scan succeeds")
             .iter()
             .flat_map(|per_chunk| per_chunk.iter())
             .any(|m| m.detector_id.as_ref() == id);

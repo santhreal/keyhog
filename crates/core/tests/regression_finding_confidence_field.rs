@@ -4,9 +4,9 @@
 //! This pins the serde + ordering contract of the `confidence: Option<f64>`
 //! field specifically, read off `crates/core/src/finding.rs`:
 //!
-//!   * `RawMatch.confidence` / `RedactedFinding.confidence` are
-//!     `Option<f64>` with `#[serde(skip_serializing_if = "Option::is_none")]`,
-//!     so `None` is OMITTED but `Some(0.0)` is PRESENT.
+//!   * `RawMatch.confidence` is copied into `RedactedFinding.confidence`, whose
+//!     `Option<f64>` serde field uses `skip_serializing_if = "Option::is_none"`;
+//!     `None` is omitted but `Some(0.0)` is present.
 //!   * `VerifiedFinding` has a hand-written `Serialize` that bumps its field
 //!     count from 11 to 12 iff `confidence.is_some()` (so `Some(0.0)` => 12,
 //!     `None` => 11), emitting `confidence` as a bare JSON number.
@@ -104,13 +104,13 @@ fn measured_entropy_survives_redaction_dedup_and_verified_serialization() {
 }
 
 // ---------------------------------------------------------------------------
-// RawMatch.confidence serde
+// RedactedFinding.confidence serde, reached through RawMatch::to_redacted
 // ---------------------------------------------------------------------------
 
 #[test]
-fn raw_match_confidence_some_serializes_exact_number() {
-    let raw = make_raw(Some(0.4));
-    let value = serde_json::to_value(&raw).expect("serialize RawMatch");
+fn redacted_match_confidence_some_serializes_exact_number() {
+    let redacted = make_raw(Some(0.4)).to_redacted();
+    let value = serde_json::to_value(&redacted).expect("serialize RedactedFinding");
     // Present as a bare JSON number equal to 0.4.
     assert_eq!(value["confidence"].as_f64(), Some(0.4));
     assert!(value["confidence"].is_number());
@@ -118,9 +118,9 @@ fn raw_match_confidence_some_serializes_exact_number() {
 }
 
 #[test]
-fn raw_match_confidence_none_is_omitted_from_object() {
-    let raw = make_raw(None);
-    let value = serde_json::to_value(&raw).expect("serialize RawMatch");
+fn redacted_match_confidence_none_is_omitted_from_object() {
+    let redacted = make_raw(None).to_redacted();
+    let value = serde_json::to_value(&redacted).expect("serialize RedactedFinding");
     let obj = value.as_object().expect("object");
     // skip_serializing_if drops the key entirely.
     assert!(!obj.contains_key("confidence"));
@@ -129,41 +129,41 @@ fn raw_match_confidence_none_is_omitted_from_object() {
 }
 
 #[test]
-fn raw_match_confidence_zero_boundary_is_present_not_omitted() {
+fn redacted_match_confidence_zero_boundary_is_present_not_omitted() {
     // BOUNDARY: 0.0 is `Some(0.0)`, NOT `None`, so it must be serialized.
-    let raw = make_raw(Some(0.0));
-    let value = serde_json::to_value(&raw).expect("serialize RawMatch");
+    let redacted = make_raw(Some(0.0)).to_redacted();
+    let value = serde_json::to_value(&redacted).expect("serialize RedactedFinding");
     let obj = value.as_object().expect("object");
     assert!(obj.contains_key("confidence"));
     assert_eq!(value["confidence"].as_f64(), Some(0.0));
 }
 
 #[test]
-fn raw_match_confidence_one_boundary_serializes_one() {
+fn redacted_match_confidence_one_boundary_serializes_one() {
     // BOUNDARY: top of the documented [0.0, 1.0] closed interval.
-    let raw = make_raw(Some(1.0));
-    let value = serde_json::to_value(&raw).expect("serialize RawMatch");
+    let redacted = make_raw(Some(1.0)).to_redacted();
+    let value = serde_json::to_value(&redacted).expect("serialize RedactedFinding");
     assert_eq!(value["confidence"].as_f64(), Some(1.0));
 }
 
 #[test]
-fn raw_match_confidence_roundtrips_exact() {
-    let raw = make_raw(Some(0.9));
-    let json = serde_json::to_string(&raw).expect("serialize");
-    let back: RawMatch = serde_json::from_str(&json).expect("deserialize");
+fn redacted_match_confidence_roundtrips_exact() {
+    let redacted = make_raw(Some(0.9)).to_redacted();
+    let json = serde_json::to_string(&redacted).expect("serialize");
+    let back: RedactedFinding = serde_json::from_str(&json).expect("deserialize");
     assert_eq!(back.confidence, Some(0.9));
-    // Full-value equality (manual PartialEq uses total_cmp on the float).
-    assert_eq!(raw, back);
+    assert_eq!(back.detector_id, redacted.detector_id);
+    assert_eq!(back.credential_hash, redacted.credential_hash);
 }
 
 #[test]
-fn raw_match_confidence_preserves_full_f64_precision() {
+fn redacted_match_confidence_preserves_full_f64_precision() {
     // A value that needs many significant digits: serde_json uses a
     // round-trippable shortest repr, so the exact bits must survive.
     let precise = 0.123_456_789_012_345_67_f64;
-    let raw = make_raw(Some(precise));
-    let json = serde_json::to_string(&raw).expect("serialize");
-    let back: RawMatch = serde_json::from_str(&json).expect("deserialize");
+    let redacted = make_raw(Some(precise)).to_redacted();
+    let json = serde_json::to_string(&redacted).expect("serialize");
+    let back: RedactedFinding = serde_json::from_str(&json).expect("deserialize");
     assert_eq!(back.confidence, Some(precise));
     // And within eps for good measure.
     let got = back.confidence.expect("some");

@@ -508,7 +508,7 @@ impl ScanOrchestrator {
         }
 
         let report_finished_at = chrono::Utc::now();
-        let report_metadata = crate::reporting::report_metadata_from_scan_run(
+        let report_metadata = crate::reporting::report_metadata_from_scan_run_with_corpus(
             &self.args,
             wall_start,
             report_finished_at,
@@ -516,6 +516,8 @@ impl ScanOrchestrator {
             crate::SCANNED_CHUNKS.load(std::sync::atomic::Ordering::Relaxed),
             crate::SCANNED_BYTES.load(std::sync::atomic::Ordering::Relaxed),
             self.detectors.len(),
+            &self.detector_corpus_digest,
+            &self.detector_corpus_provenance,
             Some(crate::orchestrator_config::autoroute_config_digest(
                 &self.effective_config,
             )),

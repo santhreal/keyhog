@@ -1,13 +1,18 @@
-//! Binary credentials serialize as tagged base64 objects.
+//! Binary credentials refuse implicit output; tagged base64 remains readable.
 
 use keyhog_core::Credential;
 
 #[test]
-fn serialize_binary_credential_as_tagged_b64() {
-    let c = Credential::from(vec![0xFF, 0xFE, 0x00, 0x42]);
-    let json = serde_json::to_string(&c).unwrap();
-    assert!(
-        json.starts_with("{\"b64\":\""),
-        "expected tagged b64 envelope, got {json}"
-    );
+fn binary_credential_refuses_implicit_serialization() {
+    let credential = Credential::from(vec![0xFF, 0xFE, 0x00, 0x42]);
+    let mut output = Vec::new();
+    let error = serde_json::to_writer(&mut output, &credential)
+        .expect_err("implicit binary credential output must fail closed")
+        .to_string();
+    assert!(output.is_empty());
+    assert!(!error.contains("//4AQg=="));
+    assert!(error.contains("Credential refuses implicit plaintext serialization"));
+
+    let back: Credential = serde_json::from_str(r#"{"b64":"//4AQg=="}"#).unwrap();
+    assert_eq!(credential, back);
 }

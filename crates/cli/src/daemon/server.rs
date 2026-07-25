@@ -4,8 +4,9 @@
 use crate::daemon::frame;
 use crate::daemon::protocol::{
     BackendRecoveryStatus, RecoveredInputRangeStatus, Request, Response, SourceCoverageGaps,
-    WIRE_VERSION,
+    WarmBackendStatus, WIRE_VERSION,
 };
+use crate::daemon::warm_identity::WarmBackendReadiness;
 use crate::daemon::trust;
 use crate::style;
 use anyhow::{Context, Result};
@@ -25,7 +26,7 @@ static DAEMON_SOURCE_COVERAGE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new
 const DEFAULT_REQUEST_READ_TIMEOUT_SECS: u64 = 300;
 
 #[derive(Debug, Clone, Copy)]
-pub struct ServerOptions {
+pub(crate) struct ServerOptions {
     /// Maximum wall-clock time a single client request may take to fully arrive
     /// once the connection is otherwise idle-waiting for it. Bounds a slowloris
     /// / half-frame stall: a peer that announces a frame length (up to the
@@ -123,6 +124,7 @@ struct ServerState {
     backend_override: Option<ScanBackend>,
     backend_recoveries: AtomicU64,
     last_backend_fault: std::sync::Mutex<Option<BackendRecoveryStatus>>,
+    warm_backend: WarmBackendReadiness,
     // Fragment reassembly is scanner-owned mutable state. Until it becomes an
     // explicit per-scan context, serialize clear/scan/clear so independent
     // clients can never combine secret fragments across requests.
@@ -147,6 +149,7 @@ impl ServerState {
         detector_rules_digest: String,
         options: ServerOptions,
         backend_override: Option<ScanBackend>,
+        warm_backend: WarmBackendReadiness,
     ) -> Self {
         let cores = std::thread::available_parallelism()
             .map(|n| n.get())
@@ -165,6 +168,7 @@ impl ServerState {
             backend_override,
             backend_recoveries: AtomicU64::new(0),
             last_backend_fault: std::sync::Mutex::new(None),
+            warm_backend,
             fragment_scan_lock: Arc::new(std::sync::Mutex::new(())),
             connection_limit: Arc::new(Semaphore::new(max_conns)),
         }
@@ -192,19 +196,28 @@ impl ServerState {
         self.backend_recoveries.fetch_add(1, Ordering::Relaxed);
         Ok(())
     }
+
+    fn warm_backend_status(&self) -> WarmBackendStatus {
+        self.warm_backend.status(&self.scanner)
+    }
+
+}
+pub(crate) fn warm_route_error(status: &WarmBackendStatus) -> Option<Response> {
+    if status.ready {
+        return None;
+    }
+    let message = match (
+        status.reason.as_deref(),
+        status.repair_command.as_deref(),
+    ) {
+        (Some(reason), Some(repair)) => {
+            format!("daemon warm route is not ready: {reason}. Repair with `{repair}`.")
+        }
+        _ => "daemon warm route is not ready and its exact status is internally inconsistent. Repair with `keyhog daemon stop && keyhog daemon start`.".to_string(),
+    };
+    Some(Response::Error { message })
 }
 
-/// Run the daemon until a `Shutdown` request or terminal listener failure.
-/// The compiled scanner is built once before the
-/// listener accepts so the first client connection doesn't pay the
-/// init cost (which is the whole point of running a daemon).
-pub async fn run(
-    socket_path: PathBuf,
-    detectors: Vec<DetectorSpec>,
-    options: ServerOptions,
-) -> Result<()> {
-    run_with_backend_override(socket_path, detectors, options, None).await
-}
 
 pub(crate) async fn run_with_backend_override(
     socket_path: PathBuf,
@@ -219,8 +232,13 @@ pub(crate) async fn run_with_backend_override(
     announce_daemon_starting(detectors.len());
     let detector_rules_digest =
         keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&detectors));
-    let (scanner, router, detector_count) =
+    let (scanner, router, detector_count, required_backends) =
         compile_daemon_scan_runtime(detectors, backend_override)?;
+    let warm_backend = WarmBackendReadiness::capture(
+        &scanner,
+        &detector_rules_digest,
+        required_backends,
+    )?;
     let listener = bind_trusted_daemon_socket(&socket_path)?;
     let shutdown = Arc::new(Notify::new());
     let state = Arc::new(ServerState::new(
@@ -231,9 +249,10 @@ pub(crate) async fn run_with_backend_override(
         detector_rules_digest,
         options,
         backend_override,
+        warm_backend,
     ));
 
-    announce_daemon_ready(&socket_path, detector_count);
+    announce_daemon_ready(&socket_path, detector_count, &state.warm_backend_status());
     let accept_task = spawn_accept_loop(listener, state.clone());
 
     finish_daemon_service(&socket_path, accept_task).await
@@ -265,6 +284,7 @@ fn compile_daemon_scan_runtime(
     Arc<CompiledScanner>,
     crate::orchestrator::CachedBackendRouter,
     usize,
+    Vec<ScanBackend>,
 )> {
     let scan_runtime = crate::orchestrator::compile_default_scan_runtime(
         detectors,
@@ -276,7 +296,11 @@ fn compile_daemon_scan_runtime(
     // regex compile once, up front and in parallel, so no client request eats a
     // detector's first-use compile latency.
     let (scanner, router) = scan_runtime.into_parts();
-    Ok((scanner, router, detector_count))
+    let required_backends = match backend_override {
+        Some(backend) => vec![backend],
+        None => router.persistent_routes().map_err(anyhow::Error::from)?,
+    };
+    Ok((scanner, router, detector_count, required_backends))
 }
 
 fn bind_trusted_daemon_socket(socket_path: &Path) -> Result<UnixListener> {
@@ -304,13 +328,40 @@ fn announce_daemon_starting(detector_spec_count: usize) {
     );
 }
 
-fn announce_daemon_ready(socket_path: &Path, detector_count: usize) {
-    eprintln!(
-        "keyhog daemon ready on {} ({} detectors, wire={})",
-        socket_path.display(),
-        detector_count,
-        WIRE_VERSION,
-    );
+fn announce_daemon_ready(
+    socket_path: &Path,
+    detector_count: usize,
+    warm_backend: &WarmBackendStatus,
+) {
+    if warm_backend.ready {
+        eprintln!(
+            "keyhog daemon ready on {} ({} detectors, wire={}, warm generation={})",
+            socket_path.display(),
+            detector_count,
+            WIRE_VERSION,
+            warm_backend.daemon_generation,
+        );
+        return;
+    }
+    match (
+        warm_backend.reason.as_deref(),
+        warm_backend.repair_command.as_deref(),
+    ) {
+        (Some(reason), Some(repair)) => eprintln!(
+            "keyhog daemon status-only on {} ({} detectors, wire={}): warm route not ready: {}; repair with `{}`",
+            socket_path.display(),
+            detector_count,
+            WIRE_VERSION,
+            reason,
+            repair,
+        ),
+        _ => eprintln!(
+            "keyhog daemon status-only on {} ({} detectors, wire={}): warm readiness status is internally inconsistent; repair with `keyhog daemon stop && keyhog daemon start`",
+            socket_path.display(),
+            detector_count,
+            WIRE_VERSION,
+        ),
+    }
 }
 
 fn spawn_accept_loop(
@@ -448,16 +499,17 @@ pub(crate) fn is_transient_accept_error(e: &std::io::Error) -> bool {
 }
 
 async fn handle_connection(state: Arc<ServerState>, stream: UnixStream) -> Result<()> {
-    // Belt-and-suspenders peer-cred gate, symmetric with the client's
-    // `verify_connected_peer`. The 0600 socket + 0700 parent dir are the primary
-    // boundary; this rejects a cross-uid peer that reaches us through a bind-race
-    // before the socket is chmod-tightened, or a root connection.
+    // Peer credentials are the authentication boundary, symmetric with the
+    // client's `verify_connected_peer`. Verify them before constructing the
+    // decoder or reading any request bytes. The `0600` socket and private
+    // parent directory are independent defense-in-depth access controls.
     trust::verify_accepted_peer(&stream)?;
     let mut transport = frame::server_transport(stream);
     let read_timeout = state.request_read_timeout;
     // KH-1337: first frame on a connection must be Hello so wire/corpus
     // identity is established before Scan/Shutdown.
     let mut hello_ok = false;
+    let mut warm_route_denial: Option<Response> = None;
     loop {
         // Bound the per-request read so a half-frame / slowloris stall (a peer
         // that announces a frame length then sends the body slowly or never)
@@ -495,7 +547,17 @@ async fn handle_connection(state: Arc<ServerState>, stream: UnixStream) -> Resul
             }
             hello_ok = true;
         }
-        let response = dispatch(&state, request).await;
+        let response = if matches!(&request, Request::ScanText { .. } | Request::ScanPath { .. }) {
+            match warm_route_denial.as_ref() {
+                Some(denial) => denial.clone(),
+                None => dispatch(&state, request).await,
+            }
+        } else {
+            dispatch(&state, request).await
+        };
+        if let Response::Hello { warm_backend, .. } = &response {
+            warm_route_denial = warm_route_error(&warm_backend);
+        }
         let is_shutdown_ack = matches!(response, Response::Shutdown);
         transport.send(response).await?;
         if is_shutdown_ack {
@@ -516,6 +578,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             backend_policy: state.backend_policy().to_string(),
             detector_count: state.detector_count,
             uptime_secs: state.uptime_secs(),
+            warm_backend: state.warm_backend_status(),
         },
         Request::Health => match state.last_backend_fault.lock() {
             Ok(last_backend_fault) => Response::Health {
@@ -525,6 +588,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 detector_count: state.detector_count,
                 backend_recoveries: state.backend_recoveries.load(Ordering::Relaxed),
                 last_backend_fault: last_backend_fault.clone(),
+                warm_backend: state.warm_backend_status(),
             },
             // LAW10: loud operator error; lock poisoning returns a restart instruction and fabricates no health value.
             Err(_) => Response::Error {
@@ -673,14 +737,12 @@ async fn scan_text(
 
 /// Resolve the path a client asked the daemon to scan into the path the scanner
 /// will open. Absolute paths pass through; a relative path is anchored to the
-/// client's absolute `working_dir`; a relative path with no usable working_dir
-/// fails closed with an actionable error. The client sends `working_dir=None`
-/// only when its own `std::env::current_dir()` failed (see subcommands/scan.rs),
-/// and the daemon's own cwd is unrelated to what the client wants scanned -
-/// resolving against it would silently scan the wrong tree (LAW10: no silent
-/// fallback). `pub` only so the external resolution regression test can reach
-/// it; not protocol surface.
-pub fn resolve_scan_target(path: &str, working_dir: Option<&str>) -> Result<PathBuf, String> {
+/// client's absolute `working_dir`; a relative path with no usable working dir
+/// returns an error to the client before any path is scanned. The client sends
+/// `working_dir=None` only when its own `std::env::current_dir()` failed (see
+/// subcommands/scan.rs); using the unrelated daemon cwd would scan the wrong
+/// tree, so this path fails closed and surfaces the resolution error.
+pub(crate) fn resolve_scan_target(path: &str, working_dir: Option<&str>) -> Result<PathBuf, String> {
     if Path::new(path).is_absolute() {
         Ok(PathBuf::from(path))
     } else if let Some(wd) = working_dir {
@@ -842,6 +904,7 @@ fn scan_results_response(
         engine_example_suppressions: telemetry.example_suppressions,
         dogfood_events: telemetry.dogfood_events,
         static_recovery_rejections: telemetry.static_recovery_rejections,
+        static_recovery_status: telemetry.static_recovery_status,
         dogfood_detail_events_dropped: telemetry.dogfood_detail_events_dropped,
         source_coverage_gaps,
         backend_recovery: backend_recovery.into(),

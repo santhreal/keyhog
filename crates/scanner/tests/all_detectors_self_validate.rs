@@ -307,7 +307,9 @@ fn smoke_scanner_fires_on_canonical_aws_ghp_re_examples() {
             },
         };
         scanner.clear_fragment_cache();
-        let matches = scanner.scan(&chunk);
+        let matches = scanner
+            .scan(&chunk)
+            .expect("canonical detector smoke scan should succeed");
         assert!(
             !matches.is_empty(),
             "smoke: scanner found NO findings on {label} canonical fixture: {text:?}"

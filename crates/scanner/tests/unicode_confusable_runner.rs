@@ -164,7 +164,9 @@ fn make_chunk(text: &str) -> Chunk {
 
 fn surfaces(scanner: &CompiledScanner, text: &str, credential: &str) -> bool {
     scanner.clear_fragment_cache();
-    let matches = scanner.scan(&make_chunk(text));
+    let matches = scanner
+        .scan(&make_chunk(text))
+        .expect("unicode-confusable detector scan should succeed");
     matches
         .iter()
         .any(|m| m.credential.as_ref().contains(credential))

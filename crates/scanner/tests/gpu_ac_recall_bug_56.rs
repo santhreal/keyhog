@@ -190,7 +190,9 @@ fn baseline_simd_finds_stackblitz_token() {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors load");
     let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
     let chunk = make_chunk(window);
-    let matches = scanner.scan(&chunk);
+    let matches = scanner
+        .scan(&chunk)
+        .expect("SIMD baseline scan should succeed");
     assert!(
         finds_stackblitz(&matches),
         "SIMD/CPU baseline must find {STACKBLITZ_TOKEN}; got {} matches: {:?}",
@@ -225,7 +227,7 @@ fn gpu_ac_kernel_finds_stackblitz_token_in_narrow_window() {
     // unavailable), we still get a result; finds_stackblitz then
     // reflects the AC outcome OR the fallback outcome, which is
     // what an end user would see at KEYHOG_GPU_KERNEL=ac.
-    let ac_results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::GpuWgpu);
+    let ac_results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::GpuWgpu).expect("selected backend scan succeeds");
     let ac_flat: Vec<_> = ac_results.into_iter().flatten().collect();
     assert!(
         finds_stackblitz(&ac_flat),
@@ -294,7 +296,7 @@ fn bisect_gpu_ac_recall_by_window_size() {
         // and AC misses it, the bug is purely AC-side. If both miss
         // it, the chunk-coalesce + dedup downstream is dropping it.
         let ac_results =
-            scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::GpuWgpu);
+            scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::GpuWgpu).expect("selected backend scan succeeds");
         let ac_flat: Vec<_> = ac_results.into_iter().flatten().collect();
         let ac_hit = finds_stackblitz(&ac_flat);
         let ac_stackblitz_count = ac_flat
@@ -302,7 +304,9 @@ fn bisect_gpu_ac_recall_by_window_size() {
             .filter(|m| m.detector_id.as_ref() == "stackblitz-credentials")
             .count();
 
-        let simd_matches = scanner.scan(&chunk);
+        let simd_matches = scanner
+            .scan(&chunk)
+            .expect("SIMD bisection scan should succeed");
         let simd_hit = finds_stackblitz(&simd_matches);
         let simd_stackblitz_count = simd_matches
             .iter()
@@ -371,7 +375,7 @@ fn gpu_ac_kernel_must_find_stackblitz_token_on_full_corpus() {
 
     // First: direct call to the AC dispatch path. This is the
     // engine surface keyhog's CLI ultimately routes to.
-    let direct_results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::GpuWgpu);
+    let direct_results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::GpuWgpu).expect("selected backend scan succeeds");
     let direct_flat: Vec<_> = direct_results.into_iter().flatten().collect();
     let direct_has_stackblitz = finds_stackblitz(&direct_flat);
 
@@ -381,7 +385,7 @@ fn gpu_ac_kernel_must_find_stackblitz_token_on_full_corpus() {
     // binary takes when invoked as `keyhog scan --backend gpu-wgpu`
     // with the env var on.
     let _restore_gpu_kernel = RestoreGpuKernelEnv::set("ac");
-    let routed_results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::GpuWgpu);
+    let routed_results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::GpuWgpu).expect("selected backend scan succeeds");
     let routed_flat: Vec<_> = routed_results.into_iter().flatten().collect();
     let routed_has_stackblitz = finds_stackblitz(&routed_flat);
 

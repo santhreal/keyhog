@@ -40,11 +40,17 @@ pub struct Phase2KeywordTriggerSummary {
     pub keyword_trigger_count: u64,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Phase1AdmissionPlanIdentityError {
+    Malformed,
+    Mismatch,
+}
+
 /// Exact per-chunk phase-1 admissions computed while an autoroute key is
 /// built. The plan is intentionally opaque: callers can only reuse it through
-/// the scanner method that verifies the same chunk slice shape. GPU region
-/// presence does not consume this plan because VYRE owns that path's trigger
-/// admission.
+/// the scanner boundary that verifies its internal totals and exact live chunk
+/// identity. GPU region presence does not consume this plan because VYRE owns
+/// that path's trigger admission.
 #[derive(Debug)]
 pub struct Phase1AdmissionPlan {
     admissions: Vec<Phase1Admission>,
@@ -70,15 +76,71 @@ impl Phase1AdmissionPlan {
     }
 
     #[inline]
-    pub(crate) fn matches_chunks(&self, chunks: &[Chunk]) -> bool {
-        chunks.len() == self.chunk_shapes.len()
-            && chunks
+    pub(crate) fn validate_chunks(
+        &self,
+        chunks: &[Chunk],
+    ) -> Result<(), Phase1AdmissionPlanIdentityError> {
+        let Some(summary_chunks) = self
+            .summary
+            .alphabet_rejected_chunks
+            .checked_add(self.summary.bigram_rejected_chunks)
+            .and_then(|count| count.checked_add(self.summary.admitted_chunks))
+        else {
+            return Err(Phase1AdmissionPlanIdentityError::Malformed);
+        };
+        let Some(summary_bytes) = self
+            .summary
+            .alphabet_rejected_bytes
+            .checked_add(self.summary.bigram_rejected_bytes)
+            .and_then(|count| count.checked_add(self.summary.admitted_bytes))
+        else {
+            return Err(Phase1AdmissionPlanIdentityError::Malformed);
+        };
+        let Ok(shape_count) = u64::try_from(self.chunk_shapes.len()) else {
+            return Err(Phase1AdmissionPlanIdentityError::Malformed);
+        };
+        let mut shape_bytes = 0u64;
+        for &(_, len) in &self.chunk_shapes {
+            let Ok(len) = u64::try_from(len) else {
+                return Err(Phase1AdmissionPlanIdentityError::Malformed);
+            };
+            let Some(total) = shape_bytes.checked_add(len) else {
+                return Err(Phase1AdmissionPlanIdentityError::Malformed);
+            };
+            shape_bytes = total;
+        }
+        let keyword_summary_valid = self.phase2_keyword_triggers.keyword_trigger_chunks
+            <= shape_count
+            && self.phase2_keyword_triggers.keyword_trigger_bytes <= shape_bytes
+            && self.phase2_keyword_triggers.keyword_trigger_count
+                >= self.phase2_keyword_triggers.keyword_trigger_chunks
+            && (self.phase2_keyword_triggers.keyword_trigger_chunks == 0)
+                == (self.phase2_keyword_triggers.keyword_trigger_count == 0);
+        if self.admissions.len() != self.chunk_shapes.len()
+            || summary_chunks != shape_count
+            || summary_bytes != shape_bytes
+            || !keyword_summary_valid
+            || self
+                .chunk_shapes
                 .iter()
-                .zip(&self.chunk_shapes)
-                .all(|(chunk, &(ptr, len))| {
-                    let bytes = chunk.data.as_bytes();
-                    bytes.as_ptr() as usize == ptr && bytes.len() == len
-                })
+                .any(|&(ptr, len)| len != 0 && ptr == 0)
+        {
+            return Err(Phase1AdmissionPlanIdentityError::Malformed);
+        }
+        if chunks.len() != self.chunk_shapes.len() {
+            return Err(Phase1AdmissionPlanIdentityError::Malformed);
+        }
+        if !chunks
+            .iter()
+            .zip(&self.chunk_shapes)
+            .all(|(chunk, &(ptr, len))| {
+                let bytes = chunk.data.as_bytes();
+                bytes.as_ptr() as usize == ptr && bytes.len() == len
+            })
+        {
+            return Err(Phase1AdmissionPlanIdentityError::Mismatch);
+        }
+        Ok(())
     }
 }
 
@@ -149,6 +211,18 @@ impl CompiledScanner {
     }
 
     #[inline]
+    fn phase1_admission_bypassing_bigram(&self, data: &[u8]) -> Phase1Admission {
+        if self
+            .alphabet_screen
+            .as_ref()
+            .is_some_and(|screen| !screen.screen(data))
+        {
+            return Phase1Admission::AlphabetRejected;
+        }
+        Phase1Admission::Admitted
+    }
+
+    #[inline]
     fn phase2_keyword_trigger_count(&self, data: &str) -> u64 {
         self.phase2_keyword_ac.as_ref().map_or(0, |keyword_ac| {
             keyword_ac
@@ -196,40 +270,52 @@ impl CompiledScanner {
         summary
     }
 
-    /// Build the exact per-chunk admission evidence used by autoroute and
-    /// retain it for the immediately following production scan. Reusing this
-    /// plan removes a duplicate alphabet/bigram pass on SIMD and CPU routes;
-    /// the scan boundary rejects a plan for a different chunk slice and
-    /// recomputes admissions instead of trusting stale evidence.
+    /// Build exact per-chunk evidence for autoroute and the next production scan.
+    /// Reuse avoids duplicate gates; malformed or mismatched identity is recomputed
+    /// with an exact recovery receipt.
     pub fn phase1_admission_plan(&self, chunks: &[Chunk]) -> Phase1AdmissionPlan {
+        self.phase1_admission_plan_with_bigram_mode(chunks, false)
+    }
+
+    /// Build admission evidence with only the bigram gate bypassed.
+    ///
+    /// This is a diagnostic oracle for corpus differential benchmarks. The
+    /// alphabet screen and every downstream matcher remain unchanged, so an
+    /// enabled-versus-bypassed comparison isolates whether the bigram gate
+    /// dropped a finding. Production scans must use [`Self::phase1_admission_plan`].
+    pub fn phase1_admission_plan_bypassing_bigram_for_diagnostics(
+        &self,
+        chunks: &[Chunk],
+    ) -> Phase1AdmissionPlan {
+        self.phase1_admission_plan_with_bigram_mode(chunks, true)
+    }
+
+    fn phase1_admission_plan_with_bigram_mode(
+        &self,
+        chunks: &[Chunk],
+        bypass_bigram: bool,
+    ) -> Phase1AdmissionPlan {
+        let classify = |chunk: &Chunk| {
+            let admission = if bypass_bigram {
+                self.phase1_admission_bypassing_bigram(chunk.data.as_bytes())
+            } else {
+                self.phase1_admission(chunk.data.as_bytes())
+            };
+            (
+                admission,
+                self.phase2_keyword_trigger_count(&chunk.data),
+                chunk.data.as_bytes().as_ptr() as usize,
+                chunk.data.len(),
+            )
+        };
         let classified = if chunks.len() >= 4
             && chunks.iter().map(|chunk| chunk.data.len()).sum::<usize>() >= 64 * 1024
         {
             use rayon::prelude::*;
 
-            chunks
-                .par_iter()
-                .map(|chunk| {
-                    (
-                        self.phase1_admission(chunk.data.as_bytes()),
-                        self.phase2_keyword_trigger_count(&chunk.data),
-                        chunk.data.as_bytes().as_ptr() as usize,
-                        chunk.data.len(),
-                    )
-                })
-                .collect::<Vec<_>>()
+            chunks.par_iter().map(classify).collect::<Vec<_>>()
         } else {
-            chunks
-                .iter()
-                .map(|chunk| {
-                    (
-                        self.phase1_admission(chunk.data.as_bytes()),
-                        self.phase2_keyword_trigger_count(&chunk.data),
-                        chunk.data.as_bytes().as_ptr() as usize,
-                        chunk.data.len(),
-                    )
-                })
-                .collect::<Vec<_>>()
+            chunks.iter().map(classify).collect::<Vec<_>>()
         };
         let mut summary = Phase1AdmissionSummary::default();
         let mut phase2_keyword_triggers = Phase2KeywordTriggerSummary::default();

@@ -92,9 +92,9 @@ pub(crate) struct WarnDedupSummaryGuard;
 
 /// Print the per-callsite suppressed-WARN summary to stderr.
 ///
-/// Called from [`WarnDedupSummaryGuard`]'s Drop on normal exit, and from the
-/// scanner `process_exit` pre-exit hook so `std::process::exit` hard-stops
-/// (selected-backend failures) still dump the summary (KH-1316).
+/// Called from [`WarnDedupSummaryGuard`]'s `Drop` on normal CLI completion.
+/// Selected-backend failures propagate through `Result`, so they unwind through
+/// the guard and preserve this operator-visible summary (KH-1316).
 pub(crate) fn dump_warn_dedup_summary() {
     let state = match WARN_REPEATS.lock() {
         Ok(state) => state,

@@ -22,9 +22,20 @@ use tempfile::TempDir;
 
 use crate::reliability::harness::subprocess_slot;
 
+/// Creates an install root with the permission contract required by the real
+/// installer. `tempfile` honors the host umask, so its default can be 0775;
+/// forcing 0700 keeps recovery tests on their intended transaction path rather
+/// than accidentally turning them into duplicates of the unsafe-root test.
+fn private_install_root() -> TempDir {
+    let dir = TempDir::new().expect("tempdir");
+    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700))
+        .expect("make temporary install root private");
+    dir
+}
+
 /// A fake install dir holding a fake "current" binary with given contents.
 fn staged_exe(contents: &[u8]) -> (TempDir, PathBuf) {
-    let dir = TempDir::new().expect("tempdir");
+    let dir = private_install_root();
     let exe = dir.path().join("keyhog");
     fs::write(&exe, contents).expect("write fake binary");
     fs::set_permissions(&exe, fs::Permissions::from_mode(0o755)).expect("chmod");
@@ -88,7 +99,7 @@ fn rolled_back_binary_is_byte_identical_to_the_original() {
     // Arbitrary binary content including NULs and high bytes: rollback must be
     // exact, not "close enough".
     let original: Vec<u8> = (0u8..=255).cycle().take(4096).collect();
-    let dir = TempDir::new().unwrap();
+    let dir = private_install_root();
     let exe = dir.path().join("keyhog");
     fs::write(&exe, &original).unwrap();
     fs::set_permissions(&exe, fs::Permissions::from_mode(0o755)).unwrap();
@@ -105,7 +116,7 @@ fn rolled_back_binary_is_byte_identical_to_the_original() {
 fn fresh_install_failed_verify_removes_the_broken_binary() {
     // No prior binary at the path. If the freshly-installed one fails its
     // health check, we must not leave a broken executable lying around.
-    let dir = TempDir::new().unwrap();
+    let dir = private_install_root();
     let exe = dir.path().join("keyhog");
     assert!(!exe.exists());
     let r = API.install_with_rollback(&exe, b"NEW-BROKEN", |_| false);
@@ -118,7 +129,7 @@ fn fresh_install_failed_verify_removes_the_broken_binary() {
 
 #[test]
 fn fresh_install_success_leaves_the_new_binary() {
-    let dir = TempDir::new().unwrap();
+    let dir = private_install_root();
     let exe = dir.path().join("keyhog");
     let r = API.install_with_rollback(&exe, b"NEW-GOOD", |_| true);
     assert!(r.is_ok(), "{r:?}");
@@ -209,7 +220,7 @@ fn older_candidate_version_requires_an_explicit_pin() {
 fn cannot_create_backup_in_readonly_dir_leaves_original_untouched() {
     // If we cannot stage a backup (read-only install dir), we must abort BEFORE
     // overwriting - the working binary stays exactly as it was.
-    let dir = TempDir::new().unwrap();
+    let dir = private_install_root();
     let exe = dir.path().join("keyhog");
     fs::write(&exe, b"OLD-WORKING").unwrap();
     fs::set_permissions(&exe, fs::Permissions::from_mode(0o755)).unwrap();
@@ -219,7 +230,7 @@ fn cannot_create_backup_in_readonly_dir_leaves_original_untouched() {
     let r = API.install_with_rollback(&exe, b"NEW", |_| true);
 
     // Restore dir perms so TempDir can clean up regardless of the assertion.
-    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o755)).unwrap();
+    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
 
     assert!(
         r.is_err(),
@@ -251,7 +262,7 @@ fn backup_path_sits_beside_the_exe_and_is_hidden() {
 
 #[test]
 fn preplanted_update_symlink_cannot_overwrite_its_target() {
-    let dir = TempDir::new().unwrap();
+    let dir = private_install_root();
     let exe = dir.path().join("keyhog");
     let protected = dir.path().join("protected");
     fs::write(&protected, b"DO-NOT-TOUCH").unwrap();
@@ -299,7 +310,9 @@ fn writable_by_other_users_install_directory_is_refused() {
     let dir = TempDir::new().unwrap();
     let exe = dir.path().join("keyhog");
     fs::write(&exe, b"OLD-WORKING-BINARY").unwrap();
-    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o777)).unwrap();
+    // Negative twin for the private-root fixtures: a conventional 0775
+    // install root is group-writable and must be rejected before staging.
+    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o775)).unwrap();
 
     let error = API
         .install_with_rollback(&exe, b"NEW-BINARY", |_| true)

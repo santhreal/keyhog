@@ -118,13 +118,13 @@ pub(crate) fn scan_chunk_boundaries(
     scanner: &CompiledScanner,
     chunks: &[Chunk],
     per_chunk_results: &mut [Vec<RawMatch>],
-) {
+) -> crate::error::Result<()> {
     scan_chunk_boundaries_with_route(
         scanner,
         chunks,
         per_chunk_results,
         scanner.default_execution_route(),
-    );
+    )
 }
 
 pub(crate) fn scan_chunk_boundaries_with_route(
@@ -132,13 +132,13 @@ pub(crate) fn scan_chunk_boundaries_with_route(
     chunks: &[Chunk],
     per_chunk_results: &mut [Vec<RawMatch>],
     route: crate::ScanExecutionRoute,
-) {
+) -> crate::error::Result<()> {
     if chunks.len() < 2 {
-        return;
+        return Ok(());
     }
     if chunks.len() != per_chunk_results.len() {
         crate::telemetry::record_boundary_result_cardinality_mismatch();
-        return;
+        return Ok(());
     }
 
     // Group chunk indices by (source_type, path). Indices, not refs,
@@ -174,9 +174,10 @@ pub(crate) fn scan_chunk_boundaries_with_route(
                 bi,
                 per_chunk_results,
                 route,
-            );
+            )?;
         }
     }
+    Ok(())
 }
 
 fn scan_one_pair(
@@ -187,10 +188,10 @@ fn scan_one_pair(
     bi: usize,
     per_chunk_results: &mut [Vec<RawMatch>],
     route: crate::ScanExecutionRoute,
-) {
+) -> crate::error::Result<()> {
     if ai >= per_chunk_results.len() || bi >= per_chunk_results.len() {
         crate::telemetry::record_boundary_result_cardinality_mismatch();
-        return;
+        return Ok(());
     }
 
     let a_bytes = a.data.as_ref().as_bytes();
@@ -202,11 +203,11 @@ fn scan_one_pair(
     //   scan handles it.
     // - Gap: data between chunks isn't available to reassemble.
     if a_end != b.metadata.base_offset {
-        return;
+        return Ok(());
     }
 
     if a_bytes.is_empty() || b_bytes.is_empty() {
-        return;
+        return Ok(());
     }
 
     let path = b.metadata.path.as_deref().or(a.metadata.path.as_deref());
@@ -229,7 +230,7 @@ fn scan_one_pair(
     let head = &b.data.as_ref()[..head_end];
 
     if tail.is_empty() || head.is_empty() {
-        return;
+        return Ok(());
     }
 
     // Build the synthetic boundary chunk. file-level base_offset =
@@ -242,7 +243,7 @@ fn scan_one_pair(
     // reporting one near `usize::MAX` would misattribute the finding. The shared
     // `absolute_offset` guard skips this (impossible-on-real-input) case.
     let Some(boundary_base_offset) = absolute_offset(a.metadata.base_offset, tail_start) else {
-        return;
+        return Ok(());
     };
     let mut buf = String::with_capacity(tail.len() + head.len());
     buf.push_str(tail);
@@ -267,9 +268,9 @@ fn scan_one_pair(
         },
     };
 
-    let boundary_matches = scan_boundary_chunk_whole(scanner, &boundary_chunk, route);
+    let boundary_matches = scan_boundary_chunk_whole(scanner, &boundary_chunk, route)?;
     let Some(seam_file_offset) = absolute_offset(boundary_base_offset, seam_local) else {
-        return;
+        return Ok(());
     };
 
     for m in boundary_matches {
@@ -332,6 +333,7 @@ fn scan_one_pair(
 
         per_chunk_results[bi].push(m);
     }
+    Ok(())
 }
 
 fn boundary_context_for_pair(
@@ -358,7 +360,7 @@ fn scan_boundary_chunk_whole(
     scanner: &CompiledScanner,
     chunk: &Chunk,
     route: crate::ScanExecutionRoute,
-) -> Vec<RawMatch> {
+) -> crate::error::Result<Vec<RawMatch>> {
     // Boundary reassembly is a shared correctness tail, not a second routing
     // decision. Choosing from live hardware here let an explicit batch backend
     // silently change at the seam and made results depend on host state. Keep
@@ -369,7 +371,7 @@ fn scan_boundary_chunk_whole(
         crate::hw_probe::ScanBackend::CpuFallback,
         None,
         route,
-    );
-    scanner.post_process_matches(chunk, &mut matches, None, route);
-    matches
+    )?;
+    scanner.post_process_matches(chunk, &mut matches, None, route)?;
+    Ok(matches)
 }

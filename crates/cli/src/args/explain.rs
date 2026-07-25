@@ -4,7 +4,7 @@ use clap::Parser;
 
 #[derive(Parser)]
 pub struct ExplainArgs {
-    /// Detector ID to explain (e.g. `aws-access-key`, `github-pat`).
+    /// Detector ID to explain (e.g. `aws-access-key`, `github-pat-fine-grained`).
     /// Use `keyhog detectors` to list available IDs.
     pub detector_id: String,
 
@@ -13,6 +13,12 @@ pub struct ExplainArgs {
     /// an error.
     #[arg(short, long, default_value = "detectors")]
     pub detectors: PathBuf,
+
+    /// Read a `bloom-evidence-v1` receipt produced by `keyhog bloom-diagnostic`.
+    /// The receipt must match the selected detector corpus and prove exact
+    /// enabled-versus-bypassed finding parity.
+    #[arg(long, value_name = "PATH")]
+    pub bloom_evidence: Option<PathBuf>,
 
     #[arg(skip)]
     pub(crate) detectors_cli_explicit: bool,

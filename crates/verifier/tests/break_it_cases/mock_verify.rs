@@ -59,7 +59,7 @@ async fn test_verify_large_payload() {
             service: "test".to_string(),
             timeout_ms: None,
             steps: vec![],
-            allowed_domains: vec!["127.0.0.1".into(), "localhost".into()],
+            allowed_domains: vec!["127.0.0.1".into()],
             oob: None,
         }),
         ..Default::default()
@@ -364,7 +364,7 @@ async fn test_verify_slow_loris_timeout() {
             metadata: vec![],
             service: "test".to_string(),
             steps: vec![],
-            allowed_domains: vec!["127.0.0.1".into(), "localhost".into()],
+            allowed_domains: vec!["127.0.0.1".into()],
             oob: None,
         }),
         ..Default::default()

@@ -57,9 +57,9 @@ pub fn decode_standard_base64(input: &str) -> Result<Vec<u8>, String> {
     let bytes = input.as_bytes();
     // `=` is only legal as TRAILING padding in standard base64. The previous
     // `take_while(|c| c != b'=')` silently TRUNCATED at the first `=`, so
-    // `"AB=CD"` decoded as `"AB"` and dropped `"CD"` with no error, a
-    // silent-accept that corrupts a credential round-trip. Split at the first
-    // `=`: everything before it is data, and everything FROM it onward must be
+    // `"AB=CD"` decoded as `"AB"` and dropped `"CD"` with no error, corrupting
+    // historical tagged binary credential input. Split at the first `=`:
+    // everything before it is data, and everything FROM it onward must be
     // padding-only (`=`). A non-`=` byte after an `=` is malformed; reject it
     // loudly instead of swallowing the tail.
     let first_pad = bytes.iter().position(|&c| c == b'=');

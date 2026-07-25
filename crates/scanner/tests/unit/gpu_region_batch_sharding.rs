@@ -198,8 +198,11 @@ fn backend_limits_keep_wgpu_inside_its_portable_grid() {
         .all(|shard| shard.coalesced_bytes <= WGPU_BYTE_SCAN_DISPATCH_LIMIT));
 }
 
+/// Proves a production-sized WGPU shard split preserves every CPU finding
+/// without cross-test contention on the host adapter.
 #[test]
 fn production_wgpu_shards_the_8mib_overlapped_workload_with_cpu_parity() {
+    let _gpu_test_guard = crate::testing::gpu_test_lock();
     use super::super::gpu_region_dispatch::{
         reset_test_window_reduction_allocations, test_window_reduction_allocations,
     };
@@ -272,9 +275,13 @@ fn production_wgpu_shards_the_8mib_overlapped_workload_with_cpu_parity() {
         .iter()
         .all(|shard| shard.coalesced_bytes <= WGPU_BYTE_SCAN_DISPATCH_LIMIT));
 
-    let mut cpu = scanner.scan_coalesced_with_backend(&chunks, ScanBackend::CpuFallback);
+    let mut cpu = scanner
+        .scan_coalesced_with_backend(&chunks, ScanBackend::CpuFallback)
+        .expect("scalar WGPU-sharding control scan succeeds");
     reset_test_window_reduction_allocations();
-    let mut gpu = scanner.scan_coalesced_with_backend(&chunks, ScanBackend::GpuWgpu);
+    let mut gpu = scanner
+        .scan_coalesced_with_backend(&chunks, ScanBackend::GpuWgpu)
+        .expect("WGPU-sharding production scan succeeds");
     assert_eq!(
         test_window_reduction_allocations(),
         0,
@@ -293,8 +300,11 @@ fn production_wgpu_shards_the_8mib_overlapped_workload_with_cpu_parity() {
     );
 }
 
+/// Proves CUDA window seams and tail rows preserve CPU findings while live GPU
+/// tests serialize access to the shared physical adapter.
 #[test]
 fn production_cuda_windows_seam_tail_and_mixed_rows_with_cpu_parity() {
+    let _gpu_test_guard = crate::testing::gpu_test_lock();
     use super::super::gpu_region_dispatch::{
         reset_test_window_reduction_allocations, test_window_reduction_allocations,
     };
@@ -354,11 +364,14 @@ fn production_cuda_windows_seam_tail_and_mixed_rows_with_cpu_parity() {
         keyhog_core::Chunk::from(oversized),
         keyhog_core::Chunk::from("KHCUDAX_T5y6U7i8!"),
     ];
-    let mut cpu = scanner.scan_coalesced_with_backend(&chunks, ScanBackend::CpuFallback);
+    let mut cpu = scanner
+        .scan_coalesced_with_backend(&chunks, ScanBackend::CpuFallback)
+        .expect("scalar CUDA-windowing control scan succeeds");
     reset_test_window_reduction_allocations();
     let mut cuda = with_test_region_presence_byte_limit(LIMIT, || {
         scanner.scan_coalesced_with_backend(&chunks, ScanBackend::GpuCuda)
-    });
+    })
+    .expect("CUDA-windowing production scan succeeds");
     assert_eq!(
         test_window_reduction_allocations(),
         1,

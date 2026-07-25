@@ -25,15 +25,15 @@ fn encode_standard_base64_uses_canonical_padding() {
 }
 
 #[test]
-fn credential_does_not_own_a_second_base64_encoder() {
+fn credential_deserializer_does_not_own_a_second_base64_decoder() {
     let credential_src = include_str!("../../src/credential.rs");
     assert!(
-        !credential_src.contains("fn base64_encode"),
-        "Credential serialization must use core::encoding::encode_standard_base64"
+        !credential_src.contains("fn base64_decode"),
+        "Credential deserialization must use core::encoding::decode_standard_base64"
     );
     assert!(
-        credential_src.contains("crate::encoding::encode_standard_base64"),
-        "Credential serialization must call the shared standard-base64 encoder"
+        credential_src.contains("crate::encoding::decode_standard_base64"),
+        "Credential deserialization must call the shared standard-base64 decoder"
     );
 }
 

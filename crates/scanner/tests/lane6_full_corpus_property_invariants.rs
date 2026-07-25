@@ -99,10 +99,15 @@ proptest! {
         let c = chunk(&text);
 
         SCANNER.clear_fragment_cache();
-        let per_chunk = keyset(&SCANNER.scan(&c));
+        let matches = SCANNER
+            .scan(&c)
+            .expect("single-chunk corpus parity scan should succeed");
+        let per_chunk = keyset(&matches);
 
         SCANNER.clear_fragment_cache();
-        let coalesced_nested = SCANNER.scan_coalesced(std::slice::from_ref(&c));
+        let coalesced_nested = SCANNER
+            .scan_coalesced(std::slice::from_ref(&c))
+            .expect("coalesced corpus parity scan should succeed");
         prop_assert_eq!(
             coalesced_nested.len(), 1,
             "scan_coalesced over a 1-chunk batch must return exactly 1 result vec, got {}",
@@ -127,9 +132,15 @@ proptest! {
         let c = chunk(&text);
 
         SCANNER.clear_fragment_cache();
-        let first = keyset(&SCANNER.scan(&c));
+        let first_matches = SCANNER
+            .scan(&c)
+            .expect("first deterministic corpus scan should succeed");
+        let first = keyset(&first_matches);
         SCANNER.clear_fragment_cache();
-        let second = keyset(&SCANNER.scan(&c));
+        let second_matches = SCANNER
+            .scan(&c)
+            .expect("second deterministic corpus scan should succeed");
+        let second = keyset(&second_matches);
 
         prop_assert_eq!(
             &first, &second,
@@ -147,7 +158,9 @@ proptest! {
     ) {
         let text = String::from_utf8_lossy(&raw).into_owned();
         let c = chunk(&text);
-        let matches = SCANNER.scan(&c);
+        let matches = SCANNER
+            .scan(&c)
+            .expect("offset-invariant corpus scan should succeed");
         let text_ref: &str = c.data.as_ref();
         for m in &matches {
             let off = m.location.offset;

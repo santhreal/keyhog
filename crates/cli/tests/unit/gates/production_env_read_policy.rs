@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -18,6 +19,61 @@ fn collect_rs_files(root: &Path, out: &mut Vec<PathBuf>) {
             out.push(path);
         }
     }
+}
+
+fn externally_split_test_modules(files: &[PathBuf]) -> BTreeSet<PathBuf> {
+    let mut test_modules = BTreeSet::new();
+    for owner in files {
+        let source = fs::read_to_string(owner)
+            .unwrap_or_else(|error| panic!("read source {}: {error}", owner.display()));
+        let mut pending_cfg_test = false;
+        let mut explicit_path: Option<&str> = None;
+        for line in source.lines() {
+            let trimmed = line.trim();
+            if trimmed == "#[cfg(test)]" {
+                pending_cfg_test = true;
+                explicit_path = None;
+                continue;
+            }
+            if !pending_cfg_test {
+                continue;
+            }
+            if let Some(path) = trimmed
+                .strip_prefix("#[path = \"")
+                .and_then(|rest| rest.strip_suffix("\"]"))
+            {
+                explicit_path = Some(path);
+                continue;
+            }
+            if trimmed.starts_with("#[") {
+                continue;
+            }
+            if let Some(name) = trimmed
+                .strip_prefix("mod ")
+                .and_then(|rest| rest.strip_suffix(';'))
+            {
+                let parent = owner.parent().expect("Rust source has parent directory");
+                let candidate = explicit_path.map_or_else(
+                    || {
+                        if owner.file_name().and_then(|name| name.to_str()) == Some("mod.rs") {
+                            parent.join(format!("{name}.rs"))
+                        } else {
+                            parent
+                                .join(owner.file_stem().expect("Rust source has a file stem"))
+                                .join(format!("{name}.rs"))
+                        }
+                    },
+                    |path| parent.join(path),
+                );
+                if candidate.is_file() {
+                    test_modules.insert(candidate);
+                }
+            }
+            pending_cfg_test = false;
+            explicit_path = None;
+        }
+    }
+    test_modules
 }
 
 fn env_call_name(line: &str) -> Option<Option<String>> {
@@ -67,14 +123,16 @@ fn allowed_env_read(rel: &str, name: &str) -> bool {
     }
 }
 
-/// Files where reading an env var through a *variable* name (rather than a
-/// string literal) is justified: cloud credential discovery iterates a fixed,
-/// provider-standard set of env var names (`AWS_*`, GCS bearer tokens) through
-/// one small helper, so the name reaches `var_os`/`var` as a parameter. Those
-/// names are themselves on the static allowlist above; the dynamic form is a
-/// code-structure detail, not an unaudited behavior knob.
-fn allowed_dynamic_env_read(rel: &str) -> bool {
-    rel.starts_with("crates/sources/src/s3/") || rel == "crates/sources/src/gcs.rs"
+/// Dynamic reads are limited to credential-provider helpers and the two
+/// authenticated autoroute timing-fixture variables. The fixture is compiled
+/// into `ci-lean` so integration tests can drive the real binary, but its
+/// authorization sentinel prevents it from becoming an ambient backend policy.
+fn allowed_dynamic_env_read(rel: &str, line: &str) -> bool {
+    rel.starts_with("crates/sources/src/s3/")
+        || rel == "crates/sources/src/gcs.rs"
+        || (rel == "crates/cli/src/orchestrator/dispatch/backend/calibration.rs"
+            && (line.contains("std::env::var_os(TEST_TIMING_FIXTURE_ENV)")
+                || line.contains("std::env::var(TEST_TIMING_FIXTURE_AUTH_ENV)")))
 }
 
 #[test]
@@ -95,6 +153,14 @@ fn env_policy_parser_catches_aliases_and_dynamic_names() {
         env_call_name(r#"let dynamic = env::var(name);"#),
         Some(None)
     );
+    assert!(allowed_dynamic_env_read(
+        "crates/cli/src/orchestrator/dispatch/backend/calibration.rs",
+        "let fixture = std::env::var_os(TEST_TIMING_FIXTURE_ENV);"
+    ));
+    assert!(!allowed_dynamic_env_read(
+        "crates/cli/src/orchestrator/dispatch/backend/calibration.rs",
+        "let value = std::env::var_os(arbitrary_name);"
+    ));
 }
 
 #[test]
@@ -127,9 +193,13 @@ fn production_env_reads_stay_on_the_allowlist() {
     ] {
         collect_rs_files(&root.join(rel), &mut files);
     }
+    let external_test_modules = externally_split_test_modules(&files);
 
     let mut offenders = Vec::new();
     for path in files {
+        if external_test_modules.contains(&path) {
+            continue;
+        }
         let rel_path = path
             .strip_prefix(&root)
             .unwrap_or_else(|error| panic!("strip repo root from {}: {error}", path.display()))
@@ -174,7 +244,7 @@ fn production_env_reads_stay_on_the_allowlist() {
             match call {
                 Some(name) if allowed_env_read(&rel_path, &name) => {}
                 Some(name) => offenders.push(format!("{rel_path}:{} reads {name}", line_no + 1)),
-                None if allowed_dynamic_env_read(&rel_path) => {}
+                None if allowed_dynamic_env_read(&rel_path, line) => {}
                 None => offenders.push(format!(
                     "{rel_path}:{} reads a dynamic env var: {}",
                     line_no + 1,

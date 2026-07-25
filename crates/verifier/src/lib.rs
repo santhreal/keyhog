@@ -180,10 +180,37 @@ pub(crate) fn apply_proxy_config(
     match resolve_proxy_mode(explicit) {
         ProxyMode::Disabled => Ok(builder.no_proxy()),
         ProxyMode::Explicit(url) => {
+            let parsed = url::Url::parse(&url)
+                .map_err(|_| invalid_proxy_url_diagnostic(None))?;
+            if !matches!(parsed.scheme(), "http" | "https" | "socks5")
+                || parsed.host_str().is_none()
+            {
+                return Err(invalid_proxy_url_diagnostic(Some(&parsed)));
+            }
+
+            // Deliberately discard reqwest's parser error and its source chain:
+            // either may repeat the original URL, including userinfo or query
+            // secrets. The diagnostic below contains only URL-parser-normalized
+            // scheme/host components.
             let proxy = reqwest::Proxy::all(&url)
-                .map_err(|e| format!("invalid verifier proxy URL {url:?}: {e}"))?;
+                .map_err(|_| invalid_proxy_url_diagnostic(Some(&parsed)))?;
             Ok(builder.proxy(proxy))
         }
+    }
+}
+
+/// Build the only diagnostic emitted for a rejected verifier proxy URL.
+///
+/// A successful `url` parse makes its normalized scheme and host safe to name.
+/// Userinfo, path, query, and fragment are never copied. If parsing did not
+/// establish a host, echo none of the untrusted input.
+fn invalid_proxy_url_diagnostic(parsed: Option<&url::Url>) -> String {
+    if let Some((scheme, host)) =
+        parsed.and_then(|url| url.host_str().map(|host| (url.scheme(), host)))
+    {
+        format!("invalid verifier proxy URL (scheme `{scheme}`, host `{host}`)")
+    } else {
+        "invalid verifier proxy URL".to_owned()
     }
 }
 
@@ -867,6 +894,9 @@ pub mod testing {
             minted_id: &str,
         ) -> HashMap<String, String> {
             crate::interpolate::companions_with_oob(base, minted_host, minted_url, minted_id)
+                .into_iter()
+                .map(|(name, value)| (name.to_string(), value))
+                .collect()
         }
 
         fn built_request_header_body_for_test(
@@ -999,7 +1029,7 @@ pub mod testing {
                 .no_proxy()
                 .build()
                 .expect("test verifier client builds");
-            let companions = HashMap::new();
+            let companions = HashMap::<String, String>::new();
             match crate::verify::build_aws_probe(
                 access_key,
                 secret_key,

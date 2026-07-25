@@ -25,7 +25,9 @@ fn deep_recovers_unanchored_source_entropy_that_default_excludes() {
     let value = "q4S3#lg7pKEmNkfQOjoUHcd%yzTF^56*iLt-$RAw0xhX_8Pu2s@YeZ+.GM1Vvarn";
     let input = source_chunk(value);
 
-    let default_matches = scanner(ScannerConfig::default()).scan(&input);
+    let default_matches = scanner(ScannerConfig::default())
+        .scan(&input)
+        .expect("default preset regression scan should succeed");
     assert!(
         default_matches
             .iter()
@@ -41,7 +43,9 @@ fn deep_recovers_unanchored_source_entropy_that_default_excludes() {
     assert!(deep_config.entropy_in_source_files);
     assert!(deep_config.scan_comments);
 
-    let deep_matches = scanner(deep_config).scan(&input);
+    let deep_matches = scanner(deep_config)
+        .scan(&input)
+        .expect("deep preset entropy recovery scan should succeed");
     assert!(
         deep_matches.iter().any(|finding| {
             finding.credential.as_ref() == value
@@ -62,7 +66,9 @@ fn deep_rejects_javascript_xor_index_expression_as_entropy() {
         },
     };
 
-    let matches = scanner(ScannerConfig::thorough()).scan(&input);
+    let matches = scanner(ScannerConfig::thorough())
+        .scan(&input)
+        .expect("deep JavaScript XOR rejection scan should succeed");
     assert!(
         matches
             .iter()
@@ -84,7 +90,9 @@ fn deep_rejects_digit_only_javascript_identifier_tail_as_entropy() {
         },
     };
 
-    let matches = scanner(ScannerConfig::thorough()).scan(&input);
+    let matches = scanner(ScannerConfig::thorough())
+        .scan(&input)
+        .expect("deep identifier-tail rejection scan should succeed");
     assert!(
         matches
             .iter()

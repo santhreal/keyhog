@@ -231,6 +231,7 @@ fn html_report_embeds_scan_metadata_panel() {
         scan_id: "scan-test-id".to_string(),
         scan_status: keyhog_core::ScanCompletionStatus::Success,
         backend_recoveries: Vec::new(),
+        static_recovery: None,
         keyhog_version: "1.2.3".to_string(),
         git_hash: "test-git".to_string(),
         detector_digest: "test-detectors".to_string(),

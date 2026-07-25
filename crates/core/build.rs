@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 #[path = "src/detector_file_io.rs"]
 mod detector_file_io;
 
+const DETECTOR_CORPUS_MANIFEST_FILE: &str = "corpus.toml";
+
 #[derive(serde::Deserialize)]
 struct ConfigKeywords {
     known_prefixes: Vec<String>,
@@ -70,6 +72,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .into());
     }
     let entries = read_detector_entries(&toml_paths)?;
+    let corpus_manifest_path = detectors_dir.join(DETECTOR_CORPUS_MANIFEST_FILE);
+    let corpus_manifest = fs::read_to_string(&corpus_manifest_path).map_err(|error| {
+        io::Error::new(
+            error.kind(),
+            format!(
+                "failed to read detector corpus manifest '{}': {}. Fix: restore a readable UTF-8 {}",
+                corpus_manifest_path.display(),
+                error,
+                DETECTOR_CORPUS_MANIFEST_FILE
+            ),
+        )
+    })?;
     let config_keywords = read_toml::<ConfigKeywords>(
         &manifest_dir.join("rules/config-keywords.toml"),
         "Tier-B config keyword defaults",
@@ -87,15 +101,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     validate_nonempty_unique("decoder_names", &decoder_names.decoder_names)?;
 
-    // Build provenance: stamp the digest of the EXACT detector set that is
-    // about to be baked into the binary. The CLI surfaces this so the
-    // benchmark can assert the running binary's embedded detectors match the
-    // on-disk `detectors/` tree (cargo's `rerun-if-changed` cannot be trusted
-    // across in-place TOML edits, so a fresh-from-this-build digest is the
-    // authoritative answer to "what got compiled in"). Self-contained FNV-1a
-    // (no build-dependency on a hashing crate), it identifies the set, it is
-    // not a security primitive.
-    let detector_digest = detector_set_digest(&entries);
+    // Build provenance: stamp the effective identity of the EXACT detector set
+    // about to be baked into the binary plus the corpus manifest that controls
+    // how those bytes are interpreted. The CLI surfaces this so benchmarks,
+    // caches, and autoroute evidence cannot treat a schema change as the same
+    // corpus. Self-contained FNV-1a (no build dependency on a hashing crate)
+    // identifies the effective set; it is not a security primitive.
+    let detector_digest = detector_set_digest(&entries, &corpus_manifest);
     println!("cargo:rustc-env=KEYHOG_DETECTOR_DIGEST={detector_digest}");
 
     write_embedded_data(
@@ -119,6 +131,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!(
         "cargo:rerun-if-changed={}",
+        detectors_dir.join(DETECTOR_CORPUS_MANIFEST_FILE).display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
         manifest_dir.join("rules/config-keywords.toml").display()
     );
     println!(
@@ -139,10 +155,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Sorted `.toml` paths in `detectors_dir`: the single directory walk both
-/// the embedded table and the per-file `rerun-if-changed` lines derive from.
-/// Sorting by path equals sorting by file name (shared parent), so the
-/// embedded detector order is stable across platforms.
+/// Sorted detector `.toml` paths in `detectors_dir`: the single directory walk
+/// both the embedded table and the per-file `rerun-if-changed` lines derive
+/// from. The directory-scoped corpus manifest is metadata, not a detector, so
+/// it is excluded from the embedded table and detector count; its canonical
+/// path and bytes are nevertheless bound into the effective detector digest.
+/// Sorting by path equals sorting by file name (shared parent), so the embedded
+/// detector order is stable across platforms.
 fn detector_toml_paths(detectors_dir: &Path) -> io::Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
     let read_dir = fs::read_dir(detectors_dir).map_err(|error| {
@@ -167,7 +186,9 @@ fn detector_toml_paths(detectors_dir: &Path) -> io::Result<Vec<PathBuf>> {
             )
         })?;
         let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "toml") {
+        if path.extension().is_some_and(|ext| ext == "toml")
+            && path.file_name().is_none_or(|name| name != DETECTOR_CORPUS_MANIFEST_FILE)
+        {
             paths.push(path);
         }
     }
@@ -362,12 +383,12 @@ fn git_hash(workspace_root: &Path) -> Option<String> {
     }
 }
 
-/// Digest of the exact embedded detector set (sorted `(name, content)` pairs),
-/// as a stable lowercase-hex string. FNV-1a 64-bit over name+content of every
-/// entry, mirroring the scanner build script's `model_version` hash so both
-/// build scripts speak the same self-contained, build-dependency-free dialect.
-/// This identifies "which detectors got compiled in"; it is not a tamper seal.
-fn detector_set_digest(entries: &[(String, String)]) -> String {
+/// Digest of the effective embedded corpus: sorted detector `(name, content)`
+/// pairs followed by the canonical manifest `(name, content)` pair. The count
+/// prefix remains the detector count, while the hash is schema-bound so caches
+/// and provenance change whenever parsing semantics change. This is a stable
+/// lowercase FNV-1a 64-bit identity, not a tamper seal.
+fn detector_set_digest(entries: &[(String, String)], corpus_manifest: &str) -> String {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     let mut mix = |bytes: &[u8]| {
         for &b in bytes {
@@ -382,6 +403,10 @@ fn detector_set_digest(entries: &[(String, String)]) -> String {
         mix(content.as_bytes());
         mix(&[0]);
     }
+    mix(DETECTOR_CORPUS_MANIFEST_FILE.as_bytes());
+    mix(&[0]);
+    mix(corpus_manifest.as_bytes());
+    mix(&[0]);
     format!("{}-{hash:016x}", entries.len())
 }
 

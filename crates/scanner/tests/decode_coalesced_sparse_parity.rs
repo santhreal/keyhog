@@ -4,7 +4,7 @@
 mod support;
 
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::decode::{register_decoder, Decoder};
+use keyhog_scanner::decode::{register_decoder, DecodeOutputSink, Decoder};
 use keyhog_scanner::{CompiledScanner, ScanBackend, ScannerConfig};
 use std::collections::BTreeSet;
 use std::sync::{Once, OnceLock};
@@ -53,10 +53,14 @@ fn assert_scalar_coalesced_parity(label: &str, fixture: Chunk) {
     let scanner = scanner();
     scanner.clear_fragment_cache();
     let scalar =
-        scanner.scan_chunks_with_backend(std::slice::from_ref(&fixture), ScanBackend::CpuFallback);
+        scanner.scan_chunks_with_backend(std::slice::from_ref(&fixture), ScanBackend::CpuFallback).expect("selected backend scan succeeds");
     scanner.clear_fragment_cache();
-    let coalesced =
-        scanner.scan_coalesced_with_backend(std::slice::from_ref(&fixture), ScanBackend::SimdCpu);
+    let coalesced = scanner
+        .scan_coalesced_with_backend(
+            std::slice::from_ref(&fixture),
+            ScanBackend::SimdCpu,
+        )
+        .expect("coalesced SIMD decode scan should succeed");
 
     let scalar = aws_findings(&scalar);
     let coalesced = aws_findings(&coalesced);
@@ -73,7 +77,7 @@ fn assert_scalar_coalesced_parity(label: &str, fixture: Chunk) {
     if keyhog_scanner::gpu::gpu_available() {
         scanner.clear_fragment_cache();
         let gpu =
-            scanner.scan_chunks_with_backend(std::slice::from_ref(&fixture), ScanBackend::GpuWgpu);
+            scanner.scan_chunks_with_backend(std::slice::from_ref(&fixture), ScanBackend::GpuWgpu).expect("selected backend scan succeeds");
         assert_eq!(
             aws_findings(&gpu),
             scalar,
@@ -143,20 +147,20 @@ impl Decoder for UnknownAdmissionDecoder {
         "unknown-admission-parity-probe"
     }
 
-    fn decode_chunk(&self, source: &Chunk) -> Vec<Chunk> {
+    fn decode_chunk_into(&self, source: &Chunk, sink: &mut dyn DecodeOutputSink) {
         if source
             .metadata
             .source_type
             .contains("/unknown-admission-probe")
             || !source.data.contains("c.u.s.t.o.m")
         {
-            return Vec::new();
+            return;
         }
         let mut decoded = source.clone();
         decoded.data = AWS_ACCESS_KEY.into();
         decoded.metadata.source_type =
             format!("{}/unknown-admission-probe", source.metadata.source_type).into();
-        vec![decoded]
+        sink.push(decoded);
     }
 }
 

@@ -57,7 +57,7 @@ fn test_nested_base64_decoding_gating() {
         },
     };
 
-    let matches = scanner.scan(&chunk);
+    let matches = scanner.scan(&chunk).expect("test scan succeeds");
     let hit =
         matches
             .iter()

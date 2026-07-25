@@ -2,14 +2,15 @@ use crate::types::*;
 use keyhog_core::Chunk;
 use std::borrow::Cow;
 
+/// Maximum source bytes fed to context-driven model feature predicates.
+const ML_CONTEXT_WINDOW_BYTES: usize = 8 * 1024;
+
 /// Borrow the `[line - radius, line + radius]` window directly out of `text`.
 ///
-/// `line` is 1-based. Returns a `&str` slice of the original buffer: no
-/// `Vec<&str>` collect, no `join` re-allocation, and no O(file)
-/// `lines().skip()` prefix walk (which iterates and discards every skipped
-/// line). We locate the two byte boundaries with `memchr` newline scans -
-/// O(window) for the start instead of O(file) - and slice once. Callers that
-/// need ownership call `.to_string()` (still one alloc total, down from two).
+/// `line` is 1-based. Returns a `&str` slice of the original buffer and remains
+/// as the compatibility oracle for callers that do not own line offsets.
+/// Production candidate extraction uses [`local_context_window_from_offsets`]
+/// to avoid this function's prefix newline walk.
 pub(crate) fn local_context_window(text: &str, line: usize, radius: usize) -> &str {
     let bytes = text.as_bytes();
     // Byte offset where the first window line begins. Walk forward over the
@@ -38,7 +39,6 @@ pub(crate) fn local_context_window(text: &str, line: usize, radius: usize) -> &s
     // in `context::inference::surrounding_line_window` (2 KiB): that one only
     // needs a single header line, this one feeds the ML feature/keyword scan
     // and wants more neighbouring context. Same intent, different justified cap.
-    const ML_CONTEXT_WINDOW_BYTES: usize = 8 * 1024;
     let cap = (start + ML_CONTEXT_WINDOW_BYTES).min(bytes.len());
     // Byte offset just past the last window line. Skip `(2*radius + 1)` line
     // terminators from `start`; the slice excludes the trailing newline so a
@@ -81,6 +81,41 @@ pub(crate) fn local_context_window(text: &str, line: usize, radius: usize) -> &s
     // and is therefore UTF-8-aligned. `end` was just snapped to a char boundary
     // by floor_char_boundary, which guarantees end <= text.len() and
     // is_char_boundary(end).
+    &text[start..end]
+}
+
+/// Borrow the same bounded context window as [`local_context_window`], using
+/// the chunk's already-owned line-start table instead of rescanning every
+/// newline before the candidate.
+///
+/// `line` is 1-based and `line_offsets` must come from
+/// [`compute_line_offsets`] for `text`. The output is byte-identical to
+/// `local_context_window`; only boundary discovery differs.
+pub(crate) fn local_context_window_from_offsets<'a>(
+    text: &'a str,
+    line_offsets: &[usize],
+    line: usize,
+    radius: usize,
+) -> &'a str {
+
+    let start_line = line.saturating_sub(radius).saturating_sub(1);
+    let Some(&start) = line_offsets.get(start_line) else {
+        return "";
+    };
+    if start > text.len() {
+        return "";
+    }
+
+    let window_lines = radius.saturating_mul(2).saturating_add(1);
+    let end_line = start_line.saturating_add(window_lines);
+    let uncapped_end = match line_offsets.get(end_line) {
+        Some(&next_line_start) => next_line_start.saturating_sub(1),
+        None => text.len(),
+    };
+    let end = uncapped_end
+        .min(start.saturating_add(ML_CONTEXT_WINDOW_BYTES))
+        .min(text.len());
+    let end = crate::engine::floor_char_boundary(text, end);
     &text[start..end]
 }
 

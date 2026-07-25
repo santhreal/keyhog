@@ -1,5 +1,6 @@
 //! KH-GAP-134: FILE_GATE_MATRIX CLI rows stale after R3.2 args/orchestrator split.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 fn repo_root() -> PathBuf {
@@ -12,18 +13,29 @@ fn repo_root() -> PathBuf {
 #[test]
 fn file_gate_matrix_lists_every_cli_src_module() {
     let repo = repo_root();
-    let matrix = std::fs::read_to_string(repo.join("tests/FILE_GATE_MATRIX.toml"))
+    let raw = std::fs::read_to_string(repo.join("tests/FILE_GATE_MATRIX.toml"))
         .expect("FILE_GATE_MATRIX.toml");
-    let src = walk_rs(&repo.join("crates/cli/src"), &repo);
-    for path in &src {
-        assert!(
-            matrix.contains(&format!("path = \"{path}\"")),
-            "FILE_GATE_MATRIX must include {path} after R3.2 split"
-        );
-    }
+    let matrix: toml::Value = toml::from_str(&raw).expect("FILE_GATE_MATRIX.toml parses");
+    let listed: BTreeSet<String> = matrix
+        .get("module")
+        .and_then(toml::Value::as_array)
+        .expect("matrix declares module rows")
+        .iter()
+        .filter_map(|row| row.get("path").and_then(toml::Value::as_str))
+        .filter(|path| path.starts_with("crates/cli/src/"))
+        .map(str::to_owned)
+        .collect();
+    let owned: BTreeSet<String> = walk_rs(&repo.join("crates/cli/src"), &repo)
+        .into_iter()
+        .collect();
+
+    // Regression: compare real ownership in both directions. A hardcoded count
+    // or one-off stale filename check can pass while new split modules are absent.
+    let missing: Vec<&String> = owned.difference(&listed).collect();
+    let stale: Vec<&String> = listed.difference(&owned).collect();
     assert!(
-        !matrix.contains("path = \"crates/cli/src/orchestrator.rs\""),
-        "stale orchestrator.rs row must be removed from matrix"
+        missing.is_empty() && stale.is_empty(),
+        "FILE_GATE_MATRIX CLI ownership differs from the live filesystem; missing={missing:?}, stale={stale:?}"
     );
 }
 

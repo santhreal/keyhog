@@ -1,23 +1,6 @@
 # Changelog
 
-## 0.5.45 - 2026-07-22
-
-- Republish source backends in the release chain whose signed asset publication
-  addresses GitHub drafts by immutable release ID.
-
-## 0.5.44 - 2026-07-22
-
-- Republish source backends in the corrected five-crate release chain after
-  the Windows GPU literal artifact generator fix.
-
-## 0.5.43 - 2026-07-22
-
-- Declare the filesystem and git-diff sources' contiguous chunk-identity
-  ordering contract for safe provenance-aware autoroute batching.
-- Surface oversized Git diff, history, and tag lines as counted source errors
-  instead of silently continuing after telemetry.
-- Remove shifted UTF-16 LE/BE suffix duplicates by comparing recovered byte
-  spans while preserving valid strings in both byte orders.
+## 0.5.46 - 2026-07-24
 
 - Let all four WebSource DNS-screening workers wait on and consume the bounded
   job queue concurrently instead of serializing receives behind one mutex.
@@ -37,14 +20,26 @@
   buffered) so findings in files past the 1 MiB window size report the
   absolute file line, not the per-window one (paired with the scanner-side
   emit-site fix).
-- Mark `s3_ambient_credential_forward` with `required-features = ["s3"]` so default `keyhog-sources` tests no longer compile an S3-only integration test without the S3 module.
-- Move inline helper tests into registered external source tests via a hidden internal test facade, and clear the no-inline/no-production-unwrap gates for filesystem, binary literals/sections, GitHub org, HTTP, and web sources.
-- Move hosted-git git-error redaction into `hosted_git/sanitize.rs`, keeping
-  clone stderr sanitization shared across GitHub, GitLab, and Bitbucket sources.
-- Move WebSource SSRF/redaction/DNS-pinning helpers into `web/ssrf.rs`, bringing `web.rs` under the 500-line modularity target.
-- Move filesystem per-entry extraction into `filesystem/extract.rs` and walker/filter policy into `filesystem/filter.rs`, bringing `filesystem.rs` under the 500-line modularity target and wiring the zip archive skip-list regression into the aggregate source tests.
-- Fix HTTP property-test env isolation, split 10k-case policy fuzzing from bounded reqwest builder/client smoke fuzzing, and use direct proptest regression files for HTTP/filesystem property tests so aggregate source gates run without `http_fuzz` skips.
 - Run filesystem reading on a dedicated Rayon pool so bounded-channel backpressure cannot starve scanner work on the global Rayon pool during large-tree scans.
+
+## 0.5.45 - 2026-07-22
+
+- Republish source backends in the release chain whose signed asset publication
+  addresses GitHub drafts by immutable release ID.
+
+## 0.5.44 - 2026-07-22
+
+- Republish source backends in the corrected five-crate release chain after
+  the Windows GPU literal artifact generator fix.
+
+## 0.5.43 - 2026-07-22
+
+- Declare the filesystem and git-diff sources' contiguous chunk-identity
+  ordering contract for safe provenance-aware autoroute batching.
+- Surface oversized Git diff, history, and tag lines as counted source errors
+  instead of silently continuing after telemetry.
+- Remove shifted UTF-16 LE/BE suffix duplicates by comparing recovered byte
+  spans while preserving valid strings in both byte orders.
 
 ## 0.2.1
 

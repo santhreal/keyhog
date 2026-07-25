@@ -41,7 +41,7 @@ impl CompiledScanner {
         // LAW10: cfg-only Hyperscan tuning marker; no runtime effect.
         #[cfg(not(feature = "simd"))]
         let _tuning_config = tuning_config;
-        let state = build_compile_state(&detectors)?;
+        let mut state = build_compile_state(&detectors)?;
         // Build the canonical detector execution plan before any backend
         // projection. Backends consume only derived matcher inputs from this
         // owner and never reinterpret detector TOML independently.
@@ -67,11 +67,27 @@ impl CompiledScanner {
                             ]
                         }),
                 )
+                .chain(
+                    detector
+                        .companions
+                        .iter()
+                        .map(|companion| companion.name.as_str()),
+                )
             })
             .collect();
         let static_intern = Arc::new(crate::static_intern::StaticInterner::from_detector_strings(
             static_intern_strings,
         ));
+        for companions in &mut state.companions {
+            for companion in companions {
+                companion.name = static_intern.lookup(companion.name.as_ref()).ok_or_else(|| {
+                    crate::error::ScanError::Config(format!(
+                        "compiled companion name missing from static interner: {}",
+                        companion.name
+                    ))
+                })?;
+            }
+        }
         let detector_digest = super::detector_digest::from_execution_plan(
             keyhog_core::compute_spec_hash(&detectors),
             decoder_plan.identity(),
@@ -326,11 +342,14 @@ impl CompiledScanner {
             ))
         };
 
+        // Only direct AC alternatives belong to the selective literal gate.
+        // Prefixless/dynamic phase-2 patterns stay in the explicit always-admit
+        // no-hit lane and are evaluated even when this gate rejects.
         let bigram_bloom =
-            crate::bigram_bloom::BigramBloom::from_literal_prefixes(&alphabet_targets);
+            crate::bigram_bloom::BigramBloom::from_literal_prefixes(&state.ac_literals);
         tracing::debug!(
             popcount = bigram_bloom.popcount(),
-            "bigram bloom built (65536 slots / 8 KB direct table, lower popcount = stronger filter)"
+            "selective literal-anchor bloom built (65536 slots / 8 KB)"
         );
 
         // Pre-resolve the detector-wide weak-anchor base once. The per-pattern

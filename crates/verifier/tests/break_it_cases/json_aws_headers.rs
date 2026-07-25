@@ -41,6 +41,7 @@ async fn test_verify_json_path_exhaustion() {
                 json_path: Some("$.a.a.a".to_string()),
                 status: None,
                 status_not: None,
+                policy: None,
                 body_contains: None,
                 body_not_contains: None,
                 equals: None,
@@ -242,8 +243,8 @@ async fn test_verify_aws_sigv4_null_bytes() {
         },
     )
     .unwrap();
-    let mut comps = HashMap::new();
-    comps.insert("secret".to_string(), "sec\0\0\0ret".repeat(10));
+    let mut comps = HashMap::<Arc<str>, String>::new();
+    comps.insert(Arc::from("secret"), "sec\0\0\0ret".repeat(10));
     let group = DedupedMatch {
         detector_id: Arc::from("det_aws"),
         detector_name: Arc::from("det_aws"),

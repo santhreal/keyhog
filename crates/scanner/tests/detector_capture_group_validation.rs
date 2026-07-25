@@ -249,7 +249,9 @@ fn in_bounds_group_captures_the_group_value_not_the_whole_match() {
             ..Default::default()
         },
     };
-    let matches = scanner.scan(&chunk);
+    let matches = scanner
+        .scan(&chunk)
+        .expect("capture-group behavior scan should succeed");
     assert!(
         matches.iter().any(|m| m.credential.as_ref() == value),
         "expected credential {value:?}, got {:?}",

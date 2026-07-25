@@ -69,6 +69,10 @@ pub enum ScanError {
         detector_index: usize,
         detectors_len: usize,
     },
+    #[error(
+        "phase-one admission plan identity rejected: {0}. Fix: rebuild the plan for the live chunk batch or use the recovery-aware dispatch API to retain its exact recovery receipt"
+    )]
+    AdmissionPlanIdentity(String),
     #[error("scanner configuration failure: {0}. Fix: correct the bundled scanner rules")]
     Config(String),
 }

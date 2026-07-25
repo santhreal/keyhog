@@ -28,6 +28,7 @@ url = "https://api.wistia.com/v1/medias.json"
 allowed_domains = ["api.wistia.com"]
 [detector.verify.success]
 status = 200
+policy = "status_with_error_backstop"
 
 [[detector.verify.headers]]
 name = "Authorization"

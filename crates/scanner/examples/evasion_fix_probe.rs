@@ -81,7 +81,7 @@ fn strip_comment_prefix(text: &str) -> Option<String> {
     None
 }
 
-fn surfaces(scanner: &CompiledScanner, text: &str, credential: &str) -> bool {
+fn surfaces(scanner: &CompiledScanner, text: &str, credential: &str) -> keyhog_scanner::Result<bool> {
     scanner.clear_fragment_cache();
     let chunk = Chunk {
         data: text.into(),
@@ -91,10 +91,10 @@ fn surfaces(scanner: &CompiledScanner, text: &str, credential: &str) -> bool {
             ..Default::default()
         },
     };
-    scanner
-        .scan(&chunk)
+    Ok(scanner
+        .scan(&chunk)?
         .iter()
-        .any(|m| m.credential.as_ref().contains(credential))
+        .any(|m| m.credential.as_ref().contains(credential)))
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -133,7 +133,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         // Match against positive credential - evasion field may drift from surfaced value.
         let target_cred = &pos.credential;
-        if surfaces(&scanner, &eva.text, target_cred) {
+        if surfaces(&scanner, &eva.text, target_cred)? {
             continue;
         }
 
@@ -146,7 +146,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut cands = candidates(&pos.text, target_cred);
             cands.extend(extra.iter().map(|(l, t)| (*l, t.clone())));
             for (label, cand) in cands {
-                if surfaces(&scanner, &cand, target_cred) {
+                if surfaces(&scanner, &cand, target_cred)? {
                     found = Some((label, cand));
                     break 'outer;
                 }

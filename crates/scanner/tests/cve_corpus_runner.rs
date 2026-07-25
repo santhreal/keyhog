@@ -125,7 +125,9 @@ fn every_cve_corpus_entry_surfaces_a_credential_matching_the_pattern() {
                 ..Default::default()
             },
         };
-        let matches = scanner.scan(&chunk);
+        let matches = scanner
+            .scan(&chunk)
+            .expect("CVE corpus regression scan should succeed");
 
         // Truth: the regex must match the credential of at least one
         // surfaced finding. If the scanner returns zero findings, or

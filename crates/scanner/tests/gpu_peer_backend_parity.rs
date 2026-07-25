@@ -71,7 +71,7 @@ fn every_available_gpu_peer_matches_the_cpu_reference() {
         },
     };
     let reference = canonical(
-        &scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+        &scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback).expect("selected backend scan succeeds")
             [0],
     );
     assert_eq!(
@@ -108,7 +108,7 @@ fn every_available_gpu_peer_matches_the_cpu_reference() {
     for candidate in available {
         assert!(candidate.backend.is_gpu());
         let findings =
-            scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), candidate.backend);
+            scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), candidate.backend).expect("selected backend scan succeeds");
         assert_eq!(
             canonical(&findings[0]),
             reference,
@@ -199,8 +199,9 @@ fn gpu_routes_do_not_borrow_the_phase_two_hyperscan_engine() {
         keyhog_core::load_embedded_detectors_or_fail().expect("embedded detector corpus must load");
     let scanner = CompiledScanner::compile(detectors).expect("compile embedded detector plan");
     let chunk = Chunk::from("const api_key = \"sk_live_0123456789abcdefghijklmnopqrstuv\";\n");
-    let reference =
-        scanner.scan_coalesced_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback);
+    let reference = scanner
+        .scan_coalesced_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+        .expect("CPU fallback phase-two scan should succeed");
     assert!(
         !reference[0].is_empty(),
         "fixture must exercise real phase two"
@@ -219,8 +220,9 @@ fn gpu_routes_do_not_borrow_the_phase_two_hyperscan_engine() {
         "GPU release host must expose an eligible execution peer"
     );
     for candidate in candidates {
-        let findings =
-            scanner.scan_coalesced_with_backend(std::slice::from_ref(&chunk), candidate.backend);
+        let findings = scanner
+            .scan_coalesced_with_backend(std::slice::from_ref(&chunk), candidate.backend)
+            .expect("acquired GPU phase-two scan should succeed");
         assert_eq!(
             findings,
             reference,
@@ -275,8 +277,11 @@ fn detector_required_literals_preserve_every_backend_finding() {
             },
         },
     ];
-    let reference =
-        canonical_chunks(&scanner.scan_coalesced_with_backend(&chunks, ScanBackend::CpuFallback));
+    let reference = canonical_chunks(
+        &scanner
+            .scan_coalesced_with_backend(&chunks, ScanBackend::CpuFallback)
+            .expect("CPU fallback required-literal scan should succeed"),
+    );
     assert_eq!(
         reference
             .iter()
@@ -310,7 +315,9 @@ fn detector_required_literals_preserve_every_backend_finding() {
     let mut backends = vec![ScanBackend::SimdCpu];
     backends.extend(acquired);
     for backend in backends {
-        let findings = scanner.scan_coalesced_with_backend(&chunks, backend);
+        let findings = scanner
+            .scan_coalesced_with_backend(&chunks, backend)
+            .expect("required-literal backend parity scan should succeed");
         assert_eq!(
             canonical_chunks(&findings),
             reference,
@@ -403,7 +410,9 @@ fn service_scoped_api_headers_match_on_every_acquired_backend() {
         .collect::<Vec<_>>();
 
     let reference = canonical_chunks(
-        &scanner.scan_coalesced_with_backend(&positive_chunks, ScanBackend::CpuFallback),
+        &scanner
+            .scan_coalesced_with_backend(&positive_chunks, ScanBackend::CpuFallback)
+            .expect("CPU fallback service-positive scan should succeed"),
     );
     assert_eq!(
         reference.len(),
@@ -420,7 +429,9 @@ fn service_scoped_api_headers_match_on_every_acquired_backend() {
     }
     assert!(
         canonical_chunks(
-            &scanner.scan_coalesced_with_backend(&negative_chunks, ScanBackend::CpuFallback)
+            &scanner
+                .scan_coalesced_with_backend(&negative_chunks, ScanBackend::CpuFallback)
+                .expect("CPU fallback service-negative scan should succeed")
         )
         .is_empty(),
         "bare generic API headers must not be assigned to a service"
@@ -436,14 +447,22 @@ fn service_scoped_api_headers_match_on_every_acquired_backend() {
     );
     for backend in backends {
         assert_eq!(
-            canonical_chunks(&scanner.scan_coalesced_with_backend(&positive_chunks, backend)),
+            canonical_chunks(
+                &scanner
+                    .scan_coalesced_with_backend(&positive_chunks, backend)
+                    .expect("service-positive backend parity scan should succeed")
+            ),
             reference,
             "{} diverged on service-scoped positives",
             backend.label()
         );
         assert!(
-            canonical_chunks(&scanner.scan_coalesced_with_backend(&negative_chunks, backend))
-                .is_empty(),
+            canonical_chunks(
+                &scanner
+                    .scan_coalesced_with_backend(&negative_chunks, backend)
+                    .expect("service-negative backend parity scan should succeed")
+            )
+            .is_empty(),
             "{} assigned a bare generic header",
             backend.label()
         );

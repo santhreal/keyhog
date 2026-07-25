@@ -182,6 +182,10 @@ fn canonical(matches: &[Vec<RawMatch>]) -> Vec<Key> {
     v
 }
 
+fn canonical_result(matches: keyhog_scanner::Result<Vec<Vec<RawMatch>>>) -> Vec<Key> {
+    canonical(&matches.expect("phase-two anchor parity scan succeeds"))
+}
+
 fn scanner() -> &'static CompiledScanner {
     static SCANNER: OnceLock<CompiledScanner> = OnceLock::new();
     SCANNER.get_or_init(|| {
@@ -231,7 +235,7 @@ fn scan_paths(scanner: &CompiledScanner, chunk: &Chunk) -> PathResults {
                     format!(
                         "{engine} plain={phase2_plain_localizer} keyword={phase2_keyword_localizer}"
                     ),
-                    canonical(&matches),
+                    canonical_result(matches),
                 ));
             }
         }
@@ -269,8 +273,8 @@ fn scan_paths(scanner: &CompiledScanner, chunk: &Chunk) -> PathResults {
     assert!(scanner.default_execution_route().phase2_keyword_localizer);
     PathResults {
         localized,
-        requested_localizer_gate_off: canonical(&requested_localizer_gate_off),
-        whole: canonical(&baseline),
+        requested_localizer_gate_off: canonical_result(requested_localizer_gate_off),
+        whole: canonical_result(baseline),
     }
 }
 

@@ -3,7 +3,7 @@
 //! `--help` is the cheapest promise a CLI makes; it must hold with HOME unset,
 //! a read-only cwd, TERM=dumb, a 1-column terminal, a bogus forced backend.
 //! Each cell asserts: clean exit, exit 0, usage text present, zero ANSI leak,
-//! no panic. 17 subcommands x 16 profiles = 272 distinct tests.
+//! no panic. 18 subcommands x 16 profiles = 288 distinct tests.
 
 use crate::reliability::harness::{
     assert_clean_exit, assert_no_ansi, assert_no_panic, run, Profile,
@@ -48,6 +48,7 @@ crate::kh_matrix!(
     completion => "completion",
     backend => "backend",
     doctor => "doctor",
+    bloom_diagnostic => "bloom-diagnostic",
     update => "update",
     repair => "repair",
     uninstall => "uninstall",

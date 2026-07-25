@@ -55,15 +55,13 @@ fn phase2_pattern_profile_mirror() {
     // Warm + discard, then a timed pass.
     for (i, c) in chunks_16k.iter().enumerate() {
         let chunk = chunk_of(c, &format!("16k-{i}"));
-        let _ = scanner
-            .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback);
+        let _ = scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback).expect("selected backend scan succeeds");
     }
     scanner.phase2_profile_dump("warmup-discard");
 
     for (i, c) in chunks_16k.iter().enumerate() {
         let chunk = chunk_of(c, &format!("16k-{i}"));
-        let _ = scanner
-            .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback);
+        let _ = scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback).expect("selected backend scan succeeds");
     }
     eprintln!("regime B: {} 16-KiB chunks", chunks_16k.len());
     scanner.phase2_profile_dump("mirror-16kib");

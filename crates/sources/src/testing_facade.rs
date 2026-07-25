@@ -213,8 +213,30 @@ pub mod testing {
             window_size: usize,
             overlap: usize,
         ) -> Vec<String>;
+        fn slice_into_windows_with_offsets(
+            &self,
+            bytes: &[u8],
+            window_size: usize,
+            overlap: usize,
+        ) -> Vec<(usize, String)>;
+        fn read_file_windowed_mmap(
+            &self,
+            path: &std::path::Path,
+            window_size: usize,
+            overlap: usize,
+        ) -> Option<Vec<(usize, String)>>;
         fn decode_utf16(&self, bytes: &[u8]) -> Option<String>;
+        fn decode_text_file(&self, bytes: &[u8]) -> Option<String>;
+        fn decode_text_file_owned_or_bytes(&self, bytes: Vec<u8>) -> Result<String, Vec<u8>>;
         fn looks_binary(&self, bytes: &[u8]) -> bool;
+        fn looks_binary_prefix(&self, bytes: &[u8]) -> bool;
+        fn read_file_buffered_text(&self, path: &std::path::Path, size_hint: u64) -> Option<String>;
+        fn read_file_prefix_safe(
+            &self,
+            path: &std::path::Path,
+            buf: &mut [u8],
+        ) -> std::io::Result<usize>;
+        fn open_file_safe(&self, path: &std::path::Path) -> std::io::Result<std::fs::File>;
         fn duplicate_zip_central_entries_error(
             &self,
             path: &std::path::Path,
@@ -877,8 +899,54 @@ pub mod testing {
             crate::filesystem::decode_utf16_for_test(bytes)
         }
 
+        fn decode_text_file(&self, bytes: &[u8]) -> Option<String> {
+            crate::filesystem::decode_text_file_for_test(bytes)
+        }
+
+        fn decode_text_file_owned_or_bytes(&self, bytes: Vec<u8>) -> Result<String, Vec<u8>> {
+            crate::filesystem::decode_text_file_owned_or_bytes_for_test(bytes)
+        }
+
         fn looks_binary(&self, bytes: &[u8]) -> bool {
             crate::filesystem::looks_binary_for_test(bytes)
+        }
+
+        fn looks_binary_prefix(&self, bytes: &[u8]) -> bool {
+            crate::filesystem::looks_binary_prefix_for_test(bytes)
+        }
+
+        fn slice_into_windows_with_offsets(
+            &self,
+            bytes: &[u8],
+            window_size: usize,
+            overlap: usize,
+        ) -> Vec<(usize, String)> {
+            crate::filesystem::slice_into_windows_with_offsets_for_test(bytes, window_size, overlap)
+        }
+
+        fn read_file_windowed_mmap(
+            &self,
+            path: &std::path::Path,
+            window_size: usize,
+            overlap: usize,
+        ) -> Option<Vec<(usize, String)>> {
+            crate::filesystem::read_file_windowed_mmap_for_test(path, window_size, overlap)
+        }
+
+        fn read_file_buffered_text(&self, path: &std::path::Path, size_hint: u64) -> Option<String> {
+            crate::filesystem::read_file_buffered_text_for_test(path, size_hint)
+        }
+
+        fn read_file_prefix_safe(
+            &self,
+            path: &std::path::Path,
+            buf: &mut [u8],
+        ) -> std::io::Result<usize> {
+            crate::filesystem::read_file_prefix_safe_for_test(path, buf)
+        }
+
+        fn open_file_safe(&self, path: &std::path::Path) -> std::io::Result<std::fs::File> {
+            crate::filesystem::open_file_safe(path)
         }
 
         fn duplicate_zip_central_entries_error(
@@ -1674,6 +1742,45 @@ pub mod testing {
                 .with_lookback_messages(lookback_messages)
         }
     }
+    /// Outcome of [`for_each_file_windowed_mmap_for_test`].
+    pub enum ForEachWindowedMmapOutcome {
+        Consumed,
+        Fallback,
+    }
+
+    /// Stream a file through the windowed-mmap path, calling `emit` for each
+    /// decoded `(offset, text)` window. The bool return value of `emit` stops
+    /// further emission when `false`.
+    pub fn for_each_file_windowed_mmap_for_test<F>(
+        path: &std::path::Path,
+        window_size: usize,
+        overlap: usize,
+        mut emit: F,
+    ) -> ForEachWindowedMmapOutcome
+    where
+        F: FnMut(Result<(usize, String), String>) -> bool,
+    {
+        match crate::filesystem::for_each_file_windowed_mmap_for_test(
+            path,
+            window_size,
+            overlap,
+            |row| emit(row),
+        ) {
+            crate::filesystem::ForEachWindowedMmapTestOutcome::Consumed => {
+                ForEachWindowedMmapOutcome::Consumed
+            }
+            crate::filesystem::ForEachWindowedMmapTestOutcome::Fallback => {
+                ForEachWindowedMmapOutcome::Fallback
+            }
+        }
+    }
+
+    /// Canonical zstd frame magic bytes used by the filesystem text decoder's
+    /// binary-magic rejection path.
+    pub fn zstd_frame_magic_for_test() -> &'static [u8] {
+        crate::magic::ZSTD_FRAME_MAGIC
+    }
+
     #[cfg(feature = "git")]
     pub fn oversized_staged_header_path_outcome_for_test(
         input: &[u8],

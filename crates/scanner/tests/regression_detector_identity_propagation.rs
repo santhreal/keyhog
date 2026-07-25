@@ -41,6 +41,7 @@ group = 1
 
     let matching: Vec<_> = scanner
         .scan(&chunk)
+        .expect("detector identity propagation scan should succeed")
         .into_iter()
         .filter(|finding| finding.detector_id.as_ref() == DETECTOR_ID)
         .collect();

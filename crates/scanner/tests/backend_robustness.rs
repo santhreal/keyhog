@@ -49,7 +49,7 @@ fn canonical_scan(
     chunks: &[Chunk],
     backend: ScanBackend,
 ) -> Vec<Vec<keyhog_core::RawMatch>> {
-    let mut rows = scanner.scan_chunks_with_backend(chunks, backend);
+    let mut rows = scanner.scan_chunks_with_backend(chunks, backend).expect("selected backend scan succeeds");
     for row in &mut rows {
         row.sort();
     }
@@ -165,7 +165,7 @@ fn r7_concurrent_scans_from_multiple_threads_no_data_race() {
                     rows
                 };
                 let reference = canonicalize(
-                    scanner.scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback),
+                    scanner.scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback).expect("selected backend scan succeeds"),
                 );
                 let aws: Vec<_> = reference[0]
                     .iter()
@@ -177,12 +177,12 @@ fn r7_concurrent_scans_from_multiple_threads_no_data_race() {
 
                 barrier.wait();
                 let gpu_first =
-                    canonicalize(scanner.scan_chunks_with_backend(&chunks, ScanBackend::GpuWgpu));
+                    canonicalize(scanner.scan_chunks_with_backend(&chunks, ScanBackend::GpuWgpu).expect("selected backend scan succeeds"));
                 barrier.wait();
                 let gpu_second =
-                    canonicalize(scanner.scan_chunks_with_backend(&chunks, ScanBackend::GpuWgpu));
+                    canonicalize(scanner.scan_chunks_with_backend(&chunks, ScanBackend::GpuWgpu).expect("selected backend scan succeeds"));
                 let simd =
-                    canonicalize(scanner.scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu));
+                    canonicalize(scanner.scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu).expect("selected backend scan succeeds"));
                 for (backend, actual) in [
                     ("gpu-first", gpu_first),
                     ("gpu-second", gpu_second),
@@ -241,8 +241,7 @@ fn r9_fallible_gpu_boundary_preserves_stable_bytes_for_cpu_recovery() {
         "recover.env",
     )];
 
-    let error = scanner
-        .try_scan_coalesced_with_backend_and_admission(&chunks, ScanBackend::GpuWgpu, None)
+    let error = scanner.scan_coalesced_with_backend_and_admission(&chunks, ScanBackend::GpuWgpu, None)
         .expect_err("a disabled GPU peer must return an in-band dispatch error");
     assert!(
         error.to_string().contains("GPU"),

@@ -29,19 +29,19 @@ impl CompiledScanner {
         matches: &mut Vec<RawMatch>,
         deadline: Option<std::time::Instant>,
         route: crate::ScanExecutionRoute,
-    ) {
+    ) -> crate::error::Result<()> {
         if crate::deadline::expired(deadline) {
-            return;
+            return Ok(());
         }
         if !Self::has_fragment_assignment_syntax(chunk.data.as_bytes()) {
-            return;
+            return Ok(());
         }
 
         let assign_re = &*crate::shared_regexes::ASSIGN_RE;
 
         for (line_idx, line) in chunk.data.lines().enumerate() {
             if crate::deadline::expired(deadline) {
-                return;
+                return Ok(());
             }
             if let Some(caps) = assign_re.captures(line) {
                 let Some(var_name_match) = caps.get(1) else {
@@ -92,7 +92,7 @@ impl CompiledScanner {
                 let candidates = self.fragment_cache.record_and_reassemble(fragment);
                 for candidate in candidates {
                     if crate::deadline::expired(deadline) {
-                        return;
+                        return Ok(());
                     }
                     // `candidate` is `Zeroizing<String>` (kimi-wave1 fix).
                     let entropy = crate::pipeline::match_entropy(candidate.as_str().as_bytes());
@@ -122,9 +122,9 @@ impl CompiledScanner {
                         ..route
                     };
                     let mut reassembled_matches =
-                        self.scan_inner(&synthetic_chunk, backend, deadline, synthetic_route);
+                        self.scan_inner(&synthetic_chunk, backend, deadline, synthetic_route)?;
                     if crate::deadline::expired(deadline) {
-                        return;
+                        return Ok(());
                     }
                     for m in &mut reassembled_matches {
                         m.detector_id = format!(
@@ -175,6 +175,7 @@ impl CompiledScanner {
                 }
             }
         }
+        Ok(())
     }
 
     pub(crate) fn has_fragment_assignment_syntax(data: &[u8]) -> bool {

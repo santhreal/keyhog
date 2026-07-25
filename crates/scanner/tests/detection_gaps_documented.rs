@@ -38,6 +38,7 @@ fn fired_ids_auto(text: &str) -> Vec<String> {
         .expect("scanner compile");
     scanner
         .scan(&chunk(text))
+        .expect("production auto-path scan should succeed")
         .iter()
         .map(|m| m.detector_id.to_string())
         .collect()
@@ -47,8 +48,7 @@ fn fired_ids_auto(text: &str) -> Vec<String> {
 fn fired_ids_backend(text: &str, backend: ScanBackend) -> Vec<String> {
     let scanner = CompiledScanner::compile(keyhog_core::embedded_detector_specs().to_vec())
         .expect("scanner compile");
-    scanner
-        .scan_chunks_with_backend(std::slice::from_ref(&chunk(text)), backend)
+    scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk(text)), backend).expect("selected backend scan succeeds")
         .iter()
         .flat_map(|per| per.iter())
         .map(|m| m.detector_id.to_string())

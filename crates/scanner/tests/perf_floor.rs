@@ -104,11 +104,11 @@ fn scanner_throughput_above_floor() {
     // Warm-up: first scan pays detector caches + first-touch alloc.
     // Measure the SECOND scan for steady-state.
     let warm = Instant::now();
-    let warm_matches = scanner.scan(&chunk);
+    let warm_matches = scanner.scan(&chunk).expect("scanner call should succeed");
     let warm_elapsed = warm.elapsed();
 
     let start = Instant::now();
-    let matches = scanner.scan(&chunk);
+    let matches = scanner.scan(&chunk).expect("scanner call should succeed");
     let elapsed = start.elapsed();
 
     let mib = FIXTURE_BYTES as f64 / (1024.0 * 1024.0);

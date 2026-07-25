@@ -29,6 +29,7 @@ field = "match"
 
 [detector.verify.success]
 status = 200
+policy = "status_with_error_backstop"
 
 [[detector.tests]]
 test_positive = "MAPQUEST_API_KEY=dVwxYfM2hWRAGmgpCyRcAZUJGrlt7uU4"

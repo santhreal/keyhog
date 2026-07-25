@@ -13,6 +13,7 @@ import urllib.parse
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 DOCS = REPO / "docs" / "src"
+DETECTOR_CORPUS_MANIFEST_FILE = "corpus.toml"
 LICENSE_DOCS = [REPO / "README.md", DOCS / "introduction.md", DOCS / "contributing.md"]
 
 STALE_PATTERNS = [
@@ -34,6 +35,7 @@ EXPLICIT_ANCHOR = re.compile(
     r"<(?:a\s+(?:[^>]*\s)?(?:id|name)|[^>]+\s+id)=[\"']([^\"']+)[\"']", re.I
 )
 HOSTED_TOKEN_ARG = re.compile(r"--(?:github|gitlab|bitbucket)-token\b")
+BENCH_MARKER = re.compile(r"^<!-- BENCH:[^:]+:(start|end) -->$")
 
 
 def prose_lines(text: str):
@@ -134,8 +136,14 @@ def workspace_license() -> str:
     return cargo["workspace"]["package"]["license"]
 
 
-def detector_count() -> int:
-    return sum(1 for path in (REPO / "detectors").glob("*.toml") if path.is_file())
+def detector_count(detectors_dir: pathlib.Path | None = None) -> int:
+    """Count detector definitions, excluding the directory-level corpus manifest."""
+    root = detectors_dir or REPO / "detectors"
+    return sum(
+        1
+        for path in root.glob("*.toml")
+        if path.is_file() and path.name != DETECTOR_CORPUS_MANIFEST_FILE
+    )
 
 
 def canonical_paths() -> list[pathlib.Path]:
@@ -185,21 +193,46 @@ def security_reporting_issues() -> list[str]:
     return issues
 
 
+def version_truth_issues(text: str, rel: str, expected_version: str) -> list[str]:
+    """Reject stale operator claims while preserving measured benchmark identity."""
+    issues: list[str] = []
+    keyhog_series = ".".join(expected_version.split(".")[:2]) + "."
+    inside_benchmark = False
+    for lineno, line in enumerate(text.splitlines(), 1):
+        marker = BENCH_MARKER.match(line)
+        if marker:
+            boundary = marker.group(1)
+            if boundary == "start":
+                if inside_benchmark:
+                    issues.append(f"{rel}:{lineno}: nested benchmark start marker")
+                inside_benchmark = True
+            elif not inside_benchmark:
+                issues.append(f"{rel}:{lineno}: benchmark end marker without start")
+            else:
+                inside_benchmark = False
+            continue
+        if inside_benchmark:
+            continue
+        for version in re.findall(r"\bv\d+\.\d+\.\d+\b", line):
+            if version.startswith(keyhog_series) and version != expected_version:
+                issues.append(
+                    f"{rel}:{lineno}: stale version {version}; expected {expected_version}"
+                )
+    if inside_benchmark:
+        issues.append(f"{rel}: benchmark start marker without end")
+    return issues
+
+
 def truth_issues() -> list[str]:
     issues: list[str] = []
     expected_version = workspace_version()
-    keyhog_series = ".".join(expected_version.split(".")[:2]) + "."
     expected_count = detector_count()
     expected_license = workspace_license()
     for path in canonical_paths():
         text = path.read_text(errors="replace")
         rel = path.relative_to(REPO).as_posix()
+        issues.extend(version_truth_issues(text, rel, expected_version))
         for lineno, line in enumerate(text.splitlines(), 1):
-            for version in re.findall(r"\bv\d+\.\d+\.\d+\b", line):
-                if not version.startswith(keyhog_series):
-                    continue
-                if version != expected_version:
-                    issues.append(f"{rel}:{lineno}: stale version {version}; expected {expected_version}")
             for count in re.findall(r"\b(\d+)\s+detectors\b", line, re.I):
                 if int(count) != expected_count:
                     issues.append(
@@ -278,6 +311,12 @@ def self_test() -> int:
         and any("broken local link target absent.md" in issue for issue in navigation)
         and any("missing anchor #absent" in issue for issue in navigation)
     )
+    with tempfile.TemporaryDirectory(prefix=".docs-truth-detectors-", dir=REPO) as raw:
+        detectors = pathlib.Path(raw)
+        (detectors / "detector.toml").write_text("[detector]\n")
+        (detectors / DETECTOR_CORPUS_MANIFEST_FILE).write_text("[corpus]\n")
+        (detectors / "ignored.txt").write_text("not a detector\n")
+        detector_manifest_excluded = detector_count(detectors) == 1
     canonical_license = f"License: {workspace_license()}."
     license_detected = canonical_license == "License: MIT OR Apache-2.0." and (
         canonical_license in "License: MIT OR Apache-2.0.".splitlines()
@@ -293,6 +332,7 @@ def self_test() -> int:
         and navigation_detected
         and license_detected
         and token_arg_detected
+        and detector_manifest_excluded
     )
     print("self-test PASS" if detected else "self-test FAIL", file=sys.stderr)
     return 0 if detected else 1

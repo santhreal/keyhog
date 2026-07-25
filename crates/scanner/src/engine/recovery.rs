@@ -3,6 +3,7 @@ use crate::hw_probe::ScanBackend;
 const MAX_RECOVERY_REASON_BYTES: usize = 4096;
 const MISSING_RECOVERY_REASON: &str = "backend fault without diagnostic";
 
+
 /// One exact source-byte interval completed after the selected backend faulted.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecoveredInputRange {
@@ -54,6 +55,32 @@ impl BackendRecoveryReceipt {
             reason: sanitize_recovery_reason(reason),
         }
     }
+    pub(crate) fn phase1_admission(
+        backend: ScanBackend,
+        chunks: &[keyhog_core::Chunk],
+        error: super::Phase1AdmissionPlanIdentityError,
+    ) -> Self {
+        let reason = match error {
+            super::Phase1AdmissionPlanIdentityError::Malformed => "malformed phase-one admission plan identity; discarded the untrusted plan and recomputed exact admission",
+            super::Phase1AdmissionPlanIdentityError::Mismatch => "phase-one admission plan identity mismatch; discarded the untrusted plan and recomputed exact admission",
+        };
+        let ranges = chunks
+            .iter()
+            .enumerate()
+            .filter(|(_, chunk)| !chunk.data.is_empty())
+            .map(|(chunk_index, chunk)| {
+                RecoveredInputRange::new(chunk_index, 0, chunk.data.len())
+            })
+            .collect();
+        Self::new(backend, backend, ranges, reason.to_string())
+    }
+
+    #[must_use]
+    pub fn is_phase1_admission_recovery(&self) -> bool {
+        self.reason == "phase-one admission plan identity mismatch; discarded the untrusted plan and recomputed exact admission"
+            || self.reason == "malformed phase-one admission plan identity; discarded the untrusted plan and recomputed exact admission"
+    }
+
 
     #[must_use]
     pub fn recovered_bytes(&self) -> u64 {
@@ -66,11 +93,15 @@ impl BackendRecoveryReceipt {
 
     #[must_use]
     pub fn recovered_chunks(&self) -> usize {
+        let mut previous = None;
         self.ranges
             .iter()
-            .map(|range| range.chunk_index)
-            .collect::<std::collections::BTreeSet<_>>()
-            .len()
+            .filter(|range| {
+                let distinct = previous != Some(range.chunk_index);
+                previous = Some(range.chunk_index);
+                distinct
+            })
+            .count()
     }
 }
 
@@ -94,6 +125,8 @@ fn sanitize_recovery_reason(reason: String) -> String {
 pub struct CoalescedScanOutcome {
     pub matches: Vec<Vec<keyhog_core::RawMatch>>,
     pub recovery: Option<BackendRecoveryReceipt>,
+    /// GPU MoE recoveries emitted by this exact dispatch.
+    pub gpu_recovery_receipts: u64,
 }
 
 // Tests live in `tests/unit/engine_recovery.rs` (KH-1308).
@@ -103,15 +136,18 @@ pub(crate) fn canonicalize_ranges(
 ) -> Vec<RecoveredInputRange> {
     ranges.retain(|range| !range.is_empty());
     ranges.sort_unstable_by_key(|range| (range.chunk_index, range.byte_start, range.byte_end));
-    let mut canonical: Vec<RecoveredInputRange> = Vec::with_capacity(ranges.len());
-    for range in ranges {
-        if let Some(last) = canonical.last_mut() {
-            if last.chunk_index == range.chunk_index && range.byte_start <= last.byte_end {
-                last.byte_end = last.byte_end.max(range.byte_end);
-                continue;
-            }
+    let mut write = 0;
+    for read in 0..ranges.len() {
+        if write != 0
+            && ranges[write - 1].chunk_index == ranges[read].chunk_index
+            && ranges[read].byte_start <= ranges[write - 1].byte_end
+        {
+            ranges[write - 1].byte_end = ranges[write - 1].byte_end.max(ranges[read].byte_end);
+            continue;
         }
-        canonical.push(range);
+        ranges.swap(write, read);
+        write += 1;
     }
-    canonical
+    ranges.truncate(write);
+    ranges
 }

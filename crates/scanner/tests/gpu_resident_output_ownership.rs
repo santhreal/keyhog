@@ -53,8 +53,7 @@ fn resident_gpu_readback_reuse_preserves_owned_results_and_parity() {
             },
         },
     ];
-    let reference: Vec<_> = scanner
-        .scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback)
+    let reference: Vec<_> = scanner.scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback).expect("selected backend scan succeeds")
         .iter()
         .map(|matches| canonical(matches))
         .collect();
@@ -71,7 +70,7 @@ fn resident_gpu_readback_reuse_preserves_owned_results_and_parity() {
     );
 
     for candidate in acquired {
-        let first = scanner.scan_chunks_with_backend(&chunks, candidate.backend);
+        let first = scanner.scan_chunks_with_backend(&chunks, candidate.backend).expect("selected backend scan succeeds");
         let first_owned: Vec<_> = first.iter().map(|matches| canonical(matches)).collect();
         assert_eq!(
             first_owned,
@@ -81,7 +80,7 @@ fn resident_gpu_readback_reuse_preserves_owned_results_and_parity() {
         );
 
         for reuse in 1..=8 {
-            let next = scanner.scan_chunks_with_backend(&chunks, candidate.backend);
+            let next = scanner.scan_chunks_with_backend(&chunks, candidate.backend).expect("selected backend scan succeeds");
             let next_owned: Vec<_> = next.iter().map(|matches| canonical(matches)).collect();
             assert_eq!(
                 next_owned,

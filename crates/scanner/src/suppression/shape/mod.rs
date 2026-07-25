@@ -3,7 +3,9 @@
 //! is involved. Sibling modules (`api`, `decision`) chain them together
 //! into actual suppression decisions.
 
+mod assignment;
 mod canonical;
+mod detector;
 mod path;
 // `prose` is consumed by `engine::phase2_entropy::gates`, which is compiled
 // unconditionally (engine/mod.rs declares `mod phase2_entropy` with no cfg), so
@@ -16,20 +18,24 @@ pub(crate) mod public;
 pub(crate) mod source;
 
 #[cfg(feature = "entropy")]
-pub(crate) use canonical::looks_like_entropy_random_base64_blob_decoy;
+pub(crate) use assignment::looks_like_entropy_random_base64_blob_decoy;
+pub(crate) use assignment::{
+    generic_base64_candidate_is_ambiguous, looks_like_entropy_canonical_hex_digest,
+    looks_like_entropy_canonical_non_secret_shape, looks_like_entropy_uuid_shape,
+    looks_like_generic_random_base64_blob_decoy, HIGH_ENTROPY_BASE64_CUTOFF,
+};
 pub(crate) use canonical::{
-    generic_base64_candidate_is_ambiguous, has_n_or_more_consecutive_identical,
-    has_repeated_block_mask, has_three_or_more_consecutive_identical, is_canonical_service_hex_key,
-    is_dash_segmented_alnum_decoy, is_structured_dotted_token, is_uuid_v4_shape,
-    looks_like_aws_iam_arn, looks_like_bare_hex_digest, looks_like_base64_integrity_body,
+    has_n_or_more_consecutive_identical, has_repeated_block_mask,
+    has_three_or_more_consecutive_identical, is_dash_segmented_alnum_decoy,
+    is_structured_dotted_token, is_uuid_v4_shape, looks_like_aws_iam_arn,
+    looks_like_bare_hex_digest, looks_like_base64_integrity_body,
     looks_like_bracketed_template_placeholder, looks_like_dashed_serial_key,
-    looks_like_entropy_canonical_hex_digest, looks_like_entropy_canonical_non_secret_shape,
-    looks_like_entropy_uuid_shape, looks_like_generic_random_base64_blob_decoy,
     looks_like_prefixed_hash_digest, looks_like_prefixed_masked_sequence,
     looks_like_random_byte_base64_blob, looks_like_standard_base64_blob,
-    looks_like_trimmed_aws_iam_arn, looks_like_truncated_uuid_v4_suffix, HASH_ALGO_COLON_LABELS,
-    HASH_ALGO_INTEGRITY_LABELS, HIGH_ENTROPY_BASE64_CUTOFF, RFC7519_EXAMPLE_JWT_PREFIX,
+    looks_like_trimmed_aws_iam_arn, looks_like_truncated_uuid_v4_suffix,
+    HASH_ALGO_COLON_LABELS, HASH_ALGO_INTEGRITY_LABELS, RFC7519_EXAMPLE_JWT_PREFIX,
 };
+pub(crate) use detector::is_canonical_service_hex_key;
 pub(crate) use path::{
     looks_like_filename_reference, looks_like_scheme_prefixed_uri, looks_like_url_or_path_segment,
 };

@@ -1,9 +1,9 @@
 //! Law 10 guard: the per-chunk GPU trigger path (`collect_triggered_patterns_gpu`,
 //! the `scan_inner` entry) must never SILENTLY swap to SIMD/CPU. Every path off the
 //! GPU, missing matcher, missing backend handle, or a failed presence dispatch
-//! must record a concrete reason in `gpu_last_degrade_reason` and route through
-//! `fail_selected_gpu_dispatch`, which terminates the selected route with exit
-//! 12 instead of substituting CPU/SIMD.
+//! must record a concrete reason in `gpu_last_degrade_reason` and return a
+//! structured `ScanError::Gpu` through the selected-backend boundary instead
+//! of substituting CPU/SIMD or taking process-exit ownership.
 //!
 //! The pre-fix code returned `self.collect_triggered_patterns_simd(text)` directly
 //! on a missing backend and merely `tracing::debug!`'d a failed dispatch before
@@ -24,10 +24,11 @@ fn backend_triggered_src() -> String {
 fn per_chunk_gpu_failure_is_hard_and_reason_carrying() {
     let src = backend_triggered_src();
 
-    // The failure must go through the divergent, reason-carrying helper.
+    // The failure must record runtime status and return a structured GPU error.
     assert!(
-        src.contains("fail_selected_gpu_dispatch(self, &reason)"),
-        "collect_triggered_patterns_gpu must route every off-GPU path through fail_selected_gpu_dispatch"
+        src.contains("self.record_gpu_runtime_fault(reason.clone())")
+            && src.contains("Err(crate::error::ScanError::Gpu(reason))"),
+        "collect_triggered_patterns_gpu must return every off-GPU path as a recorded structured GPU error"
     );
 
     // Each distinct off-GPU cause must carry its own operator-visible reason.
@@ -56,10 +57,13 @@ fn per_chunk_gpu_has_no_silent_simd_swap() {
     let func = &src[start..end];
 
     assert!(
-        func.contains("fail_selected_gpu_dispatch(self, &reason)")
+        func.contains("self.record_gpu_runtime_fault(reason.clone())")
+            && func.contains("Err(crate::error::ScanError::Gpu(reason))")
+            && func.matches("return dispatch_failure(").count() >= 2
+            && func.contains("Err(error) => dispatch_failure(")
             && !func.contains("degraded_backend_after_gpu_failure")
-            && !func.contains("collect_triggered_patterns_for_backend(\n                text,"),
-        "the per-chunk GPU path must terminate the selected route without a CPU/SIMD substitution"
+            && !func.contains("process_exit"),
+        "the per-chunk GPU path must return dispatch failures without a CPU/SIMD substitution or process-exit ownership"
     );
 
     // The old silent `tracing::debug!`-then-fall-through on a failed dispatch must be gone.

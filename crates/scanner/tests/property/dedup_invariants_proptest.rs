@@ -294,7 +294,8 @@ fn test_window_boundary_dedup_non_contiguous_or_different_files() {
     ];
 
     let mut per_chunk_results = vec![Vec::new(), Vec::new()];
-    scan_chunk_boundaries(&scanner, &chunks, &mut per_chunk_results);
+    scan_chunk_boundaries(&scanner, &chunks, &mut per_chunk_results)
+        .expect("non-contiguous boundary scan should succeed");
 
     // Chunks are not contiguous; boundary scan must skip them and leave per_chunk_results empty
     assert!(per_chunk_results[0].is_empty());
@@ -323,7 +324,8 @@ fn test_window_boundary_dedup_non_contiguous_or_different_files() {
     ];
 
     let mut per_chunk_results_diff = vec![Vec::new(), Vec::new()];
-    scan_chunk_boundaries(&scanner, &chunks_diff_paths, &mut per_chunk_results_diff);
+    scan_chunk_boundaries(&scanner, &chunks_diff_paths, &mut per_chunk_results_diff)
+        .expect("different-path boundary scan should succeed");
     assert!(per_chunk_results_diff[0].is_empty());
     assert!(per_chunk_results_diff[1].is_empty());
 }
@@ -377,7 +379,8 @@ fn test_boundary_defensive_dedup_prevents_duplicate_reports() {
 
     // If already seen in chunk results, boundary scanner must NOT duplicate it
     let mut per_chunk_results = vec![vec![mock_match.clone()], Vec::new()];
-    scan_chunk_boundaries(&scanner, &chunks, &mut per_chunk_results);
+    scan_chunk_boundaries(&scanner, &chunks, &mut per_chunk_results)
+        .expect("deduplicating boundary scan should succeed");
 
     // Should not append duplicate
     assert_eq!(per_chunk_results[1].len(), 0);

@@ -247,7 +247,9 @@ fn every_positive_swept_through_every_encoding() {
                 let text = wrap_with_encoded_cred(&p.text, &p.credential, &encoded);
                 scanner.clear_fragment_cache();
                 let chunk = make_chunk(&text);
-                let matches = scanner.scan(&chunk);
+                let matches = scanner
+                    .scan(&chunk)
+                    .expect("encoded contract fixture scan should succeed");
                 let decode_hit = any_credential_contains(&matches, &p.credential);
                 let incidental_hit = !decode_hit && any_credential_contains(&matches, &encoded);
                 let bucket = per_enc.entry(enc.label()).or_insert((0, 0, 0));

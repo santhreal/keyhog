@@ -1,8 +1,6 @@
 use super::limits::{MAX_HEX_INPUT_LEN, MIN_HEX_CANDIDATE_LEN};
-use super::pipeline::{
-    push_batched_decoded_replacements, with_extracted_value_spans, ExtractedValue,
-};
-use super::{DecodeAdmissionSketch, Decoder, EncodedString};
+use super::pipeline::{with_extracted_value_spans, DecodedReplacementBatcher, ExtractedValue};
+use super::{DecodeAdmissionSketch, DecodeOutputSink, Decoder, EncodedString};
 use keyhog_core::Chunk;
 
 pub(super) struct HexDecoder;
@@ -31,22 +29,34 @@ impl Decoder for HexDecoder {
         })
     }
 
-    fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
+    fn decode_chunk_into(&self, chunk: &Chunk, sink: &mut dyn DecodeOutputSink) {
+        let mut batch = DecodedReplacementBatcher::new(sink, chunk, self.name());
+        let mut open = true;
         with_extracted_value_spans(&chunk.data, |candidates| {
-            let replacements = candidates
+            for candidate in candidates
                 .iter()
                 .filter(|candidate| is_hex_candidate(candidate, MIN_HEX_CANDIDATE_LEN))
-                .filter_map(|candidate| {
-                    let decoded = hex_decode(&candidate.value).ok()?;
+            {
+                if !open {
+                    break;
+                }
+                let Ok(decoded) = hex_decode(&candidate.value) else {
+                    // LAW10: recall-preserving: the original encoded bytes still
+                    // take the whole-chunk scan path unchanged; this trial decode failed.
+                    continue;
+                };
+                let Ok(text) = String::from_utf8(decoded) else {
                     // LAW10: binary output is not source text; the encoded span
                     // remains scanned unchanged.
-                    let text = String::from_utf8(decoded).ok()?;
-                    let (start, end) = candidate.span();
-                    Some((start, end, text))
-                })
-                .collect();
-            push_batched_decoded_replacements(chunk, replacements, self.name())
-        })
+                    continue;
+                };
+                let (start, end) = candidate.span();
+                open = batch.push(start, end, text);
+            }
+        });
+        if open {
+            batch.finish();
+        }
     }
 }
 

@@ -40,6 +40,7 @@ password = "companion.confluent_api_secret"
 
 [detector.verify.success]
 status = 200
+policy = "status_with_error_backstop"
 
 [[detector.tests]]
 test_positive = "cfltKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"

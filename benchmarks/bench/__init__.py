@@ -17,6 +17,7 @@ functions that need them.
 
 from __future__ import annotations
 
-SCHEMA_VERSION = "bench-v3"
+SCHEMA_VERSION = "bench-v4"
+LEGACY_SCHEMA_VERSIONS = frozenset({"bench-v3"})
 
-__all__ = ["SCHEMA_VERSION"]
+__all__ = ["LEGACY_SCHEMA_VERSIONS", "SCHEMA_VERSION"]

@@ -235,14 +235,26 @@ def test_keyhog_parser_requires_complete_resolved_mode_envelope(tmp_path):
                         "preset": "deep",
                         "effective": {"max_decode_depth": "10"},
                         "overrides": [],
-                    }
+                    },
+                    "static_recovery": {
+                        "schema_version": "static-recovery-v1",
+                        "supported": 2,
+                        "unsupported": 1,
+                        "erroneous": 1,
+                        "reasons": {
+                            "unsupported_call": 1,
+                            "json_utf8": 1,
+                        },
+                    },
                 },
                 "findings": [],
             }
         )
     )
     assert scanners.KeyhogScanner._parse(output, config_id="deep") == []
-    assert scanners.KeyhogScanner._read_scan_manifest(output)["preset"] == "deep"
+    manifest, recovery = scanners.KeyhogScanner._read_scan_metadata(output)
+    assert manifest["preset"] == "deep"
+    assert recovery["supported"] == 2
 
     recovered = json.loads(output.read_text())
     recovered["scan_status"] = "complete_after_recovery"
@@ -273,6 +285,19 @@ def test_keyhog_parser_requires_complete_resolved_mode_envelope(tmp_path):
         )
     )
     with pytest.raises(RuntimeError, match="resolved_scan manifest"):
+        scanners.KeyhogScanner._parse(output, config_id="deep")
+
+    output.write_text(
+        json.dumps(
+            {
+                "schema_version": {"major": 1, "minor": 8},
+                "scan_status": "success",
+                "metadata": {"resolved_scan": {}},
+                "findings": [],
+            }
+        )
+    )
+    with pytest.raises(RuntimeError, match="static_recovery telemetry"):
         scanners.KeyhogScanner._parse(output, config_id="deep")
 
 

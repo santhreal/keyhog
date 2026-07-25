@@ -13,11 +13,19 @@ from .gate import DEFAULT_DETECTOR_FP_ABS, DEFAULT_DETECTOR_FP_REL
 from .leaderboard import RequiredBenchmarkUnavailable, run_leaderboard
 from .scanners import SCANNER_NAMES
 from .report import (
+    ReportEmptyError,
+    ResultLoadError,
+    ResultSelectionError,
+    assert_reports_populated,
     build_sections,
+    default_run_set_path,
     inject,
     load_results,
+    load_run_set,
     missing_marker_sections,
     render_calibration,
+    select_declared_results,
+    stale_report_paths,
     write_calibration_reports,
     write_reports,
 )
@@ -69,8 +77,20 @@ def _leaderboard(args: argparse.Namespace) -> int:
 
 
 def _report(args: argparse.Namespace) -> int:
-    import sys
-    results = load_results(args.results)
+    try:
+        results = load_results(args.results)
+        run_set_path = args.run_set or default_run_set_path(args.results)
+        if run_set_path is not None:
+            results = select_declared_results(
+                results,
+                args.corpus,
+                load_run_set(run_set_path),
+            )
+        assert_reports_populated(results, args.corpus)
+    except (ReportEmptyError, ResultLoadError, ResultSelectionError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
     # --check is a read-only gate (is the README up to date?); it must NOT
     # rewrite reports/ as a side effect, or a CI/prerelease check run from stale
     # results/ silently degrades the committed rollups. Only write when rendering.
@@ -87,6 +107,18 @@ def _report(args: argparse.Namespace) -> int:
             print(
                 f"README is missing BENCH markers for: {', '.join(absent)} "
                 f"(injection cannot run, restore the <!-- BENCH:*:start/end --> markers).",
+                file=sys.stderr,
+            )
+            return 1
+        stale_reports = stale_report_paths(
+            results,
+            args.corpus,
+            args.reports,
+        )
+        if stale_reports:
+            joined = ", ".join(str(path) for path in stale_reports)
+            print(
+                f"Benchmark reports are stale: `make report` would change {joined}.",
                 file=sys.stderr,
             )
             return 1
@@ -235,12 +267,21 @@ def main(argv: list[str] | None = None) -> int:
     report.add_argument("--results", type=pathlib.Path, default=pathlib.Path("results"))
     report.add_argument("--reports", type=pathlib.Path, default=pathlib.Path("reports"))
     report.add_argument("--corpus", default="mirror")
+    report.add_argument(
+        "--run-set",
+        type=pathlib.Path,
+        default=None,
+        help=(
+            "TOML inventory binding rows to paths relative to --results and exact identities. "
+            "The committed results directory uses run-sets/canonical.toml by default."
+        ),
+    )
     report.add_argument("--readme", type=pathlib.Path, default=_REPO_ROOT / "README.md",
                         help="README to inject generated tables into (between BENCH markers).")
     report.add_argument("--inject", action="store_true",
                         help="Rewrite the README between <!-- BENCH:* --> markers.")
     report.add_argument("--check", action="store_true",
-                        help="Exit 1 if --inject would change the README (idempotence gate).")
+                        help="Exit 1 if reports or the README would change (idempotence gate).")
 
     calibrate = sub.add_parser(
         "calibrate",
@@ -274,8 +315,8 @@ def main(argv: list[str] | None = None) -> int:
     gate.add_argument("--min-precision", type=float, default=None)
     gate.add_argument("--min-recall", type=float, default=None)
     gate.add_argument("--baseline", type=pathlib.Path, default=None,
-                      help="committed RunResult (file or dir) keyhog must not "
-                           "regress below on F1")
+                      help="committed RunResult (file) or baselines directory "
+                           "containing canonical.toml; keyhog must not regress below on F1")
     gate.add_argument("--epsilon", type=float, default=0.0)
     gate.add_argument("--no-beat-competitors", action="store_true",
                       help="regression-only gate (skip the beat-competitors check)")

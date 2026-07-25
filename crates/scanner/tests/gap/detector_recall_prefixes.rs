@@ -67,7 +67,7 @@ fn scan(text: &str, path: &str) -> Vec<RawMatch> {
         },
     };
     scanner().clear_fragment_cache();
-    scanner().scan(&chunk)
+    scanner().scan(&chunk).expect("test scan succeeds")
 }
 
 /// All matches attributed to `detector_id`.

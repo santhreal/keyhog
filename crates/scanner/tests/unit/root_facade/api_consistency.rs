@@ -106,7 +106,7 @@ fn daemon_style_stdin_aws_chunk_reports_named_detector() {
         },
     };
     for backend in [ScanBackend::SimdCpu, ScanBackend::CpuFallback] {
-        let matches = scanner.scan_with_backend(&chunk, backend);
+        let matches = scanner.scan_with_backend(&chunk, backend).expect("selected backend scan succeeds");
         assert!(
             matches.iter().any(|m| {
                 m.detector_id.as_ref() == "aws-access-key"
@@ -129,7 +129,7 @@ fn scan_and_scan_with_deadline_none_agree() {
         "const AWS = \"AKIAQYLPMN5HFIQR7XYA\";\nconst PAT = \"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\";\n",
         "fixtures/aws_pat.rs",
     );
-    let auto = key(&scanner.scan(&chunk));
+    let auto = key(&scanner.scan(&chunk).expect("test scan succeeds"));
     let deadline_none = key(&keyhog_scanner::testing::scan_with_deadline(
         &scanner, &chunk, None,
     ));
@@ -149,9 +149,9 @@ fn scan_with_backend_each_matches_scan_chunks_with_backend() {
         "fixtures/stripe_aws.yml",
     );
     for backend in [ScanBackend::SimdCpu, ScanBackend::CpuFallback] {
-        let single = key(&scanner.scan_with_backend(&chunk, backend));
+        let single = key(&scanner.scan_with_backend(&chunk, backend).expect("selected backend scan succeeds"));
         let multi =
-            key_chunks(&scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), backend));
+            key_chunks(&scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), backend).expect("selected backend scan succeeds"));
         assert_eq!(
             single,
             multi,
@@ -174,9 +174,9 @@ fn scan_repeated_invocations_produce_identical_findings() {
         "GITHUB_TOKEN=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\n",
         "env.txt",
     );
-    let a = key(&scanner.scan(&chunk));
-    let b = key(&scanner.scan(&chunk));
-    let c = key(&scanner.scan(&chunk));
+    let a = key(&scanner.scan(&chunk).expect("test scan succeeds"));
+    let b = key(&scanner.scan(&chunk).expect("test scan succeeds"));
+    let c = key(&scanner.scan(&chunk).expect("test scan succeeds"));
     assert_eq!(a, b);
     assert_eq!(b, c);
 }
@@ -186,7 +186,7 @@ fn empty_chunks_slice_returns_empty_results() {
     let _telemetry_guard = super::super::telemetry_serial::lock();
     let scanner = scanner();
     scanner.clear_fragment_cache();
-    let r = scanner.scan_chunks_with_backend(&[], ScanBackend::SimdCpu);
+    let r = scanner.scan_chunks_with_backend(&[], ScanBackend::SimdCpu).expect("selected backend scan succeeds");
     assert!(
         r.is_empty(),
         "empty input slice must return empty result slice"
@@ -207,7 +207,7 @@ fn multi_chunk_input_preserves_per_chunk_attribution() {
             "d.txt",
         ),
     ];
-    let results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu);
+    let results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu).expect("selected backend scan succeeds");
     assert_eq!(
         results.len(),
         chunks.len(),

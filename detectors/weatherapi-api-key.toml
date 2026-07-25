@@ -43,6 +43,7 @@ type = "none"
 
 [detector.verify.success]
 status = 200
+policy = "status_with_error_backstop"
 
 [[detector.tests]]
 test_positive = "WEATHERAPI           _       _ __    _       _           _   _    _ _      _ __     _ _     _      _ API _       KEY =   =\"' \" =           \"    :   == \":  = : : ': =    =='\"  \"\"='  = '  :  : '::' \"  =\"   : wlTYc8i0vvSM1qBeVx9Rw"

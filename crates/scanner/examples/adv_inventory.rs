@@ -108,7 +108,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         ..Default::default()
                     },
                 };
-                let matches = scanner.scan(&chunk);
+                let matches = scanner.scan(&chunk)?;
                 let ok = matches
                     .iter()
                     .any(|m| m.credential.as_ref().contains(&p.credential));

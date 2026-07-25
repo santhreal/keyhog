@@ -31,7 +31,7 @@ fn scan_scans_keyhogignore_path_when_source_hands_it_over() {
             ..Default::default()
         },
     };
-    let matches = s.scan(&chunk);
+    let matches = s.scan(&chunk).expect("test scan succeeds");
     assert_eq!(
         matches.len(),
         1,

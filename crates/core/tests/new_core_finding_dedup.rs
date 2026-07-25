@@ -84,8 +84,9 @@ fn raw_match_deduplication_key_is_detector_and_credential() {
     assert_eq!(key.credential, "AKIAIOSFODNN7EXAMPLE");
 }
 
+/// Prevents deduplicated pre-verification findings from serializing credentials or companions.
 #[test]
-fn deduped_match_serializes_companions_in_key_order() {
+fn deduped_match_serialization_fails_closed_without_plaintext() {
     let mut deduped = dedup_matches(
         vec![{
             let mut m = raw(
@@ -93,26 +94,28 @@ fn deduped_match_serializes_companions_in_key_order() {
                 "Detector",
                 "svc",
                 Severity::Medium,
-                "cred",
+                "credential-plaintext",
                 loc("f", 1, 0),
                 Some(0.7),
             );
-            m.companions.insert("zeta".into(), "last".into());
-            m.companions.insert("alpha".into(), "first".into());
-            m.companions.insert("middle".into(), "mid".into());
+            m.companions.insert("zeta".into(), "companion-last".into());
+            m.companions.insert("alpha".into(), "companion-first".into());
+            m.companions.insert("middle".into(), "companion-mid".into());
             m
         }],
         &DedupScope::Credential,
     );
-    let json = serde_json::to_string(&deduped.remove(0)).expect("deduped match serializes");
-    let alpha = json.find(r#""alpha":"first""#).expect("alpha companion");
-    let middle = json.find(r#""middle":"mid""#).expect("middle companion");
-    let zeta = json.find(r#""zeta":"last""#).expect("zeta companion");
+    let mut output = Vec::new();
+    let error = serde_json::to_writer(&mut output, &deduped.remove(0))
+        .expect_err("DedupedMatch must refuse plaintext serialization")
+        .to_string();
+    let partial = String::from_utf8_lossy(&output);
 
-    assert!(
-        alpha < middle && middle < zeta,
-        "companion keys must serialize in lexical order for byte-stable reports: {json}"
-    );
+    assert!(!partial.contains("credential-plaintext"));
+    assert!(!partial.contains("companion-first"));
+    assert!(!partial.contains("companion-mid"));
+    assert!(!partial.contains("companion-last"));
+    assert!(error.contains("SensitiveString refuses implicit plaintext serialization"));
 }
 
 #[test]
@@ -278,11 +281,12 @@ fn raw_match_sanitize_floats_keeps_finite() {
 }
 
 // ---------------------------------------------------------------------------
-// RawMatch serde round-trip (Arc<str> + hash-hex adapters).
+// RawMatch serde boundary (fail-closed output + compatible input).
 // ---------------------------------------------------------------------------
 
+/// Prevents raw-match output from leaking a credential while retaining legacy input compatibility.
 #[test]
-fn raw_match_serde_roundtrip_preserves_fields() {
+fn raw_match_serde_refuses_plaintext_but_deserializes_legacy_wire() {
     let m = raw(
         "github-pat",
         "GitHub PAT",
@@ -292,12 +296,31 @@ fn raw_match_serde_roundtrip_preserves_fields() {
         loc("src/main.rs", 12, 40),
         Some(0.83),
     );
-    let json = serde_json::to_string(&m).unwrap();
-    // Hash serializes as 64-char lowercase hex, not a byte array.
-    assert!(json.contains(&hex_encode(&m.credential_hash)));
-    // detector_id serializes as a bare string via serde_arc_str.
-    assert!(json.contains("\"detector_id\":\"github-pat\""));
-    let back: RawMatch = serde_json::from_str(&json).unwrap();
+    let error = serde_json::to_string(&m).expect_err("RawMatch output must fail closed");
+    assert!(error
+        .to_string()
+        .contains("SensitiveString refuses implicit plaintext serialization"));
+
+    let wire = serde_json::json!({
+        "detector_id": "github-pat",
+        "detector_name": "GitHub PAT",
+        "service": "github",
+        "severity": "high",
+        "credential": "ghp_exampletoken1234567890",
+        "credential_hash": hex_encode(m.credential_hash),
+        "companions": {},
+        "location": {
+            "source": "filesystem",
+            "file_path": "src/main.rs",
+            "line": 12,
+            "offset": 40,
+            "commit": null,
+            "author": null,
+            "date": null
+        },
+        "confidence": 0.83
+    });
+    let back: RawMatch = serde_json::from_value(wire).unwrap();
     assert_eq!(back, m);
     assert_eq!(&*back.credential, "ghp_exampletoken1234567890");
     assert_eq!(back.location.line, Some(12));
@@ -389,7 +412,7 @@ fn to_redacted_strips_plaintext_keeps_hash_and_preview() {
         Some(0.77),
     );
     m.companions
-        .insert("secret".to_string(), "another_secret_value".to_string());
+        .insert("secret".into(), "another_secret_value".to_string());
 
     let red = m.to_redacted();
     assert_eq!(&*red.detector_id, "slack");

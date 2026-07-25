@@ -124,6 +124,16 @@ run "Gate #1i self-test: dangling doc version pins are detected" \
   python3 scripts/gates/doc_version_pins.py --self-test
 run "Gate #1i: documented action/install pins resolve to v0 or the current version" \
   python3 scripts/gates/doc_version_pins.py
+run "Release documentation bump tests: measured benchmark provenance stays immutable" \
+  python3 -B -m unittest scripts.tests.test_bump_doc_versions -v
+run "Documentation truth tests: measured versions remain bound to evidence" \
+  python3 -B -m unittest scripts.tests.test_docs_truth -v
+run "Crate changelog gate: every publishable crate has release notes" \
+  python3 -B scripts/gates/crate_changelogs.py --allow-released \
+    crates/cli/CHANGELOG.md crates/core/CHANGELOG.md crates/scanner/CHANGELOG.md \
+    crates/sources/CHANGELOG.md crates/verifier/CHANGELOG.md
+run "Crate changelog tests: missing and empty release sections fail closed" \
+  python3 -B -m unittest scripts.tests.test_crate_changelogs -v
 run "Package license gate: publishable crate roots use canonical bytes" \
   python3 -B scripts/gates/package_licenses.py
 run "Gate #1f self-test: mutable GitHub Action refs are detected" \

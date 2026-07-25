@@ -14,6 +14,7 @@ use crate::decode::DecodeAdmission;
 #[cfg(any(feature = "decode", test))]
 use crate::decode::DecodeAdmissionSketch;
 use crate::decode::Decoder;
+use aho_corasick::AhoCorasick;
 use parking_lot::RwLock;
 #[cfg(test)]
 use std::cell::RefCell;
@@ -53,7 +54,7 @@ impl RegisteredDecoder {
         }
     }
 
-    #[cfg(feature = "decode")]
+    #[cfg(any(feature = "decode", test))]
     fn admission(
         &self,
         chunk: &keyhog_core::Chunk,
@@ -83,15 +84,17 @@ impl RegisteredDecoder {
         }
     }
 
-    pub(super) fn decode_chunk(
+
+    pub(super) fn decode_chunk_into(
         &self,
         chunk: &keyhog_core::Chunk,
         policy: &super::super::policy::CompiledDecodeTransformPolicy,
-    ) -> Vec<keyhog_core::Chunk> {
+        sink: &mut dyn crate::decode::DecodeOutputSink,
+    ) {
         match self {
-            Self::Shared(decoder) => decoder.decode_chunk(chunk),
-            Self::Reverse => ReverseDecoder.decode_chunk_with_policy(chunk, policy),
-            Self::Caesar => CaesarDecoder.decode_chunk_with_policy(chunk, policy),
+            Self::Shared(decoder) => decoder.decode_chunk_into(chunk, sink),
+            Self::Reverse => ReverseDecoder.decode_chunk_with_policy_into(chunk, policy, sink),
+            Self::Caesar => CaesarDecoder.decode_chunk_with_policy_into(chunk, policy, sink),
         }
     }
 }
@@ -104,11 +107,14 @@ pub enum DecoderRegistrationError {
     InvalidVersion { name: &'static str },
     #[error("decoder name {0:?} is already registered")]
     DuplicateName(&'static str),
+    #[error("could not compile the all-decoder trigger automaton: {0}")]
+    TriggerBuild(String),
 }
 
 #[derive(Clone)]
 pub(crate) struct CompiledDecoderPlan {
     decoders: Arc<Vec<RegisteredDecoder>>,
+    all_decoder_trigger: Option<AhoCorasick>,
     identity: u64,
 }
 
@@ -117,6 +123,10 @@ impl std::fmt::Debug for CompiledDecoderPlan {
         formatter
             .debug_struct("CompiledDecoderPlan")
             .field("decoder_count", &self.decoders.len())
+            .field(
+                "has_all_decoder_trigger",
+                &self.all_decoder_trigger.is_some(),
+            )
             .field("identity", &self.identity)
             .finish()
     }
@@ -139,8 +149,10 @@ impl CompiledDecoderPlan {
         }
         let mut bytes = [0u8; 8];
         bytes.copy_from_slice(&hasher.finalize().as_bytes()[..8]);
+        let all_decoder_trigger = compile_all_decoder_trigger(&decoders)?;
         Ok(Self {
             decoders,
+            all_decoder_trigger,
             identity: u64::from_le_bytes(bytes),
         })
     }
@@ -149,9 +161,15 @@ impl CompiledDecoderPlan {
         self.identity
     }
 
-    #[cfg(feature = "decode")]
+    #[cfg(any(feature = "decode", test))]
     pub(crate) fn decoders(&self) -> &[RegisteredDecoder] {
         &self.decoders
+    }
+
+    pub(crate) fn all_decoder_may_match(&self, data: &str) -> bool {
+        self.all_decoder_trigger
+            .as_ref()
+            .is_none_or(|trigger| trigger.is_match(data.as_bytes()))
     }
 }
 
@@ -176,6 +194,43 @@ fn hash_descriptor(hasher: &mut blake3::Hasher, name: &str, version: &str) {
         hasher.update(&(value.len() as u64).to_le_bytes());
         hasher.update(value);
     }
+}
+
+fn is_default_decoder_name(name: &str) -> bool {
+    matches!(
+        name,
+        "base64"
+            | "hex"
+            | "url"
+            | "quoted-printable"
+            | "html-named-entity"
+            | "html-numeric-entity"
+            | "octal-escape"
+            | "mime-encoded-word"
+            | "json"
+            | "unicode-escape"
+            | "z85"
+            | "javascript-static"
+            | "reverse"
+            | "caesar"
+    )
+}
+
+fn compile_all_decoder_trigger(
+    decoders: &[RegisteredDecoder],
+) -> Result<Option<AhoCorasick>, DecoderRegistrationError> {
+    if decoders
+        .iter()
+        .any(|decoder| !is_default_decoder_name(decoder.name()))
+    {
+        return Ok(None);
+    }
+    let patterns = (b'!'..=b'~').map(|byte| [byte]);
+    AhoCorasick::builder()
+        .kind(Some(aho_corasick::AhoCorasickKind::ContiguousNFA))
+        .build(patterns)
+        .map(Some)
+        .map_err(|error| DecoderRegistrationError::TriggerBuild(error.to_string()))
 }
 
 #[cfg(test)]

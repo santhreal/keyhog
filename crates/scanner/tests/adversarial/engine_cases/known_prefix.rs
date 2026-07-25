@@ -36,7 +36,7 @@ fn known_prefix_credential_always_detected_despite_low_confidence_context() {
         "// TODO: remove before deploy\n// STRIPE_KEY={}\n",
         stripe_credential
     ));
-    let matches = scanner.scan(&chunk);
+    let matches = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
 
     assert!(
         matches
@@ -147,7 +147,7 @@ fn checksum_valid_known_prefix_survives_post_scoring_penalties() {
     };
     let scanner = compile_test_scanner(vec![detector]);
     let chunk = make_chunk(&format!("GITHUB_TOKEN={}\n", credential));
-    let matches = scanner.scan(&chunk);
+    let matches = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
 
     assert!(
         matches.iter().any(|m| m.credential.as_ref() == credential),
@@ -161,7 +161,7 @@ fn checksum_valid_known_prefix_survives_post_scoring_penalties() {
     }
 
     let invalid = format!("{}A", &credential[..credential.len() - 1]);
-    let invalid_matches = scanner.scan(&make_chunk(&format!("GITHUB_TOKEN={invalid}\n")));
+    let invalid_matches = scanner.scan(&make_chunk(&format!("GITHUB_TOKEN={invalid}\n"))).expect(concat!(module_path!(), ": scan should succeed"));
     assert!(
         invalid_matches
             .iter()

@@ -206,9 +206,15 @@ proptest! {
         // cache only accumulates within a single intentional scan run.
         scanner.clear_fragment_cache();
         let chunks = vec![make_chunk(&input)];
-        let simd = collect_keys(&scanner.scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu), &input);
+        let simd_results = scanner
+            .scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu)
+            .expect("SIMD ASCII parity scan should succeed");
+        let simd = collect_keys(&simd_results, &input);
         scanner.clear_fragment_cache();
-        let cpu = collect_keys(&scanner.scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback), &input);
+        let cpu_results = scanner
+            .scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback)
+            .expect("CPU fallback ASCII parity scan should succeed");
+        let cpu = collect_keys(&cpu_results, &input);
         prop_assert_eq!(
             &simd, &cpu,
             "SIMD/CpuFallback divergence on input.len={}", input.len()
@@ -222,9 +228,15 @@ proptest! {
         let scanner = locked_scanner();
         scanner.clear_fragment_cache();
         let chunks = vec![make_chunk(&input)];
-        let simd = collect_keys(&scanner.scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu), &input);
+        let simd_results = scanner
+            .scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu)
+            .expect("SIMD prefix-seeded parity scan should succeed");
+        let simd = collect_keys(&simd_results, &input);
         scanner.clear_fragment_cache();
-        let cpu = collect_keys(&scanner.scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback), &input);
+        let cpu_results = scanner
+            .scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback)
+            .expect("CPU fallback prefix-seeded parity scan should succeed");
+        let cpu = collect_keys(&cpu_results, &input);
         prop_assert_eq!(
             &simd, &cpu,
             "SIMD/CpuFallback divergence on prefix-seeded input.len={}", input.len()
@@ -242,10 +254,10 @@ proptest! {
     ) {
         let scanner = locked_scanner();
         scanner.clear_fragment_cache();
-        let single = collect_keys(&scanner.scan_chunks_with_backend(
-            &[make_chunk(&input)],
-            ScanBackend::SimdCpu,
-        ), &input);
+        let single_results = scanner
+            .scan_chunks_with_backend(&[make_chunk(&input)], ScanBackend::SimdCpu)
+            .expect("single-chunk SIMD scan should succeed");
+        let single = collect_keys(&single_results, &input);
 
         // Pick a UTF-8 boundary near split_frac% of the input length.
         let split_byte = {
@@ -272,10 +284,10 @@ proptest! {
         // both start from the same empty state; otherwise the split
         // scan reads fragments left over from the single-chunk scan.
         scanner.clear_fragment_cache();
-        let split = collect_keys(&scanner.scan_chunks_with_backend(
-            &[chunk_a, chunk_b],
-            ScanBackend::SimdCpu,
-        ), &input);
+        let split_results = scanner
+            .scan_chunks_with_backend(&[chunk_a, chunk_b], ScanBackend::SimdCpu)
+            .expect("split-chunk SIMD scan should succeed");
+        let split = collect_keys(&split_results, &input);
 
         // The split finding set must contain every single-chunk finding.
         // (It MAY add boundary findings the single-chunk pass missed -
@@ -299,7 +311,9 @@ proptest! {
     ) {
         let scanner = locked_scanner();
         let text = String::from_utf8_lossy(&bytes).into_owned();
-        let _ = scanner.scan_chunks_with_backend(&[make_chunk(&text)], ScanBackend::SimdCpu);
+        scanner
+            .scan_chunks_with_backend(&[make_chunk(&text)], ScanBackend::SimdCpu)
+            .expect("arbitrary-input SIMD scan should succeed");
     }
 
     #[test]
@@ -308,6 +322,8 @@ proptest! {
     ) {
         let scanner = locked_scanner();
         let text = String::from_utf8_lossy(&bytes).into_owned();
-        let _ = scanner.scan_chunks_with_backend(&[make_chunk(&text)], ScanBackend::CpuFallback);
+        scanner
+            .scan_chunks_with_backend(&[make_chunk(&text)], ScanBackend::CpuFallback)
+            .expect("arbitrary-input CPU fallback scan should succeed");
     }
 }

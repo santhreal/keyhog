@@ -105,7 +105,7 @@ fn calibrate_fp_flag_records_false_positive() {
     let output = Command::new(binary())
         .arg("calibrate")
         .arg("--fp")
-        .arg("github-pat")
+        .arg("github-pat-fine-grained")
         .arg("--cache")
         .arg(&cache)
         .output()
@@ -124,7 +124,7 @@ fn calibrate_fp_flag_records_false_positive() {
 
     let content = std::fs::read_to_string(&cache).expect("read cache");
     assert!(
-        content.contains("github-pat") || content.contains("\"fp\"") || content.contains("false"),
+        content.contains("github-pat-fine-grained") || content.contains("\"fp\"") || content.contains("false"),
         "calibration cache should record the false positive; content: {content}"
     );
 }
@@ -141,7 +141,7 @@ fn calibrate_multiple_tp_flags_accumulate() {
         .arg("--tp")
         .arg("aws-access-key")
         .arg("--tp")
-        .arg("github-pat")
+        .arg("github-pat-fine-grained")
         .arg("--cache")
         .arg(&cache)
         .output()
@@ -156,7 +156,7 @@ fn calibrate_multiple_tp_flags_accumulate() {
     let content = std::fs::read_to_string(&cache).expect("read cache");
     // Both detectors should be present in the cache.
     assert!(
-        (content.contains("aws-access-key") && content.contains("github-pat"))
+        (content.contains("aws-access-key") && content.contains("github-pat-fine-grained"))
             || content.len() > 10,
         "calibration cache should record both detectors; content: {content}"
     );

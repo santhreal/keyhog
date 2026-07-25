@@ -13,8 +13,9 @@ mod scanner;
 
 use calibration::load_explicit_scan_calibration;
 pub(crate) use detectors::{
-    auto_discover_detectors, detector_compile_failed, load_detectors_no_cache,
-    load_detectors_or_embedded, load_detectors_with_cache, validate_explicit_detector_path,
+    auto_discover_detectors, detector_compile_failed, load_detectors_or_embedded,
+    load_effective_detector_corpus, validate_detector_mode_selection,
+    validate_explicit_detector_path, DetectorCorpusProvenance,
 };
 pub(crate) use effective::{autoroute_config_digest, render_effective_config};
 pub(crate) use engine_runtime::ResolvedEngineRuntimeSettings;

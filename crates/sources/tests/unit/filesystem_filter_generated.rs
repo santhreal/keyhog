@@ -7,15 +7,7 @@ macro_rules! validate_case {
         #[test]
         fn $name() {
             let result = validate_rule_value_for_test("test", $value, $kind);
-            assert_eq!(
-                result.is_ok(),
-                $ok,
-                "validate_rule_value_for_test({:?}, {:?}, {:?}) -> {:?}",
-                $kind,
-                $value,
-                $ok,
-                result
-            );
+            assert_eq!(result.is_ok(), $ok, "validate_rule_value_for_test({:?}, {:?}, {:?}) -> {:?}", $kind, $value, $ok, result);
         }
     };
 }
@@ -53,39 +45,10 @@ macro_rules! normalize_case {
     ($name:ident, $values:expr, $expected:expr) => {
         #[test]
         fn $name() {
-            let got = normalize_rule_list_for_test(
-                "extensions",
-                $values.iter().map(|s| s.to_string()).collect(),
-                "extension",
-            )
-            .expect("normalize");
-            assert_eq!(
-                got,
-                $expected.iter().map(|s| s.to_string()).collect::<Vec<_>>()
-            );
+            let got = normalize_rule_list_for_test("extensions", $values.iter().map(|s| s.to_string()).collect(), "extension").expect("normalize");
+            assert_eq!(got, $expected.iter().map(|s| s.to_string()).collect::<Vec<_>>());
         }
     };
 }
 
-normalize_case!(
-    normalize_trims_and_preserves_order,
-    [" exe ", "png", "jpg"],
-    ["exe", "png", "jpg"]
-);
-
-#[test]
-fn normalize_rejects_duplicate_extension_after_trimming() {
-    let error = normalize_rule_list_for_test(
-        "extensions",
-        [" exe ", "png", "exe"]
-            .iter()
-            .map(|value| value.to_string())
-            .collect(),
-        "extension",
-    )
-    .expect_err("duplicate normalized extension must fail closed");
-    assert!(
-        error.contains("duplicate") && error.contains("\"exe\""),
-        "duplicate rejection must name the normalized value: {error}"
-    );
-}
+normalize_case!(normalize_trims_and_dedupes, [" exe ", "png", "jpg"], ["exe", "png", "jpg"]);

@@ -63,8 +63,7 @@ fn chunk(text: &str) -> Chunk {
 fn cpu_ids_for(scanner: &CompiledScanner, text: &str, credential: &str) -> Vec<String> {
     scanner.clear_fragment_cache();
     let c = chunk(text);
-    scanner
-        .scan_with_backend(&c, ScanBackend::CpuFallback)
+    scanner.scan_with_backend(&c, ScanBackend::CpuFallback).expect("selected backend scan succeeds")
         .iter()
         .filter(|m| m.credential.as_ref().contains(credential))
         .map(|m| m.detector_id.as_ref().to_string())
@@ -464,9 +463,7 @@ fn github_token_id_is_backend_invariant_cpu_vs_default() {
     let cpu_ids = cpu_ids_for(&scanner, &text, token);
 
     scanner.clear_fragment_cache();
-    let default_ids: Vec<String> = scanner
-        .scan(&chunk(&text))
-        .iter()
+    let default_ids: Vec<String> = scanner.scan(&chunk(&text)).expect("scanner call should succeed").iter()
         .filter(|m| m.credential.as_ref().contains(token))
         .map(|m| m.detector_id.as_ref().to_string())
         .collect();

@@ -144,7 +144,9 @@ const LAYOUTS: &[Layout] = &[Layout::Lines, Layout::Paragraph];
 
 fn surfaces(scanner: &CompiledScanner, text: &str, credential: &str) -> bool {
     scanner.clear_fragment_cache();
-    let matches = scanner.scan(&make_chunk(text));
+    let matches = scanner
+        .scan(&make_chunk(text))
+        .expect("standalone multi-secret classification scan should succeed");
     matches
         .iter()
         .any(|m| m.credential.as_ref().contains(credential))
@@ -195,7 +197,9 @@ fn credential_sufficient_secrets_survive_colocation() {
                 let texts: Vec<String> = window.iter().map(|p| p.text.clone()).collect();
                 let fixture = layout.join(&texts);
                 scanner.clear_fragment_cache();
-                let matches = scanner.scan(&make_chunk(&fixture));
+                let matches = scanner
+                    .scan(&make_chunk(&fixture))
+                    .expect("co-located multi-secret regression scan should succeed");
 
                 let base = wi * pack_size;
                 for (offset, p) in window.iter().enumerate() {

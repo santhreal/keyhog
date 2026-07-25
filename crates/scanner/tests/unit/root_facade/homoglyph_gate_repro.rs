@@ -27,10 +27,8 @@ fn stripe_corners() {
         keyhog_scanner::testing::set_phase2_anchor_mode(&scanner, Some(a));
         keyhog_scanner::testing::set_phase2_homoglyph_gate(&scanner, Some(g));
         scanner.clear_fragment_cache();
-        let r = scanner.scan_chunks_with_backend(
-            std::slice::from_ref(&chunk(input)),
-            ScanBackend::CpuFallback,
-        );
+        let r = scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk(input)),
+        ScanBackend::CpuFallback,).expect("selected backend scan succeeds");
         let dets: Vec<String> = r
             .iter()
             .flatten()

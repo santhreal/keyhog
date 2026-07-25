@@ -40,8 +40,7 @@ fn matches_at(entropy_threshold: f64) -> Vec<RawMatch> {
             ..Default::default()
         },
     };
-    scanner(entropy_threshold)
-        .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+    scanner(entropy_threshold).scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback).expect("selected backend scan succeeds")
         .into_iter()
         .flatten()
         .collect()

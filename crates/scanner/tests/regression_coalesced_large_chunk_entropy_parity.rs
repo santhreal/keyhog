@@ -105,10 +105,13 @@ fn coalesced_matches_per_chunk_on_large_no_hit_entropy_chunk() {
     let c = large_no_hit_chunk_with_entropy_token(&token);
 
     SCANNER.clear_fragment_cache();
-    let per_chunk = keyset(&SCANNER.scan(&c));
+    let per_chunk_matches = SCANNER
+        .scan(&c)
+        .expect("large-chunk entropy reference scan should succeed");
+    let per_chunk = keyset(&per_chunk_matches);
 
     SCANNER.clear_fragment_cache();
-    let coalesced_nested = SCANNER.scan_coalesced(std::slice::from_ref(&c));
+    let coalesced_nested = SCANNER.scan_coalesced(std::slice::from_ref(&c)).expect("coalesced scanner call should succeed");
     assert_eq!(
         coalesced_nested.len(),
         1,

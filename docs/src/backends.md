@@ -25,13 +25,12 @@ with host hardware or local calibration files. Library callers that want
 acceleration choose `scan_with_backend`/`scan_coalesced_with_backend`; the CLI
 is the owner of persisted automatic routing.
 
-Those explicit-backend methods have infallible finding-vector return types, so
-selection is a hard process contract. Unavailable selected SIMD terminates with
-exit `3`; unavailable or failed selected GPU execution terminates with exit
-`12`. They never return findings from another backend. `warm_backend` probes
-startup eligibility in-band, but a process that must contain a later driver or
-dispatch failure should run the CLI as a subprocess. The no-backend portable
-CPU methods do not acquire an accelerator.
+Those explicit-backend methods return typed `Result` values. Unavailable
+selected SIMD or GPU backends and later runtime failures return `ScanError`;
+they never terminate an embedding process and never return findings from
+another backend. `warm_backend` probes startup eligibility in-band. The
+`keyhog` CLI separately maps terminal scanner errors to its documented exit
+statuses. The no-backend portable CPU methods do not acquire an accelerator.
 
 The GPU literal matcher keeps its immutable VYRE tables resident after the
 first successful batch. One dispatch returns both region presence and complete

@@ -1,5 +1,9 @@
 use keyhog::testing::{CliTestApi as _, API};
 use keyhog_core::{MatchLocation, RawMatch, Severity};
+#[cfg(unix)]
+use keyhog_scanner::telemetry::StaticRecoveryStatus;
+#[cfg(unix)]
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -472,5 +476,38 @@ fn malformed_mount_escape_is_loud() {
         err.to_string().contains("decode /proc/mounts target")
             && format!("{err:#}").contains("invalid octal mount escape"),
         "malformed mount escape must include path context and parse cause; got {err:#}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn daemon_client_merge_retains_exact_static_recovery_dispositions() {
+    let snapshot = API
+        .merge_daemon_static_recovery(
+            BTreeMap::from([
+                ("unsupported_call".to_owned(), 2),
+                ("dynamic_property_access".to_owned(), 1),
+                ("json_utf8".to_owned(), 4),
+                ("resource_limit".to_owned(), 1),
+            ]),
+            StaticRecoveryStatus {
+                supported: 7,
+                unsupported: 3,
+                erroneous: 5,
+            },
+        )
+        .expect("compatible daemon telemetry merges through the client lifecycle");
+
+    assert_eq!(
+        snapshot.after.supported - snapshot.before.supported,
+        7
+    );
+    assert_eq!(
+        snapshot.after.unsupported - snapshot.before.unsupported,
+        3
+    );
+    assert_eq!(
+        snapshot.after.erroneous - snapshot.before.erroneous,
+        5
     );
 }

@@ -2,8 +2,7 @@
 //! not collide.
 
 use keyhog::exit_codes::{
-    help, DEFINITIONS, EXIT_REQUIRE_GPU_UNMET, EXIT_SOURCE_FAILED, EXIT_SYSTEM_ERROR,
-    EXIT_USER_ERROR,
+    help, DEFINITIONS, EXIT_REQUIRE_GPU_UNMET, EXIT_SOURCE_FAILED, EXIT_USER_ERROR,
 };
 use std::collections::BTreeMap;
 use std::fs;
@@ -67,32 +66,12 @@ fn production_code_does_not_construct_numeric_exit_codes_inline() {
     );
 }
 
+/// Scanner library code must propagate failures rather than terminate the host process.
 #[test]
-fn scanner_require_gpu_hard_exit_matches_cli_exit_contract() {
+fn scanner_library_contains_no_process_exit() {
     let scanner_src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../scanner/src");
-    let helper_path = scanner_src.join("process_exit.rs");
-    let helper = fs::read_to_string(&helper_path)
-        .unwrap_or_else(|err| panic!("read {}: {err}", helper_path.display()));
-    assert!(
-        helper.contains(&format!(
-            "REQUIRE_GPU_UNMET_EXIT_CODE: i32 = {}",
-            EXIT_REQUIRE_GPU_UNMET
-        )),
-        "scanner require-GPU hard exit must match keyhog::exit_codes::EXIT_REQUIRE_GPU_UNMET"
-    );
-    assert!(
-        helper.contains(&format!(
-            "BACKEND_UNAVAILABLE_EXIT_CODE: i32 = {}",
-            EXIT_SYSTEM_ERROR
-        )),
-        "scanner backend-unavailable hard exit must match keyhog::exit_codes::EXIT_SYSTEM_ERROR"
-    );
-
     let mut offenders = Vec::new();
     for path in rust_sources(&scanner_src) {
-        if path == helper_path {
-            continue;
-        }
         let rel = path.strip_prefix(&scanner_src).unwrap_or(&path);
         let text = fs::read_to_string(&path)
             .unwrap_or_else(|err| panic!("read scanner source {}: {err}", path.display()));
@@ -104,7 +83,7 @@ fn scanner_require_gpu_hard_exit_matches_cli_exit_contract() {
     }
     assert!(
         offenders.is_empty(),
-        "scanner hard exits must go through process_exit.rs: {}",
+        "scanner library must return structured errors instead of exiting: {}",
         offenders.join(", ")
     );
 }

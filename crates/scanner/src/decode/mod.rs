@@ -280,6 +280,58 @@ pub(crate) fn has_decodable_payload(data: &[u8]) -> bool {
     false
 }
 
+/// Consumer for decoded chunks produced by a [`Decoder`].
+///
+/// Returning `false` from [`Self::push`] closes the sink. Built-in decoders
+/// honor that signal while producing candidates, so the pipeline can stop
+/// allocation and decode work at its shared per-root budget boundary.
+pub trait DecodeOutputSink {
+    fn push(&mut self, chunk: Chunk) -> bool;
+}
+
+impl DecodeOutputSink for Vec<Chunk> {
+    fn push(&mut self, chunk: Chunk) -> bool {
+        Vec::push(self, chunk);
+        true
+    }
+}
+
+/// Direct collection exceeded the scanner's shared per-root decode budget.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error(
+    "decoder output exceeded the direct collection budget after {produced} chunks/{bytes} bytes (maximum {max_chunks} chunks/{max_bytes} bytes)"
+)]
+pub struct DecodeCollectionError {
+    pub produced: usize,
+    pub bytes: usize,
+    pub max_chunks: usize,
+    pub max_bytes: usize,
+}
+
+struct BoundedCollectSink {
+    chunks: Vec<Chunk>,
+    bytes: usize,
+    exhausted: bool,
+}
+
+impl DecodeOutputSink for BoundedCollectSink {
+    fn push(&mut self, chunk: Chunk) -> bool {
+        let Some(next_bytes) = self.bytes.checked_add(chunk.data.len()) else {
+            self.exhausted = true;
+            return false;
+        };
+        if self.chunks.len() == limits::MAX_DECODED_CHUNKS_PER_ROOT
+            || next_bytes > limits::MAX_DECODED_TOTAL_BYTES
+        {
+            self.exhausted = true;
+            return false;
+        }
+        self.bytes = next_bytes;
+        self.chunks.push(chunk);
+        true
+    }
+}
+
 /// A trait for decoding chunks to find hidden secrets.
 pub trait Decoder: Send + Sync {
     fn name(&self) -> &'static str;
@@ -294,7 +346,7 @@ pub trait Decoder: Send + Sync {
     /// Bounded work projection for this decoder on `chunk`.
     ///
     /// Custom decoders default to an unknown, conservative sketch. Built-in
-    /// decoders override this beside the grammar used by `decode_chunk`.
+    /// decoders override this beside their streaming grammar.
     fn admission_sketch(&self, _chunk: &Chunk) -> DecodeAdmissionSketch {
         DecodeAdmissionSketch::UNKNOWN
     }
@@ -303,13 +355,40 @@ pub trait Decoder: Send + Sync {
     ///
     /// Custom decoders default to [`DecodeAdmission::Unknown`], which always
     /// fails open. Built-in decoders derive this from the sketch owned next to
-    /// the grammar used by [`Self::decode_chunk`]. Only `Impossible` permits the
-    /// engine to skip decode post-processing.
+    /// their streaming grammar. Only `Impossible` permits the engine to skip
+    /// decode post-processing.
     fn admission(&self, _chunk: &Chunk) -> DecodeAdmission {
         self.admission_sketch(_chunk).admission()
     }
 
-    fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk>;
+    /// Produce decoded chunks into a caller-owned bounded sink.
+    ///
+    /// This is the required production method. Implementations must stop
+    /// candidate production immediately after `sink.push` returns `false`;
+    /// materializing an intermediate unbounded collection is forbidden.
+    fn decode_chunk_into(&self, chunk: &Chunk, sink: &mut dyn DecodeOutputSink);
+
+    /// Collect decoded chunks through the same count/byte limits as production.
+    ///
+    /// This compatibility helper is fallible rather than silently truncating
+    /// or materializing attacker-controlled output without a bound.
+    fn decode_chunk(&self, chunk: &Chunk) -> Result<Vec<Chunk>, DecodeCollectionError> {
+        let mut sink = BoundedCollectSink {
+            chunks: Vec::new(),
+            bytes: 0,
+            exhausted: false,
+        };
+        self.decode_chunk_into(chunk, &mut sink);
+        if sink.exhausted {
+            return Err(DecodeCollectionError {
+                produced: sink.chunks.len(),
+                bytes: sink.bytes,
+                max_chunks: limits::MAX_DECODED_CHUNKS_PER_ROOT,
+                max_bytes: limits::MAX_DECODED_TOTAL_BYTES,
+            });
+        }
+        Ok(sink.chunks)
+    }
 }
 
 /// Bounded, content-free projection of decoder work.

@@ -5,7 +5,6 @@ mod cli_surface_snapshot;
 mod completion_bash_shell_parses;
 mod daemon_mode_tristate_parses;
 mod daemon_status_action_parses;
-mod daemon_wire_version_nonzero;
 mod detectors_subcommand_parses;
 mod explain_detector_id_parses;
 mod hook_install_subcommand_parses;

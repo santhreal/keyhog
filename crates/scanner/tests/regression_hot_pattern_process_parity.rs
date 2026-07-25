@@ -74,7 +74,7 @@ fn detector_owned_non_stripe_hot_prefix_emits_once_at_exact_nonzero_offset() {
     let expected_offset = 8192 + prefix.len();
 
     for backend in [ScanBackend::SimdCpu, ScanBackend::CpuFallback] {
-        let matches = synthetic_hot_scanner(true).scan_with_backend(&chunk, backend);
+        let matches = synthetic_hot_scanner(true).scan_with_backend(&chunk, backend).expect("selected backend scan succeeds");
         let exact: Vec<_> = matches
             .iter()
             .filter(|m| {
@@ -104,7 +104,7 @@ fn detector_owned_hot_dedup_is_offset_scoped_not_detector_scoped() {
             ..Default::default()
         },
     };
-    let matches = synthetic_hot_scanner(true).scan_with_backend(&chunk, ScanBackend::SimdCpu);
+    let matches = synthetic_hot_scanner(true).scan_with_backend(&chunk, ScanBackend::SimdCpu).expect("selected backend scan succeeds");
     let mut offsets: Vec<_> = matches
         .iter()
         .filter(|m| {
@@ -132,9 +132,9 @@ fn detector_owned_hot_and_confirmed_only_paths_emit_byte_identical_findings() {
             ..Default::default()
         },
     };
-    let hot = synthetic_hot_scanner(true).scan_with_backend(&chunk, ScanBackend::CpuFallback);
+    let hot = synthetic_hot_scanner(true).scan_with_backend(&chunk, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
     let confirmed_only =
-        synthetic_hot_scanner(false).scan_with_backend(&chunk, ScanBackend::CpuFallback);
+        synthetic_hot_scanner(false).scan_with_backend(&chunk, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
 
     assert_eq!(hot, confirmed_only);
     assert_eq!(hot.len(), 1, "findings={hot:?}");
@@ -155,9 +155,9 @@ fn shipped_hot_detectors_are_byte_identical_without_hot_acceleration() {
         },
     };
 
-    let accelerated = scanner().scan_with_backend(&chunk, ScanBackend::CpuFallback);
+    let accelerated = scanner().scan_with_backend(&chunk, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
     let confirmed_only =
-        scanner_without_hot_acceleration().scan_with_backend(&chunk, ScanBackend::CpuFallback);
+        scanner_without_hot_acceleration().scan_with_backend(&chunk, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
 
     assert_eq!(accelerated, confirmed_only);
     assert!(accelerated
@@ -197,7 +197,7 @@ fn hot_openai_key_on_non_hex_oid_line_is_reported_on_both_backends() {
     for backend in [ScanBackend::SimdCpu, ScanBackend::CpuFallback] {
         let scanner = scanner();
         scanner.clear_fragment_cache();
-        let matches = scanner.scan_with_backend(&chunk, backend);
+        let matches = scanner.scan_with_backend(&chunk, backend).expect("selected backend scan succeeds");
         assert!(
             matches
                 .iter()
@@ -221,7 +221,9 @@ fn hot_openai_key_does_not_emit_when_canonical_detector_is_not_loaded() {
         },
     };
 
-    let matches = scanner_without("openai-api-key").scan(&chunk);
+    let matches = scanner_without("openai-api-key")
+        .scan(&chunk)
+        .expect("OpenAI hot-pattern exclusion scan should succeed");
     assert!(
         matches.iter().all(
             |m| !(m.detector_id.as_ref() == "openai-api-key" && m.credential.as_ref() == token)
@@ -242,7 +244,9 @@ fn hot_square_key_routes_to_canonical_square_detector() {
         },
     };
 
-    let matches = scanner().scan(&chunk);
+    let matches = scanner()
+        .scan(&chunk)
+        .expect("Square hot-pattern parity scan should succeed");
     assert!(
         matches
             .iter()
@@ -271,7 +275,9 @@ fn hot_square_key_does_not_emit_when_canonical_detector_is_not_loaded() {
         },
     };
 
-    let matches = scanner_without("square-access-token").scan(&chunk);
+    let matches = scanner_without("square-access-token")
+        .scan(&chunk)
+        .expect("Square hot-pattern exclusion scan should succeed");
     assert!(
         matches
             .iter()
@@ -295,7 +301,9 @@ fn hot_path_duplicate_identity_does_not_consume_capped_heap_slot() {
         },
     };
 
-    let matches = scanner_with_cap(2).scan(&chunk);
+    let matches = scanner_with_cap(2)
+        .scan(&chunk)
+        .expect("hot-pattern match-cap scan should succeed");
 
     assert!(
         matches

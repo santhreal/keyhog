@@ -1,7 +1,8 @@
 use keyhog_core::{
     validate_detector, AuthSpec, CompanionSpec, DetectorSpec, HttpMethod, MetadataSpec,
-    PatternSpec, QualityIssue, Severity, StepSpec, SuccessSpec, VerifySpec,
+    PatternSpec, QualityIssue, Severity, StepSpec, SuccessPolicy, SuccessSpec, VerifySpec,
 };
+use keyhog_core::testing::{CoreTestApi, TestApi};
 
 fn detector_with_pattern(regex: &str) -> DetectorSpec {
     DetectorSpec {
@@ -713,6 +714,187 @@ fn rejects_verify_success_statuses_outside_http_range() {
     )));
 }
 
+/// Regression: a bare status gate was previously accepted without recording
+/// whether the provider makes that status authoritative, leaving response-body
+/// drift to an implicit heuristic; the quality gate now rejects that ambiguity.
+#[test]
+fn rejects_unclassified_status_success_contract() {
+    let mut detector = detector_with_pattern("token_[A-Z0-9]{8}");
+    detector.verify = Some(VerifySpec {
+        url: Some("https://example.com/verify".into()),
+        success: Some(SuccessSpec {
+            status: Some(200),
+            ..Default::default()
+        }),
+        ..Default::default()
+    });
+
+    let issues = validate_detector(&detector);
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message)
+            if message.contains("policy must classify success")
+    )));
+}
+
+/// Regression: declaring a status policy while also matching body evidence made
+/// the policy unclear and could bypass the error backstop accidentally;
+/// conflicting policy declarations now fail detector validation.
+#[test]
+fn rejects_conflicting_status_and_body_positive_contract() {
+    let mut detector = detector_with_pattern("token_[A-Z0-9]{8}");
+    detector.verify = Some(VerifySpec {
+        url: Some("https://example.com/verify".into()),
+        success: Some(SuccessSpec {
+            status: Some(200),
+            policy: Some(SuccessPolicy::StatusWithErrorBackstop),
+            json_path: Some("$.ok".into()),
+            equals: Some("true".into()),
+            ..Default::default()
+        }),
+        ..Default::default()
+    });
+
+    let issues = validate_detector(&detector);
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message)
+            if message.contains("cannot be combined with body_contains")
+    )));
+}
+
+/// Regression: `status_not` describes one rejection but does not identify a
+/// provider-authoritative success status; accepting every other code would turn
+/// unrelated redirects and server errors into Live verdicts.
+#[test]
+fn rejects_status_policy_without_an_accepted_status() {
+    let mut detector = detector_with_pattern("token_[A-Z0-9]{8}");
+    detector.verify = Some(VerifySpec {
+        url: Some("https://example.com/verify".into()),
+        success: Some(SuccessSpec {
+            status_not: Some(403),
+            policy: Some(SuccessPolicy::StatusAuthoritative),
+            ..Default::default()
+        }),
+        ..Default::default()
+    });
+
+    let issues = validate_detector(&detector);
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message)
+            if message.contains("requires an accepted status")
+    )));
+}
+
+/// Regression: `body_not_contains` alone only proves one known failure marker is
+/// absent and is not positive provider evidence, so response drift must not pass
+/// validation as an authoritative body contract.
+#[test]
+fn rejects_negative_body_constraint_as_only_success_evidence() {
+    let mut detector = detector_with_pattern("token_[A-Z0-9]{8}");
+    detector.verify = Some(VerifySpec {
+        url: Some("https://example.com/verify".into()),
+        success: Some(SuccessSpec {
+            status: Some(200),
+            body_not_contains: Some("error".into()),
+            policy: Some(SuccessPolicy::BodyPositive),
+            ..Default::default()
+        }),
+        ..Default::default()
+    });
+
+    let issues = validate_detector(&detector);
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("requires stable positive evidence")
+    )));
+}
+
+/// Regression: adding the explicit policy field must not change serialized
+/// legacy success specs when absent, while a reviewed policy must remain on the
+/// detector wire so classification cannot disappear during a round trip.
+#[test]
+fn success_policy_preserves_legacy_serialization_shape() {
+    let legacy = serde_json::to_value(SuccessSpec {
+        status: Some(200),
+        ..Default::default()
+    })
+    .expect("success spec serializes");
+    assert!(legacy.get("policy").is_none());
+
+    let explicit = serde_json::to_value(SuccessSpec {
+        status: Some(202),
+        policy: Some(SuccessPolicy::StatusAuthoritative),
+        ..Default::default()
+    })
+    .expect("explicit success policy serializes");
+    assert_eq!(
+        explicit.get("policy"),
+        Some(&serde_json::Value::String("status_authoritative".into()))
+    );
+}
+
+/// Regression: schema-v1 detector compatibility must conservatively normalize
+/// every unambiguous top-level and multi-step status-only contract without
+/// guessing policy for body-constrained or no-status response shapes.
+#[test]
+fn legacy_success_policy_migration_is_complete_and_conservative() {
+    fn step(name: &str, success: SuccessSpec) -> StepSpec {
+        StepSpec {
+            name: name.into(),
+            method: HttpMethod::Get,
+            url: "https://example.com/verify".into(),
+            auth: AuthSpec::None {},
+            headers: Vec::new(),
+            body: None,
+            success,
+            extract: Vec::new(),
+        }
+    }
+
+    let mut detector = detector_with_pattern("token_[A-Z0-9]{8}");
+    detector.verify = Some(VerifySpec {
+        success: Some(SuccessSpec {
+            status: Some(200),
+            ..Default::default()
+        }),
+        steps: vec![
+            step(
+                "status-only",
+                SuccessSpec {
+                    status: Some(204),
+                    ..Default::default()
+                },
+            ),
+            step(
+                "body-constrained",
+                SuccessSpec {
+                    status: Some(200),
+                    json_path: Some("$.ok".into()),
+                    equals: Some("true".into()),
+                    ..Default::default()
+                },
+            ),
+            step("no-status", SuccessSpec::default()),
+        ],
+        ..Default::default()
+    });
+
+    assert_eq!(TestApi.migrate_legacy_success_policies(&mut detector), 2);
+    let verify = detector.verify.expect("verify spec");
+    assert_eq!(
+        verify.success.and_then(|success| success.policy),
+        Some(SuccessPolicy::StatusWithErrorBackstop)
+    );
+    assert_eq!(
+        verify.steps[0].success.policy,
+        Some(SuccessPolicy::StatusWithErrorBackstop)
+    );
+    assert_eq!(verify.steps[1].success.policy, None);
+    assert_eq!(verify.steps[2].success.policy, None);
+}
+
 #[test]
 fn rejects_step_success_statuses_outside_http_range() {
     let mut detector = detector_with_pattern("token_[A-Z0-9]{8}");
@@ -1091,7 +1273,7 @@ fn spec_field_bounds_are_named_and_validated() {
     assert!(source.contains("const MAX_COMPANION_WITHIN_LINES: usize = 100;"));
     assert!(source.contains("const MIN_HTTP_STATUS: u16 = 100;"));
     assert!(source.contains("const MAX_HTTP_STATUS: u16 = 599;"));
-    assert!(source.contains("fn validate_verify_success_statuses("));
+    assert!(source.contains("fn validate_success_policy("));
     assert!(source.contains("fn validate_http_status("));
 }
 

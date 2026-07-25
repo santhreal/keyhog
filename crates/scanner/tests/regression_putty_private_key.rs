@@ -84,7 +84,9 @@ fn scan(text: &str) -> Vec<keyhog_core::RawMatch> {
             ..Default::default()
         },
     };
-    scanner.scan(&chunk)
+    scanner
+        .scan(&chunk)
+        .expect("PuTTY private-key scan should succeed")
 }
 
 /// The `putty-private-key` match for `text`, if it fired.

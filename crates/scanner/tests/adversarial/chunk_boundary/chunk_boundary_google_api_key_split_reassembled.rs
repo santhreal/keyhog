@@ -41,7 +41,7 @@ fn chunk_boundary_google_api_key_split_reassembled() {
         },
     };
 
-    let results = scanner.scan_coalesced(&[chunk_a, chunk_b]);
+    let results = scanner.scan_coalesced(&[chunk_a, chunk_b]).expect(concat!(module_path!(), ": coalesced scan should succeed"));
     let found = results.iter().flatten().any(|m| {
         m.detector_id.as_ref() == "google-api-key"
             && m.credential.as_ref() == "AIzaSyD8x2Kf9Lm3Qp7Rt5Vw1Yz4Bc6Nh0Jk7Pq"

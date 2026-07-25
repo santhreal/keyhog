@@ -13,6 +13,22 @@ use std::time::Instant;
 const BENCHMARK_CHUNKS: usize = 768;
 const BENCHMARK_CHUNK_BYTES: usize = 128 * 1024;
 
+/// Stable source-code seed for the bounded synthetic throughput benchmark.
+pub(crate) const BENCHMARK_SOURCE_TEMPLATE: &str = concat!(
+    "// process inbound webhook from upstream provider\n",
+    "fn handle_request(req: &Request) -> Result<Response, Error> {\n",
+    "    let payload = serde_json::from_slice(&req.body)?;\n",
+    "    log::info!(\"received webhook for tenant: {}\", payload.tenant_id);\n",
+    "    let user = users.lookup(payload.user_id).await?;\n",
+    "    if !user.has_capability(Capability::Webhook) {\n",
+    "        return Ok(Response::forbidden());\n",
+    "    }\n",
+    "    let normalized = normalize(payload.event)?;\n",
+    "    queue.publish(normalized).await?;\n",
+    "    Ok(Response::ok())\n",
+    "}\n\n",
+);
+
 pub(crate) struct BackendBenchmark {
     pub backend: ScanBackend,
     pub mb_per_sec: f64,
@@ -62,7 +78,7 @@ pub(crate) fn run_benchmark(orchestrator: &ScanOrchestrator) -> Result<Vec<Backe
         let started = Instant::now();
         let findings = orchestrator
             .scanner()
-            .scan_chunks_with_backend(&corpus, backend)
+            .scan_chunks_with_backend(&corpus, backend)?
             .into_iter()
             .map(|matches| matches.len())
             .sum();
@@ -90,20 +106,7 @@ fn build_benchmark_corpus() -> Vec<Chunk> {
         // literal-set-vs-Hyperscan crossover this is meant to measure.
         // The ~70-char average line below mirrors the line-length
         // distribution of typical TypeScript/Go/Rust source.
-        let template = concat!(
-            "// process inbound webhook from upstream provider\n",
-            "fn handle_request(req: &Request) -> Result<Response, Error> {\n",
-            "    let payload = serde_json::from_slice(&req.body)?;\n",
-            "    log::info!(\"received webhook for tenant: {}\", payload.tenant_id);\n",
-            "    let user = users.lookup(payload.user_id).await?;\n",
-            "    if !user.has_capability(Capability::Webhook) {\n",
-            "        return Ok(Response::forbidden());\n",
-            "    }\n",
-            "    let normalized = normalize(payload.event)?;\n",
-            "    queue.publish(normalized).await?;\n",
-            "    Ok(Response::ok())\n",
-            "}\n\n",
-        );
+        let template = BENCHMARK_SOURCE_TEMPLATE;
         while data.len() < BENCHMARK_CHUNK_BYTES {
             data.push_str(template);
         }

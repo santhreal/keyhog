@@ -1,19 +1,40 @@
 use anyhow::{Context, Result};
-use keyhog_core::{load_detectors, validate_detector, DetectorSpec, QualityIssue};
+use keyhog_core::{
+    load_detector_corpus, load_detectors, validate_detector, DetectorSpec, QualityIssue,
+};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-const DETECTOR_CACHE_VERSION: u32 = 3;
+const DETECTOR_CACHE_VERSION: u32 = 4;
 const DETECTOR_CACHE_FILE_BYTES: u64 = 64 * 1024 * 1024;
 
 #[derive(Serialize, Deserialize)]
 struct DetectorCacheFile {
     version: u32,
     source_fingerprint: String,
+    schema_version: u32,
     detectors: Vec<DetectorSpec>,
 }
+/// Operator-visible origin of the detector corpus that actually compiled.
+#[derive(Debug, Clone)]
+pub(crate) struct DetectorCorpusProvenance {
+    pub(crate) mode: &'static str,
+    pub(crate) source: String,
+    pub(crate) embedded_count: usize,
+    pub(crate) custom_count: usize,
+}
+
+/// Loaded detector specs paired with their composition provenance and schema
+/// identity.
+#[derive(Debug)]
+pub(crate) struct LoadedDetectorCorpus {
+    pub(crate) detectors: Vec<DetectorSpec>,
+    pub(crate) schema_version: u32,
+    pub(crate) provenance: DetectorCorpusProvenance,
+}
+
 
 pub(crate) fn auto_discover_detectors(path: &Path) -> Result<PathBuf> {
     if path != Path::new("detectors") {
@@ -61,8 +82,26 @@ pub(crate) fn validate_explicit_detector_path(path: &Path, explicit: bool) -> Re
     }
     Ok(())
 }
+/// A composition mode has no meaning without an explicitly selected custom
+/// corpus. Rejecting that ambiguous spelling prevents an installed directory
+/// discovered from the default sentinel from being merged by accident.
+pub(crate) fn validate_detector_mode_selection(
+    custom_path_explicit: bool,
+    mode: Option<keyhog_core::DetectorCorpusMode>,
+) -> Result<()> {
+    if mode.is_some() && !custom_path_explicit {
+        anyhow::bail!(
+            "--detectors-mode requires a custom corpus selected by --detectors \
+             or `detectors` in .keyhog.toml. Fix: select the reviewed directory, \
+             or omit --detectors-mode to retain default detector discovery."
+        );
+    }
+    Ok(())
+}
 
-pub(crate) fn load_detectors_with_cache(path: &Path) -> Result<Vec<DetectorSpec>> {
+
+
+fn load_detector_corpus_with_cache(path: &Path) -> Result<keyhog_core::LoadedDetectorCorpus> {
     validate_detector_path_for_scan(path)?;
     if path.exists() && path.is_dir() {
         // The parse cache lives in the user's XDG cache dir, NOT inside the
@@ -79,26 +118,101 @@ pub(crate) fn load_detectors_with_cache(path: &Path) -> Result<Vec<DetectorSpec>
         if let Some(cache_path) = &cache_path {
             let loaded = load_detectors_from_dir_with_cache(path, cache_path)
                 .context("loading detectors from directory with parse cache")?;
-            require_non_empty_detectors(&loaded, path)?;
+            require_non_empty_detectors(&loaded.specs, path)?;
             return Ok(loaded);
         }
-        let loaded = load_detectors(path)?;
-        require_non_empty_detectors(&loaded, path)?;
+        let loaded = load_detector_corpus(path)?;
+        require_non_empty_detectors(&loaded.specs, path)?;
         return Ok(loaded);
     }
-    load_detectors_embedded_or_fail(path)
+    let specs = load_detectors_embedded_or_fail(path)?;
+    Ok(keyhog_core::LoadedDetectorCorpus {
+        specs,
+        schema_version: keyhog_core::DETECTOR_CORPUS_SCHEMA_VERSION,
+    })
 }
+/// Load the effective scan corpus under an explicit replace-or-overlay policy.
+///
+/// A present directory remains a full replacement unless overlay was selected.
+/// A missing default sentinel continues to use only the embedded corpus. No
+/// branch implicitly merges the two sources.
+pub(crate) fn load_effective_detector_corpus(
+    path: &Path,
+    requested_mode: Option<keyhog_core::DetectorCorpusMode>,
+    use_cache: bool,
+) -> Result<LoadedDetectorCorpus> {
+    validate_detector_path_for_scan(path)?;
+    if !path.exists() {
+        let detectors = load_detectors_embedded_or_fail(path)?;
+        let embedded_count = detectors.len();
+        return Ok(LoadedDetectorCorpus {
+            detectors,
+            schema_version: keyhog_core::DETECTOR_CORPUS_SCHEMA_VERSION,
+            provenance: DetectorCorpusProvenance {
+                mode: "embedded",
+                source: "embedded".to_string(),
+                embedded_count,
+                custom_count: 0,
+            },
+        });
+    }
+
+    let custom = if use_cache {
+        load_detector_corpus_with_cache(path)?
+    } else {
+        load_detector_corpus_no_cache(path)?
+    };
+    let custom_count = custom.specs.len();
+    let schema_version = custom.schema_version;
+    let custom_specs = custom.specs;
+    let mode = match requested_mode {
+        Some(mode) => mode,
+        // LAW10: the canonical documented default is exact replace semantics
+        // for an explicitly selected directory; absence never merges or falls back.
+        None => keyhog_core::DetectorCorpusMode::Replace,
+    };
+    match mode {
+        keyhog_core::DetectorCorpusMode::Replace => Ok(LoadedDetectorCorpus {
+            detectors: custom_specs,
+            schema_version,
+            provenance: DetectorCorpusProvenance {
+                mode: "replace",
+                source: path.display().to_string(),
+                embedded_count: 0,
+                custom_count,
+            },
+        }),
+        keyhog_core::DetectorCorpusMode::Overlay => {
+            let embedded = keyhog_core::load_embedded_detectors_or_fail()
+                .context("loading embedded detectors for overlay")?;
+            let embedded_count = embedded.len();
+            let detectors = keyhog_core::compose_detector_corpus(embedded, custom_specs, mode)
+                .context("composing detector overlay")?;
+            Ok(LoadedDetectorCorpus {
+                detectors,
+                schema_version,
+                provenance: DetectorCorpusProvenance {
+                    mode: "overlay",
+                    source: format!("embedded+{}", path.display()),
+                    embedded_count,
+                    custom_count,
+                },
+            })
+        }
+    }
+}
+
 
 fn load_detectors_from_dir_with_cache(
     source_dir: &Path,
     cache_path: &Path,
-) -> Result<Vec<DetectorSpec>> {
+) -> Result<keyhog_core::LoadedDetectorCorpus> {
     if let Some(cached) = load_detector_cache(cache_path, source_dir) {
         return Ok(cached);
     }
 
-    let loaded = load_detectors(source_dir).map_err(anyhow::Error::from)?;
-    if loaded.is_empty() {
+    let loaded = load_detector_corpus(source_dir).map_err(anyhow::Error::from)?;
+    if loaded.specs.is_empty() {
         return Ok(loaded);
     }
     let source_fingerprint = match detector_source_fingerprint(source_dir) {
@@ -123,11 +237,11 @@ fn load_detectors_from_dir_with_cache(
 }
 
 fn save_detector_cache(
-    detectors: &[DetectorSpec],
+    corpus: &keyhog_core::LoadedDetectorCorpus,
     cache_path: &Path,
     source_fingerprint: String,
 ) -> std::io::Result<()> {
-    for detector in detectors {
+    for detector in &corpus.specs {
         let issues = validate_detector(detector);
         if issues
             .iter()
@@ -146,12 +260,16 @@ fn save_detector_cache(
     let json = serde_json::to_vec(&DetectorCacheFile {
         version: DETECTOR_CACHE_VERSION,
         source_fingerprint,
-        detectors: detectors.to_vec(),
+        schema_version: corpus.schema_version,
+        detectors: corpus.specs.clone(),
     })?;
     crate::atomic_file::write_bytes(cache_path, &json)
 }
 
-fn load_detector_cache(cache_path: &Path, source_dir: &Path) -> Option<Vec<DetectorSpec>> {
+fn load_detector_cache(
+    cache_path: &Path,
+    source_dir: &Path,
+) -> Option<keyhog_core::LoadedDetectorCorpus> {
     let source_fingerprint = match detector_source_fingerprint(source_dir) {
         Ok(fingerprint) => fingerprint,
         Err(error) => {
@@ -193,6 +311,13 @@ fn load_detector_cache(cache_path: &Path, source_dir: &Path) -> Option<Vec<Detec
     if cache.source_fingerprint != source_fingerprint {
         return None;
     }
+    if !(keyhog_core::DETECTOR_CORPUS_MIN_SCHEMA_VERSION
+        ..=keyhog_core::DETECTOR_CORPUS_SCHEMA_VERSION)
+        .contains(&cache.schema_version)
+    {
+        return None;
+    }
+    let schema_version = cache.schema_version;
 
     let mut validated = Vec::with_capacity(cache.detectors.len());
     for spec in cache.detectors {
@@ -215,7 +340,10 @@ fn load_detector_cache(cache_path: &Path, source_dir: &Path) -> Option<Vec<Detec
         return None;
     }
 
-    Some(validated)
+    Some(keyhog_core::LoadedDetectorCorpus {
+        specs: validated,
+        schema_version,
+    })
 }
 
 fn read_detector_cache_file(cache_path: &Path) -> std::io::Result<Vec<u8>> {
@@ -293,16 +421,21 @@ fn detector_cache_path(source_dir: &Path) -> Option<std::path::PathBuf> {
 
 /// Load detectors without writing or reading the on-disk
 /// `.keyhog-cache.json`. Used by `--lockdown` to avoid touching disk.
-/// Falls through to the embedded TOML corpus when no detectors dir
-/// exists, matching `load_detectors_with_cache`'s behaviour.
-pub(crate) fn load_detectors_no_cache(path: &Path) -> Result<Vec<DetectorSpec>> {
+/// Falls through to the embedded TOML corpus when no detectors directory
+/// exists, matching `load_detector_corpus_with_cache`'s behavior.
+
+fn load_detector_corpus_no_cache(path: &Path) -> Result<keyhog_core::LoadedDetectorCorpus> {
     validate_detector_path_for_scan(path)?;
     if path.exists() && path.is_dir() {
-        let loaded = load_detectors(path).map_err(anyhow::Error::from)?;
-        require_non_empty_detectors(&loaded, path)?;
+        let loaded = load_detector_corpus(path).map_err(anyhow::Error::from)?;
+        require_non_empty_detectors(&loaded.specs, path)?;
         return Ok(loaded);
     }
-    load_detectors_embedded_or_fail(path)
+    let specs = load_detectors_embedded_or_fail(path)?;
+    Ok(keyhog_core::LoadedDetectorCorpus {
+        specs,
+        schema_version: keyhog_core::DETECTOR_CORPUS_SCHEMA_VERSION,
+    })
 }
 
 /// Hard-fail when detector loading produces zero specs. This is a belt-and-
@@ -431,5 +564,6 @@ pub(crate) mod testing {
         cache_path: &Path,
     ) -> Result<Vec<DetectorSpec>> {
         super::load_detectors_from_dir_with_cache(source_dir, cache_path)
+            .map(|loaded| loaded.specs)
     }
 }

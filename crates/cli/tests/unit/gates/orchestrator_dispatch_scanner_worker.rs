@@ -60,13 +60,13 @@ fn selected_simd_backend_uses_fail_loud_coalesced_boundary() {
     .expect("scanner coalesced source readable");
 
     assert!(
-        scanner.contains("pub fn try_scan_coalesced_with_backend_admission_route_and_recovery(")
+        scanner.contains("pub fn scan_coalesced_with_backend_admission_route_and_recovery(")
             && scanner.contains("self.try_initialize_simd_backend().map_err(")
             && scanner.contains("matches: self.scan_coalesced_simd("),
         "scanner must expose one fallible coalesced selected-backend boundary that proves SIMD initialization before dispatch"
     );
     assert!(
-        dispatch.contains("try_scan_coalesced_with_backend_admission_route_and_recovery(")
+        dispatch.contains("scan_coalesced_with_backend_admission_route_and_recovery(")
             && dispatch.contains("backend,")
             && !dispatch.contains("ScanBackend::SimdCpu => self.scanner.scan_coalesced(batch)"),
         "coalesced dispatch must route every selected backend through the fallible scanner boundary"

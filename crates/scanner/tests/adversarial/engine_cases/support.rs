@@ -24,7 +24,7 @@ pub fn make_chunk(data: &str) -> Chunk {
 pub fn assert_detected(data: &str) {
     let scanner = test_scanner();
     let chunk = make_chunk(data);
-    let matches = scanner.scan(&chunk);
+    let matches = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
     assert!(
         matches
             .iter()
@@ -96,7 +96,7 @@ pub const FAKE_CREDENTIAL: &str = "TESTKEY_11111111111111111111";
 
 pub fn assert_not_detected(data: &str, credential: &str) {
     let scanner = test_scanner();
-    let matches = scanner.scan(&make_chunk(data));
+    let matches = scanner.scan(&make_chunk(data)).expect(concat!(module_path!(), ": scan should succeed"));
     assert!(
         !matches.iter().any(|m| m.credential.as_ref() == credential),
         "expected {credential} to be suppressed in:\n{data}\nmatches={:?}",

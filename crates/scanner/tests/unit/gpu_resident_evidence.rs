@@ -20,6 +20,7 @@ fn calibration_reset_preserves_an_unhealthy_resident_slot() {
 
 #[test]
 fn fused_match_overflow_replays_once_with_the_exact_device_count() {
+    let _gpu_test_guard = crate::testing::gpu_test_lock();
     let backend: std::sync::Arc<dyn vyre::VyreBackend> = match vyre_driver_wgpu::WgpuBackend::shared(
     ) {
         Ok(backend) => backend,

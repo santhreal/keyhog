@@ -137,6 +137,7 @@ fn full_scan_with_public_identifier_marker(marker_enabled: bool) -> Vec<String> 
     };
     scanner
         .scan(&chunk)
+        .expect("public-identifier marker ownership scan should succeed")
         .into_iter()
         .filter(|finding| {
             finding.detector_id.as_ref() == "entropy-public-marker-owner"
@@ -186,6 +187,7 @@ fn scan_custom_canonical_hex(policy: bool) -> Vec<String> {
     };
     scanner
         .scan(&chunk)
+        .expect("canonical-hex policy ownership scan should succeed")
         .into_iter()
         .filter(|finding| finding.credential.as_ref() == CANONICAL_HEX_KEY)
         .map(|finding| finding.credential.as_str().to_string())
@@ -386,8 +388,7 @@ fn full_scan_plausibility_findings(
             ..Default::default()
         },
     };
-    let mut findings = scanner
-        .scan_chunks_with_backend(std::slice::from_ref(&chunk), backend)
+    let mut findings = scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), backend).expect("selected backend scan succeeds")
         .into_iter()
         .flatten()
         .filter(|finding| finding.credential.as_ref() == value)
@@ -436,8 +437,7 @@ fn full_scan_bare_auth_findings(
             ..Default::default()
         },
     };
-    let mut findings = scanner
-        .scan_chunks_with_backend(std::slice::from_ref(&chunk), backend)
+    let mut findings = scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), backend).expect("selected backend scan succeeds")
         .into_iter()
         .flatten()
         .filter(|finding| finding.credential.as_ref() == value)
@@ -661,8 +661,7 @@ fn scan_isolated_with_policy_mutation_and_threshold(
             ..Default::default()
         },
     };
-    scanner
-        .scan_with_backend(&chunk, ScanBackend::CpuFallback)
+    scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback).expect("selected backend scan succeeds")
         .into_iter()
         .filter(|finding| finding.credential.as_ref() == value)
         .map(|finding| finding.credential.as_str().to_string())
@@ -704,8 +703,7 @@ fn isolated_shape_boundaries_are_exact_on_every_accelerated_backend() {
     let admitted = compile(value.len());
     let rejected = compile(value.len() - 1);
     let exact = |scanner: &CompiledScanner, backend| {
-        scanner
-            .scan_with_backend(&chunk, backend)
+        scanner.scan_with_backend(&chunk, backend).expect("selected backend scan succeeds")
             .into_iter()
             .filter(|finding| finding.credential.as_ref() == value)
             .map(|finding| {
@@ -947,8 +945,7 @@ fn regex_entropy_owner_compiles_its_generic_assignment_generator() {
         data: format!(r#"{ENTROPY_ONLY_KEYWORD} = "{VALUE}""#).into(),
         metadata: ChunkMetadata::default(),
     };
-    let findings = scanner
-        .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+    let findings = scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback).expect("selected backend scan succeeds")
         .into_iter()
         .flatten()
         .filter(|finding| finding.credential.as_ref() == VALUE)
@@ -973,8 +970,7 @@ fn full_scan_findings(bpe_enabled: bool, backend: ScanBackend) -> Vec<(String, S
         data: format!(r#"{ENTROPY_ONLY_KEYWORD} = "{WORD_LIKE_VALUE}""#).into(),
         metadata: ChunkMetadata::default(),
     };
-    let mut findings = scanner
-        .scan_chunks_with_backend(std::slice::from_ref(&chunk), backend)
+    let mut findings = scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), backend).expect("selected backend scan succeeds")
         .into_iter()
         .flatten()
         .map(|finding| {
@@ -1039,8 +1035,7 @@ fn full_scan_keyword_free_values(
             ..Default::default()
         },
     };
-    scanner
-        .scan_with_backend(&chunk, backend)
+    scanner.scan_with_backend(&chunk, backend).expect("selected backend scan succeeds")
         .into_iter()
         .map(|finding| finding.credential.as_str().to_string())
         .collect()
@@ -1212,8 +1207,7 @@ fn entropy_fallback_identity_comes_from_active_detector_policy() {
             ..Default::default()
         },
     };
-    let finding = scanner
-        .scan_with_backend(&chunk, ScanBackend::CpuFallback)
+    let finding = scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback).expect("selected backend scan succeeds")
         .into_iter()
         .find(|finding| finding.credential.as_ref() == KEYWORD_FREE_VALUE)
         .expect("custom entropy metadata corpus must emit the keyword-free candidate");
@@ -1264,6 +1258,7 @@ fn lower_dash_entropy_exception_is_owned_by_the_active_detector_shape_policy() {
     assert!(
         scanner_with_restrictive_shape
             .scan(&chunk)
+            .expect("restrictive entropy-shape scan should succeed")
             .iter()
             .all(|finding| finding.credential.as_ref() != secret),
         "raising the detector-owned shape floor must remove the isolated exception"
@@ -1296,7 +1291,9 @@ fn lower_dash_entropy_exception_is_owned_by_the_active_detector_shape_policy() {
     let scanner_with_shape = CompiledScanner::compile(detectors)
         .expect("detector-owned shape policy corpus must compile")
         .with_config(config);
-    let with_shape = scanner_with_shape.scan(&chunk);
+    let with_shape = scanner_with_shape
+        .scan(&chunk)
+        .expect("declared entropy-shape scan should succeed");
     assert!(
         with_shape
             .iter()
@@ -1353,10 +1350,12 @@ fn declarative_base64_shape_enforces_alphabet_padding_and_diversity() {
 
     assert!(scanner
         .scan_with_backend(&chunk(VALID), ScanBackend::CpuFallback)
+        .expect("valid declarative base64-shape scan should succeed")
         .iter()
         .any(|finding| finding.credential.as_ref() == VALID));
     assert!(scanner
         .scan_with_backend(&chunk(INVALID_PADDING), ScanBackend::CpuFallback)
+        .expect("invalid-padding base64-shape scan should succeed")
         .iter()
         .all(|finding| finding.credential.as_ref() != INVALID_PADDING));
 }

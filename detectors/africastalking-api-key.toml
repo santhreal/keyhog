@@ -28,6 +28,7 @@ url = "https://api.africastalking.com/version1/user"
 allowed_domains = ["api.africastalking.com"]
 [detector.verify.success]
 status = 200
+policy = "status_with_error_backstop"
 
 [[detector.verify.headers]]
 name = "apiKey"

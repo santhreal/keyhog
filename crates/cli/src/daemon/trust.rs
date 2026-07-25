@@ -128,12 +128,10 @@ pub(super) fn connected_peer_uid(stream: &tokio::net::UnixStream) -> Result<libc
     platform_connected_peer_uid(stream)
 }
 
-/// Server-side twin of [`verify_connected_peer`]: reject any accepted connection
-/// whose peer uid is not this daemon's uid. The 0600 socket mode + 0700 parent
-/// dir are the primary boundary, but a bind-race before `set_socket_mode_user_only`
-/// chmods 0600, or root connecting, would otherwise reach the scan path with no
-/// peer-cred gate. Applied symmetrically with the client so neither side trusts
-/// a cross-uid peer.
+/// Server-side twin of [`verify_connected_peer`]: authenticate every accepted
+/// connection by requiring its kernel-reported peer uid to equal this daemon's
+/// uid. The `0600` socket mode and private parent directory restrict path access
+/// but do not replace this peer-credential check.
 pub(super) fn verify_accepted_peer(stream: &tokio::net::UnixStream) -> Result<()> {
     let peer_uid =
         connected_peer_uid(stream).context("daemon: verifying uid of a connecting peer")?;

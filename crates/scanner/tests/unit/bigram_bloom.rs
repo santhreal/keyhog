@@ -24,15 +24,11 @@ fn single_literal_inserts_all_bigrams() {
 }
 
 #[test]
-fn from_literal_prefixes_covers_all_bigrams_plus_extension() {
+fn from_literal_prefixes_uses_exact_trailing_internal_bigram() {
     let bloom = BigramBloom::from_literal_prefixes(&["ghp_".to_string()]);
-    // "ghp_" → bigrams "gh", "hp", "p_", plus extension "_X" for all X.
-    // The bloom must hit on any chunk containing "gh".
-    assert!(bloom.maybe_overlaps(b"xxx_gh_xxx"));
-    // Must hit on "p_" bigram too.
+    assert!(!bloom.maybe_overlaps(b"xxx_gh_xxx"));
     assert!(bloom.maybe_overlaps(b"zzz_p_zzz"));
-    // Extension: "_" followed by any byte (e.g. "_A").
-    assert!(bloom.maybe_overlaps(b"zzz_Azzz"));
+    assert!(!bloom.maybe_overlaps(b"zzz_Azzz"));
 }
 
 #[test]

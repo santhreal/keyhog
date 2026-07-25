@@ -87,7 +87,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for backend in backends {
         scanner.warm_backend(backend);
         let started = Instant::now();
-        let results = scanner.scan_chunks_with_backend(&chunks, backend);
+        let results = scanner.scan_chunks_with_backend(&chunks, backend)?;
         let elapsed = started.elapsed();
         let findings: usize = results.iter().map(Vec::len).sum();
         let detector_counts = detector_counts(&results);

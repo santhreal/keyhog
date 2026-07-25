@@ -156,10 +156,10 @@ fn floor_mib_per_s(backend: ScanBackend, size_mib: f64, dense: bool) -> f64 {
 /// Measure one cell: time the SECOND scan (warm), return MiB/s.
 fn measure(scanner: &CompiledScanner, chunk: &Chunk, backend: ScanBackend) -> (f64, usize) {
     // Warm-up (first scan pays first-touch alloc).
-    let _ = scanner.scan_chunks_with_backend(std::slice::from_ref(chunk), backend);
+    let _ = scanner.scan_chunks_with_backend(std::slice::from_ref(chunk), backend).expect("selected backend scan succeeds");
 
     let start = Instant::now();
-    let matches = scanner.scan_chunks_with_backend(std::slice::from_ref(chunk), backend);
+    let matches = scanner.scan_chunks_with_backend(std::slice::from_ref(chunk), backend).expect("selected backend scan succeeds");
     let elapsed = start.elapsed();
 
     let mib = chunk.data.len() as f64 / (1024.0 * 1024.0);

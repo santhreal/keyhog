@@ -42,6 +42,7 @@ pub mod sanitize_oob_value_uppercase_folding;
 pub mod sanitize_raw_value_c1_controls;
 pub mod sanitize_raw_value_del_byte;
 pub mod sanitize_raw_value_other_ascii_controls;
+pub mod status_success_policy;
 pub mod sigv4_authorization_owner;
 pub mod sigv4_aws_reference_vector;
 pub mod sigv4_century_leap_year;

@@ -65,6 +65,7 @@ class MeasurementProvenance:
     daemon_pid: int = 0
     daemon_requests: int = 0
     scan_manifest: dict[str, object] = field(default_factory=dict)
+    static_recovery: dict[str, object] | None = None
 
 
 # ── path collapse (verbatim intent from score.py::_scan_roots) ────────

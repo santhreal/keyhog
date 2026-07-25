@@ -22,7 +22,7 @@ from __future__ import annotations
 import re
 from dataclasses import asdict, dataclass, field
 
-from . import SCHEMA_VERSION
+from . import LEGACY_SCHEMA_VERSIONS, SCHEMA_VERSION
 
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 
@@ -286,6 +286,277 @@ class Detection:
         )
 
 
+STATIC_RECOVERY_SCHEMA_VERSION = "static-recovery-v1"
+_STATIC_RECOVERY_UNSUPPORTED_REASONS = frozenset({
+    "unsupported_call",
+    "dynamic_property_access",
+})
+_STATIC_RECOVERY_ERRONEOUS_REASONS = frozenset({
+    "literal_byte_array_element",
+    "json_base64",
+    "json_utf8",
+    "json_byte_array",
+    "xor_plaintext_utf8",
+    "string_join_json",
+    "buffer_base64",
+    "buffer_hex",
+    "aes_key_length",
+    "aes_iv_length",
+    "aes_ciphertext_block_length",
+    "aes_padding",
+    "aes_plaintext_utf8",
+    "malformed_expression",
+    "resource_limit",
+})
+_STATIC_RECOVERY_REASONS = (
+    _STATIC_RECOVERY_UNSUPPORTED_REASONS | _STATIC_RECOVERY_ERRONEOUS_REASONS
+)
+
+
+def _exact_count(value: object, field_name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"static recovery {field_name} must be a non-negative integer")
+    return value
+
+
+@dataclass(frozen=True)
+class StaticRecoveryMetrics:
+    """Exact bounded static-recovery disposition and rejection totals."""
+
+    schema_version: str = STATIC_RECOVERY_SCHEMA_VERSION
+    supported: int = 0
+    unsupported: int = 0
+    erroneous: int = 0
+    reasons: dict[str, int] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.schema_version != STATIC_RECOVERY_SCHEMA_VERSION:
+            raise ValueError(
+                "static recovery schema_version="
+                f"{self.schema_version!r}; supported={STATIC_RECOVERY_SCHEMA_VERSION!r}"
+            )
+        _exact_count(self.supported, "supported")
+        _exact_count(self.unsupported, "unsupported")
+        _exact_count(self.erroneous, "erroneous")
+        unknown = sorted(set(self.reasons) - _STATIC_RECOVERY_REASONS)
+        if unknown:
+            raise ValueError(f"static recovery has unknown rejection reasons: {unknown}")
+        normalized = {
+            reason: _exact_count(count, f"reason {reason!r}")
+            for reason, count in self.reasons.items()
+        }
+        unsupported = sum(
+            normalized.get(reason, 0)
+            for reason in _STATIC_RECOVERY_UNSUPPORTED_REASONS
+        )
+        erroneous = sum(
+            normalized.get(reason, 0)
+            for reason in _STATIC_RECOVERY_ERRONEOUS_REASONS
+        )
+        if unsupported != self.unsupported or erroneous != self.erroneous:
+            raise ValueError(
+                "static recovery reason conservation failed: "
+                f"reasons unsupported={unsupported}, erroneous={erroneous}; "
+                f"totals unsupported={self.unsupported}, erroneous={self.erroneous}"
+            )
+        object.__setattr__(self, "reasons", dict(sorted(normalized.items())))
+
+    def to_json(self) -> dict:
+        return {
+            "schema_version": self.schema_version,
+            "supported": self.supported,
+            "unsupported": self.unsupported,
+            "erroneous": self.erroneous,
+            "reasons": dict(sorted(self.reasons.items())),
+        }
+
+    @classmethod
+    def from_json(cls, value: object) -> "StaticRecoveryMetrics":
+        if not isinstance(value, dict):
+            raise ValueError("static recovery must be an object")
+        required = {
+            "schema_version",
+            "supported",
+            "unsupported",
+            "erroneous",
+            "reasons",
+        }
+        missing = sorted(required - set(value))
+        extra = sorted(set(value) - required)
+        if missing:
+            raise ValueError(f"static recovery missing required fields: {missing}")
+        if extra:
+            raise ValueError(f"static recovery has unknown fields: {extra}")
+        reasons = value["reasons"]
+        if not isinstance(reasons, dict) or any(
+            not isinstance(reason, str) for reason in reasons
+        ):
+            raise ValueError("static recovery reasons must be an object of named counts")
+        return cls(
+            schema_version=value["schema_version"],
+            supported=value["supported"],
+            unsupported=value["unsupported"],
+            erroneous=value["erroneous"],
+            reasons=reasons,
+        )
+
+
+BLOOM_EVIDENCE_SCHEMA_VERSION = "bloom-evidence-v1"
+_BLOOM_STATES = frozenset({
+    "healthy",
+    "saturated-fail-open",
+    "invalid-fail-open",
+})
+_BLOOM_UNAVAILABLE_REASONS = frozenset({"source-file-missing"})
+
+
+def _bloom_count(value: object, field_name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"Bloom evidence {field_name} must be a non-negative integer")
+    return value
+
+
+@dataclass(frozen=True)
+class BloomEvidence:
+    """Digest-bound real-corpus Bloom rejection and bypass differential."""
+
+    schema_version: str
+    corpus_name: str
+    corpus_revision: str
+    fixture_sha256: str
+    corpus_sha256: str
+    detector_corpus_sha256: str
+    scanner_detector_digest: str
+    executable_sha256: str
+    workspace_detector_corpus_sha256: str
+    declared_input_count: int
+    unavailable_input_count: int
+    unavailable_reason_counts: dict[str, int]
+    input_count: int
+    eligible_input_count: int
+    admitted_input_count: int
+    rejected_input_count: int
+    rejection_basis_points: int
+    populated_slots: int
+    total_slots: int
+    saturation_threshold_slots: int
+    density_basis_points: int
+    state: str
+    enabled_finding_count: int
+    bypass_finding_count: int
+    enabled_findings_sha256: str
+    bypass_findings_sha256: str
+    findings_identical: bool
+
+    def __post_init__(self) -> None:
+        if self.schema_version != BLOOM_EVIDENCE_SCHEMA_VERSION:
+            raise ValueError(
+                f"Bloom evidence schema_version={self.schema_version!r}; "
+                f"supported={BLOOM_EVIDENCE_SCHEMA_VERSION!r}"
+            )
+        if not self.corpus_name.strip() or not self.corpus_revision.strip():
+            raise ValueError("Bloom evidence must name the corpus and revision")
+        for field_name in (
+            "fixture_sha256",
+            "corpus_sha256",
+            "detector_corpus_sha256",
+            "executable_sha256",
+            "workspace_detector_corpus_sha256",
+            "enabled_findings_sha256",
+            "bypass_findings_sha256",
+        ):
+            if not _SHA256_RE.fullmatch(getattr(self, field_name)):
+                raise ValueError(f"Bloom evidence {field_name} must be lowercase SHA-256")
+        if not re.fullmatch(r"[0-9a-f]{16}", self.scanner_detector_digest):
+            raise ValueError(
+                "Bloom evidence scanner_detector_digest must be 16 lowercase hex digits"
+            )
+        count_fields = (
+            "declared_input_count",
+            "unavailable_input_count",
+            "input_count",
+            "eligible_input_count",
+            "admitted_input_count",
+            "rejected_input_count",
+            "rejection_basis_points",
+            "populated_slots",
+            "total_slots",
+            "saturation_threshold_slots",
+            "density_basis_points",
+            "enabled_finding_count",
+            "bypass_finding_count",
+        )
+        for field_name in count_fields:
+            _bloom_count(getattr(self, field_name), field_name)
+        if not isinstance(self.unavailable_reason_counts, dict):
+            raise ValueError("Bloom evidence unavailable_reason_counts must be an object")
+        normalized_reasons: dict[str, int] = {}
+        for reason, count in self.unavailable_reason_counts.items():
+            if reason not in _BLOOM_UNAVAILABLE_REASONS:
+                raise ValueError(
+                    f"Bloom evidence unavailable reason is invalid: {reason!r}"
+                )
+            normalized_reasons[reason] = _bloom_count(
+                count, f"unavailable_reason_counts[{reason!r}]"
+            )
+        if sum(normalized_reasons.values()) != self.unavailable_input_count:
+            raise ValueError("Bloom evidence unavailable reason accounting failed")
+        object.__setattr__(
+            self, "unavailable_reason_counts", dict(sorted(normalized_reasons.items()))
+        )
+        if self.input_count == 0 or self.total_slots == 0:
+            raise ValueError("Bloom evidence input_count and total_slots must be positive")
+        if self.declared_input_count != self.input_count + self.unavailable_input_count:
+            raise ValueError("Bloom evidence declared-input conservation failed")
+        if self.eligible_input_count > self.input_count:
+            raise ValueError("Bloom evidence eligible inputs exceed measured inputs")
+        if self.rejected_input_count > self.eligible_input_count:
+            raise ValueError("Bloom evidence rejected inputs exceed eligible inputs")
+        if self.admitted_input_count + self.rejected_input_count != self.input_count:
+            raise ValueError("Bloom evidence admit/reject conservation failed")
+        expected_rejection = self.rejected_input_count * 10_000 // self.input_count
+        if self.rejection_basis_points != expected_rejection:
+            raise ValueError("Bloom evidence rejection basis points are inconsistent")
+        expected_density = self.populated_slots * 10_000 // self.total_slots
+        if self.density_basis_points != expected_density:
+            raise ValueError("Bloom evidence density basis points are inconsistent")
+        if not 0 < self.saturation_threshold_slots <= self.total_slots:
+            raise ValueError("Bloom evidence saturation threshold is out of range")
+        if self.state not in _BLOOM_STATES:
+            raise ValueError(f"Bloom evidence state is invalid: {self.state!r}")
+        if self.state == "healthy" and self.populated_slots >= self.saturation_threshold_slots:
+            raise ValueError("Bloom evidence healthy state crosses saturation threshold")
+        if (
+            self.state == "saturated-fail-open"
+            and self.populated_slots < self.saturation_threshold_slots
+        ):
+            raise ValueError("Bloom evidence saturated state is below threshold")
+        if self.findings_identical and (
+            self.enabled_finding_count != self.bypass_finding_count
+            or self.enabled_findings_sha256 != self.bypass_findings_sha256
+        ):
+            raise ValueError("Bloom evidence identical finding claim is inconsistent")
+
+    def to_json(self) -> dict:
+        return {
+            field_name: getattr(self, field_name)
+            for field_name in self.__dataclass_fields__
+        }
+
+    @classmethod
+    def from_json(cls, value: object) -> "BloomEvidence":
+        if not isinstance(value, dict):
+            raise ValueError("Bloom evidence must be an object")
+        required = set(cls.__dataclass_fields__)
+        missing = sorted(required - set(value))
+        extra = sorted(set(value) - required)
+        if missing:
+            raise ValueError(f"Bloom evidence missing required fields: {missing}")
+        if extra:
+            raise ValueError(f"Bloom evidence has unknown fields: {extra}")
+        return cls(**value)
+
+
 # ── host: the hardware axis (OS / CPU / GPU) ──────────────────────────
 
 
@@ -484,9 +755,11 @@ class RunResult:
     available: bool = True
     error: str = ""
     scan_manifest: dict[str, object] = field(default_factory=dict)
+    static_recovery: StaticRecoveryMetrics | None = None
+    bloom: BloomEvidence | None = None
 
     def to_json(self) -> dict:
-        return {
+        value = {
             "schema_version": self.schema_version,
             "generated_at": self.generated_at,
             "host": self.host.to_json(),
@@ -501,32 +774,73 @@ class RunResult:
             "error": self.error,
             "scan_manifest": self.scan_manifest,
         }
+        if self.schema_version == SCHEMA_VERSION:
+            value["static_recovery"] = (
+                self.static_recovery.to_json()
+                if self.static_recovery is not None
+                else None
+            )
+            value["bloom"] = self.bloom.to_json() if self.bloom is not None else None
+        return value
 
     @classmethod
     def from_json(cls, d: dict, *, source: str = "benchmark result") -> "RunResult":
         observed_version = d.get("schema_version")
-        if observed_version != SCHEMA_VERSION:
+        if observed_version not in {SCHEMA_VERSION, *LEGACY_SCHEMA_VERSIONS}:
             rendered = (
                 "<missing>" if observed_version is None else repr(observed_version)
             )
             raise ValueError(
-                f"{source} has schema_version={rendered}; supported={SCHEMA_VERSION!r}. "
+                f"{source} has schema_version={rendered}; supported={SCHEMA_VERSION!r}, "
+                f"legacy={sorted(LEGACY_SCHEMA_VERSIONS)!r}. "
                 "Rerun the benchmark with the current harness"
+            )
+        scanner = Scanner.from_json(d.get("scanner", {}))
+        available = bool(d.get("available", True))
+        static_recovery = None
+        bloom = None
+        if observed_version == SCHEMA_VERSION:
+            if "static_recovery" not in d:
+                raise ValueError(
+                    f"{source} is {SCHEMA_VERSION!r} but lacks required "
+                    "'static_recovery' telemetry"
+                )
+            raw_static_recovery = d["static_recovery"]
+            if raw_static_recovery is not None:
+                static_recovery = StaticRecoveryMetrics.from_json(raw_static_recovery)
+            elif scanner.name == "keyhog" and available:
+                raise ValueError(
+                    f"{source} is an available keyhog result but static_recovery is null"
+                )
+            raw_bloom = d.get("bloom")
+            if raw_bloom is not None:
+                bloom = BloomEvidence.from_json(raw_bloom)
+        elif "static_recovery" in d or "bloom" in d:
+            current_fields = sorted(
+                field_name
+                for field_name in ("static_recovery", "bloom")
+                if field_name in d
+            )
+            raise ValueError(
+                f"{source} declares legacy schema {observed_version!r} but contains "
+                f"current telemetry fields {current_fields}"
             )
         return cls(
             schema_version=observed_version,
             generated_at=d.get("generated_at", ""),
             host=Host.from_json(d.get("host", {})),
-            scanner=Scanner.from_json(d.get("scanner", {})),
+            scanner=scanner,
             corpus=CorpusInfo.from_json(d.get("corpus", {})),
             detection=Detection.from_json(d.get("detection", {})),
             speed=Speed.from_json(d.get("speed", {})),
             finding_count=int(d.get("finding_count", 0)),
             exit_code=int(d.get("exit_code", 0)),
             timed_out=bool(d.get("timed_out", False)),
-            available=bool(d.get("available", True)),
+            available=available,
             error=d.get("error", ""),
             scan_manifest=dict(d.get("scan_manifest") or {}),
+            static_recovery=static_recovery,
+            bloom=bloom,
         )
 
     def result_filename(self) -> str:

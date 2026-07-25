@@ -42,6 +42,7 @@ fn assert_detector_fires(example: &str, detector_id: &str) {
     };
     let fired = SCANNER
         .scan(&chunk)
+        .expect("per-detector example scan should succeed")
         .iter()
         .any(|m| m.detector_id.as_ref() == detector_id);
     assert!(
@@ -936,6 +937,7 @@ fn per_detector_regression_all() {
         };
         let fired = SCANNER
             .scan(&chunk)
+            .expect("per-detector corpus scan should succeed")
             .iter()
             .any(|m| m.detector_id.as_ref() == *detector_id);
         if !fired {

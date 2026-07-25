@@ -5,7 +5,7 @@ use clap::Parser;
 #[derive(Parser)]
 pub struct CalibrateArgs {
     /// Mark these detector IDs as confirmed true positives (α += 1 each).
-    /// Use `--tp` repeatedly: `--tp aws-access-key --tp github-pat`.
+    /// Use `--tp` repeatedly: `--tp aws-access-key --tp github-pat-fine-grained`.
     #[arg(long, value_name = "DETECTOR_ID")]
     pub tp: Vec<String>,
     /// Mark these detector IDs as confirmed false positives (β += 1 each).

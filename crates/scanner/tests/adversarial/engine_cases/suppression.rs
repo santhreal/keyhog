@@ -28,7 +28,7 @@ fn pure_placeholder_not_flagged() {
     };
     let scanner = compile_test_scanner(vec![detector]);
     let chunk = make_chunk("aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n");
-    let matches = scanner.scan(&chunk);
+    let matches = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
     // The known example credential should be suppressed.
     assert!(
         matches.is_empty(),
@@ -70,7 +70,7 @@ fn example_suppression_is_recorded_in_telemetry() {
     };
     let scanner = compile_test_scanner(vec![detector]);
     let chunk = make_chunk("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n");
-    let matches = scanner.scan(&chunk);
+    let matches = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
     assert!(
         matches.is_empty(),
         "still suppressed (this is the bug we're closing the messaging gap on)"
@@ -117,7 +117,7 @@ fn dogfood_captures_redacted_event() {
     // observes exactly its own suppression event regardless of siblings.
     let trace = std::sync::Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
     trace.enable_dogfood();
-    let _ = keyhog_scanner::telemetry::with_scan_telemetry(&trace, || scanner.scan(&chunk));
+    let _ = keyhog_scanner::telemetry::with_scan_telemetry(&trace, || scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed")));
     let events = trace.drain().dogfood_events;
     // The dogfood trace must redact via the SAME canonical policy as findings
     // (`keyhog_core::redact`), which scales the retained edge to credential length
@@ -182,7 +182,7 @@ fn github_pat_example_suppressed() {
     };
     let scanner = compile_test_scanner(vec![detector]);
     let chunk = make_chunk("token = ghp_example_0001_xxxxxxxxxxxxxxxxxxxx\n");
-    let matches = scanner.scan(&chunk);
+    let matches = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
     assert!(
         matches.is_empty(),
         "ghp_example_0001_xxxxxxxxxxxxxxxxxxxx must be suppressed as an example credential"
@@ -305,7 +305,7 @@ fn real_credentials_not_suppressed() {
 fn empty_input_returns_no_matches() {
     let scanner = test_scanner();
     let chunk = make_chunk("");
-    let matches = scanner.scan(&chunk);
+    let matches = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
     assert!(matches.is_empty(), "empty input must produce zero matches");
 }
 
@@ -317,7 +317,7 @@ fn binary_garbage_returns_no_matches() {
         .map(|i| char::from((i % 94 + 33) as u8))
         .collect();
     let chunk = make_chunk(&garbage);
-    let matches = scanner.scan(&chunk);
+    let matches = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
     // We don't assert empty - we assert it doesn't panic or hang.
     let _ = matches;
 }
@@ -326,7 +326,7 @@ fn binary_garbage_returns_no_matches() {
 fn null_padded_binaryish_chunk_is_safe() {
     let scanner = test_scanner();
     let chunk = make_chunk(&format!("\0BIN\0{VALID_CREDENTIAL}\0TAIL\0"));
-    let _matches = scanner.scan(&chunk);
+    let _matches = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
     // Success means it didn"t panic or hang.
 }
 
@@ -434,7 +434,7 @@ fn dogfood_records_engine_probabilistic_gate_drop() {
     // 16 identical chars: matches the regex, has a "secret" keyword anchor, but
     // is the lowest-diversity value possible -> the probabilistic gate rejects it.
     let chunk = make_chunk("secret = aaaaaaaaaaaaaaaa\n");
-    let _ = scanner.scan(&chunk);
+    let _ = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
     // Pin to OUR planted credential's canonical redaction so a concurrent test's
     // suppression event can't satisfy the assertion. `keyhog_core::redact` scales
     // the retained edge to length (`(16/8).clamp(1,4)` = 2), so the 16-'a' value

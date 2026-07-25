@@ -28,7 +28,7 @@ macOS release assets are portable, so run `brew install minisign` and use the
 system `curl`.
 
 ```sh
-TAG=v0.5.45
+TAG=v0.5.46
 BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
 KEYHOG_MINISIGN_PUBLIC_KEY='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
 curl -fSLO "$BASE/install.sh"
@@ -86,7 +86,7 @@ part of the current release contract.
 PowerShell 5+ (ships with Windows 10/11):
 
 ```powershell
-$Tag = 'v0.5.45'
+$Tag = 'v0.5.46'
 $Base = "https://github.com/santhreal/keyhog/releases/download/$Tag"
 $PublicKey = 'RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
 iwr "$Base/install.ps1" -OutFile keyhog-install.ps1
@@ -115,7 +115,7 @@ release.
 
 | Env var / flag                          | Effect                                                        |
 |-----------------------------------------|---------------------------------------------------------------|
-| `KEYHOG_VERSION=v0.5.45` (or `--version=v0.5.45`) | Pin a specific release tag. With no pin, the installer admits only the newest stable release with this host's complete signed bundle; it probes the latest redirect first, then checks recent releases when that proof is incomplete. |
+| `KEYHOG_VERSION=v0.5.46` (or `--version=v0.5.46`) | Pin a specific release tag. With no pin, the installer admits only the newest stable release with this host's complete signed bundle; it probes the latest redirect first, then checks recent releases when that proof is incomplete. |
 | `--install-dir=...`                     | Install into a different directory.            |
 | `GITHUB_TOKEN=...`                      | Optional auth for the fallback GitHub releases API lookup. The normal latest-asset path does not need it. |
 | `--yes` / `-y`                          | Accept the displayed defaults without prompting: PATH setup yes, optional completion and repository hook no. |
@@ -160,10 +160,13 @@ mutated; only the exact signed manifest is made visible.
 `keyhog update` and `keyhog repair` use strict semantic-version precedence.
 Their implicit latest-release lookup ignores drafts and prereleases and skips
 any release that lacks the complete signed binary and GPU-literal bundle for
-the current host. Use `--version <TAG>` to request an exact published tag,
-including a prerelease. Release metadata, payloads, and signatures have bounded
-downloads and connection/request deadlines; an oversized or stalled response
-fails without changing the installed binary.
+the current host. Use `--version <SEMVER>` to request an exact published
+version; canonical bare and `v`-prefixed forms are accepted, including valid
+prereleases. KeyHog normalizes the request to one exact `v`-prefixed tag and
+rejects malformed input or a different/malformed API response before any asset
+download. Release metadata, payloads, and signatures have bounded downloads
+and connection/request deadlines; an oversized or stalled response fails
+without changing the installed binary.
 
 The maintenance commands validate the signed sidecar's archive paths, entry
 types, expansion limits, manifest version, binary-version binding, filenames,
@@ -311,7 +314,7 @@ It complements the detached minisign signatures, which remain the installer's
 offline trust root:
 
 ```sh
-TAG=v0.5.45
+TAG=v0.5.46
 gh attestation verify "$ASSET" --repo santhreal/keyhog \
   --signer-workflow github.com/santhreal/keyhog/.github/workflows/release.yml \
   --source-ref "refs/tags/$TAG" --deny-self-hosted-runners

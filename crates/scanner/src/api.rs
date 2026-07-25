@@ -3,6 +3,9 @@
 //! `lib.rs` declares the scanner subsystems; this module keeps the root
 //! compatibility exports in one place.
 
+pub use crate::bigram_bloom::{
+    BigramPrefilterCorpusStatus, BigramPrefilterState, BigramPrefilterStatus,
+};
 pub use crate::compiled_scanner::{
     CompiledScannerRuntime, GpuBackendAvailability, GpuBackendCandidateStatus, GpuInitPolicy,
 };

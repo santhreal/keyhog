@@ -33,6 +33,7 @@ password = "match"
 
 [detector.verify.success]
 status = 200
+policy = "status_with_error_backstop"
 
 [[detector.tests]]
 test_positive = "VONAGE_API_KEY=54689afc\nVONAGE_API_SECRET=0123456789abcdef"

@@ -141,7 +141,9 @@ fn every_detector_has_hostile_near_miss_twin() {
 
             scanner.clear_fragment_cache();
             let single = make_chunk(&text, &format!("{label}-near-miss.txt"), 0);
-            let matches = scanner.scan(&single);
+            let matches = scanner
+                .scan(&single)
+                .expect("single-chunk hostile near-miss scan should succeed");
             if detector_fired(&matches, label) {
                 let captured: Vec<_> = matches
                     .iter()
@@ -161,7 +163,9 @@ fn every_detector_has_hostile_near_miss_twin() {
                 .enumerate()
             {
                 scanner.clear_fragment_cache();
-                let results = scanner.scan_coalesced(&chunks);
+                let results = scanner
+                    .scan_coalesced(&chunks)
+                    .expect("coalesced hostile near-miss scan should succeed");
                 let flat: Vec<_> = results.into_iter().flatten().collect();
                 if detector_fired(&flat, label) {
                     let captured: Vec<_> = flat

@@ -521,7 +521,8 @@ impl CompiledPattern {
 /// An optional compiled companion pattern for a detector.
 #[derive(Debug)]
 pub(crate) struct CompiledCompanion {
-    pub(crate) name: String,
+    /// Immutable detector metadata shared by every emitted companion match.
+    pub(crate) name: Arc<str>,
     pub(crate) regex: Regex,
     pub(crate) capture_group: Option<usize>,
     pub(crate) within_lines: usize,

@@ -20,7 +20,7 @@
 use keyhog_core::AuthSpec;
 use keyhog_core::{
     validate_detector, CompanionSpec, DetectorSpec, HeaderSpec, HttpMethod, OobPolicy, OobProtocol,
-    OobSpec, PatternSpec, QualityIssue, Severity, StepSpec, SuccessSpec, VerifySpec,
+    OobSpec, PatternSpec, QualityIssue, Severity, StepSpec, SuccessPolicy, SuccessSpec, VerifySpec,
 };
 
 // ── Exact expected error payloads (line-continuation `\` folds the newline AND
@@ -347,7 +347,11 @@ fn oob_combined_with_multistep_is_error() {
         auth: AuthSpec::None {},
         headers: Vec::new(),
         body: Some("x={{interactsh.url}}".into()),
-        success: SuccessSpec::default(),
+        success: SuccessSpec {
+            status: Some(200),
+            policy: Some(SuccessPolicy::StatusWithErrorBackstop),
+            ..Default::default()
+        },
         extract: Vec::new(),
     }];
     spec.verify = Some(verify);

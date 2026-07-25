@@ -239,7 +239,9 @@ fn full_scan_finds_forward_aws_key_directly() {
     // decode and is surfaced directly by the scanner with its exact bytes.
     let scanner = compile_scanner();
     let chunk = chunk_with(&format!("token = \"{AWS_SECRET}\""), "direct");
-    let matches = scanner.scan(&chunk);
+    let matches = scanner
+        .scan(&chunk)
+        .expect("direct-token depth regression scan succeeds");
     let aws: Vec<&str> = matches
         .iter()
         .filter(|m| &*m.detector_id == "aws-access-key")
@@ -258,7 +260,9 @@ fn full_scan_surfaces_reversed_aws_key_as_forward_credential() {
     // and never the reversed literal.
     let scanner = compile_scanner();
     let chunk = chunk_with(&format!("token = \"{AWS_REVERSED}\""), "evasion");
-    let matches = scanner.scan(&chunk);
+    let matches = scanner
+        .scan(&chunk)
+        .expect("reverse-token depth regression scan succeeds");
 
     let has_forward = matches
         .iter()

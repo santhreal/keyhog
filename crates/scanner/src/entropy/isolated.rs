@@ -504,6 +504,26 @@ pub(super) fn collect_isolated_bare_candidates_inner(
     placeholder_keywords: &[String],
 ) {
     let mut emit_candidate = |candidate: &str, candidate_offset: usize| {
+        let whole_value = crate::detector_execution_policy::whole_assignment_value(
+            line,
+            candidate_offset,
+            candidate_offset + candidate.len(),
+        );
+        if !whole_value.is_exact(candidate_offset, candidate_offset + candidate.len()) {
+            let whole = whole_value.as_str(line);
+            if crate::telemetry::is_dogfood_enabled() {
+                let stage_id = if whole.len() > context.plausibility_policy.length.max_len {
+                    StageId::EntropyValueShape(EntropyShapeStage::ValueTooLong)
+                } else {
+                    StageId::PartialGenericAssignmentValue
+                };
+                let ctx = crate::adjudicate::MatchCtx::for_entropy_generation(
+                    crate::adjudicate::EntropyGenerationSignal::SuppressionStage(stage_id),
+                );
+                crate::adjudicate::record_suppression(None, whole, &ctx);
+            }
+            return;
+        }
         let entropy = match isolated_bare_secret_entropy_decision(
             candidate,
             context.threshold,

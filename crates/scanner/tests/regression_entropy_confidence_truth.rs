@@ -358,6 +358,7 @@ fn production_named_confidence_uses_the_resolved_scan_entropy_threshold() {
         };
         scanner
             .scan(&chunk)
+            .expect("entropy confidence-threshold scan should succeed")
             .into_iter()
             .find(|finding| {
                 finding.detector_id.as_ref() == ID && finding.credential.as_ref() == CREDENTIAL

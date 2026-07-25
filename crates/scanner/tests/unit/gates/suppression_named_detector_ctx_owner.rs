@@ -338,14 +338,15 @@ fn entropy_and_ml_emit_reject_reasons_route_through_adjudicator() {
         "engine/phase2_entropy.rs finalizer checksum drops must use the adjudicator final report helper"
     );
     assert!(
-        ml.contains("crate::adjudicate::finalize_report_raw_match("),
-        "engine/scan_postprocess/ml.rs must route pending-match suppressions through the adjudicator raw-match final report helper"
+        ml.contains("crate::adjudicate::finalize_report_candidate("),
+        "engine/scan_postprocess/ml.rs must route pending-match suppressions through the adjudicator before materialization"
     );
     assert!(
-        ml.contains("crate::adjudicate::finalize_report_raw_match(")
+        ml.contains("crate::adjudicate::finalize_report_candidate(")
+            && ml.contains(".materialize(final_confidence)")
             && !ml.contains("raw_match.confidence =")
             && !ml.contains("&pending.credential,"),
-        "engine/scan_postprocess/ml.rs checksum drops, confidence assignment, and raw-match credential selection must use the adjudicator raw-match final report helper"
+        "engine/scan_postprocess/ml.rs must adjudicate borrowed pending data before constructing RawMatch"
     );
     for (path, code) in [
         ("engine/phase2_entropy.rs", entropy.as_str()),
@@ -598,16 +599,11 @@ fn final_emit_context_hard_suppression_stays_out_of_scoring_owner() {
             && adjudicate.contains("StageId::HardSuppressedContext")
             && adjudicate.contains("fn final_emit_stage(")
             && adjudicate.contains("fn finalize_report_candidate(")
-            && adjudicate.contains("fn finalize_report_raw_match(")
-            && adjudicate.contains("let credential = raw_match.credential.as_ref();")
-            && !adjudicate.contains(
-                "fn finalize_report_raw_match(\n    mut raw_match: RawMatch,\n    credential: &str,"
-            )
             && process.contains("crate::adjudicate::finalize_report_candidate(")
             && generic.contains("crate::adjudicate::finalize_report_candidate(")
             && entropy.contains("crate::adjudicate::finalize_report_candidate(")
-            && ml.contains("crate::adjudicate::finalize_report_raw_match("),
-        "all final emit tails must route through adjudicate final report candidate helper, and raw-match finalization must derive the credential from RawMatch"
+            && ml.contains("crate::adjudicate::finalize_report_candidate("),
+        "all final emit tails must route through the adjudicate final report candidate helper"
     );
     for (path, code) in [
         ("engine/process.rs", process.as_str()),

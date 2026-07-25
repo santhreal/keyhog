@@ -27,6 +27,7 @@ type = "none"
 
 [detector.verify.success]
 status = 200
+policy = "status_with_error_backstop"
 
 [[detector.tests]]
 test_positive = "TRELLO_API_TOKEN=ViHrr2Iq7a43W4O4uE_6NJW5N1Uzm5XkEzq7IhdxW1M4JvR05_"

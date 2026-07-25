@@ -36,6 +36,7 @@ url = "https://api.braintreegateway.com/"
 allowed_domains = ["api.braintreegateway.com"]
 [detector.verify.success]
 status = 200
+policy = "status_with_error_backstop"
 
 [[detector.verify.headers]]
 name = "Authorization"

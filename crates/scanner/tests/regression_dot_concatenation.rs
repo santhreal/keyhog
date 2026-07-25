@@ -69,7 +69,9 @@ fn scan(text: &str) -> Vec<RawMatch> {
             ..Default::default()
         },
     };
-    scanner.scan(&chunk)
+    scanner
+        .scan(&chunk)
+        .expect("dot-concatenation scan should succeed")
 }
 
 // ── POSITIVE: reassembly across quote styles ───────────────────────────────

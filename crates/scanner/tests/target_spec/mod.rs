@@ -149,7 +149,9 @@ pub fn scan(text: &str, path: &str) -> Vec<RawMatch> {
         },
     };
     scanner().clear_fragment_cache();
-    scanner().scan(&chunk)
+    scanner()
+        .scan(&chunk)
+        .expect("capability target-spec scan should succeed")
 }
 
 /// True iff some surfaced match's credential CONTAINS `credential`. Substring

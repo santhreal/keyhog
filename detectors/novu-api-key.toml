@@ -28,6 +28,7 @@ template = "ApiKey {{match}}"
 
 [detector.verify.success]
 status = 200
+policy = "status_with_error_backstop"
 
 [[detector.tests]]
 test_positive = "nvu_JYpcTUFDffTRWNapX7YqCQNvLP5lpJRX"

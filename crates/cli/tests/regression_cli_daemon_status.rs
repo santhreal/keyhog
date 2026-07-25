@@ -119,8 +119,8 @@ fn plain_version_omits_simd_line_while_full_includes_it() {
 
 #[test]
 fn full_flag_without_version_is_a_usage_error_naming_version() {
-    // Boundary: `--full` has `requires = "version"`; alone it must fail clap
-    // validation with exit 2 and name the missing `--version`.
+    // Boundary: `--full` requires the root identity `--version`; alone it must
+    // fail clap validation with exit 2 and name the missing public flag.
     let out = run(&["--full"]);
     assert_eq!(
         out.status.code(),

@@ -9,11 +9,15 @@
 use crate::daemon::protocol::{response_kind, Request, Response, MAX_FRAME_BYTES};
 use anyhow::{bail, Context, Result};
 use bytes::{Buf, BufMut, BytesMut};
+#[cfg(test)]
 use futures_util::{SinkExt, StreamExt};
 use std::marker::PhantomData;
+#[cfg(test)]
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::UnixStream;
-use tokio_util::codec::{Decoder, Encoder, Framed, FramedRead, FramedWrite};
+use tokio_util::codec::{Decoder, Encoder, Framed};
+#[cfg(test)]
+use tokio_util::codec::{FramedRead, FramedWrite};
 
 const LENGTH_PREFIX_BYTES: usize = 4;
 
@@ -28,7 +32,8 @@ pub(crate) fn client_transport(stream: UnixStream) -> ClientTransport {
     Framed::new(stream, ClientCodec::default())
 }
 
-pub async fn write_request<W>(writer: &mut W, request: &Request) -> Result<()>
+#[cfg(test)]
+pub(crate) async fn write_request<W>(writer: &mut W, request: &Request) -> Result<()>
 where
     W: AsyncWrite + Unpin,
 {
@@ -36,7 +41,8 @@ where
     framed.send(request.clone()).await
 }
 
-pub async fn write_response<W>(writer: &mut W, response: &Response) -> Result<()>
+#[cfg(test)]
+pub(crate) async fn write_response<W>(writer: &mut W, response: &Response) -> Result<()>
 where
     W: AsyncWrite + Unpin,
 {
@@ -44,7 +50,8 @@ where
     framed.send(response.clone()).await
 }
 
-pub async fn read_request<R>(reader: &mut R) -> Result<Option<Request>>
+#[cfg(test)]
+pub(crate) async fn read_request<R>(reader: &mut R) -> Result<Option<Request>>
 where
     R: AsyncRead + Unpin,
 {
@@ -52,7 +59,8 @@ where
     framed.next().await.transpose()
 }
 
-pub async fn read_response<R>(reader: &mut R) -> Result<Option<Response>>
+#[cfg(test)]
+pub(crate) async fn read_response<R>(reader: &mut R) -> Result<Option<Response>>
 where
     R: AsyncRead + Unpin,
 {

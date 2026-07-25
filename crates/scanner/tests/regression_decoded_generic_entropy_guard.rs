@@ -35,7 +35,9 @@ fn scan_text(text: String, path: &str) -> Vec<RawMatch> {
             ..Default::default()
         },
     };
-    scanner().scan(&chunk)
+    scanner()
+        .scan(&chunk)
+        .expect("decoded entropy-guard scan should succeed")
 }
 
 fn ids(hits: &[RawMatch]) -> Vec<(String, String)> {
@@ -190,7 +192,7 @@ fn decoded_named_detector_with_entropy_like_id_uses_the_active_plan() {
         },
     };
 
-    let hits = scanner.scan(&chunk);
+    let hits = scanner.scan(&chunk).expect("scanner call should succeed");
     assert!(
         hits.iter().any(|matched| {
             matched.detector_id.as_ref() == ID && matched.credential.as_ref() == CREDENTIAL

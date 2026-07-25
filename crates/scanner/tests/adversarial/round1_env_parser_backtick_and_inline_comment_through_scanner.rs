@@ -45,7 +45,7 @@ fn scan_path(body: &str, path: &str) -> Vec<keyhog_core::RawMatch> {
             ..Default::default()
         },
     };
-    shared_scanner().scan(&chunk)
+    shared_scanner().scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"))
 }
 
 /// CVE-replay shape: real GitHub classic PAT prefix `ghp_` plus 36
@@ -195,7 +195,7 @@ fn cross_file_same_secret_in_backtick_and_inline_comment_env_shapes() {
         },
     };
 
-    let groups = scanner.scan_coalesced(&[chunk_a, chunk_b]);
+    let groups = scanner.scan_coalesced(&[chunk_a, chunk_b]).expect(concat!(module_path!(), ": coalesced scan should succeed"));
     let flat: Vec<_> = groups.into_iter().flatten().collect();
 
     let svc_a_exact = flat.iter().any(|m| {

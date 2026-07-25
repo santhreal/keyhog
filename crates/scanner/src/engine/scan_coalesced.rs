@@ -60,11 +60,11 @@ impl CompiledScanner {
         chunk: &keyhog_core::Chunk,
         matches: &mut Vec<keyhog_core::RawMatch>,
         route: crate::ScanExecutionRoute,
-    ) {
+    ) -> crate::error::Result<()> {
         if self.chunk_needs_decode_postprocess(chunk) {
-            self.post_process_matches(chunk, matches, None, route);
+            self.post_process_matches(chunk, matches, None, route)
         } else {
-            self.scan_cross_chunk_fragments(chunk, matches, None, route);
+            self.scan_cross_chunk_fragments(chunk, matches, None, route)
         }
     }
 
@@ -74,38 +74,37 @@ impl CompiledScanner {
         &self,
         chunk: &keyhog_core::Chunk,
         route: crate::ScanExecutionRoute,
-    ) -> Option<Vec<keyhog_core::RawMatch>> {
+    ) -> crate::error::Result<Option<Vec<keyhog_core::RawMatch>>> {
         if !self.chunk_needs_decode_postprocess(chunk) {
-            return None;
+            return Ok(None);
         }
         let mut matches = Vec::new();
-        self.post_process_matches(chunk, &mut matches, None, route);
-        Some(matches)
+        self.post_process_matches(chunk, &mut matches, None, route)?;
+        Ok(Some(matches))
     }
 
-    /// High-throughput coalesced scan: all files scanned in parallel, zero
-    /// overhead for non-hit files.
+    /// High-throughput coalesced scan using exactly the selected backend.
     ///
-    /// Direct library backend selection is a hard process contract. CLI
-    /// orchestrators that own stable input replay use the fallible companion
-    /// method below and record any automatic-route recovery explicitly.
+    /// Initialization and dispatch failures return `ScanError`; the library
+    /// never terminates the host or substitutes a different backend.
     pub fn scan_coalesced_with_backend(
         &self,
         chunks: &[keyhog_core::Chunk],
         backend: crate::hw_probe::ScanBackend,
-    ) -> Vec<Vec<keyhog_core::RawMatch>> {
+    ) -> crate::error::Result<Vec<Vec<keyhog_core::RawMatch>>> {
         self.scan_coalesced_with_backend_and_admission(chunks, backend, None)
     }
 
     /// Coalesced scan using admission evidence computed by the autoroute key
-    /// builder. A mismatched plan is ignored and the scanner recomputes its
-    /// own exact admissions, preserving recall over the optimization.
+    /// builder. This receipt-blind boundary fails closed when identity recovery
+    /// is required; callers retaining recomputed findings use the recovery-aware
+    /// outcome boundary.
     pub fn scan_coalesced_with_backend_and_admission(
         &self,
         chunks: &[keyhog_core::Chunk],
         backend: crate::hw_probe::ScanBackend,
         plan: Option<&super::Phase1AdmissionPlan>,
-    ) -> Vec<Vec<keyhog_core::RawMatch>> {
+    ) -> crate::error::Result<Vec<Vec<keyhog_core::RawMatch>>> {
         self.scan_coalesced_with_backend_admission_and_route(
             chunks,
             backend,
@@ -115,59 +114,44 @@ impl CompiledScanner {
     }
 
     /// Coalesced scan with an explicit recall-equivalent execution route.
+    /// Recovery metadata is never discarded; completed recovery requires the
+    /// recovery-aware boundary that returns its receipt.
     pub fn scan_coalesced_with_backend_admission_and_route(
         &self,
         chunks: &[keyhog_core::Chunk],
         backend: crate::hw_probe::ScanBackend,
         plan: Option<&super::Phase1AdmissionPlan>,
         route: crate::ScanExecutionRoute,
-    ) -> Vec<Vec<keyhog_core::RawMatch>> {
-        match self.try_scan_coalesced_with_backend_admission_and_route(chunks, backend, plan, route)
-        {
-            Ok(matches) => matches,
-            Err(crate::error::ScanError::Gpu(reason)) => {
-                super::gpu_forced::fail_selected_gpu_dispatch(self, &reason)
-            }
-            Err(error) => crate::process_exit::backend_unavailable(format!(
-                "selected scanner backend failed: {error}"
-            )),
-        }
-    }
-
-    /// Fallible production dispatch boundary for callers that require the
-    /// selected backend as a hard contract. Automatic orchestrators use the
-    /// recovery-aware companion below with an explicitly stable snapshot.
-    pub fn try_scan_coalesced_with_backend_and_admission(
-        &self,
-        chunks: &[keyhog_core::Chunk],
-        backend: crate::hw_probe::ScanBackend,
-        plan: Option<&super::Phase1AdmissionPlan>,
     ) -> crate::error::Result<Vec<Vec<keyhog_core::RawMatch>>> {
-        self.try_scan_coalesced_with_backend_admission_and_route(
-            chunks,
-            backend,
-            plan,
-            self.execution_route_for_backend(backend),
-        )
-    }
-
-    /// Fallible production dispatch with an immutable per-request execution route.
-    pub fn try_scan_coalesced_with_backend_admission_and_route(
-        &self,
-        chunks: &[keyhog_core::Chunk],
-        backend: crate::hw_probe::ScanBackend,
-        plan: Option<&super::Phase1AdmissionPlan>,
-        route: crate::ScanExecutionRoute,
-    ) -> crate::error::Result<Vec<Vec<keyhog_core::RawMatch>>> {
-        self.try_scan_coalesced_with_backend_admission_route_and_recovery(
+        self.scan_coalesced_with_backend_admission_route_and_recovery(
             chunks, backend, plan, route, false,
         )
-        .map(|outcome| outcome.matches)
+        .and_then(|outcome| {
+            if outcome.gpu_recovery_receipts != 0 {
+                return Err(crate::error::ScanError::Gpu(format!(
+                    "{} GPU MoE recovery receipt(s) were emitted by this dispatch; use the recovery-aware scan boundary",
+                    outcome.gpu_recovery_receipts
+                )));
+            }
+            match outcome.recovery {
+                Some(receipt) if receipt.is_phase1_admission_recovery() => Err(
+                    crate::error::ScanError::AdmissionPlanIdentity(receipt.reason),
+                ),
+                Some(receipt) => Err(crate::error::ScanError::Config(format!(
+                    "recovery-aware dispatch returned an unexpected {} -> {} receipt: {}",
+                    receipt.failed_backend.label(),
+                    receipt.recovery_backend.label(),
+                    receipt.reason,
+                ))),
+                None => Ok(outcome.matches),
+            }
+        })
     }
 
-    /// Fallible dispatch that may recover exact failed GPU dispatch ranges when
-    /// the caller owns a stable input snapshot and explicitly permits recovery.
-    pub fn try_scan_coalesced_with_backend_admission_route_and_recovery(
+    /// Dispatch that returns an exact recovery receipt when untrusted admission
+    /// evidence must be recomputed, and may recover exact failed GPU dispatch
+    /// ranges when the caller owns a stable input snapshot.
+    pub fn scan_coalesced_with_backend_admission_route_and_recovery(
         &self,
         chunks: &[keyhog_core::Chunk],
         backend: crate::hw_probe::ScanBackend,
@@ -189,7 +173,26 @@ impl CompiledScanner {
                 expected_residual_backend.label(),
             )));
         }
-        let result = if backend == crate::hw_probe::ScanBackend::SimdCpu {
+        let (validated_plan, admission_recovery) = if backend.is_gpu() {
+            // GPU region-presence dispatch owns trigger admission and does not
+            // consume the CPU/SIMD admission plan.
+            (None, None)
+        } else {
+            match plan {
+                Some(plan) => match plan.validate_chunks(chunks) {
+                    Ok(()) => (Some(plan), None),
+                    Err(error) => (
+                        None,
+                        Some(super::BackendRecoveryReceipt::phase1_admission(
+                            backend, chunks, error,
+                        )),
+                    ),
+                },
+                None => (None, None),
+            }
+        };
+        let (result, gpu_recovery_receipts) = crate::gpu::with_recovery_receipt_scope(|| {
+            let result = if backend == crate::hw_probe::ScanBackend::SimdCpu {
             self.try_initialize_simd_backend().map_err(|error| {
                 crate::error::ScanError::Simd(format!(
                     "selected Hyperscan backend initialization failed: {error}"
@@ -198,20 +201,19 @@ impl CompiledScanner {
             Ok(super::CoalescedScanOutcome {
                 matches: self.scan_coalesced_simd(
                     chunks,
-                    plan.filter(|plan| plan.matches_chunks(chunks)),
+                    validated_plan,
                     route,
                 )?,
                 recovery: None,
+                gpu_recovery_receipts: 0,
             })
         } else if backend.is_gpu() {
             #[cfg(feature = "gpu")]
             {
-                self.try_scan_coalesced_gpu_region_presence_recovering(
-                    chunks,
-                    backend,
-                    route,
-                    recover_gpu_dispatch_faults,
-                )
+                self.scan_coalesced_gpu_region_presence_recovering(chunks,
+                backend,
+                route,
+                recover_gpu_dispatch_faults,)
                 .map_err(|error| {
                     self.record_gpu_runtime_fault(error.reason());
                     crate::error::ScanError::Gpu(error.to_string())
@@ -229,12 +231,31 @@ impl CompiledScanner {
                 matches: self.scan_chunks_with_backend_internal_admission_and_route(
                     chunks,
                     backend,
-                    plan.filter(|plan| plan.matches_chunks(chunks)),
+                    validated_plan,
                     route,
-                ),
+                )?,
                 recovery: None,
+                gpu_recovery_receipts: 0,
             })
-        };
+            };
+            result
+        });
+        let result = result.and_then(|mut outcome| {
+            if admission_recovery.is_some() && outcome.recovery.is_some() {
+                return Err(crate::error::ScanError::Config(
+                    "admission-plan recovery and backend recovery completed in one dispatch, but the status model cannot represent both receipts"
+                        .to_string(),
+                ));
+            }
+            if admission_recovery.is_some() {
+                outcome.recovery = admission_recovery;
+            }
+            Ok(outcome)
+        });
+        let result = result.map(|mut outcome| {
+            outcome.gpu_recovery_receipts = gpu_recovery_receipts;
+            outcome
+        });
         // Count logical input only after a complete route succeeds. A failed GPU
         // attempt followed by visible CPU replay therefore records the input
         // once, while every successful coalesced backend reports the same bytes.
@@ -250,8 +271,20 @@ impl CompiledScanner {
     /// Accelerated callers use [`Self::scan_coalesced_with_backend`] with an
     /// explicit measured backend. Keeping the no-backend API on `CpuFallback`
     /// makes library results independent of host hardware and calibration state.
-    pub fn scan_coalesced(&self, chunks: &[keyhog_core::Chunk]) -> Vec<Vec<keyhog_core::RawMatch>> {
-        self.scan_chunks_with_backend(chunks, crate::hw_probe::ScanBackend::CpuFallback)
+    pub fn scan_coalesced(
+        &self,
+        chunks: &[keyhog_core::Chunk],
+    ) -> crate::error::Result<Vec<Vec<keyhog_core::RawMatch>>> {
+        let backend = crate::hw_probe::ScanBackend::CpuFallback;
+        let matches = self.scan_chunks_with_backend_internal_admission_and_route(
+            chunks,
+            backend,
+            None,
+            self.execution_route_for_backend(backend),
+        )?;
+        profile::add_bytes(chunks.iter().map(|chunk| chunk.data.len() as u64).sum());
+        profile::add_files(chunks.len() as u64);
+        Ok(matches)
     }
 
     /// Explicit Hyperscan coalesced path: all files scanned in parallel, zero
@@ -291,7 +324,7 @@ impl CompiledScanner {
                 self.compute_coalesced_triggers(chunks, prefilter, admission_plan)
                     .map_err(crate::error::ScanError::Simd)?
             };
-            return Ok(self.scan_coalesced_phase2(chunks, triggers, route));
+            return self.scan_coalesced_phase2(chunks, triggers, route);
         }
     }
 
@@ -389,8 +422,7 @@ impl CompiledScanner {
         if normalized.as_bytes() == raw_text.as_bytes() {
             return false;
         }
-        let normalized_triggers =
-            self.collect_triggered_patterns_for_backend(normalized, route.decode_backend);
+        let normalized_triggers = self.collect_triggered_patterns_cpu(normalized);
         normalized_triggers.iter().any(|&word| word != 0)
             || self.no_hit_text_admits(chunk, normalized, false, route)
     }
@@ -493,7 +525,7 @@ impl CompiledScanner {
         chunks: &[keyhog_core::Chunk],
         triggers: Vec<Option<Vec<u64>>>,
         route: crate::ScanExecutionRoute,
-    ) -> Vec<Vec<keyhog_core::RawMatch>> {
+    ) -> crate::error::Result<Vec<Vec<keyhog_core::RawMatch>>> {
         self.scan_coalesced_phase2_with_admission(
             chunks, triggers, None, None, None, None, None, None, None, route,
         )
@@ -504,7 +536,7 @@ impl CompiledScanner {
         &self,
         chunks: &[keyhog_core::Chunk],
         triggers: Vec<Option<Vec<u64>>>,
-        route: crate::ScanExecutionRoute,
+        _route: crate::ScanExecutionRoute,
     ) -> Vec<Option<Vec<u64>>> {
         let chunk_count = chunks.len();
         let trigger_count = triggers.len();
@@ -530,8 +562,7 @@ impl CompiledScanner {
         drop(triggers);
         let mut recomputed = Vec::with_capacity(chunk_count);
         for chunk in chunks {
-            let triggered =
-                self.collect_triggered_patterns_for_backend(&chunk.data, route.decode_backend);
+            let triggered = self.collect_triggered_patterns_cpu(&chunk.data);
             if triggered.iter().any(|&word| word != 0) {
                 recomputed.push(Some(triggered));
             } else {
@@ -560,13 +591,14 @@ impl CompiledScanner {
         confirmed_anchor_literal_matches: Option<&[Vec<(u32, u32)>]>,
         generic_keyword_positions: Option<&[Vec<u32>]>,
         route: crate::ScanExecutionRoute,
-    ) -> Vec<Vec<keyhog_core::RawMatch>> {
+    ) -> crate::error::Result<Vec<Vec<keyhog_core::RawMatch>>> {
         use rayon::prelude::*;
 
         let triggers = self.normalize_coalesced_phase2_triggers(chunks, triggers, route);
         let perf_trace = super::profile::perf_trace_enabled();
         let phase2_start = perf_trace.then(std::time::Instant::now);
         let telemetry = crate::telemetry::capture_scan_telemetry();
+        let recovery_receipts = crate::gpu::capture_recovery_receipts();
         struct CoalescedChunkOutput {
             state: Option<crate::types::ScanState>,
             matches: Vec<keyhog_core::RawMatch>,
@@ -578,7 +610,8 @@ impl CompiledScanner {
             .zip(triggers.into_par_iter())
             .enumerate()
             .map(|(chunk_index, (chunk, triggered_opt))| {
-                crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
+                crate::gpu::with_captured_recovery_receipts(recovery_receipts.as_ref(), || {
+                    crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
                     let keyword_hints = phase2_keyword_hints
                         .and_then(|rows| rows.get(chunk_index))
                         .map(Vec::as_slice);
@@ -625,12 +658,12 @@ impl CompiledScanner {
                                 confirmed_anchor_matches,
                                 generic_keyword_positions,
                                 route,
-                            );
-                            return CoalescedChunkOutput {
+                            )?;
+                            return Ok(CoalescedChunkOutput {
                                 state: None,
                                 matches,
                                 needs_postprocess: true,
-                            };
+                            });
                         } else {
                             let prepared = self.prepare_chunk(chunk);
                             let state = self.scan_prepared_state_with_triggered(
@@ -643,11 +676,11 @@ impl CompiledScanner {
                                 generic_keyword_positions,
                                 route,
                             );
-                            return CoalescedChunkOutput {
+                            return Ok(CoalescedChunkOutput {
                                 state: Some(state),
                                 matches: Vec::new(),
                                 needs_postprocess: true,
-                            };
+                            });
                         }
                     }
                     let raw_phase2_absence_proven = phase2_always_active_gpu_evidence
@@ -682,18 +715,20 @@ impl CompiledScanner {
                             route,
                         )
                     {
-                        if let Some(matches) = self.decode_only_coalesced_matches(chunk, route) {
-                            return CoalescedChunkOutput {
+                        if let Some(matches) =
+                            self.decode_only_coalesced_matches(chunk, route)?
+                        {
+                            return Ok(CoalescedChunkOutput {
                                 state: None,
                                 matches,
                                 needs_postprocess: false,
-                            };
+                            });
                         }
-                        return CoalescedChunkOutput {
+                        return Ok(CoalescedChunkOutput {
                             state: None,
                             matches: Vec::new(),
                             needs_postprocess: false,
-                        };
+                        });
                     }
 
                     let prepared = self.prepare_chunk(chunk);
@@ -707,14 +742,15 @@ impl CompiledScanner {
                         generic_keyword_positions,
                         route,
                     );
-                    CoalescedChunkOutput {
+                    Ok(CoalescedChunkOutput {
                         state: Some(state),
                         matches: Vec::new(),
                         needs_postprocess: true,
-                    }
+                    })
+                })
                 })
             })
-            .collect();
+            .collect::<crate::error::Result<Vec<_>>>()?;
 
         #[cfg(feature = "ml")]
         {
@@ -727,7 +763,7 @@ impl CompiledScanner {
                 }
             }
             let _g = profile::span(profile::P::Ml);
-            self.apply_ml_batch_scores_across(&mut scan_states);
+            self.apply_ml_batch_scores_across(&mut scan_states)?;
             for (output_index, state) in output_indices.into_iter().zip(scan_states) {
                 outputs[output_index].matches = state.into_matches();
             }
@@ -743,18 +779,20 @@ impl CompiledScanner {
             .into_par_iter()
             .zip(chunks.par_iter())
             .map(|(mut output, chunk)| {
-                crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
+                crate::gpu::with_captured_recovery_receipts(recovery_receipts.as_ref(), || {
+                    crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
                     if output.needs_postprocess {
-                        self.post_process_coalesced_matches(chunk, &mut output.matches, route);
+                        self.post_process_coalesced_matches(chunk, &mut output.matches, route)?;
                     }
-                    output.matches
+                    Ok(output.matches)
+                    })
                 })
             })
-            .collect();
+            .collect::<crate::error::Result<Vec<_>>>()?;
 
         let phase2_elapsed = phase2_start.map(|t| t.elapsed());
         let boundary_start = perf_trace.then(std::time::Instant::now);
-        super::boundary::scan_chunk_boundaries_with_route(self, chunks, &mut results, route);
+        super::boundary::scan_chunk_boundaries_with_route(self, chunks, &mut results, route)?;
         if perf_trace {
             eprintln!(
                 "perf-trace scan_coalesced_phase2: chunks={} p2={:.3}s boundary={:.3}s",
@@ -763,6 +801,6 @@ impl CompiledScanner {
                 boundary_start.map_or(0.0, |t| t.elapsed().as_secs_f64())
             );
         }
-        results
+        Ok(results)
     }
 }

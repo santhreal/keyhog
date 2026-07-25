@@ -233,6 +233,7 @@ fn scan_inline(text: &str) -> Vec<RawMatch> {
     let s = inline_scanner();
     s.clear_fragment_cache();
     s.scan(&chunk)
+        .expect("literal-prefix memoization test scan succeeds")
 }
 
 /// GOLDEN-FINDINGS e2e: the memoization must be finding-for-finding identical.

@@ -1,19 +1,18 @@
 use super::HASH_ALGO_INTEGRITY_LABELS;
 use super::TEMPLATE_PLACEHOLDER_MAX_LEN;
 use super::{
-    generic_base64_candidate_is_ambiguous, is_dash_segmented_alnum_decoy,
-    is_structured_dotted_token, is_uuid_v4_shape, looks_like_aws_iam_arn,
-    looks_like_bare_hex_digest, looks_like_base64_integrity_body,
+    is_dash_segmented_alnum_decoy, is_structured_dotted_token, is_uuid_v4_shape,
+    looks_like_aws_iam_arn, looks_like_bare_hex_digest, looks_like_base64_integrity_body,
     looks_like_bracketed_template_placeholder, looks_like_dashed_serial_key,
-    looks_like_entropy_canonical_non_secret_shape, looks_like_entropy_uuid_shape,
-    looks_like_generic_random_base64_blob_decoy, looks_like_prefixed_hash_digest,
-    looks_like_prefixed_masked_sequence, looks_like_random_byte_base64_blob,
-    looks_like_trimmed_aws_iam_arn, strip_hash_algo_prefix,
+    looks_like_prefixed_hash_digest, looks_like_prefixed_masked_sequence,
+    looks_like_random_byte_base64_blob, looks_like_trimmed_aws_iam_arn, strip_hash_algo_prefix,
+};
+use super::super::assignment::{
+    generic_base64_candidate_is_ambiguous, looks_like_entropy_canonical_non_secret_shape,
+    looks_like_entropy_uuid_shape, looks_like_generic_random_base64_blob_decoy,
+    HIGH_ENTROPY_BASE64_CUTOFF,
 };
 use crate::suppression::decision::decoded_benign_text_reason;
-// Imported separately: rustfmt groups the UPPER_SNAKE const after the
-// lower-snake fn names in a `use` list, so keep it on its own line.
-use super::HIGH_ENTROPY_BASE64_CUTOFF;
 
 /// A real `sha512-` npm SRI integrity body (proven suppressed by the
 /// `regression_reverse_integrity_decoy_suppression` corpus): standard

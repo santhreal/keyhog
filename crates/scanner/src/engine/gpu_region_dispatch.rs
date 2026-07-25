@@ -49,28 +49,10 @@ impl CompiledScanner {
         )
     }
 
-    /// Coalesced GPU region-presence scan: bounded GPU dispatches over the
-    /// `chunks` batch produce the per-chunk trigger bitmap, then the SHARED
-    /// coalesced phase-2 tail runs the identical per-chunk extraction every
-    /// other backend uses. This infallible direct-library wrapper exits when
-    /// dispatch fails; production orchestrators use the fallible companion so
-    /// they can replay the same stable bytes and report the recovery.
+    /// Coalesced GPU region-presence scan: bounded GPU dispatches produce the
+    /// per-chunk trigger bitmap, then the shared coalesced phase-2 tail runs the
+    /// same extraction as every backend. Dispatch failures remain structured.
     pub(crate) fn scan_coalesced_gpu_region_presence(
-        &self,
-        chunks: &[keyhog_core::Chunk],
-        backend: crate::hw_probe::ScanBackend,
-        route: crate::ScanExecutionRoute,
-    ) -> Vec<Vec<keyhog_core::RawMatch>> {
-        match self.try_scan_coalesced_gpu_region_presence(chunks, backend, route) {
-            Ok(results) => results,
-            Err(error) => super::gpu_forced::fail_selected_gpu_dispatch_error(self, error),
-        }
-    }
-
-    /// Result-returning hard GPU boundary. The recovery-aware companion retains
-    /// completed shards and returns exact recovered ranges; explicit callers
-    /// keep this all-or-error contract.
-    pub(crate) fn try_scan_coalesced_gpu_region_presence(
         &self,
         chunks: &[keyhog_core::Chunk],
         route: crate::hw_probe::ScanBackend,
@@ -79,7 +61,7 @@ impl CompiledScanner {
         Vec<Vec<keyhog_core::RawMatch>>,
         super::gpu_forced::SelectedGpuDispatchError,
     > {
-        self.try_scan_coalesced_gpu_region_presence_recovering(
+        self.scan_coalesced_gpu_region_presence_recovering(
             chunks,
             route,
             execution_route,
@@ -88,7 +70,7 @@ impl CompiledScanner {
         .map(|outcome| outcome.matches)
     }
 
-    pub(crate) fn try_scan_coalesced_gpu_region_presence_recovering(
+    pub(crate) fn scan_coalesced_gpu_region_presence_recovering(
         &self,
         chunks: &[keyhog_core::Chunk],
         route: crate::hw_probe::ScanBackend,
@@ -100,6 +82,7 @@ impl CompiledScanner {
             return Ok(super::CoalescedScanOutcome {
                 matches: Vec::new(),
                 recovery: None,
+                gpu_recovery_receipts: 0,
             });
         }
 
@@ -927,7 +910,10 @@ impl CompiledScanner {
                     .then_some(generic_keyword_positions.as_deref())
                     .flatten(),
                 execution_route,
-            );
+            )
+            .map_err(|error| {
+                super::gpu_forced::SelectedGpuDispatchError::new(error.to_string())
+            })?;
             if kh {
                 let phase2_always_anchor_chunks = phase2_always_anchor_presence
                     .iter()
@@ -1022,6 +1008,7 @@ impl CompiledScanner {
             Ok(super::CoalescedScanOutcome {
                 matches: results,
                 recovery,
+                gpu_recovery_receipts: 0,
             })
         }
     }

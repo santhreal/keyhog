@@ -22,7 +22,7 @@ fn reverse_stripe_sk_reversed() {
             ..Default::default()
         },
     };
-    let matches = scanner.scan(&chunk);
+    let matches = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
     assert!(
         matches
             .iter()

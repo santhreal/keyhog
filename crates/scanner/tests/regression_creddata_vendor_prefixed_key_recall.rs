@@ -42,6 +42,7 @@ use keyhog_scanner::CompiledScanner;
 fn matches(s: &CompiledScanner, chunk: &Chunk) -> Vec<(String, String, f64)> {
     s.clear_fragment_cache();
     s.scan(chunk)
+        .expect("CredData vendor-prefixed key regression scan should succeed")
         .into_iter()
         .map(|m| {
             (

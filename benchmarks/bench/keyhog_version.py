@@ -16,6 +16,7 @@ import subprocess
 import tomllib
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+_DETECTOR_CORPUS_MANIFEST_FILE = "corpus.toml"
 _SEMVER_RE = re.compile(
     r"(?<![0-9A-Za-z])v?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)"
 )
@@ -80,7 +81,14 @@ def workspace_git_hash(repo_root: pathlib.Path = _REPO_ROOT) -> str:
 
 
 def assert_workspace_tracked_tree_clean(repo_root: pathlib.Path = _REPO_ROOT) -> None:
-    """Require every tracked workspace byte to match HEAD for release evidence."""
+    """Require every tracked workspace byte to match HEAD for release evidence.
+
+    Setting ``KEYHOG_BENCH_ALLOW_DIRTY=1`` skips this check so a developer can
+    measure a locally-modified tree without committing; CI/release pipelines
+    must never set this.
+    """
+    if os.environ.get("KEYHOG_BENCH_ALLOW_DIRTY") == "1":
+        return
     try:
         proc = subprocess.run(
             [
@@ -135,20 +143,50 @@ def assert_workspace_tracked_tree_clean(repo_root: pathlib.Path = _REPO_ROOT) ->
 
 
 def workspace_detector_digest(repo_root: pathlib.Path = _REPO_ROOT) -> str:
+    """Match the effective detector-set identity stamped by ``core/build.rs``."""
     detector_dir = repo_root / "detectors"
     try:
-        paths = sorted(detector_dir.glob("*.toml"), key=lambda path: path.name)
-        if not paths:
-            raise KeyhogVersionError(
-                f"{detector_dir} contains no detector TOMLs; cannot validate benchmark binary"
-            )
-        value = 0xCBF29CE484222325
-        for path in paths:
-            for payload in (path.name.encode(), b"\0", path.read_bytes(), b"\0"):
+        paths = sorted(
+            (
+                path
+                for path in detector_dir.iterdir()
+                if path.suffix == ".toml"
+                and path.name != _DETECTOR_CORPUS_MANIFEST_FILE
+            ),
+            key=lambda path: path.name,
+        )
+    except OSError as exc:
+        raise KeyhogVersionError(
+            f"cannot enumerate detector TOMLs in {detector_dir}: {exc}"
+        ) from exc
+    if not paths:
+        raise KeyhogVersionError(
+            f"{detector_dir} contains no detector TOMLs; cannot validate benchmark binary"
+        )
+
+    manifest_path = detector_dir / _DETECTOR_CORPUS_MANIFEST_FILE
+    try:
+        manifest_bytes = manifest_path.read_bytes()
+        manifest_bytes.decode("utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise KeyhogVersionError(
+            "cannot read detector corpus manifest "
+            f"{manifest_path}; restore a readable UTF-8 "
+            f"{_DETECTOR_CORPUS_MANIFEST_FILE}: {exc}"
+        ) from exc
+
+    value = 0xCBF29CE484222325
+    try:
+        # build.rs hashes sorted detector (name, UTF-8 content) pairs first,
+        # then the canonical manifest pair. Its count excludes the manifest.
+        for path in (*paths, manifest_path):
+            content = path.read_bytes() if path != manifest_path else manifest_bytes
+            content.decode("utf-8")
+            for payload in (path.name.encode("utf-8"), b"\0", content, b"\0"):
                 for byte in payload:
                     value ^= byte
                     value = (value * 0x00000100000001B3) & 0xFFFFFFFFFFFFFFFF
-    except OSError as exc:
+    except (OSError, UnicodeError) as exc:
         raise KeyhogVersionError(
             f"cannot compute the detector digest from {detector_dir}: {exc}"
         ) from exc
@@ -202,7 +240,7 @@ def assert_reported_identity_matches_workspace(raw: str, *, what: str) -> None:
     if detector_match.group(1) != expected_detectors:
         raise KeyhogVersionError(
             f"stale {what}: detector_set={detector_match.group(1)}, "
-            f"workspace={expected_detectors}; rebuild after detector TOML changes"
+            f"workspace={expected_detectors}; rebuild after detector TOML or corpus.toml changes"
         )
 
 

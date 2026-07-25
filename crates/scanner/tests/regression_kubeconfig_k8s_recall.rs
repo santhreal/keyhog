@@ -63,6 +63,7 @@ fn scan_file(path: &str, text: &str) -> Vec<RawMatch> {
         },
     };
     s.scan(&chunk)
+        .expect("kubeconfig Kubernetes recall scan should succeed")
 }
 
 /// True iff SOME surfaced credential contains `needle`.

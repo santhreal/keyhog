@@ -54,6 +54,7 @@ template = "{{match}}"
 
 [detector.verify.success]
 status = 200
+policy = "status_with_error_backstop"
 
 [[detector.tests]]
 test_positive = "CB API KEY=7B3E5D8C1A9F4E2B6C8D3A5E"

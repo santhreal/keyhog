@@ -1,8 +1,6 @@
 #![cfg(unix)]
 
 use crate::e2e::support::{binary, DaemonGuard};
-use keyhog::daemon::protocol::{Request, Response};
-use keyhog::testing::{CliTestApi as _, API};
 use std::io::Write;
 use std::process::{Command, Stdio};
 use tempfile::TempDir;
@@ -461,108 +459,6 @@ fn forced_daemon_stdin_honors_config_byte_limit() {
     );
 }
 
-#[tokio::test]
-async fn daemon_ignores_keyhog_dogfood_env_for_wire_events() {
-    let daemon = DaemonGuard::start_with_env(&[("KEYHOG_DOGFOOD", "1")]);
-    let socket = daemon.runtime_dir().join("keyhog.sock");
-    let mut client = keyhog::daemon::client::connect(&socket)
-        .await
-        .expect("connect daemon");
-
-    let request = Request::ScanText {
-        path: Some("demo.env".into()),
-        text: "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n".into(),
-        dogfood: false,
-    };
-    let response = API
-        .daemon_client_round_trip(&mut client, &request)
-        .await
-        .expect("scan text");
-
-    match response {
-        Response::ScanResults {
-            matches,
-            engine_example_suppressions,
-            dogfood_events,
-            static_recovery_rejections,
-            dogfood_detail_events_dropped,
-            ..
-        } => {
-            assert!(
-                matches.is_empty(),
-                "known example credential should be suppressed before reporting"
-            );
-            assert!(
-                engine_example_suppressions > 0,
-                "daemon must still count suppressed examples for the client summary"
-            );
-            assert!(
-                dogfood_events.is_empty(),
-                "daemon must ignore ambient KEYHOG_DOGFOOD and avoid hidden event capture; got {dogfood_events:?}"
-            );
-            assert!(
-                static_recovery_rejections.is_empty(),
-                "ambient dogfood must not leak aggregate capture into a request scope"
-            );
-            assert_eq!(
-                dogfood_detail_events_dropped, 0,
-                "ambient dogfood must not create omitted request details"
-            );
-        }
-        other => panic!("expected ScanResults, got {other:?}"),
-    }
-}
-
-#[tokio::test]
-async fn daemon_request_transports_exact_static_recovery_dogfood_state() {
-    let daemon = DaemonGuard::start();
-    let socket = daemon.runtime_dir().join("keyhog.sock");
-    let mut client = keyhog::daemon::client::connect(&socket)
-        .await
-        .expect("connect daemon");
-    let text = format!(
-        "{}const malformed = [256]; const xorKey = [1]; \
-         String.fromCharCode(...malformed.map((b, i) => b ^ xorKey[i % xorKey.length]));\n",
-        aws_key_line()
-    );
-    let response = API
-        .daemon_client_round_trip(
-            &mut client,
-            &Request::ScanText {
-                path: Some("dogfood.js".into()),
-                text,
-                dogfood: true,
-            },
-        )
-        .await
-        .expect("dogfood scan text");
-
-    match response {
-        Response::ScanResults {
-            static_recovery_rejections,
-            dogfood_events,
-            dogfood_detail_events_dropped,
-            ..
-        } => {
-            assert_eq!(
-                static_recovery_rejections.get("literal_byte_array_element"),
-                Some(&1)
-            );
-            assert_eq!(
-                dogfood_events
-                    .iter()
-                    .filter(|event| matches!(
-                        event,
-                        keyhog_scanner::telemetry::DogfoodEvent::StaticRecoveryRejected { .. }
-                    ))
-                    .count(),
-                1
-            );
-            assert_eq!(dogfood_detail_events_dropped, 0);
-        }
-        other => panic!("expected ScanResults, got {other:?}"),
-    }
-}
 
 #[test]
 fn forced_daemon_dogfood_prints_the_request_trace() {

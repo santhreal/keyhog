@@ -2,10 +2,10 @@ use super::limits::{
     MAX_BASE64_INPUT_LEN, MAX_Z85_INPUT_LEN, MIN_BASE64_CANDIDATE_LEN, MIN_Z85_CANDIDATE_LEN,
 };
 use super::pipeline::{
-    push_batched_decoded_replacements, push_decoded_text_chunk_spliced_at,
-    with_extracted_value_spans, ExtractedValue,
+    push_decoded_text_chunk_spliced_at, with_extracted_value_spans, DecodedReplacementBatcher,
+    ExtractedValue,
 };
-use super::{DecodeAdmissionSketch, Decoder, EncodedString};
+use super::{DecodeAdmissionSketch, DecodeOutputSink, Decoder, EncodedString};
 use keyhog_core::Chunk;
 
 pub(super) struct Base64Decoder;
@@ -19,28 +19,41 @@ impl Decoder for Base64Decoder {
         base64_admission_sketch(&chunk.data)
     }
 
-    fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
-        let mut replacements = Vec::new();
+    fn decode_chunk_into(&self, chunk: &Chunk, sink: &mut dyn DecodeOutputSink) {
+        let mut batch = DecodedReplacementBatcher::new(sink, chunk, self.name());
+        let mut open = true;
         visit_classified_base64_string_spans(
             &chunk.data,
             MIN_BASE64_CANDIDATE_LEN,
             |b64_match, variant| {
+                if !open {
+                    return;
+                }
                 let Ok(decoded) = base64_decode_with_variant(&b64_match.value, variant) else {
                     // LAW10: failed trial decode is recall-preserving; the original candidate-bearing chunk stays scanned unchanged.
                     return;
                 };
-                // Compressed payloads must inflate before the UTF-8 gate.
-                let text = crate::decode::inflate::try_inflate_to_text(&decoded)
-                    .or_else(|| String::from_utf8(decoded).ok());
-                // LAW10: non-UTF-8 output is not source text; the encoded span
-                // remains scanned unchanged.
+                // A non-container, malformed container, or binary inflate result
+                // falls through to the original decoded bytes. LAW10: this is
+                // recall-preserving because those bytes remain the only valid
+                // textual decode view; non-UTF-8 bytes leave the encoded root
+                // scanned unchanged.
+                let text = match crate::decode::inflate::try_inflate_to_text(&decoded) {
+                    Some(inflated) => Some(inflated),
+                    None => match String::from_utf8(decoded) {
+                        Ok(text) => Some(text),
+                        Err(_) => None, // LAW10: recall-preserving: the original encoded bytes still take the whole-chunk scan path unchanged; non-text output is not source text.
+                    },
+                };
                 if let Some(text) = text {
                     let (start, end) = b64_match.span();
-                    replacements.push((start, end, text));
+                    open = batch.push(start, end, text);
                 }
             },
         );
-        push_batched_decoded_replacements(chunk, replacements, self.name())
+        if open {
+            batch.finish();
+        }
     }
 }
 
@@ -55,25 +68,29 @@ impl Decoder for Z85Decoder {
         z85_admission_sketch(&chunk.data)
     }
 
-    fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
-        let mut decoded_chunks = Vec::new();
+    fn decode_chunk_into(&self, chunk: &Chunk, sink: &mut dyn DecodeOutputSink) {
+        let mut open = true;
         visit_z85_string_spans(&chunk.data, MIN_Z85_CANDIDATE_LEN, |z_match, value| {
+            if !open {
+                return;
+            }
             if let Ok(decoded) = z85_decode(value.as_ref()) {
                 // LAW10: failed trial decode means this span is not valid z85; recall-preserving (the original chunk stays scanned unchanged).
-                if let Ok(text) = String::from_utf8(decoded) {
+                if let Ok(mut text) = String::from_utf8(decoded) {
                     // LAW10: non-UTF8 decoded bytes are not source text; recall-preserving (the original encoded text stays scanned unchanged).
-                    push_decoded_text_chunk_spliced_at(
-                        &mut decoded_chunks,
+                    let trimmed_len = text.trim_end_matches('\0').len();
+                    text.truncate(trimmed_len);
+                    open = push_decoded_text_chunk_spliced_at(
+                        sink,
                         chunk,
                         Some(z_match.span()),
                         value.as_ref(),
-                        text.trim_end_matches('\0').to_string(),
+                        text,
                         self.name(),
                     );
                 }
             }
         });
-        decoded_chunks
     }
 }
 

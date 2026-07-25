@@ -32,6 +32,7 @@ value = "keyhog-secret-scanner/{{version}}"
 
 [detector.verify.success]
 status = 200
+policy = "status_with_error_backstop"
 
 [[detector.tests]]
 test_positive = "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"

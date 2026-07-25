@@ -233,6 +233,9 @@ struct EffectivePolicy {
     /// and client-side finalization cannot recover findings an engine floor
     /// already dropped. Any such policy therefore requires the in-process path.
     has_detector_min_confidence: bool,
+    /// Disabled detector policy changes the compiled corpus and cannot be applied
+    /// after the daemon has scanned. Keep it on the in-process path.
+    has_disabled_detectors: bool,
 }
 
 #[cfg(unix)]
@@ -274,6 +277,7 @@ impl EffectivePolicy {
                 || outcome.allowlist_require_approved_by
                 || outcome.allowlist_max_expires_days.is_some(),
             has_detector_min_confidence: !outcome.detector_min_confidence.is_empty(),
+            has_disabled_detectors: !outcome.disabled_detectors.is_empty(),
         }
     }
 }
@@ -371,6 +375,7 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
         || policy.custom_aws_canary_accounts
         || policy.has_allowlist_config
         || policy.has_detector_min_confidence
+        || policy.has_disabled_detectors
         || args.hide_client_safe
     {
         if let Some(route) = reject_forced_daemon(
@@ -480,9 +485,16 @@ fn has_daemon_incompatible_extra_sources(args: &ScanArgs) -> bool {
 
 #[cfg(unix)]
 fn daemon_incompatible_scan_options(args: &ScanArgs) -> Option<&'static str> {
-    if args.detectors_cli_explicit || args.detectors != PathBuf::from("detectors") {
+    let custom_corpus_selected =
+        args.detectors_cli_explicit || args.detectors != PathBuf::from("detectors");
+    if args.detectors_mode == Some(crate::args::DetectorMode::Overlay) {
         return Some(
-            "this scan selects a detector corpus that the precompiled daemon scanner cannot honor",
+            "`--detectors-mode=overlay` cannot use the daemon because its precompiled scanner cannot compose a per-scan overlay; start the daemon with the exact replacement corpus and scan in replace mode, or use `--daemon=off`",
+        );
+    }
+    if args.detectors_mode.is_some() && !custom_corpus_selected {
+        return Some(
+            "`--detectors-mode` requires a custom detector corpus and cannot alter the daemon's precompiled scanner",
         );
     }
     if args.fast
@@ -550,6 +562,77 @@ fn daemon_incompatible_scan_options(args: &ScanArgs) -> Option<&'static str> {
 }
 
 #[cfg(unix)]
+struct ExpectedDaemonDetectorCorpus {
+    rules_digest: Option<String>,
+    corpus_digest: String,
+    provenance: crate::orchestrator_config::DetectorCorpusProvenance,
+    detector_count: usize,
+}
+
+#[cfg(unix)]
+fn expected_daemon_detector_corpus(args: &ScanArgs) -> Result<ExpectedDaemonDetectorCorpus> {
+    let custom_corpus_selected =
+        args.detectors_cli_explicit || args.detectors != PathBuf::from("detectors");
+    if !custom_corpus_selected {
+        let detectors = keyhog_core::embedded_detector_specs();
+        let corpus_digest = keyhog_core::hex_encode(
+            &keyhog_core::compute_detector_corpus_digest_for_schema(
+                detectors,
+                keyhog_core::DETECTOR_CORPUS_SCHEMA_VERSION,
+            )
+            .context("serializing embedded daemon detector corpus identity")?,
+        );
+        return Ok(ExpectedDaemonDetectorCorpus {
+            rules_digest: None,
+            corpus_digest,
+            provenance: crate::orchestrator_config::DetectorCorpusProvenance {
+                mode: "embedded",
+                source: "embedded (daemon)".to_string(),
+                embedded_count: detectors.len(),
+                custom_count: 0,
+            },
+            detector_count: detectors.len(),
+        });
+    }
+
+    let requested_mode = args.detectors_mode.map(Into::into);
+    crate::orchestrator_config::validate_detector_mode_selection(true, requested_mode)?;
+    crate::orchestrator_config::validate_explicit_detector_path(&args.detectors, true)?;
+    if args.detectors_mode == Some(crate::args::DetectorMode::Overlay) {
+        bail!(
+            "daemon route cannot honor `--detectors-mode=overlay`; start the daemon with the exact replacement corpus and scan in replace mode, or use `--daemon=off`"
+        );
+    }
+    let detectors_path = crate::orchestrator_config::auto_discover_detectors(&args.detectors)?;
+    let loaded = crate::orchestrator_config::load_effective_detector_corpus(
+        &detectors_path,
+        requested_mode,
+        true,
+    )
+    .with_context(|| {
+        format!(
+            "daemon route: load expected replacement detector corpus from {}",
+            detectors_path.display()
+        )
+    })?;
+    let detector_count = loaded.detectors.len();
+    let rules_digest = keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&loaded.detectors));
+    let corpus_digest = keyhog_core::hex_encode(
+        &keyhog_core::compute_detector_corpus_digest_for_schema(
+            &loaded.detectors,
+            loaded.schema_version,
+        )
+        .context("serializing replacement daemon detector corpus identity")?,
+    );
+    Ok(ExpectedDaemonDetectorCorpus {
+        rules_digest: Some(rules_digest),
+        corpus_digest,
+        provenance: loaded.provenance,
+        detector_count,
+    })
+}
+
+#[cfg(unix)]
 fn effective_single_file_path(args: &ScanArgs) -> Result<Option<&Path>> {
     // Several positional roots are never a daemon single-file candidate. Reading
     // only `path`/`input` here would see the FIRST root, route the scan over the
@@ -584,6 +667,9 @@ struct DaemonScan {
     source_coverage_gaps: SourceCoverageGaps,
     source_bytes_scanned: u64,
     wall_start: chrono::DateTime<chrono::Utc>,
+    detector_corpus_digest: String,
+    detector_corpus_provenance: crate::orchestrator_config::DetectorCorpusProvenance,
+    detector_count: usize,
 }
 
 #[cfg(unix)]
@@ -594,7 +680,17 @@ async fn acquire_via_daemon(args: &mut ScanArgs) -> Result<DaemonScan> {
     }
     let wall_start = chrono::Utc::now();
     let socket = effective_daemon_socket(args);
-    let mut conn = client::connect(&socket).await.with_context(|| {
+    let ExpectedDaemonDetectorCorpus {
+        rules_digest,
+        corpus_digest: detector_corpus_digest,
+        provenance: detector_corpus_provenance,
+        detector_count,
+    } = expected_daemon_detector_corpus(args)?;
+    let mut conn = match rules_digest {
+        Some(digest) => client::connect_with_detector_rules_digest(&socket, digest).await,
+        None => client::connect(&socket).await,
+    }
+    .with_context(|| {
         format!(
             "daemon route: connect to {} (start one with `keyhog daemon start{}` or pass --daemon=off)",
             socket.display(),
@@ -656,6 +752,9 @@ async fn acquire_via_daemon(args: &mut ScanArgs) -> Result<DaemonScan> {
         source_coverage_gaps,
         source_bytes_scanned,
         wall_start,
+        detector_corpus_digest,
+        detector_corpus_provenance,
+        detector_count,
     })
 }
 
@@ -666,17 +765,22 @@ fn finish_daemon_scan(scan: DaemonScan, args: &ScanArgs) -> Result<ExitCode> {
         source_coverage_gaps,
         source_bytes_scanned,
         wall_start,
+        detector_corpus_digest,
+        detector_corpus_provenance,
+        detector_count,
     } = scan;
     let findings = finalize_for_report(matches, args)?;
     let report_finished_at = chrono::Utc::now();
-    let mut report_metadata = crate::reporting::report_metadata_from_scan_run(
+    let mut report_metadata = crate::reporting::report_metadata_from_scan_run_with_corpus(
         args,
         wall_start,
         report_finished_at,
         (report_finished_at - wall_start).num_milliseconds().max(0) as u128,
         1,
         source_bytes_scanned,
-        keyhog_core::embedded_detector_count(),
+        detector_count,
+        &detector_corpus_digest,
+        &detector_corpus_provenance,
         None,
     );
     // Merge daemon wire gaps into process-local skip counters so
@@ -753,13 +857,14 @@ fn read_stdin_bytes(args: &ScanArgs) -> Result<Vec<u8>> {
 }
 
 #[cfg(unix)]
-fn unwrap_scan_results(resp: Response) -> Result<(Vec<RawMatch>, SourceCoverageGaps)> {
+pub(crate) fn unwrap_scan_results(resp: Response) -> Result<(Vec<RawMatch>, SourceCoverageGaps)> {
     match resp {
         Response::ScanResults {
             matches,
             engine_example_suppressions,
             dogfood_events,
             static_recovery_rejections,
+            static_recovery_status,
             dogfood_detail_events_dropped,
             source_coverage_gaps,
             backend_recovery,
@@ -777,6 +882,7 @@ fn unwrap_scan_results(resp: Response) -> Result<(Vec<RawMatch>, SourceCoverageG
             // this process when its aggregate schema is incompatible.
             keyhog_scanner::telemetry::merge_daemon_aggregates(
                 &static_recovery_rejections,
+                static_recovery_status,
                 dogfood_detail_events_dropped,
             )
             .map_err(|error| {

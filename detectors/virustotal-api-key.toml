@@ -29,6 +29,7 @@ template = "{{match}}"
 
 [detector.verify.success]
 status = 200
+policy = "status_with_error_backstop"
 
 [[detector.tests]]
 test_positive = "VIRUSTOTAL=94006201bd6c02ff2503b0a5791efdf15c370afd7e58806ee5633b46ce6cbdc6"

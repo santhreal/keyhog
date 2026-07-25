@@ -28,12 +28,12 @@ fn chunk(text: &str) -> Chunk {
     }
 }
 
-fn fires(scanner: &CompiledScanner, text: &str, cred: &str) -> bool {
+fn fires(scanner: &CompiledScanner, text: &str, cred: &str) -> keyhog_scanner::Result<bool> {
     scanner.clear_fragment_cache();
-    scanner
-        .scan(&chunk(text))
+    Ok(scanner
+        .scan(&chunk(text))?
         .iter()
-        .any(|m| m.credential.as_ref().contains(cred))
+        .any(|m| m.credential.as_ref().contains(cred)))
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -61,12 +61,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let c: Contract = toml::from_str(&text)?;
         for p in &c.positive {
-            let bare = fires(&scanner, &p.text, &p.credential);
+            let bare = fires(&scanner, &p.text, &p.credential)?;
             let wrapped = fires(
                 &scanner,
                 &format!("CREDENTIAL_PAYLOAD={}\n", p.text),
                 &p.credential,
-            );
+            )?;
             if !wrapped {
                 if bare {
                     bare_ok_wrap_fail.push((

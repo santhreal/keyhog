@@ -154,9 +154,12 @@ fn hyperscan_unsupported_confirmed_route_recovers_from_its_literal_plan() {
             ..ChunkMetadata::default()
         },
     }];
-    let cpu =
-        scanner.scan_coalesced_with_backend(&chunks, keyhog_scanner::ScanBackend::CpuFallback);
-    let simd = scanner.scan_coalesced_with_backend(&chunks, keyhog_scanner::ScanBackend::SimdCpu);
+    let cpu = scanner
+        .scan_coalesced_with_backend(&chunks, keyhog_scanner::ScanBackend::CpuFallback)
+        .expect("scalar coalesced recovery scan succeeds");
+    let simd = scanner
+        .scan_coalesced_with_backend(&chunks, keyhog_scanner::ScanBackend::SimdCpu)
+        .expect("SIMD coalesced recovery scan succeeds");
     let canonical = |rows: Vec<Vec<keyhog_core::RawMatch>>| {
         rows.into_iter()
             .flatten()
@@ -177,7 +180,14 @@ fn hyperscan_unsupported_confirmed_route_recovers_from_its_literal_plan() {
             "header\n".len() + prefix.len(),
         )]
     );
-    assert_eq!(canonical(simd), canonical(scanner.scan_coalesced(&chunks)));
+    assert_eq!(
+        canonical(simd),
+        canonical(
+            scanner
+                .scan_coalesced(&chunks)
+                .expect("automatic coalesced recovery scan succeeds"),
+        )
+    );
 }
 
 #[test]
@@ -353,7 +363,9 @@ fn structured_env_preprocessing_surfaces_key_value_via_scan() {
             ..Default::default()
         },
     };
-    let matches = scanner.scan(&chunk);
+    let matches = scanner
+        .scan(&chunk)
+        .expect("structured environment test scan succeeds");
     assert!(
         matches.iter().any(|m| m.credential.as_ref() == token),
         "structured .env preprocessing must keep recall"

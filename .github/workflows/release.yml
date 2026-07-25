@@ -18,6 +18,10 @@ on:
         description: 'Existing tag to build (e.g. v0.5.7). Select the same tag under Use workflow from.'
         required: true
 
+concurrency:
+  group: release-${{ github.repository }}-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
 env:
   CC: ""
   # Survive intermittent mid-stream crates.io download drops on hosted runners
@@ -172,7 +176,9 @@ jobs:
             --features "${{ matrix.artifact_features }}" \
             -- \
             --out-dir "$bundle_dir"
-          tar -czf "$bundle_dir.tar.gz" "$bundle_dir"
+          PYTHONPATH="$GITHUB_WORKSPACE" python3 -B -c \
+            'import sys; from pathlib import Path; from scripts.publish_release_assets import create_deterministic_archive; create_deterministic_archive(Path(sys.argv[1]), Path(sys.argv[2]))' \
+            "$bundle_dir" "$bundle_dir.tar.gz"
 
       - name: Stage binary
         env:
@@ -319,7 +325,7 @@ jobs:
     needs: [build, installers]
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # publish the complete signed draft manifest
+      contents: write  # create/reuse one immutable draft and upload its signed assets
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -330,6 +336,7 @@ jobs:
         shell: bash
         env:
           KEYHOG_RELEASE_INPUT_TAG: ${{ inputs.tag }}
+          KEYHOG_RELEASE_EVENT_REF: ${{ github.ref }}
         run: |
           set -euo pipefail
           if [[ -n "${KEYHOG_RELEASE_INPUT_TAG:-}" ]]; then
@@ -341,12 +348,30 @@ jobs:
             echo "::error title=KeyHog::Release tag must be exact semver (vMAJOR.MINOR.PATCH with an optional prerelease suffix)."
             exit 2
           fi
+          if [[ "$KEYHOG_RELEASE_EVENT_REF" != "refs/tags/$tag" ]]; then
+            echo "::error title=KeyHog::Signing source mismatch::Run this workflow from the exact refs/tags/$tag ref."
+            exit 2
+          fi
           printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: refs/tags/${{ steps.tag.outputs.tag }}
           fetch-depth: 1
+
+      - name: Prove signing source matches attested event
+        id: source
+        shell: bash
+        env:
+          KEYHOG_RELEASE_EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          if [[ "$actual" != "$KEYHOG_RELEASE_EVENT_SHA" ]]; then
+            echo "ERROR: signing checkout $actual does not match release commit $KEYHOG_RELEASE_EVENT_SHA" >&2
+            exit 2
+          fi
+          printf 'commit=%s\n' "$actual" >> "$GITHUB_OUTPUT"
 
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # pinned action
         with:
@@ -361,7 +386,7 @@ jobs:
         shell: bash
         run: cargo install rsign2 --version 0.6.6 --locked
 
-      - name: Sign, validate, and publish the exact release manifest
+      - name: Sign and privately stage the exact release manifest
         env:
           GH_TOKEN: ${{ github.token }}
           KEYHOG_MINISIGN_SECRET_KEY: ${{ secrets.KEYHOG_MINISIGN_SECRET_KEY }}
@@ -375,8 +400,14 @@ jobs:
             exit 1
           fi
           tag="$KEYHOG_RELEASE_TAG"
-          workdir="$(mktemp -d)"
+          workdir="$GITHUB_WORKSPACE/signed"
+          rm -rf "$workdir"
+          mkdir -p "$workdir"
           cp -a "$GITHUB_WORKSPACE/dist/." "$workdir/"
+          python3 "$GITHUB_WORKSPACE/scripts/release_notes.py" \
+            --tag "$tag" \
+            --changelog "$GITHUB_WORKSPACE/CHANGELOG.md" \
+            --output "$workdir/release-notes.md"
           cd "$workdir"
           bases=(
             keyhog-linux-x86_64
@@ -410,34 +441,179 @@ jobs:
             echo "signed $f.minisig"
           done
 
-          # Every release stays private while its asset set is mutated. The
-          # publisher discovers drafts through the releases collection, then
-          # addresses every mutation by immutable release ID. It publishes only
-          # after GitHub reports the exact signed manifest.
+          # Mutate only an immutable-ID draft here. The signed receipt binds
+          # that private release to its exact tag commit and downloaded asset
+          # hashes; no public transition occurs in the signing job.
           final=("${expected[@]}")
           for payload in "${payloads[@]}"; do
             final+=("$payload.minisig")
           done
-          python3 "$GITHUB_WORKSPACE/scripts/publish_release_assets.py" \
+          python3 "$GITHUB_WORKSPACE/scripts/publish_release_assets.py" prepare \
             --tag "$tag" \
+            --commit "${{ steps.source.outputs.commit }}" \
             --repository "$GITHUB_REPOSITORY" \
+            --notes-file "$workdir/release-notes.md" \
+            --receipt "$workdir/release-publication.json" \
             "${final[@]}"
+          rsign sign -W -s sec.key \
+            -x "$workdir/release-publication.json.minisig" \
+            "$workdir/release-publication.json" </dev/null
 
-  # Publish the container image to GHCR so `docker run ghcr.io/santhreal/
-  # keyhog:<ver>` (and `:latest`) works - the third consumption mode alongside
-  # the prebuilt binary and `cargo install`. Standalone (not in any `needs`):
-  # a registry hiccup must not block the binary release. Builds from the
-  # repo Dockerfile (multi-stage, non-root runtime, embedded detector corpus).
-  docker:
-    name: Publish container image (GHCR)
-    # Gate on the build: the container bundles the release binaries, so it must
-    # not publish before those artifacts exist (a race that could ship an empty
-    # or stale image on a parallel-job run).
+      - name: Preserve signed immutable-ID publication proof
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-publication-proof
+          if-no-files-found: error
+          retention-days: 1
+          path: |
+            signed/release-publication.json
+            signed/release-publication.json.minisig
+
+      - name: Preserve signed Linux candidate for pre-publication smoke
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: signed-linux-candidate
+          if-no-files-found: error
+          retention-days: 1
+          path: |
+            signed/install.sh
+            signed/install.sh.sha256
+            signed/install.sh.minisig
+            signed/keyhog-linux-x86_64
+            signed/keyhog-linux-x86_64.sha256
+            signed/keyhog-linux-x86_64.minisig
+            signed/keyhog-linux-x86_64.gpu-literals.tar.gz
+            signed/keyhog-linux-x86_64.gpu-literals.tar.gz.sha256
+            signed/keyhog-linux-x86_64.gpu-literals.tar.gz.minisig
+
+  smoke:
+    name: Smoke staged release candidate
     needs: sign
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    steps:
+      - name: Download signed Linux candidate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: signed-linux-candidate
+          path: candidate
+
+      - name: Install candidate verification dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y jq libhyperscan5 minisign
+
+      - name: Verify, install, diagnose, and scan with the exact candidate
+        shell: bash
+        env:
+          KEYHOG_MINISIGN_PUBLIC_KEY: RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go
+          KEYHOG_EXPECTED_HYPERSCAN_STATE: compiled-in
+          KEYHOG_EXPECTED_GPU_STATE_NO_ADAPTER: not detected (CPU/SIMD path)
+          KEYHOG_EXPECTED_GPU_STATE_SOFTWARE: software renderer (disabled for scans)
+          KEYHOG_EXPECTED_SCAN_BACKEND: simd
+          NO_COLOR: "1"
+        run: |
+          set -euo pipefail
+          candidate="$GITHUB_WORKSPACE/candidate"
+          cd "$candidate"
+          payloads=(
+            install.sh
+            keyhog-linux-x86_64
+            keyhog-linux-x86_64.gpu-literals.tar.gz
+          )
+          for payload in "${payloads[@]}"; do
+            sha256sum -c "$payload.sha256"
+            minisign -Vm "$payload" -x "$payload.minisig" \
+              -P "$KEYHOG_MINISIGN_PUBLIC_KEY"
+          done
+
+          root="$RUNNER_TEMP/keyhog-release-candidate"
+          install_dir="$root/prefix/bin"
+          rm -rf "$root"
+          mkdir -p "$install_dir" "$root/home" "$root/cache" "$root/work"
+          HOME="$root/home" XDG_CACHE_HOME="$root/cache" \
+            PATH="$install_dir:$PATH" \
+            sh "$candidate/install.sh" \
+              --from-file="$candidate/keyhog-linux-x86_64" \
+              --install-dir="$install_dir" \
+              --yes --no-prompt --no-color
+          installed="$install_dir/keyhog"
+          cmp "$candidate/keyhog-linux-x86_64" "$installed"
+
+          HOME="$root/home" XDG_CACHE_HOME="$root/cache" \
+            PATH="$install_dir:$PATH" \
+            "$installed" doctor >"$root/doctor.txt"
+          grep -F "hyperscan      $KEYHOG_EXPECTED_HYPERSCAN_STATE" "$root/doctor.txt"
+          if ! grep -F "gpu            $KEYHOG_EXPECTED_GPU_STATE_NO_ADAPTER" "$root/doctor.txt" &&
+             ! grep -F "gpu            $KEYHOG_EXPECTED_GPU_STATE_SOFTWARE" "$root/doctor.txt"; then
+            echo "ERROR: hosted candidate smoke unexpectedly selected a hardware GPU backend" >&2
+            exit 1
+          fi
+          grep -F "scan engine    PASS" "$root/doctor.txt"
+
+          fixture="$root/work/candidate-secret.env"
+          report="$root/work/report.json"
+          secret="sk_$(printf live)_ReleaseSmokeA1B2C3D4E5F6G7H8"
+          printf 'TOKEN=%s\n' "$secret" >"$fixture"
+          set +e
+          HOME="$root/home" XDG_CACHE_HOME="$root/cache" \
+            PATH="$install_dir:$PATH" \
+            "$installed" scan \
+              --no-config \
+              --backend "$KEYHOG_EXPECTED_SCAN_BACKEND" \
+              --daemon=off \
+              --no-suppress-test-fixtures \
+              --format json \
+              "$fixture" >"$report" 2>"$root/work/scan.err"
+          scan_status=$?
+          set -e
+          if [[ "$scan_status" -ne 1 ]]; then
+            cat "$root/work/scan.err" >&2
+            echo "ERROR: candidate scan exited $scan_status; expected exact findings exit 1" >&2
+            exit 1
+          fi
+          jq -e --arg file "$fixture" \
+            'type == "array" and length == 1 and
+             .[0].detector_id == "stripe-secret-key" and
+             .[0].location.file_path == $file' \
+            "$report" >/dev/null
+          if grep -Fq "$secret" "$report"; then
+            echo "ERROR: candidate scan disclosed the planted credential" >&2
+            exit 1
+          fi
+
+  # Releases published with GITHUB_TOKEN do not emit a second workflow run.
+  # Call the crate publisher only after the immutable-ID public transition;
+  # its own verifier re-proves the exact public release before credentials.
+  crates:
+    name: Publish tagged crates
+    needs: publish
+    uses: ./.github/workflows/publish-crates.yml
+    with:
+      tag: ${{ needs.publish.outputs.tag }}
+    secrets:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  # Publish and verify the multi-arch GHCR image only after the signed candidate
+  # smoke succeeds. Versioned and `latest` GHCR tag writes are irreversible
+  # public mutations, so neither may precede product validation. The immutable
+  # digest is provenance-attested and carried to the final publication gate as
+  # a job output.
+  docker:
+    name: Publish container image (GHCR)
+    needs: smoke
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      digest: ${{ steps.image.outputs.digest }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
       packages: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -448,6 +624,7 @@ jobs:
         shell: bash
         env:
           KEYHOG_RELEASE_INPUT_TAG: ${{ inputs.tag }}
+          KEYHOG_RELEASE_EVENT_REF: ${{ github.ref }}
         run: |
           set -euo pipefail
           if [[ -n "${KEYHOG_RELEASE_INPUT_TAG:-}" ]]; then
@@ -459,6 +636,10 @@ jobs:
             echo "::error title=KeyHog::Release tag must be exact semver (vMAJOR.MINOR.PATCH with an optional prerelease suffix)."
             exit 2
           fi
+          if [[ "$KEYHOG_RELEASE_EVENT_REF" != "refs/tags/$tag" ]]; then
+            echo "::error title=KeyHog::Container source mismatch::Run this workflow from the exact refs/tags/$tag ref."
+            exit 2
+          fi
           printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
           printf 'version=%s\n' "${tag#v}" >> "$GITHUB_OUTPUT"
 
@@ -466,6 +647,18 @@ jobs:
         with:
           ref: refs/tags/${{ steps.tag.outputs.tag }}
           fetch-depth: 0
+
+      - name: Prove container source matches release event
+        shell: bash
+        env:
+          KEYHOG_RELEASE_EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          if [[ "$actual" != "$KEYHOG_RELEASE_EVENT_SHA" ]]; then
+            echo "ERROR: container checkout $actual does not match release commit $KEYHOG_RELEASE_EVENT_SHA" >&2
+            exit 2
+          fi
 
       - name: Decide whether this is the newest stable release
         id: floating
@@ -476,6 +669,7 @@ jobs:
           set -euo pipefail
           advance="$(bash scripts/is-newest-stable-tag.sh "$KEYHOG_RELEASE_TAG")"
           echo "advance=$advance" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Log in to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -483,15 +677,48 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build and push
+      - name: Build and push multi-arch image
+        id: image
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           push: true
+          platforms: linux/amd64,linux/arm64
           tags: |
             ghcr.io/${{ github.repository }}:${{ steps.tag.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Verify published multi-arch manifest
+        shell: bash
+        env:
+          KEYHOG_IMAGE: ghcr.io/${{ github.repository }}:${{ steps.tag.outputs.version }}
+          KEYHOG_IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$KEYHOG_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "ERROR: build did not return an immutable sha256 image digest" >&2
+            exit 1
+          fi
+          inspection="$(docker buildx imagetools inspect "$KEYHOG_IMAGE")"
+          if [[ "$inspection" != *"$KEYHOG_IMAGE_DIGEST"* ]]; then
+            echo "ERROR: GHCR tag does not resolve to the pushed digest $KEYHOG_IMAGE_DIGEST" >&2
+            exit 1
+          fi
+          docker buildx imagetools inspect "$KEYHOG_IMAGE" --raw \
+            | jq -e '
+                [.manifests[].platform
+                 | select(.os == "linux" and
+                          (.architecture == "amd64" or .architecture == "arm64"))
+                 | "\(.os)/\(.architecture)"]
+                | unique | sort == ["linux/amd64", "linux/arm64"]
+              ' >/dev/null
+
+      - name: Attest published image digest
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
       - name: Advance latest image for the newest stable release
         if: steps.floating.outputs.advance == 'true'
         shell: bash
@@ -500,17 +727,87 @@ jobs:
             --tag "ghcr.io/${{ github.repository }}:latest" \
             "ghcr.io/${{ github.repository }}:${{ steps.tag.outputs.version }}"
 
+  publish:
+    name: Publish verified GitHub release
+    needs: [sign, docker, smoke]
+    outputs:
+      tag: ${{ steps.proof.outputs.tag }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Download signed immutable-ID publication proof
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-publication-proof
+          path: proof
+
+      - name: Install publication proof verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y jq minisign
+
+      - name: Verify signed source and successful container proof
+        id: proof
+        shell: bash
+        env:
+          KEYHOG_MINISIGN_PUBLIC_KEY: RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go
+          KEYHOG_RELEASE_EVENT_SHA: ${{ github.sha }}
+          KEYHOG_CONTAINER_TAG: ${{ needs.docker.outputs.tag }}
+          KEYHOG_CONTAINER_DIGEST: ${{ needs.docker.outputs.digest }}
+        run: |
+          set -euo pipefail
+          receipt="$GITHUB_WORKSPACE/proof/release-publication.json"
+          minisign -Vm "$receipt" -x "$receipt.minisig" \
+            -P "$KEYHOG_MINISIGN_PUBLIC_KEY"
+          schema="$(jq -er '.schema' "$receipt")"
+          repository="$(jq -er '.repository' "$receipt")"
+          tag="$(jq -er '.tag' "$receipt")"
+          commit="$(jq -er '.commit' "$receipt")"
+          release_id="$(jq -er '.release_id' "$receipt")"
+          if [[ "$schema" != "keyhog-release-publication-v1" ||
+                "$repository" != "$GITHUB_REPOSITORY" ||
+                "$commit" != "$KEYHOG_RELEASE_EVENT_SHA" ||
+                "$tag" != "$KEYHOG_CONTAINER_TAG" ||
+                ! "$release_id" =~ ^[1-9][0-9]*$ ||
+                ! "$KEYHOG_CONTAINER_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "ERROR: signed release proof does not match the successful release jobs" >&2
+            exit 1
+          fi
+          actual="$(git rev-parse HEAD)"
+          if [[ "$actual" != "$commit" ]]; then
+            echo "ERROR: publication checkout $actual does not match signed commit $commit" >&2
+            exit 1
+          fi
+          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Transition exact immutable release ID to public
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 scripts/publish_release_assets.py publish \
+            --repository "$GITHUB_REPOSITORY" \
+            --receipt "$GITHUB_WORKSPACE/proof/release-publication.json"
+
   # Move the floating major tag (e.g. `v0`) to this release so adopters can
   # pin `uses: santhreal/keyhog/.github/actions/keyhog@v0` and always get
   # the latest release without editing their workflow - and our own docs stop
   # drifting to dead exact tags (the @v0.5.36 incident). Lightweight tag, force
-  # -moved each release. Standalone so a tag-push failure never blocks assets.
+  # -moved only after the complete GitHub release is public.
   major-tag:
     name: Update floating major tag
-    # Gate on the build: the floating major tag (e.g. `v1`) must not move to a
-    # release ref until that release has actually built, so consumers pinning
-    # `@v1` never resolve to a half-published or failed build.
-    needs: sign
+    # The floating action tag cannot move until signed assets, the staged
+    # candidate smoke, GHCR publication, and final immutable-ID transition pass.
+    needs: publish
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -524,6 +821,7 @@ jobs:
         shell: bash
         env:
           KEYHOG_RELEASE_INPUT_TAG: ${{ inputs.tag }}
+          KEYHOG_RELEASE_EVENT_REF: ${{ github.ref }}
         run: |
           set -euo pipefail
           if [[ -n "${KEYHOG_RELEASE_INPUT_TAG:-}" ]]; then
@@ -535,12 +833,28 @@ jobs:
             echo "::error title=KeyHog::Release tag must be exact semver (vMAJOR.MINOR.PATCH with an optional prerelease suffix)."
             exit 2
           fi
+          if [[ "$KEYHOG_RELEASE_EVENT_REF" != "refs/tags/$tag" ]]; then
+            echo "::error title=KeyHog::Floating tag source mismatch::Run this workflow from the exact refs/tags/$tag ref."
+            exit 2
+          fi
           printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: refs/tags/${{ steps.tag.outputs.tag }}
           fetch-depth: 0
+
+      - name: Prove floating tag source matches release event
+        shell: bash
+        env:
+          KEYHOG_RELEASE_EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          if [[ "$actual" != "$KEYHOG_RELEASE_EVENT_SHA" ]]; then
+            echo "ERROR: floating-tag checkout $actual does not match release commit $KEYHOG_RELEASE_EVENT_SHA" >&2
+            exit 2
+          fi
 
       - name: Decide whether this is the newest stable release
         id: floating

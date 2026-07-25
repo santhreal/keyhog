@@ -49,6 +49,7 @@ fn scan(text: &str) -> Vec<(String, String)> {
     let chunk: Chunk = make_chunk(text, "source", "infra.env");
     s.clear_fragment_cache();
     s.scan(&chunk)
+        .expect("infrastructure vendor-token regression scan should succeed")
         .into_iter()
         .map(|m| (m.detector_id.to_string(), m.credential.as_str().to_string()))
         .collect()

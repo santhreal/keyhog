@@ -143,7 +143,7 @@ jobs:
         # detector set so it actually runs in CI instead of being an orphan.
         continue-on-error: true
         run: |
-          ls crates/core/detectors/*.toml | xargs -n1 basename | sed 's/\.toml$//' \
-            > "${RUNNER_TEMP:-/tmp}/chunk_ids.txt"
+          find crates/core/detectors -maxdepth 1 -type f -name '*.toml' -printf '%f\n' \
+            | sort | sed 's/\.toml$//' > "${RUNNER_TEMP:-/tmp}/chunk_ids.txt"
           KEYHOG_CHUNK_IDS="${RUNNER_TEMP:-/tmp}/chunk_ids.txt" \
             cargo test -p keyhog-scanner --profile release-fast --test chunk_ad_runner

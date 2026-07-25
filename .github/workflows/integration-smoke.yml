@@ -154,6 +154,10 @@ jobs:
           set +e
           keyhog scan smoke --format sarif --output findings.sarif
           code=$?
+          if [ "$code" != "1" ]; then
+            echo "FAIL: expected exit 1 (secrets found), got $code"
+            exit 1
+          fi
           test -s findings.sarif || { echo "FAIL: empty SARIF"; exit 1; }
           python3 -c "
           import json,sys

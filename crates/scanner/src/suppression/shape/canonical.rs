@@ -4,19 +4,6 @@
 pub(crate) const RFC7519_EXAMPLE_JWT_PREFIX: &str =
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkw";
 
-/// Shannon-entropy (bits/char) threshold separating high-entropy base64 blobs
-/// from lower-entropy generic candidates. Single source of truth shared by the
-/// two generic-base64 decoy gates: below it a value is treated as a byte-
-/// distribution decoy, at/above it a value is instead routed to the ambiguous
-/// high-entropy path. The two gates MUST agree on this boundary, they were two
-/// byte-identical `4.8` locals before being hoisted here so the split can never
-/// silently drift.
-///
-/// `pub(crate)` so the sibling `decision.rs` repetitive-run / high-entropy-blob
-/// gate and `shape::looks_like_high_entropy_punctuation_payload` bind the SAME
-/// boundary instead of re-pasting a bare `4.8`: the whole point of a single
-/// source of truth is that every gate that pivots on the cutoff moves with it.
-pub(crate) const HIGH_ENTROPY_BASE64_CUTOFF: f64 = 4.8;
 
 /// True if `credential` matches the XXXXX-XXXXX-XXXXX-XXXXX-XXXXX
 /// dashed-serial / license-key shape: exactly 5 dash-separated
@@ -27,44 +14,17 @@ pub(crate) fn looks_like_dashed_serial_key(credential: &str) -> bool {
     is_five_by_five_dash_shape(credential, |b| b.is_ascii_alphanumeric())
 }
 
-/// Canonical non-secret shapes rejected at entropy candidate generation.
-///
-/// This intentionally preserves the historical entropy semantics instead of
-/// reusing broader report-time suppression helpers. For example,
-/// [`looks_like_bare_hex_digest`] also suppresses truncated digest lengths
-/// 48/56/72, and [`looks_like_dashed_serial_key`] accepts lowercase serial
-/// groups; entropy generation only treats exact UUID, 32/40/64/128 pure-hex,
-/// npm SRI, and uppercase 5x5 license serial shapes as canonical non-secrets.
-pub(crate) fn looks_like_entropy_canonical_non_secret_shape(value: &str) -> bool {
-    looks_like_entropy_uuid_shape(value)
-        || looks_like_entropy_canonical_hex_digest(value)
-        || looks_like_entropy_integrity_digest(value)
-        || looks_like_entropy_upper_license_serial(value)
-}
-
-pub(crate) fn looks_like_entropy_uuid_shape(value: &str) -> bool {
-    // ONE UUID-shape owner: entropy generation and report-time suppression bind
-    // the SAME uniform-case predicate. A mixed-case UUID must not be a non-secret
-    // in one path and a candidate in the other (was: mixed-case hex here vs
-    // uniform-case in `is_uuid_v4_shape`) (DEDUP).
-    is_uuid_v4_shape(value)
-}
-
 /// The four canonical cryptographic hex-digest lengths in HEX CHARS: md5 = 32,
 /// sha1 = 40, sha256 = 64, sha512 = 128. Single owner, every shape gate that
 /// recognises a fixed-length hex digest consults [`is_canonical_hex_digest_length`]
 /// instead of re-listing the four widths inline, so a new digest width (or a
 /// correction) is made in exactly ONE place and two gates can never drift.
-pub(crate) const CANONICAL_HEX_DIGEST_LENGTHS: [usize; 4] = [32, 40, 64, 128];
+pub(super) const CANONICAL_HEX_DIGEST_LENGTHS: [usize; 4] = [32, 40, 64, 128];
 
 /// `true` iff `len` (in hex chars) is one of the [`CANONICAL_HEX_DIGEST_LENGTHS`].
 #[inline]
-pub(crate) fn is_canonical_hex_digest_length(len: usize) -> bool {
+pub(super) fn is_canonical_hex_digest_length(len: usize) -> bool {
     CANONICAL_HEX_DIGEST_LENGTHS.contains(&len)
-}
-
-pub(crate) fn looks_like_entropy_canonical_hex_digest(value: &str) -> bool {
-    is_canonical_hex_digest_length(value.len()) && value.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 /// Exact dotted credential shapes the scanner may treat as real tokens.
@@ -114,22 +74,11 @@ pub(crate) const HASH_ALGO_INTEGRITY_LABELS: &[&str] = &["sha512-", "sha384-", "
 /// the docker/python/git-LFS digest formats, not commit references.
 pub(crate) const HASH_ALGO_COLON_LABELS: &[&[u8]] = &[b"sha256:", b"sha512:", b"sha1:", b"md5:"];
 
-fn looks_like_entropy_integrity_digest(value: &str) -> bool {
-    for &prefix in HASH_ALGO_INTEGRITY_LABELS {
-        if let Some(body) = value.strip_prefix(prefix) {
-            if !body.is_empty() && crate::decode::standard_base64_shape(body).is_some() {
-                return true;
-            }
-        }
-    }
-    false
-}
 
-fn looks_like_entropy_upper_license_serial(value: &str) -> bool {
-    is_five_by_five_dash_shape(value, |b| b.is_ascii_uppercase() || b.is_ascii_digit())
-}
-
-fn is_five_by_five_dash_shape(value: &str, body_byte_ok: impl Fn(u8) -> bool) -> bool {
+pub(super) fn is_five_by_five_dash_shape(
+    value: &str,
+    body_byte_ok: impl Fn(u8) -> bool,
+) -> bool {
     let bytes = value.as_bytes();
     if bytes.len() != 29 {
         return false;
@@ -193,28 +142,6 @@ pub(crate) fn looks_like_bare_hex_digest(credential: &str) -> bool {
     matches!(credential.len(), 32 | 40 | 48 | 56 | 64 | 72 | 128) && is_uniform_hex(credential)
 }
 
-/// True for a complete, uniform-case pure-hex value of a canonical service-key
-/// length (32 / 40 / 48 / 64). A *service-anchored* detector's regex required
-/// its service-specific keyword to match (`ALCHEMY_API_KEY=`, `CROWDIN_API_TOKEN=`,
-/// `DATADOG_API_KEY:`), so a capture of this shape is a real key, not a
-/// coincidental git-SHA / MD5 / SHA-1 digest sitting next to that exact keyword.
-///
-/// Callers gate this on [`crate::detector_ids::is_service_anchored_detector`] and
-/// pass it as `allow_canonical_hex_key` into [`super::super::decision::suppression_stage_inner`],
-/// which exempts the value from the bare-hex-digest and algorithmic-placeholder
-/// arms ONLY: every decoy gate (repetitive runs, fake sequences, prefixed-hash
-/// labels, UUID, dashed serials) still runs, so explicit placeholder hex
-/// (`0000…`, `…ABCDEFGH…`-dominated) is still suppressed. This is the same
-/// KH-L-0110 escape hatch the generic bridge applies via
-/// detector-owned canonical-hex policy, keyed here on the detector's own
-/// service anchor rather than a captured keyword.
-///
-/// The 56/72/128 lengths the bare-hex-digest gate also catches are deliberately
-/// excluded: those are SHA-224/384/512 digest lengths that no service detector
-/// requests as a key body, so they stay suppressed even under a service anchor.
-pub(crate) fn is_canonical_service_hex_key(credential: &str) -> bool {
-    matches!(credential.len(), 32 | 40 | 48 | 64) && is_uniform_hex(credential)
-}
 
 /// The AWS partitions whose IAM ARNs this suppression recognizes. Single owner
 /// for both the full (`arn:<p>:iam::`) and trimmed (`<p>:iam::`) gates, so adding
@@ -269,7 +196,7 @@ fn aws_iam_arn_body_has_resource_target(body: &str) -> bool {
 ///
 /// The dash-form (SRI) labels are NOT hardcoded here: they come from the ONE
 /// owner [`HASH_ALGO_INTEGRITY_LABELS`], so this report-time strip and the
-/// entropy-generation (`looks_like_entropy_integrity_digest`) / decoded
+/// entropy-generation assignment role in `shape::assignment` / decoded
 /// (`decision::decoded_looks_like_labelled_hash`) integrity gates can never
 /// disagree on the SRI label set. This list previously pasted a diverging
 /// `{sha512-, sha256-}` dash subset that DROPPED `sha384-`, so a raw `sha384-`
@@ -369,29 +296,6 @@ pub(crate) fn looks_like_standard_base64_blob(credential: &str) -> bool {
     crate::decode_structure::is_random_base64_blob(credential, 40, 80, 32)
 }
 
-#[cfg(feature = "entropy")]
-pub(crate) fn looks_like_entropy_random_base64_blob_decoy(value: &str) -> bool {
-    crate::decode_structure::is_byte_distribution_base64_blob(value, 50, 300)
-}
-
-pub(crate) fn looks_like_generic_random_base64_blob_decoy(value: &str, entropy: f64) -> bool {
-    if entropy >= HIGH_ENTROPY_BASE64_CUTOFF {
-        return false;
-    }
-    crate::decode_structure::is_byte_distribution_base64_blob(value, 40, 300)
-}
-
-pub(crate) fn generic_base64_candidate_is_ambiguous(value: &str, entropy: f64) -> bool {
-    const MIN_DISTINCT_ALNUM: u32 = 32;
-
-    if entropy < HIGH_ENTROPY_BASE64_CUTOFF {
-        return false;
-    }
-    let Some(shape) = crate::decode::standard_base64_shape(value) else {
-        return false;
-    };
-    shape.distinct_alnum >= MIN_DISTINCT_ALNUM
-}
 
 /// Pure standard-base64 random-byte decoy shape in the 40-80 char band.
 ///
@@ -423,7 +327,7 @@ pub(crate) fn looks_like_random_byte_base64_blob(value: &str) -> bool {
     structure.printable_ratio < 0.85
 }
 
-fn is_uniform_hex(s: &str) -> bool {
+pub(super) fn is_uniform_hex(s: &str) -> bool {
     let bytes = s.as_bytes();
     if bytes.is_empty() {
         return false;

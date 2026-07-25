@@ -22,8 +22,7 @@ fn scan_credentials(text: &str, backend: ScanBackend) -> Vec<String> {
             ..Default::default()
         },
     };
-    scanner
-        .scan_chunks_with_backend(std::slice::from_ref(&chunk), backend)
+    scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), backend).expect("selected backend scan succeeds")
         .iter()
         .flat_map(|per_chunk| per_chunk.iter())
         .map(|m| m.credential.as_ref().to_string())

@@ -33,6 +33,7 @@ template = "{{match}}"
 
 [detector.verify.success]
 status = 200
+policy = "status_with_error_backstop"
 
 [[detector.tests]]
 test_positive = "pscale_tkn_93iwbHaZKAmZqjeAwhEWgwf3zowdD5bu"

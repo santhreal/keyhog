@@ -3,8 +3,8 @@
 use keyhog_scanner::telemetry::{
     append_daemon_events, append_events, dogfood_detail_events_dropped, drain_events,
     enable_dogfood, example_suppression_count, merge_daemon_aggregates, record_example_suppression,
-    reset_example_suppression_count, static_recovery_rejection_counts, testing::reset,
-    with_scan_telemetry, DogfoodEvent, ScanTelemetry,
+    reset_example_suppression_count, static_recovery_rejection_counts, static_recovery_status,
+    testing::reset, with_scan_telemetry, DogfoodEvent, ScanTelemetry, StaticRecoveryStatus,
 };
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -84,12 +84,28 @@ fn daemon_details_and_exact_aggregates_merge_without_double_counting() {
         decoder: Cow::Borrowed("javascript-static"),
         reason: Cow::Borrowed("json_utf8"),
     }]);
-    merge_daemon_aggregates(&BTreeMap::from([("json_utf8".to_owned(), 7)]), 3)
-        .expect("merge compatible aggregate reasons");
+    merge_daemon_aggregates(
+        &BTreeMap::from([("json_utf8".to_owned(), 7)]),
+        StaticRecoveryStatus {
+            supported: 5,
+            unsupported: 0,
+            erroneous: 7,
+        },
+        3,
+    )
+    .expect("merge compatible aggregate reasons");
 
     assert_eq!(
         static_recovery_rejection_counts().get("json_utf8"),
         Some(&7)
+    );
+    assert_eq!(
+        static_recovery_status(),
+        StaticRecoveryStatus {
+            supported: 5,
+            unsupported: 0,
+            erroneous: 7,
+        }
     );
     assert_eq!(dogfood_detail_events_dropped(), 3);
     assert_eq!(drain_events().len(), 1);
@@ -105,11 +121,39 @@ fn daemon_aggregate_merge_rejects_unknown_reason_before_mutation() {
             ("json_utf8".to_owned(), 4),
             ("newer-daemon-reason".to_owned(), 2),
         ]),
+        StaticRecoveryStatus {
+            supported: 0,
+            unsupported: 0,
+            erroneous: 6,
+        },
         5,
     )
     .expect_err("unknown reason must fail closed");
     assert!(error.contains("restart it with this KeyHog build"));
     assert!(static_recovery_rejection_counts().is_empty());
+    assert_eq!(dogfood_detail_events_dropped(), 0);
+}
+
+#[test]
+fn daemon_aggregate_merge_rejects_nonconserving_status_before_mutation() {
+    let _g = super::super::telemetry_serial::lock();
+    reset();
+    let error = merge_daemon_aggregates(
+        &BTreeMap::from([
+            ("unsupported_call".to_owned(), 2),
+            ("json_utf8".to_owned(), 3),
+        ]),
+        StaticRecoveryStatus {
+            supported: 1,
+            unsupported: 1,
+            erroneous: 3,
+        },
+        4,
+    )
+    .expect_err("nonconserving disposition totals must fail closed");
+    assert!(error.contains("aggregate conservation failed"));
+    assert!(static_recovery_rejection_counts().is_empty());
+    assert_eq!(static_recovery_status(), StaticRecoveryStatus::default());
     assert_eq!(dogfood_detail_events_dropped(), 0);
 }
 

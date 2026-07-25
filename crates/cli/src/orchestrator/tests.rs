@@ -3,6 +3,8 @@
 //! mod {}` block) so the `no_inline_tests_in_src` gate stays green while these
 //! still reach the parent module's private items via `use super::*`.
 
+mod shared_default_detector_modes;
+
 use super::run::{resolve_scan_exit, ScanOutcome};
 #[cfg(feature = "simd")]
 use super::setup_default_scan_runtime_for_test;
@@ -165,6 +167,20 @@ fn unavailable_daemon_gpu_is_typed_and_exits_twelve() {
         preflight.to_string(),
         "daemon start: required GPU preflight failed: no physical adapter passed self-test. Run `keyhog backend --self-test` and repair the GPU driver/runtime, or start the daemon with `--backend simd` or `--backend cpu`."
     );
+}
+
+/// Regression: fallible scanner backends keep the stable CLI exit-code contract.
+#[test]
+fn selected_backend_scan_errors_map_to_backend_exit_codes() {
+    let gpu = anyhow::Error::new(keyhog_scanner::ScanError::Gpu(
+        "selected GPU runtime is unavailable".into(),
+    ));
+    assert_eq!(crate::cli_error_exit_code(&gpu), EXIT_REQUIRE_GPU_UNMET);
+
+    let simd = anyhow::Error::new(keyhog_scanner::ScanError::Simd(
+        "selected SIMD runtime is unavailable".into(),
+    ));
+    assert_eq!(crate::cli_error_exit_code(&simd), EXIT_SYSTEM_ERROR);
 }
 
 #[test]

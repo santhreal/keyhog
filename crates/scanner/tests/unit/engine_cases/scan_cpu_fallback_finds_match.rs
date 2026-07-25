@@ -28,6 +28,6 @@ fn scan_cpu_fallback_finds_match() {
         data: "tok=abc".into(),
         metadata: ChunkMetadata::default(),
     };
-    let m = s.scan_with_backend(&chunk, ScanBackend::CpuFallback);
+    let m = s.scan_with_backend(&chunk, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
     assert_eq!(m.len(), 1);
 }

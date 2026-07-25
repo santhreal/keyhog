@@ -58,7 +58,7 @@ pub fn scan_corpus(subdir: &str, rel: &str) -> Vec<keyhog_core::RawMatch> {
             ..Default::default()
         },
     };
-    production_scanner().scan(&chunk)
+    production_scanner().scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"))
 }
 
 pub fn scan_recall(rel: &str) -> Vec<keyhog_core::RawMatch> {
@@ -80,7 +80,7 @@ pub fn scan_recall(rel: &str) -> Vec<keyhog_core::RawMatch> {
             ..Default::default()
         },
     };
-    production_scanner().scan(&chunk)
+    production_scanner().scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"))
 }
 
 pub fn scan_text(data: &str, path: &str) -> Vec<keyhog_core::RawMatch> {
@@ -99,7 +99,7 @@ pub fn scan_text(data: &str, path: &str) -> Vec<keyhog_core::RawMatch> {
             ..Default::default()
         },
     };
-    production_scanner().scan(&chunk)
+    production_scanner().scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"))
 }
 
 pub fn has_detector(matches: &[keyhog_core::RawMatch], needle: &str) -> bool {

@@ -139,6 +139,8 @@ pub mod mark_stats;
 pub mod ml_features_extraction;
 #[cfg(feature = "ml")]
 pub mod ml_scorer;
+#[cfg(feature = "ml")]
+pub mod ml_pending_hashing;
 pub mod ml_weights_parse;
 #[cfg(feature = "multiline")]
 pub mod multiline;

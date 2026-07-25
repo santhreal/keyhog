@@ -35,11 +35,12 @@ pub(crate) async fn run(args: UpdateArgs) -> Result<ExitCode> {
         Err(error) => println!("  asset          (unresolved for this platform: {error:#})"),
     }
 
-    let newer = installer::is_newer(current, &latest);
-    // A pinned --version always proceeds (downgrade/pin is intentional);
-    // otherwise only act when latest is strictly newer.
+    // `resolve_release` returns an explicit request only after canonical SemVer
+    // validation and exact response-tag binding. Therefore this flag can permit
+    // an intentional pin/downgrade without authorizing a different release.
     let allow_explicit_downgrade = args.version.is_some();
-    if args.version.is_none() && !newer {
+    let newer = installer::is_newer(current, &latest);
+    if !allow_explicit_downgrade && !newer {
         println!(
             "\n{} already on the latest release.",
             style::pass("PASS", &palette)

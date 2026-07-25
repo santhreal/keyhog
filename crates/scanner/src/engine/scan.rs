@@ -38,9 +38,9 @@ impl CompiledScanner {
         backend: crate::hw_probe::ScanBackend,
         deadline: Option<std::time::Instant>,
         route: crate::ScanExecutionRoute,
-    ) -> Vec<RawMatch> {
+    ) -> crate::error::Result<Vec<RawMatch>> {
         if crate::deadline::expired(deadline) {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         // KH-116: Record scan metrics atomically
         crate::telemetry::record_file_scanned(chunk.data.len());
@@ -57,10 +57,10 @@ impl CompiledScanner {
             );
         }
         if crate::deadline::expired(deadline) {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let t1 = prof.then(std::time::Instant::now);
-        let triggered = self.collect_triggered_patterns_for_backend(&chunk.data, backend);
+        let triggered = self.collect_triggered_patterns_for_backend(&chunk.data, backend)?;
         if let Some(t) = t1 {
             SCAN_PHASE1_NS.fetch_add(
                 t.elapsed().as_nanos() as u64,
@@ -69,7 +69,7 @@ impl CompiledScanner {
             SCAN_INNER_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
         if crate::deadline::expired(deadline) {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         self.scan_prepared_with_triggered(
             prepared, &triggered, deadline, None, None, None, None, route,

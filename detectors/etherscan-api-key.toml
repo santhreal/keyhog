@@ -45,7 +45,10 @@ allowed_domains = ["api.etherscan.io"]
 type = "none"
 
 [detector.verify.success]
+policy = "body_positive"
 status = 200
+json_path = "$.status"
+equals = "1"
 
 [[detector.tests]]
 test_positive = "ETHERSCAN_API_KEY=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"

@@ -447,7 +447,7 @@ pub(crate) fn compile_companion(
         })?;
     let capture_group = (regex.captures_len() > 1).then_some(FIRST_CAPTURE_GROUP_INDEX);
     Ok(CompiledCompanion {
-        name: spec.name.clone(),
+        name: std::sync::Arc::from(spec.name.as_str()),
         regex,
         capture_group,
         within_lines: spec.within_lines,

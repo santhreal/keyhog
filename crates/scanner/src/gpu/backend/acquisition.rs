@@ -1,0 +1,344 @@
+//! Lazy CUDA/WGPU acquisition behind the scanner GPU boundary.
+
+#[cfg(feature = "gpu")]
+use super::artifact::{load_moe_artifacts, MoeArtifacts};
+#[cfg(feature = "gpu")]
+use super::diagnostics::{on_gpu_init_failed, GpuBackendError, GpuInitError};
+use crate::hw_probe::ScanBackend;
+#[cfg(feature = "gpu")]
+use std::sync::LazyLock;
+use std::sync::{Arc, OnceLock};
+
+pub(crate) struct AcquiredGpuPeer {
+    pub(crate) backend: Arc<dyn vyre::VyreBackend>,
+    pub(crate) device_identity: Option<String>,
+    pub(crate) is_software: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct GpuBackendAvailability {
+    pub cuda: bool,
+    pub wgpu: bool,
+}
+
+impl GpuBackendAvailability {
+    #[must_use]
+    pub const fn any(self) -> bool {
+        self.cuda || self.wgpu
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct GpuBackendAcquisitionFailure {
+    pub backend: &'static str,
+    pub diagnostic: String,
+}
+
+pub(crate) struct GpuBackendPeers {
+    cuda: OnceLock<Result<AcquiredGpuPeer, String>>,
+    wgpu: OnceLock<Result<AcquiredGpuPeer, String>>,
+    pub(crate) cuda_available: bool,
+    pub(crate) wgpu_available: bool,
+    pub(crate) cuda_device_identity: Option<String>,
+    pub(crate) cuda_runtime_identity: Option<String>,
+    pub(crate) wgpu_device_identity: Option<String>,
+    pub(crate) wgpu_runtime_identity: Option<String>,
+    pub(crate) wgpu_is_software: bool,
+}
+
+impl Default for GpuBackendPeers {
+    fn default() -> Self {
+        Self {
+            cuda: OnceLock::new(),
+            wgpu: OnceLock::new(),
+            cuda_available: false,
+            wgpu_available: false,
+            cuda_device_identity: None,
+            cuda_runtime_identity: None,
+            wgpu_device_identity: None,
+            wgpu_runtime_identity: None,
+            wgpu_is_software: false,
+        }
+    }
+}
+
+pub(super) fn lazy_acquire<T, E>(
+    available: bool,
+    slot: &OnceLock<Result<T, E>>,
+    acquire: impl FnOnce() -> Result<T, E>,
+) -> Option<&Result<T, E>> {
+    if !available {
+        return None;
+    }
+    Some(slot.get_or_init(acquire))
+}
+
+impl GpuBackendPeers {
+    pub(crate) fn get(&self, backend: ScanBackend) -> Option<&Arc<dyn vyre::VyreBackend>> {
+        let result = match backend {
+            ScanBackend::GpuCuda => {
+                lazy_acquire(self.cuda_available, &self.cuda, acquire_cuda_peer)
+            }
+            ScanBackend::GpuWgpu => {
+                lazy_acquire(self.wgpu_available, &self.wgpu, acquire_wgpu_peer)
+            }
+            _ => None,
+        }?;
+        match result {
+            Ok(peer) => Some(&peer.backend),
+            Err(error) => {
+                tracing::error!(
+                    target: "keyhog::routing",
+                    ?backend,
+                    diagnostic = %error,
+                    "selected GPU backend acquisition failed"
+                );
+                None
+            }
+        }
+    }
+
+    pub(crate) fn initialized(&self, backend: ScanBackend) -> Option<&AcquiredGpuPeer> {
+        let result = match backend {
+            ScanBackend::GpuCuda => self.cuda.get(),
+            ScanBackend::GpuWgpu => self.wgpu.get(),
+            _ => None,
+        }?;
+        // LAW10: diagnostics retain the complete error in the slot; this status
+        // accessor distinguishes initialized success without consuming it.
+        match result {
+            Ok(peer) => Some(peer),
+            Err(_) => None, // LAW10: status projection only; initialization_error retains the typed diagnostic and execution logs it before refusing this backend.
+        }
+    }
+
+    pub(crate) fn initialization_error(&self, backend: ScanBackend) -> Option<&str> {
+        match backend {
+            ScanBackend::GpuCuda => self.cuda.get(),
+            ScanBackend::GpuWgpu => self.wgpu.get(),
+            _ => None,
+        }
+        .and_then(|result| result.as_ref().err().map(String::as_str))
+    }
+
+    pub(crate) fn availability(&self) -> GpuBackendAvailability {
+        GpuBackendAvailability {
+            cuda: self.cuda_available,
+            wgpu: self.wgpu_available,
+        }
+    }
+}
+
+#[cfg(all(feature = "gpu", target_os = "linux"))]
+pub(super) fn run_cuda_after_preflight<T>(
+    preflight: impl FnOnce() -> Result<(), String>,
+    acquire: impl FnOnce() -> Result<T, String>,
+    operation: &'static str,
+) -> Result<T, String> {
+    preflight()?;
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(acquire)).map_err(|panic| {
+        format!(
+            "CUDA {operation} panicked: {}. Fix: repair the CUDA driver/runtime{}",
+            crate::error::panic_payload_detail(panic),
+            if operation == "backend acquisition" {
+                " or select another calibrated backend"
+            } else {
+                " before enabling this backend"
+            }
+        )
+    })?
+}
+
+#[cfg(all(feature = "gpu", target_os = "linux"))]
+fn acquire_cuda_peer() -> Result<AcquiredGpuPeer, String> {
+    let backend = run_cuda_after_preflight(
+        ensure_cuda_driver_library_loadable,
+        || {
+            let cuda = vyre_driver_cuda::backend::CudaBackend::acquire()?;
+            let boxed: Box<dyn vyre::VyreBackend> =
+                Box::new(vyre_driver_cuda::CudaBackendRegistration::new(cuda));
+            Ok::<Arc<dyn vyre::VyreBackend>, String>(Arc::from(boxed))
+        },
+        "backend acquisition",
+    )?;
+    tracing::info!(target: "keyhog::routing", "selected CUDA peer backend acquired");
+    Ok(AcquiredGpuPeer {
+        backend,
+        device_identity: None,
+        is_software: false,
+    })
+}
+
+#[cfg(not(all(feature = "gpu", target_os = "linux")))]
+fn acquire_cuda_peer() -> Result<AcquiredGpuPeer, String> {
+    Err("CUDA peer is not compiled for this platform".to_string())
+}
+
+#[cfg(feature = "gpu")]
+fn acquire_wgpu_peer() -> Result<AcquiredGpuPeer, String> {
+    let backend = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+        vyre_driver_wgpu::WgpuBackend::shared,
+    ))
+    .map_err(|panic| {
+        format!(
+            "WGPU backend acquisition panicked: {}. Fix: repair the graphics driver/runtime or select another calibrated backend",
+            crate::error::panic_payload_detail(panic)
+        )
+    })?
+    .map_err(|error| error.to_string())?;
+    let info = backend.adapter_info();
+    let device_identity =
+        crate::gpu::gpu_adapter_device_identity(info, backend.device_limits().max_buffer_size);
+    let is_software = crate::gpu::is_software_adapter(info);
+    tracing::info!(
+        target: "keyhog::routing",
+        device_identity,
+        "selected WGPU peer backend acquired"
+    );
+    let backend: Arc<dyn vyre::VyreBackend> = backend;
+    Ok(AcquiredGpuPeer {
+        backend,
+        device_identity: Some(device_identity),
+        is_software,
+    })
+}
+
+#[cfg(not(feature = "gpu"))]
+fn acquire_wgpu_peer() -> Result<AcquiredGpuPeer, String> {
+    Err("WGPU peer is not compiled in this build".to_string())
+}
+
+#[cfg(all(feature = "gpu", target_os = "linux"))]
+pub(crate) fn load_dynamic_library(name: &std::ffi::CStr) -> Result<(), String> {
+    // SAFETY: `name` is NUL-terminated for `dlopen`; a successful handle is
+    // closed before returning, and `dlerror` remains valid until the next
+    // dynamic-loader call on this thread.
+    unsafe {
+        let handle = libc::dlopen(name.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL);
+        if handle.is_null() {
+            let error = libc::dlerror();
+            let detail = if error.is_null() {
+                "unknown dynamic-loader error".to_owned()
+            } else {
+                std::ffi::CStr::from_ptr(error)
+                    .to_string_lossy()
+                    .into_owned()
+            };
+            return Err(format!("{}: {detail}", name.to_string_lossy()));
+        }
+        libc::dlclose(handle);
+    }
+    Ok(())
+}
+
+#[cfg(all(feature = "gpu", target_os = "linux"))]
+fn ensure_cuda_driver_library_loadable() -> Result<(), String> {
+    let first_error = match load_dynamic_library(c"libcuda.so.1") {
+        Ok(()) => return Ok(()),
+        Err(error) => error,
+    };
+    let second_error = match load_dynamic_library(c"libcuda.so") {
+        Ok(()) => return Ok(()),
+        Err(error) => error,
+    };
+    Err(format!(
+        "CUDA driver library is unavailable ({second_error}; first attempt: {first_error}). Fix: install or expose the NVIDIA driver libcuda.so before enabling this backend"
+    ))
+}
+
+#[cfg(all(feature = "gpu", target_os = "linux"))]
+pub(crate) fn probe_cuda_peer() -> Result<vyre_driver_cuda::device::CudaDeviceCaps, String> {
+    run_cuda_after_preflight(
+        ensure_cuda_driver_library_loadable,
+        || vyre_driver_cuda::device::CudaDeviceCaps::probe(0).map_err(|error| error.to_string()),
+        "device probe",
+    )
+}
+
+#[cfg(feature = "gpu")]
+pub(crate) struct GpuContext {
+    pub(super) device_queue: Arc<(wgpu::Device, wgpu::Queue)>,
+    pub(super) adapter_info: wgpu::AdapterInfo,
+    pub(super) device_limits: wgpu::Limits,
+    pub(super) artifacts: MoeArtifacts,
+}
+
+#[cfg(feature = "gpu")]
+impl GpuContext {
+    pub(crate) fn vram_mb(&self) -> Option<u64> {
+        const SANE_CAP_MB: u64 = 256 * 1024;
+        Some((self.device_limits.max_buffer_size / (1024 * 1024)).min(SANE_CAP_MB))
+    }
+
+    pub(crate) fn gpu_name(&self) -> &str {
+        &self.adapter_info.name
+    }
+
+    pub(super) fn device(&self) -> &wgpu::Device {
+        &self.device_queue.0
+    }
+
+    pub(super) fn queue(&self) -> &wgpu::Queue {
+        &self.device_queue.1
+    }
+
+    pub(super) fn artifacts(&self) -> &MoeArtifacts {
+        &self.artifacts
+    }
+}
+
+#[cfg(feature = "gpu")]
+static GPU: LazyLock<Result<Option<GpuContext>, GpuBackendError>> =
+    LazyLock::new(|| match init_moe_gpu() {
+        Ok(context) => {
+            tracing::info!("GPU MoE inference initialized (shared device)");
+            Ok(Some(context))
+        }
+        Err(error) => {
+            on_gpu_init_failed(
+                &error,
+                crate::gpu::gpu_disabled_by_policy(),
+                crate::gpu::gpu_required_by_policy(),
+            )?;
+            Ok(None)
+        }
+    });
+
+#[cfg(feature = "gpu")]
+fn init_moe_gpu() -> Result<GpuContext, GpuInitError> {
+    let vyre_backend = vyre_driver_wgpu::WgpuBackend::shared().map_err(|error| {
+        GpuInitError::no_adapter(format!("vyre WgpuBackend unavailable: {error}"))
+    })?;
+    let adapter_info = vyre_backend.adapter_info().clone();
+    if crate::gpu::is_software_adapter(&adapter_info) {
+        return Err(GpuInitError::no_adapter(format!(
+            "GPU adapter is a software fallback ({} on {:?}); refusing to use",
+            adapter_info.name, adapter_info.backend
+        )));
+    }
+    let device_limits = vyre_backend.device_limits().clone();
+    let device_queue = vyre_backend.device_queue();
+    tracing::info!(
+        gpu = %adapter_info.name,
+        backend = ?adapter_info.backend,
+        device_type = ?adapter_info.device_type,
+        driver = %adapter_info.driver,
+        "GPU MoE: reusing vyre shared device"
+    );
+    let artifacts = load_moe_artifacts(&device_queue.0, &adapter_info, &device_limits)
+        .map_err(GpuInitError::adapter_unusable)?;
+    Ok(GpuContext {
+        device_queue,
+        adapter_info,
+        device_limits,
+        artifacts,
+    })
+}
+
+#[cfg(feature = "gpu")]
+pub(crate) fn get_gpu() -> Result<Option<&'static GpuContext>, GpuBackendError> {
+    match &*GPU {
+        Ok(context) => Ok(context.as_ref()),
+        Err(error) => Err(error.clone()),
+    }
+}

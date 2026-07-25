@@ -29,8 +29,68 @@
 // renamed to match their module names).
 #[cfg(feature = "gpu")]
 mod adapter_probe;
-#[cfg(feature = "gpu")]
 mod backend;
+pub use backend::GpuBackendAvailability;
+pub(crate) use backend::{GpuBackendAcquisitionFailure, GpuBackendPeers};
+#[cfg(all(feature = "gpu", target_os = "linux"))]
+pub(crate) use backend::probe_cuda_peer;
+#[cfg(all(test, feature = "gpu", target_os = "linux"))]
+pub(crate) use backend::load_dynamic_library;
+type RecoveryReceiptCounter = std::sync::Arc<std::sync::atomic::AtomicU64>;
+
+thread_local! {
+    static RECOVERY_RECEIPT_COUNTER: std::cell::RefCell<Option<RecoveryReceiptCounter>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+struct RecoveryReceiptCounterGuard {
+    previous: Option<RecoveryReceiptCounter>,
+}
+
+impl Drop for RecoveryReceiptCounterGuard {
+    fn drop(&mut self) {
+        let previous = self.previous.take();
+        RECOVERY_RECEIPT_COUNTER.with_borrow_mut(|counter| {
+            *counter = previous;
+        });
+    }
+}
+
+pub(crate) fn capture_recovery_receipts() -> Option<RecoveryReceiptCounter> {
+    RECOVERY_RECEIPT_COUNTER.with_borrow(|counter| counter.clone())
+}
+
+pub(crate) fn with_captured_recovery_receipts<T>(
+    counter: Option<&RecoveryReceiptCounter>,
+    operation: impl FnOnce() -> T,
+) -> T {
+    let previous = RECOVERY_RECEIPT_COUNTER.with_borrow_mut(|current| {
+        std::mem::replace(&mut *current, counter.cloned())
+    });
+    let _guard = RecoveryReceiptCounterGuard { previous };
+    operation()
+}
+
+pub(crate) fn with_recovery_receipt_scope<T>(operation: impl FnOnce() -> T) -> (T, u64) {
+    let counter = RecoveryReceiptCounter::new(std::sync::atomic::AtomicU64::new(0));
+    let result = with_captured_recovery_receipts(Some(&counter), operation);
+    let receipts = counter.load(std::sync::atomic::Ordering::Relaxed);
+    (result, receipts)
+}
+
+pub(crate) fn record_recovery_receipt() {
+    RECOVERY_RECEIPT_COUNTER.with_borrow(|counter| {
+        if let Some(counter) = counter {
+            counter
+                .fetch_update(
+                    std::sync::atomic::Ordering::Relaxed,
+                    std::sync::atomic::Ordering::Relaxed,
+                    |receipts| Some(receipts.saturating_add(1)),
+                )
+                .expect("recovery receipt update closure always returns Some");
+        }
+    });
+}
 #[cfg(feature = "gpu")]
 pub(crate) mod gpu_shader;
 
@@ -86,13 +146,16 @@ pub(crate) fn batch_ml_inference<T: crate::ml_scorer::MlScoreInput>(
     candidates: &[T],
     config: &crate::types::ScannerConfig,
 ) -> Vec<f64> {
-    batch_ml_inference_with_timeout(
+    match batch_ml_inference_with_timeout(
         candidates,
         config,
         std::time::Duration::from_millis(
             crate::scanner_config::ScannerTuningConfig::GPU_MOE_TIMEOUT_MS_DEFAULT,
         ),
-    )
+    ) {
+        Ok(scores) => scores,
+        Err(error) => panic!("test GPU ML inference failed: {error}"),
+    }
 }
 
 #[cfg(feature = "ml")]
@@ -100,9 +163,9 @@ pub(crate) fn batch_ml_inference_with_timeout<T: crate::ml_scorer::MlScoreInput>
     candidates: &[T],
     config: &crate::types::ScannerConfig,
     gpu_moe_timeout: std::time::Duration,
-) -> Vec<f64> {
+) -> crate::error::Result<Vec<f64>> {
     if candidates.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
 
     #[cfg(feature = "ml")]
@@ -129,7 +192,7 @@ pub(crate) fn batch_ml_inference_with_timeout<T: crate::ml_scorer::MlScoreInput>
                     std::sync::atomic::Ordering::Relaxed,
                 );
             }
-            return scores;
+            return Ok(scores);
         }
 
         // Large batch: parallel feature extraction, then GPU (or parallel CPU).
@@ -152,25 +215,14 @@ pub(crate) fn batch_ml_inference_with_timeout<T: crate::ml_scorer::MlScoreInput>
             #[cfg(feature = "gpu")]
             {
                 match backend::batch_score_features(&features, gpu_moe_timeout) {
-                    Some(mut scores) if scores.len() == candidates.len() => {
+                    Ok(Some(mut scores)) if scores.len() == candidates.len() => {
                         crate::confidence::policy::apply_empty_candidate_score_policy(
                             candidates.iter().map(|candidate| candidate.ml_text()),
                             &mut scores,
                         );
                         scores
                     }
-                    Some(scores) => {
-                        // Defense in depth. `batch_score_features` OWNS the length
-                        // invariant (backend.rs degrades + returns `None` when the
-                        // GPU readback count != batch_size == features.len()), and
-                        // this caller builds `features` one-per-candidate, so a
-                        // `Some` whose length differs from `candidates` cannot occur
-                        // via the real backend, this arm is unreachable today. Keep
-                        // it fail-LOUD instead of a silent CPU fallback (Law 10): if
-                        // a future backend change ever breaks that contract, route
-                        // the degrade through the SAME owner as every other MoE
-                        // dispatch failure (hard-fail under --require-gpu, one-shot
-                        // eprintln otherwise) rather than a second hand-rolled warn.
+                    Ok(Some(scores)) => {
                         debug_assert_eq!(
                             scores.len(),
                             candidates.len(),
@@ -180,13 +232,14 @@ pub(crate) fn batch_ml_inference_with_timeout<T: crate::ml_scorer::MlScoreInput>
                             "caller-side score count mismatch: backend returned {} scores for {} candidates",
                             scores.len(),
                             candidates.len()
-                        ));
+                        ))
+                        .map_err(|error| crate::error::ScanError::Gpu(error.to_string()))?;
                         score_features_on_cpu()
                     }
-                    // `None` here is a genuine GPU dispatch failure that
-                    // `batch_score_features` ALREADY degraded loudly (below-threshold
-                    // `None` cannot occur: this branch only runs for large batches).
-                    None => score_features_on_cpu(),
+                    Ok(None) => score_features_on_cpu(),
+                    Err(error) => {
+                        return Err(crate::error::ScanError::Gpu(error.to_string()));
+                    }
                 }
             }
             #[cfg(not(feature = "gpu"))]
@@ -200,7 +253,7 @@ pub(crate) fn batch_ml_inference_with_timeout<T: crate::ml_scorer::MlScoreInput>
                 std::sync::atomic::Ordering::Relaxed,
             );
         }
-        scores
+        Ok(scores)
     }
 
     #[cfg(not(feature = "ml"))]
@@ -208,7 +261,7 @@ pub(crate) fn batch_ml_inference_with_timeout<T: crate::ml_scorer::MlScoreInput>
         let _ = candidates; // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
         let _ = config; // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
         let _ = gpu_moe_timeout; // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
-        Vec::new()
+        Ok(Vec::new())
     }
 }
 

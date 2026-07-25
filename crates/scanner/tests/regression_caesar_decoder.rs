@@ -184,7 +184,9 @@ fn caesar_prefix_requires_a_token_boundary() {
 #[test]
 fn decode_chunk_recovers_planted_caesar_credential() {
     let body = format!("api_token = \"{ENCODED_SHIFT3}\"\n");
-    let out = CaesarDecoder.decode_chunk(&chunk(&body, "filesystem", Some("secrets.env")));
+    let out = CaesarDecoder
+        .decode_chunk(&chunk(&body, "filesystem", Some("secrets.env")))
+        .expect("bounded planted Caesar decode should succeed");
 
     // The exact planted credential is recovered as a decoded sub-chunk.
     assert!(
@@ -207,7 +209,9 @@ fn decode_chunk_skips_line_with_embedded_credential_url() {
     // already the credential and the 25-shift fan-out would only manufacture a
     // garbage finding that out-resolves the real connection string.
     let body = format!("db_url = \"postgres://admin:{ENCODED_SHIFT3}@db.example.com:5432/app\"\n");
-    let out = CaesarDecoder.decode_chunk(&chunk(&body, "filesystem", Some("app.env")));
+    let out = CaesarDecoder
+        .decode_chunk(&chunk(&body, "filesystem", Some("app.env")))
+        .expect("bounded credential-URL Caesar decode should succeed");
 
     assert_eq!(
         out.len(),
@@ -225,7 +229,9 @@ fn decode_chunk_skips_source_code_path() {
     // Identical recoverable token, but the chunk's path is program source
     // (`.py`). Caesar decoding of source is pure noise and is refused entirely.
     let body = format!("api_token = \"{ENCODED_SHIFT3}\"\n");
-    let out = CaesarDecoder.decode_chunk(&chunk(&body, "filesystem", Some("app.py")));
+    let out = CaesarDecoder
+        .decode_chunk(&chunk(&body, "filesystem", Some("app.py")))
+        .expect("bounded source-path Caesar decode should succeed");
     assert_eq!(out.len(), 0, "source-code path must be skipped: {out:#?}");
 }
 
@@ -235,7 +241,13 @@ fn decode_chunk_refuses_to_recurse_on_own_caesar_output() {
     // decode output) must not be re-shifted, one of the 25 shifts would just
     // rotate it back to the original.
     let body = format!("api_token = \"{ENCODED_SHIFT3}\"\n");
-    let out = CaesarDecoder.decode_chunk(&chunk(&body, "filesystem/caesar", Some("secrets.env")));
+    let out = CaesarDecoder
+        .decode_chunk(&chunk(
+            &body,
+            "filesystem/caesar",
+            Some("secrets.env"),
+        ))
+        .expect("bounded recursive-guard Caesar decode should succeed");
     assert_eq!(
         out.len(),
         0,
@@ -249,7 +261,9 @@ fn decode_chunk_enforces_min_caesar_len() {
     assert_eq!(decode_caesar::MIN_CAESAR_LEN, 16);
     // A 10-char candidate is below the floor and is never shifted, so no
     // credential is manufactured even though its +3 rotation would begin AKIA.
-    let out = CaesarDecoder.decode_chunk(&chunk("t = \"DNLD12ABCD\"\n", "filesystem", None));
+    let out = CaesarDecoder
+        .decode_chunk(&chunk("t = \"DNLD12ABCD\"\n", "filesystem", None))
+        .expect("bounded short-candidate Caesar decode should succeed");
     assert_eq!(
         out.len(),
         0,

@@ -183,11 +183,11 @@ fn bench_adversarial(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("cpu_fallback", label), &chunk, |b, chk| {
             b.iter(|| {
-                black_box(scanner.scan_with_backend(black_box(chk), ScanBackend::CpuFallback))
+                black_box(scanner.scan_with_backend(black_box(chk), ScanBackend::CpuFallback).expect("selected backend scan succeeds"))
             });
         });
         group.bench_with_input(BenchmarkId::new("simd_cpu", label), &chunk, |b, chk| {
-            b.iter(|| black_box(scanner.scan_with_backend(black_box(chk), ScanBackend::SimdCpu)));
+            b.iter(|| black_box(scanner.scan_with_backend(black_box(chk), ScanBackend::SimdCpu).expect("selected backend scan succeeds")));
         });
     }
     group.finish();

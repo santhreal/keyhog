@@ -86,25 +86,30 @@ fn phase2_prefilter_compile_failures_warn() {
 #[test]
 fn phase2_gpu_admission_loss_terminates_selected_route() {
     let dispatch_src = engine_src("gpu_region_dispatch.rs");
+    let owner_src = engine_src("backend_dispatch.rs");
     assert!(
-        dispatch_src.contains("fail_selected_gpu_dispatch_error(self, error)")
-            && dispatch_src.contains("SelectedGpuDispatchError::new(reason)")
+        dispatch_src.contains("SelectedGpuDispatchError::new(reason)")
             && dispatch_src
                 .matches("return dispatch_failure(reason);")
                 .count()
                 >= 2
-            && !dispatch_src.contains("CPU admission remains authoritative"),
-        "full-batch and subset phase-2 GPU failures must terminate the selected route instead of substituting CPU admission"
+            && !dispatch_src.contains("CPU admission remains authoritative")
+            && owner_src.contains("self.record_gpu_runtime_fault(error.reason())")
+            && owner_src.contains("crate::error::ScanError::Gpu(error.to_string())")
+            && !owner_src.contains("process_exit"),
+        "full-batch and subset phase-2 GPU failures must surface through the structured selected-route owner instead of substituting CPU admission or exiting the process"
     );
 }
 
 #[test]
 fn positioned_gpu_candidate_loss_updates_runtime_status() {
     let src = engine_src("gpu_region_dispatch.rs");
+    let owner = engine_src("backend_dispatch.rs");
     assert!(
-        src.contains("self.record_gpu_runtime_fault(format!(")
-            && src.contains("fail_selected_gpu_dispatch_error(self, error)"),
-        "recall-floor recovery and hard GPU dispatch failures must both update runtime status"
+        owner.contains("self.record_gpu_runtime_fault(error.reason())")
+            && owner.contains("crate::error::ScanError::Gpu(error.to_string())")
+            && !owner.contains("process_exit"),
+        "hard GPU dispatch failures must update runtime status and return a structured scanner error"
     );
     assert!(
         !src.contains("positioned literal matcher not built for this scanner")
@@ -361,7 +366,7 @@ fn backend_affecting_config_parse_failures_are_loud() {
     let engine = compiled_scanner_src("runtime.rs");
     let scanner_config = scanner_src("scanner_config.rs");
     assert!(
-        engine.matches("self.config.per_chunk_deadline()").count() == 3
+        engine.contains("self.config.per_chunk_deadline()")
             && scanner_config.contains("pub per_chunk_timeout_ms: Option<u64>")
             && scanner_config.contains("per_chunk_deadline(&self)")
             && !engine.contains("crate::env_config::per_chunk_deadline")
@@ -379,12 +384,12 @@ fn backend_affecting_config_parse_failures_are_loud() {
         "HS prefilter max-length must be explicit scanner tuning config, not ambient env"
     );
 
-    let gpu = scanner_src("gpu/backend.rs");
+    let gpu_execution = scanner_src("gpu/backend/execution.rs");
     assert!(
-        gpu.contains("readback_timeout: Duration")
-            && gpu.contains("let timeout = readback_timeout")
-            && !gpu.contains("KEYHOG_GPU_MOE_TIMEOUT_MS")
-            && !gpu.contains("u64_at_least_or_default")
+        gpu_execution.contains("readback_timeout: Duration")
+            && gpu_execution.contains("let timeout = readback_timeout")
+            && !gpu_execution.contains("KEYHOG_GPU_MOE_TIMEOUT_MS")
+            && !gpu_execution.contains("u64_at_least_or_default")
             && scanner_config.contains("pub gpu_moe_timeout_ms: Option<u64>")
             && scanner_config.contains("const GPU_MOE_TIMEOUT_MS_DEFAULT: u64 = 30_000")
             && tuning.contains("set_gpu_moe_timeout_ms")

@@ -66,7 +66,9 @@ fn scan(text: &str) -> Vec<RawMatch> {
     };
     let scanner = shared_scanner();
     scanner.clear_fragment_cache();
-    scanner.scan(&chunk)
+    scanner
+        .scan(&chunk)
+        .expect("new-prefix recall regression scan should succeed")
 }
 
 /// Find the single match for `detector_id`, or fail with the full set of

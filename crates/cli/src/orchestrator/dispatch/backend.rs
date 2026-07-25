@@ -90,6 +90,20 @@ pub(crate) struct AutorouteMeasurementReceipt {
 
 pub(crate) type AutorouteMeasurementObserver = Arc<Mutex<BTreeSet<AutorouteMeasurementReceipt>>>;
 
+pub(crate) fn autoroute_engine_identity() -> String {
+    store::current_engine_identity()
+}
+
+pub(crate) fn autoroute_executable_identity(
+) -> Result<&'static str, Box<dyn std::error::Error + Send + Sync>> {
+    store::current_executable_identity()
+}
+
+pub(crate) fn autoroute_gpu_artifact_identity(scanner: &CompiledScanner) -> Option<String> {
+    gpu_peer_identity(scanner)
+}
+
+
 fn autoroute_detector_digest(rules_digest: &str) -> u64 {
     let mut hasher = crate::stable_hash::StableHasher::new("autoroute-detector-corpus");
     hasher.field_str("rules_digest", rules_digest);

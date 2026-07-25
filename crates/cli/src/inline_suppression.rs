@@ -2,9 +2,14 @@
 
 use keyhog_core::{Chunk, RawMatch};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 const INLINE_CONTEXT_PREV_LINE: &str = "__keyhog_internal_inline_prev_line_v1";
 const INLINE_CONTEXT_CURRENT_LINE: &str = "__keyhog_internal_inline_current_line_v1";
+static INLINE_CONTEXT_PREV_LINE_NAME: std::sync::LazyLock<Arc<str>> =
+    std::sync::LazyLock::new(|| Arc::from(INLINE_CONTEXT_PREV_LINE));
+static INLINE_CONTEXT_CURRENT_LINE_NAME: std::sync::LazyLock<Arc<str>> =
+    std::sync::LazyLock::new(|| Arc::from(INLINE_CONTEXT_CURRENT_LINE));
 #[derive(serde::Deserialize)]
 struct InlineSuppressionDirectives {
     directives: Vec<String>,
@@ -199,9 +204,9 @@ fn attach_inline_suppression_context_from_chunk(chunk: &Chunk, m: &mut RawMatch)
         return false;
     };
     m.companions
-        .insert(INLINE_CONTEXT_PREV_LINE.to_string(), prev_line);
+        .insert(Arc::clone(&INLINE_CONTEXT_PREV_LINE_NAME), prev_line);
     m.companions
-        .insert(INLINE_CONTEXT_CURRENT_LINE.to_string(), current_line);
+        .insert(Arc::clone(&INLINE_CONTEXT_CURRENT_LINE_NAME), current_line);
     true
 }
 

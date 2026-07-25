@@ -356,7 +356,9 @@ fn inspect_autoroute_cache_for_build(
             out.error = Some(
                 "autoroute cache is disabled (--autoroute-cache off / [system].autoroute_cache = \
                  off); automatic scans warn and complete through scalar correctness recovery, \
-                 but cannot claim a fastest measured route until calibration is persisted"
+                 but cannot claim a fastest measured route until calibration is persisted. \
+                 Use an explicit --backend only as a diagnostic override; it does not replace \
+                 autoroute evidence"
                     .to_string(),
             );
         }

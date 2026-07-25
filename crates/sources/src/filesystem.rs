@@ -455,6 +455,63 @@ pub(crate) fn decode_utf16_for_test(bytes: &[u8]) -> Option<String> {
 pub(crate) fn looks_binary_for_test(bytes: &[u8]) -> bool {
     read::looks_binary_for_test(bytes)
 }
+pub(crate) fn decode_text_file_for_test(bytes: &[u8]) -> Option<String> {
+    read::decode_text_file_for_test(bytes)
+}
+
+pub(crate) fn decode_text_file_owned_or_bytes_for_test(
+    bytes: Vec<u8>,
+) -> Result<String, Vec<u8>> {
+    read::decode_text_file_owned_or_bytes_for_test(bytes)
+}
+
+pub(crate) fn looks_binary_prefix_for_test(bytes: &[u8]) -> bool {
+    read::looks_binary_prefix_for_test(bytes)
+}
+
+pub(crate) fn slice_into_windows_with_offsets_for_test(
+    bytes: &[u8],
+    window_size: usize,
+    overlap: usize,
+) -> Vec<(usize, String)> {
+    read::slice_into_windows_with_offsets_for_test(bytes, window_size, overlap)
+}
+
+pub(crate) fn read_file_windowed_mmap_for_test(
+    path: &std::path::Path,
+    window_size: usize,
+    overlap: usize,
+) -> Option<Vec<(usize, String)>> {
+    read::read_file_windowed_mmap_for_test(path, window_size, overlap)
+}
+
+pub(crate) use read::ForEachWindowedMmapTestOutcome;
+
+pub(crate) fn for_each_file_windowed_mmap_for_test<F>(
+    path: &std::path::Path,
+    window_size: usize,
+    overlap: usize,
+    emit: F,
+) -> ForEachWindowedMmapTestOutcome
+where
+    F: FnMut(Result<(usize, String), String>) -> bool,
+{
+    read::for_each_file_windowed_mmap_for_test(path, window_size, overlap, emit)
+}
+
+pub(crate) fn read_file_buffered_text_for_test(
+    path: &std::path::Path,
+    size_hint: u64,
+) -> Option<String> {
+    read::read_file_buffered_text_for_test(path, size_hint)
+}
+
+pub(crate) fn read_file_prefix_safe_for_test(
+    path: &std::path::Path,
+    buf: &mut [u8],
+) -> std::io::Result<usize> {
+    read::read_file_prefix_safe_for_test(path, buf)
+}
 
 pub(crate) fn duplicate_zip_central_entries_error_for_test(
     path: &std::path::Path,

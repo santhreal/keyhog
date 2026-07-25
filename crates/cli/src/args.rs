@@ -26,13 +26,27 @@ pub use limits::SourceLimitArgs;
 pub use maintenance::{
     BackendArgs, CompletionArgs, DoctorArgs, RepairArgs, UninstallArgs, UpdateArgs,
 };
-pub use scan::{CliDedupScope, DaemonMode, OutputFormat, ScanArgs, SeverityFilter};
+pub use scan::{
+    CliDedupScope, DaemonMode, DetectorMode, OutputFormat, ScanArgs, SeverityFilter,
+};
 pub use scan_system::{parse_space_bytes, ScanSystemArgs};
 pub use watch::WatchArgs;
 pub use watch::DEFAULT_WATCH_MAX_CONSECUTIVE_SCAN_FAILURES;
 
 use clap::{FromArgMatches, Parser};
 use std::ffi::OsString;
+
+/// Measure the production Bloom gate on a benchmark-owned corpus fixture.
+#[derive(clap::Args, Debug)]
+pub struct BloomDiagnosticArgs {
+    /// JSON fixture naming the corpus and its exact negative input files
+    #[arg(long, value_name = "PATH")]
+    pub fixture: std::path::PathBuf,
+
+    /// Root directory used to resolve fixture-relative corpus paths
+    #[arg(long, value_name = "PATH")]
+    pub corpus_root: std::path::PathBuf,
+}
 
 #[derive(Parser)]
 #[command(
@@ -45,12 +59,12 @@ pub struct Cli {
     pub command: Option<Command>,
 
     /// Print version, build information, and statistics
-    #[arg(short = 'V', long)]
-    pub version: bool,
+    #[arg(id = "build_version", short = 'V', long = "version")]
+    pub build_version: bool,
 
     /// Include the hardware probe in version output. This initializes GPU/SIMD
     /// discovery, so it is explicit instead of controlled by ambient env.
-    #[arg(long, requires = "version")]
+    #[arg(long, requires = "build_version")]
     pub full: bool,
 }
 
@@ -87,7 +101,10 @@ pub enum Command {
     #[command(verbatim_doc_comment)]
     Calibrate(CalibrateArgs),
 
-    /// Prime autoroute: calibrate every scan-policy preset × workload bucket
+    /// Prime autoroute: calibrate every scan-policy preset × workload bucket.
+    ///
+    /// Statistically overlapping timings are inconclusive: exits 2 and publishes
+    /// no generation. Rerun on an idle host; explicit --backend is diagnostic only.
     #[command(verbatim_doc_comment)]
     CalibrateAutoroute(CalibrateAutorouteArgs),
 
@@ -106,6 +123,10 @@ pub enum Command {
     /// Health-check the install: host, PATH, detector corpus, scan self-test
     #[command(verbatim_doc_comment)]
     Doctor(DoctorArgs),
+
+    /// Measure Bloom rejection and prove enabled-versus-bypassed finding parity
+    #[command(verbatim_doc_comment)]
+    BloomDiagnostic(BloomDiagnosticArgs),
 
     /// Update keyhog to the latest release: verified download + self-replace
     #[command(verbatim_doc_comment)]

@@ -42,8 +42,7 @@ fn matches_for(body: &str) -> Vec<(String, String)> {
         },
     };
     scanner().clear_fragment_cache();
-    scanner()
-        .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+    scanner().scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback).expect("selected backend scan succeeds")
         .into_iter()
         .flatten()
         .map(|m| (m.detector_id.to_string(), m.credential.as_str().to_string()))

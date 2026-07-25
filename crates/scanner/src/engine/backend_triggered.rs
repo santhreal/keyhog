@@ -15,7 +15,7 @@ impl CompiledScanner {
         confirmed_anchor_literal_matches: Option<&[(u32, u32)]>,
         generic_keyword_positions: Option<&[u32]>,
         route: crate::ScanExecutionRoute,
-    ) -> Vec<RawMatch> {
+    ) -> crate::error::Result<Vec<RawMatch>> {
         let scan_state = self.scan_prepared_state_with_triggered(
             prepared,
             triggered_patterns,
@@ -31,13 +31,13 @@ impl CompiledScanner {
             let mut scan_state = scan_state;
             if !crate::deadline::expired(deadline) {
                 let _g = profile::span(profile::P::Ml);
-                self.apply_ml_batch_scores(&mut scan_state);
+                self.apply_ml_batch_scores(&mut scan_state)?;
             }
-            scan_state.into_matches()
+            Ok(scan_state.into_matches())
         }
         #[cfg(not(feature = "ml"))]
         {
-            scan_state.into_matches()
+            Ok(scan_state.into_matches())
         }
     }
 
@@ -89,10 +89,8 @@ impl CompiledScanner {
             triggered_patterns
         } else {
             normalized_triggered = {
-                let mut normalized = self.collect_triggered_patterns_for_backend(
-                    &prepared.preprocessed.text,
-                    ScanBackend::CpuFallback,
-                );
+                let mut normalized =
+                    self.collect_triggered_patterns_cpu(&prepared.preprocessed.text);
                 for (word, raw_word) in normalized.iter_mut().zip(triggered_patterns) {
                     *word |= *raw_word;
                 }
@@ -284,22 +282,27 @@ impl CompiledScanner {
         &self,
         text: &str,
         backend: ScanBackend,
-    ) -> Vec<u64> {
+    ) -> crate::error::Result<Vec<u64>> {
         let _g = profile::span(profile::P::Phase1Triggers);
         match backend {
             ScanBackend::GpuCuda | ScanBackend::GpuWgpu => {
                 self.collect_triggered_patterns_gpu(text, backend)
             }
             ScanBackend::SimdCpu => self.collect_triggered_patterns_simd(text),
-            ScanBackend::CpuFallback => self.collect_triggered_patterns_cpu(text),
+            ScanBackend::CpuFallback => Ok(self.collect_triggered_patterns_cpu(text)),
         }
     }
 
     /// Per-chunk GPU trigger production. Every dispatch failure records its
-    /// concrete reason and terminates the selected route.
-    fn collect_triggered_patterns_gpu(&self, text: &str, route: ScanBackend) -> Vec<u64> {
-        let dispatch_failure = |reason: String| -> Vec<u64> {
-            super::gpu_forced::fail_selected_gpu_dispatch(self, &reason)
+    /// concrete reason and returns it through the selected-backend boundary.
+    fn collect_triggered_patterns_gpu(
+        &self,
+        text: &str,
+        route: ScanBackend,
+    ) -> crate::error::Result<Vec<u64>> {
+        let dispatch_failure = |reason: String| {
+            self.record_gpu_runtime_fault(reason.clone());
+            Err(crate::error::ScanError::Gpu(reason))
         };
 
         let Some(matcher) = self.gpu_matcher() else {
@@ -336,26 +339,28 @@ impl CompiledScanner {
                 // allocating a second per-chunk `Vec<u64>` only to OR it in.
                 let mut triggered = self.collect_triggered_patterns_cpu(text);
                 self.mark_gpu_presence_into(&mut triggered, &presence);
-                triggered
+                Ok(triggered)
             }
             Err(error) => dispatch_failure(format!("gpu presence scan failed: {error}")),
         }
     }
 
-    fn collect_triggered_patterns_simd(&self, _text: &str) -> Vec<u64> {
+    fn collect_triggered_patterns_simd(
+        &self,
+        _text: &str,
+    ) -> crate::error::Result<Vec<u64>> {
         #[cfg(feature = "simd")]
         {
-            // LAW10: fail-closed/security; backend_unavailable terminates the selected-backend scan with an operator-visible error.
-            let prefilter = self.try_simd_prefilter().unwrap_or_else(|error| {
-                crate::process_exit::backend_unavailable(format!(
+            let prefilter = self.try_simd_prefilter().map_err(|error| {
+                crate::error::ScanError::Simd(format!(
                     "selected Hyperscan trigger backend was not initialized: {error}"
                 ))
-            });
+            })?;
             let scanner = prefilter.scanner();
             // AC and HS trigger sets are incomparable; union then confirm.
             let mut triggered_patterns = self.collect_triggered_patterns_cpu(_text);
-            let scan_result =
-                scanner.scan_matches_result(_text.as_bytes(), |hs_id, _start, _end| {
+            scanner
+                .scan_matches_result(_text.as_bytes(), |hs_id, _start, _end| {
                     if let Some(original_indices) = prefilter.original_indices(hs_id) {
                         for &pattern_index in original_indices {
                             self.mark_triggered_pattern(
@@ -364,21 +369,22 @@ impl CompiledScanner {
                             );
                         }
                     }
-                });
-            if let Err(error) = scan_result {
-                crate::process_exit::backend_unavailable(format!(
-                    "selected Hyperscan trigger scan failed: {error}. The scan did not complete; rerun with `--backend cpu` or recalibrate autoroute"
-                ));
-            }
-            return triggered_patterns;
+                })
+                .map_err(|error| {
+                    crate::error::ScanError::Simd(format!(
+                        "selected Hyperscan trigger scan failed: {error}. The scan did not complete; rerun with `--backend cpu` or recalibrate autoroute"
+                    ))
+                })?;
+            return Ok(triggered_patterns);
         }
 
         #[cfg(not(feature = "simd"))]
-        crate::process_exit::backend_unavailable(
+        Err(crate::error::ScanError::Simd(
             "simd-regex trigger collection reached without a live SIMD/Hyperscan prefilter; \
-silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or choose \
-`--backend cpu` explicitly.",
-        )
+             silent cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or \
+             choose `--backend cpu` explicitly."
+                .to_owned(),
+        ))
     }
 
     pub(crate) fn collect_triggered_patterns_cpu(&self, text: &str) -> Vec<u64> {

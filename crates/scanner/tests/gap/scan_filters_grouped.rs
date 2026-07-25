@@ -47,8 +47,7 @@ fn scan_creds(text: &str) -> Vec<String> {
             ..Default::default()
         },
     };
-    scanner()
-        .scan(&chunk)
+    scanner().scan(&chunk).expect("test scan succeeds")
         .into_iter()
         .map(|m| m.credential.as_ref().to_string())
         .collect()
@@ -64,8 +63,7 @@ fn scan_pairs(text: &str) -> Vec<(String, String)> {
             ..Default::default()
         },
     };
-    scanner()
-        .scan(&chunk)
+    scanner().scan(&chunk).expect("test scan succeeds")
         .into_iter()
         .map(|m| {
             (

@@ -119,6 +119,7 @@ fn poisoned_scan_metadata_does_not_break_out_of_script_element() {
         scan_id: "scan-test-id".to_string(),
         scan_status: keyhog_core::ScanCompletionStatus::Success,
         backend_recoveries: Vec::new(),
+        static_recovery: None,
         keyhog_version: PAYLOAD.to_string(),
         git_hash: "test-git".to_string(),
         detector_digest: "test-detectors".to_string(),

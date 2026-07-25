@@ -53,7 +53,7 @@ fn multiple_secrets_on_same_line_all_detected() {
     let chunk = make_chunk(&format!(
         "SLACK=xoxb-1234567890-1234567890-abcdefghijABCDEFGHIJklmn AWS={aws_key}\n"
     ));
-    let matches = scanner.scan(&chunk);
+    let matches = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
     assert!(
         matches.len() >= 2,
         "both secrets on the same line must be detected, got {}",
@@ -67,7 +67,7 @@ fn duplicate_credential_in_multiple_lines_deduped() {
     let chunk = make_chunk(&format!(
         "line1: {VALID_CREDENTIAL}\nline2: {VALID_CREDENTIAL}\nline3: {VALID_CREDENTIAL}\n"
     ));
-    let matches = scanner.scan(&chunk);
+    let matches = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
     // The scanner should detect the credential but may report once or multiple.
     // Key assertion: no panic, bounded output.
     assert!(

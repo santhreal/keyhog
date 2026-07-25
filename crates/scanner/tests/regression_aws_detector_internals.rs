@@ -80,6 +80,7 @@ fn matches_for(text: &str) -> Vec<RawMatch> {
     s.clear_fragment_cache();
     let chunk: Chunk = make_chunk(text, "filesystem", "aws.conf");
     s.scan(&chunk)
+        .expect("AWS detector internals scan should succeed")
 }
 
 fn by_detector(text: &str, detector_id: &str) -> Vec<RawMatch> {

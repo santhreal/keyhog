@@ -75,6 +75,45 @@ pub(crate) struct Asset {
     pub browser_download_url: String,
 }
 
+#[derive(Debug)]
+pub(crate) enum ReleaseVersionError {
+    InvalidRequested { requested: String },
+    InvalidLatestResponse { returned: String },
+    InvalidExactResponse { requested: String, returned: String },
+    MismatchedExactResponse { requested: String, returned: String },
+}
+
+impl std::fmt::Display for ReleaseVersionError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidRequested { requested } => write!(
+                formatter,
+                "requested release version `{requested}` is not canonical SemVer; pass a tag such as `--version v1.2.3` (valid prereleases such as `v1.2.3-rc.1` are accepted) and retry"
+            ),
+            Self::InvalidLatestResponse { returned } => write!(
+                formatter,
+                "GitHub returned malformed release tag `{returned}`; no update was selected. Retry later or pass a trusted exact tag such as `--version v1.2.3`"
+            ),
+            Self::InvalidExactResponse {
+                requested,
+                returned,
+            } => write!(
+                formatter,
+                "requested release tag `{requested}`, but GitHub returned malformed tag `{returned}`; refusing release substitution before asset download. Verify the published tag and retry with `--version {requested}`"
+            ),
+            Self::MismatchedExactResponse {
+                requested,
+                returned,
+            } => write!(
+                formatter,
+                "requested release tag `{requested}`, but GitHub returned `{returned}`; refusing release substitution before asset download. Verify the published tag and retry with `--version {requested}`"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ReleaseVersionError {}
+
 /// GitHub release-asset name for `keyhog` on a given host. Mirrors the asset
 /// naming the release workflow + install.sh use. `None` for platforms without
 /// a prebuilt asset.
@@ -92,9 +131,61 @@ pub(crate) fn asset_name(os: &str, arch: &str) -> Option<String> {
 }
 
 pub(crate) fn parse_version(tag: &str) -> Option<semver::Version> {
-    let trimmed = tag.trim();
-    let value = trimmed.strip_prefix('v').unwrap_or(trimmed); // LAW10: intentional alternate spelling; an absent v prefix means parse the original tag unchanged
-    semver::Version::parse(value).ok() // LAW10: malformed input returns None and fails closed because an invalid release tag is never selected
+    let value = match tag.strip_prefix('v') {
+        Some(value) => value,
+        None => tag,
+    };
+    match semver::Version::parse(value) {
+        Ok(version) => Some(version),
+        Err(_) => None, // LAW10: resolver validation turns this into a loud error before request/download; comparison returns false and selects no update on malformed input
+    }
+}
+
+/// Validate an operator-supplied version and bind it to KeyHog's canonical
+/// `v`-prefixed GitHub tag spelling before it enters a request URL.
+pub(crate) fn normalize_requested_version(
+    requested: &str,
+) -> std::result::Result<String, ReleaseVersionError> {
+    let parsed = parse_version(requested).ok_or_else(|| ReleaseVersionError::InvalidRequested {
+        requested: requested.to_owned(),
+    })?;
+    let bare = parsed.to_string();
+    let canonical = format!("v{bare}");
+    if requested != bare && requested != canonical {
+        return Err(ReleaseVersionError::InvalidRequested {
+            requested: requested.to_owned(),
+        });
+    }
+    Ok(canonical)
+}
+
+fn validate_latest_response_tag(
+    returned: &str,
+) -> std::result::Result<(), ReleaseVersionError> {
+    parse_version(returned)
+        .map(|_| ())
+        .ok_or_else(|| ReleaseVersionError::InvalidLatestResponse {
+            returned: returned.to_owned(),
+        })
+}
+
+fn validate_exact_response_tag(
+    requested: &str,
+    returned: &str,
+) -> std::result::Result<(), ReleaseVersionError> {
+    let parsed =
+        parse_version(returned).ok_or_else(|| ReleaseVersionError::InvalidExactResponse {
+            requested: requested.to_owned(),
+            returned: returned.to_owned(),
+        })?;
+    let normalized_returned = format!("v{parsed}");
+    if returned != normalized_returned || returned != requested {
+        return Err(ReleaseVersionError::MismatchedExactResponse {
+            requested: requested.to_owned(),
+            returned: returned.to_owned(),
+        });
+    }
+    Ok(())
 }
 
 /// Parse the numeric core of a strict semantic version. Kept as the compact
@@ -169,7 +260,10 @@ pub(crate) async fn resolve_release_at(
     if api.is_empty() {
         anyhow::bail!("injected release API base is empty");
     }
-    if let Some(tag) = version {
+    if let Some(requested) = version {
+        // Validate before constructing or sending a request: untrusted CLI/test
+        // input must never become a path or query fragment.
+        let tag = normalize_requested_version(requested)?;
         let url = format!("{api}/repos/{REPO}/releases/tags/{tag}");
         let response = client.get(&url).send().await.context("query release tag")?;
         let bytes = read_limited_response(
@@ -182,13 +276,14 @@ pub(crate) async fn resolve_release_at(
         if release.draft {
             anyhow::bail!("release tag {tag} is still a draft and cannot be installed");
         }
+        validate_exact_response_tag(&tag, &release.tag_name)?;
         return Ok(release);
     }
     let url = format!("{api}/repos/{REPO}/releases?per_page=10");
     let response = client.get(&url).send().await.context("query releases")?;
     let bytes = read_limited_response(response, MAX_RELEASE_METADATA_BYTES, "release list").await?;
     let releases: Vec<Release> = serde_json::from_slice(&bytes).context("parse releases JSON")?;
-    releases
+    let release = releases
         .into_iter()
         .find(|release| {
             !release.draft && !release.prerelease && release_has_complete_host_bundle(release)
@@ -197,7 +292,9 @@ pub(crate) async fn resolve_release_at(
             anyhow!(
                 "no recent stable GitHub release has the complete signed asset bundle for this host; pass --version to diagnose an exact tag"
             )
-        })
+        })?;
+    validate_latest_response_tag(&release.tag_name)?;
+    Ok(release)
 }
 
 fn release_has_complete_host_bundle(release: &Release) -> bool {
@@ -464,6 +561,6 @@ pub(crate) fn scan_engine_self_test() -> Result<bool> {
             ..Default::default()
         },
     };
-    let matches = scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback);
+    let matches = scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback)?;
     Ok(matches.iter().any(|m| m.credential.as_ref() == PLANTED))
 }

@@ -44,7 +44,7 @@ fn scan(text: String) -> Vec<RawMatch> {
             ..Default::default()
         },
     };
-    SCANNER.scan(&chunk)
+    SCANNER.scan(&chunk).expect("property scan succeeds")
 }
 
 proptest! {
@@ -62,21 +62,51 @@ proptest! {
     ) {
         let plaintext = format!("secret={token}\n");
         let direct = scan(plaintext.clone());
-        prop_assume!(direct.iter().any(|m| {
-            m.credential.as_ref() == token && is_anchored_generic(m.detector_id.as_ref())
-        }));
-        let blob = base64::engine::general_purpose::STANDARD.encode(plaintext.as_bytes());
-        let hits = scan(format!("blob = \"{blob}\"\n"));
-        let recovered: Vec<(String, String)> = hits
+        let direct_hits: Vec<&RawMatch> = direct
             .iter()
             .filter(|m| {
                 m.credential.as_ref() == token && is_anchored_generic(m.detector_id.as_ref())
             })
-            .map(|m| (m.detector_id.to_string(), m.credential.as_str().to_string()))
             .collect();
-        prop_assert!(
-            !recovered.is_empty(),
-            "decoded generic assignment was lost for token {token}: direct={direct:?}, hits={hits:?}",
+        prop_assume!(direct_hits.len() == 1);
+        let direct_hit = direct_hits[0];
+        prop_assert_eq!(direct_hit.location.source.as_ref(), "decode-guard-proptest");
+        prop_assert_eq!(direct_hit.location.offset, "secret=".len());
+        prop_assert_eq!(
+            direct_hit.location.offset + direct_hit.credential.as_str().len(),
+            "secret=".len() + token.len()
+        );
+
+        let blob = base64::engine::general_purpose::STANDARD.encode(plaintext.as_bytes());
+        let hits = scan(format!("blob = \"{blob}\"\n"));
+        let recovered: Vec<&RawMatch> = hits
+            .iter()
+            .filter(|m| {
+                m.credential.as_ref() == token && is_anchored_generic(m.detector_id.as_ref())
+            })
+            .collect();
+        prop_assert_eq!(
+            recovered.len(),
+            1,
+            "decoded generic assignment disagreed with direct assignment for token {}: direct={:?}, hits={:?}",
+            token,
+            direct,
+            hits,
+        );
+        let decoded_hit = recovered[0];
+        prop_assert_eq!(
+            decoded_hit.detector_id.as_ref(),
+            direct_hit.detector_id.as_ref()
+        );
+        prop_assert_eq!(
+            decoded_hit.location.source.as_ref(),
+            "decode-guard-proptest/base64"
+        );
+        let decoded_start = "blob = \"secret=".len();
+        prop_assert_eq!(decoded_hit.location.offset, decoded_start);
+        prop_assert_eq!(
+            decoded_hit.location.offset + decoded_hit.credential.as_str().len(),
+            decoded_start + token.len()
         );
     }
 }

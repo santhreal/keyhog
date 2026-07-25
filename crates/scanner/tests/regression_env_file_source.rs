@@ -50,7 +50,9 @@ fn scan_as(path: &str, content: &str) -> Vec<RawMatch> {
             ..Default::default()
         },
     };
-    scanner.scan(&chunk)
+    scanner
+        .scan(&chunk)
+        .expect("environment-file source regression scan should succeed")
 }
 
 /// True iff some match is the openai-api-key detector, carries exactly

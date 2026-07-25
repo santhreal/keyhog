@@ -15,10 +15,10 @@ impl CompiledScanner {
         backend: crate::hw_probe::ScanBackend,
         deadline: Option<std::time::Instant>,
         route: crate::ScanExecutionRoute,
-    ) -> Vec<RawMatch> {
+    ) -> crate::error::Result<Vec<RawMatch>> {
         let chunk_text = &chunk.data;
         if reject_oversized_window_chunk(chunk, chunk_text) {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let mut all_matches = Vec::with_capacity(estimate_window_match_capacity(chunk_text.len()));
         let mut seen = HashSet::new();
@@ -27,10 +27,7 @@ impl CompiledScanner {
 
         // Compute the chunk's line-start offsets ONCE up front. Per-match line
         // attribution then binary-searches this table (O(log L)) instead of
-        // re-counting newlines from the buffer start for every match
-        // (O(offset)/match → O(n²) over a match-dense chunk). On a windowed
-        // multi-MiB buffer the old path made line attribution the dominant
-        // cost; see `record_window_match`.
+        // re-counting newlines from the buffer start for every match.
         let line_offsets = crate::compute_line_offsets(chunk_text);
 
         while offset < chunk_text.len() {
@@ -39,7 +36,7 @@ impl CompiledScanner {
             }
             let end = window_end_offset(chunk_text, offset, MAX_SCAN_CHUNK_BYTES);
             let window_chunk = window_chunk(chunk, offset, end);
-            for mut raw_match in self.scan_inner(&window_chunk, backend, deadline, route) {
+            for mut raw_match in self.scan_inner(&window_chunk, backend, deadline, route)? {
                 if record_window_match(
                     &line_offsets,
                     chunk.metadata.base_offset,
@@ -59,7 +56,7 @@ impl CompiledScanner {
             offset = next_window_offset(chunk_text, end, WINDOW_OVERLAP_BYTES);
         }
 
-        all_matches
+        Ok(all_matches)
     }
 
     #[cfg(any(feature = "simd", feature = "gpu", test))]
@@ -73,12 +70,12 @@ impl CompiledScanner {
         confirmed_anchor_literal_matches: Option<&[(u32, u32)]>,
         generic_keyword_positions: Option<&[u32]>,
         route: crate::ScanExecutionRoute,
-    ) -> Vec<RawMatch> {
+    ) -> crate::error::Result<Vec<RawMatch>> {
         use rayon::prelude::*;
 
         let chunk_text = &chunk.data;
         if reject_oversized_window_chunk(chunk, chunk_text) {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let mut all_matches = Vec::with_capacity(estimate_window_match_capacity(chunk_text.len()));
         let mut seen = HashSet::new();
@@ -86,14 +83,16 @@ impl CompiledScanner {
         let line_offsets = crate::compute_line_offsets(chunk_text);
         let ranges = window_ranges(chunk_text, MAX_SCAN_CHUNK_BYTES, WINDOW_OVERLAP_BYTES);
         let telemetry = crate::telemetry::capture_scan_telemetry();
+        let recovery_receipts = crate::gpu::capture_recovery_receipts();
 
-        let window_matches: Vec<(usize, usize, Vec<RawMatch>)> = ranges
+        let window_matches: crate::error::Result<Vec<(usize, usize, Vec<RawMatch>)>> = ranges
             .par_iter()
             .map(|&(offset, end)| {
-                crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
+                crate::gpu::with_captured_recovery_receipts(recovery_receipts.as_ref(), || {
+                    crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
                     let window_len = end - offset;
                     if crate::deadline::expired(deadline) {
-                        return (offset, window_len, Vec::new());
+                        return Ok((offset, window_len, Vec::new()));
                     }
                     let window_chunk = window_chunk(chunk, offset, end);
                     let prepared = self.prepare_chunk(&window_chunk);
@@ -158,11 +157,13 @@ impl CompiledScanner {
                         confirmed_anchor_matches,
                         generic_positions,
                         route,
-                    );
-                    (offset, window_len, matches)
+                    )?;
+                    Ok((offset, window_len, matches))
+                    })
                 })
             })
             .collect();
+        let window_matches = window_matches?;
 
         for (offset, window_len, matches) in window_matches {
             for mut raw_match in matches {
@@ -181,7 +182,7 @@ impl CompiledScanner {
             }
         }
 
-        all_matches
+        Ok(all_matches)
     }
 }
 

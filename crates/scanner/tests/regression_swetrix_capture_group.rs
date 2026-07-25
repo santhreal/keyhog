@@ -50,7 +50,7 @@ fn swetrix_credential(text: &str) -> String {
             ..Default::default()
         },
     };
-    let matches = scanner.scan(&chunk);
+    let matches = scanner.scan(&chunk).expect("scanner call should succeed");
     let m = matches
         .iter()
         .find(|m| m.detector_id.as_ref() == "swetrix-api-key")

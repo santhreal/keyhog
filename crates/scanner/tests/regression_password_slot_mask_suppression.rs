@@ -34,8 +34,7 @@ const FAMILY: [&str; 4] = [
 
 fn matches(s: &CompiledScanner, chunk: &Chunk) -> Vec<(String, String)> {
     s.clear_fragment_cache();
-    s.scan(chunk)
-        .into_iter()
+    s.scan(chunk).expect("scanner call should succeed").into_iter()
         .map(|m| (m.detector_id.to_string(), m.credential.as_str().to_string()))
         .collect()
 }

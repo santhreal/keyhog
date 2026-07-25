@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::time::Duration;
+use std::sync::Arc;
 
-use keyhog_core::VerificationResult;
+use keyhog_core::{CompanionMap, VerificationResult};
 use reqwest::Client;
 
 use crate::interpolate::interpolate_url;
@@ -17,7 +18,7 @@ pub(crate) async fn verify_multi_step(
     client: &Client,
     spec: &keyhog_core::VerifySpec,
     credential: &str,
-    companions: &HashMap<String, String>,
+    companions: &CompanionMap,
     timeout: Duration,
     allow_private_ips: bool,
     allow_http: bool,
@@ -191,7 +192,7 @@ pub(crate) async fn verify_multi_step(
             }
         };
         for (k, v) in &step_metadata {
-            current_companions.insert(format!("{}.{}", step.name, k), v.clone());
+            current_companions.insert(Arc::from(format!("{}.{}", step.name, k)), v.clone());
         }
         // Step extracts are transport state for later templates. They are not
         // detector-declared report evidence and must never enter findings.

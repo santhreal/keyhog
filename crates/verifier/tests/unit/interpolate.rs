@@ -2,6 +2,7 @@ use keyhog_verifier::testing::{
     missing_companion_refs, TestApi, VerifierTestApi, MAX_TEMPLATE_TOKENS,
 };
 use std::collections::HashMap;
+use std::sync::Arc;
 
 #[test]
 fn resolve_field_match() {
@@ -85,7 +86,7 @@ fn missing_companion_refs_reports_only_absent_names_in_order() {
 fn missing_companion_refs_dedups_a_repeated_missing_ref() {
     let template = "{{companion.x}}{{companion.x}}{{companion.x}}{{companion.x}}";
     assert_eq!(
-        missing_companion_refs(template, &HashMap::new()),
+        missing_companion_refs(template, &HashMap::<Arc<str>, String>::new()),
         vec!["x".to_string()],
         "a repeated missing ref must be reported once, not per occurrence"
     );
@@ -110,7 +111,8 @@ fn missing_companion_refs_stops_scanning_at_max_template_tokens() {
         template.push_str(&i.to_string());
         template.push_str("}}");
     }
-    let missing = missing_companion_refs(&template, &HashMap::new());
+    let missing =
+        missing_companion_refs(&template, &HashMap::<Arc<str>, String>::new());
     assert_eq!(
         missing.len(),
         MAX_TEMPLATE_TOKENS,

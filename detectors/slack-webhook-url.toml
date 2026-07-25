@@ -38,6 +38,7 @@ name = "Content-Type"
 value = "application/json"
 
 [detector.verify.success]
+policy = "body_positive"
 status = 400
 body_contains = "invalid_payload"
 

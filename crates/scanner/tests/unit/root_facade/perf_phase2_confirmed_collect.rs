@@ -317,7 +317,9 @@ fn scan_with(scanner: &CompiledScanner, text: &str) -> Vec<RawMatch> {
         },
     };
     scanner.clear_fragment_cache();
-    scanner.scan(&chunk)
+    scanner
+        .scan(&chunk)
+        .expect("confirmed-collection test scan succeeds")
 }
 
 fn confirmed_only_scanner(detectors: Vec<DetectorSpec>) -> CompiledScanner {
@@ -518,13 +520,16 @@ fn coalesced_and_per_chunk_findings_match() {
     scanner.clear_fragment_cache();
     let mut per_chunk: Vec<RawMatch> = Vec::new();
     for c in &chunks {
-        per_chunk.extend(scanner.scan(c));
+        per_chunk.extend(
+            scanner
+                .scan(c)
+                .expect("confirmed-collection per-chunk scan succeeds"),
+        );
     }
 
     // Coalesced batch API (drives scan_coalesced_phase2 directly).
     scanner.clear_fragment_cache();
-    let coalesced: Vec<RawMatch> = scanner
-        .scan_coalesced(&chunks)
+    let coalesced: Vec<RawMatch> = scanner.scan_coalesced(&chunks).expect("coalesced test scan succeeds")
         .into_iter()
         .flatten()
         .collect();

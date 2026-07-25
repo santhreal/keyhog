@@ -33,6 +33,7 @@ template = "AWS {{match}}:{{companion.secret_access_key}}"
 
 [detector.verify.success]
 status = 200
+policy = "status_with_error_backstop"
 
 [[detector.tests]]
 test_positive = "WASABIKEY=D1R7E3FCOQ5SBACMK1F2"

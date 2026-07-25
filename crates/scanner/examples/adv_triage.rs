@@ -76,12 +76,12 @@ fn chunk(text: &str) -> Chunk {
         },
     }
 }
-fn fires(scanner: &CompiledScanner, text: &str, cred: &str) -> bool {
+fn fires(scanner: &CompiledScanner, text: &str, cred: &str) -> keyhog_scanner::Result<bool> {
     scanner.clear_fragment_cache();
-    scanner
-        .scan(&chunk(text))
+    Ok(scanner
+        .scan(&chunk(text))?
         .iter()
-        .any(|m| m.credential.as_ref().contains(cred))
+        .any(|m| m.credential.as_ref().contains(cred)))
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -114,7 +114,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let c = toml::from_str::<Contract>(&text)?;
         for p in &c.positive {
-            let bare = fires(&scanner, &p.text, &p.credential);
+            let bare = fires(&scanner, &p.text, &p.credential)?;
             if !bare {
                 bare_fail += Wrapper::ALL.len();
                 *bare_fail_detectors
@@ -125,7 +125,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             for w in Wrapper::ALL {
                 total += 1;
-                let wrapped = fires(&scanner, &w.wrap(&p.text), &p.credential);
+                let wrapped = fires(&scanner, &w.wrap(&p.text), &p.credential)?;
                 if !wrapped {
                     wrap_fail_e += 1;
                     if wrap_fail_e <= 120 {

@@ -63,7 +63,8 @@ A dash means that layer intentionally has no surface.
 
 | Setting | Default | `.keyhog.toml` key | CLI flag | Effect |
 |---|---|---|---|---|
-| Detector corpus | embedded | `detectors` | `--detectors` | Select the complete detector TOML directory. A config-relative path resolves from the config directory; a CLI path resolves from the caller's working directory. |
+| Detector corpus | embedded | `detectors` | `--detectors` | Select a detector TOML directory. A config-relative path resolves from the config directory; a CLI path resolves from the caller's working directory. |
+| Detector composition | replace | `detectors_mode` | `--detectors-mode` | `replace` uses only the selected directory; `overlay` adds it to the embedded corpus and rejects detector-ID collisions. A mode requires an explicit detector directory. |
 | Min confidence | **0.40** | `[scan].min_confidence` | `--min-confidence` | Drop findings scoring below this (0.0-1.0). Bench-tuned for max F1. |
 | Decode depth | **10** | `[scan].decode_depth` | `--decode-depth` | Max recursive decode passes, e.g. `base64(hex(url(secret)))` (1-10). A zero value also disables bounded static JavaScript XOR/AES recovery. |
 | Decode size limit | **512KB** | `decode_size_limit` | `--decode-size-limit` | Maximum prepared chunk admitted to decode-through. Large files are windowed, so this is not a whole-file limit. |
@@ -188,13 +189,20 @@ security policy. Unknown keys and retired duplicate spellings fail closed.
 When migrating an older file, move the retired flat scan keys named by the
 parser under `[scan]` and rename `exclude_paths` to `[scan].exclude`.
 
-### `detectors`
+### `detectors` and `detectors_mode`
 
-The root `detectors = "path"` key selects the complete detector TOML corpus.
-Relative paths resolve from the directory containing the loaded config file,
-so the same repository policy is independent of the caller's working
-directory. An explicit `--detectors PATH` takes precedence. This key selects a
-corpus; it does not overlay files onto the embedded detector set.
+The root `detectors = "path"` key selects a detector TOML corpus. Relative
+paths resolve from the directory containing the loaded config file, so the same
+repository policy is independent of the caller's working directory. An
+explicit `--detectors PATH` takes precedence.
+
+`detectors_mode = "replace"` makes that directory the complete corpus and is
+the default for compatibility. `detectors_mode = "overlay"` composes it with
+the embedded corpus after rejecting every detector-ID collision. The matching
+`--detectors-mode replace|overlay` CLI value takes precedence over TOML after
+the detector path is resolved. Supplying a mode without a `detectors` path in
+either layer is an error rather than an implicit merge with an auto-discovered
+directory.
 
 ### `[scan]`
 

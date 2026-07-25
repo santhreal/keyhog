@@ -11,23 +11,22 @@ use crate::confidence::policy::MlScoreResult;
 use crate::context;
 use crate::pipeline::*;
 use crate::types::*;
-use keyhog_core::Chunk;
-use std::collections::HashMap;
+use keyhog_core::{Chunk, CompanionMap};
 
 impl CompiledScanner {
     pub(crate) fn match_companions(
         detector_companions: &[CompiledCompanion],
         preprocessed: &ScannerPreprocessedText<'_>,
         line: usize,
-    ) -> Option<HashMap<String, String>> {
+    ) -> Option<CompanionMap> {
         // Most detectors declare no companions. Return the empty map without
-        // sizing a bucket array (`HashMap::new()` is allocation-free until the
+        // sizing a bucket array (`CompanionMap::new()` is allocation-free until the
         // first insert) and without entering the search loop. Only detectors
         // that actually have companions pay for the map.
         if detector_companions.is_empty() {
-            return Some(HashMap::new());
+            return Some(CompanionMap::new());
         }
-        let mut results = HashMap::with_capacity(detector_companions.len());
+        let mut results = CompanionMap::with_capacity(detector_companions.len());
         for companion in detector_companions {
             if let Some(val) = find_companion(preprocessed, line, companion) {
                 results.insert(companion.name.clone(), val);
@@ -67,6 +66,40 @@ impl CompiledScanner {
         let line = match_line_number(preprocessed, line_offsets, credential_start);
         let execution_policy = &detector_plan.execution;
         let is_generic = execution_policy.is_generic;
+        let whole_value = is_generic.then(|| {
+            let source_start =
+                preprocessed.source_offset_for_match(&chunk.data, credential_start, credential);
+            let source_end = source_start.saturating_add(credential.len());
+            let (span_data, span_start, span_end) = if chunk
+                .data
+                .get(source_start..source_end)
+                .is_some_and(|source_value| source_value == credential)
+            {
+                (chunk.data.as_ref(), source_start, source_end)
+            } else {
+                // A synthesized match without an exact source mapping still
+                // receives detector policy against its exact preprocessed span.
+                (
+                    data,
+                    credential_start,
+                    credential_start.saturating_add(credential.len()),
+                )
+            };
+            (
+                crate::detector_execution_policy::whole_assignment_value(
+                    span_data, span_start, span_end,
+                ),
+                span_data,
+                span_start,
+                span_end,
+            )
+        });
+        let whole_value_len =
+            whole_value.map_or(credential.len(), |(span, _, _, _)| span.end - span.start);
+        let partial_assignment_value =
+            whole_value.is_some_and(|(span, _, start, end)| !span.is_exact(start, end));
+        let suppression_value =
+            whole_value.map_or(credential, |(span, span_data, _, _)| span.as_str(span_data));
         let structural_password_slot =
             execution_policy.structural_password_slot || entry.structural_password_slot;
         // A declared structural slot is exact syntactic evidence even when the
@@ -83,6 +116,8 @@ impl CompiledScanner {
                 .post_match()
                 .degenerate_run_min_length,
             credential,
+            whole_value_len,
+            partial_assignment_value,
             data,
             credential_start,
             match_end,
@@ -90,7 +125,7 @@ impl CompiledScanner {
         let process_ctx = crate::adjudicate::MatchCtx::for_process_signals(process_signals);
         if crate::adjudicate::record_suppression(
             chunk.metadata.path.as_deref(),
-            credential,
+            suppression_value,
             &process_ctx,
         )
         .is_some()
@@ -371,7 +406,7 @@ impl CompiledScanner {
                 let source_offset =
                     preprocessed.source_offset_for_match(&chunk.data, credential_start, credential);
                 let ml_features = crate::types::ml_features_for_candidate(
-                    data,
+                    data, line_offsets,
                     line,
                     chunk.metadata.path.as_deref(),
                     credential,
@@ -381,7 +416,7 @@ impl CompiledScanner {
                     detector_ml_policy.features,
                     crate::ml_scorer::MlCandidateChannel::Pattern,
                 );
-                let raw_match = build_raw_match(
+                let pending_raw_match = crate::pipeline::build_pending_raw_match(
                     execution_policy.severity,
                     detector_plan.cloned_metadata(),
                     chunk,
@@ -390,12 +425,11 @@ impl CompiledScanner {
                     source_offset,
                     line,
                     entropy,
-                    heuristic_conf,
                     scan_state,
                     entry.client_safe,
                 );
                 if scan_state.push_detector_ml_pending(
-                    raw_match,
+                    pending_raw_match,
                     heuristic_conf,
                     code_context,
                     context_multiplier,

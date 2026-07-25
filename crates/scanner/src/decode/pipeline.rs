@@ -17,6 +17,7 @@ pub(crate) fn decode_chunk_with_policy(
         chunk,
         policy,
         decoder_plan.decoders(),
+        Some(decoder_plan),
         max_depth,
         validate,
         deadline,
@@ -34,7 +35,7 @@ pub(crate) fn decode_chunk_with_active_decoders(
 ) -> Vec<Chunk> {
     let decoders = registry::active_decoders();
     decode_chunk_with_decoders(
-        chunk, policy, &decoders, max_depth, validate, deadline, screen,
+        chunk, policy, &decoders, None, max_depth, validate, deadline, screen,
     )
 }
 
@@ -42,6 +43,7 @@ fn decode_chunk_with_decoders(
     chunk: &Chunk,
     policy: &super::policy::CompiledDecodeTransformPolicy,
     decoders: &[registry::RegisteredDecoder],
+    decoder_plan: Option<&registry::CompiledDecoderPlan>,
     max_depth: usize,
     validate: bool,
     deadline: Option<std::time::Instant>,
@@ -91,7 +93,7 @@ fn decode_chunk_with_decoders(
     while let Some((current, depth, decode_cursor)) = queue.pop_front() {
         if crate::deadline::expired(deadline) {
             // LAW10: deadline truncation is counted as a typed scanner coverage gap and reported by CLI/reporting surfaces.
-            tracing::debug!(
+            tracing::debug!( // LAW10: the typed decode-truncation counter below is the operator-visible surface.
                 path = ?chunk.metadata.path,
                 "decode caller deadline exhausted; stopping decode-through"
             );
@@ -99,6 +101,9 @@ fn decode_chunk_with_decoders(
             break;
         }
         if depth >= max_depth {
+            continue;
+        }
+        if decoder_plan.is_some_and(|plan| !plan.all_decoder_may_match(&current.data)) {
             continue;
         }
 
@@ -117,7 +122,7 @@ fn decode_chunk_with_decoders(
             // consuming the CURRENT decoder's (un-bounded) output.
             if crate::deadline::expired(deadline) {
                 // LAW10: deadline truncation is counted as a typed scanner coverage gap and reported by CLI/reporting surfaces.
-                tracing::debug!(
+                tracing::debug!( // LAW10: the typed decode-truncation counter below is the operator-visible surface.
                     path = ?chunk.metadata.path,
                     "decode caller deadline exhausted mid-fan-out; stopping decode-through"
                 );
@@ -126,113 +131,157 @@ fn decode_chunk_with_decoders(
                 return unwrap_decoded_chunks(decoded_chunks);
             }
             let dec_t0 = prof_dec.then(std::time::Instant::now);
-            let decoded_out = decoder.decode_chunk(&current, policy);
+            let (exhaustion, emitted, last_decoded_bytes) = {
+                let mut sink = BoundedDecodeSink {
+                    decoded_chunks: &mut decoded_chunks,
+                    queue: &mut queue,
+                    seen: &mut seen,
+                    produced: &mut produced,
+                    total_bytes: &mut total_bytes,
+                    depth,
+                    decode_cursor,
+                    validate,
+                    deadline,
+                    screen,
+                    exhaustion: None,
+                    emitted: 0,
+                    last_decoded_bytes: 0,
+                };
+                decoder.decode_chunk_into(&current, policy, &mut sink);
+                (sink.exhaustion, sink.emitted, sink.last_decoded_bytes)
+            };
             if let Some(t0) = dec_t0 {
-                registry::record_decoder_run(dec_i, t0.elapsed(), decoded_out.len());
+                registry::record_decoder_run(dec_i, t0.elapsed(), emitted);
             }
-            for decoded in decoded_out {
-                // Re-check the deadline WHILE consuming this decoder's output
-                // (C9 root cause). The pre-decoder check above only fires
-                // once per decoder, but `decode_chunk` returns a fully
-                // materialized Vec whose length is O(chunk size) -
-                // candidate extraction yields one candidate per quoted
-                // string / `key=value` / base64 run, and Caesar fans each out
-                // 25x. Without this check the pipeline still hashes, screens,
-                // clones, and queues every one of those results after the
-                // caller deadline has passed. The
-                // `decoder.decode_chunk` call itself cannot be interrupted
-                // (trait returns an owned Vec), but bailing here bounds the
-                // post-deadline overrun to one decoder's fan-out at most -
-                // and stops the (dominant) per-result processing cost dead.
-                if crate::deadline::expired(deadline) {
-                    // LAW10: deadline truncation is counted as a typed scanner coverage gap and reported by CLI/reporting surfaces.
-                    tracing::debug!(
-                        path = ?chunk.metadata.path,
-                        "decode caller deadline exhausted while consuming decoder output; \
-                         stopping decode-through"
-                    );
-                    crate::telemetry::record_decode_truncation();
-                    extractor::clear_shared_candidates();
-                    return unwrap_decoded_chunks(decoded_chunks);
-                }
-                let decoded_offset = decoded
-                    .metadata
-                    .decoded_span
-                    .map_or(decoded.metadata.base_offset, |(start, _)| {
-                        decoded.metadata.base_offset.saturating_add(start)
-                    });
-                if decoded_offset < decode_cursor {
-                    // The same independent regions have a canonical
-                    // nondecreasing traversal. Dropping this reverse-order
-                    // permutation does not drop a decoded state; the earlier
-                    // region's branch reaches it in source order.
-                    continue;
-                }
-                if seen.insert(dedup_key(decoded.data.as_bytes())) {
-                    // Optional sanitization (kimi-wave1 audit finding 5.1).
-                    // When `validate=true`, drop decoded chunks containing
-                    // NUL bytes - these are typically buggy-decoder output
-                    // (mis-decoded binary, broken-encoded base64) and feed
-                    // garbage into downstream regex scanning. C1 controls
-                    // (0x80-0x9F) are kept because legitimate UTF-8 multi-
-                    // byte sequences include those bytes.
-                    if validate && decoded.data.as_bytes().contains(&0u8) {
-                        continue;
+            if let Some(exhaustion) = exhaustion {
+                match exhaustion {
+                    DecodeSinkExhaustion::Deadline => {
+                        tracing::debug!( // LAW10: the typed decode-truncation counter below is the operator-visible surface.
+                            path = ?chunk.metadata.path,
+                            decoder = decoder.name(),
+                            depth,
+                            "decode caller deadline exhausted while producing decoder output; \
+                             stopping decode-through"
+                        );
                     }
-                    let passes_screen = if let Some(screen) = screen {
-                        screen.screen(decoded.data.as_bytes())
-                    } else {
-                        true
-                    };
-
-                    // Count this unique decoded chunk against the fan-out
-                    // budget REGARDLESS of screen result (M2): a chunk that
-                    // fails the screen is still queued and recursively
-                    // re-decoded, so it must consume the recursion budget.
-                    produced += 1;
-                    total_bytes += decoded.data.len();
-                    if produced > MAX_DECODED_CHUNKS_PER_ROOT
-                        || total_bytes > MAX_DECODED_TOTAL_BYTES
-                    {
-                        // Demoted from `warn!` - hitting the recursive
-                        // decode limit is a benign cap, not an error.
-                        // Files with dense nested encoding (audit logs,
-                        // sealed blobs, base64-of-base64-of-zlib...)
-                        // trip it routinely on every scan, which made
-                        // routine output (e.g. `keyhog scan ~/.config`)
-                        // look like the scanner was failing. Real
-                        // scanner failures use `warn!`/`error!`.
-                        // LAW10: cap truncation is counted as a typed scanner coverage gap and reported by CLI/reporting surfaces.
-                        tracing::debug!(
+                    DecodeSinkExhaustion::Budget => {
+                        tracing::debug!( // LAW10: the typed decode-truncation counter below is the operator-visible surface.
                             path = ?chunk.metadata.path,
                             decoder = decoder.name(),
                             depth,
                             produced,
                             total_bytes,
                             current_bytes = current.data.len(),
-                            decoded_bytes = decoded.data.len(),
+                            decoded_bytes = last_decoded_bytes,
                             max_chunks = MAX_DECODED_CHUNKS_PER_ROOT,
                             max_total_bytes = MAX_DECODED_TOTAL_BYTES,
-                            "decode depth/size cap reached: chunk truncated to limit"
+                            "decode depth/size cap reached while producing output"
                         );
-                        crate::telemetry::record_decode_truncation();
-                        extractor::clear_shared_candidates();
-                        return unwrap_decoded_chunks(decoded_chunks);
-                    }
-
-                    if passes_screen {
-                        let shared = Arc::new(decoded);
-                        queue.push_back((Arc::clone(&shared), depth + 1, decoded_offset));
-                        decoded_chunks.push(shared);
-                    } else {
-                        queue.push_back((Arc::new(decoded), depth + 1, decoded_offset));
                     }
                 }
+                crate::telemetry::record_decode_truncation();
+                extractor::clear_shared_candidates();
+                return unwrap_decoded_chunks(decoded_chunks);
             }
         }
     }
     extractor::clear_shared_candidates();
     unwrap_decoded_chunks(decoded_chunks)
+}
+
+#[derive(Clone, Copy)]
+enum DecodeSinkExhaustion {
+    Deadline,
+    Budget,
+}
+
+struct BoundedDecodeSink<'a> {
+    decoded_chunks: &'a mut Vec<Arc<Chunk>>,
+    queue: &'a mut VecDeque<(Arc<Chunk>, usize, usize)>,
+    seen: &'a mut HashSet<u128>,
+    produced: &'a mut usize,
+    total_bytes: &'a mut usize,
+    depth: usize,
+    decode_cursor: usize,
+    validate: bool,
+    deadline: Option<std::time::Instant>,
+    screen: Option<&'a crate::alphabet_filter::AlphabetScreen>,
+    exhaustion: Option<DecodeSinkExhaustion>,
+    emitted: usize,
+    last_decoded_bytes: usize,
+}
+
+impl super::DecodeOutputSink for BoundedDecodeSink<'_> {
+    fn push(&mut self, decoded: Chunk) -> bool {
+        self.emitted = self.emitted.saturating_add(1);
+        self.last_decoded_bytes = decoded.data.len();
+        // LAW10: closing for the caller deadline is reported immediately after
+        // the producer returns through the typed decode-truncation counter.
+        if crate::deadline::expired(self.deadline) {
+            self.exhaustion = Some(DecodeSinkExhaustion::Deadline);
+            return false;
+        }
+
+        let decoded_offset = decoded
+            .metadata
+            .decoded_span
+            .map_or(decoded.metadata.base_offset, |(start, _)| {
+                decoded.metadata.base_offset.saturating_add(start)
+            });
+        // LAW10: recall-preserving: the original root bytes still take the
+        // whole-chunk scan path unchanged; the canonical source-order branch
+        // reaches the same decoded state without the reverse-order permutation.
+        if decoded_offset < self.decode_cursor {
+            return true;
+        }
+        // LAW10: recall-preserving: the original root bytes still take the
+        // whole-chunk scan path unchanged; identical decoded bytes add no finding.
+        if !self.seen.insert(dedup_key(decoded.data.as_bytes())) {
+            return true;
+        }
+        // LAW10: recall-preserving: the original encoded root bytes still take
+        // the whole-chunk scan path unchanged; validation rejects only binary views.
+        if self.validate && decoded.data.as_bytes().contains(&0u8) {
+            return true;
+        }
+
+        let next_produced = self.produced.saturating_add(1);
+        let next_total_bytes = self.total_bytes.saturating_add(decoded.data.len());
+        // LAW10: a shared-budget cut is recorded immediately after production
+        // stops through the typed decode-truncation counter.
+        if next_produced > MAX_DECODED_CHUNKS_PER_ROOT
+            || next_total_bytes > MAX_DECODED_TOTAL_BYTES
+        {
+            self.exhaustion = Some(DecodeSinkExhaustion::Budget);
+            return false;
+        }
+        *self.produced = next_produced;
+        *self.total_bytes = next_total_bytes;
+
+        // LAW10: recall-preserving: the decoded bytes still take the decode-through
+        // queue unchanged; the screen proves only the direct scanner pass impossible.
+        let passes_screen = self
+            .screen
+            .is_none_or(|screen| screen.screen(decoded.data.as_bytes()));
+        if passes_screen {
+            let shared = Arc::new(decoded);
+            self.queue
+                .push_back((Arc::clone(&shared), self.depth + 1, decoded_offset));
+            self.decoded_chunks.push(shared);
+        } else {
+            self.queue
+                .push_back((Arc::new(decoded), self.depth + 1, decoded_offset));
+        }
+
+        if *self.produced == MAX_DECODED_CHUNKS_PER_ROOT
+            || *self.total_bytes == MAX_DECODED_TOTAL_BYTES
+        {
+            self.exhaustion = Some(DecodeSinkExhaustion::Budget);
+            false
+        } else {
+            true
+        }
+    }
 }
 
 fn unwrap_decoded_chunks(chunks: Vec<Arc<Chunk>>) -> Vec<Chunk> {
@@ -274,7 +323,11 @@ pub(crate) fn canonical_decode_order_probe_for_test() -> Result<usize, String> {
             "canonical-order-probe"
         }
 
-        fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
+        fn decode_chunk_into(
+            &self,
+            chunk: &Chunk,
+            sink: &mut dyn super::DecodeOutputSink,
+        ) {
             const ENCODED: [&str; 10] = [
                 "E00", "E01", "E02", "E03", "E04", "E05", "E06", "E07", "E08", "E09",
             ];
@@ -282,20 +335,20 @@ pub(crate) fn canonical_decode_order_probe_for_test() -> Result<usize, String> {
                 "D00", "D01", "D02", "D03", "D04", "D05", "D06", "D07", "D08", "D09",
             ];
 
-            let mut outputs = Vec::new();
             for (encoded, decoded) in ENCODED.into_iter().zip(DECODED) {
                 if let Some(start) = chunk.data.find(encoded) {
-                    splice::push_decoded_text_chunk_spliced_at(
-                        &mut outputs,
+                    if !splice::push_decoded_text_chunk_spliced_at(
+                        sink,
                         chunk,
                         Some((start, start + encoded.len())),
                         encoded,
                         decoded.to_owned(),
                         self.name(),
-                    );
+                    ) {
+                        return;
+                    }
                 }
             }
-            outputs
         }
     }
 
@@ -307,7 +360,10 @@ pub(crate) fn canonical_decode_order_probe_for_test() -> Result<usize, String> {
     let decoders = [registry::RegisteredDecoder::Shared(Arc::new(
         IndependentMarkerDecoder,
     ))];
-    Ok(decode_chunk_with_decoders(&chunk, &policy, &decoders, 4, false, None, None).len())
+    Ok(decode_chunk_with_decoders(
+        &chunk, &policy, &decoders, None, 4, false, None, None,
+    )
+    .len())
 }
 
 mod extractor;
@@ -329,7 +385,8 @@ pub use registry::{register_decoder, try_register_decoder, DecoderRegistrationEr
 pub(crate) use registry::{register_thread_decoder, ScopedDecoderRegistration};
 pub(crate) use splice::{bytecount_newlines, splice_decoded_payload_at};
 pub(super) use splice::{
-    decode_candidate_refs_exact, decode_candidate_spans_exact, push_batched_decoded_replacements,
-    push_decoded_replacements_spliced, push_decoded_text_chunk, push_decoded_text_chunk_spliced_at,
+    push_decoded_replacements_spliced, push_decoded_text_chunk,
+    push_decoded_text_chunk_spliced_at, stream_batched_decoded_replacements,
+    stream_candidate_refs_exact, stream_candidate_spans_exact, DecodedReplacementBatcher,
     DECODE_REPLACEMENT_BATCH_SOURCE_BYTES,
 };

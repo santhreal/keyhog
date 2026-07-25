@@ -4,7 +4,45 @@
 #[cfg(test)]
 use keyhog_core::Chunk;
 #[cfg(test)]
-use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::sync::{Mutex, MutexGuard, OnceLock, TryLockError};
+
+#[cfg(test)]
+static GPU_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+/// Serializes live GPU unit tests that share one physical adapter.
+///
+/// This prevents injected-fault and parity fixtures from contending for the
+/// same driver queue while the ordinary Rust test harness runs in parallel.
+#[cfg(test)]
+pub(crate) fn gpu_test_lock() -> MutexGuard<'static, ()> {
+    GPU_TEST_LOCK
+        .lock()
+        .expect("live GPU test lock poisoned by a prior test failure")
+}
+
+/// Nonblocking test seam for proving live-adapter exclusion without timing.
+#[cfg(test)]
+pub(crate) fn try_gpu_test_lock() -> Option<MutexGuard<'static, ()>> {
+    match GPU_TEST_LOCK.try_lock() {
+        Ok(guard) => Some(guard),
+        Err(TryLockError::WouldBlock) => None,
+        Err(TryLockError::Poisoned(_)) => {
+            panic!("live GPU test lock poisoned by a prior test failure")
+        }
+    }
+}
+/// Capture GPU recovery receipts emitted by exactly one synchronous test request.
+pub fn with_gpu_recovery_receipt_scope_for_test<T>(
+    operation: impl FnOnce() -> T,
+) -> (T, u64) {
+    crate::gpu::with_recovery_receipt_scope(operation)
+}
+
+/// Emit one GPU recovery receipt into the current test request scope.
+pub fn record_gpu_recovery_receipt_for_test() {
+    crate::gpu::record_recovery_receipt();
+}
+
 
 #[cfg(test)]
 pub(crate) use crate::engine::scan_chunk_boundaries;
@@ -428,25 +466,6 @@ pub fn require_gpu_preflight_with_policy_for_test(
     crate::gpu::require_gpu_preflight_with_policy(policy)
 }
 
-/// Test seam for the scanner's hard-exit code constants
-/// (crates/scanner/src/process_exit.rs). Returns
-/// `(REQUIRE_GPU_UNMET_EXIT_CODE, BACKEND_UNAVAILABLE_EXIT_CODE)`, which must
-/// mirror `keyhog::exit_codes::{EXIT_REQUIRE_GPU_UNMET, EXIT_SYSTEM_ERROR}`.
-/// Lets a scanner-side gap test pin the compiled values (the CLI contract test
-/// only source-string-checks them).
-pub fn process_exit_codes_for_test() -> (i32, i32) {
-    (
-        crate::process_exit::REQUIRE_GPU_UNMET_EXIT_CODE,
-        crate::process_exit::BACKEND_UNAVAILABLE_EXIT_CODE,
-    )
-}
-
-/// Register two pre-exit hooks and return the hook retained by the scanner.
-pub fn register_pre_exit_hooks_for_test(first: fn(), second: fn()) -> Option<fn()> {
-    crate::process_exit::set_pre_exit_hook(first);
-    crate::process_exit::set_pre_exit_hook(second);
-    crate::process_exit::pre_exit_hook_for_test()
-}
 
 /// Test seam for the decode-splice core: splice `decoded_text` into the bounded
 /// `[start, end)` window of `parent`, keeping `SPLICE_CONTEXT_WINDOW` bytes of
@@ -1444,7 +1463,7 @@ pub fn compile_companion_for_test(
         required: false,
     };
     crate::compiler::compiler_compile::compile_companion(&spec, detector_id)
-        .map(|c| (c.name, c.capture_group))
+        .map(|c| (c.name.to_string(), c.capture_group))
         .map_err(|e| e.to_string())
 }
 
@@ -1679,18 +1698,20 @@ pub fn scan_coalesced_phase2_with_admission_for_test(
     let negative_keyword_hints =
         phase2_admission_complete.map(|_| vec![Vec::<u32>::new(); chunks.len()]);
     let negative_anchor_presence = phase2_admission_complete.map(|_| vec![false; chunks.len()]);
-    scanner.scan_coalesced_phase2_with_admission(
-        chunks,
-        triggers,
-        phase2_admission,
-        phase2_admission_complete,
-        negative_keyword_hints.as_deref(),
-        negative_anchor_presence.as_deref(),
-        None,
-        None,
-        None,
-        scanner.default_execution_route(),
-    )
+    scanner
+        .scan_coalesced_phase2_with_admission(
+            chunks,
+            triggers,
+            phase2_admission,
+            phase2_admission_complete,
+            negative_keyword_hints.as_deref(),
+            negative_anchor_presence.as_deref(),
+            None,
+            None,
+            None,
+            scanner.default_execution_route(),
+        )
+        .expect("test phase-2 admission scan succeeds")
 }
 
 #[cfg(any(feature = "simd", feature = "gpu", test))]
@@ -1699,16 +1720,18 @@ pub fn scan_windowed_with_triggered_for_test(
     chunk: &keyhog_core::Chunk,
     triggered_patterns: &[u64],
 ) -> Vec<keyhog_core::RawMatch> {
-    scanner.scan_windowed_with_triggered(
-        chunk,
-        triggered_patterns,
-        None,
-        None,
-        None,
-        None,
-        None,
-        scanner.default_execution_route(),
-    )
+    scanner
+        .scan_windowed_with_triggered(
+            chunk,
+            triggered_patterns,
+            None,
+            None,
+            None,
+            None,
+            None,
+            scanner.default_execution_route(),
+        )
+        .expect("test triggered window scan succeeds")
 }
 
 #[cfg(any(feature = "simd", feature = "gpu", test))]
@@ -1719,16 +1742,18 @@ pub fn scan_windowed_with_triggered_evidence_for_test(
     confirmed_anchor_literal_matches: Option<&[(u32, u32)]>,
     generic_keyword_positions: Option<&[u32]>,
 ) -> Vec<keyhog_core::RawMatch> {
-    scanner.scan_windowed_with_triggered(
-        chunk,
-        triggered_patterns,
-        None,
-        None,
-        None,
-        confirmed_anchor_literal_matches,
-        generic_keyword_positions,
-        scanner.default_execution_route(),
-    )
+    scanner
+        .scan_windowed_with_triggered(
+            chunk,
+            triggered_patterns,
+            None,
+            None,
+            None,
+            confirmed_anchor_literal_matches,
+            generic_keyword_positions,
+            scanner.default_execution_route(),
+        )
+        .expect("test evidence window scan succeeds")
 }
 
 #[cfg(test)]
@@ -1737,7 +1762,9 @@ pub(crate) fn scan_with_deadline(
     chunk: &Chunk,
     deadline: Option<std::time::Instant>,
 ) -> Vec<keyhog_core::RawMatch> {
-    scanner.scan_with_deadline(chunk, deadline)
+    scanner
+        .scan_with_deadline(chunk, deadline)
+        .expect("test deadline scan succeeds")
 }
 
 #[cfg(test)]
@@ -3024,6 +3051,14 @@ pub fn is_within_hex_context(data: &str, match_start: usize, match_end: usize) -
 pub fn local_context_window(text: &str, line: usize, radius: usize) -> &str {
     crate::pipeline::local_context_window(text, line, radius)
 }
+pub fn local_context_window_from_offsets<'a>(
+    text: &'a str,
+    line_offsets: &[usize],
+    line: usize,
+    radius: usize,
+) -> &'a str {
+    crate::pipeline::local_context_window_from_offsets(text, line_offsets, line, radius)
+}
 #[cfg(feature = "ml")]
 pub fn ml_context_for_candidate(
     text: &str,
@@ -3045,7 +3080,34 @@ pub fn queued_ml_features(
     config: &crate::ScannerConfig,
     detector_id: &str,
     entropy_channel: bool,
-) -> Vec<f32> {
+) -> [f32; crate::ml_scorer::NUM_FEATURES] {
+    let line_offsets = crate::pipeline::compute_line_offsets(text);
+    queued_ml_features_with_line_offsets(
+        text,
+        &line_offsets,
+        line,
+        file_path,
+        credential,
+        context_radius_lines,
+        config,
+        detector_id,
+        entropy_channel,
+    )
+}
+
+#[cfg(feature = "ml")]
+#[allow(clippy::too_many_arguments)]
+pub fn queued_ml_features_with_line_offsets(
+    text: &str,
+    line_offsets: &[usize],
+    line: usize,
+    file_path: Option<&str>,
+    credential: &str,
+    context_radius_lines: usize,
+    config: &crate::ScannerConfig,
+    detector_id: &str,
+    entropy_channel: bool,
+) -> [f32; crate::ml_scorer::NUM_FEATURES] {
     let detector = keyhog_core::detector_spec_by_id(detector_id)
         // LAW10: fail-closed; the test-only feature helper aborts for an unknown detector and cannot substitute a policy.
         .unwrap_or_else(|| panic!("test detector {detector_id:?} must exist"));
@@ -3053,6 +3115,7 @@ pub fn queued_ml_features(
         crate::ml_scorer::ml_features::CompiledDetectorMlFeatures::compile(detector);
     crate::scan_state::ml_features_for_candidate(
         text,
+        line_offsets,
         line,
         file_path,
         credential,
@@ -3066,7 +3129,6 @@ pub fn queued_ml_features(
             crate::ml_scorer::MlCandidateChannel::Pattern
         },
     )
-    .to_vec()
 }
 pub fn match_entropy(data: &[u8]) -> f64 {
     crate::pipeline::match_entropy(data)
@@ -3080,7 +3142,7 @@ pub(crate) use crate::types::{CompiledCompanion, ScannerPreprocessedText};
 pub use multiline::PreprocessedText as ScannerPreprocessedText;
 #[cfg(all(feature = "multiline", not(test)))]
 pub struct CompiledCompanion {
-    pub name: String,
+    pub name: std::sync::Arc<str>,
     pub regex: regex::Regex,
     pub capture_group: Option<usize>,
     pub within_lines: usize,
@@ -3109,7 +3171,7 @@ fn inner_preprocessed<'a>(
 #[cfg(all(feature = "multiline", not(test)))]
 fn inner_companion(companion: &CompiledCompanion) -> crate::types::CompiledCompanion {
     crate::types::CompiledCompanion {
-        name: companion.name.clone(),
+        name: std::sync::Arc::clone(&companion.name),
         regex: companion.regex.clone(),
         capture_group: companion.capture_group,
         within_lines: companion.within_lines,
@@ -4499,8 +4561,11 @@ pub fn decode_admission_sketch_with_custom_unknown(
             "benchmark-custom-unknown"
         }
 
-        fn decode_chunk(&self, _chunk: &keyhog_core::Chunk) -> Vec<keyhog_core::Chunk> {
-            Vec::new()
+        fn decode_chunk_into(
+            &self,
+            _chunk: &keyhog_core::Chunk,
+            _sink: &mut dyn crate::decode::DecodeOutputSink,
+        ) {
         }
     }
 
@@ -4521,6 +4586,11 @@ pub(crate) fn register_thread_decoder(
 
 pub fn ml_score(text: &str, context: &str) -> f64 {
     crate::ml_scorer::score(text, context)
+}
+
+#[cfg(feature = "ml")]
+pub fn ml_score_features(features: &[f32; crate::ml_scorer::NUM_FEATURES]) -> f64 {
+    crate::ml_scorer::score_features(features)
 }
 
 #[cfg(feature = "ml")]
@@ -4621,12 +4691,12 @@ fn ml_score_for_detector_with_vocab(
 }
 
 #[cfg(feature = "ml")]
-/// Exercise production score-cardinality repair with borrowed model inputs.
+/// Exercise production score-cardinality validation with borrowed model inputs.
 pub fn complete_ml_batch_scores(
     candidates: &[(&str, &str)],
     scores: Vec<f64>,
     config: &crate::ScannerConfig,
-) -> Vec<f64> {
+) -> crate::Result<Vec<f64>> {
     crate::ml_scorer::complete_batch_scores_with_config(scores, candidates, config)
 }
 
@@ -4853,6 +4923,49 @@ impl BigramBloom {
         self.0.maybe_overlaps(chunk)
     }
 
+    pub fn status(&self) -> crate::BigramPrefilterStatus {
+        self.0.status()
+    }
+
+    pub fn corpus_status<'a, I>(
+        &self,
+        corpus_name: &'a str,
+        inputs: I,
+    ) -> crate::BigramPrefilterCorpusStatus<'a>
+    where
+        I: IntoIterator<Item = &'a [u8]>,
+    {
+        self.0.corpus_status(corpus_name, inputs, 2)
+    }
+
+    #[doc(hidden)]
+    pub fn production_corpus_status<'a, I>(
+        &self,
+        corpus_name: &'a str,
+        inputs: I,
+    ) -> crate::BigramPrefilterCorpusStatus<'a>
+    where
+        I: IntoIterator<Item = &'a [u8]>,
+    {
+        self.0.corpus_status(
+            corpus_name,
+            inputs,
+            crate::engine::BIGRAM_BLOOM_MIN_CHUNK_BYTES,
+        )
+    }
+
+    #[doc(hidden)]
+    pub fn with_population_for_test(populated_slots: u32) -> Self {
+        Self(crate::bigram_bloom::BigramBloom::with_population_for_test(
+            populated_slots,
+        ))
+    }
+
+    #[doc(hidden)]
+    pub fn invalid_for_test() -> Self {
+        Self(crate::bigram_bloom::BigramBloom::invalid_for_test())
+    }
+
     #[cfg(test)]
     pub(crate) fn popcount(&self) -> u32 {
         self.0.popcount()
@@ -4874,15 +4987,12 @@ impl BigramBloom {
     }
 }
 
-/// Layer-0.5 bigram-prefilter density for the bundled production detector set:
-/// `(popcount, saturated)`. Compiles the shipped `embedded_detector_specs()` and
-/// reports the resulting 65536-slot table's bit population and whether it crossed
-/// the saturation threshold, at which [`crate::bigram_bloom::BigramBloom::maybe_overlaps`]
-/// degrades to always-admit and the documented Layer-0.5 prefilter becomes a
-/// no-op. Exposed so a regression test can pin that the shipped detector set does
-/// NOT saturate the table - a future detector addition that would silently
-/// disable the prefilter then fails loudly instead of shipping a filter that
-/// filters nothing.
+/// Layer-0.5 selective-anchor hash density for the bundled detector set:
+/// `(popcount, saturated)`. Compiles `embedded_detector_specs()` and reports the
+/// 65,536-slot long-anchor table population. At saturation `maybe_overlaps`
+/// fails open. Short mandatory alternatives use the exact owner and do not add
+/// hash-table bits. This regression surface prevents detector growth from
+/// silently disabling the hashed owner.
 pub fn production_bigram_prefilter_density() -> (u32, bool) {
     let scanner = crate::CompiledScanner::compile(keyhog_core::embedded_detector_specs().to_vec())
         .expect("production detector set must compile");
@@ -4890,6 +5000,13 @@ pub fn production_bigram_prefilter_density() -> (u32, bool) {
         scanner.bigram_bloom.popcount(),
         scanner.bigram_bloom.is_saturated(),
     )
+}
+
+/// Full Layer-0.5 status for the bundled production detector set.
+pub fn production_bigram_prefilter_status() -> crate::BigramPrefilterStatus {
+    let scanner = crate::CompiledScanner::compile(keyhog_core::embedded_detector_specs().to_vec())
+        .expect("production detector set must compile");
+    scanner.bigram_prefilter_status()
 }
 
 pub fn looks_like_standard_base64_blob(credential: &str) -> bool {
@@ -5218,7 +5335,10 @@ pub mod segment_attribution {
 pub struct CaesarDecoder;
 
 impl CaesarDecoder {
-    pub fn decode_chunk(&self, chunk: &keyhog_core::Chunk) -> Vec<keyhog_core::Chunk> {
+    pub fn decode_chunk(
+        &self,
+        chunk: &keyhog_core::Chunk,
+    ) -> Result<Vec<keyhog_core::Chunk>, crate::decode::DecodeCollectionError> {
         use crate::decode::Decoder;
         let inner = crate::decode::caesar::CaesarDecoder;
         inner.decode_chunk(chunk)

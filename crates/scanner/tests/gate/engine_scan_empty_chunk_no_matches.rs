@@ -31,5 +31,10 @@ fn scan_empty_chunk_produces_no_matches() {
         data: String::new().into(),
         metadata: ChunkMetadata::default(),
     };
-    assert!(scanner.scan(&chunk).is_empty());
+    assert!(
+        scanner
+            .scan(&chunk)
+            .expect("empty-chunk scan succeeds")
+            .is_empty()
+    );
 }

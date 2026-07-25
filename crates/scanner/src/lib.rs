@@ -35,8 +35,8 @@
 //!   [`resolution`], `structured`.
 //! - **Specialized validators**: [`checksum`], [`jwt`], [`aws`],
 //!   `homoglyph`, [`unicode_hardening`].
-//! - **Cross-cutting**: `platform_compat`, `placeholder_words`,
-//!   `process_exit`, [`telemetry`], `util_hash`.
+//! - **Cross-cutting**: `platform_compat`, `placeholder_words`, [`telemetry`],
+//!   `util_hash`.
 //!
 //! Most single-file modules are one responsibility each; the multi-file engine
 //! is the exception and carries its own internal map in `engine::mod`.
@@ -137,7 +137,6 @@ pub(crate) mod multiline;
 pub(crate) mod phase2_truncate;
 pub(crate) mod placeholder_words;
 pub(crate) mod platform_compat;
-pub(crate) mod process_exit;
 /// Match resolution and deduplication.
 pub mod resolution;
 /// Process-wide scan profiling and diagnostics.
@@ -214,10 +213,6 @@ mod simdsieve_prefilter;
 pub(crate) mod shared_regexes;
 
 pub use api::*;
-/// Install a pre-exit hook for scanner hard-stops (`process::exit` paths).
-///
-/// The CLI uses this to dump rate-limited WARN summaries that Drop would skip.
-pub use process_exit::set_pre_exit_hook;
 
 /// Configure the Hyperscan compiled-database cache directory for this process.
 ///

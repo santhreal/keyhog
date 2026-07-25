@@ -62,7 +62,7 @@ fn generic_confidence(scanner: &CompiledScanner, path: &str) -> Option<f64> {
         },
     };
     scanner.clear_fragment_cache();
-    let matches: Vec<RawMatch> = scanner.scan(&chunk);
+    let matches: Vec<RawMatch> = scanner.scan(&chunk).expect("test scan succeeds");
     matches
         .iter()
         // Pin the ONE generic-* detector that owns this line. `generic-api-key`

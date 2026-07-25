@@ -28,6 +28,7 @@ template = "Bearer {{match}}"
 
 [detector.verify.success]
 status = 200
+policy = "status_with_error_backstop"
 
 [[detector.tests]]
 test_positive = "rootly-nAdOzDbZnj6TamM8tkZ4_nmGv1Kl7411nuD1n8ogRKBe1Bh8LlWiEpMVDiFLyb8gX3axlWWmL6"

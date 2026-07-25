@@ -9,8 +9,10 @@
 //! the protocol is low-throughput per scan, dominated by the
 //! findings payload that has to be JSON-shaped anyway.
 
-use keyhog_core::RawMatch;
-use keyhog_scanner::telemetry::DogfoodEvent;
+use keyhog_core::{
+    CompanionMap, CredentialHash, MatchLocation, RawMatch, SensitiveString, Severity,
+};
+use keyhog_scanner::telemetry::{DogfoodEvent, StaticRecoveryStatus};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -42,17 +44,48 @@ use std::collections::BTreeMap;
 /// * v6 - scan results and health expose complete backend recovery plus the
 ///   daemon's last route fault; recovered requests can never look like clean
 ///   no-fault execution to clients.
-pub const WIRE_VERSION: u32 = 6;
+/// * v7 - Hello and health bind persistent warm readiness to the exact
+///   autoroute engine, GPU artifact, executable, detector, and resolved-config
+///   identities. A daemon with incomplete backend initialization reports the
+///   missing engines and cannot satisfy a scan handshake.
+/// * v8 - `ScanResults` carries the exact static-recovery disposition totals
+///   (`supported`, `unsupported`, and `erroneous`) as well as per-reason
+///   rejections, so daemon routing conserves the complete recovery receipt.
+
+pub(crate) const WIRE_VERSION: u32 = 8;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct WarmBackendIdentity {
+    pub engine: String,
+    pub gpu_artifact: Option<String>,
+    pub binary_sha256: String,
+    pub detector_rules_digest: String,
+    pub config_digest: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct WarmBackendStatus {
+    pub ready: bool,
+    pub daemon_generation: String,
+    pub identity: WarmBackendIdentity,
+    pub required_backends: Vec<String>,
+    pub initialized_backends: Vec<String>,
+    pub reason: Option<String>,
+    pub repair_command: Option<String>,
+}
+
 
 /// Maximum length of a single framed message body. 64 MiB ceiling
 /// matches `MAX_SCAN_CHUNK_BYTES * 64` so a chunk batch fits, but
 /// bounds the recv buffer so a hostile client can't OOM the daemon
 /// by lying about the length prefix.
-pub const MAX_FRAME_BYTES: u32 = 64 * 1024 * 1024;
+pub(crate) const MAX_FRAME_BYTES: u32 = 64 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
-pub enum Request {
+pub(crate) enum Request {
     /// First message on every connection. Server replies with
     /// [`Response::Hello`] containing its `WIRE_VERSION` so the client
     /// can refuse mismatched daemons.
@@ -82,7 +115,7 @@ pub enum Request {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum Response {
+pub(crate) enum Response {
     Hello {
         wire_version: u32,
         keyhog_version: String,
@@ -94,6 +127,8 @@ pub enum Response {
         backend_policy: String,
         detector_count: usize,
         uptime_secs: u64,
+        warm_backend: WarmBackendStatus,
+
     },
     /// Returned for `ScanText` and `ScanPath`. `matches` are the
     /// scanner's `RawMatch` outputs - same wire shape as
@@ -108,32 +143,32 @@ pub enum Response {
     /// example/test keys suppressed") fires even when the suppression
     /// happened on the other side of the socket.
     ///
-    /// `dogfood_events` and its exact aggregates are populated only when the
-    /// request enables dogfood capture. The daemon installs one request-scoped
-    /// telemetry owner, so concurrent clients cannot share detail state.
+    /// Exact static-recovery aggregates are always populated; bounded
+    /// `dogfood_events` detail is populated only when requested. Each request
+    /// owns its telemetry snapshot, so concurrent clients cannot share state.
     ScanResults {
         path: Option<String>,
-        /// Security: each `RawMatch` carries the *unredacted* plaintext
-        /// credential (`RawMatch::credential`), so this field puts every
-        /// discovered secret on the wire in the clear. The sole control
-        /// is the daemon socket's `0600` mode (same-uid trust model): the
-        /// server hard-fails startup if that chmod does not stick (see
-        /// `server::set_socket_mode_user_only`), so nothing but a process
-        /// running as the daemon's own uid can ever read this payload.
-        /// The redaction the rest of keyhog relies on is applied
-        /// client-side, after these bytes have already crossed the socket
-        /// under that 0600 guarantee - never trust this field to be
-        /// redacted on the wire.
+        /// Security: each `RawMatch` carries the unredacted plaintext
+        /// credential. Serialization is confined to this crate and occurs only
+        /// on a connected Unix stream after the client and server have verified
+        /// the peer uid. The socket's `0600` mode and private parent directory
+        /// are additional access controls, not peer authentication. Redaction
+        /// remains client-side, after these bytes cross that authenticated
+        /// local connection.
+        #[serde(with = "protected_raw_matches")]
         matches: Vec<RawMatch>,
         /// Scanner-side example suppression count. Required since wire v3; the
         /// strict Hello handshake rejects older peers before scan traffic.
         engine_example_suppressions: u64,
         /// Per-decision dogfood events captured on the daemon side.
         dogfood_events: Vec<DogfoodEvent>,
-        /// Exact per-reason static-recovery rejection-attempt counts. Populated
-        /// only when this request enables dogfood capture. Counts remain
-        /// complete after the bounded detail buffer fills.
+        /// Exact, always-on per-reason static-recovery rejection counts. These
+        /// remain complete regardless of dogfood detail capture or buffer
+        /// exhaustion.
         static_recovery_rejections: BTreeMap<String, u64>,
+        /// Exact disposition totals for static recovery. Required since wire v8;
+        /// an absent value must not silently become a clean zero.
+        static_recovery_status: StaticRecoveryStatus,
         /// Number of daemon-side detail events omitted after the bounded trace
         /// filled. Required in wire v4 so a client never invents a zero count.
         dogfood_detail_events_dropped: u64,
@@ -153,6 +188,7 @@ pub enum Response {
         detector_count: usize,
         backend_recoveries: u64,
         last_backend_fault: Option<BackendRecoveryStatus>,
+        warm_backend: WarmBackendStatus,
     },
     /// Anything that went wrong on the server side. Connection stays
     /// open so the client can retry with a different request.
@@ -163,7 +199,7 @@ pub enum Response {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct BackendRecoveryStatus {
+pub(crate) struct BackendRecoveryStatus {
     pub failed_backend: String,
     pub recovery_backend: String,
     pub recovered_ranges: Vec<RecoveredInputRangeStatus>,
@@ -176,21 +212,22 @@ pub struct BackendRecoveryStatus {
 /// field is a deserialization error so older peers cannot silently downgrade
 /// a v6 `ScanResults` frame to a no-fault execution.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RequiredOption<T> {
+pub(crate) enum RequiredOption<T> {
     None,
     Some(T),
 }
 
+#[cfg(test)]
 impl<T> RequiredOption<T> {
-    pub fn is_none(&self) -> bool {
+    pub(crate) fn is_none(&self) -> bool {
         matches!(self, RequiredOption::None)
     }
 
-    pub fn is_some(&self) -> bool {
+    pub(crate) fn is_some(&self) -> bool {
         matches!(self, RequiredOption::Some(_))
     }
 
-    pub fn expect(self, msg: &str) -> T {
+    pub(crate) fn expect(self, msg: &str) -> T {
         match self {
             RequiredOption::Some(v) => v,
             RequiredOption::None => panic!("{msg}"),
@@ -265,14 +302,14 @@ impl<T> Default for RequiredOption<T> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RecoveredInputRangeStatus {
+pub(crate) struct RecoveredInputRangeStatus {
     pub chunk_index: usize,
     pub byte_start: usize,
     pub byte_end: usize,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SourceCoverageGaps {
+pub(crate) struct SourceCoverageGaps {
     pub over_max_size: usize,
     pub binary: usize,
     pub unreadable: usize,
@@ -286,7 +323,7 @@ pub struct SourceCoverageGaps {
 }
 
 impl SourceCoverageGaps {
-    pub fn total(self) -> usize {
+    pub(crate) fn total(self) -> usize {
         self.over_max_size
             + self.binary
             + self.unreadable
@@ -301,7 +338,7 @@ impl SourceCoverageGaps {
 
     /// CoverageGapKind FAIL set only (KH-1347 / KH-1368). WARN skips
     /// (binary, over_max_size) do not flip incomplete exit 13.
-    pub fn fail_class_total(self) -> usize {
+    pub(crate) fn fail_class_total(self) -> usize {
         self.unreadable
             + self.git_object_unreadable
             + self.archive_truncated
@@ -312,12 +349,144 @@ impl SourceCoverageGaps {
             + self.git_lfs_pointer
     }
 
-    pub fn is_empty(self) -> bool {
+    pub(crate) fn is_empty(self) -> bool {
         self.total() == 0
     }
 
-    pub fn fail_class_empty(self) -> bool {
+    #[cfg(test)]
+    pub(crate) fn fail_class_empty(self) -> bool {
         self.fail_class_total() == 0
+    }
+}
+
+/// Explicit plaintext adapter for the authenticated, user-only daemon socket.
+///
+/// `RawMatch` intentionally refuses implicit plaintext serialization. This
+/// private DTO is the sole IPC boundary that exposes `credential.as_str()`;
+/// deserialization moves the temporary owned string directly into
+/// `SensitiveString`, whose storage is zeroized on drop.
+mod protected_raw_matches {
+    use super::{
+        CompanionMap, CredentialHash, MatchLocation, RawMatch, SensitiveString, Severity,
+    };
+    use serde::ser::{SerializeMap, SerializeSeq};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    #[derive(Serialize)]
+    struct DaemonRawMatchRef<'a> {
+        detector_id: &'a str,
+        detector_name: &'a str,
+        service: &'a str,
+        severity: Severity,
+        #[serde(serialize_with = "serialize_sensitive")]
+        credential: &'a SensitiveString,
+        credential_hash: CredentialHash,
+        #[serde(serialize_with = "serialize_companions")]
+        companions: &'a CompanionMap,
+        location: &'a MatchLocation,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        entropy: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        confidence: Option<f64>,
+    }
+
+    #[derive(Deserialize)]
+    struct DaemonRawMatchOwned {
+        detector_id: String,
+        detector_name: String,
+        service: String,
+        severity: Severity,
+        #[serde(deserialize_with = "deserialize_sensitive")]
+        credential: SensitiveString,
+        credential_hash: CredentialHash,
+        companions: HashMap<String, String>,
+        location: MatchLocation,
+        entropy: Option<f64>,
+        confidence: Option<f64>,
+    }
+
+    impl From<DaemonRawMatchOwned> for RawMatch {
+        fn from(wire: DaemonRawMatchOwned) -> Self {
+            Self {
+                detector_id: Arc::from(wire.detector_id),
+                detector_name: Arc::from(wire.detector_name),
+                service: Arc::from(wire.service),
+                severity: wire.severity,
+                credential: wire.credential,
+                credential_hash: wire.credential_hash,
+                companions: wire
+                    .companions
+                    .into_iter()
+                    .map(|(name, value)| (Arc::from(name), value))
+                    .collect(),
+                location: wire.location,
+                entropy: wire.entropy,
+                confidence: wire.confidence,
+            }
+        }
+    }
+
+    pub(super) fn serialize<S>(matches: &[RawMatch], serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut sequence = serializer.serialize_seq(Some(matches.len()))?;
+        for raw_match in matches {
+            sequence.serialize_element(&DaemonRawMatchRef {
+                detector_id: raw_match.detector_id.as_ref(),
+                detector_name: raw_match.detector_name.as_ref(),
+                service: raw_match.service.as_ref(),
+                severity: raw_match.severity,
+                credential: &raw_match.credential,
+                credential_hash: raw_match.credential_hash,
+                companions: &raw_match.companions,
+                location: &raw_match.location,
+                entropy: raw_match.entropy,
+                confidence: raw_match.confidence,
+            })?;
+        }
+        sequence.end()
+    }
+
+    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<Vec<RawMatch>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Vec::<DaemonRawMatchOwned>::deserialize(deserializer)
+            .map(|matches| matches.into_iter().map(RawMatch::from).collect())
+    }
+
+    fn serialize_sensitive<S>(
+        credential: &&SensitiveString,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(credential.as_str())
+    }
+
+    fn deserialize_sensitive<'de, D>(deserializer: D) -> Result<SensitiveString, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        String::deserialize(deserializer).map(SensitiveString::from)
+    }
+
+    fn serialize_companions<S>(
+        companions: &&CompanionMap,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(Some(companions.len()))?;
+        for (name, value) in companions.iter() {
+            map.serialize_entry(name.as_ref(), value)?;
+        }
+        map.end()
     }
 }
 

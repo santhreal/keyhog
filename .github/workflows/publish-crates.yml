@@ -1,0 +1,192 @@
+name: Publish crates.io
+
+on:
+  release:
+    types: [published]
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Existing exact release tag to publish or resume.'
+        required: true
+        type: string
+    secrets:
+      CARGO_REGISTRY_TOKEN:
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing exact release tag to publish or resume (for example, v0.5.45).'
+        required: true
+        type: string
+
+# Cargo publishes dependency tiers serially. Never cancel a run after an upload
+# may have started, and never publish two workspace versions concurrently.
+concurrency:
+  group: keyhog-crates-io
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish tagged crates
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      CC: ""
+      CARGO_NET_RETRY: "10"
+    steps:
+      - name: Resolve exact release tag
+        id: tag
+        shell: bash
+        env:
+          KEYHOG_MANUAL_TAG: ${{ inputs.tag }}
+          KEYHOG_PUBLISHED_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          tag="${KEYHOG_MANUAL_TAG:-$KEYHOG_PUBLISHED_TAG}"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error title=KeyHog::Crates.io publication requires an exact vMAJOR.MINOR.PATCH tag, optionally with a prerelease suffix."
+            exit 2
+          fi
+          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+          printf 'version=%s\n' "${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Prove the release ref is an immutable tag
+        id: source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEYHOG_RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          readarray -t resolved < <(
+            gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$KEYHOG_RELEASE_TAG" \
+              --jq '.ref, .object.sha'
+          )
+          ref="${resolved[0]:-}"
+          object_sha="${resolved[1]:-}"
+          if [[ "$ref" != "refs/tags/$KEYHOG_RELEASE_TAG" || ! "$object_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "ERROR: publication input does not resolve to an exact Git object at refs/tags/$KEYHOG_RELEASE_TAG" >&2
+            exit 2
+          fi
+          commit="$(gh api "repos/$GITHUB_REPOSITORY/commits/$KEYHOG_RELEASE_TAG" --jq '.sha')"
+          if [[ ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "ERROR: publication tag $KEYHOG_RELEASE_TAG did not resolve to an exact commit SHA" >&2
+            exit 2
+          fi
+          printf 'commit=%s\n' "$commit" >> "$GITHUB_OUTPUT"
+          printf 'object=%s\n' "$object_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Check out hardened publication automation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: automation
+          fetch-depth: 1
+
+      - name: Check out immutable tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ steps.tag.outputs.tag }}
+          path: source
+          fetch-depth: 0
+
+      - name: Prove tag and workspace version agree
+        shell: bash
+        env:
+          KEYHOG_RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+          KEYHOG_RELEASE_VERSION: ${{ steps.tag.outputs.version }}
+          KEYHOG_EXPECTED_COMMIT: ${{ steps.source.outputs.commit }}
+          KEYHOG_EXPECTED_OBJECT: ${{ steps.source.outputs.object }}
+          KEYHOG_AUTOMATION_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          automation_commit="$(git -C automation rev-parse HEAD)"
+          if [[ "$automation_commit" != "$KEYHOG_AUTOMATION_SHA" ]]; then
+            echo "ERROR: automation checkout $automation_commit does not match workflow revision $KEYHOG_AUTOMATION_SHA" >&2
+            exit 2
+          fi
+          tag="$(bash automation/scripts/release-version.sh "$KEYHOG_RELEASE_TAG")"
+          if [[ "$tag" != "$KEYHOG_RELEASE_TAG" ]]; then
+            echo "ERROR: checked-out source rejected release tag $KEYHOG_RELEASE_TAG" >&2
+            exit 2
+          fi
+          tagged_commit="$(git -C source rev-list -n 1 "$KEYHOG_RELEASE_TAG")"
+          checked_out_commit="$(git -C source rev-parse HEAD)"
+          checked_out_object="$(git -C source rev-parse "$KEYHOG_RELEASE_TAG")"
+          if [[ "$tagged_commit" != "$checked_out_commit" ]]; then
+            echo "ERROR: checkout $checked_out_commit does not match $KEYHOG_RELEASE_TAG at $tagged_commit" >&2
+            exit 2
+          fi
+          if [[ "$checked_out_commit" != "$KEYHOG_EXPECTED_COMMIT" ]]; then
+            echo "ERROR: tag $KEYHOG_RELEASE_TAG moved after proof: expected $KEYHOG_EXPECTED_COMMIT, checked out $checked_out_commit" >&2
+            exit 2
+          fi
+          if [[ "$checked_out_object" != "$KEYHOG_EXPECTED_OBJECT" ]]; then
+            echo "ERROR: tag ref $KEYHOG_RELEASE_TAG moved after proof: expected object $KEYHOG_EXPECTED_OBJECT, checked out $checked_out_object" >&2
+            exit 2
+          fi
+          workspace_version="$(awk -F'"' '
+            /^\[workspace\.package\]/ { in_pkg = 1; next }
+            in_pkg && /^version[[:space:]]*=/ { print $2; exit }
+          ' source/Cargo.toml)"
+          if [[ "$workspace_version" != "$KEYHOG_RELEASE_VERSION" ]]; then
+            echo "ERROR: tag $KEYHOG_RELEASE_TAG requires workspace version $KEYHOG_RELEASE_VERSION, found $workspace_version" >&2
+            exit 2
+          fi
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # pinned action
+        with:
+          toolchain: '1.89'
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: source
+
+      - name: Install pinned release signature verifier
+        shell: bash
+        run: cargo install rsign2 --version 0.6.6 --locked
+
+      - name: Require immutable published release verdict
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEYHOG_RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+          KEYHOG_EXPECTED_COMMIT: ${{ steps.source.outputs.commit }}
+          KEYHOG_PUBLISHED_RELEASE_ID: ${{ github.event.release.id }}
+        run: |
+          set -euo pipefail
+          release_id_args=()
+          if [[ -n "${KEYHOG_PUBLISHED_RELEASE_ID:-}" ]]; then
+            if [[ ! "$KEYHOG_PUBLISHED_RELEASE_ID" =~ ^[1-9][0-9]*$ ]]; then
+              echo "ERROR: published release event has no positive immutable release ID" >&2
+              exit 2
+            fi
+            release_id_args=(--expected-release-id "$KEYHOG_PUBLISHED_RELEASE_ID")
+          fi
+          python3 -B automation/scripts/verify_published_release.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --tag "$KEYHOG_RELEASE_TAG" \
+            --expected-commit "$KEYHOG_EXPECTED_COMMIT" \
+            "${release_id_args[@]}" \
+            --download-dir "$RUNNER_TEMP/keyhog-published-release"
+
+      - name: Require crates.io credential
+        shell: bash
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${CARGO_REGISTRY_TOKEN:-}" ]]; then
+            echo "::error title=KeyHog::CARGO_REGISTRY_TOKEN is not configured. Set the repository Actions secret before publishing crates."
+            exit 2
+          fi
+
+      - name: Publish and verify every workspace crate
+        shell: bash
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CRATES_IO_POLL_INITIAL_SECONDS: "1"
+          CRATES_IO_POLL_MAX_SECONDS: "15"
+          CRATES_IO_POLL_TIMEOUT_SECONDS: "300"
+          PACKAGE_BUILD_JOBS: "2"
+        run: bash automation/scripts/publish.sh --source-root "$GITHUB_WORKSPACE/source"

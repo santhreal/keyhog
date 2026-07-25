@@ -6,7 +6,7 @@
 
 - Detector specifications are validated before scanner use.
 - Credential hashes and allowlist checks are deterministic.
-- Public output types are serializable for CLI and downstream tooling.
+- Explicit report-safe DTOs and versioned envelopes are serializable for CLI and downstream tooling. Secret-bearing `Credential`, `SensitiveString`, `RawMatch`, `DedupedMatch`, and `Chunk` reject implicit serialization; any protected internal transport must use a private, explicit adapter at its authenticated boundary.
 - Error paths return typed errors with actionable messages where exposed through public APIs.
 
 ## Boundaries

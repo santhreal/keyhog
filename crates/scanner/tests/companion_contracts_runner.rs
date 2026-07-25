@@ -153,7 +153,9 @@ fn every_companion_contract_passes() {
         // filesystem-iteration order. Clear before every scan.
         scanner.clear_fragment_cache();
         let chunk = make_chunk(&case.text);
-        let matches = scanner.scan(&chunk);
+        let matches = scanner
+            .scan(&chunk)
+            .expect("positive-with-companion contract scan should succeed");
         for expected in &case.expected_findings {
             let found = findings_for_detector(&matches, expected);
             if found.is_empty() {
@@ -188,7 +190,9 @@ fn every_companion_contract_passes() {
         let case = &c.positive_primary_only;
         scanner.clear_fragment_cache();
         let chunk = make_chunk(&case.text);
-        let matches = scanner.scan(&chunk);
+        let matches = scanner
+            .scan(&chunk)
+            .expect("primary-only companion contract scan should succeed");
         for expected in &case.expected_findings {
             let found = findings_for_detector(&matches, expected);
             if found.is_empty() {
@@ -245,7 +249,9 @@ fn every_companion_contract_passes() {
         let case = &c.negative_companion_lookalike;
         scanner.clear_fragment_cache();
         let chunk = make_chunk(&case.text);
-        let matches = scanner.scan(&chunk);
+        let matches = scanner
+            .scan(&chunk)
+            .expect("negative companion-lookalike contract scan should succeed");
         for expected_empty in &case.expected_findings {
             // expected_findings is normally empty; if non-empty it's a positive expectation
             let found = findings_for_detector(&matches, expected_empty);

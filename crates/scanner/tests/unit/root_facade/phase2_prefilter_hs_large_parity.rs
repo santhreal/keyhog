@@ -88,8 +88,7 @@ fn scan_raw(scanner: &CompiledScanner, text: &str) -> Vec<RawMatch> {
             ..Default::default()
         },
     };
-    scanner
-        .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::SimdCpu)
+    scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::SimdCpu).expect("selected backend scan succeeds")
         .into_iter()
         .flatten()
         .collect()

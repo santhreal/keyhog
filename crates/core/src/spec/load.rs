@@ -7,7 +7,12 @@ use std::path::{Path, PathBuf};
 use rayon::prelude::*;
 use thiserror::Error;
 
-use super::{validate_detector, DetectorFile, DetectorSpec, QualityIssue};
+use super::{
+    migrate_legacy_success_policies, validate_detector, DetectorCorpusManifest, DetectorFile,
+    DetectorSpec, QualityIssue, DETECTOR_CORPUS_MANIFEST_FILE,
+    DETECTOR_CORPUS_MAX_FORWARD_SCHEMA_VERSION, DETECTOR_CORPUS_MIN_SCHEMA_VERSION,
+    DETECTOR_CORPUS_SCHEMA_VERSION,
+};
 pub use crate::detector_file_io::{read_detector_toml_file, DETECTOR_TOML_FILE_BYTES};
 
 /// Errors returned while loading or validating detector specifications.
@@ -27,6 +32,42 @@ pub enum SpecError {
     InvalidToml {
         path: PathBuf,
         source: toml::de::Error,
+    },
+    #[error(
+        "invalid detector corpus manifest {path}: {source}. Fix: set `schema_version` \
+         to an integer supported by this keyhog binary and remove misspelled manifest fields"
+    )]
+    InvalidCorpusManifest {
+        path: PathBuf,
+        source: toml::de::Error,
+    },
+    #[error(
+        "unsupported detector corpus schema {found} declared by {path}; this binary \
+         supports schema {current} and bounded forward compatibility through schema \
+         {max_forward}. Fix: use a compatible detector corpus or update keyhog"
+    )]
+    UnsupportedCorpusSchema {
+        path: PathBuf,
+        found: u32,
+        current: u32,
+        max_forward: u32,
+    },
+    #[error(
+        "detector corpus {dir} declares supported forward schema {declared_schema}, \
+         while this binary owns schema {supported_schema}; {skipped_count} of {total} \
+         detector file(s) use fields this binary cannot interpret. Keyhog refuses to \
+         scan under newer parsing semantics or with a partial corpus because either \
+         would invalidate corpus identity and could silently drop recall. \
+         Compatibility detail:\n{detail}\nFix: update keyhog to load the complete \
+         detector corpus"
+    )]
+    ForwardIncompatibleCorpus {
+        dir: String,
+        declared_schema: u32,
+        supported_schema: u32,
+        skipped_count: usize,
+        total: usize,
+        detail: String,
     },
     #[error(
         "{failed_count} of {total} embedded detector(s) failed to parse, the binary \
@@ -57,6 +98,28 @@ pub enum SpecError {
     },
 }
 
+/// A validated detector corpus paired with the schema identity that selected
+/// its normalization rules.
+///
+/// `schema_version` is the normalized directory identity: a missing manifest
+/// is schema 1, while an explicit manifest contributes its declared version.
+/// Keeping it beside `specs` prevents a caller from hashing normalized legacy
+/// specs as though they had been authored under the current schema.
+#[derive(Debug)]
+pub struct LoadedDetectorCorpus {
+    /// Fully parsed and validated detector specifications.
+    pub specs: Vec<DetectorSpec>,
+    /// Effective detector corpus schema version.
+    pub schema_version: u32,
+}
+
+impl LoadedDetectorCorpus {
+    /// Compute the schema-bound identity of these exact normalized specs.
+    pub fn compute_digest(&self) -> Result<[u8; 32], serde_json::Error> {
+        crate::compute_detector_corpus_digest_for_schema(&self.specs, self.schema_version)
+    }
+}
+
 /// Load all detector specs from a directory of TOML files.
 /// Runs the quality gate on each detector and fails closed if any detector
 /// cannot be read, parsed, or accepted by the gate.
@@ -73,7 +136,13 @@ pub enum SpecError {
 /// # Ok(()) }
 /// ```
 pub fn load_detectors(dir: &Path) -> Result<Vec<DetectorSpec>, SpecError> {
-    load_detectors_with_gate(dir, true)
+    Ok(load_detector_corpus(dir)?.specs)
+}
+
+/// Load all detector specs together with their normalized corpus schema
+/// identity.
+pub fn load_detector_corpus(dir: &Path) -> Result<LoadedDetectorCorpus, SpecError> {
+    load_detector_corpus_with_gate(dir, true)
 }
 
 /// Load detectors with optional quality gate enforcement.
@@ -91,13 +160,70 @@ pub fn load_detectors(dir: &Path) -> Result<Vec<DetectorSpec>, SpecError> {
 /// let _detectors = load_detectors_with_gate(Path::new("detectors"), true)?;
 /// # Ok(()) }
 /// ```
+#[derive(Clone, Copy)]
+struct CorpusCompatibility {
+    schema_version: u32,
+    permits_forward_unknown_fields: bool,
+}
+
 pub(crate) fn load_detectors_with_gate(
     dir: &Path,
     enforce_gate: bool,
 ) -> Result<Vec<DetectorSpec>, SpecError> {
+    Ok(load_detector_corpus_with_gate(dir, enforce_gate)?.specs)
+}
+
+fn load_detector_corpus_with_gate(
+    dir: &Path,
+    enforce_gate: bool,
+) -> Result<LoadedDetectorCorpus, SpecError> {
+    let compatibility = read_corpus_compatibility(dir)?;
     let toml_paths = discover_detector_tomls(dir, enforce_gate)?;
-    let parsed = parse_detector_files(&toml_paths);
-    assemble_detector_load(dir, enforce_gate, toml_paths.len(), parsed)
+    let parsed = parse_detector_files(&toml_paths, compatibility);
+    let specs =
+        assemble_detector_load(dir, enforce_gate, compatibility, toml_paths.len(), parsed)?;
+    Ok(LoadedDetectorCorpus {
+        specs,
+        schema_version: compatibility.schema_version,
+    })
+}
+
+fn read_corpus_compatibility(dir: &Path) -> Result<CorpusCompatibility, SpecError> {
+    let path = dir.join(DETECTOR_CORPUS_MANIFEST_FILE);
+    let contents = match std::fs::read_to_string(&path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(CorpusCompatibility {
+                schema_version: DETECTOR_CORPUS_MIN_SCHEMA_VERSION,
+                permits_forward_unknown_fields: false,
+            });
+        }
+        Err(source) => {
+            return Err(SpecError::ReadFile {
+                path: path.display().to_string(),
+                source,
+            });
+        }
+    };
+    let manifest: DetectorCorpusManifest =
+        toml::from_str(&contents).map_err(|source| SpecError::InvalidCorpusManifest {
+            path: path.clone(),
+            source,
+        })?;
+    if !(DETECTOR_CORPUS_MIN_SCHEMA_VERSION..=DETECTOR_CORPUS_MAX_FORWARD_SCHEMA_VERSION)
+        .contains(&manifest.schema_version)
+    {
+        return Err(SpecError::UnsupportedCorpusSchema {
+            path,
+            found: manifest.schema_version,
+            current: DETECTOR_CORPUS_SCHEMA_VERSION,
+            max_forward: DETECTOR_CORPUS_MAX_FORWARD_SCHEMA_VERSION,
+        });
+    }
+    Ok(CorpusCompatibility {
+        schema_version: manifest.schema_version,
+        permits_forward_unknown_fields: manifest.schema_version > DETECTOR_CORPUS_SCHEMA_VERSION,
+    })
 }
 
 fn discover_detector_tomls(dir: &Path, enforce_gate: bool) -> Result<Vec<PathBuf>, SpecError> {
@@ -112,7 +238,9 @@ fn discover_detector_tomls(dir: &Path, enforce_gate: bool) -> Result<Vec<PathBuf
             source: e,
         })?;
         let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "toml") {
+        if path.extension().is_some_and(|ext| ext == "toml")
+            && path.file_name().is_none_or(|name| name != DETECTOR_CORPUS_MANIFEST_FILE)
+        {
             toml_paths.push(path);
         }
     }
@@ -130,16 +258,20 @@ fn discover_detector_tomls(dir: &Path, enforce_gate: bool) -> Result<Vec<PathBuf
     Ok(toml_paths)
 }
 
-fn parse_detector_files(toml_paths: &[PathBuf]) -> Vec<ReadDetectorOutcome> {
+fn parse_detector_files(
+    toml_paths: &[PathBuf],
+    compatibility: CorpusCompatibility,
+) -> Vec<ReadDetectorOutcome> {
     toml_paths
         .par_iter()
-        .map(|path| read_detector_file(path))
+        .map(|path| read_detector_file(path, compatibility))
         .collect()
 }
 
 fn assemble_detector_load(
     dir: &Path,
     enforce_gate: bool,
+    compatibility: CorpusCompatibility,
     total: usize,
     parsed: Vec<ReadDetectorOutcome>,
 ) -> Result<Vec<DetectorSpec>, SpecError> {
@@ -148,7 +280,12 @@ fn assemble_detector_load(
 
     for outcome in parsed {
         match outcome {
-            ReadDetectorOutcome::Loaded { path, spec } => {
+            ReadDetectorOutcome::Loaded {
+                path,
+                spec,
+                legacy_migrations,
+            } => {
+                load_state.legacy_migrations += legacy_migrations;
                 if should_reject_detector(
                     &spec,
                     &path,
@@ -160,6 +297,10 @@ fn assemble_detector_load(
                     continue;
                 }
                 detectors.push(*spec);
+            }
+            ReadDetectorOutcome::ForwardSkipped { message } => {
+                load_state.forward_skipped += 1;
+                load_state.forward_errors.push(message);
             }
             ReadDetectorOutcome::Skipped { message } => {
                 load_state.skipped += 1;
@@ -192,6 +333,13 @@ fn assemble_detector_load(
     }
 
     log_load_summary(&load_state);
+    if enforce_gate && compatibility.permits_forward_unknown_fields {
+        return Err(load_state.into_forward_error(
+            dir,
+            total,
+            compatibility.schema_version,
+        ));
+    }
     if enforce_gate && load_state.has_failures() {
         return Err(load_state.into_rejected_error(dir, total));
     }
@@ -202,6 +350,9 @@ fn assemble_detector_load(
 struct DetectorLoadState {
     skipped: usize,
     load_errors: Vec<String>,
+    forward_skipped: usize,
+    forward_errors: Vec<String>,
+    legacy_migrations: usize,
     gate_rejected: usize,
     gate_errors: Vec<String>,
     total_warnings: usize,
@@ -209,7 +360,7 @@ struct DetectorLoadState {
 
 impl DetectorLoadState {
     fn has_failures(&self) -> bool {
-        self.skipped > 0 || self.gate_rejected > 0
+        self.skipped > 0 || self.forward_skipped > 0 || self.gate_rejected > 0
     }
 
     fn into_rejected_error(self, dir: &Path, total: usize) -> SpecError {
@@ -227,14 +378,45 @@ impl DetectorLoadState {
             detail,
         }
     }
+    fn into_forward_error(
+        self,
+        dir: &Path,
+        total: usize,
+        declared_schema: u32,
+    ) -> SpecError {
+        let detail = if self.forward_errors.is_empty() {
+            format!(
+                "  - {} declares schema {}; schema metadata is part of effective \
+                 corpus identity and cannot be interpreted as schema {}",
+                dir.join(DETECTOR_CORPUS_MANIFEST_FILE).display(),
+                declared_schema,
+                DETECTOR_CORPUS_SCHEMA_VERSION
+            )
+        } else {
+            self.forward_errors
+                .into_iter()
+                .map(|line| format!("  - {line}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        SpecError::ForwardIncompatibleCorpus {
+            dir: dir.display().to_string(),
+            declared_schema,
+            supported_schema: DETECTOR_CORPUS_SCHEMA_VERSION,
+            skipped_count: self.forward_skipped,
+            total,
+            detail,
+        }
+    }
+
 }
 
 fn log_load_summary(state: &DetectorLoadState) {
     if state.skipped > 0 {
         // Aggregate into ONE actionable line instead of one warn! per file.
-        // An "unknown field" parse error means the detector TOML declares a
-        // field this binary's schema does not know, i.e. the corpus is newer
-        // than the binary; the fix is `keyhog update`, not editing the file.
+        // Unknown fields reaching this strict path are same-version typos or
+        // undeclared version skew; a declared bounded-forward corpus is handled
+        // separately below.
         let version_skew = state
             .load_errors
             .iter()
@@ -249,11 +431,13 @@ fn log_load_summary(state: &DetectorLoadState) {
             .join(" | ");
         if version_skew > 0 {
             tracing::warn!(
-                "skipped {} detector file(s); {} declare a field this keyhog version \
-                 does not understand (the detector corpus is newer than the binary) - \
-                 run `keyhog update`. Examples: {examples}",
+                "skipped {} detector file(s); {} contain unknown fields while the corpus \
+                 is using the current/legacy strict schema. Fix field typos, or add a \
+                 supported newer `{}` declaration when the fields are intentional. \
+                 Examples: {examples}",
                 state.skipped,
-                version_skew
+                version_skew,
+                DETECTOR_CORPUS_MANIFEST_FILE
             );
         } else {
             tracing::warn!(
@@ -263,6 +447,31 @@ fn log_load_summary(state: &DetectorLoadState) {
                 state.skipped
             );
         }
+    }
+    if state.forward_skipped > 0 {
+        let examples = state
+            .forward_errors
+            .iter()
+            .take(3)
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .join(" | ");
+        tracing::warn!(
+            "detector corpus declared a supported forward schema; skipped {} detector \
+             file(s) that use newer fields rather than silently dropping those fields. \
+             Update keyhog for full recall. Examples: {examples}",
+            state.forward_skipped
+        );
+    }
+    if state.legacy_migrations > 0 {
+        tracing::warn!(
+            "migrated {} legacy schema-{} verifier success contract(s) to \
+             status_with_error_backstop; add an explicit success policy and a \
+             schema-{} corpus manifest",
+            state.legacy_migrations,
+            DETECTOR_CORPUS_MIN_SCHEMA_VERSION,
+            DETECTOR_CORPUS_SCHEMA_VERSION
+        );
     }
     if state.gate_rejected > 0 {
         // Law 10: quality-gate rejections are not silent. The per-detector
@@ -293,13 +502,20 @@ enum ReadDetectorOutcome {
     Loaded {
         path: PathBuf,
         spec: Box<DetectorSpec>,
+        legacy_migrations: usize,
+    },
+    ForwardSkipped {
+        message: String,
     },
     Skipped {
         message: String,
     },
 }
 
-fn read_detector_file(path: &Path) -> ReadDetectorOutcome {
+fn read_detector_file(
+    path: &Path,
+    compatibility: CorpusCompatibility,
+) -> ReadDetectorOutcome {
     let contents = match read_detector_toml_file(path) {
         Ok(contents) => contents,
         Err(error) => {
@@ -319,19 +535,54 @@ fn read_detector_file(path: &Path) -> ReadDetectorOutcome {
     };
 
     match toml::from_str::<DetectorFile>(&contents) {
-        Ok(file) => ReadDetectorOutcome::Loaded {
-            path: path.to_path_buf(),
-            spec: Box::new(file.detector),
-        },
+        Ok(mut file) => {
+            let legacy_migrations =
+                if compatibility.schema_version == DETECTOR_CORPUS_MIN_SCHEMA_VERSION {
+                    migrate_legacy_success_policies(&mut file.detector)
+                } else {
+                    0
+                };
+            ReadDetectorOutcome::Loaded {
+                path: path.to_path_buf(),
+                spec: Box::new(file.detector),
+                legacy_migrations,
+            }
+        }
         Err(error) => {
-            // LAW10: reporting-only; per-file TOML detail stays at debug!,
-            // while the summary warns with examples and gated loads reject the
-            // incomplete corpus.
-            let message = format!("failed to parse {}: {}", path.display(), error);
+            let unknown_field = error.to_string().contains("unknown field");
+            if compatibility.permits_forward_unknown_fields && unknown_field {
+                let message = format!(
+                    "skipped {} under declared detector corpus schema {} because it uses \
+                     a field unknown to schema {}: {}. Fix: update keyhog to load this detector",
+                    path.display(),
+                    compatibility.schema_version,
+                    DETECTOR_CORPUS_SCHEMA_VERSION,
+                    error
+                );
+                tracing::warn!(
+                    detector_path = %path.display(),
+                    declared_schema = compatibility.schema_version,
+                    supported_schema = DETECTOR_CORPUS_SCHEMA_VERSION,
+                    error = %error,
+                    "skipping forward-schema detector without dropping unknown fields"
+                );
+                return ReadDetectorOutcome::ForwardSkipped { message };
+            }
+            let message = format!(
+                "failed to parse {} under detector corpus schema {}: {}. Fix: correct \
+                 misspelled or invalid detector fields; only a corpus manifest declaring \
+                 a supported newer schema permits an unknown future field",
+                path.display(),
+                compatibility.schema_version,
+                error
+            );
+            // LAW10: the default-level aggregate warning surfaces every skip,
+            // and gated loads return DetectorCorpusRejected with this detail.
             tracing::debug!(
                 detector_path = %path.display(),
+                schema_version = compatibility.schema_version,
                 error = %error,
-                "skipping detector - TOML parse failed" // LAW10: aggregate warning surfaces the skipped file count and examples; gated loads reject
+                "skipping detector - TOML parse failed"
             );
             ReadDetectorOutcome::Skipped { message }
         }

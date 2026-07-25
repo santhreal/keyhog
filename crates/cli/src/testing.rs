@@ -65,6 +65,12 @@ pub struct ScanRuntimeSnapshot {
     pub example_suppressions: usize,
     pub decode_truncations: usize,
 }
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StaticRecoveryMergeSnapshot {
+    pub before: keyhog_scanner::telemetry::StaticRecoveryStatus,
+    pub after: keyhog_scanner::telemetry::StaticRecoveryStatus,
+}
 
 /// Opaque test-fixture suppression wrapper.
 pub struct TestFixtureSuppressions(crate::test_fixture_suppressions::TestFixtureSuppressions);
@@ -200,16 +206,6 @@ pub trait CliTestApi {
         fixture: DaemonTerminalFixture,
     ) -> Pin<Box<dyn Future<Output = Result<()>>>>;
     fn cli_error_exit_code(&self, error: &anyhow::Error) -> u8;
-    #[cfg(unix)]
-    fn daemon_client_version<'a>(&self, client: &'a crate::daemon::client::Client) -> &'a str;
-    #[cfg(unix)]
-    fn daemon_client_is_stale(&self, client: &crate::daemon::client::Client) -> bool;
-    #[cfg(unix)]
-    fn daemon_client_round_trip<'a>(
-        &self,
-        client: &'a mut crate::daemon::client::Client,
-        request: &'a crate::daemon::protocol::Request,
-    ) -> Pin<Box<dyn Future<Output = Result<crate::daemon::protocol::Response>> + 'a>>;
 
     fn baseline_version(&self) -> u32;
     fn baseline_empty(&self) -> Baseline;
@@ -524,6 +520,12 @@ pub trait CliTestApi {
         &self,
         toml: &str,
     ) -> std::result::Result<(usize, usize, usize), String>;
+    #[cfg(unix)]
+    fn merge_daemon_static_recovery(
+        &self,
+        rejections: std::collections::BTreeMap<String, u64>,
+        status: keyhog_scanner::telemetry::StaticRecoveryStatus,
+    ) -> Result<StaticRecoveryMergeSnapshot>;
 }
 
 impl CliTestApi for TestApi {
@@ -706,22 +708,6 @@ impl CliTestApi for TestApi {
     }
     fn cli_error_exit_code(&self, error: &anyhow::Error) -> u8 {
         crate::cli_error_exit_code(error)
-    }
-    #[cfg(unix)]
-    fn daemon_client_version<'a>(&self, client: &'a crate::daemon::client::Client) -> &'a str {
-        client.daemon_version()
-    }
-    #[cfg(unix)]
-    fn daemon_client_is_stale(&self, client: &crate::daemon::client::Client) -> bool {
-        client.is_stale()
-    }
-    #[cfg(unix)]
-    fn daemon_client_round_trip<'a>(
-        &self,
-        client: &'a mut crate::daemon::client::Client,
-        request: &'a crate::daemon::protocol::Request,
-    ) -> Pin<Box<dyn Future<Output = Result<crate::daemon::protocol::Response>> + 'a>> {
-        Box::pin(async move { client.round_trip(request).await })
     }
 
     fn baseline_version(&self) -> u32 {
@@ -1522,6 +1508,29 @@ impl CliTestApi for TestApi {
         toml: &str,
     ) -> std::result::Result<(usize, usize, usize), String> {
         crate::skip_dirs::testing::section_counts(toml)
+    }
+    #[cfg(unix)]
+    fn merge_daemon_static_recovery(
+        &self,
+        rejections: std::collections::BTreeMap<String, u64>,
+        status: keyhog_scanner::telemetry::StaticRecoveryStatus,
+    ) -> Result<StaticRecoveryMergeSnapshot> {
+        use crate::daemon::protocol::{RequiredOption, Response, SourceCoverageGaps};
+
+        let before = keyhog_scanner::telemetry::static_recovery_status();
+        crate::subcommands::scan::unwrap_scan_results(Response::ScanResults {
+            path: None,
+            matches: Vec::new(),
+            engine_example_suppressions: 0,
+            dogfood_events: Vec::new(),
+            static_recovery_rejections: rejections,
+            static_recovery_status: status,
+            dogfood_detail_events_dropped: 0,
+            source_coverage_gaps: SourceCoverageGaps::default(),
+            backend_recovery: RequiredOption::None,
+        })?;
+        let after = keyhog_scanner::telemetry::static_recovery_status();
+        Ok(StaticRecoveryMergeSnapshot { before, after })
     }
 }
 

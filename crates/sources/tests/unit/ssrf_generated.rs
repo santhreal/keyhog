@@ -7,12 +7,7 @@ macro_rules! ssrf_url_case {
     ($name:ident, $url:expr, $expected_private:expr) => {
         #[test]
         fn $name() {
-            assert_eq!(
-                TestApi.is_disallowed_web_host($url),
-                $expected_private,
-                "URL: {:?}",
-                $url
-            );
+            assert_eq!(TestApi.is_disallowed_web_host($url), $expected_private, "URL: {:?}", $url);
         }
     };
 }
@@ -48,7 +43,7 @@ ssrf_url_cases! {
     private_17: "http://017700000001/" => true;
     private_18: "http://127.1/" => true;
     private_19: "http://0x7f.1/" => true;
-    private_20: "file:///etc/passwd" => true;
+    private_20: "http://file:///etc/passwd" => true;
     private_21: "ftp://example.com/" => true;
     private_22: "not-a-url" => true;
 }

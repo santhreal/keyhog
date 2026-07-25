@@ -40,7 +40,7 @@ fn main() -> Result<(), keyhog_scanner::ScanError> {
             size_bytes: None,
             ..Default::default()
         },
-    });
+    })?;
 
     println!(
         "detectors={} patterns={}",

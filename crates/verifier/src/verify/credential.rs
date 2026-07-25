@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use keyhog_core::{AuthSpec, HttpMethod, OobPolicy, VerificationResult};
+use keyhog_core::{AuthSpec, CompanionMap, HttpMethod, OobPolicy, VerificationResult};
 use rand::Rng;
 use reqwest::Client;
 
@@ -100,7 +100,7 @@ pub(crate) async fn verify_with_retry(
     client: &Client,
     spec: &keyhog_core::VerifySpec,
     credential: &str,
-    companions: &HashMap<String, String>,
+    companions: &CompanionMap,
     timeout: Duration,
     allow_private_ips: bool,
     allow_http: bool,
@@ -314,7 +314,7 @@ pub(crate) async fn verify_credential(
     client: &Client,
     spec: &keyhog_core::VerifySpec,
     credential: &str,
-    companions: &HashMap<String, String>,
+    companions: &CompanionMap,
     timeout: Duration,
     allow_private_ips: bool,
     allow_http: bool,
@@ -372,7 +372,7 @@ pub(crate) async fn verify_credential(
         }
         _ => None,
     };
-    let companions_ref: &HashMap<String, String> = match oob_ctx.as_ref() {
+    let companions_ref: &CompanionMap = match oob_ctx.as_ref() {
         Some(ctx) => &ctx.augmented,
         None => companions,
     };
@@ -611,7 +611,7 @@ struct OobContext {
     spec: keyhog_core::OobSpec,
     session: Arc<OobSession>,
     unique_id: String,
-    augmented: HashMap<String, String>,
+    augmented: CompanionMap,
 }
 
 /// Combine HTTP and OOB results per the detector's policy. Always populates

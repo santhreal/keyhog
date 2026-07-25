@@ -1,16 +1,10 @@
-//! Direct-library GPU selection and runtime-fault accounting.
+//! GPU dispatch errors and runtime-fault accounting.
 //!
-//! Infallible backend APIs preserve their explicit process contract here.
-//! Production orchestrators use the scanner's fallible coalesced boundary,
-//! visibly replay stable input, and report complete-after-recovery receipts.
+//! Selected-backend library APIs return structured errors. Recovery-aware
+//! orchestrators may replay stable input and retain an exact recovery receipt.
 
-pub(crate) use super::gpu_forced_helpers::{
-    fail_selected_gpu_dispatch, require_selected_gpu_stack,
-};
 #[cfg(feature = "gpu")]
-pub(crate) use super::gpu_forced_helpers::{
-    fail_selected_gpu_dispatch_error, SelectedGpuDispatchError,
-};
+pub(crate) use super::gpu_forced_helpers::SelectedGpuDispatchError;
 use super::CompiledScanner;
 
 impl CompiledScanner {

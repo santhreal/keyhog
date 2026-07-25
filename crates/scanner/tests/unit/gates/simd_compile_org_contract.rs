@@ -1,3 +1,6 @@
+/// Regression: Hyperscan compilation must remain decomposed, cache-stable,
+/// and independent of per-executor scratch allocation; warm-up owns that
+/// fallible runtime resource boundary.
 #[test]
 fn hyperscan_compile_with_opts_delegates_compile_stages() {
     let source =
@@ -21,8 +24,7 @@ fn hyperscan_compile_with_opts_delegates_compile_stages() {
         "fn partition_patterns_lpt(",
         "fn compile_cached_shards(",
         "fn assemble_scanner_shards(",
-        "fn scratch_pool_size()",
-        "fn build_scratch_pool(",
+        "fn warm(",
         "fn write_cached_dropped_ids(",
         "fn read_cached_dropped_ids(",
     ] {
@@ -69,13 +71,12 @@ fn hyperscan_compile_with_opts_delegates_compile_stages() {
         .next()
         .expect("assemble_scanner_shards boundary present");
     assert!(
-        assemble_body.contains("let scratch_count = Self::scratch_pool_size();")
-            && assemble_body.contains("Self::build_scratch_pool(&db, shard_idx, scratch_count)?")
-            && assemble_body.contains("Self::caller_pattern_indices_for_dropped(")
-            && assemble_body.contains("scratch_pool: parking_lot::Mutex::new(scratch_pool)")
-            && source.contains("Vec::with_capacity(scratch_count)")
-            && source.contains("scratch_pool.push("),
-        "Hyperscan compile must preallocate shard scratch pools so scan coverage cannot allocate opportunistically or return partial results"
+        assemble_body.contains("Self::caller_pattern_indices_for_dropped(")
+            && assemble_body.contains("shards.push(Shard { db })")
+            && !assemble_body.contains("scratch_pool")
+            && source.contains("fn warm(")
+            && source.contains("rayon::broadcast"),
+        "Hyperscan compile must NOT preallocate scratch; warm path must seed executor thread-local scratches"
     );
 
     let cache_key_body = source
@@ -194,6 +195,8 @@ fn hyperscan_compile_with_opts_delegates_compile_stages() {
     );
 }
 
+/// Regression: phase-1 and phase-2 callers require distinct compile flags and
+/// therefore distinct serialized cache identities.
 #[test]
 fn hyperscan_call_sites_use_distinct_cache_profiles() {
     let backend_prepared = std::fs::read_to_string(concat!(

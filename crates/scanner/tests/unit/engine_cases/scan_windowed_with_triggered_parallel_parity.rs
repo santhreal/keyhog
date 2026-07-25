@@ -66,7 +66,7 @@ fn coalesced_triggered_large_chunk_matches_windowed_scan() {
     };
 
     scanner.clear_fragment_cache();
-    let serial = scanner.scan(&chunk);
+    let serial = scanner.scan(&chunk).expect("test scan succeeds");
     scanner.clear_fragment_cache();
     let triggered = scan_windowed_with_triggered_for_test(&scanner, &chunk, &[1]);
 

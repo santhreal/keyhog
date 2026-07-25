@@ -217,7 +217,8 @@ fn decode_chunk_recovers_credential_via_registry_selected_shift() {
     // A file line carrying the +3-encoded AKIA credential. `decode_chunk` must
     // select shift 23 and emit the recovered plaintext as a `/caesar` chunk.
     let body = format!("token = \"{AKIA_ENC_SHIFT3}\"\n");
-    let out = CaesarDecoder.decode_chunk(&chunk(&body, "src", Some("creds.env")));
+    let out = CaesarDecoder.decode_chunk(&chunk(&body, "src", Some("creds.env")))
+        .expect("should decode successfully");
 
     // The exact recovered credential is present.
     assert!(
@@ -241,7 +242,8 @@ fn decode_chunk_emits_nothing_when_registry_selects_no_shift() {
     // The prefix-free candidate selects zero shifts, so the decoder emits no
     // sub-chunks at all (the whole fan-out is skipped).
     let body = "value = \"zzzzzzzz12345678\"\n";
-    let out = CaesarDecoder.decode_chunk(&chunk(body, "src", None));
+    let out = CaesarDecoder.decode_chunk(&chunk(body, "src", None))
+        .expect("should decode successfully");
     assert_eq!(out.len(), 0, "no shift selected → no emission: {out:#?}");
 }
 
@@ -251,7 +253,8 @@ fn decode_chunk_enforces_min_caesar_len_boundary() {
     // rotated form would select shift 23, it is skipped entirely.
     assert_eq!(decode_caesar::MIN_CAESAR_LEN, 16);
     let short_body = "k=\"DNLD1234567890D\"\n"; // 15-char token
-    let short_out = CaesarDecoder.decode_chunk(&chunk(short_body, "src", None));
+    let short_out = CaesarDecoder.decode_chunk(&chunk(short_body, "src", None))
+        .expect("should decode successfully");
     assert_eq!(
         short_out.len(),
         0,
@@ -260,7 +263,8 @@ fn decode_chunk_enforces_min_caesar_len_boundary() {
 
     // 16-char encoded candidate: at the boundary, recovered to `AKIA1234567890AB`.
     let long_body = "k=\"DNLD1234567890DE\"\n"; // 16-char token
-    let long_out = CaesarDecoder.decode_chunk(&chunk(long_body, "src", None));
+    let long_out = CaesarDecoder.decode_chunk(&chunk(long_body, "src", None))
+        .expect("should decode successfully");
     assert!(
         any_output_equals(&long_out, "AKIA1234567890AB"),
         "16-char candidate must recover AKIA1234567890AB: {long_out:#?}"
@@ -273,7 +277,8 @@ fn decode_chunk_refuses_recursion_on_nested_caesar_source_type() {
     // base64→caesar chain) is our own prior output; re-shifting it would fold
     // the value back, so the decoder returns nothing regardless of content.
     let body = format!("token = \"{AKIA_ENC_SHIFT3}\"\n");
-    let out = CaesarDecoder.decode_chunk(&chunk(&body, "raw/base64/caesar", Some("creds.env")));
+    let out = CaesarDecoder.decode_chunk(&chunk(&body, "raw/base64/caesar", Some("creds.env")))
+        .expect("should decode successfully");
     assert_eq!(
         out.len(),
         0,

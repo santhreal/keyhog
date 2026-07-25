@@ -170,10 +170,10 @@ fn scan_both(
     keyhog_scanner::testing::set_phase2_hs(&s, Some(false));
     keyhog_scanner::testing::set_phase2_prefix_gate(&s, Some(true));
     s.clear_fragment_cache();
-    let on = canonical(&[s.scan_with_backend(c, ScanBackend::CpuFallback)]);
+    let on = canonical(&[s.scan_with_backend(c, ScanBackend::CpuFallback).expect("selected backend scan succeeds")]);
     keyhog_scanner::testing::set_phase2_prefix_gate(&s, Some(false));
     s.clear_fragment_cache();
-    let off = canonical(&[s.scan_with_backend(c, ScanBackend::CpuFallback)]);
+    let off = canonical(&[s.scan_with_backend(c, ScanBackend::CpuFallback).expect("selected backend scan succeeds")]);
     (on, off)
 }
 
@@ -224,11 +224,11 @@ fn prefix_gate_does_not_skip_unicode_casefold_ci_patterns() {
     keyhog_scanner::testing::set_phase2_hs(&scanner, Some(false));
     keyhog_scanner::testing::set_phase2_prefix_gate(&scanner, Some(true));
     scanner.clear_fragment_cache();
-    let gated = canonical(&[scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback)]);
+    let gated = canonical(&[scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback).expect("selected backend scan succeeds")]);
 
     keyhog_scanner::testing::set_phase2_prefix_gate(&scanner, Some(false));
     scanner.clear_fragment_cache();
-    let ungated = canonical(&[scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback)]);
+    let ungated = canonical(&[scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback).expect("selected backend scan succeeds")]);
 
     keyhog_scanner::testing::set_phase2_prefix_gate(&scanner, None);
     keyhog_scanner::testing::set_phase2_hs(&scanner, None);

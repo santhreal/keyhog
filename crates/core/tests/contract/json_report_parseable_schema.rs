@@ -4,10 +4,11 @@
 use crate::support::reporters::JsonArrayReporter;
 use keyhog_core::{
     parse_jsonl_stream, write_scan_report, JsonReportEnvelope, MatchLocation, ReportFormat,
-    ScanReport, ScanReportMetadata, Severity, VerificationResult, VerifiedFinding,
+    ScanReport, ScanReportMetadata, Severity, StaticRecoveryMetrics, VerificationResult,
+    VerifiedFinding, STATIC_RECOVERY_METRICS_SCHEMA_VERSION,
 };
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 fn sample_finding() -> VerifiedFinding {
     VerifiedFinding {
@@ -84,6 +85,16 @@ fn versioned_json_envelope_validates_major_and_accepts_minor() {
         scan_id: "scan-test-id".into(),
         scan_status: keyhog_core::ScanCompletionStatus::Success,
         backend_recoveries: Vec::new(),
+        static_recovery: Some(StaticRecoveryMetrics {
+            schema_version: STATIC_RECOVERY_METRICS_SCHEMA_VERSION.to_string(),
+            supported: 7,
+            unsupported: 2,
+            erroneous: 3,
+            reasons: BTreeMap::from([
+                ("unsupported_call".to_string(), 2),
+                ("json_utf8".to_string(), 3),
+            ]),
+        }),
         keyhog_version: "0.5.41".into(),
         git_hash: "test-git".into(),
         detector_digest: "922-test".into(),
@@ -111,7 +122,7 @@ fn versioned_json_envelope_validates_major_and_accepts_minor() {
     let text = String::from_utf8(buf).expect("JSON envelope is UTF-8");
     let parsed = JsonReportEnvelope::parse(&text).expect("current major parses");
     assert_eq!(parsed.schema_version.major, 1);
-    assert_eq!(parsed.schema_version.minor, 7);
+    assert_eq!(parsed.schema_version.minor, 8);
     assert_eq!(
         parsed.scan_status,
         keyhog_core::ScanCompletionStatus::Partial
@@ -119,6 +130,15 @@ fn versioned_json_envelope_validates_major_and_accepts_minor() {
     assert_eq!(
         parsed.metadata.as_ref().expect("metadata").targets,
         ["fixture.env"]
+    );
+    assert_eq!(
+        parsed
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.static_recovery.as_ref())
+            .expect("static recovery metadata")
+            .supported,
+        7
     );
     assert_eq!(parsed.coverage_gap_summary[0].count, 1);
     assert_eq!(parsed.findings.len(), 1);
@@ -201,7 +221,7 @@ fn versioned_jsonl_headers_split_concatenated_streams_and_validate_major() {
     let streams = parse_jsonl_stream(std::str::from_utf8(&joined).expect("JSONL is UTF-8"))
         .expect("concatenated streams parse by header boundary");
     assert_eq!(streams.len(), 2);
-    assert_eq!(streams[0].header.schema_version.minor, 8);
+    assert_eq!(streams[0].header.schema_version.minor, 9);
     assert_eq!(streams[0].findings.len(), 1);
     assert!(streams[0].is_complete());
     assert_eq!(

@@ -8,6 +8,7 @@ use reqwest::Client;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
+use crate::interpolate::CompanionKey;
 use crate::verify::request::{execute_request, resolved_client_for_url, RequestError};
 use crate::verify::response::read_response_body;
 
@@ -29,7 +30,7 @@ pub(crate) async fn build_aws_probe(
     session_token_template: &Option<String>,
     region: &str,
     credential: &str,
-    companions: &HashMap<String, String>,
+    companions: &HashMap<impl CompanionKey, String>,
     timeout: Duration,
     client: &Client,
     allow_private_ips: bool,

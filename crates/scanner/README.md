@@ -8,7 +8,7 @@ XOR and AES-256-CBC expressions.
 Part of the [KeyHog](https://github.com/santhreal/keyhog) secret scanner.
 
 ```rust
-use keyhog_core::{Chunk, ChunkMetadata};
+use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 
 let detectors = keyhog_core::load_embedded_detectors_or_fail()?;
@@ -19,10 +19,13 @@ let chunk = Chunk {
 };
 
 // Host-independent portable reference.
-let reference = scanner.scan(&chunk);
+let reference = scanner.scan(&chunk)?;
 
 // Explicit acceleration; unavailable requested backends fail loudly.
-let accelerated = scanner.scan_with_backend(&chunk, ScanBackend::SimdCpu);
+let accelerated = scanner.scan_with_backend(&chunk, ScanBackend::SimdCpu)?;
+
+// Raw matches contain plaintext. Project to the report-safe public DTO first.
+let report_safe: Vec<_> = reference.iter().map(RawMatch::to_redacted).collect();
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
@@ -31,6 +34,15 @@ explicit-backend methods when embedding an execution policy. Persisted,
 parity-checked automatic routing belongs to the `keyhog` CLI because its
 decision identity includes the binary, detector/config digests, host, runtime
 lifetime, and workload class.
+
+Every scan method returns a typed `Result`; initialization and runtime backend
+failures return `ScanError` without terminating the embedding process. A
+successful result contains in-process `RawMatch` values. `Credential`,
+`SensitiveString`, `RawMatch`, `DedupedMatch`, and `Chunk` refuse implicit
+serialization because they can contain plaintext or encoded secret bytes. Use
+`RawMatch::to_redacted` or the final `VerifiedFinding` shape for JSON, logging,
+disk, or network output. Explicit secret access is reserved for a protected
+private protocol.
 
 Detector-specific candidate generation and policy are compiled from the
 detector TOMLs embedded by `keyhog-core`; scanner configuration supplies the

@@ -39,9 +39,9 @@ fn prefix_storm_seed_has_exact_repeatable_cpu_backend_parity() {
     // fresh compile. Full RawMatch equality also preserves multiplicity.
     for round in 0..5 {
         scanner.clear_fragment_cache();
-        let simd = scanner.scan_chunks_with_backend(&[chunk.clone()], ScanBackend::SimdCpu);
+        let simd = scanner.scan_chunks_with_backend(&[chunk.clone()], ScanBackend::SimdCpu).expect("selected backend scan succeeds");
         scanner.clear_fragment_cache();
-        let cpu = scanner.scan_chunks_with_backend(&[chunk.clone()], ScanBackend::CpuFallback);
+        let cpu = scanner.scan_chunks_with_backend(&[chunk.clone()], ScanBackend::CpuFallback).expect("selected backend scan succeeds");
         let simd = canonical(&simd);
         let cpu = canonical(&cpu);
         assert_eq!(

@@ -74,6 +74,7 @@ fn finding_keys(scanner: &CompiledScanner, text: &str, path: &str) -> BTreeSet<F
     scanner.clear_fragment_cache();
     scanner
         .scan(&chunk)
+        .expect("phase-two zero-work test scan succeeds")
         .iter()
         .map(|m| {
             (

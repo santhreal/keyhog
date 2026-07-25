@@ -125,11 +125,6 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // the no-hit reassembly path reuses the SINGLE `reassembly_probe_data` owner
     // (a ONE-PLACE guard). Crate-internal, co-located with the owner.
     "engine/scan_postprocess/fragments.rs",
-    // `engine/phase2_prefilter.rs` pins the private `hs_prefilter_engages` engine
-    // gate: Hyperscan on ASCII at any size, RegexSet only on large non-ASCII. The
-    // exact ASCII/size decision boundary is recall-load-bearing and the predicate
-    // is module-private (no public surface), so it can only be pinned in-module.
-    "engine/phase2_prefilter.rs",
     // `scanner_config.rs` pins how the `*_effective()` resolvers fall back to the
     // COMPILED defaults (`FALLBACK_*_DEFAULT`) when a knob is unset, a
     // crate-internal Tier-A default-wiring contract asserted against private

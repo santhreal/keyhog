@@ -59,32 +59,51 @@ jobs:
       # package, not just the runtime. Mirrors ci.yml / runners-nightly.yml.
       - name: Install Vectorscan
         run: |
-
+          set -euo pipefail
           for i in 1 2 3 4 5; do
-
-            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
-
+            if sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends libhyperscan-dev pkg-config; then
+              break
+            fi
             sleep $((i * 2))
-
             if [ "$i" -eq 5 ]; then exit 1; fi
-
           done
 
+
       - name: Build keyhog release binary
-        run: cargo build --release -p keyhog --bin keyhog
+        # CPU-only ubuntu-latest cannot load libcuda; ci-lean keeps the benchmark
+        # `auto` backend off the GPU default feature set (KH-GAP-081).
+        run: |
+          set -euo pipefail
+          cargo build --release -p keyhog --bin keyhog --no-default-features --features ci-lean
+
 
       - name: Install trufflehog
         run: |
           curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh \
             | sh -s -- -b /usr/local/bin
 
-      - name: Install bench test deps
-        run: python3 -m pip install pytest
+      - name: Install benchmark dependencies
+        run: |
+          set -euo pipefail
+          python3 -m pip install -r benchmarks/requirements.txt
+
+
+      - name: Prepare clean benchmark artifact directories
+        # Reports are tracked documentation, so remove them together with the
+        # isolated nightly output and run-set declaration before measuring. The
+        # immutable committed results/ inventory remains untouched.
+        run: |
+          set -euo pipefail
+          rm -rf benchmarks/results-nightly benchmarks/results-ioc-recovery \
+            benchmarks/reports benchmarks/nightly-run-set.toml
 
       - name: Benchmark regression tests
         env:
           KEYHOG_BIN: ${{ github.workspace }}/target/release/keyhog
-        run: cd benchmarks && PYTHONDONTWRITEBYTECODE=1 python3 -B -m pytest -p no:cacheprovider -q -m 'not target_spec' bench/tests
+        run: |
+          set -euo pipefail
+          cd benchmarks && PYTHONDONTWRITEBYTECODE=1 python3 -B -m pytest -p no:cacheprovider -q -m 'not target_spec' bench/tests
+
 
       - name: Generate mirror corpus
         env:
@@ -92,43 +111,181 @@ jobs:
           NEGATIVES: ${{ inputs.negatives || 12000 }}
           SEED: ${{ inputs.seed || 0 }}
         run: |
+          set -euo pipefail
           cd benchmarks && python3 -m bench.corpora.mirror --ensure \
             --positives "$POSITIVES" --negatives "$NEGATIVES" --seed "$SEED"
 
+
       - name: Run leaderboard (keyhog + trufflehog)
+        # Use the Makefile target so --require-available fails the job if any
+        # scanner cannot produce a real result.
         env:
           KEYHOG_BIN: ${{ github.workspace }}/target/release/keyhog
         run: |
-          cd benchmarks && python3 -m bench leaderboard \
-            --corpus mirror --scanners keyhog,trufflehog --out results
+          set -euo pipefail
+          make -C benchmarks leaderboard SCANNERS=keyhog,trufflehog OUT=results-nightly
+
+      - name: Declare exact nightly report run set
+        # The committed headline inventory has immutable identities and must
+        # remain untouched. Bind this hosted-runner measurement to the two exact
+        # output paths the leaderboard command above is required to produce.
+        run: |
+          set -euo pipefail
+          cd benchmarks
+          python3 - <<'PY'
+          import json
+          import pathlib
+
+          from bench.schema import RunResult
+
+          root = pathlib.Path("results-nightly")
+          files = [
+              root / "mirror-keyhog-simd-nocache-nodaemon-full.json",
+              root / "mirror-trufflehog-default-nocache-nodaemon-no-verify.json",
+          ]
+          observed_files = set(root.rglob("*.json"))
+          if observed_files != set(files):
+              raise SystemExit(
+                  "nightly result paths differ from the declared run set: "
+                  f"expected={sorted(map(str, files))} "
+                  f"observed={sorted(map(str, observed_files))}"
+              )
+          rows = [
+              (path, RunResult.from_json(json.loads(path.read_text()), source=str(path)))
+              for path in files
+          ]
+          expected = {"keyhog", "trufflehog"}
+          observed = {row.scanner.name for _, row in rows}
+          if len(rows) != len(expected) or observed != expected:
+              raise SystemExit(
+                  "nightly run set must contain exactly one result for each "
+                  f"required scanner; expected={sorted(expected)} observed={sorted(observed)}"
+              )
+
+          def quoted(value: str) -> str:
+              return json.dumps(value)
+
+          lines = ["schema_version = 1", 'corpus = "mirror"', ""]
+          for path, row in sorted(rows, key=lambda item: item[1].scanner.name):
+              lines.extend([
+                  "[[run]]",
+                  f"scanner = {quoted(row.scanner.name)}",
+                  f"config_id = {quoted(row.scanner.config_id)}",
+                  f"path = {quoted(path.relative_to(root).as_posix())}",
+                  f"generated_at = {quoted(row.generated_at)}",
+                  f"executable_sha256 = {quoted(row.scanner.executable_sha256)}",
+                  f"hostname_hash = {quoted(row.host.hostname_hash)}",
+                  f"fixture_count = {row.corpus.fixture_count}",
+                  f"labeled_positives = {row.corpus.labeled_positives}",
+                  f"corpus_bytes = {row.corpus.bytes}",
+                  "",
+              ])
+          pathlib.Path("nightly-run-set.toml").write_text("\n".join(lines))
+          PY
+
 
       - name: Generate exact recovery corpus
-        run: make -C benchmarks ioc-recovery-corpus
+        run: |
+          set -euo pipefail
+          make -C benchmarks ioc-recovery-corpus
+
 
       - name: Enforce exact deep recovery target
         env:
           KEYHOG_BIN: ${{ github.workspace }}/target/release/keyhog
         run: |
+          set -euo pipefail
           cd benchmarks && PYTHONDONTWRITEBYTECODE=1 python3 -B -m pytest \
             -p no:cacheprovider -q -m target_spec \
             bench/tests/test_ioc_recovery_target_spec.py
 
+
       - name: Run exact recovery mode matrix
         env:
           KEYHOG_BIN: ${{ github.workspace }}/target/release/keyhog
-        run: make -C benchmarks ioc-recovery
+        run: |
+          set -euo pipefail
+          make -C benchmarks ioc-recovery
+
 
       - name: Render leaderboard + per-detector reports
+        # Resolve the isolated nightly inventory explicitly. Do not inject the
+        # ad-hoc hosted-runner measurement into the committed README.
         run: |
-          cd benchmarks && python3 -m bench report \
-            --results results --reports reports --corpus mirror
+          set -euo pipefail
+          cd benchmarks
+          python3 -m bench report --results results-nightly --reports reports \
+            --corpus mirror --run-set nightly-run-set.toml
+
+
+      - name: Validate benchmark artifacts
+        # upload-artifact only detects a wholly missing path. Validate every
+        # result as the production RunResult schema and reject unavailable,
+        # empty, or wrong-corpus rows before any artifact can be published.
+        run: |
+          set -euo pipefail
+          cd benchmarks
+          python3 - <<'PY'
+          import json
+          import pathlib
+
+          from bench.schema import RunResult
+
+          expected = {
+              pathlib.Path("results-nightly"): ("mirror", {"keyhog", "trufflehog"}),
+              pathlib.Path("results-ioc-recovery"): ("ioc-recovery", {"keyhog"}),
+          }
+          for root, (corpus, scanners) in expected.items():
+              files = sorted(root.rglob("*.json"))
+              if not files:
+                  raise SystemExit(f"{root}: no benchmark result JSON files")
+              rows = [
+                  RunResult.from_json(json.loads(path.read_text()), source=str(path))
+                  for path in files
+              ]
+              observed = {row.scanner.name for row in rows if row.corpus.name == corpus}
+              missing = scanners - observed
+              if missing:
+                  raise SystemExit(f"{root}: missing required scanner rows: {sorted(missing)}")
+              for row in rows:
+                  if row.corpus.name != corpus:
+                      raise SystemExit(
+                          f"{root}: unexpected corpus {row.corpus.name!r}; expected {corpus!r}"
+                      )
+                  if not row.available:
+                      raise SystemExit(
+                          f"{root}: unavailable {row.scanner.name} row: {row.error}"
+                      )
+                  if row.corpus.fixture_count <= 0 or row.finding_count <= 0:
+                      raise SystemExit(
+                          f"{root}: empty {row.scanner.name} result "
+                          f"(fixtures={row.corpus.fixture_count}, findings={row.finding_count})"
+                      )
+
+          required_reports = [
+              pathlib.Path("reports/leaderboard.md"),
+              pathlib.Path("reports/perf.md"),
+              pathlib.Path("reports/recall-gap.md"),
+              pathlib.Path("reports/category-recall.md"),
+          ]
+          empty_reports = [
+              str(path)
+              for path in required_reports
+              if not path.is_file() or not path.read_text().strip()
+          ]
+          if empty_reports:
+              raise SystemExit(f"missing or empty generated reports: {empty_reports}")
+          PY
+
 
       - name: Upload benchmark results and reports
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: bench-unified-results
           path: |
-            benchmarks/results/**
+            benchmarks/results-nightly/**
             benchmarks/results-ioc-recovery/**
             benchmarks/reports/**
+            benchmarks/nightly-run-set.toml
+          if-no-files-found: error
           retention-days: 30

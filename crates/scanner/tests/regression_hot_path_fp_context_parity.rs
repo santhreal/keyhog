@@ -53,8 +53,7 @@ fn per_backend_hit(text: &str, detector: &str, credential: &str) -> Vec<bool> {
         .iter()
         .map(|&backend| {
             scanner.clear_fragment_cache();
-            scanner
-                .scan_with_backend(&chunk(text), backend)
+            scanner.scan_with_backend(&chunk(text), backend).expect("selected backend scan succeeds")
                 .iter()
                 .any(|m| m.detector_id.as_ref() == detector && m.credential.as_ref() == credential)
         })
@@ -227,7 +226,7 @@ fn real_64_hex_git_lfs_pointer_yields_no_hot_token_finding_on_either_backend() {
     let scanner = scanner();
     for backend in CPU_BACKENDS {
         scanner.clear_fragment_cache();
-        let matches = scanner.scan_with_backend(&chunk(text), backend);
+        let matches = scanner.scan_with_backend(&chunk(text), backend).expect("selected backend scan succeeds");
         assert!(
             matches.is_empty(),
             "a real git-LFS pointer must not surface any hot-token finding on {backend:?}; got {matches:?}"

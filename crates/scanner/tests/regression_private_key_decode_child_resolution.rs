@@ -39,7 +39,9 @@ fn decoded_child_token_does_not_displace_enclosing_pgp_private_key() {
     let scanner = scanner();
     let chunk = make_chunk(&body, "filesystem", "/repo/private-key.pem");
     scanner.clear_fragment_cache();
-    let raw = scanner.scan(&chunk);
+    let raw = scanner
+        .scan(&chunk)
+        .expect("decoded private-key child scan should succeed");
 
     assert!(
         raw.iter().any(|m| {

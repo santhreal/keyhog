@@ -46,6 +46,7 @@ url = "https://api.flickr.com/services/rest/?method=flickr.test.echo&api_key={{m
 allowed_domains = ["api.flickr.com"]
 [detector.verify.success]
 status = 200
+policy = "status_with_error_backstop"
 
 [[detector.tests]]
 test_positive = "flickr_api_key=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"

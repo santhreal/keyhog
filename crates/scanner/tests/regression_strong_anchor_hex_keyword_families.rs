@@ -49,8 +49,7 @@ fn hex(n: usize, seed: usize) -> String {
 
 fn matches(s: &CompiledScanner, chunk: &Chunk) -> Vec<String> {
     s.clear_fragment_cache();
-    s.scan(chunk)
-        .into_iter()
+    s.scan(chunk).expect("scanner call should succeed").into_iter()
         .map(|m| m.credential.as_str().to_string())
         .collect()
 }

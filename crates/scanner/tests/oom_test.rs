@@ -25,7 +25,7 @@ fn test_large_chunk_skip() {
     // if the scanner ran the full 513MB scan and merely produced zero
     // findings.
     let start = std::time::Instant::now();
-    let matches = scanner.scan(&chunk);
+    let matches = scanner.scan(&chunk).expect("scanner call should succeed");
     let elapsed = start.elapsed();
     assert!(
         matches.is_empty(),

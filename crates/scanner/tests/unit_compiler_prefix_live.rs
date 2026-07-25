@@ -36,7 +36,9 @@ fn partial_alternation_unprefixed_branch_still_scans() {
             ..Default::default()
         },
     };
-    let matches = scanner.scan(&chunk);
+    let matches = scanner
+        .scan(&chunk)
+        .expect("partial-alternation detector scan should succeed");
     assert!(
         matches
             .iter()
@@ -81,7 +83,9 @@ fn loaded_hot_detector_without_matching_ac_prefix_degrades_gracefully_and_still_
             ..Default::default()
         },
     };
-    let matches = scanner.scan(&chunk);
+    let matches = scanner
+        .scan(&chunk)
+        .expect("inactive hot-slot fallback scan should succeed");
     assert!(
         matches.iter().any(|m| m.credential.as_ref() == credential),
         "credential must still be detected via the confirmed AC scan even though its hot \

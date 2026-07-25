@@ -4,8 +4,8 @@
 //! Update and repair can perform network I/O. Dedicated bounded tests cover
 //! those commands.
 //!
-//! This is the "does the command even start on a weird box" sweep. 10 x 16 =
-//! 160 distinct tests.
+//! This is the "does the command even start on a weird box" sweep. 11 x 16 =
+//! 176 distinct tests.
 
 use crate::reliability::harness::{
     assert_clean_exit, assert_documented_exit, assert_no_ansi, assert_no_panic, run, Profile,
@@ -31,6 +31,7 @@ crate::kh_matrix!(
     completion => "completion",
     backend => "backend",
     doctor => "doctor",
+    bloom_diagnostic => "bloom-diagnostic",
     uninstall => "uninstall",
     hook => "hook",
 );

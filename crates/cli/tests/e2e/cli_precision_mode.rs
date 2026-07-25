@@ -127,14 +127,18 @@ fn precision_mode_exits_one_on_findings() {
 }
 
 /// Precision mode respects the literal 0.85 min_confidence floor.
-/// A generic password assignment scores above the default floor and below the
-/// precision bar. In precision mode it must be dropped, but in default mode it
-/// is kept. This asserts precision enforces 0.85.
+/// The anchored AbuseIPDB credential has a stable reported confidence of 0.795:
+/// default keeps its detector-owned 0.25 floor, while precision must clamp that
+/// floor to 0.85 and drop the exact same candidate.
 #[test]
 fn precision_mode_enforces_0_85_floor_on_weak_credentials() {
-    let fixture = "DATABASE_PASSWORD = \"admin123\"\n";
+    let fixture = concat!(
+        "ABUSEIPDB_API_KEY=",
+        "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz",
+        "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz\n",
+    );
 
-    // Default mode: the weak generic secret is surfaced (floor is 0.40).
+    // Default mode: the 0.795 finding clears its detector-owned 0.25 floor.
     let (def_out, _e, def_code) = scan_text_file(fixture, &[]);
     assert_eq!(
         def_code,
@@ -144,20 +148,18 @@ fn precision_mode_enforces_0_85_floor_on_weak_credentials() {
     let def_findings: serde_json::Value =
         serde_json::from_str(&def_out).expect("default stdout is JSON");
     let def_arr = def_findings.as_array().expect("array");
-    // The weak low-entropy password `admin123` is surfaced by default as a
-    // generic-service finding. Which generic detector claims it (the
-    // keyword `generic-secret` gate or the `entropy-password` entropy gate)
-    // is an internal detail; the contract under test is that SOME weak
-    // generic finding clears the 0.40 default floor and will be dropped by the
-    // 0.85 precision floor below.
+    // Regression: assert the exact detector and confidence so a later scoring
+    // change cannot silently turn this boundary fixture into another admin123.
     assert!(
         def_arr.iter().any(|finding| {
-            finding.get("service").and_then(|value| value.as_str()) == Some("generic")
+            finding.get("detector_id").and_then(|value| value.as_str())
+                == Some("abuseipdb-api-key")
+                && finding.get("confidence").and_then(|value| value.as_f64()) == Some(0.795)
         }),
-        "default must surface the weak generic finding; got {def_out}"
+        "default must surface the 0.795 AbuseIPDB finding; got {def_out}"
     );
 
-    // Precision mode: the same weak generic secret must be dropped.
+    // Precision mode: the same 0.795 credential must be dropped by the 0.85 floor.
     let (prec_out, _e2, prec_code) = scan_text_file(fixture, &["--precision"]);
     let prec_findings: serde_json::Value =
         serde_json::from_str(&prec_out).expect("precision stdout is JSON");
@@ -165,7 +167,7 @@ fn precision_mode_enforces_0_85_floor_on_weak_credentials() {
 
     assert!(
         prec_arr.is_empty(),
-        "precision mode must drop the generic secret (conf < 0.85); got {prec_out}"
+        "precision mode must drop the credential (confidence 0.795 < 0.85); got {prec_out}"
     );
     assert!(
         prec_code.is_some_and(|c| c == 0),
@@ -286,17 +288,17 @@ fn precision_mode_json_schema_carries_required_fields() {
 }
 
 /// Precision mode effectiveness: a corpus of mixed-confidence findings shows
-/// that precision is tighter than default. The fixture includes both
-/// high-confidence (AWS secret) and low-confidence (generic password) entries.
+/// that precision is tighter than default. The fixture includes both a
+/// high-confidence AWS secret and an anchored 0.795 AbuseIPDB credential.
 /// Precision must reduce the count vs default.
 #[test]
 fn precision_mode_is_stricter_than_default_overall_reduction() {
     let fixture = concat!(
         "aws_secret_access_key = \"kP8xQ2mNvR7tZ4wL9bYsH3jD6fG1cA0eXuViK5oT\"\n",
-        // Low-confidence generic password: default surfaces it (~0.55, above the
-        // 0.40 default floor) but precision's 0.85 bar drops it - so precision
-        // returns strictly fewer findings than default.
-        "DATABASE_PASSWORD = \"admin123\"\n",
+        // The AbuseIPDB detector owns a 0.25 default floor and reports this
+        // anchored credential at exactly 0.795. Precision clamps the detector
+        // floor to 0.85, so it must remove this finding.
+        "ABUSEIPDB_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz\n",
     );
 
     let (def_out, _, _) = scan_text_file(fixture, &[]);

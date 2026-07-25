@@ -98,6 +98,7 @@ pub trait CoreTestApi {
     ) -> Result<Vec<DetectorSpec>, SpecError>;
     fn load_detectors_from_str(&self, toml_str: &str) -> Result<Vec<DetectorSpec>, SpecError>;
     fn embedded_detector_tomls(&self) -> &'static [(&'static str, &'static str)];
+    fn migrate_legacy_success_policies(&self, detector: &mut DetectorSpec) -> usize;
     fn parse_embedded_detector(
         &self,
         name: &str,
@@ -264,6 +265,10 @@ impl CoreTestApi for TestApi {
 
     fn load_detectors_from_str(&self, toml_str: &str) -> Result<Vec<DetectorSpec>, SpecError> {
         crate::spec::load::load_detectors_from_str(toml_str)
+    }
+
+    fn migrate_legacy_success_policies(&self, detector: &mut DetectorSpec) -> usize {
+        crate::spec::migrate_legacy_success_policies(detector)
     }
 
     fn embedded_detector_tomls(&self) -> &'static [(&'static str, &'static str)] {

@@ -30,6 +30,7 @@ allowed_domains = ["api.telegram.org"]
 type = "none"
 
 [detector.verify.success]
+policy = "body_positive"
 status = 200
 json_path = "$.ok"
 equals = "true"

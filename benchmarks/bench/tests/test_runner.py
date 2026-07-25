@@ -1,5 +1,6 @@
 import hashlib
 import json
+import pytest
 
 from bench import runner
 from bench.corpora.mirror import MirrorCorpus
@@ -7,7 +8,19 @@ from bench.corpora.ioc_recovery import IocRecoveryCorpus
 from bench.corpora.perf_corpus import KernelCorpus
 from bench.runner import build_result, resolve_corpus_with_root, write_result
 from bench.scanners.base import MeasurementProvenance, RunStats
-from bench.schema import ScannerConfig
+from bench.schema import ScannerConfig, StaticRecoveryMetrics
+
+
+def _static_recovery_json(
+    *, supported: int = 0, unsupported: int = 0, erroneous: int = 0,
+    reasons: dict[str, int] | None = None,
+) -> dict:
+    return StaticRecoveryMetrics(
+        supported=supported,
+        unsupported=unsupported,
+        erroneous=erroneous,
+        reasons=reasons or {},
+    ).to_json()
 
 
 def test_build_result_scores_and_computes_throughput(tmp_path):
@@ -37,6 +50,12 @@ def test_build_result_scores_and_computes_throughput(tmp_path):
         corpus=corpus,
         findings=[{"file": str(tmp_path / "one.txt"), "line": 1, "value": "secret-one"}],
         stats=RunStats(wall_ms=500.0, peak_rss_kb=1234, exit_code=1),
+        static_recovery=StaticRecoveryMetrics(
+            supported=2,
+            unsupported=1,
+            erroneous=1,
+            reasons={"unsupported_call": 1, "json_utf8": 1},
+        ),
         executable_sha256="a" * 64,
         detector_corpus_sha256="b" * 64,
     )
@@ -50,6 +69,12 @@ def test_build_result_scores_and_computes_throughput(tmp_path):
     assert result.timed_out is False
     assert result.scanner.executable_sha256 == "a" * 64
     assert result.scanner.detector_corpus_sha256 == "b" * 64
+    assert result.static_recovery == StaticRecoveryMetrics(
+        supported=2,
+        unsupported=1,
+        erroneous=1,
+        reasons={"unsupported_call": 1, "json_utf8": 1},
+    )
 
 
 def test_write_result_round_trips_json(tmp_path):
@@ -61,6 +86,7 @@ def test_write_result_round_trips_json(tmp_path):
         corpus=corpus,
         findings=[],
         stats=RunStats(),
+        static_recovery=StaticRecoveryMetrics(),
     )
     output = tmp_path / "result.json"
 
@@ -234,6 +260,7 @@ def test_run_once_uses_adapter_provenance_bound_scan(monkeypatch, tmp_path):
                 executable_sha256="b" * 64,
                 detector_corpus_sha256="c" * 64,
                 execution_route="in_process",
+                static_recovery=_static_recovery_json(supported=3),
             )
 
         def exit_success(self, code):
@@ -328,6 +355,7 @@ def test_run_once_snapshot_provenance_does_not_reprobe_mutable_workspace(
                 executable_sha256="b" * 64,
                 detector_corpus_sha256="a" * 64,
                 execution_route="in_process",
+                static_recovery=_static_recovery_json(),
             )
 
         def exit_success(self, code):
@@ -373,6 +401,7 @@ def test_run_once_records_snapshot_when_source_binary_changes(monkeypatch, tmp_p
                 executable_sha256="b" * 64,
                 detector_corpus_sha256="a" * 64,
                 execution_route="in_process",
+                static_recovery=_static_recovery_json(),
             )
 
         def exit_success(self, code):
@@ -389,3 +418,75 @@ def test_run_once_records_snapshot_when_source_binary_changes(monkeypatch, tmp_p
     assert result.available is True
     assert result.scanner.version == "KeyHog snapshot A"
     assert result.scanner.executable_sha256 == "b" * 64
+
+def _bloom_receipt() -> dict[str, object]:
+    return {
+        "schema_version": "bloom-evidence-v1",
+        "corpus_name": "creddata-test",
+        "corpus_revision": "f1de3f85dbdf42bf7b3467c0d273a4dfe44d56ee",
+        "fixture_sha256": "1" * 64,
+        "corpus_sha256": "2" * 64,
+        "detector_corpus_sha256": "3" * 64,
+        "scanner_detector_digest": "4" * 16,
+        "executable_sha256": "6" * 64,
+        "workspace_detector_corpus_sha256": "7" * 64,
+        "declared_input_count": 12,
+        "unavailable_input_count": 2,
+        "unavailable_reason_counts": {"source-file-missing": 2},
+        "input_count": 10,
+        "eligible_input_count": 8,
+        "admitted_input_count": 6,
+        "rejected_input_count": 4,
+        "rejection_basis_points": 4_000,
+        "populated_slots": 18_437,
+        "total_slots": 65_536,
+        "saturation_threshold_slots": 39_322,
+        "density_basis_points": 2_813,
+        "state": "healthy",
+        "enabled_finding_count": 7,
+        "bypass_finding_count": 7,
+        "enabled_findings_sha256": "5" * 64,
+        "bypass_findings_sha256": "5" * 64,
+        "findings_identical": True,
+    }
+
+
+def test_bloom_linkage_keeps_semantic_and_raw_detector_digests_separate(
+    tmp_path, monkeypatch
+):
+    receipt = tmp_path / "bloom.json"
+    receipt.write_text(json.dumps(_bloom_receipt()), encoding="utf-8")
+    monkeypatch.setenv("KEYHOG_BENCH_BLOOM_RESULT", str(receipt))
+
+    evidence = runner._load_bloom_evidence("keyhog", "7" * 64, "6" * 64)
+
+    assert evidence.detector_corpus_sha256 == "3" * 64
+    assert evidence.scanner_detector_digest == "4" * 16
+    assert evidence.workspace_detector_corpus_sha256 == "7" * 64
+    assert evidence.executable_sha256 == "6" * 64
+
+
+@pytest.mark.parametrize(
+    ("workspace_digest", "executable_digest", "message"),
+    [
+        ("8" * 64, "6" * 64, "workspace detector corpus SHA-256"),
+        ("7" * 64, "8" * 64, "executable SHA-256"),
+    ],
+)
+def test_bloom_linkage_rejects_wrong_owner_identity(
+    tmp_path,
+    monkeypatch,
+    workspace_digest,
+    executable_digest,
+    message,
+):
+    receipt = tmp_path / "bloom.json"
+    receipt.write_text(json.dumps(_bloom_receipt()), encoding="utf-8")
+    monkeypatch.setenv("KEYHOG_BENCH_BLOOM_RESULT", str(receipt))
+
+    with pytest.raises(ValueError, match=message):
+        runner._load_bloom_evidence(
+            "keyhog",
+            workspace_digest,
+            executable_digest,
+        )

@@ -99,16 +99,20 @@ proptest! {
         prop_assert_eq!(hash_of(&c), hash_of(&cloned));
     }
 
-    /// `deserialize(serialize(c)) == c` for arbitrary bytes, the durable guard
-    /// against the kimi-wave2 §Critical round-trip corruption. Arbitrary bytes
-    /// drive UTF-8 payloads through the `text` tag and non-UTF-8 through `b64`,
-    /// so one property covers both encoding branches.
+    /// Implicit serialization fails before writing UTF-8 or binary credential
+    /// bytes. Historical tagged input remains covered by named regressions.
     #[test]
-    fn prop_credential_serde_roundtrip_preserves_eq(a in bytes_strat()) {
-        let c = Credential::from(&a[..]);
-        let json = serde_json::to_string(&c).expect("serialize");
-        let back: Credential = serde_json::from_str(&json).expect("deserialize");
-        prop_assert_eq!(back, c);
+    fn prop_credential_serde_output_fails_closed(a in bytes_strat()) {
+        let credential = Credential::from(&a[..]);
+        let mut output = Vec::new();
+        let error = serde_json::to_writer(&mut output, &credential)
+            .expect_err("implicit Credential output must fail closed")
+            .to_string();
+        prop_assert!(output.is_empty());
+        prop_assert_eq!(
+            error,
+            "Credential refuses implicit plaintext serialization; expose bytes explicitly only for a protected private channel"
+        );
     }
 
     /// Redaction is exact and length-only: `Debug`/`Display` are fully
@@ -164,16 +168,29 @@ proptest! {
         prop_assert_eq!(ss.cmp(&st) == Ordering::Equal, ss == st);
     }
 
-    /// Serde round-trips as a plain JSON string AND preserves the content
-    /// (readable publicly via `Deref<str>`), so the value survives a
-    /// disk/JSON hop unchanged.
+    /// Implicit output always fails closed without exposing the value in either
+    /// partial serializer output or the diagnostic. Historical plaintext input
+    /// remains readable for compatibility.
     #[test]
-    fn prop_sensitive_serde_roundtrip_preserves_value(s in any::<String>()) {
-        let ss = SensitiveString::from(s.as_str());
-        let json = serde_json::to_string(&ss).expect("serialize");
-        let back: SensitiveString = serde_json::from_str(&json).expect("deserialize");
-        prop_assert_eq!(back == ss, true);
-        prop_assert_eq!(&*back, s.as_str());
+    fn prop_sensitive_serde_output_fails_closed_and_input_remains_compatible(
+        s in any::<String>()
+    ) {
+        let sensitive = SensitiveString::from(s.as_str());
+        let mut output = Vec::new();
+        let error = serde_json::to_writer(&mut output, &sensitive)
+            .expect_err("implicit SensitiveString output must fail closed")
+            .to_string();
+
+        prop_assert!(output.is_empty());
+        prop_assert_eq!(
+            error,
+            "SensitiveString refuses implicit plaintext serialization; call as_str() explicitly only for a protected private channel"
+        );
+
+        let historical = serde_json::to_string(&s).expect("plain historical wire string");
+        let back: SensitiveString =
+            serde_json::from_str(&historical).expect("historical plaintext input");
+        prop_assert_eq!(back.as_str(), s.as_str());
     }
 
     /// Both `Debug` and `Display` redact (KH-1424). Plaintext is only via
@@ -192,28 +209,23 @@ proptest! {
 }
 
 // ---------------------------------------------------------------------------
-// Explicit regression: the exact kimi-wave2 §Critical corruption case, pinned
-// as a named test so the intent is auditable even though the proptest above
-// also covers it (arbitrary strings include `b64:`-prefixed values).
+// Explicit regression for the exact kimi-wave2 §Critical ambiguity. Implicit
+// output is forbidden, while historical tagged text input remains unambiguous.
 // ---------------------------------------------------------------------------
 
 #[test]
-fn credential_text_value_that_looks_like_b64_prefix_roundtrips_as_text() {
-    // A user-typed credential whose literal value is `b64:SGVsbG8=`. Under the
-    // OLD `b64:<base64>` string scheme this round-tripped as the DECODED bytes
-    // "Hello" (corruption). The tagged `{"text": …}` form must preserve it
-    // verbatim (equality with the original proves no silent decode happened).
+fn credential_text_value_that_looks_like_b64_prefix_deserializes_as_tagged_text() {
     let literal = Credential::from("b64:SGVsbG8=");
-    let json = serde_json::to_string(&literal).expect("serialize");
-    // New writers must emit the tagged text form, not the ambiguous legacy one.
-    assert!(
-        json.contains("\"text\""),
-        "a UTF-8 credential must serialize under the `text` tag, got {json}"
-    );
-    let back: Credential = serde_json::from_str(&json).expect("deserialize");
+    let error = serde_json::to_string(&literal)
+        .expect_err("implicit Credential output must fail closed")
+        .to_string();
+    assert!(!error.contains("b64:SGVsbG8="));
+
+    let back: Credential = serde_json::from_str(r#"{"text":"b64:SGVsbG8="}"#)
+        .expect("historical tagged text input");
     assert_eq!(
         back, literal,
-        "the `b64:`-looking text value must not be decoded"
+        "tagged `b64:`-looking text input must not be decoded"
     );
 }
 

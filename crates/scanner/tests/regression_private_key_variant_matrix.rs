@@ -47,7 +47,9 @@ fn scan(text: &str) -> Vec<keyhog_core::RawMatch> {
             ..Default::default()
         },
     };
-    scanner.scan(&chunk)
+    scanner
+        .scan(&chunk)
+        .expect("private-key variant scan should succeed")
 }
 
 fn detector_regex_matches(text: &str, detector_id: &str) -> bool {
@@ -80,6 +82,7 @@ fn scan_detector(text: &str, detector_id: &str) -> Vec<keyhog_core::RawMatch> {
             ..Default::default()
         },
     })
+        .expect("focused private-key detector scan should succeed")
 }
 
 /// The `private-key` capture for `text`, if the detector fired.

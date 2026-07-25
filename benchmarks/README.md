@@ -20,6 +20,7 @@ make ioc-recovery # compare all four keyhog presets on exact recovery
 make report     # render reports/ + inject the leaderboard into ../README.md
 make analyze    # print top FP/FN examples for detector tuning
 make test       # pytest the package (scorer truth, loaders, injection idempotence)
+make bloom KEYHOG_BIN=/absolute/path/to/keyhog # pinned CredData Bloom parity evidence
 make targets    # execute aspirational recall/competitor target specs (expected worklist)
 ```
 
@@ -33,6 +34,22 @@ into a private writable runtime directory and set `$KEYHOG_BIN` to that copy.
 The default test/release gate excludes tests marked `target_spec`; those are
 executable product targets, not claims that the current release already meets.
 Run them explicitly with `make targets`.
+
+## Bloom prefilter evidence
+
+`make bloom KEYHOG_BIN=/absolute/path/to/keyhog` rebuilds the canonical
+`samsung-creddata-fx-record-spans-v1` fixture from pinned CredData commit
+`f1de3f85dbdf42bf7b3467c0d273a4dfe44d56ee`, measures the production Bloom gate,
+and runs byte-identical enabled and diagnostic-bypass scans. It writes
+`results/bloom-creddata-fx-record-spans-v1.json` and
+`reports/bloom-creddata-fx-record-spans-v1.md` only after at least one real input
+is rejected and canonical finding identities match exactly.
+
+The receipt accounts for all declared records as measured or unavailable,
+categorizes every unavailable reason, and binds each finding identity to detector
+ID, source path, line, byte span, and a credential SHA-256. Credential plaintext
+is never written. A missing source file, revision mismatch, zero rejection, or
+finding mismatch fails the command instead of publishing partial evidence.
 
 ## What it measures
 
@@ -53,6 +70,12 @@ Run them explicitly with `make targets`.
   preset, effective detection values, and compatible overrides from the
   report's `resolved_scan` object. A mode label alone is never treated as proof
   that two runs used the same detection policy.
+- **Bounded static recovery:** current KeyHog rows carry the versioned
+  `static_recovery` object with exact supported, unsupported, erroneous, and
+  per-reason rejection counts from the normal scan artifact. The schema checks
+  disposition/reason conservation and `static-recovery.md` renders exact zeroes.
+  Selected `bench-v3` artifacts predate this telemetry and are labeled legacy;
+  the report never substitutes invented zeroes.
 - **Execution route:** each KeyHog result records whether execution was
   in-process or daemon-served. A daemon result also records the owned server
   PID and exactly two served requests (one warmup, one timed scan).
@@ -158,7 +181,7 @@ benchmarks/
     ioc_recovery/         deterministic P0-P12 JavaScript recovery generator
   corpora/                generated data (git-ignored; reproducible through Make targets)
   results/<host>/         one RunResult JSON per run (git-ignored; regenerable)
-  reports/                generated markdown (committed): leaderboard.md · perf.md · recall-gap.md
+  reports/                generated markdown: leaderboard · perf · recall-gap · category-recall · static-recovery
   baselines/              committed known-good scoreboard anchors (regression history)
 ```
 
@@ -360,8 +383,8 @@ vectors without manual babysitting:
 
 - **detection / differential:** `differential-bench` (nightly): `bench gate`
   fails red if a competitor overtakes keyhog on F1 **or** keyhog regresses past
-  `baselines/mirror-keyhog-baseline.json` (the committed anchor; ratchet it up
-  after a real gain, never down to hide one).
+  `baselines/canonical.toml` (the committed anchor; ratchet it up after a real
+  gain, never down to hide one). The active file is `mirror-keyhog-baseline.json`.
 - **leaderboard + speed/RSS:** `bench-nightly` (nightly): renders the tables.
 - **strict recall under evasion:** `runners-nightly` (the Rust strict matrix).
 - **exact secret recovery:** `bench-nightly` (the P0-P12 full/fast/deep/precision matrix).

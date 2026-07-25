@@ -34,6 +34,7 @@ pub mod file_gate;
 pub mod filesystem;
 pub mod filesystem_filter;
 pub mod filesystem_filter_generated;
+pub mod filesystem_read;
 pub mod gates;
 pub mod git_diff;
 pub mod git_diff_head_worktree;

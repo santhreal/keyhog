@@ -63,7 +63,7 @@ fn scan_windowed_overlap_dedups_end_to_end() {
     };
 
     scanner.clear_fragment_cache();
-    let raw = scanner.scan(&chunk);
+    let raw = scanner.scan(&chunk).expect("test scan succeeds");
     let raw_rows = raw
         .iter()
         .filter(|m| m.detector_id.as_ref() == "windowed-overlap-token")

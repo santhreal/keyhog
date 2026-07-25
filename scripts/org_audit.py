@@ -189,14 +189,26 @@ def check_install_fixture_backend_labels(violations: list[str]) -> None:
         fail(violations, f"installer fixture uses retired GPU backend label: {fixture}")
 
 
+def workflow_requires_competitor_evidence(workflow: str) -> bool:
+    """Accept direct CLI wiring or the canonical Make target's exact variable."""
+    return (
+        "--require-competitors betterleaks,kingfisher" in workflow
+        or "REQUIRE_COMPETITORS=betterleaks,kingfisher" in workflow
+    )
+
+
 def check_required_evidence_wiring(violations: list[str]) -> None:
     workflow = text(".github/workflows/differential-bench.yml")
-    for required in [
-        "keyhog,betterleaks,kingfisher",
-        "--require-competitors betterleaks,kingfisher",
-    ]:
-        if required not in workflow:
-            fail(violations, f"differential-bench workflow missing required evidence: {required}")
+    if "keyhog,betterleaks,kingfisher" not in workflow:
+        fail(
+            violations,
+            "differential-bench workflow missing required evidence: keyhog,betterleaks,kingfisher",
+        )
+    if not workflow_requires_competitor_evidence(workflow):
+        fail(
+            violations,
+            "differential-bench workflow missing required BetterLeaks and Kingfisher evidence",
+        )
 
     makefile = text("benchmarks/Makefile")
     for required in [

@@ -184,7 +184,7 @@ corpus; there is no separate `keyhog-detectors` crate.)
 Minimal scan:
 
 ```rust,ignore
-use keyhog_core::{Chunk, ChunkMetadata};
+use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::CompiledScanner;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -204,7 +204,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ..Default::default()
         },
     };
-    for m in scanner.scan(&chunk) {
+    let matches = scanner.scan(&chunk)?;
+    for m in &matches {
         println!(
             "{}:{} (detector {})",
             m.location.file_path.as_deref().unwrap_or("<memory>"),
@@ -212,6 +213,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             m.detector_id
         );
     }
+    // RawMatch stays in process; this projection is safe to serialize or report.
+    let _report_safe: Vec<_> = matches.iter().map(RawMatch::to_redacted).collect();
     Ok(())
 }
 ```
@@ -222,11 +225,19 @@ by design.
 
 The no-backend `scan` and `scan_coalesced` methods are deterministic portable
 CPU calls. Explicit `scan_with_backend` and `scan_coalesced_with_backend` calls
-are infallible at the type level and therefore enforce selection as a process
-contract: missing selected SIMD exits `3`, while unavailable or failed selected
-GPU execution exits `12`. They do not substitute another engine. Probe startup
-eligibility with `warm_backend`; isolate the CLI in a subprocess when the host
-application must survive a later accelerator runtime failure.
+return typed `ScanError` values when a selected backend cannot initialize or
+finish. They never terminate the embedding process and never substitute a
+different engine. You can probe startup eligibility with `warm_backend`; the
+CLI owns the separate mapping from terminal scanner errors to process exit
+status.
+
+Successful calls return `Vec<RawMatch>` inside the typed `Result`. `Credential`,
+`SensitiveString`, raw or deduplicated matches, and source `Chunk` values can
+contain plaintext or encoded secret bytes and therefore refuse implicit serde
+output. Convert raw matches with `RawMatch::to_redacted`, or emit the
+verification pipeline's `VerifiedFinding`, before JSON, logging, disk, or
+network output. Only a protected private protocol should explicitly reveal
+secret bytes.
 
 For finer-grained control of individual detector features:
 

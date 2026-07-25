@@ -83,7 +83,7 @@ fn find_companion_window_lookup_is_not_linear_in_file_lines() {
     // `line_window_offsets` scan, NOT regex work. The regex never matches, so
     // we exercise the full window-resolution path on every call.
     let companion = CompiledCompanion {
-        name: "audit-companion".to_string(),
+        name: Arc::from("audit-companion"),
         regex: Regex::new("ZZZ_NO_MATCH_ZZZ").expect("valid regex"),
         capture_group: None,
         within_lines: 1,

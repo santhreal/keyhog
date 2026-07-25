@@ -170,10 +170,10 @@ fn scan_both(scanner: &CompiledScanner, chunk: &Chunk) -> (Vec<Key>, Vec<Key>) {
     keyhog_scanner::testing::set_phase2_hs(&scanner, Some(false));
     keyhog_scanner::testing::set_homoglyph_ascii_skip(&scanner, Some(false));
     scanner.clear_fragment_cache();
-    let off = canonical(&scanner.scan_with_backend(chunk, ScanBackend::CpuFallback));
+    let off = canonical(&scanner.scan_with_backend(chunk, ScanBackend::CpuFallback).expect("selected backend scan succeeds"));
     keyhog_scanner::testing::set_homoglyph_ascii_skip(&scanner, Some(true));
     scanner.clear_fragment_cache();
-    let on = canonical(&scanner.scan_with_backend(chunk, ScanBackend::CpuFallback));
+    let on = canonical(&scanner.scan_with_backend(chunk, ScanBackend::CpuFallback).expect("selected backend scan succeeds"));
     keyhog_scanner::testing::set_homoglyph_ascii_skip(&scanner, None);
     (on, off)
 }
@@ -187,10 +187,10 @@ fn scan_both_hs(scanner: &CompiledScanner, chunk: &Chunk) -> (Vec<Key>, Vec<Key>
     keyhog_scanner::testing::set_phase2_hs(scanner, Some(true));
     keyhog_scanner::testing::set_homoglyph_ascii_skip(scanner, Some(false));
     scanner.clear_fragment_cache();
-    let off = canonical(&scanner.scan_with_backend(chunk, ScanBackend::SimdCpu));
+    let off = canonical(&scanner.scan_with_backend(chunk, ScanBackend::SimdCpu).expect("selected backend scan succeeds"));
     keyhog_scanner::testing::set_homoglyph_ascii_skip(scanner, Some(true));
     scanner.clear_fragment_cache();
-    let on = canonical(&scanner.scan_with_backend(chunk, ScanBackend::SimdCpu));
+    let on = canonical(&scanner.scan_with_backend(chunk, ScanBackend::SimdCpu).expect("selected backend scan succeeds"));
     keyhog_scanner::testing::set_homoglyph_ascii_skip(scanner, None);
     keyhog_scanner::testing::set_phase2_hs(scanner, None);
     (on, off)

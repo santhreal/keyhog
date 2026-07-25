@@ -1,5 +1,5 @@
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, SensitiveString, Severity};
-use keyhog_scanner::decode::Decoder;
+use keyhog_scanner::decode::{DecodeOutputSink, Decoder};
 use keyhog_scanner::telemetry::{self, DogfoodEvent, ScanTelemetry};
 use keyhog_scanner::testing::register_thread_decoder;
 use keyhog_scanner::{CompiledScanner, ScannerConfig};
@@ -14,12 +14,12 @@ impl Decoder for ReversePlaceholderDecoder {
         "postprocess_reverse_placeholder"
     }
 
-    fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
+    fn decode_chunk_into(&self, chunk: &Chunk, sink: &mut dyn DecodeOutputSink) {
         if chunk.metadata.source_type.contains("postprocess-reverse") {
-            return Vec::new();
+            return;
         }
 
-        vec![Chunk {
+        sink.push(Chunk {
             data: SensitiveString::from(format!("decoded = \"{REVERSED_EXAMPLE_CREDENTIAL}\"")),
             metadata: ChunkMetadata {
                 source_type: format!("{}/postprocess-reverse/reverse", chunk.metadata.source_type)
@@ -27,7 +27,7 @@ impl Decoder for ReversePlaceholderDecoder {
                 path: chunk.metadata.path.clone(),
                 ..Default::default()
             },
-        }]
+        });
     }
 }
 
@@ -77,7 +77,8 @@ fn decoded_reverse_placeholder_drop_records_adjudicator_example_suppression() {
 
     let trace = Arc::new(ScanTelemetry::new());
     trace.enable_dogfood();
-    let matches = telemetry::with_scan_telemetry(&trace, || scanner.scan(&root_chunk()));
+    let matches = telemetry::with_scan_telemetry(&trace, || scanner.scan(&root_chunk()))
+        .expect("decode suppression-trace regression scan succeeds");
     assert!(
         matches.is_empty(),
         "reverse-decoded documentation placeholder must be suppressed, got {matches:?}"

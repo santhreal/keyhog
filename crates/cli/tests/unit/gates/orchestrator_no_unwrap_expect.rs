@@ -1,14 +1,21 @@
 //! Gate `orchestrator`: no .unwrap( / .expect( in production source lines.
 
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
+
 #[test]
 fn orchestrator_no_unwrap_expect() {
-    let root = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/src/orchestrator"));
+    let root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/src/orchestrator"));
     let mut files = Vec::new();
     collect_rust_sources(&root, &mut files);
     files.sort();
+    let external_test_modules = externally_split_test_modules(&files);
 
     let mut offenders: Vec<(String, usize, String)> = Vec::new();
     for path in files {
+        if external_test_modules.contains(&path) {
+            continue;
+        }
         let display = path
             .strip_prefix(concat!(env!("CARGO_MANIFEST_DIR"), "/"))
             .map(|p| p.display().to_string())
@@ -55,7 +62,62 @@ fn orchestrator_no_unwrap_expect() {
     );
 }
 
-fn collect_rust_sources(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+fn externally_split_test_modules(files: &[PathBuf]) -> BTreeSet<PathBuf> {
+    let mut test_modules = BTreeSet::new();
+    for owner in files {
+        let source = std::fs::read_to_string(owner)
+            .unwrap_or_else(|error| panic!("{} source readable: {error}", owner.display()));
+        let mut pending_cfg_test = false;
+        let mut explicit_path: Option<&str> = None;
+        for line in source.lines() {
+            let trimmed = line.trim();
+            if trimmed == "#[cfg(test)]" {
+                pending_cfg_test = true;
+                explicit_path = None;
+                continue;
+            }
+            if !pending_cfg_test {
+                continue;
+            }
+            if let Some(path) = trimmed
+                .strip_prefix("#[path = \"")
+                .and_then(|rest| rest.strip_suffix("\"]"))
+            {
+                explicit_path = Some(path);
+                continue;
+            }
+            if trimmed.starts_with("#[") {
+                continue;
+            }
+            if let Some(name) = trimmed
+                .strip_prefix("mod ")
+                .and_then(|rest| rest.strip_suffix(';'))
+            {
+                let parent = owner.parent().expect("Rust source has parent directory");
+                let candidate = explicit_path.map_or_else(
+                    || {
+                        if owner.file_name().and_then(|name| name.to_str()) == Some("mod.rs") {
+                            parent.join(format!("{name}.rs"))
+                        } else {
+                            parent
+                                .join(owner.file_stem().expect("Rust source has a file stem"))
+                                .join(format!("{name}.rs"))
+                        }
+                    },
+                    |path| parent.join(path),
+                );
+                if candidate.is_file() {
+                    test_modules.insert(candidate);
+                }
+            }
+            pending_cfg_test = false;
+            explicit_path = None;
+        }
+    }
+    test_modules
+}
+
+fn collect_rust_sources(dir: &Path, out: &mut Vec<PathBuf>) {
     for entry in std::fs::read_dir(dir)
         .unwrap_or_else(|error| panic!("read orchestrator dir {}: {error}", dir.display()))
     {

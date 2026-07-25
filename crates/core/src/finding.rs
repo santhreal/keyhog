@@ -103,16 +103,58 @@ pub struct RawMatchDedupKey<'a> {
     pub credential: &'a str,
 }
 
+/// Companion values keyed by scanner-compiled, reference-counted names.
+///
+/// Names are immutable detector metadata. Sharing them keeps repeated findings
+/// from allocating and copying the same key while preserving the map's string
+/// keys at serialization and reporting boundaries.
+pub type CompanionMap = HashMap<Arc<str>, String>;
+
+mod serde_companion_map {
+    use super::CompanionMap;
+    use serde::ser::SerializeMap;
+    use serde::{Deserialize, Serializer};
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    pub(super) fn serialize<S>(
+        companions: &CompanionMap,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(Some(companions.len()))?;
+        for (name, value) in companions {
+            map.serialize_entry(name.as_ref(), value)?;
+        }
+        map.end()
+    }
+
+    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<CompanionMap, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        HashMap::<String, String>::deserialize(deserializer).map(|companions| {
+            companions
+                .into_iter()
+                .map(|(name, value)| (Arc::from(name), value))
+                .collect()
+        })
+    }
+}
+
 /// A raw pattern match before verification or deduplication.
 ///
 /// `entropy` and `confidence` are stored as `f64` but are guaranteed never to
 /// be `NaN` (sanitized at construction time). This keeps the manual `Eq` impl
 /// reflexive, which downstream code relies on for `HashMap`/`BTreeMap` keys.
 ///
-/// Manual `Debug` impl redacts the `credential` field - the previous
-/// derive-`Debug` was a CRITICAL leak vector (any `{:?}` print, panic
-/// handler, or `tracing::error!(?match)` would expose plaintext). See
-/// audit kimi-wave1 finding 1.1.
+/// Serde is deliberately asymmetric: `Deserialize` accepts historical
+/// protected-wire input for compatibility, while implicit `Serialize` fails
+/// closed through `SensitiveString` and cannot emit plaintext. Manual `Debug`
+/// also redacts the credential. Use [`Self::to_redacted`] before any disk,
+/// network, log, or report output boundary.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct RawMatch {
     /// Stable detector identifier.
@@ -133,10 +175,11 @@ pub struct RawMatch {
     /// Stored as the raw 32 inline bytes (matching the verifier `CacheKey`),
     /// never the 64-char hex `String`: zero heap, half the per-finding
     /// footprint, no per-match allocation on the pre-dedup hot path. Hex
-    /// encoding happens lazily at the serde/reporter boundary only.
+    /// encoding happens lazily at the redacted/report boundary only.
     pub credential_hash: CredentialHash,
     /// Companion credential or context value extracted nearby.
-    pub companions: std::collections::HashMap<String, String>,
+    #[serde(with = "serde_companion_map")]
+    pub companions: CompanionMap,
     /// Source location for the match.
     pub location: MatchLocation,
     /// Shannon entropy of the matched credential (0.0 - 8.0). NaN-sanitized.
@@ -231,10 +274,7 @@ fn opt_f64_total_cmp(a: Option<f64>, b: Option<f64>) -> std::cmp::Ordering {
     }
 }
 
-fn companion_map_cmp(
-    a: &std::collections::HashMap<String, String>,
-    b: &std::collections::HashMap<String, String>,
-) -> std::cmp::Ordering {
+fn companion_map_cmp(a: &CompanionMap, b: &CompanionMap) -> std::cmp::Ordering {
     if a == b {
         return std::cmp::Ordering::Equal;
     }
@@ -252,22 +292,22 @@ fn companion_map_cmp(
     for _ in 0..a.len() {
         let Some(a_entry) = a
             .iter()
-            .filter(|(key, _)| a_after.is_none_or(|after| key.as_str() > after))
+            .filter(|(key, _)| a_after.is_none_or(|after| key.as_ref() > after))
             .min_by(|left, right| left.0.cmp(right.0))
         else {
             return std::cmp::Ordering::Equal;
         };
         let Some(b_entry) = b
             .iter()
-            .filter(|(key, _)| b_after.is_none_or(|after| key.as_str() > after))
+            .filter(|(key, _)| b_after.is_none_or(|after| key.as_ref() > after))
             .min_by(|left, right| left.0.cmp(right.0))
         else {
             return std::cmp::Ordering::Equal;
         };
         match a_entry.cmp(&b_entry) {
             std::cmp::Ordering::Equal => {
-                a_after = Some(a_entry.0.as_str());
-                b_after = Some(b_entry.0.as_str());
+                a_after = Some(a_entry.0.as_ref());
+                b_after = Some(b_entry.0.as_ref());
             }
             ordering => return ordering,
         }
@@ -554,18 +594,24 @@ impl RawMatch {
 ///
 /// Keeping this transformation centralized prevents verifier, offline scan,
 /// and serialization paths from accidentally diverging on companion safety.
-pub fn redact_companions(
-    companions: &std::collections::HashMap<String, String>,
-) -> std::collections::HashMap<String, String> {
+pub fn redact_companions<K>(companions: &HashMap<K, String>) -> HashMap<String, String>
+where
+    K: AsRef<str> + Eq + std::hash::Hash,
+{
     companions
         .iter()
-        .map(|(key, value)| (key.clone(), crate::redact(value).into_owned()))
+        .map(|(key, value)| {
+            (
+                key.as_ref().to_string(),
+                crate::redact(value).into_owned(),
+            )
+        })
         .collect()
 }
 
 /// Redacted, disk-safe view of a `RawMatch`. Carries only the SHA-256 hash
-/// and a "first4...last4" preview, never the plaintext credential. This is
-/// the only finding shape that should ever leave keyhog's process boundary.
+/// and a "first4...last4" preview, never the plaintext credential. Use this
+/// before verification; [`VerifiedFinding`] is the final report-safe shape.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RedactedFinding {
     #[serde(with = "serde_arc_str")]

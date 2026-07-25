@@ -91,11 +91,13 @@ fn preprocess_multiline_inner<'a>(
         let (joined_line, lines_consumed, line_mappings) =
             process_line_chain(&lines, &source_line_offsets, index, config, current_offset);
 
+        let total_len = joined_line.len();
         if !joined_line.is_empty() {
-            let total_len = joined_line.len();
             mappings.extend(line_mappings);
-            current_offset += total_len + 1;
         }
+        // `join("\n")` inserts a separator for empty result lines too. Advance
+        // the mapping cursor for that byte so later synthetic spans stay exact.
+        current_offset += total_len + 1;
 
         result_lines.push(joined_line);
         index += lines_consumed.max(1);

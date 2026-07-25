@@ -24,7 +24,9 @@ fn aws_access_key_fires_on_canonical_shape() {
     };
 
     scanner.clear_fragment_cache();
-    let matches = scanner.scan(&chunk);
+    let matches = scanner
+        .scan(&chunk)
+        .expect("canonical AWS contract scan succeeds");
 
     let aws_hits: Vec<_> = matches
         .iter()

@@ -1312,7 +1312,7 @@ fn has_substantial_literal<'a>(
 fn validate_verify_spec(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
     if let Some(ref verify) = spec.verify {
         validate_verify_urls(spec, verify, issues);
-        validate_verify_success_statuses(verify, issues);
+        validate_verify_success_policies(verify, issues);
         validate_provider_evidence(verify, issues);
         issues.extend(
             crate::json_selector::validate_detector_response_selectors(spec)
@@ -1343,12 +1343,12 @@ fn validate_provider_evidence(verify: &VerifySpec, issues: &mut Vec<QualityIssue
     }
 }
 
-fn validate_verify_success_statuses(verify: &VerifySpec, issues: &mut Vec<QualityIssue>) {
+fn validate_verify_success_policies(verify: &VerifySpec, issues: &mut Vec<QualityIssue>) {
     if let Some(success) = &verify.success {
-        validate_success_status("verify.success", success, issues);
+        validate_success_policy("verify.success", success, issues);
     }
     for (step_index, step) in verify.steps.iter().enumerate() {
-        validate_success_status(
+        validate_success_policy(
             &format!("verify.steps[{step_index}].success"),
             &step.success,
             issues,
@@ -1356,13 +1356,52 @@ fn validate_verify_success_statuses(verify: &VerifySpec, issues: &mut Vec<Qualit
     }
 }
 
-fn validate_success_status(
+fn validate_success_policy(
     scope: &str,
     success: &super::SuccessSpec,
     issues: &mut Vec<QualityIssue>,
 ) {
     validate_http_status(scope, "status", success.status, issues);
     validate_http_status(scope, "status_not", success.status_not, issues);
+
+    let has_body_positive = success
+        .body_contains
+        .as_deref()
+        .is_some_and(|needle| !needle.is_empty())
+        || success.json_path.is_some();
+    let has_any_body_constraint = success.body_contains.is_some()
+        || success.body_not_contains.is_some()
+        || success.json_path.is_some()
+        || success.equals.is_some();
+
+    match success.policy {
+        None => issues.push(QualityIssue::Error(format!(
+            "{scope}.policy must classify success as body_positive, status_with_error_backstop, or status_authoritative"
+        ))),
+        Some(super::SuccessPolicy::BodyPositive) => {
+            if !has_body_positive {
+                issues.push(QualityIssue::Error(format!(
+                    "{scope}.policy=body_positive requires stable positive evidence with non-empty body_contains or json_path"
+                )));
+            }
+        }
+        Some(
+            policy
+            @ (super::SuccessPolicy::StatusWithErrorBackstop
+                | super::SuccessPolicy::StatusAuthoritative),
+        ) => {
+            if success.status.is_none() {
+                issues.push(QualityIssue::Error(format!(
+                    "{scope}.policy={policy:?} requires an accepted status; status_not alone would treat unrelated responses as success"
+                )));
+            }
+            if has_any_body_constraint {
+                issues.push(QualityIssue::Error(format!(
+                    "{scope}.policy={policy:?} cannot be combined with body_contains, body_not_contains, json_path, or equals"
+                )));
+            }
+        }
+    }
 }
 
 fn validate_http_status(

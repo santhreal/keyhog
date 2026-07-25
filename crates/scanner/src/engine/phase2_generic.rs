@@ -102,6 +102,7 @@ impl CompiledScanner {
             // truncate the candidate. Pure ASCII remains borrowed and offsets stay raw.
             let normalized_line = crate::unicode_hardening::normalize_homoglyphs(raw_line);
             let line: &str = &normalized_line;
+            let mut covered_until = 0;
 
             for (capture_iter, caps) in generic_re.captures_iter(line).enumerate() {
                 if crate::deadline::expired_on_cadence(
@@ -119,18 +120,12 @@ impl CompiledScanner {
                 let Some(keyword_match) = caps.get(1) else {
                     continue;
                 };
+                if keyword_match.start() < covered_until {
+                    continue;
+                }
                 let Some(value_match) = caps.get(2) else {
                     continue;
                 };
-                // Whole-word left boundary, enforced ONLY for the short,
-                // substring-ambiguous abbreviation `pass` (the tail of
-                // `bypass`/`compass`/`surpass`/...). The longer keywords
-                // (`password`, `token`, `secret`, `api_key`, ...) deliberately
-                // keep substring matching so concatenated no-separator keys like
-                // `DBPASSWORD=` / `apitoken=` still bridge, measured on CredData,
-                // enforcing the boundary on every keyword cost ~36 real positives
-                // for no precision gain. `pass` alone needs the guard because its
-                // false-substring family (`bypass=`/`compass=`) is common.
                 let keyword = keyword_match.as_str();
                 if crate::adjudicate::generic_bridge_keyword_boundary_rejected(
                     keyword,
@@ -147,7 +142,13 @@ impl CompiledScanner {
                     );
                     continue;
                 }
-                let value = value_match.as_str();
+                let whole_value = crate::detector_execution_policy::whole_assignment_value(
+                    line,
+                    value_match.start(),
+                    value_match.end(),
+                );
+                covered_until = covered_until.max(whole_value.covered_end);
+                let value = whole_value.as_str(line);
                 // Resolve the detector before any detector-specific value gate.
                 // The bare-auth bridge must use the same compiled TOML policy as
                 // the entropy, shape, and BPE stages below.
@@ -164,23 +165,48 @@ impl CompiledScanner {
                 let detector_plan = self.detector_plans.get(owning_detector_index);
                 let execution_policy = &detector_plan.execution;
                 let metadata = &detector_plan.metadata;
-                let length_stage = match execution_policy.length.rejection(value.len()) {
+                let preprocessed_offset = line_offset + whole_value.start;
+                let source_start =
+                    preprocessed.source_offset_for_match(&chunk.data, preprocessed_offset, value);
+                let source_end = source_start + value.len();
+                let source_whole = chunk
+                    .data
+                    .get(source_start..source_end)
+                    .filter(|source_value| *source_value == value)
+                    .map(|_| {
+                        crate::detector_execution_policy::whole_assignment_value(
+                            &chunk.data,
+                            source_start,
+                            source_end,
+                        )
+                    });
+                let candidate_len =
+                    source_whole.map_or(value.len(), |span| span.end - span.start);
+                let partial_source_value =
+                    source_whole.is_some_and(|span| !span.is_exact(source_start, source_end));
+                let telemetry_value =
+                    source_whole.map_or(value, |span| span.as_str(&chunk.data));
+                let length_stage = match execution_policy.length.rejection(candidate_len) {
                     Some(crate::detector_execution_policy::CandidateLengthRejection::TooShort) => {
-                        Some(crate::adjudicate::GenericValueShapeStage::ValueTooShort)
+                        Some(crate::adjudicate::StageId::GenericValueShape(
+                            crate::adjudicate::GenericValueShapeStage::ValueTooShort,
+                        ))
                     }
                     Some(crate::detector_execution_policy::CandidateLengthRejection::TooLong) => {
-                        Some(crate::adjudicate::GenericValueShapeStage::ValueTooLong)
+                        Some(crate::adjudicate::StageId::GenericValueShape(
+                            crate::adjudicate::GenericValueShapeStage::ValueTooLong,
+                        ))
+                    }
+                    None if partial_source_value => {
+                        Some(crate::adjudicate::StageId::PartialGenericAssignmentValue)
                     }
                     None => None,
                 };
-                if let Some(stage) = length_stage {
-                    let generic_ctx = crate::adjudicate::MatchCtx::for_generic_bridge(
-                        crate::adjudicate::GenericBridgeSignal::ValueShape(stage),
-                    );
+                if let Some(stage_id) = length_stage {
                     crate::adjudicate::record_suppression(
                         chunk.metadata.path.as_deref(),
-                        value,
-                        &generic_ctx,
+                        telemetry_value,
+                        &crate::adjudicate::MatchCtx::for_stage(stage_id),
                     );
                     continue;
                 }
@@ -191,7 +217,6 @@ impl CompiledScanner {
                     );
                     continue;
                 };
-                let preprocessed_offset = line_offset + value_match.start();
                 let transport_decoded =
                     preprocessed.transport_decoded_for_offset(preprocessed_offset);
                 if crate::adjudicate::generic_bridge_bare_auth_rejected(
@@ -251,7 +276,7 @@ impl CompiledScanner {
                     );
 
                 let exact_structural_slot = |pattern: &crate::types::CompiledPattern| {
-                    pattern.captures_exact_slot(line, value_match.start(), value_match.end())
+                    pattern.captures_exact_slot(line, whole_value.start, whole_value.end)
                 };
                 let structural_password_slot = execution_policy.structural_password_slot
                     || self.structural_confirmed_patterns[owning_detector_index]
@@ -264,7 +289,7 @@ impl CompiledScanner {
                 // Surface every generic shape rejection through dogfood accounting.
                 let shape_rejected = if self
                     .detector_plans
-                    .assignment_has_public_identifier(line.as_bytes(), value_match.start())
+                    .assignment_has_public_identifier(line.as_bytes(), whole_value.start)
                 {
                     Some(crate::adjudicate::GenericValueShapeStage::PublicIdentifierAssignment)
                 } else {
@@ -433,7 +458,7 @@ impl CompiledScanner {
                     .flatten()
                 {
                     let ml_features = crate::types::ml_features_for_candidate(
-                        scan_text,
+                        scan_text, line_offsets,
                         line_idx,
                         chunk.metadata.path.as_deref(),
                         value,
@@ -443,9 +468,23 @@ impl CompiledScanner {
                         ml_policy.features,
                         crate::ml_scorer::MlCandidateChannel::Pattern,
                     );
-                    let raw = build_raw(scan_state, policy_conf);
+                    let pending_raw_match =
+                        crate::pipeline::build_pending_synthetic_raw_match(
+                            (
+                                Arc::clone(&metadata.0),
+                                Arc::clone(&metadata.1),
+                                Arc::clone(&metadata.2),
+                            ),
+                            execution_policy.severity,
+                            chunk,
+                            value,
+                            absolute_offset,
+                            Some(line_number),
+                            Some(entropy),
+                            scan_state,
+                        );
                     let inserted = scan_state.push_detector_ml_pending(
-                        raw,
+                        pending_raw_match,
                         policy_conf,
                         context,
                         detector_plan.match_confidence.context_multiplier(context),

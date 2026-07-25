@@ -281,9 +281,9 @@ impl CompiledScanner {
             return None;
         }
         let mut offsets = std::collections::HashSet::new();
-        scan_state.for_each_produced_match(|m| {
-            if let Some(&detector_index) = detector_by_id.get(m.detector_id.as_ref()) {
-                offsets.insert((detector_index, m.location.offset));
+        scan_state.for_each_produced_match(|produced| {
+            if let Some(&detector_index) = detector_by_id.get(produced.detector_id) {
+                offsets.insert((detector_index, produced.offset));
             }
         });
         (!offsets.is_empty()).then_some(offsets)

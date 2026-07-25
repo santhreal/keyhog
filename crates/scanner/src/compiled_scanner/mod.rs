@@ -24,7 +24,7 @@ use crate::engine::CompiledScanner;
 use crate::engine::Phase2HsEngine;
 use crate::engine::{
     build_confirmed_suffix_gate, derive_pattern_boundary_context, phase2, profile,
-    require_selected_gpu_stack, ConfirmedAnchorIndex, CsrU32, Phase1Admission, Phase2AnchorIndex,
+    ConfirmedAnchorIndex, CsrU32, Phase1Admission, Phase2AnchorIndex,
 };
 #[cfg(feature = "gpu")]
 use crate::engine::{

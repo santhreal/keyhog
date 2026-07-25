@@ -87,6 +87,7 @@ pub fn scan_ids(text: &str) -> Vec<(String, String)> {
     let chunk: Chunk = make_chunk(text, "source", "vendor.env");
     s.clear_fragment_cache();
     s.scan(&chunk)
+        .expect("vendor detector probe scan succeeds")
         .into_iter()
         .map(|m| (m.detector_id.to_string(), m.credential.as_str().to_string()))
         .collect()

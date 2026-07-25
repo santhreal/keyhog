@@ -42,6 +42,7 @@ template = "Bearer {{match}}"
 
 [detector.verify.success]
 status = 200
+policy = "status_with_error_backstop"
 
 [[detector.tests]]
 test_positive = "CROWDIN_API_TOKEN = 3b70df2c347b7e02b642198793dc0b8a9827bb4c"

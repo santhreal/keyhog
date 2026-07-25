@@ -54,7 +54,7 @@ fn scan(body: String, path: &str) -> Vec<keyhog_core::RawMatch> {
             ..Default::default()
         },
     };
-    shared_scanner().scan(&chunk)
+    shared_scanner().scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"))
 }
 
 /// Set of placeholder / sentinel detector_id values that must never

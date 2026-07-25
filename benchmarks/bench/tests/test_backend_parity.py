@@ -30,6 +30,7 @@ build). Both checked; absence skips the module with the reason.
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import subprocess
 
@@ -342,14 +343,30 @@ def backend_findings():
     return out
 
 
-def test_fused_autoroute_calibration_cache_replay_matches_simd(tmp_path):
-    binary = _current_keyhog_binary()
-    root = tmp_path / "fused-fixture"
+_AUTOROUTE_TIMING_FIXTURE_ENV = "KEYHOG_CI_AUTOROUTE_TIMING_FIXTURE"
+_AUTOROUTE_TIMING_FIXTURE_AUTH_ENV = "KEYHOG_CI_AUTOROUTE_FIXTURE_AUTH"
+_AUTOROUTE_TIMING_FIXTURE_AUTH = "bench-backend-parity-v1"
+
+
+def _autoroute_timing_fixture_env(fixture: str) -> dict[str, str]:
+    return {
+        _AUTOROUTE_TIMING_FIXTURE_ENV: fixture,
+        _AUTOROUTE_TIMING_FIXTURE_AUTH_ENV: _AUTOROUTE_TIMING_FIXTURE_AUTH,
+    }
+
+
+def _write_fused_autoroute_fixture(root: pathlib.Path) -> None:
     root.mkdir()
     secret = "AWS_ACCESS_KEY_ID=AKIAKPQXRMSNTBVWYZBN\n"
     for index in range(40):
         body = secret if index in {0, 33} else f"clean_{index}=not_a_secret\n"
         (root / f"fixture-{index:02}.env").write_text(body)
+
+
+def test_fused_autoroute_calibration_cache_replay_matches_simd(tmp_path):
+    binary = _current_keyhog_binary()
+    root = tmp_path / "fused-fixture"
+    _write_fused_autoroute_fixture(root)
 
     cache = tmp_path / "autoroute.json"
     autoroute_args = ["--autoroute-cache", str(cache)]
@@ -358,16 +375,102 @@ def test_fused_autoroute_calibration_cache_replay_matches_simd(tmp_path):
     simd = _scan(binary, "simd", root)
     assert simd, "bounded fused fixture must produce real findings on the simd reference path"
 
-    calibrated = _scan(binary, "auto", root, extra_args=calibration_args)
+    # Regression: real host timings can overlap legitimately, so success/replay
+    # cannot depend on scheduler luck. The explicit test-only fixture replaces
+    # timing evidence after every real candidate scan and parity receipt with
+    # confidence-separated trials; route confidence selection still runs.
+    calibrated = _scan(
+        binary,
+        "auto",
+        root,
+        extra_args=calibration_args,
+        extra_env=_autoroute_timing_fixture_env("confidence-separated-v1"),
+    )
     assert calibrated == simd, (
         "fused autoroute calibration must scan the same production batch shape "
-        "and preserve the simd finding set")
-    assert cache.exists(), "fused autoroute calibration must persist a cache file"
+        "and preserve the simd finding set"
+    )
+    assert cache.exists(), "confidence-supported calibration must persist a cache file"
 
     replayed = _scan(binary, "auto", root, extra_args=autoroute_args)
     assert replayed == simd, (
         "default fused auto replay must consume the persisted calibration cache "
-        "and preserve the simd finding set")
+        "and preserve the simd finding set"
+    )
+
+
+def test_fused_autoroute_inconclusive_timing_fails_closed(tmp_path):
+    binary = _current_keyhog_binary()
+    root = tmp_path / "noisy-fused-fixture"
+    _write_fused_autoroute_fixture(root)
+    cache = tmp_path / "autoroute.json"
+
+    # Negative twin: candidate execution and parity remain real, while injected
+    # distinct-median, overlapping-interval trials model a noisy host. No route
+    # may be forced or published from that evidence.
+    completed = subprocess.run(
+        [
+            binary,
+            "scan",
+            "--backend",
+            "auto",
+            "--daemon=off",
+            "--no-config",
+            "--format",
+            "json",
+            "--autoroute-cache",
+            str(cache),
+            "--autoroute-calibrate",
+            str(root),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env={**os.environ, **_autoroute_timing_fixture_env("overlapping-v1")},
+    )
+
+    detail = completed.stderr
+    assert completed.returncode == 2, detail
+    assert completed.stdout == ""
+    assert "autoroute calibration did not persist a routing decision" in detail
+    assert (
+        "calibration timing is inconclusive: neither one exact route nor one backend "
+        "with its compiled default plan is confidence-supported at 95%"
+    ) in detail
+    assert "rerun `keyhog calibrate-autoroute`" in detail
+    assert "explicit `--backend` only for a diagnostic scan" in detail
+    assert not cache.exists(), "inconclusive calibration must publish no routing cache"
+
+
+def test_fused_autoroute_timing_fixture_requires_authorization(tmp_path):
+    binary = _current_keyhog_binary()
+    root = tmp_path / "unauthorized-fused-fixture"
+    _write_fused_autoroute_fixture(root)
+    cache = tmp_path / "autoroute.json"
+
+    # The ci-lean seam is inert unless the benchmark contract supplies its
+    # independent authorization value; an ambient fixture name cannot alter
+    # routing evidence or create a cache.
+    with pytest.raises(RuntimeError) as raised:
+        _scan(
+            binary,
+            "auto",
+            root,
+            extra_args=[
+                "--autoroute-cache",
+                str(cache),
+                "--autoroute-calibrate",
+            ],
+            extra_env={
+                _AUTOROUTE_TIMING_FIXTURE_ENV: "confidence-separated-v1",
+            },
+        )
+
+    detail = str(raised.value)
+    assert "timed scan exited 2" in detail
+    assert "test-only autoroute timing fixture authorization failed" in detail
+    assert _AUTOROUTE_TIMING_FIXTURE_AUTH_ENV in detail
+    assert not cache.exists(), "unauthorized fixture input must publish no routing cache"
 
 
 @pytest.mark.skipif(not _AVAILABLE, reason="CredData corpus not on disk, backend parity cannot run")

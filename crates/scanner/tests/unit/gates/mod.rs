@@ -150,8 +150,6 @@ pub mod prefix_trie_no_inline_tests;
 pub mod prefix_trie_no_unwrap_expect;
 pub mod probabilistic_gate_no_inline_tests;
 pub mod probabilistic_gate_no_unwrap_expect;
-pub mod process_exit_no_inline_tests;
-pub mod process_exit_no_unwrap_expect;
 pub mod production_source_substantive_stub_free;
 pub mod resolution_no_inline_tests;
 pub mod resolution_no_unwrap_expect;

@@ -125,11 +125,9 @@ fn test_verify_deeply_nested_interpolations_inner() {
             };
 
             let engine = VerificationEngine::new(&[spec], VerifyConfig { danger_allow_private_ips: true, danger_allow_http: true, ..Default::default() }).unwrap();
-            let mut comps = HashMap::new();
-            // If the template engine is recursive and not bound limited, this could cause OOM or timeout.
-            // The prompt mentions `interpolate` has a 1024 replacement limit, let's test it.
-            comps.insert("a".to_string(), "{{companion.b}}".to_string());
-            comps.insert("b".to_string(), "{{companion.a}}".to_string());
+            let mut comps = HashMap::<Arc<str>, String>::new();
+            comps.insert(Arc::from("a"), "{{companion.b}}".to_string());
+            comps.insert(Arc::from("b"), "{{companion.a}}".to_string());
 
             let group = DedupedMatch {
                 detector_id: Arc::from("det_interp"),

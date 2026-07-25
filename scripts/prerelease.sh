@@ -145,35 +145,16 @@ sed_inplace() {
 }
 
 validate_crate_changelogs() {
-  python3 - \
+  local -a mode=()
+  if ! grep -q '^## \[Unreleased\]$' CHANGELOG.md; then
+    mode=(--allow-released)
+  fi
+  python3 -B scripts/gates/crate_changelogs.py "${mode[@]}" \
     crates/cli/CHANGELOG.md \
     crates/core/CHANGELOG.md \
     crates/scanner/CHANGELOG.md \
     crates/sources/CHANGELOG.md \
-    crates/verifier/CHANGELOG.md <<'PY'
-import pathlib
-import sys
-
-failures = []
-for raw in sys.argv[1:]:
-    path = pathlib.Path(raw)
-    lines = path.read_text().splitlines()
-    try:
-        start = lines.index("## Unreleased") + 1
-    except ValueError:
-        failures.append(f"{path}: missing one '## Unreleased' section")
-        continue
-    end = next(
-        (index for index in range(start, len(lines)) if lines[index].startswith("## ")),
-        len(lines),
-    )
-    if not any(line.startswith("- ") for line in lines[start:end]):
-        failures.append(f"{path}: Unreleased section has no owned change entry")
-
-if failures:
-    print("\n".join(failures), file=sys.stderr)
-    raise SystemExit(1)
-PY
+    crates/verifier/CHANGELOG.md
 }
 
 run_gpu_crossover_gate() {
@@ -215,7 +196,7 @@ apply_version_bump() {
     .github/actions/keyhog/README.md
     docs/src/install.md
     docs/src/introduction.md
-    docs/src/workflows/integrations.md
+    docs/assets/keyhog-banner.svg
     docs/src/workflows/ci.md
     docs/src/first-scan.md
     docs/src/workflows/precommit.md
@@ -278,9 +259,10 @@ os.chmod(tmp, path.stat().st_mode)
 os.replace(tmp, path)
 PY
 
-  for file in "${versioned_files[@]}"; do
-    sed_inplace "s/v$current_re/v$next/g" "$file" || return 1
-  done
+  python3 -B scripts/bump_doc_versions.py \
+    --current "$current" \
+    --next "$next" \
+    "${versioned_files[@]}" || return 1
 
   today="$(date -u +%Y-%m-%d)"
   sed_inplace "0,/^## \[Unreleased\]$/s//## [$next] - $today/" CHANGELOG.md || return 1
@@ -293,10 +275,7 @@ PY
     sed_inplace "0,/^## Unreleased$/s//## $next - $today/" "$file" || return 1
   done
 
-  if rg -n "v$current" "${versioned_files[@]}"; then
-    echo "canonical release docs still contain v$current" >&2
-    return 1
-  fi
+  python3 -B scripts/gates/doc_version_pins.py || return 1
   if [ "$(grep -c '^## \[Unreleased\]$' CHANGELOG.md)" -ne 0 ]; then
     echo "CHANGELOG.md still contains an Unreleased heading after bump" >&2
     return 1
@@ -312,6 +291,14 @@ if [ -n "$BUMP" ]; then
   step "candidate: bump $CUR → $BUMP"
   apply_version_bump "$CUR" "$BUMP" || exit $?
 fi
+
+RELEASE_VERSION="${BUMP:-$CUR}"
+step "coherence: changelog-backed release notes"
+check "substantive release notes" \
+  python3 -B scripts/release_notes.py \
+    --tag "v$RELEASE_VERSION" \
+    --changelog CHANGELOG.md \
+    --output /dev/null
 
 # ── 1. candidate + bench gates ───────────────────────────────────────────────
 # Bench integration tests must execute the source tree being released. Resolving

@@ -1,0 +1,9 @@
+# Canonical current baseline anchors.
+#
+# Each entry maps one active corpus to a single baseline file path relative to
+# this directory. Historical versions live under archive/ and must not be
+# referenced by active gates; gates resolve baselines by declared identity
+# (corpus -> path) rather than filename ordering.
+
+[mirror]
+path = "mirror-keyhog-baseline.json"

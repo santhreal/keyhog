@@ -155,26 +155,27 @@ fn gpu_recovery_fixture() -> (
         keyhog_core::Chunk::from(format!("{}tok_BBBBBBBBBBBBBBBB", "b".repeat(24))),
         keyhog_core::Chunk::from(format!("{}tok_CCCCCCCCCCCCCCCC", "c".repeat(24))),
     ];
-    let expected =
-        scanner.scan_coalesced_with_backend(&chunks, crate::hw_probe::ScanBackend::CpuFallback);
+    let expected = scanner
+        .scan_coalesced_with_backend(&chunks, crate::hw_probe::ScanBackend::CpuFallback)
+        .expect("scalar recovery-fixture scan succeeds");
     scanner.clear_fragment_cache();
     (scanner, backend, chunks, expected)
 }
 
 #[cfg(feature = "gpu")]
+/// Proves an injected resident-dispatch fault replays only unfinished ranges
+/// without racing another live GPU test on the shared adapter.
 #[test]
 fn automatic_gpu_recovery_rescans_only_unprocessed_dispatch_ranges() {
+    let _gpu_test_guard = crate::testing::gpu_test_lock();
     let (scanner, backend, chunks, expected) = gpu_recovery_fixture();
 
     let outcome = with_test_region_presence_byte_limit(64, || {
         crate::engine::gpu_resident_evidence::with_test_resident_dispatch_failure(1, || {
-            scanner
-                .try_scan_coalesced_gpu_region_presence_recovering(
-                    &chunks,
-                    backend,
-                    scanner.default_execution_route(),
-                    true,
-                )
+            scanner.scan_coalesced_gpu_region_presence_recovering(&chunks,
+            backend,
+            scanner.default_execution_route(),
+            true,)
                 .expect("automatic route must recover stable dispatch ranges")
         })
     });
@@ -193,19 +194,19 @@ fn automatic_gpu_recovery_rescans_only_unprocessed_dispatch_ranges() {
 }
 
 #[cfg(feature = "gpu")]
+/// Proves phase-two recovery retains completed GPU shards while sharing no
+/// fault-injection or adapter state with concurrent parity tests.
 #[test]
 fn automatic_phase2_gpu_recovery_preserves_completed_shards() {
+    let _gpu_test_guard = crate::testing::gpu_test_lock();
     let (scanner, backend, chunks, expected) = gpu_recovery_fixture();
 
     let outcome = with_test_region_presence_byte_limit(64, || {
         crate::engine::gpu_region_dispatch_helpers::with_test_phase2_dispatch_failure(1, || {
-            scanner
-                .try_scan_coalesced_gpu_region_presence_recovering(
-                    &chunks,
-                    backend,
-                    scanner.default_execution_route(),
-                    true,
-                )
+            scanner.scan_coalesced_gpu_region_presence_recovering(&chunks,
+            backend,
+            scanner.default_execution_route(),
+            true,)
                 .expect("automatic route must recover phase-two admission ranges")
         })
     });
@@ -392,6 +393,7 @@ fn complete_always_active_negative_preserves_triggered_row_keyword_phase2_findin
         None,
         scanner.default_execution_route(),
     );
+    let results = results.expect("always-active negative phase-two scan succeeds");
 
     let found = results[0]
         .iter()
@@ -454,7 +456,11 @@ fn normalized_triggered_rows_discard_raw_gpu_evidence_and_recompute_admission() 
         " = aB3dE5gH7jK9mN2pQ4sT6vW8xY1zC0fR\n"
     ));
     let raw_triggers = scanner
-        .collect_triggered_patterns_for_backend(&chunk.data, crate::hw_probe::ScanBackend::SimdCpu);
+        .collect_triggered_patterns_for_backend(
+            &chunk.data,
+            crate::hw_probe::ScanBackend::SimdCpu,
+        )
+        .expect("SIMD trigger collection succeeds");
     assert!(raw_triggers.iter().any(|&word| word != 0));
     let raw_keyword_hints = [Vec::<u32>::new()];
     let admitted = [false];
@@ -473,6 +479,7 @@ fn normalized_triggered_rows_discard_raw_gpu_evidence_and_recompute_admission() 
         None,
         scanner.default_execution_route(),
     );
+    let results = results.expect("normalized phase-two scan succeeds");
     let by_detector = |detector: &str| {
         results[0]
             .iter()

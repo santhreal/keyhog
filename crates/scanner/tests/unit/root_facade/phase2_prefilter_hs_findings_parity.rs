@@ -37,8 +37,7 @@ fn scan_file(scanner: &CompiledScanner, path: &str, bytes: &[u8]) -> BTreeSet<Fi
             ..Default::default()
         },
     };
-    scanner
-        .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::SimdCpu)
+    scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::SimdCpu).expect("selected backend scan succeeds")
         .iter()
         .flat_map(|r| r.iter())
         .map(|m| {

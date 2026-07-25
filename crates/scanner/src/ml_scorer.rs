@@ -68,7 +68,7 @@ impl MlScoreInput for (&str, &str) {
 impl MlScoreInput for crate::types::MlPendingMatch {
     #[inline]
     fn ml_text(&self) -> &str {
-        self.raw_match.credential.as_ref()
+        self.pending_raw_match.credential.as_ref()
     }
 
     #[inline]
@@ -191,40 +191,24 @@ pub(crate) fn score_cache_key(
     hasher.finish()
 }
 
-/// Score model inputs on the CPU through the same feature path used by GPU batches.
-#[cfg(feature = "ml")]
-fn score_inputs_with_config<T: MlScoreInput>(
-    inputs: &[T],
-    config: &crate::types::ScannerConfig,
-) -> Vec<f64> {
-    inputs
-        .iter()
-        .map(|input| {
-            crate::confidence::policy::ml_score_for_candidate_text(input.ml_text(), || {
-                score_features(&input.ml_features(config))
-            })
-        })
-        .collect()
-}
 
 /// Preserve pending-match cardinality before confidence blending. A malformed
-/// GPU/backend score vector is a backend failure, not permission to drop queued
-/// findings.
+/// backend score vector is a typed backend failure, never permission to drop
+/// queued findings or silently rescore them.
 #[cfg(feature = "ml")]
 pub(crate) fn complete_batch_scores_with_config<T: MlScoreInput>(
     scores: Vec<f64>,
     inputs: &[T],
-    config: &crate::types::ScannerConfig,
-) -> Vec<f64> {
-    if scores.len() == inputs.len() {
-        return scores;
+    _config: &crate::types::ScannerConfig,
+) -> crate::Result<Vec<f64>> {
+    if scores.len() != inputs.len() {
+        return Err(crate::ScanError::Gpu(format!(
+            "ML backend score count mismatch: expected {}, received {}",
+            inputs.len(),
+            scores.len()
+        )));
     }
-    tracing::warn!(
-        pending = inputs.len(),
-        scores = scores.len(),
-        "ML score count mismatch; recomputing CPU MoE scores before confidence blending"
-    );
-    score_inputs_with_config(inputs, config)
+    Ok(scores)
 }
 
 /// Score precomputed model features without recomputing text/context signals.

@@ -189,7 +189,7 @@ fn scan_text(text: &str) -> Vec<keyhog_core::RawMatch> {
             path: Some("cross_detector.txt".into()),
             ..Default::default()
         },
-    })
+    }).expect("property scan succeeds")
 }
 
 fn any_credential_contains(matches: &[keyhog_core::RawMatch], needle: &str) -> bool {

@@ -10,12 +10,13 @@
 use indexmap::{Equivalent, IndexMap, IndexSet};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
-use crate::{sha256_hash, CredentialHash, MatchLocation, RawMatch, SensitiveString, Severity};
+use crate::{
+    sha256_hash, CompanionMap, CredentialHash, MatchLocation, RawMatch, SensitiveString, Severity,
+};
 
 /// Count of times [`dedup_cross_detector`] reached the (guard-impossible) empty
 /// singleton-group branch, where a finding would otherwise vanish from the
@@ -58,7 +59,7 @@ pub struct DedupedMatch {
     pub credential_hash: CredentialHash,
     /// Optional companion credentials extracted nearby.
     #[serde(serialize_with = "serialize_companions_sorted")]
-    pub companions: HashMap<String, String>,
+    pub companions: CompanionMap,
     /// Primary source location.
     pub primary_location: MatchLocation,
     /// Additional duplicate locations.
@@ -311,7 +312,7 @@ fn is_decoder_alias_pair(a: &MatchLocation, b: &MatchLocation) -> bool {
 }
 
 fn serialize_companions_sorted<S>(
-    companions: &HashMap<String, String>,
+    companions: &CompanionMap,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
 where
@@ -321,7 +322,7 @@ where
     entries.sort_by(|left, right| left.0.cmp(right.0));
     let mut map = serializer.serialize_map(Some(entries.len()))?;
     for (key, value) in entries {
-        map.serialize_entry(key, value)?;
+        map.serialize_entry(key.as_ref(), value)?;
     }
     map.end()
 }
@@ -443,7 +444,7 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
                     .map(|c| format!("{c:.2}"))
                     .unwrap_or_else(|| "n/a".to_string()) // LAW10: display-only label for absent confidence in cross_detector evidence, no recall impact
             );
-            winner.companions.entry(key).or_insert(value);
+            winner.companions.entry(Arc::from(key)).or_insert(value);
             winner.entropy = max_entropy(winner.entropy, loser.entropy);
             merge_cross_detector_locations(&mut winner, &mut seen_locations, loser);
         }
@@ -646,7 +647,7 @@ fn insert_new_location_identity(
     true
 }
 
-fn merge_companions(existing: &mut HashMap<String, String>, incoming: HashMap<String, String>) {
+fn merge_companions(existing: &mut CompanionMap, incoming: CompanionMap) {
     // Most duplicate matches carry no companions; skip the Vec alloc + sort in
     // that hot-loop-common case. (dedup calls this once per merged duplicate.)
     if incoming.is_empty() {
@@ -655,7 +656,7 @@ fn merge_companions(existing: &mut HashMap<String, String>, incoming: HashMap<St
     // Sort incoming by key so the merged " | "-delimited string is stable
     // across runs even though the existing field is a HashMap. Without this,
     // rerunning the same scan can produce different companion orderings.
-    let mut sorted: Vec<(String, String)> = incoming.into_iter().collect();
+    let mut sorted: Vec<(Arc<str>, String)> = incoming.into_iter().collect();
     sorted.sort_by(|a, b| a.0.cmp(&b.0));
     for (name, value) in sorted {
         match existing.get_mut(&name) {
@@ -675,6 +676,7 @@ fn merge_companions(existing: &mut HashMap<String, String>, incoming: HashMap<St
         }
     }
 }
+
 
 fn max_confidence(lhs: Option<f64>, rhs: Option<f64>) -> Option<f64> {
     match (lhs, rhs) {

@@ -32,13 +32,27 @@ fn scan_dogfood_one_event_per_example_suppression() {
         Some(1),
         "expected exactly one dogfood event; stderr={stderr}"
     );
+    // The multiline preprocessor scans the original assignment plus its
+    // synthesized structural key/value representation. Across the SIMD direct
+    // and confirmed-pattern extraction paths that produces six real suppression
+    // calls for this one credential. Telemetry counts those calls, while the
+    // dogfood event set intentionally deduplicates them to the one event above.
     assert_eq!(
         trace["dogfood"]["example_suppressions_total"].as_u64(),
-        Some(8),
-        "counter still tracks every pipeline-stage suppression; stderr={stderr}"
+        Some(6),
+        "counter tracks the six actual compiled-pipeline suppressions; stderr={stderr}"
     );
     assert_eq!(
         trace["dogfood"]["events"][0]["kind"].as_str(),
         Some("example_suppressed")
+    );
+    assert_eq!(
+        trace["dogfood"]["events"][0]["reason"].as_str(),
+        Some("contains_EXAMPLE_token")
+    );
+    assert_eq!(
+        trace["dogfood"]["events"][0]["credential_redacted"].as_str(),
+        Some("AK...LE"),
+        "dogfood telemetry must never expose the suppressed credential"
     );
 }

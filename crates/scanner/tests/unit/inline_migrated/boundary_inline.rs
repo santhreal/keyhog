@@ -62,7 +62,8 @@ fn boundary_reassembles_secret_split_across_two_contiguous_chunks() {
     ];
     let mut per_chunk: Vec<Vec<RawMatch>> = vec![Vec::new(), Vec::new()];
 
-    scan_chunk_boundaries(&scanner, &chunks, &mut per_chunk);
+    scan_chunk_boundaries(&scanner, &chunks, &mut per_chunk)
+        .expect("contiguous boundary scan should succeed");
 
     // Match should land in chunk B's bucket (right-hand-side).
     let total: usize = per_chunk.iter().map(|v| v.len()).sum();
@@ -93,7 +94,8 @@ fn boundary_skips_chunks_with_overlap() {
     ];
     let mut per_chunk: Vec<Vec<RawMatch>> = vec![Vec::new(), Vec::new()];
 
-    scan_chunk_boundaries(&scanner, &chunks, &mut per_chunk);
+    scan_chunk_boundaries(&scanner, &chunks, &mut per_chunk)
+        .expect("overlapping boundary scan should succeed");
     let total: usize = per_chunk.iter().map(|v| v.len()).sum();
     assert_eq!(total, 0, "overlap case must skip boundary scan");
 }
@@ -107,7 +109,8 @@ fn boundary_skips_chunks_with_gap() {
         make_chunk("more padding".into(), 1000, "file.txt"),
     ];
     let mut per_chunk: Vec<Vec<RawMatch>> = vec![Vec::new(), Vec::new()];
-    scan_chunk_boundaries(&scanner, &chunks, &mut per_chunk);
+    scan_chunk_boundaries(&scanner, &chunks, &mut per_chunk)
+        .expect("gapped boundary scan should succeed");
     assert!(per_chunk.iter().all(|v| v.is_empty()));
 }
 
@@ -127,7 +130,8 @@ fn boundary_ignores_chunks_with_different_paths() {
         make_chunk(b_data, a_len, "bob.txt"),
     ];
     let mut per_chunk: Vec<Vec<RawMatch>> = vec![Vec::new(), Vec::new()];
-    scan_chunk_boundaries(&scanner, &chunks, &mut per_chunk);
+    scan_chunk_boundaries(&scanner, &chunks, &mut per_chunk)
+        .expect("different-path boundary scan should succeed");
     assert!(per_chunk.iter().all(|v| v.is_empty()));
 }
 
@@ -152,13 +156,15 @@ fn boundary_dedups_against_existing_match() {
 
     // Run boundary once to learn the canonical match shape.
     let mut probe: Vec<Vec<RawMatch>> = vec![Vec::new(), Vec::new()];
-    scan_chunk_boundaries(&scanner, &chunks, &mut probe);
+    scan_chunk_boundaries(&scanner, &chunks, &mut probe)
+        .expect("initial boundary scan should succeed");
     assert_eq!(probe[1].len(), 1);
     let canonical = probe[1][0].clone();
 
     // Pre-seed chunk B with that canonical match, then re-run.
     let mut per_chunk: Vec<Vec<RawMatch>> = vec![Vec::new(), vec![canonical]];
-    scan_chunk_boundaries(&scanner, &chunks, &mut per_chunk);
+    scan_chunk_boundaries(&scanner, &chunks, &mut per_chunk)
+        .expect("deduplicating boundary scan should succeed");
     assert_eq!(
         per_chunk[1].len(),
         1,
@@ -172,6 +178,7 @@ fn boundary_handles_single_chunk() {
     let scanner = CompiledScanner::compile(vec![straddle_detector()]).unwrap();
     let chunks = vec![make_chunk("alone".into(), 0, "file.txt")];
     let mut per_chunk: Vec<Vec<RawMatch>> = vec![Vec::new()];
-    scan_chunk_boundaries(&scanner, &chunks, &mut per_chunk);
+    scan_chunk_boundaries(&scanner, &chunks, &mut per_chunk)
+        .expect("single-chunk boundary scan should succeed");
     assert!(per_chunk[0].is_empty());
 }

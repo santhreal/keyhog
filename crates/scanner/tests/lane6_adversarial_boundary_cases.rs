@@ -82,7 +82,7 @@ fn scan_bounded(name: &str, text: &str) -> Vec<keyhog_core::RawMatch> {
     SCANNER.clear_fragment_cache();
     let c = chunk(text);
     let start = Instant::now();
-    let matches = SCANNER.scan(&c);
+    let result = SCANNER.scan(&c);
     let elapsed = start.elapsed();
     assert!(
         elapsed < PER_INPUT_BUDGET,
@@ -90,6 +90,7 @@ fn scan_bounded(name: &str, text: &str) -> Vec<keyhog_core::RawMatch> {
          {PER_INPUT_BUDGET:?} budget, a quadratic/unbounded path has regressed",
         text.len()
     );
+    let matches = result.expect("bounded adversarial scan should return a typed success");
     // Every surfaced offset must index a real char boundary (a reporter slices
     // there). This is the per-match internal-consistency gate for the explicit
     // adversarial shapes, mirroring the property file's randomised version.
@@ -275,7 +276,9 @@ fn adversarial_shapes_no_panic_bounded_time_consistent() {
 #[test]
 fn empty_chunk_zero_findings() {
     SCANNER.clear_fragment_cache();
-    let matches = SCANNER.scan(&chunk(""));
+    let matches = SCANNER
+        .scan(&chunk(""))
+        .expect("empty-chunk scan should succeed");
     assert_eq!(
         matches.len(),
         0,
@@ -289,7 +292,9 @@ fn empty_chunk_zero_findings() {
 fn one_byte_chunk_zero_findings() {
     for b in ["A", "\0", "\n", "\u{FEFF}", "z", "9", "="] {
         SCANNER.clear_fragment_cache();
-        let matches = SCANNER.scan(&chunk(b));
+        let matches = SCANNER
+            .scan(&chunk(b))
+            .expect("one-byte boundary scan should succeed");
         assert_eq!(
             matches.len(),
             0,
@@ -340,7 +345,9 @@ fn secret_split_across_chunk_boundary_is_reassembled() {
     let b = chunk_at(&b_text, "split.env", a_text.len()); // gapless: base_offset == a.len()
 
     SCANNER.clear_fragment_cache();
-    let results = SCANNER.scan_coalesced(&[a, b]);
+    let results = SCANNER
+        .scan_coalesced(&[a, b])
+        .expect("gapless boundary scan should succeed");
     assert_eq!(
         results.len(),
         2,
@@ -377,7 +384,9 @@ fn secret_split_with_gap_is_not_fabricated() {
     let b = chunk_at(&b_text, "gapped.env", a_text.len() + 4096);
 
     SCANNER.clear_fragment_cache();
-    let results = SCANNER.scan_coalesced(&[a, b]);
+    let results = SCANNER
+        .scan_coalesced(&[a, b])
+        .expect("gapped boundary scan should succeed");
     let fabricated = results
         .iter()
         .flatten()

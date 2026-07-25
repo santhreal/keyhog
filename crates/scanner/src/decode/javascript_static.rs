@@ -12,13 +12,15 @@
 //! in the normal scan path.
 
 use super::pipeline::push_decoded_text_chunk_spliced_at;
-use super::{DecodeAdmissionSketch, Decoder};
+use super::{DecodeAdmissionSketch, DecodeOutputSink, Decoder};
 use keyhog_core::{Chunk, ChunkMetadata};
 use regex::Regex;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::LazyLock;
 
-use crate::telemetry::{record_static_recovery_rejection, StaticRecoveryRejection};
+use crate::telemetry::{
+    record_static_recovery_rejection, record_static_recovery_supported, StaticRecoveryRejection,
+};
 
 mod aes;
 mod cryptojs;
@@ -37,24 +39,28 @@ struct RecoveredPlaintext {
 }
 
 fn append_spliced_recoveries(
-    decoded_chunks: &mut Vec<Chunk>,
+    sink: &mut dyn DecodeOutputSink,
     chunk: &Chunk,
     recovered: BTreeSet<RecoveredPlaintext>,
     decoder: &'static str,
-) {
+) -> bool {
+    record_static_recovery_supported(recovered.len());
     for recovery in recovered {
         let Some(original) = chunk.data.get(recovery.source_start..recovery.source_end) else {
             continue;
         };
-        push_decoded_text_chunk_spliced_at(
-            decoded_chunks,
+        if !push_decoded_text_chunk_spliced_at(
+            sink,
             chunk,
             Some((recovery.source_start, recovery.source_end)),
             original,
             recovery.plaintext,
             decoder,
-        );
+        ) {
+            return false;
+        }
     }
+    true
 }
 
 static LITERAL_ARRAY_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -75,6 +81,20 @@ static XOR_MAP_RE: LazyLock<Regex> = LazyLock::new(|| {
     compile_static_regex(
         r"String\s*\.\s*fromCharCode\s*\(\s*\.\.\.\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*map\s*\(\s*\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*,\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\)\s*=>\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\^\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\[\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*%\s*(?:(?:([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*length)|([0-9]+))\s*\]\s*\)\s*\)",
         "static XOR map expression",
+    )
+});
+
+static XOR_CANDIDATE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    compile_static_regex(
+        r#"String\s*(?:\.\s*fromCharCode|\[\s*(?:'fromCharCode'|"fromCharCode")\s*\])\s*\("#,
+        "static XOR candidate",
+    )
+});
+
+static XOR_DYNAMIC_PROPERTY_RE: LazyLock<Regex> = LazyLock::new(|| {
+    compile_static_regex(
+        r#"String\s*\[\s*(?:'fromCharCode'|"fromCharCode")\s*\]\s*\("#,
+        "computed static XOR property",
     )
 });
 
@@ -104,9 +124,9 @@ fn static_expression_kinds(data: &str) -> StaticExpressionKinds {
             && data.contains(".enc")
             && data.contains(".Utf8"),
         reverse_base64: data.contains("atob")
-            && data.contains(".split")
-            && data.contains(".reverse")
-            && data.contains(".join"),
+            && data.contains("split")
+            && data.contains("reverse")
+            && data.contains("join"),
     }
 }
 
@@ -116,9 +136,7 @@ impl Decoder for JavaScriptStaticDecoder {
     }
 
     fn admission_sketch(&self, chunk: &Chunk) -> DecodeAdmissionSketch {
-        if chunk.metadata.source_type.contains("/javascript-static")
-            || chunk.data.len() > MAX_STATIC_SOURCE_BYTES
-        {
+        if chunk.metadata.source_type.contains("/javascript-static") {
             return DecodeAdmissionSketch::NONE;
         }
         let kinds = static_expression_kinds(&chunk.data);
@@ -142,43 +160,95 @@ impl Decoder for JavaScriptStaticDecoder {
         }
     }
 
-    fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
+    fn decode_chunk_into(&self, chunk: &Chunk, sink: &mut dyn DecodeOutputSink) {
         if chunk.metadata.source_type.contains("/javascript-static") {
-            return Vec::new();
+            return;
         }
 
         let kinds = static_expression_kinds(&chunk.data);
         if !kinds.any() {
-            return Vec::new();
+            return;
         }
         if chunk.data.len() > MAX_STATIC_SOURCE_BYTES {
             record_static_limit("source byte ceiling");
-            return Vec::new();
+            record_static_recovery_rejection(
+                &chunk.metadata,
+                chunk.metadata.base_offset,
+                StaticRecoveryRejection::ResourceLimit,
+            );
+            return;
         }
 
-        let mut decoded_chunks = Vec::new();
         let base_offset = chunk.metadata.base_offset;
         if kinds.xor {
             let mut recovered = BTreeSet::new();
             recover_xor_plaintexts(&chunk.data, &chunk.metadata, base_offset, &mut recovered);
-            append_spliced_recoveries(&mut decoded_chunks, chunk, recovered, self.name());
+            if !append_spliced_recoveries(sink, chunk, recovered, self.name()) {
+                return;
+            }
         }
         if kinds.node_aes {
             let mut recovered = BTreeSet::new();
             aes::recover_plaintexts(&chunk.data, &chunk.metadata, base_offset, &mut recovered);
-            append_spliced_recoveries(&mut decoded_chunks, chunk, recovered, self.name());
+            if !append_spliced_recoveries(sink, chunk, recovered, self.name()) {
+                return;
+            }
         }
         if kinds.cryptojs_aes {
             let mut recovered = BTreeSet::new();
             cryptojs::recover_plaintexts(&chunk.data, &chunk.metadata, base_offset, &mut recovered);
-            append_spliced_recoveries(&mut decoded_chunks, chunk, recovered, self.name());
+            if !append_spliced_recoveries(sink, chunk, recovered, self.name()) {
+                return;
+            }
         }
         if kinds.reverse_base64 {
             let mut recovered = BTreeSet::new();
-            reverse_base64::recover_plaintexts(&chunk.data, base_offset, &mut recovered);
-            append_spliced_recoveries(&mut decoded_chunks, chunk, recovered, self.name());
+            reverse_base64::recover_plaintexts(
+                &chunk.data,
+                &chunk.metadata,
+                base_offset,
+                &mut recovered,
+            );
+            append_spliced_recoveries(sink, chunk, recovered, self.name());
         }
-        decoded_chunks
+    }
+}
+
+fn report_nonstandard_xor_candidates(
+    source: &str,
+    metadata: &ChunkMetadata,
+    base_offset: usize,
+) {
+    let supported_starts: HashSet<usize> = XOR_MAP_RE
+        .find_iter(source)
+        .take(MAX_STATIC_EXPRESSIONS)
+        .map(|matched| matched.start())
+        .collect();
+    for (candidate_index, candidate) in XOR_CANDIDATE_RE.find_iter(source).enumerate() {
+        if candidate_index >= MAX_STATIC_EXPRESSIONS {
+            record_static_limit("XOR candidate ceiling");
+            if let Some(offset) = crate::engine::absolute_offset(base_offset, candidate.start()) {
+                record_static_recovery_rejection(
+                    metadata,
+                    offset,
+                    StaticRecoveryRejection::ResourceLimit,
+                );
+            }
+            break;
+        }
+        if supported_starts.contains(&candidate.start()) {
+            continue;
+        }
+        let Some(offset) = crate::engine::absolute_offset(base_offset, candidate.start()) else {
+            record_static_limit("XOR candidate offset overflow");
+            continue;
+        };
+        let reason = if XOR_DYNAMIC_PROPERTY_RE.is_match(candidate.as_str()) {
+            StaticRecoveryRejection::DynamicPropertyAccess
+        } else {
+            StaticRecoveryRejection::MalformedExpression
+        };
+        record_static_recovery_rejection(metadata, offset, reason);
     }
 }
 
@@ -188,6 +258,7 @@ fn recover_xor_plaintexts(
     base_offset: usize,
     emitted: &mut BTreeSet<RecoveredPlaintext>,
 ) {
+    report_nonstandard_xor_candidates(source, metadata, base_offset);
     let bindings = collect_byte_array_bindings(source);
     if bindings.len() < 2 {
         return;

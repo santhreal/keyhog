@@ -54,6 +54,129 @@ pub(crate) enum CandidateLengthRejection {
     TooLong,
 }
 
+/// Byte span of one complete generic assignment value, excluding its wrapper.
+///
+/// Generic detector regexes are intentionally cheap trigger/extraction
+/// patterns. Some have a narrower capture than the detector-owned ceiling, and
+/// an ASCII capture can also stop at Unicode or punctuation inside a quoted
+/// value. This span is the authoritative whole-value view used before applying
+/// length policy, so no producer can report such a prefix as a credential.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct WholeAssignmentValue {
+    pub(crate) start: usize,
+    pub(crate) end: usize,
+    /// End of the wrapper, used to skip regex captures nested inside its value.
+    pub(crate) covered_end: usize,
+}
+
+impl WholeAssignmentValue {
+    #[inline]
+    pub(crate) fn as_str<'a>(self, data: &'a str) -> &'a str {
+        data.get(self.start..self.end)
+            .expect("whole assignment spans are canonical UTF-8 byte ranges")
+    }
+
+    #[inline]
+    pub(crate) const fn is_exact(self, start: usize, end: usize) -> bool {
+        self.start == start && self.end == end
+    }
+}
+
+/// Resolve the whole logical value around a generic detector capture.
+///
+/// A capture inside a quote belongs to everything inside its matching unescaped
+/// wrapper (or through line end when unterminated). Unquoted values extend
+/// through non-delimiter bytes, including UTF-8 and encoded escape syntax. The
+/// byte scan is allocation-free and deliberately returns byte offsets because
+/// detector `min_len`/`max_len` are UTF-8 byte policies.
+pub(crate) fn whole_assignment_value(
+    data: &str,
+    candidate_start: usize,
+    candidate_end: usize,
+) -> WholeAssignmentValue {
+    let bytes = data.as_bytes();
+    // Synthetic-source mappings are byte offsets and can point between UTF-8
+    // bytes or beyond the original buffer; canonicalize once before byte scans.
+    let candidate_start = crate::engine::floor_char_boundary(data, candidate_start);
+    let candidate_end =
+        crate::engine::ceil_char_boundary(data, candidate_end).max(candidate_start);
+    let mut active_quote = None;
+    let mut escaped = false;
+    let mut cursor = 0;
+    while cursor < candidate_start {
+        let byte = bytes[cursor];
+        if matches!(byte, b'\n' | b'\r') {
+            active_quote = None;
+            escaped = false;
+        } else if matches!(byte, b'"' | b'\'' | b'`') && !escaped {
+            active_quote = match active_quote {
+                Some((quote, _)) if quote == byte => None,
+                None => Some((byte, cursor)),
+                current => current,
+            };
+        }
+        if byte == b'\\' {
+            escaped = !escaped;
+        } else {
+            escaped = false;
+        }
+        cursor += 1;
+    }
+
+    if let Some((quote, opening)) = active_quote {
+        // A decoded replacement is spliced into its source wrapper so scanners
+        // retain surrounding evidence. That can produce text such as
+        // `blob = "secret=VALUE"`: the outer quote belongs to `blob`, while the
+        // candidate belongs to the nested `secret=` assignment. Expanding that
+        // candidate back to the outer quote would report `secret=VALUE` instead
+        // of the same `VALUE` span reported from direct plaintext.
+        let nested_assignment = bytes[opening + 1..candidate_start]
+            .iter()
+            .any(|byte| matches!(byte, b'=' | b':'));
+        if !nested_assignment {
+            while cursor < bytes.len() {
+                let byte = bytes[cursor];
+                if matches!(byte, b'\n' | b'\r') {
+                    break;
+                }
+                if byte == quote && !escaped {
+                    return WholeAssignmentValue {
+                        start: opening + 1,
+                        end: cursor,
+                        covered_end: cursor + 1,
+                    };
+                }
+                if byte == b'\\' {
+                    escaped = !escaped;
+                } else {
+                    escaped = false;
+                }
+                cursor += 1;
+            }
+            return WholeAssignmentValue {
+                start: opening + 1,
+                end: cursor,
+                covered_end: cursor,
+            };
+        }
+    }
+
+    let mut end = candidate_end;
+    while let Some(&byte) = bytes.get(end) {
+        if byte.is_ascii_whitespace()
+            || matches!(byte, b',' | b';' | b')' | b']' | b'}' | b'"' | b'\'' | b'`')
+        {
+            break;
+        }
+        end += 1;
+    }
+    WholeAssignmentValue {
+        start: candidate_start,
+        end,
+        covered_end: end,
+    }
+}
+
 /// Canonical detector-owned candidate length policy shared by every producer.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct CompiledDetectorLengthPolicy {

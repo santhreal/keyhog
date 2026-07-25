@@ -24,7 +24,9 @@ fn github_pat_fine_grained_first_positive_fires() {
     };
 
     scanner.clear_fragment_cache();
-    let matches = scanner.scan(&chunk);
+    let matches = scanner
+        .scan(&chunk)
+        .expect("fine-grained GitHub PAT contract scan should succeed");
     let hits: Vec<_> = matches
         .iter()
         .filter(|m| m.detector_id.as_ref() == DETECTOR_ID)

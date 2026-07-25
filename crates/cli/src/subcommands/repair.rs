@@ -60,6 +60,9 @@ pub(crate) async fn run(args: RepairArgs) -> Result<ExitCode> {
     let release = installer::resolve_release(&client, args.version.as_deref()).await?;
     let asset = installer::select_asset(&release)?;
     let expected_tag = release.tag_name.clone();
+    // The resolver sets an explicit version on this path only after canonical
+    // SemVer validation and exact returned-tag binding, so downgrade permission
+    // cannot authorize a substituted release.
     let allow_explicit_downgrade = args.version.is_some();
     println!("  downloading    {} ({})", asset.name, release.tag_name);
     let bytes = installer::download_verified_asset(&client, &release, asset).await?;

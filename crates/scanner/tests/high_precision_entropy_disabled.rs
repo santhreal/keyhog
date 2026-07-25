@@ -57,8 +57,12 @@ fn high_precision_entropy_disabled() {
         },
     };
 
-    let default_matches = default_scanner.scan(&chunk);
-    let precision_matches = high_precision_scanner.scan(&chunk);
+    let default_matches = default_scanner
+        .scan(&chunk)
+        .expect("default-config entropy scan should succeed");
+    let precision_matches = high_precision_scanner
+        .scan(&chunk)
+        .expect("high-precision entropy scan should succeed");
 
     // Count entropy-tagged findings (those without a strong detector prefix signal)
     let default_entropy_count = default_matches

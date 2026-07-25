@@ -1,4 +1,10 @@
 //! Always-active phase-2 prefilter construction and marking.
+mod dispatch_plan;
+mod gating;
+mod trigger_evidence;
+
+use dispatch_plan::{DispatchConfig, DispatchPlan, PrefilterScope};
+use gating::{combined_gate_decision, CombinedGateDecision};
 use super::phase2::*;
 #[cfg(feature = "simd")]
 use super::phase2_hs::Phase2HsEngine;
@@ -8,33 +14,6 @@ use crate::scanner_config::ResolvedRuntimeTuningConfig;
 use aho_corasick::AhoCorasick;
 use std::sync::atomic::Ordering::Relaxed;
 
-#[derive(Clone, Copy)]
-enum PrefilterScope {
-    Full,
-    AnchorResidual,
-    LocalizedResidual,
-}
-
-/// ONE PLACE for the always-active prefilter's HS-vs-RegexSet engine gate (the
-/// hot-path decision in [`Phase2AlwaysActivePrefilter::mark_matches`]). HS engages
-/// when it is enabled AND the chunk is EITHER within the size gate OR pure ASCII of
-/// any size. On ASCII the RegexSet ASCII-fold is match-equivalent so HS is
-/// findings-IDENTICAL and ~2× faster (measured: 16 MB ASCII 1.55s→0.75s); large
-/// NON-ASCII chunks stay on the RegexSet because HS is NOT a win there, forcing
-/// HS on non-ASCII (with a supplemental unicode host set for the divergent
-/// `.`/`\w`/`\s` patterns) held recall but cost 2.75× more CPU than the RegexSet
-/// (its prefix-AC gating skips most patterns; the dot-heavy divergent set can't be
-/// gated). So the RegexSet is strictly faster on non-ASCII (Law 7). Kept pure +
-/// separate so the gate is unit-tested without a scanner (`hs_gate_tests`).
-#[cfg(any(test, feature = "simd"))]
-fn hs_prefilter_engages(
-    fallback_hs: bool,
-    chunk_len: usize,
-    hs_prefilter_max_len: usize,
-    chunk_is_ascii: bool,
-) -> bool {
-    fallback_hs && (chunk_len <= hs_prefilter_max_len || chunk_is_ascii)
-}
 
 impl Phase2AlwaysActivePrefilter {
     /// Patterns per RegexSet batch. A single set over all ~2.7k always-active
@@ -624,80 +603,35 @@ impl Phase2AlwaysActivePrefilter {
         allow_hyperscan: bool,
     ) {
         #[cfg(not(feature = "simd"))]
-        // LAW10: no runtime effect; without SIMD the parameter cannot affect execution and the CPU matcher below remains exact.
-        let _ = allow_hyperscan;
+        let _ = allow_hyperscan; // LAW10: recall is preserved because non-SIMD builds have no accelerator to degrade from and use the exact portable matcher.
         record_mark_call();
-        let ascii = match_text.is_ascii();
-        let scope = if !anchor_mode {
-            PrefilterScope::Full
-        } else if localize_plain && tuning.homoglyph_gate && ascii {
-            PrefilterScope::LocalizedResidual
-        } else {
-            PrefilterScope::AnchorResidual
-        };
-        // SWE-101 no-candidate gate (the user's #1 issue: "phase-2 must NEVER
-        // eat runtime, not 0.000000001s"). The per-pattern body below, the HS
-        // `scan_each` enumeration + its HS-incompatible whole-chunk-regex loop, or
-        // the `regex::RegexSet` batch loop, ran UNCONDITIONALLY on every chunk
-        // (~10µs/chunk × 518k chunks ≈ 5.3s of pure no-candidate overhead).
-        // `combined_gate.anchor_present` is the ONE fast combined prefilter: an
-        // exact first-bigram prescreen before one `ascii_case_insensitive`
-        // Aho-Corasick over the ANCHORABLE always-active patterns'
-        // required-prefix literals. On a PURE-ASCII chunk where it finds none, no
-        // anchorable pattern can fire, so the whole body is skipped; only the small
-        // NON-anchorable set (patterns that can match with no required literal) is
-        // checked, each with its OWN regex, marking exactly those that match, the
-        // same active set the full body would produce for them. Findings are
-        // unchanged (recall-neutral), pinned by `phase2_no_candidate_zero_work` +
-        // the HS/RegexSet findings-parity gates. ASCII-only: the folded plain literals
-        // describe the homoglyph matcher only on ASCII text. A non-ASCII chunk, a
-        // degraded build (`None`), or a real candidate fall through to the full
-        // body (never a silent skip (Law 10)).
-        if tuning.no_candidate_gate {
-            if let Some(gate) = self.combined_gate(phase2_patterns) {
-                if ascii && !gate.anchor_present(match_text) {
-                    // No anchorable pattern can fire; mark only the non-anchorable
-                    // patterns that actually match (precise, recall-identical).
-                    gate.mark_non_anchorable(match_text, scratch, self.indices_for(scope));
-                    record_mark_gate_skip();
-                    return;
-                }
-            }
-        }
-        // Past the gate: a candidate is possible, so the per-pattern marking body
-        // below is real work, not no-candidate overhead.
-        record_mark_perpattern_work();
-        // SIMD fast path: one Hyperscan scan replaces the whole-chunk RegexSet
-        // batch loop below. The selected scope excludes every pattern already
-        // owned by the active anchor localizers, so no HS database rescans work
-        // that anchored verification will execute.
-        #[cfg(feature = "simd")]
-        let hs_owns_marking = hs_prefilter_engages(
-            allow_hyperscan && tuning.fallback_hs,
-            match_text.len(),
-            tuning.hs_prefilter_max_len,
-            ascii,
+        let plan = DispatchPlan::for_mark(
+            match_text,
+            anchor_mode,
+            localize_plain,
+            allow_hyperscan,
+            DispatchConfig::from_tuning(tuning),
         );
+        let combined_gate = if tuning.no_candidate_gate {
+            self.combined_gate(phase2_patterns)
+        } else {
+            None
+        };
+        if let (CombinedGateDecision::NonAnchorableOnly, Some(gate)) = (
+            combined_gate_decision(plan.chunk(), tuning.no_candidate_gate, combined_gate),
+            combined_gate,
+        ) {
+            gate.mark_non_anchorable(match_text, scratch, self.indices_for(plan.scope()));
+            record_mark_gate_skip();
+            return;
+        }
+
+        record_mark_perpattern_work();
         #[cfg(feature = "simd")]
-        if hs_owns_marking {
-            // HS engages on (chunks ≤ the size gate) OR (ASCII chunks of ANY size).
-            // On ASCII the RegexSet ASCII-fold is match-equivalent, so HS is
-            // findings-IDENTICAL and ~2× faster on large chunks (the >8MB ASCII
-            // win). Large NON-ASCII chunks stay on the RegexSet: HS byte-mode
-            // under-marks the unicode `.`/`\w`/`\s` patterns there, and forcing HS
-            // + a supplemental unicode set was recall-safe but 2.75× slower than the
-            // RegexSet (see hs_prefilter_engages / HS_PREFILTER_MAX_LEN_DEFAULT).
-            if let Some(hs) = self.hs_for(phase2_patterns, scope) {
-                // Homoglyph skip for the HS path: the homoglyph variants are inert on
-                // a pure-ASCII chunk (base AC covers the ASCII original) AND on any
-                // decoded sub-chunk (a homoglyph in decoded binary is a non-credential),
-                // so the lean sub-DB marks the identical CREDENTIAL set ~100× cheaper.
-                // SAME `homoglyph_skip_applies` owner the RegexSet path below uses, so
-                // both engines stay findings-consistent (backend_parity_matrix).
-                let skip_homoglyph = homoglyph_skip_applies(ascii, tuning.homoglyph_ascii_skip);
-                match hs.mark(match_text, scratch, skip_homoglyph) {
+        if plan.try_hyperscan() {
+            if let Some(hs) = self.hs_for(phase2_patterns, plan.scope()) {
+                match hs.mark(match_text, scratch, plan.skip_homoglyph()) {
                     Ok(()) => {
-                        // Per-pattern work served by the HS SIMD fast path.
                         record_mark_hs_served();
                         return;
                     }
@@ -710,77 +644,20 @@ impl Phase2AlwaysActivePrefilter {
                 }
             }
         }
-        // Reaching here, this per-pattern call is served by the portable
-        // RegexSet batches: HS was unavailable, errored, the chunk exceeded the
-        // size gate, or this is a non-`simd` build. The profiler reads this split
-        // to attribute the `phase2:prefilter` cost between the two paths.
+
         record_mark_regexset_served();
-        let portable = self.portable_for(phase2_patterns, scope);
-        let use_ascii = tuning.homoglyph_gate && ascii;
-
-        // Prefix-literal skip gate (KH decode-recursion lever). A `gateable`
-        // batch's patterns ALL provably require one of their prefix literals; if
-        // the combined Aho-Corasick over those literals finds NONE in the chunk,
-        // the batch cannot produce a single match and its whole-chunk RegexSet
-        // pass is skipped. `is_match` early-exits at the first literal, so the
-        // full O(text) scan only happens on chunks that have none, exactly the
-        // skip case (the dominant decode-recursion sub-chunk shape, and most
-        // low-density source). `present == true` means "run gateable batches as
-        // before" (recall is identical, only dead work is removed).
-        let gate_on = tuning.fallback_prefix_gate;
-        // ci batches run `set` on every chunk, but the combined AC gate is an
-        // ASCII case-insensitive automaton. On non-ASCII chunks the regex crate's
-        // Unicode case folding is broader, so the ci batches must run.
-        let ci_present = !gate_on
-            || !ascii
-            || portable
-                .ci_gate
-                .as_ref()
-                .is_none_or(|ac| ac.is_match(match_text));
-        // plain batches are gated only on the ASCII path (the folded-literal gate
-        // describes the folded matcher); on a non-ASCII chunk the unicode `set`
-        // runs unconditionally, so `plain_present` is forced true there.
-        let plain_present = !gate_on
-            || !use_ascii
-            || portable
-                .plain_gate
-                .as_ref()
-                .is_none_or(|ac| ac.is_match(match_text));
-
+        let portable = self.portable_for(phase2_patterns, plan.scope());
+        let gates = plan.portable_gates(portable);
         let prof = phase2_pattern_prof_enabled();
         if prof {
             GATE_CALLS.fetch_add(1, Relaxed);
         }
-        // Truncated (lazy-DFA) marking sets: a sound SUPERSET, over-marks at
-        // most, extraction with the full pattern filters. The win is keeping the
-        // RegexSet off PikeVM on `{N,}` bodies.
-        let truncate = tuning.prefilter_truncate;
         for batch in &portable.batches {
-            let is_plain = batch.ascii_set.is_some();
-            // A HOMOGLYPH-variant batch on a pure-ASCII chunk: skip entirely. Each
-            // variant's base ASCII prefix is in the AC/confirmed path
-            // (compiler_build.rs pushes both) AND that path now CONFIRMS it even
-            // when the literal is shadowed by a longer one, because phase-1 marks
-            // triggers with OVERLAPPING AC matching (collect_triggered_patterns_cpu)
-            // the missing half that previously let the always-active variant be
-            // the sole matcher for e.g. generic-password on `client_secret="…"`. A
-            // chunk with no non-ASCII bytes has no homoglyph for the variant to
-            // catch, so on ASCII it adds nothing the base AC doesn't. This removes
-            // the dominant `phase2:prefilter` cost on all-ASCII source (~13% of scan).
-            // Proven recall-neutral by `homoglyph_ascii_skip_parity_default` (now a
-            // live gate, not `#[ignore]`). Generic/case-sensitive plain fallbacks
-            // (no base AC) are in non-skippable batches and are unaffected.
-            // `homoglyph_skip_applies` also skips the batch on decoded sub-chunks
-            // (binary noise → homoglyph hits are non-credentials), matching the HS path.
-            if batch.homoglyph_skippable
-                && homoglyph_skip_applies(ascii, tuning.homoglyph_ascii_skip)
-            {
+            if plan.skip_homoglyph_batch(batch) {
                 continue;
             }
-            // Skip a gateable batch whose required prefix literals are all absent.
             if batch.gateable {
-                let present = if is_plain { plain_present } else { ci_present };
-                if !present {
+                if !plan.run_gateable_batch(batch, gates) {
                     if prof {
                         GATE_BATCH_SKIPS.fetch_add(1, Relaxed);
                     }
@@ -790,18 +667,7 @@ impl Phase2AlwaysActivePrefilter {
                     GATE_BATCH_RUNS.fetch_add(1, Relaxed);
                 }
             }
-            let set = match (
-                truncate,
-                use_ascii,
-                &batch.ascii_set,
-                &batch.ascii_set_trunc,
-            ) {
-                (true, true, Some(_), Some(ascii_trunc)) => ascii_trunc,
-                (false, true, Some(ascii), _) => ascii,
-                (true, _, _, _) => &batch.set_trunc,
-                (false, _, _, _) => &batch.set,
-            };
-            for set_idx in set.matches(match_text).iter() {
+            for set_idx in plan.matcher_for(batch).matches(match_text).iter() {
                 scratch.mark(batch.phase2_indices[set_idx]);
             }
         }
@@ -816,15 +682,12 @@ impl Phase2AlwaysActivePrefilter {
     /// "is the active set non-empty?", not the full marked set. Early-exits at the
     /// first active pattern; the marked set is the measured #1 scan cost and the
     /// gate would otherwise build it in full only to call `.is_empty()` (then have
-    /// extraction build it AGAIN). Mirrors `mark_matches`'s engine dispatch with
-    /// `localize_plain = false` (the gate runs `anchor_mode = false`): in the
-    /// default config this computes EXACTLY the same active-set membership (HS marks
-    /// the full set; no prune applies), so admission and extraction share one
-    /// contract. It never applies the optional measurement-only prunes
-    /// (`phase2_prefix_gate` / `homoglyph_ascii_skip`), so it answers over the
-    /// marking SUPERSET except for the proven homoglyph ASCII skip, sound (it can
-    /// never reject a chunk the scan would mark, so no finding is lost), at most
-    /// over-admitting an inert chunk to the extraction that already filters it.
+    /// extraction build it AGAIN). It uses the same full-scope dispatch plan as
+    /// `mark_matches(anchor_mode = false)`, including the exact combined and
+    /// portable prefix evidence. A portable batch is skipped only when its
+    /// required-prefix automaton supplies exact negative evidence; unavailable
+    /// evidence fails closed and runs the batch. Thus admission computes the
+    /// same active-set membership while avoiding materializing that set.
     ///
     /// Like `mark_matches`, it consults the cheap SWE-101 `combined_gate` first: on
     /// a pure-ASCII chunk where the combined required-literal AC finds nothing, NO
@@ -842,33 +705,28 @@ impl Phase2AlwaysActivePrefilter {
         allow_hyperscan: bool,
     ) -> bool {
         #[cfg(not(feature = "simd"))]
-        // LAW10: no runtime effect; without SIMD the parameter cannot affect execution and the CPU matcher below remains exact.
-        let _ = allow_hyperscan;
-        let ascii = match_text.is_ascii();
-        // Same no-candidate gate as `mark_matches`: on a pure-ASCII no-anchor chunk
-        // no anchorable pattern can fire, so the active set is non-empty iff some
-        // non-anchorable pattern matches, checked precisely with each pattern's
-        // OWN regex, so the admission gate never over- or under-admits. The whole
-        // check costs one exact first-bigram prescreen, one possible AC
-        // `is_match`, and a handful of per-pattern `is_match` calls instead of
-        // the full ~2,700-pattern HS/RegexSet scan.
-        if tuning.no_candidate_gate {
-            if let Some(gate) = self.combined_gate(phase2_patterns) {
-                if ascii && !gate.anchor_present(match_text) {
-                    return gate.any_non_anchorable_match(match_text);
-                }
-            }
+        let _ = allow_hyperscan; // LAW10: recall is preserved because non-SIMD builds have no accelerator to degrade from and use the exact portable matcher.
+        let plan = DispatchPlan::for_admission(
+            match_text,
+            allow_hyperscan,
+            DispatchConfig::from_tuning(tuning),
+        );
+        let combined_gate = if tuning.no_candidate_gate {
+            self.combined_gate(phase2_patterns)
+        } else {
+            None
+        };
+        if let (CombinedGateDecision::NonAnchorableOnly, Some(gate)) = (
+            combined_gate_decision(plan.chunk(), tuning.no_candidate_gate, combined_gate),
+            combined_gate,
+        ) {
+            return gate.any_non_anchorable_match(match_text);
         }
+
         #[cfg(feature = "simd")]
-        if allow_hyperscan && tuning.fallback_hs && match_text.len() <= tuning.hs_prefilter_max_len
-        {
-            if let Some(hs) = self.hs_for(phase2_patterns, PrefilterScope::Full) {
-                // Same `homoglyph_skip_applies` owner as `mark_matches` and the
-                // RegexSet admission path below: on ASCII (and on decoded sub-chunks)
-                // the lean sub-DB answers the identical "any always-active credential
-                // match?" question ~100× cheaper.
-                let skip_homoglyph = homoglyph_skip_applies(ascii, tuning.homoglyph_ascii_skip);
-                match hs.any_match(match_text, skip_homoglyph) {
+        if plan.try_hyperscan() {
+            if let Some(hs) = self.hs_for(phase2_patterns, plan.scope()) {
+                match hs.any_match(match_text, plan.skip_homoglyph()) {
                     Ok(hit) => return hit,
                     Err(error) => {
                         tracing::warn!(
@@ -879,38 +737,17 @@ impl Phase2AlwaysActivePrefilter {
                 }
             }
         }
-        let portable = self.portable_for(phase2_patterns, PrefilterScope::Full);
-        // Patterns whose batch failed to compile run unconditionally on the full
-        // marking path, so a chunk that reaches this point must be admitted.
-        // Keep this AFTER the combined no-candidate gate and the successful HS
-        // exact path: a pure-ASCII no-anchor chunk can still be rejected exactly,
-        // and HS success does not need the portable RegexSet fallback state.
+
+        let portable = self.portable_for(phase2_patterns, plan.scope());
         if !portable.ungated_indices.is_empty() {
             return true;
         }
-        // RegexSet reference path (HS absent / over the size gate): the active
-        // set is non-empty iff some batch's set matches. `is_match` early-exits
-        // at the first matching pattern within the batch.
-        let truncate = tuning.prefilter_truncate;
-        let use_ascii = tuning.homoglyph_gate && ascii;
+        let gates = plan.portable_gates(portable);
         for batch in &portable.batches {
-            if batch.homoglyph_skippable
-                && homoglyph_skip_applies(ascii, tuning.homoglyph_ascii_skip)
-            {
+            if plan.skip_homoglyph_batch(batch) || !plan.run_gateable_batch(batch, gates) {
                 continue;
             }
-            let set = match (
-                truncate,
-                use_ascii,
-                &batch.ascii_set,
-                &batch.ascii_set_trunc,
-            ) {
-                (true, true, Some(_), Some(ascii_trunc)) => ascii_trunc,
-                (false, true, Some(ascii), _) => ascii,
-                (true, _, _, _) => &batch.set_trunc,
-                (false, _, _, _) => &batch.set,
-            };
-            if set.is_match(match_text) {
+            if plan.matcher_for(batch).is_match(match_text) {
                 return true;
             }
         }
@@ -919,30 +756,5 @@ impl Phase2AlwaysActivePrefilter {
 }
 
 #[cfg(test)]
-mod hs_gate_tests {
-    use super::hs_prefilter_engages;
-
-    // Locks the always-active prefilter engine gate, in particular the
-    // `|| is_ascii` clause that makes HS run on large ASCII chunks (the ~2× >8MB
-    // speedup) while keeping large NON-ASCII chunks on the RegexSet, which is both
-    // recall-safe AND faster there. A regression that drops the ASCII clause
-    // (re-capping HS at 4096) or widens it to non-ASCII (2.75× slower CPU, see
-    // HS_PREFILTER_MAX_LEN_DEFAULT) fails here.
-    #[test]
-    fn engine_gate_hs_on_ascii_any_size_regexset_on_large_nonascii() {
-        const CAP: usize = 4096;
-        // Small chunk (≤ cap): HS regardless of ASCII-ness.
-        assert!(hs_prefilter_engages(true, 100, CAP, true));
-        assert!(hs_prefilter_engages(true, 100, CAP, false));
-        // Large ASCII: HS engages (findings-identical AND ~2× faster (the >8MB win)).
-        assert!(hs_prefilter_engages(true, 5_000_000, CAP, true));
-        // Large NON-ASCII: MUST stay on the RegexSet (HS is 2.75× slower there).
-        assert!(!hs_prefilter_engages(true, 5_000_000, CAP, false));
-        // Cap boundary is inclusive (≤).
-        assert!(hs_prefilter_engages(true, CAP, CAP, false));
-        assert!(!hs_prefilter_engages(true, CAP + 1, CAP, false));
-        // Disabled: never HS, at any size or ASCII-ness.
-        assert!(!hs_prefilter_engages(false, 100, CAP, true));
-        assert!(!hs_prefilter_engages(false, 5_000_000, CAP, true));
-    }
-}
+#[path = "../../tests/unit/phase2_prefilter/mod.rs"]
+mod tests;

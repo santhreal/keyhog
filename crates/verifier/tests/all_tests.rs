@@ -39,6 +39,8 @@ pub mod new_verifier_allowlist_cache;
 pub mod new_verifier_bogon_ssrf;
 #[path = "new_verifier_interpolate.rs"]
 pub mod new_verifier_interpolate;
+#[path = "proxy_credential_redaction.rs"]
+pub mod proxy_credential_redaction;
 #[path = "regression_allowlist_cache_invalidation.rs"]
 pub mod regression_allowlist_cache_invalidation;
 #[path = "regression_aws_field_sanitize.rs"]

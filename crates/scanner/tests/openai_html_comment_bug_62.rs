@@ -47,7 +47,7 @@ fn scanner_finds(text: &str, needle: &str) -> bool {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors loadable");
     let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
     let chunk = make_chunk(text);
-    let matches = scanner.scan(&chunk);
+    let matches = scanner.scan(&chunk).expect("scanner call should succeed");
     eprintln!(
         "task62 probe: text len {} → {} matches: {:?}",
         text.len(),

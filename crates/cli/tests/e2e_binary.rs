@@ -362,6 +362,16 @@ fn docs_scan_banners_match_live_binary_banner_contract() {
     let detector_dir = detector_dir();
     let specs = keyhog_core::load_detectors(&detector_dir).expect("load detectors/ corpus");
     let expected_detectors = specs.len();
+    // Compile the same loaded specs the binary embeds. `patterns.len()` only
+    // counts authored TOML regexes; the progress banner reports the canonical
+    // compiled plan after required matcher projections have been added.
+    let expected_patterns = keyhog_scanner::CompiledScanner::compile_with_gpu_policy(
+        specs,
+        keyhog_scanner::GpuInitPolicy::ForceDisabled,
+    )
+    .expect("compile detectors/ corpus")
+    .runtime_status()
+    .pattern_count;
 
     let version_output = Command::new(binary())
         .arg("--version")
@@ -386,9 +396,9 @@ fn docs_scan_banners_match_live_binary_banner_contract() {
         banner_detectors, expected_detectors,
         "live progress banner detector count drifted from loaded corpus; banner={progress_banner}"
     );
-    assert!(
-        banner_patterns >= banner_detectors,
-        "compiled pattern count must not be smaller than detector count; banner={progress_banner}"
+    assert_eq!(
+        banner_patterns, expected_patterns,
+        "live progress banner pattern count drifted from the scanner compiled from the same corpus; banner={progress_banner}"
     );
 
     let version_fragment = format!(
@@ -598,7 +608,11 @@ fn no_suppress_test_fixtures_surfaces_stripe_demo_key() {
 
 #[test]
 fn no_suppress_test_fixtures_surfaces_test_path_findings() {
-    let fixture = "DATABASE_URL=postgres://admin:S3cr3tP4ssw0rd@db.example.com:5432/prod\n";
+    // A URL-shaped password is intentionally owned by `url-credentials`, so it
+    // cannot prove that the generic-password test-path haircut is reversible.
+    // Keep this a pure PASSWORD assignment: default suppresses it, while the
+    // explicit opt-out must restore this exact generic finding and span.
+    let fixture = "DATABASE_PASSWORD = \"S3cr3tP4ssw0rd\"\n";
 
     let dir = TempDir::new().expect("tempdir");
     let fixture_dir = dir.path().join("tests").join("fixtures");
@@ -618,6 +632,12 @@ fn no_suppress_test_fixtures_surfaces_test_path_findings() {
         .arg(&path)
         .output()
         .expect("spawn keyhog scan (default)");
+    assert_eq!(
+        default_out.status.code(),
+        Some(0),
+        "the suppressed test-path fixture must be a clean scan; stderr={}",
+        String::from_utf8_lossy(&default_out.stderr)
+    );
     let default_json = String::from_utf8_lossy(&default_out.stdout);
     let default_findings: serde_json::Value =
         serde_json::from_str(&default_json).expect("default-mode stdout is JSON");
@@ -644,19 +664,49 @@ fn no_suppress_test_fixtures_surfaces_test_path_findings() {
     let optout_findings: serde_json::Value =
         serde_json::from_str(&optout_json).expect("opt-out stdout is JSON");
     let optout_arr = optout_findings.as_array().expect("array");
-    let surfaced = optout_arr.iter().find(|f| {
-        f.get("detector_id").and_then(|v| v.as_str()) == Some("generic-password")
-            && f.pointer("/location/line").and_then(|v| v.as_u64()) == Some(1)
-            && f.pointer("/location/file_path")
-                .and_then(|v| v.as_str())
-                .is_some_and(|p| p.contains("/tests/fixtures/"))
-    });
-    assert!(
-        surfaced.is_some(),
-        "--no-suppress-test-fixtures must surface test-path findings; got {optout_json}"
+    assert_eq!(
+        optout_out.status.code(),
+        Some(1),
+        "surfacing the opted-out test-path finding must use the findings exit; stderr={}",
+        String::from_utf8_lossy(&optout_out.stderr)
+    );
+    assert_eq!(
+        optout_arr.len(),
+        1,
+        "--no-suppress-test-fixtures must surface exactly the planted finding; got {optout_json}"
+    );
+    let surfaced = &optout_arr[0];
+    assert_eq!(
+        surfaced.get("detector_id").and_then(|v| v.as_str()),
+        Some("generic-password"),
+        "the PASSWORD assignment must stay with its detector-data owner; got {optout_json}"
+    );
+    assert_eq!(
+        surfaced.pointer("/location/line").and_then(|v| v.as_u64()),
+        Some(1),
+        "the finding must map to the planted line; got {optout_json}"
+    );
+    assert_eq!(
+        surfaced.pointer("/location/offset").and_then(|v| v.as_u64()),
+        Some(21),
+        "the finding span must start at the password value, after the opening quote; got {optout_json}"
+    );
+    let surfaced_path = surfaced
+        .pointer("/location/file_path")
+        .and_then(|v| v.as_str())
+        .expect("finding file path");
+    assert_eq!(
+        PathBuf::from(surfaced_path),
+        path,
+        "the finding must stay attributed to the exact test fixture"
+    );
+    assert_eq!(
+        surfaced.get("credential_redacted").and_then(|v| v.as_str()),
+        Some("S...d"),
+        "the report must use keyhog_core::redact's one-character edges for this short credential"
     );
     let confidence = surfaced
-        .and_then(|f| f.get("confidence"))
+        .get("confidence")
         .and_then(|v| v.as_f64())
         .unwrap_or_default();
     assert!(
@@ -1422,6 +1472,13 @@ fn update_subcommand_is_wired_with_its_flags() {
             "`keyhog update --help` must document {flag}; got:\n{help}"
         );
     }
+    assert!(
+        help.contains("SEMVER")
+            && help.contains("Canonical SemVer")
+            && help.contains("leading `v` is normalized")
+            && help.contains("Valid prereleases are accepted"),
+        "update help must describe exact accepted version syntax; got:\n{help}"
+    );
 }
 
 #[test]
@@ -1445,6 +1502,43 @@ fn repair_subcommand_is_wired_with_its_flags() {
             help.contains(flag),
             "`keyhog repair --help` must document {flag}; got:\n{help}"
         );
+    }
+    assert!(
+        help.contains("SEMVER")
+            && help.contains("Canonical SemVer")
+            && help.contains("leading `v` is normalized")
+            && help.contains("Valid prereleases are accepted"),
+        "repair help must describe exact accepted version syntax; got:\n{help}"
+    );
+}
+
+#[test]
+fn maintenance_version_validation_rejects_hostile_values_before_execution() {
+    // Why: clap is the earliest production boundary; malformed values must
+    // fail there rather than reaching either resolver URL construction or I/O.
+    for command in ["update", "repair"] {
+        for invalid in [
+            "v1.2.3/../../latest",
+            "v1.2.3?draft=true",
+            "v1.2.3-rc..1",
+        ] {
+            let output = Command::new(binary())
+                .args([command, "--version", invalid])
+                .output()
+                .unwrap_or_else(|error| panic!("run keyhog {command}: {error}"));
+            assert_eq!(
+                output.status.code(),
+                Some(2),
+                "{command} must reject invalid version `{invalid}` during parsing"
+            );
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                stderr.contains(invalid)
+                    && stderr.contains("not canonical SemVer")
+                    && stderr.contains("--version v1.2.3"),
+                "{command} must name the invalid value and remediation: {stderr}"
+            );
+        }
     }
 }
 
@@ -1542,6 +1636,7 @@ fn config_detector_disable_all_loaded_detectors_fails_closed() {
         service = "demo"
         severity = "high"
         ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
+        match_confidence = { literal_prefix_weight = 0.35, context_anchor_weight = 0.20, entropy_weight = 0.20, high_entropy_partial_weight = 0.12, moderate_entropy_threshold = 3.0, moderate_entropy_weight = 0.05, low_entropy_penalty_floor = 2.0, low_entropy_min_match_length = 10, low_entropy_penalty_multiplier = 0.60, keyword_nearby_weight = 0.10, sensitive_file_weight = 0.10, companion_weight = 0.05, very_high_entropy_margin = 1.3, named_anchor_floor = 0.50, assignment_context_multiplier = 1.0, string_literal_context_multiplier = 0.9, unknown_context_multiplier = 0.8, documentation_context_multiplier = 0.3, comment_context_multiplier = 0.4, test_context_multiplier = 0.3, encrypted_context_multiplier = 0.05, soft_context_suppression_threshold = 0.5, encrypted_context_suppression_threshold = 0.8, post_match = { placeholder_multiplier = 0.05, minimum_byte_diversity = 0.1, low_diversity_multiplier = 0.1, maximum_repeat_ratio = 0.8, degenerate_run_min_length = 10, degenerate_repeat_multiplier = 0.1, fixture_path_multiplier = 0.5, ml_context_reapply_below = 0.95 } }
         keywords = ["demo_secret_"]
 
         [[detector.patterns]]
@@ -1613,6 +1708,7 @@ fn config_detector_min_confidence_floor_drops_findings() {
         service = "demo"
         severity = "high"
         ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
+        match_confidence = { literal_prefix_weight = 0.35, context_anchor_weight = 0.20, entropy_weight = 0.20, high_entropy_partial_weight = 0.12, moderate_entropy_threshold = 3.0, moderate_entropy_weight = 0.05, low_entropy_penalty_floor = 2.0, low_entropy_min_match_length = 10, low_entropy_penalty_multiplier = 0.60, keyword_nearby_weight = 0.10, sensitive_file_weight = 0.10, companion_weight = 0.05, very_high_entropy_margin = 1.3, named_anchor_floor = 0.50, assignment_context_multiplier = 1.0, string_literal_context_multiplier = 0.9, unknown_context_multiplier = 0.8, documentation_context_multiplier = 0.3, comment_context_multiplier = 0.4, test_context_multiplier = 0.3, encrypted_context_multiplier = 0.05, soft_context_suppression_threshold = 0.5, encrypted_context_suppression_threshold = 0.8, post_match = { placeholder_multiplier = 0.05, minimum_byte_diversity = 0.1, low_diversity_multiplier = 0.1, maximum_repeat_ratio = 0.8, degenerate_run_min_length = 10, degenerate_repeat_multiplier = 0.1, fixture_path_multiplier = 0.5, ml_context_reapply_below = 0.95 } }
         keywords = ["demo_secret_"]
 
         [[detector.patterns]]
@@ -1689,6 +1785,7 @@ fn config_detector_min_confidence_floor_drops_findings() {
         service = "demo"
         severity = "high"
         ml = { match_mode = "disabled", entropy_mode = "disabled", weight = 0.0, context_radius_lines = 0 }
+        match_confidence = { literal_prefix_weight = 0.35, context_anchor_weight = 0.20, entropy_weight = 0.20, high_entropy_partial_weight = 0.12, moderate_entropy_threshold = 3.0, moderate_entropy_weight = 0.05, low_entropy_penalty_floor = 2.0, low_entropy_min_match_length = 10, low_entropy_penalty_multiplier = 0.60, keyword_nearby_weight = 0.10, sensitive_file_weight = 0.10, companion_weight = 0.05, very_high_entropy_margin = 1.3, named_anchor_floor = 0.50, assignment_context_multiplier = 1.0, string_literal_context_multiplier = 0.9, unknown_context_multiplier = 0.8, documentation_context_multiplier = 0.3, comment_context_multiplier = 0.4, test_context_multiplier = 0.3, encrypted_context_multiplier = 0.05, soft_context_suppression_threshold = 0.5, encrypted_context_suppression_threshold = 0.8, post_match = { placeholder_multiplier = 0.05, minimum_byte_diversity = 0.1, low_diversity_multiplier = 0.1, maximum_repeat_ratio = 0.8, degenerate_run_min_length = 10, degenerate_repeat_multiplier = 0.1, fixture_path_multiplier = 0.5, ml_context_reapply_below = 0.95 } }
         min_confidence = 0.8
         keywords = ["demo_secret_"]
 
@@ -1758,11 +1855,19 @@ fn config_lockdown_require_refuses_without_flag() {
 fn precision_mode_keeps_strong_drops_weak() {
     let fixture = concat!(
         "aws_secret_access_key = \"kP8xQ2mNvR7tZ4wL9bYsH3jD6fG1cA0eXuViK5oT\"\n",
-        "DATABASE_PASSWORD = \"admin123\"\n",
+        "DATABASE_PASSWORD = \"hunter2hunter2\"\n",
     );
-    let (def_out, _e, _c) = scan_text_file(fixture, &[]);
-    let (prec_out, _e2, _c2) = scan_text_file(fixture, &["--precision"]);
-    let def: Vec<String> = parse_json_array(&def_out, "default precision-mode scan")
+    let (def_out, _e, def_code) = scan_text_file(fixture, &[]);
+    let (prec_out, _e2, prec_code) = scan_text_file(fixture, &["--precision"]);
+    assert_eq!(def_code, Some(1), "default scan must report findings");
+    assert_eq!(
+        prec_code,
+        Some(1),
+        "precision keeps the strong finding, so it must retain the findings exit"
+    );
+    let def_findings = parse_json_array(&def_out, "default precision-mode scan");
+    let prec_findings = parse_json_array(&prec_out, "explicit precision-mode scan");
+    let def: Vec<String> = def_findings
         .iter()
         .filter_map(|finding| {
             finding
@@ -1771,7 +1876,7 @@ fn precision_mode_keeps_strong_drops_weak() {
                 .map(String::from)
         })
         .collect();
-    let prec: Vec<String> = parse_json_array(&prec_out, "explicit precision-mode scan")
+    let prec: Vec<String> = prec_findings
         .iter()
         .filter_map(|finding| {
             finding
@@ -1781,29 +1886,67 @@ fn precision_mode_keeps_strong_drops_weak() {
         })
         .collect();
 
-    assert!(
-        def.len() >= 2,
-        "default mode should surface both the weak generic secret and the AWS secret; got {def:?}"
+    // `generic-password.toml` is the detector-data owner for PASSWORD-family
+    // assignments. The previous short dictionary value scores 0.879 under the
+    // structural-password policy and therefore intentionally clears precision's
+    // 0.85 floor. This planted weak value scores below that floor, so it proves
+    // the mode transition rather than expecting the product to hide a strong hit.
+    assert_eq!(
+        def.len(),
+        2,
+        "default mode should surface exactly the weak generic password and the AWS secret; got {def:?}"
     );
     assert!(
         def.iter().any(|d| d == "aws-secret-access-key"),
         "default must find the secret key; got {def:?}"
     );
     assert!(
-        def.iter().any(|d| d == "generic-secret"),
-        "default must find the weak generic secret; got {def:?}"
+        def.iter().any(|d| d == "generic-password"),
+        "default must find the weak generic password; got {def:?}"
+    );
+    let weak = def_findings
+        .iter()
+        .find(|finding| finding.get("detector_id").and_then(|v| v.as_str()) == Some("generic-password"))
+        .expect("default generic-password finding");
+    assert_eq!(
+        weak.get("credential_redacted").and_then(|v| v.as_str()),
+        Some("h...2"),
+        "the weak finding must retain the core redaction shape"
+    );
+    assert_eq!(
+        weak.pointer("/location/line").and_then(|v| v.as_u64()),
+        Some(2),
+        "the weak finding must stay on the PASSWORD assignment"
+    );
+    assert_eq!(
+        weak.pointer("/location/offset").and_then(|v| v.as_u64()),
+        Some(88),
+        "the weak finding span must start at the planted password value"
+    );
+    let weak_confidence = weak
+        .get("confidence")
+        .and_then(|v| v.as_f64())
+        .expect("weak finding confidence");
+    assert!(
+        (0.5..0.85).contains(&weak_confidence),
+        "the fixture must remain reportable by default and below precision's floor; got {weak_confidence}"
     );
     assert!(
         prec.iter().any(|d| d == "aws-secret-access-key"),
         "precision must KEEP the high-confidence secret key; got {prec:?}"
+    );
+    assert_eq!(
+        prec.len(),
+        1,
+        "precision must retain exactly the strong finding; got {prec:?}"
     );
     assert!(
         prec.len() < def.len(),
         "precision must be strictly tighter than default; default={def:?} precision={prec:?}"
     );
     assert!(
-        !prec.iter().any(|d| d == "generic-secret"),
-        "precision must drop the weaker generic-secret finding (below the 0.85 bar); got {prec:?}"
+        !prec.iter().any(|d| d == "generic-password"),
+        "precision must drop the weaker generic-password finding (below the 0.85 bar); got {prec:?}"
     );
 }
 

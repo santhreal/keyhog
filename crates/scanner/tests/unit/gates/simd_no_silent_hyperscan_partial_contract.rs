@@ -1,3 +1,6 @@
+/// Regression: scratch exhaustion and mid-scan errors must never be reported
+/// as successful partial Hyperscan findings; allocation is transactional and
+/// execution failures carry an explicit discard contract.
 #[test]
 fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
     let scan = std::fs::read_to_string(concat!(
@@ -18,11 +21,6 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
         "/src/engine/scan_coalesced.rs"
     ))
     .expect("engine coalesced scan source readable");
-    let runtime_source = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/compiled_scanner/runtime.rs"
-    ))
-    .expect("compiled scanner runtime source readable");
     let hw_select = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/hw_probe/select.rs"
@@ -56,10 +54,11 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
         );
     }
     assert!(
-        backend.contains("fn scratch_pool_size()")
-            && backend.contains("Vec::with_capacity(scratch_count)")
-            && backend.contains("scratch_pool.push("),
-        "Hyperscan scratches must be preallocated per shard to seed the warm-start fast path"
+        backend.contains("fn warm(")
+            && backend.contains("rayon::broadcast")
+            && scan.contains("shard.db.alloc_scratch()")
+            && scan.contains("hyperscan scratch on-demand growth failed"),
+        "Hyperscan warm path must seed executor thread-local scratches; scratch-pool exhaustion under oversubscription must still GROW on demand with the same precise full-chunk scan"
     );
     assert!(
         scan.contains("shard.db.alloc_scratch()")
@@ -104,17 +103,26 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
             && scan.contains("fn put_scratch(")
             && scan.contains("struct CachedScratch")
             && scan.contains("owner: Weak<()>")
+            && scan.contains("cached.owner.as_ptr()")
+            && scan.contains("Arc::as_ptr(owner)")
             && scan.contains("SCRATCH_TLS_PRUNE_THRESHOLD")
             && scan.contains("fn prune_dead_scanner_scratch(")
             && scan.contains("fn purge_scanner_scratch(")
             && scan.contains("prune_dead_scanner_scratch(&mut tls);")
             && !scan.contains("retain_current_scanner_scratch")
-            && scan.contains("put_scratch(self.scanner_id, shard_idx, &self.scratch_owner, scratch);")
+            && scan.contains("struct ScratchBatch")
+            && scan.contains("impl Drop for ScratchBatch")
+            && scan.contains("slots: [MaybeUninit<Scratch>; super::MAX_COMPILE_SHARDS]")
+            && scan
+                .matches("let scratches = ScratchBatch::acquire(self)?;")
+                .count()
+                == 3
+            && scan.contains("callback output from this call is incomplete and must be discarded")
             && backend.contains("impl Drop for HsScanner")
             && backend.contains("scratch_owner: Arc<()>")
             && backend.contains("scan::purge_scanner_scratch(scanner_id);")
             && !backend.contains("rayon::broadcast(|_| scan::purge_scanner_scratch(scanner_id));"),
-        "fallible Hyperscan scan paths must return scratch, keep live interleaved scanner caches, and prune/drop retained thread-local scratches"
+        "fallible Hyperscan paths must acquire all scratches before callbacks, return them through RAII, reject foreign-owner cache entries, and make execution partiality explicit"
     );
     assert!(
         !scan.contains("alloc_scratch().ok()"),
@@ -124,7 +132,7 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
         engine_scan.contains("scanner.scan_each_result(data")
             && engine_scan.contains("Result<Vec<Option<Vec<u64>>>, String>")
             && engine_scan.contains(".map_err(crate::error::ScanError::Simd)?")
-            && triggered.contains("scanner.scan_matches_result(_text.as_bytes()")
+            && triggered.contains(".scan_matches_result(_text.as_bytes()")
             && phase2_hs.contains("scan_each_result")
             && phase2_hs.contains("any_match_result")
             && phase2_prefilter
@@ -140,14 +148,15 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
     assert!(
         scan.contains("fn scan_matches_result(")
             && !scan.contains("fn scan_result(")
-            && !scan.contains("Vec::with_capacity(32)"),
-        "Hyperscan scan hot paths must stream matches through callbacks instead of allocating a per-chunk Vec"
+            && !scan.contains("Vec::with_capacity(32)")
+            && !scan.contains("Vec<Scratch>"),
+        "Hyperscan scan hot paths must stream matches through callbacks and hold transactional scratches in fixed stack storage, not allocate per chunk"
     );
     assert!(
         engine_scan.contains("normalize_coalesced_phase2_triggers")
             && engine_scan.contains("coalesced phase-2 trigger row count mismatch")
-            && engine_scan.contains("collect_triggered_patterns_for_backend(")
-            && engine_scan.contains("ScanBackend::SimdCpu"),
+            && triggered.contains("collect_triggered_patterns_for_backend(")
+            && triggered.contains("ScanBackend::SimdCpu"),
         "shared coalesced phase-2 must normalize trigger rows before zipping, so cardinality drift cannot silently truncate scanned chunks"
     );
     assert!(
@@ -157,16 +166,11 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
             ),
         "CPU-tier routing must not label AVX/NEON-only hosts as simd-regex when no live Hyperscan/Vectorscan prefilter exists"
     );
-    let selected_simd_guard = runtime_source
-        .split("pub(crate) fn require_selected_backend_stack")
-        .nth(1)
-        .and_then(|tail| tail.split("/// Number of loaded detectors.").next())
-        .expect("selected-backend degrade guard extractable");
     assert!(
-        selected_simd_guard.contains("crate::process_exit::backend_unavailable(")
-            && selected_simd_guard.contains("cpu-fallback execution is forbidden")
-            && !selected_simd_guard.contains("warn_simd_auto_degrade")
-            && !selected_simd_guard.contains("return ScanBackend::CpuFallback"),
+        triggered.contains("Err(crate::error::ScanError::Simd(")
+            && triggered.contains("silent cpu-fallback execution is forbidden")
+            && !triggered.contains("warn_simd_auto_degrade")
+            && !triggered.contains("return ScanBackend::CpuFallback"),
         "selected simd-regex without a live prefilter must fail closed, not warn and reroute to cpu-fallback"
     );
 }

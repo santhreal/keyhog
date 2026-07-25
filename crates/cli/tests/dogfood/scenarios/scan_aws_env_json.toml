@@ -8,4 +8,4 @@ max_ms = 20000
 detector_id = "aws-access-key"
 line = 6
 
-forbid = ["github-pat", "github-classic-pat"]
+forbid = ["github-pat-fine-grained", "github-classic-pat"]

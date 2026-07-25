@@ -72,7 +72,8 @@ fn metadata_intern_is_indexed_not_rehashed_per_match() {
             path: Some("fixture.env".into()),
             ..Default::default()
         },
-    });
+    })
+    .expect("metadata interning production scan succeeds");
     let alpha = matches
         .iter()
         .find(|matched| matched.detector_id.as_ref() == "alpha-token")

@@ -13,11 +13,12 @@
 //!    (`Credential` and `SensitiveString` both redact Display, KH-1424).
 //!    Raw byte access is via `expose_secret` / `SensitiveString::as_str`;
 //!    integration tests reach it only through the intentional surface.
-//! 3. Is `Clone` and serializable via `serde` (uses the inner zeroizing
-//!    bytes for `Serialize`, decodes back to a fresh `Credential` for
-//!    `Deserialize`). The serialization channel is the responsibility of
-//!    the caller - find emitters that go to disk/JSON and either redact
-//!    them or wrap the entire output in EnvSeal seal.
+//! 3. Refuses implicit `Serialize` for both secret wrappers. Public DTOs that
+//!    contain source or credential bytes therefore fail closed instead of
+//!    writing plaintext or encoded binary data. Intentional private
+//!    serialization must explicitly expose `SensitiveString::as_str` or use
+//!    the owning crate's private `Credential` byte boundary, keeping every
+//!    plaintext boundary searchable.
 //!
 //! When EnvSeal embeds keyhog, this type is the only place credential
 //! bytes ever appear in process memory; an mlock + memfd backing can be
@@ -181,33 +182,21 @@ impl std::fmt::Display for Credential {
 }
 
 impl Serialize for Credential {
-    /// Serialize as a tagged JSON object so the encoding is unambiguous.
-    /// kimi-wave2 §Critical: the previous `"b64:<base64>"` string-prefix
-    /// scheme round-tripped a UTF-8 credential like `"b64:SGVsbG8="`
-    /// (a literal user-typed value) through the deserializer as if it
-    /// were base64-encoded bytes, silently corrupting it. The tagged
-    /// variant `{"text":"…"}` / `{"b64":"…"}` cannot be confused with
-    /// either form.
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::SerializeMap;
-        let mut m = serializer.serialize_map(Some(1))?;
-        match self.expose_str() {
-            Some(s) => m.serialize_entry("text", s)?,
-            None => {
-                m.serialize_entry("b64", &crate::encoding::encode_standard_base64(&self.inner))?
-            }
-        }
-        m.end()
+    /// Refuse implicit serialization because credentials are plaintext or
+    /// binary secret material. A protected private DTO must explicitly expose
+    /// the bytes through its crate-private credential boundary.
+    fn serialize<S: Serializer>(&self, _serializer: S) -> Result<S::Ok, S::Error> {
+        Err(serde::ser::Error::custom(
+            "Credential refuses implicit plaintext serialization; expose bytes explicitly only for a protected private channel",
+        ))
     }
 }
 
 impl<'de> Deserialize<'de> for Credential {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        // Accept the new tagged form (preferred) OR the legacy
-        // `b64:<base64>` / plain string forms (so on-disk artifacts
-        // from earlier versions still load). The legacy ambiguity is
-        // exactly what kimi-wave2 §Critical flagged; new writers must
-        // use the tagged form.
+        // Accept tagged `text` / `b64` objects and legacy `b64:<base64>` /
+        // plain string forms so historical protected artifacts still load.
+        // No implicit writer emits any of these plaintext-bearing forms.
         #[derive(Deserialize)]
         #[serde(untagged)]
         enum Wire {
@@ -360,8 +349,13 @@ impl std::fmt::Debug for SensitiveString {
 }
 
 impl Serialize for SensitiveString {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.as_str().serialize(serializer)
+    /// Refuse implicit serialization because this value can contain source
+    /// text or credential plaintext. Callers that intentionally own a private,
+    /// protected wire format must serialize [`Self::as_str`] explicitly.
+    fn serialize<S: Serializer>(&self, _serializer: S) -> Result<S::Ok, S::Error> {
+        Err(serde::ser::Error::custom(
+            "SensitiveString refuses implicit plaintext serialization; call as_str() explicitly only for a protected private channel",
+        ))
     }
 }
 

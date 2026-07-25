@@ -116,19 +116,21 @@ pub struct ResolvedScanManifest {
     pub overrides: Vec<String>,
 }
 
-/// Bounded, non-secret summary of one completed automatic backend recovery.
+/// Bounded, non-secret summary of one completed exact recovery.
 ///
 /// Exact dispatch-local ranges remain available on the daemon wire. Detached
 /// reports carry stable aggregates because scanner chunk indices restart for
-/// each batch and therefore are not durable source identities.
+/// each batch and therefore are not durable source identities. Admission-plan
+/// recovery uses the selected backend in both backend fields and identifies
+/// the rejected identity in `reason`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ScanBackendRecoverySummary {
     /// Number of recovery events represented by this summary row.
     pub events: usize,
-    /// Selected backend that faulted, or `autoroute-invalid` when recovery was
-    /// required before a trustworthy route could be selected.
+    /// Selected backend whose work required recovery, or `autoroute-invalid`
+    /// when recovery was required before a trustworthy route was selected.
     pub failed_backend: String,
-    /// Backend that completed the unprocessed stable input ranges.
+    /// Backend that completed the stable input ranges after exact recovery.
     pub recovery_backend: String,
     /// Number of canonical disjoint ranges recovered in this event.
     pub recovered_ranges: usize,
@@ -136,10 +138,31 @@ pub struct ScanBackendRecoverySummary {
     pub recovered_chunks: usize,
     /// Total recovered source bytes across the canonical ranges.
     pub recovered_bytes: u64,
-    /// Non-secret runtime fault diagnostic.
+    /// Non-secret recovery diagnostic.
     pub reason: String,
-    /// Canonical command that repairs the quarantined autoroute identity.
+    /// Canonical operator action for the represented recovery condition.
     pub repair_command: String,
+}
+
+/// Schema generation for exact bounded static-recovery telemetry.
+pub const STATIC_RECOVERY_METRICS_SCHEMA_VERSION: &str = "static-recovery-v1";
+
+/// Exact, non-secret bounded static-recovery telemetry for one scan.
+///
+/// `reasons` contains rejection counts only. Its unsupported reasons conserve
+/// to `unsupported`; all remaining reasons conserve to `erroneous`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct StaticRecoveryMetrics {
+    /// Version of this nested telemetry contract.
+    pub schema_version: String,
+    /// Recognized expressions successfully evaluated within the static bounds.
+    pub supported: u64,
+    /// Recognized expressions requiring unsupported dynamic behavior.
+    pub unsupported: u64,
+    /// Recognized expressions rejected because their bounded evaluation failed.
+    pub erroneous: u64,
+    /// Exact rejection counts keyed by the stable scanner reason vocabulary.
+    pub reasons: BTreeMap<String, u64>,
 }
 
 /// Format-neutral operator-visible metadata for a scan report.
@@ -160,10 +183,14 @@ pub struct ScanReportMetadata {
     /// because they predate this explicit field and have no state to recover.
     #[serde(default)]
     pub scan_status: ScanCompletionStatus,
-    /// Completed automatic backend recovery events. Empty means the scan did
-    /// not recover a selected backend fault.
+    /// Completed exact recovery events. Empty means no backend fault or
+    /// admission-plan identity mismatch required recovery.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub backend_recoveries: Vec<ScanBackendRecoverySummary>,
+    /// Exact bounded static-recovery telemetry. Absent only in legacy reports
+    /// produced before JSON report schema 1.8.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub static_recovery: Option<StaticRecoveryMetrics>,
     /// KeyHog crate/binary version that produced the report.
     pub keyhog_version: String,
     /// Git identity of the binary that produced the report.
@@ -200,9 +227,9 @@ pub struct ScanReportMetadata {
 /// Current major version for the versioned JSON report envelope.
 pub const JSON_REPORT_SCHEMA_MAJOR: u16 = 1;
 /// Current minor version for the versioned JSON report envelope.
-pub const JSON_REPORT_SCHEMA_MINOR: u16 = 7;
+pub const JSON_REPORT_SCHEMA_MINOR: u16 = 8;
 /// Current minor version for the versioned JSONL stream contract.
-pub const JSONL_REPORT_SCHEMA_MINOR: u16 = 8;
+pub const JSONL_REPORT_SCHEMA_MINOR: u16 = 9;
 
 /// Version marker carried by every versioned JSON report.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

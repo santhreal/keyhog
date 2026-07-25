@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import shutil
 # timezone.utc (not datetime.UTC, which is 3.11+) (macOS ships Python 3.9).
@@ -14,7 +15,7 @@ from .corpora import resolve_corpus
 from .corpora.base import Corpus
 from .scanners import resolve_scanner
 from .scanners.base import Finding, MeasurementProvenance, RunStats
-from .schema import Detection, RunResult
+from .schema import BloomEvidence, Detection, RunResult, StaticRecoveryMetrics
 from .schema import Scanner as ScannerRecord
 from .schema import ScannerConfig, Speed, is_sha256
 from .executable_snapshot import sha256_file
@@ -80,6 +81,34 @@ def resolve_corpus_with_root(name: str, root: str | pathlib.Path | None = None) 
     return resolve_corpus(name, root=root)
 
 
+def _load_bloom_evidence(
+    scanner_name: str,
+    detector_corpus_sha256: str,
+    executable_sha256: str,
+) -> BloomEvidence | None:
+    """Load optional scanner-bound evidence; absence never invents a fallback."""
+    if scanner_name != "keyhog":
+        return None
+    configured = os.environ.get("KEYHOG_BENCH_BLOOM_RESULT")
+    if not configured:
+        return None
+    path = pathlib.Path(configured).expanduser().resolve(strict=True)
+    value = json.loads(path.read_text(encoding="utf-8"))
+    evidence = BloomEvidence.from_json(value)
+    if evidence.workspace_detector_corpus_sha256 != detector_corpus_sha256:
+        raise ValueError(
+            "Bloom evidence workspace detector corpus SHA-256 does not match "
+            f"the measured scanner: evidence={evidence.workspace_detector_corpus_sha256}, "
+            f"scanner={detector_corpus_sha256}"
+        )
+    if evidence.executable_sha256 != executable_sha256:
+        raise ValueError(
+            "Bloom evidence executable SHA-256 does not match the measured scanner: "
+            f"evidence={evidence.executable_sha256}, scanner={executable_sha256}"
+        )
+    return evidence
+
+
 def build_result(
     *,
     scanner_name: str,
@@ -88,6 +117,8 @@ def build_result(
     corpus: Corpus,
     findings: list[Finding],
     stats: RunStats,
+    static_recovery: StaticRecoveryMetrics | None,
+    bloom: BloomEvidence | None = None,
     executable_sha256: str = "",
     detector_corpus_sha256: str = "",
     execution_route: str = "",
@@ -129,6 +160,8 @@ def build_result(
         available=True,
         error="" if stats.exit_code >= 0 and not stats.timed_out else "scanner timed out",
         scan_manifest=dict(scan_manifest or {}),
+        static_recovery=static_recovery,
+        bloom=bloom,
     )
 
 
@@ -182,6 +215,7 @@ def _run_resolved_scanner(
     daemon_pid = 0
     daemon_requests = 0
     scan_manifest: dict[str, object] = {}
+    static_recovery: StaticRecoveryMetrics | None = None
     if callable(run_with_provenance):
         try:
             findings, stats, provenance = run_with_provenance(corpus.scan_root, cfg)
@@ -208,6 +242,15 @@ def _run_resolved_scanner(
             daemon_pid = provenance.daemon_pid
             daemon_requests = provenance.daemon_requests
             scan_manifest = dict(provenance.scan_manifest)
+            if scanner.name == "keyhog":
+                if provenance.static_recovery is None:
+                    raise ValueError(
+                        "provenance-bound keyhog scanner returned no exact "
+                        "static-recovery telemetry"
+                    )
+                static_recovery = StaticRecoveryMetrics.from_json(
+                    provenance.static_recovery
+                )
             if scanner.name == "keyhog":
                 expected_route = "daemon" if cfg.daemon == "on" else "in_process"
                 if execution_route != expected_route:
@@ -273,6 +316,22 @@ def _run_resolved_scanner(
                 executable_sha256=executable_digest,
                 detector_corpus_sha256=detector_digest,
             )
+    try:
+        bloom = _load_bloom_evidence(
+            scanner.name,
+            detector_digest,
+            executable_digest,
+        )
+    except Exception as exc:
+        return _unavailable_result(
+            scanner,
+            version,
+            cfg,
+            corpus,
+            f"Bloom evidence failed: {type(exc).__name__}: {exc}",
+            executable_sha256=executable_digest,
+            detector_corpus_sha256=detector_digest,
+        )
     result = build_result(
         scanner_name=scanner.name,
         scanner_version=version,
@@ -280,6 +339,8 @@ def _run_resolved_scanner(
         corpus=corpus,
         findings=findings,
         stats=stats,
+        static_recovery=static_recovery,
+        bloom=bloom,
         executable_sha256=executable_digest,
         detector_corpus_sha256=detector_digest,
         execution_route=execution_route,

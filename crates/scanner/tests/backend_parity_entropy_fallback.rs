@@ -68,7 +68,7 @@ fn entropy_fallback_parity_high_entropy_no_literal_prefix() {
         .collect::<Vec<_>>();
 
     scanner.clear_fragment_cache();
-    let simd_results = scanner.scan_chunks_with_backend(&[fixture.clone()], ScanBackend::SimdCpu);
+    let simd_results = scanner.scan_chunks_with_backend(&[fixture.clone()], ScanBackend::SimdCpu).expect("selected backend scan succeeds");
     let simd_findings = collect_entropy_findings(&simd_results);
     assert!(
         simd_findings
@@ -80,7 +80,7 @@ fn entropy_fallback_parity_high_entropy_no_literal_prefix() {
     for backend in backends {
         scanner.clear_fragment_cache();
         let degrade_before = scanner.runtime_status().gpu_degrade_count;
-        let results = scanner.scan_chunks_with_backend(&[fixture.clone()], backend);
+        let results = scanner.scan_chunks_with_backend(&[fixture.clone()], backend).expect("selected backend scan succeeds");
         let degrade_after = scanner.runtime_status().gpu_degrade_count;
         let findings = collect_entropy_findings(&results);
 
@@ -115,7 +115,7 @@ fn entropy_fallback_with_keyword_prefilter_active() {
     );
 
     scanner.clear_fragment_cache();
-    let simd_results = scanner.scan_chunks_with_backend(&[fixture.clone()], ScanBackend::SimdCpu);
+    let simd_results = scanner.scan_chunks_with_backend(&[fixture.clone()], ScanBackend::SimdCpu).expect("selected backend scan succeeds");
     let simd_findings = collect_entropy_findings(&simd_results);
     assert!(
         !simd_findings.is_empty(),
@@ -124,7 +124,7 @@ fn entropy_fallback_with_keyword_prefilter_active() {
 
     scanner.clear_fragment_cache();
     let fallback_results =
-        scanner.scan_chunks_with_backend(&[fixture.clone()], ScanBackend::CpuFallback);
+        scanner.scan_chunks_with_backend(&[fixture.clone()], ScanBackend::CpuFallback).expect("selected backend scan succeeds");
     let fallback_findings = collect_entropy_findings(&fallback_results);
 
     assert_eq!(

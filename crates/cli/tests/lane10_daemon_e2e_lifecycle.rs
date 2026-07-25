@@ -56,8 +56,9 @@ fn daemon_start_status_stop_lifecycle_and_socket_hygiene() {
     let dir = TempDir::new().unwrap();
     let (mut child, socket) = start_daemon(dir.path(), &[]);
 
-    // Socket must be 0600 (user-only), same-uid trust model for plaintext
-    // credentials on the wire.
+    // Socket mode is one defense-in-depth access control. The production
+    // status and scan clients exercised below additionally authenticate the
+    // connected peer uid before decoding any response.
     let mode = std::fs::metadata(&socket)
         .expect("socket metadata")
         .permissions();
@@ -93,8 +94,13 @@ fn daemon_start_status_stop_lifecycle_and_socket_hygiene() {
         "status must disclose the daemon scan scope and in-process-only post-steps; got {out}"
     );
     assert!(
-        out.contains("backend policy: autoroute") && out.contains("persisted warm-route evidence"),
-        "status must disclose that this daemon resolves persisted warm routes; got {out}"
+        out.contains("warm backend: ready · generation")
+            && out.contains(" · engine ")
+            && out.contains(" · binary ")
+            && out.contains(" · detectors ")
+            && out.contains(" · config ")
+            && out.contains(" · GPU artifact "),
+        "status must disclose every identity that gates warm-route readiness; got {out}"
     );
 
     // stop exits 0 and removes the socket.
@@ -275,6 +281,11 @@ fn daemon_socket_flag_wires_scan_to_a_fixed_location_daemon() {
         findings.as_array().map(|a| a.len()),
         Some(1),
         "flag-wired daemon scan must return exactly the planted AWS finding; got {findings:?}"
+    );
+    assert_eq!(
+        findings[0]["detector_id"].as_str(),
+        Some("aws-access-key"),
+        "the exact fixed-socket finding identity must survive the authenticated daemon roundtrip"
     );
 
     // (b) The SAME forced scan pointed at a DIFFERENT --daemon-socket must fail

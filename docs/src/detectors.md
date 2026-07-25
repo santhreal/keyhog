@@ -60,6 +60,7 @@ password = ""
 
 [detector.verify.success]
 status = 200
+policy = "status_with_error_backstop"
 ```
 
 That's the whole contract for one service. Every other detector
@@ -550,18 +551,55 @@ regex = "acme_internal_[a-zA-Z0-9]{32}"
 group = 0
 ```
 
-Then name that corpus on every operator path that should use it:
+Declare the current corpus schema beside the detector files:
+
+```toml
+# my-detectors/corpus.toml
+schema_version = 2
+```
+
+Schema 2 requires every `[detector.verify.success]` and per-step `success`
+table to classify its evidence explicitly with `policy = "body_positive"`,
+`"status_with_error_backstop"`, or `"status_authoritative"`. An omitted policy
+is a validation error that names the affected success table.
+
+For compatibility, a directory without `corpus.toml` is schema 1, as is a
+manifest that explicitly declares `schema_version = 1`. Schema-1 success
+tables written before policy classification are normalized to
+`status_with_error_backstop`: an accepted status is necessary, but a known
+error-shaped response still prevents a live verdict. This is deliberately not
+the more permissive `status_authoritative` policy. New corpora should declare
+schema 2 and serialize every policy rather than relying on legacy
+normalization.
+
+Manifest typos, unsupported schema versions, and schema-2 success tables with
+missing policies fail closed. A bounded newer schema declaration may be parsed
+only to produce compatibility diagnostics; a gated load refuses the complete
+corpus rather than skipping fields or detector files it cannot interpret. The
+effective corpus digest binds the normalized schema and manifest identity, so
+a legacy corpus and a schema-2 corpus cannot share an identity merely because
+their detector fields otherwise match.
+
+Audit a custom corpus directly, then choose an explicit scan composition mode:
 
 ```sh
 keyhog detectors --detectors my-detectors --audit
-keyhog scan . --detectors my-detectors
+keyhog scan . --detectors my-detectors --detectors-mode replace
+keyhog scan . --detectors my-detectors --detectors-mode overlay
 ```
 
-`--detectors` selects the directory as the complete active corpus; it does not
-silently merge the directory with embedded detectors. Copy any built-in TOMLs
-you still want into the directory. A named path that is missing, is not a
-directory, contains no detectors, or contains invalid TOML fails closed instead
-of substituting the embedded corpus.
+`replace` makes the directory the complete active corpus. It is also the
+backward-compatible behavior when `--detectors-mode` is omitted, so selecting a
+directory never silently merges it with embedded detectors. `overlay` retains
+the embedded corpus and adds the reviewed directory. Overlay fails closed if a
+custom detector ID equals an embedded detector ID; it never shadows a shipped
+rule.
+
+A named path that is missing, is not a directory, contains no detectors, or
+contains invalid TOML fails closed instead of substituting the embedded corpus.
+Versioned JSON envelopes expose the effective corpus digest plus its
+`embedded`, `replace`, or `overlay` provenance under
+`metadata.resolved_scan.effective`.
 
 ## Disabling specific detectors
 

@@ -24,7 +24,7 @@ fn empty_chunk_produces_zero_matches() {
             ..Default::default()
         },
     };
-    let matches = scanner.scan(&chunk);
+    let matches = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
     assert_eq!(
         matches.len(),
         0,

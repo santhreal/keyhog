@@ -3,7 +3,7 @@
 //! for daemon/watch/scan-system (no long-running work executes).
 //!
 //! A premium CLI: exits 2 (usage error), names the offending flag or prints a
-//! usage hint, never panics, never leaks ANSI. 17 x 16 = 272 distinct tests.
+//! usage hint, never panics, never leaks ANSI. 18 x 16 = 288 distinct tests.
 
 use crate::reliability::harness::{
     assert_clean_exit, assert_no_ansi, assert_no_panic, run, Profile,
@@ -63,6 +63,7 @@ crate::kh_matrix!(
     completion => "completion",
     backend => "backend",
     doctor => "doctor",
+    bloom_diagnostic => "bloom-diagnostic",
     update => "update",
     repair => "repair",
     uninstall => "uninstall",

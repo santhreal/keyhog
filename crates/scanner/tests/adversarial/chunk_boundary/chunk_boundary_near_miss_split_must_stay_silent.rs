@@ -41,7 +41,7 @@ fn chunk_boundary_near_miss_split_must_stay_silent() {
         },
     };
 
-    let results = scanner.scan_coalesced(&[chunk_a, chunk_b]);
+    let results = scanner.scan_coalesced(&[chunk_a, chunk_b]).expect(concat!(module_path!(), ": coalesced scan should succeed"));
     let flat: Vec<_> = results.into_iter().flatten().collect();
     let fired = flat
         .iter()

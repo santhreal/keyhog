@@ -371,7 +371,10 @@ fn run_all_policies_in_isolated_processes(args: &CalibrateAutorouteArgs) -> Resu
         })?;
         if !status.success() {
             anyhow::bail!(
-                "isolated {} autoroute calibration failed with {status}; earlier policy generations remain valid, but the complete sweep was not published",
+                "isolated {} autoroute calibration failed with {status}; earlier policy \
+                 generations remain valid, but the complete sweep was not published. \
+                 Remediation: rerun `keyhog calibrate-autoroute` on an idle host; use an \
+                 explicit `--backend` only for a diagnostic scan",
                 policy_cli_value(policy)
             );
         }
@@ -470,6 +473,7 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
 
     let mut idx = 0usize;
     let mut failed = 0usize;
+    let mut inconclusive_failed = 0usize;
     let measured_points = Arc::new(Mutex::new(BTreeSet::new()));
     let hardware = keyhog_scanner::hw_probe::probe_hardware();
     let physical_gpu_available = hardware.gpu_available && !hardware.gpu_is_software;
@@ -546,6 +550,9 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
                     }
                     Err(error) => {
                         failed += 1;
+                        if retryable_inconclusive_calibration(&error) {
+                            inconclusive_failed += 1;
+                        }
                         // The probe already printed its FAIL line; surface the cause
                         // loudly (Law 10) rather than swallowing it behind the counter.
                         eprintln!("    {} {error:#}", crate::style::fail("reason:", &p));
@@ -557,6 +564,17 @@ pub(crate) fn run(args: CalibrateAutorouteArgs) -> Result<ExitCode> {
     }
 
     if failed > 0 {
+        if failed == inconclusive_failed {
+            // Timing overlap is an honest absence of routing evidence, never a
+            // successful calibration. Keep the terminal diagnostic stable so
+            // installers and operators can distinguish this retryable state
+            // from parity, persistence, and corpus failures.
+            anyhow::bail!(
+                "autoroute calibration is inconclusive; no routing generation was published. \
+                 Remediation: rerun `keyhog calibrate-autoroute` on an idle host; use an explicit \
+                 `--backend` only for a diagnostic scan"
+            );
+        }
         anyhow::bail!(
             "autoroute calibration failed for {failed}/{total} workload probes; \
              persisted routing was not updated for every required bucket"

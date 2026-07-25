@@ -1,16 +1,15 @@
-//! Regression: `RawMatch` / `MatchLocation` / `RedactedFinding` /
-//! `VerifiedFinding` / `Severity` serde contract.
+//! Regression: fail-closed `RawMatch` output plus compatible finding input.
 //!
-//! Pins the EXACT on-wire JSON shape of keyhog's core finding types, read off
-//! the real implementation in `crates/core/src/finding.rs` and the `Severity`
-//! enum in `crates/core/src/spec.rs`:
+//! Pins the exact on-wire JSON shape of the public safe finding types and the
+//! historical input contract of `RawMatch`:
 //!
-//!   * `RawMatch` derives `Serialize`/`Deserialize`; its `Arc<str>` fields use
-//!     `serde_arc_str` (plain string), `credential` is a `SensitiveString`
-//!     (serialized as the plaintext string on this internal wire type),
-//!     `credential_hash` is a `CredentialHash` (`serde(transparent)` +
-//!     `serde_hash_hex` → 64-char lower-case hex), and `entropy`/`confidence`
-//!     are `Option<f64>` with `skip_serializing_if = "Option::is_none"`.
+//!   * `RawMatch` refuses serialization because its credential is a
+//!     `SensitiveString`; callers must use `RawMatch::to_redacted()` before a
+//!     disk, network, log, or report boundary.
+//!   * `RawMatch` still deserializes the historical plaintext input shape so
+//!     existing protected private artifacts remain readable.
+//!   * `RedactedFinding` serializes its SHA-256 credential hash as 64 lower-case
+//!     hexadecimal characters and omits absent entropy/confidence values.
 //!   * `Severity` is `serde(rename_all = "kebab-case")` with a `client_safe`
 //!     alias on the `ClientSafe` variant.
 //!   * `credential_hash` deserialization fails closed on any string that is not
@@ -32,7 +31,7 @@ use keyhog_core::{
 const AKIA_HASH_HEX: &str = "1a5d44a2dca19669d72edf4c4f1c27c4c1ca4b4408fbb17f6ce4ad452d78ddb3";
 const AKIA_PLAINTEXT: &str = "AKIAIOSFODNN7EXAMPLE";
 
-/// Canonical, fully-populated `RawMatch` used across the round-trip tests.
+/// Canonical, fully-populated `RawMatch` used across the boundary tests.
 fn make_raw() -> RawMatch {
     RawMatch {
         detector_id: "aws-access-key-id".into(),
@@ -56,51 +55,64 @@ fn make_raw() -> RawMatch {
     }
 }
 
-#[test]
-fn raw_match_serializes_exact_field_names_and_values() {
-    let raw = make_raw();
-    let value = serde_json::to_value(&raw).expect("serialize RawMatch");
-
-    assert_eq!(value["detector_id"].as_str(), Some("aws-access-key-id"));
-    assert_eq!(value["detector_name"].as_str(), Some("AWS Access Key ID"));
-    assert_eq!(value["service"].as_str(), Some("aws"));
-    assert_eq!(value["severity"].as_str(), Some("critical"));
-    // Internal wire type: credential is the plaintext string.
-    assert_eq!(value["credential"].as_str(), Some(AKIA_PLAINTEXT));
-    assert_eq!(value["credential_hash"].as_str(), Some(AKIA_HASH_HEX));
-    assert_eq!(value["location"]["source"].as_str(), Some("filesystem"));
-    assert_eq!(
-        value["location"]["file_path"].as_str(),
-        Some("config/prod.env")
-    );
-    assert_eq!(value["location"]["line"].as_u64(), Some(42));
-    assert_eq!(value["location"]["offset"].as_u64(), Some(100));
-    assert_eq!(value["entropy"].as_f64(), Some(4.5));
-    assert_eq!(value["confidence"].as_f64(), Some(0.9));
+fn raw_wire_value() -> serde_json::Value {
+    serde_json::json!({
+        "detector_id": "aws-access-key-id",
+        "detector_name": "AWS Access Key ID",
+        "service": "aws",
+        "severity": "critical",
+        "credential": AKIA_PLAINTEXT,
+        "credential_hash": AKIA_HASH_HEX,
+        "companions": {},
+        "location": {
+            "source": "filesystem",
+            "file_path": "config/prod.env",
+            "line": 42,
+            "offset": 100,
+            "commit": null,
+            "author": null,
+            "date": null
+        },
+        "entropy": 4.5,
+        "confidence": 0.9
+    })
 }
 
 #[test]
-fn raw_match_roundtrips_equal_via_partial_eq() {
+fn raw_match_serialization_fails_closed_without_plaintext() {
     let raw = make_raw();
-    let json = serde_json::to_string(&raw).expect("serialize RawMatch");
-    let back: RawMatch = serde_json::from_str(&json).expect("deserialize RawMatch");
+    let mut output = Vec::new();
+    let error = serde_json::to_writer(&mut output, &raw)
+        .expect_err("RawMatch must refuse plaintext serialization")
+        .to_string();
 
-    // RawMatch's manual PartialEq compares every field including the hash and
-    // the total-ordered floats.
-    assert_eq!(raw, back);
-    // And spot-check the load-bearing fields survive individually.
+    assert!(!String::from_utf8_lossy(&output).contains(AKIA_PLAINTEXT));
+    assert!(!error.contains(AKIA_PLAINTEXT));
+    assert!(error.contains("SensitiveString refuses implicit plaintext serialization"));
+}
+
+#[test]
+fn raw_match_historical_wire_deserializes_equal() {
+    let expected = make_raw();
+    let back: RawMatch =
+        serde_json::from_value(raw_wire_value()).expect("deserialize historical RawMatch");
+
+    assert_eq!(expected, back);
     assert_eq!(&*back.detector_id, "aws-access-key-id");
     assert_eq!(&*back.service, "aws");
     assert_eq!(back.severity, Severity::Critical);
     assert_eq!(&*back.credential, AKIA_PLAINTEXT);
     assert_eq!(back.location.line, Some(42));
     assert_eq!(back.credential_hash, sha256_hash(AKIA_PLAINTEXT));
+    let debug = format!("{back:?}");
+    assert!(!debug.contains(AKIA_PLAINTEXT));
+    assert!(debug.contains("<redacted"));
 }
 
 #[test]
-fn raw_match_credential_hash_is_exact_64_char_lowercase_hex() {
-    let raw = make_raw();
-    let value = serde_json::to_value(&raw).expect("serialize RawMatch");
+fn redacted_finding_credential_hash_is_exact_64_char_lowercase_hex() {
+    let redacted = make_raw().to_redacted();
+    let value = serde_json::to_value(&redacted).expect("serialize RedactedFinding");
     let hash = value["credential_hash"].as_str().expect("hash is a string");
 
     assert_eq!(hash.len(), 64);
@@ -108,27 +120,24 @@ fn raw_match_credential_hash_is_exact_64_char_lowercase_hex() {
     assert!(hash
         .bytes()
         .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()));
-    // The serde form matches the documented hex_encode(sha256_hash(..)) pipeline.
     assert_eq!(hash, hex_encode(sha256_hash(AKIA_PLAINTEXT)));
 }
 
 #[test]
 fn raw_match_unknown_field_is_ignored_on_deserialize() {
-    let raw = make_raw();
-    let mut value = serde_json::to_value(&raw).expect("serialize RawMatch");
+    let mut value = raw_wire_value();
     value.as_object_mut().expect("object").insert(
         "field_from_a_future_version".to_string(),
         serde_json::json!(123),
     );
 
     let back: RawMatch = serde_json::from_value(value).expect("unknown field must be ignored");
-    assert_eq!(raw, back);
+    assert_eq!(make_raw(), back);
 }
 
 #[test]
 fn raw_match_missing_optional_floats_default_to_none() {
-    let raw = make_raw();
-    let mut value = serde_json::to_value(&raw).expect("serialize RawMatch");
+    let mut value = raw_wire_value();
     let obj = value.as_object_mut().expect("object");
     obj.remove("entropy");
     obj.remove("confidence");
@@ -136,22 +145,20 @@ fn raw_match_missing_optional_floats_default_to_none() {
     let back: RawMatch = serde_json::from_value(value).expect("optional floats default None");
     assert_eq!(back.entropy, None);
     assert_eq!(back.confidence, None);
-    // Everything else still preserved.
     assert_eq!(&*back.detector_id, "aws-access-key-id");
     assert_eq!(back.severity, Severity::Critical);
 }
 
 #[test]
-fn raw_match_none_floats_are_omitted_from_output() {
+fn redacted_finding_none_floats_are_omitted_from_output() {
     let mut raw = make_raw();
     raw.entropy = None;
     raw.confidence = None;
-    let value = serde_json::to_value(&raw).expect("serialize RawMatch");
+    let value = serde_json::to_value(raw.to_redacted()).expect("serialize RedactedFinding");
     let obj = value.as_object().expect("object");
 
     assert!(!obj.contains_key("entropy"));
     assert!(!obj.contains_key("confidence"));
-    // Required fields are still present.
     assert_eq!(
         obj.get("credential_hash").and_then(|v| v.as_str()),
         Some(AKIA_HASH_HEX)
@@ -206,7 +213,7 @@ fn credential_hash_rejects_wrong_length_string() {
     // 63 hex chars (one short) must fail closed.
     let short_hex = "1a5d44a2dca19669d72edf4c4f1c27c4c1ca4b4408fbb17f6ce4ad452d78ddb"; // 63 chars
     assert_eq!(short_hex.len(), 63);
-    let mut value = serde_json::to_value(make_raw()).expect("serialize");
+    let mut value = raw_wire_value();
     value.as_object_mut().unwrap().insert(
         "credential_hash".to_string(),
         serde_json::Value::String(short_hex.to_string()),
@@ -225,7 +232,7 @@ fn credential_hash_rejects_non_hex_64_char_string() {
     // 64 chars but 'z' is not a hex digit.
     let bad_hex: String = std::iter::repeat('z').take(64).collect();
     assert_eq!(bad_hex.len(), 64);
-    let mut value = serde_json::to_value(make_raw()).expect("serialize");
+    let mut value = raw_wire_value();
     value.as_object_mut().unwrap().insert(
         "credential_hash".to_string(),
         serde_json::Value::String(bad_hex),

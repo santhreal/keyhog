@@ -182,7 +182,9 @@ fn hex_encoded_aws_key_decodes_through_same_detector() {
 
     // Baseline: the plaintext key fires the aws-access-key detector.
     scanner.clear_fragment_cache();
-    let plain = scanner.scan(&make_chunk(AWS_KEY));
+    let plain = scanner
+        .scan(&make_chunk(AWS_KEY))
+        .expect("plain AWS control scan succeeds");
     let plain_ids = detector_ids_for_credential(&plain, AWS_KEY);
     assert!(
         plain_ids.iter().any(|id| id == "aws-access-key"),
@@ -193,7 +195,9 @@ fn hex_encoded_aws_key_decodes_through_same_detector() {
     // decoder must recover the exact key bytes and the SAME detector fires.
     let encoded_line = format!("aws_access_key_id = {AWS_KEY_HEX}\n");
     scanner.clear_fragment_cache();
-    let decoded = scanner.scan(&make_chunk(&encoded_line));
+    let decoded = scanner
+        .scan(&make_chunk(&encoded_line))
+        .expect("hex decode-through regression scan succeeds");
     let decoded_ids = detector_ids_for_credential(&decoded, AWS_KEY);
     assert!(
         decoded.iter().any(|m| &*m.credential == AWS_KEY),
@@ -236,7 +240,9 @@ fn hex_encoded_gzip_stays_opaque_no_inflate_stage() {
     // the compressed AWS key (the documented gap (hex has no inflate stage)).
     let scanner = full_scanner();
     scanner.clear_fragment_cache();
-    let matches = scanner.scan(&make_chunk(&gzip_hex));
+    let matches = scanner
+        .scan(&make_chunk(&gzip_hex))
+        .expect("nested gzip-hex regression scan succeeds");
     let recovered = matches.iter().filter(|m| &*m.credential == AWS_KEY).count();
     assert_eq!(recovered, 0);
 }

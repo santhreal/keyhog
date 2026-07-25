@@ -216,6 +216,204 @@ async fn pinned_missing_tag_fails_closed() {
 }
 
 #[tokio::test]
+async fn exact_bare_version_is_normalized_once_before_request() {
+    // Why: accepting bare SemVer is useful only if the resolver binds it to the
+    // repository's one canonical v-prefixed tag instead of interpolating it.
+    let server = MockServer::start();
+    let requested = server.mock(|when, then| {
+        when.method(GET)
+            .path("/repos/santhreal/keyhog/releases/tags/v1.2.3");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(release_value("v1.2.3", &server.base_url()).to_string());
+    });
+    let release = resolve(&server.base_url(), Some("1.2.3"))
+        .await
+        .expect("resolve normalized exact release");
+    assert_eq!(release.tag_name, "v1.2.3");
+    assert_eq!(requested.calls(), 1, "only the canonical tag may be requested");
+}
+
+#[tokio::test]
+async fn normalized_equivalent_response_spelling_is_still_rejected() {
+    // Why: semantic equivalence is insufficient for identity binding; GitHub
+    // must return the exact canonical tag that the resolver requested.
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET)
+            .path("/repos/santhreal/keyhog/releases/tags/v1.2.3");
+        then.status(200)
+            .body(release_value("1.2.3", &server.base_url()).to_string());
+    });
+    let error = resolve(&server.base_url(), Some("1.2.3"))
+        .await
+        .unwrap_err();
+    let message = format!("{error:#}");
+    assert!(
+        message.contains("v1.2.3")
+            && message.contains("`1.2.3`")
+            && message.contains("refusing release substitution"),
+        "response spelling mismatch must be rejected exactly: {message}"
+    );
+}
+
+#[tokio::test]
+async fn valid_exact_prerelease_is_installable() {
+    // Why: strict validation must reject malformed prereleases without
+    // accidentally removing the documented exact-prerelease escape hatch.
+    let server = MockServer::start();
+    let requested = server.mock(|when, then| {
+        when.method(GET)
+            .path("/repos/santhreal/keyhog/releases/tags/v1.2.3-rc.1");
+        then.status(200)
+            .body(release_value("v1.2.3-rc.1", &server.base_url()).to_string());
+    });
+    let release = resolve(&server.base_url(), Some("v1.2.3-rc.1"))
+        .await
+        .expect("resolve canonical prerelease");
+    assert_eq!(release.tag_name, "v1.2.3-rc.1");
+    assert_eq!(requested.calls(), 1);
+}
+
+#[tokio::test]
+async fn validated_exact_downgrade_resolves() {
+    // Why: an older exact version is an intentional downgrade; the security
+    // boundary is exact validated identity, not comparison with the CLI build.
+    let server = MockServer::start();
+    let requested = server.mock(|when, then| {
+        when.method(GET)
+            .path("/repos/santhreal/keyhog/releases/tags/v0.1.0");
+        then.status(200)
+            .body(release_value("v0.1.0", &server.base_url()).to_string());
+    });
+    let release = resolve(&server.base_url(), Some("v0.1.0"))
+        .await
+        .expect("resolve validated downgrade");
+    assert_eq!(release.tag_name, "v0.1.0");
+    assert_eq!(requested.calls(), 1);
+}
+
+#[tokio::test]
+async fn invalid_exact_versions_never_send_a_request() {
+    // Why: rejecting after URL construction would still permit path/query
+    // injection and leak an attacker-controlled request to the release API.
+    for invalid in [
+        "v1.2.3?per_page=100",
+        "v1.2.3/../../latest",
+        "v1.2.3\nlatest",
+        "v1.2.3-rc..1",
+        " v1.2.3",
+    ] {
+        let server = MockServer::start();
+        let any_request = server.mock(|when, then| {
+            when.method(GET);
+            then.status(500);
+        });
+        let error = resolve(&server.base_url(), Some(invalid))
+            .await
+            .unwrap_err();
+        let message = format!("{error:#}");
+        assert!(
+            message.contains(invalid) && message.contains("--version v1.2.3"),
+            "invalid input and remediation must be actionable: {message}"
+        );
+        assert_eq!(
+            any_request.calls(),
+            0,
+            "invalid version `{invalid}` must be rejected before HTTP"
+        );
+    }
+}
+
+#[tokio::test]
+async fn mismatched_exact_response_prevents_every_asset_download() {
+    // Why: a signed but different release is still a substitution, including
+    // when the requested version was intended as a downgrade.
+    let server = MockServer::start();
+    let release_request = server.mock(|when, then| {
+        when.method(GET)
+            .path("/repos/santhreal/keyhog/releases/tags/v1.2.3");
+        then.status(200)
+            .body(release_value("v1.2.4", &server.base_url()).to_string());
+    });
+    let asset_download = server.mock(|when, then| {
+        when.method(GET).path("/download/fixture.bin");
+        then.status(200).body(FIXTURE_DATA);
+    });
+    let client = API.http_client().expect("build release client");
+    let directory = private_install_directory();
+    let target = directory.path().join("keyhog-fixture");
+    let error = API
+        .install_verified_release_payload_at(
+            &client,
+            Some("v1.2.3"),
+            &server.base_url(),
+            "fixture.bin",
+            &target,
+        )
+        .await
+        .unwrap_err();
+    let message = format!("{error:#}");
+    assert!(
+        message.contains("v1.2.3")
+            && message.contains("v1.2.4")
+            && message.contains("refusing release substitution")
+            && message.contains("retry"),
+        "mismatch must name both tags and remediation: {message}"
+    );
+    assert_eq!(release_request.calls(), 1);
+    assert_eq!(
+        asset_download.calls(),
+        0,
+        "identity rejection must precede all asset downloads"
+    );
+}
+
+#[tokio::test]
+async fn malformed_exact_response_is_actionable() {
+    // Why: malformed server metadata is not equivalent to "no update"; it
+    // invalidates the identity proof for the exact requested release.
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET)
+            .path("/repos/santhreal/keyhog/releases/tags/v1.2.3");
+        then.status(200)
+            .body(release_value("release/latest", &server.base_url()).to_string());
+    });
+    let error = resolve(&server.base_url(), Some("v1.2.3"))
+        .await
+        .unwrap_err();
+    let message = format!("{error:#}");
+    assert!(
+        message.contains("v1.2.3")
+            && message.contains("release/latest")
+            && message.contains("before asset download")
+            && message.contains("retry"),
+        "malformed response must name both identities and remediation: {message}"
+    );
+}
+
+#[tokio::test]
+async fn malformed_latest_tag_is_a_loud_resolution_error() {
+    // Why: update --check must not turn malformed release metadata into either
+    // "already current" or a trusted update-available result.
+    let server = MockServer::start();
+    releases_mock(
+        &server,
+        200,
+        &releases_body("release/latest", &server.base_url()),
+    );
+    let error = resolve(&server.base_url(), None).await.unwrap_err();
+    let message = format!("{error:#}");
+    assert!(
+        message.contains("release/latest")
+            && message.contains("no update was selected")
+            && message.contains("--version v1.2.3"),
+        "latest-tag failure must be actionable: {message}"
+    );
+}
+
+#[tokio::test]
 async fn signed_payload_runs_shared_download_and_atomic_install_path() {
     let server = MockServer::start();
     let tag = "v99.0.0";

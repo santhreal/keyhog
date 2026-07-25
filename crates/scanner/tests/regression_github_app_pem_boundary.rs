@@ -52,7 +52,9 @@ fn scan_raw(text: &str) -> Vec<RawMatch> {
             ..Default::default()
         },
     };
-    scanner.scan(&chunk)
+    scanner
+        .scan(&chunk)
+        .expect("GitHub App PEM scan should succeed")
 }
 
 /// Every credential matched by `github-app-private-key`, raw (pre-resolution).

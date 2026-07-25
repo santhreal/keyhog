@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use keyhog_core::{
     ReportFormat, ResolvedScanManifest, ScanCompletionStatus, ScanReport, ScanReportMetadata,
-    VerifiedFinding,
+    StaticRecoveryMetrics, VerifiedFinding, STATIC_RECOVERY_METRICS_SCHEMA_VERSION,
 };
 use std::collections::BTreeMap;
 use std::io::{self, IsTerminal};
@@ -162,7 +162,9 @@ fn generated_report_metadata() -> ScanReportMetadata {
     report_metadata_from_times(now, now, None)
 }
 
-/// Construct the single core-owned report metadata model for a scan run.
+#[cfg(test)]
+/// Construct report metadata for scan paths whose corpus is fixed by their
+/// existing protocol (for example the embedded-only daemon route).
 pub(crate) fn report_metadata_from_scan_run(
     args: &ScanArgs,
     started_at: DateTime<Utc>,
@@ -173,6 +175,60 @@ pub(crate) fn report_metadata_from_scan_run(
     detector_count: usize,
     config_digest: Option<u64>,
 ) -> ScanReportMetadata {
+    report_metadata_from_scan_run_inner(
+        args,
+        started_at,
+        finished_at,
+        duration_ms,
+        source_chunks_scanned,
+        source_bytes_scanned,
+        detector_count,
+        None,
+        config_digest,
+    )
+}
+
+/// Construct scan metadata with the effective detector-corpus identity that the
+/// in-process orchestrator loaded and compiled.
+pub(crate) fn report_metadata_from_scan_run_with_corpus(
+    args: &ScanArgs,
+    started_at: DateTime<Utc>,
+    finished_at: DateTime<Utc>,
+    duration_ms: u128,
+    source_chunks_scanned: usize,
+    source_bytes_scanned: u64,
+    detector_count: usize,
+    effective_detector_digest: &str,
+    detector_provenance: &crate::orchestrator_config::DetectorCorpusProvenance,
+    config_digest: Option<u64>,
+) -> ScanReportMetadata {
+    report_metadata_from_scan_run_inner(
+        args,
+        started_at,
+        finished_at,
+        duration_ms,
+        source_chunks_scanned,
+        source_bytes_scanned,
+        detector_count,
+        Some((effective_detector_digest, detector_provenance)),
+        config_digest,
+    )
+}
+
+fn report_metadata_from_scan_run_inner(
+    args: &ScanArgs,
+    started_at: DateTime<Utc>,
+    finished_at: DateTime<Utc>,
+    duration_ms: u128,
+    source_chunks_scanned: usize,
+    source_bytes_scanned: u64,
+    detector_count: usize,
+    detector_corpus: Option<(
+        &str,
+        &crate::orchestrator_config::DetectorCorpusProvenance,
+    )>,
+    config_digest: Option<u64>,
+) -> ScanReportMetadata {
     let mut metadata = report_metadata_from_times(started_at, finished_at, config_digest);
     metadata.duration_ms = duration_ms;
     metadata.targets = scan_targets(args);
@@ -180,8 +236,32 @@ pub(crate) fn report_metadata_from_scan_run(
     metadata.source_bytes_scanned = source_bytes_scanned;
     metadata.detector_count = detector_count;
     metadata.backend_recoveries = crate::backend_recovery_summaries();
+    metadata.static_recovery = Some(current_static_recovery_metrics());
     let scanner = crate::orchestrator_config::build_scanner_config(args);
-    metadata.resolved_scan = Some(resolved_scan_manifest(args, &scanner));
+    let mut resolved_scan = resolved_scan_manifest(args, &scanner);
+    if let Some((effective_detector_digest, detector_provenance)) = detector_corpus {
+        resolved_scan.effective.insert(
+            "detector_corpus_mode".to_string(),
+            detector_provenance.mode.to_string(),
+        );
+        resolved_scan.effective.insert(
+            "detector_corpus_source".to_string(),
+            detector_provenance.source.clone(),
+        );
+        resolved_scan.effective.insert(
+            "detector_corpus_digest".to_string(),
+            effective_detector_digest.to_string(),
+        );
+        resolved_scan.effective.insert(
+            "detector_corpus_embedded_count".to_string(),
+            detector_provenance.embedded_count.to_string(),
+        );
+        resolved_scan.effective.insert(
+            "detector_corpus_custom_count".to_string(),
+            detector_provenance.custom_count.to_string(),
+        );
+    }
+    metadata.resolved_scan = Some(resolved_scan);
     let has_coverage_gaps = !coverage_gap_summary(&CoverageCounts::current()).is_empty();
     metadata.scan_status = if has_coverage_gaps {
         ScanCompletionStatus::Partial
@@ -203,6 +283,7 @@ fn report_metadata_from_times(
         scan_id: String::new(),
         scan_status: ScanCompletionStatus::Success,
         backend_recoveries: Vec::new(),
+        static_recovery: Some(current_static_recovery_metrics()),
         keyhog_version: env!("CARGO_PKG_VERSION").to_string(),
         git_hash: keyhog_core::git_hash().to_string(),
         detector_digest: keyhog_core::detector_digest().to_string(),
@@ -219,6 +300,17 @@ fn report_metadata_from_times(
     };
     metadata.scan_id = scan_report_id(&metadata);
     metadata
+}
+
+fn current_static_recovery_metrics() -> StaticRecoveryMetrics {
+    let status = keyhog_scanner::telemetry::static_recovery_status();
+    StaticRecoveryMetrics {
+        schema_version: STATIC_RECOVERY_METRICS_SCHEMA_VERSION.to_string(),
+        supported: status.supported,
+        unsupported: status.unsupported,
+        erroneous: status.erroneous,
+        reasons: keyhog_scanner::telemetry::static_recovery_rejection_counts(),
+    }
 }
 
 /// Build the one report-visible description of the preset and every effective
@@ -405,95 +497,8 @@ fn format_gitlab_time(time: DateTime<Utc>) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{resolved_scan_manifest, scan_report_id, ScanReportMetadata};
-    use crate::args::ScanArgs;
-    use clap::Parser;
-    use keyhog_core::{ResolvedScanManifest, ScanCompletionStatus};
-    use std::collections::BTreeMap;
-
-    fn metadata() -> ScanReportMetadata {
-        ScanReportMetadata {
-            scan_id: String::new(),
-            scan_status: ScanCompletionStatus::Success,
-            backend_recoveries: Vec::new(),
-            keyhog_version: env!("CARGO_PKG_VERSION").to_string(),
-            git_hash: "test-git".to_string(),
-            detector_digest: "test-detectors".to_string(),
-            config_digest: Some("0000000000000001".to_string()),
-            resolved_scan: None,
-            generated_at: "2026-07-14T00:00:01".to_string(),
-            scan_started_at: "2026-07-14T00:00:00".to_string(),
-            scan_finished_at: "2026-07-14T00:00:01".to_string(),
-            duration_ms: 1_000,
-            targets: vec!["path:repo".to_string()],
-            source_chunks_scanned: 2,
-            source_bytes_scanned: 128,
-            detector_count: 922,
-        }
-    }
-
-    #[test]
-    fn scan_report_id_is_stable_and_identity_bound() {
-        let base = metadata();
-        assert_eq!(scan_report_id(&base), scan_report_id(&base));
-        assert_eq!(scan_report_id(&base).len(), 32);
-        assert!(scan_report_id(&base)
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit()));
-
-        let mut changed_config = base.clone();
-        changed_config.config_digest = Some("0000000000000002".to_string());
-        assert_ne!(scan_report_id(&base), scan_report_id(&changed_config));
-
-        let mut changed_target = base;
-        changed_target.targets = vec!["path:other-repo".to_string()];
-        assert_ne!(
-            scan_report_id(&changed_target),
-            scan_report_id(&changed_config)
-        );
-
-        let mut changed_mode = changed_config.clone();
-        changed_mode.resolved_scan = Some(ResolvedScanManifest {
-            schema_version: 1,
-            preset: "deep".to_string(),
-            effective: BTreeMap::new(),
-            overrides: Vec::new(),
-        });
-        assert_ne!(
-            scan_report_id(&changed_mode),
-            scan_report_id(&changed_config)
-        );
-    }
-
-    #[test]
-    fn resolved_scan_manifest_is_diffable_across_presets_and_overrides(
-    ) -> Result<(), serde_json::Error> {
-        let default_args = ScanArgs::parse_from(["keyhog"]);
-        let deep_args = ScanArgs::parse_from(["keyhog", "--deep", "--decode-depth", "3"]);
-        let default_manifest =
-            resolved_scan_manifest(&default_args, &keyhog_scanner::ScannerConfig::default());
-        let deep_manifest = resolved_scan_manifest(
-            &deep_args,
-            &crate::orchestrator_config::build_scanner_config(&deep_args),
-        );
-
-        assert_eq!(default_manifest.schema_version, 1);
-        assert_eq!(default_manifest.preset, "default");
-        assert_eq!(deep_manifest.preset, "deep");
-        assert_ne!(default_manifest, deep_manifest);
-        assert_eq!(deep_manifest.effective["max_decode_depth"], "3");
-        assert!(deep_manifest
-            .overrides
-            .iter()
-            .any(|key| key == "max_decode_depth"));
-
-        let encoded = serde_json::to_string(&deep_manifest)?;
-        assert!(encoded.contains("\"preset\":\"deep\""));
-        assert!(encoded.contains("\"max_decode_depth\":\"3\""));
-        Ok(())
-    }
-}
+#[path = "../tests/unit/report_identity.rs"]
+mod report_identity_tests;
 
 /// One end-of-scan snapshot of every coverage-gap counter the reporters read.
 ///

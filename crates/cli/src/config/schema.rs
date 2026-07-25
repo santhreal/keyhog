@@ -7,6 +7,8 @@ use std::path::PathBuf;
 pub(super) struct ConfigFile {
     /// Path to detector TOMLs directory.
     pub detectors: Option<String>,
+    /// Composition policy for an explicitly selected detector directory.
+    pub detectors_mode: Option<String>,
     /// Enable fast mode (no entropy discovery, ML scoring, or decode recursion).
     pub fast: Option<bool>,
     /// Enable the bounded deep-recovery preset.

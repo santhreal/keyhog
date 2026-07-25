@@ -36,6 +36,7 @@ type = "bearer"
 field = "match"
 
 [detector.verify.success]
+policy = "body_positive"
 status = 200
 json_path = "$.ok"
 equals = "true"

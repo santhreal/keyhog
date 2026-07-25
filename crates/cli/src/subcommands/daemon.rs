@@ -133,10 +133,14 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
     // (`connect` fails closed), but an operator running `status` must SEE that
     // the daemon is stale, otherwise the healthy-looking uptime line hides the
     // very reason their scans are silently routed in-process.
-    let stale = conn.is_stale();
+    let mut stale = conn.is_stale();
     let daemon_version = conn.daemon_version().to_string();
     let backend_policy = conn.backend_policy().to_string();
-    let stale_reason = conn.stale_reason().map(str::to_string);
+    let mut stale_reason = conn.stale_reason().map(str::to_string);
+    let hello_warm_backend = conn
+        .warm_backend_status()
+        .context("daemon status: Hello omitted required warm-backend status")?
+        .clone();
     match conn.round_trip(&Request::Health).await? {
         Response::Health {
             uptime_secs,
@@ -145,7 +149,63 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
             detector_count,
             backend_recoveries,
             last_backend_fault,
+            warm_backend,
         } => {
+            if warm_backend.daemon_generation != hello_warm_backend.daemon_generation {
+                anyhow::bail!(
+                    "daemon status: daemon generation changed between Hello ({}) and Health ({}). Retry status; if it recurs, restart with `keyhog daemon stop && keyhog daemon start`.",
+                    hello_warm_backend.daemon_generation,
+                    warm_backend.daemon_generation
+                );
+            }
+            if warm_backend.identity != hello_warm_backend.identity
+                || warm_backend.required_backends != hello_warm_backend.required_backends
+            {
+                anyhow::bail!(
+                    "daemon status: warm-route identity or required backend set changed within daemon generation {}; restart with `keyhog daemon stop && keyhog daemon start`",
+                    warm_backend.daemon_generation
+                );
+            }
+            let exact_mismatches = client::current_warm_backend_mismatches(&warm_backend)?;
+            if !exact_mismatches.is_empty() {
+                stale = true;
+                let exact_reason = exact_mismatches.join("; ");
+                stale_reason = Some(match stale_reason.take() {
+                    Some(control_reason) if control_reason != exact_reason => {
+                        format!("{control_reason}; {exact_reason}")
+                    }
+                    Some(control_reason) => control_reason,
+                    None => exact_reason,
+                });
+            }
+            if warm_backend.ready {
+                println!(
+                    "warm backend: ready · generation {} · engine {} · binary {} · detectors {} · config {} · GPU artifact {}",
+                    warm_backend.daemon_generation,
+                    warm_backend.identity.engine,
+                    warm_backend.identity.binary_sha256,
+                    warm_backend.identity.detector_rules_digest,
+                    warm_backend.identity.config_digest,
+                    match warm_backend.identity.gpu_artifact.as_deref() {
+                        Some(artifact) => artifact,
+                        None => "none",
+                    }
+                );
+            } else {
+                let (reason, repair) = match (
+                    warm_backend.reason.as_deref(),
+                    warm_backend.repair_command.as_deref(),
+                ) {
+                    (Some(reason), Some(repair)) => (reason, repair),
+                    _ => anyhow::bail!(
+                        "daemon status: warm-backend status is internally inconsistent; restart with `keyhog daemon stop && keyhog daemon start`"
+                    ),
+                };
+                println!(
+                    "warm backend: not ready · generation {} · {reason} · repair `{repair}`",
+                    warm_backend.daemon_generation
+                );
+            }
             println!(
                 "keyhog daemon: uptime {}s · {} scans served · {} active · {} detectors",
                 uptime_secs, scans_served, active_scans, detector_count
@@ -197,15 +257,21 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
             }
             if stale {
                 let palette = style::for_stderr();
+                let reason = match stale_reason.as_deref() {
+                    Some(reason) => reason,
+                    None => anyhow::bail!(
+                        "daemon status: client marked the daemon stale without an exact readiness or identity mismatch"
+                    ),
+                };
                 eprintln!(
-                    "{} this daemon's build/corpus identity does not match the client \
+                    "{} this daemon's warm-route readiness/identity is not compatible with the client \
                      (daemon keyhog {}, client {}; {}): scan connections refuse it; \
                      `--daemon=auto` runs in process and `--daemon=on` fails until you restart it: \
                      `keyhog daemon stop && keyhog daemon start`.",
                     style::warn("WARN", &palette),
                     daemon_version,
                     env!("CARGO_PKG_VERSION"),
-                    stale_reason.as_deref().unwrap_or("identity mismatch"), // LAW10: reporting-only fallback; status remains explicitly stale and scan handshakes still fail closed
+                    reason,
                 );
             }
             Ok(ExitCode::SUCCESS)

@@ -1,8 +1,9 @@
-use keyhog_core::{MatchLocation, RawMatch, Severity};
+use keyhog_core::{CompanionMap, MatchLocation, RawMatch, Severity};
 use keyhog_scanner::scan_state::{RawMatchPriority, ScanState};
 #[cfg(feature = "ml")]
+use keyhog_scanner::scan_state::PendingRawMatch;
+#[cfg(feature = "ml")]
 use keyhog_scanner::testing::ml_context_for_candidate;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 #[cfg(feature = "ml")]
@@ -20,7 +21,7 @@ fn push_pattern_pending(
 ) -> bool {
     let policy = confidence_policy();
     state.push_detector_ml_pending(
-        raw,
+        pending_raw_match(raw),
         confidence,
         keyhog_scanner::context::CodeContext::Assignment,
         policy.assignment_context_multiplier,
@@ -38,6 +39,21 @@ fn push_pattern_pending(
     )
 }
 
+#[cfg(feature = "ml")]
+fn pending_raw_match(raw: RawMatch) -> PendingRawMatch {
+    PendingRawMatch {
+        detector_id: raw.detector_id,
+        detector_name: raw.detector_name,
+        service: raw.service,
+        severity: raw.severity,
+        credential: raw.credential,
+        companions: raw.companions,
+        location: raw.location,
+        entropy: raw.entropy,
+    }
+}
+
+
 fn raw_match(confidence: f64, credential: &'static str, offset: usize) -> RawMatch {
     RawMatch {
         detector_id: Arc::from("gate"),
@@ -46,7 +62,7 @@ fn raw_match(confidence: f64, credential: &'static str, offset: usize) -> RawMat
         severity: Severity::High,
         credential: credential.into(),
         credential_hash: [0u8; 32].into(),
-        companions: HashMap::new(),
+        companions: CompanionMap::new(),
         location: MatchLocation {
             source: Arc::from("unit"),
             file_path: Some(Arc::from("unit.env")),
@@ -200,7 +216,7 @@ fn pending_ml_queue_deduplicates_only_execution_equivalent_candidates() {
         features,
     ));
     assert_eq!(state.ml_pending.len(), 1);
-    assert_eq!(state.ml_pending[0].raw_match.confidence, Some(0.9));
+    assert_eq!(state.ml_pending[0].heuristic_conf, 0.9);
 
     let mut distinct_features = features;
     distinct_features[0] = 0.75;
@@ -223,7 +239,7 @@ fn pending_ml_queue_keeps_pattern_and_entropy_evidence_separate() {
     assert!(push_pattern_pending(&mut state, raw.clone(), 0.7, features));
     let policy = confidence_policy();
     assert!(state.push_entropy_ml_pending(
-        raw,
+        pending_raw_match(raw),
         0.7,
         policy.unknown_context_multiplier,
         Some(policy.soft_context_suppression_threshold),
@@ -236,4 +252,26 @@ fn pending_ml_queue_keeps_pattern_and_entropy_evidence_separate() {
         keyhog_scanner::detector_ml_policy::ActiveMlMode::Blend,
     ));
     assert_eq!(state.ml_pending.len(), 2);
+}
+
+/// Regression KH-1229: confirmed extraction must observe a finalized positive
+/// and its still-pending ML-rejected twin in the same finalized-then-pending
+/// order, without forcing the pending candidate into a durable `RawMatch`.
+#[test]
+#[cfg(feature = "ml")]
+fn produced_match_view_preserves_final_and_pending_twin_order() {
+    let mut state = ScanState::default();
+    assert!(state.push_match(raw_match(0.95, "emitted", 3), 8));
+    assert!(push_pattern_pending(
+        &mut state,
+        raw_match(0.05, "pending-reject", 7),
+        0.05,
+        [0.0; keyhog_scanner::ml_scorer::NUM_FEATURES],
+    ));
+
+    let mut produced = Vec::new();
+    state.for_each_produced_match(|view| {
+        produced.push((view.detector_id.to_string(), view.offset));
+    });
+    assert_eq!(produced, [("gate".to_string(), 3), ("gate".to_string(), 7)]);
 }

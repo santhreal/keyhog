@@ -140,21 +140,34 @@ fn entropy_keywords_does_not_own_shape_predicates() {
 }
 
 #[test]
-fn entropy_canonical_shapes_live_in_shape_owner() {
+fn entropy_canonical_shapes_live_in_one_way_shape_owners() {
     let src = scanner_src();
     let scanner = uncommented_code(&read(&src.join("entropy/scanner.rs")));
     let plausibility = uncommented_code(&read(&src.join("entropy/plausibility.rs")));
-    let shape = uncommented_code(&read(&src.join("suppression/shape/canonical.rs")));
+    let assignment = uncommented_code(&read(&src.join("suppression/shape/assignment.rs")));
+    let canonical = uncommented_code(&read(&src.join("suppression/shape/canonical.rs")));
+    let detector = uncommented_code(&read(&src.join("suppression/shape/detector.rs")));
 
     assert!(
-        shape.contains("fn looks_like_entropy_canonical_non_secret_shape(")
-            && shape.contains("fn looks_like_entropy_canonical_hex_digest(")
-            && shape.contains("fn looks_like_entropy_uuid_shape(")
-            && shape.contains("fn is_five_by_five_dash_shape("),
-        "suppression::shape::canonical must own entropy canonical non-secret shape predicates"
+        assignment.contains("use super::canonical::{")
+            && assignment.contains("fn looks_like_entropy_canonical_non_secret_shape(")
+            && assignment.contains("fn looks_like_entropy_canonical_hex_digest(")
+            && assignment.contains("is_uuid_v4_shape as looks_like_entropy_uuid_shape")
+            && !assignment.contains("fn looks_like_entropy_uuid_shape(")
+            && canonical.contains("fn is_five_by_five_dash_shape(")
+            && !canonical.contains("fn looks_like_entropy_")
+            && !canonical.contains("super::assignment"),
+        "assignment roles must depend one way on canonical value shapes"
     );
     assert!(
-        !shape.contains("Vec<&str>") && !shape.contains(".split('-').collect()"),
+        detector.contains("use super::canonical::is_uniform_hex;")
+            && detector.contains("fn is_canonical_service_hex_key(")
+            && !canonical.contains("fn is_canonical_service_hex_key(")
+            && !canonical.contains("super::detector"),
+        "detector exceptions must depend one way on canonical value shapes"
+    );
+    assert!(
+        !canonical.contains("Vec<&str>") && !canonical.contains(".split('-').collect()"),
         "canonical dashed serial predicates must stay allocation-free fixed-width byte scans"
     );
     assert!(
@@ -193,20 +206,23 @@ fn entropy_canonical_shapes_live_in_shape_owner() {
 }
 
 #[test]
-fn random_byte_base64_shape_lives_in_shape_owner() {
+fn random_byte_base64_shape_lives_in_value_and_assignment_owners() {
     let src = scanner_src();
-    let shape = uncommented_code(&read(&src.join("suppression/shape/canonical.rs")));
+    let canonical = uncommented_code(&read(&src.join("suppression/shape/canonical.rs")));
+    let assignment = uncommented_code(&read(&src.join("suppression/shape/assignment.rs")));
     let shape_mod = uncommented_code(&read(&src.join("suppression/shape/mod.rs")));
     let generic_shape = uncommented_code(&read(&src.join("generic_assignment_shape.rs")));
     let entropy_gates = uncommented_code(&read(&src.join("engine/phase2_entropy/gates.rs")));
 
     assert!(
-        shape.contains("fn looks_like_random_byte_base64_blob(")
-            && shape.contains("fn looks_like_entropy_random_base64_blob_decoy(")
-            && shape.contains("fn looks_like_generic_random_base64_blob_decoy(")
-            && shape.contains("fn generic_base64_candidate_is_ambiguous(")
+        canonical.contains("fn looks_like_random_byte_base64_blob(")
+            && assignment.contains("fn looks_like_entropy_random_base64_blob_decoy(")
+            && assignment.contains("fn looks_like_generic_random_base64_blob_decoy(")
+            && assignment.contains("fn generic_base64_candidate_is_ambiguous(")
+            && !canonical.contains("fn looks_like_entropy_random_base64_blob_decoy(")
+            && !canonical.contains("fn looks_like_generic_random_base64_blob_decoy(")
             && shape_mod.contains("looks_like_random_byte_base64_blob"),
-        "suppression::shape must own and re-export the random-byte base64 blob predicate"
+        "value shape and assignment roles must have distinct suppression::shape owners"
     );
     assert!(
         !src.join("engine/phase2_generic/shape_helpers.rs").exists(),

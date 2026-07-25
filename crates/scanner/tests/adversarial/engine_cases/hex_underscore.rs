@@ -27,7 +27,7 @@ fn hex_underscore_separators_decode_to_credential() {
     let encoded = underscored(VALID_HEX);
     let body = format!("const token_hex = \"{encoded}\";\n");
     let scanner = test_scanner();
-    let matches = scanner.scan(&make_chunk(&body));
+    let matches = scanner.scan(&make_chunk(&body)).expect(concat!(module_path!(), ": scan should succeed"));
     assert!(
         matches
             .iter()

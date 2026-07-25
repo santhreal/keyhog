@@ -49,7 +49,9 @@ fn source_code_path_skips_caesar_decoder() {
             ..Default::default()
         },
     };
-    let decoded = CaesarDecoder.decode_chunk(&chunk);
+    let decoded = CaesarDecoder
+        .decode_chunk(&chunk)
+        .expect("bounded source-path Caesar decode should succeed");
     assert!(
         decoded.is_empty(),
         "Caesar decoder must not run on .rs source files; got {} decoded variants",
@@ -73,7 +75,9 @@ fn decode_chunk_round_trips_aws_shaped_token() {
             ..Default::default()
         },
     };
-    let decoded = CaesarDecoder.decode_chunk(&chunk);
+    let decoded = CaesarDecoder
+        .decode_chunk(&chunk)
+        .expect("bounded env Caesar decode should succeed");
     assert!(
         decoded
             .iter()
@@ -100,7 +104,9 @@ fn private_key_block_body_skips_caesar_decoder() {
         },
     };
 
-    let decoded = CaesarDecoder.decode_chunk(&chunk);
+    let decoded = CaesarDecoder
+        .decode_chunk(&chunk)
+        .expect("bounded lowercase Caesar decode should succeed");
 
     assert!(
         decoded.is_empty(),
@@ -126,7 +132,9 @@ fn private_key_block_does_not_disable_caesar_outside_block() {
         },
     };
 
-    let decoded = CaesarDecoder.decode_chunk(&chunk);
+    let decoded = CaesarDecoder
+        .decode_chunk(&chunk)
+        .expect("bounded candidate Caesar decode should succeed");
 
     assert!(
         decoded

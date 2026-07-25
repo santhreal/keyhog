@@ -22,8 +22,7 @@ fn generic_bridge_does_not_echo_named_ml_pending_line() {
         },
     };
 
-    let matches = scanner
-        .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+    let matches = scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback).expect("selected backend scan succeeds")
         .into_iter()
         .flatten()
         .collect::<Vec<_>>();
@@ -57,8 +56,7 @@ fn stripe_direct_prefix_path_preserves_same_line_multiple_tokens() {
         },
     };
 
-    let matches = scanner
-        .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+    let matches = scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback).expect("selected backend scan succeeds")
         .into_iter()
         .flatten()
         .collect::<Vec<_>>();

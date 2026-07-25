@@ -1,5 +1,5 @@
-use super::pipeline::{decode_candidate_refs_exact, with_extracted_value_spans};
-use super::{DecodeAdmissionSketch, Decoder};
+use super::pipeline::{stream_candidate_refs_exact, with_extracted_value_spans};
+use super::{DecodeAdmissionSketch, DecodeOutputSink, Decoder};
 use keyhog_core::Chunk;
 
 /// Match secrets that have been reversed character-by-character to dodge a
@@ -50,24 +50,26 @@ impl ReverseDecoder {
         })
     }
 
-    pub(super) fn decode_chunk_with_policy(
+    pub(super) fn decode_chunk_with_policy_into(
         &self,
         chunk: &Chunk,
         policy: &super::policy::CompiledDecodeTransformPolicy,
-    ) -> Vec<Chunk> {
+        sink: &mut dyn DecodeOutputSink,
+    ) {
         if chunk.metadata.source_type.contains("/reverse") {
-            return Vec::new();
+            return;
         }
         with_extracted_value_spans(&chunk.data, |candidates| {
-            decode_candidate_refs_exact(
+            stream_candidate_refs_exact(
+                sink,
                 chunk,
                 candidates
                     .iter()
                     .filter(|candidate| is_reverse_candidate(candidate, policy)),
                 |s| Ok(reverse_str(s)),
                 self.name(),
-            )
-        })
+            );
+        });
     }
 }
 
@@ -80,8 +82,8 @@ impl Decoder for ReverseDecoder {
         self.admission_sketch_with_policy(chunk, super::policy::bundled_compat_policy())
     }
 
-    fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
-        self.decode_chunk_with_policy(chunk, super::policy::bundled_compat_policy())
+    fn decode_chunk_into(&self, chunk: &Chunk, sink: &mut dyn DecodeOutputSink) {
+        self.decode_chunk_with_policy_into(chunk, super::policy::bundled_compat_policy(), sink);
     }
 }
 

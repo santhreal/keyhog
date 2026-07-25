@@ -46,27 +46,42 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: install vectorscan runtime
+      - name: install Hyperscan development files
         run: |
           set -euo pipefail
           for i in 1 2 3 4 5; do
             if sudo apt-get update -qq \
-              && (sudo apt-get install -y --no-install-recommends libhyperscan5 \
-                  || sudo apt-get install -y --no-install-recommends libhyperscan-dev); then
+              && sudo apt-get install -y --no-install-recommends libhyperscan-dev pkg-config; then
               break
             fi
             sleep $((i * 2))
             if [ "$i" -eq 5 ]; then exit 1; fi
           done
 
-      - name: build checked-out keyhog (release binary)
+      - name: build checked-out keyhog (CPU-only release binary)
+        # Hosted ubuntu runners have no CUDA device or libcuda. Keep the full
+        # detection surface, including Hyperscan, but explicitly omit only the
+        # GPU dispatch stack so this measures the checked-out CPU scanner.
         run: |
           set -euo pipefail
-          env -u CC cargo build --locked --release -p keyhog --bin keyhog
+          env -u CC cargo build --locked --release -p keyhog --bin keyhog \
+            --no-default-features --features ci-lean
           mkdir -p "$HOME/.local/bin"
           install -m 0755 target/release/keyhog "$HOME/.local/bin/keyhog"
           echo "using checked-out keyhog $(git rev-parse HEAD)"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: install benchmark dependencies
+        run: |
+          set -euo pipefail
+          python3 -m pip install -r benchmarks/requirements.txt
+
+      - name: prepare clean benchmark results
+        # Results are generated state. Start from an absent directory so the
+        # gate/upload cannot consume a stale row from a cache or checkout.
+        run: |
+          set -euo pipefail
+          rm -rf benchmarks/results
 
       - name: install required competitors
         run: |
@@ -146,24 +161,61 @@ jobs:
             --positives "$POSITIVES" --negatives "$NEGATIVES" --seed 0
 
       - name: run leaderboard (keyhog + required competitors)
-        # Scanner adapters resolve binaries from PATH.
+        # The production target passes --require-available, so an adapter that
+        # cannot execute fails here rather than becoming a fabricated row.
         run: |
           set -euo pipefail
-          cd benchmarks && python3 -m bench leaderboard \
-            --corpus mirror --scanners keyhog,betterleaks,kingfisher --out results
+          make -C benchmarks leaderboard SCANNERS=keyhog,betterleaks,kingfisher
 
       - name: differential + regression gate (keyhog must lead and not regress)
-        # Fails red if a competitor overtakes keyhog on F1 OR keyhog's F1 drops
-        # more than --epsilon below the committed baseline anchor.
+        # BASELINE names the inventory directory, not a hand-picked JSON file:
+        # the gate resolves mirror through baselines/canonical.toml.
         run: |
           set -euo pipefail
-          cd benchmarks && python3 -m bench gate \
-            --corpus mirror --results results \
-            --require-competitors betterleaks,kingfisher \
-            --baseline baselines/mirror-keyhog-baseline.json --epsilon 0.005
+          make -C benchmarks gate \
+            GATE_SCANNERS=keyhog,betterleaks,kingfisher \
+            REQUIRE_COMPETITORS=betterleaks,kingfisher \
+            BASELINE=baselines EPSILON=0.005
+
+      - name: validate differential artifacts
+        # A successful command is not sufficient evidence for publication:
+        # validate schema, provenance axes, availability, and real findings.
+        run: |
+          set -euo pipefail
+          cd benchmarks
+          python3 - <<'PY'
+          import json
+          import pathlib
+
+          from bench.schema import RunResult
+
+          files = sorted(pathlib.Path("results").rglob("*.json"))
+          if not files:
+              raise SystemExit("results: no benchmark result JSON files")
+          rows = [
+              RunResult.from_json(json.loads(path.read_text()), source=str(path))
+              for path in files
+          ]
+          expected = {"keyhog", "betterleaks", "kingfisher"}
+          observed = {row.scanner.name for row in rows if row.corpus.name == "mirror"}
+          missing = expected - observed
+          if missing:
+              raise SystemExit(f"results: missing required scanner rows: {sorted(missing)}")
+          for row in rows:
+              if row.corpus.name != "mirror":
+                  raise SystemExit(f"results: unexpected corpus {row.corpus.name!r}")
+              if not row.available:
+                  raise SystemExit(f"results: unavailable {row.scanner.name} row: {row.error}")
+              if row.corpus.fixture_count <= 0 or row.finding_count <= 0:
+                  raise SystemExit(
+                      f"results: empty {row.scanner.name} result "
+                      f"(fixtures={row.corpus.fixture_count}, findings={row.finding_count})"
+                  )
+          PY
+
 
       - name: upload results artifact
-        if: always()
+        if: success()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: differential-results-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}

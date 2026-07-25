@@ -50,7 +50,9 @@ fn single_line_k8s_bootstrap_token_dedups_to_one_finding_no_phantom_offsets() {
     let file_len = text.len();
     let chunk = make_chunk(text, "k8s-single-line.env");
 
-    let results = scanner.scan_coalesced(std::slice::from_ref(&chunk));
+    let results = scanner
+        .scan_coalesced(std::slice::from_ref(&chunk))
+        .expect("single-chunk dedup regression scan should succeed");
     let raw: Vec<_> = results.into_iter().flatten().collect();
     let deduped = dedup_matches(raw, &DedupScope::Credential);
 
@@ -117,7 +119,9 @@ fn single_line_env_secret_no_offsets_past_eof_across_dedup() {
     let file_len = text.len();
     let chunk = make_chunk(text, "github-single-line.env");
 
-    let results = scanner.scan_coalesced(std::slice::from_ref(&chunk));
+    let results = scanner
+        .scan_coalesced(std::slice::from_ref(&chunk))
+        .expect("dedup provenance regression scan should succeed");
     let raw: Vec<_> = results.into_iter().flatten().collect();
     let deduped = dedup_matches(raw, &DedupScope::Credential);
     for m in &deduped {

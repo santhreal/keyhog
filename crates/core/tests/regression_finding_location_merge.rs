@@ -447,11 +447,11 @@ fn cross_detector_fold_drops_loser_additional_equal_to_winner_primary() {
 }
 
 // ---------------------------------------------------------------------------
-// 10. Serialized shape: `additional_locations` appears in the JSON with the
-//     exact recorded line/offset so downstream reporters see the merge result.
+// 10. Pre-report shape: `additional_locations` retains exact line/offset data.
 // ---------------------------------------------------------------------------
+/// Proves dedup retains exact primary and additional locations before safe reporting.
 #[test]
-fn additional_locations_serialize_with_exact_lines() {
+fn additional_locations_retain_exact_lines() {
     let matches = vec![
         raw(
             "generic-password",
@@ -468,16 +468,11 @@ fn additional_locations_serialize_with_exact_lines() {
     ];
     let out = dedup_matches(matches, &DedupScope::Credential);
     assert_eq!(out.len(), 1);
-    let v = serde_json::to_value(&out[0]).expect("DedupedMatch serializes");
-    let extra = v
-        .get("additional_locations")
-        .and_then(|x| x.as_array())
-        .expect("additional_locations is a JSON array");
-    assert_eq!(extra.len(), 1, "one additional location serialized");
-    assert_eq!(extra[0]["line"].as_u64(), Some(2));
-    assert_eq!(extra[0]["offset"].as_u64(), Some(30));
-    assert_eq!(v["primary_location"]["line"].as_u64(), Some(1));
-    assert_eq!(v["primary_location"]["offset"].as_u64(), Some(10));
+    assert_eq!(out[0].additional_locations.len(), 1);
+    assert_eq!(out[0].additional_locations[0].line, Some(2));
+    assert_eq!(out[0].additional_locations[0].offset, 30);
+    assert_eq!(out[0].primary_location.line, Some(1));
+    assert_eq!(out[0].primary_location.offset, 10);
 }
 
 // ---------------------------------------------------------------------------

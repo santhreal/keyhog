@@ -3,9 +3,8 @@
 //!
 //! Standalone integration test (external crate): only the public API is in
 //! scope. `SensitiveString` is re-exported from `keyhog_core` (via `api::*`).
-//! The inner `as_str()` is `pub(crate)` and therefore NOT reachable here, so
-//! every content read goes through the public `Deref<Target=str>` (`&*ss`),
-//! `Display` (`{}`), or `serde` surface.
+//! Explicit plaintext access uses public `as_str()` / `Deref<Target = str>`;
+//! implicit formatting and serialization remain redacted or fail closed.
 //!
 //! Focus is deliberately DISJOINT from
 //! `regression_sensitive_string_redaction.rs` (which owns the `redact()`
@@ -19,9 +18,9 @@
 //!   * `partial_cmp` -> `Some(self.cmp(other))` (total order)
 //!   * `hash` -> `self.as_str().hash(state)` (str-consistent, enables
 //!               `Borrow<str>` map lookup)
-//!   * `Serialize`   -> `self.as_str().serialize(..)` (bare JSON string;
-//!                      the content IS exposed on this surface, by contract)
-//!   * `Deserialize` -> `String::deserialize(..)` (a JSON string, nothing else)
+//!   * `Serialize`   -> always returns a serde error; callers must explicitly
+//!                      reveal `as_str()` only at a protected private boundary
+//!   * `Deserialize` -> `String::deserialize(..)` for historical compatibility
 
 use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
@@ -211,28 +210,27 @@ fn hash_borrow_str_enables_lookup_by_plain_str_key() {
 }
 
 // ------------------------------------------------------------------
-// Serialize / Deserialize  (bare JSON string; content exposed by contract)
+// Fail-closed serialization and compatible plaintext deserialization
 // ------------------------------------------------------------------
 
+/// Locks out the old serde path that emitted a bare plaintext JSON string.
 #[test]
-fn serialize_emits_bare_json_string_exposing_content() {
-    // Serialize forwards to `as_str().serialize` -> a plain JSON string.
-    // This surface INTENTIONALLY exposes the bytes (mirrors Display); pin it so
-    // a future "redact on serialize" change is a deliberate, reviewed decision.
+fn serialize_refuses_plaintext_for_regular_and_escaped_secrets() {
     let ss = SensitiveString::from("ghp_secretvalue");
-    let json = serde_json::to_string(&ss).unwrap();
-    assert_eq!(json, "\"ghp_secretvalue\"");
-    // Special characters are JSON-escaped, not mangled.
+    let error = serde_json::to_string(&ss).expect_err("implicit serialization must fail closed");
+    assert!(!error.to_string().contains("ghp_secretvalue"));
+
     let quoted = SensitiveString::from("a\"b\\c");
-    assert_eq!(serde_json::to_string(&quoted).unwrap(), "\"a\\\"b\\\\c\"");
+    let quoted_error =
+        serde_json::to_string(&quoted).expect_err("escaped plaintext must also fail closed");
+    assert!(!quoted_error.to_string().contains("a\"b\\c"));
 }
 
+/// Preserves exact UTF-8 input compatibility without requiring unsafe output first.
 #[test]
-fn deserialize_from_json_string_roundtrips_exactly() {
-    let ss = SensitiveString::from("café-π-secret");
-    let json = serde_json::to_string(&ss).unwrap();
-    let back: SensitiveString = serde_json::from_str(&json).unwrap();
-    assert_eq!(back, ss);
+fn deserialize_from_json_string_preserves_exact_unicode() {
+    let back: SensitiveString = serde_json::from_str(r#""café-π-secret""#).unwrap();
+    assert_eq!(back, SensitiveString::from("café-π-secret"));
     assert_eq!(&*back, "café-π-secret");
 }
 

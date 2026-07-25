@@ -72,7 +72,7 @@ fn anchor_ineligible_phase2_pattern_runs_whole_chunk_under_anchor_mode() {
     keyhog_scanner::testing::set_phase2_anchor_mode(&scanner, Some(false));
     scanner.clear_fragment_cache();
     let baseline =
-        scanner.scan_chunks_with_backend(std::slice::from_ref(&sample), ScanBackend::CpuFallback);
+        scanner.scan_chunks_with_backend(std::slice::from_ref(&sample), ScanBackend::CpuFallback).expect("selected backend scan succeeds");
     assert!(
         baseline.iter().flatten().any(|m| {
             m.detector_id.as_ref() == "asana-pat" && m.credential.as_ref() == credential
@@ -83,7 +83,7 @@ fn anchor_ineligible_phase2_pattern_runs_whole_chunk_under_anchor_mode() {
     keyhog_scanner::testing::set_phase2_anchor_mode(&scanner, Some(true));
     scanner.clear_fragment_cache();
     let matches =
-        scanner.scan_chunks_with_backend(std::slice::from_ref(&sample), ScanBackend::CpuFallback);
+        scanner.scan_chunks_with_backend(std::slice::from_ref(&sample), ScanBackend::CpuFallback).expect("selected backend scan succeeds");
     keyhog_scanner::testing::set_phase2_anchor_mode(&scanner, None);
 
     assert!(

@@ -12,6 +12,8 @@
 #   make agentre-corpus       # verify sources and build the pinned Linux binaries
 #   make leakage-audit        # prove train/calibration/sealed-test split isolation
 #   make creddata          # print Samsung/CredData corpus info
+#   make bloom             # measure Bloom rejection + bypass parity on CredData F/X records
+#   make canonical         # rerun the exact KH-020 mirror run set with Bloom linkage
 #   make kernel-info       # print perf corpus info
 #   make run               # run SCANNER=keyhog CORPUS=mirror once
 #   make analyze           # print top FP/FN examples for SCANNER on CORPUS
@@ -35,6 +37,8 @@ export PYTHONDONTWRITEBYTECODE := 1
 # then PATH.
 SCANNER          ?= keyhog
 SCANNERS         ?= keyhog,betterleaks,kingfisher,noseyparker,trufflehog,titus
+CANONICAL_SCANNERS ?= keyhog,betterleaks,kingfisher
+CANONICAL_BLOOM_RESULT ?= results/bloom-creddata-fx-record-spans-v1.json
 CORPUS           ?= mirror
 OUTPUT           ?= -
 OUT              ?= results
@@ -44,13 +48,15 @@ IOC_RECOVERY_OUT ?= results-ioc-recovery
 LEAKAGE_MANIFEST ?=
 LEAKAGE_CONTENT_ROOT ?=
 LEAKAGE_RECEIPT ?= reports/leakage-receipt.json
+REPORT_RUN_SET ?= $(if $(filter results,$(OUT)),run-sets/canonical.toml,)
+REPORT_RUN_SET_ARG = $(if $(strip $(REPORT_RUN_SET)),--run-set "$(REPORT_RUN_SET)",)
 
 # Gate / loop knobs. The loop measures every available scanner but gates
 # keyhog against the required competitors plus the committed regression anchor;
 # EPSILON is the allowed F1 slack.
 GATE_SCANNERS    ?= keyhog,betterleaks,kingfisher
 REQUIRE_COMPETITORS ?= betterleaks,kingfisher
-BASELINE         ?= baselines/mirror-keyhog-baseline.json
+BASELINE         ?= baselines
 EPSILON          ?= 0.005
 CALIBRATION_OUT  ?= reports/calibration.toml
 
@@ -58,7 +64,7 @@ ifneq ($(strip $(KEYHOG_BIN)),)
 export KEYHOG_BIN
 endif
 
-.PHONY: help test targets host mirror ioc-recovery-corpus ioc-recovery agentre-corpus leakage-audit creddata kernel-info run analyze bench leaderboard report report-check org-audit gate cross-device-gate loop keyhog clean
+.PHONY: help test targets host mirror ioc-recovery-corpus ioc-recovery agentre-corpus leakage-audit creddata bloom canonical kernel-info run analyze bench leaderboard report report-check org-audit gate cross-device-gate loop keyhog clean
 
 help:
 	@grep -E '^#   make ' $(lastword $(MAKEFILE_LIST)) | sed 's/^#   /  /'
@@ -94,6 +100,18 @@ leakage-audit:
 creddata:
 	cd $(BENCH_DIR) && $(PY) -m bench.corpora.creddata
 
+bloom:
+	@test -n "$(KEYHOG_BIN)" || { echo "KEYHOG_BIN is required for the Bloom differential" >&2; exit 2; }
+	cd $(BENCH_DIR) && $(PY) -m bench.bloom --keyhog "$(KEYHOG_BIN)"
+
+canonical:
+	@test -n "$(KEYHOG_BIN)" || { echo "KEYHOG_BIN is required for the canonical benchmark" >&2; exit 2; }
+	cd $(BENCH_DIR) && $(PY) -m bench.corpora.mirror --ensure
+	cd $(BENCH_DIR) && $(PY) -m bench.bloom --keyhog "$(KEYHOG_BIN)"
+	cd $(BENCH_DIR) && KEYHOG_BENCH_BLOOM_RESULT="$(BENCH_DIR)/$(CANONICAL_BLOOM_RESULT)" \
+		$(PY) -m bench leaderboard --corpus mirror --scanners "$(CANONICAL_SCANNERS)" \
+		--out results --require-available
+
 kernel-info:
 	cd $(BENCH_DIR) && $(PY) -m bench corpus kernel
 
@@ -107,10 +125,10 @@ bench leaderboard:
 	cd $(BENCH_DIR) && $(PY) -m bench leaderboard --corpus "$(CORPUS)" --scanners "$(SCANNERS)" --out "$(OUT)" --require-available
 
 report:
-	cd $(BENCH_DIR) && $(PY) -m bench report --results "$(OUT)" --reports reports --corpus "$(CORPUS)" --inject
+	cd $(BENCH_DIR) && $(PY) -m bench report --results "$(OUT)" --reports reports --corpus "$(CORPUS)" $(REPORT_RUN_SET_ARG) --inject
 
 report-check:
-	cd $(BENCH_DIR) && $(PY) -m bench report --results "$(OUT)" --reports reports --corpus "$(CORPUS)" --check
+	cd $(BENCH_DIR) && $(PY) -m bench report --results "$(OUT)" --reports reports --corpus "$(CORPUS)" $(REPORT_RUN_SET_ARG) --check
 
 org-audit:
 	cd $(REPO_ROOT) && $(PY) scripts/org_audit.py
@@ -139,7 +157,7 @@ loop:
 	cd $(BENCH_DIR) && $(PY) -m bench.corpora.mirror --ensure
 	cd $(BENCH_DIR) && $(PY) -m bench leaderboard --corpus "$(CORPUS)" --scanners "$(SCANNERS)" --out "$(OUT)" --require-available
 	cd $(BENCH_DIR) && $(PY) -m bench calibrate --corpus "$(CORPUS)" --emit-toml "$(CALIBRATION_OUT)"
-	cd $(BENCH_DIR) && $(PY) -m bench report --results "$(OUT)" --reports reports --corpus "$(CORPUS)"
+	cd $(BENCH_DIR) && $(PY) -m bench report --results "$(OUT)" --reports reports --corpus "$(CORPUS)" $(REPORT_RUN_SET_ARG)
 	cd $(BENCH_DIR) && $(PY) -m bench gate --corpus "$(CORPUS)" --results "$(OUT)" \
 		--scanners "$(GATE_SCANNERS)" --baseline "$(BASELINE)" --epsilon "$(EPSILON)" \
 		--require-competitors "$(REQUIRE_COMPETITORS)"

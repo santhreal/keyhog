@@ -28,11 +28,14 @@ impl StateFileWriteLock {
             )
         })?;
         std::fs::create_dir_all(parent)?;
-        let file = OpenOptions::new()
-            .create(true)
-            .read(true)
-            .write(true)
-            .open(lock_path)?;
+        let mut options = OpenOptions::new();
+        options.create(true).read(true).write(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let file = options.open(lock_path)?;
         file.lock_exclusive()?;
         Ok(Self { file })
     }

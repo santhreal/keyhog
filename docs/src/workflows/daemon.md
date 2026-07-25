@@ -193,6 +193,18 @@ output formats, output files, deduplication, bundled test-fixture suppression,
 local default allowlists, inline suppression, and `--dogfood`. Dogfood detail is
 request-scoped and bounded; exact aggregate counters are carried separately.
 
+You can warm an explicit replacement corpus. Select the same reviewed directory
+at both ends:
+
+```sh
+keyhog daemon start --detectors ./reviewed-detectors
+keyhog scan --daemon=on --detectors ./reviewed-detectors one-file.txt
+```
+
+The client computes the expected rules identity from its selected directory.
+It accepts the warm route only when the daemon compiled the exact same rules.
+The report records the replacement corpus count, digest, source, and mode.
+
 The in-process orchestrator is required for any of these request classes:
 
 - directories, multiple roots, Git modes, remote, cloud, container, binary,
@@ -200,13 +212,14 @@ The in-process orchestrator is required for any of these request classes:
 - baseline filtering, live verification, or Merkle/incremental source state
 - `--fast`, `--deep`, `--precision`, benchmark mode, or changes to decode,
   entropy, ML, Unicode normalization, comment scanning, scanner limits, source
-  limits, detector vocabulary, or detector corpus
+  limits, detector vocabulary, or detector overlay composition
+- a replacement corpus that does not exactly match the daemon rules identity
 - per-request backend, GPU, batch-pipeline, autoroute, cache, or calibration
   controls
 - path-exclusion changes
 - lockdown, secret display, client-safe hiding, confidence or severity floors,
-  custom AWS canaries, detector confidence policy, allowlist governance, or a
-  malformed effective configuration
+  custom AWS canaries, detector disable or confidence policy, allowlist
+  governance, or a malformed effective configuration
 
 In `auto`, these requests stay in process. In `on`, they fail before scanning.
 Daemon availability therefore cannot weaken a requested policy or change the
@@ -222,13 +235,16 @@ of these values to match the current client:
 - Git build hash
 - canonical detector-rules digest
 
-The detector digest is compared with the client's embedded detector corpus.
-The handshake also carries the daemon-owned backend policy. It must be
-`autoroute` or a canonical forced backend label. A scan client rejects an
-unknown label. `daemon status` and `daemon stop` tolerate package, build, and
-detector identity staleness so an operator can inspect and terminate an old
-service. They still require a compatible wire protocol. Stale status prints the
-exact mismatch and exits successfully because the health request succeeded.
+For the default corpus, the detector digest is compared with the client's
+embedded rules. For an explicit replacement corpus, the client derives the
+expected digest from its own selected directory and accepts only an exact match.
+Overlay composition is not daemon-eligible. The handshake also carries the
+daemon-owned backend policy. It must be `autoroute` or a canonical forced backend
+label. A scan client rejects an unknown label. `daemon status` and `daemon stop`
+tolerate package, build, and detector identity staleness so you can inspect and
+terminate an old service. They still require a compatible wire protocol.
+Stale status prints the exact mismatch and exits successfully because the health
+request succeeded.
 
 Current scan results require matches, example-suppression count, dogfood
 detail, exact static-recovery rejection aggregates, dropped-detail count, and
@@ -280,3 +296,9 @@ with the matching KeyHog binary or the service manager that owns it.
 may take to deliver one complete request frame. The default is `300` seconds.
 On timeout, the daemon closes that connection and reclaims its concurrency
 slot. This is a request-read deadline, not a scan execution deadline.
+
+After a request is sent, the client applies a response deadline by request
+kind. `Hello`, `Health`, and `Shutdown` use 5 seconds. `ScanText` uses 60
+seconds. `ScanPath` uses 300 seconds. A timeout fails with restart guidance.
+Automatic scan routing may then use its documented in-process recovery path,
+while `--daemon=on`, `daemon status`, and `daemon stop` return an error.

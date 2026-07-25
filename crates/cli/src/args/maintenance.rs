@@ -1,4 +1,5 @@
 use clap::Parser;
+use std::path::PathBuf;
 
 #[derive(Parser)]
 pub struct CompletionArgs {
@@ -70,11 +71,15 @@ pub struct BackendArgs {
     pub require_gpu: bool,
 }
 
-/// Arguments for `keyhog doctor`. The health check is fully automatic; no
-/// flags are needed today. The struct exists so the command can grow options
-/// (e.g. `--json`) without a breaking signature change.
+/// Arguments for `keyhog doctor`.
 #[derive(Parser)]
-pub struct DoctorArgs {}
+pub struct DoctorArgs {
+    /// Read a `bloom-evidence-v1` receipt produced by `keyhog bloom-diagnostic`.
+    /// The receipt must match this binary's detector corpus and prove exact
+    /// enabled-versus-bypassed finding parity.
+    #[arg(long, value_name = "PATH")]
+    pub bloom_evidence: Option<PathBuf>,
+}
 
 /// Arguments for `keyhog update` (self-update from GitHub releases).
 #[derive(Parser)]
@@ -84,9 +89,15 @@ pub struct UpdateArgs {
     #[arg(long)]
     pub check: bool,
 
-    /// Install a specific release tag instead of the latest (e.g. `v0.5.34`).
-    /// Use this to pin a version or downgrade.
-    #[arg(long)]
+    /// Install an exact release version (e.g. `1.2.3` or `v1.2.3`).
+    /// Canonical SemVer is required; a leading `v` is normalized. Valid
+    /// prereleases are accepted. Use this to pin a version or downgrade.
+    #[arg(
+        long,
+        id = "release_version",
+        value_name = "SEMVER",
+        value_parser = crate::installer::normalize_requested_version
+    )]
     pub version: Option<String>,
 }
 
@@ -97,9 +108,15 @@ pub struct RepairArgs {
     #[arg(long)]
     pub force: bool,
 
-    /// Reinstall a specific release tag instead of the latest (e.g. `v0.5.34`).
-    /// Use this to pin a version or downgrade.
-    #[arg(long)]
+    /// Reinstall an exact release version (e.g. `1.2.3` or `v1.2.3`).
+    /// Canonical SemVer is required; a leading `v` is normalized. Valid
+    /// prereleases are accepted. Use this to pin a version or downgrade.
+    #[arg(
+        long,
+        id = "release_version",
+        value_name = "SEMVER",
+        value_parser = crate::installer::normalize_requested_version
+    )]
     pub version: Option<String>,
 }
 

@@ -30,6 +30,7 @@ template = "ApiToken {{match}}"
 
 [detector.verify.success]
 status = 200
+policy = "status_with_error_backstop"
 
 [[detector.tests]]
 test_positive = "SENTINELONE_API_TOKEN=VTLKc1UW3ORMthMR2228PzVvccx9vfRITHRsJ7kuH_XizcBV9Cd4tf-PTl-yPLEYJc-a"

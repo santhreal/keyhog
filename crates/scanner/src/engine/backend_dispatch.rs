@@ -3,27 +3,6 @@ use crate::hw_probe::ScanBackend;
 use keyhog_core::Chunk;
 
 impl CompiledScanner {
-    pub(crate) fn scan_chunks_with_backend_internal(
-        &self,
-        chunks: &[Chunk],
-        backend: ScanBackend,
-    ) -> Vec<Vec<RawMatch>> {
-        self.scan_chunks_with_backend_internal_and_admission(chunks, backend, None)
-    }
-
-    pub(crate) fn scan_chunks_with_backend_internal_and_admission(
-        &self,
-        chunks: &[Chunk],
-        backend: ScanBackend,
-        admission_plan: Option<&Phase1AdmissionPlan>,
-    ) -> Vec<Vec<RawMatch>> {
-        self.scan_chunks_with_backend_internal_admission_and_route(
-            chunks,
-            backend,
-            admission_plan,
-            self.execution_route_for_backend(backend),
-        )
-    }
 
     pub(crate) fn scan_chunks_with_backend_internal_admission_and_route(
         &self,
@@ -31,12 +10,12 @@ impl CompiledScanner {
         backend: ScanBackend,
         admission_plan: Option<&Phase1AdmissionPlan>,
         route: crate::ScanExecutionRoute,
-    ) -> Vec<Vec<RawMatch>> {
+    ) -> crate::error::Result<Vec<Vec<RawMatch>>> {
         if chunks.iter().all(|chunk| chunk.data.is_empty()) {
             for _ in chunks {
                 crate::telemetry::record_file_scanned(0);
             }
-            return vec![Vec::new(); chunks.len()];
+            return Ok(vec![Vec::new(); chunks.len()]);
         }
 
         // Non-GPU backends (and empty batches) run the parallel CPU path. rayon's
@@ -52,58 +31,61 @@ impl CompiledScanner {
         }
 
         // The batched region-presence literal set is the SINGLE on-GPU trigger
-        // producer. It acquires the compiled GPU literal matcher and hard-fails
-        // the selected route on dispatch degradation, so it runs whenever a GPU
-        // backend is selected without silently substituting CPU/SIMD.
+        // producer. Dispatch failures remain structured and never substitute
+        // CPU/SIMD for the selected route.
         #[cfg(feature = "gpu")]
         {
             self.scan_coalesced_gpu_region_presence(chunks, backend, route)
+                .map_err(|error| {
+                    self.record_gpu_runtime_fault(error.reason());
+                    crate::error::ScanError::Gpu(error.to_string())
+                })
         }
-        // GPU compiled out: never silent-CPU while the selected route is GPU
-        // (KH-1407). Public entry should reject earlier; this is fail-closed.
         #[cfg(not(feature = "gpu"))]
         {
-            // LAW10: no-runtime-effect; this cfg-only binding exists solely to type-check parameters before the branch fails closed below.
-            let _ = (chunks, admission_plan, route);
-            crate::process_exit::backend_unavailable(format!(
+            let _ = (chunks, admission_plan, route); // LAW10: parameters are consumed only to keep the unsupported cfg branch warning-free before returning its structured error.
+            Err(crate::error::ScanError::Gpu(format!(
                 "{} selected but this scanner build has no GPU support",
                 backend.label()
-            ));
+            )))
         }
     }
 
     /// Parallel per-chunk CPU scan + cross-chunk boundary reassembly. The single
-    /// owner of this path: it is taken both for any non-GPU backend (and empty
-    /// batches) and as the GPU-compiled-out / GPU-request degrade, which were
-    /// otherwise two byte-identical copies that could drift apart (the
-    /// `scan_chunk_boundaries` seam pass is load-bearing recall on both).
+    /// owner of this path: it is taken only for non-GPU routes. GPU routes never
+    /// enter it; a GPU route compiled without GPU support returns a structured
+    /// [`crate::error::ScanError::Gpu`] from the caller instead of substituting a
+    /// CPU scan or taking process-exit ownership.
     fn scan_chunks_cpu_parallel(
         &self,
         chunks: &[Chunk],
         backend: ScanBackend,
         admission_plan: Option<&Phase1AdmissionPlan>,
         route: crate::ScanExecutionRoute,
-    ) -> Vec<Vec<RawMatch>> {
+    ) -> crate::error::Result<Vec<Vec<RawMatch>>> {
         use rayon::prelude::*;
         let telemetry = crate::telemetry::capture_scan_telemetry();
+        let recovery_receipts = crate::gpu::capture_recovery_receipts();
         let mut results: Vec<Vec<RawMatch>> = chunks
             .par_iter()
             .enumerate()
             .map(|(index, chunk)| {
-                crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
-                    let admission = admission_plan.and_then(|plan| plan.admission_for(index));
-                    self.scan_with_deadline_and_backend_admission_and_route(
-                        chunk,
-                        self.config.per_chunk_deadline(),
-                        backend,
-                        admission,
-                        route,
-                    )
+                crate::gpu::with_captured_recovery_receipts(recovery_receipts.as_ref(), || {
+                    crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
+                        let admission = admission_plan.and_then(|plan| plan.admission_for(index));
+                        self.scan_with_deadline_and_backend_admission_and_route(
+                            chunk,
+                            self.config.per_chunk_deadline(),
+                            backend,
+                            admission,
+                            route,
+                        )
+                    })
                 })
             })
-            .collect();
-        super::boundary::scan_chunk_boundaries_with_route(self, chunks, &mut results, route);
-        results
+            .collect::<crate::error::Result<Vec<_>>>()?;
+        super::boundary::scan_chunk_boundaries_with_route(self, chunks, &mut results, route)?;
+        Ok(results)
     }
 
     pub(crate) fn prepare_chunk<'a>(&self, chunk: &'a Chunk) -> PreparedChunk<'a> {

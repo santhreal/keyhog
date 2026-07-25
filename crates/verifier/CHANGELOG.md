@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.46 - 2026-07-24
+
+- Normalize missing schema-1 verifier success policy to
+  `status_with_error_backstop`, require an explicit policy in schema 2, and
+  reject forward schema versions. Corpus identity binds the normalized schema
+  so equivalent detector fields under different schemas remain distinct.
+- Redact verifier proxy credentials, query parameters, percent-decoded secrets,
+  and parser source text from invalid-URL errors. Diagnostics include only a
+  safely parsed scheme and host or the generic invalid-proxy message.
+
 ## 0.5.45 - 2026-07-22
 
 - Republish verifier backends in the release chain whose signed asset

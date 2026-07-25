@@ -10,12 +10,15 @@ fn scanner_source(path: &str) -> String {
 
 #[test]
 fn gpu_dispatch_failure_has_no_cpu_substitution_path() {
-    let source = scanner_source("engine/gpu_region_dispatch.rs");
+    let dispatch = scanner_source("engine/backend_dispatch.rs");
+    let gpu_region = scanner_source("engine/gpu_region_dispatch.rs");
     assert!(
-        source.contains("fail_selected_gpu_dispatch_error(self, error)")
-            && source.contains("SelectedGpuDispatchError::new(reason)")
-            && !source.contains("degraded_backend_after_gpu_failure")
-            && !source.contains("scan_with_backend(chunk, degraded)"),
-        "a selected GPU dispatch failure must terminate with exit 12, not retain a CPU/SIMD substitution"
+        dispatch.contains("self.scan_coalesced_gpu_region_presence(chunks, backend, route)")
+            && dispatch.contains("crate::error::ScanError::Gpu(error.to_string())")
+            && !dispatch.contains("process_exit")
+            && gpu_region.contains("SelectedGpuDispatchError::new(reason)")
+            && !gpu_region.contains("degraded_backend_after_gpu_failure")
+            && !gpu_region.contains("scan_with_backend(chunk, degraded)"),
+        "a selected GPU dispatch failure must surface as a structured scanner error without CPU/SIMD substitution or process-exit ownership"
     );
 }

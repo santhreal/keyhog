@@ -1,12 +1,17 @@
-//! Migrated from `src/credential.rs` inline tests.
+//! UTF-8 credentials refuse implicit output; tagged text remains readable.
 use keyhog_core::Credential;
 #[test]
-fn serialize_utf8_credential_as_tagged_text() {
-    // kimi-wave2 §Critical: the wire format is now an explicit tagged
-    // object, NOT a string-with-prefix. The tag eliminates the
-    // ambiguity where `"b64:SGVsbG8="` (a literal user-typed string)
-    // round-tripped as base64-decoded bytes.
-    let c = Credential::from("AKIA1234");
-    let json = serde_json::to_string(&c).unwrap();
-    assert_eq!(json, "{\"text\":\"AKIA1234\"}");
+fn utf8_credential_refuses_implicit_serialization() {
+    const SECRET: &str = "AKIA1234";
+    let credential = Credential::from(SECRET);
+    let mut output = Vec::new();
+    let error = serde_json::to_writer(&mut output, &credential)
+        .expect_err("implicit UTF-8 credential output must fail closed")
+        .to_string();
+    assert!(output.is_empty());
+    assert!(!error.contains(SECRET));
+    assert!(error.contains("Credential refuses implicit plaintext serialization"));
+
+    let back: Credential = serde_json::from_str(r#"{"text":"AKIA1234"}"#).unwrap();
+    assert_eq!(credential, back);
 }

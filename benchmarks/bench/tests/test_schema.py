@@ -2,6 +2,8 @@ import pytest
 
 from bench.schema import (
     CONF_BINS,
+    BLOOM_EVIDENCE_SCHEMA_VERSION,
+    BloomEvidence,
     CorpusInfo,
     Detection,
     DetectorStat,
@@ -11,8 +13,43 @@ from bench.schema import (
     Scanner,
     ScannerConfig,
     Speed,
+    StaticRecoveryMetrics,
     conf_bin,
 )
+
+
+def bloom_evidence(**overrides) -> BloomEvidence:
+    values = {
+        "schema_version": BLOOM_EVIDENCE_SCHEMA_VERSION,
+        "corpus_name": "samsung-creddata-fx-record-spans-v1",
+        "corpus_revision": "f1de3f85dbdf42bf7b3467c0d273a4dfe44d56ee",
+        "fixture_sha256": "1" * 64,
+        "corpus_sha256": "2" * 64,
+        "detector_corpus_sha256": "3" * 64,
+        "scanner_detector_digest": "4" * 16,
+        "executable_sha256": "6" * 64,
+        "workspace_detector_corpus_sha256": "7" * 64,
+        "declared_input_count": 12,
+        "unavailable_input_count": 2,
+        "unavailable_reason_counts": {"source-file-missing": 2},
+        "input_count": 10,
+        "eligible_input_count": 8,
+        "admitted_input_count": 6,
+        "rejected_input_count": 4,
+        "rejection_basis_points": 4_000,
+        "populated_slots": 18_437,
+        "total_slots": 65_536,
+        "saturation_threshold_slots": 39_322,
+        "density_basis_points": 2_813,
+        "state": "healthy",
+        "enabled_finding_count": 7,
+        "bypass_finding_count": 7,
+        "enabled_findings_sha256": "5" * 64,
+        "bypass_findings_sha256": "5" * 64,
+        "findings_identical": True,
+    }
+    values.update(overrides)
+    return BloomEvidence(**values)
 
 
 def test_run_result_round_trips_losslessly():
@@ -41,6 +78,17 @@ def test_run_result_round_trips_losslessly():
             "effective": {"max_decode_depth": "10"},
             "overrides": [],
         },
+        static_recovery=StaticRecoveryMetrics(
+            supported=3,
+            unsupported=2,
+            erroneous=4,
+            reasons={
+                "unsupported_call": 1,
+                "dynamic_property_access": 1,
+                "json_utf8": 4,
+            },
+        ),
+        bloom=bloom_evidence(),
     )
 
     encoded = result.to_json()
@@ -54,6 +102,8 @@ def test_run_result_round_trips_losslessly():
     assert decoded.scanner.daemon_pid == 4242
     assert decoded.scanner.daemon_requests == 2
     assert decoded.scan_manifest["preset"] == "full"
+    assert decoded.static_recovery == result.static_recovery
+    assert decoded.bloom == result.bloom
     assert decoded.result_filename() == "mirror-keyhog-simd-nocache-daemon-full.json"
 
 
@@ -65,8 +115,95 @@ def test_run_result_rejects_missing_or_unsupported_schema(observed):
     else:
         payload["schema_version"] = observed
 
-    with pytest.raises(ValueError, match="supported='bench-v3'"):
+    with pytest.raises(ValueError, match="supported='bench-v4'"):
         RunResult.from_json(payload, source="fixture.json")
+
+
+def test_current_keyhog_result_requires_exact_static_recovery_object():
+    payload = RunResult(
+        scanner=Scanner(name="keyhog"),
+        static_recovery=StaticRecoveryMetrics(),
+    ).to_json()
+    payload.pop("static_recovery")
+
+    with pytest.raises(ValueError, match="lacks required 'static_recovery' telemetry"):
+        RunResult.from_json(payload, source="fixture.json")
+
+
+@pytest.mark.parametrize(
+    "mutation, message",
+    [
+        (lambda value: value.update(schema_version="future"), "schema_version"),
+        (lambda value: value.pop("supported"), "missing required fields"),
+        (lambda value: value.update(unsupported=-1), "non-negative integer"),
+        (
+            lambda value: value.update(
+                unsupported=2,
+                reasons={"unsupported_call": 1},
+            ),
+            "reason conservation failed",
+        ),
+        (
+            lambda value: value.update(reasons={"unknown_reason": 1}),
+            "unknown rejection reasons",
+        ),
+    ],
+)
+def test_static_recovery_schema_rejects_malformed_or_nonconserving_data(
+    mutation, message
+):
+    value = StaticRecoveryMetrics().to_json()
+    mutation(value)
+    with pytest.raises(ValueError, match=message):
+        StaticRecoveryMetrics.from_json(value)
+
+
+@pytest.mark.parametrize(
+    "mutation, message",
+    [
+        (lambda value: value.update(schema_version="future"), "schema_version"),
+        (lambda value: value.pop("corpus_sha256"), "missing required fields"),
+        (lambda value: value.update(corpus_sha256="bad"), "lowercase SHA-256"),
+        (lambda value: value.update(admitted_input_count=5), "conservation failed"),
+        (lambda value: value.update(rejection_basis_points=3_999), "basis points"),
+        (
+            lambda value: value.update(bypass_findings_sha256="6" * 64),
+            "identical finding claim",
+        ),
+        (
+            lambda value: value.update(
+                unavailable_reason_counts={"source-file-missing": 1}
+            ),
+            "unavailable reason accounting",
+        ),
+        (
+            lambda value: value.update(unavailable_reason_counts={"other": 2}),
+            "unavailable reason is invalid",
+        ),
+    ],
+)
+def test_bloom_evidence_rejects_malformed_or_nonconserving_data(
+    mutation, message
+):
+    value = bloom_evidence().to_json()
+    mutation(value)
+    with pytest.raises(ValueError, match=message):
+        BloomEvidence.from_json(value)
+
+
+def test_legacy_v3_result_is_explicitly_supported_without_invented_metrics():
+    payload = RunResult().to_json()
+    payload["schema_version"] = "bench-v3"
+    payload.pop("static_recovery")
+    payload.pop("bloom")
+
+    result = RunResult.from_json(payload, source="legacy.json")
+
+    assert result.schema_version == "bench-v3"
+    assert result.static_recovery is None
+    assert "static_recovery" not in result.to_json()
+    assert result.bloom is None
+    assert "bloom" not in result.to_json()
 
 
 def test_scanner_config_min_confidence_is_optional_and_off_the_matrix_key():

@@ -79,6 +79,8 @@ pub mod regression_coalesced_reassembly_parity;
 pub mod regression_coalesced_telemetry;
 #[path = "regression_compile_companion_capture_group.rs"]
 pub mod regression_compile_companion_capture_group;
+#[path = "regression_compiled_scanner_backend_errors.rs"]
+pub mod regression_compiled_scanner_backend_errors;
 #[path = "regression_confidence_nan_sanitize.rs"]
 pub mod regression_confidence_nan_sanitize;
 #[path = "regression_context_syntax_recall.rs"]
@@ -189,6 +191,8 @@ pub mod regression_finalize_confidence_proptest;
 pub mod regression_finalize_report_confidence_pipeline;
 #[path = "regression_generic_bridge_padded_log_field.rs"]
 pub mod regression_generic_bridge_padded_log_field;
+#[path = "regression_generic_candidate_length_boundaries.rs"]
+pub mod regression_generic_candidate_length_boundaries;
 #[path = "regression_generic_detector_entropy_override.rs"]
 pub mod regression_generic_detector_entropy_override;
 #[path = "regression_github_app_pem_boundary.rs"]
@@ -245,6 +249,8 @@ pub mod regression_messaging_vendor_token_recall;
 pub mod regression_mime_encoded_word_decode;
 #[path = "regression_min_confidence_floor.rs"]
 pub mod regression_min_confidence_floor;
+#[path = "regression_ml_context_ownership.rs"]
+pub mod regression_ml_context_ownership;
 #[path = "regression_ml_features_bigram_stats.rs"]
 pub mod regression_ml_features_bigram_stats;
 #[path = "regression_ml_production_weight_golden.rs"]
@@ -329,6 +335,8 @@ pub mod regression_reverse_integrity_decoy_suppression;
 pub mod regression_saas_platform_token_recall;
 #[path = "regression_scan_telemetry_rayon_scope.rs"]
 pub mod regression_scan_telemetry_rayon_scope;
+#[path = "regression_selective_bloom_anchors.rs"]
+pub mod regression_selective_bloom_anchors;
 #[path = "regression_shannon_entropy.rs"]
 pub mod regression_shannon_entropy;
 #[path = "regression_shape_collision_recall_carveout.rs"]

@@ -26,6 +26,37 @@ pub(crate) use inner::{
 
 use crate::types::MIN_LITERAL_PREFIX_CHARS;
 
+fn split_top_level_alternatives(pattern: &str) -> Option<Vec<&str>> {
+    let mut parts = Vec::new();
+    let mut start = 0usize;
+    let mut depth = 0usize;
+    let mut in_class = false;
+    let mut escaped = false;
+    for (index, ch) in pattern.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            '[' if !in_class => in_class = true,
+            ']' if in_class => in_class = false,
+            '(' if !in_class => depth += 1,
+            ')' if !in_class => depth = depth.saturating_sub(1),
+            '|' if !in_class && depth == 0 => {
+                parts.push(&pattern[start..index]);
+                start = index + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    if parts.is_empty() {
+        return None;
+    }
+    parts.push(&pattern[start..]);
+    Some(parts)
+}
+
 /// Extract literal prefixes from a regex pattern for Aho-Corasick.
 /// Handles simple literals and top-level groups like (AKIA|ASIA).
 pub(crate) fn extract_literal_prefixes(pattern: &str) -> Vec<String> {
@@ -39,6 +70,23 @@ pub(crate) fn extract_literal_prefixes(pattern: &str) -> Vec<String> {
     // broke extraction at the first byte and the detector carried no AC trigger
     // / literal-prefix anchor (contracts_runner: flagsmith MISSED).
     let pattern = strip_leading_zero_width_assertions(pattern);
+
+    // Ungrouped top-level alternation is still a set of complete regex
+    // alternatives. Routing on only the first branch's leading literal makes
+    // every later branch unreachable. Require every branch to contribute a
+    // prefix; otherwise the whole pattern belongs to the explicit phase-2
+    // always-admit lane.
+    if let Some(parts) = split_top_level_alternatives(pattern) {
+        let mut prefixes = Vec::new();
+        for part in parts {
+            let branch_prefixes = extract_literal_prefixes(part);
+            if branch_prefixes.is_empty() {
+                return Vec::new();
+            }
+            prefixes.extend(branch_prefixes);
+        }
+        return prefixes;
+    }
 
     // Boundary-guard idiom: `(?:^|[^...])(LITERAL...)`. Secret detectors
     // prefix the real token with a zero-/one-width boundary guard so the

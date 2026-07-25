@@ -735,6 +735,7 @@ fn engine_backend_happy() {
     assert_eq!(
         scanner
             .scan_with_backend(&chunk, ScanBackend::CpuFallback)
+            .expect("selected backend file-gate scan succeeds")
             .len(),
         1
     );
@@ -772,6 +773,7 @@ fn engine_backend_error() {
     };
     assert!(scanner
         .scan_with_backend(&chunk, ScanBackend::CpuFallback)
+        .expect("selected backend empty file-gate scan succeeds")
         .is_empty());
 }
 
@@ -787,12 +789,23 @@ fn engine_scan_happy() {
     let token = "GATEabcDEF1234567890abcDEFGH";
     let scanner =
         CompiledScanner::compile(vec![demo_detector(r#"GATE[A-Za-z0-9]{24}"#, "GATE")]).unwrap();
-    assert_eq!(scanner.scan(&demo_chunk(token)).len(), 1);
+    assert_eq!(
+        scanner
+            .scan(&demo_chunk(token))
+            .expect("engine file-gate scan succeeds")
+            .len(),
+        1
+    );
 }
 #[test]
 fn engine_scan_error() {
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
-    assert!(scanner.scan(&demo_chunk("")).is_empty());
+    assert!(
+        scanner
+            .scan(&demo_chunk(""))
+            .expect("empty engine file-gate scan succeeds")
+            .is_empty()
+    );
 }
 
 // ── crates/scanner/src/engine/windowed.rs ─────────────────────────────
@@ -815,6 +828,7 @@ fn engine_phase2_happy() {
     let token = concat!("gh", "p_zQWBuTSOoRi4A9spHcVY5ncnsDkxkJ0mLq17");
     assert!(scanner
         .scan(&demo_chunk(&format!("export TOKEN={token}")))
+        .expect("keyword window file-gate scan succeeds")
         .iter()
         .any(|m| m.credential.as_ref() == token));
 }
@@ -822,7 +836,12 @@ fn engine_phase2_happy() {
 fn engine_phase2_error() {
     let scanner =
         CompiledScanner::compile(vec![demo_detector(r"ghp_[A-Za-z0-9]{20,}", "ghp_")]).unwrap();
-    assert!(scanner.scan(&demo_chunk("plain prose")).is_empty());
+    assert!(
+        scanner
+            .scan(&demo_chunk("plain prose"))
+            .expect("plaintext window file-gate scan succeeds")
+            .is_empty()
+    );
 }
 
 // ── crates/scanner/src/engine/scan_filters.rs ─────────────────────────
@@ -831,6 +850,7 @@ fn engine_scan_filters_happy() {
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
     assert!(scanner
         .scan(&demo_chunk("username = randomuser1234567890"))
+        .expect("generic-filter file-gate scan succeeds")
         .is_empty());
 }
 #[test]
@@ -840,6 +860,7 @@ fn engine_scan_filters_error() {
     let token = concat!("gh", "p_zQWBuTSOoRi4A9spHcVY5ncnsDkxkJ0mLq17");
     assert!(scanner
         .scan(&demo_chunk(&format!("api_key = \"{token}\"")))
+        .expect("generic-filter positive file-gate scan succeeds")
         .iter()
         .any(|m| m.credential.as_ref() == token));
 }
@@ -1682,13 +1703,18 @@ fn prefix_trie_error() {
 #[test]
 fn probabilistic_gate_happy() {
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
-    let matches = scanner.scan(&demo_chunk("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
+    let matches = scanner.scan(&demo_chunk("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")).expect("test scan succeeds");
     assert!(matches.is_empty());
 }
 #[test]
 fn probabilistic_gate_error() {
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
-    assert!(scanner.scan(&demo_chunk("aaaaaaaaaaaaaaaa")).is_empty());
+    assert!(
+        scanner
+            .scan(&demo_chunk("aaaaaaaaaaaaaaaa"))
+            .expect("probabilistic-gate file scan succeeds")
+            .is_empty()
+    );
 }
 #[test]
 fn probabilistic_gate_bigram_slot_avoids_per_pair_fnv_rounds() {
@@ -1739,13 +1765,18 @@ fn resolution_error() {
 fn shared_regexes_happy() {
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
     let chunk = demo_chunk("my_key = \"abc\"");
-    let matches = scanner.scan(&chunk);
+    let matches = scanner.scan(&chunk).expect("test scan succeeds");
     let _ = matches;
 }
 #[test]
 fn shared_regexes_error() {
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
-    assert!(scanner.scan(&demo_chunk("no assignment syntax")).is_empty());
+    assert!(
+        scanner
+            .scan(&demo_chunk("no assignment syntax"))
+            .expect("assignment-free file scan succeeds")
+            .is_empty()
+    );
 }
 
 // ── crates/scanner/src/simd.rs ────────────────────────────────────────
@@ -1772,14 +1803,19 @@ fn simdsieve_prefilter_happy() {
         CompiledScanner::compile(vec![demo_detector("ghp_[A-Za-z0-9]{20,}", "ghp_")]).unwrap();
     let token = concat!("gh", "p_zQWBuTSOoRi4A9spHcVY5ncnsDkxkJ0mLq17");
     let pad = "x".repeat(100_001);
-    let matches = scanner.scan(&demo_chunk(&format!("{pad}{token}")));
+    let matches = scanner.scan(&demo_chunk(&format!("{pad}{token}"))).expect("test scan succeeds");
     assert!(matches.iter().any(|m| m.credential.as_ref() == token));
 }
 #[test]
 fn simdsieve_prefilter_error() {
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
     let pad = "x".repeat(100_001);
-    assert!(scanner.scan(&demo_chunk(&pad)).is_empty());
+    assert!(
+        scanner
+            .scan(&demo_chunk(&pad))
+            .expect("large-padding file scan succeeds")
+            .is_empty()
+    );
 }
 
 // ── crates/scanner/src/static_intern.rs ───────────────────────────────
@@ -1806,13 +1842,18 @@ fn structured_mod_happy() {
         CompiledScanner::compile(vec![demo_detector("ghp_[A-Za-z0-9]{20,}", "ghp_")]).unwrap();
     let token = concat!("gh", "p_zQWBuTSOoRi4A9spHcVY5ncnsDkxkJ0mLq17");
     let chunk = structured_env_chunk(&format!("GITHUB_TOKEN={token}\n"), "config.env");
-    let matches = scanner.scan(&chunk);
+    let matches = scanner.scan(&chunk).expect("test scan succeeds");
     assert!(matches.iter().any(|m| m.credential.as_ref() == token));
 }
 #[test]
 fn structured_mod_error() {
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
-    assert!(scanner.scan(&demo_chunk("fn main() {}")).is_empty());
+    assert!(
+        scanner
+            .scan(&demo_chunk("fn main() {}"))
+            .expect("structured plaintext file scan succeeds")
+            .is_empty()
+    );
 }
 
 // ── crates/scanner/src/structured/parsers.rs ──────────────────────────
@@ -1820,13 +1861,18 @@ fn structured_mod_error() {
 fn structured_parsers_happy() {
     let scanner = CompiledScanner::compile(vec![demo_detector("secret", "secret")]).unwrap();
     let chunk = structured_env_chunk("TOKEN=abc123\n", ".env");
-    let _ = scanner.scan(&chunk);
+    let _ = scanner.scan(&chunk).expect("test scan succeeds");
 }
 #[test]
 fn structured_parsers_error() {
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
     let chunk = structured_env_chunk("", ".env");
-    assert!(scanner.scan(&chunk).is_empty());
+    assert!(
+        scanner
+            .scan(&chunk)
+            .expect("empty structured file scan succeeds")
+            .is_empty()
+    );
 }
 
 // ── crates/scanner/src/telemetry.rs ───────────────────────────────────

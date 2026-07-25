@@ -47,11 +47,17 @@ pub(crate) fn generic_keyword_alternation_from(
 }
 
 /// Compile the bridge from a pre-built group-1 alternation.
+///
+/// The capture admits one byte beyond the largest detector ceiling solely as
+/// an over-limit sentinel. The whole-value gate rejects that capture with
+/// `value_too_long`; the right boundary still prevents a longer value from
+/// being truncated to the sentinel.
 pub(crate) fn compile_generic_re_with_policy(
     alternation: &str,
     max_len: usize,
     tail_suffixes: &[String],
 ) -> std::result::Result<regex::Regex, regex::Error> {
+    let extraction_max_len = max_len.saturating_add(1);
     let mut tail_alternation = String::new();
     for (index, suffix) in tail_suffixes.iter().enumerate() {
         if index != 0 {
@@ -61,11 +67,11 @@ pub(crate) fn compile_generic_re_with_policy(
     }
     let assignment_tail = if tail_alternation.is_empty() {
         format!(
-            r#"["'`]?\s*(?::\s*(?:&?[a-zA-Z_][a-zA-Z0-9_<>]{{0,31}}\s*[=:]\s*)?|=\s*)["'`]?([{GENERIC_VALUE_CHARS}]{{8,{max_len}}})(?:["'`]|$|[^{GENERIC_VALUE_CHARS}])"#
+            r#"["'`]?\s*(?::\s*(?:&?[a-zA-Z_][a-zA-Z0-9_<>]{{0,31}}\s*[=:]\s*)?|=\s*)["'`]?([{GENERIC_VALUE_CHARS}]{{8,{extraction_max_len}}})(?:["'`]|$|[^{GENERIC_VALUE_CHARS}])"#
         )
     } else {
         format!(
-            r#"(?:[._-]?(?:{tail_alternation})){{0,2}}["'`]?\s*(?::\s*(?:&?[a-zA-Z_][a-zA-Z0-9_<>]{{0,31}}\s*[=:]\s*)?|=\s*)["'`]?([{GENERIC_VALUE_CHARS}]{{8,{max_len}}})(?:["'`]|$|[^{GENERIC_VALUE_CHARS}])"#
+            r#"(?:[._-]?(?:{tail_alternation})){{0,2}}["'`]?\s*(?::\s*(?:&?[a-zA-Z_][a-zA-Z0-9_<>]{{0,31}}\s*[=:]\s*)?|=\s*)["'`]?([{GENERIC_VALUE_CHARS}]{{8,{extraction_max_len}}})(?:["'`]|$|[^{GENERIC_VALUE_CHARS}])"#
         )
     };
     regex::Regex::new(&format!("(?i)({alternation}){assignment_tail}"))

@@ -87,7 +87,9 @@ fn scan_embedded(encoded: &str) -> Vec<RawMatch> {
             ..Default::default()
         },
     };
-    scanner().scan(&chunk)
+    scanner()
+        .scan(&chunk)
+        .expect("strict decode-through regression scan should succeed")
 }
 
 fn surfaces(encoded: &str, needle: &str) -> bool {
@@ -110,6 +112,7 @@ fn baseline_pem_fires_unwrapped() {
     };
     assert!(scanner()
         .scan(&chunk)
+        .expect("strict decoded PEM scan should succeed")
         .iter()
         .any(|m| m.credential.as_ref().contains(PEM_NEEDLE)));
 }

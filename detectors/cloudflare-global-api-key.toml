@@ -36,6 +36,7 @@ name = "X-Auth-Key"
 template = "{{match}}"
 
 [detector.verify.success]
+policy = "body_positive"
 status = 200
 json_path = "$.success"
 equals = "true"

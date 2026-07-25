@@ -1,6 +1,15 @@
 //! Template interpolation helpers for verification requests.
 
 use std::collections::HashMap;
+use std::borrow::Borrow;
+use std::hash::Hash;
+use std::sync::Arc;
+
+use keyhog_core::CompanionMap;
+
+pub trait CompanionKey: Borrow<str> + Eq + Hash {}
+
+impl<T> CompanionKey for T where T: Borrow<str> + Eq + Hash {}
 
 /// Resolve a field reference to an actual value.
 /// - "match" → the primary credential
@@ -9,7 +18,7 @@ use std::collections::HashMap;
 pub(crate) fn resolve_field(
     field: &str,
     credential: &str,
-    companions: &HashMap<String, String>,
+    companions: &HashMap<impl CompanionKey, String>,
 ) -> String {
     match field {
         "match" => credential.to_string(),
@@ -95,7 +104,7 @@ pub(crate) fn sanitize_raw_value(s: &str) -> String {
 pub(crate) fn resolve_and_sanitize_field(
     field: &str,
     credential: &str,
-    companions: &HashMap<String, String>,
+    companions: &HashMap<impl CompanionKey, String>,
 ) -> String {
     sanitize_raw_value(&resolve_field(field, credential, companions))
 }
@@ -113,7 +122,7 @@ pub const MAX_TEMPLATE_TOKENS: usize = 1024;
 pub(crate) fn interpolate(
     template: &str,
     credential: &str,
-    companions: &HashMap<String, String>,
+    companions: &HashMap<impl CompanionKey, String>,
 ) -> String {
     interpolate_url(template, credential, companions)
 }
@@ -123,7 +132,7 @@ pub(crate) fn interpolate(
 pub(crate) fn interpolate_url(
     template: &str,
     credential: &str,
-    companions: &HashMap<String, String>,
+    companions: &HashMap<impl CompanionKey, String>,
 ) -> String {
     interpolate_with_context(template, credential, companions, InterpolationContext::Url)
 }
@@ -134,7 +143,7 @@ pub(crate) fn interpolate_url(
 pub(crate) fn interpolate_http_value(
     template: &str,
     credential: &str,
-    companions: &HashMap<String, String>,
+    companions: &HashMap<impl CompanionKey, String>,
 ) -> String {
     interpolate_with_context(
         template,
@@ -146,7 +155,7 @@ pub(crate) fn interpolate_http_value(
 
 pub(crate) fn missing_companion_field(
     field: &str,
-    companions: &HashMap<String, String>,
+    companions: &HashMap<impl CompanionKey, String>,
 ) -> Option<String> {
     field
         .strip_prefix("companion.")
@@ -154,7 +163,10 @@ pub(crate) fn missing_companion_field(
         .map(str::to_string)
 }
 
-pub fn missing_companion_refs(template: &str, companions: &HashMap<String, String>) -> Vec<String> {
+pub fn missing_companion_refs(
+    template: &str,
+    companions: &HashMap<impl CompanionKey, String>,
+) -> Vec<String> {
     let mut missing = Vec::new();
     let mut search_from = 0usize;
     let mut scanned = 0usize;
@@ -196,7 +208,7 @@ fn interpolate_placeholder_value(value: &str, context: InterpolationContext) -> 
 /// operator-influenced host to `[a-z0-9.-]`. A value with no `scheme://` is
 /// sanitized whole. The scheme is accepted only when it is purely alphabetic,
 /// so no structural punctuation can masquerade as one.
-fn resolve_oob_url(companions: &HashMap<String, String>) -> String {
+fn resolve_oob_url(companions: &HashMap<impl CompanionKey, String>) -> String {
     let raw = companions
         .get(OOB_COMPANION_URL)
         .map(String::as_str)
@@ -222,7 +234,7 @@ fn resolve_oob_url(companions: &HashMap<String, String>) -> String {
 fn resolve_placeholder(
     inner: &str,
     credential: &str,
-    companions: &HashMap<String, String>,
+    companions: &HashMap<impl CompanionKey, String>,
     context: InterpolationContext,
 ) -> Option<String> {
     let oob = |key| {
@@ -244,7 +256,7 @@ fn resolve_placeholder(
 fn interpolate_with_context(
     template: &str,
     credential: &str,
-    companions: &HashMap<String, String>,
+    companions: &HashMap<impl CompanionKey, String>,
     context: InterpolationContext,
 ) -> String {
     if template == "{{match}}" {
@@ -321,17 +333,20 @@ pub(crate) const OOB_COMPANION_HOST: &str = "__keyhog_oob_host";
 pub(crate) const OOB_COMPANION_ID: &str = "__keyhog_oob_id";
 
 /// Inject the OOB minted URL into a companions map for downstream
-/// interpolation. Returns an owned map; callers pass the result wherever
-/// a `&HashMap<String, String>` was previously taken.
+/// interpolation. Returns an owned interned-name map so verification never
+/// clones detector-owned names into a second string allocation.
 pub(crate) fn companions_with_oob(
-    base: &HashMap<String, String>,
+    base: &HashMap<impl CompanionKey, String>,
     minted_host: &str,
     minted_url: &str,
     minted_id: &str,
-) -> HashMap<String, String> {
-    let mut out = base.clone();
-    out.insert(OOB_COMPANION_HOST.to_string(), minted_host.to_string());
-    out.insert(OOB_COMPANION_URL.to_string(), minted_url.to_string());
-    out.insert(OOB_COMPANION_ID.to_string(), minted_id.to_string());
+) -> CompanionMap {
+    let mut out: CompanionMap = base
+        .iter()
+        .map(|(name, value)| (Arc::from(name.borrow()), value.clone()))
+        .collect();
+    out.insert(Arc::from(OOB_COMPANION_HOST), minted_host.to_string());
+    out.insert(Arc::from(OOB_COMPANION_URL), minted_url.to_string());
+    out.insert(Arc::from(OOB_COMPANION_ID), minted_id.to_string());
     out
 }

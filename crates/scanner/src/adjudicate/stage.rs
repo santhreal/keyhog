@@ -4,6 +4,7 @@ use super::{entropy::EntropyShapeStage, generic::GenericValueShapeStage};
 pub(crate) enum StageId {
     BelowDetectorMinLength,
     AboveDetectorMaxLength,
+    PartialGenericAssignmentValue,
     DetectorCredentialShapeInvalid,
     WithinHexContext,
     HexDigestFragment,
@@ -31,6 +32,7 @@ impl StageId {
         match self {
             Self::BelowDetectorMinLength => "below_detector_min_length",
             Self::AboveDetectorMaxLength => "value_too_long",
+            Self::PartialGenericAssignmentValue => "partial_assignment_value",
             Self::DetectorCredentialShapeInvalid => "detector_credential_shape_invalid",
             Self::WithinHexContext => "within_hex_context",
             Self::HexDigestFragment => "hex_digest_fragment",

@@ -1,74 +1,129 @@
-//! Bigram-bloom prefilter - Layer 0.5 between alphabet screening and AC/HS.
+//! Selective literal-anchor prefilter (the public diagnostic name remains
+//! "bigram Bloom" for compatibility).
 //!
-//! `AlphabetMask` (Layer 0) tells us which BYTES appear in the chunk; it can't
-//! tell us about adjacencies. A 1 MB Java source file likely contains
-//! `g`, `h`, `p`, `_` somewhere (Layer 0 says "scan it") but never the bigram
-//! `gh` followed by `p_` (which the GitHub PAT prefix `ghp_` requires).
+//! The original Layer-0.5 table inserted every bigram from every detector
+//! literal and widened each terminal byte to a full row. The production table
+//! was only 28.13% populated, but ordinary source lines still overlapped it
+//! almost universally: density was truthful while rejection was zero.
 //!
-//! This module builds a 65536-bit (8 KB / 1024 u64) DIRECT lookup table at
-//! scanner construction time:
-//!   * `LITERAL_BIGRAM_TABLE` - one bit per (byte_a, byte_b) pair. Set
-//!     whenever any detector literal prefix contains that bigram, plus an
-//!     extension where the literal's terminal byte is followed by ANY byte
-//!     (so a 4-char prefix `ghp_` populates `gh`, `hp`, `p_`, and every
-//!     `_X` row).
-//!   * `MAYBE_HAS_LITERAL_PREFIX(chunk)` - true if the chunk contains AT
-//!     LEAST ONE bigram whose bit is set; false (skip the chunk) when
-//!     there's zero overlap.
+//! Construction now chooses one mandatory anchor for every direct-matcher
+//! literal alternative. Alternatives shorter than eight bytes use one exact
+//! ASCII-case-insensitive automaton; longer alternatives select the rarest
+//! eight-byte window measured across the compiled literal corpus, with
+//! deterministic byte and position tie-breaking. Every complete alternative
+//! therefore contains its selected anchor. Empty/unextractable alternatives
+//! invalidate this gate and fail open.
 //!
-//! ## Why a direct table beats the previous FNV-1a bloom
+//! The 65,536-bit table stores two independent stable hashes of each selected
+//! eight-byte anchor. A query requires both bits. Hash collisions can only
+//! admit extra chunks; they cannot reject a real candidate.
+//! Prefixless and dynamic regexes are not trained into this table. They remain
+//! in the scanner's explicit phase-2 always-admit/no-hit lane, which is evaluated
+//! even when this direct-literal gate rejects a chunk.
 //!
-//! The previous implementation used a 4096-bit bloom keyed by a 4-instruction
-//! FNV-1a hash (xor, mul, xor, mul). Each `maybe_overlaps` byte pair carried
-//! a 4-cycle serial dependency (`mul` depends on the previous `xor`), defeating
-//! out-of-order execution; the inner loop ran at ~4 cycles/byte. A 65536-bit
-//! direct table (`bits[(a<<8) | b]`) is a single byte load + bit-test per
-//! window with no FNV math, runs at ~1 cycle/byte on Zen 4 / Apple M-series,
-//! and fits entirely in L1d (8 KB << 32 KB). As a bonus it eliminates hash
-//! collisions, so prefilter false positives drop to zero (recall is preserved
-//! because the previous FNV bloom never had false NEGATIVES either - just
-//! more false positives, which scanned more chunks than necessary).
-//!
-//! Cost: ~1 ns per byte on AVX2/scalar - strictly cheaper than
-//! `AlphabetMask::from_bytes`. The 8 KB construction cost is paid once per
-//! scanner build (`compiled_scanner/compile.rs`), not per chunk.
+//! Keeping the existing 8 KB table and diagnostic surface preserves operator
+//! compatibility while replacing an overbroad two-byte representation with a
+//! selective, proof-carrying one.
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
-/// 65536-bit (8 KB) direct bigram lookup table. Indexed by the 16-bit value
-/// `(a as u16) << 8 | b as u16` for every byte pair `(a, b)`.
+/// Scanner-owned selective anchor gate: one exact short-literal automaton plus
+/// a 65,536-bit (8 KB) double-hash table for selected eight-byte anchors.
 ///
 /// `Box<[u64; 1024]>` (not inline) keeps the `CompiledScanner` struct compact:
 /// the scanner is moved during compile, and 8 KB inline would force stack
 /// spill on every move.
 pub(crate) struct BigramBloom {
     bits: Box<[u64; 1024]>,
-    /// `true` once the table is so densely populated that `maybe_overlaps`
-    /// would return `true` for essentially every real chunk - i.e. the
-    /// prefilter has zero filtering value and only costs an O(L) pass. Set
-    /// at build time (see [`Self::recompute_saturation`]) so the hot path
-    /// can short-circuit without walking the chunk. Returning `true` is
-    /// always sound: `maybe_overlaps` is allowed false positives (never
-    /// false negatives), so a blanket `true` can never drop a real secret.
-    saturated: bool,
+    /// Exact owner for mandatory literal alternatives shorter than eight bytes.
+    short_anchors: Option<aho_corasick::AhoCorasick>,
+    /// Bit `n - 1` is set when hashed anchors of byte width `n` exist.
+    width_mask: u8,
+    minimum_anchor_bytes: u8,
+    /// Cached build-time state. Saturated and invalid states fail open.
+    state: BigramPrefilterState,
 }
 
-/// When the set-bit fraction of the 65536-slot table reaches this share, the
-/// bloom admits almost every real-world chunk (common ASCII bigrams like
-/// `th`, `e `, `in` are present) and provides no useful rejection. At that
-/// point the downstream AC/HS automaton - which is strictly more precise -
-/// should run unconditionally rather than paying for a dead O(L) scalar pass.
-/// 60% (39322 of 65536 slots) is deliberately conservative: a table this full
-/// already lets through the overwhelming majority of source bytes.
+/// Operator-visible health state for the Layer-0.5 selective anchor prefilter.
+///
+/// `Saturated` and `Invalid` are deliberately fail-open states: production
+/// scanning bypasses the prefilter and retains full downstream matcher recall.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BigramPrefilterState {
+    Healthy,
+    Saturated,
+    Invalid,
+}
+
+/// Build-time hash-table density diagnostics for the Layer-0.5 prefilter.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BigramPrefilterStatus {
+    pub populated_slots: u32,
+    pub total_slots: u32,
+    pub saturation_threshold_slots: u32,
+    pub density_basis_points: u16,
+    pub state: BigramPrefilterState,
+}
+
+/// Rejection effectiveness measured over one explicitly named input corpus.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BigramPrefilterCorpusStatus<'a> {
+    pub corpus_name: &'a str,
+    pub input_count: u64,
+    /// Inputs large enough for the production bloom gate to run.
+    pub eligible_inputs: u64,
+    pub rejected_inputs: u64,
+    /// Rejected share in basis points (10_000 = 100.00%).
+    pub rejection_basis_points: u16,
+}
+
+/// When the set-bit fraction of the 65,536-slot hash table reaches this share,
+/// collision admissions make the hashed owner ineffective. At that point the
+/// downstream AC/HS automaton should run unconditionally rather than paying for
+/// a dead prefilter pass. The exact short-anchor owner does not alter the table
+/// population. 60% (39,322 slots) retains conservative saturation headroom.
 const SATURATION_NUMERATOR: u32 = 3;
 const SATURATION_DENOMINATOR: u32 = 5;
-const TABLE_SLOTS: u32 = 65536;
+const TABLE_SLOTS: u32 = 65_536;
+const SATURATION_THRESHOLD_SLOTS: u32 =
+    (TABLE_SLOTS * SATURATION_NUMERATOR + SATURATION_DENOMINATOR - 1)
+        / SATURATION_DENOMINATOR;
+
+const MAX_ANCHOR_BYTES: usize = 8;
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct AnchorKey {
+    bytes: [u8; MAX_ANCHOR_BYTES],
+    len: u8,
+}
+
+impl AnchorKey {
+    fn from_slice(bytes: &[u8]) -> Self {
+        debug_assert!(!bytes.is_empty() && bytes.len() <= MAX_ANCHOR_BYTES);
+        let mut key = Self {
+            bytes: [0; MAX_ANCHOR_BYTES],
+            len: bytes.len() as u8,
+        };
+        key.bytes[..bytes.len()].copy_from_slice(bytes);
+        for byte in &mut key.bytes[..bytes.len()] {
+            *byte = byte.to_ascii_lowercase();
+        }
+        key
+    }
+
+    fn as_slice(&self) -> &[u8] {
+        &self.bytes[..usize::from(self.len)]
+    }
+}
 
 impl Clone for BigramBloom {
     fn clone(&self) -> Self {
         Self {
             bits: Box::new(*self.bits),
-            saturated: self.saturated,
+            short_anchors: self.short_anchors.clone(),
+            width_mask: self.width_mask,
+            minimum_anchor_bytes: self.minimum_anchor_bytes,
+            state: self.state,
         }
     }
 }
@@ -77,208 +132,308 @@ impl BigramBloom {
     pub(crate) fn empty() -> Self {
         Self {
             bits: Box::new([0; 1024]),
-            saturated: false,
+            short_anchors: None,
+            width_mask: width_bit(2),
+            minimum_anchor_bytes: 2,
+            state: BigramPrefilterState::Healthy,
+        }
+    }
+
+    fn blank() -> Self {
+        Self {
+            bits: Box::new([0; 1024]),
+            short_anchors: None,
+            width_mask: 0,
+            minimum_anchor_bytes: 0,
+            state: BigramPrefilterState::Healthy,
         }
     }
 
     /// Insert every distinct bigram from `bytes` into this table.
-    ///
-    /// Refreshes the saturation flag so tests that mutate a table directly
-    /// keep `maybe_overlaps`'s short-circuit consistent with bit population.
     #[cfg(test)]
     pub(crate) fn insert_all(&mut self, bytes: &[u8]) {
-        self.insert_all_without_saturation_refresh(bytes);
+        self.width_mask |= width_bit(2);
+        for window in bytes.windows(2) {
+            self.insert_anchor(window);
+        }
         self.recompute_saturation();
     }
 
     #[inline]
-    fn insert_all_without_saturation_refresh(&mut self, bytes: &[u8]) {
-        for window in bytes.windows(2) {
-            self.insert(window[0], window[1]);
+    fn insert_anchor(&mut self, anchor: &[u8]) {
+        for slot in ngram_slots(anchor) {
+            self.bits[slot >> 6] |= 1u64 << (slot & 63);
         }
     }
 
-    #[inline]
-    fn insert(&mut self, a: u8, b: u8) {
-        let idx = bigram_slot(a, b);
-        self.bits[idx >> 6] |= 1u64 << (idx & 63);
+    fn insert_folded_anchor(&mut self, anchor: AnchorKey) {
+        self.insert_anchor(anchor.as_slice());
     }
 
-    /// Set every bigram of the form `(a, *)` (the whole "row" for byte `a`).
-    /// Used for 1-byte literal prefixes (which can be followed by anything)
-    /// and to widen each literal's terminal byte by one ASCII byte (so we
-    /// admit secrets that START with the prefix and continue with any byte).
-    #[inline]
-    fn insert_row(&mut self, a: u8) {
-        // Every (a, b) for b in 0..=255 is a contiguous range of 256 slots
-        // starting at `(a as usize) << 8`. That's exactly 4 u64 words on a
-        // 256-bit boundary.
-        let word = (a as usize) << 2;
-        self.bits[word] = u64::MAX;
-        self.bits[word + 1] = u64::MAX;
-        self.bits[word + 2] = u64::MAX;
-        self.bits[word + 3] = u64::MAX;
-    }
-
-    /// Build a table containing every bigram of every literal prefix in
-    /// `literals`, plus `prefix[i] || ANY_BYTE` for each interior position
-    /// (so we accept secrets that *start* with the prefix and continue with
-    /// any byte). The "extension" widening keeps the table sound under
-    /// truncated prefixes (`ghp` matches `ghp_AB...`).
+    /// Build one mandatory anchor for every literal alternative.
+    ///
+    /// Long-anchor candidate frequency is measured over the complete compiled
+    /// literal corpus. A hash collision or common selected anchor only causes
+    /// extra admissions. Short alternatives use exact matching. An empty
+    /// alternative cannot provide a rejection proof, so construction marks the
+    /// filter invalid and every query fails open.
     pub(crate) fn from_literal_prefixes(literals: &[String]) -> Self {
-        let mut bloom = Self::empty();
+        if literals.is_empty() || literals.iter().any(String::is_empty) {
+            return Self::invalid_for_test();
+        }
+
+        let mut frequencies = std::collections::HashMap::<AnchorKey, u32>::new();
+        let mut short_literals = Vec::<&[u8]>::new();
         for literal in literals {
             let bytes = literal.as_bytes();
-            if bytes.is_empty() {
+            if bytes.len() < MAX_ANCHOR_BYTES {
+                short_literals.push(bytes);
                 continue;
             }
-            if bytes.len() < 2 {
-                // 1-byte literal: every bigram starting with that byte is
-                // possible; we set the byte's full row to true. This is
-                // costly but 1-byte literal prefixes are pathological and
-                // the AC matcher will short-circuit before the table even
-                // sees the chunk.
-                bloom.insert_row(bytes[0]);
+            for window in bytes.windows(MAX_ANCHOR_BYTES) {
+                let key = AnchorKey::from_slice(window);
+                frequencies
+                    .entry(key)
+                    .and_modify(|count| *count = count.saturating_add(1))
+                    .or_insert(1);
+            }
+        }
+
+        let mut bloom = Self::blank();
+        bloom.minimum_anchor_bytes = literals
+            .iter()
+            .map(|literal| literal.len())
+            .min()
+            .expect("non-empty literal corpus has a minimum length") as u8;
+        if !short_literals.is_empty() {
+            bloom.short_anchors = match aho_corasick::AhoCorasick::builder()
+                .ascii_case_insensitive(true)
+                .build(short_literals)
+            {
+                Ok(anchors) => Some(anchors),
+                Err(error) => {
+                    tracing::error!(%error, "selective short-anchor automaton build failed; filter is invalid and fail-open");
+                    return Self::invalid_for_test();
+                }
+            };
+        }
+        for literal in literals {
+            let bytes = literal.as_bytes();
+            if bytes.len() < MAX_ANCHOR_BYTES {
                 continue;
             }
-            bloom.insert_all_without_saturation_refresh(bytes);
-            // Extension: terminal byte may be followed by anything in a
-            // real secret. Add `last || any`. The `len() < 2` guard
-            // above proves non-empty; if a future refactor weakens
-            // the guard we'd rather skip the terminal extension for
-            // that literal (slight precision loss in the prefilter)
-            // than panic the scanner mid-scan.
-            let Some(&last) = bytes.last() else { continue };
-            bloom.insert_row(last);
+            let selected = bytes
+                .windows(MAX_ANCHOR_BYTES)
+                .enumerate()
+                .map(|(position, window)| {
+                    let key = AnchorKey::from_slice(window);
+                    let frequency = frequencies
+                        .get(&key)
+                        .copied()
+                        .expect("candidate frequency was measured in the first pass");
+                    (frequency, key, position)
+                })
+                .min()
+                .map(|(_, key, _)| key)
+                .expect("long literal has at least one anchor window");
+            bloom.width_mask |= width_bit(MAX_ANCHOR_BYTES);
+            bloom.insert_folded_anchor(selected);
         }
         bloom.recompute_saturation();
         bloom
     }
 
-    /// Recompute the `saturated` flag from the current bit population. Cheap
-    /// (one popcount pass, ~1024 `u64` words, paid once per scanner build) so
-    /// the per-chunk `maybe_overlaps` hot path can branch on a precomputed
-    /// bool instead of re-deriving density per call.
     fn recompute_saturation(&mut self) {
-        // `popcount * DENOM >= SLOTS * NUMER`  avoids any float / division.
-        self.saturated = self.popcount() as u64 * SATURATION_DENOMINATOR as u64
-            >= TABLE_SLOTS as u64 * SATURATION_NUMERATOR as u64;
+        self.state = classify_population(self.popcount(), TABLE_SLOTS);
     }
 
-    /// Returns `true` when the chunk contains AT LEAST ONE bigram present
-    /// in `self`. Returns `false` when there is no overlap (skip the chunk).
+    /// Return whether a selected mandatory anchor may occur in `chunk`.
     ///
-    /// Two cheap escapes precede the scan:
-    ///   * `chunk.len() < 2` - no bigram exists, so we cannot prove the chunk
-    ///     is clean; conservatively admit it.
-    ///   * `self.saturated` - the table is dense enough that this walk would
-    ///     return `true` for essentially every real chunk. Skip the dead
-    ///     O(L) pass and let the strictly-more-precise AC/HS automaton run.
-    ///     Sound because admitting (`true`) never drops a real secret.
-    ///
-    /// Hot loop: four independent byte-pair probes per iteration. Each probe
-    /// is a load + bit-test into the 8 KB L1-resident table; unrolling by 4
-    /// breaks the per-window serial dependency the old `windows(2)` walk
-    /// carried (each iteration depended on the prior comparison) so the four
-    /// loads issue in parallel and retire at ~1 byte/cycle on Zen 4 /
-    /// Apple M-series. This mirrors the 4-wide unroll the alphabet filter's
-    /// AVX2 body uses; a true 64 KB SIMD gather offers no win because the
-    /// table exceeds a single shuffle register.
+    /// Saturated/invalid states and chunks shorter than the shortest compiled
+    /// anchor fail open. A healthy miss proves that none of the direct matcher
+    /// literal alternatives can occur. Prefixless/dynamic phase-2 alternatives
+    /// are owned by the scanner's separate always-admit lane.
     pub(crate) fn maybe_overlaps(&self, chunk: &[u8]) -> bool {
-        if chunk.len() < 2 {
+        if self.state != BigramPrefilterState::Healthy {
             return true;
         }
-        if self.saturated {
+        if chunk.len() < usize::from(self.minimum_anchor_bytes) {
             return true;
         }
-        let bits = self.bits.as_ref();
-
-        // Each window starts at byte index `i` and pairs `chunk[i]` with
-        // `chunk[i+1]`, for `i` in `0..=chunk.len()-2`. We unroll the leading
-        // window indices in groups of four, then mop up the tail.
-        let last_start = chunk.len() - 2; // valid because len >= 2
-        let probe = |i: usize| -> bool {
-            // i <= last_start guarantees i + 1 is in bounds.
-            let idx = bigram_slot(chunk[i], chunk[i + 1]);
-            // idx is at most 0xFFFF; idx >> 6 is at most 1023, in bounds for
-            // [u64; 1024]. The optimizer proves this and elides the check.
-            bits[idx >> 6] & (1u64 << (idx & 63)) != 0
-        };
-
-        let mut i = 0usize;
-        // Process four independent windows per step while a full group fits.
-        while i + 4 <= last_start + 1 {
-            // OR the four results so the loads are independent (no early
-            // return inside the group); branch once per group of four.
-            if probe(i) | probe(i + 1) | probe(i + 2) | probe(i + 3) {
-                return true;
-            }
-            i += 4;
+        if self
+            .short_anchors
+            .as_ref()
+            .is_some_and(|anchors| anchors.is_match(chunk))
+        {
+            return true;
         }
-        // Tail: remaining windows (fewer than four).
-        while i <= last_start {
-            if probe(i) {
-                return true;
-            }
-            i += 1;
+        if self.width_mask == 0 {
+            return false;
         }
-        false
+        chunk
+            .windows(MAX_ANCHOR_BYTES)
+            .any(|window| self.contains_anchor(window))
     }
 
-    /// Population count - useful for diagnostics and the basis of the
-    /// `saturated` short-circuit ([`Self::recompute_saturation`]): a near-full
-    /// table makes `maybe_overlaps` always return true and the prefilter
-    /// provides zero filtering value, so the hot path skips its O(L) walk.
+    #[inline]
+    fn contains_anchor(&self, anchor: &[u8]) -> bool {
+        let mut folded = [0u8; MAX_ANCHOR_BYTES];
+        for (target, byte) in folded.iter_mut().zip(anchor.iter().copied()) {
+            *target = byte.to_ascii_lowercase();
+        }
+        ngram_slots(&folded[..anchor.len()])
+            .into_iter()
+            .all(|slot| self.bits[slot >> 6] & (1u64 << (slot & 63)) != 0)
+    }
+
     pub(crate) fn popcount(&self) -> u32 {
-        self.bits.iter().map(|w| w.count_ones()).sum()
+        self.bits.iter().map(|word| word.count_ones()).sum()
     }
 
-    /// Whether the table is saturated enough that `maybe_overlaps`
-    /// short-circuits to `true`. Used by production density diagnostics
-    /// (`testing::production_bigram_prefilter_density`) and unit tests.
+    pub(crate) fn status(&self) -> BigramPrefilterStatus {
+        let populated_slots = self.popcount();
+        let derived_state = classify_population(populated_slots, TABLE_SLOTS);
+        let has_anchor_owner = self.width_mask != 0 || self.short_anchors.is_some();
+        let state = if self.state == BigramPrefilterState::Invalid
+            || self.state != derived_state
+            || !has_anchor_owner
+        {
+            BigramPrefilterState::Invalid
+        } else {
+            derived_state
+        };
+        BigramPrefilterStatus {
+            populated_slots,
+            total_slots: TABLE_SLOTS,
+            saturation_threshold_slots: SATURATION_THRESHOLD_SLOTS,
+            density_basis_points: share_basis_points(populated_slots as u64, TABLE_SLOTS as u64),
+            state,
+        }
+    }
+
+    pub(crate) fn corpus_status<'a, I>(
+        &self,
+        corpus_name: &'a str,
+        inputs: I,
+        minimum_input_bytes: usize,
+    ) -> BigramPrefilterCorpusStatus<'a>
+    where
+        I: IntoIterator<Item = &'a [u8]>,
+    {
+        let mut input_count = 0u64;
+        let mut eligible_inputs = 0u64;
+        let mut rejected_inputs = 0u64;
+        for input in inputs {
+            input_count += 1;
+            if input.len() >= minimum_input_bytes {
+                eligible_inputs += 1;
+                if !self.maybe_overlaps(input) {
+                    rejected_inputs += 1;
+                }
+            }
+        }
+        BigramPrefilterCorpusStatus {
+            corpus_name,
+            input_count,
+            eligible_inputs,
+            rejected_inputs,
+            rejection_basis_points: share_basis_points(rejected_inputs, input_count),
+        }
+    }
+
     pub(crate) fn is_saturated(&self) -> bool {
-        self.saturated
+        self.status().state == BigramPrefilterState::Saturated
     }
 
-    /// Test-only naive reference: "does any bigram of `chunk` have its bit
-    /// set", with NO saturation short-circuit and NO unrolling. The unrolled,
-    /// saturation-aware [`maybe_overlaps`](Self::maybe_overlaps) must agree
-    /// with this on every non-saturated table. Exposed through
-    /// `testing::BigramBloom` so the differential test in
-    /// `tests/unit/bigram_bloom.rs` can compare against the private
-    /// `bits`/`bigram_slot` internals.
     #[cfg(test)]
     pub(crate) fn scalar_overlaps_reference(&self, chunk: &[u8]) -> bool {
-        if chunk.len() < 2 {
+        if self.state != BigramPrefilterState::Healthy {
             return true;
         }
-        chunk.windows(2).any(|w| {
-            let idx = bigram_slot(w[0], w[1]);
-            self.bits[idx >> 6] & (1u64 << (idx & 63)) != 0
-        })
+        if chunk.len() < usize::from(self.minimum_anchor_bytes) {
+            return true;
+        }
+        if self
+            .short_anchors
+            .as_ref()
+            .is_some_and(|anchors| anchors.is_match(chunk))
+        {
+            return true;
+        }
+        self.width_mask != 0
+            && chunk
+                .windows(MAX_ANCHOR_BYTES)
+                .any(|window| self.contains_anchor(window))
     }
 
-    /// Test-only constructor of a saturated table (enough full rows to cross
-    /// the saturation threshold), so the external suite can exercise the
-    /// short-circuit path without reaching the private `insert_row` /
-    /// `recompute_saturation` mutators.
     #[cfg(test)]
     pub(crate) fn saturated_for_test() -> Self {
+        Self::with_population_for_test(SATURATION_THRESHOLD_SLOTS)
+    }
+
+    #[doc(hidden)]
+    pub(crate) fn with_population_for_test(populated_slots: u32) -> Self {
         let mut bloom = Self::empty();
-        // 158 full rows * 256 slots = 40448 set bits > the 3/5 threshold.
-        for a in 0u16..158 {
-            bloom.insert_row(a as u8);
+        let bounded = populated_slots.min(TABLE_SLOTS) as usize;
+        for slot in 0..bounded {
+            bloom.bits[slot >> 6] |= 1u64 << (slot & 63);
         }
         bloom.recompute_saturation();
         bloom
+    }
+
+    #[doc(hidden)]
+    pub(crate) fn invalid_for_test() -> Self {
+        Self {
+            bits: Box::new([0; 1024]),
+            short_anchors: None,
+            width_mask: 0,
+            minimum_anchor_bytes: 0,
+            state: BigramPrefilterState::Invalid,
+        }
     }
 }
 
-/// Direct index into the 65536-bit table: high byte is the first byte,
-/// low byte is the second. One cycle of arithmetic on every modern CPU
-/// (one shift, one or, both single-cycle ops). The previous implementation
-/// ran 4 dependent instructions (FNV-1a) here.
+const fn classify_population(populated_slots: u32, total_slots: u32) -> BigramPrefilterState {
+    if total_slots == 0 || populated_slots > total_slots {
+        return BigramPrefilterState::Invalid;
+    }
+    if populated_slots >= SATURATION_THRESHOLD_SLOTS {
+        BigramPrefilterState::Saturated
+    } else {
+        BigramPrefilterState::Healthy
+    }
+}
+
+fn share_basis_points(numerator: u64, denominator: u64) -> u16 {
+    if denominator == 0 {
+        return 0;
+    }
+    let basis_points = (u128::from(numerator) * 10_000) / u128::from(denominator);
+    basis_points.min(10_000) as u16
+}
+
 #[inline(always)]
-fn bigram_slot(a: u8, b: u8) -> usize {
-    ((a as usize) << 8) | (b as usize)
+fn width_bit(width: usize) -> u8 {
+    1 << (width - 1)
+}
+
+/// Two stable 16-bit slots for an anchor of one to eight bytes. Requiring both
+/// bits keeps long real-corpus lines selective without enlarging the public
+/// 65,536-slot diagnostic table. Collisions remain fail-open admissions.
+#[inline(always)]
+fn ngram_slots(bytes: &[u8]) -> [usize; 2] {
+    debug_assert!(!bytes.is_empty() && bytes.len() <= MAX_ANCHOR_BYTES);
+    let mut first = 0x811c_9dc5u32 ^ bytes.len() as u32;
+    let mut second = 0x9e37_79b9u32 ^ (bytes.len() as u32).rotate_left(16);
+    for byte in bytes {
+        first ^= u32::from(*byte);
+        first = first.wrapping_mul(0x0100_0193);
+        second ^= u32::from(*byte);
+        second = second.rotate_left(5).wrapping_mul(0x85eb_ca6b);
+    }
+    [
+        usize::from(((first ^ (first >> 16)) & 0xffff) as u16),
+        usize::from(((second ^ (second >> 16)) & 0xffff) as u16),
+    ]
 }

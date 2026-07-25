@@ -22,7 +22,9 @@ fn twitch_client_id_first_positive_fires() {
     };
 
     scanner.clear_fragment_cache();
-    let matches = scanner.scan(&chunk);
+    let matches = scanner
+        .scan(&chunk)
+        .expect("Twitch client-id contract scan should succeed");
     assert!(
         matches.iter().any(|m| {
             m.detector_id.as_ref() == DETECTOR_ID && m.credential.as_ref().contains(CREDENTIAL)

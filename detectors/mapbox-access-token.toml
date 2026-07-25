@@ -36,6 +36,7 @@ type = "none"
 
 [detector.verify.success]
 status = 200
+policy = "status_with_error_backstop"
 
 [[detector.tests]]
 test_positive = "pk.eyJA5HA_hbDTF1ehFQcw04n1IbyKHrAsL0Ii98UNshdQVdyf43_duDPPNyWFZzVb06zdZNhAI8KWT_MieYZ.2VSbx2uM9jl7Sw75lvz9IFDKTSCPhLMo"

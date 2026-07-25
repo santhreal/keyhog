@@ -1,4 +1,4 @@
-use crate::decode::{DecodeAdmission, DecodeAdmissionSketch, Decoder};
+use crate::decode::{DecodeAdmission, DecodeAdmissionSketch, DecodeOutputSink, Decoder};
 use keyhog_core::{Chunk, ChunkMetadata};
 use std::collections::BTreeMap;
 
@@ -120,7 +120,8 @@ fn impossible_admission_implies_zero_output_for_every_builtin_decoder() {
                     *impossible_counts
                         .get_mut(decoder.name())
                         .expect("default decoder name was counted") += 1;
-                    let decoded = decoder.decode_chunk(&chunk, policy);
+                    let mut decoded = Vec::new();
+                    decoder.decode_chunk_into(&chunk, policy, &mut decoded);
                     assert!(
                         decoded.is_empty(),
                         "decoder={} returned Impossible but emitted {} chunks; case={case_index}; \
@@ -187,9 +188,7 @@ impl Decoder for UnknownSketchDecoder {
         "unknown-sketch-test"
     }
 
-    fn decode_chunk(&self, _chunk: &Chunk) -> Vec<Chunk> {
-        Vec::new()
-    }
+    fn decode_chunk_into(&self, _chunk: &Chunk, _sink: &mut dyn DecodeOutputSink) {}
 }
 
 #[test]

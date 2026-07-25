@@ -20,8 +20,7 @@ fn findings(text: &str) -> Vec<(String, String)> {
             ..Default::default()
         },
     };
-    scanner
-        .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+    scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback).expect("selected backend scan succeeds")
         .iter()
         .flat_map(|per_chunk| per_chunk.iter())
         .map(|m| (m.detector_id.to_string(), m.credential.as_ref().to_string()))

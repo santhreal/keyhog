@@ -151,7 +151,9 @@ fn aws_access_key_ac_literal_surfaces_at_exact_offset() {
 
     let s = shared();
     s.clear_fragment_cache();
-    let matches = s.scan(&chunk);
+    let matches = s
+        .scan(&chunk)
+        .expect("SIMD sieve AWS scan should succeed");
 
     let aws: Vec<_> = matches
         .iter()
@@ -188,7 +190,9 @@ fn aws_access_key_nonzero_base_offset_reports_absolute() {
 
     let s = shared();
     s.clear_fragment_cache();
-    let matches = s.scan(&chunk);
+    let matches = s
+        .scan(&chunk)
+        .expect("SIMD sieve offset scan should succeed");
     let aws: Vec<_> = matches
         .iter()
         .filter(|m| m.detector_id.as_ref() == "aws-access-key")
@@ -222,7 +226,9 @@ fn false_prefix_storm_confirms_exactly_one_key() {
 
     let s = shared();
     s.clear_fragment_cache();
-    let matches = s.scan(&chunk);
+    let matches = s
+        .scan(&chunk)
+        .expect("SIMD sieve multiline scan should succeed");
     let aws: Vec<_> = matches
         .iter()
         .filter(|m| m.detector_id.as_ref() == "aws-access-key")
@@ -247,7 +253,9 @@ fn clean_region_is_not_triggered() {
 
     let s = shared();
     s.clear_fragment_cache();
-    let matches = s.scan(&chunk);
+    let matches = s
+        .scan(&chunk)
+        .expect("SIMD sieve multi-detector scan should succeed");
 
     let aws_count = matches
         .iter()
@@ -284,7 +292,9 @@ fn twilio_auth_token_hs_only_surfaces_exact_credential() {
 
     let s = shared();
     s.clear_fragment_cache();
-    let matches = s.scan(&chunk);
+    let matches = s
+        .scan(&chunk)
+        .expect("SIMD sieve Twilio token scan should succeed");
 
     let token_hit = matches
         .iter()
@@ -307,7 +317,9 @@ fn twilio_auth_token_reported_at_credential_offset() {
 
     let s = shared();
     s.clear_fragment_cache();
-    let matches = s.scan(&chunk);
+    let matches = s
+        .scan(&chunk)
+        .expect("SIMD sieve Twilio offset scan should succeed");
 
     let token_hit = matches
         .iter()
@@ -329,7 +341,9 @@ fn twilio_missing_companion_is_suppressed() {
 
     let s = shared();
     s.clear_fragment_cache();
-    let matches = s.scan(&chunk);
+    let matches = s
+        .scan(&chunk)
+        .expect("SIMD sieve duplicate-token scan should succeed");
 
     let twilio_count = matches
         .iter()
@@ -355,7 +369,9 @@ fn union_ac_literal_and_hs_only_both_surface_same_chunk() {
 
     let s = shared();
     s.clear_fragment_cache();
-    let matches = s.scan(&chunk);
+    let matches = s
+        .scan(&chunk)
+        .expect("SIMD sieve mixed detector scan should succeed");
 
     let aws: Vec<_> = matches
         .iter()
@@ -393,7 +409,7 @@ fn union_holds_on_explicit_simdcpu_backend() {
 
     let s = shared();
     s.clear_fragment_cache();
-    let matches = s.scan_with_backend(&chunk, ScanBackend::SimdCpu);
+    let matches = s.scan_with_backend(&chunk, ScanBackend::SimdCpu).expect("selected backend scan succeeds");
 
     let aws_count = matches
         .iter()
@@ -428,6 +444,7 @@ fn union_scan_is_deterministic_across_two_runs() {
         scanner.clear_fragment_cache();
         let mut v: Vec<_> = scanner
             .scan(&chunk)
+            .expect("SIMD sieve deterministic-order scan should succeed")
             .iter()
             .map(|m| {
                 (

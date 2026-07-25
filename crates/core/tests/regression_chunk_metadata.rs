@@ -6,9 +6,8 @@
 //! source-type propagation, or decoded-span accounting fails loudly.
 //!
 //! Standalone integration test: sees only the crate's public API
-//! (`keyhog_core::*`). `SensitiveString::as_str` is `pub(crate)`, so the
-//! bytes are reached through `Deref<Target = str>` (`&*value`) / `Display`,
-//! never that private accessor.
+//! (`keyhog_core::*`). Sensitive bytes are reached only through the explicit
+//! `SensitiveString::as_str`, `Deref<Target = str>`, or `AsRef<str>` surfaces.
 
 use keyhog_core::{Chunk, ChunkMetadata, SensitiveString, SourceError};
 

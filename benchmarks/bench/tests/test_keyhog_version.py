@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import pathlib
 import subprocess
 from types import SimpleNamespace
 
@@ -16,6 +17,111 @@ def _version_output(*, commit: str, detector_digest: str) -> str:
         f"Detector Set: 1 ({detector_digest})\n"
         "Build Target: test-test\n"
     )
+
+def _build_rs_detector_digest(detector_dir: pathlib.Path) -> str:
+    """Independent translation of crates/core/build.rs detector_set_digest."""
+    manifest_name = "corpus.toml"
+    detector_paths = sorted(
+        path
+        for path in detector_dir.iterdir()
+        if path.suffix == ".toml" and path.name != manifest_name
+    )
+    entries = [
+        (path.name, path.read_bytes().decode("utf-8")) for path in detector_paths
+    ]
+    manifest = (detector_dir / manifest_name).read_bytes().decode("utf-8")
+
+    value = 0xCBF29CE484222325
+    for name, content in (*entries, (manifest_name, manifest)):
+        for payload in (
+            name.encode("utf-8"),
+            b"\0",
+            content.encode("utf-8"),
+            b"\0",
+        ):
+            for byte in payload:
+                value ^= byte
+                value = (value * 0x00000100000001B3) & 0xFFFFFFFFFFFFFFFF
+    return f"{len(entries)}-{value:016x}"
+
+
+def test_workspace_detector_digest_matches_build_rs_on_current_tree():
+    repo_root = pathlib.Path(__file__).resolve().parents[3]
+    detector_dir = repo_root / "detectors"
+
+    # Regression: treating corpus.toml as detector 924 and hashing it in sorted
+    # order produced 924-c403f3d2507f00dc instead of the audit tree's
+    # build-stamped 923-8ff9138381e6a120. The explicit final-tree lock also
+    # forces intentional manifest/schema changes to regenerate this assertion.
+    authoritative = _build_rs_detector_digest(detector_dir)
+    assert authoritative == "923-8785f8837d2cd505"
+    assert keyhog_version.workspace_detector_digest(repo_root) == authoritative
+
+    correct_output = _version_output(
+        commit=keyhog_version.workspace_git_hash(), detector_digest=authoritative
+    )
+    keyhog_version.assert_reported_identity_matches_workspace(
+        correct_output, what="keyhog benchmark result"
+    )
+
+
+def test_report_identity_rejects_pre_manifest_fix_digest():
+    commit = keyhog_version.workspace_git_hash()
+    stale_output = _version_output(
+        commit=commit, detector_digest="924-c403f3d2507f00dc"
+    )
+
+    # The old benchmark digest must fail closed rather than rejecting the
+    # correctly built binary and accepting stale pre-manifest result metadata.
+    with pytest.raises(
+        keyhog_version.KeyhogVersionError,
+        match=(
+            "detector_set=924-c403f3d2507f00dc, "
+            "workspace=923-8785f8837d2cd505"
+        ),
+    ):
+        keyhog_version.assert_reported_identity_matches_workspace(
+            stale_output, what="keyhog benchmark result"
+        )
+
+
+def test_workspace_detector_digest_requires_corpus_manifest(tmp_path):
+    detector_dir = tmp_path / "detectors"
+    detector_dir.mkdir()
+    (detector_dir / "a.toml").write_text("id = 'a'\n", encoding="utf-8")
+
+    # build.rs fails when corpus.toml is missing; the benchmark must not invent
+    # a detector-only identity that no authoritative build can stamp.
+    with pytest.raises(
+        keyhog_version.KeyhogVersionError,
+        match=r"corpus\.toml.*restore a readable UTF-8",
+    ):
+        keyhog_version.workspace_detector_digest(tmp_path)
+
+
+def test_workspace_detector_digest_binds_manifest_content_after_detectors(tmp_path):
+    detector_dir = tmp_path / "detectors"
+    detector_dir.mkdir()
+    (detector_dir / "z.toml").write_text(
+        "[detector]\nid = 'z'\n", encoding="utf-8"
+    )
+    (detector_dir / "a.toml").write_text(
+        "[detector]\nid = 'a'\n", encoding="utf-8"
+    )
+    manifest = detector_dir / "corpus.toml"
+    manifest.write_text("schema_version = 1\n", encoding="utf-8")
+
+    # Regression: the manifest is schema metadata, so it changes the hash but
+    # remains outside the detector count and follows every sorted detector.
+    initial = keyhog_version.workspace_detector_digest(tmp_path)
+    assert initial == "2-86d220cb297a8ec5"
+    assert initial == _build_rs_detector_digest(detector_dir)
+
+    manifest.write_text("schema_version = 2\n", encoding="utf-8")
+    changed = keyhog_version.workspace_detector_digest(tmp_path)
+    assert changed == "2-8f453bcb2e345ae0"
+    assert changed == _build_rs_detector_digest(detector_dir)
+    assert changed != initial
 
 
 def test_detector_corpus_sha256_binds_filenames_and_bytes(tmp_path):
@@ -225,3 +331,19 @@ def test_workspace_git_hash_accepts_sha256_repository(tmp_path):
     )
 
     assert len(keyhog_version.workspace_git_hash(tmp_path)) == 64
+
+
+def test_workspace_cleanliness_honors_allow_dirty_env(tmp_path, monkeypatch):
+    """KEYHOG_BENCH_ALLOW_DIRTY=1 lets a developer benchmark an uncommitted tree."""
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    scanner = tmp_path / "crates" / "scanner" / "src" / "lib.rs"
+    scanner.parent.mkdir(parents=True)
+    scanner.write_text("pub fn version() -> u8 { 1 }\n")
+    subprocess.run(["git", "-C", str(tmp_path), "add", str(scanner)], check=True)
+    # Without the env, the same tree is rejected.
+    with pytest.raises(keyhog_version.KeyhogVersionError, match="uncommitted changes"):
+        keyhog_version.assert_workspace_tracked_tree_clean(tmp_path)
+
+    monkeypatch.setenv("KEYHOG_BENCH_ALLOW_DIRTY", "1")
+    # With the env, the check passes despite the uncommitted edit.
+    keyhog_version.assert_workspace_tracked_tree_clean(tmp_path)

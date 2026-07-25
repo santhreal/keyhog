@@ -109,7 +109,7 @@ fn canonical(matches: &[Vec<RawMatch>]) -> Vec<(String, String, String)> {
 fn scan(scanner: &CompiledScanner, chunk: &Chunk) -> Vec<(String, String, String)> {
     scanner.clear_fragment_cache();
     canonical(
-        &scanner.scan_chunks_with_backend(std::slice::from_ref(chunk), ScanBackend::CpuFallback),
+        &scanner.scan_chunks_with_backend(std::slice::from_ref(chunk), ScanBackend::CpuFallback).expect("selected backend scan succeeds"),
     )
 }
 
@@ -142,8 +142,7 @@ fn boundary_scanner() -> CompiledScanner {
 
 fn boundary_credentials(scanner: &CompiledScanner, text: &str) -> Vec<String> {
     let chunk = chunk_of(text.as_bytes(), "boundary.env");
-    scanner
-        .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+    scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback).expect("selected backend scan succeeds")
         .into_iter()
         .flatten()
         .map(|m| m.credential.as_str().to_string())

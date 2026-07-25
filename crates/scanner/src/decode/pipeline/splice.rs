@@ -1,19 +1,91 @@
+use crate::decode::DecodeOutputSink;
 use super::extractor::ExtractedValue;
 use keyhog_core::{Chunk, ChunkMetadata};
 
 pub(in crate::decode) const DECODE_REPLACEMENT_BATCH_SOURCE_BYTES: usize = 64 * 1024;
 const DECODE_REPLACEMENT_BATCH_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
 
+pub(in crate::decode) struct DecodedReplacementBatcher<'a> {
+    sink: &'a mut dyn DecodeOutputSink,
+    chunk: &'a Chunk,
+    decoder_name: &'a str,
+    batch_start: usize,
+    batch_end: usize,
+    batch_decoded_bytes: usize,
+    replacements: Vec<(usize, usize, String)>,
+}
+
+impl<'a> DecodedReplacementBatcher<'a> {
+    pub(in crate::decode) fn new(
+        sink: &'a mut dyn DecodeOutputSink,
+        chunk: &'a Chunk,
+        decoder_name: &'a str,
+    ) -> Self {
+        Self {
+            sink,
+            chunk,
+            decoder_name,
+            batch_start: usize::MAX,
+            batch_end: 0,
+            batch_decoded_bytes: 0,
+            replacements: Vec::new(),
+        }
+    }
+
+    pub(in crate::decode) fn push(
+        &mut self,
+        start: usize,
+        end: usize,
+        decoded: String,
+    ) -> bool {
+        let exceeds_source_bound = self.batch_start != usize::MAX
+            && end.saturating_sub(self.batch_start) > DECODE_REPLACEMENT_BATCH_SOURCE_BYTES;
+        let exceeds_output_bound = !self.replacements.is_empty()
+            && self.batch_decoded_bytes.saturating_add(decoded.len())
+                > DECODE_REPLACEMENT_BATCH_OUTPUT_BYTES;
+        if exceeds_source_bound || exceeds_output_bound {
+            if !self.flush() {
+                return false;
+            }
+        }
+        if self.batch_start == usize::MAX {
+            self.batch_start = start;
+        }
+        self.batch_end = end;
+        self.batch_decoded_bytes = self.batch_decoded_bytes.saturating_add(decoded.len());
+        self.replacements.push((start, end, decoded));
+        true
+    }
+
+    pub(in crate::decode) fn finish(mut self) -> bool {
+        self.flush()
+    }
+
+    fn flush(&mut self) -> bool {
+        let open = push_decoded_replacements_spliced(
+            self.sink,
+            self.chunk,
+            self.batch_start,
+            self.batch_end,
+            &mut self.replacements,
+            self.decoder_name,
+        );
+        self.batch_start = usize::MAX;
+        self.batch_decoded_bytes = 0;
+        open
+    }
+}
+
 pub(in crate::decode) fn push_decoded_replacements_spliced(
-    decoded_chunks: &mut Vec<Chunk>,
+    sink: &mut dyn DecodeOutputSink,
     chunk: &Chunk,
     span_start: usize,
     span_end: usize,
     replacements: &mut Vec<(usize, usize, String)>,
     decoder_name: &str,
-) {
+) -> bool {
     if replacements.is_empty() {
-        return;
+        return true;
     }
     let mut decoded_span = chunk.data[span_start..span_end].to_owned();
     for (start, end, decoded) in replacements.drain(..).rev() {
@@ -21,20 +93,24 @@ pub(in crate::decode) fn push_decoded_replacements_spliced(
         decoded_span.replace_range(start - span_start..end - span_start, &decoded);
     }
     push_decoded_text_chunk_spliced_at(
-        decoded_chunks,
+        sink,
         chunk,
         Some((span_start, span_end)),
         &chunk.data[span_start..span_end],
         decoded_span,
         decoder_name,
-    );
+    )
 }
-pub(in crate::decode) fn push_batched_decoded_replacements(
+
+pub(in crate::decode) fn stream_batched_decoded_replacements<I>(
+    sink: &mut dyn DecodeOutputSink,
     chunk: &Chunk,
-    replacements: Vec<(usize, usize, String)>,
+    replacements: I,
     decoder_name: &str,
-) -> Vec<Chunk> {
-    let mut decoded_chunks = Vec::new();
+) -> bool
+where
+    I: IntoIterator<Item = (usize, usize, String)>,
+{
     let mut batch_start = usize::MAX;
     let mut batch_end = 0;
     let mut batch_decoded_bytes = 0usize;
@@ -46,14 +122,16 @@ pub(in crate::decode) fn push_batched_decoded_replacements(
             && batch_decoded_bytes.saturating_add(decoded.len())
                 > DECODE_REPLACEMENT_BATCH_OUTPUT_BYTES;
         if exceeds_source_bound || exceeds_output_bound {
-            push_decoded_replacements_spliced(
-                &mut decoded_chunks,
+            if !push_decoded_replacements_spliced(
+                sink,
                 chunk,
                 batch_start,
                 batch_end,
                 &mut batch_replacements,
                 decoder_name,
-            );
+            ) {
+                return false;
+            }
             batch_start = usize::MAX;
             batch_decoded_bytes = 0;
         }
@@ -65,28 +143,27 @@ pub(in crate::decode) fn push_batched_decoded_replacements(
         batch_replacements.push((start, end, decoded));
     }
     push_decoded_replacements_spliced(
-        &mut decoded_chunks,
+        sink,
         chunk,
         batch_start,
         batch_end,
         &mut batch_replacements,
         decoder_name,
-    );
-    decoded_chunks
+    )
 }
 
 pub(in crate::decode) fn push_decoded_text_chunk(
-    decoded_chunks: &mut Vec<Chunk>,
+    sink: &mut dyn DecodeOutputSink,
     chunk: &Chunk,
     text: String,
     decoder_name: &str,
-) {
+) -> bool {
     // Legacy entrypoint with no source-blob info. Forwards to the
     // splice-aware variant with `original_encoded = ""`, which falls
     // back to the old "decoded text alone" chunk shape. New decoders
     // should call `push_decoded_text_chunk_spliced` so the parent's
     // companion context lands adjacent to the decoded credential.
-    push_decoded_text_chunk_spliced(decoded_chunks, chunk, "", text, decoder_name);
+    push_decoded_text_chunk_spliced(sink, chunk, "", text, decoder_name)
 }
 
 /// Push a decoded chunk that **splices** the decoded text back into
@@ -98,35 +175,35 @@ pub(in crate::decode) fn push_decoded_text_chunk(
 /// Pass an empty `original_encoded` to fall back to the legacy
 /// "decoded text alone" behavior.
 pub(in crate::decode) fn push_decoded_text_chunk_spliced(
-    decoded_chunks: &mut Vec<Chunk>,
+    sink: &mut dyn DecodeOutputSink,
     chunk: &Chunk,
     original_encoded: &str,
     text: String,
     decoder_name: &str,
-) {
+) -> bool {
     push_decoded_text_chunk_spliced_at(
-        decoded_chunks,
+        sink,
         chunk,
         None,
         original_encoded,
         text,
         decoder_name,
-    );
+    )
 }
 
 pub(in crate::decode) fn push_decoded_text_chunk_spliced_at(
-    decoded_chunks: &mut Vec<Chunk>,
+    sink: &mut dyn DecodeOutputSink,
     chunk: &Chunk,
     original_span: Option<(usize, usize)>,
     original_encoded: &str,
     text: String,
     decoder_name: &str,
-) {
+) -> bool {
     // Backspace and form feed are legitimate JSON/Unicode escape output.
     // Replace other C0 controls with token separators: dropping the decoded
     // view loses printable siblings, while deletion joins unrelated tokens.
     let text = if text.is_empty() {
-        return;
+        return true;
     } else if text
         .as_bytes()
         .iter()
@@ -145,7 +222,7 @@ pub(in crate::decode) fn push_decoded_text_chunk_spliced_at(
         text
     };
     if text.is_empty() {
-        return;
+        return true;
     }
 
     // Build the new chunk's payload. Default: just the decoded text
@@ -193,7 +270,7 @@ pub(in crate::decode) fn push_decoded_text_chunk_spliced_at(
         )
     };
 
-    decoded_chunks.push(Chunk {
+    sink.push(Chunk {
         data: payload.into(),
         metadata: ChunkMetadata {
             base_offset,
@@ -207,7 +284,7 @@ pub(in crate::decode) fn push_decoded_text_chunk_spliced_at(
             size_bytes: chunk.metadata.size_bytes,
             decoded_span,
         },
-    });
+    })
 }
 
 pub(crate) fn bytecount_newlines(bytes: &[u8]) -> usize {
@@ -285,43 +362,46 @@ fn consume_adjacent_base64_padding(parent: &[u8], start: usize) -> usize {
     }
 }
 
-pub(in crate::decode) fn decode_candidate_refs_exact<'a, I, F>(
+
+pub(in crate::decode) fn stream_candidate_refs_exact<'a, I, F>(
+    sink: &mut dyn DecodeOutputSink,
     chunk: &Chunk,
     candidates: I,
     mut decode: F,
     decoder_name: &str,
-) -> Vec<Chunk>
+) -> bool
 where
     I: IntoIterator<Item = &'a ExtractedValue>,
     F: FnMut(&str) -> Result<String, ()>,
 {
-    let mut decoded_chunks = Vec::new();
     for candidate in candidates {
         if let Ok(text) = decode(&candidate.value) {
             // LAW10: failed trial decode is recall-preserving (it keeps the original candidate-bearing chunk in the scan path unchanged).
-            push_decoded_text_chunk_spliced_at(
-                &mut decoded_chunks,
+            if !push_decoded_text_chunk_spliced_at(
+                sink,
                 chunk,
                 Some(candidate.span()),
                 &candidate.value,
                 text,
                 decoder_name,
-            );
+            ) {
+                return false;
+            }
         }
     }
-    decoded_chunks
+    true
 }
 
-pub(in crate::decode) fn decode_candidate_spans_exact<F>(
+
+pub(in crate::decode) fn stream_candidate_spans_exact<F>(
+    sink: &mut dyn DecodeOutputSink,
     chunk: &Chunk,
     candidates: Vec<ExtractedValue>,
     decode: F,
     decoder_name: &str,
-) -> Vec<Chunk>
+) -> bool
 where
     F: FnMut(&str) -> Result<String, ()>,
 {
-    // Owned-candidate variant: the loop body is identical to the borrowed one, so
-    // borrow into the single owner rather than hand-roll a second copy.
-    decode_candidate_refs_exact(chunk, candidates.iter(), decode, decoder_name)
+    stream_candidate_refs_exact(sink, chunk, candidates.iter(), decode, decoder_name)
 }

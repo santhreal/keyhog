@@ -35,6 +35,7 @@ fn scan_text(text: &str) -> Vec<keyhog_core::RawMatch> {
             ..Default::default()
         },
     })
+        .expect("digest-fragment guard scan should succeed")
 }
 
 #[test]

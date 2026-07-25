@@ -1,41 +1,31 @@
 # Changelog
 
-## 0.5.45 - 2026-07-22
+## 0.5.46 - 2026-07-24
 
-- Republish the scanner in the release chain whose signed asset publication
-  addresses GitHub drafts by immutable release ID.
-
-## 0.5.44 - 2026-07-22
-
-- Compile the GPU literal artifact generator on Windows by passing its UTF-16
-  option prefix to `slice::strip_prefix` as a slice.
-
-## 0.5.43 - 2026-07-22
-
-- Keep grown phase-two GPU DFA resident haystack capacities aligned to the
-  declared 32-bit element ABI. Forced 8 MiB, 32-shard CUDA evidence now proves
-  one haystack upload and exact admission parity against per-shard dispatch.
-- Recover balanced Helm template manifests by selecting one complete conditional
-  branch and replacing render-time actions with inert YAML values. Recover
-  Jupyter notebooks truncated at end of file by closing only open strings and
-  containers. Other syntax errors remain counted coverage gaps.
-- Batch Base64 and hexadecimal values, JSON strings, quoted-printable text, and
-  line-local URL-percent, HTML-entity, Unicode, and octal escapes into bounded
-  source and output spans instead of emitting one recursive root per value.
-  Physical lines and multiline private-key separators remain intact. Disallowed
-  controls become token separators instead of truncation events, preserving
-  adjacent printable spans without joining tokens.
-- CUDA and WGPU positioned-literal evidence use the same 8 MiB shard ceiling,
-  keeping dense corpus match replay exact without backend substitution.
-- Single-shard Hyperscan databases compile inline, preventing nested Rayon work
-  from re-entering a worker's borrowed phase-two scratch state.
-- Chef's generic `api-token` header anchor now requires a token boundary, so it
-  cannot replace an exact Snyk UUID finding through overlap resolution.
-
-- Compiled detector-owned and scan-config entropy assignment keywords into one
+- Return typed `Result` errors from every public scan entry point. Explicit
+  unavailable or failed backends no longer terminate an embedding process or
+  silently substitute another backend, and coalesced scans retain one result
+  row per input chunk. The CLI alone maps terminal errors to process status.
+- Stream decoder candidates into one per-root sink and stop production at 1,000
+  decoded chunks or 64 MiB. Accepted siblings and exact-boundary output remain,
+  and custom decoder collection is fallible instead of unbounded or truncated.
+- Return non-secret backend-recovery receipts with exact recovered ranges and
+  GPU recovery counts from recovery-aware coalesced scans. Receipt-blind APIs
+  fail instead of discarding recovery metadata, and acquired GPU peer identity
+  is required before autoroute can persist execution evidence.
+- Replace the overbroad bigram training gate with scanner-owned selective
+  mandatory anchors: exact short literals and measured-frequency eight-byte
+  double-hash anchors. Prefixless patterns remain in the explicit always-admit
+  lane. Pinned CredData evidence now records non-zero rejection with exact
+  enabled-versus-bypass finding parity and categorized unavailable inputs.
+- Keep appended multiline mappings aligned across empty lines and canonicalize
+  detector assignment byte spans to UTF-8 boundaries before slicing. CredData
+  and malformed-source scans now return their original findings instead of
+  aborting the host with exit 134.
+- Compile detector-owned and scan-config entropy assignment keywords into one
   cached case-insensitive matcher, removing the per-line linear vocabulary walk
   from sparse source scans while preserving programmatic config changes.
-- Added one-pass multiline syntax admission before the precise concatenation
+- Add one-pass multiline syntax admission before the precise concatenation
   grammar, so ordinary large source windows no longer pay repeated full-text
   searches for absent join markers.
 - Large-file multiline admission now consumes the same active generic-detector
@@ -359,8 +349,6 @@
   string arrays followed by an empty-separator `.join("")`, even when the
   temporary variable name is obfuscated. Non-empty separators and arrays that
   produce no known credential prefix remain outside this recovery path.
-- Fail a selected GPU route with exit `12` when runtime dispatch fails,
-  rather than completing the scan through an unselected CPU/SIMD backend.
 - Keep immutable VYRE region-presence tables resident across GPU batches.
   Scanner-owned capacity grows from the live workload, concurrent calls cannot
   interleave mutable device buffers, and host staging allocations are zeroized.
@@ -371,8 +359,8 @@
   finding parity. Historical per-chunk SIMD evidence is marked noncomparable.
 - Rename the production GPU health API from the obsolete AC-kernel name to
   `gpu_region_presence_self_test`, matching the live VYRE region-presence path.
-  Its structured failure remains available to health reporters while normal
-  selected-GPU scan entry points map the same failure to exit `12`.
+  Its structured failure remains available to health reporters, library scan
+  entry points return it as a typed error, and the CLI maps it to exit `12`.
 - Rename the VRAM-adaptive live buffer budget to `gpu_batch_input_limit` and
   move its owner to `gpu_input_budget.rs`.
 - Remove detector-ID constants used only by their own tests; runtime-specific
@@ -609,6 +597,38 @@
 - Remove Jumio's accidental companion capture of the role label, capture the
   exact secret value, preserve secret-only findings, and reject continued
   credential prefixes.
+
+## 0.5.45 - 2026-07-22
+
+- Republish the scanner in the release chain whose signed asset publication
+  addresses GitHub drafts by immutable release ID.
+
+## 0.5.44 - 2026-07-22
+
+- Compile the GPU literal artifact generator on Windows by passing its UTF-16
+  option prefix to `slice::strip_prefix` as a slice.
+
+## 0.5.43 - 2026-07-22
+
+- Keep grown phase-two GPU DFA resident haystack capacities aligned to the
+  declared 32-bit element ABI. Forced 8 MiB, 32-shard CUDA evidence now proves
+  one haystack upload and exact admission parity against per-shard dispatch.
+- Recover balanced Helm template manifests by selecting one complete conditional
+  branch and replacing render-time actions with inert YAML values. Recover
+  Jupyter notebooks truncated at end of file by closing only open strings and
+  containers. Other syntax errors remain counted coverage gaps.
+- Batch Base64 and hexadecimal values, JSON strings, quoted-printable text, and
+  line-local URL-percent, HTML-entity, Unicode, and octal escapes into bounded
+  source and output spans instead of emitting one recursive root per value.
+  Physical lines and multiline private-key separators remain intact. Disallowed
+  controls become token separators instead of truncation events, preserving
+  adjacent printable spans without joining tokens.
+- CUDA and WGPU positioned-literal evidence use the same 8 MiB shard ceiling,
+  keeping dense corpus match replay exact without backend substitution.
+- Single-shard Hyperscan databases compile inline, preventing nested Rayon work
+  from re-entering a worker's borrowed phase-two scratch state.
+- Chef's generic `api-token` header anchor now requires a token boundary, so it
+  cannot replace an exact Snyk UUID finding through overlap resolution.
 
 ## 0.2.1
 

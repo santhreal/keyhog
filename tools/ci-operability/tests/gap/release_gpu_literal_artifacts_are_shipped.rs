@@ -3,18 +3,26 @@
 
 use super::support::read_workflow;
 
+/// Locks out release jobs that omit GPU literal payloads, expose unsigned staging
+/// assets, or mutate a tag-named release without immutable-ID manifest validation.
 #[test]
 fn release_workflow_builds_uploads_and_signs_gpu_literal_artifacts() {
     let text = read_workflow("release.yml");
     let ci = read_workflow("ci.yml");
+    let publisher = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../scripts/publish_release_assets.py"
+    ));
 
     assert!(
         text.contains("--bin keyhog-scanner-artifacts")
             && text.contains("--out-dir \"$bundle_dir\"")
             && text.contains("artifact_features: 'ml,entropy,decode,multiline,simdsieve,simd'")
             && text.contains("--features \"${{ matrix.artifact_features }}\"")
-            && text.contains(".gpu-literals.tar.gz"),
-        "release.yml must build a GPU literal artifact bundle through the real scanner artifact writer"
+            && text.contains(".gpu-literals.tar.gz")
+            && text.contains("create_deterministic_archive")
+            && !text.contains("tar -czf"),
+        "release.yml must build a deterministic GPU literal artifact bundle through the real scanner artifact writer"
     );
     assert!(
         text.contains("${{ matrix.asset }}.gpu-literals.tar.gz")
@@ -22,12 +30,20 @@ fn release_workflow_builds_uploads_and_signs_gpu_literal_artifacts() {
             && text.contains("name: unsigned-${{ matrix.asset }}")
             && text.contains("cp -a \"$GITHUB_WORKSPACE/dist/.\" \"$workdir/\"")
             && text.contains("final+=(\"$payload.minisig\")")
-            && text.contains("releases/$release_id/assets?name=$asset")
-            && text.contains("\"repos/$GITHUB_REPOSITORY/releases/$release_id\"")
-            && text.contains("-F draft=false")
-            && text
+            && text.contains("scripts/publish_release_assets.py"),
+        "release.yml must stage every GPU literal payload and delegate publication to the exact-manifest publisher"
+    );
+    assert!(
+        publisher.contains("release_path = f\"{releases_path}/{release_id}\"")
+            && publisher.contains("f\"{assets_path}?name={encoded_name}\"")
+            && publisher.contains("\"body\": notes")
+            && publisher.contains("\"draft\": True")
+            && publisher.contains("\"draft\": False")
+            && publisher.contains("gzip.GzipFile")
+            && publisher.contains("mtime=0")
+            && publisher
                 .contains("published release manifest does not equal the signed expected manifest"),
-        "release.yml must stage the GPU literal bundle privately, then publish it only through the exact signed manifest"
+        "the delegated publisher must build deterministic archives, mutate an immutable release ID, keep uploads private, and publish only an exact signed manifest"
     );
 
     let sign_job = text

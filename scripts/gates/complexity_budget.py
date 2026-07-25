@@ -46,7 +46,7 @@ BUDGET = {
     # generic-shape adjudication, regex truncation, and GPU artifact/cache/input
     # policy now live at crate-level ownership boundaries instead of the runtime
     # engine. The engine lost seven files and two phase-2 policy lanes.
-    "engine_loc": 12123,         # total non-blank LOC under engine/
+    "engine_loc": 12121,         # total non-blank LOC under engine/
 }
 
 

@@ -141,9 +141,17 @@ fn backend_autoroute_disabled_cache_reports_compiled_route_contract() {
             value["repair_command"],
             serde_json::json!("keyhog calibrate-autoroute --autoroute-cache <PATH>")
         );
-        assert!(value["error"]
-            .as_str()
-            .is_some_and(|error| error.contains("explicit --backend")));
+        // Regression: disabled persistence must not leave JSON-only operators
+        // without the same explicit-backend diagnostic caveat as human output.
+        assert_eq!(
+            value["error"],
+            serde_json::json!(
+                "autoroute cache is disabled (--autoroute-cache off / [system].autoroute_cache = off); \
+                 automatic scans warn and complete through scalar correctness recovery, but cannot \
+                 claim a fastest measured route until calibration is persisted. Use an explicit \
+                 --backend only as a diagnostic override; it does not replace autoroute evidence"
+            )
+        );
     } else {
         assert_eq!(value["calibration_required"], serde_json::json!(false));
         assert_eq!(value["direct_backend"], serde_json::json!("cpu-fallback"));
@@ -223,11 +231,32 @@ fn backend_autoroute_shows_calibrated_decisions_after_calibration() {
         .env("XDG_CACHE_HOME", cache.path())
         .output()
         .expect("spawn keyhog scan --autoroute-calibrate --autoroute-gpu");
-    // A calibration scan runs calibration THEN scans, so it returns the scan code
-    // (0 clean / 1 found). Anything >= 2 means calibration failed.
+    // A calibration scan runs calibration then scans, so success returns the
+    // scan code (0 clean / 1 found). Statistically overlapping timing evidence
+    // is an honest exit 2 and must not be relabelled as a successful decision.
+    if calibrate.status.code() == Some(2) {
+        let stderr = String::from_utf8_lossy(&calibrate.stderr);
+        let diagnostic = stderr.lines().last().expect("terminal calibration error");
+        assert!(
+            diagnostic.starts_with(
+                "error: autoroute calibration did not persist a routing decision: cache decision \
+                 has no confidence-supported"
+            ),
+            "exit 2 must name the inconclusive evidence; stderr={stderr}"
+        );
+        assert!(
+            diagnostic.ends_with(
+                "Calibration records must be durable before auto routing can be trusted. Fix the \
+                 cache path or permissions and rerun `keyhog calibrate-autoroute`. Use an explicit \
+                 `--backend` only for a diagnostic scan; it does not replace autoroute evidence."
+            ),
+            "exit 2 must expose the exact retry and diagnostic remediation; stderr={stderr}"
+        );
+        return;
+    }
     assert!(
         matches!(calibrate.status.code(), Some(0) | Some(1)),
-        "calibration scan must succeed (exit 0/1); code={:?} stderr={}",
+        "calibration scan must publish or fail closed as inconclusive; code={:?} stderr={}",
         calibrate.status.code(),
         String::from_utf8_lossy(&calibrate.stderr)
     );

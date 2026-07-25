@@ -166,7 +166,7 @@ fn every_positive_fires_at_production_paths_and_records_suppressed_rate() {
                 production_runs += 1;
                 scanner.clear_fragment_cache();
                 let chunk = make_chunk(&p.text, path);
-                let matches = scanner.scan(&chunk);
+                let matches = scanner.scan(&chunk).expect("scanner call should succeed");
                 if !any_credential_contains(&matches, &p.credential) {
                     let creds = finding_creds(&matches);
                     production_misses.push(format!(
@@ -186,7 +186,7 @@ fn every_positive_fires_at_production_paths_and_records_suppressed_rate() {
                 suppressed_runs += 1;
                 scanner.clear_fragment_cache();
                 let chunk = make_chunk(&p.text, path);
-                let matches = scanner.scan(&chunk);
+                let matches = scanner.scan(&chunk).expect("scanner call should succeed");
                 if any_credential_contains(&matches, &p.credential) {
                     suppressed_hits += 1;
                 }

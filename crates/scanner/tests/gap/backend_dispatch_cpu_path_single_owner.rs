@@ -53,8 +53,17 @@ fn cpu_scan_and_boundary_path_has_single_owner() {
         delegations, 1,
         "the non-GPU branch must call the helper once"
     );
+    let compiled_out_gpu = src
+        .split_once("#[cfg(not(feature = \"gpu\"))]")
+        .and_then(|(_, rest)| {
+            rest.split_once("\n        }\n    }\n\n    ///")
+                .map(|(body, _)| body)
+        })
+        .expect("compiled-out GPU branch must remain inspectable");
     assert!(
-        src.contains("crate::process_exit::backend_unavailable("),
-        "a compiled-out GPU route must fail closed instead of delegating to CPU"
+        compiled_out_gpu.contains("Err(crate::error::ScanError::Gpu(")
+            && !compiled_out_gpu.contains("scan_chunks_cpu_parallel")
+            && !compiled_out_gpu.contains("process_exit"),
+        "a compiled-out GPU route must return a structured GPU error without CPU delegation or process-exit ownership"
     );
 }

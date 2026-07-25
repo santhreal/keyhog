@@ -29,6 +29,7 @@ field = "match"
 
 [detector.verify.success]
 status = 200
+policy = "status_with_error_backstop"
 
 [[detector.tests]]
 test_positive = "JOTFORM_API_KEY 53f2da167246ebe0e04dc37c9e74a75b"

@@ -9,8 +9,6 @@ use std::collections::{BinaryHeap, HashSet};
 use std::sync::Arc;
 
 use keyhog_core::SensitiveString;
-#[cfg(feature = "ml")]
-use zeroize::Zeroize;
 
 #[cfg(feature = "ml")]
 pub(crate) fn ml_context_for_candidate(
@@ -29,6 +27,7 @@ pub(crate) fn ml_context_for_candidate(
 #[cfg(feature = "ml")]
 pub(crate) fn ml_features_for_candidate(
     text: &str,
+    line_offsets: &[usize],
     line: usize,
     file_path: Option<&str>,
     credential: &str,
@@ -41,45 +40,193 @@ pub(crate) fn ml_features_for_candidate(
     if credential.is_empty() {
         return [0.0; crate::ml_scorer::NUM_FEATURES];
     }
-    let text_context = crate::pipeline::local_context_window(text, line, context_radius_lines);
-    let compute = |context: &str| {
-        crate::ml_scorer::ml_features::compute_features_for_compiled_detector_with_config(
-            credential,
-            context,
-            &config.known_prefixes,
-            &config.secret_keywords,
-            &config.test_keywords,
-            &config.placeholder_keywords,
-            detector_service,
-            detector_features,
-            channel,
-        )
-    };
-    let Some(path) = file_path else {
-        return compute(text_context);
-    };
-    thread_local! {
-        static CONTEXT: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
-    }
-    CONTEXT.with(|cell| {
-        let mut context = cell.borrow_mut();
-        context.clear();
-        context.push_str("file:");
-        context.push_str(path);
-        context.push('\n');
-        context.push_str(text_context);
-        let features = compute(&context);
-        context.zeroize();
-        features
-    })
+    let text_context = crate::pipeline::local_context_window_from_offsets(
+        text,
+        line_offsets,
+        line,
+        context_radius_lines,
+    );
+    crate::ml_scorer::ml_features::compute_features_for_compiled_detector_from_source_window(
+        credential,
+        text_context,
+        file_path,
+        &config.known_prefixes,
+        &config.secret_keywords,
+        &config.test_keywords,
+        &config.placeholder_keywords,
+        detector_service,
+        detector_features,
+        channel,
+    )
 }
 
-/// Queued ML match waiting for batch inference at the end of a scan.
+/// Owned finding payload queued for ML without computing its persistent
+/// credential digest or constructing the public `RawMatch`.
+///
+/// The plaintext and source metadata must outlive extraction so batch scoring
+/// can run after the chunk walk. The SHA-256 digest is deliberately absent:
+/// [`materialize`](Self::materialize) is called only after final adjudication
+/// returns an emit verdict.
+#[cfg(feature = "ml")]
+#[derive(Debug, Clone)]
+pub(crate) struct PendingRawMatch {
+    pub(crate) detector_id: Arc<str>,
+    pub(crate) detector_name: Arc<str>,
+    pub(crate) service: Arc<str>,
+    pub(crate) severity: keyhog_core::Severity,
+    pub(crate) credential: SensitiveString,
+    pub(crate) companions: keyhog_core::CompanionMap,
+    pub(crate) location: keyhog_core::MatchLocation,
+    pub(crate) entropy: Option<f64>,
+}
+
+#[cfg(feature = "ml")]
+impl PendingRawMatch {
+    pub(crate) fn materialize(self, confidence: f64) -> keyhog_core::RawMatch {
+        #[cfg(test)]
+        RAW_MATCH_MATERIALIZATIONS.with(|count| count.set(count.get() + 1));
+
+        let credential_hash = crate::sha256_hash(self.credential.as_ref());
+        keyhog_core::RawMatch {
+            detector_id: self.detector_id,
+            detector_name: self.detector_name,
+            service: self.service,
+            severity: self.severity,
+            credential: self.credential,
+            credential_hash,
+            companions: self.companions,
+            location: self.location,
+            entropy: self.entropy,
+            confidence: Some(confidence),
+        }
+    }
+
+    fn same_identity(&self, other: &Self) -> bool {
+        self.detector_id == other.detector_id
+            && self.credential == other.credential
+            && self.location.offset == other.location.offset
+    }
+
+    fn cmp_with_confidence(
+        &self,
+        confidence: f64,
+        other: &Self,
+        other_confidence: f64,
+    ) -> std::cmp::Ordering {
+        match other_confidence.total_cmp(&confidence) {
+            std::cmp::Ordering::Equal => {}
+            ordering => return ordering,
+        }
+        match other.severity.cmp(&self.severity) {
+            std::cmp::Ordering::Equal => {}
+            ordering => return ordering,
+        }
+        match self.detector_id.cmp(&other.detector_id) {
+            std::cmp::Ordering::Equal => {}
+            ordering => return ordering,
+        }
+        match self.credential.cmp(&other.credential) {
+            std::cmp::Ordering::Equal => {}
+            ordering => return ordering,
+        }
+        match self.location.offset.cmp(&other.location.offset) {
+            std::cmp::Ordering::Equal => {}
+            ordering => return ordering,
+        }
+        match self.location.line.cmp(&other.location.line) {
+            std::cmp::Ordering::Equal => {}
+            ordering => return ordering,
+        }
+        self.detector_name
+            .cmp(&other.detector_name)
+            .then_with(|| self.service.cmp(&other.service))
+            // Equal plaintext credentials have equal SHA-256 digests, so the
+            // omitted `RawMatch::credential_hash` tiebreak cannot affect this
+            // pending-queue comparison.
+            .then_with(|| pending_companion_map_cmp(&self.companions, &other.companions))
+            .then_with(|| self.location.source.cmp(&other.location.source))
+            .then_with(|| self.location.file_path.cmp(&other.location.file_path))
+            .then_with(|| self.location.commit.cmp(&other.location.commit))
+            .then_with(|| self.location.author.cmp(&other.location.author))
+            .then_with(|| self.location.date.cmp(&other.location.date))
+            .then_with(|| pending_opt_f64_total_cmp(self.entropy, other.entropy))
+            .then_with(|| confidence.total_cmp(&other_confidence))
+    }
+}
+
+#[cfg(all(feature = "ml", test))]
+thread_local! {
+    static RAW_MATCH_MATERIALIZATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(all(feature = "ml", test))]
+pub(crate) fn reset_raw_match_materialization_count_for_test() {
+    RAW_MATCH_MATERIALIZATIONS.with(|count| count.set(0));
+}
+
+#[cfg(all(feature = "ml", test))]
+pub(crate) fn raw_match_materialization_count_for_test() -> usize {
+    RAW_MATCH_MATERIALIZATIONS.with(std::cell::Cell::get)
+}
+
+#[cfg(feature = "ml")]
+fn pending_opt_f64_total_cmp(left: Option<f64>, right: Option<f64>) -> std::cmp::Ordering {
+    match (left, right) {
+        (None, None) => std::cmp::Ordering::Equal,
+        (None, Some(_)) => std::cmp::Ordering::Less,
+        (Some(_), None) => std::cmp::Ordering::Greater,
+        (Some(left), Some(right)) => left.total_cmp(&right),
+    }
+}
+
+#[cfg(feature = "ml")]
+fn pending_companion_map_cmp(
+    left: &keyhog_core::CompanionMap,
+    right: &keyhog_core::CompanionMap,
+) -> std::cmp::Ordering {
+    if left == right {
+        return std::cmp::Ordering::Equal;
+    }
+    match left.len().cmp(&right.len()) {
+        std::cmp::Ordering::Equal => {}
+        ordering => return ordering,
+    }
+
+    let mut left_after: Option<&str> = None;
+    let mut right_after: Option<&str> = None;
+    for _ in 0..left.len() {
+        let Some(left_entry) = left
+            .iter()
+            .filter(|(key, _)| left_after.is_none_or(|after| key.as_ref() > after))
+            .min_by(|a, b| a.0.cmp(b.0))
+        else {
+            return std::cmp::Ordering::Equal;
+        };
+        let Some(right_entry) = right
+            .iter()
+            .filter(|(key, _)| right_after.is_none_or(|after| key.as_ref() > after))
+            .min_by(|a, b| a.0.cmp(b.0))
+        else {
+            return std::cmp::Ordering::Equal;
+        };
+        match left_entry.cmp(&right_entry) {
+            std::cmp::Ordering::Equal => {
+                left_after = Some(left_entry.0.as_ref());
+                right_after = Some(right_entry.0.as_ref());
+            }
+            ordering => return ordering,
+        }
+    }
+    std::cmp::Ordering::Equal
+}
+
+
+/// Queued ML candidate waiting for batch inference at the end of a scan.
 #[cfg(feature = "ml")]
 #[derive(Debug, Clone)]
 pub(crate) struct MlPendingMatch {
-    /// The raw match built with heuristic confidence only.
-    pub(crate) raw_match: keyhog_core::RawMatch,
+    /// Owned finding payload without a persistent digest or public `RawMatch`.
+    pub(crate) pending_raw_match: PendingRawMatch,
     /// Heuristic confidence before detector-owned ML scoring.
     pub(crate) heuristic_conf: f64,
     /// Inferred code context for post-ML adjustments.
@@ -124,7 +271,7 @@ pub(crate) struct MlPendingMatch {
 #[cfg(feature = "ml")]
 impl MlPendingMatch {
     pub(crate) fn detector_candidate(
-        raw_match: keyhog_core::RawMatch,
+        pending_raw_match: PendingRawMatch,
         heuristic_conf: f64,
         code_context: crate::context::CodeContext,
         context_multiplier: f64,
@@ -141,7 +288,7 @@ impl MlPendingMatch {
         ml_mode: crate::detector_ml_policy::ActiveMlMode,
     ) -> Self {
         Self {
-            raw_match,
+            pending_raw_match,
             heuristic_conf,
             code_context,
             context_multiplier,
@@ -162,7 +309,7 @@ impl MlPendingMatch {
 
     #[cfg(feature = "entropy")]
     pub(crate) fn entropy_candidate(
-        raw_match: keyhog_core::RawMatch,
+        pending_raw_match: PendingRawMatch,
         heuristic_conf: f64,
         context_multiplier: f64,
         context_suppression_threshold: Option<f64>,
@@ -175,7 +322,7 @@ impl MlPendingMatch {
         ml_mode: crate::detector_ml_policy::ActiveMlMode,
     ) -> Self {
         Self {
-            raw_match,
+            pending_raw_match,
             heuristic_conf,
             code_context: crate::context::CodeContext::Unknown,
             context_multiplier,
@@ -238,7 +385,7 @@ fn post_match_execution_eq(
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct PendingMatchIdentity {
     detector_id: Arc<str>,
-    credential_hash: keyhog_core::CredentialHash,
+    credential: SensitiveString,
     offset: usize,
     channel: crate::ml_scorer::MlCandidateChannel,
 }
@@ -247,9 +394,9 @@ struct PendingMatchIdentity {
 impl From<&MlPendingMatch> for PendingMatchIdentity {
     fn from(pending: &MlPendingMatch) -> Self {
         Self {
-            detector_id: pending.raw_match.detector_id.clone(),
-            credential_hash: pending.raw_match.credential_hash,
-            offset: pending.raw_match.location.offset,
+            detector_id: pending.pending_raw_match.detector_id.clone(),
+            credential: pending.pending_raw_match.credential.clone(),
+            offset: pending.pending_raw_match.location.offset,
             channel: pending.channel,
         }
     }
@@ -413,6 +560,12 @@ pub(crate) struct ScanState {
     ml_pending_index: HashMap<PendingMatchIdentity, usize>,
 }
 
+/// Borrowed identity view shared by finalized and ML-pending candidates.
+pub(crate) struct ProducedMatchRef<'a> {
+    pub(crate) detector_id: &'a str,
+    pub(crate) offset: usize,
+}
+
 impl ScanState {
     /// Intern a credential string, returning a shared zeroizing allocation.
     pub(crate) fn intern_credential(&mut self, s: &str) -> SensitiveString {
@@ -461,7 +614,7 @@ impl ScanState {
     #[cfg(feature = "ml")]
     pub(crate) fn push_detector_ml_pending(
         &mut self,
-        raw_match: keyhog_core::RawMatch,
+        pending_raw_match: PendingRawMatch,
         heuristic_conf: f64,
         code_context: crate::context::CodeContext,
         context_multiplier: f64,
@@ -478,7 +631,7 @@ impl ScanState {
         ml_mode: crate::detector_ml_policy::ActiveMlMode,
     ) -> bool {
         self.push_ml_pending(MlPendingMatch::detector_candidate(
-            raw_match,
+            pending_raw_match,
             heuristic_conf,
             code_context,
             context_multiplier,
@@ -499,7 +652,7 @@ impl ScanState {
     #[cfg(all(feature = "ml", feature = "entropy"))]
     pub(crate) fn push_entropy_ml_pending(
         &mut self,
-        raw_match: keyhog_core::RawMatch,
+        pending_raw_match: PendingRawMatch,
         heuristic_conf: f64,
         context_multiplier: f64,
         context_suppression_threshold: Option<f64>,
@@ -512,7 +665,7 @@ impl ScanState {
         ml_mode: crate::detector_ml_policy::ActiveMlMode,
     ) -> bool {
         self.push_ml_pending(MlPendingMatch::entropy_candidate(
-            raw_match,
+            pending_raw_match,
             heuristic_conf,
             context_multiplier,
             context_suppression_threshold,
@@ -531,12 +684,19 @@ impl ScanState {
         let identity = PendingMatchIdentity::from(&candidate);
         if let Some(&index) = self.ml_pending_index.get(&identity) {
             let existing = &mut self.ml_pending[index];
-            if same_raw_match_identity(&candidate.raw_match, &existing.raw_match)
+            if candidate
+                .pending_raw_match
+                .same_identity(&existing.pending_raw_match)
                 && candidate.has_same_execution_as(existing)
             {
-                // Confidence is intentionally excluded above; retain the better
-                // complete pending record under the final finding ordering.
-                if candidate.raw_match < existing.raw_match {
+                // Retain the same complete pending record `RawMatch::Ord` would
+                // choose, without constructing or hashing either candidate.
+                if candidate.pending_raw_match.cmp_with_confidence(
+                    candidate.heuristic_conf,
+                    &existing.pending_raw_match,
+                    existing.heuristic_conf,
+                ) == std::cmp::Ordering::Less
+                {
                     *existing = candidate;
                     return true;
                 }
@@ -564,8 +724,8 @@ impl ScanState {
         for pending in &self.ml_pending {
             // This is called before phase-2 entropy can queue candidates, so
             // every pending row is an existing pattern/generic finding.
-            visit(pending.raw_match.location.line);
-        }
+            visit(pending.pending_raw_match.location.line);
+    }
     }
 
     /// Visit every candidate already produced by a pre-ML scanner stage.
@@ -575,14 +735,20 @@ impl ScanState {
     /// extracted and featurized a second time before batch inference.
     pub(crate) fn for_each_produced_match<F>(&self, mut visit: F)
     where
-        F: FnMut(&keyhog_core::RawMatch),
+        F: FnMut(ProducedMatchRef<'_>),
     {
         for found in &self.matches {
-            visit(found);
+            visit(ProducedMatchRef {
+                detector_id: found.detector_id.as_ref(),
+                offset: found.location.offset,
+            });
         }
         #[cfg(feature = "ml")]
         for pending in &self.ml_pending {
-            visit(&pending.raw_match);
+            visit(ProducedMatchRef {
+                detector_id: pending.pending_raw_match.detector_id.as_ref(),
+                offset: pending.pending_raw_match.location.offset,
+            });
         }
     }
 

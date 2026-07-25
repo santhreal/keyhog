@@ -1,5 +1,5 @@
 use super::pipeline::{push_decoded_text_chunk, with_extracted_value_spans};
-use super::{DecodeAdmissionSketch, Decoder};
+use super::{DecodeAdmissionSketch, DecodeOutputSink, Decoder};
 use keyhog_core::Chunk;
 use std::sync::LazyLock;
 
@@ -366,22 +366,22 @@ impl CaesarDecoder {
         })
     }
 
-    pub(super) fn decode_chunk_with_policy(
+    pub(super) fn decode_chunk_with_policy_into(
         &self,
         chunk: &Chunk,
         policy: &super::policy::CompiledDecodeTransformPolicy,
-    ) -> Vec<Chunk> {
+        sink: &mut dyn DecodeOutputSink,
+    ) {
         // Refuse to recurse on our own output: shifting all 25 non-trivial
         // shifts on a previous output's would re-shift back to the original
         // (one of those 25 covers it) and trip evasion-aware downstream
         // logic. One pass per input is enough.
         if chunk.metadata.source_type.contains("/caesar") {
-            return Vec::new();
+            return;
         }
         if is_source_code_path(chunk.metadata.path.as_deref()) {
-            return Vec::new();
+            return;
         }
-        let mut out = Vec::new();
         // Skip Caesar on chunks whose lines already carry a URL with
         // embedded credentials (`scheme://user:pass@host`). Every db
         // connection-string URL is plaintext-readable already, so the
@@ -467,11 +467,12 @@ impl CaesarDecoder {
                     // planted. Caesar's value is the bare decoded
                     // candidate; let it surface as its own chunk so the
                     // dedup layer can collapse identical findings.
-                    push_decoded_text_chunk(&mut out, chunk, decoded, self.name());
+                    if !push_decoded_text_chunk(sink, chunk, decoded, self.name()) {
+                        return;
+                    }
                 }
             }
         });
-        out
     }
 }
 
@@ -484,8 +485,8 @@ impl Decoder for CaesarDecoder {
         self.admission_sketch_with_policy(chunk, super::policy::bundled_compat_policy())
     }
 
-    fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
-        self.decode_chunk_with_policy(chunk, super::policy::bundled_compat_policy())
+    fn decode_chunk_into(&self, chunk: &Chunk, sink: &mut dyn DecodeOutputSink) {
+        self.decode_chunk_with_policy_into(chunk, super::policy::bundled_compat_policy(), sink);
     }
 }
 

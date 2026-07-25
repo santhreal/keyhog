@@ -31,7 +31,9 @@ name = "User-Agent"
 value = "keyhog-secret-scanner/{{version}}"
 
 [detector.verify.success]
+policy = "body_positive"
 status = 200
+json_path = "$.login"
 
 [[detector.tests]]
 test_positive = "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"

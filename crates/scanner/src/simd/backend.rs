@@ -1,5 +1,5 @@
 use hyperscan::{
-    Block as BlockMode, BlockDatabase, Builder, Pattern, PatternFlags, Patterns, Scratch,
+    Block as BlockMode, BlockDatabase, Builder, Pattern, PatternFlags, Patterns,
 };
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -219,31 +219,27 @@ fn read_hs_cache_file(path: &std::path::Path) -> std::io::Result<Option<Vec<u8>>
 /// against a different database.
 static SCANNER_ID_SEQ: AtomicU64 = AtomicU64::new(0);
 
-/// One compiled shard: its database plus a Mutex-guarded scratch pool. Each
-/// `Scratch` is tied to exactly one `BlockDatabase`, so the pools are
-/// per-shard. The pool is SEEDED during scanner construction to the active
-/// Rayon executor width (the warm-start fast path: every common-case thread
-/// checks out a preallocated scratch under the lock once, then reuses it
-/// lock-free from its TLS). If more distinct threads scan a shard than the seed
-/// covered (`--batch-pipeline` reader + fused-dispatch threads stack on top of
-/// rayon), `take_scratch` GROWS the pool on demand with a fresh per-database
-/// scratch. Growth runs the identical precise scan; it never skips a shard or
-/// returns a partial marked set, so there is no silent recall loss.
+/// One compiled shard: its Hyperscan database. Scratch space is allocated
+/// lazily, bound to this database, and retained per-thread / per-scanner in
+/// the thread-local cache (see `simd/backend/scan.rs`). Removing the
+/// compile-time pool means `compile` pays only for the immutable database,
+/// not `executor_width` scratches per shard.
 struct Shard {
     db: BlockDatabase,
-    scratch_pool: parking_lot::Mutex<Vec<Scratch>>,
 }
 
 /// Compiled Hyperscan databases for all detector patterns, sharded across
 /// cores at compile time.
 ///
-/// Thread-safe: every database is immutable after compilation and the
-/// scratch pools are Mutex-guarded. The public scan/lookup surface is
-/// unchanged from the single-database version - `pattern_info`/
-/// `pattern_count` still index a single global `pattern_map` keyed by the
-/// HS pattern id, because each shard's patterns carry their ORIGINAL global
-/// id, so a match from any shard maps back through the same table and the
-/// scan output is the union of all shards in original-byte space.
+/// Thread-safe: every database is immutable after compilation. Scratch state
+/// is held in the thread-local cache (`scan::SCRATCH_TLS`) keyed by scanner
+/// identity, so a dropped scanner cannot leak or be aliased by another.
+/// The public scan/lookup surface is unchanged from the single-database
+/// version - `pattern_info`/`pattern_count` still index a single global
+/// `pattern_map` keyed by the HS pattern id, because each shard's patterns
+/// carry their ORIGINAL global id, so a match from any shard maps back
+/// through the same table and the scan output is the union of all shards in
+/// original-byte space.
 ///
 /// # Examples
 ///
@@ -272,8 +268,9 @@ pub(crate) struct HsScanner {
 }
 
 // SAFETY: BlockDatabase is immutable after compilation and safe to share.
-// Scratch pools are Mutex-guarded. Individual Scratch objects are only used
-// by one thread at a time (taken from pool/thread-local, returned after use).
+// Scratch objects are held one-at-a-time by the scanning thread and then
+// returned to thread-local storage keyed by the live scanner, so `Send` and
+// `Sync` hold.
 unsafe impl Send for HsScanner {}
 unsafe impl Sync for HsScanner {}
 
@@ -786,7 +783,6 @@ impl HsScanner {
         pattern_map: &[(usize, usize, usize, bool)],
     ) -> Result<Vec<Shard>, String> {
         let mut shards = Vec::with_capacity(shard_count);
-        let scratch_count = Self::scratch_pool_size();
         for (shard_idx, result) in shard_results.into_iter().enumerate() {
             let (db, dropped) = result?;
             unsupported.extend(Self::caller_pattern_indices_for_dropped(
@@ -794,11 +790,7 @@ impl HsScanner {
                 pattern_map,
                 shard_idx,
             )?);
-            let scratch_pool = Self::build_scratch_pool(&db, shard_idx, scratch_count)?;
-            shards.push(Shard {
-                db,
-                scratch_pool: parking_lot::Mutex::new(scratch_pool),
-            });
+            shards.push(Shard { db });
         }
         Ok(shards)
     }
@@ -821,37 +813,26 @@ impl HsScanner {
             .collect()
     }
 
-    // Seed each shard from the executor that actually compiles and scans it,
-    // not host topology that may exceed --threads, cpuset, or local-pool width.
-    // This is a WARM-START FLOOR, not a hard cap. The common case checks out a
-    // preallocated scratch under the lock once and then
-    // reuses it lock-free from TLS. When more distinct threads scan a shard than
-    // the seed covered (`--batch-pipeline` stacks a reader pool + fused-dispatch
-    // threads on top of rayon), `take_scratch` GROWS the pool on demand with a
-    // fresh per-database scratch, the same precise scan, never a partial, so
-    // there is no exhaustion failure and no recall-losing degrade to fall into.
-    // The `MAX_COMPILE_SHARDS` clamp only bounds the up-front preallocation
-    // memory; growth handles any host whose true concurrency exceeds it.
+    /// Width of the current Rayon executor. It caps compile sharding and
+    /// determines how many persistent workers explicit warm-up seeds; callers
+    /// outside Rayon can still allocate their own exact TLS scratch lazily.
     fn executor_width() -> usize {
         rayon::current_num_threads().clamp(1, MAX_COMPILE_SHARDS)
     }
 
-    fn scratch_pool_size() -> usize {
-        Self::executor_width()
-    }
-
-    fn build_scratch_pool(
-        db: &BlockDatabase,
-        shard_idx: usize,
-        scratch_count: usize,
-    ) -> Result<Vec<Scratch>, String> {
-        let mut scratch_pool = Vec::with_capacity(scratch_count);
-        for _ in 0..scratch_count {
-            scratch_pool.push(db.alloc_scratch().map_err(|error| {
-                format!("hyperscan scratch preallocation failed for shard {shard_idx}: {error}")
-            })?);
-        }
-        Ok(scratch_pool)
+    /// Warm the scanner for steady-state execution: allocate one
+    /// Hyperscan scratch per shard on every Rayon worker thread and retain
+    /// them in thread-local storage keyed by this scanner's identity. After a
+    /// successful warm, ordinary scan requests reuse those scratches instead
+    /// of allocating on the request path.
+    pub(crate) fn warm(&self) -> Result<(), String> {
+        let results: Vec<Result<(), String>> = rayon::broadcast(|_| {
+            self.scan_matches_result(b"", |_, _, _| {})
+        });
+        results
+            .into_iter()
+            .collect::<Result<Vec<()>, String>>()?;
+        Ok(())
     }
 
     /// Compile patterns with explicit per-pattern flags. See [`HsCompileOpts`].

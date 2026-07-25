@@ -39,34 +39,38 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
     config.secret_keywords.clear();
     config.test_keywords.clear();
     config.placeholder_keywords.clear();
-    let repaired =
-        keyhog_scanner::testing::complete_ml_batch_scores(&candidates, vec![0.123], &config);
-    let expected: Vec<_> = candidates
-        .iter()
-        .map(|(text, context)| keyhog_scanner::testing::ml_score(text, context))
-        .collect();
-    assert_eq!(repaired.len(), candidates.len());
-    for (index, (actual, expected)) in repaired.iter().zip(expected.iter()).enumerate() {
+    let exact_scores = vec![0.1, 0.2, 0.3];
+    let exact = keyhog_scanner::testing::complete_ml_batch_scores(
+        &candidates,
+        exact_scores.clone(),
+        &config,
+    )
+    .expect("matching ML score cardinality should succeed");
+    assert_eq!(exact, exact_scores);
+    for malformed in [Vec::new(), vec![0.123], vec![0.1, 0.2, 0.3, 0.4]] {
+        let error =
+            keyhog_scanner::testing::complete_ml_batch_scores(&candidates, malformed, &config)
+                .expect_err("empty, short, and extra ML score rows must fail closed");
         assert!(
-            (*actual - *expected).abs() <= f64::EPSILON,
-            "cardinality repair changed candidate {index}: actual={actual:.9} expected={expected:.9}"
+            matches!(error, keyhog_scanner::ScanError::Gpu(_)),
+            "cardinality mismatch must remain a typed GPU backend error: {error}"
         );
     }
     assert!(
         ml_postprocess.contains("self.emit_finalized_pending_match(scan_state, pending, report_conf)")
-            && ml_postprocess.contains("crate::adjudicate::finalize_report_raw_match(")
+            && ml_postprocess.contains("crate::adjudicate::finalize_report_candidate(")
+            && ml_postprocess.contains(".materialize(final_confidence)")
             && ml_postprocess.contains("crate::adjudicate::ReportAdjudicationPolicy"),
-        "every ML-pending drain path must pass through the report finalizer and adjudicator-owned rejection stages"
+        "every ML-pending drain path must adjudicate before durable match construction"
     );
     assert!(
         ml_postprocess.contains("if !self.config.ml_enabled")
-            && ml_postprocess.contains("internal invariant violation: ML pending queue populated while ML is disabled")
-            && ml_postprocess.contains("pending={pending}")
+            && ml_postprocess.contains("return Err(crate::ScanError::Config")
+            && ml_postprocess.contains("ML pending queue populated while ML is disabled")
+            && !ml_postprocess.contains("panic!(")
             && !ml_postprocess.contains("scan_state.ml_pending.clear();")
-            && !ml_postprocess.contains("dropping pending ML matches")
-            && !ml_postprocess.contains("for p in pending")
-            && !ml_postprocess.contains("let heuristic_conf = p.heuristic_conf"),
-        "ML postprocess must fail loud on impossible disabled-ML pending state instead of clearing queued findings"
+            && !ml_postprocess.contains("dropping pending ML matches"),
+        "ML postprocess must return a typed error on impossible pending state without clearing queued findings or panicking"
     );
     assert!(
         !ml_postprocess.contains("raw_match.confidence =")

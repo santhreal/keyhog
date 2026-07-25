@@ -1,21 +1,24 @@
 # Changelog
 
-## 0.5.45 - 2026-07-22
+## 0.5.46 - 2026-07-24
 
-- Republish the CLI in the release chain whose signed asset publication
-  addresses GitHub drafts by immutable release ID.
-
-## 0.5.44 - 2026-07-22
-
-- Republish the CLI in the corrected five-crate release chain after the
-  Windows GPU literal artifact generator fix.
-
-## 0.5.43 - 2026-07-22
-
-- Compile the portable CLI on Windows by gating Unix daemon test seams, using
-  the platform process-exit path, and importing drive constants from their
-  generated windows-sys module.
-
+- Upgrade the daemon wire protocol to v8, keep request, response, frame, client,
+  server, and plaintext match adapters crate-private, and expose only the
+  non-secret default socket path. The strict Hello handshake rejects v7 peers.
+- Allow a daemon scan to select an explicit replacement detector corpus when
+  the client-derived rules identity exactly matches the warm daemon. Reports
+  retain the replacement count, digest, source, and mode. Overlay composition
+  and client-only detector policy remain fail-closed.
+- Include exact static-recovery totals and per-reason rejections in JSON 1.8,
+  JSONL 1.9, and daemon v8 report metadata. Daemon clients reject aggregates
+  whose reason counts do not reconcile instead of substituting zeroes.
+- Make `update` and `repair --version` accept only canonical SemVer, normalize
+  it to one `v`-prefixed tag before HTTP, and require the same non-draft tag
+  before downloading assets. Malformed or mismatched release metadata fails.
+- Serialize concurrent autoroute calibration updates through the cache lock so
+  distinct workload evidence is merged without torn reads. Unix cache, lock,
+  and temporary files are private, and successful writes leave no temporary
+  residue.
 - Keep the daemon socket linked for the full accept-loop lifetime. Shutdown
   removes it only after the listener terminates.
 - Bind every persisted GPU timing and parity receipt to the exact acquired
@@ -28,7 +31,7 @@
 - Reject autoroute cache and runtime-health workload identities with impossible
   logarithmic ranges, phase-one subtotals, decoder bits, or decoder cost bands.
 - Report automatic backend recovery as `complete_after_recovery` in JSON schema
-  1.7 and JSONL schema 1.8, preserve the
+  1.8 and JSONL schema 1.9, preserve the
   exact recovered ranges and byte totals across daemon responses, expose daemon
   recovery health, and persist the affected autoroute workload quarantine in a
   bounded artifact that survives restart, is visible in `backend --autoroute`
@@ -103,6 +106,22 @@
 - Distinguish detector-TOML declarations from scan-time fallback policy in
   `keyhog explain`, using the same `scan-fallback` provenance label as effective
   configuration output.
+
+## 0.5.45 - 2026-07-22
+
+- Republish the CLI in the release chain whose signed asset publication
+  addresses GitHub drafts by immutable release ID.
+
+## 0.5.44 - 2026-07-22
+
+- Republish the CLI in the corrected five-crate release chain after the
+  Windows GPU literal artifact generator fix.
+
+## 0.5.43 - 2026-07-22
+
+- Compile the portable CLI on Windows by gating Unix daemon test seams, using
+  the platform process-exit path, and importing drive constants from their
+  generated windows-sys module.
 
 ## 0.2.1
 

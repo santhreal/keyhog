@@ -10,7 +10,7 @@ from bench.keyhog_version import (
 )
 from bench.schema import CorpusInfo, Detection, DetectorStat, Outcome, RunResult
 from bench.schema import Scanner as ScannerRecord
-from bench.schema import ScannerConfig
+from bench.schema import ScannerConfig, StaticRecoveryMetrics
 
 
 @pytest.fixture(autouse=True)
@@ -53,6 +53,9 @@ def _row(scanner: str, tp: int, fp: int, fn: int, *, available: bool = True,
         finding_count=tp + fp,
         available=available,
         error=error,
+        static_recovery=(
+            StaticRecoveryMetrics() if scanner == "keyhog" and available else None
+        ),
     )
 
 
@@ -252,7 +255,7 @@ def test_run_gate_is_undecidable_for_incompatible_result_schema(
     assert rc == 2
     error = capsys.readouterr().err
     assert str(artifact) in error
-    assert "supported='bench-v3'" in error
+    assert "supported='bench-v4'" in error
 
 
 def test_run_gate_accepts_current_keyhog_result_artifacts(monkeypatch, tmp_path):

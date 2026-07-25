@@ -22,6 +22,10 @@ without hand-written runtime configuration. After verified-install calibration,
 `keyhog scan .` works with the canonical defaults; a source-built multi-backend
 binary first runs `keyhog calibrate-autoroute`.
 
+The binary banner is `v0.5.46 · secret scanner · 923 detectors`; its
+compiled progress line reports `923 detectors (5822 patterns)` together with
+the operator-visible route (for example, `backend=simd-regex | gpu=none`).
+
 <p align="center">
   <img src="demo/keyhog-scan.gif" alt="keyhog scan: boxed findings with severity, confidence, file:line, and remediation, then a results summary and an honest coverage-gap line" width="860" />
 </p>
@@ -167,7 +171,7 @@ does not need Hyperscan).
 
 ```bash
 # Linux / macOS, pinned and authenticated before execution
-TAG=v0.5.45
+TAG=v0.5.46
 BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
 PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
 curl -fSLO "$BASE/install.sh"
@@ -228,7 +232,7 @@ against the release-side checksum file. The offline `--from-file` path also
 verifies sibling `.minisig` files when present and rejects invalid signatures.
 Passing `--insecure` can accept missing proof, but it never accepts a mismatch.
 
-Pin a version with `KEYHOG_VERSION=v0.5.45`. Change the install dir with
+Pin a version with `KEYHOG_VERSION=v0.5.46`. Change the install dir with
 `--install-dir=/usr/local/bin`. Runtime backend policy belongs to
 `keyhog scan --backend ...`, `[system].gpu`, and autoroute calibration, not the
 installer asset name.
@@ -281,9 +285,11 @@ both release-manifest SHA-256 checksums to match, and install them as one
 rollback-protected maintenance operation. A tampered, mismatched, or unsafe
 archive is refused. On a healthy host `keyhog update` is the one-command upgrade
 path. Implicit update/repair resolution ignores drafts and prereleases and
-requires the complete signed host bundle; pass `--version <TAG>` to select an
-exact published tag, including a prerelease. Network responses are bounded and
-timed out before any installed file is changed.
+requires the complete signed host bundle. An explicit `--version <SEMVER>`
+accepts canonical SemVer with an optional leading `v` (for example `1.2.3` or
+`v1.2.3-rc.1`), normalizes it to the exact release tag, and refuses malformed
+or mismatched API responses before any asset download. Network responses are
+bounded and timed out before any installed file is changed.
 
 `keyhog backend --self-test --json` is the machine-readable GPU health
 gate for self-hosted runners. It exits `4` when the production GPU
@@ -433,23 +439,88 @@ hand.
 ### Detection leaderboard
 
 <!-- BENCH:leaderboard:start -->
-_No results for corpus `mirror` yet - run `make leaderboard`._
+Corpus: **mirror** - 15000 fixtures, 3000 labeled positives. Every scanner scored identically (SecretBench overlap rule); the answer-key manifest is excluded from the scan tree.
+
+| Rank | Scanner | F1 | Precision | Recall | Findings | Wall | Peak RSS |
+|---|---|---|---|---|---|---|---|
+| 1 | **KeyHog** | **0.9447** | 0.9708 | 0.9200 | 2868 | 1.67s | 988 MB |
+| 2 | Kingfisher | 0.4720 | 0.3912 | 0.5947 | 5241 | 3.89s | 415 MB |
+| 3 | Betterleaks | 0.3585 | 0.2313 | 0.7967 | 10828 | 0.82s | 191 MB |
+
+### Result provenance
+
+| Scanner | Scanner version / executable digest | Corpus identity | Host identity | Run date |
+|---|---|---|---|---|
+| KeyHog | version: KeyHog v0.5.45<br>Commit: cb27a3c14d49008530ff3f350f566eac21517abc<br>Detector Set: 923 (923-8785f8837d2cd505)<br>Build Target: x86_64-linux<br>ML Model Version: moe-v1-246a05b92bec9aa3<br>ML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable<br>executable SHA-256: `9a59423907ba73ba17f10817d8f3c16f0c98c8de63d24469b85a903cb438690e` | mirror; 15,000 fixtures; 3,000 labeled positives; 2,430,321 bytes | hostname SHA-256/12: `82fcd9288623`<br>Linux 6.17.0-19-generic<br>AMD Ryzen 9 9950X 16-Core Processor | 2026-07-25T14:39:00Z |
+| Kingfisher | version: kingfisher 1.94.0<br>executable SHA-256: `a49f8e9838d7f1da1e9f328a4dbc45a16996bce5078cde3ff1b8ad422d8ab07a` | mirror; 15,000 fixtures; 3,000 labeled positives; 2,430,321 bytes | hostname SHA-256/12: `82fcd9288623`<br>Linux 6.17.0-19-generic<br>AMD Ryzen 9 9950X 16-Core Processor | 2026-07-25T14:39:06Z |
+| Betterleaks | version: betterleaks version dev<br>executable SHA-256: `466f7d34e1ebcf12ecd5939494f509c17125e54416226976fced2f046da56ba4` | mirror; 15,000 fixtures; 3,000 labeled positives; 2,430,321 bytes | hostname SHA-256/12: `82fcd9288623`<br>Linux 6.17.0-19-generic<br>AMD Ryzen 9 9950X 16-Core Processor | 2026-07-25T14:39:02Z |
 <!-- BENCH:leaderboard:end -->
 
 ### Speed & memory
 
 <!-- BENCH:perf:start -->
-_No timed runs yet._
+| Scanner | Config | Corpus | Wall | Throughput | Peak RSS |
+|---|---|---|---|---|---|
+| Betterleaks | `default-nocache-nodaemon-no-validate` | mirror | 0.82s | 2.8 MB/s | 191 MB |
+| KeyHog | `simd-nocache-nodaemon-full` | mirror | 1.67s | 1.4 MB/s | 988 MB |
+| Kingfisher | `default-nocache-nodaemon-low-no-validate` | mirror | 3.89s | 0.6 MB/s | 415 MB |
 <!-- BENCH:perf:end -->
 
-### Per-category recall gaps (where a competitor still wins recall)
+### Per-category recall comparison
 
 <!-- BENCH:gaps:start -->
-_No keyhog result for this corpus yet._
+_Diagnostic recall slice only. Overall precision and F1 remain the comparison contract; false positives are counted in their scored categories._
+
+| Category | KeyHog P/R/F1 | KeyHog TP/FN | Best competitor P/R/F1 | Recall gap |
+|---|---|---|---|---|
+| `generic-high-entropy-string` | 1.000 / 0.547 / 0.707 | 99/82 | Betterleaks 1.000 / 0.807 / 0.893 | +0.260 |
 <!-- BENCH:gaps:end -->
 
-Reproduce: `make -C benchmarks bench` runs every scanner on the 15k
-SecretBench-mirror corpus and writes `benchmarks/results/<host>/`;
+### Bounded static recovery telemetry
+
+<!-- BENCH:recovery:start -->
+Selected run: scanner **KeyHog** `KeyHog v0.5.45<br>Commit: cb27a3c14d49008530ff3f350f566eac21517abc<br>Detector Set: 923 (923-8785f8837d2cd505)<br>Build Target: x86_64-linux<br>ML Model Version: moe-v1-246a05b92bec9aa3<br>ML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable`; corpus **mirror** (15,000 fixtures, 2,430,321 bytes); generated `2026-07-25T14:39:00Z`; artifact `mirror-keyhog-simd-nocache-nodaemon-full.json`.
+
+Telemetry schema: `static-recovery-v1`.
+
+| Disposition | Exact count |
+|---|---:|
+| Supported | 0 |
+| Unsupported | 0 |
+| Erroneous | 0 |
+
+| Rejection reason | Exact count |
+|---|---:|
+| _none_ | 0 |
+<!-- BENCH:recovery:end -->
+
+### Bigram Bloom evidence
+
+<!-- BENCH:bloom:start -->
+Evidence schema: `bloom-evidence-v1`.
+
+| Field | Exact result |
+|---|---|
+| Corpus | `samsung-creddata-fx-record-spans-v1` |
+| Corpus revision | `f1de3f85dbdf42bf7b3467c0d273a4dfe44d56ee` |
+| Corpus SHA-256 | `13f5c1c2571fb625480bb9a3a8be65f89eb6d9ddba679a4dd0f37b4ece52a4e7` |
+| Fixture SHA-256 | `43ba104ec4fb2a193a8be528f20b06136f5cbe0da3adcaaf1b461610de5af20a` |
+| Executable SHA-256 | `9a59423907ba73ba17f10817d8f3c16f0c98c8de63d24469b85a903cb438690e` |
+| Workspace detector corpus SHA-256 | `4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf` |
+| Scanner detector digest | `0ca3c41a0d87be39` |
+| Detector corpus SHA-256 | `beab12386a58fa89b33be34088bb5b1372b220c9f16cd1c6be0c93b2d8927691` |
+| Bloom rejection | **124/51790 (0.23%)**; 51666 admitted |
+| External availability | 51790 measured; 4 explicitly unavailable of 51794 declared; reasons: source-file-missing=4 |
+| Enabled vs bypassed findings | **IDENTICAL**; 1454/1454 findings |
+| Finding identity SHA-256 | `b20485fac4b14eb601a4024268afe8f9ffa4cb103850339b12c54bae3f5bf8c3` / `b20485fac4b14eb601a4024268afe8f9ffa4cb103850339b12c54bae3f5bf8c3` |
+| Bloom density/state | 1782/65536 slots; `healthy`; saturation at 39322 |
+
+Finding identity binds detector, file, line, byte span, and credential SHA-256; plaintext credentials are never recorded.
+<!-- BENCH:bloom:end -->
+
+Reproduce: `make -C benchmarks canonical KEYHOG_BIN=/absolute/path/to/keyhog`
+reruns the exact KeyHog, Betterleaks, and Kingfisher mirror run set, including
+the executable-bound CredData Bloom differential, into `benchmarks/results/`;
 `make -C benchmarks report` regenerates the tables above and
 `benchmarks/reports/`. See [`benchmarks/README.md`](benchmarks/README.md)
 for the corpora (mirror, competitor home-turf, Samsung/CredData) and the
@@ -467,6 +538,17 @@ keyhog scan --stdin --daemon < .env
 keyhog daemon status
 keyhog daemon stop
 ```
+
+An explicit replacement corpus can use the same warm route when both processes
+select the same rules:
+
+```bash
+keyhog daemon start --detectors ./reviewed-detectors
+keyhog scan --daemon=on --detectors ./reviewed-detectors path/to/one-file.txt
+```
+
+The client derives the expected corpus identity independently and rejects a
+mismatch. Overlay composition and client-only detector policy stay in process.
 
 Omitting `--daemon` means `auto` on Unix. Bare `--daemon` means `on`, which
 fails if the service cannot honor the request exactly. Directory, Git, remote,
@@ -531,7 +613,7 @@ KeyHog process cannot be core-dumped or traced through `ptrace`.
 ## Library API
 
 ```rust
-use keyhog_core::{Chunk, ChunkMetadata};
+use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::CompiledScanner;
 
 // Built-in embedded detectors, parsed through the fail-closed loader.
@@ -541,19 +623,35 @@ let scanner = CompiledScanner::compile(detectors)?;
 let findings = scanner.scan(&Chunk {
     data: "TOKEN=sk_live_EXAMPLE…".into(),
     metadata: ChunkMetadata::default(),
-});
+})?;
+
+// RawMatch is an in-process type. Convert before JSON, logs, disk, or network.
+let report_safe: Vec<_> = findings.iter().map(RawMatch::to_redacted).collect();
 ```
 
 The no-backend library methods are deterministic portable CPU references; they
-do not consult host heuristics or the CLI's calibration cache. Use
-`scan_with_backend` or `scan_coalesced_with_backend` for an explicit
-Hyperscan/GPU engine. The `keyhog` CLI owns persisted fastest-correct autoroute.
-The explicit-backend library methods return infallible finding vectors, so the
-selected backend is a hard process contract: unavailable SIMD terminates with
-exit `3`, and unavailable or failed GPU execution terminates with exit `12`
-instead of returning findings from another engine. Call `warm_backend` to probe
-startup eligibility; use the CLI as a subprocess when an embedder must contain
-runtime accelerator failure.
+do not consult host heuristics or the CLI's calibration cache. A single-chunk
+`scan` returns `Result<Vec<RawMatch>>`. Ordinary coalesced scans return
+`Result<Vec<Vec<RawMatch>>>` and preserve exactly one result row per input
+chunk. Use `scan_with_backend` or `scan_coalesced_with_backend` for an explicit
+Hyperscan/GPU engine. An unavailable or failed requested backend returns a typed
+`ScanError`; these ordinary methods never terminate the embedding process or
+silently substitute another engine.
+
+The explicit recovery-aware
+`scan_coalesced_with_backend_admission_route_and_recovery` boundary is the one
+opt-in exception: after a GPU dispatch fault, it may replay exact stable input
+ranges on the CPU only when the caller enables recovery, and returns a
+`CoalescedScanOutcome` containing the visible recovery receipt. Call
+`warm_backend` to probe startup eligibility. The `keyhog` CLI owns persisted
+fastest-correct autoroute and translates terminal scanner errors into process
+exit status at its application boundary.
+
+`SensitiveString`, raw or deduplicated matches, and source `Chunk` values can
+contain plaintext, so their implicit serde output fails closed. Convert raw
+findings with `RawMatch::to_redacted`, or emit the pipeline's final
+`VerifiedFinding`, at any JSON, log, disk, or network boundary. Only a
+protected private protocol should reveal secret bytes explicitly.
 
 Mix shipped + custom detectors by concatenating before compile. The
 scanner is `Send + Sync`; share one across rayon workers. Streaming

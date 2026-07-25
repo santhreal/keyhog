@@ -31,7 +31,7 @@ fn resolved_for(body: &str, path: &str) -> Vec<keyhog_core::RawMatch> {
     let scanner = scanner();
     let chunk = make_chunk(body, "filesystem", path);
     scanner.clear_fragment_cache();
-    resolve_matches(scanner.scan(&chunk))
+    resolve_matches(scanner.scan(&chunk).expect("private-key scan should succeed"))
 }
 
 #[test]

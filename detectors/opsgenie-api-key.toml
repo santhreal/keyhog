@@ -32,6 +32,7 @@ template = "GenieKey {{match}}"
 
 [detector.verify.success]
 status = 200
+policy = "status_with_error_backstop"
 
 [[detector.tests]]
 test_positive = "opsgenie=6b15696d-bb3e-5040-215f-e28bb6ac69a4"

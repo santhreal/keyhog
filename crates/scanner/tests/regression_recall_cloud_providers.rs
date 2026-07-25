@@ -41,6 +41,7 @@ fn matches_for(text: &str) -> Vec<RawMatch> {
     s.clear_fragment_cache();
     let chunk: Chunk = make_chunk(text, "filesystem", "cloud.conf");
     s.scan(&chunk)
+        .expect("cloud-provider recall scan should succeed")
 }
 
 /// The matches attributed to exactly `detector_id`.

@@ -136,8 +136,8 @@ fn aws_key_same_finding_set_simd_and_cpu() {
         "config.rs",
         0,
     );
-    let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu));
-    let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback));
+    let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu).expect("selected backend scan succeeds"));
+    let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback).expect("selected backend scan succeeds"));
     assert_eq!(
         simd, cpu,
         "SimdCpu and CpuFallback must emit the identical finding set for an AWS key"
@@ -153,8 +153,8 @@ fn aws_key_same_finding_set_simd_and_cpu() {
 #[test]
 fn github_pat_same_finding_set_simd_and_cpu() {
     let c = chunk(&format!("token: {GH_PAT}\n"), "ci.yml", 0);
-    let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu));
-    let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback));
+    let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu).expect("selected backend scan succeeds"));
+    let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback).expect("selected backend scan succeeds"));
     assert_eq!(simd, cpu, "GitHub fine-grained PAT parity broke");
     assert!(
         simd.iter()
@@ -166,8 +166,8 @@ fn github_pat_same_finding_set_simd_and_cpu() {
 #[test]
 fn sendgrid_same_finding_set_simd_and_cpu() {
     let c = chunk(&format!("SENDGRID_API_KEY={SENDGRID}\n"), "app.env", 0);
-    let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu));
-    let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback));
+    let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu).expect("selected backend scan succeeds"));
+    let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback).expect("selected backend scan succeeds"));
     assert_eq!(simd, cpu, "SendGrid key parity broke");
     assert!(
         simd.iter()
@@ -183,8 +183,8 @@ fn slack_bot_same_finding_set_simd_and_cpu() {
         "settings.py",
         0,
     );
-    let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu));
-    let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback));
+    let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu).expect("selected backend scan succeeds"));
+    let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback).expect("selected backend scan succeeds"));
     assert_eq!(simd, cpu, "Slack bot token parity broke");
     assert!(
         simd.iter()
@@ -200,8 +200,8 @@ fn stripe_same_finding_set_simd_and_cpu() {
         "billing.rb",
         0,
     );
-    let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu));
-    let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback));
+    let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu).expect("selected backend scan succeeds"));
+    let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback).expect("selected backend scan succeeds"));
     assert_eq!(simd, cpu, "Stripe live key parity broke");
     assert!(
         simd.iter()
@@ -223,8 +223,8 @@ fn multi_secret_corpus_same_finding_set_simd_and_cpu() {
          stripe_secret = \"{STRIPE_LIVE}\"\n"
     );
     let c = chunk(&text, "secrets.env", 0);
-    let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu));
-    let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback));
+    let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu).expect("selected backend scan succeeds"));
+    let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback).expect("selected backend scan succeeds"));
     assert_eq!(
         simd,
         cpu,
@@ -257,8 +257,8 @@ fn negative_twin_no_secret_both_backends_empty() {
         "math.rs",
         0,
     );
-    let simd = scanner().scan_with_backend(&c, ScanBackend::SimdCpu);
-    let cpu = scanner().scan_with_backend(&c, ScanBackend::CpuFallback);
+    let simd = scanner().scan_with_backend(&c, ScanBackend::SimdCpu).expect("selected backend scan succeeds");
+    let cpu = scanner().scan_with_backend(&c, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
     assert!(
         simd.is_empty(),
         "plain code must yield zero findings on SimdCpu, got {}",
@@ -277,8 +277,8 @@ fn wrong_prefix_negative_twin_both_backends_silent() {
     // case-sensitive regex cannot match it; neither backend may emit
     // aws-access-key, and the two sets must agree.
     let c = chunk("key = \"AKIBQYLPMN5HFIQR7BBB\"\n", "cfg.env", 0);
-    let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu));
-    let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback));
+    let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu).expect("selected backend scan succeeds"));
+    let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback).expect("selected backend scan succeeds"));
     assert!(
         !simd.iter().any(|(id, _, _)| id == "aws-access-key"),
         "AKIB prefix must NOT match aws-access-key, got {simd:?}"
@@ -293,8 +293,8 @@ fn aws_case_evasion_lowercase_silent_both_backends() {
     // backends must agree. (Truth check on the case-sensitivity comment in
     // aws-access-key.toml.)
     let c = chunk("akiaqylpmn5hfiqr7bbb placeholder\n", "readme.md", 0);
-    let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu));
-    let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback));
+    let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu).expect("selected backend scan succeeds"));
+    let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback).expect("selected backend scan succeeds"));
     assert!(
         !simd.iter().any(|(id, _, _)| id == "aws-access-key"),
         "lowercase akia must not match case-sensitive aws regex, got {simd:?}"
@@ -310,8 +310,8 @@ fn repeated_secret_offsets_identical_across_backends() {
     // finding identity must match across backends, not just the credential.
     let text = format!("a=\"{AWS_KEY}\"\nb=\"{AWS_KEY}\"\n");
     let c = chunk(&text, "two.env", 0);
-    let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu));
-    let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback));
+    let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu).expect("selected backend scan succeeds"));
+    let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback).expect("selected backend scan succeeds"));
     assert_eq!(simd, cpu, "two-key offset parity broke");
     let aws_offsets: BTreeSet<usize> = simd
         .iter()
@@ -346,8 +346,8 @@ fn entropy_fallback_finding_set_backend_invariant() {
     // High-entropy 50-char mixed-case+digit run (no service prefix).
     let token = "Zk9Qw3Rt7Yx2Mn5Bv8Cs1Lp4Df6Gh0Jk3Wq7Er2Ty9Ui4Op6A";
     let c = chunk(&format!("api_key = \"{token}\"\n"), "service.env", 0);
-    let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu));
-    let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback));
+    let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu).expect("selected backend scan succeeds"));
+    let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback).expect("selected backend scan succeeds"));
     assert_eq!(
         simd,
         cpu,
@@ -371,8 +371,8 @@ fn entropy_source_file_gate_parity() {
         "data_table.rs",
         0,
     );
-    let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu));
-    let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback));
+    let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu).expect("selected backend scan succeeds"));
+    let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback).expect("selected backend scan succeeds"));
     assert_eq!(simd, cpu, "source-file entropy gate parity broke");
 }
 
@@ -386,8 +386,8 @@ fn low_entropy_repeated_value_no_entropy_finding_both_backends() {
         "low.env",
         0,
     );
-    let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu));
-    let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback));
+    let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu).expect("selected backend scan succeeds"));
+    let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback).expect("selected backend scan succeeds"));
     assert!(
         !simd.iter().any(|(id, _, _)| id.starts_with("entropy-")),
         "all-'a' run must not produce an entropy finding, got {simd:?}"
@@ -408,9 +408,9 @@ fn default_scan_matches_a_cpu_backend() {
         "auto.env",
         0,
     );
-    let auto = key_set(&scanner().scan(&c));
-    let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu));
-    let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback));
+    let auto = key_set(&scanner().scan(&c).expect("test scan succeeds"));
+    let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu).expect("selected backend scan succeeds"));
+    let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback).expect("selected backend scan succeeds"));
     // SIMD/CPU parity is proven elsewhere; the default must be the portable
     // reference specifically, not whichever backend happens to exist locally.
     assert_eq!(simd, cpu, "precondition: CPU backends already diverge");
@@ -427,8 +427,8 @@ fn idempotent_rescans_same_backend_same_set() {
     // stable across repeated calls.
     let c = chunk(&format!("token: {GH_PAT}\n"), "repeat.yml", 0);
     for backend in CPU_BACKENDS {
-        let first = key_set(&scanner().scan_with_backend(&c, backend));
-        let second = key_set(&scanner().scan_with_backend(&c, backend));
+        let first = key_set(&scanner().scan_with_backend(&c, backend).expect("selected backend scan succeeds"));
+        let second = key_set(&scanner().scan_with_backend(&c, backend).expect("selected backend scan succeeds"));
         assert_eq!(
             first, second,
             "{backend:?} re-scan produced a different finding set"
@@ -452,12 +452,12 @@ fn coalesced_equals_sum_of_per_chunk_scans() {
         chunk(&format!("s='{SLACK_BOT}'\n"), "d.py", 0),
     ];
 
-    let coalesced = scanner().scan_coalesced(&chunks);
+    let coalesced = scanner().scan_coalesced(&chunks).expect("coalesced test scan succeeds");
     let coalesced_set = flat_key_set(&coalesced);
 
     let mut per_chunk: BTreeSet<Key> = BTreeSet::new();
     for c in &chunks {
-        per_chunk.extend(key_set(&scanner().scan(c)));
+        per_chunk.extend(key_set(&scanner().scan(c).expect("test scan succeeds")));
     }
 
     assert_eq!(
@@ -480,7 +480,7 @@ fn coalesced_result_vector_is_per_chunk_aligned() {
         chunk("plain comment\n", "b.rs", 0),
         chunk(&format!("s='{SLACK_BOT}'\n"), "c.py", 0),
     ];
-    let results = scanner().scan_coalesced(&chunks);
+    let results = scanner().scan_coalesced(&chunks).expect("coalesced test scan succeeds");
     assert_eq!(
         results.len(),
         chunks.len(),
@@ -533,7 +533,7 @@ fn sendgrid_split_reassembled_coalesced() {
     // sits inside the credential, so neither chunk matches alone; only
     // `scan_chunk_boundaries` recovers it.
     let (ca, cb, _len_a) = split_pair(SENDGRID, 18, "split.txt");
-    let results = scanner().scan_coalesced(&[ca, cb]);
+    let results = scanner().scan_coalesced(&[ca, cb]).expect("coalesced test scan succeeds");
     let found = results
         .iter()
         .flatten()
@@ -551,7 +551,7 @@ fn aws_split_reassembled_both_cpu_backends() {
     // recovered under BOTH CPU backends.
     for backend in CPU_BACKENDS {
         let (ca, cb, _len_a) = split_pair(AWS_KEY, 8, "aws-split.txt");
-        let results = scanner().scan_chunks_with_backend(&[ca, cb], backend);
+        let results = scanner().scan_chunks_with_backend(&[ca, cb], backend).expect("selected backend scan succeeds");
         let found = results.iter().flatten().any(|m| {
             m.detector_id.as_ref() == "aws-access-key" && m.credential.as_ref() == AWS_KEY
         });
@@ -568,7 +568,7 @@ fn boundary_match_attributed_to_right_hand_chunk() {
     // (the RIGHT chunk), never the left. The left chunk's own slot must NOT
     // gain the reassembled finding.
     let (ca, cb, _len_a) = split_pair(SENDGRID, 18, "attrib.txt");
-    let results = scanner().scan_chunks_with_backend(&[ca, cb], ScanBackend::SimdCpu);
+    let results = scanner().scan_chunks_with_backend(&[ca, cb], ScanBackend::SimdCpu).expect("selected backend scan succeeds");
     assert_eq!(results.len(), 2, "expected two result slots");
     let left_has = results[0]
         .iter()
@@ -596,7 +596,7 @@ fn boundary_finding_offset_is_absolute_file_offset() {
     let pad = "padding_line\n".repeat(8);
     let pad_len = pad.len();
     let (ca, cb, _len_a) = split_pair(SENDGRID, 18, "offset.txt");
-    let results = scanner().scan_chunks_with_backend(&[ca, cb], ScanBackend::SimdCpu);
+    let results = scanner().scan_chunks_with_backend(&[ca, cb], ScanBackend::SimdCpu).expect("selected backend scan succeeds");
     let m = results
         .iter()
         .flatten()
@@ -623,7 +623,7 @@ fn overlapping_chunks_not_double_reassembled() {
     let ca = chunk(&a_text, "ov.txt", 0);
     let cb = chunk(&b_text, "ov.txt", len_a - overlap);
 
-    let results = scanner().scan_chunks_with_backend(&[ca, cb], ScanBackend::SimdCpu);
+    let results = scanner().scan_chunks_with_backend(&[ca, cb], ScanBackend::SimdCpu).expect("selected backend scan succeeds");
     let count = results
         .iter()
         .flatten()
@@ -650,7 +650,7 @@ fn gapped_chunks_not_reassembled() {
     b.push('\n');
     let cb_gapped = chunk(&b, "gap.txt", len_a + 100);
 
-    let results = scanner().scan_chunks_with_backend(&[ca, cb_gapped], ScanBackend::SimdCpu);
+    let results = scanner().scan_chunks_with_backend(&[ca, cb_gapped], ScanBackend::SimdCpu).expect("selected backend scan succeeds");
     let found = results
         .iter()
         .flatten()
@@ -669,7 +669,7 @@ fn different_file_chunks_not_reassembled() {
     let (mut ca, mut cb, _len_a) = split_pair(SENDGRID, 18, "ignored.txt");
     ca.metadata.path = Some("file-A.txt".into());
     cb.metadata.path = Some("file-B.txt".into());
-    let results = scanner().scan_chunks_with_backend(&[ca, cb], ScanBackend::SimdCpu);
+    let results = scanner().scan_chunks_with_backend(&[ca, cb], ScanBackend::SimdCpu).expect("selected backend scan succeeds");
     let found = results
         .iter()
         .flatten()
@@ -686,7 +686,7 @@ fn single_chunk_no_boundary_scan() {
     // single split half on its own cannot reassemble.
     let (ca, _cb, _len_a) = split_pair(SENDGRID, 18, "solo.txt");
     let results =
-        scanner().scan_chunks_with_backend(std::slice::from_ref(&ca), ScanBackend::SimdCpu);
+        scanner().scan_chunks_with_backend(std::slice::from_ref(&ca), ScanBackend::SimdCpu).expect("selected backend scan succeeds");
     let found = results
         .iter()
         .flatten()
@@ -707,7 +707,7 @@ fn boundary_does_not_duplicate_fully_contained_secret() {
     let ca = chunk(&secret_line, "whole.txt", 0);
     let len_a = secret_line.len();
     let cb = chunk("trailing content with no secret\n", "whole.txt", len_a);
-    let results = scanner().scan_chunks_with_backend(&[ca, cb], ScanBackend::SimdCpu);
+    let results = scanner().scan_chunks_with_backend(&[ca, cb], ScanBackend::SimdCpu).expect("selected backend scan succeeds");
     let count = results
         .iter()
         .flatten()
@@ -728,14 +728,14 @@ fn boundary_recovers_under_both_coalesced_and_dispatch() {
     // A split AWS key must be recovered by BOTH entry points with the same
     // credential.
     let (ca1, cb1, _l1) = split_pair(AWS_KEY, 8, "dual.txt");
-    let coalesced = scanner().scan_coalesced(&[ca1, cb1]);
+    let coalesced = scanner().scan_coalesced(&[ca1, cb1]).expect("coalesced test scan succeeds");
     let via_coalesced = coalesced
         .iter()
         .flatten()
         .any(|m| m.detector_id.as_ref() == "aws-access-key" && m.credential.as_ref() == AWS_KEY);
 
     let (ca2, cb2, _l2) = split_pair(AWS_KEY, 8, "dual.txt");
-    let dispatched = scanner().scan_chunks_with_backend(&[ca2, cb2], ScanBackend::CpuFallback);
+    let dispatched = scanner().scan_chunks_with_backend(&[ca2, cb2], ScanBackend::CpuFallback).expect("selected backend scan succeeds");
     let via_dispatch = dispatched
         .iter()
         .flatten()
@@ -773,7 +773,7 @@ fn fixed_corpus_differential_all_cpu_backends_agree() {
 
     let mut sets: Vec<BTreeSet<Key>> = Vec::new();
     for backend in CPU_BACKENDS {
-        sets.push(key_set(&scanner().scan_with_backend(&c, backend)));
+        sets.push(key_set(&scanner().scan_with_backend(&c, backend).expect("selected backend scan succeeds")));
     }
     assert_eq!(
         sets[0],
@@ -809,7 +809,7 @@ fn detector_ids_and_severities_match_toml_truth() {
         0,
     );
     for backend in CPU_BACKENDS {
-        let matches = scanner().scan_with_backend(&c, backend);
+        let matches = scanner().scan_with_backend(&c, backend).expect("selected backend scan succeeds");
         let ids: BTreeSet<&str> = matches.iter().map(|m| m.detector_id.as_ref()).collect();
         assert!(
             ids.contains("aws-access-key"),
@@ -862,8 +862,8 @@ fn property_random_benign_text_never_diverges_between_backends() {
             s.push(b as char);
         }
         let c = chunk(&s, "rand.txt", 0);
-        let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu));
-        let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback));
+        let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu).expect("selected backend scan succeeds"));
+        let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback).expect("selected backend scan succeeds"));
         assert_eq!(
             simd,
             cpu,
@@ -893,8 +893,8 @@ fn property_planted_aws_keys_recovered_by_both_backends() {
         s.push_str("\"\n");
 
         let c = chunk(&s, "plant.env", 0);
-        let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu));
-        let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback));
+        let simd = key_set(&scanner().scan_with_backend(&c, ScanBackend::SimdCpu).expect("selected backend scan succeeds"));
+        let cpu = key_set(&scanner().scan_with_backend(&c, ScanBackend::CpuFallback).expect("selected backend scan succeeds"));
         assert_eq!(
             simd, cpu,
             "planted-key parity broke (iter {iter}): input={s:?}"

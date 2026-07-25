@@ -26,12 +26,12 @@ fn chunk(text: &str) -> Chunk {
         },
     }
 }
-fn fires(scanner: &CompiledScanner, text: &str, cred: &str) -> bool {
+fn fires(scanner: &CompiledScanner, text: &str, cred: &str) -> keyhog_scanner::Result<bool> {
     scanner.clear_fragment_cache();
-    scanner
-        .scan(&chunk(text))
+    Ok(scanner
+        .scan(&chunk(text))?
         .iter()
-        .any(|m| m.credential.as_ref().contains(cred))
+        .any(|m| m.credential.as_ref().contains(cred)))
 }
 fn wrap(label: &str, text: &str) -> String {
     let je = serde_json::to_string(text).unwrap();
@@ -69,8 +69,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             let c: Contract = toml::from_str(&text)?;
             for p in &c.positive {
-                let bare = fires(&scanner, &p.text, &p.credential);
-                let wrapped = fires(&scanner, &wrap(w, &p.text), &p.credential);
+                let bare = fires(&scanner, &p.text, &p.credential)?;
+                let wrapped = fires(&scanner, &wrap(w, &p.text), &p.credential)?;
                 if bare && !wrapped {
                     n += 1;
                     println!("E {w} {} cred={:?}", c.detector_id, p.credential);

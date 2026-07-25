@@ -31,8 +31,8 @@ impl CompiledScanner {
         matches: &mut Vec<RawMatch>,
         deadline: Option<std::time::Instant>,
         route: crate::ScanExecutionRoute,
-    ) {
-        self.post_process_matches_inner(chunk, matches, deadline, route);
+    ) -> crate::error::Result<()> {
+        self.post_process_matches_inner(chunk, matches, deadline, route)
     }
 
     pub(crate) fn post_process_matches_inner(
@@ -41,15 +41,15 @@ impl CompiledScanner {
         matches: &mut Vec<RawMatch>,
         deadline: Option<std::time::Instant>,
         route: crate::ScanExecutionRoute,
-    ) {
+    ) -> crate::error::Result<()> {
         if crate::deadline::expired(deadline) {
-            return;
+            return Ok(());
         }
         let pp_start = tracing::enabled!(target: "keyhog::routing", tracing::Level::DEBUG)
             .then(std::time::Instant::now);
-        self.scan_cross_chunk_fragments(chunk, matches, deadline, route);
+        self.scan_cross_chunk_fragments(chunk, matches, deadline, route)?;
         if crate::deadline::expired(deadline) {
-            return;
+            return Ok(());
         }
 
         #[cfg(feature = "decode")]
@@ -69,7 +69,7 @@ impl CompiledScanner {
                 )
             };
             if crate::deadline::expired(deadline) {
-                return;
+                return Ok(());
             }
             if let Some(t) = gen_start {
                 DECODE_GEN_NS.fetch_add(t.elapsed().as_nanos() as u64, Relaxed);
@@ -116,12 +116,13 @@ impl CompiledScanner {
                     // calibrated route's explicit small-buffer backend.
                     let restore_rescan = super::profile::set_in_decode(true);
                     let decoded_backend = route.decode_backend;
-                    let decoded_matches = if decoded_chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
+                    let decoded_result = if decoded_chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
                         self.scan_windowed(&decoded_chunk, decoded_backend, deadline, route)
                     } else {
                         self.scan_inner(&decoded_chunk, decoded_backend, deadline, route)
                     };
                     super::profile::set_in_decode(restore_rescan);
+                    let decoded_matches = decoded_result?;
                     if crate::deadline::expired(deadline) {
                         break;
                     }
@@ -170,9 +171,11 @@ impl CompiledScanner {
                     std::mem::take(matches),
                     &self.detector_plans,
                 )
-                .expect(
-                    "compiled detector resolution must remain valid after decoded finding merge",
-                );
+                .map_err(|error| {
+                    crate::ScanError::Config(format!(
+                        "compiled detector resolution failed after decoded finding merge: {error}"
+                    ))
+                })?;
                 let mut merged = raw_findings;
                 let mut merged_seen: HashSet<(Arc<str>, SensitiveString)> = merged
                     .iter()
@@ -194,6 +197,7 @@ impl CompiledScanner {
             elapsed_ms = pp_start.map_or(0, |t| t.elapsed().as_millis() as u64),
             "post_process_matches_inner done",
         );
+        Ok(())
     }
 
     pub(crate) fn expand_triggered_patterns(&self, triggered_patterns: &[u64]) -> Vec<u64> {

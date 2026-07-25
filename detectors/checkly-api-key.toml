@@ -41,6 +41,7 @@ value = "{{companion.account_id}}"
 
 [detector.verify.success]
 status = 200
+policy = "status_with_error_backstop"
 
 [[detector.tests]]
 test_positive = "CHECKLY_API_KEY=cu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Q"

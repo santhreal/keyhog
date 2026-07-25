@@ -125,7 +125,9 @@ fn chunk_contracts_pass_positives_and_negatives() {
 
         for p in &c.positive {
             scanner.clear_fragment_cache();
-            let matches = scanner.scan(&make_chunk(&p.text));
+            let matches = scanner
+                .scan(&make_chunk(&p.text))
+                .expect("chunk-ad positive scan should succeed");
             if !any_credential_contains(&matches, &p.credential) {
                 let creds: Vec<_> = matches.iter().map(|m| m.credential.as_ref()).collect();
                 failures.push(format!(
@@ -140,7 +142,9 @@ fn chunk_contracts_pass_positives_and_negatives() {
 
         for n in &c.negative {
             scanner.clear_fragment_cache();
-            let matches = scanner.scan(&make_chunk(&n.text));
+            let matches = scanner
+                .scan(&make_chunk(&n.text))
+                .expect("chunk-ad negative scan should succeed");
             let fired = matches
                 .iter()
                 .any(|m| m.detector_id.as_ref() == c.detector_id);

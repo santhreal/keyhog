@@ -17,9 +17,9 @@ mod streaming;
 use crate::args::ScanArgs;
 use crate::orchestrator_config::{
     auto_discover_detectors, autoroute_config_digest, backend_override_cli_value,
-    configure_threads, gpu_runtime_policy_from_args, load_detectors_no_cache,
-    load_detectors_or_embedded, load_detectors_with_cache, parse_backend_override,
-    resolve_scan_config, resolved_scan_config_for_scanner, validate_explicit_detector_path,
+    configure_threads, gpu_runtime_policy_from_args, load_effective_detector_corpus,
+    parse_backend_override, resolve_scan_config, resolved_scan_config_for_scanner,
+    validate_detector_mode_selection, validate_explicit_detector_path, DetectorCorpusProvenance,
     ResolvedEngineRuntimeSettings, ResolvedScanConfig,
 };
 use crate::style;
@@ -186,6 +186,7 @@ fn validate_persistent_gpu_initialization(
     Ok(())
 }
 
+#[cfg(test)]
 fn validate_persistent_gpu_warmup(
     surface: &str,
     gpu_required: bool,
@@ -261,17 +262,32 @@ pub(crate) use reporting::{
     verification_breakdown, TickerGuard,
 };
 
-pub(crate) use dispatch::CachedBackendRouter;
+pub(crate) use dispatch::{
+    autoroute_engine_identity, autoroute_executable_identity, autoroute_gpu_artifact_identity,
+    CachedBackendRouter,
+};
 pub(crate) use dispatch::{inspect_autoroute_cache, AutorouteReadiness, StagedAutorouteCache};
 pub(crate) use streaming::{scan_streaming_source, StreamingSourceEvent};
+
+fn resolved_default_autoroute_config() -> ResolvedScanConfig {
+    let mut resolved = resolved_scan_config_for_scanner(keyhog_scanner::ScannerConfig::default());
+    resolved.threads = Some(rayon::current_num_threads());
+    resolved
+}
+
+pub(crate) fn autoroute_default_config_identity() -> String {
+    format!(
+        "{:016x}",
+        autoroute_config_digest(&resolved_default_autoroute_config())
+    )
+}
 
 pub(crate) fn cached_autoroute_router_for_default_config(
     scanner: &CompiledScanner,
     detectors: &[DetectorSpec],
 ) -> CachedBackendRouter {
     let rules_digest = keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(detectors));
-    let mut resolved = resolved_scan_config_for_scanner(keyhog_scanner::ScannerConfig::default());
-    resolved.threads = Some(rayon::current_num_threads());
+    let resolved = resolved_default_autoroute_config();
     cached_autoroute_router(
         scanner,
         rules_digest,
@@ -561,21 +577,12 @@ impl DefaultScanRuntime {
                     ..Default::default()
                 },
             };
-            let degrade_before = self.scanner.gpu_degrade_count();
             self.scanner.clear_fragment_cache();
             for backend in &gpu_routes {
-                drop(
-                    self.scanner
-                        .scan_chunks_with_backend(std::slice::from_ref(&warmup), *backend),
-                );
+                self.scanner
+                    .scan_chunks_with_backend(std::slice::from_ref(&warmup), *backend)?;
             }
             self.scanner.clear_fragment_cache();
-            validate_persistent_gpu_warmup(
-                surface,
-                gpu_must_be_ready,
-                degrade_before,
-                self.scanner.gpu_degrade_count(),
-            )?;
         }
         tracing::info!(
             simd_initialized = self.scanner.simd_backend_initialized(),
@@ -751,7 +758,15 @@ fn setup_default_scan_runtime_with_rayon_policy(
     synthetic.backend = backend_override.map(|backend| backend_override_cli_value(backend).into());
     synthetic.path = filter_root.map(std::path::Path::to_path_buf);
     let mut effective_config = resolve_scan_config(&mut synthetic)?;
-    validate_explicit_detector_path(&synthetic.detectors, synthetic.detectors_cli_explicit)?;
+    let requested_detector_mode = synthetic.detectors_mode.map(Into::into);
+    validate_detector_mode_selection(
+        synthetic.detectors_cli_explicit,
+        requested_detector_mode,
+    )?;
+    validate_explicit_detector_path(
+        &synthetic.detectors,
+        synthetic.detectors_cli_explicit,
+    )?;
     let detectors_path = auto_discover_detectors(&synthetic.detectors)?;
     let detectors_path_for_compile = detectors_path.clone();
     ResolvedEngineRuntimeSettings::from(&effective_config).apply();
@@ -782,7 +797,13 @@ fn setup_default_scan_runtime_with_rayon_policy(
         ))
     })?;
 
-    let mut detectors = load_detectors_or_embedded(detectors_path)?;
+    let mut detectors = load_effective_detector_corpus(
+        &detectors_path,
+        requested_detector_mode,
+        !synthetic.lockdown,
+    )
+    .context("loading effective detector corpus")?
+    .detectors;
 
     // Apply `[detector.<id>] enabled = false`: drop the disabled detectors before
     // compilation so they never fire (mirrors `ScanOrchestrator::new`).
@@ -935,6 +956,8 @@ pub(crate) struct ScanOrchestrator {
     pub(crate) detectors: Vec<DetectorSpec>,
     pub(crate) detector_spec_hash: [u8; 32],
     pub(crate) detector_rules_digest: String,
+    pub(crate) detector_corpus_digest: String,
+    pub(crate) detector_corpus_provenance: DetectorCorpusProvenance,
     pub(crate) scanner: Arc<CompiledScanner>,
     pub(crate) signatures: std::collections::HashSet<Arc<str>>,
     pub(crate) test_fixture_suppressions: crate::test_fixture_suppressions::TestFixtureSuppressions,
@@ -1037,14 +1060,22 @@ impl ScanOrchestrator {
         args.threads = Some(worker_threads);
         effective_config.threads = Some(worker_threads);
 
+        let requested_detector_mode = args.detectors_mode.map(Into::into);
+        validate_detector_mode_selection(
+            args.detectors_cli_explicit,
+            requested_detector_mode,
+        )?;
         validate_explicit_detector_path(&args.detectors, args.detectors_cli_explicit)?;
         let detectors_path = auto_discover_detectors(&args.detectors)?;
-        let mut detectors = if args.lockdown {
-            load_detectors_no_cache(&detectors_path)
-                .context("loading detectors (lockdown: cache disabled)")?
-        } else {
-            load_detectors_with_cache(&detectors_path)?
-        };
+        let loaded_corpus = load_effective_detector_corpus(
+            &detectors_path,
+            requested_detector_mode,
+            !args.lockdown,
+        )
+        .context("loading effective detector corpus")?;
+        let detector_corpus_schema_version = loaded_corpus.schema_version;
+        let detector_corpus_provenance = loaded_corpus.provenance;
+        let mut detectors = loaded_corpus.detectors;
 
         // Apply `[detector.<id>] enabled = false` from .keyhog.toml: drop the
         // disabled detectors from the corpus so they never compile or fire.
@@ -1100,6 +1131,13 @@ impl ScanOrchestrator {
         // change the compiled pattern set and backend workload materially.
         let detector_rules_digest =
             keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&detectors));
+        let detector_corpus_digest = keyhog_core::hex_encode(
+            &keyhog_core::compute_detector_corpus_digest_for_schema(
+                &detectors,
+                detector_corpus_schema_version,
+            )
+            .context("serializing effective detector corpus identity")?,
+        );
 
         apply_host_runtime_limits(&mut effective_config, &hw);
 
@@ -1176,6 +1214,8 @@ impl ScanOrchestrator {
             detectors,
             detector_spec_hash,
             detector_rules_digest,
+            detector_corpus_digest,
+            detector_corpus_provenance,
             scanner,
             signatures,
             test_fixture_suppressions,
@@ -1291,11 +1331,20 @@ impl ScanOrchestrator {
         let fused_depth = args.fused_depth;
         let detector_spec_hash = keyhog_core::compute_spec_hash(&detectors);
         let detector_rules_digest = keyhog_core::hex_encode(&detector_spec_hash);
+        let detector_corpus_digest = detector_rules_digest.clone();
+        let detector_corpus_provenance = DetectorCorpusProvenance {
+            mode: "provided",
+            source: "library/test constructor".to_string(),
+            embedded_count: 0,
+            custom_count: detectors.len(),
+        };
         Self {
             args,
             detectors,
             detector_spec_hash,
             detector_rules_digest,
+            detector_corpus_provenance,
+            detector_corpus_digest,
             scanner,
             signatures,
             test_fixture_suppressions,

@@ -7,6 +7,9 @@ use super::{
 use regex::Regex;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::LazyLock;
+use keyhog_core::ChunkMetadata;
+
+use crate::telemetry::{record_static_recovery_rejection, StaticRecoveryRejection};
 
 const MAX_REVERSE_BASE64_LITERAL_BYTES: usize = MAX_BYTE_ARRAY_LEN.div_ceil(3) * 4;
 
@@ -22,6 +25,10 @@ static INVOCATION_RE: LazyLock<Regex> = LazyLock::new(|| {
         r#"(?P<function>[A-Za-z_$][A-Za-z0-9_$]*)\s*\(\s*atob\s*\(\s*(?P<literal>["'][A-Za-z0-9+/=]+["'])\s*\.\s*split\s*\(\s*(?:''|"")\s*\)\s*\.\s*reverse\s*\(\s*\)\s*\.\s*join\s*\(\s*(?:''|"")\s*\)\s*\)\s*\)"#,
         "reverse/Base64 invocation",
     )
+});
+
+static ATOB_CANDIDATE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    compile_static_regex(r"\batob\s*\(", "reverse/Base64 candidate")
 });
 
 #[derive(Clone, Copy)]
@@ -60,12 +67,23 @@ impl CodeFacts<'_> {
 
 pub(super) fn recover_plaintexts(
     source: &str,
+    metadata: &ChunkMetadata,
     base_offset: usize,
     emitted: &mut BTreeSet<RecoveredPlaintext>,
 ) {
     let raw_helpers = collect_helpers(source);
     let raw_invocations = collect_invocations(source);
-    if raw_helpers.is_empty() || raw_invocations.is_empty() {
+    if raw_invocations.is_empty() {
+        record_loose_candidates(source, metadata, base_offset);
+        return;
+    }
+    if raw_helpers.is_empty() {
+        record_invocations(
+            &raw_invocations,
+            metadata,
+            base_offset,
+            StaticRecoveryRejection::MalformedExpression,
+        );
         return;
     }
 
@@ -81,9 +99,12 @@ pub(super) fn recover_plaintexts(
         .chain(raw_invocations.iter().map(|invocation| invocation.start))
         .collect();
     let regex_bindings = collect_inert_regex_bindings(source);
-    let Some(facts) = analyze_code(source, &semantic_names, &candidate_starts, &regex_bindings)
-    else {
-        return;
+    let facts = match analyze_code(source, &semantic_names, &candidate_starts, &regex_bindings) {
+        Ok(facts) => facts,
+        Err(reason) => {
+            record_invocations(&raw_invocations, metadata, base_offset, reason);
+            return;
+        }
     };
 
     let helpers: Vec<_> = raw_helpers
@@ -91,6 +112,12 @@ pub(super) fn recover_plaintexts(
         .filter(|helper| facts.is_top_level(helper.start))
         .collect();
     if helpers.len() != 1 {
+        record_invocations(
+            &raw_invocations,
+            metadata,
+            base_offset,
+            StaticRecoveryRejection::MalformedExpression,
+        );
         return;
     }
     let helper = helpers[0];
@@ -101,10 +128,17 @@ pub(super) fn recover_plaintexts(
         })
         .take(MAX_STATIC_EXPRESSIONS + 1)
         .collect();
-    if invocations.is_empty() || invocations.len() > MAX_STATIC_EXPRESSIONS {
-        if invocations.len() > MAX_STATIC_EXPRESSIONS {
-            record_static_limit("reverse/Base64 expression ceiling");
-        }
+    if invocations.is_empty() {
+        return;
+    }
+    if invocations.len() > MAX_STATIC_EXPRESSIONS {
+        record_static_limit("reverse/Base64 expression ceiling");
+        record_invocations(
+            &invocations[MAX_STATIC_EXPRESSIONS..],
+            metadata,
+            base_offset,
+            StaticRecoveryRejection::ResourceLimit,
+        );
         return;
     }
     if facts.count(helper.parameter) != 2
@@ -114,22 +148,64 @@ pub(super) fn recover_plaintexts(
             .into_iter()
             .any(|method| facts.count(method) != invocations.len().saturating_add(1))
     {
+        record_invocations(
+            &invocations,
+            metadata,
+            base_offset,
+            StaticRecoveryRejection::MalformedExpression,
+        );
         return;
     }
 
     for invocation in invocations {
-        if crate::engine::absolute_offset(base_offset, invocation.literal_start).is_none() {
+        let Some(expression_offset) =
+            crate::engine::absolute_offset(base_offset, invocation.start)
+        else {
             record_static_limit("reverse/Base64 expression offset overflow");
             continue;
-        }
-        let Some(plaintext) = recover_literal(invocation.literal) else {
-            continue;
+        };
+        let plaintext = match recover_literal(invocation.literal) {
+            Ok(plaintext) => plaintext,
+            Err(reason) => {
+                record_static_recovery_rejection(metadata, expression_offset, reason);
+                continue;
+            }
         };
         emitted.insert(RecoveredPlaintext {
             plaintext,
             source_start: invocation.literal_start,
             source_end: invocation.literal_end,
         });
+    }
+}
+
+fn record_loose_candidates(source: &str, metadata: &ChunkMetadata, base_offset: usize) {
+    for (index, candidate) in ATOB_CANDIDATE_RE.find_iter(source).enumerate() {
+        let reason = if index >= MAX_STATIC_EXPRESSIONS {
+            record_static_limit("reverse/Base64 candidate ceiling");
+            StaticRecoveryRejection::ResourceLimit
+        } else {
+            StaticRecoveryRejection::MalformedExpression
+        };
+        if let Some(offset) = crate::engine::absolute_offset(base_offset, candidate.start()) {
+            record_static_recovery_rejection(metadata, offset, reason);
+        }
+        if index >= MAX_STATIC_EXPRESSIONS {
+            break;
+        }
+    }
+}
+
+fn record_invocations(
+    invocations: &[Invocation<'_>],
+    metadata: &ChunkMetadata,
+    base_offset: usize,
+    reason: StaticRecoveryRejection,
+) {
+    for invocation in invocations.iter().take(MAX_STATIC_EXPRESSIONS) {
+        if let Some(offset) = crate::engine::absolute_offset(base_offset, invocation.start) {
+            record_static_recovery_rejection(metadata, offset, reason);
+        }
     }
 }
 
@@ -167,19 +243,21 @@ fn collect_invocations(source: &str) -> Vec<Invocation<'_>> {
         .collect()
 }
 
-fn recover_literal(encoded: &str) -> Option<String> {
+fn recover_literal(encoded: &str) -> Result<String, StaticRecoveryRejection> {
     if encoded.len() > MAX_REVERSE_BASE64_LITERAL_BYTES {
         record_static_limit("reverse/Base64 literal byte ceiling");
-        return None;
+        return Err(StaticRecoveryRejection::ResourceLimit);
     }
     let reversed: String = encoded.bytes().rev().map(char::from).collect();
-    // LAW10: malformed trial input is not this exact reverse/Base64 dialect.
-    // Recall is preserved because the unchanged source remains on the ordinary scan path.
-    let decoded = super::super::base64_decode(&reversed).ok()?;
-    if decoded.len() > MAX_BYTE_ARRAY_LEN || !decoded.is_ascii() {
-        return None;
+    let decoded = super::super::base64_decode(&reversed)
+        .map_err(|()| StaticRecoveryRejection::MalformedExpression)?;
+    if decoded.len() > MAX_BYTE_ARRAY_LEN {
+        return Err(StaticRecoveryRejection::ResourceLimit);
     }
-    Some(decoded.into_iter().rev().map(char::from).collect())
+    if !decoded.is_ascii() {
+        return Err(StaticRecoveryRejection::MalformedExpression);
+    }
+    Ok(decoded.into_iter().rev().map(char::from).collect())
 }
 
 fn analyze_code<'a>(
@@ -187,7 +265,8 @@ fn analyze_code<'a>(
     semantic_names: &HashSet<&'a str>,
     candidate_starts: &HashSet<usize>,
     regex_bindings: &[(usize, usize)],
-) -> Option<CodeFacts<'a>> {
+) -> Result<CodeFacts<'a>, StaticRecoveryRejection> {
+    let malformed = StaticRecoveryRejection::MalformedExpression;
     let bytes = source.as_bytes();
     let mut identifier_counts: HashMap<&str, usize> = semantic_names
         .iter()
@@ -233,7 +312,7 @@ fn analyze_code<'a>(
                 index += 1;
             }
             if !closed {
-                return None;
+                return Err(malformed);
             }
             continue;
         }
@@ -245,32 +324,32 @@ fn analyze_code<'a>(
             let content_start = index;
             while index < bytes.len() {
                 if bytes[index] == b'\\' {
-                    index = index.checked_add(2)?;
+                    index = index.checked_add(2).ok_or(malformed)?;
                     continue;
                 }
                 if bytes[index] == quote {
-                    let content = source.get(content_start..index)?;
+                    let content = source.get(content_start..index).ok_or(malformed)?;
                     index += 1;
                     closed = true;
                     if semantic_names.contains(content)
                         && is_computed_property(source, literal_start, index)
                     {
-                        return None;
+                        return Err(StaticRecoveryRejection::DynamicPropertyAccess);
                     }
                     break;
                 }
                 if matches!(bytes[index], b'\n' | b'\r') {
-                    return None;
+                    return Err(malformed);
                 }
                 index += 1;
             }
             if !closed {
-                return None;
+                return Err(malformed);
             }
             continue;
         }
         if matches!(bytes[index], b'`' | b'\\') {
-            return None;
+            return Err(malformed);
         }
         if is_identifier_start(bytes[index]) {
             let start = index;
@@ -278,26 +357,31 @@ fn analyze_code<'a>(
             while index < bytes.len() && is_identifier_byte(bytes[index]) {
                 index += 1;
             }
-            let identifier = source.get(start..index)?;
+            let identifier = source.get(start..index).ok_or(malformed)?;
             if matches!(identifier, "eval" | "Function") {
-                return None;
+                return Err(StaticRecoveryRejection::UnsupportedCall);
             }
             if let Some(count) = identifier_counts.get_mut(identifier) {
                 *count = count.saturating_add(1);
             }
             if candidate_starts.contains(&start) {
-                scopes.insert(start, *scope_stack.last()?);
+                scopes.insert(
+                    start,
+                    *scope_stack.last().ok_or(StaticRecoveryRejection::ResourceLimit)?,
+                );
             }
             continue;
         }
         match bytes[index] {
             b'{' => {
                 scope_stack.push(next_scope);
-                next_scope = next_scope.checked_add(1)?;
+                next_scope = next_scope
+                    .checked_add(1)
+                    .ok_or(StaticRecoveryRejection::ResourceLimit)?;
             }
             b'}' => {
                 if scope_stack.len() == 1 {
-                    return None;
+                    return Err(malformed);
                 }
                 scope_stack.pop();
             }
@@ -306,7 +390,10 @@ fn analyze_code<'a>(
         index += 1;
     }
 
-    (scope_stack.len() == 1).then_some(CodeFacts {
+    if scope_stack.len() != 1 {
+        return Err(malformed);
+    }
+    Ok(CodeFacts {
         identifier_counts,
         scopes,
     })

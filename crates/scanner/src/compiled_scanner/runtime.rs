@@ -233,19 +233,6 @@ impl CompiledScanner {
         }
     }
 
-    /// Exit before a caller-selected backend can silently run a different path.
-    pub(crate) fn require_selected_backend_stack(&self, backend: ScanBackend) {
-        if backend == ScanBackend::SimdCpu {
-            if let Err(error) = self.try_initialize_simd_backend() {
-                crate::process_exit::backend_unavailable(format!(
-                    "simd-regex selected but Hyperscan initialization failed: {error}; silent \
-                     cpu-fallback execution is forbidden. Run `keyhog backend --self-test` or \
-                     choose `--backend cpu-fallback` explicitly."
-                ));
-            }
-        }
-        require_selected_gpu_stack(self, backend);
-    }
 
     /// Number of loaded detectors.
     pub(crate) fn detector_count(&self) -> usize {
@@ -555,16 +542,44 @@ impl CompiledScanner {
             detector_digest: self.detector_digest(),
             preferred_backend: self.preferred_backend_label(),
             gpu_backends: self.gpu_backends.availability(),
-            gpu_degrade_count: self
-                .gpu_degrade_count
-                .load(std::sync::atomic::Ordering::Relaxed),
+            gpu_degrade_count: self.gpu_degrade_count(),
         }
     }
+    /// Build-time Layer-0.5 bigram-prefilter density and health.
+    ///
+    /// This performs one 1024-word population-count pass on explicit status
+    /// requests. It is never called from the per-chunk scan path.
+    #[must_use]
+    pub fn bigram_prefilter_status(&self) -> crate::bigram_bloom::BigramPrefilterStatus {
+        self.bigram_bloom.status()
+    }
 
-    /// Cumulative count of runtime GPU dispatch failures and recall-floor
-    /// faults/recoveries recorded by this scanner (via the private runtime-fault recorder). Cheap
-    /// (one relaxed atomic load) so routing and calibration can reject poisoned
-    /// GPU evidence without recomputing the digests in `runtime_status()`.
+    /// Measure Layer-0.5 rejection over one explicitly named diagnostic corpus.
+    ///
+    /// Inputs are borrowed and walked without collection. Saturated or invalid
+    /// filters are fail-open and therefore report zero rejected inputs.
+    #[must_use]
+    pub fn bigram_prefilter_corpus_status<'a, I>(
+        &self,
+        corpus_name: &'a str,
+        inputs: I,
+    ) -> crate::bigram_bloom::BigramPrefilterCorpusStatus<'a>
+    where
+        I: IntoIterator<Item = &'a [u8]>,
+    {
+        self.bigram_bloom.corpus_status(
+            corpus_name,
+            inputs,
+            crate::engine::BIGRAM_BLOOM_MIN_CHUNK_BYTES,
+        )
+    }
+
+
+    /// Cumulative count of scanner-local GPU region-dispatch failures.
+    ///
+    /// Per-request GPU MoE recovery is returned on `CoalescedScanOutcome`;
+    /// it is deliberately excluded here so concurrent scanners cannot affect
+    /// another request's correctness decision.
     pub fn gpu_degrade_count(&self) -> u64 {
         self.gpu_degrade_count
             .load(std::sync::atomic::Ordering::Relaxed)
@@ -669,21 +684,78 @@ impl CompiledScanner {
             .into_iter()
             .find(|candidate| candidate.backend == backend)
             .ok_or_else(|| format!("{} is not a compiled GPU peer", backend.label()))?;
-        if !candidate.is_acquired_eligible() {
+        if !candidate.acquired || !candidate.available || candidate.is_software {
             return Err(self.gpu_backend_unavailable_reason(backend));
         }
-        let identity = (
-            candidate.backend.label(),
-            candidate.driver_id.expect("acquired eligible driver id"),
+        let (
+            Some(driver_id),
+            Some(driver_version),
+            Some(device_identity),
+            Some(runtime_identity),
+        ) = (
+            candidate
+                .driver_id
+                .as_deref()
+                .filter(|value| !value.trim().is_empty()),
             candidate
                 .driver_version
-                .expect("acquired eligible driver version"),
+                .as_deref()
+                .filter(|value| !value.trim().is_empty()),
             candidate
                 .device_identity
-                .expect("acquired eligible device identity"),
+                .as_deref()
+                .filter(|value| !value.trim().is_empty()),
             candidate
                 .runtime_identity
-                .expect("acquired eligible runtime identity"),
+                .as_deref()
+                .filter(|value| !value.trim().is_empty()),
+        )
+        else {
+            let missing = [
+                (
+                    "driver_id",
+                    candidate
+                        .driver_id
+                        .as_deref()
+                        .is_none_or(|value| value.trim().is_empty()),
+                ),
+                (
+                    "driver_version",
+                    candidate
+                        .driver_version
+                        .as_deref()
+                        .is_none_or(|value| value.trim().is_empty()),
+                ),
+                (
+                    "device_identity",
+                    candidate
+                        .device_identity
+                        .as_deref()
+                        .is_none_or(|value| value.trim().is_empty()),
+                ),
+                (
+                    "runtime_identity",
+                    candidate
+                        .runtime_identity
+                        .as_deref()
+                        .is_none_or(|value| value.trim().is_empty()),
+                ),
+            ]
+            .into_iter()
+            .filter_map(|(field, absent)| absent.then_some(field))
+            .collect::<Vec<_>>()
+            .join(", ");
+            return Err(format!(
+                "{} reported acquired eligibility with missing identity fields: {missing}; reinitialize the GPU backend and recalibrate autoroute",
+                backend.label()
+            ));
+        };
+        let identity = (
+            candidate.backend.label(),
+            driver_id,
+            driver_version,
+            device_identity,
+            runtime_identity,
         );
         serde_json::to_string(&identity)
             .map_err(|error| format!("GPU peer identity serialization failed: {error}"))
@@ -761,84 +833,97 @@ impl CompiledScanner {
             crate::hw_probe::ScanBackend::GpuCuda | crate::hw_probe::ScanBackend::GpuWgpu => {
                 self.gpu_stack_usable_for(backend)
             }
-            crate::hw_probe::ScanBackend::SimdCpu => self.try_initialize_simd_backend().is_ok(),
+            crate::hw_probe::ScanBackend::SimdCpu => {
+                #[cfg(feature = "simd")]
+                {
+                    match self.try_simd_prefilter() {
+                        Ok(prefilter) => prefilter.scanner().warm().is_ok(),
+                        Err(_) => false, // LAW10: this operator-visible bool is the honest resource status; warm_backend never begins a scan.
+                    }
+                }
+                #[cfg(not(feature = "simd"))]
+                {
+                    false
+                }
+            }
             crate::hw_probe::ScanBackend::CpuFallback => true,
         };
-        // Warming is a PROBE with an in-band `bool` channel: report readiness
-        // honestly (`false` when a forced GPU stack is unusable) instead
-        // of hard-stopping the process. This is NOT a silent fallback (Law 10)
-        // the caller receives the `false` and decides. The no-silent-fallback
-        // hard-stop lives where it MUST: `--require-gpu` is caught by the CLI
-        // preflight (`gpu::require_gpu_preflight`) before any scan, and a forced
-        // backend that reaches GPU dispatch fails closed via
-        // `require_selected_backend_stack` inside `scan_with_backend`
-        // (the `par_iter` closure with no `Result` channel, the ONLY place the
-        // M12 process-exit is justified). Exiting here instead broke the `-> bool`
-        // contract and killed the whole process (exit 12) on any GPU-less warm.
+        // Warming is a probe with an in-band `bool` channel: `false` honestly
+        // reports unavailable resources. Selected-backend scans use a separate
+        // API and return `ScanError` for initialization or dispatch failures.
         ready
     }
 
-    /// Scan a chunk of text and return all raw credential matches.
-    pub fn scan(&self, chunk: &Chunk) -> Vec<RawMatch> {
+    /// Scan a chunk on the deterministic portable backend.
+    ///
+    /// Runtime failures return `ScanError` and never terminate the host.
+    pub fn scan(&self, chunk: &Chunk) -> crate::error::Result<Vec<RawMatch>> {
         self.scan_with_deadline(chunk, self.config.per_chunk_deadline())
     }
 
-    /// Scan a chunk using a caller-selected backend.
+    /// Scan a chunk using exactly the caller-selected backend.
     ///
-    /// This infallible API treats backend selection as a process contract. It
-    /// terminates with exit `3` when selected SIMD is unavailable or exit `12`
-    /// when a selected GPU stack or runtime dispatch cannot be honored; it
-    /// never returns findings produced by another backend.
+    /// Backend initialization and runtime dispatch failures return `ScanError`;
+    /// this library boundary never terminates the embedding process or invents
+    /// a clean empty scan for a failed backend.
     pub fn scan_with_backend(
         &self,
         chunk: &Chunk,
         backend: crate::hw_probe::ScanBackend,
-    ) -> Vec<RawMatch> {
-        self.scan_with_deadline_and_backend(chunk, self.config.per_chunk_deadline(), backend)
+    ) -> crate::error::Result<Vec<RawMatch>> {
+        let results = self.scan_coalesced_with_backend_and_admission(std::slice::from_ref(chunk),
+        backend,
+        None,)?;
+        results.into_iter().next().ok_or_else(|| {
+            crate::error::ScanError::Config(
+                "single-chunk backend dispatch returned no result row".to_owned(),
+            )
+        })
     }
 
-    /// Scan one chunk while reusing an autoroute admission plan when it was
-    /// produced for this exact chunk. A mismatched plan is ignored and the
-    /// normal admission probe runs, preserving recall for library callers.
+    /// Scan one chunk with optional reusable admission evidence.
+    ///
+    /// The outcome retains an exact recovery receipt when mismatched admission
+    /// evidence is discarded and recomputed by the shared coalesced boundary.
+    /// Backend failures return `ScanError` without terminating the host.
     pub fn scan_with_backend_and_admission_plan(
         &self,
         chunk: &Chunk,
         backend: crate::hw_probe::ScanBackend,
         plan: Option<&crate::engine::Phase1AdmissionPlan>,
-    ) -> Vec<RawMatch> {
-        let admission = match plan {
-            Some(p) if p.matches_chunks(std::slice::from_ref(chunk)) => p.admission_for(0),
-            Some(_) => {
-                // KH-1289: do not silently drop a mismatched admission plan.
-                tracing::warn!(
-                    "Phase1AdmissionPlan does not match live chunk identity; recomputing admission (recall preserved)"
-                );
-                None
-            }
-            None => None,
-        };
-        self.scan_with_deadline_and_backend_and_admission(
-            chunk,
-            self.config.per_chunk_deadline(),
-            backend,
-            admission,
-        )
+    ) -> crate::error::Result<crate::engine::CoalescedScanOutcome> {
+        self.scan_coalesced_with_backend_admission_route_and_recovery(std::slice::from_ref(chunk),
+        backend,
+        plan,
+        self.execution_route_for_backend(backend),
+        false,)
     }
 
-    /// Scan multiple chunks using a caller-selected backend.
+    /// Scan multiple chunks using exactly the caller-selected backend.
     ///
-    /// This infallible API has the same hard process contract as
-    /// [`Self::scan_with_backend`]: unavailable SIMD exits `3`, and unavailable
-    /// or failed GPU execution exits `12` instead of substituting CPU/SIMD.
+    /// Backend initialization and runtime dispatch failures return `ScanError`;
+    /// successful results preserve one output row per input chunk.
     pub fn scan_chunks_with_backend(
         &self,
         chunks: &[Chunk],
         backend: crate::hw_probe::ScanBackend,
-    ) -> Vec<Vec<RawMatch>> {
-        self.require_selected_backend_stack(backend);
-        profile::add_bytes(chunks.iter().map(|c| c.data.len() as u64).sum());
-        profile::add_files(chunks.len() as u64);
-        self.scan_chunks_with_backend_internal(chunks, backend)
+    ) -> crate::error::Result<Vec<Vec<RawMatch>>> {
+        self.scan_coalesced_with_backend_and_admission(chunks, backend, None)
+    }
+
+    /// Scan multiple chunks with the bigram gate explicitly bypassed.
+    ///
+    /// This diagnostic-only oracle preserves the alphabet screen, selected
+    /// backend, and all downstream matching. Comparing its result with
+    /// [`Self::scan_chunks_with_backend`] proves whether bigram rejection
+    /// changed any finding identity or location.
+    pub fn scan_chunks_with_backend_bypassing_bigram_for_diagnostics(
+        &self,
+        chunks: &[Chunk],
+        backend: crate::hw_probe::ScanBackend,
+    ) -> crate::error::Result<Vec<Vec<RawMatch>>> {
+        let plan = self.phase1_admission_plan_bypassing_bigram_for_diagnostics(chunks);
+        self.scan_coalesced_with_backend_and_admission(chunks, backend, Some(&plan))
     }
 
     /// Reset the cross-file fragment-reassembly cache.
@@ -851,7 +936,7 @@ impl CompiledScanner {
         &self,
         chunk: &Chunk,
         deadline: Option<std::time::Instant>,
-    ) -> Vec<RawMatch> {
+    ) -> crate::error::Result<Vec<RawMatch>> {
         // The library default is the deterministic portable reference. Hardware
         // acceleration requires an explicit backend or the CLI's persisted
         // fastest-correct router; a library call must not invent a heuristic
@@ -868,17 +953,16 @@ impl CompiledScanner {
         chunk: &Chunk,
         deadline: Option<std::time::Instant>,
         selected_backend: crate::hw_probe::ScanBackend,
-    ) -> Vec<RawMatch> {
+    ) -> crate::error::Result<Vec<RawMatch>> {
         self.scan_with_deadline_and_backend_and_admission(chunk, deadline, selected_backend, None)
     }
-
     pub(crate) fn scan_with_deadline_and_backend_and_admission(
         &self,
         chunk: &Chunk,
         deadline: Option<std::time::Instant>,
         selected_backend: crate::hw_probe::ScanBackend,
         admission: Option<crate::engine::Phase1Admission>,
-    ) -> Vec<RawMatch> {
+    ) -> crate::error::Result<Vec<RawMatch>> {
         self.scan_with_deadline_and_backend_admission_and_route(
             chunk,
             deadline,
@@ -895,11 +979,10 @@ impl CompiledScanner {
         selected_backend: crate::hw_probe::ScanBackend,
         admission: Option<crate::engine::Phase1Admission>,
         route: crate::ScanExecutionRoute,
-    ) -> Vec<RawMatch> {
+    ) -> crate::error::Result<Vec<RawMatch>> {
         if scan_deadline_expired(deadline) {
-            return Vec::new();
+            return Ok(Vec::new());
         }
-        self.require_selected_backend_stack(selected_backend);
         // Direct-match prefilters: skip chunks that carry none of any
         // detector's literal bytes (`AlphabetScreen`) or bigrams (bloom). A
         // FULLY-ENCODED secret carries none of those - its plaintext prefix
@@ -924,30 +1007,30 @@ impl CompiledScanner {
                     None,
                     None,
                     route,
-                );
+                )?;
                 if scan_deadline_expired(deadline) {
-                    return matches;
+                    return Ok(matches);
                 }
-                self.post_process_matches(chunk, &mut matches, deadline, route);
+                self.post_process_matches(chunk, &mut matches, deadline, route)?;
                 if scan_deadline_expired(deadline) {
-                    return matches;
+                    return Ok(matches);
                 }
-                return matches;
+                return Ok(matches);
             }
 
             if self.chunk_needs_decode_postprocess(chunk) {
                 if scan_deadline_expired(deadline) {
-                    return Vec::new();
+                    return Ok(Vec::new());
                 }
                 let mut matches = Vec::new();
-                self.post_process_matches(chunk, &mut matches, deadline, route);
+                self.post_process_matches(chunk, &mut matches, deadline, route)?;
                 if scan_deadline_expired(deadline) {
-                    return matches;
+                    return Ok(matches);
                 }
-                return matches;
+                return Ok(matches);
             }
             crate::telemetry::record_file_skipped();
-            return Vec::new();
+            return Ok(Vec::new());
         }
 
         tracing::trace!(
@@ -958,19 +1041,19 @@ impl CompiledScanner {
             "scan dispatch"
         );
         let mut matches = if chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
-            self.scan_windowed(chunk, selected_backend, deadline, route)
+            self.scan_windowed(chunk, selected_backend, deadline, route)?
         } else {
-            self.scan_inner(chunk, selected_backend, deadline, route)
+            self.scan_inner(chunk, selected_backend, deadline, route)?
         };
 
         if scan_deadline_expired(deadline) {
-            return matches;
+            return Ok(matches);
         }
-        self.post_process_matches(chunk, &mut matches, deadline, route);
+        self.post_process_matches(chunk, &mut matches, deadline, route)?;
         if scan_deadline_expired(deadline) {
-            return matches;
+            return Ok(matches);
         }
 
-        matches
+        Ok(matches)
     }
 }

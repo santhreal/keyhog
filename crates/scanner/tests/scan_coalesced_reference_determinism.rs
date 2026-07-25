@@ -130,9 +130,10 @@ fn scan_coalesced_is_deterministic_across_trials() {
     const TRIALS: usize = 7;
 
     scanner.clear_fragment_cache();
-    let reference = canonical(
-        &scanner.scan_coalesced_with_backend(&chunks, keyhog_scanner::ScanBackend::SimdCpu),
-    );
+    let reference_rows = scanner
+        .scan_coalesced_with_backend(&chunks, keyhog_scanner::ScanBackend::SimdCpu)
+        .expect("reference coalesced determinism scan should succeed");
+    let reference = canonical(&reference_rows);
     assert!(
         !reference.is_empty(),
         "determinism corpus must exercise real findings, not only empty scans"
@@ -140,9 +141,10 @@ fn scan_coalesced_is_deterministic_across_trials() {
 
     for trial in 1..TRIALS {
         scanner.clear_fragment_cache();
-        let got = canonical(
-            &scanner.scan_coalesced_with_backend(&chunks, keyhog_scanner::ScanBackend::SimdCpu),
-        );
+        let got_rows = scanner
+            .scan_coalesced_with_backend(&chunks, keyhog_scanner::ScanBackend::SimdCpu)
+            .expect("repeated coalesced determinism scan should succeed");
+        let got = canonical(&got_rows);
         if got != reference {
             let only_ref: Vec<&Record> = reference.difference(&got).collect();
             let only_got: Vec<&Record> = got.difference(&reference).collect();

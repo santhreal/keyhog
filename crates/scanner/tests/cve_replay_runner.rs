@@ -143,7 +143,9 @@ fn every_cve_replay_entry_must_fire() {
                 ..Default::default()
             },
         };
-        let matches = scanner.scan(&chunk);
+        let matches = scanner
+            .scan(&chunk)
+            .expect("CVE replay corpus scan should succeed");
 
         let detector_hit = matches.iter().any(|m| {
             entry

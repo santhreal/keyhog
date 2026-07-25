@@ -56,7 +56,7 @@ fn scan(body: &str, path: &str) -> Vec<keyhog_core::RawMatch> {
             ..Default::default()
         },
     };
-    scanner().scan(&chunk)
+    scanner().scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"))
 }
 
 #[test]

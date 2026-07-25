@@ -136,13 +136,13 @@ fn scan_secs_and_candidates(
     backend: ScanBackend,
 ) -> (f64, usize) {
     scanner.clear_fragment_cache();
-    let _ = scanner.scan_with_backend(chunk, backend); // warm
+    let _ = scanner.scan_with_backend(chunk, backend).expect("selected backend scan succeeds"); // warm
     let mut times = Vec::with_capacity(MEASURE_REPS);
     let mut n = 0usize;
     for _ in 0..MEASURE_REPS {
         scanner.clear_fragment_cache();
         let t = Instant::now();
-        let m = scanner.scan_with_backend(chunk, backend);
+        let m = scanner.scan_with_backend(chunk, backend).expect("selected backend scan succeeds");
         times.push(t.elapsed().as_secs_f64());
         n = m.len();
     }

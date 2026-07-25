@@ -99,13 +99,13 @@ fn scan_both(
     s.clear_fragment_cache();
     let on_trace = Arc::new(ScanTelemetry::new());
     let on = with_scan_telemetry(&on_trace, || {
-        canonical(&[s.scan_with_backend(c, ScanBackend::CpuFallback)])
+        canonical(&[s.scan_with_backend(c, ScanBackend::CpuFallback).expect("selected backend scan succeeds")])
     });
     keyhog_scanner::testing::set_confirmed_suffix_gate(&s, Some(false));
     s.clear_fragment_cache();
     let off_trace = Arc::new(ScanTelemetry::new());
     let off = with_scan_telemetry(&off_trace, || {
-        canonical(&[s.scan_with_backend(c, ScanBackend::CpuFallback)])
+        canonical(&[s.scan_with_backend(c, ScanBackend::CpuFallback).expect("selected backend scan succeeds")])
     });
     (on, off)
 }

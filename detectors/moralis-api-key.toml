@@ -37,6 +37,7 @@ template = "{{match}}"
 
 [detector.verify.success]
 status = 200
+policy = "status_with_error_backstop"
 
 [[detector.tests]]
 test_positive = "MORALIS_API_KEY=RDcaN0CTOK20ayMWP8e33V2zt9U44WSIdDo1pT8f2R68ugXVO0Lu9kX854Uj"

@@ -36,7 +36,7 @@ fn scan_source_type(source_type: &str) -> Vec<(String, Severity)> {
             ..Default::default()
         },
     };
-    let matches = scanner.scan_chunks_with_backend(&[chunk], ScanBackend::CpuFallback);
+    let matches = scanner.scan_chunks_with_backend(&[chunk], ScanBackend::CpuFallback).expect("selected backend scan succeeds");
     let rows = matches.first().expect("scanner must return a chunk bucket");
     assert!(!rows.is_empty(), "detector must match fixture");
     rows.iter()
@@ -81,7 +81,7 @@ fn source_arcs_over_two_chunks(source_type: &str) -> (Arc<str>, Arc<str>) {
             ..Default::default()
         },
     };
-    let buckets = scanner.scan_chunks_with_backend(&[chunk(), chunk()], ScanBackend::CpuFallback);
+    let buckets = scanner.scan_chunks_with_backend(&[chunk(), chunk()], ScanBackend::CpuFallback).expect("selected backend scan succeeds");
     let hit_source = |bucket: &[RawMatch]| {
         bucket
             .iter()

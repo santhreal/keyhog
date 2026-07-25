@@ -5,7 +5,7 @@ fn utf8_bom_does_not_prevent_detection() {
     let scanner = test_scanner();
     let bom = "\u{FEFF}";
     let chunk = make_chunk(&format!("{bom}KEY={VALID_CREDENTIAL}\n"));
-    let matches = scanner.scan(&chunk);
+    let matches = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
     assert!(
         !matches.is_empty(),
         "UTF-8 BOM prefix must not suppress detection"
@@ -17,7 +17,7 @@ fn unicode_homoglyph_does_not_evade() {
     let scanner = test_scanner();
     // The actual ASCII credential should still be found even with nearby Unicode.
     let chunk = make_chunk(&format!("# Uñiçödé comments\ntoken = {VALID_CREDENTIAL}\n"));
-    let matches = scanner.scan(&chunk);
+    let matches = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
     assert!(
         !matches.is_empty(),
         "unicode context must not prevent ASCII credential detection"
@@ -33,7 +33,7 @@ fn scanner_is_thread_safe_under_parallel_load() {
         "first={VALID_CREDENTIAL}\nsecond={VALID_CREDENTIAL}\n"
     )));
 
-    let baseline = scanner.scan(&chunk);
+    let baseline = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
     assert!(
         !baseline.is_empty(),
         "baseline scan must find the credential"
@@ -43,7 +43,7 @@ fn scanner_is_thread_safe_under_parallel_load() {
         .map(|_| {
             let scanner = Arc::clone(&scanner);
             let chunk = Arc::clone(&chunk);
-            std::thread::spawn(move || scanner.scan(&chunk))
+            std::thread::spawn(move || scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed")))
         })
         .collect();
 

@@ -307,7 +307,9 @@ fn every_contract_positive_fires_under_every_format_wrapper() {
                 scanner.clear_fragment_cache();
                 let wrapped = wrapper.wrap(&p.text);
                 let chunk = make_chunk(&wrapped, "wrapped-positive");
-                let matches = scanner.scan(&chunk);
+                let matches = scanner
+                    .scan(&chunk)
+                    .expect("wrapped positive scan should succeed");
                 if !any_credential_contains(&matches, &p.credential) {
                     let creds = finding_creds(&matches);
                     failures.push(format!(
@@ -421,7 +423,9 @@ fn every_contract_positive_fires_through_decode_wrappers() {
                 scanner.clear_fragment_cache();
                 let wrapped = wrapper.wrap(&p.text);
                 let chunk = make_chunk(&wrapped, "decode-wrapped-positive");
-                let matches = scanner.scan(&chunk);
+                let matches = scanner
+                    .scan(&chunk)
+                    .expect("decode-wrapped positive scan should succeed");
                 if !any_credential_contains(&matches, &p.credential) {
                     misses.push(format!(
                         "{detector} :: positive #{pi} :: {wrap}: credential {cred:?} not \

@@ -204,7 +204,9 @@ fn every_contract_passes_positives_negatives_evasions() {
             // makes pollution a non-deterministic CI-only flake.
             scanner.clear_fragment_cache();
             let chunk = make_chunk(&p.text);
-            let matches = scanner.scan(&chunk);
+            let matches = scanner
+                .scan(&chunk)
+                .expect("positive contract scan should succeed");
             if !any_credential_contains(&matches, &p.credential) {
                 let creds = finding_creds(&matches);
                 failures.push(format!(
@@ -222,7 +224,9 @@ fn every_contract_passes_positives_negatives_evasions() {
         for n in &c.negative {
             scanner.clear_fragment_cache();
             let chunk = make_chunk(&n.text);
-            let matches = scanner.scan(&chunk);
+            let matches = scanner
+                .scan(&chunk)
+                .expect("negative contract scan should succeed");
             // We don't gate on "zero findings" - a fixture line may
             // also exercise a different detector - we gate on
             // "this detector did not fire on this text."
@@ -248,7 +252,9 @@ fn every_contract_passes_positives_negatives_evasions() {
         for e in &c.evasion {
             scanner.clear_fragment_cache();
             let chunk = make_chunk(&e.text);
-            let matches = scanner.scan(&chunk);
+            let matches = scanner
+                .scan(&chunk)
+                .expect("evasion contract scan should succeed");
             if !any_credential_contains(&matches, &e.credential) {
                 let creds = finding_creds(&matches);
                 failures.push(format!(
@@ -266,7 +272,9 @@ fn every_contract_passes_positives_negatives_evasions() {
         for r in &c.cve_replay {
             scanner.clear_fragment_cache();
             let chunk = make_chunk(&r.text);
-            let matches = scanner.scan(&chunk);
+            let matches = scanner
+                .scan(&chunk)
+                .expect("CVE replay contract scan should succeed");
             if !any_credential_contains(&matches, &r.credential) {
                 let creds = finding_creds(&matches);
                 failures.push(format!(
@@ -334,7 +342,9 @@ fn every_contract_perf_budget_holds() {
         // the warmup AND before each measured pass so none inherits
         // state from another contract's fixture.
         scanner.clear_fragment_cache();
-        let _ = scanner.scan(&chunk);
+        scanner
+            .scan(&chunk)
+            .expect("performance warmup scan should succeed");
 
         // Best-of-N steady-state timing. A single wall-clock sample on a shared
         // CI runner occasionally folds in a scheduler-preemption / cache-eviction
@@ -349,7 +359,9 @@ fn every_contract_perf_budget_holds() {
         for _ in 0..5 {
             scanner.clear_fragment_cache();
             let start = std::time::Instant::now();
-            let _ = scanner.scan(&chunk);
+            scanner
+                .scan(&chunk)
+                .expect("measured performance scan should succeed");
             micros = micros.min(start.elapsed().as_micros() as u64);
             if micros <= perf.max_microseconds {
                 break;
@@ -411,13 +423,17 @@ fn every_contract_scale_gate_holds() {
         let chunk = make_chunk(&fixture);
 
         scanner.clear_fragment_cache();
-        let _ = scanner.scan(&chunk);
+        scanner
+            .scan(&chunk)
+            .expect("scale warmup scan should succeed");
         let mut elapsed = f64::INFINITY;
         let mut matches = Vec::new();
         for _ in 0..5 {
             scanner.clear_fragment_cache();
             let start = std::time::Instant::now();
-            let current_matches = scanner.scan(&chunk);
+            let current_matches = scanner
+                .scan(&chunk)
+                .expect("measured scale scan should succeed");
             let current_elapsed = start.elapsed().as_secs_f64();
             if current_elapsed < elapsed {
                 elapsed = current_elapsed;
@@ -675,14 +691,18 @@ fn every_positive_scans_deterministically_over_the_corpus() {
             let chunk = make_chunk(&p.text);
 
             scanner.clear_fragment_cache();
-            let mut first = scanner.scan(&chunk);
+            let mut first = scanner
+                .scan(&chunk)
+                .expect("determinism baseline scan should succeed");
             first.sort();
             let baseline = scan_fingerprint(&first);
             scanned += 1;
 
             for run in 1..REPEATS {
                 scanner.clear_fragment_cache();
-                let mut again = scanner.scan(&chunk);
+                let mut again = scanner
+                    .scan(&chunk)
+                    .expect("determinism repeat scan should succeed");
                 again.sort();
                 // Full `RawMatch` equality (every field, floats via total_cmp)
                 // the strongest possible identity, not just the fingerprint.

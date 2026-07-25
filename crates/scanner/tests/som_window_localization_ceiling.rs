@@ -124,7 +124,7 @@ fn optional_api_header_shape_is_localized_without_changing_findings() {
                 path: Some("opensea.env".into()),
                 ..ChunkMetadata::default()
             },
-        });
+        }).expect("scanner call should succeed");
         assert_eq!(
             findings.len(),
             1,

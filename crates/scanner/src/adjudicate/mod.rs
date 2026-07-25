@@ -57,11 +57,13 @@ impl ProcessCandidateSignals {
         credential_shape: Option<&crate::credential_shapes::CredentialShapeRule>,
         degenerate_run_min_length: usize,
         credential: &str,
+        whole_value_len: usize,
+        partial_assignment_value: bool,
         data: &str,
         credential_start: usize,
         match_end: usize,
     ) -> Self {
-        match detector_length.rejection(credential.len()) {
+        match detector_length.rejection(whole_value_len) {
             Some(crate::detector_execution_policy::CandidateLengthRejection::TooShort) => {
                 return Self::suppress(StageId::BelowDetectorMinLength);
             }
@@ -69,6 +71,9 @@ impl ProcessCandidateSignals {
                 return Self::suppress(StageId::AboveDetectorMaxLength);
             }
             None => {}
+        }
+        if partial_assignment_value {
+            return Self::suppress(StageId::PartialGenericAssignmentValue);
         }
         if credential_shape.is_some_and(|shape| !shape.allows(credential)) {
             return Self::suppress(StageId::DetectorCredentialShapeInvalid);
@@ -537,17 +542,6 @@ fn record_suppression_telemetry(path: Option<&str>, credential: &str, stage_id: 
     crate::telemetry::record_shape_suppression(path, credential, reason);
 }
 
-#[cfg(feature = "ml")]
-pub(crate) fn finalize_report_raw_match(
-    mut raw_match: RawMatch,
-    policy: ReportAdjudicationPolicy<'_>,
-) -> Option<RawMatch> {
-    let credential = raw_match.credential.as_ref();
-    let confidence =
-        finalize_report_candidate(raw_match.location.file_path.as_deref(), credential, policy)?;
-    raw_match.confidence = Some(confidence);
-    Some(raw_match)
-}
 
 pub(crate) fn record_example_suppression(
     detector: &str,

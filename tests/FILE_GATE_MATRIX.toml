@@ -568,6 +568,11 @@ error = true
 adversarial = true
 
 [[module]]
+path = "crates/core/src/detector_corpus.rs"
+error = true
+adversarial = true
+
+[[module]]
 path = "crates/core/src/detector_file_io.rs"
 error = true
 adversarial = true
@@ -629,11 +634,6 @@ adversarial = true
 
 [[module]]
 path = "crates/core/src/merkle_spec_hash.rs"
-error = true
-adversarial = true
-
-[[module]]
-path = "crates/core/src/registry.rs"
 error = true
 adversarial = true
 
@@ -793,37 +793,7 @@ error = true
 adversarial = true
 
 [[module]]
-path = "crates/scanner/src/checksum/github.rs"
-error = true
-adversarial = true
-
-[[module]]
-path = "crates/scanner/src/checksum/gitlab.rs"
-error = true
-adversarial = true
-
-[[module]]
 path = "crates/scanner/src/checksum/mod.rs"
-error = true
-adversarial = true
-
-[[module]]
-path = "crates/scanner/src/checksum/npm.rs"
-error = true
-adversarial = true
-
-[[module]]
-path = "crates/scanner/src/checksum/prefixes.rs"
-error = true
-adversarial = true
-
-[[module]]
-path = "crates/scanner/src/checksum/slack.rs"
-error = true
-adversarial = true
-
-[[module]]
-path = "crates/scanner/src/checksum/stripe.rs"
 error = true
 adversarial = true
 
@@ -1103,11 +1073,6 @@ error = true
 adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/gpu_resident_presence.rs"
-error = true
-adversarial = true
-
-[[module]]
 path = "crates/scanner/src/engine/hot_patterns.rs"
 error = true
 adversarial = true
@@ -1237,6 +1202,26 @@ path = "crates/scanner/src/gpu/backend.rs"
 error = true
 adversarial = true
 
+
+[[module]]
+path = "crates/scanner/src/gpu/backend/acquisition.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/gpu/backend/artifact.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/gpu/backend/diagnostics.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/gpu/backend/execution.rs"
+error = true
+adversarial = true
 [[module]]
 path = "crates/scanner/src/gpu/gpu_shader.rs"
 error = true
@@ -1383,11 +1368,6 @@ error = true
 adversarial = true
 
 [[module]]
-path = "crates/scanner/src/process_exit.rs"
-error = true
-adversarial = true
-
-[[module]]
 path = "crates/scanner/src/resolution.rs"
 error = true
 adversarial = true
@@ -1488,7 +1468,17 @@ error = true
 adversarial = true
 
 [[module]]
+path = "crates/scanner/src/suppression/shape/assignment.rs"
+error = true
+adversarial = true
+
+[[module]]
 path = "crates/scanner/src/suppression/shape/canonical.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/suppression/shape/detector.rs"
 error = true
 adversarial = true
 
@@ -1624,9 +1614,6 @@ path = "crates/sources/src/filesystem/read/mod.rs"
 
 [[module]]
 path = "crates/sources/src/filesystem/read/raw.rs"
-
-[[module]]
-path = "crates/sources/src/filesystem/read/tests.rs"
 
 [[module]]
 path = "crates/sources/src/filesystem/read/window.rs"
@@ -1906,6 +1893,21 @@ path = "crates/scanner/src/engine/phase2_prefilter.rs"
 error = true
 adversarial = true
 
+
+[[module]]
+path = "crates/scanner/src/engine/phase2_prefilter/dispatch_plan.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/engine/phase2_prefilter/gating.rs"
+error = true
+adversarial = true
+
+[[module]]
+path = "crates/scanner/src/engine/phase2_prefilter/trigger_evidence.rs"
+error = true
+adversarial = true
 [[module]]
 path = "crates/scanner/src/phase2_truncate.rs"
 error = true
@@ -2118,11 +2120,6 @@ adversarial = true
 
 [[module]]
 path = "crates/scanner/src/placeholder_words.rs"
-error = true
-adversarial = true
-
-[[module]]
-path = "crates/scanner/src/entropy_floors.rs"
 error = true
 adversarial = true
 
@@ -2618,3 +2615,114 @@ adversarial = true
 path = "crates/scanner/src/detector_execution_policy.rs"
 error = true
 adversarial = true
+[[module]]
+path = "crates/cli/src/bloom_diagnostic.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/bloom_diagnostic_tests.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/cli_reference.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/daemon/client_staleness_tests.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/daemon/client_tests.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/daemon/frame_incremental_tests.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/daemon/frame_streaming_tests.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/daemon/path_resolution_tests.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/daemon/protected_wire_tests.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/daemon/server_tests.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/daemon/warm_identity.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/daemon/warm_identity_tests.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/daemon/wire_tests.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/orchestrator/dispatch/backend/routing.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/orchestrator/dispatch/backend/store/persistence/contention.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/orchestrator_config/runtime_tests.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true

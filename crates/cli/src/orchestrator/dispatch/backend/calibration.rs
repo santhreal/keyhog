@@ -27,6 +27,100 @@ use super::{is_gpu_backend, AutorouteRoutingError, AUTOROUTE_CALIBRATION_TRIALS}
 const MIN_WARM_TRIAL_WINDOW: Duration = Duration::from_millis(10);
 const MAX_WARM_TRIAL_REPETITIONS: u32 = 1_024;
 
+#[cfg(any(test, feature = "ci-lean"))]
+const TEST_TIMING_FIXTURE_ENV: &str = "KEYHOG_CI_AUTOROUTE_TIMING_FIXTURE";
+#[cfg(any(test, feature = "ci-lean"))]
+const TEST_TIMING_FIXTURE_AUTH_ENV: &str = "KEYHOG_CI_AUTOROUTE_FIXTURE_AUTH";
+#[cfg(any(test, feature = "ci-lean"))]
+const TEST_TIMING_FIXTURE_AUTH: &str = "bench-backend-parity-v1";
+
+#[cfg(any(test, feature = "ci-lean"))]
+fn apply_test_timing_fixture(
+    route_timings: &mut [RouteTimingEvidence],
+) -> Result<(), AutorouteRoutingError> {
+    let Some(fixture) = std::env::var_os(TEST_TIMING_FIXTURE_ENV) else {
+        return Ok(());
+    };
+    if std::env::var(TEST_TIMING_FIXTURE_AUTH_ENV).as_deref()
+        != Ok(TEST_TIMING_FIXTURE_AUTH)
+    {
+        return Err(AutorouteRoutingError::calibration_not_persisted(format!(
+            "test-only autoroute timing fixture authorization failed; \
+             {TEST_TIMING_FIXTURE_AUTH_ENV} must equal {TEST_TIMING_FIXTURE_AUTH:?}"
+        )));
+    }
+    let fixture = fixture.to_string_lossy();
+    for entry in route_timings {
+        let route = entry.measured_route().ok_or_else(|| {
+            AutorouteRoutingError::calibration_not_persisted(
+                "test timing fixture encountered an invalid measured route",
+            )
+        })?;
+        let trials_ns = match fixture.as_ref() {
+            // Constant, widely separated peers make both one-shot and warm
+            // route confidence deterministic while real scans still establish
+            // parity receipts and finding identity before this test-only swap.
+            "confidence-separated-v1" => {
+                let trial_ns = if route.backend == ScanBackend::CpuFallback {
+                    1_000_000
+                } else {
+                    10_000_000
+                };
+                vec![trial_ns; AUTOROUTE_CALIBRATION_TRIALS]
+            }
+            // Distinct medians with overlapping intervals model noisy host
+            // evidence. They cannot use the exact-peer-tie rule and must leave
+            // calibration without a publishable winner.
+            "overlapping-v1" => {
+                if AUTOROUTE_CALIBRATION_TRIALS != 7 {
+                    return Err(AutorouteRoutingError::calibration_not_persisted(
+                        "overlapping-v1 timing fixture requires exactly seven calibration trials",
+                    ));
+                }
+                if route.backend == ScanBackend::CpuFallback {
+                    vec![
+                        18_000_000,
+                        20_000_000,
+                        20_000_000,
+                        20_000_000,
+                        20_000_000,
+                        20_000_000,
+                        22_000_000,
+                    ]
+                } else {
+                    vec![
+                        19_000_000,
+                        16_000_000,
+                        18_000_000,
+                        18_000_000,
+                        18_000_000,
+                        18_000_000,
+                        22_000_000,
+                    ]
+                }
+            }
+            _ => {
+                return Err(AutorouteRoutingError::calibration_not_persisted(
+                    format!(
+                        "unsupported {TEST_TIMING_FIXTURE_ENV} value {fixture:?}; expected \
+                         confidence-separated-v1 or overlapping-v1"
+                    ),
+                ));
+            }
+        };
+        entry.timing = BackendTimingEvidence::from_trial_ns(trials_ns).ok_or_else(|| {
+            AutorouteRoutingError::calibration_not_persisted(
+                "test timing fixture could not construct timing evidence",
+            )
+        })?;
+    }
+    eprintln!(
+        "WARN: applying explicit test-only autoroute timing fixture {fixture:?}; \
+         real candidate scans, parity receipts, and confidence selection were retained"
+    );
+    Ok(())
+}
+
 pub(super) fn calibrate_fastest_correct_backend(
     scanner: &CompiledScanner,
     _pattern_count: usize,
@@ -104,6 +198,12 @@ pub(super) fn calibrate_fastest_correct_backend(
         admission_plan,
     )?;
     let route_timings = route_timings_with_cold_cost(scanner, measured_routes)?;
+    #[cfg(any(test, feature = "ci-lean"))]
+    let route_timings = {
+        let mut route_timings = route_timings;
+        apply_test_timing_fixture(&mut route_timings)?;
+        route_timings
+    };
     if !route_timings
         .iter()
         .any(|entry| entry.measured_route() == Some(reference_route))
@@ -364,11 +464,6 @@ fn measure_candidate_trial(
     let reported_trial = trial.max(1);
     let preserve_single_dispatch =
         reported_trial == 1 && (backend == ScanBackend::SimdCpu || backend.is_gpu());
-    let gpu_degrade_count_before = if is_gpu_backend(backend) {
-        Some(scanner.runtime_status().gpu_degrade_count)
-    } else {
-        None
-    };
     let mut total = Duration::ZERO;
     let mut repetitions = 0_u32;
 
@@ -379,25 +474,6 @@ fn measure_candidate_trial(
         total = total.saturating_add(started.elapsed());
         repetitions += 1;
 
-        if let Some(before) = gpu_degrade_count_before {
-            let after = scanner.runtime_status().gpu_degrade_count;
-            if after != before {
-                tracing::error!(
-                    target: "keyhog::routing",
-                    backend = backend.label(),
-                    gpu_degrade_count_before = before,
-                    gpu_degrade_count_after = after,
-                    "backend rejected by autoroute GPU degrade check"
-                );
-                scanner.clear_fragment_cache();
-                return Err(AutorouteRoutingError::candidate_backend_rejected(
-                    backend,
-                    format!(
-                        "GPU degrade count changed from {before} to {after} during calibration"
-                    ),
-                ));
-            }
-        }
         validate_calibration_candidate_matches(
             scanner,
             backend,
@@ -525,14 +601,11 @@ fn scan_calibration_backend(
     admission_plan: Option<&Phase1AdmissionPlan>,
 ) -> Result<Vec<Vec<keyhog_core::RawMatch>>, AutorouteRoutingError> {
     let coverage_before = keyhog_scanner::telemetry::ScannerCoverageSnapshot::capture();
-    let outcome = scanner
-        .try_scan_coalesced_with_backend_admission_route_and_recovery(
-            sample,
-            route.backend,
-            admission_plan,
-            route.execution_route(),
-            false,
-        )
+    let outcome = scanner.scan_coalesced_with_backend_admission_route_and_recovery(sample,
+    route.backend,
+    admission_plan,
+    route.execution_route(),
+    false,)
         .map_err(|error| {
             AutorouteRoutingError::candidate_backend_rejected(
                 route.backend,
@@ -569,15 +642,5 @@ fn current_unix_time_ms() -> Result<u128, std::time::SystemTimeError> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn calibration_difference_reports_exact_multiset_count() {
-        let mut left = vec!["record-00".to_string(); 4];
-        left.extend((1..37).map(|index| format!("record-{index:02}")));
-        let right = vec!["record-00".to_string()];
-
-        assert_eq!(sorted_calibration_difference_count(&left, &right), 39);
-    }
-}
+#[path = "../../../../tests/unit/backend_calibration.rs"]
+mod tests;

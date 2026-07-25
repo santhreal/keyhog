@@ -167,38 +167,46 @@ fn credential_display_redacts_bytes() {
 }
 
 #[test]
-fn credential_serde_text_roundtrip_tagged() {
-    let c = Credential::from("hello-token");
-    let json = serde_json::to_string(&c).unwrap();
-    // Tagged form: {"text":"hello-token"} - never a bare string.
-    assert_eq!(json, r#"{"text":"hello-token"}"#);
-    let back: Credential = serde_json::from_str(&json).unwrap();
-    assert_eq!(back, c);
+fn credential_utf8_serde_fails_closed_and_tagged_input_remains_compatible() {
+    const SECRET: &str = "hello-token";
+    let credential = Credential::from(SECRET);
+    let mut output = Vec::new();
+    let error = serde_json::to_writer(&mut output, &credential)
+        .expect_err("implicit Credential output must fail closed")
+        .to_string();
+    assert!(output.is_empty());
+    assert!(!error.contains(SECRET));
+    assert!(error.contains("Credential refuses implicit plaintext serialization"));
+
+    let back: Credential = serde_json::from_str(r#"{"text":"hello-token"}"#).unwrap();
     assert_eq!(
         keyhog_core::testing::CoreTestApi::credential_expose_str(
             &keyhog_core::testing::TestApi,
             &back
         ),
-        Some("hello-token")
+        Some(SECRET)
     );
 }
 
 #[test]
-fn credential_serde_b64_roundtrip_for_non_utf8() {
-    let c = Credential::from(vec![0x00, 0xFF, 0x10, 0x80]);
-    let json = serde_json::to_string(&c).unwrap();
-    // Non-UTF-8 must serialize under the "b64" tag, not "text".
-    assert!(
-        json.starts_with(r#"{"b64":"#),
-        "expected b64 tag, got {json}"
-    );
-    let back: Credential = serde_json::from_str(&json).unwrap();
+fn credential_binary_serde_fails_closed_and_tagged_b64_input_remains_compatible() {
+    const SECRET: &[u8] = &[0x00, 0xFF, 0x10, 0x80];
+    let credential = Credential::from(SECRET);
+    let mut output = Vec::new();
+    let error = serde_json::to_writer(&mut output, &credential)
+        .expect_err("implicit binary Credential output must fail closed")
+        .to_string();
+    assert!(output.is_empty());
+    assert!(error.contains("Credential refuses implicit plaintext serialization"));
+    assert!(!error.contains("AP8QgA=="));
+
+    let back: Credential = serde_json::from_str(r#"{"b64":"AP8QgA=="}"#).unwrap();
     assert_eq!(
         keyhog_core::testing::CoreTestApi::credential_expose_secret(
             &keyhog_core::testing::TestApi,
             &back
         ),
-        &[0x00, 0xFF, 0x10, 0x80]
+        SECRET
     );
 }
 
@@ -294,15 +302,19 @@ fn sensitive_string_display_and_debug_redact() {
     assert_eq!(dbg, "SensitiveString(<redacted 13 bytes>)");
 }
 
+/// Prevents implicit serde output while preserving explicit historical input.
 #[test]
-fn sensitive_string_serde_roundtrip_plain_string() {
+fn sensitive_string_serde_fails_closed_and_still_deserializes_plain_string() {
     let s = SensitiveString::from("round-trip");
-    let json = serde_json::to_string(&s).unwrap();
-    assert_eq!(json, r#""round-trip""#);
-    let back: SensitiveString = serde_json::from_str(&json).unwrap();
+    let error = serde_json::to_string(&s).expect_err("implicit output must fail closed");
+    assert!(error
+        .to_string()
+        .contains("SensitiveString refuses implicit plaintext serialization"));
+    let back: SensitiveString = serde_json::from_str(r#""round-trip""#).unwrap();
     assert_eq!(back.as_ref(), "round-trip");
 }
 
+/// Proves every canonical pre-report credential remains zeroizing and non-serializable.
 #[test]
 fn canonical_match_credentials_use_zeroizing_sensitive_string() {
     fn assert_sensitive_string(_: &SensitiveString) {}
@@ -329,16 +341,17 @@ fn canonical_match_credentials_use_zeroizing_sensitive_string() {
     };
     assert_sensitive_string(&raw.credential);
 
-    let raw_json = serde_json::to_value(&raw).unwrap();
-    assert_eq!(raw_json["credential"], "live-secret-value");
+    let raw_error = serde_json::to_value(&raw).expect_err("RawMatch must reject plaintext serde");
+    assert!(!raw_error.to_string().contains("live-secret-value"));
 
     let mut deduped = dedup_matches(vec![raw], &DedupScope::None);
     assert_eq!(deduped.len(), 1);
     let finding = deduped.pop().unwrap();
     assert_sensitive_string(&finding.credential);
 
-    let deduped_json = serde_json::to_value(&finding).unwrap();
-    assert_eq!(deduped_json["credential"], "live-secret-value");
+    let deduped_error =
+        serde_json::to_value(&finding).expect_err("DedupedMatch must reject plaintext serde");
+    assert!(!deduped_error.to_string().contains("live-secret-value"));
 }
 
 // ---------------------------------------------------------------------------

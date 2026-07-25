@@ -149,16 +149,23 @@ impl VerificationCache {
         credential: &str,
         detector_id: &str,
     ) -> Option<(VerificationResult, HashMap<String, String>)> {
-        self.get_with_companions(credential, detector_id, &HashMap::new())
+        self.get_with_companions(
+            credential,
+            detector_id,
+            &HashMap::<String, String>::new(),
+        )
     }
 
     /// Look up a result for the complete detector-owned verification identity.
-    pub(crate) fn get_with_companions(
+    pub(crate) fn get_with_companions<K>(
         &self,
         credential: &str,
         detector_id: &str,
-        companions: &HashMap<String, String>,
-    ) -> Option<(VerificationResult, HashMap<String, String>)> {
+        companions: &HashMap<K, String>,
+    ) -> Option<(VerificationResult, HashMap<String, String>)>
+    where
+        K: AsRef<str> + Eq + std::hash::Hash,
+    {
         let key = verification_identity(credential, detector_id, companions);
         let now = Instant::now();
 
@@ -207,18 +214,27 @@ impl VerificationCache {
         result: VerificationResult,
         metadata: HashMap<String, String>,
     ) {
-        self.put_with_companions(credential, detector_id, &HashMap::new(), result, metadata);
+        self.put_with_companions(
+            credential,
+            detector_id,
+            &HashMap::<String, String>::new(),
+            result,
+            metadata,
+        );
     }
 
     /// Store a result under the complete detector-owned verification identity.
-    pub(crate) fn put_with_companions(
+    pub(crate) fn put_with_companions<K>(
         &self,
         credential: &str,
         detector_id: &str,
-        companions: &HashMap<String, String>,
+        companions: &HashMap<K, String>,
         result: VerificationResult,
         metadata: HashMap<String, String>,
-    ) {
+    )
+    where
+        K: AsRef<str> + Eq + std::hash::Hash,
+    {
         let key = verification_identity(credential, detector_id, companions);
 
         let insert_count = self.inserts.fetch_add(1, Ordering::Relaxed) + 1;
@@ -385,7 +401,11 @@ impl VerificationCache {
         metadata: HashMap<String, String>,
     ) {
         self.entries.insert(
-            verification_identity(credential, detector_id, &HashMap::new()),
+            verification_identity(
+                credential,
+                detector_id,
+                &HashMap::<String, String>::new(),
+            ),
             CacheEntry {
                 result,
                 metadata: sanitize_metadata(metadata),
@@ -441,14 +461,17 @@ pub(crate) fn evict_oldest_dashmap_entries<K, V>(
     }
 }
 
-pub(crate) fn verification_identity(
+pub(crate) fn verification_identity<K>(
     credential: &str,
     detector_id: &str,
-    companions: &HashMap<String, String>,
-) -> VerificationIdentity {
+    companions: &HashMap<K, String>,
+) -> VerificationIdentity
+where
+    K: AsRef<str> + Eq + std::hash::Hash,
+{
     let mut companion_rows: Vec<(&str, &str)> = companions
         .iter()
-        .map(|(name, value)| (name.as_str(), value.as_str()))
+        .map(|(name, value)| (name.as_ref(), value.as_str()))
         .collect();
     companion_rows.sort_unstable();
     let mut companions_hasher = Sha256::new();

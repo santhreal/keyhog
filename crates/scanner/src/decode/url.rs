@@ -1,11 +1,11 @@
 use super::base64::base64_decode;
 use super::pipeline::{
-    decode_candidate_spans_exact, push_batched_decoded_replacements, with_extracted_value_spans,
+    stream_batched_decoded_replacements, stream_candidate_spans_exact, with_extracted_value_spans,
     ExtractedValue,
 };
 use super::unicode_escape::unicode_escape_decode;
 use super::util::{hex_val, lazy_decoded_prefix};
-use super::{DecodeAdmissionSketch, Decoder};
+use super::{DecodeAdmissionSketch, DecodeOutputSink, Decoder};
 use crate::context;
 use keyhog_core::Chunk;
 
@@ -35,8 +35,14 @@ impl Decoder for UrlDecoder {
         }
     }
 
-    fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
-        decode_filtered_lines(chunk, contains_percent_escape, url_decode, self.name())
+    fn decode_chunk_into(&self, chunk: &Chunk, sink: &mut dyn DecodeOutputSink) {
+        decode_filtered_lines_into(
+            sink,
+            chunk,
+            contains_percent_escape,
+            url_decode,
+            self.name(),
+        );
     }
 }
 
@@ -58,27 +64,33 @@ impl Decoder for QuotedPrintableDecoder {
         }
     }
 
-    fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
+    fn decode_chunk_into(&self, chunk: &Chunk, sink: &mut dyn DecodeOutputSink) {
         let line_views = line_views_with_offsets(&chunk.data);
         let lines = line_views.iter().map(|line| line.text).collect::<Vec<_>>();
-        let mut replacements = Vec::new();
-        for (line_index, line) in line_views.iter().enumerate() {
-            if !has_qp_escape(line.text)
-                || context::is_false_positive_context(
-                    &lines,
-                    line_index,
-                    chunk.metadata.path.as_deref(),
-                )
-            {
-                continue;
-            }
-            let Ok(decoded) = quoted_printable_decode(line.text) else {
-                // LAW10: recall-preserving; a failed trial leaves the root line scanned.
-                continue;
-            };
-            replacements.push((line.start, line.end, decoded));
-        }
-        push_batched_decoded_replacements(chunk, replacements, self.name())
+        let replacements = line_views
+            .iter()
+            .enumerate()
+            .filter_map(|(line_index, line)| {
+                if !has_qp_escape(line.text)
+                    || context::is_false_positive_context(
+                        &lines,
+                        line_index,
+                        chunk.metadata.path.as_deref(),
+                    )
+                {
+                    // LAW10: recall-preserving: the original root bytes still take
+                    // the whole-chunk scan path unchanged; only this trial view is skipped.
+                    return None;
+                }
+                let decoded = match quoted_printable_decode(line.text) {
+                    Ok(decoded) => decoded,
+                    // LAW10: recall-preserving: the original encoded bytes still take
+                    // the whole-chunk scan path unchanged; only the malformed view is rejected.
+                    Err(()) => return None,
+                };
+                Some((line.start, line.end, decoded))
+            });
+        stream_batched_decoded_replacements(sink, chunk, replacements, self.name());
     }
 }
 
@@ -103,30 +115,33 @@ fn line_views_with_offsets(text: &str) -> Vec<LineView<'_>> {
         .collect()
 }
 
-fn decode_filtered_lines<F, D>(
+fn decode_filtered_lines_into<F, D>(
+    sink: &mut dyn DecodeOutputSink,
     chunk: &Chunk,
     filter: F,
     mut decode: D,
     decoder_name: &str,
-) -> Vec<Chunk>
+) -> bool
 where
     F: Fn(&str) -> bool,
     D: FnMut(&str) -> Result<String, ()>,
 {
-    let mut replacements = Vec::new();
-    for line in line_views_with_offsets(&chunk.data) {
-        if !filter(line.text) {
-            continue;
-        }
-        let Ok(decoded) = decode(line.text) else {
-            // LAW10: recall-preserving; a failed trial leaves the root line scanned.
-            continue;
-        };
-        replacements.push((line.start, line.end, decoded));
-    }
-    push_batched_decoded_replacements(chunk, replacements, decoder_name)
+    let replacements = line_views_with_offsets(&chunk.data)
+        .into_iter()
+        .filter_map(|line| {
+            if !filter(line.text) {
+                return None;
+            }
+            let decoded = match decode(line.text) {
+                Ok(decoded) => decoded,
+                // LAW10: a failed optional wrapper decode leaves this exact
+                // source line in the root chunk's scan path unchanged.
+                Err(()) => return None,
+            };
+            Some((line.start, line.end, decoded))
+        });
+    stream_batched_decoded_replacements(sink, chunk, replacements, decoder_name)
 }
-
 fn strip_line_ending(segment: &str) -> &str {
     let line = segment.strip_suffix('\n').unwrap_or(segment); // LAW10: recall-preserving identity for final unterminated lines; whole-line bytes still flow to scanning.
     line.strip_suffix('\r').unwrap_or(line) // LAW10: recall-preserving identity when no CR is present; whole-line bytes still flow to scanning.
@@ -179,8 +194,8 @@ macro_rules! simple_decoder {
                 }
             }
 
-            fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
-                decode_filtered_lines(chunk, $filter, $decode, self.name())
+            fn decode_chunk_into(&self, chunk: &Chunk, sink: &mut dyn DecodeOutputSink) {
+                decode_filtered_lines_into(sink, chunk, $filter, $decode, self.name());
             }
         }
     };
@@ -236,13 +251,14 @@ impl Decoder for MimeEncodedWordDecoder {
         }
     }
 
-    fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
-        decode_candidate_spans_exact(
+    fn decode_chunk_into(&self, chunk: &Chunk, sink: &mut dyn DecodeOutputSink) {
+        stream_candidate_spans_exact(
+            sink,
             chunk,
             find_mime_encoded_word_spans(&chunk.data),
             mime_encoded_word_decode,
             self.name(),
-        )
+        );
     }
 }
 

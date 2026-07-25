@@ -26,9 +26,16 @@ pub fn binary() -> PathBuf {
 /// failures.
 pub fn subprocess_slot() -> MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-        .lock()
-        .expect("reliability subprocess slot")
+    match LOCK.get_or_init(|| Mutex::new(())).lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            // A panicking test is already surfaced by libtest. Recover only
+            // this test-only serialization guard so that the original failure
+            // does not cascade into unrelated subprocess tests; taking the
+            // poisoned guard still preserves mutual exclusion.
+            poisoned.into_inner()
+        }
+    }
 }
 
 /// The full list of CLI subcommands. Kept here as the single source the matrix
@@ -46,6 +53,7 @@ pub const SUBCOMMANDS: &[&str] = &[
     "completion",
     "backend",
     "doctor",
+    "bloom-diagnostic",
     "update",
     "repair",
     "uninstall",

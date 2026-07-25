@@ -60,9 +60,7 @@ fn scan_credentials(scanner: &CompiledScanner, text: &str, detector_id: &str) ->
             ..Default::default()
         },
     };
-    scanner
-        .scan(&chunk)
-        .into_iter()
+    scanner.scan(&chunk).expect("scanner call should succeed").into_iter()
         .filter(|finding| finding.detector_id.as_ref() == detector_id)
         .map(|finding| finding.credential.as_str().to_string())
         .collect()

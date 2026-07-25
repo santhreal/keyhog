@@ -56,6 +56,7 @@ fn scan(s: &CompiledScanner, text: &str) -> Vec<RawMatch> {
     s.clear_fragment_cache();
     let chunk = make_chunk(text, "filesystem", "creds.env");
     s.scan(&chunk)
+        .expect("VCS/SaaS recall scan should succeed")
 }
 
 // ---------------------------------------------------------------------------

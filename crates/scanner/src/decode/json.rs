@@ -1,6 +1,6 @@
 use super::pipeline::{push_decoded_replacements_spliced, DECODE_REPLACEMENT_BATCH_SOURCE_BYTES};
 use super::util::{resolve_escaped_codepoint, simple_control_escape, take_hex_digits};
-use super::{DecodeAdmissionSketch, Decoder};
+use super::{DecodeAdmissionSketch, DecodeOutputSink, Decoder};
 use keyhog_core::Chunk;
 
 /// JSON-aware decoder that unescapes string values before scanning.
@@ -23,8 +23,12 @@ impl Decoder for JsonDecoder {
         }
     }
 
-    fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
-        let mut lines: Vec<JsonLine> = Vec::new();
+    fn decode_chunk_into(&self, chunk: &Chunk, sink: &mut dyn DecodeOutputSink) {
+        let mut current_line: Option<JsonLine> = None;
+        let mut batch_start = usize::MAX;
+        let mut batch_end = 0;
+        let mut batch_replacements = Vec::new();
+
         for json_string in extract_escaped_json_strings(&chunk.data) {
             let Ok(unescaped) = json_unescape(json_string) else {
                 // LAW10: recall-preserving; the original JSON text remains in the root scan.
@@ -35,68 +39,62 @@ impl Decoder for JsonDecoder {
             let value_end = value_start + json_string.len();
             let line_start = memchr::memrchr(b'\n', &chunk.data.as_bytes()[..value_start])
                 .map_or(0, |newline| newline + 1);
-            if lines.last().is_none_or(|line| line.start != line_start) {
+
+            if current_line
+                .as_ref()
+                .is_some_and(|line| line.start != line_start)
+            {
+                let line = current_line.take().expect("line presence checked above");
+                if !stream_json_line(
+                    sink,
+                    chunk,
+                    line,
+                    &mut batch_start,
+                    &mut batch_end,
+                    &mut batch_replacements,
+                    self.name(),
+                ) {
+                    return;
+                }
+            }
+
+            let line = current_line.get_or_insert_with(|| {
                 let line_end = memchr::memchr(b'\n', &chunk.data.as_bytes()[value_end..])
                     .map_or(chunk.data.len(), |newline| value_end + newline);
-                lines.push(JsonLine {
+                JsonLine {
                     start: line_start,
                     end: line_end,
                     preserves_embedded_newlines: false,
                     replacements: Vec::new(),
-                });
-            }
-            let line_index = lines.len() - 1;
-            let line = &mut lines[line_index];
+                }
+            });
             let (unescaped, preserves_embedded_newlines) =
                 normalize_json_control_separators(unescaped);
             line.preserves_embedded_newlines |= preserves_embedded_newlines;
             line.replacements.push((value_start, value_end, unescaped));
         }
 
-        let mut decoded_chunks = Vec::new();
-        let mut batch_start = usize::MAX;
-        let mut batch_end = 0;
-        let mut batch_replacements = Vec::new();
-        for mut line in lines {
-            let exceeds_batch = batch_start != usize::MAX
-                && line.end.saturating_sub(batch_start) > DECODE_REPLACEMENT_BATCH_SOURCE_BYTES;
-            if line.preserves_embedded_newlines || exceeds_batch {
-                push_decoded_replacements_spliced(
-                    &mut decoded_chunks,
-                    chunk,
-                    batch_start,
-                    batch_end,
-                    &mut batch_replacements,
-                    self.name(),
-                );
-                batch_start = usize::MAX;
+        if let Some(line) = current_line {
+            if !stream_json_line(
+                sink,
+                chunk,
+                line,
+                &mut batch_start,
+                &mut batch_end,
+                &mut batch_replacements,
+                self.name(),
+            ) {
+                return;
             }
-            if line.preserves_embedded_newlines {
-                push_decoded_replacements_spliced(
-                    &mut decoded_chunks,
-                    chunk,
-                    line.start,
-                    line.end,
-                    &mut line.replacements,
-                    self.name(),
-                );
-                continue;
-            }
-            if batch_start == usize::MAX {
-                batch_start = line.start;
-            }
-            batch_end = line.end;
-            batch_replacements.append(&mut line.replacements);
         }
         push_decoded_replacements_spliced(
-            &mut decoded_chunks,
+            sink,
             chunk,
             batch_start,
             batch_end,
             &mut batch_replacements,
             self.name(),
         );
-        decoded_chunks
     }
 }
 
@@ -105,6 +103,48 @@ struct JsonLine {
     end: usize,
     preserves_embedded_newlines: bool,
     replacements: Vec<(usize, usize, String)>,
+}
+
+fn stream_json_line(
+    sink: &mut dyn DecodeOutputSink,
+    chunk: &Chunk,
+    mut line: JsonLine,
+    batch_start: &mut usize,
+    batch_end: &mut usize,
+    batch_replacements: &mut Vec<(usize, usize, String)>,
+    decoder_name: &str,
+) -> bool {
+    let exceeds_batch = *batch_start != usize::MAX
+        && line.end.saturating_sub(*batch_start) > DECODE_REPLACEMENT_BATCH_SOURCE_BYTES;
+    if line.preserves_embedded_newlines || exceeds_batch {
+        if !push_decoded_replacements_spliced(
+            sink,
+            chunk,
+            *batch_start,
+            *batch_end,
+            batch_replacements,
+            decoder_name,
+        ) {
+            return false;
+        }
+        *batch_start = usize::MAX;
+    }
+    if line.preserves_embedded_newlines {
+        return push_decoded_replacements_spliced(
+            sink,
+            chunk,
+            line.start,
+            line.end,
+            &mut line.replacements,
+            decoder_name,
+        );
+    }
+    if *batch_start == usize::MAX {
+        *batch_start = line.start;
+    }
+    *batch_end = line.end;
+    batch_replacements.append(&mut line.replacements);
+    true
 }
 
 fn normalize_json_control_separators(decoded: String) -> (String, bool) {
@@ -161,6 +201,16 @@ fn extract_escaped_json_strings(text: &str) -> Vec<&str> {
             break;
         }
 
+        // Decode JSON string *values*, not arbitrary quoted text containing a
+        // JSON-compatible escape. In particular, treating
+        // `api_key="left\"right"` as JSON would turn the escaped quote into a
+        // real delimiter and fabricate a reportable `left` prefix. A value is
+        // either the top-level string or follows JSON's value delimiters.
+        let json_value_position = bytes[..index]
+            .iter()
+            .rposition(|byte| !byte.is_ascii_whitespace())
+            .is_none_or(|previous| matches!(bytes[previous], b':' | b'[' | b','));
+
         // Found opening quote. Walk bytes: `"`, `\`, CR and LF are ASCII and
         // cannot appear inside a UTF-8 continuation byte, so byte scanning is
         // UTF-8 safe while avoiding per-character allocation.
@@ -190,7 +240,8 @@ fn extract_escaped_json_strings(text: &str) -> Vec<&str> {
                     let content_end = index;
                     index += 1;
                     closed = true;
-                    if saw_value_changing_escape
+                    if json_value_position
+                        && saw_value_changing_escape
                         && content_end.saturating_sub(content_start) >= MIN_ESCAPED_JSON_STRING_LEN
                     {
                         strings.push(&text[content_start..content_end]);

@@ -31,7 +31,7 @@ fn scan_scans_detectors_directory_path() {
             ..Default::default()
         },
     };
-    let matches = s.scan(&chunk);
+    let matches = s.scan(&chunk).expect("test scan succeeds");
     assert_eq!(
         matches.len(),
         1,

@@ -390,9 +390,8 @@ impl CompiledScanner {
                 .filter(|_| self.config.ml_enabled && self.config.entropy_ml_authoritative)
             {
                 let policy = entropy_ml_policy;
-                let raw_match = build_raw_match(scan_state, policy_conf);
                 let ml_features = crate::types::ml_features_for_candidate(
-                    &preprocessed.text,
+                    &preprocessed.text, line_offsets,
                     entropy_match.line,
                     chunk.metadata.path.as_deref(),
                     &entropy_match.value,
@@ -402,8 +401,23 @@ impl CompiledScanner {
                     policy.features,
                     crate::ml_scorer::MlCandidateChannel::Entropy,
                 );
+                let pending_raw_match =
+                    crate::pipeline::build_pending_synthetic_raw_match(
+                        (
+                            Arc::clone(&metadata.0),
+                            Arc::clone(&metadata.1),
+                            Arc::clone(&metadata.2),
+                        ),
+                        keyhog_core::Severity::High,
+                        chunk,
+                        &entropy_match.value,
+                        offset,
+                        Some(line_number),
+                        Some(entropy_match.entropy),
+                        scan_state,
+                    );
                 scan_state.push_entropy_ml_pending(
-                    raw_match,
+                    pending_raw_match,
                     policy_conf,
                     detector_plan
                         .match_confidence

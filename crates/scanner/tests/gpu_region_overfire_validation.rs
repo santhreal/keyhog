@@ -66,7 +66,7 @@ fn scan_gpu_without_degrade(
     chunks: &[keyhog_core::Chunk],
 ) -> Vec<Vec<keyhog_core::RawMatch>> {
     let before = scanner.runtime_status().gpu_degrade_count;
-    let results = scanner.scan_chunks_with_backend(chunks, ScanBackend::GpuWgpu);
+    let results = scanner.scan_chunks_with_backend(chunks, ScanBackend::GpuWgpu).expect("selected backend scan succeeds");
     let after = scanner.runtime_status().gpu_degrade_count;
     assert_eq!(
         after, before,
@@ -116,7 +116,7 @@ fn gpu_equals_simd_on_overfire_bait_corpus() {
         test_chunk("fn main() { println!(\"hello, world\"); }", "src/clean.rs"),
     ];
 
-    let simd_results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu);
+    let simd_results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu).expect("selected backend scan succeeds");
     let gpu_results = scan_gpu_without_degrade(&scanner, &chunks);
     let simd = keys(&simd_results);
     let gpu = keys(&gpu_results);
@@ -192,7 +192,7 @@ fn gpu_equals_simd_with_repeated_real_secrets() {
         ));
     }
 
-    let simd_results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu);
+    let simd_results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu).expect("selected backend scan succeeds");
     let gpu_results = scan_gpu_without_degrade(&scanner, &chunks);
     let simd = keys(&simd_results);
     let gpu = keys(&gpu_results);
@@ -251,7 +251,7 @@ fn gpu_equals_simd_on_zero_width_obfuscated_secret() {
         "fixtures/zw_obfuscated.rs",
     )];
 
-    let simd_results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu);
+    let simd_results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu).expect("selected backend scan succeeds");
     let gpu_results = scan_gpu_without_degrade(&scanner, &chunks);
     let simd = keys(&simd_results);
     let gpu = keys(&gpu_results);

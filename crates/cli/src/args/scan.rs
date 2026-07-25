@@ -92,6 +92,24 @@ impl CliDedupScope {
     }
 }
 
+/// Explicit policy for a custom `--detectors` directory.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum DetectorMode {
+    /// Use only the custom detector directory.
+    Replace,
+    /// Add the custom directory to the embedded corpus, rejecting ID collisions.
+    Overlay,
+}
+
+impl From<DetectorMode> for keyhog_core::DetectorCorpusMode {
+    fn from(mode: DetectorMode) -> Self {
+        match mode {
+            DetectorMode::Replace => Self::Replace,
+            DetectorMode::Overlay => Self::Overlay,
+        }
+    }
+}
+
 /// Tri-state daemon routing policy for `scan --daemon[=auto|on|off]` (CLI-02).
 ///
 /// One flag owns the complete daemon policy:
@@ -127,6 +145,11 @@ pub struct ScanArgs {
     pub detectors: PathBuf,
     #[arg(skip)]
     pub(crate) detectors_cli_explicit: bool,
+    /// How an explicitly selected custom corpus participates in the embedded
+    /// corpus. Omitted preserves the established replace behavior.
+    #[arg(long, value_name = "MODE")]
+    pub detectors_mode: Option<DetectorMode>,
+
 
     /// Path(s) to scan. Pass several to scan multiple roots in one run
     /// (`keyhog scan a/ b/ c/`); nested or duplicate roots fold into their

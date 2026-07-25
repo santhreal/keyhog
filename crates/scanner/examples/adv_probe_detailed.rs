@@ -73,7 +73,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 path: Some("t.txt".into()),
                 ..Default::default()
             },
-        });
+        })?;
         println!(
             "--- scan {expect_id}: {} hits {:?}",
             m.len(),

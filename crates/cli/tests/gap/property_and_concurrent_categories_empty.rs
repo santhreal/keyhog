@@ -1,12 +1,11 @@
 //! KH-GAP-140: CLI ships empty `property/` and `concurrent/` mods. STANDARD categories 3/5 missing.
 //!
 //! This is the watchdog for the orphaned-test-file class of rot: a directory under
-//! `tests/` may accumulate `#[test]`-bearing `.rs` files while its module manifest
-//! declares fewer (or zero) `mod` items, so those tests never compile or run. The
-//! guard walks every test category at test time and fails when the category's
-//! `mod.rs` or standalone `tests/<category>.rs` manifest declares fewer modules
-//! than there are test-bearing `.rs` files in that directory. For the watchdog
-//! itself to run it must be declared in `gap/mod.rs` (KH-GAP-140 cross-file fix).
+//! `tests/` may accumulate `#[test]`-bearing `.rs` files while no compiled module
+//! owns them. The guard accepts both category-manifest `mod` declarations and
+//! source-module `#[path = "..."] mod` declarations, because private unit tests
+//! need the latter to exercise their production owner's internals. For the
+//! watchdog itself to run it must be declared in `gap/mod.rs`.
 
 use std::path::{Path, PathBuf};
 
@@ -48,9 +47,9 @@ fn declaration_manifest(base: &Path, category: &str) -> PathBuf {
     }
 }
 
-/// Count of module declarations in the category manifest (matches `pub mod x;`
-/// and `mod x;`).
-fn declared_mods(manifest: &Path) -> Vec<String> {
+/// Module declarations in the category manifest, plus externally split unit
+/// modules compiled by a production owner through Rust's `#[path]` attribute.
+fn declared_mods(manifest: &Path, base: &Path, category: &str) -> Vec<String> {
     let src = std::fs::read_to_string(manifest)
         .unwrap_or_else(|e| panic!("read test module manifest {}: {e}", manifest.display()));
     let mut mods: Vec<String> = src
@@ -72,13 +71,75 @@ fn declared_mods(manifest: &Path) -> Vec<String> {
             Some(name.to_string())
         })
         .collect();
+    mods.extend(externally_owned_mods(base, category));
     mods.sort();
+    mods.dedup();
     mods
 }
 
+fn externally_owned_mods(base: &Path, category: &str) -> Vec<String> {
+    fn visit(dir: &Path, category_dir: &Path, owned: &mut Vec<String>) {
+        for entry in std::fs::read_dir(dir)
+            .unwrap_or_else(|e| panic!("read source dir {}: {e}", dir.display()))
+        {
+            let path = entry.expect("source dir entry").path();
+            if path.is_dir() {
+                visit(&path, category_dir, owned);
+                continue;
+            }
+            if path.extension().is_none_or(|extension| extension != "rs") {
+                continue;
+            }
+            let source = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("read source module {}: {e}", path.display()));
+            for line in source.lines() {
+                let Some(relative) = line
+                    .trim()
+                    .strip_prefix("#[path = \"")
+                    .and_then(|line| line.strip_suffix("\"]"))
+                else {
+                    continue;
+                };
+                let target = path
+                    .parent()
+                    .expect("source module has a parent")
+                    .join(relative)
+                    .canonicalize()
+                    .unwrap_or_else(|e| {
+                        panic!(
+                            "resolve external test module {} from {}: {e}",
+                            relative,
+                            path.display()
+                        )
+                    });
+                if target.parent() == Some(category_dir) {
+                    owned.push(
+                        target
+                            .file_stem()
+                            .expect("external test module has a stem")
+                            .to_string_lossy()
+                            .into_owned(),
+                    );
+                }
+            }
+        }
+    }
+
+    let category_dir = base
+        .join(category)
+        .canonicalize()
+        .unwrap_or_else(|e| panic!("resolve tests/{category}: {e}"));
+    let mut owned = Vec::new();
+    visit(
+        &base.parent().expect("tests has a crate root").join("src"),
+        &category_dir,
+        &mut owned,
+    );
+    owned
+}
+
 /// STANDARD Test Contract categories 3 (property) and 5 (concurrent) must each ship
-/// at least one test module, and every test-bearing file must be declared in the
-/// category manifest.
+/// at least one test module, and every test-bearing file must have a compiled owner.
 #[test]
 fn property_and_concurrent_categories_have_tests() {
     let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests");
@@ -86,7 +147,7 @@ fn property_and_concurrent_categories_have_tests() {
         let dir = base.join(category);
         let manifest = declaration_manifest(&base, category);
         let files = test_bearing_files(&dir);
-        let declared = declared_mods(&manifest);
+        let declared = declared_mods(&manifest, &base, category);
         assert!(
             !files.is_empty() || !declared.is_empty(),
             "tests/{category}/ must ship at least one test module per STANDARD Test Contract"
@@ -104,9 +165,9 @@ fn property_and_concurrent_categories_have_tests() {
     }
 }
 
-/// Watchdog over ALL test categories: every `tests/<dir>/` that contains test-bearing
-/// `.rs` files must declare each of them in its category manifest, so no test
-/// silently rots.
+/// Watchdog over ALL test categories: every test-bearing `tests/<dir>/*.rs` file
+/// must have either a category-manifest owner or an external production unit-test
+/// owner, so no test silently rots.
 #[test]
 fn no_test_category_has_orphaned_files() {
     let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests");
@@ -126,7 +187,9 @@ fn no_test_category_has_orphaned_files() {
             continue;
         }
         let files = test_bearing_files(&dir);
-        let declared = declared_mods(&manifest);
+        let declared = declared_mods(&manifest, &base, &category);
+        // Regression: externally split private unit tests are already executed
+        // by their production module; duplicating them in all_tests does not compile.
         let missing: Vec<&String> = files.iter().filter(|f| !declared.contains(f)).collect();
         if !missing.is_empty() {
             offenders.push(format!(

@@ -44,26 +44,26 @@ fn explain_valid_detector_returns_exit_zero_with_spec() {
     );
 }
 
-/// `keyhog explain github-pat` uses the loaded corpus and surfaces the
-/// GitHub Personal Access Token detector spec.
+/// `keyhog explain github-pat-fine-grained` uses the loaded corpus and
+/// surfaces the current GitHub Personal Access Token detector spec.
 #[test]
-fn explain_github_pat_detector_includes_rotation_guide() {
+fn explain_github_fine_grained_pat_detector_includes_rotation_guide() {
     let output = Command::new(binary())
         .arg("explain")
-        .arg("github-pat")
+        .arg("github-pat-fine-grained")
         .output()
-        .expect("spawn keyhog explain github-pat");
+        .expect("spawn keyhog explain github-pat-fine-grained");
 
     assert_eq!(
         output.status.code(),
         Some(0),
-        "explain github-pat should exit 0"
+        "explain github-pat-fine-grained should exit 0"
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("github") || stdout.contains("GitHub"),
-        "explain github-pat must mention github; got: {stdout}"
+        "explain github-pat-fine-grained must mention github; got: {stdout}"
     );
 
     // The output should include guidance on key rotation/revocation.
@@ -125,5 +125,34 @@ fn explain_help_documents_detector_id_argument() {
     assert!(
         stdout.contains("--detectors"),
         "help must mention the --detectors directory override flag; got: {stdout}"
+    );
+}
+
+/// KH-1237 regression: `explain` previously exposed detector policy but no
+/// production prefilter status, forcing operators to infer whether Layer 0.5
+/// was saturated or effective. Pin density, named-corpus rejection, and the
+/// explicit state as user-visible values.
+#[test]
+fn explain_includes_operator_visible_bigram_prefilter_status() {
+    let output = Command::new(binary())
+        .args(["explain", "aws-access-key"])
+        .output()
+        .expect("spawn keyhog explain aws-access-key");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "explain should succeed; stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Bigram prefilter:")
+            && stdout.contains("density:")
+            && stdout.contains("slots; saturates at 39322")
+            && stdout.contains("state:")
+            && stdout.contains("reject:")
+            && stdout.contains("builtin-source-benchmark-v1"),
+        "explain must render reproducible bloom health and rejection values; stdout={stdout}"
     );
 }

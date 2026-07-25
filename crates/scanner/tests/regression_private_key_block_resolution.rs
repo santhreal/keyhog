@@ -53,7 +53,9 @@ fn scan_raw(text: &str) -> Vec<RawMatch> {
             ..Default::default()
         },
     };
-    scanner.scan(&chunk)
+    scanner
+        .scan(&chunk)
+        .expect("private-key block regression scan should succeed")
 }
 
 /// Block-detector ids present in the RESOLVED (operator-visible) match set.

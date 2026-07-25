@@ -214,28 +214,33 @@ fn credential_display_does_not_expose_bytes() {
 }
 
 #[test]
-fn credential_utf8_serializes_as_tagged_text() {
-    let credential = Credential::from("roundtrip_text");
-    let json = serde_json::to_string(&credential).expect("serialize credential");
-    let back: Credential = serde_json::from_str(&json).expect("deserialize credential");
+fn credential_utf8_serde_fails_closed_and_tagged_text_deserializes() {
+    const SECRET: &str = "roundtrip_text";
+    let credential = Credential::from(SECRET);
+    let mut output = Vec::new();
+    let error = serde_json::to_writer(&mut output, &credential)
+        .expect_err("implicit UTF-8 credential output must fail closed")
+        .to_string();
+    assert!(output.is_empty());
+    assert!(!error.contains(SECRET));
 
-    assert!(
-        json.contains("\"text\""),
-        "UTF-8 credential must serialize under the text key: {json}"
-    );
+    let back: Credential = serde_json::from_str(r#"{"text":"roundtrip_text"}"#)
+        .expect("historical tagged text input");
     assert_eq!(back, credential);
 }
 
 #[test]
-fn credential_binary_serializes_as_tagged_b64() {
+fn credential_binary_serde_fails_closed_and_tagged_b64_deserializes() {
     let credential = Credential::from(vec![0xff, 0x00, 0xab]);
-    let json = serde_json::to_string(&credential).expect("serialize credential");
-    let back: Credential = serde_json::from_str(&json).expect("deserialize credential");
+    let mut output = Vec::new();
+    let error = serde_json::to_writer(&mut output, &credential)
+        .expect_err("implicit binary credential output must fail closed")
+        .to_string();
+    assert!(output.is_empty());
+    assert!(!error.contains("/wCr"));
 
-    assert!(
-        json.contains("\"b64\""),
-        "binary credential must serialize under the b64 key: {json}"
-    );
+    let back: Credential = serde_json::from_str(r#"{"b64":"/wCr"}"#)
+        .expect("historical tagged binary input");
     assert_eq!(back, credential);
 }
 
@@ -371,11 +376,17 @@ fn sensitive_string_join_single_no_separator() {
     assert_eq!(joined.as_ref(), "only");
 }
 
+/// Prevents the extended credential suite from normalizing accidental plaintext serde.
 #[test]
-fn sensitive_string_serde_round_trip() {
+fn sensitive_string_serde_fails_closed_but_plaintext_input_remains_compatible() {
     let sensitive = SensitiveString::from("serde_roundtrip_val");
-    let json = serde_json::to_string(&sensitive).expect("serialize sensitive string");
-    let back: SensitiveString = serde_json::from_str(&json).expect("deserialize sensitive string");
+    let error = serde_json::to_string(&sensitive)
+        .expect_err("implicit SensitiveString serialization must fail closed");
+    assert!(error
+        .to_string()
+        .contains("SensitiveString refuses implicit plaintext serialization"));
 
+    let back: SensitiveString =
+        serde_json::from_str(r#""serde_roundtrip_val""#).expect("deserialize sensitive string");
     assert_eq!(back.as_ref(), sensitive.as_ref());
 }

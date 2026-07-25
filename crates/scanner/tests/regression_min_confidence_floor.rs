@@ -74,7 +74,7 @@ fn scan(detectors: Vec<DetectorSpec>, global_floor: f64) -> Vec<RawMatch> {
         .expect("scanner compiles from the shipped detector corpus")
         .with_config(config);
     let chunk = Chunk::from(CHUNK_TEXT.to_string());
-    scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback)
+    scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback).expect("selected backend scan succeeds")
 }
 
 /// The sourcegraph-attributed match for our planted token, if it survived. Keyed

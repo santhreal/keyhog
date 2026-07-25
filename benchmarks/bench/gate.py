@@ -9,15 +9,16 @@ This is the single replacement for the two retired gates:
 * a *regression* gate (new): keyhog's overall P/R/F1 must clear explicit
   floors (``--min-f1`` …) and/or must not drop below a committed baseline
   RunResult by more than ``--epsilon``. This is what
-  ``benchmarks/results/baselines/*.json`` pin and what the production loop
+  ``benchmarks/baselines/canonical.toml`` pins and what the production loop
   asserts after every calibrate→report cycle.
 
 It sits ABOVE :func:`bench.leaderboard.run_leaderboard` (which produces the
-per-scanner RunResult JSONs) and reuses :func:`bench.report.load_results` +
+per-scanner RunResult JSONs). Live results are reduced with
 :func:`bench.report.canonical_leaderboard` so "which row is keyhog, which
-are competitors" is decided by exactly the same newest-wins, default-config
-selection the README leaderboard uses, the gate can never disagree with the
-published table.
+are competitors" is decided by the same newest-wins, default-config
+selection the README leaderboard uses. Committed baselines are selected by
+the canonical inventory in ``benchmarks/baselines/canonical.toml`` so the
+regression anchor is a declared identity, never a filename-ordering accident.
 
 Exit code is the gate verdict: ``0`` all checks pass, ``1`` any violation,
 ``2`` keyhog itself is missing/unavailable (nothing to gate on, treated as a
@@ -39,6 +40,7 @@ from .keyhog_version import (
     workspace_detector_corpus_sha256,
 )
 from .report import ResultLoadError, canonical_leaderboard, load_results
+from . import baseline_inventory
 from .scanners import SCANNER_NAMES
 from .scanners.keyhog import resolve_keyhog_binary
 from .schema import DetectorStat, RunResult, is_sha256
@@ -159,22 +161,37 @@ def _assert_keyhog_results_current(rows: list[RunResult]) -> None:
 def _baseline_keyhog_row(baseline: pathlib.Path, corpus: str) -> RunResult:
     """The keyhog RunResult a committed baseline pins for ``corpus``.
 
-    ``baseline`` may be a single RunResult file or a directory of them;
-    canonical selection picks the same keyhog row the live run would. The F1
-    floor and the per-detector FP baseline both derive from this one row, so
-    they can never disagree about which build is the baseline."""
+    ``baseline`` may be a single RunResult file or a baselines directory that
+    contains a ``canonical.toml`` inventory. Canonical selection uses the
+    declared corpus -> path identity, never filename ordering or newest-wins
+    heuristics. The F1 floor and per-detector FP baseline both derive from
+    this one row, so they can never disagree about which build is the baseline."""
     try:
-        results = (
-            load_results(baseline)
-            if baseline.is_dir()
-            else [RunResult.from_json(json.loads(baseline.read_text()), source=str(baseline))]
-        )
-    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        if baseline.is_dir():
+            run = baseline_inventory.load_canonical(corpus, baselines_dir=baseline)
+        else:
+            run = RunResult.from_json(
+                json.loads(baseline.read_text()), source=str(baseline)
+            )
+    except (
+        OSError,
+        json.JSONDecodeError,
+        ValueError,
+        baseline_inventory.BaselineInventoryError,
+    ) as exc:
         raise GateError(f"cannot load benchmark baseline: {exc}") from exc
-    row = _keyhog_row(canonical_leaderboard(results, corpus))
-    if row is None:
-        raise GateError(f"baseline {baseline} has no keyhog result for corpus {corpus!r}")
-    return row
+
+    if run.scanner.name != "keyhog":
+        raise GateError(
+            f"baseline {baseline} is not a keyhog result (scanner={run.scanner.name!r})"
+        )
+    if run.corpus.name != corpus:
+        raise GateError(
+            f"baseline {baseline} is for corpus {run.corpus.name!r}, expected {corpus!r}"
+        )
+    if not run.available:
+        raise GateError(f"baseline {baseline} is unavailable: {run.error}")
+    return run
 
 
 def _baseline_keyhog_f1(baseline: pathlib.Path, corpus: str) -> float:

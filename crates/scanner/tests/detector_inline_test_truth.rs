@@ -29,7 +29,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use support::paths::detector_dir;
 
-use keyhog_core::{Chunk, ChunkMetadata, DetectorFile};
+use keyhog_core::{Chunk, ChunkMetadata, DetectorFile, DETECTOR_CORPUS_MANIFEST_FILE};
 use keyhog_scanner::telemetry::{self, ScanTelemetry};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 
@@ -51,7 +51,12 @@ fn load_inline_cases() -> Vec<InlineCase> {
         .unwrap_or_else(|e| panic!("detectors/ must be readable ({}): {e}", dir.display()))
         .flatten()
         .map(|e| e.path())
-        .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("toml"))
+        .filter(|p| {
+            p.extension().and_then(|s| s.to_str()) == Some("toml")
+                && p
+                    .file_name()
+                    .is_none_or(|name| name != DETECTOR_CORPUS_MANIFEST_FILE)
+        })
         .collect();
     files.sort();
 
@@ -165,7 +170,9 @@ fn every_inline_positive_fires_its_own_detector() {
         // Isolate cross-file fragment-reassembly state between fixtures (the
         // scanner accumulates it across scan() calls (see contracts_runner)).
         scanner.clear_fragment_cache();
-        let matches = scanner.scan(&make_chunk(positive));
+        let matches = scanner
+            .scan(&make_chunk(positive))
+            .expect("inline positive scan should succeed");
         let fired = matches
             .iter()
             .any(|m| m.detector_id.as_ref() == case.detector_id);
@@ -175,7 +182,9 @@ fn every_inline_positive_fires_its_own_detector() {
             trace.enable_dogfood();
             scanner.clear_fragment_cache();
             telemetry::with_scan_telemetry(&trace, || {
-                let _ = scanner.scan(&make_chunk(positive));
+                scanner
+                    .scan(&make_chunk(positive))
+                    .expect("inline positive suppression-trace scan should succeed");
             });
             let suppressions = trace.drain().dogfood_events;
             failures.push(format!(
@@ -205,9 +214,11 @@ fn every_inline_positive_fires_its_own_detector() {
 
 #[test]
 fn agenta_assignment_is_not_a_tripadvisor_alias() {
-    let matches = scanner().scan(&make_chunk(
-        "AGENTA_API_KEY=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d",
-    ));
+    let matches = scanner()
+        .scan(&make_chunk(
+            "AGENTA_API_KEY=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d",
+        ))
+        .expect("Agenta detector regression scan should succeed");
     assert!(
         matches
             .iter()
@@ -245,7 +256,9 @@ fn anchored_generic_service_detectors_remain_named_through_resolution() {
             continue;
         };
         scanner.clear_fragment_cache();
-        let raw = scanner.scan(&make_chunk(positive));
+        let raw = scanner
+            .scan(&make_chunk(positive))
+            .expect("anchored generic detector scan should succeed");
         let active = scanner
             .try_resolve_matches(raw.clone())
             .expect("active compiled plan must classify every finding");
@@ -315,15 +328,15 @@ fn corrected_primary_role_regressions_have_exact_backend_parity() {
         };
         let chunk = make_chunk(&positive);
         scanner.clear_fragment_cache();
-        let mut cpu = scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback);
+        let mut cpu = scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
         scanner.clear_fragment_cache();
-        let mut simd = scanner.scan_with_backend(&chunk, ScanBackend::SimdCpu);
+        let mut simd = scanner.scan_with_backend(&chunk, ScanBackend::SimdCpu).expect("selected backend scan succeeds");
         cpu.sort();
         simd.sort();
         assert_eq!(cpu, simd, "CPU/SIMD finding drift for {}", case.detector_id);
         for backend in &acquired_gpu_backends {
             scanner.clear_fragment_cache();
-            let mut gpu = scanner.scan_with_backend(&chunk, *backend);
+            let mut gpu = scanner.scan_with_backend(&chunk, *backend).expect("selected backend scan succeeds");
             gpu.sort();
             assert_eq!(
                 cpu,
@@ -367,7 +380,9 @@ fn every_inline_negative_does_not_fire_its_own_detector() {
             continue;
         };
         scanner.clear_fragment_cache();
-        let matches = scanner.scan(&make_chunk(negative));
+        let matches = scanner
+            .scan(&make_chunk(negative))
+            .expect("inline negative scan should succeed");
         let wrongly_fired: Vec<&str> = matches
             .iter()
             .filter(|m| m.detector_id.as_ref() == case.detector_id)
@@ -412,7 +427,11 @@ fn every_embedded_id_is_present_exactly_once_on_disk() {
         .flatten()
     {
         let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) != Some("toml") {
+        if path.extension().and_then(|s| s.to_str()) != Some("toml")
+            || path
+                .file_name()
+                .is_some_and(|name| name == DETECTOR_CORPUS_MANIFEST_FILE)
+        {
             continue;
         }
         let text = std::fs::read_to_string(&path).expect("read detector toml");

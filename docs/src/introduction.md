@@ -8,8 +8,10 @@ credentials.
 $ keyhog scan .
     K E Y H O G
     ───────────
-    v0.5.45 · secret scanner · 923 detectors
+    v0.5.46 · secret scanner · 923 detectors
     by santh
+
+  ⚡ 16 cores | SIMD: AVX-512 | Hyperscan | 923 detectors (5822 patterns) io_uring | backend=simd-regex | gpu=none
 
   ┌    CRITICAL ─── Stripe Secret Key
   │ Secret:     sk_l...p7dc
@@ -44,9 +46,10 @@ map, with every capability linking to its chapter.
 
 The detector corpus ships as TOML files under `detectors/`. Run
 `keyhog detectors --format json` to inspect the exact corpus embedded in the
-installed binary. A custom `--detectors <DIR>` selects an explicit replacement
-corpus, so detector policy can change without changing scanner code and without
-a hidden merge with embedded rules.
+installed binary. A custom `--detectors <DIR>` remains an explicit replacement
+by default, so there is never a hidden merge with embedded rules. Reviewed
+extensions can opt into `--detectors-mode overlay`; detector-ID collisions
+then fail closed rather than shadowing shipped rules.
 
 ## What it doesn't do
 
@@ -116,7 +119,7 @@ prerequisite commands live in the [install guide](./install.md#pinned-verified-i
 
 ```sh
 # Linux / macOS, pinned and authenticated before execution
-TAG=v0.5.45
+TAG=v0.5.46
 BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
 PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
 curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"

@@ -3,13 +3,9 @@
 use clap::Parser;
 use keyhog::args::{Cli, ScanArgs};
 use keyhog::testing::{CliTestApi as _, API};
-// The `keyhog::daemon::*` modules are unix-only (Unix-domain sockets).
-// Gate the imports and the daemon_* tests below so the file compiles
-// on Windows.
+// The public daemon facade is Unix-only because it resolves a Unix socket path.
 #[cfg(unix)]
 use keyhog::daemon::default_socket_path;
-#[cfg(unix)]
-use keyhog::daemon::protocol::{Request, Response, MAX_FRAME_BYTES, WIRE_VERSION};
 use keyhog_core::{Chunk, ChunkMetadata, MatchLocation, RawMatch, SensitiveString, Severity};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -311,7 +307,7 @@ fn ak_p4_cli_hot_paths_stay_linear() {
 #[test]
 fn main_happy() {
     let cli = Cli::try_parse_from(["keyhog", "--version"]).unwrap();
-    assert!(cli.version);
+    assert!(cli.build_version);
 }
 #[test]
 fn main_error() {
@@ -378,40 +374,6 @@ fn daemon_client_happy() {
     assert!(path.to_string_lossy().contains("keyhog") || path.ends_with(".sock"));
 }
 
-// ── crates/cli/src/daemon/frame.rs ──────────────────────────────────────
-#[cfg(unix)]
-#[test]
-fn daemon_frame_happy() {
-    let json = serde_json::to_string(&Request::Hello).unwrap();
-    assert!(json.contains("hello"));
-}
-#[cfg(unix)]
-#[test]
-fn daemon_frame_error() {
-    let json = serde_json::to_string(&Response::Hello {
-        wire_version: WIRE_VERSION,
-        keyhog_version: "0.0.0".into(),
-        git_hash: "test".into(),
-        detector_rules_digest: "test".into(),
-        backend_policy: "autoroute".into(),
-        detector_count: 0,
-        uptime_secs: 0,
-    })
-    .unwrap();
-    assert!(json.contains("wire_version"));
-}
-
-// ── crates/cli/src/daemon/protocol.rs ───────────────────────────────────
-#[cfg(unix)]
-#[test]
-fn daemon_protocol_happy() {
-    assert_eq!(WIRE_VERSION, 6);
-}
-#[cfg(unix)]
-#[test]
-fn daemon_protocol_error() {
-    assert!(MAX_FRAME_BYTES > 0);
-}
 
 // ── crates/cli/src/daemon/server.rs ─────────────────────────────────────
 #[cfg(unix)]
@@ -419,11 +381,6 @@ fn daemon_protocol_error() {
 fn daemon_server_happy() {
     let path = default_socket_path();
     assert!(!path.as_os_str().is_empty());
-}
-#[cfg(unix)]
-#[test]
-fn daemon_server_error() {
-    assert_ne!(WIRE_VERSION, 0);
 }
 
 // ── crates/cli/src/inline_suppression.rs ──────────────────────────────

@@ -27,6 +27,7 @@ type = "none"
 
 [detector.verify.success]
 status = 200
+policy = "status_with_error_backstop"
 
 [[detector.tests]]
 test_positive = "GREYNOISE=_4XCZ6jfqICQrr43YH0c"

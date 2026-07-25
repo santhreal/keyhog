@@ -181,7 +181,7 @@ fn line_number_for_offset_counts_newlines() {
 #[test]
 fn compiled_scanner_compile_happy_path() {
     let scanner = CompiledScanner::compile(vec![demo_detector()]).unwrap();
-    let matches = scanner.scan(&chunk("prefix abc suffix"));
+    let matches = scanner.scan(&chunk("prefix abc suffix")).expect("test scan succeeds");
     assert_eq!(matches.len(), 1);
     assert_eq!(matches[0].credential.as_ref(), "abc");
 }
@@ -198,14 +198,19 @@ fn compiled_scanner_compile_rejects_invalid_regex() {
 #[test]
 fn scan_empty_chunk_returns_no_matches() {
     let scanner = CompiledScanner::compile(vec![demo_detector()]).unwrap();
-    assert!(scanner.scan(&chunk("")).is_empty());
+    assert!(
+        scanner
+            .scan(&chunk(""))
+            .expect("empty-chunk test scan succeeds")
+            .is_empty()
+    );
 }
 
 #[test]
 fn scan_rejects_cross_chunk_pattern_via_chunks_api() {
     let scanner = CompiledScanner::compile(vec![demo_detector()]).unwrap();
     let chunks = vec![chunk("ab"), chunk("c")];
-    let per_chunk = scanner.scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback);
+    let per_chunk = scanner.scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
     assert!(per_chunk.iter().all(Vec::is_empty));
 }
 
@@ -214,7 +219,7 @@ fn scan_rejects_cross_chunk_pattern_via_chunks_api() {
 #[test]
 fn backend_scan_with_backend_cpu_fallback_finds_match() {
     let scanner = CompiledScanner::compile(vec![demo_detector()]).unwrap();
-    let matches = scanner.scan_with_backend(&chunk("abc token"), ScanBackend::CpuFallback);
+    let matches = scanner.scan_with_backend(&chunk("abc token"), ScanBackend::CpuFallback).expect("selected backend scan succeeds");
     assert_eq!(matches.len(), 1);
 }
 
@@ -223,6 +228,7 @@ fn backend_scan_with_backend_empty_chunk_returns_empty() {
     let scanner = CompiledScanner::compile(vec![demo_detector()]).unwrap();
     assert!(scanner
         .scan_with_backend(&chunk(""), ScanBackend::CpuFallback)
+        .expect("empty-chunk selected backend scan succeeds")
         .is_empty());
 }
 
@@ -235,7 +241,7 @@ fn fallback_pattern_fires_on_keyword_chunk() {
     detector.keywords = vec!["ghp_".into()];
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
     let token = concat!("gh", "p_zQWBuTSOoRi4A9spHcVY5ncnsDkxkJ0mLq17");
-    let matches = scanner.scan(&chunk(&format!("export TOKEN={token}")));
+    let matches = scanner.scan(&chunk(&format!("export TOKEN={token}"))).expect("test scan succeeds");
     assert!(matches.iter().any(|m| m.credential.as_ref() == token));
 }
 
@@ -245,7 +251,12 @@ fn fallback_pattern_skips_plaintext_without_keyword() {
     detector.patterns[0].regex = r"ghp_[A-Za-z0-9]{20,}".into();
     detector.keywords = vec!["ghp_".into()];
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
-    assert!(scanner.scan(&chunk("the quick brown fox")).is_empty());
+    assert!(
+        scanner
+            .scan(&chunk("the quick brown fox"))
+            .expect("plaintext test scan succeeds")
+            .is_empty()
+    );
 }
 
 #[test]
@@ -299,7 +310,7 @@ fn mx_api_key_phase2_pattern_is_shared_anchor_localized() {
     assert!(anchor_index.is_eligible(phase2_index));
 
     let value = "abcdef0123456789abcdef0123456789";
-    let matches = scanner.scan(&chunk(&format!("export MX_API_KEY={value}")));
+    let matches = scanner.scan(&chunk(&format!("export MX_API_KEY={value}"))).expect("test scan succeeds");
     assert!(
         matches.iter().any(|m| m.credential.as_ref() == value),
         "localized MX phase2 pattern must still report the API key: {matches:?}"
@@ -327,7 +338,7 @@ fn named_detector_honors_min_confidence_and_traces_reject() {
         "named_min_floor.env",
         0,
     );
-    let matches = keyhog_scanner::telemetry::with_scan_telemetry(&trace, || scanner.scan(&chunk));
+    let matches = keyhog_scanner::telemetry::with_scan_telemetry(&trace, || scanner.scan(&chunk).expect("test scan succeeds"));
 
     assert!(
         !matches.iter().any(|m| m.credential.as_ref() == value),
@@ -366,7 +377,7 @@ fn named_detector_comment_anchor_floor_keeps_anchored_secret_visible() {
         .unwrap()
         .with_config(config);
     let chunk = file_chunk(format!("<!--{value}-->"), "named_comment_floor.html", 0);
-    let matches = scanner.scan(&chunk);
+    let matches = scanner.scan(&chunk).expect("test scan succeeds");
 
     // The `<!--…-->` line IS classified as Comment context, and with the default
     // `scan_comments = false` the comment confidence penalty (×0.4) applies. But
@@ -414,7 +425,7 @@ fn entropy_fallback_honors_min_secret_len_config() {
     let scanner = CompiledScanner::compile(embedded_entropy_detectors())
         .unwrap()
         .with_config(config.clone());
-    let matches = scanner.scan(&chunk(&format!("MARKER = \"{value}\"")));
+    let matches = scanner.scan(&chunk(&format!("MARKER = \"{value}\""))).expect("test scan succeeds");
     assert!(
         matches.iter().any(|m| {
             m.credential.as_ref() == value && m.detector_id.as_ref().starts_with("entropy-")
@@ -426,7 +437,7 @@ fn entropy_fallback_honors_min_secret_len_config() {
     let scanner = CompiledScanner::compile(embedded_entropy_detectors())
         .unwrap()
         .with_config(config);
-    let matches = scanner.scan(&chunk(&format!("MARKER = \"{value}\"")));
+    let matches = scanner.scan(&chunk(&format!("MARKER = \"{value}\""))).expect("test scan succeeds");
     assert!(
         !matches.iter().any(|m| {
             m.credential.as_ref() == value && m.detector_id.as_ref().starts_with("entropy-")
@@ -452,7 +463,7 @@ fn entropy_fallback_precheck_admits_symbolic_password_runs() {
     let scanner = CompiledScanner::compile(embedded_entropy_detectors())
         .unwrap()
         .with_config(config);
-    let matches = scanner.scan(&chunk(&format!("SECRET = \"{value}\"")));
+    let matches = scanner.scan(&chunk(&format!("SECRET = \"{value}\""))).expect("test scan succeeds");
     assert!(
         matches.iter().any(|m| m.credential.as_ref() == value
             && m.detector_id.as_ref() == "generic-keyword-secret"),
@@ -481,7 +492,7 @@ fn entropy_fallback_rejection_is_operator_visible() {
     let trace = Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
     trace.enable_dogfood();
     let chunk = file_chunk(format!("MARKER = \"{value}\""), "entropy_min_floor.env", 0);
-    let matches = keyhog_scanner::telemetry::with_scan_telemetry(&trace, || scanner.scan(&chunk));
+    let matches = keyhog_scanner::telemetry::with_scan_telemetry(&trace, || scanner.scan(&chunk).expect("test scan succeeds"));
 
     assert!(
         !matches.iter().any(|m| m.credential.as_ref() == value),
@@ -550,7 +561,7 @@ fn azure_subscription_key_named_detector_fires_on_normal_and_zero_width_anchor()
         format!("azure_subscription_key = \"{value}\""),
         format!("azure_subscription\u{200b}_key = \"{value}\""),
     ] {
-        let matches = scanner.scan(&chunk(&text));
+        let matches = scanner.scan(&chunk(&text)).expect("test scan succeeds");
         assert!(
             matches.iter().any(|m| {
                 m.detector_id.as_ref() == "azure-subscription-key"
@@ -574,7 +585,7 @@ fn strong_secret_assignment_surfaces_printable_base64_transport_value() {
     ])
     .expect("generic detectors compile")
     .with_config(config);
-    let matches = scanner.scan(&chunk(&format!("K8S_FULL_SECRET=\"{value}\"")));
+    let matches = scanner.scan(&chunk(&format!("K8S_FULL_SECRET=\"{value}\""))).expect("test scan succeeds");
     assert!(
         matches.iter().any(|m| m.credential.as_ref() == value),
         "strong *_SECRET assignment must retain its printable base64 transport value; matches={matches:?}"
@@ -606,7 +617,7 @@ fn boundary_scan_uses_bounded_detector_match_width_past_1024_bytes() {
         file_chunk(left, "long-boundary.txt", 0),
         file_chunk(right, "long-boundary.txt", left_len),
     ];
-    let matches = scanner.scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback);
+    let matches = scanner.scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
     assert!(
         matches
             .iter()
@@ -641,7 +652,7 @@ fn boundary_scan_uses_full_pair_for_unbounded_detector_regex() {
         file_chunk(left, "unbounded-boundary.txt", 0),
         file_chunk(right, "unbounded-boundary.txt", left_len),
     ];
-    let matches = scanner.scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback);
+    let matches = scanner.scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
     assert!(
         matches
             .iter()
@@ -665,11 +676,32 @@ fn scan_gpu_warm_backend_cpu_paths_always_succeed() {
     );
 }
 
+/// Proves repeated WGPU readiness probes are stable when no other live GPU test
+/// can mutate or contend for the adapter concurrently.
 #[test]
 fn scan_gpu_warm_reports_stable_backend_readiness() {
+    let _gpu_test_guard = crate::testing::gpu_test_lock();
     let scanner = CompiledScanner::compile(vec![demo_detector()]).unwrap();
     let gpu_ready = scanner.warm_backend(ScanBackend::GpuWgpu);
     assert_eq!(gpu_ready, scanner.warm_backend(ScanBackend::GpuWgpu));
+}
+
+/// Proves the process-wide live-adapter guard excludes overlapping test work.
+///
+/// Without the guard, the nonblocking probe enters its simulated adapter
+/// section while the first fixture still owns it, reproducing the process-local
+/// interference that made independently correct GPU fixtures fail in parallel.
+#[test]
+fn gpu_test_lock_serializes_live_adapter_sections() {
+    let first_guard = crate::testing::gpu_test_lock();
+    assert!(
+        crate::testing::try_gpu_test_lock().is_none(),
+        "overlapping live GPU work must be denied while the adapter is owned"
+    );
+
+    drop(first_guard);
+    let _second_guard = crate::testing::try_gpu_test_lock()
+        .expect("live GPU work must enter immediately after adapter release");
 }
 
 // ── engine/scan_filters.rs (keyword gating via generic assignment) ──
@@ -677,7 +709,7 @@ fn scan_gpu_warm_reports_stable_backend_readiness() {
 #[test]
 fn scan_filters_generic_assignment_requires_secret_keyword() {
     let scanner = CompiledScanner::compile(vec![demo_detector()]).unwrap();
-    let matches = scanner.scan(&chunk("username = randomuser1234567890"));
+    let matches = scanner.scan(&chunk("username = randomuser1234567890")).expect("test scan succeeds");
     assert!(matches.is_empty());
 }
 
@@ -688,7 +720,7 @@ fn scan_filters_generic_assignment_fires_with_secret_keyword() {
     detector.keywords = vec!["ghp_".into()];
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
     let token = concat!("gh", "p_zQWBuTSOoRi4A9spHcVY5ncnsDkxkJ0mLq17");
-    let matches = scanner.scan(&chunk(&format!("api_key = \"{token}\"")));
+    let matches = scanner.scan(&chunk(&format!("api_key = \"{token}\""))).expect("test scan succeeds");
     assert!(matches.iter().any(|m| m.credential.as_ref() == token));
 }
 
@@ -701,7 +733,7 @@ fn scan_filters_generic_assignment_accepts_dotted_and_dashed_keys() {
     let token = concat!("gh", "p_zQWBuTSOoRi4A9spHcVY5ncnsDkxkJ0mLq17");
 
     for key in ["api.key", "auth-token", "client.secret"] {
-        let matches = scanner.scan(&chunk(&format!("{key} = \"{token}\"")));
+        let matches = scanner.scan(&chunk(&format!("{key} = \"{token}\""))).expect("test scan succeeds");
         assert!(
             matches.iter().any(|m| m.credential.as_ref() == token),
             "{key} should admit generic assignment scanning"
@@ -715,7 +747,7 @@ fn generic_assignment_compact_prefilter_keeps_webhook_url_recall() {
         CompiledScanner::compile(vec![demo_detector(), embedded_detector("generic-secret")])
             .unwrap();
     let value = "Zx9KmPq2LvWnB7tRsYz3BcDe";
-    let matches = scanner.scan(&chunk(&format!("webhook_url = \"{value}\"")));
+    let matches = scanner.scan(&chunk(&format!("webhook_url = \"{value}\""))).expect("test scan succeeds");
     assert!(
         matches
             .iter()
@@ -764,7 +796,7 @@ fn generic_assignment_bridges_bare_pass_abbreviation() {
     .unwrap();
     let value = "k7m2p9q4t6w1x8z3v5";
     for key in ["GRAPHITE_PASS", "DB_PASS", "jenkins_pass", "ses.pass"] {
-        let matches = scanner.scan(&chunk(&format!("{key} = \"{value}\"")));
+        let matches = scanner.scan(&chunk(&format!("{key} = \"{value}\""))).expect("test scan succeeds");
         assert!(
             matches.iter().any(|m| m.credential.as_ref() == value),
             "{key} (bare `pass` key) should bridge to the generic-secret fallback"
@@ -781,7 +813,7 @@ fn generic_assignment_bare_pass_respects_word_boundary() {
     let scanner = CompiledScanner::compile(vec![demo_detector()]).unwrap();
     let value = "k7m2p9q4t6w1x8z3v5";
     for key in ["BYPASS", "COMPASS", "encompass"] {
-        let matches = scanner.scan(&chunk(&format!("{key} = \"{value}\"")));
+        let matches = scanner.scan(&chunk(&format!("{key} = \"{value}\""))).expect("test scan succeeds");
         assert!(
             !matches.iter().any(|m| m.credential.as_ref() == value),
             "{key} ends in `pass` but is not a credential key; must stay silent"
@@ -836,6 +868,7 @@ fn generic_keyword_low_entropy_knob_gates_low_entropy_values() {
     assert!(
         relaxed
             .scan(&chunk(&line))
+            .expect("relaxed low-entropy test scan succeeds")
             .iter()
             .any(|m| m.credential.as_ref() == value),
         "with generic_keyword_low_entropy on, a low-entropy keyword-anchored \
@@ -858,6 +891,7 @@ fn generic_keyword_low_entropy_knob_gates_low_entropy_values() {
     assert!(
         !strict
             .scan(&chunk(&line))
+            .expect("strict low-entropy test scan succeeds")
             .iter()
             .any(|m| m.credential.as_ref() == value),
         "with --no-keyword-low-entropy the high generic-secret floor must gate \

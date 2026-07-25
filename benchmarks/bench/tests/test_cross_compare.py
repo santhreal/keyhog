@@ -2,7 +2,15 @@ import json
 import pathlib
 
 from bench import cross_compare
-from bench.schema import CorpusInfo, Detection, Host, Outcome, RunResult, Speed
+from bench.schema import (
+    CorpusInfo,
+    Detection,
+    Host,
+    Outcome,
+    RunResult,
+    Speed,
+    StaticRecoveryMetrics,
+)
 from bench.schema import Scanner as ScannerRecord
 from bench.schema import ScannerConfig
 
@@ -24,6 +32,7 @@ def _write(
         host=Host(os=os_, cpu="cpu"),
         speed=Speed(throughput_mb_s=speed),
         finding_count=tp + fp,
+        static_recovery=StaticRecoveryMetrics() if scanner == "keyhog" else None,
     )
     (dev_dir / f"mirror-{scanner}.json").write_text(json.dumps(r.to_json()))
 

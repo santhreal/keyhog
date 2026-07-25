@@ -157,7 +157,9 @@ proptest! {
         bytes in proptest::collection::vec(any::<u8>(), 0..256)
     ) {
         let chunk = make_chunk(bytes);
-        let _ = FUZZ_SCANNER.scan(&chunk);
+        let _ = FUZZ_SCANNER
+            .scan(&chunk)
+            .expect("random-byte fuzz scan succeeds");
     }
 
     /// Random ASCII (printable-ish range) exercises the regex path hard because
@@ -174,7 +176,9 @@ proptest! {
                 ..Default::default()
             },
         };
-        let _ = FUZZ_SCANNER.scan(&chunk);
+        let _ = FUZZ_SCANNER
+            .scan(&chunk)
+            .expect("random-ASCII fuzz scan succeeds");
     }
 
     /// Bytes with embedded NULs + control chars + high-bit bytes.
@@ -190,7 +194,9 @@ proptest! {
         bytes.extend(std::iter::repeat_n(0u8, nul_count));
         bytes.extend(high_bytes);
         let chunk = make_chunk(bytes);
-        let _ = FUZZ_SCANNER.scan(&chunk);
+        let _ = FUZZ_SCANNER
+            .scan(&chunk)
+            .expect("mixed-control-byte fuzz scan succeeds");
     }
 }
 
@@ -224,7 +230,9 @@ proptest! {
         let token = format!("AKIA{random_tail}");
         let body = format!("{prefix}\n{token}\n{suffix}");
         let chunk = make_text_chunk(body);
-        let matches = CORRECTNESS_SCANNER.scan(&chunk);
+        let matches = CORRECTNESS_SCANNER
+            .scan(&chunk)
+            .expect("planted-key correctness scan succeeds");
         prop_assert!(
             finds_token_anywhere(&matches, &token),
             "planted {token} was not surfaced in any credential; \
@@ -251,8 +259,16 @@ proptest! {
                           m.location.offset))
                 .collect()
         };
-        let first = key(FUZZ_SCANNER.scan(&chunk));
-        let second = key(FUZZ_SCANNER.scan(&chunk));
+        let first = key(
+            FUZZ_SCANNER
+                .scan(&chunk)
+                .expect("first idempotency scan succeeds"),
+        );
+        let second = key(
+            FUZZ_SCANNER
+                .scan(&chunk)
+                .expect("second idempotency scan succeeds"),
+        );
         prop_assert_eq!(
             first, second,
             "scanner not idempotent - two scans of the same input differ"
@@ -274,7 +290,9 @@ proptest! {
         let padding: String = " ".repeat(pad_len);
         let secret = concat!("AK", "IAQYLPMN5HFIQR7XYA");
         let chunk = make_text_chunk(format!("{padding}{secret}"));
-        let matches = FUZZ_SCANNER.scan(&chunk);
+        let matches = FUZZ_SCANNER
+            .scan(&chunk)
+            .expect("prefix-padding fuzz scan succeeds");
         prop_assert!(
             finds_token_anywhere(&matches, secret),
             "padding of len {pad_len} dropped the {secret} finding"
@@ -293,7 +311,7 @@ fn scanner_does_not_panic_at_random_byte_size_boundary() {
             (state >> 24) as u8
         })
         .collect();
-    let _ = FUZZ_SCANNER.scan(&make_chunk(bytes));
+    let _ = FUZZ_SCANNER.scan(&make_chunk(bytes)).expect("fuzz scan succeeds");
 }
 
 /// Locks out a fast-test loophole by exercising the regex-heavy printable
@@ -303,7 +321,7 @@ fn scanner_does_not_panic_at_ascii_size_boundary() {
     let text: String = (0..8_192)
         .map(|index| char::from(b' ' + (index % 95) as u8))
         .collect();
-    let _ = FUZZ_SCANNER.scan(&make_text_chunk(text));
+    let _ = FUZZ_SCANNER.scan(&make_text_chunk(text)).expect("fuzz scan succeeds");
 }
 
 /// Locks out context truncation by proving a planted key survives the original
@@ -312,7 +330,7 @@ fn scanner_does_not_panic_at_ascii_size_boundary() {
 fn aws_key_survives_maximum_surrounding_context() {
     let token = "AKIAQYLPMN5HFIQR7XYA";
     let body = format!("{} {token} {}", "a".repeat(4_095), "z".repeat(4_095));
-    let matches = CORRECTNESS_SCANNER.scan(&make_text_chunk(body));
+    let matches = CORRECTNESS_SCANNER.scan(&make_text_chunk(body)).expect("correctness scan succeeds");
     assert!(
         finds_token_anywhere(&matches, token),
         "planted key at the maximum context boundary was not surfaced"
@@ -325,7 +343,7 @@ fn aws_key_survives_maximum_surrounding_context() {
 fn aws_key_is_found_at_both_chunk_edges() {
     let token = "AKIAQYLPMN5HFIQR7XYA";
     for body in [format!("{token}\ncontext"), format!("context\n{token}")] {
-        let matches = CORRECTNESS_SCANNER.scan(&make_text_chunk(body));
+        let matches = CORRECTNESS_SCANNER.scan(&make_text_chunk(body)).expect("correctness scan succeeds");
         assert!(
             finds_token_anywhere(&matches, token),
             "chunk-edge AWS access-key ID was not surfaced: {matches:?}"
@@ -338,7 +356,7 @@ fn aws_key_is_found_at_both_chunk_edges() {
 #[test]
 fn mixed_case_prefix_does_not_shadow_canonical_aws_key() {
     let token = "AKIA00A000A0AA0A0A00";
-    let matches = CORRECTNESS_SCANNER.scan(&make_text_chunk(format!("Aki{token}")));
+    let matches = CORRECTNESS_SCANNER.scan(&make_text_chunk(format!("Aki{token}"))).expect("correctness scan succeeds");
     assert!(
         finds_token_anywhere(&matches, token),
         "mixed-case prefix shadowed the canonical AWS access-key ID: {matches:?}"
@@ -364,8 +382,16 @@ fn scan_is_idempotent_at_size_boundary() {
             .collect::<std::collections::BTreeSet<_>>()
     };
     assert_eq!(
-        key(FUZZ_SCANNER.scan(&chunk)),
-        key(FUZZ_SCANNER.scan(&chunk))
+        key(
+            FUZZ_SCANNER
+                .scan(&chunk)
+                .expect("first boundary idempotency scan succeeds"),
+        ),
+        key(
+            FUZZ_SCANNER
+                .scan(&chunk)
+                .expect("second boundary idempotency scan succeeds"),
+        )
     );
 }
 
@@ -375,7 +401,7 @@ fn scan_is_idempotent_at_size_boundary() {
 fn maximum_prefix_padding_does_not_drop_finding() {
     let secret = concat!("AK", "IAQYLPMN5HFIQR7XYA");
     let chunk = make_text_chunk(format!("{}{secret}", " ".repeat(4_095)));
-    let matches = FUZZ_SCANNER.scan(&chunk);
+    let matches = FUZZ_SCANNER.scan(&chunk).expect("fuzz scan succeeds");
     assert!(
         finds_token_anywhere(&matches, secret),
         "4,095 bytes of prefix padding dropped the planted secret"

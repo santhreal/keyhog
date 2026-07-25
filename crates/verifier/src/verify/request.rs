@@ -7,7 +7,7 @@ use dashmap::DashMap;
 use keyhog_core::{HeaderSpec, HttpMethod, VerificationResult};
 use reqwest::Client;
 
-use crate::interpolate::{interpolate_http_value, missing_companion_refs};
+use crate::interpolate::{interpolate_http_value, missing_companion_refs, CompanionKey};
 use crate::ssrf::{is_private_ip_addr, is_private_url};
 
 // ── refusal family ────────────────────────────────────────────────────────────
@@ -399,7 +399,7 @@ pub(crate) async fn build_request_for_step(
     auth: &keyhog_core::AuthSpec,
     url: reqwest::Url,
     credential: &str,
-    companions: &HashMap<String, String>,
+    companions: &HashMap<impl CompanionKey, String>,
     timeout: Duration,
     allow_private_ips: bool,
     allow_http: bool,
@@ -429,7 +429,7 @@ pub(crate) fn apply_header_body_templates(
     headers: &[HeaderSpec],
     body_template: Option<&str>,
     credential: &str,
-    companions: &HashMap<String, String>,
+    companions: &HashMap<impl CompanionKey, String>,
 ) -> reqwest::RequestBuilder {
     for header in headers {
         let value = interpolate_http_value(&header.value, credential, companions);
@@ -454,7 +454,7 @@ pub(crate) fn missing_companion_error(context: &str, missing: &[String]) -> Veri
 pub(crate) fn validate_template_companions(
     context: &str,
     template: &str,
-    companions: &HashMap<String, String>,
+    companions: &HashMap<impl CompanionKey, String>,
 ) -> Result<(), VerificationResult> {
     let missing = missing_companion_refs(template, companions);
     if missing.is_empty() {
@@ -467,7 +467,7 @@ pub(crate) fn validate_template_companions(
 pub(crate) fn validate_header_body_templates(
     headers: &[HeaderSpec],
     body_template: Option<&str>,
-    companions: &HashMap<String, String>,
+    companions: &HashMap<impl CompanionKey, String>,
 ) -> Result<(), VerificationResult> {
     for header in headers {
         validate_template_companions("verification header", &header.value, companions)?;

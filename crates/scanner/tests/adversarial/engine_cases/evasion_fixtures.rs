@@ -126,7 +126,7 @@ unrelated = 'foo' + 'bar'\n\
             ..Default::default()
         },
     };
-    let matches = production_scanner().scan(&chunk);
+    let matches = production_scanner().scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
     let aws_hit = matches
         .iter()
         .any(|m| m.detector_id.as_ref().contains("aws") || m.service.as_ref().contains("aws"));

@@ -266,3 +266,87 @@ fn autoroute_calibration_leaves_incremental_cache_bytes_unchanged() {
             .into_index();
     assert!(reloaded.record_chunk_at_offset_and_check_unchanged("new.rs".into(), 0, 2, 3, b"new",));
 }
+
+/// Regression for KH-1409: admission identity recovery must drive the same
+/// counted complete-after-recovery report metadata as an exact backend rescan,
+/// while terminal text names admission recovery rather than a backend fault.
+#[test]
+fn admission_recovery_receipt_is_counted_in_json_and_terminal_status() {
+    use crate::testing::{CliTestApi, API};
+    use keyhog_core::ScanCompletionStatus;
+
+    let guard = API.scan_runtime_guard_for_test();
+    API.reset_scan_runtime_state_for_test(&guard);
+    let receipt = keyhog_scanner::BackendRecoveryReceipt::new(
+        ScanBackend::CpuFallback,
+        ScanBackend::CpuFallback,
+        vec![keyhog_scanner::RecoveredInputRange::new(0, 0, 17)],
+        "phase-one admission plan identity mismatch; discarded the untrusted plan and recomputed exact admission"
+            .to_string(),
+    );
+    let summary = completed_recovery_summary(&receipt);
+    let json = serde_json::to_value(&summary).expect("recovery summary serializes");
+    assert_eq!(json["events"], 1);
+    assert_eq!(json["recovered_ranges"], 1);
+    assert_eq!(json["recovered_chunks"], 1);
+    assert_eq!(json["recovered_bytes"], 17);
+    assert_eq!(
+        json["reason"],
+        "phase-one admission plan identity mismatch; discarded the untrusted plan and recomputed exact admission"
+    );
+    assert_eq!(
+        json["repair_command"],
+        "rerun the scan; report persistent admission-plan identity mismatches"
+    );
+
+    let terminal = completed_recovery_terminal_message(&receipt);
+    assert!(terminal.contains("phase-one admission plan identity mismatch"));
+    assert!(terminal.contains("recovered 1 exact range(s)"));
+    assert!(terminal.contains("17 byte(s)"));
+    assert!(terminal.contains("scan coverage is complete"));
+    assert!(!terminal.contains("backend CPU fallback faulted"));
+    assert!(!terminal.contains("calibrate-autoroute"));
+
+    record_completed_backend_recovery(&receipt);
+    record_completed_backend_recovery(&receipt);
+    let snapshot = API.scan_runtime_snapshot(&guard);
+    assert_eq!(snapshot.backend_recovery_events, 2);
+    assert_eq!(snapshot.backend_recovered_chunks, 2);
+    assert_eq!(snapshot.backend_recovered_bytes, 34);
+    let summaries = API.backend_recovery_summaries_for_test(&guard);
+    assert_eq!(summaries.len(), 1);
+    assert_eq!(summaries[0].events, 2);
+    assert_eq!(summaries[0].recovered_ranges, 2);
+    assert_eq!(summaries[0].recovered_chunks, 2);
+    assert_eq!(summaries[0].recovered_bytes, 34);
+
+    let cli = crate::args::Cli::parse_from(["keyhog", "scan", "."]);
+    let crate::args::Command::Scan(args) =
+        cli.command.expect("scan command parsed")
+    else {
+        panic!("expected scan command");
+    };
+    let now = chrono::Utc::now();
+    let metadata = crate::reporting::report_metadata_from_scan_run(
+        &args,
+        now,
+        now,
+        0,
+        1,
+        17,
+        1,
+        None,
+    );
+    assert_eq!(metadata.scan_status, ScanCompletionStatus::CompleteAfterRecovery);
+    assert_eq!(metadata.backend_recoveries.len(), 1);
+    assert_eq!(metadata.backend_recoveries[0].events, 2);
+    let metadata_json =
+        serde_json::to_value(&metadata).expect("report metadata serializes to JSON");
+    assert_eq!(metadata_json["scan_status"], "complete_after_recovery");
+    assert_eq!(metadata_json["backend_recoveries"][0]["events"], 2);
+    assert_eq!(
+        metadata_json["backend_recoveries"][0]["reason"],
+        "phase-one admission plan identity mismatch; discarded the untrusted plan and recomputed exact admission"
+    );
+    API.reset_scan_runtime_state_for_test(&guard);
+}

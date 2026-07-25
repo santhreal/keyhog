@@ -24,8 +24,6 @@ fn report_confidence_tail_routes_through_confidence_owner() {
     for required in [
         "struct ReportAdjudicationPolicy",
         "fn finalize_report_candidate(",
-        "fn finalize_report_raw_match(",
-        "let credential = raw_match.credential.as_ref();",
         "finalize_report_confidence(",
         "record_checksum_invalid_suppression(",
         "MatchCtx::for_final_emit(",
@@ -44,20 +42,24 @@ fn report_confidence_tail_routes_through_confidence_owner() {
         "engine/phase2_generic.rs",
     ] {
         let code = uncommented_code(&read(&src.join(path)));
-        let expected_finalizer = if path == "engine/scan_postprocess/ml.rs" {
-            "crate::adjudicate::finalize_report_raw_match("
-        } else {
-            "crate::adjudicate::finalize_report_candidate("
-        };
+        let expected_finalizer = "crate::adjudicate::finalize_report_candidate(";
         assert!(
             code.contains(expected_finalizer)
                 && code.contains("crate::adjudicate::ReportAdjudicationPolicy"),
             "{path} must route final report confidence through adjudicate"
         );
         if path == "engine/scan_postprocess/ml.rs" {
+            let verdict = code
+                .find("crate::adjudicate::finalize_report_candidate(")
+                .expect("ML final verdict boundary");
+            let materialize = code
+                .find(".materialize(final_confidence)")
+                .expect("post-verdict RawMatch materialization");
             assert!(
-                !code.contains("raw_match.confidence =") && !code.contains("&pending.credential,"),
-                "{path} must not mutate RawMatch confidence or pass a split credential into adjudicate"
+                verdict < materialize
+                    && !code.contains("raw_match.confidence =")
+                    && !code.contains("&pending.credential,"),
+                "{path} must adjudicate before constructing the durable RawMatch"
             );
         }
         for forbidden in [

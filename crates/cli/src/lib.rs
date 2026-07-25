@@ -315,22 +315,28 @@ fn exit_now(code: u8) -> ! {
 
 pub async fn cli_main() -> ExitCode {
     // `env::args()` panics on non-UTF-8 args (Linux allows raw-byte
-    // paths). The version check only needs to recognize literal ASCII
-    // flags, so iterate args_os() and lossy-compare; non-UTF-8 args
-    // could not possibly be the `-V` / `--version` literal.
-    // kimi-dogfood-2 #134.
+    // paths). The version check only needs to recognize literal ASCII flags,
+    // so inspect args_os(); non-UTF-8 args cannot equal these literals.
+    //
+    // `update` and `repair` deliberately own a value-taking `--version`.
+    // Once either subcommand is selected, that long flag must reach clap and
+    // the release SemVer validator rather than triggering this root fast path.
+    // The root-only `-V` remains unambiguous in every position.
     let mut is_version = false;
     let mut full_version = false;
-    for arg in std::env::args_os() {
-        if let Some(s) = arg.to_str() {
-            is_version |= s == "-V" || s == "--version";
-            full_version |= s == "--full";
+    let mut maintenance_subcommand_seen = false;
+    for arg in std::env::args_os().skip(1) {
+        if let Some(value) = arg.to_str() {
+            maintenance_subcommand_seen |= value == "update" || value == "repair";
+            is_version |= value == "-V"
+                || (value == "--version" && !maintenance_subcommand_seen);
+            full_version |= value == "--full";
         }
     }
 
-    // Fast-path: --version skips Ctrl-C handler spawn, tracing subscriber
-    // install, and Cli::parse(). The cold-start audit measured this at ~25ms
-    // saved per invocation on top of the hardware-probe skip.
+    // Fast-path: root --version/-V skips Ctrl-C handler spawn, tracing
+    // subscriber install, and Cli::parse(). The cold-start audit measured this
+    // at ~25ms saved per invocation on top of the hardware-probe skip.
     if is_version {
         print_version_info(full_version);
         return ExitCode::SUCCESS;
@@ -391,13 +397,10 @@ pub async fn cli_main() -> ExitCode {
             .init();
     }
     let _warn_dedup_summary = log_dedup::WarnDedupSummaryGuard;
-    // Scanner hard-stops call process::exit and skip Drop; flush the same
-    // warn-dedup summary the guard would print on normal exit (KH-1316).
-    keyhog_scanner::set_pre_exit_hook(log_dedup::dump_warn_dedup_summary);
 
     let cli = args::parse();
 
-    if cli.version {
+    if cli.build_version {
         print_version_info(cli.full);
         return ExitCode::SUCCESS;
     }
@@ -426,6 +429,7 @@ pub async fn cli_main() -> ExitCode {
         }
         Some(args::Command::Backend(args)) => subcommands::backend::run(args),
         Some(args::Command::Doctor(args)) => subcommands::doctor::run(args),
+        Some(args::Command::BloomDiagnostic(args)) => bloom_diagnostic::run(args),
         Some(args::Command::Update(args)) => subcommands::update::run(args).await,
         Some(args::Command::Repair(args)) => subcommands::repair::run(args).await,
         Some(args::Command::Uninstall(args)) => subcommands::uninstall::run(args),
@@ -477,6 +481,20 @@ fn cli_error_exit_code(error: &anyhow::Error) -> u8 {
         .any(|cause| cause.is::<orchestrator::GpuUnavailableError>())
     {
         exit_codes::EXIT_REQUIRE_GPU_UNMET
+    } else if error.chain().any(|cause| {
+        matches!(
+            cause.downcast_ref::<keyhog_scanner::ScanError>(),
+            Some(keyhog_scanner::ScanError::Gpu(_))
+        )
+    }) {
+        exit_codes::EXIT_REQUIRE_GPU_UNMET
+    } else if error.chain().any(|cause| {
+        matches!(
+            cause.downcast_ref::<keyhog_scanner::ScanError>(),
+            Some(keyhog_scanner::ScanError::Simd(_))
+        )
+    }) {
+        exit_codes::EXIT_SYSTEM_ERROR
     } else if is_daemon_service_failure(error) {
         exit_codes::EXIT_SYSTEM_ERROR
     } else if error.chain().any(is_user_io_error) {
@@ -581,6 +599,7 @@ pub(crate) mod atomic_file;
 pub(crate) mod autoroute_cache_path;
 pub(crate) mod baseline;
 pub(crate) mod benchmark;
+pub(crate) mod bloom_diagnostic;
 pub(crate) mod config;
 pub mod exit_codes;
 pub(crate) mod format;
@@ -606,6 +625,12 @@ pub(crate) mod sources;
 mod style;
 pub(crate) mod subcommands;
 pub(crate) mod test_fixture_suppressions;
-#[doc(hidden)]
+#[cfg(test)]
+mod cli_reference;
+#[cfg(test)]
+extern crate self as keyhog;
+#[cfg(test)]
+#[path = "../tests/unit/docs_help_coherence.rs"]
+mod docs_help_coherence;
 pub mod testing;
 pub(crate) mod value_parsers;

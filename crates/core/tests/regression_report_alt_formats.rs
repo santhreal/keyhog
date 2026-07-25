@@ -87,6 +87,7 @@ fn test_metadata(scan_status: ScanCompletionStatus) -> ScanReportMetadata {
         scan_id: "0123456789abcdef0123456789abcdef".into(),
         scan_status,
         backend_recoveries: Vec::new(),
+        static_recovery: None,
         keyhog_version: "test".into(),
         git_hash: "test".into(),
         detector_digest: "test".into(),

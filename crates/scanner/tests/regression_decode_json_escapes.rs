@@ -76,7 +76,7 @@ fn scan(text: &str) -> Vec<RawMatch> {
         },
     };
     s.clear_fragment_cache();
-    s.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+    s.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback).expect("selected backend scan succeeds")
         .into_iter()
         .flatten()
         .collect()
@@ -108,6 +108,40 @@ fn only(matches: &[RawMatch], id: &str) -> RawMatch {
     hits[0].clone()
 }
 
+/// Return the one detector match emitted by an exact source layer.
+fn only_from_source(matches: &[RawMatch], id: &str, source: &str) -> RawMatch {
+    let hits: Vec<&RawMatch> = matches
+        .iter()
+        .filter(|m| m.detector_id.as_ref() == id && m.location.source.as_ref() == source)
+        .collect();
+    assert_eq!(
+        hits.len(),
+        1,
+        "expected exactly one `{id}` match from `{source}`, got {} at {:?}",
+        hits.len(),
+        hits.iter()
+            .map(|hit| (&hit.location.source, hit.location.offset, hit.location.line))
+            .collect::<Vec<_>>()
+    );
+    hits[0].clone()
+}
+
+/// Assert both the credential bytes and their half-open byte span in the exact
+/// source layer that emitted them. Comparing only the value would miss a
+/// decoder that restored the right scalar at the wrong coordinate.
+fn assert_exact_credential_span(hit: &RawMatch, source_layer: &str, expected: &str) {
+    let start = source_layer
+        .find(expected)
+        .expect("expected credential must occur in its source layer");
+    let end = start + expected.len();
+    assert_eq!(hit.credential.as_ref(), expected);
+    assert_eq!(hit.location.offset, start);
+    assert_eq!(
+        source_layer.get(hit.location.offset..end),
+        Some(hit.credential.as_ref())
+    );
+}
+
 /// Wrap a JSON `"pem"` value around `sep`, with the PEM `BEGIN` anchor hidden as
 /// `BEGIN` so ONLY a decoder that restores the `I` can produce a match, and
 /// a 32-char contiguous base64 body run so decode-through is always routed in.
@@ -136,40 +170,52 @@ fn pw_json(value_body: &str) -> String {
 // `\uXXXX` (BMP) -> the exact scalar, captured verbatim in a credential.
 // ─────────────────────────────────────────────────────────────────────────
 
+/// Proves BMP escapes restore their exact ASCII scalar while raw-source recall
+/// remains monotonic instead of being erased by a decoded child.
 #[test]
 fn u_escape_bmp_decodes_to_exact_ascii_char() {
-    // `B` is the BMP escape for U+0042 'B'. The generic-password field
-    // captures the decoded value exactly, so the 'B' must land between RUN24 and
-    // the "Rq" tail with NO surrounding escape residue.
-    let json = pw_json(&format!("{RUN24}\\u0042Rq"));
+    // `B` is the BMP escape for U+0042 'B'. The source layer must retain the
+    // complete escaped logical value: truncating at `\` would silently hide
+    // bytes. The JSON child replaces exactly that escape and preserves its span.
+    let raw_value = format!("{RUN24}\\u0042Rq");
+    let decoded_value = format!("{RUN24}BRq");
+    let json = pw_json(&raw_value);
+    let decoded_json = pw_json(&decoded_value);
     let matches = scan(&json);
-    let m = only(&matches, "generic-password");
-    let expected = format!("{RUN24}BRq");
-    assert_eq!(m.credential.as_ref(), expected.as_str());
+    let raw = only_from_source(&matches, "generic-password", "filesystem");
+    let decoded = only_from_source(&matches, "generic-password", "filesystem/json");
+    assert_exact_credential_span(&raw, &json, &raw_value);
+    assert_exact_credential_span(&decoded, &decoded_json, &decoded_value);
 }
 
+/// Proves uppercase and lowercase hexadecimal nibbles decode identically while
+/// preserving the independent raw-source finding.
 #[test]
 fn u_escape_hex_digits_are_case_insensitive() {
-    // `take_hex_digits` accepts `0-9a-fA-F`. `J` (upper 'A' hex) -> 'J' and
-    // `j` (lower 'a' hex) -> 'j'. Both must decode; the credential pins the
-    // pair "Jj", proving upper- and lower-case hex nibbles map identically.
-    let json = pw_json(&format!("{RUN24}\\u004A\\u006aRq"));
+    let raw_value = format!("{RUN24}\\u004A\\u006aRq");
+    let decoded_value = format!("{RUN24}JjRq");
+    let json = pw_json(&raw_value);
+    let decoded_json = pw_json(&decoded_value);
     let matches = scan(&json);
-    let m = only(&matches, "generic-password");
-    let expected = format!("{RUN24}JjRq");
-    assert_eq!(m.credential.as_ref(), expected.as_str());
+    let raw = only_from_source(&matches, "generic-password", "filesystem");
+    let decoded = only_from_source(&matches, "generic-password", "filesystem/json");
+    assert_exact_credential_span(&raw, &json, &raw_value);
+    assert_exact_credential_span(&decoded, &decoded_json, &decoded_value);
 }
 
+/// Proves a decoded class-special scalar remains inside the decoded credential
+/// without suppressing the source-layer prefix finding.
 #[test]
 fn u_escape_decodes_in_class_special_char() {
-    // `!` -> '!' (U+0021). '!' is inside the generic-password value class,
-    // so it is captured rather than terminating the value, pins that `\u`
-    // resolves to the literal scalar, not a placeholder.
-    let json = pw_json(&format!("{RUN24}\\u0021Rq"));
+    let raw_value = format!("{RUN24}\\u0021Rq");
+    let decoded_value = format!("{RUN24}!Rq");
+    let json = pw_json(&raw_value);
+    let decoded_json = pw_json(&decoded_value);
     let matches = scan(&json);
-    let m = only(&matches, "generic-password");
-    let expected = format!("{RUN24}!Rq");
-    assert_eq!(m.credential.as_ref(), expected.as_str());
+    let raw = only_from_source(&matches, "generic-password", "filesystem");
+    let decoded = only_from_source(&matches, "generic-password", "filesystem/json");
+    assert_exact_credential_span(&raw, &json, &raw_value);
+    assert_exact_credential_span(&decoded, &decoded_json, &decoded_value);
 }
 
 // ─────────────────────────────────────────────────────────────────────────

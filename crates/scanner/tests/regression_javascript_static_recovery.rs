@@ -130,8 +130,7 @@ fn scan_at_base_offset(
             ..Default::default()
         },
     };
-    scanner
-        .scan_chunks_with_backend(&[chunk], backend)
+    scanner.scan_chunks_with_backend(&[chunk], backend).expect("selected backend scan succeeds")
         .into_iter()
         .flatten()
         .collect()

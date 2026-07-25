@@ -7,9 +7,8 @@
 //!     `(char_count / 8).clamp(1, 4)`; strings of <= 8 chars are fully masked
 //!     (`****`); UTF-8 is sliced on CHAR boundaries, never byte boundaries.
 //!   * `keyhog_core::Credential`: the opaque, zeroize-on-drop byte wrapper whose
-//!     `Debug`/`Display` refuse to print the bytes (leak guard), whose equality is
-//!     length-checked + constant-time, and whose serde form is a tagged
-//!     `{"text":...}` / `{"b64":...}` object (never the ambiguous legacy prefix).
+//!     `Debug`/`Display` redact and whose implicit serde output fails closed.
+//!     Historical tagged and legacy plaintext-bearing inputs remain readable.
 //!
 //! Every assertion is a concrete expected value read off the real implementation
 //! in `crates/core/src/lib.rs` (`redact` / `redaction_edge_len`) and
@@ -206,27 +205,35 @@ fn credential_clone_shares_bytes_and_stays_equal() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// Credential, serde tagged form + legacy compatibility
+// Credential, fail-closed output + tagged input compatibility
 // ---------------------------------------------------------------------------
 
 #[test]
-fn credential_serde_text_roundtrips_as_tagged_object() {
-    let cred: Credential = "hello".into();
-    let json = serde_json::to_string(&cred).unwrap();
-    assert_eq!(json, r#"{"text":"hello"}"#);
-    let back: Credential = serde_json::from_str(&json).unwrap();
-    assert!(back == cred);
-    assert_eq!(TestApi.credential_expose_str(&back), Some("hello"));
+fn credential_utf8_output_fails_closed_and_tagged_text_still_loads() {
+    const SECRET: &str = "hello";
+    let credential: Credential = SECRET.into();
+    let mut output = Vec::new();
+    let error = serde_json::to_writer(&mut output, &credential)
+        .expect_err("implicit UTF-8 credential output must fail closed")
+        .to_string();
+    assert!(output.is_empty());
+    assert!(!error.contains(SECRET));
+
+    let back: Credential = serde_json::from_str(r#"{"text":"hello"}"#).unwrap();
+    assert_eq!(TestApi.credential_expose_str(&back), Some(SECRET));
 }
 
 #[test]
-fn credential_serde_non_utf8_uses_b64_tag() {
-    let cred: Credential = (&[0xffu8, 0xfe][..]).into();
-    let json = serde_json::to_string(&cred).unwrap();
-    assert_eq!(json, r#"{"b64":"//4="}"#);
-    let back: Credential = serde_json::from_str(&json).unwrap();
-    assert!(back == cred);
+fn credential_binary_output_fails_closed_and_tagged_b64_still_loads() {
+    let credential: Credential = (&[0xffu8, 0xfe][..]).into();
+    let mut output = Vec::new();
+    let error = serde_json::to_writer(&mut output, &credential)
+        .expect_err("implicit binary credential output must fail closed")
+        .to_string();
+    assert!(output.is_empty());
+    assert!(!error.contains("//4="));
+
+    let back: Credential = serde_json::from_str(r#"{"b64":"//4="}"#).unwrap();
     assert_eq!(TestApi.credential_expose_secret(&back), &[0xffu8, 0xfe][..]);
 }
 

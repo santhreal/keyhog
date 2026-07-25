@@ -10,8 +10,8 @@
 //! the source: ASCII path `len<=8 -> "****"`, else
 //! `edge = (len/8).clamp(1,4)` and `s[..edge] + "..." + s[len-edge..]`;
 //! non-ASCII path uses `char_count` (grapheme-safe via `chars()`), not byte
-//! length. `SensitiveString::Debug` redacts to a byte count while `Display`
-//! *intentionally* exposes the content; `Credential` redacts BOTH.
+//! length. `SensitiveString` and `Credential` redact both `Debug` and
+//! `Display`; plaintext requires an explicit exposure method.
 
 use keyhog_core::testing::{CoreTestApi, TestApi};
 use keyhog_core::{redact, Credential, SensitiveString};

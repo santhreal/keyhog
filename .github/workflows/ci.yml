@@ -480,7 +480,7 @@ jobs:
       # not only the scanner library. The portable release build remains below.
       - run: cargo build -p keyhog
       - run: cargo test -p keyhog-core --lib
-      - run: cargo test -p keyhog-scanner --lib
+      - run: cargo test -p keyhog-scanner --lib -- --nocapture
       - run: cargo test -p keyhog-sources --lib
       # Lock the EXACT invocation the release workflow uses. The release
       # tag flow runs `cargo build --release -p keyhog --no-default-features

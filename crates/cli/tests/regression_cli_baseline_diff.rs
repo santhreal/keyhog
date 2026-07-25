@@ -72,6 +72,45 @@ fn file_with(name: &str, body: &str) -> (TempDir, PathBuf) {
     (dir, path)
 }
 
+/// Write a one-detector corpus whose explicit script verifier deterministically
+/// classifies the planted PAT without network access.
+#[cfg(feature = "verify")]
+fn write_script_verifier_detector(detectors: &Path, status: &str) {
+    std::fs::create_dir(detectors).expect("create detector corpus");
+    let detector = format!(
+        r#"
+[detector]
+id = "baseline-script-verifier"
+name = "Baseline script verifier"
+service = "baseline-script-verifier"
+severity = "critical"
+ml = {{ match_mode = "lift", entropy_mode = "disabled", weight = 1.0, context_radius_lines = 0 }}
+match_confidence = {{ literal_prefix_weight = 0.35, context_anchor_weight = 0.20, entropy_weight = 0.20, high_entropy_partial_weight = 0.12, moderate_entropy_threshold = 3.0, moderate_entropy_weight = 0.05, low_entropy_penalty_floor = 2.0, low_entropy_min_match_length = 10, low_entropy_penalty_multiplier = 0.60, keyword_nearby_weight = 0.10, sensitive_file_weight = 0.10, companion_weight = 0.05, very_high_entropy_margin = 1.2999999999999998, named_anchor_floor = 0.55, assignment_context_multiplier = 1.0, string_literal_context_multiplier = 0.9, unknown_context_multiplier = 0.8, documentation_context_multiplier = 0.3, comment_context_multiplier = 0.4, test_context_multiplier = 0.3, encrypted_context_multiplier = 0.05, soft_context_suppression_threshold = 0.5, encrypted_context_suppression_threshold = 0.8, post_match = {{ placeholder_multiplier = 0.05, minimum_byte_diversity = 0.1, low_diversity_multiplier = 0.1, maximum_repeat_ratio = 0.8, degenerate_run_min_length = 10, degenerate_repeat_multiplier = 0.1, fixture_path_multiplier = 0.5, ml_context_reapply_below = 0.95 }} }}
+validators = [{{ type = "crc32-base62", prefixes = ["ghp_"], entropy_len = 30, checksum_len = 6, reject_overlong = true, confidence_floor = 0.9 }}]
+keywords = ["ghp_"]
+simdsieve_prefixes = ["ghp_"]
+
+[[detector.patterns]]
+regex = 'ghp_[A-Za-z0-9]{{36}}\b'
+
+[detector.verify]
+method = "GET"
+url = "https://example.com/unused"
+allowed_domains = ["example.com"]
+
+[detector.verify.auth]
+type = "script"
+engine = "python3"
+code = "print('STATUS: {status}')"
+
+[detector.verify.success]
+status = 200
+"#
+    );
+    std::fs::write(detectors.join("script-verifier.toml"), detector)
+        .expect("write script verifier detector");
+}
+
 /// Parse a JSON report / baseline document, panicking with raw bytes on failure.
 fn json_of(s: &str) -> serde_json::Value {
     serde_json::from_str(s).unwrap_or_else(|e| panic!("not JSON ({e}):\n{s}"))
@@ -133,6 +172,81 @@ fn create_baseline_writes_v1_one_entry_and_exits_zero() {
         entries[0]["detector_id"].as_str(),
         Some(PAT_DETECTOR),
         "the entry must carry the github-classic-pat id; got {v}"
+    );
+}
+
+/// Combining `--create-baseline --verify` must still write the exact snapshot,
+/// but a deterministically confirmed live credential must preserve exit 10.
+/// This prevents baseline creation from turning a live-secret CI failure green.
+#[test]
+#[cfg(feature = "verify")]
+fn create_baseline_with_live_verification_writes_snapshot_and_exits_ten() {
+    let (dir, source) = file_with("live.env", &format!("TOKEN={PAT}\n"));
+    let detectors = dir.path().join("detectors");
+    let baseline = dir.path().join("baseline.json");
+    write_script_verifier_detector(&detectors, "LIVE");
+
+    let (code, stdout, stderr) = scan(
+        &source,
+        &[
+            "--detectors",
+            detectors.to_str().unwrap(),
+            "--verify",
+            "--allow-script-verify",
+            "--create-baseline",
+            baseline.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(
+        code,
+        Some(10),
+        "verified-live baseline creation must preserve exit 10; stdout={stdout}; stderr={stderr}"
+    );
+    assert_eq!(
+        stdout, "",
+        "baseline creation returns before reporting findings; got {stdout:?}"
+    );
+    let value = read_baseline(&baseline);
+    assert_eq!(value["version"].as_u64(), Some(1), "baseline={value}");
+    assert_eq!(
+        baseline_detectors(&value),
+        vec!["baseline-script-verifier".to_string()],
+        "the live finding must still be persisted before exit 10; baseline={value}"
+    );
+}
+
+/// The same combined path with a deterministically dead credential writes the
+/// snapshot and exits zero. This negative twin pins that exit 10 depends on a
+/// `Live` result, not merely on requesting verification.
+#[test]
+#[cfg(feature = "verify")]
+fn create_baseline_with_dead_verification_writes_snapshot_and_exits_zero() {
+    let (dir, source) = file_with("dead.env", &format!("TOKEN={PAT}\n"));
+    let detectors = dir.path().join("detectors");
+    let baseline = dir.path().join("baseline.json");
+    write_script_verifier_detector(&detectors, "DEAD");
+
+    let (code, stdout, stderr) = scan(
+        &source,
+        &[
+            "--detectors",
+            detectors.to_str().unwrap(),
+            "--verify",
+            "--allow-script-verify",
+            "--create-baseline",
+            baseline.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(
+        code,
+        Some(0),
+        "verified-dead baseline creation must stay green; stdout={stdout}; stderr={stderr}"
+    );
+    assert_eq!(
+        baseline_detectors(&read_baseline(&baseline)),
+        vec!["baseline-script-verifier".to_string()]
     );
 }
 

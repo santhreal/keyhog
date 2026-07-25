@@ -173,13 +173,20 @@ fn phase1_test_scanner() -> CompiledScanner {
     CompiledScanner::compile(phase1_test_detectors()).expect("autoroute phase-1 scanner compiles")
 }
 
+fn phase2_keyword_test_scanner() -> CompiledScanner {
+    let mut detectors = phase1_test_detectors();
+    detectors[0].patterns[0].regex = r"[gG][hH][pP]_[A-Za-z0-9]{8}".into();
+    CompiledScanner::compile(detectors).expect("autoroute phase-2 scanner compiles")
+}
+
 fn phase1_test_detectors() -> Vec<keyhog_core::DetectorSpec> {
+    let baseline = keyhog_core::embedded_detector_specs()
+        .iter()
+        .find(|detector| detector.id == "generic-password")
+        .expect("embedded generic-password policy")
+        .clone();
     vec![keyhog_core::DetectorSpec {
         tests: Vec::new(),
-        id: "autoroute-phase1-token".into(),
-        name: "Autoroute phase 1 token".into(),
-        service: "unit".into(),
-        severity: keyhog_core::Severity::High,
         patterns: vec![keyhog_core::PatternSpec {
             regex: r"ghp_[A-Za-z0-9]{8}".into(),
             description: None,
@@ -191,7 +198,7 @@ fn phase1_test_detectors() -> Vec<keyhog_core::DetectorSpec> {
         }],
         keywords: vec!["ghp_".into()],
         min_confidence: Some(0.0),
-        ..keyhog_scanner::testing::named_detector_fixture_defaults()
+        ..baseline
     }]
 }
 
@@ -1073,7 +1080,7 @@ fn workload_key_distinguishes_equal_size_phase2_keyword_trigger_density() {
     const BYTES: usize = 64 * 1024;
     const TRIGGER: &str = "ghp_ABCDEFGH";
 
-    let scanner = phase1_test_scanner();
+    let scanner = phase2_keyword_test_scanner();
     let decode_disabled = keyhog_scanner::decode::DecodeWorkloadPlan::from_limits(0, usize::MAX);
     let mut sparse = TRIGGER.to_string();
     sparse.push_str(&"x".repeat(BYTES - sparse.len()));
@@ -1102,7 +1109,9 @@ fn workload_key_distinguishes_equal_size_phase2_keyword_trigger_density() {
     );
     assert!(
         dense_triggers.keyword_trigger_count > sparse_triggers.keyword_trigger_count,
-        "the dense payload must exercise more keyword-localized phase-2 work"
+        "the dense payload must exercise more keyword-localized phase-2 work; sparse={}, dense={}",
+        sparse_triggers.keyword_trigger_count,
+        dense_triggers.keyword_trigger_count
     );
 
     let sparse_key = workload_key_with_plan(
@@ -1147,7 +1156,9 @@ fn workload_key_projects_scanner_owned_decoder_families() {
     assert!(!plain.decode_unknown);
 
     let sparse = workload_key(
-        &[test_chunk("token = \"AK%49AQYLPMN5HFIQR7XYA\"".into())],
+        &[test_chunk(
+            "token = \"::%41::!@#$^*()_-+[]{};,./?~|\"".into(),
+        )],
         902,
     )
     .expect("sparse URL workload classified");
@@ -3978,7 +3989,6 @@ fn cached_router_uses_visible_scalar_recovery_for_invalid_autoroute_state() {
     )
     .expect("compile scanner");
     let caps = test_hw_caps();
-    let runtime_status = scanner.runtime_status();
     let host = AutorouteHostProfile::from_caps(
         &caps,
         None,
@@ -4038,7 +4048,7 @@ fn cached_router_uses_visible_scalar_recovery_for_invalid_autoroute_state() {
     );
     save_autoroute_cache(
         &path,
-        runtime_status.detector_digest,
+        autoroute_detector_digest(test_rules_digest()),
         test_rules_digest(),
         config_digest,
         &host,
@@ -4055,16 +4065,18 @@ fn cached_router_uses_visible_scalar_recovery_for_invalid_autoroute_state() {
         Ok(Some(path.clone())),
         &scanner,
     );
+    let hit = router
+        .choose_with_plan(&scanner, None, &hit_batch)
+        .expect("cache hit should choose persisted backend");
     assert_eq!(
-        router
-            .choose_with_plan(&scanner, None, &hit_batch)
-            .map(|selection| selection.backend)
-            .expect("cache hit should choose persisted backend"),
+        hit.backend,
         if scanner.simd_backend_available() {
             ScanBackend::SimdCpu
         } else {
             ScanBackend::CpuFallback
-        }
+        },
+        "cache-hit recovery was unexpected: {:?}",
+        hit.autoroute_recovery
     );
     let miss = router
         .choose_with_plan(&scanner, None, &miss_batch)
@@ -5312,7 +5324,7 @@ fn autoroute_reference_mismatch_evidence_names_fields_without_values() {
         credential: "AKIAIOSFODNN7EXAMPLE".into(),
         credential_hash: [0xAB; 32].into(),
         companions: std::collections::HashMap::from([(
-            "account".to_string(),
+            std::sync::Arc::from("account"),
             "production@example.test".to_string(),
         )]),
         location: keyhog_core::MatchLocation {
@@ -5332,7 +5344,7 @@ fn autoroute_reference_mismatch_evidence_names_fields_without_values() {
     trial_match.credential_hash = [0xCD; 32].into();
     trial_match
         .companions
-        .insert("account".to_string(), "staging@example.test".to_string());
+        .insert(std::sync::Arc::from("account"), "staging@example.test".to_string());
     trial_match.location.commit = Some("commit-sensitive-b".into());
     trial_match.location.author = Some("author-b@example.test".into());
     trial_match.location.date = Some("2026-07-15T00:00:00Z".into());
@@ -5481,7 +5493,7 @@ fn canonical_match_parity_covers_every_user_visible_raw_match_field() {
     let mut changed = base.clone();
     changed
         .companions
-        .insert("account".to_string(), "sensitive-companion".to_string());
+        .insert(std::sync::Arc::from("account"), "sensitive-companion".to_string());
     variants.push(("companions", changed));
     let mut changed = base.clone();
     changed.location.source = "git".into();
@@ -6875,8 +6887,11 @@ fn phase2_keyword_localizer_is_an_independent_measured_route_candidate() {
     assert_eq!(decision.primary_point().candidate_receipts.len(), 8);
 }
 
+/// Proves that live calibration times both physical GPU implementations before
+/// resolving a route; this must run only on a host with working CUDA and WGPU.
 #[cfg(feature = "default")]
 #[test]
+#[ignore = "GPU-host gate; run explicitly with --ignored on a host with live CUDA and WGPU"]
 fn live_calibration_measures_every_gpu_peer_before_resolving_or_refusing() {
     let detector = keyhog_core::DetectorSpec {
         id: "gpu-peer-calibration".into(),
@@ -6902,14 +6917,14 @@ fn live_calibration_measures_every_gpu_peer_before_resolving_or_refusing() {
             .iter()
             .find(|candidate| candidate.backend == ScanBackend::GpuCuda)
             .is_some_and(|candidate| candidate.available),
-        "CUDA peer must be live on the GPU release host"
+        "CUDA peer must be live on the GPU release host: {candidates:#?}"
     );
     assert!(
         candidates
             .iter()
             .find(|candidate| candidate.backend == ScanBackend::GpuWgpu)
             .is_some_and(|candidate| candidate.available),
-        "WGPU peer must be live on the GPU release host"
+        "WGPU peer must be live on the GPU release host: {candidates:#?}"
     );
     let sample = vec![Chunk {
         data: "key=KHGPUCAL_A1b2C3d4E5f6G7h8I9j0\n".repeat(1024).into(),

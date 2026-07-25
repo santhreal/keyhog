@@ -129,8 +129,8 @@ fn simd_union_is_load_bearing_for_recall() {
     let mut union_load_bearing = 0usize;
     for &(detector_id, text, credential) in HS_MINUS_AC_FIXTURES {
         let chunk = make_chunk(text);
-        let simd = scanner.scan_with_backend(&chunk, ScanBackend::SimdCpu);
-        let cpu = scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback);
+        let simd = scanner.scan_with_backend(&chunk, ScanBackend::SimdCpu).expect("selected backend scan succeeds");
+        let cpu = scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
 
         let simd_found = simd
             .iter()
@@ -202,8 +202,8 @@ fn simd_findings_are_a_superset_of_scalar() {
     // set, so BOTH backends must find it. This proves the Hyperscan union did not
     // regress the scalar AC fast path while widening the candidate set.
     let control = make_chunk("const AWS_KEY = \"AKIAQYLPMN5HFIQR7XYA\";\n");
-    let control_simd = finding_keys(&scanner.scan_with_backend(&control, ScanBackend::SimdCpu));
-    let control_cpu = finding_keys(&scanner.scan_with_backend(&control, ScanBackend::CpuFallback));
+    let control_simd = finding_keys(&scanner.scan_with_backend(&control, ScanBackend::SimdCpu).expect("selected backend scan succeeds"));
+    let control_cpu = finding_keys(&scanner.scan_with_backend(&control, ScanBackend::CpuFallback).expect("selected backend scan succeeds"));
     assert!(
         !control_cpu.is_empty() && control_cpu.is_subset(&control_simd),
         "literal-anchored control regressed: CpuFallback={control_cpu:?} must be non-empty \
@@ -214,8 +214,8 @@ fn simd_findings_are_a_superset_of_scalar() {
     // each fixture scanned in isolation (no shared-substring cross-pollution).
     for &(detector_id, text, _cred) in HS_MINUS_AC_FIXTURES {
         let chunk = make_chunk(text);
-        let simd = finding_keys(&scanner.scan_with_backend(&chunk, ScanBackend::SimdCpu));
-        let cpu = finding_keys(&scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback));
+        let simd = finding_keys(&scanner.scan_with_backend(&chunk, ScanBackend::SimdCpu).expect("selected backend scan succeeds"));
+        let cpu = finding_keys(&scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback).expect("selected backend scan succeeds"));
         let dropped: Vec<_> = cpu.difference(&simd).collect();
         assert!(
             dropped.is_empty(),

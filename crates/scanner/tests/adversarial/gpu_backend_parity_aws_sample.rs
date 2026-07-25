@@ -4,6 +4,8 @@
 mod gpu_backend_support;
 use gpu_backend_support::assert_cpu_gpu_backend_parity;
 
+/// Locks out adapter-contention regressions that made the macOS suite abort
+/// before proving exact AWS finding parity.
 #[test]
 fn gpu_backend_parity_aws_sample() {
     assert_cpu_gpu_backend_parity(

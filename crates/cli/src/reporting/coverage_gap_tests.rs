@@ -514,10 +514,12 @@ fn warn_severity_set_is_exact() {
     }
 }
 
+/// Locks out leaving a coverage-gap kind unclassified after adding a new
+/// fail-closed category to the canonical 20-kind partition.
 #[test]
 fn severity_partition_totals_all_kinds() {
-    // 12 FAIL + 8 WARN = 20, no kind is left unclassified, and the split is
-    // pinned so a future re-classification is a deliberate, reviewed change.
+    // 13 FAIL + 7 WARN = 20. ScannerLineOffsetMismatch is fail-closed because
+    // wrong source coordinates make the reported finding incomplete.
     let fail = CoverageGapKind::ALL
         .iter()
         .filter(|k| k.severity() == CoverageSeverity::Fail)
@@ -526,8 +528,8 @@ fn severity_partition_totals_all_kinds() {
         .iter()
         .filter(|k| k.severity() == CoverageSeverity::Warn)
         .count();
-    assert_eq!(fail, 12, "expected 12 FAIL categories, got {fail}");
-    assert_eq!(warn, 8, "expected 8 WARN categories, got {warn}");
+    assert_eq!(fail, 13, "expected 13 FAIL categories, got {fail}");
+    assert_eq!(warn, 7, "expected 7 WARN categories, got {warn}");
     assert_eq!(fail + warn, CoverageGapKind::ALL.len());
     assert_eq!(
         CoverageGapKind::fail_class_kinds().count(),

@@ -50,5 +50,21 @@ keyhog scan .
         )
 
 
+class OrgAuditWorkflowEvidenceTests(unittest.TestCase):
+    def test_make_delegation_preserves_required_competitor_evidence(self) -> None:
+        """The workflow may bind the canonical Make target without duplicating its CLI."""
+        workflow = """
+        make -C benchmarks gate \\
+          GATE_SCANNERS=keyhog,betterleaks,kingfisher \\
+          REQUIRE_COMPETITORS=betterleaks,kingfisher
+        """
+        self.assertTrue(org_audit.workflow_requires_competitor_evidence(workflow))
+
+    def test_missing_required_competitors_remains_rejected(self) -> None:
+        """A scanner list alone must not satisfy fail-closed competitor availability."""
+        workflow = "make -C benchmarks gate GATE_SCANNERS=keyhog,betterleaks,kingfisher"
+        self.assertFalse(org_audit.workflow_requires_competitor_evidence(workflow))
+
+
 if __name__ == "__main__":
     unittest.main()

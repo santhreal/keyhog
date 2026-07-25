@@ -31,7 +31,9 @@ fn scan(text: &str) -> Vec<RawMatch> {
             ..Default::default()
         },
     };
-    scanner.scan(&chunk)
+    scanner
+        .scan(&chunk)
+        .expect("dotfile credential regression scan should succeed")
 }
 
 /// The captured credential for detector `id`, if it fired.

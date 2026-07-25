@@ -35,7 +35,7 @@
 //! parity tests running concurrently in the same Rust test process.
 
 use keyhog_core::{Chunk, ChunkMetadata, SensitiveString};
-use keyhog_scanner::decode::Decoder;
+use keyhog_scanner::decode::{DecodeOutputSink, Decoder};
 use keyhog_scanner::telemetry::{decode_truncation_count, reset_for_scan, testing::reset};
 use keyhog_scanner::testing::{decode_chunk, register_thread_decoder};
 use keyhog_scanner::{CompiledScanner, ScannerConfig};
@@ -74,12 +74,12 @@ impl Decoder for FanoutDecoder {
         "c9probe_decoder"
     }
 
-    fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
+    fn decode_chunk_into(&self, chunk: &Chunk, sink: &mut dyn DecodeOutputSink) {
         // Never recurse on our own output: results we emit carry TAG in their
         // source_type, so a re-decode pass at depth>0 would otherwise multiply
         // the count and muddy the assertion.
         if chunk.metadata.source_type.contains(TAG) {
-            return Vec::new();
+            return;
         }
         let should_sleep = chunk
             .metadata
@@ -89,7 +89,6 @@ impl Decoder for FanoutDecoder {
         if should_sleep {
             std::thread::sleep(SLEEP);
         }
-        let mut out = Vec::with_capacity(FANOUT);
         for i in 0..FANOUT {
             // Each result is unique (so the pipeline's `seen` dedup keeps all of
             // them) and tagged so the test can count our contribution exactly.
@@ -100,16 +99,17 @@ impl Decoder for FanoutDecoder {
             // candidates, so re-decoding our output at depth>0 produces nothing.
             // That keeps the tagged count exactly `FANOUT` (no recursive
             // inflation toward MAX_DECODED_CHUNKS_PER_ROOT) on the no-sleep path.
-            out.push(Chunk {
+            if !sink.push(Chunk {
                 data: SensitiveString::from(format!("c9.tok.{i:05}.end")),
                 metadata: ChunkMetadata {
                     source_type: format!("{}/{TAG}", chunk.metadata.source_type).into(),
                     path: chunk.metadata.path.clone(),
                     ..Default::default()
                 },
-            });
+            }) {
+                return;
+            }
         }
-        out
     }
 }
 
@@ -120,18 +120,18 @@ impl Decoder for OversizeDecodedChunk {
         "oversize_decoded_chunk"
     }
 
-    fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
+    fn decode_chunk_into(&self, chunk: &Chunk, sink: &mut dyn DecodeOutputSink) {
         if chunk.metadata.source_type.contains("oversize-decoded") {
-            return Vec::new();
+            return;
         }
-        vec![Chunk {
+        sink.push(Chunk {
             data: SensitiveString::from("Z".repeat(256)),
             metadata: ChunkMetadata {
                 source_type: format!("{}/oversize-decoded", chunk.metadata.source_type).into(),
                 path: chunk.metadata.path.clone(),
                 ..Default::default()
             },
-        }]
+        });
     }
 }
 
@@ -321,7 +321,9 @@ fn postprocess_oversized_decoded_child_counts_decode_truncation() {
         root.data.len() <= 64,
         "fixture parent must enter decode postprocess"
     );
-    let matches = scanner.scan(&root);
+    let matches = scanner
+        .scan(&root)
+        .expect("decoded-child budget regression scan succeeds");
     assert!(
         matches.is_empty(),
         "oversized decoded-child fixture has no detectors and must not emit matches"

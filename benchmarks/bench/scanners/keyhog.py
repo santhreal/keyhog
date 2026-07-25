@@ -251,6 +251,7 @@ class KeyhogScanner(Scanner):
         super().__init__(binary)
         self._detector_corpus = detector_corpus
         self._last_scan_manifest: dict[str, object] = {}
+        self._last_static_recovery: dict[str, object] | None = None
 
     @property
     def binary(self) -> str:
@@ -472,6 +473,7 @@ class KeyhogScanner(Scanner):
         """Scan immutable executable and detector snapshots with exact identity."""
         self._validate_config(cfg)
         self._last_scan_manifest = {}
+        self._last_static_recovery = None
         snapshot, digest = self._detector_snapshot()
         with self._binary_snapshot() as (
             executable, executable_digest, version, pass_fds,
@@ -511,6 +513,11 @@ class KeyhogScanner(Scanner):
             daemon_pid=daemon_pid,
             daemon_requests=daemon_requests,
             scan_manifest=dict(self._last_scan_manifest),
+            static_recovery=(
+                dict(self._last_static_recovery)
+                if self._last_static_recovery is not None
+                else None
+            ),
         )
 
     def _run_daemon_prepared(
@@ -564,7 +571,10 @@ class KeyhogScanner(Scanner):
                     )
                 stats = daemon.run_client(root, result_output, timeout)
                 findings = self._parse(result_output, config_id=cfg.config_id)
-                self._last_scan_manifest = self._read_scan_manifest(result_output)
+                (
+                    self._last_scan_manifest,
+                    self._last_static_recovery,
+                ) = self._read_scan_metadata(result_output)
                 evidence = daemon.evidence()
                 if evidence.scans_served != 2:
                     raise RuntimeError(
@@ -640,7 +650,10 @@ class KeyhogScanner(Scanner):
             )
             self._require_success(stdout, stderr, stats, cfg, timeout, phase="timed scan")
             findings = self._parse(result_output, config_id=cfg.config_id)
-            self._last_scan_manifest = self._read_scan_manifest(result_output)
+            (
+                self._last_scan_manifest,
+                self._last_static_recovery,
+            ) = self._read_scan_metadata(result_output)
             return findings, stats
 
     def _require_success(
@@ -712,12 +725,28 @@ class KeyhogScanner(Scanner):
                     f"keyhog benchmark artifact for {config_id or output} lacks the "
                     "resolved_scan manifest"
                 )
+            if not isinstance(metadata.get("static_recovery"), dict):
+                raise RuntimeError(
+                    f"keyhog benchmark artifact for {config_id or output} lacks "
+                    "exact static_recovery telemetry"
+                )
         return _normalize_keyhog(data)
 
     @staticmethod
-    def _read_scan_manifest(output: pathlib.Path) -> dict[str, object]:
-        """Read the already-validated manifest for persistent benchmark provenance."""
+    def _read_scan_metadata(
+        output: pathlib.Path,
+    ) -> tuple[dict[str, object], dict[str, object] | None]:
+        """Read run metadata; legacy list artifacts carry no provenance."""
         data = json.loads(output.read_text())
+        if isinstance(data, list):
+            return {}, None
         metadata = data.get("metadata") if isinstance(data, dict) else None
-        manifest = metadata.get("resolved_scan") if isinstance(metadata, dict) else None
-        return dict(manifest) if isinstance(manifest, dict) else {}
+        if not isinstance(metadata, dict):
+            raise RuntimeError(f"keyhog benchmark artifact {output} lacks metadata")
+        manifest = metadata.get("resolved_scan")
+        static_recovery = metadata.get("static_recovery")
+        if not isinstance(manifest, dict) or not isinstance(static_recovery, dict):
+            raise RuntimeError(
+                f"keyhog benchmark artifact {output} lacks required provenance"
+            )
+        return dict(manifest), dict(static_recovery)

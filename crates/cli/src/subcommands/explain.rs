@@ -7,6 +7,7 @@
 use crate::args::ExplainArgs;
 use anyhow::Result;
 use keyhog_core::{contains_ignore_ascii_case, DetectorSpec};
+use keyhog_scanner::CompiledScanner;
 
 pub(crate) fn run(args: ExplainArgs) -> Result<()> {
     crate::orchestrator_config::validate_explicit_detector_path(
@@ -22,10 +23,58 @@ pub(crate) fn run(args: ExplainArgs) -> Result<()> {
         .find(|d| d.id.eq_ignore_ascii_case(requested))
         .ok_or_else(|| explain_not_found(&detectors, requested, requested))?;
 
+    let detector_corpus_sha256 =
+        keyhog_core::hex_encode(keyhog_core::compute_detector_corpus_digest(&detectors)?);
+    let scanner = CompiledScanner::compile(detectors.clone())?;
     print_explanation(detector);
+    print_bigram_prefilter_status(
+        &scanner,
+        args.bloom_evidence.as_deref(),
+        &detector_corpus_sha256,
+    )?;
     Ok(())
 }
 
+
+fn print_bigram_prefilter_status(
+    scanner: &CompiledScanner,
+    evidence_path: Option<&std::path::Path>,
+    detector_corpus_sha256: &str,
+) -> Result<()> {
+    let status = scanner.bigram_prefilter_status();
+    let evidence = evidence_path
+        .map(|path| {
+            super::doctor::load_bloom_evidence(
+                path,
+                status,
+                detector_corpus_sha256,
+                scanner.runtime_status().detector_digest,
+            )
+        })
+        .transpose()?;
+    let diagnostic = super::doctor::bloom_operator_diagnostic(status, evidence.as_ref());
+    let style = crate::style::for_stdout();
+    let state_color = if diagnostic.unhealthy {
+        style.red
+    } else if diagnostic.warned {
+        style.yellow
+    } else {
+        style.green
+    };
+    println!("\n  {}Bigram prefilter:{}", style.bold, style.reset);
+    println!("    density: {}", diagnostic.density);
+    println!(
+        "    state:   {state_color}{}{reset}",
+        diagnostic.state,
+        reset = style.reset
+    );
+    println!("    reject:  {}", diagnostic.corpus_rejection);
+    println!("    parity:  {}", diagnostic.finding_parity);
+    if let Some(action) = diagnostic.action {
+        println!("    action:  {}{action}{}", style.dim, style.reset);
+    }
+    Ok(())
+}
 /// Map a retired `hot-<name>` finding alias to its canonical registry detector.
 /// The map provides an exact error migration but never aliases execution.
 fn canonical_for_hot_id(id: &str) -> Option<&'static str> {

@@ -92,6 +92,15 @@ fn file_gate_matrix_lists_every_scanner_src_module() {
         missing.is_empty(),
         "FILE_GATE_MATRIX missing scanner src rows: {missing:?}"
     );
+    let orphaned: Vec<_> = listed
+        .iter()
+        .filter(|p| p.starts_with("crates/scanner/src/") && !required.contains(p))
+        .cloned()
+        .collect();
+    assert!(
+        orphaned.is_empty(),
+        "FILE_GATE_MATRIX has orphaned scanner src rows: {orphaned:?}"
+    );
     assert!(
         !listed
             .iter()

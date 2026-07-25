@@ -41,7 +41,9 @@ fn asana_pat_fires_after_phase2_wire_fix() {
             ..Default::default()
         },
     };
-    let matches = scanner.scan(&chunk);
+    let matches = scanner
+        .scan(&chunk)
+        .expect("canonical Asana phase-two scan should succeed");
     for m in &matches {
         eprintln!(
             "match: detector_id={:?} credential={:?}",

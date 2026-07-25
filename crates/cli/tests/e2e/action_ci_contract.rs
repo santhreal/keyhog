@@ -517,6 +517,51 @@ fn yaml_get<'a>(
     mapping.get(serde_yaml::Value::String(key.into()))
 }
 
+fn workflow_job<'a>(
+    workflow: &'a serde_yaml::Mapping,
+    name: &str,
+) -> &'a serde_yaml::Mapping {
+    yaml_get(workflow, "jobs")
+        .and_then(serde_yaml::Value::as_mapping)
+        .and_then(|jobs| yaml_get(jobs, name))
+        .and_then(serde_yaml::Value::as_mapping)
+        .unwrap_or_else(|| panic!("workflow declares the {name} job"))
+}
+
+fn workflow_job_needs(job: &serde_yaml::Mapping) -> Vec<&str> {
+    match yaml_get(job, "needs") {
+        Some(serde_yaml::Value::String(need)) => vec![need],
+        Some(serde_yaml::Value::Sequence(needs)) => needs
+            .iter()
+            .map(|need| need.as_str().expect("job need is a string"))
+            .collect(),
+        Some(_) => panic!("job needs must be a string or sequence"),
+        None => Vec::new(),
+    }
+}
+
+fn workflow_job_steps(job: &serde_yaml::Mapping) -> &[serde_yaml::Value] {
+    yaml_get(job, "steps")
+        .and_then(serde_yaml::Value::as_sequence)
+        .map(Vec::as_slice)
+        .expect("workflow job declares steps")
+}
+
+fn workflow_run_step_containing<'a>(
+    job: &'a serde_yaml::Mapping,
+    command: &str,
+) -> &'a serde_yaml::Mapping {
+    workflow_job_steps(job)
+        .iter()
+        .filter_map(serde_yaml::Value::as_mapping)
+        .find(|step| {
+            yaml_get(step, "run")
+                .and_then(serde_yaml::Value::as_str)
+                .is_some_and(|run| run.contains(command))
+        })
+        .unwrap_or_else(|| panic!("workflow job has a run step containing {command:?}"))
+}
+
 fn workflow_trigger<'a>(mapping: &'a serde_yaml::Mapping) -> Option<&'a serde_yaml::Value> {
     yaml_get(mapping, "on").or_else(|| mapping.get(serde_yaml::Value::Bool(true)))
 }
@@ -2868,34 +2913,76 @@ printf 'scan\n' >> "$KEYHOG_CALL_LOG"
 }
 
 #[test]
-fn release_floating_tags_advance_only_after_signed_newest_stable_release() {
-    let workflow = fs::read_to_string(release_workflow()).expect("read release.yml");
-    let docker = workflow.split("\n  docker:").nth(1).expect("docker job");
-    let major = workflow
-        .split("\n  major-tag:")
-        .nth(1)
-        .expect("major-tag job");
-    for (name, job) in [("docker", docker), ("major-tag", major)] {
-        assert!(
-            job.contains("needs: sign"),
-            "{name} must wait for signatures"
-        );
-        assert!(
-            job.contains("Decide whether this is the newest stable release")
-                && job.contains("scripts/is-newest-stable-tag.sh \"$KEYHOG_RELEASE_TAG\"")
-                && job.contains("steps.floating.outputs.advance == 'true'"),
-            "{name} must reject prereleases and older manual reruns before moving a floating tag"
+fn release_floating_tags_advance_only_after_atomic_publication_gates() {
+    let source = fs::read_to_string(release_workflow()).expect("read release.yml");
+    let workflow: serde_yaml::Value =
+        serde_yaml::from_str(&source).expect("release.yml must parse");
+    let workflow = workflow.as_mapping().expect("release workflow is a mapping");
+    let docker = workflow_job(workflow, "docker");
+    let publish = workflow_job(workflow, "publish");
+    let major = workflow_job(workflow, "major-tag");
+    let crates = workflow_job(workflow, "crates");
+
+    assert_eq!(
+        workflow_job_needs(docker),
+        ["sign"],
+        "the immutable container must wait for privately signed assets"
+    );
+    let mut publish_needs = workflow_job_needs(publish);
+    publish_needs.sort_unstable();
+    assert_eq!(
+        publish_needs,
+        ["docker", "sign", "smoke"],
+        "public release transition must wait for the signed receipt, immutable container, and candidate smoke"
+    );
+    for (name, job) in [("major-tag", major), ("crates", crates)] {
+        assert_eq!(
+            workflow_job_needs(job),
+            ["publish"],
+            "{name} must not advance until the exact immutable release is public"
         );
     }
+
+    // Regression: prereleases and older manual reruns must never move either
+    // floating namespace, even though the immutable image is a publish prerequisite.
+    for (name, job) in [("docker", docker), ("major-tag", major)] {
+        let floating = workflow_run_step_containing(job, "is-newest-stable-tag.sh");
+        let run = yaml_get(floating, "run")
+            .and_then(serde_yaml::Value::as_str)
+            .expect("floating-tag predicate is a run step");
+        assert!(
+            run.contains("\"$KEYHOG_RELEASE_TAG\""),
+            "{name} must evaluate the exact validated release tag"
+        );
+        assert!(
+            workflow_job_steps(job)
+                .iter()
+                .filter_map(serde_yaml::Value::as_mapping)
+                .any(|step| {
+                    yaml_get(step, "if").and_then(serde_yaml::Value::as_str)
+                        == Some("steps.floating.outputs.advance == 'true'")
+                }),
+            "{name} must gate its floating mutation on the shared stable-tag predicate"
+        );
+    }
+
+    let image = workflow_job_steps(docker)
+        .iter()
+        .filter_map(serde_yaml::Value::as_mapping)
+        .find(|step| {
+            yaml_get(step, "uses")
+                .and_then(serde_yaml::Value::as_str)
+                .is_some_and(|uses| uses.starts_with("docker/build-push-action@"))
+        })
+        .expect("docker job builds the immutable image");
+    let tags = yaml_get(image, "with")
+        .and_then(serde_yaml::Value::as_mapping)
+        .and_then(|with| yaml_get(with, "tags"))
+        .and_then(serde_yaml::Value::as_str)
+        .expect("container build declares tags");
     assert!(
-        docker.contains("ghcr.io/${{ github.repository }}:${{ steps.tag.outputs.version }}")
-            && !docker
-                .split("- name: Build and push")
-                .nth(1)
-                .and_then(|tail| tail.split("- name:").next())
-                .expect("build-and-push step")
-                .contains(":latest"),
-        "the immutable version image must publish before latest is conditionally advanced"
+        tags.contains("steps.tag.outputs.version") && !tags.contains(":latest"),
+        "the build step must publish only the immutable version tag; latest advances separately"
     );
 }
 
@@ -3318,23 +3405,32 @@ fn differential_bench_smoke_fails_closed_before_scoring() {
 
 #[test]
 fn differential_bench_builds_checked_out_keyhog_release_binary() {
-    let workflow =
+    let source =
         fs::read_to_string(differential_bench_workflow()).expect("read differential-bench.yml");
-    let install = workflow
-        .split("- name: build checked-out keyhog (release binary)")
-        .nth(1)
-        .and_then(|tail| tail.split("- name: install required competitors").next())
-        .expect("checked-out keyhog build step exists");
-    assert!(
-        install.contains("cargo build --locked --release -p keyhog --bin keyhog"),
-        "differential bench must measure the checked-out KeyHog source"
+    let workflow: serde_yaml::Value =
+        serde_yaml::from_str(&source).expect("differential-bench.yml must parse");
+    let gate = workflow_job(
+        workflow
+            .as_mapping()
+            .expect("differential benchmark workflow is a mapping"),
+        "gate",
     );
+    let build = workflow_run_step_containing(
+        gate,
+        "cargo build --locked --release -p keyhog --bin keyhog",
+    );
+    let run = yaml_get(build, "run")
+        .and_then(serde_yaml::Value::as_str)
+        .expect("checked-out build step runs shell commands");
+
+    // Regression: selecting a step by its display name let harmless wording
+    // changes hide whether the benchmark still executes the checked-out binary.
     assert!(
-        install.contains("install -m 0755 target/release/keyhog \"$HOME/.local/bin/keyhog\""),
+        run.contains("install -m 0755 target/release/keyhog \"$HOME/.local/bin/keyhog\""),
         "differential bench must install only the release artifact it just built"
     );
     assert!(
-        install.contains("git rev-parse HEAD"),
+        run.contains("git rev-parse HEAD"),
         "differential evidence must disclose the exact checked-out KeyHog commit"
     );
 }
@@ -3472,43 +3568,91 @@ fn shared_release_version_parser_accepts_prereleases_and_rejects_build_metadata(
 }
 
 #[test]
-fn release_stages_privately_and_publishes_only_the_exact_signed_manifest() {
-    let workflow = fs::read_to_string(release_workflow()).expect("read release.yml");
-    let build = workflow
-        .split("\n  build:")
-        .nth(1)
-        .and_then(|tail| tail.split("\n  sign:").next())
-        .expect("build job exists");
-    let publish = workflow
-        .split("- name: Sign, validate, and publish the exact release manifest")
-        .nth(1)
-        .and_then(|tail| tail.split("\n  docker:").next())
-        .expect("signed publish step exists");
+fn release_stages_privately_then_publishes_the_signed_immutable_receipt() {
+    let source = fs::read_to_string(release_workflow()).expect("read release.yml");
+    let workflow: serde_yaml::Value =
+        serde_yaml::from_str(&source).expect("release.yml must parse");
+    let workflow = workflow.as_mapping().expect("release workflow is a mapping");
+    let build = workflow_job(workflow, "build");
+    let sign = workflow_job(workflow, "sign");
+    let smoke = workflow_job(workflow, "smoke");
+    let publish = workflow_job(workflow, "publish");
+
     assert!(
-        build.contains("Stage unsigned release bundle")
-            && build.contains("actions/upload-artifact@")
-            && !build.contains("gh release upload"),
-        "matrix jobs must stage privately instead of exposing unsigned release assets"
+        workflow_job_steps(build)
+            .iter()
+            .filter_map(serde_yaml::Value::as_mapping)
+            .any(|step| {
+                yaml_get(step, "uses")
+                    .and_then(serde_yaml::Value::as_str)
+                    .is_some_and(|uses| uses.starts_with("actions/upload-artifact@"))
+                    && yaml_get(step, "name").and_then(serde_yaml::Value::as_str)
+                        == Some("Stage unsigned release bundle")
+            }),
+        "matrix jobs must stage unsigned bundles privately"
     );
-    assert!(
-        publish.contains("\"repos/$GITHUB_REPOSITORY/releases?per_page=100\"")
-            && publish.contains("if (( ${#release_ids[@]} == 1 ))")
-            && publish.contains("\"repos/$GITHUB_REPOSITORY/releases/$release_id\"")
-            && publish.contains("-F draft=true")
-            && publish.contains("-F draft=false")
-            && publish.contains(
-                "\"https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$release_id/assets?name=$asset\""
-            )
-            && !publish.contains("releases/tags/$tag")
-            && !publish.contains("gh release "),
-        "new, published-rerun, and interrupted-draft releases must mutate by release ID, remain private until the signed manifest is complete, then publish"
+    assert_eq!(
+        workflow_job_needs(sign),
+        ["build", "installers"],
+        "the sole signing job must wait for every privately staged payload"
     );
+    assert_eq!(
+        workflow_job_needs(smoke),
+        ["sign"],
+        "candidate smoke must consume only signed private artifacts"
+    );
+
+    let prepare = workflow_run_step_containing(sign, "publish_release_assets.py\" prepare");
+    let prepare = yaml_get(prepare, "run")
+        .and_then(serde_yaml::Value::as_str)
+        .expect("private preparation runs shell commands");
     assert!(
-        publish.contains("staged release manifest is missing")
-            && publish.contains("actual[*]")
-            && publish.contains("wanted[*]")
-            && publish.contains("published release manifest does not equal"),
-        "publication must fail closed on missing, extra, or mismatched assets"
+        prepare.contains("--receipt \"$workdir/release-publication.json\"")
+            && prepare.contains("\"$workdir/release-publication.json\" </dev/null")
+            && !prepare.contains("publish_release_assets.py\" publish"),
+        "signing must produce and sign an immutable-ID receipt without making the release public"
+    );
+
+    let transition = workflow_run_step_containing(publish, "publish_release_assets.py publish");
+    let transition = yaml_get(transition, "run")
+        .and_then(serde_yaml::Value::as_str)
+        .expect("public transition runs shell commands");
+    assert!(
+        transition.contains("--receipt \"$GITHUB_WORKSPACE/proof/release-publication.json\""),
+        "the final job must publish only the downloaded signed immutable-ID receipt"
+    );
+
+    // Regression: publication is atomic only when both externally visible
+    // prerequisites and the exact private receipt are proven first.
+    let mut needs = workflow_job_needs(publish);
+    needs.sort_unstable();
+    assert_eq!(needs, ["docker", "sign", "smoke"]);
+    let proof = workflow_run_step_containing(publish, "minisign -Vm");
+    let proof = yaml_get(proof, "run")
+        .and_then(serde_yaml::Value::as_str)
+        .expect("publication proof runs shell commands");
+    assert!(
+        proof.contains("release-publication.json")
+            && proof.contains("KEYHOG_CONTAINER_DIGEST")
+            && proof.contains("git rev-parse HEAD"),
+        "final publication must verify the receipt signature, container digest, and source commit"
+    );
+}
+
+#[test]
+fn integration_smoke_sarif_path_requires_the_findings_exit_code() {
+    let workflow =
+        fs::read_to_string(integration_smoke_workflow()).expect("read integration-smoke.yml");
+    let sarif = workflow
+        .split("- name: SARIF output")
+        .nth(1)
+        .and_then(|tail| tail.split("- name: Empty dir scan").next())
+        .expect("SARIF smoke step exists");
+    assert!(
+        sarif.contains("code=$?")
+            && sarif.contains("if [ \"$code\" != \"1\" ]; then")
+            && sarif.contains("FAIL: expected exit 1 (secrets found), got $code"),
+        "SARIF smoke must require the findings exit code as well as validating the report"
     );
 }
 

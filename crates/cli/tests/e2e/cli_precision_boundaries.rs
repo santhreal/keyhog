@@ -47,13 +47,13 @@ fn scan_with_args(fixture: &str, args: &[&str]) -> (String, String, Option<i32>)
 }
 
 /// Precision mode negative twin: the same file content scanned with and without
-/// `--precision` must show that precision is tighter (fewer or equal findings).
-/// Use a fixture with mixed-strength credentials.
+/// `--precision` must show that precision is a strict subset. The 0.795
+/// AbuseIPDB finding is the negative twin to the high-confidence AWS finding.
 #[test]
 fn precision_mode_negative_twin_is_subset_of_default() {
     let fixture = concat!(
         "aws_secret_access_key = \"kP8xQ2mNvR7tZ4wL9bYsH3jD6fG1cA0eXuViK5oT\"\n",
-        "DATABASE_PASSWORD = \"admin123\"\n",
+        "ABUSEIPDB_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz\n",
     );
 
     let (def_out, _, _) = scan_with_args(fixture, &[]);
@@ -246,28 +246,42 @@ fn precision_mode_composes_with_scan_comments() {
     );
 }
 
-/// Precision mode with `--min-confidence` set LOWER than 0.85 defaults to 0.85.
-/// The user cannot use `--precision --min-confidence 0.3` to bypass the floor.
-/// The effective floor is max(0.85, 0.3) = 0.85.
+/// Precision mode with `--min-confidence` set LOWER than 0.85 stays at 0.85.
+/// The user cannot use `--precision --min-confidence 0.3` to bypass the floor:
+/// the effective threshold is max(0.85, 0.3) = 0.85.
 #[test]
 fn precision_mode_ignores_min_confidence_when_lower_than_0_85() {
-    // A weak generic password (scores below 0.85).
-    let fixture = "PASSWORD = \"admin123\"\n";
+    let fixture = concat!(
+        "ABUSEIPDB_API_KEY=",
+        "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz",
+        "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz\n",
+    );
+
+    // Regression: prove the negative fixture itself has not drifted above the
+    // precision boundary before relying on it to test the lower override.
+    let (default_out, _, default_code) = scan_with_args(fixture, &[]);
+    assert_eq!(default_code, Some(1));
+    let default = parse_json_array(&default_out, "default lower-override twin");
+    assert!(default.iter().any(|finding| {
+        finding.get("detector_id").and_then(|value| value.as_str())
+            == Some("abuseipdb-api-key")
+            && finding.get("confidence").and_then(|value| value.as_f64()) == Some(0.795)
+    }));
 
     // Try to set min_confidence to 0.3 (below the precision floor).
     let (out, _, code) = scan_with_args(fixture, &["--precision", "--min-confidence", "0.3"]);
 
-    // The weak password must still be dropped because precision enforces 0.85.
+    // The 0.795 credential must still be dropped because precision enforces 0.85.
     assert_eq!(
         code,
         Some(0),
-        "precision must enforce 0.85 floor even with --min-confidence 0.3"
+        "precision must enforce 0.85 even with --min-confidence 0.3"
     );
     let findings: serde_json::Value = serde_json::from_str(&out).expect("JSON");
     let arr = findings.as_array().expect("array");
     assert!(
         arr.is_empty(),
-        "precision must drop the weak password (conf < 0.85); got {arr:?}"
+        "precision must drop the 0.795 credential; got {arr:?}"
     );
 }
 

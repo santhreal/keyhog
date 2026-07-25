@@ -52,7 +52,7 @@ fn decode_through_reports_real_in_bounds_offset_not_synthetic_alias() {
         },
     };
 
-    let matches = scanner.scan(&chunk);
+    let matches = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
     let aws: Vec<_> = matches
         .iter()
         .filter(|m| m.detector_id.as_ref() == "aws-access-key" && m.credential.as_ref() == secret)

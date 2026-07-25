@@ -34,6 +34,6 @@ fn scan_does_not_cross_chunk_boundary() {
             metadata: ChunkMetadata::default(),
         },
     ];
-    let out = s.scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback);
+    let out = s.scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
     assert!(out.iter().all(|v| v.is_empty()));
 }

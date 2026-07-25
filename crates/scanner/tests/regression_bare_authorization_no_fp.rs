@@ -71,7 +71,9 @@ fn build_scanner() -> CompiledScanner {
 /// True if ANY surfaced match was attributed to `detector_id`.
 fn detector_fired(scanner: &CompiledScanner, text: &str, path: &str, detector_id: &str) -> bool {
     let chunk = make_chunk(text, path);
-    let matches = scanner.scan(&chunk);
+    let matches = scanner
+        .scan(&chunk)
+        .expect("bare-authorization attribution scan should succeed");
     matches
         .iter()
         .any(|m| m.detector_id.as_ref() == detector_id)
@@ -85,7 +87,9 @@ fn detector_credential(
     detector_id: &str,
 ) -> Option<String> {
     let chunk = make_chunk(text, path);
-    let matches = scanner.scan(&chunk);
+    let matches = scanner
+        .scan(&chunk)
+        .expect("bare-authorization credential scan should succeed");
     matches
         .iter()
         .find(|m| m.detector_id.as_ref() == detector_id)

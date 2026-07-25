@@ -13,6 +13,7 @@ fn metadata() -> ScanReportMetadata {
         scan_id: "scan-test-id".to_string(),
         scan_status: keyhog_core::ScanCompletionStatus::Success,
         backend_recoveries: Vec::new(),
+        static_recovery: None,
         keyhog_version: "0.5.41-test".to_string(),
         git_hash: "test-git".to_string(),
         detector_digest: "922-test".to_string(),
