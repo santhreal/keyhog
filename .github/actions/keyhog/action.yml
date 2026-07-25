@@ -1,85 +1,73 @@
 name: 'KeyHog Secret Scanner'
-description: 'Scan source code for leaked secrets with KeyHog.'
+description: 'Scan a path for secrets, keep a report, and fail on findings by default.'
 branding:
   icon: 'shield'
   color: 'red'
 
 inputs:
   path:
-    description: 'Path to scan (file or directory).'
+    description: 'File or directory to scan.'
     default: '.'
   severity:
-    description: 'Minimum severity to report: info | client-safe | low | medium | high | critical.'
+    description: 'Minimum reported severity: info | client-safe | low | medium | high | critical.'
     default: 'high'
   format:
-    description: 'Output format supported by the composite Action: text | json | sarif | jsonl.'
+    description: 'Report format: text | json | sarif | jsonl.'
     default: 'sarif'
   verify:
-    description: 'Run live credential verification on findings ("true" enables --verify).'
+    description: 'Set to "true" to verify findings with provider APIs.'
     default: 'false'
   version:
     description: |
-      KeyHog version to use. Matched against a published GitHub Release tag.
-      Exact versions use vMAJOR.MINOR.PATCH with an optional prerelease suffix;
-      build metadata is not published and is rejected.
-      Exact versions, semver action tags, and floating major tags require the
-      complete signed binary and GPU literal bundle. When unset, exact and
-      floating release refs resolve the checked-out release version. Branch and
-      commit refs build their checked-out source directly.
+      Published KeyHog version to install, such as v0.5.46. Leave unset to use
+      the version selected by the Action ref. Branch and commit refs build from source.
     default: ''
   upload-sarif:
-    description: 'When format=sarif, upload via the GitHub Code Scanning SARIF action.'
+    description: 'Upload the report to GitHub Code Scanning when format is sarif.'
     default: 'true'
   analysis-category:
     description: |
-      Stable lowercase identity for this analysis partition. Use a distinct
-      value for each monorepo slice or matrix partition scanned on one commit.
-      Allowed: 1-64 lowercase letters, digits, dot, underscore, or dash. Start
-      and end with a letter or digit.
+      Stable lowercase identity for this scan. Use a distinct value for each
+      monorepo or matrix partition. Allows 1-64 letters, digits, dots,
+      underscores, or dashes, and must start and end with a letter or digit.
     default: 'keyhog'
   fail-on-findings:
     description: |
-      Fail the workflow when any finding at or above `severity` is reported.
-      Set to "false" to keep the job green and rely on the uploaded SARIF
-      surfacing in code-scanning instead. Verified-live credentials under
-      `verify: "true"` always fail after reports are uploaded.
+      Fail on reported findings. Set to "false" for advisory findings.
+      A verified-live credential still fails with exit code 10.
     default: 'true'
   baseline:
     description: |
-      Path to a keyhog baseline file (produced by
-      `keyhog scan --create-baseline baseline.json` and committed to the
-      repo). Findings already present in the baseline are suppressed, so the
-      job blocks only NEW secrets. This is the standard way to adopt keyhog in
-      a repo that already has findings, without a noisy failing first run.
+      Committed baseline created with keyhog scan <PATH>
+      --create-baseline <FILE>. Baseline findings are suppressed.
     default: ''
   backend:
     description: |
-      Optional scan backend: auto | simd | cpu | gpu-cuda | gpu-wgpu. Leave
-      unset or choose auto to calibrate this workload; explicit backends are
-      for diagnostics.
+      Scan backend: auto | simd | cpu | gpu-cuda | gpu-wgpu.
+      Leave unset for calibrated automatic routing.
     default: ''
 
 outputs:
   findings:
-    description: 'Number of findings at or above `severity` (parsed from the report).'
+    description: 'Number of reported findings at or above `severity`.'
     value: ${{ steps.scan.outputs.findings }}
   exit-code:
-    description: 'Raw keyhog process exit code: 0 clean, 1 findings, 10 live findings under --verify.'
+    description: 'Raw KeyHog exit code. Common scan results are 0 clean, 1 findings, and 10 verified-live findings.'
     value: ${{ steps.scan.outputs.exit-code }}
   duration-ms:
-    description: 'Wall-clock scan duration in milliseconds, measured by the Action wrapper.'
+    description: 'Scan duration in milliseconds.'
     value: ${{ steps.scan.outputs.duration-ms }}
   scan-status:
-    description: 'Typed terminal scan state: success, partial, cancelled, or failed.'
+    description: 'Terminal scan state: success, partial, cancelled, or failed.'
     value: ${{ steps.scan.outputs.scan-status }}
   report-present:
-    description: 'Whether the scanner wrote the requested report before termination.'
+    description: 'Whether the requested report was written.'
     value: ${{ steps.scan.outputs.report-present }}
   report:
-    description: 'Path to the produced scan report (relative to the workspace).'
+    description: 'Report path relative to the workspace.'
     value: ${{ steps.outfile.outputs.name }}
   analysis-category:
-    description: 'Validated Code Scanning and report partition identity.'
+    description: 'Validated report and Code Scanning partition identity.'
     value: ${{ steps.outfile.outputs.category }}
 
 runs:
