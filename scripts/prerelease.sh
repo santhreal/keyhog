@@ -307,11 +307,11 @@ check "substantive release notes" \
 # failures. Pin release benchmarks to an immutable default-feature artifact.
 step "candidate: build release binary"
 CANDIDATE="$CARGO_TARGET_DIR/$PROFILE/keyhog"
-RELEASE_CANDIDATE="$CARGO_TARGET_DIR/$PROFILE/keyhog-release-candidate"
+BENCH_RELEASE_CANDIDATE="$CARGO_TARGET_DIR/$PROFILE/keyhog-release-candidate"
 CANDIDATE_READY=0
 if cargo build -p keyhog --bin keyhog --profile "$PROFILE" \
-  && cp "$CANDIDATE" "$RELEASE_CANDIDATE"; then
-  export KEYHOG_BIN="$RELEASE_CANDIDATE"
+  && cp "$CANDIDATE" "$BENCH_RELEASE_CANDIDATE"; then
+  export KEYHOG_BIN="$BENCH_RELEASE_CANDIDATE"
   CANDIDATE_READY=1
   printf '  \033[32mPASS\033[0m candidate build (%s)\n' "$KEYHOG_BIN"
 else
@@ -331,7 +331,7 @@ if [ "$CANDIDATE_READY" = "1" ]; then
     --no-default-features --features ci-lean; then
     export KEYHOG_BIN="$CANDIDATE"
     check "bench pytest" bash -c "cd benchmarks && PYTHONDONTWRITEBYTECODE=1 python3 -B -m pytest -p no:cacheprovider -q -m 'not target_spec' bench/tests"
-    export KEYHOG_BIN="$RELEASE_CANDIDATE"
+    export KEYHOG_BIN="$BENCH_RELEASE_CANDIDATE"
   else
     echo "  FAIL bench pytest, ci-lean fixture candidate failed to build"
     fail=1
