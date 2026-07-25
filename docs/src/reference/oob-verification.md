@@ -157,9 +157,9 @@ not by itself produce a special process exit.
 
 ## Failure behavior
 
-- **No `--verify-oob`:** an OOB-required finding fails closed as `error` before
-  KeyHog sends its provider HTTP probe. Metadata says
-  `"oob_disabled":"no active OOB session"`.
+- **No `--verify-oob`:** OOB-required detectors fail closed before sending any
+  HTTP probe. The metadata contract is
+  `oob_disabled = "no active OOB session"`.
 - **Collector handshake failure:** KeyHog prints one stderr warning with the
   server and a redacted error. Ordinary HTTP verifiers continue. OOB-required
   findings fail closed before their provider probe.
