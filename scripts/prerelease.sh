@@ -304,12 +304,14 @@ check "substantive release notes" \
 # Bench integration tests must execute the source tree being released. Resolving
 # an arbitrary same-semver binary from a shared Cargo target can load an older
 # detector schema and turn one stale-artifact error into thousands of recall
-# failures. Build once, then pin every benchmark invocation to this artifact.
-step "candidate: build benchmark binary"
+# failures. Pin release benchmarks to an immutable default-feature artifact.
+step "candidate: build release binary"
 CANDIDATE="$CARGO_TARGET_DIR/$PROFILE/keyhog"
+RELEASE_CANDIDATE="$CARGO_TARGET_DIR/$PROFILE/keyhog-release-candidate"
 CANDIDATE_READY=0
-if cargo build -p keyhog --bin keyhog --profile "$PROFILE"; then
-  export KEYHOG_BIN="$CANDIDATE"
+if cargo build -p keyhog --bin keyhog --profile "$PROFILE" \
+  && cp "$CANDIDATE" "$RELEASE_CANDIDATE"; then
+  export KEYHOG_BIN="$RELEASE_CANDIDATE"
   CANDIDATE_READY=1
   printf '  \033[32mPASS\033[0m candidate build (%s)\n' "$KEYHOG_BIN"
 else
@@ -320,7 +322,21 @@ fi
 
 step "bench: scorer/gate unit tests"
 if [ "$CANDIDATE_READY" = "1" ]; then
-  check "bench pytest" bash -c "cd benchmarks && PYTHONDONTWRITEBYTECODE=1 python3 -B -m pytest -p no:cacheprovider -q -m 'not target_spec' bench/tests"
+  # Three autoroute parity tests use an independently authorized timing seam
+  # compiled only by `ci-lean`. Build that test binary in the ordinary target
+  # slot, run the suite against it, then restore KEYHOG_BIN to the immutable
+  # default-feature release candidate copied above. Release evidence and later
+  # benchmark gates therefore never consume the test-enabled binary.
+  if cargo build -p keyhog --bin keyhog --profile "$PROFILE" \
+    --no-default-features --features ci-lean; then
+    export KEYHOG_BIN="$CANDIDATE"
+    check "bench pytest" bash -c "cd benchmarks && PYTHONDONTWRITEBYTECODE=1 python3 -B -m pytest -p no:cacheprovider -q -m 'not target_spec' bench/tests"
+    export KEYHOG_BIN="$RELEASE_CANDIDATE"
+  else
+    echo "  FAIL bench pytest, ci-lean fixture candidate failed to build"
+    fail=1
+    FAILED+=("bench pytest fixture candidate")
+  fi
 else
   echo "  FAIL bench pytest, candidate binary is unavailable"
   fail=1
