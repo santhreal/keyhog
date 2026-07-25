@@ -1,66 +1,132 @@
 # System-wide credential triage
 
-`keyhog scan-system` audits a whole machine in one command. It enumerates
-every mounted drive, auto-discovers every git repository on the way, and runs
-the same scan and git-history pipeline that `keyhog scan --git-history` runs,
-against each. It exists for the moments when the question is not "does this
-repo leak" but "does anything on this host leak".
+`keyhog scan-system` performs a one-shot audit across the mounted filesystems
+that KeyHog can enumerate and read. It scans working-tree files first. It also
+discovers Git repositories and scans their history unless you disable that
+step.
+
+Start with a bounded local sweep:
 
 ```sh
-sudo keyhog scan-system --space 50G                   # default 50 GiB ceiling
-sudo keyhog scan-system --space 1T --include-network  # also walk NFS / SMB / sshfs
-sudo keyhog scan-system --space 10G --no-git-history  # skip historical blobs
+sudo keyhog scan-system --space 10G 2>scan-system.log
 ```
 
-Run it with enough privilege to read the trees you care about. Without `sudo`
-it silently cannot enter another user's home directory, which is the opposite
-of what a triage sweep wants.
+Keep the exit status and stderr log. Stderr contains the selected mounts,
+coverage warnings, byte count, and terminal summary. Add `--output findings.json`
+when you also need a redacted JSON findings array.
 
-## What it walks
+Run with enough privilege to read the trees in scope. An unreadable path is a
+coverage gap. KeyHog reports the gap and does not describe the run as complete.
+Use elevated privilege only on a host and scope you are authorized to audit.
 
-The command discovers targets, it is not handed a path. It enumerates every
-mounted filesystem and skips the pseudo-filesystems that never hold source:
-`/proc`, `/sys`, `tmpfs`, `nsfs`, `fuse.snapfuse`, and their kin. Network
-mounts (NFS, SMB, sshfs) are skipped by default because they are usually slow
-and shared; `--include-network` opts them in.
+## Execution mode
 
-On the way through each filesystem it auto-discovers every git repository:
-ordinary worktrees, bare repositories, and submodules. Each one is scanned
-through the full pipeline, and unless you pass `--no-git-history` its history
-is walked too, so a credential committed and later deleted still surfaces.
+`scan-system` always builds and runs its scanner in process. It does not accept
+`--daemon`, and a running daemon does not change its behavior. This is distinct
+from `keyhog scan --daemon=auto`, which can route an eligible single file or
+`stdin` request through a warm daemon.
 
-## The space ceiling is a hard limit
+Use `watch` after the one-shot sweep when you need to inspect future file
+changes:
 
-`--space <N>` (default `50G`) caps the total bytes scanned. It is not a
-suggestion: the sweep stops when it reaches the ceiling so a run on an
-unfamiliar host cannot accidentally exhaust a CI runner or an incident
-responder's laptop. Sizes take `K`/`M`/`G`/`T` suffixes (`--space 1T`). Raise
-it deliberately when you know the host is large; lower it when you want a fast
-first pass.
+```sh
+keyhog watch ~/projects \
+  --max-file-size 104857600 \
+  --max-consecutive-failures 8
+```
 
-## Why `.gitignore` is ignored by default
+`watch` is also an in-process foreground command. It compiles one scanner and
+scans changed regular files. It does not perform the initial directory sweep or
+Git-history scan for you. Run `keyhog scan --daemon=off ~/projects` for a full
+rescan after a watch failure. The watcher exits after eight consecutive scan
+engine failures by default so a broken scanner does not keep dropping changes.
 
-A normal scan honors `.gitignore`. `scan-system` does not, and that is the
-security-correct default: an attacker or a careless developer who stashes a
-leaked key will often `.gitignore` it precisely so tooling stops looking. A
-triage sweep that respected those rules would be blind to the exact files most
-worth finding. Pass `--respect-gitignore` only when you are auditing your own
-hygiene rather than hunting for hidden secrets.
+## What the system sweep walks
 
-## When to reach for it
+The command discovers targets instead of accepting a path. It enumerates
+mounted filesystems and skips pseudo-filesystems such as `/proc`, `/sys`,
+`tmpfs`, and `nsfs`. Network mounts such as NFS, SMB, and sshfs are skipped by
+default. Add `--include-network` only when that remote scope is authorized:
 
-- **Incident response.** A host is suspected compromised; you need to know what
-  credentials are recoverable from it before rotating.
-- **Inherited infrastructure.** An M&A handover or a decommissioned server whose
-  history nobody remembers.
-- **Quarterly laptop sweeps.** A recurring audit of developer machines where
-  secrets accumulate in dotfiles, old clones, and forgotten branches.
+```sh
+sudo keyhog scan-system --space 1T --include-network
+```
 
-## Pairing with lockdown
+During discovery, KeyHog finds ordinary worktrees, bare repositories, and
+submodules. After the filesystem walk, it scans their Git histories. A
+credential committed and later deleted can therefore surface. Use
+`--no-git-history` when only current files are in scope:
 
-When the host holding the secrets is the same host running the scan, add
-`--lockdown` so credentials never reach swap or a core dump while the sweep
-runs. Lockdown forbids `--include-network` (a network sweep from a locked-down
-host defeats the point), so pick one posture per run. See the
+```sh
+sudo keyhog scan-system --space 10G --no-git-history
+```
+
+A binary built without the `git` feature cannot scan discovered history.
+KeyHog reports each skipped history as a coverage gap. Reinstall a build with
+Git support, or use `--no-git-history` to state the reduced scope.
+
+## Space and findings limits
+
+`--space <SIZE>` is a hard aggregate byte ceiling. The default is `50G`, which
+means 50 GiB. Sizes require a unit and accept `B`, `K`, `M`, `G`, or `T` and
+their `KB` or `KiB` forms. Fractional values such as `1.5G` are accepted.
+
+KeyHog stops before a chunk that would cross the ceiling. Filesystem data is
+scanned before Git history, so a small ceiling can leave later mounts and
+histories untouched. Reaching the ceiling records a coverage gap. Raise the
+limit and rerun when complete host coverage is required.
+
+The command retains at most 1,000,000 redacted findings in memory and continues
+counting additional findings. A warning says when detail was dropped. Preserve
+the stderr summary with the JSON output.
+
+The terminal states are:
+
+| Result | Exit |
+|---|---:|
+| No findings and complete coverage | `0` |
+| One or more findings, including a partial scan | `1` |
+| No findings and one or more coverage gaps | `13` |
+| Invalid arguments or operator input | `2` |
+| System or I/O failure | `3` |
+
+Exit `13` is not a clean result. Correct permissions, raise `--space`, restore
+Git support, or isolate the affected path with a normal in-process scan.
+
+## Detector corpus
+
+Both system scans and watchers accept an explicit detector directory:
+
+```sh
+sudo keyhog scan-system --space 10G \
+  --detectors /opt/keyhog/reviewed-detectors
+
+keyhog watch ~/projects \
+  --detectors /opt/keyhog/reviewed-detectors
+```
+
+An explicitly selected directory is a replacement corpus by default. It does
+not silently fall back to embedded detectors when the path is missing or
+invalid. These subcommands do not expose a `--detectors-mode` flag. They use the
+shared scan configuration, so a valid `detectors_mode = "overlay"` in the
+resolved `.keyhog.toml` explicitly requests composition instead.
+
+This corpus is compiled by the command itself. It need not match a running
+daemon because neither `scan-system` nor `watch` uses the daemon socket.
+
+## Ignore and lockdown policy
+
+Unlike a normal filesystem scan, `scan-system` ignores `.gitignore` and
+`.keyhogignore` by default. This prevents a local ignore rule from hiding the
+files being triaged. Use `--respect-gitignore` only when that narrower scope is
+intentional.
+
+Every system sweep disables core dumps and ptrace when the host permits it.
+`--lockdown` also requires the stronger protections to succeed and refuses
+network mounts. It cannot be combined with `--include-network`.
+
+For recovery, address every warning before treating the host as covered. Fix
+permissions for unreadable paths, raise the byte ceiling, repair corrupt Git
+objects, or rerun a deliberately reduced scope. See the
 [CLI reference](../reference/cli.md#keyhog-scan-system) for the full flag list
-and the exit-code contract.
+and [exit codes](../reference/exit-codes.md) for shared failures.

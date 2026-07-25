@@ -1,185 +1,221 @@
-# Out-of-Band (OOB) Verification
+# Out-of-band verification
 
-> Live key ≠ exploitable key.
+Out-of-band (OOB) verification checks whether a service calls an interactsh
+collector after KeyHog sends a detector-defined probe. It is useful for
+webhook, mail, and callback credentials. A callback proves the behavior named
+by the detector. It does not prove the credential's full permissions.
 
-Standard verification asks "does the API return 200?" - a per-service heuristic
-that confirms a credential parses. For webhook-, mailer-, and callback-shaped
-credentials that's necessary but not sufficient: a 200 OK can mean "your key
-parses but has no useful scope," "the webhook URL is dead but silent," or
-"your credential reached our staging system and got swallowed." OOB
-verification proves the credential is **exfil-capable**: we mint a unique
-per-finding subdomain on an interactsh collector, embed it in the verification
-probe, and confirm the service actually called back. A callback means the
-credential really moved attacker-controlled traffic.
+OOB is off by default. In v0.5.46, the shipped detector corpus contains no
+`[detector.verify.oob]` block. `--verify-oob` therefore changes no shipped
+finding. Use it only with a reviewed custom detector corpus that declares an
+OOB probe.
 
-## Quick start
+## Prerequisites
 
-```bash
-# Default: HTTP-only verification (what you've always had)
-keyhog scan ./repo --verify
+You need all of the following:
 
-# Opt in to OOB verification using the public oast.fun collector
-keyhog scan ./repo --verify --verify-oob
+1. A custom detector with a valid `[detector.verify]` request, explicit
+   `allowed_domains`, and a `[detector.verify.oob]` block.
+2. An `{{interactsh}}`, `{{interactsh.host}}`, `{{interactsh.url}}`, or
+   `{{interactsh.id}}` token in that verifier's URL, header, or body.
+3. A reachable interactsh collector. The default is the public `oast.fun`
+   collector.
+4. DNS and HTTPS egress from the KeyHog host to the collector.
+5. Network egress from the verified service to the collector protocol selected
+   by the detector.
+6. `--verify --verify-oob` on the scan command.
 
-# Self-host an interactsh-server and point keyhog at it
-keyhog scan ./repo --verify --verify-oob --oob-server interactsh.mycorp.internal
+The collector host must pass KeyHog's SSRF checks. A self-hosted collector must
+resolve to a public address. A loopback, link-local, RFC 1918, or cloud-metadata
+address is rejected even when you configured an explicit proxy.
 
-# Tune how long we wait for callbacks per finding (default 30s, max 120s)
-keyhog scan ./repo --verify --verify-oob --oob-timeout 60
+Audit the custom corpus before scanning:
+
+```sh
+keyhog detectors --detectors ./company-detectors --audit
+
+keyhog scan ./repo \
+  --detectors ./company-detectors \
+  --detectors-mode overlay \
+  --verify \
+  --verify-oob \
+  --oob-server oast.fun \
+  --oob-timeout 30 \
+  --format json-envelope \
+  --output keyhog-results.json
 ```
 
-OOB is **off by default**. A normal `--verify` run never speaks to a
-collector. This is intentional: OOB ships traffic to a third-party server
-(or a self-hosted one) and you should opt in deliberately.
+`--oob-server` and `--oob-timeout` require `--verify-oob`.
+`--verify-oob` requires `--verify`. Clap rejects invalid combinations before a
+scan begins.
 
-## Threat model
+## Detector configuration
 
-What the collector sees:
-
-- 20-character correlation IDs - random, per-scan.
-- 33-character per-finding subdomains.
-- Source IP, timestamp, and protocol (DNS / HTTP / SMTP) of services
-  calling back.
-- Whatever the calling service includes in its outbound request - typically
-  a User-Agent, no body, no credentials.
-
-What the collector **never** sees:
-
-- The leaked credential. The credential is sent to the legitimate service
-  (Slack, Mailgun, etc.), not to the collector.
-- The repository, file path, or commit being scanned.
-- Any other finding metadata.
-
-For high-sensitivity scans (regulated environments, customer code, audits),
-self-host `projectdiscovery/interactsh-server` and pass
-`--oob-server <your-host>`. The protocol is wire-compatible.
-
-## Detector schema
-
-Detectors opt into OOB verification by adding `[detector.verify.oob]` to
-their TOML. The verifier substitutes a per-finding callback URL into any
-`{{interactsh}}` / `{{interactsh.host}}` / `{{interactsh.url}}` /
-`{{interactsh.id}}` token inside the verify spec.
+Add OOB configuration to an otherwise complete detector. This excerpt shows
+the verification portion:
 
 ```toml
-[detector]
-id = "example-webhook"
-service = "example"
-# ... patterns, keywords ...
-
 [detector.verify]
 method = "POST"
-url = "{{match}}"
-# Embed the OOB host in the request body. The service will (we expect)
-# fetch the URL we control, and the callback proves exfil-capability.
-body = '{"text":"https://{{interactsh}}/probe"}'
+url = "https://api.example.test/probe"
+allowed_domains = ["api.example.test"]
+body = '{"callback":"{{interactsh.url}}/keyhog-probe"}'
 
 [detector.verify.success]
-# Probe-level HTTP success - the webhook has to accept the payload.
 status = 200
+policy = "status_with_error_backstop"
 
 [detector.verify.oob]
-# Wait for an outbound HTTP request. `dns` / `smtp` / `any` also valid.
 protocol = "http"
-# Per-finding wait timeout in seconds. Optional; defaults to --oob-timeout.
 timeout_secs = 30
-# Verification policy:
-#   "oob_and_http"  - both must hold (default; strict)
-#   "oob_only"      - ignore HTTP, trust the callback
-#   "oob_optional"  - HTTP success suffices; OOB enriches metadata only
 policy = "oob_and_http"
 ```
 
-### Token expansion
+The detector validator rejects these unsafe or ineffective shapes:
 
-| Token                 | Value                                     | Example                                                           |
-|-----------------------|-------------------------------------------|-------------------------------------------------------------------|
-| `{{interactsh}}`      | bare host                                 | `abc...xyz.oast.fun`                                              |
-| `{{interactsh.host}}` | bare host (alias)                         | `abc...xyz.oast.fun`                                              |
-| `{{interactsh.url}}`  | full HTTPS URL                            | `https://abc...xyz.oast.fun`                                      |
-| `{{interactsh.id}}`   | 33-char unique ID without server suffix  | `abc...xyz`                                                       |
+- An OOB block without an interactsh token.
+- An interactsh token without an OOB block.
+- OOB on a multi-step verifier.
+- An unapproved verification destination.
 
-These tokens are NOT URL-encoded - the host is already URL-safe and we
-expect templates to embed it verbatim into JSON bodies, headers, and URL
-paths.
+Never put `{{match}}` or a secret companion into a collector URL, collector
+header, or callback payload. The credential belongs only in the request to the
+legitimate provider endpoint.
 
-### Verification policy
+### Tokens
 
-`policy = "oob_and_http"` (default) is the strict mode for webhook-style
-detectors. A finding is `Live` only when both the HTTP probe succeeds AND
-the OOB callback arrives within `timeout_secs`. If HTTP says alive but no
-callback comes, the verdict is `Dead` - the credential parses but isn't
-exfil-capable, which for a webhook is the security-relevant question.
+| Token | Expanded value |
+| --- | --- |
+| `{{interactsh}}` | Bare per-finding collector host |
+| `{{interactsh.host}}` | Bare per-finding collector host |
+| `{{interactsh.url}}` | Full `https://` collector URL |
+| `{{interactsh.id}}` | Per-finding ID without the collector suffix |
 
-`policy = "oob_only"` skips HTTP success entirely. Use for credentials
-where the API has no useful HTTP response shape (one-way push tokens, fire-
-and-forget event triggers) but provably triggers an outbound request.
+KeyHog creates a 24-character per-session correlation ID and appends a
+24-character random suffix for each finding. The resulting per-finding ID is
+48 lowercase alphanumeric characters. Token values are sanitized to the DNS
+hostname character set before interpolation. They are not URL-encoded.
 
-`policy = "oob_optional"` is HTTP-only verification with OOB observation
-enriching the metadata. Use to roll out OOB to a detector for visibility
-before flipping to strict mode.
+## Policies and outcomes
 
-## Metadata
+| Policy | HTTP result | Matching callback | Finding result |
+| --- | --- | --- | --- |
+| `oob_and_http` | Live | Observed | `live` |
+| `oob_and_http` | Live | Not observed | `dead` |
+| `oob_and_http` | Not live | Not consulted | Original HTTP result |
+| `oob_only` | Live or dead | Observed | `live` |
+| `oob_only` | Live or dead | Not observed | `dead` |
+| `oob_only` | Rate-limited or error | Not observed | Original HTTP result |
+| `oob_optional` | Any | Either | Original HTTP result |
 
-Verified findings produced under OOB verification carry:
+`protocol = "dns"`, `"http"`, `"smtp"`, or `"any"` selects which collector
+interaction counts. Use `"any"` only when any of those callbacks proves the
+detector's intended behavior.
 
-- `oob_unique_id` - the 33-char correlation ID minted for this finding.
-- `oob_observed` - `"true"` or `"false"`.
-- `oob_protocol` - `"Dns"`, `"Http"`, `"Smtp"`, `"Other"` (when observed).
-- `oob_remote_address` - IP that called back (when observed).
-- `oob_timestamp` - collector timestamp (when observed).
-- `oob_disabled` - reason string when an OOB-required verifier cannot use an
-  active session.
+`--oob-timeout` is the default wait for a detector that omits `timeout_secs`.
+A detector-specific timeout replaces that default. In v0.5.46, the CLI value is
+not a strict upper bound on detector-specific timeouts. The runtime cap is
+120 seconds or the CLI value, whichever is larger.
 
-These propagate to every output format (JSON, JSONL, SARIF, plain-text).
+## Machine-readable result
 
-## Failure modes
+The default output remains redacted. A successful OOB finding can contain this
+metadata. All values below are synthetic:
 
-OOB infrastructure failures are non-fatal for detectors that do not require
-OOB. Detectors with `[detector.verify.oob]` fail closed when the required OOB
-session is unavailable.
+```json
+{
+  "verification": "live",
+  "metadata": {
+    "oob_observed": "true",
+    "oob_protocol": "Http",
+    "oob_remote_address": "203.0.113.42",
+    "oob_timestamp": "2026-07-25T12:00:00Z",
+    "oob_unique_id": "aaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbb"
+  }
+}
+```
 
-- **Collector unreachable at startup**: the engine logs a warning and
-  continues without an OOB session. HTTP-only detectors still run normally;
-  OOB-required detectors fail closed before sending any HTTP probe.
-- **Collector goes silent mid-scan**: the poller backs off (1s → 32s),
-  in-flight waits time out as `NotObserved`, and policy evaluation continues
-  from that observation. If the session is disabled during callback wait, the
-  finding fails closed with `VerificationResult::Error` and `oob_disabled`.
-- **OOB session not enabled but detector requests it**: verification fails
-  closed before sending any HTTP probe. The finding metadata carries
-  `oob_disabled = "no active OOB session"`.
+When no callback arrives, `oob_observed` is `"false"`. When strict
+`oob_and_http` skips the wait because HTTP already failed, metadata also
+contains `"oob_skipped":"http-failed-under-oob-and-http"`. If the session is
+disabled, metadata contains `oob_disabled` and verification is an
+`{"error":"..."}` object.
 
-## Performance
+JSON and JSONL place these values in the finding's `metadata` object. SARIF
+prefixes each property with `metadata.`, for example
+`properties["metadata.oob_observed"]`. Text and the remaining projections use
+their normal finding-metadata representation.
 
-The interactsh handshake costs ~150ms at engine boot (RSA-2048 keygen +
-register POST). That cost is paid once per scan, not per finding.
+OOB metadata is not a credential, but it identifies a scan session and callback
+source. Store it with the same access controls as the rest of the report. Never
+use `--show-secrets` for a retained OOB report.
 
-The polling loop adds one HTTPS request every `poll_interval` (default 2s)
-and decrypts batched interactions in-process. AES-256-CFB decryption is a
-few hundred bytes per callback - negligible relative to scan cost.
+The process exit follows the normal verification contract. A `live` OOB
+finding makes the scan exit `10`. A dead, rate-limited, or error finding exits
+`1` when findings are present and none is live. OOB infrastructure failure does
+not by itself produce a special process exit.
 
-The dominant added latency is the per-finding wait. For a webhook-shaped
-detector you're paying `oob_timeout` worst-case per finding that doesn't
-call back. Tune `--oob-timeout` to your service profile: aggressive
-real-time webhooks can use `--oob-timeout 5`; queued mail systems need
-30+.
+## Failure behavior
+
+- **No `--verify-oob`:** an OOB-required finding fails closed as `error` before
+  KeyHog sends its provider HTTP probe. Metadata says
+  `"oob_disabled":"no active OOB session"`.
+- **Collector handshake failure:** KeyHog prints one stderr warning with the
+  server and a redacted error. Ordinary HTTP verifiers continue. OOB-required
+  findings fail closed before their provider probe.
+- **Collector disabled during a wait:** the finding becomes `error`, and
+  `oob_disabled` records the reason.
+- **No matching callback before the timeout:** the observation is not an
+  infrastructure error. The selected OOB policy determines `dead` or preserves
+  the HTTP result.
+- **Poll errors:** the poller backs off from one second to at most 32 seconds.
+  Once it is degraded, pending waits fail closed instead of treating missing
+  callbacks as dead credentials.
+
+Transport errors redact collector URLs before they reach warnings or finding
+errors.
+
+## Collector privacy
+
+The collector sees the session and per-finding correlation IDs. It also sees
+the callback source IP, timestamp, protocol, and raw callback payload. That
+payload can contain provider-selected headers or body data. Review the detector
+probe and the provider's callback behavior before using a public collector.
+
+The collector does not receive the scanned repository path, commit, or finding
+metadata from KeyHog. KeyHog sends the credential to the legitimate provider
+verification endpoint, not to the collector. A badly designed custom detector
+or a provider that reflects credential material in its callback can violate
+that separation. This is why OOB detector review is a prerequisite.
+
+Use a self-hosted collector for regulated code, customer repositories, or any
+provider whose callback payload is not known to be non-sensitive.
 
 ## Self-hosting interactsh
 
-```bash
-# On a server with public DNS pointed at it (NS records for $YOUR_DOMAIN
-# delegated to this host):
+Your domain needs public DNS delegation to a publicly reachable host. Install
+and run the upstream server:
+
+```sh
 go install github.com/projectdiscovery/interactsh/cmd/interactsh-server@latest
 
 interactsh-server \
-  -domain $YOUR_DOMAIN \
-  -ip $YOUR_PUBLIC_IP \
+  -domain "$YOUR_DOMAIN" \
+  -ip "$YOUR_PUBLIC_IP" \
   -listen-ip 0.0.0.0 \
-  -tls-cert /etc/letsencrypt/live/$YOUR_DOMAIN/fullchain.pem \
-  -tls-key  /etc/letsencrypt/live/$YOUR_DOMAIN/privkey.pem
+  -tls-cert "/etc/letsencrypt/live/$YOUR_DOMAIN/fullchain.pem" \
+  -tls-key "/etc/letsencrypt/live/$YOUR_DOMAIN/privkey.pem"
 ```
 
-Then run keyhog with `--oob-server $YOUR_DOMAIN`. The wire protocol is
-identical to the public oast.fun deployment - keyhog's client does not
-care which it talks to.
+Then pass the public domain:
+
+```sh
+keyhog scan ./repo \
+  --detectors ./company-detectors \
+  --detectors-mode overlay \
+  --verify \
+  --verify-oob \
+  --oob-server "$YOUR_DOMAIN" \
+  --format json-envelope \
+  --output keyhog-results.json
+```

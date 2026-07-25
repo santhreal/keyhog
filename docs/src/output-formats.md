@@ -98,6 +98,50 @@ finding has all required documented fields present; optional fields are omitted
 only when their value is unavailable. Use `--format json-envelope` for a
 versioned root object with schema identity and scan metadata.
 
+The following is one complete finding object. The values are synthetic. The
+credential is already redacted, and the hash is a non-secret example value.
+
+```json
+{
+  "detector_id": "stripe-secret-key",
+  "detector_name": "Stripe Secret Key",
+  "service": "stripe",
+  "severity": "critical",
+  "credential_redacted": "sk_l...p7dc",
+  "credential_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "companions_redacted": {},
+  "location": {
+    "source": "filesystem",
+    "file_path": "src/config/staging.env",
+    "line": 14,
+    "offset": 218,
+    "commit": null,
+    "author": null,
+    "date": null
+  },
+  "verification": "skipped",
+  "metadata": {},
+  "additional_locations": [],
+  "confidence": 1.0,
+  "remediation": {
+    "action": "Roll the exposed Stripe secret key in the Dashboard, update production consumers, then delete the old key.",
+    "revoke_url": "https://docs.stripe.com/keys#roll-api-key",
+    "docs_url": "https://docs.stripe.com/keys"
+  }
+}
+```
+
+Optional fields such as `entropy` are absent when they were not measured.
+Location members are present and use `null` when the value is unknown. A
+verification transport failure is encoded as an externally tagged object, for
+example `"verification":{"error":"timeout: the endpoint did not respond within the verification deadline. Fix: raise the verification timeout with --timeout, or check network egress / proxy reachability to the credential's host"}`.
+
+Do not enable `--show-secrets` when stdout or `--output` is retained by CI,
+uploaded as an artifact, or sent to another process. That option deliberately
+replaces `credential_redacted` with plaintext. `credential_hash` is safe from
+accidental plaintext disclosure, but it is a stable SHA-256 correlation value.
+Treat every report as security-sensitive data.
+
 ```sh
 keyhog scan . --format json | jq '.[].detector_id' | sort | uniq -c
 ```
@@ -126,6 +170,30 @@ joined without exposing secrets. Reports
 from older KeyHog versions may omit it; the HTML projection displays that state
 as `not recorded` rather than inventing an identifier. `resolved_scan` is
 omitted only for library-created reports that have no resolved CLI scan policy.
+
+### Status and process exit are separate contracts
+
+Machine consumers must read the status carried by a metadata-bearing artifact.
+Do not derive scan completeness from the process exit code:
+
+| Reported result | Process exit |
+| --- | --- |
+| No findings and complete input | `0` |
+| Findings, with no finding verified `live` | `1` |
+| At least one reported finding verified `live` | `10` |
+| No findings and incomplete input coverage | `13` |
+
+A scanner panic exits `11`, a required or explicitly selected GPU that is
+unavailable exits `12`, and Ctrl-C exits `130`. Findings take precedence over
+an input-coverage failure in process-exit selection. A partial scan with
+findings can therefore exit `1` or `10`. Its envelope still says
+`"scan_status":"partial"`. This is why detached consumers must inspect
+`scan_status` and `coverage_gap_summary`.
+
+Legacy `json` and `jsonl` contain findings only. They cannot distinguish a
+complete zero-finding scan from an incomplete one. Use `json-envelope`,
+`jsonl-envelope`, SARIF, CSV with its CLI preamble, GitLab SAST, or JUnit when
+that distinction controls a gate.
 
 ## `--format csv`
 
@@ -169,29 +237,87 @@ format; they must not be inferred from stderr or the process exit code.
 ## `--format sarif`
 
 [SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html)
-- Static Analysis Results Interchange Format. GitHub Code Scanning,
-GitLab Security Dashboard, and most IDE security plugins consume this.
+is the preferred format for GitHub Code Scanning and SARIF-aware IDEs.
 
 ```sh
-keyhog scan . --format sarif > keyhog-results.sarif
+keyhog scan . --format sarif --output keyhog-results.sarif
+status=$?
+test "$status" -eq 0 -o "$status" -eq 1 -o "$status" -eq 10
 ```
 
-Upload to GitHub:
+The file remains available when findings make KeyHog exit `1` or `10`. Do not
+write a command chain that uploads the file only after an exit-zero scan.
+
+The important machine fields have this shape. The values are synthetic and the
+message contains only the redacted credential:
+
+```json
+{
+  "version": "2.1.0",
+  "runs": [{
+    "results": [{
+      "ruleId": "stripe-secret-key",
+      "level": "error",
+      "message": {"text": "stripe secret detected: sk_l...p7dc"},
+      "locations": [{
+        "physicalLocation": {
+          "artifactLocation": {"uri": "src/config/staging.env"},
+          "region": {"startLine": 14, "charOffset": 218}
+        }
+      }],
+      "properties": {
+        "verification": "skipped",
+        "confidence": 1.0,
+        "cwe": "CWE-798",
+        "owasp": "A07:2021",
+        "remediation.action": "Roll the exposed Stripe secret key in the Dashboard, update production consumers, then delete the old key."
+      }
+    }],
+    "properties": {
+      "keyhog.scan.status": "success",
+      "keyhog.backend.recoveries": []
+    }
+  }]
+}
+```
+
+The full document also contains `$schema`, `tool.driver`, rules, taxonomies,
+optional fixes, and partial fingerprints. Consume those fields from the file
+rather than treating the abbreviated example as a complete SARIF document.
+`runs[0].properties["keyhog.scan.status"]` carries the terminal state. When
+coverage gaps exist, SARIF includes `invocations[0]`,
+`executionSuccessful` is `false`, and the exact reasons appear in
+`toolExecutionNotifications`. Consumers must still read `keyhog.scan.status`
+because a cancelled or failed artifact is allowed to have no coverage
+notification.
+
+Upload to GitHub even when the scan found credentials:
 
 ```yaml
-# .github/workflows/secrets.yml
+- name: Scan
+  id: keyhog
+  continue-on-error: true
+  run: keyhog scan . --format sarif --output keyhog-results.sarif
+
 - uses: github/codeql-action/upload-sarif@v3
+  if: always() && hashFiles('keyhog-results.sarif') != ''
   with:
     sarif_file: keyhog-results.sarif
+
+- name: Enforce KeyHog result
+  if: always()
+  env:
+    KEYHOG_OUTCOME: ${{ steps.keyhog.outcome }}
+  run: test "$KEYHOG_OUTCOME" = success
 ```
 
-Findings show up in the **Security → Code scanning** tab with the
-detector ID as the rule, file path + line as the location, and the
-redacted credential as the message.
+The final step fails for any nonzero KeyHog exit. If your policy permits
+unverified findings but rejects live credentials, capture the numeric exit in a
+wrapper instead of using the GitHub step outcome.
 
 ## `--format github-annotations`
 
-GitHub Actions workflow commands - one annotation line per finding.
+GitHub Actions workflow commands emit one annotation line per finding.
 Use this when you want findings to appear inline in the Actions log
 without uploading SARIF:
 
@@ -270,7 +396,8 @@ object carrying the same `schema_version` major contract as
 `--format json-envelope` (JSONL has its own additive minor revision) and
 optional scan metadata; every following line is one finding object. The final
 line is a `record_type: "summary"` object with transport
-`status: "complete"`, a `scan_status` of `success` or `partial`, the exact
+`status: "complete"`, a `scan_status` of `success`,
+`complete_after_recovery`, `partial`, `cancelled`, or `failed`, the exact
 finding count, and the coverage-gap summary.
 An empty scan still emits both header and summary. A stream without the final
 summary is interrupted and must not be treated as complete; concatenated
@@ -287,20 +414,27 @@ keyhog scan /huge/monorepo --format jsonl-envelope \
 
 ## Combining with `--verify`
 
-`--verify` calls each detector's verification endpoint to confirm the
-credential is live. Live credentials keep their severity; dead ones get
-downgraded one tier. The output format doesn't change - the
-`verification` field of each finding becomes `"live"` or `"dead"`
-instead of `"skipped"`. (The JSON value is the lowercase
-`VerificationResult` variant - `"live"`, `"dead"`, `"revoked"`,
-`"rate_limited"`, `"unverifiable"`, `"skipped"`, or an `{"error": "..."}`
-object - not the `verified-live`/`verified-dead` labels the *text*
-reporter prints.)
+`--verify` sends eligible findings to the detector's declared verification
+endpoint. A `live` result keeps its severity. A `dead` or `revoked` result
+downgrades it by one tier. The machine value is one of `"live"`, `"dead"`,
+`"revoked"`, `"rate_limited"`, `"unverifiable"`, `"skipped"`, or an
+`{"error":"..."}` object.
 
 ```sh
-keyhog scan . --verify --format json-envelope \
-  | jq '.findings[] | select(.verification == "live")'
+set +e
+keyhog scan . --verify --format json-envelope --output keyhog-results.json
+status=$?
+set -e
+
+jq -e '.scan_status == "success" or
+       .scan_status == "complete_after_recovery"' keyhog-results.json
+jq '.findings[] | select(.verification == "live")' keyhog-results.json
+test "$status" -ne 10
 ```
+
+The first `jq` rejects incomplete input. The second emits only live findings.
+The final command enforces the documented live-credential exit. Adjust the
+finding policy explicitly if exit `1` is also a failure in your environment.
 
 ## Findings-only output
 

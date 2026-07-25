@@ -7,14 +7,22 @@ inventory traversal itself. No loop, no clone script:
 
 ```bash
 export KEYHOG_GITHUB_TOKEN="$GH_PAT"
-keyhog scan --github-org acme --format json-envelope --output acme.json
+keyhog scan --daemon=off --github-org acme \
+  --format json-envelope --output acme.json
 ```
 
 ```bash
-KEYHOG_GITLAB_TOKEN="$GL_PAT"    keyhog scan --gitlab-group acme       --format json-envelope --output gitlab.json
+KEYHOG_GITLAB_TOKEN="$GL_PAT" \
+  keyhog scan --daemon=off --gitlab-group acme \
+  --format json-envelope --output gitlab.json
+
 KEYHOG_BITBUCKET_USERNAME="$U" KEYHOG_BITBUCKET_TOKEN="$P" \
-  keyhog scan --bitbucket-workspace acme --format json-envelope --output bitbucket.json
-keyhog scan --s3-bucket logs-prod --s3-prefix config/ --format json-envelope --output s3.json
+  keyhog scan --daemon=off --bitbucket-workspace acme \
+  --format json-envelope --output bitbucket.json
+
+keyhog scan --daemon=off \
+  --s3-bucket logs-prod --s3-prefix config/ \
+  --format json-envelope --output s3.json
 ```
 
 Each run walks every repository or object under the target and writes one
@@ -45,9 +53,9 @@ while IFS= read -r -d '' partition; do
   name="$(basename -- "$partition")"
   report="$out/$name.json"
   set +e
-  keyhog scan "$partition" \
-    --format json-envelope --output "$report" \
-    --limit-stdin-bytes 10MiB
+  keyhog scan --daemon=off "$partition" \
+    --max-file-size 100MiB \
+    --format json-envelope --output "$report"
   rc=$?
   set -e
   printf '%s\t%s\t%s\n' "$partition" "$rc" "$report" \
@@ -66,6 +74,10 @@ just because another partition was clean. If a partition is retried, replace
 its report atomically and append a new attempt column or manifest row rather
 than overwriting the only evidence.
 
+`--max-file-size` bounds each regular file. The default is 100 MiB. A larger
+file is skipped and recorded as a coverage gap. `--limit-stdin-bytes` does not
+bound a directory partition. It applies only to `--stdin`.
+
 For CI, upload the whole output directory as an artifact and make the job fail
 on any status that the policy treats as actionable. Exit `13` means the scan
 completed with coverage gaps, not that it found nothing; inspect the envelope
@@ -78,19 +90,21 @@ The source flags keep inventory traversal inside KeyHog so source identity and
 coverage remain in the report:
 
 ```bash
-keyhog scan --github-org "$ORG" \
+keyhog scan --daemon=off --github-org "$ORG" \
   --limit-hosted-git-pages 100 \
   --format json-envelope --output github.json
 
-keyhog scan --gitlab-group "$GROUP" \
+keyhog scan --daemon=off --gitlab-group "$GROUP" \
   --limit-hosted-git-pages 100 \
   --format json-envelope --output gitlab.json
 
-keyhog scan --s3-bucket "$BUCKET" --s3-prefix "$PREFIX" \
+keyhog scan --daemon=off \
+  --s3-bucket "$BUCKET" --s3-prefix "$PREFIX" \
   --limit-cloud-max-objects 10000 --limit-s3-object-bytes 100MiB \
   --format json-envelope --output s3.json
 
-keyhog scan --gcs-bucket "$BUCKET" --gcs-prefix "$PREFIX" \
+keyhog scan --daemon=off \
+  --gcs-bucket "$BUCKET" --gcs-prefix "$PREFIX" \
   --limit-cloud-max-objects 10000 --limit-gcs-object-bytes 100MiB \
   --format json-envelope --output gcs.json
 ```
@@ -107,22 +121,48 @@ original partial envelope, and preserve the provider request diagnostics. Do
 not increase object/page caps automatically, and do not classify a rate-limit
 failure as a clean scan. Respect each provider's pagination and retry headers.
 
-## Daemon semantics at scale
+## Daemon and corpus semantics at scale
 
-The daemon is useful for repeated eligible `stdin` or single-regular-file
-requests. Directory trees, Git history, hosted inventories, cloud buckets,
-archives, multiple roots, deep/fast/precision policy changes, and source-limit
-changes stay in the in-process orchestrator. Starting a daemon does not make
-those scopes faster and `--daemon=on` rejects them; `--daemon=auto` keeps them
-local. See [daemon and warm scans](../workflows/daemon.md) for the exact
-eligibility and retry matrix.
+The examples use `--daemon=off` to make the execution contract explicit.
+Directory trees, Git history, hosted inventories, cloud buckets, archives,
+multiple roots, and source-limit changes require the in-process orchestrator.
+A running daemon does not accelerate them.
 
-For a large inventory, partition at the provider or repository boundary, not
-inside one daemon request. Calibrate autoroute on the actual worker class and
-retain the per-partition resolved policy and coverage envelope. A missing or
-stale autoroute decision triggers visible scalar correctness recovery, never a
-silent CPU, Hyperscan, or GPU substitution. Treat `complete_after_recovery` as a
-recalibration signal even though scan byte coverage is complete.
+Omitting the flag gives `--daemon=auto` on Unix. These unsupported request
+classes are recognized before a socket connection and stay in process.
+`--daemon=on` rejects them before scanning. It does not fall back:
+
+```bash
+# Supported in process.
+keyhog scan --daemon=off ./partitions/team-a
+
+# Unsupported. This exits before scanning the directory.
+keyhog scan --daemon=on ./partitions/team-a
+```
+
+The daemon is useful only when a partitioner emits repeated eligible `stdin`
+or single-regular-file requests. Start it with an explicit replacement corpus
+only when each client selects the exact same corpus:
+
+```bash
+keyhog daemon start --detectors ./reviewed-detectors
+keyhog scan --daemon=on \
+  --detectors ./reviewed-detectors --detectors-mode=replace \
+  one-object.txt
+```
+
+Overlay composition is unsupported by the daemon. Use `--daemon=off` with
+`--detectors-mode=overlay`. A replacement identity mismatch is a handshake
+error. Required daemon mode exits instead of using either the daemon's corpus
+or an in-process scan. See [daemon and warm scans](../workflows/daemon.md) for
+the lifecycle, socket, eligibility, and retry matrix.
+
+For a large inventory, partition at the provider or repository boundary.
+Calibrate autoroute on the actual worker class and retain the per-partition
+resolved policy and coverage envelope. A missing or stale autoroute decision
+uses visible scalar correctness recovery. It does not silently claim a
+calibrated CPU, Hyperscan, or GPU route. Treat `complete_after_recovery` as a
+recalibration signal even when scan byte coverage is complete.
 
 ## Report aggregation
 

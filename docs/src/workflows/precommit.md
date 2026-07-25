@@ -1,8 +1,8 @@
 # Pre-commit hook
 
-The point of a pre-commit hook is to stop credentials from ever
-landing in your repo's history. It runs locally, fast enough to feel
-synchronous, and blocks the commit if a finding shows up.
+A pre-commit hook stops credentials before they enter repository history. It
+scans staged content and blocks the commit on findings. It also blocks when the
+scan cannot complete, so an unavailable scanner cannot look clean.
 
 ## Install in one command
 
@@ -27,8 +27,15 @@ security scan did not run. Install KeyHog, fix `PATH`, or remove
 
 ### `pre-commit` framework
 
-If your repo uses [pre-commit](https://pre-commit.com/) instead of
-raw git hooks, add the following to `.pre-commit-config.yaml`:
+This repository's hook uses `language: system`. Follow the
+[pinned verified install](../install.md#pinned-verified-install-linux--macos)
+for the KeyHog binary, then confirm that it is on `PATH`:
+
+```sh
+keyhog --version
+```
+
+Add the following to `.pre-commit-config.yaml`:
 
 ```yaml
 repos:
@@ -39,7 +46,9 @@ repos:
         stages: [pre-commit]
 ```
 
-Then `pre-commit install` once, and it runs on every commit.
+Run `pre-commit install` once. The hook then runs on every commit. The `rev`
+pin selects the hook definition. It does not install or pin the `keyhog` binary.
+Keep the binary and hook definition on compatible release versions.
 
 ## What gets scanned
 
@@ -77,17 +86,18 @@ $ git commit -m "add staging config"
   1. Revoke active secrets in the provider's dashboard.
 ```
 
-The hook is just `exec keyhog scan --fast --git-staged --backend cpu`, so
-this is the ordinary scan report over the *staged* blobs. Exit code is `1`,
-so git aborts the commit and your work-in-progress stays in the index. Your
-options:
+The hook runs `exec keyhog scan --fast --git-staged --backend cpu`, so this is
+the ordinary scan report over the staged blobs. Exit `1` means findings and
+aborts the commit. Exit `10` would mean a confirmed live credential, although
+the shipped hook does not enable verification. Every operational nonzero exit
+also aborts the commit because the scan did not complete. Your staged work
+remains intact. You can then:
 
-1. Remove the credential from the file, `git add` the fix, and commit again.
-2. Replace it with a placeholder and load the real value from the environment
-   at runtime.
-3. If it is a false positive, add its hash to `.keyhogignore` (see below) or a
-   narrowly scoped predicate rule in `.keyhogignore.toml`, with the reason and
-   ownership recorded beside the exception.
+1. Remove the credential, stage the fix, and commit again.
+2. Replace it with a placeholder and load the value from the environment.
+3. For a false positive, add its hash to `.keyhogignore` or add a narrowly
+   scoped predicate rule to `.keyhogignore.toml`. Record the reason and owner
+   beside the exception.
 
 ## When you really need to commit anyway
 
@@ -130,8 +140,7 @@ If a pre-commit scan feels slow:
 keyhog hook uninstall
 ```
 
-Removes the KeyHog `.git/hooks/pre-commit` file if it carries the
-generated KeyHog marker. If you hand-edited the hook,
-`keyhog hook uninstall` refuses to touch it - clean it up by hand.
-For the pre-commit framework, delete the keyhog stanza from
-`.pre-commit-config.yaml` and run `pre-commit clean`.
+This removes `.git/hooks/pre-commit` only when it carries the generated KeyHog
+marker. If you edited the hook, `keyhog hook uninstall` refuses to touch it.
+Remove that hook by hand. For the `pre-commit` framework, delete the KeyHog
+stanza from `.pre-commit-config.yaml` and run `pre-commit clean`.

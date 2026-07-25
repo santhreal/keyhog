@@ -21,9 +21,9 @@ few flags and sources. This page is the map.
 | Scan a source-map exposed by Webpack      | `keyhog scan --url https://app.example.com/static/main.js.map` |
 | Scan a HAR export from DevTools           | `keyhog scan capture.har`  (see [HAR auto-expansion](#har-auto-expansion))   |
 | Scan a single curl response               | `curl -s https://api/... \| keyhog scan --stdin`             |
-| Scan a saved Burp / mitmproxy capture     | `keyhog scan dump.txt`  *(treats as text - no protocol parsing)* |
-| Route every fetch through Burp            | `keyhog scan --url https://... --proxy http://burp:8080 --insecure` |
-| Scan in an air-gapped network             | `keyhog scan --url https://... --proxy off`                  |
+| Scan a saved Burp or mitmproxy capture     | `keyhog scan dump.txt` *(plain text, no protocol parsing)* |
+| Route every fetch through Burp            | `keyhog scan --url https://app.example.test/main.js --proxy http://burp:8080 --insecure` |
+| Force a direct connection                 | `keyhog scan --url https://app.example.test/main.js --proxy off` |
 
 ## The `--url` flag (Web Source)
 
@@ -54,6 +54,11 @@ Findings are tagged `source: "web:js"`, `web:sourcemap`,
 (including the "everything else" case above) carries `web:js`; there is
 no separate `web:other` tag. The original URL is the `file_path`.
 
+Use URLs without credentials, signed query strings, or secret fragments. Scan
+metadata redacts a target's query and fragment, but a finding's `file_path`
+identifies the fetched URL. Store web-source reports as sensitive artifacts.
+Do not add `--show-secrets` to a retained report.
+
 ### SSRF defense
 
 `--url` refuses to fetch:
@@ -65,30 +70,35 @@ no separate `web:other` tag. The original URL is the `file_path`.
 - Cloud metadata endpoints (`169.254.169.254`, the GCP / Azure /
   AWS / DigitalOcean / Hetzner variants).
 
-This isn't a CLI flag - it's hardcoded so a user can't accidentally
-turn an `--url` invocation into a metadata-service IAM exfil.
+This protection is not configurable. It prevents a URL scan from reaching a
+metadata service or another private endpoint.
 
 ## Proxy and TLS
 
-Everything outbound - `--url`, `--github-org`, `--github-collaboration`, `--gitlab-group`,
-`--bitbucket-workspace`, `--s3-bucket`, `--gcs-bucket`,
-`--azure-container-url`, `--verify`'s API calls - runs through one HTTP client builder.
-Policy:
+Remote sources and verification share the same explicit proxy and TLS policy.
 
-| Source                       | Effect                                            |
-|------------------------------|---------------------------------------------------|
-| `--proxy http://burp:8080`   | Explicit. Routes all KeyHog HTTP traffic through the proxy. |
-| `--proxy off`                | Disable proxying entirely, including any TOML proxy. |
-| `.keyhog.toml` proxy         | Used when no CLI proxy flag is set.               |
-| Proxy environment variables  | Ignored; shell/CI state cannot silently reroute secret-bearing traffic. |
-| `--insecure`                 | Accept any TLS cert (self-signed Burp CA, etc.).  |
-| TLS environment toggles      | Ignored; use `--insecure` or TOML explicitly.     |
+| Setting | Effect |
+| --- | --- |
+| `--proxy http://burp:8080` | Routes KeyHog HTTP traffic through that proxy. |
+| `--proxy off` | Disables proxying, including a proxy from `.keyhog.toml`. |
+| `.keyhog.toml` `proxy` | Applies only when the CLI does not set `--proxy`. |
+| Proxy environment variables | Ignored. |
+| `--insecure` | Accepts invalid TLS certificates. |
 
-Order: explicit flag -> `.keyhog.toml` -> compiled default (`no proxy`,
-strict TLS). There is no environment fallback for proxy or TLS policy.
+Precedence is the CLI, then `.keyhog.toml`, then no proxy and strict TLS.
+`HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY`, and `NO_PROXY` cannot change it.
+TLS environment toggles are also ignored. `--insecure` applies to every
+remote-source and verification client in that scan, so use it only with an
+interception proxy or endpoint you control.
 
-`User-Agent: keyhog/<version>` is always set so you can grep your
-proxy logs for keyhog traffic without guessing.
+KeyHog sets `User-Agent: keyhog/<version>`.
+
+Web fetching follows at most five redirects. Every redirect target is parsed,
+DNS-screened, and pinned again before the request. Verification requests follow
+no redirects. A verifier redirect becomes an `error` finding instead.
+
+An invalid proxy value prevents the HTTP client from starting. An unreachable
+proxy does not fall back to a direct connection.
 
 ## HAR auto-expansion
 
@@ -107,25 +117,50 @@ HAR with five different requests produces five distinct paths.
 Editors that jump-to-file on `path:line` URIs land on the HAR but
 the URL tail makes the location unambiguous.
 
+The finding remains a normal redacted finding. This JSON fragment shows the
+exact location shape with synthetic values:
+
+```json
+{
+  "credential_redacted": "ghp_...4f2a",
+  "location": {
+    "source": "wire:har:request",
+    "file_path": "capture.har#https://api.example.test/v1/me",
+    "line": 2,
+    "offset": 41,
+    "commit": null,
+    "author": null,
+    "date": null
+  }
+}
+```
+
+The HAR request URL is part of `file_path`. A query credential in the captured
+URL can therefore appear in the report's location even though the detected
+credential itself is redacted. Remove or sanitize sensitive query strings
+before sharing a HAR artifact or its report.
+
 ```sh
 keyhog scan capture.har --format json-envelope | \
   jq '.findings[] | select(.location.source == "wire:har:request")'
 ```
 
-filters down to outbound credentials only - the bug-bounty
-"what did I send" view. Swap `request` for `response` to see what
-the upstream reflected back at you.
+This filters down to outbound credentials for the bug-bounty "what did I send"
+view. Select `wire:har:response` instead to see what the upstream reflected back
+at you.
 
-A HAR that fails to parse (truncated export from a crashed
-browser) falls through to plain text scanning so credentials still
-surface; the file isn't silently dropped.
+A HAR that fails to parse is still scanned as plain text. KeyHog also records a
+`structured_source_parse_failure` coverage gap because request and response
+expansion did not happen. A metadata-bearing report is therefore `partial`,
+even if the raw fallback found no credentials.
 
-Defenses:
-- 4× `--max-file-size` budget on cumulative request+response body
-  bytes. Defeats a malicious HAR that decompresses to gigabytes.
-- The cheap pre-sniff (`{"log"` + `"entries"` in the first 2 KiB)
-  bails before invoking the JSON parser on a 200 MiB blob that
-  obviously isn't HAR.
+The expander applies two bounds:
+
+- Cumulative rendered request and response bytes are limited to four times
+  `--max-file-size`.
+- KeyHog decodes the text, checks for the required `log` and `entries` markers,
+  and only then invokes the JSON parser. The marker check covers the full
+  decoded text, so valid HAR metadata may precede `entries`.
 
 ## Scanning a single HTTP exchange (stdin)
 
@@ -154,18 +189,39 @@ the richer `wire:har:request` / `wire:har:response` provenance tags,
 save the exchange as a `.har` file and scan that instead (see
 [HAR auto-expansion](#har-auto-expansion)).
 
-## Headers, bodies, URL params - where the secret sits
+Use `--format json-envelope` for automation. Legacy `json` cannot say whether
+the source was complete:
+
+```sh
+set +e
+keyhog scan capture.har \
+  --format json-envelope \
+  --output keyhog-results.json
+status=$?
+set -e
+
+jq -e '.scan_status == "success" or
+       .scan_status == "complete_after_recovery"' keyhog-results.json
+test "$status" -eq 0 -o "$status" -eq 1 -o "$status" -eq 10
+```
+
+The `jq` check rejects malformed-HAR fallback and other coverage gaps. Exit `0`
+means complete input with no findings. Exit `1` means findings without a live
+verification result. Exit `10` means at least one live finding. A no-finding
+source failure exits `13`. Findings take precedence, so a partial report can
+still exit `1` or `10`.
+
+## Headers, bodies, and URL parameters
 
 The detector engine matches the bytes supplied by each source adapter. A plain
-text capture is scanned as-is; the HAR adapter renders each request and response
-into separate chunks before scanning. A `Bearer ghp_…` in an HTTP header is
-therefore detected by the same detector policy as a `"token": "ghp_…"` in a
-JSON body or a `?token=ghp_…` in the URL.
+text capture is scanned as-is. The HAR adapter renders each request and response
+into separate chunks before scanning. A synthetic `Bearer ghp_...4f2a` in an
+HTTP header is therefore checked by the same detector policy as a synthetic
+`"token":"ghp_...4f2a"` in a JSON body or `?token=ghp_...4f2a` in a URL.
 
-For an HTTP capture this is usually what you want - the location
-column in the finding gives the byte offset within the capture, and
-the surrounding context (line ±2) is enough to tell whether it was
-a header or a body.
+The finding location gives the byte offset in the rendered chunk. It does not
+identify the exact header, JSON path, or query field. HAR findings identify
+only the request or response side.
 
 Unsupported behavior:
 
@@ -174,6 +230,20 @@ Unsupported behavior:
 - Attach field-level provenance such as `header:Authorization`, `body`, or
   `query` to a finding. HAR findings do distinguish the request and response
   sides through `source_type`.
+
+## Fetch and parse errors
+
+A non-success HTTP status, timeout, DNS failure, response above the configured
+size limit, invalid content encoding, invalid WASM response, blocked
+destination, or redirect-policy failure means some requested bytes were not
+scanned. KeyHog records the reason as a coverage gap and makes metadata-bearing
+artifacts `partial`.
+
+When there are no findings, incomplete source coverage exits `13` and stderr
+says KeyHog is not reporting the scan as clean. When findings exist, exit `1`
+or `10` takes precedence. Consume the artifact's `scan_status` and
+`coverage_gap_summary`; never use a zero finding count or the process exit alone
+as a completeness signal.
 
 ## Unsupported Wire Features
 

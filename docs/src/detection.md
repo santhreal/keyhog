@@ -296,46 +296,63 @@ floor; the model may raise its score but cannot erase a policy-proven key as if
 it were an unowned entropy candidate.
 
 Scan-wide settings remain operational controls, but they do not all compose the
-same way. Explicit CLI values take precedence over config-file values. An
-explicit scan-wide BPE ceiling takes precedence over detector-local BPE ceilings
-so a benchmark can compare one bound consistently. `entropy_threshold` can
-tighten a detector's high band but does not silently replace its lower
-detector-owned keyword band. A detector's `min_confidence` replaces the global
-reporting floor for that detector, and `[detector.<id>] min_confidence` is the
-operator override for that one ID. For production detector tuning, put the
-stable value in the owning detector TOML and prove it with that detector's
-positive, negative, evasion, backend-parity, and corpus contracts.
+same way. The operator-layer order and working TOML/CLI examples are in
+[Configuration](./reference/configuration.md#precedence). Stable per-detector
+tuning belongs in the owning detector TOML and should be proved with that
+detector's positive, negative, evasion, backend-parity, and corpus contracts.
 
-## Settings, hardware, and result parity
+## Settings, active corpus, and exact identity
+
+KeyHog keeps detector content, resolved scan policy, and corpus provenance
+separate:
+
+- The reported **detector corpus digest** binds the normalized corpus schema and
+  the active detector specifications after composition and
+  `[detector.<id>] enabled = false` removal. A matching disable therefore
+  changes the digest. An unknown disabled ID warns and leaves this digest
+  unchanged.
+- The autoroute **rules identity** also describes the active detector
+  specifications. Operator confidence-floor overrides are composed later so
+  different scan presets can coexist in one calibration cache.
+- The autoroute **configuration identity** binds the resolved scanner and
+  operator policy. It includes the selected fast, deep, or precision preset,
+  scan-wide and per-detector floors, the configured disabled-ID set, detector
+  tuning inputs, worker and pipeline settings, backend/GPU policy, and profiling
+  instrumentation.
+- The corpus path and `embedded`, `replace`, or `overlay` label are provenance.
+  They are reported in versioned output, but the path spelling is not detector
+  content. Copying the same normalized corpus to another directory does not
+  create a different content digest. A mode change changes the digest only when
+  it changes the resulting active specifications.
+
+The preset definitions and their override rules are in
+[Configuration](./reference/configuration.md#presets). `--profile` is
+performance instrumentation, not a named scan-policy profile.
 
 Hardware changes execution, not detection policy. CPU, SIMD/Hyperscan, and GPU
-routes consume the same resolved detector/config digest. Autoroute admits a
-candidate only when its canonical detection identities match the reference:
-chunk membership, detector id/name/service/severity, exact credential,
-stored-hash, and companion identity, source, file, line, byte offset, commit,
-author, date, entropy, confidence, and multiplicity. Mismatch diagnostics name
-only the differing fields and occurrence counts. They never expose raw
-values or deterministic value fingerprints.
+routes consume the same resolved detector and configuration identities.
+Autoroute accepts a candidate only when its canonical detection identities
+match the reference: chunk membership, detector id/name/service/severity, exact
+credential, stored hash, companion identity, source, file, line, byte offset,
+commit, author, date, entropy, confidence, and multiplicity. Mismatch
+diagnostics name only the differing fields and occurrence counts. They never
+expose raw values or deterministic value fingerprints.
+
 Built-in suppression, confidence, decode, and scanner postprocessing are already
 part of those backend results. CLI allowlists and rules, policy floors,
 cross-source deduplication, verification, and output formatting run after
-selection. Missing or stale exact evidence is an error; calibration never
+selection. Missing or stale exact evidence is an error. Calibration never
 relaxes a detector to make a backend look faster.
 
 | Change | Finding-set effect | Routing/calibration effect |
 |---|---|---|
-| Different CPU, GPU, driver, or accelerator availability | None for the same resolved detector/config and input; a parity mismatch rejects that route | Host/device/runtime identity changes, so old autoroute evidence is not reusable |
-| Different detector TOML, thresholds, allowlists, or enabled detectors | May change candidates, suppressions, confidence, and final findings | Detector/config digest changes; recalibration is required |
-| `--fast`, `--deep`, or `--precision` | Changes the resolved feature and confidence policy, so results may differ by design | Each preset has a distinct config identity and calibration coverage |
-| Explicit `--backend cpu|simd|gpu-cuda|gpu-wgpu` | Intended to be parity-identical; it is a diagnostic/benchmark override, not proof | Bypasses autoroute and does not create reusable fastest-correct evidence |
-| Input size, chunk count, source execution class, decoder-kind mask, decode candidate count or byte bucket, decoder uncertainty, or full-source-size availability | The input itself can change findings; backend choice must not | Selects a different exact workload key, including whether each source class's size bucket came from full-source or payload evidence |
-| One-shot process versus ready daemon/watch runtime | None: runtime lifetime cannot change detector policy or canonical matches | The same timing record derives a cold-aware one-shot route and a warm persistent-runtime route; the winners may differ |
-
-### Configuration Presets
-
-*   `--fast` (or `ScannerConfig::fast()`): Disables high-FP generic entropy checks, ML, and deep decoding (`max_decode_depth = 0`). Maximizes throughput.
-*   `--deep` (or `ScannerConfig::thorough()`): Enables source-file entropy, combines heuristic and ML evidence without an ML-only veto, removes comment confidence penalties, raises decode-through to one 1 MiB chunk, and uses decode depth 10. This is the highest-recall built-in preset with bounded recovery.
-*   `--precision` (or `ScannerConfig::high_precision()`): Sets `min_confidence` to `0.85` (`HIGH_PRECISION_MIN_CONFIDENCE`), keeps ML enabled, limits decoding depth (`max_decode_depth = 1`), and disables high-FP generic entropy checks. Maximizes precision.
+| Copy the same normalized corpus to another path | None | Content identity is unchanged; reported source provenance changes |
+| Change detector TOML, corpus schema, replacement/overlay membership, or a matching `enabled = false` override | Candidates, suppressions, confidence, or final findings may change | Active corpus/rules identity changes; recalibration is required |
+| Change a preset, scan-wide policy, per-detector floor, configured disabled-ID set, workers, or GPU/runtime policy | Results or scan cost may change according to the setting | Configuration identity changes; calibration for the old identity is not reused |
+| Change CPU, GPU, driver, or accelerator availability | None for the same resolved detector/configuration and input; a parity mismatch rejects that route | Host/device/runtime identity changes; old host evidence is not reusable |
+| Use `--backend cpu|simd|gpu-cuda|gpu-wgpu` | Intended to be parity-identical | This diagnostic override bypasses autoroute and creates no reusable fastest-correct evidence |
+| Change input size, chunk count, source execution class, decoder-kind mask, decode candidate count or byte bucket, decoder uncertainty, or full-source-size availability | The input can change findings; backend choice must not | A different exact workload key is selected |
+| Switch between a one-shot process and a ready daemon/watch runtime | Runtime lifetime must not change detector policy or canonical matches | Cold-aware and warm persistent-runtime routes may have different winners |
 
 ### Strict Backend Parity
 

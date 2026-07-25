@@ -1,8 +1,9 @@
 # Verification
 
-`keyhog scan --verify` makes an HTTP call to each detector's
-documented verification endpoint with the captured credential.
-The response tells you if the credential is live.
+`keyhog scan --verify` makes HTTP requests for eligible findings whose detector
+declares a verification endpoint. The provider response becomes a structured
+verification outcome. Detectors without a verifier are `unverifiable`, and
+low-confidence findings that do not meet the verifier floor are `skipped`.
 
 `--timeout <SECONDS>` (or `.keyhog.toml` `timeout`) sets the HTTP timeout for
 each verification request; the default is five seconds. It is not a whole-scan
@@ -46,6 +47,19 @@ labels. The machine-readable `--format json` value is the lowercase
 `"revoked"`, `"rate_limited"`, `"unverifiable"`, `"skipped"`, or an
 `{"error": "..."}` object; never the `verified-live`/`verified-dead`
 strings. See [Output formats](./output-formats.md#combining-with---verify).
+
+The JSON form is exact and preserves errors as data:
+
+```json
+{"verification":"live"}
+{"verification":"rate_limited"}
+{"verification":{"error":"connection failed: could not open a connection to the endpoint. Fix: check DNS resolution, firewall/egress rules, and proxy settings for the credential's host"}}
+```
+
+These are fragments from finding objects, not three complete findings. Error
+text never contains the credential. The default reporters emit only
+`credential_redacted`. Do not use `--show-secrets` in CI, retained logs, or
+machine-readable artifacts.
 
 ## What "live" means
 
@@ -114,11 +128,29 @@ The verifier:
 4. Compares the response status (and optionally body) to the success
    criteria
 
-If the criteria match: `live`. If not: `dead`. If the provider says
-the credential was explicitly disabled: `revoked`. If it returns a
-rate-limit error (e.g. HTTP 429): `rate_limited`. If the request times
-out or DNS fails: an `error` (treated as unverified, severity
-unchanged).
+If the success contract matches, the result is `live`. A normal rejection is
+`dead`. A provider-specific disabled state can be `revoked`. HTTP 429 and
+retryable 5xx responses are `rate_limited`. KeyHog tries transient outcomes at
+most three times. A timeout, DNS failure, blocked destination, redirect, TLS
+failure, or other transport failure is an `{"error":"..."}` machine value.
+Errors and rate limits are inconclusive. They leave severity unchanged.
+
+### Verification outcome and process exit
+
+Verification failures do not turn the scan into a system error. They remain
+finding outcomes:
+
+| Reported findings | Exit |
+| --- | --- |
+| No findings | `0` |
+| At least one finding, none `live` | `1` |
+| At least one `live` finding | `10` |
+
+One live finding makes the exit `10` even when other findings are dead,
+rate-limited, or errors. A source-coverage failure can still make the artifact
+`partial`; findings take precedence in process-exit selection. Read
+`scan_status` from `json-envelope` or SARIF rather than treating exit `1` or
+`10` as proof that all requested input was scanned.
 
 ## Permissions and blast radius
 
@@ -167,23 +199,25 @@ tiers.
 `--verify` makes network calls. Two flags shape what the verifier
 talks to:
 
-- `--proxy <url>` -- route verification through an explicit HTTP or SOCKS
-  proxy. The same scan-wide flag also routes remote-source HTTP clients.
-  Useful in corp networks and interception labs. When unset, no proxy
-  is used; ambient `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` /
-  `NO_PROXY` variables are ignored so shell or CI state cannot silently
-  reroute secret-bearing verifier traffic. Use `--proxy off` to force a
-  direct connection when TOML configured a proxy.
-- `--insecure` -- accept self-signed certificates in verification and
-  remote-source HTTP clients. ONLY use against endpoints you control. The
-  default is strict TLS verification, and no environment variable can disable
-  certificate verification.
+- `--proxy <url>` routes verification through an explicit HTTP, HTTPS, or
+  SOCKS5 proxy. The same scan-wide flag also routes remote-source HTTP
+  clients. When unset, no proxy is used. Ambient `HTTPS_PROXY`, `HTTP_PROXY`,
+  `ALL_PROXY`, and `NO_PROXY` variables are ignored. Use `--proxy off` to
+  force a direct connection when TOML configured a proxy.
+- `--insecure` accepts invalid or self-signed certificates in verification and
+  remote-source HTTP clients. Use it only for endpoints you control. Strict TLS
+  verification is the default, and no environment variable can disable it.
 
-The verifier never follows redirects (SSRF defense -- a 302 to a
-private IP could otherwise leak the credential to an internal
-service). If a vendor's auth endpoint returns 302 to follow into the
-API, that endpoint's verify block in the detector TOML is wrong;
-report a bug.
+An invalid proxy URL prevents the verification engine from starting. A proxy
+that cannot connect produces an `error` result for the affected finding after
+the bounded retries. It does not silently retry direct. `--proxy off` also
+prevents ambient proxy discovery.
+
+The verifier never follows redirects. A redirect produces an error beginning
+`too many redirects: the endpoint issued a redirect, but redirects are disabled
+for SSRF safety`. This prevents a provider endpoint from redirecting a
+secret-bearing request to a private address. If a legitimate endpoint
+redirects, update the detector to use its canonical API URL.
 
 Outbound destinations are filtered at the client level:
 
@@ -211,12 +245,17 @@ one file.
 
 ## Out-of-band callbacks
 
-`--verify-oob` enables callback-style verification for detectors that
-need an external collector. If the collector handshake fails, keyhog
-prints a stderr warning naming the `--verify-oob` server and the
-handshake error. Detectors that require OOB verification then report
-verification errors, while detectors with normal HTTP verification
-continue through their usual path.
+`--verify-oob` requires `--verify` and starts one interactsh collector session.
+Only detectors with a validated `[detector.verify.oob]` block use that session.
+The v0.5.46 shipped detector corpus contains no OOB-enabled detector, so the
+flag has no effect on shipped findings. It is for reviewed custom corpora.
+
+If the collector handshake fails, KeyHog prints a stderr warning naming the
+configured server and a redacted handshake error. Ordinary HTTP verifiers keep
+running. OOB-required findings fail closed as an `error` before their HTTP
+probe is sent. See the
+[OOB verification reference](./reference/oob-verification.md) for detector,
+collector, DNS, egress, and output prerequisites.
 
 ## Rate limits
 
@@ -240,12 +279,12 @@ service's documented rate limit.
 
 ## Low-confidence candidates
 
-`--verify` only sends findings that meet the verifier confidence floor
-to external services. Findings below that floor still appear in every
-output format, but their `verification` field stays `skipped`. When
-that happens, keyhog prints a stderr warning naming how many findings
-were skipped and the verifier confidence floor that caused it, so a
-partial verification pass cannot look complete.
+`--verify` sends only findings that meet the verifier confidence floor.
+Findings below that floor still appear in every output format with
+`"verification":"skipped"`. KeyHog also prints a stderr warning with the count
+and floor. `skipped` is not evidence that the credential is dead. A machine
+consumer that requires complete verification must reject both `skipped` and
+`unverifiable`, as well as `rate_limited` and `error`.
 
 ## Detectors without verification
 
@@ -256,15 +295,15 @@ relying on a copied count:
 keyhog detectors --format json | jq '[.[] | select(.verify)] | length'
 ```
 
-Detectors counted there ship a live verification endpoint. The rest are:
+Detectors counted there ship a live verification endpoint. The rest include:
 
-- Format-only detectors (private keys, certificates, JWTs) where the
-  credential itself has provable structure but no service to call.
-- Services without a known low-impact verification endpoint (some
-  internal APIs, deprecated services).
+- Format-only detectors, such as private keys and certificates, for which
+  there is no service endpoint to call.
+- Services without a known low-impact verification endpoint.
 
-For these, `--verify` is a no-op. The `verification` field of the
-finding stays `skipped`.
+With `--verify`, these findings are reported as
+`"verification":"unverifiable"`. Without `--verify`, every finding is
+`"verification":"skipped"`.
 
 ## What you can't do
 

@@ -15,8 +15,76 @@ output ordering.
 | `gpu-wgpu` (`gpu-wgpu-region-presence`) | VYRE WGPU region-presence matching feeding the shared confirmation pipeline | Measured as its own autoroute candidate. |
 | `auto` | Exact lookup in a persisted, parity-checked calibration table | Default. It is a selector over all eligible engines, not a fallback order. |
 
+## Use automatic routing for normal scans
+
+Start with a calibrated automatic route:
+
+```sh
+keyhog calibrate-autoroute
+keyhog backend --autoroute
+keyhog scan .
+```
+
+The last command is equivalent to `keyhog scan . --backend auto`. A normal
+installation already runs the all-preset calibration sweep, so you usually need
+the first command only after a binary, driver, hardware, or routing-relevant
+configuration change. `auto` performs an exact cache lookup. It does not try
+backends in order and does not benchmark during the scan.
+
+For a healthy multi-backend installation, `keyhog backend --autoroute` reports
+`health: ready`. A scalar-only build reports `health: direct` because it has no
+backend choice to calibrate.
+
+
 `--backend` is an explicit diagnostic or benchmark override. It bypasses
-autoroute; it does not prove that the chosen engine is fastest for the input.
+autoroute and its calibration cache:
+
+```sh
+keyhog scan . --backend cpu
+keyhog scan . --backend simd
+keyhog scan . --backend gpu-cuda
+keyhog scan . --backend gpu-wgpu
+```
+
+Use these commands to compare engines or isolate a driver problem. Do not put an
+explicit backend in a routine scan configuration. It does not prove that the
+chosen engine is fastest for the input, repair autoroute evidence, or publish a
+route decision.
+
+An explicit backend is a hard execution contract. If it was not compiled, its
+runtime is unavailable, initialization fails, or dispatch fails, the scan
+returns an error. KeyHog does not substitute CPU, SIMD, or another GPU peer.
+`gpu-cuda` and `gpu-wgpu` are separate choices. There is no generic `gpu`
+override.
+
+## Check SIMD and GPU availability
+
+Inspect discovery before forcing an accelerator:
+
+```sh
+keyhog --version --full
+keyhog backend --self-test
+keyhog backend --self-test --require-gpu
+```
+
+`--version --full` reports whether the running binary can see
+Hyperscan/Vectorscan and a physical GPU. This is a discovery report, not an
+execution test. `backend --self-test` executes the GPU diagnostic and production
+dispatch paths. It reports `SKIP` and exits successfully when no physical GPU is
+available. Add `--require-gpu` to make that condition fail. After calibration,
+`keyhog backend --autoroute --json` records the exact `eligible_backends` set
+that was measured.
+
+The scalar `cpu-fallback` backend is always the portable reference. The
+`simd-regex` backend requires a build with scanner SIMD support and a usable,
+identifiable Hyperscan/Vectorscan runtime. A CPU with AVX2 or AVX-512 alone does
+not provide that runtime. GPU candidates require scanner GPU support, a
+physical device, and a usable driver path. CUDA and WGPU are acquired and
+measured independently, so one available peer does not imply that the other is
+available. An explicit `--backend simd`, `gpu-cuda`, or `gpu-wgpu` scan is the
+final diagnostic that the selected engine can initialize for that scan.
+
+## Library backend contract
 
 The Rust library deliberately has a different default contract. Calling
 `CompiledScanner::scan` or `scan_coalesced` without a backend uses the portable
@@ -177,27 +245,52 @@ dirty, stale, or merely point-estimate evidence cannot pass prerelease.
 Autoroute still requires calibration on the deployment host for the exact
 workload class.
 
-## When automatic routing has no decision
+## Automatic routing failures and recovery
 
-Missing, stale, malformed, or incomplete evidence is an invalid automatic
-route. KeyHog prints the missing workload identity and calibration command,
-completes the bytes through the scalar correctness oracle, and marks structured
-output `complete_after_recovery`. Run `keyhog calibrate-autoroute` for the core
-ladder or the installer calibration for source-specific probes. Use an explicit
-backend only when you intentionally want a diagnostic override.
+Automatic routing has two visible failure states. Neither one changes an
+explicit backend contract.
 
-Calibration candidates and explicit backend overrides remain hard execution
-contracts. During a normal automatic scan, an accelerated backend fault is
-warned and the same stable snapshot is scanned through the confidence-separated
-fastest remaining peer. GPU recovery replays only exact unprocessed intervals.
-A backend that fails before scanning replays the full stable batch. Completed
-dispatches remain owned by their original backend. Recovered ranges, chunks,
-and bytes are reported. The exact workload route is
-then quarantined in a bounded runtime-health artifact instead of silently
-selecting another backend. That artifact is separate from immutable timing
-evidence, survives restart, and clears the repaired workload only after
-successful recalibration. If recovery cannot prove full coverage, the result is
-incomplete rather than clean.
+### The route state is invalid
+
+Missing, stale, malformed, disabled, incomplete, or quarantined evidence cannot
+authorize an automatic route. KeyHog prints the missing workload identity and a
+repair command. It then scans the bytes through the scalar correctness oracle
+and marks metadata-bearing output `complete_after_recovery`. The recovery
+receipt names `autoroute-invalid`, the recovery backend, recovered ranges,
+chunks, and bytes, the non-secret reason, and the repair command.
+
+Run `keyhog backend --autoroute` to distinguish `calibration_required`, `stale`,
+`invalid`, `disabled`, and `quarantined`. Run `keyhog calibrate-autoroute` for
+the core ladder. Use installer calibration for Git, Docker, or web probes:
+
+```sh
+./install.sh --calibrate
+# Windows
+./install.ps1 -Calibrate
+```
+
+Use an explicit backend only when you intentionally want a diagnostic override.
+It bypasses the invalid route state but does not repair it.
+
+### A selected automatic backend faults
+
+During a normal automatic scan, an accelerated backend fault is warned and the
+same stable bytes are replayed through the confidence-separated fastest
+remaining peer. GPU recovery replays only exact unprocessed intervals. A
+backend that fails before scanning replays the full stable batch. Completed
+dispatches remain owned by their original backend.
+
+This recovery is not silent. KeyHog reports the failed and recovery backends,
+recovered ranges, chunks, and bytes, and records `complete_after_recovery`. The
+exact workload route is quarantined in a bounded runtime-health artifact. That
+artifact is separate from immutable timing evidence, survives restart, and
+clears the repaired workload only after successful recalibration. If recovery
+cannot prove full coverage, the result is incomplete rather than clean.
+
+Calibration candidates, explicit backend overrides, and `--require-gpu` remain
+hard execution contracts. They fail instead of recovering through another
+backend.
+
 
 For cache identity, inspection commands, calibration coverage, and recovery,
 see [Autoroute calibration](./reference/autoroute-calibration.md).

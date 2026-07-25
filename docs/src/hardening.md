@@ -1,73 +1,108 @@
 # Hardening and data handling
 
-A secret scanner reads credentials into memory for a living. KeyHog treats
-that as a threat model, not an afterthought. This chapter describes what the
-process does to protect the secrets it handles and what it never does with
-them. (For how to report a vulnerability in KeyHog itself, see the
-[Security policy](./security.md).)
+A secret scanner reads credentials into memory. This chapter states which
+process protections KeyHog applies, which commands can use the network, and
+where the guarantees stop. For vulnerability reporting, see the
+[security policy](./security.md).
 
-## Detection is local
+## Start with the boundary
 
-KeyHog does not phone home. Detection runs entirely on your machine: the
-detector corpus is compiled in, service validators prove a credential's shape
-with offline checks (GitHub and npm CRC32, PyPI payload decoding) rather than
-by calling the service, and no finding, filename, or telemetry event leaves the
-host. There is no analytics endpoint to disable because there is none.
+A normal local scan does not send findings, filenames, or telemetry away from
+the host:
 
-Two operations are allowed to reach the network, and only when you ask for
-them: `--verify`, which live-checks whether a found credential is still active,
-and `keyhog update`, which fetches a signed release. A default scan makes no
-outbound connection.
+```sh
+keyhog scan . --daemon=off
+```
 
-## Always-on process hardening
+Filesystem, local Git, archive extraction, decoding, detection, suppression,
+and reporting remain local. Network access begins only when you select an
+operation that needs it.
 
-Every KeyHog invocation, not just lockdown runs, applies zero-cost process
-protections before it reads a byte:
+| Operation | Why it can use the network |
+|---|---|
+| `scan --url`, `--github-org`, `--github-collaboration`, `--gitlab-group`, `--bitbucket-workspace`, `--s3-bucket`, `--gcs-bucket`, or `--azure-container-url` | Reads the remote source you named. |
+| `scan --verify` | Sends credential-derived requests for detectors that have a live verification plan. Out-of-band verification can also wait for callbacks. |
+| `update` and `repair` | Reads release metadata and authenticated release assets. |
+| `install.sh` and `install.ps1` | Downloads the selected release unless you use a local-file mode. |
 
-- **Linux:** `prctl(PR_SET_DUMPABLE, 0)` disables core dumps, `ptrace` attach
-  from non-root, and `/proc/<pid>/mem` reads against the KeyHog process.
-- **macOS:** `ptrace(PT_DENY_ATTACH, …)` denies debugger attachment with the
-  same intent.
-- **Windows:** a best-effort process mitigation policy.
+The detector corpus and detector-owned validators are local. Offline validators
+such as checksum or payload-shape checks do not contact the service.
 
-These have no throughput cost, so they are never gated behind a flag. The
-practical effect: another process on the same host cannot snapshot KeyHog's
-memory to read the credentials it is scanning, and a crash cannot spill them
-into a core file.
+## In-process scan hardening
+
+The one-shot `scan` orchestrator and `scan-system` apply process protections
+before reading scan input:
+
+- On Linux, `prctl(PR_SET_DUMPABLE, 0)` disables ordinary core dumps,
+  same-user `ptrace` attachment, and same-user `/proc/<pid>/mem` access.
+- On macOS, `ptrace(PT_DENY_ATTACH, ...)` denies debugger attachment.
+- On Windows, KeyHog does not currently wire WER dump suppression or an
+  equivalent debugger-denial policy. The scan records that hardening gap.
+
+These protections are best effort during a normal scan. A failure is logged and
+the scan continues. They are not applied merely because another subcommand was
+invoked. In particular, `watch` and the long-lived daemon do not pass through
+the one-shot scan hardening call.
+
+Do not treat these controls as protection from a privileged host
+administrator. Run KeyHog inside the same host trust boundary as the data it
+scans.
 
 ## Lockdown mode
 
-When KeyHog runs on the same machine that holds the secrets, for example paired
-with [EnvSeal](https://github.com/santhreal/envseal), there is no trusted
-boundary between the scanner and the credentials. `keyhog scan . --lockdown`
-adds the protections that carry a real cost:
+`--lockdown` is a Linux-only, fail-closed mode for `scan` and `scan-system`.
+Run it only after granting enough locked-memory allowance for the process:
 
-- `mlockall(MCL_CURRENT | MCL_FUTURE)` pins every current and future page into
-  RAM so no credential can be swapped to disk.
-- On Linux it refuses to run if `/proc/self/coredump_filter` would let
-  anonymous pages reach a dump.
-- It refuses to run if any persistence cache exists, and refuses
-  `--incremental` writes, `--verify`, and `--show-secrets`, so nothing about
-  the run is written to disk.
-- It refuses the completeness-trading fast flags (`--fast`, `--no-decode`,
-  `--no-entropy`, `--no-ml`, and the like): a lockdown run is the
-  highest-stakes run, so every detection gate stays engaged.
+```sh
+keyhog scan . --daemon=off --lockdown
+```
 
-Lockdown and `--include-network` on [`scan-system`](./guides/system-wide-triage.md)
-are mutually exclusive; pick one posture per run.
+For `scan`, lockdown:
 
-## Credentials in memory
+- calls `mlockall(MCL_CURRENT | MCL_FUTURE)` so current and future process
+  pages stay resident;
+- sets `RLIMIT_CORE` to zero and checks `/proc/self/coredump_filter`; it fails
+  only if the dump limit cannot be set and the filter still permits a dump;
+- checks the default KeyHog cache root and any selected incremental-cache path
+  for persistence artifacts that could contain past scan state;
+- allows validated `KHHS` Hyperscan pattern-database shards because they contain
+  compiled detector automata, not findings or credentials;
+- disables incremental cache use with a warning;
+- refuses `--verify` and `--show-secrets`;
+- refuses `--fast`, `--no-default-excludes`, `--no-unicode-norm`,
+  `--no-decode`, `--no-entropy`, and `--no-ml`.
 
-Found credentials are held in an opaque `Credential` type whose bytes are
-zeroed on drop through the `zeroize` crate, so a freed heap page never keeps a
-readable copy. Reports redact every secret to a fixed shape (`sk_l...p7dc`);
-the full value is written out only when you explicitly pass `--show-secrets`,
-which lockdown refuses.
+The daemon route is not eligible for a lockdown scan. `scan-system --lockdown`
+also refuses `--include-network`. On macOS and Windows, memory locking for this
+mode is not implemented, so lockdown fails rather than claiming a no-swap
+guarantee.
 
-## Signed, fail-closed releases
+## Credentials in memory and reports
 
-The install and update path verifies a SHA-256 checksum and a minisign
-signature against the release-side files before it replaces a binary, and rolls
-back if verification fails. An unsigned or tampered artifact never runs. The
-[install guide](./install.md) documents the pinned, authenticated flow, and
-`keyhog update` performs the same verification atomically.
+Reported credential bytes are stored in the `Credential` type and zeroized when
+that buffer is dropped. This protects that owned buffer. It is not a claim that
+every temporary source or decoder allocation has never held the same bytes.
+
+Reports redact credentials by default. `--show-secrets` explicitly requests
+plaintext output and is rejected by lockdown. Treat any plaintext terminal,
+pipe, or report file as secret-bearing data.
+
+## Authenticated release replacement
+
+`keyhog update` and `keyhog repair` verify the release checksum and minisign
+signature before replacing the executable. Replacement is staged so a failed
+verification does not install the candidate.
+
+The normal `install.sh` and `install.ps1` paths perform the same release
+authentication. The installer scripts also expose an explicit `--insecure`
+escape hatch. That mode is not an authenticated install and should not be used
+for routine installation. See [Install](./install.md) for the pinned flow.
+
+## Related operator references
+
+- [Environment variables](./reference/env.md) lists every direct production
+  environment read and the platform directory variables that affect paths.
+- [Exit codes](./reference/exit-codes.md) explains how hardening and other setup
+  failures reach automation.
+- [Daemon and warm scans](./workflows/daemon.md) documents the separate daemon
+  process and its eligibility boundary.

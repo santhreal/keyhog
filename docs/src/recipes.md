@@ -131,6 +131,56 @@ keyhog scan . --create-baseline .keyhog-baseline.json     # snapshot existing fi
 keyhog scan . --baseline .keyhog-baseline.json            # then report only NEW findings
 ```
 
+## Approve one exact fixture finding
+
+Append a detector, path, and credential hash to the same rule:
+
+```bash
+cat >> .keyhogignore.toml <<'EOF'
+[[suppress]]
+detector = "aws-access-key"
+path_eq = "fixtures/aws.env"
+credential_hash = "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"
+EOF
+keyhog scan .
+```
+
+All three fields must match. A different value in the fixture, or the same
+value in another path, still reports and keeps the findings exit. Invalid TOML
+stops the scan with exit `2`; KeyHog does not ignore a broken policy. See
+[suppressions](./suppressions.md).
+
+## Ignore one generated tree
+
+```bash
+cat >> .keyhogignore <<'EOF'
+path:generated/**
+EOF
+keyhog scan .
+```
+
+The rooted pattern matches `generated/app.js`, not
+`packages/web/generated/app.js`. Use `path:**/generated/**` only if every
+generated directory is reviewed and safe to exclude. `.keyhogignore` has no
+negation or last-rule-wins override. An invalid entry stops the scan with exit
+`2`.
+
+## Scan third-party archives without a false clean
+
+```bash
+rc=0
+keyhog scan incoming/ --format json-envelope -o keyhog-archives.json || rc=$?
+jq '{scan_status, coverage_gap_summary, findings: (.findings | length)}' \
+  keyhog-archives.json
+printf 'keyhog exit=%s\n' "$rc"
+```
+
+Corrupt, encrypted, unsafe, oversized, or truncated members produce coverage
+gaps. With no findings, incomplete coverage exits `13`, not `0`. Findings in
+the covered portion take exit `1`, or `10` when verification confirms a live
+credential, while `scan_status` remains `partial`. See
+[source archives](./source-archives.md).
+
 ## Make the CI loop fast
 
 ```bash

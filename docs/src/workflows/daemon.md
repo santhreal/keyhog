@@ -1,23 +1,32 @@
 # Daemon and warm scans
 
-The Unix daemon keeps one compiled scanner and its backend state warm for
-repeated small scans. It serves eligible standard-policy `stdin` and
-single-file requests. Repository, multi-source, and policy-changing scans use
-the full in-process orchestrator.
+The Unix daemon keeps one compiled scanner and its backend state warm. It is
+useful for repeated standard-policy scans of `stdin` or one regular file.
+Directory, repository, remote, watch, and system-wide scans require the
+in-process orchestrator. Automatic routing keeps them in process. Required
+daemon mode rejects them instead of falling back.
 
-Starting the daemon is opt-in infrastructure: KeyHog never launches a service
-for you. Client routing is different. On Unix, an omitted `--daemon` means
-`--daemon=auto`, so once you explicitly start a compatible daemon, eligible
-stdin and single-file scans use it automatically. An ineligible request stays
-in process and is never captured by the daemon silently.
+Starting the daemon is an explicit operational step. KeyHog never starts one
+for you. Run the server in one terminal or under a service manager:
 
 ```sh
-# Terminal or service-manager process. This command stays in the foreground.
+# Terminal 1. This stays in the foreground until stop or a fatal service error.
 keyhog daemon start
+```
 
-# The omitted scan flag means --daemon=auto on Unix.
+Wait for the ready line before sending required requests. Use a second
+terminal for scans and administration:
+
+```sh
+# Terminal 2. Omitted --daemon means --daemon=auto on Unix.
 keyhog scan --stdin < changed-file.txt
 keyhog scan path/to/one-file.txt
+
+# Require daemon execution. This fails rather than changing execution mode.
+keyhog scan --daemon=on path/to/one-file.txt
+
+# Guarantee in-process execution even while the daemon is ready.
+keyhog scan --daemon=off path/to/one-file.txt
 
 keyhog daemon status
 keyhog daemon stop
@@ -26,6 +35,10 @@ keyhog daemon stop
 `keyhog watch` is separate. It is a foreground filesystem watcher with its own
 compiled scanner. It does not use the daemon socket and does not appear in
 `daemon status`.
+
+The `watch` and `scan-system` subcommands do not accept `--daemon`. Each
+compiles and owns an in-process scanner. A running daemon neither serves nor
+accelerates those commands.
 
 ## Lifecycle and readiness
 
@@ -95,17 +108,26 @@ to finish. Check that `daemon status` reports `0 active` before stopping when
 in-flight requests must complete. An abrupt process exit can leave a socket
 entry. The next start removes it only after the stale-socket trust checks pass.
 
+Use the service manager as the process owner when it started the daemon. Before
+restarting, run `daemon status` against the same socket and wait for
+the status line to show `0 active` when requests must finish. Then use
+`daemon stop`, or stop the
+service-manager unit. Start the replacement process and wait for its ready line.
+Do not delete a live socket to restart the service. Removing the path does not
+stop the listener and can leave an unreachable daemon running.
+
 ## Socket selection and trust
 
-All daemon commands use the same default socket resolver:
+The server, scan client, status command, and stop command use the same default
+socket resolver:
 
 1. `$XDG_RUNTIME_DIR/keyhog.sock` when `XDG_RUNTIME_DIR` is set.
 2. The OS user-cache directory plus `keyhog/server.sock`.
 3. The OS temporary directory plus `keyhog/server.sock`.
 
 The usual cache paths are `~/.cache/keyhog/server.sock` on Linux and
-`~/Library/Caches/keyhog/server.sock` on macOS. For a fixed location, pass the
-same path at both ends:
+`~/Library/Caches/keyhog/server.sock` on macOS. There is no KeyHog socket
+environment variable. For a fixed location, pass the same path at both ends:
 
 ```sh
 keyhog daemon start --socket /private/path/keyhog.sock
@@ -158,10 +180,11 @@ diagnosing an automatic route:
 | Live but wire-incompatible daemon | Report the mismatch, then retry an eligible request in process. | Fail before scanning with the exact wire mismatch. | Report the mismatch; the current protocol does not inspect or stop it. |
 | Untrusted entry or peer | Report the trust failure, then retry an eligible request in process. | Fail before scanning with the exact trust error. | Refuse to unlink or operate on the entry. |
 
-An eligible request that connects successfully can still fail during daemon
-execution. `auto` retries only after a complete, validated `ScanResults`
-response boundary; `on` returns the daemon error. A request that is ineligible
-because of its sources or policy never connects in either mode.
+Some compatibility failures can be known only after connecting. This includes
+a detector identity or wire mismatch. Under `auto`, KeyHog reports that failure
+and retries the same eligible input in process. Under `on`, it returns the
+failure without rescanning. A request that is known to be unsupported from its
+source or policy does not connect in either mode.
 
 The automatic retry boundary is a fully decoded and validated `ScanResults`
 response. Failures before that boundary, including incompatible required wire
@@ -193,17 +216,40 @@ output formats, output files, deduplication, bundled test-fixture suppression,
 local default allowlists, inline suppression, and `--dogfood`. Dogfood detail is
 request-scoped and bounded; exact aggregate counters are carried separately.
 
-You can warm an explicit replacement corpus. Select the same reviewed directory
-at both ends:
+The daemon can use an explicit replacement corpus. Start it and scan with the
+same reviewed directory:
 
 ```sh
 keyhog daemon start --detectors ./reviewed-detectors
-keyhog scan --daemon=on --detectors ./reviewed-detectors one-file.txt
+keyhog scan --daemon=on \
+  --detectors ./reviewed-detectors \
+  --detectors-mode=replace \
+  one-file.txt
 ```
 
-The client computes the expected rules identity from its selected directory.
-It accepts the warm route only when the daemon compiled the exact same rules.
-The report records the replacement corpus count, digest, source, and mode.
+The daemon startup flag always selects a complete replacement corpus. It does
+not compose that directory over the embedded corpus. The scan-side
+`--detectors-mode=replace` spelling is optional, but makes the contract visible.
+The client derives the expected rules identity from its selected directory.
+The warm route is accepted only when the daemon compiled the exact same rules.
+The report records the replacement count, digest, source, and mode.
+
+`--detectors-mode=overlay` is not daemon-compatible. The daemon cannot rebuild
+its warm scanner for a per-request overlay. With `--daemon=auto`, an overlay
+scan stays in process without opening the socket. With `--daemon=on`, it fails
+before scanning. Use `--daemon=off` to make the supported execution mode
+explicit:
+
+```sh
+keyhog scan --daemon=off \
+  --detectors ./site-detectors \
+  --detectors-mode=overlay \
+  source-tree/
+```
+
+If the client and daemon select different replacement corpora, the handshake
+fails. `auto` prints the identity error and retries in process. `on` prints the
+identity error and exits. It never substitutes the daemon's corpus.
 
 The in-process orchestrator is required for any of these request classes:
 
@@ -213,7 +259,8 @@ The in-process orchestrator is required for any of these request classes:
 - `--fast`, `--deep`, `--precision`, benchmark mode, or changes to decode,
   entropy, ML, Unicode normalization, comment scanning, scanner limits, source
   limits, detector vocabulary, or detector overlay composition
-- a replacement corpus that does not exactly match the daemon rules identity
+- a replacement corpus whose rules identity does not exactly match the warm
+  daemon; this mismatch is detected during the handshake
 - per-request backend, GPU, batch-pipeline, autoroute, cache, or calibration
   controls
 - path-exclusion changes
@@ -221,9 +268,26 @@ The in-process orchestrator is required for any of these request classes:
   custom AWS canaries, detector disable or confidence policy, allowlist
   governance, or a malformed effective configuration
 
-In `auto`, these requests stay in process. In `on`, they fail before scanning.
+In `auto`, requests rejected by source or policy stay in process. A replacement
+identity mismatch is the exception described above because it is learned from
+the handshake, after which `auto` reports it and retries in process. In `on`,
+every unsupported or incompatible request fails without an in-process scan.
 Daemon availability therefore cannot weaken a requested policy or change the
 selected detector and engine configuration.
+
+These distinctions are useful when checking an unsupported combination:
+
+```sh
+# Supported in process. Auto also keeps this directory request in process.
+keyhog scan --daemon=off source-tree/
+
+# Unsupported as a required daemon request. This exits before scanning.
+keyhog scan --daemon=on source-tree/
+
+# Unsupported as a required daemon request because overlays are per scan.
+keyhog scan --daemon=on \
+  --detectors ./site-detectors --detectors-mode=overlay one-file.txt
+```
 
 ## Identity, wire data, and coverage
 

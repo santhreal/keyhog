@@ -19,7 +19,7 @@ treating a copied snippet as a second specification:
 |---|---|
 | Protect local commits | [`keyhog hook install`](./precommit.md) |
 | Gate a pull request | [CI integration](./ci.md) |
-| Scan a large tree or choose a policy | [Detection settings and hardware](../detection.md#settings-hardware-and-result-parity) |
+| Scan a large tree or choose a policy | [Detection settings and hardware](../detection.md#settings-active-corpus-and-exact-identity) |
 | Suppress an accepted finding | [Suppressions](../suppressions.md) |
 | Interpret a failure | [Exit codes](../reference/exit-codes.md) |
 
@@ -38,7 +38,7 @@ If you only need one section, jump to:
 - [Jenkins](#jenkins)
 - [As a library (Rust)](#as-a-library-rust)
 - [Embedded in another CLI](#embedded-in-another-cli)
-- [SARIF for GitHub Advanced Security](#sarif-for-github-advanced-security)
+- [SARIF for GitHub Code Scanning](#sarif-for-github-code-scanning)
 - [Slack / Discord / webhook alerts](#slack--discord--webhook-alerts)
 - [Allowlists and baselines](#allowlists-and-baselines)
 - [Exit codes](#exit-codes)
@@ -50,23 +50,22 @@ ownership, staged-content semantics, bypass auditing, performance, and removal.
 
 ## Pre-push hook (Git)
 
-Pre-commit is the strongest gate. Pre-push catches secrets that landed
-in earlier commits but were never pushed. Drop into `.git/hooks/pre-push`:
+Pre-commit is the fastest local gate. A pre-push history scan also finds a
+credential introduced by an earlier commit on the checked-out branch. Save this
+as `.git/hooks/pre-push` and make it executable:
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
-# Scan everything between the remote's HEAD and the local branch tip.
-remote_sha="$(git ls-remote origin HEAD | awk '{print $1}')"
-keyhog scan --git-diff "$remote_sha" \
-  --backend cpu
+
+keyhog scan --git-history . --backend cpu
 ```
 
-This compact hook compares the checked-out branch with the remote's default
-branch. Repositories that push several refs or use a different integration base
-should enforce the exact ref range in CI, where the server supplies authoritative
-base and head revisions. KeyHog's nonzero status is left intact so operational
-errors cannot be mislabeled as findings.
+This scans added lines across all commits reachable from local `HEAD`. It does
+not depend on the remote name, upstream branch, or network access. It is broader
+and slower than a staged scan. KeyHog's nonzero status is returned unchanged, so
+findings and incomplete scans both block the push. CI remains the authoritative
+gate because `git push --no-verify` bypasses local pre-push hooks.
 
 ## `pre-commit` framework
 
@@ -278,17 +277,33 @@ Or invoke the scan subcommand directly from a wrapper script:
 keyhog scan /path/to/project --format jsonl-envelope --min-confidence 0.4
 ```
 
-## SARIF for GitHub Advanced Security
+## SARIF for GitHub Code Scanning
 
-```bash
-keyhog scan . --format sarif -o keyhog.sarif
+The composite Action is the safest way to create, upload, and retain SARIF:
+
+```yaml
+- uses: santhreal/keyhog@v0.5.46
+  with:
+    format: sarif
+    upload-sarif: 'true'
+    fail-on-findings: 'true'
 ```
 
-Then upload to GitHub Code Scanning (see the [CI integration guide](./ci.md)).
-KeyHog tags every finding with CWE-798 (Use of Hard-coded
-Credentials) and the OWASP A07:2021 (Identification and Authentication
-Failures) category, so they surface in the right dashboards out of the
-box.
+Give the job `security-events: write` as shown in the
+[CI integration guide](./ci.md#github-actions). The Action uploads before it
+enforces findings, keeps a workflow artifact, and makes only a fork pull
+request's restricted-token upload advisory. Trusted upload failures fail the
+job.
+
+For another SARIF consumer, write the file directly:
+
+```bash
+keyhog scan . --format sarif --output keyhog.sarif
+```
+
+The command exits `1` on findings and `10` on a verified-live finding. Arrange
+report publication in an always-run or post step, then restore the exact scan
+status. KeyHog tags findings with CWE-798 and OWASP A07:2021.
 
 ## Slack / Discord / webhook alerts
 
@@ -401,7 +416,7 @@ keyhog scan . --format jsonl-envelope --output findings.jsonl
 policies and can produce different findings. Hardware and automatic backend
 selection must not. Measure the chosen policy on the real corpus and let
 persisted calibration choose among every measured-correct backend for that exact
-host and workload. See [How detection works](../detection.md#configuration-presets)
+host and workload. See [Configuration presets](../reference/configuration.md#presets)
 and [Backends and routing](../backends.md) before changing policy or forcing an
 engine.
 

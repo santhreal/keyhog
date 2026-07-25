@@ -5,7 +5,7 @@ your time on small ones, and quiet about findings that aren't actually
 credentials.
 
 ```text
-$ keyhog scan .
+$ keyhog scan . --progress
     K E Y H O G
     ───────────
     v0.5.46 · secret scanner · 923 detectors
@@ -101,44 +101,32 @@ Three things, in order of how much they matter:
 
 ## Get going
 
-The canonical install path is:
+Install the current release for your host:
 
 ```sh
+# Linux x86_64 or macOS x86_64/aarch64
 curl -fsSL https://santh.dev/keyhog/install.sh | sh
 ```
 
-On Windows PowerShell:
-
 ```powershell
+# Windows x86_64, PowerShell 5+
 iwr https://santh.dev/keyhog/install.ps1 -UseBasicParsing | iex
 ```
 
-Before this pinned release example, install `minisign`; Debian/Ubuntu also
-needs the Linux asset's `libhyperscan5` runtime. The complete platform-specific
-prerequisite commands live in the [install guide](./install.md#pinned-verified-install-linux--macos).
+Open a new terminal if the installer changed your `PATH`, then verify the
+binary before scanning:
 
 ```sh
-# Linux / macOS, pinned and authenticated before execution
-TAG=v0.5.46
-BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
-PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
-curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
-minisign -Vm install.sh -P "$PUB"
-KEYHOG_VERSION="$TAG" sh install.sh
-```
-
-Windows uses the same signed release flow. Copy the PowerShell commands from
-the [Install](./install.md#pinned-verified-install-windows) page.
-
-Then:
-
-```sh
+keyhog --version
 keyhog scan .
 ```
 
-The [Install](./install.md) page has package-manager, build-from-source,
-and offline-install paths. The [Your first scan](./first-scan.md) page
-walks through what the output means and where to go from there.
+Linux arm64 and Windows arm64 release assets are not currently produced.
+Debian and Ubuntu also need the `libhyperscan5` runtime. The
+[Install](./install.md) guide gives prerequisite commands, a pinned
+installer-authentication flow, offline and source-build paths, and recovery
+steps. [Your first scan](./first-scan.md) gives you a safe, synthetic finding
+to confirm output, redaction, and exit status before you scan a repository.
 
 ## Where things live
 

@@ -9,44 +9,45 @@ optional policy override, not a substitute for required autoroute evidence.
 
 ## Precedence
 
-Settings resolve in this order, rightmost winning:
+KeyHog first chooses the configuration-file layer:
+
+1. `--no-config` skips file discovery and conflicts with `--config`.
+2. `--config PATH` selects that file explicitly.
+3. Otherwise, KeyHog walks from each scan root toward the filesystem root and
+   uses the first `.keyhog.toml` found for that root.
+
+A multi-root scan may use discovery only when every root resolves the same
+configuration identity, or when every root resolves no file. Different
+repository policies fail before scanning. Pass one `--config PATH`, split the
+scan by repository, or use `--no-config`.
+
+After the file layer is chosen, ordinary settings resolve from left to right:
 
 ```text
-compiled defaults  →  .keyhog.toml  →  CLI flags
-(ScanConfig::default)  (walked up from    (always win)
-                        the scan path)
+compiled typed default  →  selected .keyhog.toml  →  explicit CLI value
 ```
 
-- **Compiled defaults** are typed at their owning boundary. Detection defaults
-  live in `ScanConfig::default()`; source limits, verifier policy, runtime
-  workers, and scanner tuning have their own typed defaults. The effective
-  resolver folds those owners into one `ResolvedScanConfig`, and behavioral
-  tests pin the operator-visible result.
-- **`.keyhog.toml`** is discovered by walking up from the scan path to the
-  filesystem root (first one found wins). Copy
-  [`.keyhog.toml.example`](https://github.com/santhreal/keyhog/blob/main/.keyhog.toml.example)
-  to your repo root and delete what you don't need. A malformed `.keyhog.toml`
-  fails closed with the path and TOML error before any scan output is written.
-  Unknown tables and keys are parse failures, not ignored compatibility shims.
-  Use `--no-config` when you intentionally want compiled defaults.
-  A multi-root scan may use automatic discovery only when every root resolves
-  the same config identity (or every root resolves none). If roots belong to
-  repositories with different policies, KeyHog fails before scanning; pass one
-  explicit `--config PATH`, split the scan by repository, or use `--no-config`.
-- **CLI flags** always override the file. A flag left unset falls through to
-  the file, then to the compiled default.
+A CLI option that you do not pass does not erase the file value. With
+`--no-config`, it falls through directly to the compiled default. There is no
+system or user configuration-file tier.
 
-There is no separate system/user config tier today: the walk-up `.keyhog.toml`
-is the only file layer.
+Relative paths in `.keyhog.toml` resolve from the directory containing that
+file. Relative CLI paths resolve from the caller's working directory. A
+malformed file, unknown table or key, invalid value, or unreadable explicit path
+fails before findings are written.
 
-Detector policy has a separate, explicit provenance. `keyhog explain
-<detector-id>` prints fields declared by the loaded detector TOML and labels
-unset optional fields as unresolved there: detector-field defaults or scan
-policy apply only at scan time. `keyhog config --effective` is the scan-level
-view and reports whether the BPE ceiling came from an explicit `scan-override`
-or the compiled `scan-fallback`. During scanning, an eligible detector's
-declared BPE ceiling wins over that fallback, while an explicit scan override
-wins over every eligible detector ceiling.
+Some detection settings compose rather than use simple replacement. Presets
+seed a base before compatible explicit knobs apply. Detector confidence floors,
+entropy bands, and BPE ceilings use the field-specific rules in
+[How detection works](../detection.md#resolution-rules). The sections below
+state the operator-layer precedence for each of those fields.
+
+Detector policy also has explicit provenance. `keyhog explain <detector-id>`
+prints fields from the loaded detector TOML. `keyhog config --effective` prints
+the resolved scan policy, including whether the BPE ceiling is an explicit
+`scan-override` or the compiled `scan-fallback`. During scanning, an eligible
+detector's declared BPE ceiling wins over that fallback. An explicit `[scan]`
+value wins over detector ceilings, and the CLI value wins over `[scan]`.
 
 The effective view also prints report format, severity floor, dedup scope,
 secret visibility, client-safe/test-fixture policy, lockdown, verification
@@ -63,8 +64,8 @@ A dash means that layer intentionally has no surface.
 
 | Setting | Default | `.keyhog.toml` key | CLI flag | Effect |
 |---|---|---|---|---|
-| Detector corpus | embedded | `detectors` | `--detectors` | Select a detector TOML directory. A config-relative path resolves from the config directory; a CLI path resolves from the caller's working directory. |
-| Detector composition | replace | `detectors_mode` | `--detectors-mode` | `replace` uses only the selected directory; `overlay` adds it to the embedded corpus and rejects detector-ID collisions. A mode requires an explicit detector directory. |
+| Detector corpus | discovered, else embedded | `detectors` | `--detectors` | Select a detector TOML directory. A config-relative path resolves from the config directory; a CLI path resolves from the caller's working directory. |
+| Detector composition | replace | `detectors_mode` | `--detectors-mode` | Select one of the modes in the [detector composition table](../detectors.md#custom-detector-corpora). |
 | Min confidence | **0.40** | `[scan].min_confidence` | `--min-confidence` | Drop findings scoring below this (0.0-1.0). Bench-tuned for max F1. |
 | Decode depth | **10** | `[scan].decode_depth` | `--decode-depth` | Max recursive decode passes, e.g. `base64(hex(url(secret)))` (1-10). A zero value also disables bounded static JavaScript XOR/AES recovery. |
 | Decode size limit | **512KB** | `decode_size_limit` | `--decode-size-limit` | Maximum prepared chunk admitted to decode-through. Large files are windowed, so this is not a whole-file limit. |
@@ -166,18 +167,19 @@ compiled `SourceLimits::default()` → `.keyhog.toml` `[limits]` → CLI
 | Deep | `deep = true` | `--deep` | Enables entropy and ML, keeps heuristic evidence instead of an ML-only entropy veto, scans source-file entropy, removes comment confidence penalties, sets depth 10, and raises decode-through to one 1 MiB chunk. It keeps the 0.40 floor. |
 | Precision | `precision = true` | `--precision` | Disables entropy discovery and the relaxed keyword-low-entropy bridge, keeps ML enabled, sets decode depth 1, and clamps global and detector confidence floors to at least **0.85**. |
 
-`--fast`, `--deep`, and `--precision` are mutually exclusive and conflict with
-`--no-decode`/`--no-entropy`.
+`--fast`, `--deep`, and `--precision` are scan presets. They are mutually
+exclusive and conflict with `--no-decode` and `--no-entropy`.
 
-**A preset is a BASE, not a terminal state.** It seeds the decode/entropy/ML
-defaults, then any explicit knob you pass on the same command line **overrides**
-that base; `--deep --decode-depth 3` runs the deep base at decode-depth 3, and
-`--deep --min-confidence 0.9` raises the floor on the deep base. Two overrides
-are one-directional and cannot weaken a precision bar: under `--precision`,
-`--min-confidence` may *raise* the 0.85 floor but never lower it, and
-`--no-keyword-low-entropy` can only *disable* the relaxed keyword floor, never
-re-enable it under a preset that turned it off. Everything else takes effect as
-written.
+A preset seeds a base. Compatible explicit options then override that base. For
+example, `--deep --decode-depth 3` uses the deep preset with decode depth 3, and
+`--deep --min-confidence 0.9` raises its confidence floor. Two overrides are
+one-directional. Under `--precision`, `--min-confidence` may raise the 0.85
+floor but cannot lower it. A preset that disables the relaxed keyword floor
+cannot be used with a flag that assumes that path is active.
+
+`--profile` is not a named configuration profile. It emits the scanner's
+performance profile to standard error. It does not select the fast, deep, or
+precision preset.
 
 ## Policy tables
 
@@ -191,18 +193,39 @@ parser under `[scan]` and rename `exclude_paths` to `[scan].exclude`.
 
 ### `detectors` and `detectors_mode`
 
-The root `detectors = "path"` key selects a detector TOML corpus. Relative
-paths resolve from the directory containing the loaded config file, so the same
-repository policy is independent of the caller's working directory. An
-explicit `--detectors PATH` takes precedence.
+The corpus path and composition mode are two independently resolved settings.
+Each follows the ordinary default, file, then CLI precedence. Their composition
+semantics are defined once in [Detectors](../detectors.md#custom-detector-corpora).
 
-`detectors_mode = "replace"` makes that directory the complete corpus and is
-the default for compatibility. `detectors_mode = "overlay"` composes it with
-the embedded corpus after rejecting every detector-ID collision. The matching
-`--detectors-mode replace|overlay` CLI value takes precedence over TOML after
-the detector path is resolved. Supplying a mode without a `detectors` path in
-either layer is an error rather than an implicit merge with an auto-discovered
-directory.
+```toml
+# /srv/acme/app/.keyhog.toml
+detectors = "keyhog-detectors"
+detectors_mode = "overlay"
+```
+
+The file above selects `/srv/acme/app/keyhog-detectors`, regardless of the
+caller's working directory:
+
+```sh
+keyhog scan /srv/acme/app --config /srv/acme/app/.keyhog.toml
+```
+
+A CLI path overrides only the path. If the file still supplies `overlay`, that
+mode applies to the CLI directory. Override both settings when you want a full
+replacement:
+
+```sh
+keyhog scan /srv/acme/app \
+  --config /srv/acme/app/.keyhog.toml \
+  --detectors /opt/acme/keyhog-detectors \
+  --detectors-mode replace
+```
+
+If neither the file nor CLI supplies a mode, a selected directory uses
+`replace`. A mode without a detector path in either layer is an error. A
+missing, non-directory, empty, or invalid explicit corpus is also an error.
+Overlay ID collisions fail before scanning. None of these errors falls back to
+the embedded corpus.
 
 ### `[scan]`
 
@@ -226,29 +249,35 @@ per_chunk_timeout_ms = 30000
 
 ### `[detector.<id>]`: per-detector overrides
 
-Keyed by detector id (`keyhog detectors` lists them; `keyhog explain <id>`
-shows one):
+Apply an override to the exact ID shown by `keyhog detectors` or `keyhog explain
+<id>`:
 
 ```toml
 [detector.generic-api-key]
-enabled = false             # drop this detector from the corpus entirely
+enabled = false
 
 [detector.twilio-api-key]
-min_confidence = 0.6        # per-detector floor, OVERRIDES the global one
+min_confidence = 0.6
 ```
 
-There are **two** per-detector floor sources, in increasing precedence:
+`enabled = false` removes the matching detector after replace or overlay
+composition and before scanner compilation. It cannot restore a detector absent
+from a replacement corpus. An unknown ID produces a warning. Disabling every
+loaded detector fails before scanning.
 
-1. **Tier-B**: `min_confidence` inside the detector's own TOML under
-   `detectors/<id>.toml` (`[detector] min_confidence`). The detector's
-   shipped baseline.
-2. **`.keyhog.toml` `[detector.<id>] min_confidence`**: validated operator
-   intent; overrides the detector floor for that id and is compiled into the
-   active scan policy before any candidate can be discarded.
+A detector confidence floor resolves in this order:
 
-`enabled = false` removes a detector from the active corpus. Shipped detector
-availability and shipped confidence policy have no hidden Rust override lists;
-the individual detector TOML is their single source.
+1. `[scan].min_confidence` supplies the global floor.
+2. `[detector] min_confidence` in the active detector TOML replaces the global
+   floor for that detector.
+3. `.keyhog.toml` `[detector.<id>] min_confidence` replaces the detector's
+   declared floor.
+4. The precision preset clamps the resolved global and detector floors to at
+   least 0.85.
+
+There is no CLI per-detector override. A scan-wide `--min-confidence` changes
+the global floor but does not replace a detector-specific floor. Shipped
+availability and detector floors have no hidden Rust override list.
 
 ### `[lockdown]`
 

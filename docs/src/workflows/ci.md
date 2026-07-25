@@ -37,47 +37,49 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@v4
-      - uses: santhreal/keyhog@v0
+      - uses: santhreal/keyhog@v0.5.46
         with:
           path: .
           severity: high
           format: sarif
+          upload-sarif: 'true'
+          fail-on-findings: 'true'
 ```
 
 This Action example scans the checked-out working tree. Use the explicit
 `--git-history` recipe below to inspect added lines across reachable commit
 ancestry. Add `--git-blobs` for complete reachable blob coverage.
 
-The composite action installs KeyHog, writes a SARIF report, uploads it
-to **Security -> Code scanning**, attaches the report as a workflow
-artifact, and prints a job summary with the finding count, raw exit code,
-and scan duration. Its `format` input intentionally supports the four formats
-that the Action wrapper can count (`text`, `json`, `sarif`, and `jsonl`). Use
-the installed CLI directly when a workflow needs envelope, CSV, HTML, JUnit,
-or provider-specific formats documented in [Output formats](../output-formats.md).
+The composite Action installs KeyHog, scans the checked-out tree, writes a
+SARIF report, uploads it to **Security > Code scanning**, and retains the report
+as a workflow artifact. It also writes a job summary and exposes the finding
+count, raw KeyHog exit code, scan status, report status, and duration as outputs.
 
-Exact release tags, the floating major tag (`@v0`), and explicit `version:`
-inputs require the complete binary and GPU literal bundle. The floating tag
-resolves the exact version from its checked-out manifest. The Action verifies
-both minisign signatures with KeyHog's pinned public key, verifies both SHA-256
-files, validates the sidecar archive, and seeds its matcher artifacts before
-execution. A missing or unverifiable payload fails closed. Branch/SHA Action
-refs skip release lookup and build from source using the checked-out tree.
+The example pins the Action code and scanner release to `v0.5.46`. This is the
+most reproducible choice. `santhreal/keyhog@v0` follows the current v0 release.
+An explicit `version: v0.5.46` installs that scanner release even when the
+Action itself is selected by a branch or commit ref. Pin the Action ref as well
+when the workflow must not change without review.
 
-Release refs use `vMAJOR.MINOR.PATCH` with an optional prerelease suffix.
-Build metadata (`+...`) is rejected because release assets are not published
-under a build-metadata namespace.
+Release refs and explicit `version:` inputs require the signed binary and GPU
+literal bundle. The Action verifies minisign signatures, SHA-256 files, and the
+sidecar archive before execution. A missing or unverifiable release payload
+fails the job. Branch and commit Action refs build their checked-out source
+instead.
 
-When `upload-sarif: 'true'`, SARIF upload is fail-closed on trusted pushes
-and same-repo pull requests. Fork pull requests often lack
-`security-events: write`; in that case the upload step is advisory and the
-downloadable SARIF artifact remains available for review. Trusted upload
-failures also keep the report artifact, so the failed job remains
-diagnosable.
+The Action accepts `text`, `json`, `sarif`, and `jsonl`. Use the CLI directly
+for the other formats in [Output formats](../output-formats.md).
 
-`fail-on-findings: 'false'` makes ordinary findings advisory after the
-report/SARIF/artifact are written. A `--verify` scan that confirms a live
-credential still fails the action with KeyHog exit code `10`.
+The `security-events: write` permission enables Code Scanning upload on pushes
+and same-repository pull requests. GitHub downgrades the token for a fork pull
+request. The Action treats only that fork upload as advisory and still retains
+the SARIF artifact. A scan finding still fails the fork job. On trusted events,
+a missing report or failed SARIF upload fails closed.
+
+`fail-on-findings: 'false'` makes exit `1` findings advisory after report
+handling. It does not hide scanner, configuration, source-coverage, backend, or
+report failures. With `verify: 'true'`, a confirmed live credential exits `10`
+and always fails after report handling.
 
 Self-hosted GPU runners can add `keyhog backend --self-test --json` before the
 scan. On an eligible GPU host, the JSON includes `ok`, `status`, `exit_code`,
@@ -102,7 +104,7 @@ git add .keyhog-baseline.json && git commit -m 'chore: keyhog baseline'
 ```
 
 ```yaml
-      - uses: santhreal/keyhog@v0
+      - uses: santhreal/keyhog@v0.5.46
         with:
           baseline: .keyhog-baseline.json
 ```
@@ -136,9 +138,16 @@ Use the verified installer when the workflow must own installation explicitly:
           exit 0
       - name: Upload SARIF
         if: always() && hashFiles('keyhog.sarif') != ''
-        uses: github/codeql-action/upload-sarif@v3
+        continue-on-error: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+        uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
         with:
           sarif_file: keyhog.sarif
+      - name: Retain SARIF report
+        if: always() && hashFiles('keyhog.sarif') != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: keyhog-sarif-${{ github.run_attempt }}
+          path: keyhog.sarif
       - name: Enforce scan result
         if: steps.keyhog.outputs.exit-code != '0'
         env:
@@ -146,10 +155,11 @@ Use the verified installer when the workflow must own installation explicitly:
         run: exit "$KEYHOG_EXIT"
 ```
 
-The scan step records the exact process status before uploading the report. The
-last step restores that status, so findings, live findings, configuration
+The scan step records the exact process status before report handling. The last
+step restores that status, so findings, verified-live findings, configuration
 errors, incomplete coverage, backend failures, and internal errors remain
-distinct.
+distinct. The SARIF upload is advisory only for fork pull requests. The artifact
+is retained whenever the scanner produced it.
 
 ### Scan only changed files in a PR (faster)
 
@@ -273,7 +283,7 @@ steps:
       - minisign -Vm install.sh -P "$PUB"
       - KEYHOG_VERSION="$TAG" sh install.sh
       - |
-        printf '{"schema_version":{"major":1,"minor":7},"scan_status":"success","coverage_gap_summary":[],"findings":[]}\n' > keyhog.json
+        printf '{"schema_version":{"major":1,"minor":7},"scan_status":"failed","coverage_gap_summary":[],"findings":[]}\n' > keyhog.json
         scan_status=0
         $HOME/.local/bin/keyhog scan . --format json-envelope --output keyhog.json \
           2>keyhog.stderr || scan_status=$?
@@ -314,7 +324,7 @@ CI that can run a POSIX shell:
 #!/bin/sh
 set -eu
 
-printf '{"schema_version":{"major":1,"minor":7},"scan_status":"success","coverage_gap_summary":[],"findings":[]}\n' > keyhog.json
+printf '{"schema_version":{"major":1,"minor":7},"scan_status":"failed","coverage_gap_summary":[],"findings":[]}\n' > keyhog.json
 scan_status=0
 keyhog scan . --format json-envelope --output keyhog.json \
   2>keyhog.stderr || scan_status=$?
@@ -390,8 +400,19 @@ pipeline {
 
 ## Pinning a version
 
-Pin and authenticate the installer before execution. The installer then pins
-the binary to the same release:
+For the composite Action, pin the Action ref:
+
+```yaml
+- uses: santhreal/keyhog@v0.5.46
+```
+
+The ref selects both the Action implementation and, for a release ref, its
+matching scanner release. The floating `@v0` ref follows later v0 releases.
+Using `version: v0.5.46` pins the scanner asset but does not pin Action code, so
+do not use it as a substitute for a fixed Action ref.
+
+For a manual installation, authenticate the installer before execution and pass
+the same release tag to it:
 
 ```sh
 TAG=v0.5.46
@@ -402,8 +423,7 @@ minisign -Vm install.sh -P "$PUB"
 KEYHOG_VERSION="$TAG" sh install.sh
 ```
 
-Update the pin via a Renovate / Dependabot config or just bump it
-by hand when a new release lands.
+Review and update either pin when adopting a new release.
 
 ## Scan commit additions on main and release, not per PR
 

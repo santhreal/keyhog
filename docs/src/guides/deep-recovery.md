@@ -1,14 +1,20 @@
 # Deep recovery
 
-Use `--deep` when recall matters more than routine scan cost:
+Use `--deep` when recall matters more than routine scan cost. For a
+multi-backend installation, calibrate the deep policy before relying on
+automatic routing:
 
 ```bash
-keyhog scan . --deep
+keyhog calibrate-autoroute --policy deep
+keyhog scan . --deep --format json-envelope --output deep.json
 keyhog config --effective --deep
 ```
 
-The second command prints the resolved policy. Record it with benchmark or
-incident results.
+A normal installation already calibrates every preset. Re-run the first command
+after changing the binary, host, driver, or routing-relevant configuration. The
+last command prints the resolved policy. Record it with benchmark or incident
+results.
+
 
 When a report is written as `json-envelope`, `jsonl-envelope`, or `html`, its
 metadata contains a `resolved_scan` manifest. The manifest records the selected
@@ -47,6 +53,42 @@ ML remains enabled. Deep retains its score as evidence but does not let the
 model alone discard an entropy candidate. Explicit compatible flags apply on
 top of the preset, such as `--deep --decode-depth 3`.
 
+## Backend routing
+
+Deep is a detection preset. It does not select a backend. The default
+`--backend auto` looks up evidence calibrated for the deep preset and the exact
+resolved overrides:
+
+```bash
+keyhog scan . --deep
+keyhog scan . --deep --decode-depth 3
+```
+
+Those two scans have different resolved configuration identities. If the second
+scan reports an uncovered workload, measure that exact diagnostic shape once,
+then return to normal automatic routing:
+
+```bash
+keyhog scan . --deep --decode-depth 3 \
+  --autoroute-calibrate --autoroute-gpu
+keyhog scan . --deep --decode-depth 3
+```
+
+Use an explicit backend only to isolate an engine problem:
+
+```bash
+keyhog scan . --deep --backend cpu
+keyhog scan . --deep --backend simd
+keyhog scan . --deep --backend gpu-cuda
+keyhog scan . --deep --backend gpu-wgpu
+```
+
+An explicit backend bypasses autoroute evidence. It does not repair or calibrate
+the deep route. It is a hard contract, so an unavailable SIMD runtime, GPU
+driver, or selected GPU peer fails the scan. KeyHog does not silently continue
+with another backend. Use `keyhog --version --full` for discovery and
+`keyhog backend --self-test --require-gpu` to execute the GPU diagnostic paths.
+
 ## Recovery mechanisms
 
 Deep runs the normal detector corpus and expands bounded recovery around it:
@@ -70,6 +112,47 @@ The static evaluator caps source size, literal arrays, binding count, and
 expression count. Decode recursion also enforces depth, output-size, expansion,
 and total-work budgets. A rejected transform still leaves the original source
 available to ordinary detection.
+
+## Read recovery receipts
+
+Deep static recovery and backend recovery are separate. Inspect both from the
+metadata-bearing report:
+
+```bash
+jq '{
+  preset: .metadata.resolved_scan.preset,
+  static_recovery: .metadata.static_recovery,
+  scan_status,
+  backend_recoveries: (.metadata.backend_recoveries // [])
+}' deep.json
+```
+
+`static_recovery` counts supported, unsupported, and erroneous bounded program
+transforms. These counters describe the JavaScript, AES, and CryptoJS evaluator.
+They do not mean that a scan backend failed.
+
+`backend_recoveries` records automatic routing recovery. Each row names the
+failed backend, the backend that completed the stable bytes, recovered range,
+chunk, and byte counts, a non-secret reason, and a repair command.
+`failed_backend: "autoroute-invalid"` means no persisted route could be trusted.
+`scan_status: "complete_after_recovery"` means byte coverage is complete, but
+the route still needs repair. A partial or failed status must not be treated as
+a clean scan.
+
+Use the receipt to remediate the route:
+
+- Run `keyhog calibrate-autoroute --policy deep` for the standard deep ladder.
+- Re-run an exact deep scan once with `--autoroute-calibrate --autoroute-gpu`
+  when compatible overrides created an uncovered configuration.
+- Run installer calibration for Git, Docker, or web source workloads.
+- If a GPU backend faulted, run
+  `keyhog backend --self-test --require-gpu`, repair the driver or runtime, and
+  recalibrate. Inspect the quarantine with `keyhog backend --autoroute`.
+- If SIMD faulted, confirm the running build and Hyperscan/Vectorscan runtime
+  with `keyhog --version --full`, repair it, and recalibrate.
+
+Do not replace these repairs with a permanent `--backend cpu` setting. That
+would bypass the invalid autoroute state rather than restore measured routing.
 
 ## Non-LLM recovery benchmark
 

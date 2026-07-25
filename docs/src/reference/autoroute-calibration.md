@@ -83,13 +83,35 @@ so an auto scan warns, scans every byte through the scalar correctness oracle,
 and reports `complete_after_recovery` plus `autoroute calibration required`.
 That recovery is deliberately not labelled autoroute.
 
-## Operator workflow
+## Calibrate, inspect, then scan
 
-1. Install normally or run calibration for the workload families you use.
-2. Inspect the cache with `keyhog backend --autoroute`.
-3. Run with the default `--backend auto`; normal scans never benchmark.
-4. If a real scan names an uncovered key, calibrate that workload family or use
-   an explicit backend only as a deliberate diagnostic override.
+For a multi-backend build, use this sequence:
+
+```sh
+keyhog calibrate-autoroute
+keyhog backend --autoroute
+keyhog scan .
+```
+
+The scan uses `auto` by default. It performs an exact lookup in the persisted
+table and never benchmarks during the scan. Use an explicit backend only for a
+deliberate diagnostic or benchmark.
+
+Before calibration:
+
+- Run the same KeyHog binary that will perform the scans. Build identity and
+  scanner feature identity are part of every decision.
+- Use a writable persistent cache path. `--autoroute-cache off` is rejected
+  because calibration must publish durable evidence.
+- Keep the host idle. Keep the CPU power policy, accelerator drivers, and
+  runtime libraries stable for the sweep. Overlapping timing intervals exit
+  without publishing a generation.
+- Make every source prerequisite available. The subcommand covers the core
+  stdin and filesystem ladder. Git, Docker, and web fixtures require installer
+  calibration.
+
+A build with only `cpu-fallback` reports `health: direct` and does not require
+calibration.
 
 ## Calibrate core and source-specific workloads
 
@@ -114,17 +136,23 @@ The binary can also recalibrate its own core workloads in place:
 keyhog calibrate-autoroute
 ```
 
-The default command calibrates every documented scan policy. To refresh only
-the policy you use, select it explicitly:
+The default command calibrates the ordinary policy and every documented preset:
 
 ```sh
+keyhog calibrate-autoroute                 # all policies
 keyhog calibrate-autoroute --policy default
+keyhog calibrate-autoroute --policy fast
 keyhog calibrate-autoroute --policy deep
+keyhog calibrate-autoroute --policy precision
 ```
 
-You can also select `fast` or `precision`. A focused run keeps valid evidence
-for other configurations and publishes only after every workload in the
-selected policy succeeds.
+The policy names correspond to no preset flag, `--fast`, `--deep`, and
+`--precision`. Each policy has its own resolved configuration digest and route
+decisions. A focused run keeps valid evidence for other configurations. It
+publishes only after every workload in the selected policy succeeds. Use the
+default all-policy sweep for a new installation. Use a focused policy to repair
+or refresh only the preset you run.
+
 
 This drives the core stdin + filesystem workload ladder across every scan
 preset. Plain single-file probes cover every power-of-two size band from 1 byte
@@ -375,23 +403,46 @@ guidance. An explicit GPU override or
 per-config fault counts, and the failed backend/reason on each affected workload;
 `keyhog doctor` reports the same repair state.
 
-## When an auto scan recovers with `calibration required`
+## Diagnose invalid state and read recovery receipts
 
-The warning and report receipt name the missing workload bucket and which
-dimensions differ from the nearest calibrated class. Scan coverage remains
-complete, but routing proof is unhealthy. Resolve it by either:
+Capture a metadata-bearing report, then inspect routing health:
 
-- Re-running the same scan once with `--autoroute-calibrate --autoroute-gpu`.
-  This measures the actual source, resolved config, and workload class that
-  failed. Use `keyhog calibrate-autoroute` for the standard core ladder, or
-  `install.sh --calibrate` / `install.ps1 -Calibrate` during installation, or
-- Passing an explicit backend for a one-off diagnostic scan:
-  `keyhog scan --backend simd` (or `gpu-cuda`, `gpu-wgpu`, `cpu`). An explicit `--backend`
-  bypasses autoroute entirely; it is a diagnostic/benchmark override and does
-  not prove autoroute correctness.
+```sh
+keyhog scan . --format json-envelope --output keyhog.json
+jq '{scan_status, backend_recoveries: (.metadata.backend_recoveries // [])}' keyhog.json
+keyhog backend --autoroute
+keyhog doctor
+```
 
-A `STALE` status means the cache was written for a different build; auto scans
-recover through the scalar oracle, so recalibrate after upgrading KeyHog.
+When automatic route state is unusable, the scan warning names the missing
+workload bucket and the dimensions that differ from the nearest measured class.
+The report uses `scan_status: "complete_after_recovery"` only when every
+requested byte completed. Its `metadata.backend_recoveries` rows include the
+failed backend (`autoroute-invalid` when no route could be trusted), the backend
+that completed the work, recovered range, chunk, and byte counts, a non-secret
+reason, and `repair_command`. This is a visible correctness recovery, not a
+calibrated route and not a silent fallback.
+
+Use the reported state to choose the repair:
+
+- For one uncovered core workload, rerun the same scan once with
+  `--autoroute-calibrate --autoroute-gpu`. This measures its actual source,
+  resolved configuration, and workload class.
+- For a standard preset ladder, run `keyhog calibrate-autoroute`. Add
+  `--policy default`, `fast`, `deep`, or `precision` for a focused repair.
+- For Git, Docker, or web source classes, run `install.sh --calibrate` or
+  `install.ps1 -Calibrate`.
+- For `stale`, recalibrate with the new binary after an upgrade.
+- For `quarantined`, repair the named SIMD or GPU runtime first. Use
+  `keyhog backend --self-test --require-gpu` for a GPU path, then recalibrate so
+  the exact route fault can clear.
+- For `disabled` or a storage error, fix the cache path or permissions and run
+  the `repair_command` shown by JSON inspection.
+
+An explicit diagnostic such as `keyhog scan . --backend simd` bypasses
+autoroute. It does not clear an invalid state. It is a hard contract and fails
+if that backend cannot initialize or execute. It is never substituted with
+another backend.
 
 ## Inspect what is calibrated
 

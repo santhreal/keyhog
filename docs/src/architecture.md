@@ -11,10 +11,11 @@ is one source of truth per fact. Read this first; then jump to the cited module.
 - Touching the scan engine? Its own header doc is the deepest map:
   [`crates/scanner/src/engine/mod.rs`](https://github.com/santhreal/keyhog/blob/main/crates/scanner/src/engine/mod.rs)
   ("# The one flow" + "# Where each method lives").
-- Choosing between a one-shot scan, a large repository scan, the daemon, and
-  `watch`? Start with [Execution surfaces](#execution-surfaces), then read the
-  [daemon workflow](./workflows/daemon.md) and
-  [autoroute reference](./reference/autoroute-calibration.md).
+- Choosing between a one-shot scan, Git modes, `scan-system`, the daemon, and
+  `watch`? Start with [Execution surfaces](#execution-surfaces).
+- Changing process termination or shell behavior? Read
+  [Process and exit ownership](#process-and-exit-ownership), then the
+  [exit-code reference](./reference/exit-codes.md).
 
 ---
 
@@ -50,33 +51,37 @@ KeyHog crate; `cli` sits on top and wires the rest together. This DAG is enforce
 by Cargo and must stay acyclic (domain logic never imports CLI/transport/UI).
 
 ```text
-            ┌─────────────────────────── cli ───────────────────────────┐
-            │  binary, subcommands, daemon, watch, baselines, installer  │
-            └───────┬───────────────┬───────────────┬───────────────────┘
-                    │               │               │
-              ┌─────▼─────┐   ┌─────▼─────┐          │
-              │  scanner  │   │  sources  │          │
-              │ detection │   │  inputs   │          │
-              └──┬─────┬──┘   └──┬─────┬──┘          │
-                 │     │         │     │             │
-                 │     └────┬────┘     │             │
-                 │      ┌───▼────┐     │             │
-                 │      │verifier│     │             │
-                 │      │  live  │     │             │
-                 │      └───┬────┘     │             │
-                 └──────────┼──────────┴─────────────┘
-                        ┌───▼───┐
-                        │ core  │   types · detector registry · report · dedup
-                        └───────┘   · allowlists · incremental (merkle) cache
+                          cli
+            orchestration · transport · process exits
+             ┌─────────────┼──────────────┐
+             ▼             ▼              ▼
+          scanner        sources       verifier
+          detection       inputs       live checks
+             │             │  ╲           │
+             │             │   ╲ optional │
+             └─────────────┼────▼─────────┘
+                           ▼
+                          core
+        types · detector registry · reports · dedup · caches
 ```
+
+`scanner` and `verifier` depend on `core`. `sources` depends on `core` and,
+for network-enabled source features, reuses `verifier` for shared SSRF and
+request-signing policy. `cli` selects features and composes all four libraries.
 
 | Crate | Owns | Start reading at |
 |-------|------|------------------|
 | **`core`** | Embedded detector loading, detector specs, the `Finding`/`Credential` types, reporters, dedup, allowlists, the Merkle incremental-scan cache, and confidence-calibration data. | `crates/core/src/lib.rs`, `spec.rs`, `finding.rs`, `report/` |
 | **`scanner`** | The detection engine: hardware probing and backend dispatch, prefilters, compile, scan, decode-through, entropy, ML confidence, multiline handling, and suppression. Persisted CLI route selection is intentionally not owned here. | `crates/scanner/src/compiled_scanner/` (construction and lifecycle), `engine/mod.rs` (execution flow), `adjudicate/`, `pipeline/`, `lib.rs` |
-| **`sources`** | Where bytes come from: filesystem, git (staged/diff/history), stdin, Docker, S3, GCS, Azure Blob, GitHub-org, web, HAR, strings, binary. | `crates/sources/src/lib.rs` |
+| **`sources`** | Where bytes come from: filesystem, Git (staged/diff/history), stdin, Docker, S3, GCS, Azure Blob, GitHub, GitLab, Bitbucket, web, HAR, strings, and optional binary/decompiler inputs. | `crates/sources/src/lib.rs` |
 | **`verifier`** | Turning a *candidate* into a *verified-live* credential: per-detector verify endpoints, SSRF/bogon guards, OOB, rate limiting. | `crates/verifier/src/lib.rs`, `verify/`, `ssrf.rs` |
 | **`cli`** | The user-facing binary: argument parsing, the scan orchestrator, daemon/watch, baselines, calibrate, hook installer, output formatting. | `crates/cli/src/lib.rs`, `args/`, `orchestrator/`; `main.rs` owns process/signal startup only |
+
+The crate graph does not imply that every build exposes every source or
+backend. The official and default CLI builds enable the full documented
+network-source set. The `portable`, `ci-lean`, and `ci` profiles deliberately
+remove different accelerator or source features. Library callers select their
+own feature set.
 
 ---
 
@@ -114,9 +119,9 @@ method-level version of steps 2-4.
    `context/`. The per-match policy here (suppression gates ·
    example/placeholder · checksum · confidence penalties) is governed by one
    invariant; see **Match adjudication: one policy, one chokepoint** below.
-5. **Verify (optional):** for detectors with a `[detector.verify]`
-   endpoint, turn a candidate into verified-live, behind SSRF/bogon/rate guards.
-   `verifier/`.
+5. **Verify (optional and networked):** for detectors with a
+   `[detector.verify]` plan, the verifier sends a credential-derived request to
+   the declared service behind SSRF, bogon, and rate-limit guards.
 6. **Resolve and report:** the CLI orchestrator applies scan-level policy and
    allowlists; core deduplication and reporters emit text/JSON/SARIF and support
    baseline comparison. `crates/cli/src/orchestrator/postprocess.rs`,
@@ -208,6 +213,30 @@ the same stable source snapshot, preserve finding parity, merge results
 deterministically, identify every replayed interval, and remain absent during
 autoroute calibration so a backend that needs recovery cannot be certified
 fastest-correct.
+
+### Process and exit ownership
+
+The library crates do not terminate the process. `core`, `scanner`, `sources`,
+and `verifier` return values or errors to their caller. The CLI owns the
+operator-visible exit:
+
+1. `crates/cli/src/main.rs` installs the Unix SIGINT handler before starting the
+   runtime. SIGINT writes the interruption diagnostic and exits `130`.
+2. `crates/cli/src/lib.rs::cli_main` dispatches subcommands. Successful
+   subcommands return `std::process::ExitCode`; setup and execution errors pass
+   through `cli_error_exit_code`.
+3. `crates/cli/src/orchestrator/run.rs::resolve_scan_exit` owns completed scan
+   precedence: scanner panic, live credentials, findings, incremental-cache
+   failure, incomplete source coverage, then clean success. Autoroute
+   calibration has its explicit success path.
+4. A scanner-thread panic sets the shared panic marker. The CLI flushes the
+   diagnostic streams and exits `11` immediately instead of allowing a later
+   accelerator teardown to replace the documented code.
+
+Normal automatic autoroute recovery is part of a completed scan, so it keeps
+the ordinary finding or clean code. An explicit backend contract that cannot be
+honored is an error before completed-scan precedence applies. See
+[Exit codes](./reference/exit-codes.md) for every number and shell examples.
 
 ### Finding identity and dedup
 
@@ -373,6 +402,7 @@ table.
 | Add or tune reverse or Caesar recovery | the owning detector TOML `decode_transforms` declaration |
 | Add an input source | `crates/sources/src/` |
 | Add live verification for a detector | `[detector.verify]` in the TOML + `crates/verifier/src/verify/` |
-| Change output format / exit codes | `crates/cli/src/format.rs`, `reporting.rs` |
+| Change output formatting | `crates/cli/src/format.rs`, `crates/cli/src/orchestrator/reporting.rs` |
+| Change process exit codes or precedence | `crates/cli/src/exit_codes.rs`, `crates/cli/src/lib.rs::cli_error_exit_code`, `crates/cli/src/orchestrator/run.rs::resolve_scan_exit`, and `crates/cli/src/main.rs` for Unix SIGINT |
 | Add a benchmark / change the gate | `benchmarks/bench/` |
 | Verify a perf or detection claim | `benchmarks/` (the README numbers regenerate from here) |

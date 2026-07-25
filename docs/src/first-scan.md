@@ -1,70 +1,94 @@
 # Your first scan
 
-You have the binary on your `PATH`. Now:
+Start with a synthetic token whose checksum is valid for the detector but which
+is not a live credential. This confirms detection and redaction without putting
+a real secret in your shell history.
+
+On Linux or macOS:
 
 ```sh
+demo_dir=$(mktemp -d)
+token='ghp_'
+token="${token}aBcD1234EFgh5678ijkl9012MNop343hK7n2"
+printf 'GH_TOKEN="%s"\n' "$token" > "$demo_dir/demo.env"
+if keyhog scan "$demo_dir/demo.env"; then status=0; else status=$?; fi
+printf 'keyhog exit code: %s\n' "$status"
+rm -rf "$demo_dir"
+test "$status" -eq 1
+```
+
+On Windows PowerShell:
+
+```powershell
+$Demo = Join-Path ([IO.Path]::GetTempPath()) "keyhog-first-scan-$PID.env"
+$Token = 'ghp_' + 'aBcD1234EFgh5678ijkl9012MNop343hK7n2'
+Set-Content -Path $Demo -Value "GH_TOKEN=`"$Token`""
+keyhog scan $Demo
+$Status = $LASTEXITCODE
+Write-Output "keyhog exit code: $Status"
+Remove-Item $Demo
+if ($Status -ne 1) { throw "expected finding exit 1, got $Status" }
+```
+
+You should see a `GitHub Classic PAT` finding with the credential rendered as
+`ghp_...K7n2`, followed by `keyhog exit code: 1`. File paths, timing, host
+capabilities, and detector counts vary by installation.
+
+KeyHog redacts credential values in terminal, JSON, JSONL, CSV, SARIF, and HTML
+output by default. `--show-secrets` deliberately prints plaintext and can leak
+it into logs, artifacts, or scrollback. Do not use that flag for routine scans.
+
+Now scan your repository:
+
+```sh
+cd /path/to/your/repository
 keyhog scan .
 ```
 
-That walks the current directory, hands every file through the scanner,
-and prints findings. The exit code carries the verdict:
+That walks the current directory and reports findings. A successful scan
+returns exactly one process exit code:
 
-| Exit code | Meaning                                    |
-|-----------|--------------------------------------------|
-| `0`       | Scan finished, no findings                 |
-| `1`       | Findings present, none confirmed live      |
-| `2`       | User error - bad config, bad path, unsupported flag |
-| `3`       | System error - local I/O or detector-corpus audit failure |
-| `10`      | Live credential confirmed under `--verify` |
-| `11`      | Scanner thread panicked; re-run before trusting results |
-| `12`      | Selected or required GPU became unavailable |
-| `13`      | Requested source failed or coverage incomplete |
+| Exit code | Meaning |
+|-----------|---------|
+| `0` | Scan completed with no reportable findings |
+| `1` | Findings are present, but none were confirmed live; skipped, unverified, dead, and revoked credentials use this verdict |
+| `2` | User error, such as a bad flag or config, a missing or unreadable path, a missing baseline, detector-load failure, or invalid autoroute calibration |
+| `3` | Local system failure, such as low-level I/O, a fatal daemon failure, or an unavailable selected SIMD/Hyperscan backend |
+| `10` | At least one credential was confirmed live under `--verify` |
+| `11` | A scanner thread panicked; partial output is not a trustworthy clean verdict |
+| `12` | A required or explicitly selected GPU was unavailable |
+| `13` | A requested source failed or input coverage was incomplete |
+| `130` | You interrupted the scan with Ctrl-C/SIGINT |
 
-So a CI step that should fail the build when a credential leaks is just:
-
-```sh
-keyhog scan .
-```
-
-No grep, no jq, no exit-code arithmetic. Findings exit non-zero, so
-the build goes red; with `--verify`, live credentials use exit `10`.
+`keyhog scan --help` prints the same canonical table. A scan with findings exits
+nonzero by design, so CI does not need `grep`, `jq`, or exit-code arithmetic.
+When several conditions apply, a scanner panic takes precedence over findings,
+a confirmed-live finding takes precedence over other findings, and findings
+take precedence over a later cache or source-coverage failure. Read the
+coverage warning and structured `scan_status` before treating partial output as
+complete.
 
 ## What you get out of it
 
-By default, output is human-readable:
+Human-readable output includes a redacted finding and a summary:
 
 ```text
-$ keyhog scan .
-K E Y H O G
-───────────
-    v0.5.46 · secret scanner · 923 detectors
-by santh
+┌    CRITICAL ─── GitHub Classic PAT
+│ Secret:     ghp_...K7n2
+│ Location:   /tmp/keyhog-first-scan/demo.env:1
+│ Confidence: ■■■■■■ 100%
+└─────────────────────────────────────────────
 
-  ⚡ 16 cores | GPU: NVIDIA GeForce RTX 5090 | SIMD: AVX-512 | Hyperscan | 923 detectors (5822 patterns) io_uring | backend=simd-regex | gpu=none
-
-  ┌    CRITICAL ─── Stripe Secret Key
-  │ Secret:     sk_l...p7dc
-  │ Location:   src/config/staging.env:14
-  │ Confidence: ■■■■■■ 100%
-  │ Action:     Roll the exposed Stripe secret key in the Dashboard, update production consumers, then delete the old key.
-  │ Docs:       https://docs.stripe.com/keys#roll-api-key
-  └─────────────────────────────────────────────
-
-  ━━━ Results ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  1 secret found · 1 unverified
-
-  1. Revoke active secrets in the provider's dashboard.
+━━━ Results ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1 secret found · 1 unverified
 ```
 
-The banner (on stderr, only when it is a terminal) tells you the binary
-version and detector count. With `--progress`, the capability line also
-shows the current host's CPU/GPU labels, scanner engine, compiled pattern
-count, selected backend, and GPU engagement result. Each finding renders
-as a severity-colored box: header severity + detector, then `Secret:`
-(redacted to its first and last few characters), `Location:`, a
-`Confidence:` bar, and an `Action:`/`Docs:` remediation hint. The
-`Results` footer joins the counts with ` · ` and lists the numbered next
-steps.
+The banner is written to stderr only when stderr is a terminal. Pass
+`--progress` to include the current host's CPU/GPU labels, scanner engine,
+compiled pattern count, selected backend, and GPU engagement result. Findings
+go to stdout unless you use `--output`. Each finding gives you the detector,
+redacted credential, location, confidence when measured, and remediation
+guidance.
 
 ## Default suppressions
 
@@ -110,12 +134,12 @@ the artifact without scraping console progress.
 
 ```json
 {
-  "schema_version": {"major": 1, "minor": 7},
+  "schema_version": {"major": 1, "minor": 8},
   "scan_status": "success",
   "metadata": {
     "scan_id": "0123456789abcdef0123456789abcdef",
     "scan_status": "success",
-    "keyhog_version": "0.5.45",
+    "keyhog_version": "0.5.46",
     "git_hash": "<build-commit>",
     "detector_digest": "923-<digest>",
     "config_digest": "<effective-config-digest>",

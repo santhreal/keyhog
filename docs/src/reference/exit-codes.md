@@ -1,213 +1,181 @@
 # Exit codes
 
-KeyHog uses exit codes to signal scan and maintenance outcomes. The numeric
-contract is stable across versions; consumers (CI gates, pre-commit hooks, IDE
-plugins, and health checks) can rely on it.
+The table below is the KeyHog 0.5.46 process contract. The canonical numeric
+definitions live in `crates/cli/src/exit_codes.rs` and are rendered in
+`keyhog --help` and `keyhog scan --help`.
 
-| Exit | Meaning                                                            |
-|------|--------------------------------------------------------------------|
-| `0`  | Command succeeded; for a scan, zero reported findings and no clean-blocking coverage/cache failure. |
-| `1`  | Findings present, none confirmed live (unverified, skipped, or verified-inactive: dead/revoked). |
-| `2`  | User/operator error: bad input/config, an unavailable required daemon, or operator-correctable I/O such as not-found, permission-denied, connection-refused, invalid-input, or invalid-data. Missing/stale/incomplete normal-scan autoroute evidence instead completes through visible scalar recovery; calibration candidates and explicit backend contracts still fail when they cannot execute. |
-| `3`  | System error: a lower-level operating-system I/O failure, incremental-cache failure, or explicitly selected non-GPU backend that cannot execute. |
-| `4`  | Health/self-test failure: `keyhog doctor` unhealthy, `keyhog repair` could not restore a working binary, `keyhog backend` self-test failed, or multi-backend `keyhog backend --autoroute` reports `quarantined`, `calibration_required`, `disabled`, `stale`, or `invalid`. |
-| `10` | **LIVE credentials confirmed** (a `--verify` scan where the vendor API accepted a found secret) - the highest-severity gate. Also returned by `keyhog update --check` when a newer release exists. |
-| `11` | Scanner thread panicked. The finding count is NOT trustworthy - investigate, don't ship. Distinct from `2`/`3` so CI can tell a code bug from a config error. |
-| `12` | Required or explicit GPU unavailable, or a GPU calibration candidate could not execute. Normal automatic runtime faults recover stable input visibly when possible. |
-| `13` | A requested source failed before producing scan data, or a zero-finding scan had incomplete input coverage, so KeyHog refuses to report clean. |
-| `130`| Interrupted (SIGINT / Ctrl-C).                                     |
+| Exit | Meaning |
+|---|---|
+| `0` | Success. For a normal scan, there are no reportable findings, no incremental-cache failure, and no incomplete source coverage. |
+| `1` | Findings are present, but none were confirmed live. |
+| `2` | User or operator error, including invalid arguments or configuration and operator-correctable I/O. |
+| `3` | System or local environment failure, including other low-level I/O, a fatal daemon service failure, or an explicitly selected SIMD backend failure. |
+| `4` | A maintenance health or self-test command reported an unhealthy state. |
+| `10` | A scan confirmed a live credential, or `update --check` found a newer release. |
+| `11` | A scanner thread panicked. Scan state is not trustworthy. |
+| `12` | An explicitly selected or required GPU path could not execute. |
+| `13` | A requested source failed or input coverage was incomplete and no finding outcome took precedence. |
+| `130` | SIGINT or Ctrl-C interrupted the process. |
 
-## `0` (clean)
+## Capture the code safely
 
-Use case: a CI step like `keyhog scan .` exits 0 when the working tree
-is clean. The job stays green.
-
-With `--verify`, the exit code escalates when a credential is confirmed
-live: a found secret the vendor API accepts exits `10`, while a finding
-that is unverified, skipped, or verified inactive (`dead` or `revoked`)
-exits `1`. So gating ONLY on live credentials needs no JSON parsing -
-branch on the exit code:
+Do not run a non-zero scan as a bare command under `set -e` if you intend to
+inspect the result. Put it on the left side of `||`:
 
 ```sh
-keyhog scan . --verify
-case $? in
-  0)  echo "clean" ;;
-  10) echo "LIVE credentials present - block + page" ; exit 1 ;;
-  1)  echo "findings, none confirmed live" ;;
-esac
-```
-
-## `1` (findings present)
-
-The most common non-zero. CI fails, pre-commit hook blocks the commit,
-PR check turns red. Findings get printed to stdout in whatever format
-`--format` selected.
-
-Exit `1` means findings exist but none were confirmed live. That covers
-findings that were not verified, findings whose verification was skipped,
-and findings verified inactive (`dead` or `revoked`). A scan that confirms
-a live credential exits `10` instead (see below), so "findings, none live"
-vs "some live" is just `1` vs `10`, no JSON parsing required.
-
-## `2` (user error)
-
-Things that exit `2`:
-
-- Unknown CLI flag.
-- On Windows, direct `keyhog uninstall --yes`: the running `.exe` cannot delete
-  itself, so the command prints the path to remove after it exits. The
-  PowerShell installer handles this outer-process cleanup normally.
-- `.keyhog.toml` parse error.
-- Detector corpus load failure. KeyHog rejects the whole corpus before reading
-  scan input. It does not scan with a partial detector set.
-- `--baseline <FILE>` where FILE doesn't exist or isn't valid JSON.
-- Missing, stale, invalid, incomplete, or runtime-quarantined autoroute calibration for an
-  automatic backend decision. Inspect it with `keyhog backend --autoroute`,
-  then rerun `keyhog calibrate-autoroute`, `install.sh --calibrate`, or
-  `install.ps1 -Calibrate`. An explicit `--backend` bypasses the table for that
-  diagnostic scan; it does not make the autoroute state valid.
-- Daemon availability, eligibility, trust, or protocol errors. See
-  [Daemon and warm scans](../workflows/daemon.md) for routing-specific exits,
-  automatic retry, stale status, coverage, and Windows behavior.
-- Invalid daemon startup configuration, including an unknown `--backend`
-  value. Required or selected GPU failures are `12`, not `2`.
-- Network error during `--verify` is NOT a `2`; it's a `verification-error`
-  marker per finding and the scan exits `1` if any unverified-live
-  findings exist.
-
-Stderr carries the error message. Stdout may have partial output
-depending on where the error happened.
-
-## `3` (system error)
-
-A failure below the operator-input boundary: a low-level I/O error that is not
-one of the operator-correctable kinds mapped to `2`, an incremental-cache
-failure, a fatal daemon listener or connection-handler spawn failure, or an
-explicitly selected SIMD/Hyperscan path that becomes unavailable. A selected
-or required GPU failure is `12`, not `3`. A
-missing/garbage `--baseline` is `2`; a requested source that produced no scan
-data (for example `--git-history` on a non-repo) is `13`; and a detector TOML
-load failure is `2`. Distinct codes let automation choose whether to correct
-configuration, repair a runner, or rescan uncovered input. Stderr carries the
-cause.
-
-## `4` (health / self-test failure)
-
-Returned by the maintenance subcommands, not by `scan`: `keyhog doctor`
-when the install fails its end-to-end self-test, `keyhog repair` when it
-could not restore a working binary, `keyhog backend` when its self-test fails,
-and multi-backend `keyhog backend --autoroute` when its persisted routing state
-is missing, disabled, stale, quarantined, or invalid. A health monitor can treat `4` as
-"binary present but not trustworthy." Use `keyhog backend --self-test --json`
-or `keyhog backend --autoroute --json` when CI needs stable fields instead of
-stderr scraping.
-
-## `10` (live credentials, or update available)
-
-The highest-severity scan outcome: a `--verify` scan where the vendor
-API **accepted** a found secret - it is real and exfil-capable right now.
-Gate hard on this:
-
-```sh
+rc=0
 keyhog scan . --verify || rc=$?
-[ "${rc:-0}" = "10" ] && { echo "::error::live credential confirmed"; exit 1; }
-```
 
-`keyhog update --check` reuses `10` to mean "a newer release exists"
-(exit `0` = already current), so a self-update cron can branch on it.
-
-## `11` (scanner panic)
-
-A panic inside a scanner thread (regex compile bug, OOM in a windowed
-chunk, etc.). The scan was incomplete; the count of findings emitted
-is NOT trustworthy. CI should treat this as "investigate" rather
-than "ship anyway because exit 11 != 1".
-
-The reason this is `11` rather than `2`:
-
-- A panic is a code bug worth surfacing distinctly.
-- Some CIs (older Jenkins, certain shell wrappers) collapse `2` with
-  "command not found" or other ambient errors. `11` is unambiguous.
-- Additional scan failure categories can be added without renumbering existing
-  codes.
-
-## `12` (selected or required GPU unavailable)
-
-Returned when the operator explicitly required GPU execution (`--require-gpu`
-or `[system].gpu = "required"`), explicitly selected a GPU backend, or a GPU
-calibration candidate cannot execute. CPU/SIMD is not substituted for those
-explicit contracts. The distinct code lets CI identify a GPU runner/driver
-regression without scraping stderr.
-
-An automatically selected accelerated backend that faults after routing is
-different. KeyHog warns, records the backend fault, and replays the same stable
-batch through the fastest remaining measured-correct peer. Completed GPU
-dispatches are retained, and only exact unprocessed GPU ranges are replayed. A
-fully recovered scan keeps the ordinary
-finding/clean exit semantics, reports `complete_after_recovery`, and names the
-recovered ranges, chunks, and bytes. If exact
-recovery cannot cover the requested input, the result is incomplete rather
-than clean.
-
-A missing, stale, invalid, incomplete, or quarantined autoroute decision uses
-the same successful complete-recovery semantics. KeyHog warns once and scans
-the affected batches through the scalar correctness oracle; structured reports
-name `autoroute-invalid`, the recovered byte count, and the recalibration
-command. Inspection remains unhealthy even though scan coverage is complete.
-
-For `keyhog daemon start`, exit `12` covers required GPU preflight, GPU scanner
-compilation, an unavailable or incompatible explicitly required backend, and a
-warmup that fails before readiness. An automatic-route fault after readiness
-recovers the affected stable request and leaves the daemon alive. It quarantines
-that workload route, exposes the recovery count and last fault in daemon status,
-and requires recalibration before that route can serve as autoroute again.
-Later requests recover visibly through the scalar correctness oracle. An
-explicit GPU daemon route returns a request error. Run
-`keyhog backend --self-test`, repair the GPU driver/runtime, and recalibrate.
-
-## `13` (requested source failed or coverage incomplete)
-
-Returned when a source the operator explicitly requested produced no scan data,
-or when the scan completed with zero findings but input coverage was incomplete:
-for example `--git-history` on a non-git directory, a bad git ref, a remote
-source that could not be read, an unreadable file, an oversized file skipped by
-`--max-file-size`, a truncated archive, or a decode/source expansion cap. This
-is distinct from clean `0` and generic user-error `2`; the scan did not prove
-the target clean because requested bytes were not scanned. If findings were
-reported from the covered portion, the findings outcome (`1`, or `10` when a
-credential was confirmed live) takes precedence while the coverage warning
-still remains visible on stderr.
-
-## Composing in shell
-
-```sh
-set -e
-keyhog scan .                # exit 1 stops the shell here
-```
-
-Or to handle the non-zero explicitly:
-
-```sh
-keyhog scan . --verify || rc=$?
 case "$rc" in
-  0|"")  echo "clean" ;;
-  1)     echo "findings (none live) -> opening PR comment" ;;
-  10)    echo "LIVE credentials -> block + page on-call" ;;
-  2)     echo "user error (bad flag/config) -> failing build" ;;
-  3)     echo "system error -> retry / investigate" ;;
-  4)     echo "health/self-test failure -> repair installation" ;;
-  11)    echo "scanner panic -> paging on-call" ;;
-  12)    echo "selected/required GPU unavailable -> repair runner or recalibrate" ;;
-  13)    echo "source failed or coverage incomplete -> fix source/ref/token or rescan uncovered input" ;;
-  130)   echo "interrupted" ;;
-  *)     echo "unknown exit $rc" ;;
+  0)   echo "clean" ;;
+  1)   echo "findings present; none confirmed live" ;;
+  10)  echo "live credential confirmed"; exit 1 ;;
+  2)   echo "fix arguments, configuration, or operator input"; exit 1 ;;
+  3)   echo "repair or retry this runner"; exit 1 ;;
+  4)   echo "maintenance health check failed"; exit 1 ;;
+  11)  echo "scanner panic; discard this scan result"; exit 1 ;;
+  12)  echo "required GPU path unavailable"; exit 1 ;;
+  13)  echo "source or coverage incomplete; do not report clean"; exit 1 ;;
+  130) echo "interrupted"; exit 130 ;;
+  *)   echo "unknown KeyHog exit: $rc"; exit 1 ;;
 esac
 ```
 
-## What you can't do
+## Completed scan precedence
 
-- No `--exit-zero` flag. KeyHog deliberately does not provide a way
-  to lie to CI about findings. If you need to override (e.g. "this
-  finding is accepted, ship anyway"), suppress it by hash in
-  `.keyhogignore` instead. The exit code then reflects truth: there
-  are no UN-suppressed findings, so it's `0`.
+For a completed normal scan, `resolve_scan_exit` applies this order:
+
+1. scanner panic, `11`;
+2. at least one live credential, `10`;
+3. at least one reportable finding, `1`;
+4. incremental-cache failure, `3`;
+5. incomplete source coverage, `13`;
+6. clean success, `0`.
+
+This means a finding from the covered portion remains `1` or `10` even when
+coverage is incomplete. The coverage warning remains visible. Automation must
+not infer complete coverage from a finding code.
+
+Autoroute calibration is a separate scan mode. A successful calibration run
+returns `0` and publishes only evidence that passed its calibration checks.
+An inconclusive or failed calibration returns an error instead.
+
+## `0`: success
+
+A normal scan returns `0` only when it can make a clean claim under the active
+policy. A source or expansion gap prevents a zero-finding scan from returning
+`0`.
+
+Maintenance subcommands also use `0` for their successful state. For example,
+`update --check` returns `0` when the installed version is current.
+
+## `1`: findings, none confirmed live
+
+This includes findings that were not verified, verification that was skipped,
+and credentials reported as inactive, dead, or revoked. A verification network
+error remains a per-finding `verification-error`; it does not become exit `2`.
+If findings remain and none is confirmed live, the scan returns `1`.
+
+## `2`: user or operator error
+
+Examples include:
+
+- an unknown flag or invalid flag combination;
+- invalid `.keyhog.toml`;
+- a detector corpus that fails to load or validate;
+- a missing or invalid baseline;
+- a required daemon that is unavailable, ineligible, or fails its trust or
+  protocol checks;
+- a failed or inconclusive autoroute calibration operation;
+- I/O classified as not found, permission denied, connection refused, invalid
+  input, invalid data, or already exists.
+
+Missing, stale, invalid, incomplete, or quarantined autoroute evidence during a
+normal automatic scan is not an exit `2`. The scan warns and uses scalar
+correctness recovery for the affected work. Its final exit follows completed
+scan precedence. Inspect the unhealthy evidence with:
+
+```sh
+keyhog backend --autoroute --json
+keyhog calibrate-autoroute
+```
+
+An explicit backend request is different. It bypasses automatic selection for
+that diagnostic run and keeps its own fail-closed execution contract.
+
+## `3`: system or local environment failure
+
+This code covers a low-level I/O error not classified as operator-correctable,
+an incremental-cache failure, a fatal daemon listener or connection-handler
+spawn failure, or an explicitly selected SIMD/Hyperscan path that cannot
+execute. A selected or required GPU failure is `12`.
+
+## `4`: maintenance health failure
+
+`scan` does not return `4`. Maintenance commands use it for unhealthy states:
+
+- `doctor` could not establish a healthy installation;
+- `repair` could not restore a working binary;
+- `backend --self-test` failed;
+- `backend --autoroute` found `quarantined`, `calibration_required`,
+  `disabled`, `stale`, or `invalid` routing state.
+
+Use the structured diagnostic surfaces when automation needs details:
+
+```sh
+keyhog backend --self-test --json
+keyhog backend --autoroute --json
+```
+
+## `10`: live credential or update available
+
+For `scan --verify`, at least one credential was accepted by its verification
+service. This takes precedence over other findings and incomplete coverage.
+
+`update --check` reuses `10` to mean that a newer release is available. The
+subcommand context distinguishes this maintenance result from a scan result.
+
+## `11`: scanner panic
+
+A scanner thread panicked. Partial findings and counts are not trustworthy.
+The CLI flushes its diagnostic streams and exits immediately with `11` so a
+later accelerator teardown cannot replace this code.
+
+## `12`: selected or required GPU unavailable
+
+This applies when `--require-gpu`, `[system].gpu = "required"`, an explicit GPU
+backend, or a GPU calibration candidate cannot execute. The same code covers a
+daemon GPU route that fails before readiness. KeyHog does not substitute CPU or
+SIMD for these explicit contracts.
+
+An automatically selected accelerated backend that faults at runtime is
+different. When exact recovery is possible, KeyHog retains completed work,
+replays only unprocessed stable input through a measured-correct peer, records
+the recovery, and follows normal completed-scan exit semantics. If recovery
+cannot cover the input, the scan is incomplete rather than clean.
+
+## `13`: source failed or coverage incomplete
+
+This code protects the clean claim. Examples include:
+
+- Git history requested for a non-repository or an invalid ref;
+- a requested remote source that produced no scan data;
+- an unreadable file;
+- a file skipped by `--max-file-size`;
+- a truncated archive;
+- a source or decode expansion limit that left requested input uncovered.
+
+If no finding outcome takes precedence, the scan returns `13`. Fix the source,
+credentials, ref, permissions, or limit and scan the uncovered input again.
+
+## `130`: interrupted
+
+SIGINT is a process boundary, not a clean partial result. On Unix, the signal
+handler writes an interruption diagnostic and exits immediately with `130`.
+On other supported platforms, the Ctrl-C task uses the same code.
+
+## Findings cannot be forced to zero
+
+KeyHog has no `--exit-zero` flag. To accept a known finding, suppress it through
+the reviewed `.keyhogignore` workflow. The next scan then computes its exit from
+the remaining unsuppressed findings and coverage state.

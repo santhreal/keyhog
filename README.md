@@ -30,19 +30,33 @@ the operator-visible route (for example, `backend=simd-regex | gpu=none`).
   <img src="demo/keyhog-scan.gif" alt="keyhog scan: boxed findings with severity, confidence, file:line, and remediation, then a results summary and an honest coverage-gap line" width="860" />
 </p>
 
-### Start in 60 seconds
+### Install and run your first scan
+
+On Linux or macOS:
 
 ```sh
-# Linux / macOS: install, then scan the current tree
 curl -fsSL https://santh.dev/keyhog/install.sh | sh
 keyhog scan .
 ```
 
-That is the whole first run. From here, keyhog scans a lot more than a
-directory. Every use case is a single copy-paste command in the
-[Recipes cookbook](https://santhreal.github.io/keyhog/recipes.html) (mirrored
-below in [Quickstart](#quickstart)): whole GitHub/GitLab/Bitbucket orgs, git history,
-Docker images, S3/GCS/Azure buckets, live URLs, and a full machine sweep.
+On Windows PowerShell:
+
+```powershell
+iwr https://santh.dev/keyhog/install.ps1 -UseBasicParsing | iex
+keyhog scan .
+```
+
+KeyHog exits `0` when the scan is clean and `1` when it reports findings above
+your severity floor. Exit `1` means the scanner worked. Review each finding's
+file, line, detector, and remediation before deciding whether to remove,
+rotate, or suppress the credential. Other nonzero codes describe input,
+system, verification, or coverage failures; see the
+[exit-code reference](https://santhreal.github.io/keyhog/reference/exit-codes.html).
+
+For the next scan, use the [recipes cookbook](https://santhreal.github.io/keyhog/recipes.html)
+or the copyable commands in [Quickstart](#quickstart). You can scan git history,
+container images, cloud buckets, repository collections, URLs, and a whole
+machine without changing tools.
 
 ### Add it to your CI (one workflow file)
 
@@ -89,14 +103,14 @@ images where binary size
 or container cold-start matters; the prebuilt installer above stays the
 default for a turnkey single-binary download.
 
-GitLab CI, CircleCI, Drone, BuildKite, Jenkins, pre-commit, Husky, and
-lefthook recipes: [integration recipes](docs/src/workflows/integrations.md).
-
-Protect local commits with `keyhog hook install`. The
-[pre-commit guide](docs/src/workflows/precommit.md) owns staged-content,
-hook-replacement, bypass, and removal semantics. The
-[CI guide](docs/src/workflows/ci.md) owns the maintained workflows, baseline
-adoption, report retention, and exit handling.
+For GitLab CI, CircleCI, Drone, Buildkite, Jenkins, pre-commit, Husky, and
+lefthook, start with the
+[integration recipes](https://santhreal.github.io/keyhog/workflows/integrations.html).
+Use `keyhog hook install` to protect local commits. The
+[pre-commit guide](https://santhreal.github.io/keyhog/workflows/precommit.html)
+explains staged-content scanning, hook replacement, bypass, and removal. The
+[CI guide](https://santhreal.github.io/keyhog/workflows/ci.html) covers the
+maintained workflows, baseline adoption, report retention, and exit handling.
 
 ### How it works
 
@@ -286,8 +300,8 @@ rollback-protected maintenance operation. A tampered, mismatched, or unsafe
 archive is refused. On a healthy host `keyhog update` is the one-command upgrade
 path. Implicit update/repair resolution ignores drafts and prereleases and
 requires the complete signed host bundle. An explicit `--version <SEMVER>`
-accepts canonical SemVer with an optional leading `v` (for example `1.2.3` or
-`v1.2.3-rc.1`), normalizes it to the exact release tag, and refuses malformed
+accepts canonical SemVer with an optional leading `v` (for example `0.5.46` or
+`v0.5.46-rc.1`), normalizes it to the exact release tag, and refuses malformed
 or mismatched API responses before any asset download. Network responses are
 bounded and timed out before any installed file is changed.
 
@@ -320,6 +334,21 @@ KEYHOG_BITBUCKET_USERNAME="$BB_USER" KEYHOG_BITBUCKET_TOKEN="$BB_APP_PASSWORD" \
 keyhog scan-system --space 50G                         # walk every drive, every git history
 ```
 
+### Choose a scan mode
+
+Start with the default mode. Select a preset only when its tradeoff matches
+your task:
+
+| Mode | Copyable command | Use it when |
+|---|---|---|
+| Default | `keyhog scan .` | You want the normal balance of recall and runtime |
+| Fast | `keyhog scan . --fast` | You are scanning staged or frequently changed files and can omit entropy, ML, and recursive decoding |
+| Deep | `keyhog scan . --deep` | You are investigating an incident or want the highest-recall built-in preset |
+
+`--fast` and `--deep` are base presets. Explicit scan options still override
+the preset. See [Deep recovery](https://santhreal.github.io/keyhog/guides/deep-recovery.html)
+for the additional evidence recovered by a deep scan.
+
 Filter, format, gate:
 
 ```bash
@@ -334,6 +363,53 @@ keyhog scan . --deep                           # highest-recall built-in preset
 keyhog scan . --incremental                    # BLAKE3 Merkle skip → 10-100× CI loop
 ```
 
+### Reuse a daemon or select a custom detector corpus
+
+On Unix, you can keep a compiled scanner warm for repeated single-file or
+stdin scans. Start the daemon in one terminal:
+
+```sh
+keyhog daemon start
+```
+
+After its ready line appears, require the warm route from another terminal:
+
+```sh
+keyhog scan --daemon=on path/to/one-file.txt
+```
+
+To replace the embedded detectors with a reviewed directory, start the daemon
+with that corpus in one terminal:
+
+```sh
+keyhog daemon start --detectors ./reviewed-detectors
+```
+
+After its ready line appears, use the same corpus from another terminal:
+
+```sh
+keyhog scan --daemon=on \
+  --detectors ./reviewed-detectors \
+  --detectors-mode=replace \
+  path/to/one-file.txt
+```
+
+To add site-specific detectors to the embedded corpus, scan in process with
+overlay mode:
+
+```sh
+keyhog scan --daemon=off \
+  --detectors ./site-detectors \
+  --detectors-mode=overlay \
+  source-tree/
+```
+
+Overlay mode is not daemon-compatible. The
+[daemon and warm scans guide](https://santhreal.github.io/keyhog/workflows/daemon.html)
+explains eligible inputs, corpus identity, service managers, sockets, and
+failure behavior. The [detector guide](https://santhreal.github.io/keyhog/detectors.html)
+explains how to author and validate custom detector TOML.
+
 One scan, every CI/SIEM dialect: `text · json · json-envelope · jsonl · jsonl-envelope · sarif · csv · html · junit · github-annotations · gitlab-sast`, all from the same engine:
 
 <p align="center">
@@ -346,6 +422,15 @@ audit failure, `4` `backend --self-test` failed, `10` live credentials found
 (requires `--verify`), `11` scanner panic (thread panicked mid-scan), `12` required GPU
 unavailable, `13` requested source failed or input coverage was incomplete. Matches
 `keyhog --help`.
+
+### Continue in the book
+
+- [Your first scan](https://santhreal.github.io/keyhog/first-scan.html) explains findings, output, suppressions, and safe rollout.
+- [Recipes](https://santhreal.github.io/keyhog/recipes.html) collects source-specific commands.
+- [CI integration](https://santhreal.github.io/keyhog/workflows/ci.html) covers GitHub Actions and command-line gates.
+- [CLI reference](https://santhreal.github.io/keyhog/reference/cli.html) lists every flag and generated default.
+- [Configuration](https://santhreal.github.io/keyhog/reference/configuration.html) documents project and user configuration.
+- [Full book](https://santhreal.github.io/keyhog/) links detection, verification, routing, operations, and security guidance.
 
 ## What it catches
 

@@ -3,6 +3,19 @@
 The quickest paths first. Each installs the canonical release artifact for
 your supported host; platform feature differences are explicit below.
 
+## Supported release platforms
+
+| Host | Release asset | Runtime notes |
+|------|---------------|---------------|
+| Linux x86_64 | `keyhog-linux-x86_64` | Requires `libhyperscan5`; CUDA and WGPU are probed at runtime |
+| macOS x86_64 | `keyhog-macos-x86_64` | Portable build, without Hyperscan or GPU backends |
+| macOS aarch64 | `keyhog-macos-aarch64` | Portable build, without Hyperscan or GPU backends |
+| Windows x86_64 | `keyhog-windows-x86_64.exe` | PowerShell 5+; portable build; daemon unavailable |
+
+Linux arm64 and Windows arm64 release assets are not produced. The installer
+stops with an unsupported-platform error instead of choosing a different
+binary.
+
 ## Quick install
 
 ```sh
@@ -18,6 +31,17 @@ iwr https://santh.dev/keyhog/install.ps1 -UseBasicParsing | iex
 These are KeyHog's canonical installer URLs. The downloaded installer verifies
 the selected release artifact before replacement. Use the signed pinned flows
 below when the installer script itself must be authenticated before execution.
+
+After installation, open a new terminal if prompted and check the binary:
+
+```sh
+keyhog --version
+keyhog doctor
+```
+
+`keyhog doctor` exits `0` when the installed binary is healthy and `4` when a
+health check fails. Continue with [Your first scan](./first-scan.md) to produce
+a safe synthetic finding and confirm exit `1`.
 
 ## Pinned verified install: Linux / macOS
 
@@ -241,10 +265,31 @@ eligibility, retry, identity, shutdown, socket, coverage, and exit contract.
 ## Repair, diagnose, uninstall
 
 ```sh
-sh keyhog-install.sh --diagnose    # print host + binary state, change nothing
-sh keyhog-install.sh --repair      # re-download the right asset for this host
-sh keyhog-install.sh --uninstall   # remove the binary + installer-owned shell wiring
+sh install.sh --diagnose    # print host + binary state, change nothing
+sh install.sh --repair      # re-download the right asset for this host
+sh install.sh --uninstall   # remove the binary + installer-owned shell wiring
 ```
+
+Use the copy of `install.sh` from the pinned flow above. If you used the quick
+installer and did not keep it, download it without executing it:
+
+```sh
+curl -fsSLo install.sh https://santh.dev/keyhog/install.sh
+sh install.sh --diagnose
+```
+
+On Windows, save `install.ps1`, then use `.\install.ps1 -Diagnose`,
+`.\install.ps1 -Repair`, or `.\install.ps1 -Uninstall`.
+
+### Common failures
+
+| Symptom | Recovery |
+|---------|----------|
+| `keyhog: command not found` after a successful install | Open a new terminal. If it still fails, add `$HOME/.local/bin` to `PATH` on Linux/macOS. Run the installer again interactively to let it add the marked PATH block. |
+| Linux reports that `libhs.so` or Hyperscan is missing | On Debian/Ubuntu, run `sudo apt-get update && sudo apt-get install -y --no-install-recommends libhyperscan5`, then retry `keyhog doctor`. |
+| The host or architecture is unsupported | Use one of the four release platforms above, or follow the source-build instructions. Do not install an asset for another architecture. |
+| Signature, checksum, or download verification fails | Retry on a working network. If it persists, run `sh install.sh --diagnose`, check the pinned tag, and download a complete bundle from GitHub Releases. Do not use `--insecure` to ignore a present invalid signature or checksum. |
+| `keyhog doctor` exits `4` | Run `sh install.sh --diagnose`, then `sh install.sh --repair`. The repair path keeps or restores the previous working binary if replacement fails. |
 
 `--diagnose` is the first thing to run if something looks off: it
 reports CPU arch, OS, GPU + libcuda state, the currently-installed
@@ -303,7 +348,7 @@ else
   (cd "$(dirname "$ASSET")" && shasum -a 256 -c "$(basename "$ASSET").sha256")
   (cd "$(dirname "$ASSET")" && shasum -a 256 -c "$(basename "$ASSET").gpu-literals.tar.gz.sha256")
 fi
-sh keyhog-install.sh --from-file="$ASSET"
+sh install.sh --from-file="$ASSET"
 ```
 
 Release workflows also publish GitHub build-provenance attestations for both
@@ -394,5 +439,5 @@ You can also run the installer in diagnostic mode at any time to
 print a full status report:
 
 ```sh
-sh keyhog-install.sh --diagnose
+sh install.sh --diagnose
 ```

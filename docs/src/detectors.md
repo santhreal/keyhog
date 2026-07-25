@@ -487,19 +487,23 @@ hidden Rust-side family table to keep synchronized.
 ### Confidence Floors
 *   **`min_confidence`** (float, optional): Per-detector minimum confidence floor. Overrides the global scan confidence floor.
 
-## Listing detectors
+## Listing the active corpus
 
-With no `--detectors` flag, KeyHog searches the platform user data locations,
-system data locations, and the executable directory for an installed
-`keyhog/detectors` corpus. The first existing directory is the complete active
-corpus. If none exists, KeyHog uses the embedded corpus. An explicit path
-replaces discovery and never merges with another corpus.
+With no `--detectors` flag, KeyHog first uses `./detectors` when that directory
+exists in the caller's working directory. Otherwise it checks the platform user
+and system data directories and the executable directory for an installed
+detector corpus. The first directory found is the complete active corpus. If
+none exists, KeyHog uses the embedded corpus.
 
 ```sh
-keyhog detectors                  # human-readable list, grouped by service
-keyhog detectors --format json           # one JSON array of detector objects
+keyhog detectors
+keyhog detectors --format json
 keyhog detectors --format json | jq length
+keyhog detectors --detectors "$PWD/.keyhog/detectors" --format json
 ```
+
+The last command names one corpus explicitly. KeyHog does not search another
+location or fall back to the embedded corpus when that path is explicit.
 
 Structured listings include a `policy` object for every detector. It carries
 the loaded detector-local kind, entropy/BPE/length thresholds, stopwords,
@@ -534,22 +538,22 @@ override table.
 
 ## Custom detector corpora
 
-Put custom detector TOMLs in an explicit corpus directory:
+Start from a detector that already satisfies the current schema. This example
+creates a focused corpus from the repository's shipped Stripe detector:
 
-```toml
-# my-detectors/my-internal-token.toml
-
-[detector]
-id = "acme-internal-token"
-name = "ACME internal API token"
-service = "acme-internal"
-severity = "high"
-keywords = ["ACME_API_TOKEN", "acme_internal_"]
-
-[[detector.patterns]]
-regex = "acme_internal_[a-zA-Z0-9]{32}"
-group = 0
+```sh
+mkdir -p "$PWD/.keyhog/detectors"
+cp detectors/stripe-secret-key.toml "$PWD/.keyhog/detectors/"
+cat > "$PWD/.keyhog/detectors/corpus.toml" <<'EOF'
+schema_version = 2
+EOF
+keyhog detectors --detectors "$PWD/.keyhog/detectors" --audit
 ```
+
+Edit the copied TOML only after the audit succeeds. A new detector must declare
+all required policy blocks. Copying only the short `[detector]` and
+`[[detector.patterns]]` example from this chapter does not create a valid
+schema-2 detector.
 
 Declare the current corpus schema beside the detector files:
 
@@ -580,32 +584,41 @@ effective corpus digest binds the normalized schema and manifest identity, so
 a legacy corpus and a schema-2 corpus cannot share an identity merely because
 their detector fields otherwise match.
 
-Audit a custom corpus directly, then choose an explicit scan composition mode:
+Audit a custom corpus directly before scanning with it:
 
 ```sh
-keyhog detectors --detectors my-detectors --audit
-keyhog scan . --detectors my-detectors --detectors-mode replace
-keyhog scan . --detectors my-detectors --detectors-mode overlay
+keyhog detectors --detectors "$PWD/.keyhog/detectors" --audit
 ```
 
-`replace` makes the directory the complete active corpus. It is also the
-backward-compatible behavior when `--detectors-mode` is omitted, so selecting a
-directory never silently merges it with embedded detectors. `overlay` retains
-the embedded corpus and adds the reviewed directory. Overlay fails closed if a
-custom detector ID equals an embedded detector ID; it never shadows a shipped
-rule.
+Then select exactly one composition mode:
 
-A named path that is missing, is not a directory, contains no detectors, or
-contains invalid TOML fails closed instead of substituting the embedded corpus.
-Versioned JSON envelopes expose the effective corpus digest plus its
-`embedded`, `replace`, or `overlay` provenance under
+| Effective mode | Command | Active detectors |
+|---|---|---|
+| `embedded` | `keyhog scan .` | The embedded corpus, but only when default discovery finds no detector directory. Any discovered directory is a complete replacement. |
+| `replace` | `keyhog scan . --detectors "$PWD/.keyhog/detectors" --detectors-mode replace` | Only the named directory. This is also the default when a directory is selected and no mode is configured. |
+| `overlay` | `keyhog scan . --detectors "$PWD/.keyhog/detectors" --detectors-mode overlay` | The embedded corpus plus the named directory. A custom ID may not equal an embedded ID. |
+
+Overlay never shadows a shipped detector. An ID collision fails before scanning.
+Replace never fills missing detector families from the embedded corpus.
+
+The path must name an existing, non-empty directory. A missing path, a regular
+file, an empty directory, invalid TOML, an unsupported manifest, or an invalid
+detector fails before findings are written. Supplying `--detectors-mode`
+without a detector path from either the CLI or `.keyhog.toml` also fails. KeyHog
+does not turn any of these errors into an embedded scan.
+
+The CLI and configuration-file precedence for the path and mode is documented
+in [Configuration](./reference/configuration.md#detectors-and-detectors_mode).
+Versioned JSON envelopes report `embedded`, `replace`, or `overlay`, the source
+and detector counts, and the effective corpus digest under
 `metadata.resolved_scan.effective`.
 
 ## Disabling specific detectors
 
-Turn off a detector by id in `.keyhog.toml`:
+Disable an exact detector ID after corpus composition:
 
 ```toml
+# .keyhog.toml
 [detector.aws-access-key]
 enabled = false
 
@@ -613,23 +626,32 @@ enabled = false
 enabled = false
 ```
 
-Detector ids are the `detector_id` field in `--format json`/`jsonl` output, or
-the left column of `keyhog detectors`. Accelerated literal slots remain owned by
-the same canonical TOML detector id; there is no separate `hot-*` detector to
-disable. Retired `hot-*` ids are rejected with the exact canonical `explain`
-command instead of executing as aliases. Disabled detectors are dropped before the corpus compiles (zero scan
-cost). If an id matches nothing in the loaded corpus, KeyHog warns rather than
-silently ignoring it.
+Use the `detector_id` field from JSON output or the ID shown by `keyhog
+detectors`. The override applies to an embedded, replacement, or overlaid
+detector with that ID. It cannot add a detector that the selected corpus does
+not contain.
+
+Disabled detectors are removed before scanner compilation, so they have no scan
+cost. Accelerated literal slots use the same canonical TOML ID. There is no
+separate `hot-*` ID to disable. Retired `hot-*` IDs are rejected by `keyhog
+explain` rather than accepted as aliases.
+
+An unmatched disabled ID produces a warning. If the overrides remove every
+loaded detector, KeyHog fails before scanning instead of reporting a clean scan
+from an empty engine. Removing a detector changes the active corpus digest and
+the autoroute configuration identity. Recalibrate autoroute before relying on
+automatic routing for that policy.
 
 ## Running only a chosen subset
 
-To run a curated set instead of the full corpus, point `--detectors` at a
-directory holding only the TOMLs you want:
+Use a replacement corpus when you want an allowlist of detector files:
 
 ```sh
-mkdir my-detectors
-cp detectors/stripe-secret-key.toml detectors/aws-*.toml my-detectors/
-keyhog scan . --detectors my-detectors/
+mkdir -p "$PWD/my-detectors"
+cp detectors/stripe-secret-key.toml detectors/aws-*.toml "$PWD/my-detectors/"
+printf 'schema_version = 2\n' > "$PWD/my-detectors/corpus.toml"
+keyhog detectors --detectors "$PWD/my-detectors" --audit
+keyhog scan . --detectors "$PWD/my-detectors" --detectors-mode replace
 ```
 
 ## Quieting a noisy detector

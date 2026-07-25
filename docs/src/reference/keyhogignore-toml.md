@@ -1,90 +1,90 @@
-# `.keyhogignore.toml` - declarative finding suppression
+# `.keyhogignore.toml` reference
 
-A `.keyhogignore.toml` file in your scan root expresses suppression
-rules in TOML, evaluated per-finding via VYRE's CPU rule engine
-(`vyre_libs::rule`). Sits alongside the legacy line-based
-`.keyhogignore` - both are loaded; either alone suppresses a finding.
+Use `.keyhogignore.toml` for exceptions that need more than one condition. Put
+the file at the filesystem scan root. A single-file scan uses the file's parent
+directory. A source mode without a filesystem path uses the current directory.
 
-## Schema
+KeyHog also loads the line-based `.keyhogignore`. A finding is suppressed when
+either file matches. `[allowlist].file` can select a different line-based file,
+but it does not move or disable `.keyhogignore.toml`. There is no negation or
+last-rule-wins behavior.
 
-Every rule is a `[[suppress]]` table. Within one table, named
-predicates combine with **AND**. Across multiple tables they combine
-with **OR**.
+## Rule composition
 
-| Field              | Type         | Predicate                                         |
-| ------------------ | ------------ | ------------------------------------------------- |
-| `literal_true`     | boolean      | explicit unconditional match; `true` suppresses every finding |
-| `detector`         | string       | detector_id exact match                           |
-| `service`          | string       | service exact match                               |
-| `severity`         | string       | severity exact match (`info`, `client-safe`, `low`, `medium`, `high`, or `critical`) |
-| `severity_lte`     | string       | severity ≤ threshold (curated rank set)           |
-| `path_eq`          | string       | file path exact match                             |
-| `path_contains`    | string       | file path contains substring                      |
-| `path_starts_with` | string       | file path starts with prefix                      |
-| `path_ends_with`   | string       | file path ends with suffix                        |
-| `path_regex`       | string       | file path matches regex                           |
-| `credential_hash`  | string       | credential SHA-256 exact match                    |
-
-A `[[suppress]]` table with no predicates is rejected at parse time
-(prevents accidentally suppressing every finding). If an unconditional rule is
-intentional, write `literal_true = true`; the explicit name makes a
-match-everything policy reviewable. `literal_true = false` does not count as a
-predicate and is rejected when it is the only field. Because predicates in one
-table use AND semantics, combining `literal_true = true` with another field is
-equivalent to using that other field alone; use it alone to suppress everything.
-
-## Examples
+Each rule is a `[[suppress]]` table. Predicates in one table use AND. Separate
+tables use OR.
 
 ```toml
-# Drop every aws-access-key finding inside test directories.
+# Suppress one reviewed AWS fixture value and nothing broader.
 [[suppress]]
 detector = "aws-access-key"
-path_contains = "/tests/"
+path_eq = "fixtures/aws.env"
+credential_hash = "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"
 
-# Drop every low, client-safe, or info Stripe finding regardless of where it lives.
+# Suppress low-or-lower Stripe findings only below test directories.
 [[suppress]]
 service = "stripe"
 severity_lte = "low"
+path_regex = '(^|/)tests/'
+```
 
-# Drop a single credential by hash, anywhere it appears.
+In the first rule, changing the path, detector, or hash makes the rule fail to
+match. In the second rule, a medium Stripe finding still reports. A low finding
+outside a `tests` directory also reports.
+
+## Fields
+
+| Field | Type | Predicate |
+|---|---|---|
+| `literal_true` | boolean | Explicit unconditional match. Only `true` is a predicate. |
+| `detector` | string | Exact detector ID |
+| `service` | string | Exact service |
+| `severity` | string | Exact severity |
+| `severity_lte` | string | Severity at or below the threshold |
+| `path_eq` | string | Exact finding path |
+| `path_contains` | string | Finding path contains the substring |
+| `path_starts_with` | string | Finding path starts with the prefix |
+| `path_ends_with` | string | Finding path ends with the suffix |
+| `path_regex` | string | Finding path matches the regular expression |
+| `credential_hash` | string | Exact SHA-256 hex digest reported as `credential_hash` |
+
+Severity values are `info`, `client-safe`, `low`, `medium`, `high`, and
+`critical`. `severity_lte = "low"` includes `info`, `client-safe`, and `low`.
+Other string comparisons are exact and case-sensitive.
+
+The path fields inspect the path stored on the finding. They do not perform
+line-based `.keyhogignore` glob matching. Use `path_regex` when an exact,
+prefix, suffix, or substring comparison is not enough. Archive member paths
+include every container, for example `bundle.zip//examples/demo.env`. A finding
+without a path does not match a path-scoped rule.
+
+## Unconditional rules
+
+An empty table is rejected:
+
+```toml
 [[suppress]]
-credential_hash = "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"
+```
 
-# Drop everything in vendored/minified files.
-[[suppress]]
-path_starts_with = "vendor/"
+`literal_true = false` by itself is also rejected. To suppress every finding,
+you must state that policy explicitly:
 
-[[suppress]]
-path_ends_with = ".min.js"
-
-[[suppress]]
-path_regex = "^docs/[a-z]+\\.md$"
-
-# Deliberately suppress every finding. Prefer a scoped predicate whenever possible.
+```toml
 [[suppress]]
 literal_true = true
 ```
 
-## Why TOML and why a rule engine
+Combining `literal_true = true` with another predicate is equivalent to using
+the other predicate alone.
 
-The legacy `.keyhogignore` is one allowlist entry per line:
-`hash:<sha>`, `detector:<id>`, `path:<glob>`. That covers the simple
-cases but can't express "drop aws-access-key findings ONLY in
-`/tests/`" - the conditions need to combine.
+## Failure behavior
 
-Each TOML table compiles into a VYRE `RuleFormula` that ANDs typed conditions
-such as `FieldInSet` and `SubstringMatch`; KeyHog applies OR semantics across
-tables by accepting the first formula that evaluates true. VYRE's CPU evaluator
-(`vyre_libs::rule::evaluate_formula`) walks those formulas once per finding.
-VYRE also exposes GPU lowering through
-`vyre_libs::rule::build_rule_program`, but KeyHog does not use that route for
-suppression decisions; the active contract is the deterministic CPU evaluator
-after finding extraction.
+A missing file means that no declarative rules are active. A present file that
+cannot be read or parsed stops the scan with exit `2`. An empty table, unknown
+field inside `[[suppress]]`, or unsupported severity also stops the scan.
+KeyHog does not fall back to an empty declarative policy.
 
-## Errors
-
-Missing `.keyhogignore.toml` means no declarative rules. A present file that
-cannot be read or parsed is fatal: KeyHog prints the file and corrective action,
-refuses to scan with silently ignored suppression policy, and exits `2`. The
-legacy `.keyhogignore` is loaded independently, but it does not make a malformed
-declarative policy safe to ignore.
+A valid rule with the wrong case, path, detector, or hash does not match. It
+does not produce an error. A file with no `[[suppress]]` tables loads no
+rules. Run the same scan after adding a rule and confirm that only the reviewed
+finding disappears.

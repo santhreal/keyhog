@@ -1,14 +1,15 @@
 # Suppressions
 
-A suppression is a filter that drops a candidate match before it becomes a
-reported finding. KeyHog has **two kinds**:
+A suppression removes a match that you have reviewed and accepted. Use the
+narrowest rule that describes the exception. A path-wide or detector-wide rule
+can hide a different credential later.
 
-- **Operator surfaces**: things *you* configure to silence findings you have
-  reviewed and accepted (allowlists, inline directives, per-detector floors,
-  baselines). This page is the single map of all of them.
-- **Always-on shape/path heuristics**: built-in precision filters that drop
-  shapes that are universally not credentials. You cannot turn these off; they
-  are summarised at the bottom and detailed in
+KeyHog has two kinds of suppression:
+
+- Operator surfaces that you configure, such as allowlists, inline directives,
+  per-detector floors, and baselines.
+- Always-on shape and path heuristics. These remove shapes that are not
+  credentials. You cannot disable them. See
   [How detection works](./detection.md#stage-4---post-process).
 
 > **There is no `.keyhog.toml [suppress]` table.** Older docs showed a
@@ -42,106 +43,125 @@ Everything is wired through `filter_and_resolve` (raw stage) and the run loop
 (resolved stage), so the `--daemon` route and every output format apply the
 exact same set; there is no path that scans under a weaker suppression policy.
 
+### Precedence and discovery
+
+Suppression is additive. A match removed by any surface stays removed. There is
+no negation rule that restores a match removed by an earlier surface.
+
+For a directory scan, KeyHog loads `.keyhogignore` and
+`.keyhogignore.toml` from the scan root. For a single-file scan, it uses the
+file's parent directory. Source modes without a filesystem scan path use the
+current directory. `[allowlist].file` in `.keyhog.toml` replaces the discovered
+line-based `.keyhogignore`; it does not replace `.keyhogignore.toml`.
+
+Within `.keyhogignore`, every active line is an alternative. Within one
+`.keyhogignore.toml` table, predicates use AND. Separate tables use OR. The two
+files also use OR, so a broad line-based rule cannot be narrowed by adding a
+declarative rule.
+
 ---
 
 ## Operator surfaces
 
-### `.keyhogignore`: line-based allowlist (opt-in, project-scoped)
+Choose a surface by scope:
 
-A `.keyhogignore` at your scan root, one rule per line. It accepts explicit
-`hash:`, `detector:`, and `path:` rules. A bare 64-hex line is a credential hash;
-other bare entries are path globs, so ordinary `.gitignore` entries work.
+| Exception | Prefer | Avoid |
+|---|---|---|
+| One value in one fixture | `.keyhogignore.toml` with detector, path, and hash | Disabling the detector |
+| One value wherever it appears | `hash:` in `.keyhogignore` | Storing the plaintext credential |
+| One finding in a local source file | Detector-scoped inline directive | Unscoped directive on a line with several values |
+| Findings that predate adoption | Baseline | Path rules for the whole legacy tree |
+| A detector that is not applicable to the repository | `[detector.<id>] enabled = false` | A large list of per-file rules |
+
+### `.keyhogignore`: one condition per line
+
+Create `.keyhogignore` at the scan root. Each non-comment line suppresses by
+credential hash, detector ID, or path glob:
 
 ```text
-# Ignore a specific credential by SHA-256 of the captured value (64 hex chars).
+# One reviewed credential value, stored only as its SHA-256 digest.
 hash:5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8
 
-# A bare 64-hex line is also read as a hash (the jq-append workflow below).
-5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8
-
-# Ignore every finding from one detector.
+# Every finding from one detector.
 detector:generic-password
 
-# Ignore files by glob.
+# Files below fixtures/ at the scan root.
 path:fixtures/**
-path:docs/example_*.env
 
-# A bare glob with no prefix is a path rule (gitignore-style).
-node_modules/
-*.min.js
+# A bare non-hash entry is also a path glob.
+**/*.min.js
 ```
 
-Hashes are bare 64-character hex (no `sha256:` prefix). Generate the exact line
-to append from an existing run:
+A bare 64-character hexadecimal line is a credential hash. Prefer the `hash:`
+prefix because a 64-character path would otherwise be ambiguous. `*` matches
+one path segment. `**` matches zero or more segments. A trailing slash matches
+the directory and its descendants. Patterns without a leading `**` are rooted,
+so `fixtures/**` does not match `packages/app/fixtures/demo.env`.
+
+Generate a candidate hash rule from the exact finding you reviewed:
 
 ```sh
-keyhog scan . --format jsonl-envelope \
-  | jq -r 'select(.record_type == null) | "hash:" + .credential_hash' \
-  >> .keyhogignore
+keyhog scan fixtures/oauth.env --format json \
+  | jq -r '.[] | select(.detector_id == "generic-api-key" and .location.line == 3) |
+      "hash:" + .credential_hash'
 ```
 
-The `hash:` prefix is recommended for readability but optional for an exact
-64-hex digest. `.credential_hash` is already the SHA-256 hex the rule expects.
+Review the printed line before you add it. This command prints nothing if the
+detector ID or line does not match. Do not substitute the redacted display value
+or add a `sha256:` prefix.
 
-**Governance metadata** (optional) trails an entry after `;`:
+Optional governance metadata follows an entry after `;`:
 
 ```text
-hash:5e88…42d8 ; reason="published OAuth client_id" ; expires=2026-12-31 ; approved_by="secops"
+hash:5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8 ; reason="published OAuth client_id" ; expires=2026-12-31 ; approved_by="secops"
 ```
 
-An entry whose `expires` date is in the past is dropped at load time with a
-fail-closed operator error, so short-lived approvals force a deliberate renewal.
-The `require_reason` / `require_approved_by` / `max_expires_days` governance
-flags under `[allowlist]` in `.keyhog.toml` are enforced before any suppression
-is active; missing required metadata or an overlong expiry stops the scan.
+`require_reason`, `require_approved_by`, and `max_expires_days` under
+`[allowlist]` in `.keyhog.toml` can require this metadata. An expired entry,
+invalid hash, unknown metadata key, missing required field, or overlong expiry
+stops the scan with exit `2`. No line from that file becomes active.
 
-### `.keyhogignore.toml`: declarative rule allowlist (opt-in, composable)
+### `.keyhogignore.toml`: combine conditions
 
-When a single glob/hash/detector line is too blunt, a `.keyhogignore.toml`
-alongside it gives composable `[[suppress]]` rules. Fields within one table AND
-together; separate tables OR together. Full schema and field list:
-[`.keyhogignore.toml` reference](./reference/keyhogignore-toml.md).
+Use `.keyhogignore.toml` when one condition is too broad. The following rule
+suppresses only one reviewed AWS fixture value:
 
 ```toml
-# Drop aws-access-key findings under any tests directory.
 [[suppress]]
 detector = "aws-access-key"
-path_contains = "/tests/"
-
-# Drop low-or-lower stripe findings on one fixture file.
-[[suppress]]
-service = "stripe"
-severity_lte = "low"
-path_eq = "fixtures/stripe.yml"
-
-# Drop one credential everywhere (mirrors a .keyhogignore hash: line).
-[[suppress]]
+path_eq = "fixtures/aws.env"
 credential_hash = "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"
 ```
 
-A `[[suppress]]` table with no conditions is rejected (it would silently drop
-every finding); write `literal_true = true` if you truly mean "drop all". A
-malformed present `.keyhogignore.toml` is a policy failure and stops the scan
-instead of being treated as an empty suppressor.
+All three predicates must match. A finding with the same hash in another file,
+or a different credential in this file, still reports. See the
+[`.keyhogignore.toml` reference](./reference/keyhogignore-toml.md) for every
+predicate and more examples.
 
-### Inline directives: suppress at the source line
+An empty `[[suppress]]` table and `literal_true = false` by itself are rejected.
+Write `literal_true = true` only for an intentional match-everything policy.
+Unreadable TOML, invalid TOML, an unknown predicate, or an invalid severity
+stops the scan with exit `2`. KeyHog does not continue with an empty
+declarative policy.
 
-Put a directive in a comment on the finding's line, or the line directly above
-it. Recognised forms: `keyhog:ignore`, `keyhog:allow`, `gitleaks:allow`,
-`betterleaks:allow` (the last two ease migration). Comment markers understood:
-`//`, `#`, `--`, `/*`, `<!--`.
+### Inline directives: suppress one local source line
 
-```python
-API_KEY = "AKIA…EXAMPLE"  # keyhog:ignore
-```
-
-Scope it to one detector so an unrelated finding on the same line still fires:
+Put a directive in a comment on the finding's line or the line immediately
+above it. Scope the directive to a detector whenever the line can contain more
+than one value:
 
 ```js
-const token = "…";  // keyhog:ignore detector=stripe-secret-key
+const token = process.env.STRIPE_TEST_TOKEN; // keyhog:ignore detector=stripe-secret-key
 ```
 
-With no `detector=` token the directive suppresses every finding on that line.
+Recognized directives are `keyhog:ignore`, `keyhog:allow`, `gitleaks:allow`,
+and `betterleaks:allow`. Recognized comment markers are `//`, `#`, `--`, `/*`,
+and `<!--`.
+
+Without `detector=`, the directive suppresses every finding on that line. A
+different detector ID does not suppress the finding. Inline directives are read
+from local filesystem source text. They do not act as an allowlist for archive
+members, Git history, or remote sources. Use an allowlist file for those modes.
 
 ### Per-detector control: `.keyhog.toml [detector.<id>]`
 
