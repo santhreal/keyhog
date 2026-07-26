@@ -25,6 +25,41 @@ fn duplicate_tag_runs_serialize_without_cancelling_active_publication() {
     );
 }
 
+/// Locks out the recovery failure where a manual dispatch named an immutable
+/// tag but the workflow compared its `main` event ref and SHA to that tag.
+/// Dispatch recovery must build the exact tag while loading hardened release
+/// automation from the workflow commit.
+#[test]
+fn manual_dispatch_binds_products_to_the_input_tag() {
+    let workflow = read_workflow("release.yml");
+    let build = job(&workflow, "build", "installers");
+    let sign = job(&workflow, "sign", "smoke");
+    let publish = job(&workflow, "publish", "major-tag");
+    let exact_dispatch_ref =
+        "ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}";
+
+    assert!(
+        build.contains(exact_dispatch_ref)
+            && build.contains(
+                "if [[ -z \"${KEYHOG_RELEASE_INPUT_TAG:-}\" && \"$KEYHOG_RELEASE_EVENT_REF\" != \"refs/tags/$tag\" ]]",
+            )
+            && build.contains(
+                "if [[ -z \"${KEYHOG_RELEASE_INPUT_TAG:-}\" && \"$actual\" != \"$KEYHOG_RELEASE_EVENT_SHA\" ]]",
+            ),
+        "manual dispatch must check out the exact input tag without comparing it to the workflow branch ref or SHA",
+    );
+    assert!(
+        sign.contains("ref: ${{ github.workflow_sha }}")
+            && sign.contains("$GITHUB_WORKSPACE/automation/scripts/publish_release_assets.py"),
+        "signing must use hardened automation from the workflow commit while products remain bound to the immutable tag",
+    );
+    assert!(
+        publish.contains(exact_dispatch_ref)
+            && publish.contains("\"$commit\" != \"$(git rev-parse HEAD)\""),
+        "publication must verify the signed receipt against the exact tag checkout during recovery dispatch",
+    );
+}
+
 #[test]
 fn container_failure_leaves_the_immutable_release_private() {
     let workflow = read_workflow("release.yml");

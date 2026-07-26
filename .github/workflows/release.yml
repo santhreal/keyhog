@@ -93,7 +93,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
           fetch-depth: 0
       - name: Resolve tag
         id: tag
@@ -112,7 +112,7 @@ jobs:
             echo "::error title=KeyHog::Release tag must be exact semver (vMAJOR.MINOR.PATCH with an optional prerelease suffix)."
             exit 2
           fi
-          if [[ "$KEYHOG_RELEASE_EVENT_REF" != "refs/tags/$tag" ]]; then
+          if [[ -z "${KEYHOG_RELEASE_INPUT_TAG:-}" && "$KEYHOG_RELEASE_EVENT_REF" != "refs/tags/$tag" ]]; then
             echo "::error title=KeyHog::Attestation source mismatch::Run this workflow from the exact refs/tags/$tag ref so GitHub provenance names the source that is built."
             exit 2
           fi
@@ -141,10 +141,11 @@ jobs:
         shell: bash
         env:
           KEYHOG_RELEASE_EVENT_SHA: ${{ github.sha }}
+          KEYHOG_RELEASE_INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
           actual="$(git rev-parse HEAD)"
-          if [[ "$actual" != "$KEYHOG_RELEASE_EVENT_SHA" ]]; then
+          if [[ -z "${KEYHOG_RELEASE_INPUT_TAG:-}" && "$actual" != "$KEYHOG_RELEASE_EVENT_SHA" ]]; then
             echo "ERROR: checked-out release commit $actual does not match attested event commit $KEYHOG_RELEASE_EVENT_SHA" >&2
             exit 2
           fi
@@ -250,7 +251,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
           fetch-depth: 0
       - name: Resolve tag
         id: tag
@@ -269,7 +270,7 @@ jobs:
             echo "::error title=KeyHog::Release tag must be exact semver (vMAJOR.MINOR.PATCH with an optional prerelease suffix)."
             exit 2
           fi
-          if [[ "$KEYHOG_RELEASE_EVENT_REF" != "refs/tags/$tag" ]]; then
+          if [[ -z "${KEYHOG_RELEASE_INPUT_TAG:-}" && "$KEYHOG_RELEASE_EVENT_REF" != "refs/tags/$tag" ]]; then
             echo "::error title=KeyHog::Installer source mismatch::Run this workflow from the exact refs/tags/$tag ref."
             exit 2
           fi
@@ -284,10 +285,11 @@ jobs:
         shell: bash
         env:
           KEYHOG_RELEASE_EVENT_SHA: ${{ github.sha }}
+          KEYHOG_RELEASE_INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
           actual="$(git rev-parse HEAD)"
-          if [[ "$actual" != "$KEYHOG_RELEASE_EVENT_SHA" ]]; then
+          if [[ -z "${KEYHOG_RELEASE_INPUT_TAG:-}" && "$actual" != "$KEYHOG_RELEASE_EVENT_SHA" ]]; then
             echo "ERROR: installer checkout $actual does not match release commit $KEYHOG_RELEASE_EVENT_SHA" >&2
             exit 2
           fi
@@ -329,7 +331,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
           fetch-depth: 1
       - name: Resolve tag
         id: tag
@@ -348,7 +350,7 @@ jobs:
             echo "::error title=KeyHog::Release tag must be exact semver (vMAJOR.MINOR.PATCH with an optional prerelease suffix)."
             exit 2
           fi
-          if [[ "$KEYHOG_RELEASE_EVENT_REF" != "refs/tags/$tag" ]]; then
+          if [[ -z "${KEYHOG_RELEASE_INPUT_TAG:-}" && "$KEYHOG_RELEASE_EVENT_REF" != "refs/tags/$tag" ]]; then
             echo "::error title=KeyHog::Signing source mismatch::Run this workflow from the exact refs/tags/$tag ref."
             exit 2
           fi
@@ -370,10 +372,11 @@ jobs:
         shell: bash
         env:
           KEYHOG_RELEASE_EVENT_SHA: ${{ github.sha }}
+          KEYHOG_RELEASE_INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
           actual="$(git rev-parse HEAD)"
-          if [[ "$actual" != "$KEYHOG_RELEASE_EVENT_SHA" ]]; then
+          if [[ -z "${KEYHOG_RELEASE_INPUT_TAG:-}" && "$actual" != "$KEYHOG_RELEASE_EVENT_SHA" ]]; then
             echo "ERROR: signing checkout $actual does not match release commit $KEYHOG_RELEASE_EVENT_SHA" >&2
             exit 2
           fi
@@ -623,7 +626,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
           fetch-depth: 0
       - name: Resolve tag
         id: tag
@@ -642,7 +645,7 @@ jobs:
             echo "::error title=KeyHog::Release tag must be exact semver (vMAJOR.MINOR.PATCH with an optional prerelease suffix)."
             exit 2
           fi
-          if [[ "$KEYHOG_RELEASE_EVENT_REF" != "refs/tags/$tag" ]]; then
+          if [[ -z "${KEYHOG_RELEASE_INPUT_TAG:-}" && "$KEYHOG_RELEASE_EVENT_REF" != "refs/tags/$tag" ]]; then
             echo "::error title=KeyHog::Container source mismatch::Run this workflow from the exact refs/tags/$tag ref."
             exit 2
           fi
@@ -658,10 +661,11 @@ jobs:
         shell: bash
         env:
           KEYHOG_RELEASE_EVENT_SHA: ${{ github.sha }}
+          KEYHOG_RELEASE_INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
           actual="$(git rev-parse HEAD)"
-          if [[ "$actual" != "$KEYHOG_RELEASE_EVENT_SHA" ]]; then
+          if [[ -z "${KEYHOG_RELEASE_INPUT_TAG:-}" && "$actual" != "$KEYHOG_RELEASE_EVENT_SHA" ]]; then
             echo "ERROR: container checkout $actual does not match release commit $KEYHOG_RELEASE_EVENT_SHA" >&2
             exit 2
           fi
@@ -744,7 +748,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
           fetch-depth: 0
 
       - name: Download signed immutable-ID publication proof
@@ -766,6 +770,7 @@ jobs:
         env:
           KEYHOG_MINISIGN_PUBLIC_KEY: RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go
           KEYHOG_RELEASE_EVENT_SHA: ${{ github.sha }}
+          KEYHOG_RELEASE_INPUT_TAG: ${{ inputs.tag }}
           KEYHOG_CONTAINER_TAG: ${{ needs.docker.outputs.tag }}
           KEYHOG_CONTAINER_DIGEST: ${{ needs.docker.outputs.digest }}
         run: |
@@ -780,7 +785,7 @@ jobs:
           release_id="$(jq -er '.release_id' "$receipt")"
           if [[ "$schema" != "keyhog-release-publication-v1" ||
                 "$repository" != "$GITHUB_REPOSITORY" ||
-                "$commit" != "$KEYHOG_RELEASE_EVENT_SHA" ||
+                "$commit" != "$(git rev-parse HEAD)" ||
                 "$tag" != "$KEYHOG_CONTAINER_TAG" ||
                 ! "$release_id" =~ ^[1-9][0-9]*$ ||
                 ! "$KEYHOG_CONTAINER_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
@@ -820,7 +825,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
           fetch-depth: 0
       - name: Resolve tag
         id: tag
@@ -839,7 +844,7 @@ jobs:
             echo "::error title=KeyHog::Release tag must be exact semver (vMAJOR.MINOR.PATCH with an optional prerelease suffix)."
             exit 2
           fi
-          if [[ "$KEYHOG_RELEASE_EVENT_REF" != "refs/tags/$tag" ]]; then
+          if [[ -z "${KEYHOG_RELEASE_INPUT_TAG:-}" && "$KEYHOG_RELEASE_EVENT_REF" != "refs/tags/$tag" ]]; then
             echo "::error title=KeyHog::Floating tag source mismatch::Run this workflow from the exact refs/tags/$tag ref."
             exit 2
           fi
@@ -854,10 +859,11 @@ jobs:
         shell: bash
         env:
           KEYHOG_RELEASE_EVENT_SHA: ${{ github.sha }}
+          KEYHOG_RELEASE_INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
           actual="$(git rev-parse HEAD)"
-          if [[ "$actual" != "$KEYHOG_RELEASE_EVENT_SHA" ]]; then
+          if [[ -z "${KEYHOG_RELEASE_INPUT_TAG:-}" && "$actual" != "$KEYHOG_RELEASE_EVENT_SHA" ]]; then
             echo "ERROR: floating-tag checkout $actual does not match release commit $KEYHOG_RELEASE_EVENT_SHA" >&2
             exit 2
           fi
