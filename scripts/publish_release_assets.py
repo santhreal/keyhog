@@ -585,8 +585,11 @@ def _validate_assets(paths: Iterable[Path]) -> list[Path]:
             raise PublicationError(
                 f"cannot verify checksum manifest {checksum}: {error}"
             ) from error
-        expected = f"{digest}  {target_name}\n"
-        if actual != expected:
+        accepted = {
+            f"{digest}  {target_name}\n",
+            f"{digest} *{target_name}\n",
+        }
+        if actual not in accepted:
             raise PublicationError(
                 f"checksum manifest {checksum.name} does not match {target_name}"
             )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import tarfile
@@ -824,6 +825,27 @@ class PublishReleaseAssetsTests(unittest.TestCase):
             )
 
         self.assertEqual(self.state.requests, [])
+
+    def test_windows_binary_checksum_marker_round_trips(self) -> None:
+        """Locks out rejecting the valid binary-mode marker emitted by Windows sha256sum."""
+        payload = b"binary"
+        asset = self.asset("keyhog-windows.exe", payload)
+        digest = hashlib.sha256(payload).hexdigest()
+        checksum = self.asset(
+            "keyhog-windows.exe.sha256",
+            f"{digest} *keyhog-windows.exe\n".encode(),
+        )
+
+        publish_release(
+            self.client,
+            "owner/keyhog",
+            "v0.5.45",
+            [asset, checksum],
+            RELEASE_NOTES,
+            EXPECTED_COMMIT,
+        )
+
+        self.assertFalse(self.state.releases[0]["draft"])
 
     def test_duplicate_basenames_fail_without_contacting_github(self) -> None:
         """Locks out an unverifiable manifest when two local paths map to one asset name."""

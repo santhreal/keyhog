@@ -359,6 +359,12 @@ jobs:
           ref: refs/tags/${{ steps.tag.outputs.tag }}
           fetch-depth: 1
 
+      - name: Check out hardened release automation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: automation
+          fetch-depth: 1
       - name: Prove signing source matches attested event
         id: source
         shell: bash
@@ -404,7 +410,7 @@ jobs:
           rm -rf "$workdir"
           mkdir -p "$workdir"
           cp -a "$GITHUB_WORKSPACE/dist/." "$workdir/"
-          python3 "$GITHUB_WORKSPACE/scripts/release_notes.py" \
+          python3 "$GITHUB_WORKSPACE/automation/scripts/release_notes.py" \
             --tag "$tag" \
             --changelog "$GITHUB_WORKSPACE/CHANGELOG.md" \
             --output "$workdir/release-notes.md"
@@ -448,7 +454,7 @@ jobs:
           for payload in "${payloads[@]}"; do
             final+=("$payload.minisig")
           done
-          python3 "$GITHUB_WORKSPACE/scripts/publish_release_assets.py" prepare \
+          python3 "$GITHUB_WORKSPACE/automation/scripts/publish_release_assets.py" prepare \
             --tag "$tag" \
             --commit "${{ steps.source.outputs.commit }}" \
             --repository "$GITHUB_REPOSITORY" \
