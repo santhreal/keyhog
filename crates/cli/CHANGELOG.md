@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.47 - 2026-07-26
+
+- Add the POSIX installer `--no-calibrate` override for deterministic
+  explicit-backend automation while retaining signature, checksum, binary, and
+  doctor verification.
+
 ## 0.5.46 - 2026-07-24
 
 - Upgrade the daemon wire protocol to v8, keep request, response, frame, client,

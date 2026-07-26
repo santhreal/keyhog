@@ -282,7 +282,7 @@ keyhog scan /path/to/project --format jsonl-envelope --min-confidence 0.4
 The composite Action is the safest way to create, upload, and retain SARIF:
 
 ```yaml
-- uses: santhreal/keyhog@v0.5.46
+- uses: santhreal/keyhog@v0.5.47
   with:
     format: sarif
     upload-sarif: 'true'

@@ -2,6 +2,33 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.47] - 2026-07-26
+
+### Added
+
+- The POSIX installer accepts `--no-calibrate` for deterministic automation.
+  It still verifies the signature, checksum, installed binary, GPU literal
+  sidecar, and `doctor` self-test, then warns that automatic routing remains
+  uncalibrated until you run `install.sh --calibrate`.
+- The signed Linux release smoke uses the explicit no-calibration path and a
+  measured-correct SIMD backend. Hosted-runner timing noise can no longer block
+  publication after payload and product verification have passed.
+
+### Fixed
+
+- Release asset verification accepts both text-mode and binary-mode
+  `sha256sum` manifests, including the `*filename` form emitted for Windows
+  executables.
+- Manual release recovery dispatches check out and attest the exact requested
+  immutable tag in every build, installer, signing, container, publication,
+  and floating-tag job.
+- Signing uses hardened publication and release-note automation from the
+  workflow commit while all product bytes remain bound to the requested tag.
+- The prerelease version bumper tracks every canonical version-bearing guide
+  and no longer rejects versionless pages. Documentation truth checks now cover
+  the integration, verification, and out-of-band verification pins updated for
+  this release.
+
 ## [0.5.46] - 2026-07-24
 
 ### Added
@@ -36,6 +63,784 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Release version updates preserve measured benchmark identities while updating
   operator pins. GHCR version and `latest` tags wait for the signed candidate
   product smoke before public mutation.
+
+### Detailed component changes
+
+These component sections enumerate the full shipped delta. They retain API, schema, routing, correctness, security, and performance details that are easy to lose in the summary above.
+
+#### CLI and orchestration
+
+- Upgrade the daemon wire protocol to v8, keep request, response, frame, client,
+  server, and plaintext match adapters crate-private, and expose only the
+  non-secret default socket path. The strict Hello handshake rejects v7 peers.
+- Allow a daemon scan to select an explicit replacement detector corpus when
+  the client-derived rules identity exactly matches the warm daemon. Reports
+  retain the replacement count, digest, source, and mode. Overlay composition
+  and client-only detector policy remain fail-closed.
+- Include exact static-recovery totals and per-reason rejections in JSON 1.8,
+  JSONL 1.9, and daemon v8 report metadata. Daemon clients reject aggregates
+  whose reason counts do not reconcile instead of substituting zeroes.
+- Make `update` and `repair --version` accept only canonical SemVer, normalize
+  it to one `v`-prefixed tag before HTTP, and require the same non-draft tag
+  before downloading assets. Malformed or mismatched release metadata fails.
+- Serialize concurrent autoroute calibration updates through the cache lock so
+  distinct workload evidence is merged without torn reads. Unix cache, lock,
+  and temporary files are private, and successful writes leave no temporary
+  residue.
+- Keep the daemon socket linked for the full accept-loop lifetime. Shutdown
+  removes it only after the listener terminates.
+- Bind every persisted GPU timing and parity receipt to the exact acquired
+  execution peer. Route replay now rejects changed or missing adapter identity.
+- Make the final backend summary identify invalid-autoroute scalar recovery and
+  runtime-fault recovery directly. Recovered work is no longer
+  described as a calibrated non-GPU winner.
+- Let `calibrate-autoroute --policy` refresh one scan policy without rerunning
+  every preset. The default remains the complete all-policy install sweep.
+- Reject autoroute cache and runtime-health workload identities with impossible
+  logarithmic ranges, phase-one subtotals, decoder bits, or decoder cost bands.
+- Report automatic backend recovery as `complete_after_recovery` in JSON schema
+  1.8 and JSONL schema 1.9, preserve the
+  exact recovered ranges and byte totals across daemon responses, expose daemon
+  recovery health, and persist the affected autoroute workload quarantine in a
+  bounded artifact that survives restart, is visible in `backend --autoroute`
+  and `doctor`, and clears through successful recalibration. Recovery replays
+  stable bytes through the fastest remaining measured-correct peer resolved by
+  the same workload evidence, rather than a hardcoded CPU backend.
+- Measure every plain-pattern and keyword-anchor localization combination for
+  every eligible backend, persist the fastest correct execution plan in cache
+  schema 39, and carry both choices beside admission evidence through one-shot,
+  fused, daemon, and automatic-recovery dispatch.
+
+- Retain every exact calibration representative inside one canonical workload
+  evidence envelope. A route class is reusable only when all points agree on
+  the fastest-correct one-shot and daemon backends; inspection exposes each
+  point's timings, confidence, and parity receipts, and calibration now probes
+  both sides of the required 8 MiB crossover.
+- Show the detector-owned keyword-free operator entropy margin in `explain`.
+- Derive autoroute readiness and repair commands once from cache inspection,
+  expose the repair command in `backend --autoroute --json`, and make `doctor`
+  report scalar-only builds as direct-route ready instead of uncalibrated.
+  Calibration now succeeds only when persisted readback is `ready` for the
+  running build.
+- Persist the resolved GPU batch-input byte cap in autoroute host identity and
+  inspection, so a device-limit or configured-cap change cannot replay timing
+  evidence measured with a different dispatch topology.
+- Bind autoroute host identity to the live linked Hyperscan/Vectorscan runtime
+  version, so a runtime replacement invalidates SIMD timing evidence and
+  requires recalibration instead of replaying a stale winner.
+- Split contiguous filesystem batches at safe source-family and size-provenance
+  boundaries, extend the split to tracked and untracked git-diff inputs, and
+  calibrate every default fused count for extracted tar members. Empty stdin is
+  no longer reported as a calibrated workload. Current installers delegate this
+  core sweep to the binary instead of maintaining a second matrix. Calibration
+  output now calls the sweep count probes rather than unique workload buckets;
+  it also reads back and reports both route classes measured by this sweep and
+  the cache's total route-decision count. Installers still parse the earlier
+  unified-command summary during migration.
+- Rename the live GPU region-presence batch byte budget to
+  `--gpu-batch-input-limit` / `gpu_batch_input_limit`; accept the retired
+  MegaScan spelling as a hidden CLI/TOML migration alias.
+- Include full-source-size provenance in autoroute workload keys so streamed or
+  transformed payload sizes cannot silently reuse calibration measured from an
+  equal numeric full-file-size bucket.
+- Activate the CLI `simd` feature in default builds so the documented
+  Hyperscan `--cache-dir` surface works whenever the default scanner includes
+  Hyperscan instead of falsely reporting an accelerator-free binary.
+- Stop prewarming an automatic backend from a zero-byte heuristic before the
+  persisted workload-specific autoroute decision is known; explicit diagnostic
+  backend overrides still prewarm directly.
+- Report the configured backend policy at startup instead of claiming that a
+  backend was selected before the persisted per-workload decision exists.
+- Do not print end-of-run repeat summaries for dependency warnings hidden by
+  the default log filter; summaries now describe only visible KeyHog warnings.
+- Record the actual first GPU dispatch as autoroute cold-start evidence instead
+  of discarding it and mislabelling an already-warm second dispatch as cold.
+- Distinguish one-shot and persistent-daemon autorouting: one-shot scans include
+  GPU cold cost, while the daemon initializes accelerator state before serving
+  requests and selects from calibrated warm timing evidence.
+- Replace autoroute cache writes through a synced same-directory temporary file
+  so recalibration atomically replaces an existing cache path across supported
+  operating systems.
+- Route CLI report/cache writes through one atomic file replacement helper,
+  including `scan-system --output`, to avoid truncated final-path artifacts.
+- Refuse autoroute calibration on empty or zero-byte samples before timing so
+  calibration cannot persist route decisions that the cache loader would later
+  reject as missing sample evidence.
+- Add `keyhog config --effective` and keep post-scan confidence filtering on the same resolved floor as the scanner.
+- Update stale unit fixtures for the inline-byte credential-hash contract and removed duplicate startup-summary helper.
+- Keep default `--git-diff HEAD` wired to worktree changes, honor CLI excludes for staged-only scans, and refresh git-mode e2e contracts for clean staged inputs and SARIF schema coherence.
+- Move args, hook, and scan-system inline tests into registered aggregate unit modules, including scan-system redaction tests updated for the raw `[u8; 32]` hash contract.
+- Refresh the dogfood detector-count oracle to 894 and keep the structured UUID named-detector default-recall e2e passing.
+- Distinguish detector-TOML declarations from scan-time fallback policy in
+  `keyhog explain`, using the same `scan-fallback` provenance label as effective
+  configuration output.
+
+#### Core contracts
+
+- Make implicit serde serialization of `Credential` and `SensitiveString`
+  fail before emitting secret bytes. `RawMatch`, `DedupedMatch`, and `Chunk`
+  therefore require an explicit protected conversion instead of serializing
+  plaintext, while historical plaintext and tagged deserialization still work.
+- Add canonical `corpus.toml` schema identity. Schema 1 keeps its conservative
+  verifier-policy migration, schema 2 requires explicit policy, and forward or
+  malformed schemas fail with typed errors. Detector digests and scan report
+  metadata bind the manifest bytes and schema so caches, daemon evidence, and
+  autoroute evidence cannot cross corpus semantics.
+- Add `complete_after_recovery` as a complete scan terminal state and preserve
+  bounded backend-recovery evidence across the current JSON and JSONL report
+  contracts.
+
+- Add detector-owned `plausibility.keyword_free_operator_margin`, validate it
+  only for the `keyword-free` entropy role, and bind it into detector identity.
+
+- Add an opt-in source ordering contract for contiguous chunk identities so
+  dispatchers can split routing batches without assuming concrete source types.
+
+- Add shared overflow-safe median and paired confidence primitives for
+  autoroute calibration and release crossover evidence.
+
+#### Scanner engine
+
+- Return typed `Result` errors from every public scan entry point. Explicit
+  unavailable or failed backends no longer terminate an embedding process or
+  silently substitute another backend, and coalesced scans retain one result
+  row per input chunk. The CLI alone maps terminal errors to process status.
+- Stream decoder candidates into one per-root sink and stop production at 1,000
+  decoded chunks or 64 MiB. Accepted siblings and exact-boundary output remain,
+  and custom decoder collection is fallible instead of unbounded or truncated.
+- Return non-secret backend-recovery receipts with exact recovered ranges and
+  GPU recovery counts from recovery-aware coalesced scans. Receipt-blind APIs
+  fail instead of discarding recovery metadata, and acquired GPU peer identity
+  is required before autoroute can persist execution evidence.
+- Replace the overbroad bigram training gate with scanner-owned selective
+  mandatory anchors: exact short literals and measured-frequency eight-byte
+  double-hash anchors. Prefixless patterns remain in the explicit always-admit
+  lane. Pinned CredData evidence now records non-zero rejection with exact
+  enabled-versus-bypass finding parity and categorized unavailable inputs.
+- Keep appended multiline mappings aligned across empty lines and canonicalize
+  detector assignment byte spans to UTF-8 boundaries before slicing. CredData
+  and malformed-source scans now return their original findings instead of
+  aborting the host with exit 134.
+- Compile detector-owned and scan-config entropy assignment keywords into one
+  cached case-insensitive matcher, removing the per-line linear vocabulary walk
+  from sparse source scans while preserving programmatic config changes.
+- Add one-pass multiline syntax admission before the precise concatenation
+  grammar, so ordinary large source windows no longer pay repeated full-text
+  searches for absent join markers.
+- Large-file multiline admission now consumes the same active generic-detector
+  and scan-config keyword index as entropy assignment discovery. Replacement
+  corpora no longer depend on five scanner-owned compatibility words.
+
+- Compile the phase-two VYRE regex-DFA admission catalog with state-cap-driven
+  shards. The GPU now rescans a batch only after the combined DFA proves a
+  split is necessary, instead of forcing another full-haystack dispatch for
+  every 16 patterns.
+- Apply the detector quality gate at the public scanner compilation boundary.
+  Programmatic `DetectorSpec` corpora now reject invalid thresholds, regexes,
+  identities, validators, and duplicate detector IDs before matcher or backend
+  construction. TOML-loaded and in-memory detectors share the same acceptance
+  rules.
+- Preserve the participating alternate capture in grouped extraction, keep
+  service-specific PEM blocks intact through collision resolution, and require
+  token boundaries on short detector aliases.
+- Snapshot the decoder registry when you compile a scanner. Decode execution
+  and autoroute admission now use that immutable plan, and its ordered decoder
+  names and versions contribute to the detector digest. Registering a decoder
+  after compilation cannot change an existing scanner. Invalid or duplicate
+  registrations through `try_register_decoder` return
+  `DecoderRegistrationError` instead of being ignored. The compatible
+  `register_decoder` entry point makes later scanner compilation fail on the
+  same error.
+- Compile reverse and Caesar admission from each active detector TOML's
+  `decode_transforms` declaration. Custom corpora no longer inherit unrelated
+  global prefixes, and detectors such as Databricks can recover `dapi` tokens
+  without a scanner-code prefix edit. `DecodeWorkloadPlan` now carries this
+  shared compiled policy and is `Clone` rather than `Copy`; callers that pass
+  one plan to more than one owner must clone it explicitly.
+- Use one compiled validator index for the active detector plan and the embedded
+  compatibility API, so prefix narrowing and validator-result precedence have
+  one implementation.
+- Avoid collecting GPU phase timing timestamps unless performance tracing is
+  enabled, removing profiling clock reads from the normal accelerated path.
+- Warn when a library caller supplies an admission plan for different input,
+  then recompute admission so the mismatch remains visible without losing
+  recall. Preserve the concrete GPU fault reason even if its diagnostic mutex
+  was poisoned by an earlier panic.
+- Resolve production entropy credential context from the active detector TOMLs
+  and Tier-A keyword configuration at generation and suppression. Embedded
+  compatibility keywords no longer widen a replacement detector corpus, and
+  adjacent declared assignments retain their own detector context.
+- Compile one typed min/max policy from each detector and apply its inclusive
+  bounds before generic entropy, BPE, entropy fallback, or regex-envelope
+  scoring. Overlength values now share the `value_too_long` suppression reason
+  and are rejected whole.
+- Reject detector corpora with entropy fallback or BPE policy when the scanner
+  artifact lacks the `entropy` feature. The public compile boundary reports the
+  affected detector IDs and corrective build feature before constructing
+  matchers.
+- Replace the hardcoded lower-dash entropy exception with one compiled
+  detector-TOML shape matcher covering typed alphabets, optional grouping,
+  padding, diversity, and detector-owned floors. Ambiguous shape lists fail
+  compilation instead of silently choosing one entry.
+- Compile a backend-neutral SIMD phase-one plan during scanner construction and
+  lazily materialize Hyperscan only when selected. Exact initialization errors
+  now cross the fallible coalesced boundary, scalar/GPU routes do not pay the
+  unused database cost, and the recorded materialization duration is available
+  to cold-aware autoroute evidence.
+- Make the measured route own phase-two acceleration as well as decoded scans.
+  Only SIMD may initialize the always-active Hyperscan prefilter; scalar and GPU
+  routes retain the portable owner through no-hit, window, and reassembly paths.
+- Establish calibration correctness from the always-present scalar engine,
+  rejecting a divergent optional Hyperscan candidate without invalidating the
+  independent oracle. Persist decoded-rescan backend composition in each
+  measured route so scalar and GPU timings cannot silently borrow Hyperscan.
+- Census CUDA and WGPU identities during scanner compilation without creating
+  execution devices or pipelines. Materialize only the selected peer, retain
+  exact initialization diagnostics, and leave unrelated peers untouched.
+- Preserve successful GPU dispatch work when a later fused region dispatch
+  faults, recover only the exact unprocessed source-byte intervals through the
+  scalar trigger path, stop issuing work to the faulted route for that request,
+  and return a typed complete-recovery receipt to orchestrators.
+- Require explicit 8x8 service context before the 8x8 detector claims a generic
+  `X-Api-Key` header, removing cross-service false attribution and unrelated
+  phase-two work.
+- Require the documented X2Y2 API host before its detector claims a generic
+  `X-API-KEY` header.
+- Remove or service-anchor generic API-header patterns for OpenSea, Omnisend,
+  Passbase, Skyscanner, and Moosend so another provider's key is not
+  misattributed.
+- Remove orphan generic API-header routing keywords from Dacast and Drata.
+- Reuse fused VYRE positions for always-active phase-two anchors when the
+  measured route disables keyword-anchor localization, eliminating the
+  duplicate host Aho-Corasick walk while retaining raw/normalized boundaries.
+- Compile the fused literal matcher with VYRE's native ASCII-insensitive DFA
+  and preserve raw source bytes through borrowed, coalesced, and windowed GPU
+  dispatches, removing KeyHog's duplicate host lowercase pass and its single-
+  chunk/window copies.
+- Replay a dense VYRE resident fused literal scan once at the exact device
+  match count instead of failing autoroute calibration at the fixed 65,536-hit
+  readback ceiling; partial positioned evidence remains impossible.
+
+- Replace the ambiguous phase-two localizer route bit with explicit
+  plain-pattern and keyword-anchor choices. Autoroute now calibrates, persists,
+  validates, inspects, and benchmarks all four plans per eligible backend;
+  cache schema 41 and crossover schema 8 reject the incomplete older evidence.
+
+- Apply the resolved scan `entropy_threshold` to named-detector heuristic
+  confidence instead of silently scoring those findings at the compiled default.
+
+- Score entropy fallback findings from the owning detector TOML's compiled
+  `entropy_high` and `entropy_very_high` tiers instead of scanner-global tiers.
+- Apply detector-owned known-example, repeated-block, and ambiguous-encoding
+  policy to structural password fields. Random connection-string passwords
+  remain visible while examples and placeholders stay suppressed.
+
+- Resolve entropy versus named findings from the active compiled detector plan,
+  not detector-ID spelling. Custom named detectors whose IDs resemble a
+  fallback namespace no longer lose valid findings during resolution or
+  decoded-content adjudication.
+
+- Canonicalize execution-equivalent ML candidates by detector, credential,
+  source offset, and producer channel before batch inference. Duplicate
+  accelerator lanes now share one pending row without merging distinct pattern
+  and entropy evidence.
+
+- Let confirmed extraction see hot-prefix findings that are awaiting batch ML,
+  not only findings already in the final heap. This prevents the same canonical
+  hot candidate from being regex-extracted and ML-featurized twice while
+  preserving one final candidate identity.
+
+- Attribute the coalesced Hyperscan trigger scan to phase one in the unified
+  profiler, so isolated backend-route profiles include the CPU accelerator work
+  that precedes the shared extraction tail. Attribute the phase-two plain
+  localizer's candidate collection, verification, and anchorless extraction to
+  their existing profiler stages instead of leaving that route's dominant work
+  outside the profile tree.
+
+- Keep crossover selection and held-out timing free of profile instrumentation,
+  then emit isolated scanner profiles for every Hyperscan localization plan and
+  the selected exact GPU route instead of one misleading aggregate report.
+  Successful coalesced CPU, Hyperscan, and GPU scans now share one logical-input
+  accounting boundary, including exact-once accounting after GPU recovery.
+
+- Make the official 8 MiB crossover gate select a GPU route from all phase-two
+  localization plans, then compare it in fresh held-out trials against every
+  parity-correct Hyperscan plan. The release verdict uses the fastest Hyperscan
+  observation in each paired trial; schema-v7 evidence records the
+  full comparison set, and release runs cannot force one diagnostic mode.
+
+- Add an explicit unprofiled `--diagnostic` crossover mode. It can measure the
+  exact 8 MiB route set from a dirty shared tree but can never set
+  `production_comparable` or `crossover_passed` in schema-v7 evidence.
+
+- Carry phase-two plain-pattern localization as an immutable per-request
+  execution route through CPU, Hyperscan, CUDA, WGPU, windowing, decode,
+  fragment recovery, and boundary reassembly. Concurrent autoroute requests no
+  longer need to mutate scanner-global tuning to select this path.
+
+- Route the profiled Elasticsearch, ip-api, 8x8, Carbon Black, GovTech,
+  SimpleAnalytics, SentinelOne, and MX API patterns through detector-owned
+  required anchors instead of scanning them as always-active phase-two regexes
+  on every chunk; when the plain-pattern localizer owns ASCII candidates, skip
+  the redundant full Hyperscan marking pass.
+
+- Require one compiled detector plan throughout isolated-bare admission and
+  entropy-fallback adjudication; remove optional scanner-default policy plus
+  duplicate entropy-shape and execution-policy inputs.
+
+- Evaluate the bare-`auth` generic bridge and its repeated-block suppression
+  through the active detector's compiled plausibility policy instead of
+  scanner-owned fallback constants, with the adversarial property suite wired.
+
+- Refuse release-comparable 8 MiB crossover evidence unless both the build and
+  publication worktrees are clean at the recorded commit. Schema-v7 artifacts
+  record both states, so a binary compiled from dirty source cannot become
+  release evidence after the worktree is cleaned without rebuilding.
+
+- Compile the keyword-free operator entropy margin from the owning detector
+  TOML instead of applying a scanner-owned `+ 1.0` threshold adjustment.
+
+- Bind the canonical 8 MiB crossover artifact to its exact parity result count,
+  and keep the backend guide synchronized with the current checked RTX 5090
+  evidence instead of the superseded near-parity run.
+- Restrict source-file entropy extraction to unclaimed same-line credential
+  assignments, matching the existing emission contract and removing the
+  whole-file entropy tail without changing dogfood rejection visibility.
+
+- Compile AST-proven per-pattern `required_literals` from detector TOML into
+  the shared scalar, Hyperscan, CUDA, and WGPU trigger plan. DeepL `:fx` and URL
+  `://` ownership remove the last two ASCII always-active regexes, replacing a
+  fixed 64-of-2,754 GPU phase-two budget with a complete ASCII prefixless plan.
+- Compose per-row prefixless completeness with fused anchor absence for every
+  eligible ASCII row, including phase-one-triggered rows, and bypass the
+  redundant Hyperscan always-active prefilter only when both proofs hold.
+  Generic, entropy, multiline, decode, normalized-text, ML, recovery, oversized,
+  non-ASCII, and incomplete work retains its canonical owner. Normalized rows
+  discard raw GPU hints and positions and recompute phase-one admission.
+- Keep fused GPU literal accounting feature-correct so portable scanner builds
+  compile without referencing GPU-only positioned-evidence fields.
+- Make Amazon Music, Checkmarx, Huawei Cloud, and Vonage Video confidential
+  secrets the detector-owned primaries. Their client IDs, access-key IDs, and
+  API keys are exact optional companions and no longer emit standalone secret
+  findings; verification now receives the corrected primary and companion
+  roles.
+- Compile generic execution and final resolution from detector `kind` and the
+  active typed plan rather than reporting service names or detector-ID length.
+  Anchored detectors that report `service = "generic"` remain named, unknown
+  active-plan identities fail visibly, equal generic ownership is stable across
+  corpus order, and duplicate vendor-suffix owners are rejected.
+- Treat SaltStack and Alertmanager usernames, GoTo client IDs, and Rapyd access
+  keys as optional detector-owned companions. Only their password, client
+  secret, or secret key is a primary finding, and companion evidence can no
+  longer be erased by the generic identifier shortcut.
+- Run the 10,667-case detector adversarial corpus and its handwritten boundary
+  suite through a standalone Cargo target. Slack fixtures now exercise
+  non-placeholder identifiers and exact declared segment boundaries.
+- Upgrade the exact VYRE dependency set to 0.6.5 and replace the resident
+  presence-only dispatch with one fused presence-and-position dispatch. The
+  detector-derived matcher now supplies complete confirmed-anchor and generic
+  keyword positions to the shared phase-two tail without a second GPU pass;
+  match-output overflow remains a visible recoverable GPU fault rather than a
+  partial result.
+- Compile each scanner's generic-assignment line prefilter from the exact
+  detector corpus that produced its assignment regex. Custom detector corpora
+  no longer lose candidates to the embedded corpus's global keyword stems. The
+  same active keyword plan now produces the fused VYRE positioned literals, so
+  custom detector assignments stay GPU-accelerated without a compatibility
+  flag or embedded-vocabulary fallback.
+- Replace regex-text weak-anchor inference with explicit detector and
+  pattern-local TOML policy. Confidence floors no longer disable structural
+  protection, and the suppression path no longer reclassifies service/generic
+  ownership from detector IDs. Pattern-local model conditioning remains
+  disabled until training records carry the exact matched-pattern policy
+  identity.
+- Compile detector entropy-floor buckets into detector-indexed primitive lookup
+  tables. Named, weak-anchor, and generic hot paths no longer walk optional TOML
+  fields or inject a scanner-owned floor per candidate; missing weak-anchor
+  policy fails scanner construction. Twenty-seven structurally derived weak
+  anchors now declare their floor and high threshold in their own TOMLs.
+- Include regex entropy owners when compiling the generic assignment generator.
+  A focused corpus containing only a regex owner now executes its declared
+  keyword, length, entropy, and identity policy instead of disabling the bridge.
+- Match detector-local public-identifier assignment markers directly against
+  source bytes with allocation-free ASCII case folding instead of uppercasing
+  an entire source line for every entropy candidate.
+- Move blockchain/network public-identifier assignment markers from a shared
+  scanner rule into each entropy detector TOML, allowing each secret family to
+  tune or disable the suppression independently.
+- Require and compile `max_len` for every generic entropy-policy owner,
+  including regex owners such as `generic-password`, so assignment ownership
+  cannot win and then silently drop because its runtime length policy is absent.
+- Compile keyword-free, isolated-bare, and unclaimed-keyword entropy entry
+  roles from the owning detector TOMLs. Custom corpora no longer activate
+  built-in generic detector IDs or scanner-side entropy defaults when a role
+  is absent, and duplicate role owners fail scanner construction.
+- Make every weak-anchor detector own its length-bucketed entropy floor and
+  high threshold. Named weak anchors no longer borrow `generic-api-key`
+  calibration, so tuning one service cannot change another detector.
+- Select ML checkpoints against recall-sensitive validation-class gates before
+  aggregate F1. The leakage-free test split remains untouched, while rare
+  authoritative classes can no longer be lost by an aggregate-only epoch choice.
+- Group strict entropy plausibility floors and shape switches in each owning
+  detector's required `plausibility` policy. Compiled assignment and isolated
+  paths now use the same detector policy, including repeated-block,
+  identifier, dash-segment, and alphabetic-credential decisions.
+- Refuse ML model writes when a recall-sensitive detector channel lacks
+  positive or negative held-out evidence, misses its recall floor, or regresses
+  against the shipped model card. The build summary now exposes real precision,
+  recall, F1, floor recall, and zero-recall detector count instead of hiding
+  detector failures behind aggregate metrics.
+- Condition the 55-feature ML scorer on the exact detector TOML owner,
+  pattern-versus-entropy channel, and detector-owned entropy family. Training
+  and parity records now fail on missing or inconsistent detector identity,
+  and detector balancing applies only where `blend` or `authoritative` model
+  policy can reduce recall.
+- Cover every authoritative entropy family with positive synthetic training
+  records, including long fixture values and service-named API-token contexts,
+  instead of training some TOML families only as negatives.
+- Compile ML match mode, entropy mode, weight, and context radius from each
+  detector TOML. Generic assignments now use the same pending batch and CPU/GPU
+  model path as regex and entropy candidates. The explicit `lift` mode applies
+  weighted positive model evidence without letting an uncalibrated model veto
+  structural matches; calibrated detectors can select bidirectional `blend` or
+  model-authoritative scoring. `--ml-weight` remains a visible scan-wide
+  diagnostic override.
+- Remove scanner-side generic-assignment identity and length defaults. Every
+  phase-2 candidate must resolve to a compiled detector owner with declared
+  `min_len` and `max_len`; an incomplete owner fails scanner construction or
+  is surfaced and dropped instead of inheriting synthetic scanner policy.
+- Score the ML pending queue directly instead of allocating a borrowed
+  candidate vector and then copying the queue into a second vector. Pending
+  matches now borrow their zeroizing `RawMatch` credential instead of retaining
+  a second plaintext credential allocation. Small and GPU-sized batches retain
+  the same model inputs, cardinality checks, and CPU/GPU score policy.
+- Keep one parsed owner for ML file/context markers instead of cloning every
+  marker family into separate lazy vectors.
+- Compute each queued candidate's 55 model features once while its source
+  context is hot, using reusable per-thread context storage that is zeroized
+  after extraction. Postprocess and GPU dispatch now consume the stored feature
+  vector instead of retaining a formatted context string and extracting the
+  same features later.
+- Compile each active generic detector's complete entropy, plausibility,
+  isolated-shape, and BPE policy once during scanner construction. Active
+  owners with missing policy fields now fail construction instead of reading
+  scanner-side defaults, and hot candidate paths consume concrete compiled
+  values rather than repeatedly resolving optional schema fields.
+- Preserve parent JavaScript context and exact source provenance for static
+  XOR and Node AES recoveries, matching the existing CryptoJS and reverse/Base64
+  recovery paths.
+
+- Resolve generic assignment entropy overrides against the owning detector's
+  TOML `entropy_high` policy instead of the global fallback threshold.
+- Make `ScannerConfig::thorough()` a distinct bounded recovery policy. It scans
+  entropy candidates in source files, retains heuristic evidence alongside ML,
+  removes comment confidence penalties, and admits one complete 1 MiB
+  production chunk into decode-through.
+- Add bounded static JavaScript recovery for embedded XOR and AES-256-CBC
+  expressions. Decode-enabled scans evaluate only the recognized
+  side-effect-free grammar and reject dynamic operands, mismatched bindings,
+  invalid padding, non-UTF-8 plaintext, and oversized inputs. SIMD and portable
+  CPU entry paths share the same static-XOR decode admission.
+- Accept decimal and hexadecimal byte literals in bounded JavaScript XOR arrays.
+  Mixed-radix values preserve exact recovery while overflow and expressions
+  remain rejected without evaluation.
+- Recover checksum-valid known-prefix credentials assembled from JavaScript
+  string arrays followed by an empty-separator `.join("")`, even when the
+  temporary variable name is obfuscated. Non-empty separators and arrays that
+  produce no known credential prefix remain outside this recovery path.
+- Keep immutable VYRE region-presence tables resident across GPU batches.
+  Scanner-owned capacity grows from the live workload, concurrent calls cannot
+  interleave mutable device buffers, and host staging allocations are zeroized.
+- Return one empty result row per empty input chunk without issuing a zero-byte
+  GPU dispatch. Mixed empty and nonempty region batches retain backend parity.
+- Correct the 8 MiB crossover gate and size-pattern sweep to compare explicit
+  production scalar, coalesced Hyperscan, and resident GPU routes with full
+  finding parity. Historical per-chunk SIMD evidence is marked noncomparable.
+- Rename the production GPU health API from the obsolete AC-kernel name to
+  `gpu_region_presence_self_test`, matching the live VYRE region-presence path.
+  Its structured failure remains available to health reporters, library scan
+  entry points return it as a typed error, and the CLI maps it to exit `12`.
+- Rename the VRAM-adaptive live buffer budget to `gpu_batch_input_limit` and
+  move its owner to `gpu_input_budget.rs`.
+- Remove detector-ID constants used only by their own tests; runtime-specific
+  identifiers remain centralized only where production scanner behavior
+  consumes them, while detector membership stays in detector TOML.
+- Remove the unused test-only MoE shader re-export; GPU tests consume the
+  existing testing facade and the backend imports the shader owner directly.
+- Make the no-backend library APIs `scan` and `scan_coalesced` deterministic
+  portable CPU references; Hyperscan/GPU execution now requires an explicit
+  backend or the CLI's persisted fastest-correct autorouter.
+- Keep cross-chunk boundary reassembly on the shared portable correctness tail
+  instead of making a second hardware-heuristic routing decision.
+- Keep fixed high-tier GPU routing conservative at 128 MiB (256 MiB for a
+  single-file override). The historical 8 MiB RTX 5090 artifact used a slower
+  per-chunk SIMD entry point and is not production crossover evidence. Exact
+  cold-versus-daemon decisions belong to persisted autoroute calibration.
+- GPU MoE buffer pool: reuse input/output/staging wgpu buffers across MoE
+  dispatches via a global `LazyLock<Mutex<MoeBufferPool>>`, eliminating
+  per-dispatch buffer allocation (the dominant non-GPU overhead for large
+  MoE batches in coalesced scanning). The params buffer remains per-dispatch
+  to prevent concurrent batch_size races. Pooled buffers grow to the
+  high-water mark and are reused for smaller batches via sized slicing.
+- Fix pre-existing `simdsieve_prefilter` compilation errors: add
+  `build_hot_pattern_validators` (plural), `HOT_PATTERNS`, and
+  `HOT_PATTERN_DETECTOR_IDS` computed from embedded detector specs via
+  `LazyLock` with leaked `'static` slices. Add standalone
+  `hot_pattern_index_at` test helper that doesn't require a compiled scanner.
+- Reduce the backend surface to `gpu`, `simd`, and `cpu`; the CLI owns `auto`
+  through persisted fastest-correct routing evidence. MegaScan and
+  implementation-name aliases no longer map to a live route.
+- Reduce `MAX_SCAN_CHUNK_BYTES` from 1 MiB to 384 KiB, enabling 32-thread
+  parallelism on large inputs without OOM. Window size stays at 1 MiB to
+  preserve adversarial parity.
+- Add fast line-level prefilter to `scan_keyword_free_candidates` that
+  skips lines below `max_entropy_run` threshold before entering the
+  expensive entropy computation. The prefilter is conditionally disabled
+  when dogfood telemetry is active to preserve suppression-event recording.
+- Promote `debug_assert!` to `assert!` for the line-offset invariant in
+  `find_entropy_secrets_with_lines` and
+  `find_entropy_secrets_with_precomputed_keywords_and_policy`. The
+  fail-closed behavior must hold in release builds, not only debug.
+- Fix pre-existing build errors in `gpu_region_dispatch.rs`: add missing
+  `report_positioned_gpu_candidate_loss` helper and
+  `scan_gpu_literal_matches_with_scratch` function. Add `marked` field
+  to `Phase2GpuDfaAdmission` initializers.
+- Fix pre-existing test compile errors in
+  `gpu_presence_bit_partition.rs`: remove assignments to non-existent
+  `confirmed_anchor_literal_count` and `generic_keyword_literal_count`
+  fields on `CompiledScanner`.
+
+- Add detector-owned BPE token-efficiency policy through
+  `bpe_max_bytes_per_token` in detector TOML. Generic and entropy fallback
+  paths resolve the same owning detector before applying the gate; detector
+  policy takes precedence over the compiled fallback, while an explicitly set
+  scan TOML/CLI value remains the final visible Tier-A override. Invalid
+  non-positive/non-finite bounds fail closed,
+  and the field participates in the detector digest used by caches and
+  calibration identity. Opaque generic API-key/secret policies use the measured
+  2.3 ceiling across assignment, entropy, and explicit regex-envelope paths
+  when the `entropy` feature supplies the tokenizer; password/passphrase-oriented
+  policies explicitly disable the
+  word-likeness rejection so human-chosen phrases do not become false negatives.
+- Add the `aws-bedrock-api-key` detector (critical), long-term AWS Bedrock
+  API keys (`ABSK` prefix + the deterministic `QmVkcm9ja0FQSUtleS` base64
+  anchor + 110-char body, 132 chars total; AWS's own published form). The
+  anchor encodes "BedrockAPIKey" and is effectively unique, so precision is
+  anchor-driven (defensive `min_confidence = 0.2` floor since the fixed anchor
+  dilutes entropy scoring). Not checksum-gated. Detector count 900 → 901.
+  Contract-locked by `crates/scanner/tests/contracts/aws-bedrock-api-key.toml`
+  (positives, anchor/length negatives, header + comment evasions). Short-term
+  `bedrock-api-key-` keys are deliberately omitted (their body is not
+  authoritatively bounded (soundness over reach)).
+- Fix a dead contract gate: `every_contract_readme_claim_present` had been
+  passing vacuously. A `readme_claim` written after a contract's `[perf]`/
+  `[scale]` header binds to that TOML table, not the Contract, so serde
+  silently dropped it and every contract's claim parsed as `None`: the gate
+  checked nothing (and "stripe" never matched README's "Stripe"). Moved the
+  six real `readme_claim`s to the top-level scalar position, corrected the
+  `stripe`→`Stripe` claim, added `#[serde(deny_unknown_fields)]` to the perf
+  and scale budget structs so a future misplacement is a loud parse error
+  instead of a silent drop (Law 10), and added a liveness floor (`checked >=
+  6`) so the gate can't regress to vacuous.
+- De-duplicate the detector-count claim (was denormalized across 782 places):
+  removed the `readme_claim = "900 service-specific detectors"` stamp from 781
+  per-detector contracts and made the count derive from `load_detectors()` in
+  one place: `readme_claims::readme_claim_detector_count` (README + banner),
+  `contract::readme_detector_count` (disk == loader, no literal), and the
+  `e2e_binary` banner test (binary == loaded corpus). Adding a detector now
+  touches only the new TOMLs + the human-facing README/banner, with no
+  test-literal or 781-file churn.
+- Byte-cap the per-match context windows (`local_context_window` ML context to 8 KiB, `context::inference::surrounding_line_window` FP context to 2 KiB). Previously each candidate's context was the whole containing line; on a line with no `\n` for kilobytes (minified bundles, or a file that is one long run of credential-shaped tokens) the per-match ML feature / FP keyword scan was O(line_len), making a many-match scan quadratic (a 164 KiB single-line file with 8 K matches took ~18 s). The caps make per-match context O(1) and noticeably speed ordinary minified-bundle scans. Behavior-preserving for normal source, a short line hits its newline well before the cap, verified by byte-identical mirror-corpus findings (F1 0.9167, 2564 findings) and the full scanner suite. Regressioned by `unit/a3_pipeline/local_context_window_caps_long_line`. (A residual super-linear cost remains when a single file carries thousands of distinct credential-shaped matches; bounded in practice by `--timeout` and the 1M-iteration-per-pattern cap.)
+
+- Fix windowed-scan line attribution: findings in files past the 1 MiB
+  windowing threshold (`filesystem/windowed`) reported the per-window line
+  instead of the absolute file line, so a secret on line 584307 of a 70 MiB
+  file was reported at line ~2 (and reported lines were non-monotonic). Added
+  `ChunkMetadata::base_line` (the line analog of `base_offset`), populated
+  per-window by the filesystem source (mmap + buffered paths) and the
+  cross-window boundary reassembler, and added it at every line emit site
+  (primary, entropy fallback, generic-secret, multiline reassembly, decode
+  pipeline, and the simdsieve hot path). Byte offsets were already absolute;
+  this brings line numbers to parity. Regressioned by
+  `cli/tests/regression/windowed_line_numbers.rs`.
+- Remove the orphaned `pipeline/postprocess/raw_match.rs`: a never-compiled
+  stale duplicate of `build_raw_match` (no `mod`/`#[path]` referenced it),
+  superseded by the `pattern_client_safe`-aware constructor in
+  `pipeline/postprocess/mod.rs`.
+- Align Vyre usage docs with the workspace-pinned crates.io `vyre` 0.6.1 release and add a scanner gap test that fails on stale Vyre pin/documentation claims.
+- Fix stale `RawMatch` scanner test fixtures to use the production `[u8; 32]` credential hash contract.
+- Split structured parser implementations by format family and move remaining parser inline tests into the external scanner test harness.
+- Add a GPU phase2 empty-hit fast path matching SIMD coalesced no-hit fallback admission, with a regression gate for the skip-before-prepare contract.
+- Preserve detector regex case-insensitivity when lowering prefixless phase-2
+  admission patterns into the GPU regex-DFA catalog; plain variants stay
+  case-sensitive, and replay tests compare the lowered DFA admission result
+  against the CPU `LazyRegex` policy.
+- Select bounded GPU regex-DFA admission candidates by detector breadth before
+  generated homoglyph variants instead of taking the first source-order slice;
+  the catalog budget is now expressed as shard count x shard width.
+- Tighten the GPU region-presence host lowercase staging helper to reserve once
+  and write folded bytes directly into spare vector capacity, preserving
+  `make_ascii_lowercase` semantics without a `Vec::push` per byte.
+- Make the boolean no-hit phase-2 admission gate honor the proven ASCII
+  homoglyph-variant skip, avoiding extra phase-2 work on pure-ASCII chunks that
+  are already covered by the base AC path.
+- Tighten GPU phase-2 DFA coalesced-region attribution so matches on or through
+  the synthetic NUL separator between chunks cannot over-admit a neighboring
+  chunk into the CPU phase-2 tail.
+- Pack the GPU phase-2 DFA coalesced haystack once per batch and reuse it across
+  DFA shards, removing duplicate O(input) host staging work from sharded
+  admission dispatch.
+- Mark GPU phase-2 DFA admission evidence incomplete when a backend hit cannot
+  be safely attributed to a chunk, keeping `phase2_gpu_complete` honest for
+  separator/cross-region output.
+- Keep high-entropy base64-like secrets with internal `+`/`/` punctuation through generic and entropy fallbacks by bypassing binary-decoy suppression on the punctuation payload class, closing `encoded_binary`-driven false negatives.
+- Add adversarial coverage for the base64 punctuated high-entropy class and a fixed-token regression for `TVo...+...` shape that previously dropped at `is_encoded_binary`.
+- Detect current variable-length Clerk publishable keys by their documented
+  base64-encoded FAPI URL form instead of requiring an obsolete exact 32-byte
+  alphanumeric body; findings remain explicitly client-safe.
+- Keep two S3-compatible access-key bodies case-sensitive inside their
+  detector TOMLs while preserving case-insensitive environment-key anchors,
+  preventing lowercase identifiers from satisfying documented uppercase
+  credential alphabets.
+- Apply the canonical Octopus Deploy key alphabet to assignment and header
+  patterns too, so context cannot admit lowercase keys or pure documentation
+  words that the bare-key pattern correctly rejects.
+- Preserve Akoya client-credential findings for mixed-case config keys by
+  declaring the required companion anchor caseless in its detector TOML;
+  simplify the already-caseless primary regex to one canonical spelling.
+- Preserve Twilio IoT credential pairs for lowercase config keys by applying
+  case folding to the required companion anchor, while keeping the credential
+  body alphabet detector-owned and simplifying redundant primary alternations.
+- Preserve Twilio API-key pairs for mixed-case secret field names by folding
+  only the detector-owned companion anchor, without widening the credential
+  body's declared alphabet.
+- Capture mixed-case AWS and GovCloud secret/session fields without widening
+  their credential bodies, so temporary ASIA credentials reach SigV4 with the
+  required session token; keep GovCloud access-key IDs uppercase-only and
+  reject overlong runs instead of truncating them into findings.
+- Make Spotify's companion secret-specific and capture only its value, so a
+  client ID cannot attach itself as a credential pair; collapse redundant
+  uppercase/lowercase primaries under the shared caseless compiler.
+- Migrate the stale FedEx companion fixture into its normal detector contract
+  and reject companion contracts whose detector declares no companions, so
+  generated test shape cannot masquerade as production verification wiring.
+- Make LiveKit's companion secret-specific so long API keys cannot self-attach
+  as secrets, deduplicate caseless primary regexes, and let companion contracts
+  explicitly declare when a companion shape is also a valid standalone primary.
+- Make Ceph access keys self-delimiting so 40-character secret values cannot be
+  truncated into 20-character access-key findings, while preserving Ceph's
+  valid user-defined mixed-case access keys and correcting the contract prose.
+- Model Five9 API secrets as intentional standalone primaries in the companion
+  corpus, while proving API-key-only findings cannot fabricate the nearby
+  secret required for credential-pair verification.
+- Make AWS SES SMTP field anchors consistently caseless while preserving the
+  uppercase access-key alphabet, reject overlong username/password prefixes
+  instead of truncating them, and model password-only findings honestly.
+- Make Olark's companion token-specific and capture only its value, so an API
+  key cannot self-attach as its own pair; preserve standalone token detection
+  and reject overlong hexadecimal runs instead of truncating them.
+- Make Genesys Cloud's companion client-secret-specific and capture only its
+  value, so a client ID cannot self-attach; preserve standalone secret findings
+  and reject overlong UUID-like client IDs instead of truncating them.
+- Treat Payoneer client IDs as companion context instead of standalone secrets,
+  capture their exact value beside a client-secret primary, and reject invalid
+  token continuations without limiting legitimate variable-length secrets.
+- Preserve standalone Gravity Forms private-key detection while proving public
+  keys cannot self-attach, accepting mixed-case hexadecimal keys, and rejecting
+  overlong hexadecimal runs instead of truncating them.
+- Keep Checkmarx client secrets detectable on their own while making them the
+  exact companion to UUID client IDs; use role-specific anchors and reject
+  overlong UUID/token continuations without losing secret recall.
+- Model Cloudinary URLs as the self-contained credentials they are, remove the
+  fabricated companion contract, capture the exact URL without its delimiter,
+  and reject invalid cloud-name continuations instead of truncating them.
+- Treat M-Pesa consumer keys as companion context for consumer-secret findings,
+  preserve standalone API-key detection, capture the exact paired key, and
+  reject invalid underscore/hyphen continuations instead of truncating them.
+- Make Tumblr's companion consumer-secret-specific while preserving standalone
+  secret findings, and reject alphanumeric, underscore, and hyphen extensions
+  whole instead of reporting a valid-looking 50-character prefix.
+- Make Marvel's primary and companion explicitly private-key/public-key roles,
+  so a private key cannot self-attach and public identifiers do not become
+  standalone secret findings; reject overlong hexadecimal key runs.
+- Replace Amazon Music's broad context companion with the exact 64-hex client
+  secret, preserve standalone secret findings, normalize caseless field anchors,
+  and reject client-ID/secret continuations instead of truncating them.
+- Remove Worldpay's service-name pseudo-companion, migrate its useful fixtures
+  into the normal contract, classify service/merchant IDs as low-severity
+  identifiers, and reject overlong or continued ID tokens whole.
+- Remove Nuvei's self-attaching and invented merchant companions while preserving
+  standalone API-key and API-secret recall, and reject invalid continuations
+  instead of emitting hexadecimal prefixes.
+- Treat Mangopay API keys/passphrases as primaries and client IDs as exact
+  companion context, with mixed-case, minimum-length, unbounded valid-length,
+  and invalid-continuation contracts.
+- Treat Tawk.to API keys as primaries and public site/property IDs as exact
+  companion context, so API keys cannot self-attach and continued key prefixes
+  are rejected whole.
+- Preserve standalone Exoscale API-secret findings explicitly while keeping API
+  keys self-delimiting, so fixed-length key prefixes cannot be truncated from
+  longer tokens.
+- Make BigCommerce store hashes exact public companion context for `bbc_` access
+  tokens, remove store hashes as critical standalone findings, and reject token
+  continuations whole.
+- Treat Avaya client secrets/API keys as primaries and public OAuth client IDs
+  as exact companion context, removing critical standalone identifier findings
+  and rejecting continued secret prefixes.
+- Make env0 key IDs self-delimiting, capture API-secret companions exactly, and
+  explicitly preserve standalone secret findings.
+- Capture FastSpring password companions by exact value and explicitly preserve
+  password-only findings without letting username primaries self-attach.
+- Make GCS HMAC companions secret-field-specific instead of matching arbitrary
+  base64/access-ID substrings, and reject overlong `GOOG` access IDs whole.
+- Remove Jumio's accidental companion capture of the role label, capture the
+  exact secret value, preserve secret-only findings, and reject continued
+  credential prefixes.
+
+#### Source adapters
+
+- Let all four WebSource DNS-screening workers wait on and consume the bounded
+  job queue concurrently instead of serializing receives behind one mutex.
+- Add GitLab group and Bitbucket workspace source backends through a shared
+  hosted-git clone/scan owner, moving git-error redaction out of the GitHub-only
+  module so every forge source redacts clone failures through the same control.
+- Fix `--git-diff` and `--git-history` line attribution: both sources
+  concatenated every added line of a file into one chunk and discarded the
+  `@@ … +new_start @@` hunk header, so every finding was reported at line 1
+  instead of its real new-file line (a pre-commit/CI workflow, and history
+  forensics, pointing nowhere near the leak). Both now run `-U0` and emit one
+  chunk per hunk carrying `base_line = new_start - 1` (parsed by the shared
+  `git::parse_hunk_new_start`), so the scanner reports the absolute new-file
+  line. Regressioned by `git_diff_chunks_carry_absolute_base_line_per_hunk`
+  and `git_history_later_commit_addition_carries_absolute_base_line`.
+- Populate `ChunkMetadata::base_line` on the filesystem windowed path (mmap +
+  buffered) so findings in files past the 1 MiB window size report the
+  absolute file line, not the per-window one (paired with the scanner-side
+  emit-site fix).
+- Run filesystem reading on a dedicated Rayon pool so bounded-channel backpressure cannot starve scanner work on the global Rayon pool during large-tree scans.
+
+#### Live verifier
+
+- Normalize missing schema-1 verifier success policy to
+  `status_with_error_backstop`, require an explicit policy in schema 2, and
+  reject forward schema versions. Corpus identity binds the normalized schema
+  so equivalent detector fields under different schemas remain distinct.
+- Redact verifier proxy credentials, query parameters, percent-decoded secrets,
+  and parser source text from invalid-URL errors. Diagnostics include only a
+  safely parsed scheme and host or the generic invalid-proxy message.
+
+#### Release engineering, benchmarks, and documentation
+
+- Add a dedicated crates.io publication workflow that proves the exact tag, checks out hardened automation separately from tagged source, verifies the public GitHub release before credential use, and resumes an interrupted five-crate publication by validating immutable registry archives.
+- Stage signed release assets in one immutable private draft, bind the release ID and source commit in a signed receipt, and expose the release only after candidate smoke, container publication, and receipt verification succeed.
+- Run the signed Linux candidate through checksum and Minisign verification, offline installation, `doctor`, and an exact finding/redaction scan before any GitHub release or GHCR mutation becomes public.
+- Verify the pushed GHCR multi-architecture manifest by digest and platform, publish `latest` only for the newest stable release, and move the floating `v0` action tag only after the immutable release is public.
+- Make release-ref GitHub Action installs require the signed binary, signed GPU literal sidecar, checksums, and matching release identity before scanning.
+- Declare canonical benchmark run sets and baselines in TOML. Reports reject stale or mixed executable, detector, corpus, host, recovery, and run-set provenance instead of silently selecting convenient results.
+- Record Bloom prefilter density, saturation, rejection, parity, and corpus evidence in benchmark artifacts, `doctor`, and `explain`; missing named-corpus evidence remains visibly unproven.
+- Generate deterministic GPU literal archives and validate archive paths, entry types, expansion limits, manifest identity, filenames, and byte lengths before installation.
+- Pin documentation tooling by checksum, validate links and CLI claims, preserve byte-identical generated benchmark blocks during version bumps, and require substantive per-crate changelog entries before release.
+- Serialize release retries by immutable tag without cancelling active publication. Repeated runs reuse exact public releases without mutating verified assets.
 
 ## [0.5.45] - 2026-07-22
 

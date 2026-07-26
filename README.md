@@ -22,7 +22,7 @@ without hand-written runtime configuration. After verified-install calibration,
 `keyhog scan .` works with the canonical defaults; a source-built multi-backend
 binary first runs `keyhog calibrate-autoroute`.
 
-The binary banner is `v0.5.46 · secret scanner · 923 detectors`; its
+The binary banner is `v0.5.47 · secret scanner · 923 detectors`; its
 compiled progress line reports `923 detectors (5822 patterns)` together with
 the operator-visible route (for example, `backend=simd-regex | gpu=none`).
 
@@ -185,7 +185,7 @@ does not need Hyperscan).
 
 ```bash
 # Linux / macOS, pinned and authenticated before execution
-TAG=v0.5.46
+TAG=v0.5.47
 BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
 PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
 curl -fSLO "$BASE/install.sh"
@@ -227,6 +227,10 @@ and **Windows x86_64**. Linux and Windows arm64 release assets are not
 produced. Verified installers calibrate multi-backend builds before enabling
 default automatic scans; a source build must run `keyhog calibrate-autoroute`
 first or use an explicit diagnostic backend.
+For deterministic POSIX automation that uses an explicit backend, you can pass
+`--no-calibrate`. Verification and the installed-binary health check still run,
+and the installer warns that you must run `install.sh --calibrate` before
+relying on automatic routing.
 
 The installer selects one asset per OS/architecture. The Linux x86_64 binary
 contains Hyperscan plus both VYRE CUDA and WGPU drivers; CUDA/NVRTC are loaded
@@ -246,7 +250,7 @@ against the release-side checksum file. The offline `--from-file` path also
 verifies sibling `.minisig` files when present and rejects invalid signatures.
 Passing `--insecure` can accept missing proof, but it never accepts a mismatch.
 
-Pin a version with `KEYHOG_VERSION=v0.5.46`. Change the install dir with
+Pin a version with `KEYHOG_VERSION=v0.5.47`. Change the install dir with
 `--install-dir=/usr/local/bin`. Runtime backend policy belongs to
 `keyhog scan --backend ...`, `[system].gpu`, and autoroute calibration, not the
 installer asset name.
@@ -301,7 +305,7 @@ archive is refused. On a healthy host `keyhog update` is the one-command upgrade
 path. Implicit update/repair resolution ignores drafts and prereleases and
 requires the complete signed host bundle. An explicit `--version <SEMVER>`
 accepts canonical SemVer with an optional leading `v` (for example `0.5.46` or
-`v0.5.46-rc.1`), normalizes it to the exact release tag, and refuses malformed
+`v0.5.47-rc.1`), normalizes it to the exact release tag, and refuses malformed
 or mismatched API responses before any asset download. Network responses are
 bounded and timed out before any installed file is changed.
 

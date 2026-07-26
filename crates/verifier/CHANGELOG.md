@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.47 - 2026-07-26
+
+- Bind the crate release identity to the KeyHog installer-recovery patch so
+  exact internal dependency pins and the published package graph remain
+  coherent.
+
 ## 0.5.46 - 2026-07-24
 
 - Normalize missing schema-1 verifier success policy to

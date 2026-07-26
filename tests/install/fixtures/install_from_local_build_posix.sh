@@ -98,37 +98,40 @@ run_install() {  # args... -> install.sh; output captured to $OUT, status to $RC
 # ==================================================================
 printf '\nA. install --from-file (non-interactive)\n'
 rm -f "$KEYHOG"
-run_install --yes --no-prompt
+run_install --yes --no-prompt --no-calibrate
 [ "$RC" = "0" ] && ok_ "A.1 installer exits 0" || bad_ "A.1 installer exits 0" "rc=$RC; $(printf '%s' "$OUT" | tail -3)"
 [ -x "$KEYHOG" ] && ok_ "A.2 binary placed at install-dir" || bad_ "A.2 binary placed at install-dir"
+printf '%s' "$OUT" | grep -Fq "Skipped autoroute calibration by explicit --no-calibrate." \
+    && ok_ "A.3 explicit --no-calibrate is visible and non-fatal" \
+    || bad_ "A.3 explicit --no-calibrate is visible and non-fatal" "missing skip warning"
 
 if [ -x "$KEYHOG" ]; then
-    "$KEYHOG" --version >/dev/null 2>&1 && ok_ "A.3 installed --version runs" || bad_ "A.3 installed --version runs"
+    "$KEYHOG" --version >/dev/null 2>&1 && ok_ "A.4 installed --version runs" || bad_ "A.4 installed --version runs"
 
     # The native doctor self-test is the real "does this build work on this
     # host" gate: it plants a synthetic secret and confirms detection.
     if "$KEYHOG" doctor >/dev/null 2>&1; then
-        ok_ "A.4 keyhog doctor exits 0 (healthy)"
+        ok_ "A.5 keyhog doctor exits 0 (healthy)"
     else
-        bad_ "A.4 keyhog doctor exits 0 (healthy)" "doctor: $("$KEYHOG" doctor 2>&1 | tail -3)"
+        bad_ "A.5 keyhog doctor exits 0 (healthy)" "doctor: $("$KEYHOG" doctor 2>&1 | tail -3)"
     fi
 
     # Seeded scan: must find the planted secrets and exit 1.
     scan_output=$("$KEYHOG" scan "$WORK/scanme" 2>&1); sc=$?
-    [ "$sc" = "1" ] && ok_ "A.5 seeded scan exits 1 (findings)" || \
-        bad_ "A.5 seeded scan exits 1 (findings)" "exit=$sc; $(printf '%s' "$scan_output" | tail -4)"
+    [ "$sc" = "1" ] && ok_ "A.6 seeded scan exits 1 (findings)" || \
+        bad_ "A.6 seeded scan exits 1 (findings)" "exit=$sc; $(printf '%s' "$scan_output" | tail -4)"
 
     # Clean dir: exit 0.
     mkdir -p "$WORK/empty"
     "$KEYHOG" scan "$WORK/empty" >/dev/null 2>&1; ec=$?
-    [ "$ec" = "0" ] && ok_ "A.6 empty scan exits 0" || bad_ "A.6 empty scan exits 0" "exit=$ec"
+    [ "$ec" = "0" ] && ok_ "A.7 empty scan exits 0" || bad_ "A.7 empty scan exits 0" "exit=$ec"
 
     # SARIF emission is well-formed and carries results.
     sarif_output=$("$KEYHOG" scan "$WORK/scanme" --format sarif --output "$WORK/out.sarif" 2>&1); sarif_rc=$?
     if [ -s "$WORK/out.sarif" ] && grep -q '2.1.0' "$WORK/out.sarif" && grep -q '"results"' "$WORK/out.sarif"; then
-        ok_ "A.7 SARIF output well-formed with results"
+        ok_ "A.8 SARIF output well-formed with results"
     else
-        bad_ "A.7 SARIF output well-formed with results" \
+        bad_ "A.8 SARIF output well-formed with results" \
             "exit=$sarif_rc; $(printf '%s' "$sarif_output" | tail -4)"
     fi
 fi
@@ -143,7 +146,7 @@ $sha_tool "$STAGE/keyhog" | awk -v f="$STAGE/keyhog" '{print $1"  "f}' > "$STAGE
 cp "$ARTIFACT.gpu-literals.tar.gz" "$STAGE/keyhog.gpu-literals.tar.gz"
 $sha_tool "$STAGE/keyhog.gpu-literals.tar.gz" | awk -v f="$STAGE/keyhog.gpu-literals.tar.gz" \
     '{print $1"  "f}' > "$STAGE/keyhog.gpu-literals.tar.gz.sha256"
-OUT=$(sh "$INSTALL_SH" --from-file="$STAGE/keyhog" --install-dir="$PREFIX" --no-color --yes --no-prompt 2>&1); RC=$?
+OUT=$(sh "$INSTALL_SH" --from-file="$STAGE/keyhog" --install-dir="$PREFIX" --no-color --yes --no-prompt --no-calibrate 2>&1); RC=$?
 { [ "$RC" = "0" ] && printf '%s' "$OUT" | grep -q "SHA256 verified"; } \
     && ok_ "B.1 correct sibling .sha256 verifies + installs" \
     || bad_ "B.1 correct sibling .sha256 verifies + installs" "rc=$RC"
@@ -160,7 +163,7 @@ OUT=$(sh "$INSTALL_SH" --from-file="$STAGE/keyhog" --install-dir="$PREFIX" --no-
     && ok_ "B.3 missing sibling .sha256 is refused" \
     || bad_ "B.3 missing sibling .sha256 is refused" "rc=$RC"
 
-OUT=$(sh "$INSTALL_SH" --from-file="$STAGE/keyhog" --install-dir="$PREFIX" --no-color --yes --no-prompt --insecure 2>&1); RC=$?
+OUT=$(sh "$INSTALL_SH" --from-file="$STAGE/keyhog" --install-dir="$PREFIX" --no-color --yes --no-prompt --no-calibrate --insecure 2>&1); RC=$?
 { [ "$RC" = "0" ] && printf '%s' "$OUT" | grep -q "INSECURE"; } \
     && ok_ "B.4 missing sibling .sha256 requires loud insecure override" \
     || bad_ "B.4 missing sibling .sha256 requires loud insecure override" "rc=$RC"
@@ -186,7 +189,7 @@ if command -v expect >/dev/null 2>&1; then
     EXP="$WORK/drive.exp"
     cat > "$EXP" <<EXPECT
 set timeout 120
-spawn sh $INSTALL_SH --from-file=$ARTIFACT --install-dir=$PREFIX --no-color
+spawn sh $INSTALL_SH --from-file=$ARTIFACT --install-dir=$PREFIX --no-color --no-calibrate
 expect {
     -re {[Pp]roceed}     { send "y\r"; exp_continue }
     -re {PATH}           { send "n\r"; exp_continue }

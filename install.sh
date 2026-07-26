@@ -31,6 +31,9 @@
 #   --yes / -y          non-interactive: accept defaults, no prompts
 #   --insecure          allow an install only when release signature/checksum
 #                       proof is unavailable; fetched mismatches still fail
+#   --no-calibrate      install and verify the binary without measuring autoroute;
+#                       explicit backends work immediately, run --calibrate before
+#                       relying on automatic routing
 #   --no-color          disable ANSI colors
 #   --help / -h         show this help and exit
 #
@@ -66,6 +69,7 @@ INSTALL_DIR="$HOME/.local/bin"
 VERSION="${KEYHOG_VERSION:-}"
 FROM_FILE=""
 INSECURE_INSTALL=0
+SKIP_CALIBRATION=0
 MODE="install"
 INTERACTIVE=1
 ASSUME_YES=0
@@ -229,7 +233,7 @@ usage() {
 "" \
 "Modes:  (default) install/upgrade   --repair   --diagnose   --calibrate   --uninstall" \
 "Flags:  --version=vX.Y.Z  --install-dir=PATH" \
-"        --from-file=PATH  --yes/-y  --no-prompt  --insecure  --no-color  --help/-h" \
+"        --from-file=PATH  --yes/-y  --no-prompt  --no-calibrate  --insecure" \
 "Env:    KEYHOG_VERSION  GITHUB_TOKEN  NO_COLOR"
     fi
     exit 0
@@ -247,6 +251,7 @@ while [ $# -gt 0 ]; do
         --yes|-y)          ASSUME_YES=1 ;;
         --no-prompt)       INTERACTIVE=0 ;;
         --insecure)        INSECURE_INSTALL=1 ;;
+        --no-calibrate)   SKIP_CALIBRATION=1 ;;
         --no-color)        USE_COLOR=0 ;;
         --help|-h)         usage ;;
         *)
@@ -1281,7 +1286,10 @@ verify_install() {
             err "Rolling back rather than leaving an install whose health is unknown."
             return 1
         fi
-        if ! prime_autoroute_cache "$INSTALL_DIR/keyhog"; then
+        if [ "$SKIP_CALIBRATION" = "1" ]; then
+            warn "Skipped autoroute calibration by explicit --no-calibrate."
+            warn "Run install.sh --calibrate before relying on automatic routing; explicit --backend routes work immediately."
+        elif ! prime_autoroute_cache "$INSTALL_DIR/keyhog"; then
             err "Autoroute calibration failed; refusing to leave an install whose default auto route is not usable."
             return 1
         fi

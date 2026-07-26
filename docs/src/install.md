@@ -52,7 +52,7 @@ macOS release assets are portable, so run `brew install minisign` and use the
 system `curl`.
 
 ```sh
-TAG=v0.5.46
+TAG=v0.5.47
 BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
 KEYHOG_MINISIGN_PUBLIC_KEY='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
 curl -fSLO "$BASE/install.sh"
@@ -110,7 +110,7 @@ part of the current release contract.
 PowerShell 5+ (ships with Windows 10/11):
 
 ```powershell
-$Tag = 'v0.5.46'
+$Tag = 'v0.5.47'
 $Base = "https://github.com/santhreal/keyhog/releases/download/$Tag"
 $PublicKey = 'RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
 iwr "$Base/install.ps1" -OutFile keyhog-install.ps1
@@ -139,19 +139,20 @@ release.
 
 | Env var / flag                          | Effect                                                        |
 |-----------------------------------------|---------------------------------------------------------------|
-| `KEYHOG_VERSION=v0.5.46` (or `--version=v0.5.46`) | Pin a specific release tag. With no pin, the installer admits only the newest stable release with this host's complete signed bundle; it probes the latest redirect first, then checks recent releases when that proof is incomplete. |
+| `KEYHOG_VERSION=v0.5.47` (or `--version=v0.5.47`) | Pin a specific release tag. With no pin, the installer admits only the newest stable release with this host's complete signed bundle; it probes the latest redirect first, then checks recent releases when that proof is incomplete. |
 | `--install-dir=...`                     | Install into a different directory.            |
 | `GITHUB_TOKEN=...`                      | Optional auth for the fallback GitHub releases API lookup. The normal latest-asset path does not need it. |
 | `--yes` / `-y`                          | Accept the displayed defaults without prompting: PATH setup yes, optional completion and repository hook no. |
 | `--no-color`                            | Disable ANSI colors (e.g. for log capture).                   |
 | `--from-file=/path/to/asset`            | Offline / air-gapped install from a pre-downloaded complete host bundle. The installer verifies each present sibling `.minisig` against the pinned release key and requires sibling `.sha256` files unless `--insecure` accepts missing proof. A present but invalid signature always fails. |
 | `--calibrate`                           | Re-run the installer's visible autoroute calibration sweep against the already-installed binary, without replacing that binary. |
+| `--no-calibrate`                        | POSIX only. Complete binary verification and installation without measuring autoroute. The installer prints a warning. Explicit `--backend` routes work immediately; run `install.sh --calibrate` before relying on automatic routing. |
 | `--insecure`                            | Emergency-only: proceed when signature/checksum *proof is missing*. A present-but-wrong signature or checksum is always fatal, `--insecure` or not. |
 
 The table uses Unix spellings. The PowerShell equivalents are `-Version`,
 `-InstallDir`, `-Yes`, `-NoColor`, `-FromFile`, `-Calibrate`, and `-Insecure`;
 environment variables keep the same names. PowerShell also exposes the matching
-`-Diagnose`, `-Repair`, and `-Uninstall` modes.
+`-Diagnose`, `-Repair`, and `-Uninstall` modes. `--no-calibrate` is POSIX-only.
 
 ### Download integrity
 
@@ -212,6 +213,13 @@ a required calibration probe fails, the install fails rather than leave
 an unavailable external tool, such as Git or a running Docker daemon, are named
 as unavailable; install the tool and rerun `install.sh --calibrate` or
 `install.ps1 -Calibrate` before relying on that source class.
+
+For deterministic automation on a host where timing cannot settle, pass
+`--no-calibrate`. This explicit override still verifies the signed payload,
+checksum, installed binary, and `keyhog doctor` self-test. It leaves automatic
+routing uncalibrated and says so. Use an explicit backend for diagnostic work,
+or run `install.sh --calibrate` on an idle host before relying on automatic
+routing.
 
 Calibration is identity-bound to the KeyHog binary/build, detector and routing
 rules, resolved scan configuration, host/backend capabilities, source class,
@@ -359,7 +367,7 @@ It complements the detached minisign signatures, which remain the installer's
 offline trust root:
 
 ```sh
-TAG=v0.5.46
+TAG=v0.5.47
 gh attestation verify "$ASSET" --repo santhreal/keyhog \
   --signer-workflow github.com/santhreal/keyhog/.github/workflows/release.yml \
   --source-ref "refs/tags/$TAG" --deny-self-hosted-runners

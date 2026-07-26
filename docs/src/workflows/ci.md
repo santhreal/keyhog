@@ -37,7 +37,7 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@v4
-      - uses: santhreal/keyhog@v0.5.46
+      - uses: santhreal/keyhog@v0.5.47
         with:
           path: .
           severity: high
@@ -55,9 +55,9 @@ SARIF report, uploads it to **Security > Code scanning**, and retains the report
 as a workflow artifact. It also writes a job summary and exposes the finding
 count, raw KeyHog exit code, scan status, report status, and duration as outputs.
 
-The example pins the Action code and scanner release to `v0.5.46`. This is the
+The example pins the Action code and scanner release to `v0.5.47`. This is the
 most reproducible choice. `santhreal/keyhog@v0` follows the current v0 release.
-An explicit `version: v0.5.46` installs that scanner release even when the
+An explicit `version: v0.5.47` installs that scanner release even when the
 Action itself is selected by a branch or commit ref. Pin the Action ref as well
 when the workflow must not change without review.
 
@@ -104,7 +104,7 @@ git add .keyhog-baseline.json && git commit -m 'chore: keyhog baseline'
 ```
 
 ```yaml
-      - uses: santhreal/keyhog@v0.5.46
+      - uses: santhreal/keyhog@v0.5.47
         with:
           baseline: .keyhog-baseline.json
 ```
@@ -121,7 +121,7 @@ Use the verified installer when the workflow must own installation explicitly:
           sudo apt-get install -y --no-install-recommends libhyperscan5 minisign
       - name: Install KeyHog
         run: |
-          TAG=v0.5.46
+          TAG=v0.5.47
           BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
           PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
           curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
@@ -203,7 +203,7 @@ keyhog:
   image: ubuntu:24.04
   before_script:
     - apt-get update -qq && apt-get install -y --no-install-recommends curl libhyperscan5 minisign
-    - export TAG=v0.5.46
+    - export TAG=v0.5.47
     - export BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
     - export PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
     - curl -fSLO "$BASE/install.sh" && curl -fSLO "$BASE/install.sh.minisig"
@@ -242,7 +242,7 @@ jobs:
           command: |
             sudo apt-get update -qq
             sudo apt-get install -y --no-install-recommends libhyperscan5 minisign
-            TAG=v0.5.46
+            TAG=v0.5.47
             BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
             PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
             curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
@@ -276,7 +276,7 @@ steps:
     commands:
       - apt-get update -qq
       - apt-get install -y --no-install-recommends curl libhyperscan5 minisign
-      - export TAG=v0.5.46
+      - export TAG=v0.5.47
       - export BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
       - export PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
       - curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
@@ -351,7 +351,7 @@ steps:
     command: |
       sudo apt-get update -qq
       sudo apt-get install -y --no-install-recommends curl libhyperscan5 minisign
-      TAG=v0.5.46
+      TAG=v0.5.47
       BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
       PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
       curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
@@ -378,7 +378,7 @@ pipeline {
                 sh '''
                     sudo apt-get update -qq
                     sudo apt-get install -y --no-install-recommends curl libhyperscan5 minisign
-                    TAG=v0.5.46
+                    TAG=v0.5.47
                     BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
                     PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
                     curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
@@ -403,19 +403,19 @@ pipeline {
 For the composite Action, pin the Action ref:
 
 ```yaml
-- uses: santhreal/keyhog@v0.5.46
+- uses: santhreal/keyhog@v0.5.47
 ```
 
 The ref selects both the Action implementation and, for a release ref, its
 matching scanner release. The floating `@v0` ref follows later v0 releases.
-Using `version: v0.5.46` pins the scanner asset but does not pin Action code, so
+Using `version: v0.5.47` pins the scanner asset but does not pin Action code, so
 do not use it as a substitute for a fixed Action ref.
 
 For a manual installation, authenticate the installer before execution and pass
 the same release tag to it:
 
 ```sh
-TAG=v0.5.46
+TAG=v0.5.47
 BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
 PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
 curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"

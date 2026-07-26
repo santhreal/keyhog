@@ -101,6 +101,7 @@ fn failed_candidate_smoke_leaves_the_release_private() {
             && smoke.contains("sha256sum -c \"$payload.sha256\"")
             && smoke.contains("minisign -Vm \"$payload\"")
             && smoke.contains("--from-file=\"$candidate/keyhog-linux-x86_64\"")
+            && smoke.contains("--no-calibrate")
             && smoke.contains("\"$installed\" doctor")
             && smoke.contains("--backend \"$KEYHOG_EXPECTED_SCAN_BACKEND\"")
             && smoke.contains("scan_status")

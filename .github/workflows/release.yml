@@ -548,7 +548,7 @@ jobs:
             sh "$candidate/install.sh" \
               --from-file="$candidate/keyhog-linux-x86_64" \
               --install-dir="$install_dir" \
-              --yes --no-prompt --no-color
+              --yes --no-prompt --no-calibrate --no-color
           installed="$install_dir/keyhog"
           cmp "$candidate/keyhog-linux-x86_64" "$installed"
 

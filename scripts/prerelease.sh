@@ -197,8 +197,10 @@ apply_version_bump() {
     docs/src/install.md
     docs/src/introduction.md
     docs/assets/keyhog-banner.svg
+    docs/src/reference/oob-verification.md
+    docs/src/verification.md
     docs/src/workflows/ci.md
-    docs/src/first-scan.md
+    docs/src/workflows/integrations.md
     docs/src/workflows/precommit.md
   )
 
