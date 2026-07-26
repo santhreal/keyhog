@@ -104,6 +104,7 @@ def test_prerelease_preserves_the_supplied_signed_candidate_path():
     assert 'cp "$CANDIDATE" "$BENCH_RELEASE_CANDIDATE"' in text
     assert 'release_candidate_bundle_present "$RELEASE_CANDIDATE"' in text
     assert 'cp "$CANDIDATE" "$RELEASE_CANDIDATE"' not in text
+    assert "--yes --no-prompt --no-calibrate --no-color" in text
 
 
 def test_run_all_source_only_loud_skips_every_asset_gate():

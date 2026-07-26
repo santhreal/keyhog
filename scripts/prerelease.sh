@@ -389,7 +389,7 @@ if release_candidate_bundle_present "$RELEASE_CANDIDATE"; then
   if HOME="$SMOKE/home" XDG_CACHE_HOME="$SMOKE/cache" sh install.sh \
     --from-file="$RELEASE_CANDIDATE" \
     --install-dir="$SMOKE/kh/bin" \
-    --yes --no-prompt --no-color >"$SMOKE/install.log" 2>&1; then
+    --yes --no-prompt --no-calibrate --no-color >"$SMOKE/install.log" 2>&1; then
     KHS="$SMOKE/kh/bin/keyhog"
     check "installed --version" installed_version_smoke "$KHS"
     check "installed doctor" "$KHS" doctor

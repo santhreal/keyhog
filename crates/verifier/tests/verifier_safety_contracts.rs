@@ -1436,6 +1436,7 @@ fn oob_session_docs_match_fail_closed_runtime_contract() {
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
+    let normalized_docs = docs.split_whitespace().collect::<Vec<_>>().join(" ");
 
     assert!(
         normalized_lib.contains(
@@ -1445,13 +1446,15 @@ fn oob_session_docs_match_fail_closed_runtime_contract() {
     );
     assert!(
         !normalized_lib.contains("fall through to HTTP-only success criteria")
-            && !docs.contains("tokens resolve to\n  empty strings; HTTP-only verification proceeds")
+            && !normalized_docs
+                .contains("tokens resolve to empty strings; HTTP-only verification proceeds")
             && !session.contains("degrades to HTTP-only success criteria"),
         "OOB-required detectors must not be documented as silently falling through to HTTP-only verification"
     );
     assert!(
-        docs.contains("OOB-required detectors fail closed before sending any HTTP probe")
-            && docs.contains("oob_disabled = \"no active OOB session\"")
+        normalized_docs.contains(
+            "OOB-required detectors fail closed before sending any HTTP probe",
+        ) && normalized_docs.contains("oob_disabled = \"no active OOB session\"")
             && session.contains("fails closed with a verification error for this finding"),
         "user-facing and developer OOB docs must describe fail-closed required-OOB behavior"
     );
