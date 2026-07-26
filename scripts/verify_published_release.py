@@ -179,7 +179,7 @@ def release_snapshot(value: dict[str, Any], *, tag: str, release_id: int | None 
 
 def _verify_checksum(payload: Path, manifest: Path) -> None:
     raw = manifest.read_text(encoding="utf-8")
-    expected_line = re.fullmatch(r"([0-9a-f]{64})  ([^/\r\n]+)\n", raw)
+    expected_line = re.fullmatch(r"([0-9a-f]{64}) [ *]([^/\r\n]+)\n", raw)
     if expected_line is None or expected_line.group(2) != payload.name:
         raise VerificationError(
             f"checksum manifest {manifest.name} is not the exact SHA-256 entry for {payload.name}"

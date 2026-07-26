@@ -282,6 +282,27 @@ class PublishedReleaseVerdictTests(unittest.TestCase):
         self.assert_failed_before_download(result)
         self.assertIn("exact signed asset manifest is incomplete", result.stderr)
 
+    def test_windows_binary_checksum_marker_is_verified(self) -> None:
+        """Locks out rejecting the valid binary-mode marker emitted by Windows sha256sum."""
+        assert self.state.release is not None
+        asset = next(
+            item
+            for item in self.state.release["assets"]
+            if item["name"] == "keyhog-windows-x86_64.exe.sha256"
+        )
+        original = self.state.asset_bytes[asset["id"]]
+        binary_mode = original.replace(
+            b"  keyhog-windows-x86_64.exe\n",
+            b" *keyhog-windows-x86_64.exe\n",
+        )
+        self.state.asset_bytes[asset["id"]] = binary_mode
+        asset["size"] = len(binary_mode)
+
+        result = self.run_verifier()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(len(self.state.requests), 34)
+
     def test_checksum_manifest_mismatch_is_rejected(self) -> None:
         assert self.state.release is not None
         asset = next(
