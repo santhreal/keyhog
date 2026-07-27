@@ -1,6 +1,6 @@
 use super::{
     reset_resident_literal_slot, scan_gpu_literal_evidence_by_region_resident,
-    GpuResidentLiteralSlot,
+    with_test_resident_dispatch_failure, GpuResidentLiteralSlot,
 };
 
 /// Regression: calibration must preserve the diagnostic when a prior GPU cleanup poisoned the slot.
@@ -71,6 +71,44 @@ fn untimed_wgpu_adapter_uses_exact_borrowed_fused_scan() {
     assert!(state.scratch.haystack_bytes.iter().all(|byte| *byte == 0));
     drop(state_guard);
     reset_resident_literal_slot(&slot).expect("untimed borrowed scratch resets cleanly");
+}
+
+/// Regression: untimed adapters must expose injected dispatch failures to the same typed recovery boundary as timed resident adapters.
+#[test]
+fn untimed_borrowed_dispatch_exposes_injected_faults() {
+    let _gpu_test_guard = crate::testing::gpu_test_lock();
+    let concrete_backend = match vyre_driver_wgpu::WgpuBackend::shared() {
+        Ok(backend) => backend,
+        Err(error) => {
+            assert!(
+                !crate::hw_probe::probe_hardware().gpu_available,
+                "GPU hardware is present but the WGPU untimed recovery test could not acquire it: {error}"
+            );
+            return;
+        }
+    };
+    let backend: std::sync::Arc<dyn vyre::VyreBackend> = concrete_backend;
+    let matcher = vyre_libs::scan::GpuLiteralSet::compile(&[b"a".as_slice()]);
+    let slot = std::sync::Mutex::new(GpuResidentLiteralSlot::Empty);
+
+    let error = with_test_resident_dispatch_failure(0, || {
+        scan_gpu_literal_evidence_by_region_resident(
+            &slot,
+            &matcher,
+            &backend,
+            false,
+            b"zaa",
+            &[0],
+            |_, _| Ok(()),
+        )
+    })
+    .expect_err("the untimed borrowed dispatch must surface its injected fault");
+
+    assert_eq!(error, "injected borrowed fused literal dispatch fault");
+    assert!(matches!(
+        slot.into_inner().expect("untimed slot remains unpoisoned"),
+        GpuResidentLiteralSlot::Empty
+    ));
 }
 
 /// Regression: fused literal overflow must replay once at the exact count on timed and untimed WGPU adapters.

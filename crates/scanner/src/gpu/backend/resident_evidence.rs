@@ -335,6 +335,10 @@ pub(crate) fn scan_gpu_literal_evidence_by_region_resident<R>(
         ));
     }
     if !resident_timed_dispatch_supported {
+        #[cfg(test)]
+        if injected_dispatch_failure() {
+            return Err("injected borrowed fused literal dispatch fault".to_string());
+        }
         return scan_gpu_literal_evidence_by_region_borrowed(
             &mut slot,
             matcher,

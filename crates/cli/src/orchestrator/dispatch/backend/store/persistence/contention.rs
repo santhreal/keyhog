@@ -36,6 +36,9 @@ const UNIQUE_WRITERS: usize = CONFIG_DIGESTS.len() * HOST_VARIANTS;
 // Four distinct config/host generations plus one exact duplicate maximize
 // process overlap while requiring only one fsync-heavy save per subprocess.
 const WRITER_PROCESSES: usize = UNIQUE_WRITERS + 1;
+// Hosted two-core runners execute these full test binaries beside the parent
+// suite. Budget one minute of process startup and lock progress per writer.
+const WRITER_DEADLOCK_BUDGET: Duration = Duration::from_secs(60 * WRITER_PROCESSES as u64);
 const SECRET_SENTINEL: &str = "kh031-secret-material-must-never-reach-cache-or-temp";
 
 fn host(variant: usize) -> AutorouteHostProfile {
@@ -348,7 +351,7 @@ fn multiprocess_writers_publish_one_exact_private_merged_cache() {
         "no writer may publish while another process owns the canonical cache lock"
     );
     drop(parent_lock);
-    let deadline = Instant::now() + Duration::from_secs(120);
+    let deadline = Instant::now() + WRITER_DEADLOCK_BUDGET;
     let mut observed_temporary_artifacts = 0;
     while children.iter().any(Option::is_some) {
         assert!(
