@@ -27,15 +27,14 @@ default-features = false
 
 [dependencies.keyhog-scanner]
 path = "../crates/scanner"
-# Fuzz the scan LOGIC (panics / hangs / OOM), not the GPU backend. The default
-# feature set pulls `gpu`, whose scanner init probes Vulkan and acquires a wgpu
-# backend. On GPU-less hosted CI runners that "GPU" is llvmpipe (software
-# rasterization), so init + any GPU-routed work is catastrophically slow, the
-# scanner_target OnceLock init alone (run #0, the empty input) blew past
-# libFuzzer's 1200s per-unit timeout. CPU/SIMD covers the fuzz goal fully and
-# deterministically; drop `gpu` so the targets never touch a software Vulkan.
+# Fuzz the Rust scan logic, not accelerator initialization or Hyperscan's FFI
+# scratch wrapper. Hyperscan currently triggers a rustc ICE when ASan and
+# sanitizer coverage lower its `MaybeUninit<Scratch>` state. CPU regex plus
+# simdsieve still drives decode, suppression, scoring, and extraction; strict
+# backend parity gates cover Hyperscan and GPU execution without sanitizer
+# instrumentation.
 default-features = false
-features = ["ml", "entropy", "decode", "multiline", "simdsieve", "simd"]
+features = ["ml", "entropy", "decode", "multiline", "simdsieve"]
 
 [[bin]]
 name = "decode_target"

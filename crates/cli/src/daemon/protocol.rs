@@ -76,7 +76,6 @@ pub(crate) struct WarmBackendStatus {
     pub repair_command: Option<String>,
 }
 
-
 /// Maximum length of a single framed message body. 64 MiB ceiling
 /// matches `MAX_SCAN_CHUNK_BYTES * 64` so a chunk batch fits, but
 /// bounds the recv buffer so a hostile client can't OOM the daemon
@@ -128,7 +127,6 @@ pub(crate) enum Response {
         detector_count: usize,
         uptime_secs: u64,
         warm_backend: WarmBackendStatus,
-
     },
     /// Returned for `ScanText` and `ScanPath`. `matches` are the
     /// scanner's `RawMatch` outputs - same wire shape as
@@ -366,9 +364,7 @@ impl SourceCoverageGaps {
 /// deserialization moves the temporary owned string directly into
 /// `SensitiveString`, whose storage is zeroized on drop.
 mod protected_raw_matches {
-    use super::{
-        CompanionMap, CredentialHash, MatchLocation, RawMatch, SensitiveString, Severity,
-    };
+    use super::{CompanionMap, CredentialHash, MatchLocation, RawMatch, SensitiveString, Severity};
     use serde::ser::{SerializeMap, SerializeSeq};
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use std::collections::HashMap;
@@ -459,7 +455,7 @@ mod protected_raw_matches {
     }
 
     fn serialize_sensitive<S>(
-        credential: &&SensitiveString,
+        credential: &&SensitiveString, // keyhog:ignore detector=generic-keyword-secret
         serializer: S,
     ) -> Result<S::Ok, S::Error>
     where
@@ -475,10 +471,7 @@ mod protected_raw_matches {
         String::deserialize(deserializer).map(SensitiveString::from)
     }
 
-    fn serialize_companions<S>(
-        companions: &&CompanionMap,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
+    fn serialize_companions<S>(companions: &&CompanionMap, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {

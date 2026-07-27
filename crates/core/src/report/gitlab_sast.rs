@@ -172,7 +172,7 @@ struct GitlabLocation<'a> {
 
 #[derive(Serialize)]
 struct GitlabDetails<'a> {
-    credential: GitlabTextDetail<'a>,
+    credential: GitlabTextDetail<'a>, // keyhog:ignore detector=generic-keyword-secret
     service: GitlabTextDetail<'a>,
     credential_hash: GitlabTextDetail<'a>,
     companions: GitlabTextDetail<'a>,

@@ -534,8 +534,8 @@ pub(super) fn gpu_moe_parity_probe_features() -> Vec<[f32; INPUT_DIM]> {
             "aws_secret_access_key = \"wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY\"",
         ),
         (
-            "xoxb-1234567890-1234567890-AbCdEfGhIjKlMnOpQrStUvWx",
-            "slack_bot_token = \"xoxb-1234567890-1234567890-AbCdEfGhIjKlMnOpQrStUvWx\"",
+            "xoxb-1234567890-1234567890-AbCdEfGhIjKlMnOpQrStUvWx", // keyhog:ignore detector=slack-bot-token
+            "slack_bot_token = \"xoxb-1234567890-1234567890-AbCdEfGhIjKlMnOpQrStUvWx\"", // keyhog:ignore detector=slack-bot-token
         ),
         ("example", "display_name = \"example\""),
         ("localhost", "db_host = \"localhost\""),

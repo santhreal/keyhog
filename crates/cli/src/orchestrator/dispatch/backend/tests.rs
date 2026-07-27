@@ -183,7 +183,7 @@ fn phase1_test_detectors() -> Vec<keyhog_core::DetectorSpec> {
     let baseline = keyhog_core::embedded_detector_specs()
         .iter()
         .find(|detector| detector.id == "generic-password")
-        .expect("embedded generic-password policy")
+        .expect("embedded generic-password policy") // keyhog:ignore detector=cli-password-flag
         .clone();
     vec![keyhog_core::DetectorSpec {
         tests: Vec::new(),
@@ -5342,9 +5342,10 @@ fn autoroute_reference_mismatch_evidence_names_fields_without_values() {
     let mut trial_match = reference_match.clone();
     trial_match.credential = "AKIAZZZZZZZZZZZZZZZZ".into();
     trial_match.credential_hash = [0xCD; 32].into();
-    trial_match
-        .companions
-        .insert(std::sync::Arc::from("account"), "staging@example.test".to_string());
+    trial_match.companions.insert(
+        std::sync::Arc::from("account"),
+        "staging@example.test".to_string(),
+    );
     trial_match.location.commit = Some("commit-sensitive-b".into());
     trial_match.location.author = Some("author-b@example.test".into());
     trial_match.location.date = Some("2026-07-15T00:00:00Z".into());
@@ -5491,9 +5492,10 @@ fn canonical_match_parity_covers_every_user_visible_raw_match_field() {
     changed.credential_hash = [0xCC; 32].into();
     variants.push(("stored credential hash", changed));
     let mut changed = base.clone();
-    changed
-        .companions
-        .insert(std::sync::Arc::from("account"), "sensitive-companion".to_string());
+    changed.companions.insert(
+        std::sync::Arc::from("account"),
+        "sensitive-companion".to_string(),
+    );
     variants.push(("companions", changed));
     let mut changed = base.clone();
     changed.location.source = "git".into();

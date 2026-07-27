@@ -92,8 +92,8 @@ The installer scripts are separate programs from the KeyHog binary.
 | `GITHUB_TOKEN` | both | Authenticates GitHub API requests when present. |
 | `NO_COLOR` | both | A non-empty value disables installer styling. |
 | `HOME` | `install.sh` | Supplies the default install root `$HOME/.local/bin`. |
-| `LOCALAPPDATA` | `install.ps1` | Supplies the default install directory and cache roots. |
-| `USERPROFILE` | `install.ps1` | Locates PowerShell completion directories. |
+| `LOCALAPPDATA` | `install.ps1` | Supplies the default install directory and cache roots. | <!-- keyhog:ignore detector=entropy-token -->
+| `USERPROFILE` | `install.ps1` | Locates PowerShell completion directories. | <!-- keyhog:ignore detector=entropy-token -->
 | `PATH` | `install.ps1` | Checks whether the selected install directory is already reachable. |
 
 ## CI-only autoroute fixture variables

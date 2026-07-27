@@ -21,7 +21,7 @@ On Windows PowerShell:
 
 ```powershell
 $Demo = Join-Path ([IO.Path]::GetTempPath()) "keyhog-first-scan-$PID.env"
-$Token = 'ghp_' + 'aBcD1234EFgh5678ijkl9012MNop343hK7n2'
+$Token = 'ghp_' + 'aBcD1234EFgh5678ijkl9012MNop343hK7n2' # keyhog:ignore detector=github-classic-pat
 Set-Content -Path $Demo -Value "GH_TOKEN=`"$Token`""
 keyhog scan $Demo
 $Status = $LASTEXITCODE
@@ -31,7 +31,7 @@ if ($Status -ne 1) { throw "expected finding exit 1, got $Status" }
 ```
 
 You should see a `GitHub Classic PAT` finding with the credential rendered as
-`ghp_...K7n2`, followed by `keyhog exit code: 1`. File paths, timing, host
+`ghp_...K7n2`, followed by `keyhog exit code: 1`. <!-- keyhog:ignore detector=entropy-token --> File paths, timing, host
 capabilities, and detector counts vary by installation.
 
 KeyHog redacts credential values in terminal, JSON, JSONL, CSV, SARIF, and HTML

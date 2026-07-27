@@ -175,7 +175,7 @@ fn every_companion_contract_passes() {
             let primary_matches = findings_for_detector(&matches, label);
             if let Some(primary) = primary_matches.first() {
                 for (comp_name, comp_val) in &case.expected_companions {
-                    let actual = primary.companions.get(comp_name);
+                    let actual = primary.companions.get(comp_name.as_str());
                     if actual != Some(comp_val) {
                         parity_issues.push(format!(
                             "{}: positive_with_companion companion mismatch - expected companions[{}]={:?}, got {:?}",
@@ -233,7 +233,7 @@ fn every_companion_contract_passes() {
                 };
                 if let Some(det) = detector {
                     for companion in &det.companions {
-                        if primary.companions.contains_key(&companion.name) {
+                        if primary.companions.contains_key(companion.name.as_str()) {
                             parity_issues.push(format!(
                                 "{}: positive_primary_only VERIFY-RISK - primary fired with companion {} populated; \
                                  verification may succeed even though must_not_verify is asserted",

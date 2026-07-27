@@ -2,6 +2,9 @@
 path:benchmark-harness/
 # Build artifacts
 path:crates/cli/tests/fixtures/
+# The scanner regression fixture embeds fabricated passwords from the exact
+# source that reproduced a UTF-8 span crash. It is test input, not live material.
+path:crates/scanner/tests/fixtures/detector_execution_policy_utf8/
 path:debug.log
 # Demo fixtures intentionally embed fake credentials so the TUI recording
 # has rich content to scan; they must never block the self-scan in CI.
