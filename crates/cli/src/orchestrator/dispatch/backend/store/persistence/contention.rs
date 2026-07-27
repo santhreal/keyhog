@@ -162,7 +162,7 @@ fn wait_for_writer_markers(path: &Path, label: &str) {
 }
 
 fn wait_for_any_writer_marker(path: &Path, label: &str) {
-    let deadline = Instant::now() + Duration::from_secs(30);
+    let deadline = Instant::now() + WRITER_DEADLOCK_BUDGET;
     loop {
         let count = std::fs::read_dir(path)
             .expect("read writer observation directory")
