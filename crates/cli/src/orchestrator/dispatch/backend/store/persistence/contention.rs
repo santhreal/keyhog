@@ -17,6 +17,8 @@ const CHILD_READY_ENV: &str = "KEYHOG_AUTOROUTE_CONTENTION_READY";
 const CHILD_ATTEMPT_ENV: &str = "KEYHOG_AUTOROUTE_CONTENTION_ATTEMPT";
 const CHILD_WRITER_ENV: &str = "KEYHOG_AUTOROUTE_CONTENTION_WRITER";
 const CHILD_SECRET_ENV: &str = "KEYHOG_AUTOROUTE_CONTENTION_SECRET";
+const CHILD_OBSERVE_ENV: &str = "KEYHOG_ATOMIC_FILE_TEST_OBSERVE_DIR";
+const CHILD_RELEASE_ENV: &str = "KEYHOG_ATOMIC_FILE_TEST_RELEASE_PATH";
 const CHILD_TEST_NAME: &str = "orchestrator::dispatch::backend::store::persistence::contention::autoroute_cache_contention_writer_subprocess";
 const DETECTOR_DIGEST: u64 = 0x31ca_11b4_a5e0_0310;
 const RULES_DIGEST: &str = "0310310310310310310310310310310310310310310310310310310310310310";
@@ -159,6 +161,23 @@ fn wait_for_writer_markers(path: &Path, label: &str) {
     }
 }
 
+fn wait_for_any_writer_marker(path: &Path, label: &str) {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let count = std::fs::read_dir(path)
+            .expect("read writer observation directory")
+            .count();
+        if count > 0 {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for a contention writer to report {label}"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
 /// Regression: the subprocess endpoint performs one real production save only when explicitly selected by the parent contention test.
 #[test]
 fn autoroute_cache_contention_writer_subprocess() {
@@ -192,6 +211,8 @@ fn spawn_writer(
     gate: &Path,
     ready: &Path,
     attempt: &Path,
+    observe: &Path,
+    release: &Path,
     writer: usize,
 ) -> Child {
     Command::new(executable)
@@ -202,6 +223,8 @@ fn spawn_writer(
         .env(CHILD_ATTEMPT_ENV, attempt)
         .env(CHILD_WRITER_ENV, writer.to_string())
         .env(CHILD_SECRET_ENV, SECRET_SENTINEL)
+        .env(CHILD_OBSERVE_ENV, observe)
+        .env(CHILD_RELEASE_ENV, release)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -308,8 +331,11 @@ fn multiprocess_writers_publish_one_exact_private_merged_cache() {
     let gate = coordination.path().join("writers.go");
     let ready = coordination.path().join("ready");
     let attempt = coordination.path().join("attempt");
+    let observe = coordination.path().join("observe");
+    let release = coordination.path().join("observed.release");
     std::fs::create_dir(&ready).expect("create writer readiness directory");
     std::fs::create_dir(&attempt).expect("create writer attempt directory");
+    std::fs::create_dir(&observe).expect("create writer observation directory");
     let current_executable = std::env::current_exe().expect("resolve current test executable");
     let stable_executable = coordination.path().join(
         current_executable
@@ -334,6 +360,8 @@ fn multiprocess_writers_publish_one_exact_private_merged_cache() {
                 &gate,
                 &ready,
                 &attempt,
+                &observe,
+                &release,
                 writer,
             ))
         })
@@ -351,8 +379,17 @@ fn multiprocess_writers_publish_one_exact_private_merged_cache() {
         "no writer may publish while another process owns the canonical cache lock"
     );
     drop(parent_lock);
+    wait_for_any_writer_marker(&observe, "an atomic temp artifact");
+    let mut observed_temporary_artifacts =
+        inspect_in_flight_artifacts(directory.path(), &cache, &gate);
+    assert!(
+        observed_temporary_artifacts > 0,
+        "the held process publication must expose a private in-flight autoroute temp artifact"
+    );
+    std::fs::write(&release, []).expect("release observed atomic publication");
     let deadline = Instant::now() + WRITER_DEADLOCK_BUDGET;
-    let mut observed_temporary_artifacts = 0;
+    // The synchronized observation above proves a real temp artifact's type,
+    // permissions, and secret hygiene. Continue sampling later generations.
     while children.iter().any(Option::is_some) {
         assert!(
             Instant::now() < deadline,
@@ -412,10 +449,6 @@ fn multiprocess_writers_publish_one_exact_private_merged_cache() {
     assert!(
         std::fs::read(&lock).expect("read lock artifact").is_empty(),
         "lock artifacts must never retain state or secret material"
-    );
-    assert!(
-        observed_temporary_artifacts > 0,
-        "the process race must observe and permission-check an actual in-flight autoroute temp artifact"
     );
 
     let residue = std::fs::read_dir(directory.path())

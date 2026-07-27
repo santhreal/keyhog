@@ -3,6 +3,40 @@
 use std::io::{self, Write};
 use std::path::Path;
 
+#[cfg(test)]
+const TEST_OBSERVE_DIR_ENV: &str = "KEYHOG_ATOMIC_FILE_TEST_OBSERVE_DIR";
+#[cfg(test)]
+const TEST_RELEASE_PATH_ENV: &str = "KEYHOG_ATOMIC_FILE_TEST_RELEASE_PATH";
+
+#[cfg(test)]
+fn hold_for_test_observation(tmp: &tempfile::NamedTempFile) -> io::Result<()> {
+    let Some(observe_dir) = std::env::var_os(TEST_OBSERVE_DIR_ENV) else {
+        return Ok(());
+    };
+    let release_path = std::env::var_os(TEST_RELEASE_PATH_ENV).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "atomic-file test observation requires a release path",
+        )
+    })?;
+    std::fs::create_dir_all(&observe_dir)?;
+    std::fs::write(
+        Path::new(&observe_dir).join(std::process::id().to_string()),
+        tmp.path().as_os_str().as_encoded_bytes(),
+    )?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while !Path::new(&release_path).exists() {
+        if std::time::Instant::now() >= deadline {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "parent did not release the observed atomic-file test publication",
+            ));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    Ok(())
+}
+
 pub(crate) fn write_bytes(path: &Path, bytes: &[u8]) -> io::Result<()> {
     write_with_file(path, |mut file| file.write_all(bytes))
 }
@@ -33,5 +67,7 @@ where
     let writer = tmp.reopen()?;
     write_fn(writer)?;
     tmp.as_file().sync_all()?;
+    #[cfg(test)]
+    hold_for_test_observation(&tmp)?;
     tmp.persist(path).map(drop).map_err(|error| error.error)
 }
