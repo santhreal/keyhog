@@ -50,7 +50,9 @@ fn phase2_breakdown_mirror() {
     profile_reset();
     for (i, f) in files.iter().enumerate() {
         let chunk = chunk_of(f.clone(), &format!("small-{i}"));
-        let _ = scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback).expect("selected backend scan succeeds");
+        let _ = scanner
+            .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+            .expect("selected backend scan succeeds");
     }
     eprintln!(
         "regime A: {} small files, {} KiB total",
@@ -76,7 +78,9 @@ fn phase2_breakdown_mirror() {
     profile_reset();
     for (i, c) in chunks_16k.iter().enumerate() {
         let chunk = chunk_of(c.clone(), &format!("16k-{i}"));
-        let _ = scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback).expect("selected backend scan succeeds");
+        let _ = scanner
+            .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+            .expect("selected backend scan succeeds");
     }
     eprintln!("regime B: {} 16-KiB chunks", chunks_16k.len());
     profile_dump("mirror-16kib-chunks");

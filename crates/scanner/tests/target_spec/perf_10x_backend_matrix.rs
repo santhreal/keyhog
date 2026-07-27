@@ -103,13 +103,17 @@ fn median(mut v: Vec<f64>) -> f64 {
 
 fn scan_secs(scanner: &CompiledScanner, chunk: &Chunk, backend: ScanBackend) -> f64 {
     scanner.clear_fragment_cache();
-    let _ = scanner.scan_with_backend(chunk, backend).expect("selected backend scan succeeds"); // warm
+    let _ = scanner
+        .scan_with_backend(chunk, backend)
+        .expect("selected backend scan succeeds"); // warm
     median(
         (0..MEASURE_REPS)
             .map(|_| {
                 scanner.clear_fragment_cache();
                 let t = Instant::now();
-                let _ = scanner.scan_with_backend(chunk, backend).expect("selected backend scan succeeds");
+                let _ = scanner
+                    .scan_with_backend(chunk, backend)
+                    .expect("selected backend scan succeeds");
                 t.elapsed().as_secs_f64()
             })
             .collect(),

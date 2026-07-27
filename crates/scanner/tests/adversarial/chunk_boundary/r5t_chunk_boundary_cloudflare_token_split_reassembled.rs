@@ -41,7 +41,9 @@ fn r5t_chunk_boundary_cloudflare_token_split_reassembled() {
             ..Default::default()
         },
     };
-    let results = scanner.scan_coalesced(&[chunk_a, chunk_b]).expect(concat!(module_path!(), ": coalesced scan should succeed"));
+    let results = scanner
+        .scan_coalesced(&[chunk_a, chunk_b])
+        .expect(concat!(module_path!(), ": coalesced scan should succeed"));
     let found = results.iter().flatten().any(|m| {
         m.detector_id.as_ref() == "cloudflare-api-token"
             && m.credential.as_ref() == "Xy7Kp2Lm9Qr4Tv6Wz1Bn8Ch5Df3Gj0Hs4iU2oPqR"

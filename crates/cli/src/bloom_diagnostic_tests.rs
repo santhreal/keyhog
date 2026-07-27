@@ -7,8 +7,8 @@ fn identity() -> FindingIdentity {
         line: Some(42),
         span_start: 1_024,
         span_end: 1_044,
-        credential_sha256:
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+        credential_sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            .to_string(),
     }
 }
 

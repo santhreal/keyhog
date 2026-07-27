@@ -449,9 +449,11 @@ fn detect_db_password_hex() {
         .expect("embedded generic-password detector")
         .clone();
     let scanner = CompiledScanner::compile(vec![detector]).expect("compile password policy");
-    let matches = scanner.scan(&keyhog_core::Chunk::from(
-        "DB_PASSWORD=8ae31cacf141669ddfb5da\n",
-    )).expect("test scan succeeds");
+    let matches = scanner
+        .scan(&keyhog_core::Chunk::from(
+            "DB_PASSWORD=8ae31cacf141669ddfb5da\n",
+        ))
+        .expect("test scan succeeds");
     assert!(
         matches.iter().any(|finding| {
             finding.detector_id.as_ref() == "generic-password"

@@ -1,7 +1,7 @@
 use super::*;
-use std::sync::atomic::{AtomicUsize, Ordering};
 #[cfg(target_os = "linux")]
 use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[test]
 fn gpu_moe_score_validation_clamps_only_complete_finite_batches() {
@@ -349,13 +349,19 @@ fn backend_slots_are_lazy_once_and_identity_preserving() {
             Ok("cuda")
         })
         .expect("available CUDA slot must initialize");
-        assert_eq!(cuda_result.as_ref().expect("synthetic CUDA acquisition"), &"cuda");
+        assert_eq!(
+            cuda_result.as_ref().expect("synthetic CUDA acquisition"),
+            &"cuda"
+        );
         let wgpu_result = lazy_acquire(true, &wgpu, || {
             calls.fetch_add(1, Ordering::Relaxed);
             Ok("wgpu")
         })
         .expect("available WGPU slot must initialize");
-        assert_eq!(wgpu_result.as_ref().expect("synthetic WGPU acquisition"), &"wgpu");
+        assert_eq!(
+            wgpu_result.as_ref().expect("synthetic WGPU acquisition"),
+            &"wgpu"
+        );
     }
     assert_eq!(calls.load(Ordering::Relaxed), 2);
 }

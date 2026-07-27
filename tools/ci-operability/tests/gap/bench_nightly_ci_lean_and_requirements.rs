@@ -53,9 +53,7 @@ fn bench_nightly_is_ci_lean_and_rejects_empty_or_stale_artifacts() {
         .find("rm -rf benchmarks/results-nightly benchmarks/results-ioc-recovery")
         .expect("bench-nightly must remove its isolated generated artifacts");
     let leaderboard = text
-        .find(
-            "make -C benchmarks leaderboard SCANNERS=keyhog,trufflehog OUT=results-nightly",
-        )
+        .find("make -C benchmarks leaderboard SCANNERS=keyhog,trufflehog OUT=results-nightly")
         .expect("bench-nightly must write the exact scanner set to isolated nightly results");
     let run_set = text
         .find("name: Declare exact nightly report run set")

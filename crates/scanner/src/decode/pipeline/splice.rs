@@ -1,5 +1,5 @@
-use crate::decode::DecodeOutputSink;
 use super::extractor::ExtractedValue;
+use crate::decode::DecodeOutputSink;
 use keyhog_core::{Chunk, ChunkMetadata};
 
 pub(in crate::decode) const DECODE_REPLACEMENT_BATCH_SOURCE_BYTES: usize = 64 * 1024;
@@ -32,12 +32,7 @@ impl<'a> DecodedReplacementBatcher<'a> {
         }
     }
 
-    pub(in crate::decode) fn push(
-        &mut self,
-        start: usize,
-        end: usize,
-        decoded: String,
-    ) -> bool {
+    pub(in crate::decode) fn push(&mut self, start: usize, end: usize, decoded: String) -> bool {
         let exceeds_source_bound = self.batch_start != usize::MAX
             && end.saturating_sub(self.batch_start) > DECODE_REPLACEMENT_BATCH_SOURCE_BYTES;
         let exceeds_output_bound = !self.replacements.is_empty()
@@ -181,14 +176,7 @@ pub(in crate::decode) fn push_decoded_text_chunk_spliced(
     text: String,
     decoder_name: &str,
 ) -> bool {
-    push_decoded_text_chunk_spliced_at(
-        sink,
-        chunk,
-        None,
-        original_encoded,
-        text,
-        decoder_name,
-    )
+    push_decoded_text_chunk_spliced_at(sink, chunk, None, original_encoded, text, decoder_name)
 }
 
 pub(in crate::decode) fn push_decoded_text_chunk_spliced_at(
@@ -362,7 +350,6 @@ fn consume_adjacent_base64_padding(parent: &[u8], start: usize) -> usize {
     }
 }
 
-
 pub(in crate::decode) fn stream_candidate_refs_exact<'a, I, F>(
     sink: &mut dyn DecodeOutputSink,
     chunk: &Chunk,
@@ -391,7 +378,6 @@ where
     }
     true
 }
-
 
 pub(in crate::decode) fn stream_candidate_spans_exact<F>(
     sink: &mut dyn DecodeOutputSink,

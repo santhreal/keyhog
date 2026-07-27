@@ -45,7 +45,9 @@ fn scan_path(body: &str, path: &str) -> Vec<keyhog_core::RawMatch> {
             ..Default::default()
         },
     };
-    shared_scanner().scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"))
+    shared_scanner()
+        .scan(&chunk)
+        .expect(concat!(module_path!(), ": scan should succeed"))
 }
 
 /// Positive truth: a postgres connection string surfaces under a

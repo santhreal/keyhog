@@ -3,7 +3,6 @@ use crate::hw_probe::ScanBackend;
 const MAX_RECOVERY_REASON_BYTES: usize = 4096;
 const MISSING_RECOVERY_REASON: &str = "backend fault without diagnostic";
 
-
 /// One exact source-byte interval completed after the selected backend faulted.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecoveredInputRange {
@@ -68,9 +67,7 @@ impl BackendRecoveryReceipt {
             .iter()
             .enumerate()
             .filter(|(_, chunk)| !chunk.data.is_empty())
-            .map(|(chunk_index, chunk)| {
-                RecoveredInputRange::new(chunk_index, 0, chunk.data.len())
-            })
+            .map(|(chunk_index, chunk)| RecoveredInputRange::new(chunk_index, 0, chunk.data.len()))
             .collect();
         Self::new(backend, backend, ranges, reason.to_string())
     }
@@ -80,7 +77,6 @@ impl BackendRecoveryReceipt {
         self.reason == "phase-one admission plan identity mismatch; discarded the untrusted plan and recomputed exact admission"
             || self.reason == "malformed phase-one admission plan identity; discarded the untrusted plan and recomputed exact admission"
     }
-
 
     #[must_use]
     pub fn recovered_bytes(&self) -> u64 {

@@ -35,7 +35,9 @@ fn catastrophic_backtracking_input_does_not_hang() {
     let chunk = make_chunk(&adversarial);
 
     let start = std::time::Instant::now();
-    let _ = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
+    let _ = scanner
+        .scan(&chunk)
+        .expect(concat!(module_path!(), ": scan should succeed"));
     let elapsed = start.elapsed();
     assert!(
         elapsed.as_secs() < 5,

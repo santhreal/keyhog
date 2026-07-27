@@ -68,9 +68,7 @@ fn take_scratch(
     owner: &Arc<()>,
 ) -> Result<Scratch, String> {
     let key = (scanner_id, shard_idx);
-    if let Some(cached) =
-        SCRATCH_TLS.with(|tls| tls.borrow_mut().remove(&key))
-    {
+    if let Some(cached) = SCRATCH_TLS.with(|tls| tls.borrow_mut().remove(&key)) {
         // The monotonic scanner id is the fast cache key. Checking the Arc
         // address as well makes a wrapped/reused id fail safe instead of
         // handing Hyperscan scratch to a different database.
@@ -150,12 +148,8 @@ impl<'a> ScratchBatch<'a> {
             slots: std::array::from_fn(|_| MaybeUninit::uninit()),
         };
         for (shard_idx, shard) in scanner.shards.iter().enumerate() {
-            let scratch = take_scratch(
-                scanner.scanner_id,
-                shard_idx,
-                shard,
-                &scanner.scratch_owner,
-            )?;
+            let scratch =
+                take_scratch(scanner.scanner_id, shard_idx, shard, &scanner.scratch_owner)?;
             batch.slots[shard_idx].write(scratch);
             batch.initialized += 1;
         }
@@ -211,14 +205,14 @@ impl HsScanner {
         // original byte space, no remapping.
         let scratches = ScratchBatch::acquire(self)?;
         for (shard_idx, shard) in self.shards.iter().enumerate() {
-            if let Err(error) =
-                shard
-                    .db
-                    .scan(text, scratches.scratch(shard_idx), |id, from, to, _flags| {
-                        on_match(id as usize, from as usize, to as usize);
-                        Matching::Continue
-                    })
-            {
+            if let Err(error) = shard.db.scan(
+                text,
+                scratches.scratch(shard_idx),
+                |id, from, to, _flags| {
+                    on_match(id as usize, from as usize, to as usize);
+                    Matching::Continue
+                },
+            ) {
                 return Err(format!(
                     "hyperscan scan failed while executing shard {shard_idx} of {}; \
                      callback output from this call is incomplete and must be discarded: {error}",
@@ -246,14 +240,14 @@ impl HsScanner {
     ) -> Result<(), String> {
         let scratches = ScratchBatch::acquire(self)?;
         for (shard_idx, shard) in self.shards.iter().enumerate() {
-            if let Err(error) =
-                shard
-                    .db
-                    .scan(text, scratches.scratch(shard_idx), |id, _from, _to, _flags| {
-                        on_match(id as usize);
-                        Matching::Continue
-                    })
-            {
+            if let Err(error) = shard.db.scan(
+                text,
+                scratches.scratch(shard_idx),
+                |id, _from, _to, _flags| {
+                    on_match(id as usize);
+                    Matching::Continue
+                },
+            ) {
                 return Err(format!(
                     "hyperscan scan_each failed while executing shard {shard_idx} of {}; \
                      callback output from this call is incomplete and must be discarded: {error}",
@@ -276,14 +270,14 @@ impl HsScanner {
         let scratches = ScratchBatch::acquire(self)?;
         for (shard_idx, shard) in self.shards.iter().enumerate() {
             let mut hit = false;
-            if let Err(error) =
-                shard
-                    .db
-                    .scan(text, scratches.scratch(shard_idx), |_id, _from, _to, _flags| {
-                        hit = true;
-                        Matching::Terminate
-                    })
-            {
+            if let Err(error) = shard.db.scan(
+                text,
+                scratches.scratch(shard_idx),
+                |_id, _from, _to, _flags| {
+                    hit = true;
+                    Matching::Terminate
+                },
+            ) {
                 if !hit {
                     return Err(format!(
                         "hyperscan any_match failed before a match was observed while executing \
@@ -478,7 +472,10 @@ mod scratch_lifetime {
     fn compile_does_not_allocate_thread_local_scratch() {
         let patterns = [(0usize, 0usize, "KHDROP_[A-Z0-9]{8}", false)];
         let (scanner, unsupported) = HsScanner::compile(&patterns).expect("probe pattern compiles");
-        assert!(unsupported.is_empty(), "probe pattern must be Hyperscan-supported");
+        assert!(
+            unsupported.is_empty(),
+            "probe pattern must be Hyperscan-supported"
+        );
 
         assert_eq!(
             super::current_thread_scratch_count_for_test(scanner.scanner_id),
@@ -493,7 +490,10 @@ mod scratch_lifetime {
     fn first_scan_lazily_warms_then_reuses_scratch() {
         let patterns = [(0usize, 0usize, "KHLAZY_[A-Z0-9]{8}", false)];
         let (scanner, unsupported) = HsScanner::compile(&patterns).expect("probe pattern compiles");
-        assert!(unsupported.is_empty(), "probe pattern must be Hyperscan-supported");
+        assert!(
+            unsupported.is_empty(),
+            "probe pattern must be Hyperscan-supported"
+        );
 
         let mut ids = Vec::new();
         scanner
@@ -528,14 +528,18 @@ mod scratch_lifetime {
             (1usize, 0usize, "ZZWORKER_[a-z0-9]{6}", false),
         ];
         let (scanner, unsupported) = HsScanner::compile(&patterns).expect("probe patterns compile");
-        assert!(unsupported.is_empty(), "probe patterns must be Hyperscan-supported");
+        assert!(
+            unsupported.is_empty(),
+            "probe patterns must be Hyperscan-supported"
+        );
 
-        scanner.warm().expect("warm must seed worker thread-local scratch");
+        scanner
+            .warm()
+            .expect("warm must seed worker thread-local scratch");
 
         let shard_count = scanner.shard_count();
-        let warm_counts: Vec<usize> = rayon::broadcast(|_| {
-            super::current_thread_scratch_count_for_test(scanner.scanner_id)
-        });
+        let warm_counts: Vec<usize> =
+            rayon::broadcast(|_| super::current_thread_scratch_count_for_test(scanner.scanner_id));
         for (i, count) in warm_counts.iter().enumerate() {
             assert_eq!(
                 *count, shard_count,
@@ -571,7 +575,10 @@ mod scratch_lifetime {
             (1usize, 0usize, "ZZTOK_[a-z0-9]{6}", false),
         ];
         let (scanner, unsupported) = HsScanner::compile(&patterns).expect("probe patterns compile");
-        assert!(unsupported.is_empty(), "probe patterns must be Hyperscan-supported");
+        assert!(
+            unsupported.is_empty(),
+            "probe patterns must be Hyperscan-supported"
+        );
 
         let probe = b"x KHSCRATCH_AB12CD34 y ZZTOK_xy99zz z";
         let mut expected = Vec::new();
@@ -582,7 +589,9 @@ mod scratch_lifetime {
         expected.dedup();
 
         let extra_threads = 3;
-        let n_threads = rayon::current_num_threads().saturating_add(extra_threads).max(2);
+        let n_threads = rayon::current_num_threads()
+            .saturating_add(extra_threads)
+            .max(2);
         std::thread::scope(|scope| {
             let handles: Vec<_> = (0..n_threads)
                 .map(|_| {
@@ -643,16 +652,22 @@ mod scratch_lifetime {
                 )
             })
             .expect("two-shard probe compiles");
-        assert!(unsupported.is_empty(), "probe patterns must be Hyperscan-supported");
-        assert_eq!(scanner.shard_count(), 2, "failure probe requires two shards");
+        assert!(
+            unsupported.is_empty(),
+            "probe patterns must be Hyperscan-supported"
+        );
+        assert_eq!(
+            scanner.shard_count(),
+            2,
+            "failure probe requires two shards"
+        );
 
         super::fail_next_scratch_allocation_for_test(1);
         let mut callbacks = Vec::new();
         let error = scanner
-            .scan_matches_result(
-                b"x KHFAIL_AB12CD34 y ZZFAIL_xy99zz z",
-                |id, _, _| callbacks.push(id),
-            )
+            .scan_matches_result(b"x KHFAIL_AB12CD34 y ZZFAIL_xy99zz z", |id, _, _| {
+                callbacks.push(id)
+            })
             .expect_err("second shard scratch allocation must fail");
         assert!(
             error.contains("scratch on-demand growth failed")
@@ -672,10 +687,9 @@ mod scratch_lifetime {
 
         let mut recovered = Vec::new();
         scanner
-            .scan_matches_result(
-                b"x KHFAIL_AB12CD34 y ZZFAIL_xy99zz z",
-                |id, _, _| recovered.push(id),
-            )
+            .scan_matches_result(b"x KHFAIL_AB12CD34 y ZZFAIL_xy99zz z", |id, _, _| {
+                recovered.push(id)
+            })
             .expect("one-shot allocation failure must recover on the next scan");
         recovered.sort_unstable();
         recovered.dedup();
@@ -689,10 +703,9 @@ mod scratch_lifetime {
         super::fail_next_scratch_allocation_for_test(1);
         let mut each_callbacks = Vec::new();
         scanner
-            .scan_each_result(
-                b"x KHFAIL_AB12CD34 y ZZFAIL_xy99zz z",
-                |id| each_callbacks.push(id),
-            )
+            .scan_each_result(b"x KHFAIL_AB12CD34 y ZZFAIL_xy99zz z", |id| {
+                each_callbacks.push(id)
+            })
             .expect_err("scan_each must propagate scratch allocation failure");
         assert!(
             each_callbacks.is_empty(),
@@ -737,12 +750,18 @@ mod scratch_lifetime {
         scanner_b
             .scan_matches_result(b"KHCOLLIDEB_xy99zz", |_, _, _| b_hits += 1)
             .expect("scanner B must reject and replace scanner A scratch");
-        assert_eq!(b_hits, 1, "scanner B must retain exact findings after collision");
+        assert_eq!(
+            b_hits, 1,
+            "scanner B must retain exact findings after collision"
+        );
 
         let mut a_hits = 0;
         scanner_a
             .scan_matches_result(b"KHCOLLIDEA_AB12CD34", |_, _, _| a_hits += 1)
             .expect("scanner A must replace scanner B scratch on reuse");
-        assert_eq!(a_hits, 1, "scanner A must recover exact findings after collision");
+        assert_eq!(
+            a_hits, 1,
+            "scanner A must recover exact findings after collision"
+        );
     }
 }

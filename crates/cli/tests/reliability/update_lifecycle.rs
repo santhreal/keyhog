@@ -231,7 +231,11 @@ async fn exact_bare_version_is_normalized_once_before_request() {
         .await
         .expect("resolve normalized exact release");
     assert_eq!(release.tag_name, "v1.2.3");
-    assert_eq!(requested.calls(), 1, "only the canonical tag may be requested");
+    assert_eq!(
+        requested.calls(),
+        1,
+        "only the canonical tag may be requested"
+    );
 }
 
 #[tokio::test]

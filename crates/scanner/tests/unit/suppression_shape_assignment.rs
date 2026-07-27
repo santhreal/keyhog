@@ -73,7 +73,9 @@ fn assignment_hex_boundaries_and_unicode_remain_exact() {
 fn assignment_integrity_role_preserves_report_time_floor() {
     let short_integrity = "sha256-YWJjZA==";
 
-    assert!(looks_like_entropy_canonical_non_secret_shape(short_integrity));
+    assert!(looks_like_entropy_canonical_non_secret_shape(
+        short_integrity
+    ));
     assert_eq!(suppression_stage(short_integrity), None);
 }
 

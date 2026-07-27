@@ -51,7 +51,9 @@ fn reporting_service_does_not_control_generic_execution_policy() {
         metadata: keyhog_core::ChunkMetadata::default(),
     };
 
-    let generic = scanner_for("generic").scan_with_backend(&chunk, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
+    let generic = scanner_for("generic")
+        .scan_with_backend(&chunk, ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds");
     assert_eq!(
         generic.len(),
         1,
@@ -59,7 +61,9 @@ fn reporting_service_does_not_control_generic_execution_policy() {
     );
     assert_eq!(generic[0].detector_id.as_ref(), "opaque-detector-id");
 
-    let named = scanner_for("opaque-service").scan_with_backend(&chunk, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
+    let named = scanner_for("opaque-service")
+        .scan_with_backend(&chunk, ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds");
     assert_eq!(
         named.len(),
         1,

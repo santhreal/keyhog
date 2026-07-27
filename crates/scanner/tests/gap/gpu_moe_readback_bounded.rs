@@ -2,12 +2,8 @@
 
 #[test]
 fn gpu_moe_readback_uses_bounded_polling() {
-    let execution_path = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/gpu/backend/execution.rs"
-    );
-    let execution =
-        std::fs::read_to_string(execution_path).expect("GPU execution source readable");
+    let execution_path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/gpu/backend/execution.rs");
+    let execution = std::fs::read_to_string(execution_path).expect("GPU execution source readable");
     let config_path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/scanner_config.rs");
     let config = std::fs::read_to_string(config_path).expect("config source readable");
     let gpu_path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/gpu.rs");
@@ -40,9 +36,8 @@ fn gpu_moe_readback_uses_bounded_polling() {
             && dispatch.contains("Instant::now() >= deadline")
             && dispatch.contains("wgpu::PollType::Poll")
             && dispatch.contains("TryRecvError::Empty")
-            && dispatch.contains(
-                "backoff.wait(deadline.saturating_duration_since(Instant::now()))"
-            ),
+            && dispatch
+                .contains("backoff.wait(deadline.saturating_duration_since(Instant::now()))"),
         "GPU MoE readback must nonblockingly poll with caller-owned deadline and bounded backoff"
     );
     assert!(

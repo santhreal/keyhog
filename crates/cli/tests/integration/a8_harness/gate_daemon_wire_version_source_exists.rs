@@ -2,10 +2,13 @@
 
 #[test]
 fn daemon_wire_version_has_a_private_nonzero_owner() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("src/daemon/protocol.rs");
-    let source = std::fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("read private daemon protocol owner {}: {error}", path.display()));
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/daemon/protocol.rs");
+    let source = std::fs::read_to_string(&path).unwrap_or_else(|error| {
+        panic!(
+            "read private daemon protocol owner {}: {error}",
+            path.display()
+        )
+    });
     let declaration = source
         .lines()
         .map(str::trim)

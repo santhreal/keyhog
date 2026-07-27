@@ -7,7 +7,12 @@ macro_rules! ssrf_url_case {
     ($name:ident, $url:expr, $expected_private:expr) => {
         #[test]
         fn $name() {
-            assert_eq!(TestApi.is_disallowed_web_host($url), $expected_private, "URL: {:?}", $url);
+            assert_eq!(
+                TestApi.is_disallowed_web_host($url),
+                $expected_private,
+                "URL: {:?}",
+                $url
+            );
         }
     };
 }

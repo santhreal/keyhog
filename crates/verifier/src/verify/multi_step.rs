@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::time::Duration;
 use std::sync::Arc;
+use std::time::Duration;
 
 use keyhog_core::{CompanionMap, VerificationResult};
 use reqwest::Client;

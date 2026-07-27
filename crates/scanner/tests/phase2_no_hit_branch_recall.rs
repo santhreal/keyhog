@@ -84,7 +84,9 @@ fn kubernetes_bootstrap_token_fires_in_direct_scan() {
         "KUBERNETES_BOOTSTRAP_TOKEN=k3m9zq.4r8w2nq3p6vt5b1z\n",
         "k8s-bootstrap.env",
     );
-    let matches = scanner.scan(&chunk).expect("phase-two direct scan should succeed");
+    let matches = scanner
+        .scan(&chunk)
+        .expect("phase-two direct scan should succeed");
     let fired = matches
         .iter()
         .any(|m| m.detector_id.as_ref() == "kubernetes-bootstrap-token");
@@ -119,7 +121,9 @@ fn portable_cpu_phase2_pattern_survives_direct_literal_rejection() {
         1,
         "fixture must enter backend-neutral no-hit admission"
     );
-    let matches = scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
+    let matches = scanner
+        .scan_with_backend(&chunk, ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds");
     assert!(
         matches.iter().any(|finding| {
             finding.detector_id.as_ref() == "kubernetes-bootstrap-token"
@@ -144,7 +148,9 @@ fn kubernetes_bootstrap_token_fires_in_coalesced_no_hit_branch() {
         "k8s-bootstrap.env",
     );
 
-    let results = scanner.scan_coalesced(std::slice::from_ref(&chunk)).expect("phase-two coalesced scan should succeed");
+    let results = scanner
+        .scan_coalesced(std::slice::from_ref(&chunk))
+        .expect("phase-two coalesced scan should succeed");
     assert_eq!(results.len(), 1, "one chunk → one result vec");
     let matches = &results[0];
 
@@ -181,7 +187,9 @@ fn kubernetes_bootstrap_token_canonical_kubeadm_join_fires() {
         "kubeadm-join.sh",
     );
 
-    let results = scanner.scan_coalesced(std::slice::from_ref(&chunk)).expect("phase-two coalesced scan should succeed");
+    let results = scanner
+        .scan_coalesced(std::slice::from_ref(&chunk))
+        .expect("phase-two coalesced scan should succeed");
     let matches = &results[0];
 
     let bootstrap_fired = matches
@@ -216,7 +224,9 @@ fn bare_entropy_secret_file_still_enters_coalesced_no_hit_branch() {
         "config/secrets.env",
     );
 
-    let results = scanner.scan_coalesced(std::slice::from_ref(&chunk)).expect("phase-two coalesced scan should succeed");
+    let results = scanner
+        .scan_coalesced(std::slice::from_ref(&chunk))
+        .expect("phase-two coalesced scan should succeed");
     let matches = &results[0];
     let entropy_fired = matches.iter().any(|m| {
         m.detector_id.as_ref() == "entropy-generic"
@@ -251,7 +261,9 @@ fn bare_entropy_secret_enters_portable_per_chunk_no_hit_path() {
         1,
         "fixture must be rejected by direct-literal admission"
     );
-    let matches = scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
+    let matches = scanner
+        .scan_with_backend(&chunk, ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds");
     assert!(
         matches.iter().any(|finding| {
             finding.detector_id.as_ref() == "entropy-generic"
@@ -277,9 +289,13 @@ fn detector_owned_keyword_free_minimum_enters_coalesced_no_hit_path() {
         "config/keyword-free-boundary.env",
     );
 
-    let portable = scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
+    let portable = scanner
+        .scan_with_backend(&chunk, ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds");
     scanner.clear_fragment_cache();
-    let results = scanner.scan_coalesced(std::slice::from_ref(&chunk)).expect("phase-two coalesced scan should succeed");
+    let results = scanner
+        .scan_coalesced(std::slice::from_ref(&chunk))
+        .expect("phase-two coalesced scan should succeed");
     assert!(
         results[0].iter().any(|finding| {
             finding.detector_id.as_ref() == "entropy-generic"
@@ -336,9 +352,13 @@ fn detector_owned_keyword_free_candidate_survives_large_no_hit_chunk() {
     assert!(body.len() > 1024 * 1024);
     let chunk = make_chunk(&body, "config/large-keyword-free-boundary.env");
 
-    let portable = scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
+    let portable = scanner
+        .scan_with_backend(&chunk, ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds");
     scanner.clear_fragment_cache();
-    let coalesced = scanner.scan_coalesced(std::slice::from_ref(&chunk)).expect("phase-two coalesced scan should succeed");
+    let coalesced = scanner
+        .scan_coalesced(std::slice::from_ref(&chunk))
+        .expect("phase-two coalesced scan should succeed");
     for findings in [&portable, &coalesced[0]] {
         assert!(
             findings.iter().any(|finding| {
@@ -369,7 +389,9 @@ fn active_detector_keyword_enters_coalesced_no_hit_path() {
         "config/custom-keyword.env",
     );
 
-    let results = scanner.scan_coalesced(std::slice::from_ref(&chunk)).expect("phase-two coalesced scan should succeed");
+    let results = scanner
+        .scan_coalesced(std::slice::from_ref(&chunk))
+        .expect("phase-two coalesced scan should succeed");
     assert!(
         results[0]
             .iter()
@@ -404,7 +426,9 @@ fn isolated_bare_entropy_secret_enters_coalesced_no_hit_branch_on_plain_text_pat
     let secret = "KP4QX7RM2SN5TB8VW3YZ";
     let chunk = make_chunk(secret, "notes/sufficiency-probe.txt");
 
-    let results = scanner.scan_coalesced(std::slice::from_ref(&chunk)).expect("phase-two coalesced scan should succeed");
+    let results = scanner
+        .scan_coalesced(std::slice::from_ref(&chunk))
+        .expect("phase-two coalesced scan should succeed");
     let matches = &results[0];
     let entropy_fired = matches.iter().any(|m| {
         m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
@@ -434,7 +458,9 @@ fn embedded_isolated_entropy_secret_enters_coalesced_no_hit_branch_on_plain_text
         "notes/sufficiency-probe.txt",
     );
 
-    let direct = scanner.scan(&chunk).expect("phase-two direct scan should succeed");
+    let direct = scanner
+        .scan(&chunk)
+        .expect("phase-two direct scan should succeed");
     assert!(
         direct.iter().any(|m| m.credential.as_ref() == secret),
         "direct scan must recover an embedded isolated entropy token after same-line filler; matches={:?}",
@@ -445,7 +471,9 @@ fn embedded_isolated_entropy_secret_enters_coalesced_no_hit_branch_on_plain_text
     );
 
     scanner.clear_fragment_cache();
-    let results = scanner.scan_coalesced(std::slice::from_ref(&chunk)).expect("phase-two coalesced scan should succeed");
+    let results = scanner
+        .scan_coalesced(std::slice::from_ref(&chunk))
+        .expect("phase-two coalesced scan should succeed");
     let matches = &results[0];
     assert!(
         matches.iter().any(|m| m.credential.as_ref() == secret),
@@ -475,7 +503,9 @@ fn zero_width_generic_assignment_enters_coalesced_no_hit_branch_after_normalizat
     );
 
     scanner.clear_fragment_cache();
-    let results = scanner.scan_coalesced(std::slice::from_ref(&chunk)).expect("phase-two coalesced scan should succeed");
+    let results = scanner
+        .scan_coalesced(std::slice::from_ref(&chunk))
+        .expect("phase-two coalesced scan should succeed");
     let matches = &results[0];
     assert!(
         matches.iter().any(|m| m.credential.as_ref() == secret),
@@ -501,7 +531,9 @@ fn deterministic_same_line_filler_does_not_surface_as_embedded_isolated_secret()
     let filler = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789..".repeat(4);
     let chunk = make_chunk(&format!("{filler}\n"), "notes/sufficiency-probe.txt");
 
-    let direct = scanner.scan(&chunk).expect("phase-two direct scan should succeed");
+    let direct = scanner
+        .scan(&chunk)
+        .expect("phase-two direct scan should succeed");
     assert!(
         direct.iter().all(|m| m.credential.as_ref() != filler),
         "direct scan must suppress deterministic alphabet filler; matches={:?}",
@@ -516,7 +548,9 @@ fn deterministic_same_line_filler_does_not_surface_as_embedded_isolated_secret()
     );
 
     scanner.clear_fragment_cache();
-    let results = scanner.scan_coalesced(std::slice::from_ref(&chunk)).expect("phase-two coalesced scan should succeed");
+    let results = scanner
+        .scan_coalesced(std::slice::from_ref(&chunk))
+        .expect("phase-two coalesced scan should succeed");
     let matches = &results[0];
     assert!(
         matches.iter().all(|m| m.credential.as_ref() != filler),
@@ -542,7 +576,9 @@ fn isolated_short_dash_entropy_secret_enters_direct_scan_prefilter_recovery() {
     let secret = "QXjK-nCvdgB1eKnjRTfl";
     let chunk = make_chunk(secret, "notes/sufficiency-probe.txt");
 
-    let matches = scanner.scan(&chunk).expect("phase-two direct scan should succeed");
+    let matches = scanner
+        .scan(&chunk)
+        .expect("phase-two direct scan should succeed");
     let entropy_fired = matches.iter().any(|m| {
         m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
     });
@@ -569,7 +605,9 @@ fn multiline_symbolic_isolated_candidate_enters_coalesced_no_hit_branch() {
     let secret = "BadCbc0#-DE&1$FA";
     let chunk = make_chunk(&format!("`{secret}`\\\n\n"), "notes/multiline-symbolic.txt");
 
-    let direct = scanner.scan(&chunk).expect("phase-two direct scan should succeed");
+    let direct = scanner
+        .scan(&chunk)
+        .expect("phase-two direct scan should succeed");
     assert!(
         direct.iter().any(|m| m.credential.as_ref() == secret),
         "direct scan must surface the multiline-isolated symbolic candidate; matches={:?}",
@@ -580,7 +618,9 @@ fn multiline_symbolic_isolated_candidate_enters_coalesced_no_hit_branch() {
     );
 
     scanner.clear_fragment_cache();
-    let results = scanner.scan_coalesced(std::slice::from_ref(&chunk)).expect("phase-two coalesced scan should succeed");
+    let results = scanner
+        .scan_coalesced(std::slice::from_ref(&chunk))
+        .expect("phase-two coalesced scan should succeed");
     let matches = &results[0];
     assert!(
         matches.iter().any(|m| m.credential.as_ref() == secret),
@@ -602,7 +642,9 @@ fn isolated_bare_base64_shaped_entropy_secret_bypasses_blob_shape_gate() {
     let secret = "cvxs2sDMfkbwkGohlpD2BuQhAcqkYTI0nCInqbKrMfyX87TPRTfNvVVq89b9VGLi";
     let chunk = make_chunk(secret, "notes/sufficiency-probe.txt");
 
-    let results = scanner.scan_coalesced(std::slice::from_ref(&chunk)).expect("phase-two coalesced scan should succeed");
+    let results = scanner
+        .scan_coalesced(std::slice::from_ref(&chunk))
+        .expect("phase-two coalesced scan should succeed");
     let matches = &results[0];
     let entropy_fired = matches.iter().any(|m| {
         m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
@@ -628,7 +670,9 @@ fn isolated_bare_base64_random_byte_shape_reaches_audit_floor() {
     let secret = "JwbAykwNNL4zIbfQOSw6FvkB5uYAFzOQidAQ9PTG";
     let chunk = make_chunk(secret, "notes/sufficiency-probe.txt");
 
-    let matches = scanner.scan(&chunk).expect("phase-two direct scan should succeed");
+    let matches = scanner
+        .scan(&chunk)
+        .expect("phase-two direct scan should succeed");
     let entropy_fired = matches.iter().any(|m| {
         m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
     });
@@ -672,7 +716,9 @@ fn credential_assignment_base64_random_byte_shape_reaches_audit_floor() {
 
     for (body, path, label) in cases {
         let chunk = make_chunk(&body, path);
-        let matches = scanner.scan(&chunk).expect("phase-two direct scan should succeed");
+        let matches = scanner
+            .scan(&chunk)
+            .expect("phase-two direct scan should succeed");
         let entropy_fired = matches.iter().any(|m| {
             m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
         });
@@ -699,7 +745,9 @@ fn isolated_slash_bearing_base64_entropy_secret_bypasses_path_fragment_gate() {
     let secret = "ev0BsFtSD7S/4VWYObxiEhME3hJBXeYzR43jgiB1";
     let chunk = make_chunk(secret, "notes/sufficiency-probe.txt");
 
-    let matches = scanner.scan(&chunk).expect("phase-two direct scan should succeed");
+    let matches = scanner
+        .scan(&chunk)
+        .expect("phase-two direct scan should succeed");
     let entropy_fired = matches.iter().any(|m| {
         m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
     });
@@ -725,7 +773,9 @@ fn authorization_call_arg_surfaces_quoted_high_entropy_token() {
     let body = format!("response = requests.get(url, headers={{'Authorization': '{secret}'}})\n");
     let chunk = make_chunk(&body, "src/fetch.py");
 
-    let results = scanner.scan_coalesced(std::slice::from_ref(&chunk)).expect("phase-two coalesced scan should succeed");
+    let results = scanner
+        .scan_coalesced(std::slice::from_ref(&chunk))
+        .expect("phase-two coalesced scan should succeed");
     let matches = &results[0];
     let surfaced = matches
         .iter()
@@ -785,7 +835,9 @@ fn isolated_unstructured_dotted_values_stay_suppressed() {
         "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0",
     ] {
         let chunk = make_chunk(value, "notes/sufficiency-probe.txt");
-        let matches = scanner.scan(&chunk).expect("phase-two direct scan should succeed");
+        let matches = scanner
+            .scan(&chunk)
+            .expect("phase-two direct scan should succeed");
         let entropy_fired = matches.iter().any(|m| {
             m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(value)
         });
@@ -810,7 +862,9 @@ fn isolated_bare_split_entropy_secret_bypasses_identifier_emit_gate() {
     let secret = "kp4qx7rm_sn5tb8vw_3yzkp4qx";
     let chunk = make_chunk(secret, "notes/sufficiency-probe.txt");
 
-    let results = scanner.scan_coalesced(std::slice::from_ref(&chunk)).expect("phase-two coalesced scan should succeed");
+    let results = scanner
+        .scan_coalesced(std::slice::from_ref(&chunk))
+        .expect("phase-two coalesced scan should succeed");
     let matches = &results[0];
     let entropy_fired = matches.iter().any(|m| {
         m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
@@ -867,7 +921,9 @@ fn isolated_absolute_path_with_random_segment_stays_below_leading_slash_recovery
     let path = "/tmp/Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz/cache";
     let chunk = make_chunk(path, "notes/sufficiency-probe.txt");
 
-    let matches = scanner.scan(&chunk).expect("phase-two direct scan should succeed");
+    let matches = scanner
+        .scan(&chunk)
+        .expect("phase-two direct scan should succeed");
     let entropy_fired = matches.iter().any(|m| {
         m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(path)
     });
@@ -892,7 +948,9 @@ fn isolated_symbol_heavy_entropy_secrets_enter_full_line_recovery() {
 
     let secret = "RJ{4~d__D!Ts3S-jP46V~SAQ";
     let chunk = make_chunk(secret, "notes/sufficiency-probe.txt");
-    let matches = scanner.scan(&chunk).expect("phase-two direct scan should succeed");
+    let matches = scanner
+        .scan(&chunk)
+        .expect("phase-two direct scan should succeed");
     let entropy_fired = matches.iter().any(|m| {
         m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
     });
@@ -917,7 +975,9 @@ fn isolated_dictionary_password_with_one_symbol_stays_below_symbol_recovery() {
     let value = "SnowFlakePass123!";
     let chunk = make_chunk(value, "notes/sufficiency-probe.txt");
 
-    let matches = scanner.scan(&chunk).expect("phase-two direct scan should succeed");
+    let matches = scanner
+        .scan(&chunk)
+        .expect("phase-two direct scan should succeed");
     let entropy_fired = matches.iter().any(|m| {
         m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(value)
     });
@@ -942,7 +1002,9 @@ fn isolated_no_digit_symbolic_random_secret_enters_full_line_recovery() {
     let secret = "AFHzLDdEbht+JO%$Qr";
     let chunk = make_chunk(secret, "notes/sufficiency-probe.txt");
 
-    let matches = scanner.scan(&chunk).expect("phase-two direct scan should succeed");
+    let matches = scanner
+        .scan(&chunk)
+        .expect("phase-two direct scan should succeed");
     let entropy_fired = matches.iter().any(|m| {
         m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
     });
@@ -968,7 +1030,9 @@ fn isolated_no_digit_symbolic_identifier_stays_suppressed() {
     let identifier = "OAuthTokenSecret!@#Value";
     let chunk = make_chunk(identifier, "notes/sufficiency-probe.txt");
 
-    let matches = scanner.scan(&chunk).expect("phase-two direct scan should succeed");
+    let matches = scanner
+        .scan(&chunk)
+        .expect("phase-two direct scan should succeed");
     let entropy_fired = matches.iter().any(|m| {
         m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(identifier)
     });
@@ -993,7 +1057,9 @@ fn isolated_colon_separated_opaque_entropy_secret_enters_full_line_recovery() {
     let secret = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz:Kp4Qx7Rm2Sn5Tb8V";
     let chunk = make_chunk(secret, "notes/sufficiency-probe.txt");
 
-    let matches = scanner.scan(&chunk).expect("phase-two direct scan should succeed");
+    let matches = scanner
+        .scan(&chunk)
+        .expect("phase-two direct scan should succeed");
     let entropy_fired = matches.iter().any(|m| {
         m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
     });
@@ -1020,7 +1086,9 @@ fn isolated_hash_scheme_and_short_password_colon_values_stay_suppressed() {
         "user:CorrectHorseBattery123",
     ] {
         let chunk = make_chunk(value, "notes/sufficiency-probe.txt");
-        let matches = scanner.scan(&chunk).expect("phase-two direct scan should succeed");
+        let matches = scanner
+            .scan(&chunk)
+            .expect("phase-two direct scan should succeed");
         let entropy_fired = matches.iter().any(|m| {
             m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(value)
         });
@@ -1047,7 +1115,9 @@ fn isolated_bang_led_symbolic_entropy_secret_bypasses_punctuation_gate() {
         "!t1c!_Axt_7ARTF*Pzzl8L8qY*XoT5AiY2Yo-ppyTjrjvA0JAM2UPZFE1iFJa4U2q=#GhFKv&2UJR7wOQqIiQ6qWW";
     let chunk = make_chunk(secret, "notes/sufficiency-probe.txt");
 
-    let matches = scanner.scan(&chunk).expect("phase-two direct scan should succeed");
+    let matches = scanner
+        .scan(&chunk)
+        .expect("phase-two direct scan should succeed");
     let entropy_fired = matches.iter().any(|m| {
         m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
     });
@@ -1072,7 +1142,9 @@ fn isolated_js_coercion_identifier_stays_below_bang_led_recovery() {
     let identifier = "!!apiKeyOrOAuthToken1234567890CredentialName";
     let chunk = make_chunk(identifier, "notes/sufficiency-probe.txt");
 
-    let matches = scanner.scan(&chunk).expect("phase-two direct scan should succeed");
+    let matches = scanner
+        .scan(&chunk)
+        .expect("phase-two direct scan should succeed");
     let entropy_fired = matches.iter().any(|m| {
         m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(identifier)
     });
@@ -1098,7 +1170,9 @@ fn isolated_mixed_underscore_entropy_secret_enters_direct_scan_prefilter_recover
     let secret = "H_ZM9TBrKrmGsNmjQ8mT";
     let chunk = make_chunk(secret, "notes/sufficiency-probe.txt");
 
-    let matches = scanner.scan(&chunk).expect("phase-two direct scan should succeed");
+    let matches = scanner
+        .scan(&chunk)
+        .expect("phase-two direct scan should succeed");
     let entropy_fired = matches.iter().any(|m| {
         m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
     });
@@ -1124,7 +1198,9 @@ fn isolated_snake_case_identifier_with_digits_stays_below_entropy_recovery() {
     let identifier = "s3_secret_access_key";
     let chunk = make_chunk(identifier, "notes/sufficiency-probe.txt");
 
-    let matches = scanner.scan(&chunk).expect("phase-two direct scan should succeed");
+    let matches = scanner
+        .scan(&chunk)
+        .expect("phase-two direct scan should succeed");
     let entropy_fired = matches.iter().any(|m| {
         m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(identifier)
     });
@@ -1149,7 +1225,9 @@ fn isolated_mixed_alnum_entropy_secret_uses_randomness_floor() {
     let secret = "C372xGw30nSx5QdQuTxy";
     let chunk = make_chunk(secret, "notes/sufficiency-probe.txt");
 
-    let matches = scanner.scan(&chunk).expect("phase-two direct scan should succeed");
+    let matches = scanner
+        .scan(&chunk)
+        .expect("phase-two direct scan should succeed");
     let entropy_fired = matches.iter().any(|m| {
         m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
     });
@@ -1174,7 +1252,9 @@ fn isolated_camelcase_identifier_with_digits_stays_below_mixed_alnum_floor() {
     let identifier = "ClientSecretConfigValue2";
     let chunk = make_chunk(identifier, "notes/sufficiency-probe.txt");
 
-    let matches = scanner.scan(&chunk).expect("phase-two direct scan should succeed");
+    let matches = scanner
+        .scan(&chunk)
+        .expect("phase-two direct scan should succeed");
     let entropy_fired = matches.iter().any(|m| {
         m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(identifier)
     });
@@ -1198,7 +1278,9 @@ fn isolated_bare_dash_entropy_secret_bypasses_serial_decoy_gate() {
     let secret = "Kp4Qx7-Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn";
     let chunk = make_chunk(secret, "notes/sufficiency-probe.txt");
 
-    let results = scanner.scan_coalesced(std::slice::from_ref(&chunk)).expect("phase-two coalesced scan should succeed");
+    let results = scanner
+        .scan_coalesced(std::slice::from_ref(&chunk))
+        .expect("phase-two coalesced scan should succeed");
     let matches = &results[0];
     let entropy_fired = matches.iter().any(|m| {
         m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
@@ -1224,7 +1306,9 @@ fn isolated_lower_dash_app_password_enters_full_line_recovery() {
     let secret = "kp4q-x7rm-2sn5-tb8v";
     let chunk = make_chunk(secret, "notes/sufficiency-probe.txt");
 
-    let matches = scanner.scan(&chunk).expect("phase-two direct scan should succeed");
+    let matches = scanner
+        .scan(&chunk)
+        .expect("phase-two direct scan should succeed");
     let entropy_matches = matches
         .iter()
         .filter(|m| {
@@ -1272,7 +1356,9 @@ fn lower_dash_app_password_surfaces_in_assignment_contexts() {
 
     for (body, path, label) in cases {
         let chunk = make_chunk(&body, path);
-        let matches = scanner.scan(&chunk).expect("phase-two direct scan should succeed");
+        let matches = scanner
+            .scan(&chunk)
+            .expect("phase-two direct scan should succeed");
         let entropy_fired = matches.iter().any(|m| {
             m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
         });
@@ -1303,7 +1389,9 @@ fn isolated_lower_dash_identifiers_and_hex_serials_stay_suppressed() {
         "A1B2-C3D4-E5F6-G7H8",
     ] {
         let chunk = make_chunk(value, "notes/sufficiency-probe.txt");
-        let matches = scanner.scan(&chunk).expect("phase-two direct scan should succeed");
+        let matches = scanner
+            .scan(&chunk)
+            .expect("phase-two direct scan should succeed");
         let entropy_fired = matches.iter().any(|m| {
             m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(value)
         });
@@ -1330,7 +1418,9 @@ fn bare_entropy_source_file_obeys_default_entropy_source_gate() {
         "src/lib.rs",
     );
 
-    let results = scanner.scan_coalesced(std::slice::from_ref(&chunk)).expect("phase-two coalesced scan should succeed");
+    let results = scanner
+        .scan_coalesced(std::slice::from_ref(&chunk))
+        .expect("phase-two coalesced scan should succeed");
     let leaked = results[0]
         .iter()
         .any(|m| m.credential.as_ref().contains(BARE_ENTROPY_SECRET));

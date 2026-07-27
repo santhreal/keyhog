@@ -55,8 +55,7 @@ fn fuzz_smoke_excludes_asan_incompatible_hyperscan() {
         .expect("keyhog-scanner fuzz dependency");
 
     assert!(
-        scanner_dependency.contains("\"simdsieve\"")
-            && !scanner_dependency.contains("\"simd\""),
+        scanner_dependency.contains("\"simdsieve\"") && !scanner_dependency.contains("\"simd\""),
         "scanner fuzz dependency must exercise the Rust SIMD sieve without compiling Hyperscan's \
          ASan-incompatible scratch wrapper"
     );

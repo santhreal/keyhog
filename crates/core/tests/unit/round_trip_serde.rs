@@ -13,7 +13,6 @@ fn utf8_credential_serde_output_fails_closed() {
     assert!(output.is_empty());
     assert!(!error.contains(SECRET));
 
-    let back: Credential =
-        serde_json::from_str(r#"{"text":"xoxb-1234-5678-abc"}"#).unwrap();
+    let back: Credential = serde_json::from_str(r#"{"text":"xoxb-1234-5678-abc"}"#).unwrap();
     assert_eq!(credential, back);
 }

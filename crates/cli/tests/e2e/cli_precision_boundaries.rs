@@ -263,8 +263,7 @@ fn precision_mode_ignores_min_confidence_when_lower_than_0_85() {
     assert_eq!(default_code, Some(1));
     let default = parse_json_array(&default_out, "default lower-override twin");
     assert!(default.iter().any(|finding| {
-        finding.get("detector_id").and_then(|value| value.as_str())
-            == Some("abuseipdb-api-key")
+        finding.get("detector_id").and_then(|value| value.as_str()) == Some("abuseipdb-api-key")
             && finding.get("confidence").and_then(|value| value.as_f64()) == Some(0.795)
     }));
 

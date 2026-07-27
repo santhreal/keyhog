@@ -55,7 +55,8 @@ fn chunk(text: &str, path: &str) -> Chunk {
 /// never leaks fragment state between backends.
 fn run(sc: &CompiledScanner, chunks: &[Chunk], backend: ScanBackend) -> Vec<Vec<RawMatch>> {
     sc.clear_fragment_cache();
-    sc.scan_chunks_with_backend(chunks, backend).expect("selected backend scan succeeds")
+    sc.scan_chunks_with_backend(chunks, backend)
+        .expect("selected backend scan succeeds")
 }
 
 /// `(detector_id, credential, absolute_offset)` triples (the exact parity key).

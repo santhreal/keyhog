@@ -35,7 +35,9 @@ fn scan(text: &str) -> Vec<Found> {
             ..Default::default()
         },
     };
-    scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback).expect("selected backend scan succeeds")
+    scanner
+        .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds")
         .iter()
         .flat_map(|per_chunk| per_chunk.iter())
         .map(|m| Found {

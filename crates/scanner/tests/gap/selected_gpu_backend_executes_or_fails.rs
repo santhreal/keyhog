@@ -42,9 +42,12 @@ fn selected_gpu_backend_executes_or_fails() {
         return;
     }
 
-    let results = scanner.scan_coalesced_with_backend_and_admission(&[chunk("const K = \"AKIAQYLPMN5HFIQR7XYA\";")],
-    ScanBackend::GpuWgpu,
-    None,)
+    let results = scanner
+        .scan_coalesced_with_backend_and_admission(
+            &[chunk("const K = \"AKIAQYLPMN5HFIQR7XYA\";")],
+            ScanBackend::GpuWgpu,
+            None,
+        )
         .expect("the warmed WGPU route must execute without CPU substitution");
     let count: usize = results.iter().map(|chunk| chunk.len()).sum();
     assert_eq!(

@@ -152,7 +152,9 @@ fn cpu_fallback_completes_under_2s_on_4mib_corpus() {
     }
 
     let start = Instant::now();
-    let results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
+    let results = scanner
+        .scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds");
     let elapsed = start.elapsed();
     let limit_ms = if cfg!(debug_assertions) {
         30_000

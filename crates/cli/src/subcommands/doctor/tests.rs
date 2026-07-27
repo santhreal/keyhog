@@ -4,9 +4,7 @@
 //! stays green while still reaching the parent module's private
 //! `dir_is_on_path` via `super::`.
 
-use super::{
-    bloom_operator_diagnostic, dir_is_on_path, load_bloom_evidence, BloomEvidenceSummary,
-};
+use super::{bloom_operator_diagnostic, dir_is_on_path, load_bloom_evidence, BloomEvidenceSummary};
 use keyhog_scanner::{BigramPrefilterState, BigramPrefilterStatus};
 use std::ffi::OsString;
 
@@ -69,8 +67,8 @@ fn corpus_evidence(rejected_input_count: u64) -> BloomEvidenceSummary {
             4,
         )]),
         finding_count: 7,
-        findings_sha256:
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+        findings_sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            .to_string(),
     }
 }
 
@@ -98,10 +96,8 @@ fn missing_bloom_evidence_is_an_explicit_error() {
 #[test]
 fn ordinary_bloom_status_has_exact_operator_values() {
     let evidence = corpus_evidence(2);
-    let diagnostic = bloom_operator_diagnostic(
-        bloom_status(BigramPrefilterState::Healthy),
-        Some(&evidence),
-    );
+    let diagnostic =
+        bloom_operator_diagnostic(bloom_status(BigramPrefilterState::Healthy), Some(&evidence));
     assert_eq!(
         diagnostic.density,
         "0.39% (257/65536 slots; saturates at 39322)"
@@ -124,21 +120,16 @@ fn ordinary_bloom_status_has_exact_operator_values() {
 /// The operator text must state fail-open recall behavior and a concrete repair.
 #[test]
 fn saturated_bloom_status_is_actionable_and_not_healthy() {
-    let diagnostic =
-        bloom_operator_diagnostic(bloom_status(BigramPrefilterState::Saturated), None);
+    let diagnostic = bloom_operator_diagnostic(bloom_status(BigramPrefilterState::Saturated), None);
     assert_eq!(diagnostic.state, "SATURATED / FAIL-OPEN");
     assert!(diagnostic.warned);
     assert!(!diagnostic.unhealthy);
-    assert!(
-        diagnostic
-            .action
-            .is_some_and(|action| action.contains("downstream scanning remains enabled"))
-    );
-    assert!(
-        diagnostic
-            .action
-            .is_some_and(|action| action.contains("enlarge the table"))
-    );
+    assert!(diagnostic
+        .action
+        .is_some_and(|action| action.contains("downstream scanning remains enabled")));
+    assert!(diagnostic
+        .action
+        .is_some_and(|action| action.contains("enlarge the table")));
 }
 
 /// KH-1237 regression: invalid state must be a doctor health failure, not a
@@ -146,16 +137,13 @@ fn saturated_bloom_status_is_actionable_and_not_healthy() {
 /// telling operators that downstream recall remains enabled.
 #[test]
 fn invalid_bloom_status_is_unhealthy_and_actionable() {
-    let diagnostic =
-        bloom_operator_diagnostic(bloom_status(BigramPrefilterState::Invalid), None);
+    let diagnostic = bloom_operator_diagnostic(bloom_status(BigramPrefilterState::Invalid), None);
     assert_eq!(diagnostic.state, "INVALID / FAIL-OPEN");
     assert!(!diagnostic.warned);
     assert!(diagnostic.unhealthy);
-    assert!(
-        diagnostic
-            .action
-            .is_some_and(|action| action.contains("repair or rebuild"))
-    );
+    assert!(diagnostic
+        .action
+        .is_some_and(|action| action.contains("repair or rebuild")));
 }
 
 /// KH-1237 regression: a technically non-saturated filter that rejects none of
@@ -164,16 +152,12 @@ fn invalid_bloom_status_is_unhealthy_and_actionable() {
 #[test]
 fn zero_rejection_healthy_filter_is_visible_as_ineffective() {
     let evidence = corpus_evidence(0);
-    let diagnostic = bloom_operator_diagnostic(
-        bloom_status(BigramPrefilterState::Healthy),
-        Some(&evidence),
-    );
+    let diagnostic =
+        bloom_operator_diagnostic(bloom_status(BigramPrefilterState::Healthy), Some(&evidence));
     assert_eq!(diagnostic.state, "HEALTHY / NO CORPUS REJECTION");
     assert!(diagnostic.warned);
     assert!(!diagnostic.unhealthy);
-    assert!(
-        diagnostic
-            .action
-            .is_some_and(|action| action.contains("measured corpus was rejected at 0%"))
-    );
+    assert!(diagnostic
+        .action
+        .is_some_and(|action| action.contains("measured corpus was rejected at 0%")));
 }

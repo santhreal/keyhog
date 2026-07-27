@@ -3,8 +3,8 @@
 //! This module is compiled only for the crate's path-included coherence tests;
 //! it is not part of the supported `keyhog` library API.
 
-use std::ffi::OsStr;
 use clap::{Arg, ArgAction, Command};
+use std::ffi::OsStr;
 
 /// Opening marker for a generated block in `docs/src/reference/cli.md`.
 ///
@@ -100,10 +100,7 @@ fn generate_for_built(root: &Command, command: &str) -> String {
     }
 
     let cmd = resolve(root, command);
-    let subcommands: Vec<&Command> = cmd
-        .get_subcommands()
-        .filter(|c| !c.is_hide_set())
-        .collect();
+    let subcommands: Vec<&Command> = cmd.get_subcommands().filter(|c| !c.is_hide_set()).collect();
 
     if subcommands.is_empty() {
         arguments_table(cmd, false)
@@ -193,7 +190,10 @@ fn arguments_table(cmd: &Command, is_root: bool) -> String {
         let desc = description(arg);
         out.push_str(&format!(
             "| {} | {} | {} | {} |\n",
-            argument, value, default, md_cell(&desc)
+            argument,
+            value,
+            default,
+            md_cell(&desc)
         ));
     }
     out
@@ -280,7 +280,12 @@ fn positional_cell(arg: &Arg) -> String {
 /// Build the `Value` table cell.
 fn value_cell(arg: &Arg) -> String {
     let action = arg.get_action();
-    if !action.takes_values() || matches!(action, ArgAction::SetTrue | ArgAction::SetFalse | ArgAction::Count) {
+    if !action.takes_values()
+        || matches!(
+            action,
+            ArgAction::SetTrue | ArgAction::SetFalse | ArgAction::Count
+        )
+    {
         return String::new();
     }
 
@@ -421,10 +426,7 @@ fn code_or_empty(text: &str) -> String {
 /// is collapsed to a single space so multi-line clap help strings do not break
 /// the table layout.
 fn md_cell(text: &str) -> String {
-    let collapsed = text
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
+    let collapsed = text.split_whitespace().collect::<Vec<_>>().join(" ");
 
     let mut out = String::with_capacity(collapsed.len());
     let mut in_code = false;

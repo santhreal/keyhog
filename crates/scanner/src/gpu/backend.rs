@@ -13,12 +13,12 @@ mod diagnostics;
 #[cfg(feature = "gpu")]
 mod execution;
 
-pub use acquisition::GpuBackendAvailability;
-pub(crate) use acquisition::{GpuBackendAcquisitionFailure, GpuBackendPeers};
-#[cfg(all(feature = "gpu", target_os = "linux"))]
-pub(crate) use acquisition::probe_cuda_peer;
 #[cfg(all(test, feature = "gpu", target_os = "linux"))]
 pub(crate) use acquisition::load_dynamic_library;
+#[cfg(all(feature = "gpu", target_os = "linux"))]
+pub(crate) use acquisition::probe_cuda_peer;
+pub use acquisition::GpuBackendAvailability;
+pub(crate) use acquisition::{GpuBackendAcquisitionFailure, GpuBackendPeers};
 
 #[cfg(feature = "gpu")]
 pub(crate) use acquisition::get_gpu;
@@ -30,6 +30,8 @@ pub(crate) use execution::{
 };
 
 #[cfg(all(test, feature = "gpu"))]
+use crate::ml_scorer::GPU_BATCH_THRESHOLD;
+#[cfg(all(test, feature = "gpu"))]
 use acquisition::lazy_acquire;
 #[cfg(all(test, feature = "gpu", target_os = "linux"))]
 use acquisition::run_cuda_after_preflight;
@@ -40,11 +42,7 @@ use diagnostics::{
     classify_gpu_init_failure, on_gpu_init_failed, GpuInitError, GpuInitFailureAction,
 };
 #[cfg(all(test, feature = "gpu"))]
-use execution::{
-    checked_moe_scores, dispatch_moe_batch, gpu_moe_parity_probe_features, INPUT_DIM,
-};
-#[cfg(all(test, feature = "gpu"))]
-use crate::ml_scorer::GPU_BATCH_THRESHOLD;
+use execution::{checked_moe_scores, dispatch_moe_batch, gpu_moe_parity_probe_features, INPUT_DIM};
 #[cfg(all(test, feature = "gpu"))]
 use std::sync::OnceLock;
 #[cfg(all(test, feature = "gpu"))]

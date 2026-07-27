@@ -15,7 +15,10 @@ fn scan(text: &str) -> Vec<String> {
             ..Default::default()
         },
     };
-    scanner.scan(&chunk).expect("scanner call should succeed").into_iter()
+    scanner
+        .scan(&chunk)
+        .expect("scanner call should succeed")
+        .into_iter()
         .map(|m| m.credential.as_ref().to_string())
         .collect()
 }

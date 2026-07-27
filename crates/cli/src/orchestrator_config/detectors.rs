@@ -35,7 +35,6 @@ pub(crate) struct LoadedDetectorCorpus {
     pub(crate) provenance: DetectorCorpusProvenance,
 }
 
-
 pub(crate) fn auto_discover_detectors(path: &Path) -> Result<PathBuf> {
     if path != Path::new("detectors") {
         return Ok(path.to_path_buf());
@@ -98,8 +97,6 @@ pub(crate) fn validate_detector_mode_selection(
     }
     Ok(())
 }
-
-
 
 fn load_detector_corpus_with_cache(path: &Path) -> Result<keyhog_core::LoadedDetectorCorpus> {
     validate_detector_path_for_scan(path)?;
@@ -201,7 +198,6 @@ pub(crate) fn load_effective_detector_corpus(
         }
     }
 }
-
 
 fn load_detectors_from_dir_with_cache(
     source_dir: &Path,
@@ -563,7 +559,6 @@ pub(crate) mod testing {
         source_dir: &Path,
         cache_path: &Path,
     ) -> Result<Vec<DetectorSpec>> {
-        super::load_detectors_from_dir_with_cache(source_dir, cache_path)
-            .map(|loaded| loaded.specs)
+        super::load_detectors_from_dir_with_cache(source_dir, cache_path).map(|loaded| loaded.specs)
     }
 }

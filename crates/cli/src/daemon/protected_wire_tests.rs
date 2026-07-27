@@ -73,7 +73,10 @@ fn daemon_private_wire_is_the_only_plaintext_serde_boundary() {
             ..
         } => {
             assert_eq!(matches.len(), 1);
-            assert_eq!(matches[0].credential.as_str(), "protected-daemon-credential");
+            assert_eq!(
+                matches[0].credential.as_str(),
+                "protected-daemon-credential"
+            );
             assert_eq!(static_recovery_rejections, recovery_rejections());
             assert_eq!(
                 static_recovery_status,

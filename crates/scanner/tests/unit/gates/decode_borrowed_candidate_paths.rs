@@ -15,8 +15,8 @@ fn hot_decoders_decode_borrowed_candidates_without_clone_collect() {
     ))
     .expect("decode pipeline splice source readable");
     assert!(
-        pipeline.contains("fn decode_candidate_refs_exact<'a, I, F>"),
-        "decode pipeline must expose a borrowed Exact-splice candidate helper"
+        pipeline.contains("fn stream_candidate_refs_exact<'a, I, F>"),
+        "decode pipeline must expose a borrowed exact-splice candidate stream"
     );
 
     let base64 =
@@ -28,10 +28,10 @@ fn hot_decoders_decode_borrowed_candidates_without_clone_collect() {
         "pub(super) struct Z85Decoder",
     );
     assert!(
-        base64_body.contains(
-            "visit_classified_base64_string_spans(\n            &chunk.data,\n            MIN_BASE64_CANDIDATE_LEN",
-        ) && !base64_body.contains("find_classified_base64_string_spans"),
-        "base64 decoder should visit borrowed classified candidates directly"
+        base64_body.contains("DecodedReplacementBatcher::new(sink, chunk, self.name())")
+            && base64_body.contains("visit_classified_base64_string_spans(")
+            && !base64_body.contains("find_classified_base64_string_spans"),
+        "base64 decoder should stream borrowed classified candidates into bounded splice batches"
     );
     let z85_body = impl_body(
         &base64,
@@ -52,7 +52,7 @@ fn hot_decoders_decode_borrowed_candidates_without_clone_collect() {
         "pub fn find_hex_strings",
     );
     assert!(
-        hex_body.contains("push_batched_decoded_replacements(")
+        hex_body.contains("DecodedReplacementBatcher::new(sink, chunk, self.name())")
             && hex_body.contains(".iter()")
             && !hex_body.contains("find_hex_string_spans(&chunk.data"),
         "hex decoder should batch decoded borrowed candidate spans"
@@ -65,7 +65,7 @@ fn hot_decoders_decode_borrowed_candidates_without_clone_collect() {
     .expect("reverse source readable");
     let reverse_body = &reverse;
     assert!(
-        reverse_body.contains("decode_candidate_refs_exact(")
+        reverse_body.contains("stream_candidate_refs_exact(")
             && reverse_body
                 .contains("candidates\n                    .iter()\n                    .filter(")
             && !reverse_body.contains(".cloned()"),
@@ -95,9 +95,9 @@ fn hot_decoders_decode_borrowed_candidates_without_clone_collect() {
         "impl Decoder for QuotedPrintableDecoder",
     );
     assert!(
-        url_body.contains("decode_filtered_lines(")
-            && url.contains("push_batched_decoded_replacements(")
-            && !url_body.contains("decode_candidate_refs_exact("),
+        url_body.contains("decode_filtered_lines_into(")
+            && url.contains("stream_batched_decoded_replacements(")
+            && !url_body.contains("stream_candidate_refs_exact("),
         "URL decoder should use the shared bounded line-replacement batch"
     );
     let qp_body = impl_body(
@@ -106,9 +106,9 @@ fn hot_decoders_decode_borrowed_candidates_without_clone_collect() {
         "/// True if `s` contains",
     );
     assert!(
-        qp_body.contains("push_batched_decoded_replacements(")
+        qp_body.contains("stream_batched_decoded_replacements(")
             && qp_body.contains("is_false_positive_context(")
-            && !qp_body.contains("decode_candidate_refs_exact("),
+            && !qp_body.contains("stream_candidate_refs_exact("),
         "quoted-printable decoder should batch admitted physical lines"
     );
     let mime_body = impl_body(
@@ -117,15 +117,15 @@ fn hot_decoders_decode_borrowed_candidates_without_clone_collect() {
         "fn percent_decode",
     );
     assert!(
-        mime_body.contains("decode_candidate_spans_exact(")
+        mime_body.contains("stream_candidate_spans_exact(")
             && mime_body.contains("find_mime_encoded_word_spans(&chunk.data)")
             && !mime_body.contains("decode_candidates("),
         "MIME encoded-word decoder should preserve parser spans instead of using synthetic decode candidates"
     );
     let macro_body = impl_body(&url, "macro_rules! simple_decoder", "simple_decoder!(");
     assert!(
-        macro_body.contains("decode_filtered_lines(")
-            && !macro_body.contains("decode_candidate_refs_exact(")
+        macro_body.contains("decode_filtered_lines_into(")
+            && !macro_body.contains("stream_candidate_refs_exact(")
             && !macro_body.contains(".collect::<Vec<_>>()"),
         "simple escape/entity decoders should batch borrowed physical lines"
     );

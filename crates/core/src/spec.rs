@@ -17,8 +17,8 @@ use serde::{Deserialize, Serialize};
 
 pub use evidence::{ProviderEvidenceRole, ProviderEvidenceSensitivity};
 pub use load::{
-    load_detector_corpus, load_detectors, read_detector_toml_file, LoadedDetectorCorpus,
-    SpecError, DETECTOR_TOML_FILE_BYTES,
+    load_detector_corpus, load_detectors, read_detector_toml_file, LoadedDetectorCorpus, SpecError,
+    DETECTOR_TOML_FILE_BYTES,
 };
 pub use validate::{validate_detector, QualityIssue};
 
@@ -2080,8 +2080,7 @@ pub const DETECTOR_CORPUS_SCHEMA_VERSION: u32 = 2;
 ///
 /// A corpus beyond this one-version compatibility window is rejected before
 /// any detector is loaded.
-pub const DETECTOR_CORPUS_MAX_FORWARD_SCHEMA_VERSION: u32 =
-    DETECTOR_CORPUS_SCHEMA_VERSION + 1;
+pub const DETECTOR_CORPUS_MAX_FORWARD_SCHEMA_VERSION: u32 = DETECTOR_CORPUS_SCHEMA_VERSION + 1;
 
 /// Directory-scoped compatibility contract for detector TOML files.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -37,7 +37,9 @@ pub fn scan_text(text: &str, path: &str) -> Vec<RawMatch> {
             ..Default::default()
         },
     };
-    production_scanner().scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"))
+    production_scanner()
+        .scan(&chunk)
+        .expect(concat!(module_path!(), ": scan should succeed"))
 }
 
 fn unescape_rust_unicode(input: &str) -> String {
@@ -153,7 +155,9 @@ pub fn assert_detector_silent_across_chunk_boundary(detector_id: &str, text: &st
         },
     };
     production_scanner().clear_fragment_cache();
-    let results = production_scanner().scan_coalesced(&[chunk_a, chunk_b]).expect(concat!(module_path!(), ": coalesced scan should succeed"));
+    let results = production_scanner()
+        .scan_coalesced(&[chunk_a, chunk_b])
+        .expect(concat!(module_path!(), ": coalesced scan should succeed"));
     let flat: Vec<RawMatch> = results.into_iter().flatten().collect();
     let hits = hits_for_detector(&flat, detector_id);
     assert!(

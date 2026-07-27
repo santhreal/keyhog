@@ -42,7 +42,10 @@ pub fn compose_detector_corpus(
         return Ok(custom);
     }
 
-    let embedded_ids: BTreeSet<&str> = embedded.iter().map(|detector| detector.id.as_str()).collect();
+    let embedded_ids: BTreeSet<&str> = embedded
+        .iter()
+        .map(|detector| detector.id.as_str())
+        .collect();
     let collisions: BTreeSet<&str> = custom
         .iter()
         .map(|detector| detector.id.as_str())
@@ -66,10 +69,7 @@ pub fn compose_detector_corpus(
 pub fn compute_detector_corpus_digest(
     detectors: &[DetectorSpec],
 ) -> Result<[u8; 32], serde_json::Error> {
-    compute_detector_corpus_digest_for_schema(
-        detectors,
-        crate::DETECTOR_CORPUS_SCHEMA_VERSION,
-    )
+    compute_detector_corpus_digest_for_schema(detectors, crate::DETECTOR_CORPUS_SCHEMA_VERSION)
 }
 
 /// Compute a deterministic, schema-bound digest of a complete effective

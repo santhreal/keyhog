@@ -74,14 +74,15 @@ fn scan_detector(text: &str, detector_id: &str) -> Vec<keyhog_core::RawMatch> {
         .find(|detector| detector.id == detector_id)
         .expect("requested detector exists");
     let scanner = CompiledScanner::compile(vec![detector]).expect("compile detector");
-    scanner.scan(&Chunk {
-        data: text.into(),
-        metadata: ChunkMetadata {
-            source_type: "filesystem".into(),
-            path: Some("secrets.pem".into()),
-            ..Default::default()
-        },
-    })
+    scanner
+        .scan(&Chunk {
+            data: text.into(),
+            metadata: ChunkMetadata {
+                source_type: "filesystem".into(),
+                path: Some("secrets.pem".into()),
+                ..Default::default()
+            },
+        })
         .expect("focused private-key detector scan should succeed")
 }
 

@@ -25,9 +25,11 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
     .expect("confidence/policy.rs readable");
     let gpu = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/gpu.rs"))
         .expect("gpu.rs readable");
-    let backend =
-        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/gpu/backend.rs"))
-            .expect("gpu/backend.rs readable");
+    let backend = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/gpu/backend/execution.rs"
+    ))
+    .expect("gpu/backend/execution.rs readable");
 
     let candidates = [
         ("ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij", "TOKEN="),
@@ -57,7 +59,8 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
         );
     }
     assert!(
-        ml_postprocess.contains("self.emit_finalized_pending_match(scan_state, pending, report_conf)")
+        ml_postprocess
+            .contains("self.emit_finalized_pending_match(scan_state, pending, report_conf)")
             && ml_postprocess.contains("crate::adjudicate::finalize_report_candidate(")
             && ml_postprocess.contains(".materialize(final_confidence)")
             && ml_postprocess.contains("crate::adjudicate::ReportAdjudicationPolicy"),

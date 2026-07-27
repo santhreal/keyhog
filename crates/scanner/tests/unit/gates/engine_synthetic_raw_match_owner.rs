@@ -8,7 +8,7 @@ fn synthetic_engine_matches_route_through_shared_builder() {
     let postprocess = uncommented_code(&read(&src.join("pipeline/postprocess/mod.rs")));
     assert!(
         postprocess.contains("fn build_synthetic_raw_match(")
-            && postprocess.contains("companions: HashMap::new()")
+            && postprocess.contains("companions: CompanionMap::new()")
             && postprocess.contains("credential_hash: crate::sha256_hash(credential)")
             && postprocess.contains("credential: scan_state.intern_credential(credential)"),
         "pipeline::postprocess must own synthetic RawMatch construction"

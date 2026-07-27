@@ -85,8 +85,14 @@ fn emitted_candidate_materializes_once_with_compatible_hash_and_fields() {
     assert_eq!(finding.location.line, Some(9));
     assert_eq!(finding.entropy, Some(4.25));
     assert_eq!(finding.confidence, Some(0.95));
-    assert_eq!(finding.companions.get("account").map(String::as_str), Some("tenant-42"));
-    assert_eq!(keyhog_core::hex_encode(&finding.credential_hash), EXPECTED_SHA256);
+    assert_eq!(
+        finding.companions.get("account").map(String::as_str),
+        Some("tenant-42")
+    );
+    assert_eq!(
+        keyhog_core::hex_encode(&finding.credential_hash),
+        EXPECTED_SHA256
+    );
 
     let wire = serde_json::to_value(finding.to_redacted())
         .expect("RedactedFinding JSON serialization should succeed");
@@ -116,12 +122,8 @@ fn dense_rejected_candidates_construct_no_durable_matches() {
     let config = ScannerConfig::default();
     let mut emitted = 0usize;
     for offset in 0..4096 {
-        emitted += finalize_pending_match_for_test(
-            &config,
-            pending_candidate(offset, 0.99),
-            0.01,
-        )
-        .is_some() as usize;
+        emitted += finalize_pending_match_for_test(&config, pending_candidate(offset, 0.99), 0.01)
+            .is_some() as usize;
     }
 
     assert_eq!(emitted, 0);

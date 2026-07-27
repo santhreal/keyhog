@@ -1452,9 +1452,9 @@ fn oob_session_docs_match_fail_closed_runtime_contract() {
         "OOB-required detectors must not be documented as silently falling through to HTTP-only verification"
     );
     assert!(
-        normalized_docs.contains(
-            "OOB-required detectors fail closed before sending any HTTP probe",
-        ) && normalized_docs.contains("oob_disabled = \"no active OOB session\"")
+        normalized_docs
+            .contains("OOB-required detectors fail closed before sending any HTTP probe",)
+            && normalized_docs.contains("oob_disabled = \"no active OOB session\"")
             && session.contains("fails closed with a verification error for this finding"),
         "user-facing and developer OOB docs must describe fail-closed required-OOB behavior"
     );

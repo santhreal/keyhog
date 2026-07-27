@@ -117,14 +117,16 @@ fn optional_api_header_shape_is_localized_without_changing_findings() {
         "x\u{a0}api-key",
     ] {
         let text = format!("{header}: {credential}\nhttps://api.opensea.io/v1");
-        let findings = scanner.scan(&Chunk {
-            data: text.into(),
-            metadata: ChunkMetadata {
-                source_type: "confirmed-anchor-localization".into(),
-                path: Some("opensea.env".into()),
-                ..ChunkMetadata::default()
-            },
-        }).expect("scanner call should succeed");
+        let findings = scanner
+            .scan(&Chunk {
+                data: text.into(),
+                metadata: ChunkMetadata {
+                    source_type: "confirmed-anchor-localization".into(),
+                    path: Some("opensea.env".into()),
+                    ..ChunkMetadata::default()
+                },
+            })
+            .expect("scanner call should succeed");
         assert_eq!(
             findings.len(),
             1,

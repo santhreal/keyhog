@@ -41,7 +41,9 @@ fn akia_split_across_chunk_boundary_reassembled() {
         },
     };
 
-    let results = scanner.scan_coalesced(&[chunk_a, chunk_b]).expect(concat!(module_path!(), ": coalesced scan should succeed"));
+    let results = scanner
+        .scan_coalesced(&[chunk_a, chunk_b])
+        .expect(concat!(module_path!(), ": coalesced scan should succeed"));
     let found = results
         .iter()
         .flatten()

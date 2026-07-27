@@ -89,10 +89,7 @@ fn workload(bytes: u64) -> WorkloadKey {
     }
 }
 
-fn decisions(
-    bytes: u64,
-    host: &AutorouteHostProfile,
-) -> HashMap<WorkloadKey, AutorouteDecision> {
+fn decisions(bytes: u64, host: &AutorouteHostProfile) -> HashMap<WorkloadKey, AutorouteDecision> {
     let gpu_ms = host
         .eligible_backends
         .iter()
@@ -142,8 +139,7 @@ fn staged_generation_does_not_touch_live_cache_until_publish() {
     .expect("seed live cache");
     let baseline = std::fs::read(&live).expect("read live baseline");
 
-    let transaction =
-        StagedAutorouteCache::begin(&live, &staged).expect("begin staged generation");
+    let transaction = StagedAutorouteCache::begin(&live, &staged).expect("begin staged generation");
     save_autoroute_cache(
         transaction.staged_path(),
         DETECTOR_DIGEST,
@@ -185,8 +181,7 @@ fn concurrent_live_update_prevents_staged_generation_from_overwriting_it() {
     )
     .expect("seed live cache");
 
-    let transaction =
-        StagedAutorouteCache::begin(&live, &staged).expect("begin staged generation");
+    let transaction = StagedAutorouteCache::begin(&live, &staged).expect("begin staged generation");
     save_autoroute_cache(
         transaction.staged_path(),
         DETECTOR_DIGEST,
@@ -244,8 +239,7 @@ fn concurrent_runtime_fault_prevents_staged_generation_from_clearing_it() {
     .expect("seed live cache");
     let live_baseline = std::fs::read(&live).expect("read live baseline");
 
-    let transaction =
-        StagedAutorouteCache::begin(&live, &staged).expect("begin staged generation");
+    let transaction = StagedAutorouteCache::begin(&live, &staged).expect("begin staged generation");
     save_autoroute_cache(
         transaction.staged_path(),
         DETECTOR_DIGEST,
@@ -309,8 +303,7 @@ fn completed_generation_clears_only_faults_for_routes_measured_by_the_sweep() {
             .expect("persist route fault");
     }
 
-    let transaction =
-        StagedAutorouteCache::begin(&live, &staged).expect("begin staged generation");
+    let transaction = StagedAutorouteCache::begin(&live, &staged).expect("begin staged generation");
     save_autoroute_cache(
         transaction.staged_path(),
         DETECTOR_DIGEST,
@@ -389,17 +382,13 @@ fn gpu_policy_configs_coexist_and_replay_exact_hosts_in_both_write_orders() {
 
         let auto_under_disabled =
             load_autoroute_cache(&path, DETECTOR_DIGEST, RULES_DIGEST, 0xa001, &cpu)
-                .expect_err(
-                    "GPU-auto evidence must not replay under disabled-GPU host identity",
-                );
+                .expect_err("GPU-auto evidence must not replay under disabled-GPU host identity");
         assert!(auto_under_disabled
             .to_string()
             .contains("host profile mismatch"));
         let disabled_under_auto =
             load_autoroute_cache(&path, DETECTOR_DIGEST, RULES_DIGEST, 0xa003, &gpu)
-                .expect_err(
-                    "disabled-GPU evidence must not replay under GPU-auto host identity",
-                );
+                .expect_err("disabled-GPU evidence must not replay under GPU-auto host identity");
         assert!(disabled_under_auto
             .to_string()
             .contains("host profile mismatch"));
@@ -668,9 +657,8 @@ fn cache_global_host_schema_is_rejected_without_migration() {
     )
     .expect("write old autoroute schema");
 
-    let error =
-        load_autoroute_cache(&path, DETECTOR_DIGEST, RULES_DIGEST, config_digest, &host)
-            .expect_err("cache-global host schema must not migrate silently");
+    let error = load_autoroute_cache(&path, DETECTOR_DIGEST, RULES_DIGEST, config_digest, &host)
+        .expect_err("cache-global host schema must not migrate silently");
     let message = error.to_string();
     assert!(message.contains("unsupported autoroute cache version"));
     assert!(message.contains(&(AUTOROUTE_CACHE_VERSION - 1).to_string()));

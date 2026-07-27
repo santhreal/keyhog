@@ -25,7 +25,9 @@ fn scan_sorted(text: &str, backend: ScanBackend) -> Vec<String> {
         },
     };
     SCANNER.clear_fragment_cache();
-    let mut creds: Vec<String> = SCANNER.scan_chunks_with_backend(std::slice::from_ref(&chunk), backend).expect("selected backend scan succeeds")
+    let mut creds: Vec<String> = SCANNER
+        .scan_chunks_with_backend(std::slice::from_ref(&chunk), backend)
+        .expect("selected backend scan succeeds")
         .iter()
         .flat_map(|per_chunk| per_chunk.iter())
         .map(|m| {

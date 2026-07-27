@@ -150,7 +150,6 @@ pub struct ScanArgs {
     #[arg(long, value_name = "MODE")]
     pub detectors_mode: Option<DetectorMode>,
 
-
     /// Path(s) to scan. Pass several to scan multiple roots in one run
     /// (`keyhog scan a/ b/ c/`); nested or duplicate roots fold into their
     /// covering parent. Positional shorthand for `--path` (single root only).

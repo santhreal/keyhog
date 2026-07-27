@@ -66,8 +66,9 @@ fn check_decoder_cells(decoder_label: &str, fixture: &Chunk) {
     let scanner = scanner();
     let mut failed = Vec::new();
     scanner.clear_fragment_cache();
-    let reference_results =
-        scanner.scan_chunks_with_backend(std::slice::from_ref(fixture), ScanBackend::CpuFallback).expect("selected backend scan succeeds");
+    let reference_results = scanner
+        .scan_chunks_with_backend(std::slice::from_ref(fixture), ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds");
     let reference = canonical(&reference_results);
 
     for backend in ALL_BACKENDS {
@@ -83,7 +84,9 @@ fn check_decoder_cells(decoder_label: &str, fixture: &Chunk) {
         );
         scanner.clear_fragment_cache();
         let degrade_before = scanner.runtime_status().gpu_degrade_count;
-        let results = scanner.scan_chunks_with_backend(std::slice::from_ref(fixture), *backend).expect("selected backend scan succeeds");
+        let results = scanner
+            .scan_chunks_with_backend(std::slice::from_ref(fixture), *backend)
+            .expect("selected backend scan succeeds");
         let degrade_after = scanner.runtime_status().gpu_degrade_count;
         let found = results
             .iter()

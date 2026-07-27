@@ -6,8 +6,8 @@
 //! workflow guidance; the command/flag tables inside the marked regions are
 //! generated from the real model so they cannot drift.
 
-use std::path::PathBuf;
 use clap::{Arg, Command};
+use std::path::PathBuf;
 
 fn root_command() -> clap::Command {
     keyhog::args::command()
@@ -116,7 +116,10 @@ fn nested_subcommands_are_covered() {
             "daemon subcommand `{sub}` missing from generated reference"
         );
     }
-    assert!(daemon.contains("`--socket`"), "daemon start --socket missing");
+    assert!(
+        daemon.contains("`--socket`"),
+        "daemon start --socket missing"
+    );
     assert!(
         daemon.contains("`--request-timeout-secs`"),
         "daemon start --request-timeout-secs missing"
@@ -124,7 +127,10 @@ fn nested_subcommands_are_covered() {
 
     let hook = keyhog::cli_reference::generate_for(&root_command(), "hook");
     assert!(hook.contains("keyhog hook install"), "hook install missing");
-    assert!(hook.contains("keyhog hook uninstall"), "hook uninstall missing");
+    assert!(
+        hook.contains("keyhog hook uninstall"),
+        "hook uninstall missing"
+    );
     assert!(hook.contains("`--force`"), "hook install --force missing");
 }
 
@@ -155,10 +161,7 @@ fn defaults_value_enums_and_possible_values_are_documented() {
     );
 
     let detectors_mode = table_columns(&scan, "`--detectors-mode`");
-    assert_eq!(
-        &detectors_mode[..3],
-        ["`--detectors-mode`", "`MODE`", ""]
-    );
+    assert_eq!(&detectors_mode[..3], ["`--detectors-mode`", "`MODE`", ""]);
     assert_eq!(
         detectors_mode[3],
         "How an explicitly selected custom corpus participates in the embedded \
@@ -174,16 +177,10 @@ fn defaults_value_enums_and_possible_values_are_documented() {
     );
 
     let daemon = table_columns(&scan, "`--daemon`");
-    assert_eq!(
-        &daemon[..3],
-        ["`--daemon`", "`[auto\\|on\\|off]`", ""]
-    );
+    assert_eq!(&daemon[..3], ["`--daemon`", "`[auto\\|on\\|off]`", ""]);
 
     let verify_rate = table_columns(&scan, "`--verify-rate`");
-    assert_eq!(
-        &verify_rate[..3],
-        ["`--verify-rate`", "`RPS`", "`5.0`"]
-    );
+    assert_eq!(&verify_rate[..3], ["`--verify-rate`", "`RPS`", "`5.0`"]);
 
     let scan_system = keyhog::cli_reference::generate_for(&root, "scan-system");
     let space = table_columns(&scan_system, "`--space`");
@@ -197,7 +194,12 @@ fn hidden_flags_are_covered() {
     let cmd = Command::new("test")
         .disable_help_flag(true)
         .arg(Arg::new("visible").long("visible").help("A visible flag"))
-        .arg(Arg::new("hidden").long("hidden").help("A hidden flag").hide(true));
+        .arg(
+            Arg::new("hidden")
+                .long("hidden")
+                .help("A hidden flag")
+                .hide(true),
+        );
 
     let generated = keyhog::cli_reference::generate_for(&cmd, "");
     assert_eq!(
@@ -232,14 +234,12 @@ fn markdown_special_characters_are_escaped() {
 /// them; this prevents a long alias from being mislabeled as a short option.
 #[test]
 fn aliases_are_covered() {
-    let args = Command::new("test")
-        .disable_help_flag(true)
-        .arg(
-            Arg::new("fast")
-                .long("fast")
-                .visible_short_alias('f')
-                .help("Fast"),
-        );
+    let args = Command::new("test").disable_help_flag(true).arg(
+        Arg::new("fast")
+            .long("fast")
+            .visible_short_alias('f')
+            .help("Fast"),
+    );
     assert_eq!(
         keyhog::cli_reference::generate_for(&args, ""),
         "| Argument | Value | Default | Description |\n\

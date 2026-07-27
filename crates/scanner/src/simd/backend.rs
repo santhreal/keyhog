@@ -1,6 +1,4 @@
-use hyperscan::{
-    Block as BlockMode, BlockDatabase, Builder, Pattern, PatternFlags, Patterns,
-};
+use hyperscan::{Block as BlockMode, BlockDatabase, Builder, Pattern, PatternFlags, Patterns};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
@@ -826,12 +824,9 @@ impl HsScanner {
     /// successful warm, ordinary scan requests reuse those scratches instead
     /// of allocating on the request path.
     pub(crate) fn warm(&self) -> Result<(), String> {
-        let results: Vec<Result<(), String>> = rayon::broadcast(|_| {
-            self.scan_matches_result(b"", |_, _, _| {})
-        });
-        results
-            .into_iter()
-            .collect::<Result<Vec<()>, String>>()?;
+        let results: Vec<Result<(), String>> =
+            rayon::broadcast(|_| self.scan_matches_result(b"", |_, _, _| {}));
+        results.into_iter().collect::<Result<Vec<()>, String>>()?;
         Ok(())
     }
 

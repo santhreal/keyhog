@@ -82,5 +82,4 @@ impl PortableGateEvidence {
             TriggerEvidence::Absent
         )
     }
-
 }

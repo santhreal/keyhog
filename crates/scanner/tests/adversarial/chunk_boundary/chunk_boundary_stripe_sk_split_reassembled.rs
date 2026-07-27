@@ -41,7 +41,9 @@ fn chunk_boundary_stripe_sk_split_reassembled() {
         },
     };
 
-    let results = scanner.scan_coalesced(&[chunk_a, chunk_b]).expect(concat!(module_path!(), ": coalesced scan should succeed"));
+    let results = scanner
+        .scan_coalesced(&[chunk_a, chunk_b])
+        .expect(concat!(module_path!(), ": coalesced scan should succeed"));
     let found = results.iter().flatten().any(|m| {
         m.detector_id.as_ref() == "stripe-secret-key"
             && m.credential.as_ref() == "sk_live_abcdefghijklmnopqrstuvwxyz"

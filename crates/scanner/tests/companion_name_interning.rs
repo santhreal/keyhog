@@ -81,7 +81,9 @@ fn chunk(access_key: &str, companions: Option<(&str, &str)>) -> Chunk {
 }
 
 fn only_match(scanner: &CompiledScanner, chunk: &Chunk) -> keyhog_core::RawMatch {
-    let mut matches = scanner.scan(chunk).expect("companion fixture scan must succeed");
+    let mut matches = scanner
+        .scan(chunk)
+        .expect("companion fixture scan must succeed");
     assert_eq!(matches.len(), 1, "fixture must produce exactly one finding");
     matches.pop().expect("one finding was asserted")
 }

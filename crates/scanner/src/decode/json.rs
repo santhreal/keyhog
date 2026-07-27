@@ -40,11 +40,7 @@ impl Decoder for JsonDecoder {
             let line_start = memchr::memrchr(b'\n', &chunk.data.as_bytes()[..value_start])
                 .map_or(0, |newline| newline + 1);
 
-            if current_line
-                .as_ref()
-                .is_some_and(|line| line.start != line_start)
-            {
-                let line = current_line.take().expect("line presence checked above");
+            if let Some(line) = current_line.take_if(|line| line.start != line_start) {
                 if !stream_json_line(
                     sink,
                     chunk,

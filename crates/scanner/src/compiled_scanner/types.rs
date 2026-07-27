@@ -1,12 +1,12 @@
 //! Public scanner lifecycle and backend-readiness types.
 
-use crate::hw_probe::ScanBackend;
-pub use crate::gpu::GpuBackendAvailability;
-pub(crate) use crate::gpu::{GpuBackendAcquisitionFailure, GpuBackendPeers};
-#[cfg(all(feature = "gpu", target_os = "linux"))]
-pub(crate) use crate::gpu::probe_cuda_peer;
 #[cfg(all(test, feature = "gpu", target_os = "linux"))]
 pub(crate) use crate::gpu::load_dynamic_library;
+#[cfg(all(feature = "gpu", target_os = "linux"))]
+pub(crate) use crate::gpu::probe_cuda_peer;
+pub use crate::gpu::GpuBackendAvailability;
+pub(crate) use crate::gpu::{GpuBackendAcquisitionFailure, GpuBackendPeers};
+use crate::hw_probe::ScanBackend;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GpuInitPolicy {
@@ -20,7 +20,6 @@ pub enum GpuInitPolicy {
     /// scan results.
     ForceDisabled,
 }
-
 
 #[cfg(all(test, feature = "gpu", target_os = "linux"))]
 #[path = "../../tests/unit/compiled_scanner_cuda_driver_preflight.rs"]

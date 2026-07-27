@@ -34,6 +34,8 @@ fn scan_chunks_preserves_chunk_count() {
             metadata: ChunkMetadata::default(),
         },
     ];
-    let out = s.scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
+    let out = s
+        .scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds");
     assert_eq!(out.len(), 2);
 }

@@ -22,7 +22,9 @@ fn assert_detector_silent(detector_id: &str, text: &str) {
             ..Default::default()
         },
     };
-    let hits: Vec<_> = scanner().scan(&chunk).expect("test scan succeeds")
+    let hits: Vec<_> = scanner()
+        .scan(&chunk)
+        .expect("test scan succeeds")
         .into_iter()
         .filter(|m| m.detector_id.as_ref() == detector_id)
         .collect();

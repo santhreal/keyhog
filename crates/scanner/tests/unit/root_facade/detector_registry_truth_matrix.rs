@@ -39,7 +39,9 @@ use super::support;
 use std::collections::BTreeMap;
 use support::paths::detector_dir;
 
-use keyhog_core::{validate_detector, DetectorSpec, QualityIssue, Severity};
+use keyhog_core::{
+    validate_detector, DetectorSpec, QualityIssue, Severity, DETECTOR_CORPUS_MANIFEST_FILE,
+};
 use keyhog_scanner::CompiledScanner;
 
 /// The FULL shipped detector population: the compiled-in embedded corpus the
@@ -304,10 +306,9 @@ fn every_detector_severity_is_a_known_tier() {
     );
 }
 
-/// Count the `.toml` files in the detectors tree, the UNGATED population that
-/// `build.rs` embeds verbatim (it does not run the quality gate). This is the
-/// right comparand for the embedded set; `load_detectors` applies the gate and
-/// may drop a gate-rejected detector, so it is a (possibly proper) subset.
+/// Count detector definition TOMLs in the detectors tree, excluding the
+/// directory-scoped corpus manifest that `build.rs` binds into identity but
+/// does not parse as a detector.
 fn on_disk_toml_count() -> usize {
     let dir = detector_dir();
     std::fs::read_dir(&dir)
@@ -315,7 +316,10 @@ fn on_disk_toml_count() -> usize {
         .map(|e| {
             e.unwrap_or_else(|e| panic!("detectors/ dir entry readable at {}: {e}", dir.display()))
         })
-        .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("toml"))
+        .filter(|e| {
+            e.path().extension().and_then(|x| x.to_str()) == Some("toml")
+                && e.file_name() != DETECTOR_CORPUS_MANIFEST_FILE
+        })
         .count()
 }
 

@@ -172,10 +172,13 @@ fn automatic_gpu_recovery_rescans_only_unprocessed_dispatch_ranges() {
 
     let outcome = with_test_region_presence_byte_limit(64, || {
         crate::engine::gpu_resident_evidence::with_test_resident_dispatch_failure(1, || {
-            scanner.scan_coalesced_gpu_region_presence_recovering(&chunks,
-            backend,
-            scanner.default_execution_route(),
-            true,)
+            scanner
+                .scan_coalesced_gpu_region_presence_recovering(
+                    &chunks,
+                    backend,
+                    scanner.default_execution_route(),
+                    true,
+                )
                 .expect("automatic route must recover stable dispatch ranges")
         })
     });
@@ -203,10 +206,13 @@ fn automatic_phase2_gpu_recovery_preserves_completed_shards() {
 
     let outcome = with_test_region_presence_byte_limit(64, || {
         crate::engine::gpu_region_dispatch_helpers::with_test_phase2_dispatch_failure(1, || {
-            scanner.scan_coalesced_gpu_region_presence_recovering(&chunks,
-            backend,
-            scanner.default_execution_route(),
-            true,)
+            scanner
+                .scan_coalesced_gpu_region_presence_recovering(
+                    &chunks,
+                    backend,
+                    scanner.default_execution_route(),
+                    true,
+                )
                 .expect("automatic route must recover phase-two admission ranges")
         })
     });
@@ -456,10 +462,7 @@ fn normalized_triggered_rows_discard_raw_gpu_evidence_and_recompute_admission() 
         " = aB3dE5gH7jK9mN2pQ4sT6vW8xY1zC0fR\n"
     ));
     let raw_triggers = scanner
-        .collect_triggered_patterns_for_backend(
-            &chunk.data,
-            crate::hw_probe::ScanBackend::SimdCpu,
-        )
+        .collect_triggered_patterns_for_backend(&chunk.data, crate::hw_probe::ScanBackend::SimdCpu)
         .expect("SIMD trigger collection succeeds");
     assert!(raw_triggers.iter().any(|&word| word != 0));
     let raw_keyword_hints = [Vec::<u32>::new()];

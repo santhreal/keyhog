@@ -21,16 +21,18 @@ fn stripe_hot_and_confirmed_paths_share_nonzero_base_offset() {
     let local_offset = text.find(secret).expect("secret present");
     let base_offset = 4096usize;
     let base_line = 23usize;
-    let matches = scanner().scan(&Chunk {
-        data: text.into(),
-        metadata: ChunkMetadata {
-            source_type: "stripe-direct-prefix-dedup".into(),
-            path: Some("windowed-stripe.env".into()),
-            base_offset,
-            base_line,
-            ..Default::default()
-        },
-    }).expect("scanner call should succeed");
+    let matches = scanner()
+        .scan(&Chunk {
+            data: text.into(),
+            metadata: ChunkMetadata {
+                source_type: "stripe-direct-prefix-dedup".into(),
+                path: Some("windowed-stripe.env".into()),
+                base_offset,
+                base_line,
+                ..Default::default()
+            },
+        })
+        .expect("scanner call should succeed");
 
     let stripe: Vec<_> = matches
         .iter()

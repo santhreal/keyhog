@@ -55,8 +55,7 @@ fn detector_count(matches: &[RawMatch], detector_id: &str) -> usize {
 fn scan(s: &CompiledScanner, text: &str) -> Vec<RawMatch> {
     s.clear_fragment_cache();
     let chunk = make_chunk(text, "filesystem", "creds.env");
-    s.scan(&chunk)
-        .expect("VCS/SaaS recall scan should succeed")
+    s.scan(&chunk).expect("VCS/SaaS recall scan should succeed")
 }
 
 // ---------------------------------------------------------------------------

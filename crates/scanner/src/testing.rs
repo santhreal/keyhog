@@ -32,9 +32,7 @@ pub(crate) fn try_gpu_test_lock() -> Option<MutexGuard<'static, ()>> {
     }
 }
 /// Capture GPU recovery receipts emitted by exactly one synchronous test request.
-pub fn with_gpu_recovery_receipt_scope_for_test<T>(
-    operation: impl FnOnce() -> T,
-) -> (T, u64) {
+pub fn with_gpu_recovery_receipt_scope_for_test<T>(operation: impl FnOnce() -> T) -> (T, u64) {
     crate::gpu::with_recovery_receipt_scope(operation)
 }
 
@@ -42,7 +40,6 @@ pub fn with_gpu_recovery_receipt_scope_for_test<T>(
 pub fn record_gpu_recovery_receipt_for_test() {
     crate::gpu::record_recovery_receipt();
 }
-
 
 #[cfg(test)]
 pub(crate) use crate::engine::scan_chunk_boundaries;
@@ -465,7 +462,6 @@ pub fn require_gpu_preflight_with_policy_for_test(
 ) -> Result<(), String> {
     crate::gpu::require_gpu_preflight_with_policy(policy)
 }
-
 
 /// Test seam for the decode-splice core: splice `decoded_text` into the bounded
 /// `[start, end)` window of `parent`, keeping `SPLICE_CONTEXT_WINDOW` bytes of
@@ -4906,11 +4902,6 @@ impl BigramBloom {
     #[cfg(test)]
     pub(crate) fn empty() -> Self {
         Self(crate::bigram_bloom::BigramBloom::empty())
-    }
-
-    #[cfg(test)]
-    pub(crate) fn insert_all(&mut self, bytes: &[u8]) {
-        self.0.insert_all(bytes);
     }
 
     pub fn from_literal_prefixes(literals: &[String]) -> Self {

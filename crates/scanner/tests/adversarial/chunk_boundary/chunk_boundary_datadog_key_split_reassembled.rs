@@ -25,7 +25,11 @@ fn chunk_boundary_datadog_key_split_reassembled() {
             ..Default::default()
         },
     };
-    let direct = crate::telemetry::with_scan_telemetry(&trace, || scanner.scan(&direct_chunk).expect(concat!(module_path!(), ": scan should succeed")));
+    let direct = crate::telemetry::with_scan_telemetry(&trace, || {
+        scanner
+            .scan(&direct_chunk)
+            .expect(concat!(module_path!(), ": scan should succeed"))
+    });
     let direct_events = trace.drain().dogfood_events;
     let split = 10;
     let pad = "z\n".repeat(4096);
@@ -52,7 +56,9 @@ fn chunk_boundary_datadog_key_split_reassembled() {
             ..Default::default()
         },
     };
-    let results = scanner.scan_coalesced(&[chunk_a, chunk_b]).expect(concat!(module_path!(), ": coalesced scan should succeed"));
+    let results = scanner
+        .scan_coalesced(&[chunk_a, chunk_b])
+        .expect(concat!(module_path!(), ": coalesced scan should succeed"));
     let found = results
         .iter()
         .flatten()

@@ -149,11 +149,7 @@ impl VerificationCache {
         credential: &str,
         detector_id: &str,
     ) -> Option<(VerificationResult, HashMap<String, String>)> {
-        self.get_with_companions(
-            credential,
-            detector_id,
-            &HashMap::<String, String>::new(),
-        )
+        self.get_with_companions(credential, detector_id, &HashMap::<String, String>::new())
     }
 
     /// Look up a result for the complete detector-owned verification identity.
@@ -231,8 +227,7 @@ impl VerificationCache {
         companions: &HashMap<K, String>,
         result: VerificationResult,
         metadata: HashMap<String, String>,
-    )
-    where
+    ) where
         K: AsRef<str> + Eq + std::hash::Hash,
     {
         let key = verification_identity(credential, detector_id, companions);
@@ -401,11 +396,7 @@ impl VerificationCache {
         metadata: HashMap<String, String>,
     ) {
         self.entries.insert(
-            verification_identity(
-                credential,
-                detector_id,
-                &HashMap::<String, String>::new(),
-            ),
+            verification_identity(credential, detector_id, &HashMap::<String, String>::new()),
             CacheEntry {
                 result,
                 metadata: sanitize_metadata(metadata),

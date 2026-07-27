@@ -62,7 +62,9 @@ fn published_release_updates_every_crate_from_the_exact_tag() {
             && workflow.contains("automation/scripts/verify_published_release.py")
             && workflow.contains("--expected-commit \"$KEYHOG_EXPECTED_COMMIT\"")
             && workflow.contains("KEYHOG_PUBLISHED_RELEASE_ID: ${{ github.event.release.id }}")
-            && workflow.contains("release_id_args=(--expected-release-id \"$KEYHOG_PUBLISHED_RELEASE_ID\")")
+            && workflow.contains(
+                "release_id_args=(--expected-release-id \"$KEYHOG_PUBLISHED_RELEASE_ID\")"
+            )
             && workflow.contains("cargo install rsign2 --version 0.6.6 --locked"),
         "release/manual recovery must prove the immutable public release ID, commit, checksums, and signatures before a crates.io credential enters scope"
     );

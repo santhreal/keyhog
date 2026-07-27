@@ -192,8 +192,8 @@ pub fn credential_sufficient(
         .expect("credential-sufficiency probe scan succeeds")
         .iter()
         .any(|m| {
-        m.credential.as_ref().contains(primary.credential.as_str())
-            && !keyhog_scanner::is_entropy_detector(m.detector_id.as_ref())
+            m.credential.as_ref().contains(primary.credential.as_str())
+                && !keyhog_scanner::is_entropy_detector(m.detector_id.as_ref())
         })
 }
 

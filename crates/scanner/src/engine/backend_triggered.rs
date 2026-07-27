@@ -345,10 +345,7 @@ impl CompiledScanner {
         }
     }
 
-    fn collect_triggered_patterns_simd(
-        &self,
-        _text: &str,
-    ) -> crate::error::Result<Vec<u64>> {
+    fn collect_triggered_patterns_simd(&self, _text: &str) -> crate::error::Result<Vec<u64>> {
         #[cfg(feature = "simd")]
         {
             let prefilter = self.try_simd_prefilter().map_err(|error| {

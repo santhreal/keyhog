@@ -187,7 +187,9 @@ fn detector_toml_paths(detectors_dir: &Path) -> io::Result<Vec<PathBuf>> {
         })?;
         let path = entry.path();
         if path.extension().is_some_and(|ext| ext == "toml")
-            && path.file_name().is_none_or(|name| name != DETECTOR_CORPUS_MANIFEST_FILE)
+            && path
+                .file_name()
+                .is_none_or(|name| name != DETECTOR_CORPUS_MANIFEST_FILE)
         {
             paths.push(path);
         }

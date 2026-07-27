@@ -36,7 +36,9 @@ fn credentials(scanner: &CompiledScanner, backend: ScanBackend, input: &str) -> 
             ..Default::default()
         },
     };
-    scanner.scan_with_backend(&chunk, backend).expect("selected backend scan succeeds")
+    scanner
+        .scan_with_backend(&chunk, backend)
+        .expect("selected backend scan succeeds")
         .into_iter()
         .filter(|finding| finding.detector_id.as_ref() == "capture-participation-contract")
         .map(|finding| finding.credential.as_str().to_owned())

@@ -155,14 +155,18 @@ fn measure(
 ) -> (f64, usize) {
     // Single warm-up absorbs the GPU cold adapter/upload cost and first-touch
     // allocation; a second adds nothing but wall-clock on the slow large cells.
-    let warm = scanner.scan_chunks_with_backend(std::slice::from_ref(chunk), backend).expect("selected backend scan succeeds");
+    let warm = scanner
+        .scan_chunks_with_backend(std::slice::from_ref(chunk), backend)
+        .expect("selected backend scan succeeds");
     let matches: usize = warm.iter().map(Vec::len).sum();
 
     let mib = chunk.data.len() as f64 / MIB as f64;
     let mut rates = Vec::with_capacity(runs);
     for _ in 0..runs {
         let start = Instant::now();
-        let m = scanner.scan_chunks_with_backend(std::slice::from_ref(chunk), backend).expect("selected backend scan succeeds");
+        let m = scanner
+            .scan_chunks_with_backend(std::slice::from_ref(chunk), backend)
+            .expect("selected backend scan succeeds");
         let secs = start.elapsed().as_secs_f64().max(1e-9);
         std::hint::black_box(&m);
         rates.push(mib / secs);
@@ -370,9 +374,12 @@ fn gpu_vs_cpu_recall_parity_large_buffer() {
         "recall-parity-16MiB.txt",
     );
 
-    let cpu =
-        scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback).expect("selected backend scan succeeds");
-    let gpu = scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::GpuWgpu).expect("selected backend scan succeeds");
+    let cpu = scanner
+        .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds");
+    let gpu = scanner
+        .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::GpuWgpu)
+        .expect("selected backend scan succeeds");
     let cpu_n: usize = cpu.iter().map(Vec::len).sum();
     let gpu_n: usize = gpu.iter().map(Vec::len).sum();
 

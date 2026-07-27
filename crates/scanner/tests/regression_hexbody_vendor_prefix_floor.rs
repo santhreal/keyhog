@@ -65,7 +65,9 @@ fn reports_on_both(detector: &str, text: &str, credential: &str) -> bool {
     let scanner = scanner();
     CPU_BACKENDS.iter().all(|&backend| {
         scanner.clear_fragment_cache();
-        scanner.scan_with_backend(&chunk(text), backend).expect("selected backend scan succeeds")
+        scanner
+            .scan_with_backend(&chunk(text), backend)
+            .expect("selected backend scan succeeds")
             .iter()
             .any(|m| m.detector_id.as_ref() == detector && m.credential.as_ref() == credential)
     })
@@ -75,7 +77,9 @@ fn detector_absent_on_both(detector: &str, text: &str) -> bool {
     let scanner = scanner();
     CPU_BACKENDS.iter().all(|&backend| {
         scanner.clear_fragment_cache();
-        scanner.scan_with_backend(&chunk(text), backend).expect("selected backend scan succeeds")
+        scanner
+            .scan_with_backend(&chunk(text), backend)
+            .expect("selected backend scan succeeds")
             .iter()
             .all(|m| m.detector_id.as_ref() != detector)
     })

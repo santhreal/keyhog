@@ -3,10 +3,8 @@ use keyhog_scanner::{CompiledScanner, ScanBackend};
 use proptest::prelude::*;
 use std::sync::LazyLock;
 
-const PINNED_ELASTICSEARCH_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../benchmarks/corpora/creddata/CredData/data/387016a6/test/src/tool/setting/eedec1c5.java"
-));
+const PINNED_ELASTICSEARCH_SOURCE: &str =
+    include_str!("../fixtures/detector_execution_policy_utf8/eedec1c5.java");
 const LIVE_POSITIVE: &str = "AWS_ACCESS_KEY_ID=AKIAQYLPMN5HFIQR7XYA\n";
 const LIVE_CREDENTIAL: &str = "AKIAQYLPMN5HFIQR7XYA";
 
@@ -80,7 +78,9 @@ fn pinned_creddata_elasticsearch_simd_scan_has_exact_results_and_host_stays_live
     assert_eq!(followup[0].credential.as_ref(), LIVE_CREDENTIAL);
     assert_eq!(
         followup[0].location.offset,
-        LIVE_POSITIVE.find(LIVE_CREDENTIAL).expect("credential offset")
+        LIVE_POSITIVE
+            .find(LIVE_CREDENTIAL)
+            .expect("credential offset")
     );
 }
 
@@ -159,11 +159,8 @@ fn multibyte_candidates_at_requested_window_boundaries_keep_whole_byte_spans() {
 
 #[test]
 fn shortest_and_maximum_scan_window_sources_have_canonical_spans() {
-    let empty = crate::detector_execution_policy::whole_assignment_value(
-        "",
-        usize::MAX,
-        usize::MAX,
-    );
+    let empty =
+        crate::detector_execution_policy::whole_assignment_value("", usize::MAX, usize::MAX);
     assert_eq!((empty.start, empty.end, empty.covered_end), (0, 0, 0));
     assert_eq!(empty.as_str(""), "");
 

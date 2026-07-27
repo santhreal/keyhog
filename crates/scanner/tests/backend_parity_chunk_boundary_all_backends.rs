@@ -97,15 +97,17 @@ fn boundary_straddle_parity_aws_key_split_across_chunks() {
     ];
 
     scanner.clear_fragment_cache();
-    let simd_results =
-        scanner.scan_chunks_with_backend(&[chunk_a.clone(), chunk_b.clone()], ScanBackend::SimdCpu).expect("selected backend scan succeeds");
+    let simd_results = scanner
+        .scan_chunks_with_backend(&[chunk_a.clone(), chunk_b.clone()], ScanBackend::SimdCpu)
+        .expect("selected backend scan succeeds");
     let simd_keys = collect_boundary_findings(&simd_results);
 
     let mut failures = Vec::new();
     for backend in &backends[1..] {
         scanner.clear_fragment_cache();
-        let results =
-            scanner.scan_chunks_with_backend(&[chunk_a.clone(), chunk_b.clone()], *backend).expect("selected backend scan succeeds");
+        let results = scanner
+            .scan_chunks_with_backend(&[chunk_a.clone(), chunk_b.clone()], *backend)
+            .expect("selected backend scan succeeds");
         let keys = collect_boundary_findings(&results);
 
         if keys != simd_keys {
@@ -166,8 +168,9 @@ fn boundary_straddle_parity_github_pat_split_across_chunks() {
     let chunk_b = make_chunk(&data_b, "github_boundary.py", len_a);
 
     scanner.clear_fragment_cache();
-    let simd_results =
-        scanner.scan_chunks_with_backend(&[chunk_a.clone(), chunk_b.clone()], ScanBackend::SimdCpu).expect("selected backend scan succeeds");
+    let simd_results = scanner
+        .scan_chunks_with_backend(&[chunk_a.clone(), chunk_b.clone()], ScanBackend::SimdCpu)
+        .expect("selected backend scan succeeds");
     let simd_findings: Vec<_> = simd_results
         .iter()
         .flat_map(|chunk| chunk.iter())
@@ -180,8 +183,9 @@ fn boundary_straddle_parity_github_pat_split_across_chunks() {
     );
 
     scanner.clear_fragment_cache();
-    let fallback_results =
-        scanner.scan_chunks_with_backend(&[chunk_a, chunk_b], ScanBackend::CpuFallback).expect("selected backend scan succeeds");
+    let fallback_results = scanner
+        .scan_chunks_with_backend(&[chunk_a, chunk_b], ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds");
     let fallback_findings: Vec<_> = fallback_results
         .iter()
         .flat_map(|chunk| chunk.iter())

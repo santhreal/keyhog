@@ -40,7 +40,10 @@ group = 1
         },
     };
 
-    let credentials: Vec<_> = scanner.scan(&chunk).expect("scanner call should succeed").into_iter()
+    let credentials: Vec<_> = scanner
+        .scan(&chunk)
+        .expect("scanner call should succeed")
+        .into_iter()
         .filter(|finding| finding.detector_id.as_ref() == "detector-min-length-contract")
         .map(|finding| finding.credential.as_str().to_string())
         .collect();

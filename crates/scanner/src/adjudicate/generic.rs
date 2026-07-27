@@ -17,6 +17,21 @@ impl GenericBridgeSignal {
         }
     }
 }
+pub(crate) const fn generic_bridge_length_stage(
+    rejection: Option<crate::detector_execution_policy::CandidateLengthRejection>,
+    partial_assignment_value: bool,
+) -> Option<StageId> {
+    match rejection {
+        Some(crate::detector_execution_policy::CandidateLengthRejection::TooShort) => Some(
+            StageId::GenericValueShape(GenericValueShapeStage::ValueTooShort),
+        ),
+        Some(crate::detector_execution_policy::CandidateLengthRejection::TooLong) => Some(
+            StageId::GenericValueShape(GenericValueShapeStage::ValueTooLong),
+        ),
+        None if partial_assignment_value => Some(StageId::PartialGenericAssignmentValue),
+        None => None,
+    }
+}
 
 pub(crate) fn generic_bridge_keyword_boundary_rejected(
     keyword: &str,

@@ -230,7 +230,8 @@ pub mod testing {
         fn decode_text_file_owned_or_bytes(&self, bytes: Vec<u8>) -> Result<String, Vec<u8>>;
         fn looks_binary(&self, bytes: &[u8]) -> bool;
         fn looks_binary_prefix(&self, bytes: &[u8]) -> bool;
-        fn read_file_buffered_text(&self, path: &std::path::Path, size_hint: u64) -> Option<String>;
+        fn read_file_buffered_text(&self, path: &std::path::Path, size_hint: u64)
+            -> Option<String>;
         fn read_file_prefix_safe(
             &self,
             path: &std::path::Path,
@@ -933,7 +934,11 @@ pub mod testing {
             crate::filesystem::read_file_windowed_mmap_for_test(path, window_size, overlap)
         }
 
-        fn read_file_buffered_text(&self, path: &std::path::Path, size_hint: u64) -> Option<String> {
+        fn read_file_buffered_text(
+            &self,
+            path: &std::path::Path,
+            size_hint: u64,
+        ) -> Option<String> {
             crate::filesystem::read_file_buffered_text_for_test(path, size_hint)
         }
 

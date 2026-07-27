@@ -70,7 +70,7 @@ fn phase1_summary_distinguishes_equal_size_admission_classes() {
     let scanner = scanner();
     let alphabet_rejected = chunk("~".repeat(BYTES));
     let bigram_rejected = chunk("g".repeat(BYTES));
-    let admitted = chunk("gh ".repeat(BYTES / 3));
+    let admitted = chunk("ghp_".repeat(BYTES / 4));
     let batch = vec![
         alphabet_rejected.clone(),
         bigram_rejected.clone(),
@@ -99,7 +99,7 @@ fn phase1_summary_distinguishes_equal_size_admission_classes() {
     let planned = vec![
         chunk("~".repeat(BYTES)),
         chunk("g".repeat(BYTES)),
-        chunk("gh ".repeat(BYTES / 3)),
+        chunk("ghp_".repeat(BYTES / 4)),
     ];
     let plan = scanner.phase1_admission_plan(&planned);
     assert_eq!(
@@ -120,8 +120,8 @@ fn phase1_summary_parallel_fold_preserves_admission_totals() {
     let batch = vec![
         chunk("~".repeat(BYTES)),
         chunk("g".repeat(BYTES)),
-        chunk("gh ".repeat(BYTES / 3)),
-        chunk("gh ".repeat(BYTES / 3)),
+        chunk("ghp_".repeat(BYTES / 4)),
+        chunk("ghp_".repeat(BYTES / 4)),
     ];
 
     let summary = scanner.phase1_admission_summary(&batch);

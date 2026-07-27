@@ -3,7 +3,6 @@ use crate::hw_probe::ScanBackend;
 use keyhog_core::Chunk;
 
 impl CompiledScanner {
-
     pub(crate) fn scan_chunks_with_backend_internal_admission_and_route(
         &self,
         chunks: &[Chunk],

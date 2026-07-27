@@ -84,7 +84,6 @@ impl RegisteredDecoder {
         }
     }
 
-
     pub(super) fn decode_chunk_into(
         &self,
         chunk: &keyhog_core::Chunk,

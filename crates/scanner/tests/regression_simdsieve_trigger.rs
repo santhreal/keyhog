@@ -151,9 +151,7 @@ fn aws_access_key_ac_literal_surfaces_at_exact_offset() {
 
     let s = shared();
     s.clear_fragment_cache();
-    let matches = s
-        .scan(&chunk)
-        .expect("SIMD sieve AWS scan should succeed");
+    let matches = s.scan(&chunk).expect("SIMD sieve AWS scan should succeed");
 
     let aws: Vec<_> = matches
         .iter()
@@ -409,7 +407,9 @@ fn union_holds_on_explicit_simdcpu_backend() {
 
     let s = shared();
     s.clear_fragment_cache();
-    let matches = s.scan_with_backend(&chunk, ScanBackend::SimdCpu).expect("selected backend scan succeeds");
+    let matches = s
+        .scan_with_backend(&chunk, ScanBackend::SimdCpu)
+        .expect("selected backend scan succeeds");
 
     let aws_count = matches
         .iter()

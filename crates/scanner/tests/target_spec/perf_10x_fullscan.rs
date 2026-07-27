@@ -158,7 +158,9 @@ fn median(mut v: Vec<f64>) -> f64 {
 fn full_scan_secs(scanner: &CompiledScanner, chunk: &Chunk, backend: ScanBackend) -> (f64, usize) {
     scanner.clear_fragment_cache();
     let t = Instant::now();
-    let matches = scanner.scan_with_backend(chunk, backend).expect("selected backend scan succeeds");
+    let matches = scanner
+        .scan_with_backend(chunk, backend)
+        .expect("selected backend scan succeeds");
     (t.elapsed().as_secs_f64(), matches.len())
 }
 

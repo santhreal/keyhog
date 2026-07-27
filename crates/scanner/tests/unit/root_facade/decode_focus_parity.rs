@@ -156,10 +156,14 @@ fn scan_both(
 ) -> (Vec<(String, String, String)>, Vec<(String, String, String)>) {
     keyhog_scanner::testing::set_decode_focus(&s, Some(true));
     s.clear_fragment_cache();
-    let on = canonical(&[s.scan_with_backend(c, ScanBackend::CpuFallback).expect("selected backend scan succeeds")]);
+    let on = canonical(&[s
+        .scan_with_backend(c, ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds")]);
     keyhog_scanner::testing::set_decode_focus(&s, Some(false));
     s.clear_fragment_cache();
-    let off = canonical(&[s.scan_with_backend(c, ScanBackend::CpuFallback).expect("selected backend scan succeeds")]);
+    let off = canonical(&[s
+        .scan_with_backend(c, ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds")]);
     (on, off)
 }
 

@@ -1,3 +1,8 @@
+use super::super::assignment::{
+    generic_base64_candidate_is_ambiguous, looks_like_entropy_canonical_non_secret_shape,
+    looks_like_entropy_uuid_shape, looks_like_generic_random_base64_blob_decoy,
+    HIGH_ENTROPY_BASE64_CUTOFF,
+};
 use super::HASH_ALGO_INTEGRITY_LABELS;
 use super::TEMPLATE_PLACEHOLDER_MAX_LEN;
 use super::{
@@ -6,11 +11,6 @@ use super::{
     looks_like_bracketed_template_placeholder, looks_like_dashed_serial_key,
     looks_like_prefixed_hash_digest, looks_like_prefixed_masked_sequence,
     looks_like_random_byte_base64_blob, looks_like_trimmed_aws_iam_arn, strip_hash_algo_prefix,
-};
-use super::super::assignment::{
-    generic_base64_candidate_is_ambiguous, looks_like_entropy_canonical_non_secret_shape,
-    looks_like_entropy_uuid_shape, looks_like_generic_random_base64_blob_decoy,
-    HIGH_ENTROPY_BASE64_CUTOFF,
 };
 use crate::suppression::decision::decoded_benign_text_reason;
 

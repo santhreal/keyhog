@@ -62,8 +62,8 @@ fn scan_report_id_is_stable_and_identity_bound() {
 
 /// Regression: resolved scan manifests must expose preset and override differences as stable operator-visible data.
 #[test]
-fn resolved_scan_manifest_is_diffable_across_presets_and_overrides(
-) -> Result<(), serde_json::Error> {
+fn resolved_scan_manifest_is_diffable_across_presets_and_overrides() -> Result<(), serde_json::Error>
+{
     let default_args = ScanArgs::parse_from(["keyhog"]);
     let deep_args = ScanArgs::parse_from(["keyhog", "--deep", "--decode-depth", "3"]);
     let default_manifest =

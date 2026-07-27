@@ -7,7 +7,9 @@ use keyhog_sources::testing::{SourceTestApi, TestApi};
 /// Regression: preserves the externally observable `slice_into_windows_empty_input_returns_empty` behavior after the inline suite split.
 #[test]
 fn slice_into_windows_empty_input_returns_empty() {
-    assert!(TestApi.slice_into_windows_with_offsets(&[], 64, 8).is_empty());
+    assert!(TestApi
+        .slice_into_windows_with_offsets(&[], 64, 8)
+        .is_empty());
 }
 
 /// Regression: preserves the externally observable `slice_into_windows_smaller_than_window_yields_one_window` behavior after the inline suite split.

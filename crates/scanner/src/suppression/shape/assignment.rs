@@ -4,12 +4,12 @@
 //! canonical shapes. The byte-level predicates remain in [`super::canonical`];
 //! dependencies flow from this policy layer to that value-shape owner only.
 
-use super::canonical::{
-    is_canonical_hex_digest_length, is_five_by_five_dash_shape, HASH_ALGO_INTEGRITY_LABELS,
-};
 /// Entropy's UUID assignment role is an alias of the canonical predicate, not
 /// a second predicate that can drift.
 pub(crate) use super::canonical::is_uuid_v4_shape as looks_like_entropy_uuid_shape;
+use super::canonical::{
+    is_canonical_hex_digest_length, is_five_by_five_dash_shape, HASH_ALGO_INTEGRITY_LABELS,
+};
 
 /// Shannon-entropy (bits/char) threshold separating high-entropy base64 blobs
 /// from lower-entropy generic candidates. Single source of truth shared by the
@@ -28,7 +28,6 @@ pub(crate) fn looks_like_entropy_canonical_non_secret_shape(value: &str) -> bool
         || looks_like_entropy_integrity_digest(value)
         || looks_like_entropy_upper_license_serial(value)
 }
-
 
 /// Entropy's exact canonical-digest assignment role.
 pub(crate) fn looks_like_entropy_canonical_hex_digest(value: &str) -> bool {

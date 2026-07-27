@@ -63,7 +63,8 @@ fn effective_digest(detectors_dir: &Path, manifest_override: Option<&str>) -> St
         .expect("read detector corpus")
         .map(|entry| entry.expect("read detector entry").path())
         .filter(|path| {
-            path.extension().is_some_and(|extension| extension == "toml")
+            path.extension()
+                .is_some_and(|extension| extension == "toml")
                 && path
                     .file_name()
                     .is_some_and(|name| name != DETECTOR_CORPUS_MANIFEST_FILE)
@@ -89,19 +90,16 @@ fn effective_digest(detectors_dir: &Path, manifest_override: Option<&str>) -> St
         mix(content.as_bytes());
         mix(&[0]);
     }
-    let manifest = manifest_override
-        .map(str::to_owned)
-        .unwrap_or_else(|| {
-            std::fs::read_to_string(detectors_dir.join(DETECTOR_CORPUS_MANIFEST_FILE))
-                .expect("read corpus manifest")
-        });
+    let manifest = manifest_override.map(str::to_owned).unwrap_or_else(|| {
+        std::fs::read_to_string(detectors_dir.join(DETECTOR_CORPUS_MANIFEST_FILE))
+            .expect("read corpus manifest")
+    });
     mix(DETECTOR_CORPUS_MANIFEST_FILE.as_bytes());
     mix(&[0]);
     mix(manifest.as_bytes());
     mix(&[0]);
     format!("{}-{hash:016x}", detector_paths.len())
 }
-
 
 /// Regression: a current manifest is metadata, not a detector TOML, and a
 /// healthy current-schema corpus must load without changing detector identity.
@@ -135,13 +133,22 @@ fn same_version_unknown_field_is_typo_fatal_with_repair_guidance() {
     let detail = strict_rejection_detail(
         load_detectors(dir.path()).expect_err("same-version typo must fail closed"),
     );
-    assert!(detail.contains("typo.toml"), "missing file context: {detail}");
+    assert!(
+        detail.contains("typo.toml"),
+        "missing file context: {detail}"
+    );
     assert!(
         detail.contains(&format!("schema {}", DETECTOR_CORPUS_SCHEMA_VERSION)),
         "missing schema context: {detail}"
     );
-    assert!(detail.contains("sevrity"), "missing unknown field: {detail}");
-    assert!(detail.contains("Fix: correct"), "missing repair guidance: {detail}");
+    assert!(
+        detail.contains("sevrity"),
+        "missing unknown field: {detail}"
+    );
+    assert!(
+        detail.contains("Fix: correct"),
+        "missing repair guidance: {detail}"
+    );
 }
 
 /// Regression: the one-version forward window classifies newer fields without
@@ -258,8 +265,7 @@ fn future_only_incompatible_corpus_fails_with_typed_error() {
     );
     write_detector(dir.path(), "future.toml", FUTURE_DETECTOR);
 
-    let error =
-        load_detectors(dir.path()).expect_err("zero-compatible-detector corpus must fail");
+    let error = load_detectors(dir.path()).expect_err("zero-compatible-detector corpus must fail");
     match &error {
         SpecError::ForwardIncompatibleCorpus {
             skipped_count,
@@ -350,7 +356,6 @@ fn explicit_schema_one_migrates_status_only_success_to_error_backstop() {
     assert_eq!(policy, Some(SuccessPolicy::StatusWithErrorBackstop));
 }
 
-
 /// Regression: the same absent policy under current schema 2 is an authoring
 /// error, proving the legacy migration is selected by schema rather than by
 /// detector shape alone.
@@ -434,7 +439,6 @@ fn current_manifest_accepts_all_three_explicit_success_policies() {
         assert_eq!(policy, Some(expected), "policy {policy_name} changed");
     }
 }
-
 
 /// Regression: a non-integer version is a manifest error with the canonical
 /// path and a direct version repair, not a misleading detector parse failure.
@@ -559,9 +563,8 @@ fn detector_digest_is_bound_to_corpus_manifest_bytes() {
     let current = effective_digest(&detectors_dir, None);
     assert_eq!(keyhog_core::detector_digest(), current);
 
-    let manifest =
-        std::fs::read_to_string(detectors_dir.join(DETECTOR_CORPUS_MANIFEST_FILE))
-            .expect("read current corpus manifest");
+    let manifest = std::fs::read_to_string(detectors_dir.join(DETECTOR_CORPUS_MANIFEST_FILE))
+        .expect("read current corpus manifest");
     let future = manifest.replace(
         &format!("schema_version = {DETECTOR_CORPUS_SCHEMA_VERSION}"),
         &format!("schema_version = {DETECTOR_CORPUS_MAX_FORWARD_SCHEMA_VERSION}"),

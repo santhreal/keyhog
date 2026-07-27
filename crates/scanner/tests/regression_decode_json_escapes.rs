@@ -76,7 +76,8 @@ fn scan(text: &str) -> Vec<RawMatch> {
         },
     };
     s.clear_fragment_cache();
-    s.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback).expect("selected backend scan succeeds")
+    s.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds")
         .into_iter()
         .flatten()
         .collect()

@@ -12,7 +12,9 @@ fn homoglyph_keyword_prefix_normalizes_to_real_credential() {
     let homoglyph_cred = format!("{HOMOGLYPH_PREFIX}aK7xP9mQ2wE5rT8yU1iO");
     let body = format!("# rotated {HOMOGLYPH_PREFIX}token\nexport KEY=\"{homoglyph_cred}\"\n");
     let scanner = test_scanner();
-    let matches = scanner.scan(&make_chunk(&body)).expect(concat!(module_path!(), ": scan should succeed"));
+    let matches = scanner
+        .scan(&make_chunk(&body))
+        .expect(concat!(module_path!(), ": scan should succeed"));
     assert!(
         matches
             .iter()

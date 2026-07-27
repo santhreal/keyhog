@@ -53,7 +53,6 @@ fn scenario(mode: usize) -> ScenarioGuard {
     }
 }
 
-
 fn inert_root() -> Chunk {
     Chunk {
         data: SensitiveString::from("alpha.bravo.charlie.delta"),
@@ -82,7 +81,6 @@ impl Decoder for BudgetProbe {
     fn name(&self) -> &'static str {
         "kh1239-budget-probe"
     }
-
 
     fn decode_chunk_into(&self, chunk: &Chunk, sink: &mut dyn DecodeOutputSink) {
         if chunk.metadata.source_type.contains(STREAM_TAG) {
@@ -135,10 +133,7 @@ fn chunk_budget_stops_production_at_the_exact_boundary() {
         .count();
     assert_eq!(tagged, MAX_DECODED_CHUNKS);
     assert_eq!(PRODUCTION_CALLS.load(Ordering::Relaxed), MAX_DECODED_CHUNKS);
-    assert_eq!(
-        decode_truncation_count(),
-        _scenario.truncations_before + 1
-    );
+    assert_eq!(decode_truncation_count(), _scenario.truncations_before + 1);
 }
 
 /// Regression: direct custom-decoder callers previously reached an unbounded
@@ -174,10 +169,7 @@ fn byte_budget_accepts_exact_boundary_then_closes_sink() {
         .expect("exact-boundary output must be retained");
     assert_eq!(boundary.data.len(), MAX_DECODED_BYTES);
     assert_eq!(PRODUCTION_CALLS.load(Ordering::Relaxed), 1);
-    assert_eq!(
-        decode_truncation_count(),
-        _scenario.truncations_before + 1
-    );
+    assert_eq!(decode_truncation_count(), _scenario.truncations_before + 1);
 }
 
 /// Regression: when an oversized decoded candidate follows a valid sibling,
@@ -189,13 +181,14 @@ fn oversized_stream_preserves_safe_sibling_and_stops_immediately() {
     let _scenario = scenario(MODE_OVERSIZE_AFTER_SAFE);
 
     let decoded = decode_chunk(&inert_root(), 1, false, None, None);
-    assert!(decoded.iter().any(|chunk| chunk.data.as_str() == "safe.sibling.finding"));
-    assert!(!decoded.iter().any(|chunk| chunk.data.as_str() == "must.not.be.produced"));
+    assert!(decoded
+        .iter()
+        .any(|chunk| chunk.data.as_str() == "safe.sibling.finding"));
+    assert!(!decoded
+        .iter()
+        .any(|chunk| chunk.data.as_str() == "must.not.be.produced"));
     assert_eq!(PRODUCTION_CALLS.load(Ordering::Relaxed), 2);
-    assert_eq!(
-        decode_truncation_count(),
-        _scenario.truncations_before + 1
-    );
+    assert_eq!(decode_truncation_count(), _scenario.truncations_before + 1);
 }
 
 /// Regression: streaming URL, JSON, and MIME-wrapper producers must preserve
@@ -254,6 +247,9 @@ fn wrapper_streaming_preserves_positives_and_exact_source_attribution() {
         assert_eq!(decoded_line, source_line);
         assert!(decoded_end > decoded_start);
         assert!(output.data[decoded_start..decoded_end].contains(expected));
-        assert_eq!(output.metadata.base_offset + decoded_start, root_base + source_start);
+        assert_eq!(
+            output.metadata.base_offset + decoded_start,
+            root_base + source_start
+        );
     }
 }

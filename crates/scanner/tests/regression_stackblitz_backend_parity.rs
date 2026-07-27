@@ -26,10 +26,18 @@ fn stripe_aws_reproducer_has_exact_gpu_simd_parity_without_degrade() {
         findings
     };
     scanner.clear_fragment_cache();
-    let simd = canonical(&scanner.scan_chunks_with_backend(&[chunk.clone()], ScanBackend::SimdCpu).expect("selected backend scan succeeds"));
+    let simd = canonical(
+        &scanner
+            .scan_chunks_with_backend(&[chunk.clone()], ScanBackend::SimdCpu)
+            .expect("selected backend scan succeeds"),
+    );
     scanner.clear_fragment_cache();
     let degrade_before = scanner.runtime_status().gpu_degrade_count;
-    let gpu = canonical(&scanner.scan_chunks_with_backend(&[chunk], ScanBackend::GpuWgpu).expect("selected backend scan succeeds"));
+    let gpu = canonical(
+        &scanner
+            .scan_chunks_with_backend(&[chunk], ScanBackend::GpuWgpu)
+            .expect("selected backend scan succeeds"),
+    );
     let degrade_after = scanner.runtime_status().gpu_degrade_count;
 
     assert_eq!(
@@ -56,7 +64,9 @@ fn simd_sb_hallucinates_with_no_sb_in_input() {
         "fixtures/stripe.yml",
     );
 
-    let simd = scanner.scan_chunks_with_backend(&[chunk], ScanBackend::SimdCpu).expect("selected backend scan succeeds");
+    let simd = scanner
+        .scan_chunks_with_backend(&[chunk], ScanBackend::SimdCpu)
+        .expect("selected backend scan succeeds");
     let mut stackblitz_findings = 0;
     for chunk_matches in &simd {
         for m in chunk_matches {

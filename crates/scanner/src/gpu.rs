@@ -30,12 +30,12 @@
 #[cfg(feature = "gpu")]
 mod adapter_probe;
 mod backend;
-pub use backend::GpuBackendAvailability;
-pub(crate) use backend::{GpuBackendAcquisitionFailure, GpuBackendPeers};
-#[cfg(all(feature = "gpu", target_os = "linux"))]
-pub(crate) use backend::probe_cuda_peer;
 #[cfg(all(test, feature = "gpu", target_os = "linux"))]
 pub(crate) use backend::load_dynamic_library;
+#[cfg(all(feature = "gpu", target_os = "linux"))]
+pub(crate) use backend::probe_cuda_peer;
+pub use backend::GpuBackendAvailability;
+pub(crate) use backend::{GpuBackendAcquisitionFailure, GpuBackendPeers};
 type RecoveryReceiptCounter = std::sync::Arc<std::sync::atomic::AtomicU64>;
 
 thread_local! {
@@ -64,9 +64,8 @@ pub(crate) fn with_captured_recovery_receipts<T>(
     counter: Option<&RecoveryReceiptCounter>,
     operation: impl FnOnce() -> T,
 ) -> T {
-    let previous = RECOVERY_RECEIPT_COUNTER.with_borrow_mut(|current| {
-        std::mem::replace(&mut *current, counter.cloned())
-    });
+    let previous = RECOVERY_RECEIPT_COUNTER
+        .with_borrow_mut(|current| std::mem::replace(&mut *current, counter.cloned()));
     let _guard = RecoveryReceiptCounterGuard { previous };
     operation()
 }
@@ -81,13 +80,11 @@ pub(crate) fn with_recovery_receipt_scope<T>(operation: impl FnOnce() -> T) -> (
 pub(crate) fn record_recovery_receipt() {
     RECOVERY_RECEIPT_COUNTER.with_borrow(|counter| {
         if let Some(counter) = counter {
-            counter
-                .fetch_update(
-                    std::sync::atomic::Ordering::Relaxed,
-                    std::sync::atomic::Ordering::Relaxed,
-                    |receipts| Some(receipts.saturating_add(1)),
-                )
-                .expect("recovery receipt update closure always returns Some");
+            let _ = counter.fetch_update(
+                std::sync::atomic::Ordering::Relaxed,
+                std::sync::atomic::Ordering::Relaxed,
+                |receipts| Some(receipts.saturating_add(1)),
+            );
         }
     });
 }

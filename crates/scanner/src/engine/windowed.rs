@@ -90,17 +90,40 @@ impl CompiledScanner {
             .map(|&(offset, end)| {
                 crate::gpu::with_captured_recovery_receipts(recovery_receipts.as_ref(), || {
                     crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
-                    let window_len = end - offset;
-                    if crate::deadline::expired(deadline) {
-                        return Ok((offset, window_len, Vec::new()));
-                    }
-                    let window_chunk = window_chunk(chunk, offset, end);
-                    let prepared = self.prepare_chunk(&window_chunk);
-                    let window_phase2_always_anchor_matches;
-                    let phase2_always_evidence =
-                        if let Some(evidence) = phase2_always_active_gpu_evidence {
-                            if let Some(matches) = evidence.anchor_literal_matches {
-                                window_phase2_always_anchor_matches = matches
+                        let window_len = end - offset;
+                        if crate::deadline::expired(deadline) {
+                            return Ok((offset, window_len, Vec::new()));
+                        }
+                        let window_chunk = window_chunk(chunk, offset, end);
+                        let prepared = self.prepare_chunk(&window_chunk);
+                        let window_phase2_always_anchor_matches;
+                        let phase2_always_evidence =
+                            if let Some(evidence) = phase2_always_active_gpu_evidence {
+                                if let Some(matches) = evidence.anchor_literal_matches {
+                                    window_phase2_always_anchor_matches = matches
+                                        .iter()
+                                        .filter_map(|&(literal_idx, pos)| {
+                                            let pos = pos as usize;
+                                            (pos >= offset && pos < end)
+                                                .then(|| (literal_idx, (pos - offset) as u32))
+                                        })
+                                        .collect::<Vec<_>>();
+                                    Some(Phase2AlwaysActiveGpuEvidence {
+                                        anchor_literal_matches: Some(
+                                            window_phase2_always_anchor_matches.as_slice(),
+                                        ),
+                                        ..evidence
+                                    })
+                                } else {
+                                    Some(evidence)
+                                }
+                            } else {
+                                None
+                            };
+                        let window_confirmed_anchor_matches;
+                        let confirmed_anchor_matches =
+                            if let Some(matches) = confirmed_anchor_literal_matches {
+                                window_confirmed_anchor_matches = matches
                                     .iter()
                                     .filter_map(|&(literal_idx, pos)| {
                                         let pos = pos as usize;
@@ -108,57 +131,34 @@ impl CompiledScanner {
                                             .then(|| (literal_idx, (pos - offset) as u32))
                                     })
                                     .collect::<Vec<_>>();
-                                Some(Phase2AlwaysActiveGpuEvidence {
-                                    anchor_literal_matches: Some(
-                                        window_phase2_always_anchor_matches.as_slice(),
-                                    ),
-                                    ..evidence
-                                })
+                                Some(window_confirmed_anchor_matches.as_slice())
                             } else {
-                                Some(evidence)
-                            }
-                        } else {
-                            None
-                        };
-                    let window_confirmed_anchor_matches;
-                    let confirmed_anchor_matches =
-                        if let Some(matches) = confirmed_anchor_literal_matches {
-                            window_confirmed_anchor_matches = matches
+                                None
+                            };
+                        let window_generic_keyword_positions;
+                        let generic_positions = if let Some(positions) = generic_keyword_positions {
+                            window_generic_keyword_positions = positions
                                 .iter()
-                                .filter_map(|&(literal_idx, pos)| {
+                                .filter_map(|&pos| {
                                     let pos = pos as usize;
-                                    (pos >= offset && pos < end)
-                                        .then(|| (literal_idx, (pos - offset) as u32))
+                                    (pos >= offset && pos < end).then(|| (pos - offset) as u32)
                                 })
                                 .collect::<Vec<_>>();
-                            Some(window_confirmed_anchor_matches.as_slice())
+                            Some(window_generic_keyword_positions.as_slice())
                         } else {
                             None
                         };
-                    let window_generic_keyword_positions;
-                    let generic_positions = if let Some(positions) = generic_keyword_positions {
-                        window_generic_keyword_positions = positions
-                            .iter()
-                            .filter_map(|&pos| {
-                                let pos = pos as usize;
-                                (pos >= offset && pos < end).then(|| (pos - offset) as u32)
-                            })
-                            .collect::<Vec<_>>();
-                        Some(window_generic_keyword_positions.as_slice())
-                    } else {
-                        None
-                    };
-                    let matches = self.scan_prepared_with_triggered(
-                        prepared,
-                        triggered_patterns,
-                        deadline,
-                        phase2_keyword_hints,
-                        phase2_always_evidence,
-                        confirmed_anchor_matches,
-                        generic_positions,
-                        route,
-                    )?;
-                    Ok((offset, window_len, matches))
+                        let matches = self.scan_prepared_with_triggered(
+                            prepared,
+                            triggered_patterns,
+                            deadline,
+                            phase2_keyword_hints,
+                            phase2_always_evidence,
+                            confirmed_anchor_matches,
+                            generic_positions,
+                            route,
+                        )?;
+                        Ok((offset, window_len, matches))
                     })
                 })
             })

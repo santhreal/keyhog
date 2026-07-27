@@ -44,11 +44,13 @@ fn assert_rescan_recompiles_nothing(text: &str, rounds: usize) {
     let s = primed();
     let c = chunk(text);
     s.clear_fragment_cache();
-    s.scan(&c).expect("zero-pattern scanner transition should succeed"); // prime this chunk's lazy regex paths (compile-at-most-once)
+    s.scan(&c)
+        .expect("zero-pattern scanner transition should succeed"); // prime this chunk's lazy regex paths (compile-at-most-once)
     let before = lazy_regex_compile_events();
     for _ in 0..rounds {
         s.clear_fragment_cache();
-        s.scan(&c).expect("zero-pattern scanner transition should succeed");
+        s.scan(&c)
+            .expect("zero-pattern scanner transition should succeed");
     }
     let after = lazy_regex_compile_events();
     assert_eq!(
@@ -194,11 +196,13 @@ fn fifty_rescans_compile_nothing() {
         "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI7K8MDENGbPxRfiCYEXKEYAAAA password=Hunter2Value99",
     );
     s.clear_fragment_cache();
-    s.scan(&c).expect("zero-pattern scanner transition should succeed");
+    s.scan(&c)
+        .expect("zero-pattern scanner transition should succeed");
     let before = lazy_regex_compile_events();
     for _ in 0..50 {
         s.clear_fragment_cache();
-        s.scan(&c).expect("zero-pattern scanner transition should succeed");
+        s.scan(&c)
+            .expect("zero-pattern scanner transition should succeed");
     }
     assert_eq!(
         lazy_regex_compile_events(),
@@ -216,10 +220,12 @@ fn cold_first_scan_then_warm_rescans_compile_nothing() {
         "token: glsoat-Kc4Np8Qr3St9Uw6Xz2Yb5Bd7E client_secret=Xy8Q~kPv3mNz.aB7dEfGhIjKlMnOp",
     );
     s.clear_fragment_cache();
-    s.scan(&c).expect("zero-pattern scanner transition should succeed"); // cold for this chunk's lazy paths
+    s.scan(&c)
+        .expect("zero-pattern scanner transition should succeed"); // cold for this chunk's lazy paths
     let warm0 = lazy_regex_compile_events();
     s.clear_fragment_cache();
-    s.scan(&c).expect("zero-pattern scanner transition should succeed"); // warm
+    s.scan(&c)
+        .expect("zero-pattern scanner transition should succeed"); // warm
     let warm1 = lazy_regex_compile_events();
     assert_eq!(
         warm1,
@@ -243,14 +249,16 @@ fn distinct_primed_files_in_sequence_compile_nothing() {
     for t in texts {
         let c = chunk(t);
         s.clear_fragment_cache();
-        s.scan(&c).expect("zero-pattern scanner transition should succeed");
+        s.scan(&c)
+            .expect("zero-pattern scanner transition should succeed");
     }
     let before = lazy_regex_compile_events();
     // Now scan the whole sequence again: a real multi-file scan, zero recompiles.
     for t in texts {
         let c = chunk(t);
         s.clear_fragment_cache();
-        s.scan(&c).expect("zero-pattern scanner transition should succeed");
+        s.scan(&c)
+            .expect("zero-pattern scanner transition should succeed");
     }
     assert_eq!(
         lazy_regex_compile_events(),
@@ -265,13 +273,15 @@ fn clearing_fragment_cache_does_not_recompile_patterns() {
     let s = primed();
     let c = chunk("password=Sup3rSecretValue12345 AKIAZ7QH4XNB2WKLP3RV");
     s.clear_fragment_cache();
-    s.scan(&c).expect("zero-pattern scanner transition should succeed");
+    s.scan(&c)
+        .expect("zero-pattern scanner transition should succeed");
     let before = lazy_regex_compile_events();
     for _ in 0..10 {
         s.clear_fragment_cache();
     }
     s.clear_fragment_cache();
-    s.scan(&c).expect("zero-pattern scanner transition should succeed");
+    s.scan(&c)
+        .expect("zero-pattern scanner transition should succeed");
     assert_eq!(
         lazy_regex_compile_events(),
         before,
@@ -285,7 +295,8 @@ fn compile_event_counter_is_monotonic_non_decreasing() {
     let a = lazy_regex_compile_events();
     let s = primed();
     s.clear_fragment_cache();
-    s.scan(&chunk("just some text without obvious secrets")).expect("zero-pattern scanner transition should succeed");
+    s.scan(&chunk("just some text without obvious secrets"))
+        .expect("zero-pattern scanner transition should succeed");
     let b = lazy_regex_compile_events();
     assert!(b >= a, "compile-event counter went backwards: {a} -> {b}");
 }
@@ -298,11 +309,15 @@ fn second_scanner_from_same_corpus_rescans_compile_nothing() {
     fresh.warm();
     let c = chunk("AKIAZ7QH4XNB2WKLP3RV glpat-Ab3Cd6Ef9Gh2Ij5Kl8Mn password=Hunter2Value99");
     fresh.clear_fragment_cache();
-    fresh.scan(&c).expect("zero-pattern scanner transition should succeed");
+    fresh
+        .scan(&c)
+        .expect("zero-pattern scanner transition should succeed");
     let before = lazy_regex_compile_events();
     for _ in 0..5 {
         fresh.clear_fragment_cache();
-        fresh.scan(&c).expect("zero-pattern scanner transition should succeed");
+        fresh
+            .scan(&c)
+            .expect("zero-pattern scanner transition should succeed");
     }
     assert_eq!(
         lazy_regex_compile_events(),
@@ -321,13 +336,15 @@ fn interleaved_diverse_chunks_after_priming_compile_nothing() {
     ];
     for t in primers {
         s.clear_fragment_cache();
-        s.scan(&chunk(t)).expect("zero-pattern scanner transition should succeed");
+        s.scan(&chunk(t))
+            .expect("zero-pattern scanner transition should succeed");
     }
     let before = lazy_regex_compile_events();
     for _ in 0..3 {
         for t in primers {
             s.clear_fragment_cache();
-            s.scan(&chunk(t)).expect("zero-pattern scanner transition should succeed");
+            s.scan(&chunk(t))
+                .expect("zero-pattern scanner transition should succeed");
         }
     }
     assert_eq!(

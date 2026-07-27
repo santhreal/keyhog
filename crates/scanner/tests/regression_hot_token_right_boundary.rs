@@ -59,7 +59,9 @@ fn reports_on_all_backends(text: &str, detector_id: &str, credential: &str) -> b
     let scanner = scanner();
     CPU_BACKENDS.iter().all(|&backend| {
         scanner.clear_fragment_cache();
-        scanner.scan_with_backend(&chunk(text), backend).expect("selected backend scan succeeds")
+        scanner
+            .scan_with_backend(&chunk(text), backend)
+            .expect("selected backend scan succeeds")
             .iter()
             .any(|m| m.detector_id.as_ref() == detector_id && m.credential.as_ref() == credential)
     })
@@ -70,7 +72,9 @@ fn suppressed_on_all_backends(text: &str, detector_id: &str) -> bool {
     let scanner = scanner();
     CPU_BACKENDS.iter().all(|&backend| {
         scanner.clear_fragment_cache();
-        scanner.scan_with_backend(&chunk(text), backend).expect("selected backend scan succeeds")
+        scanner
+            .scan_with_backend(&chunk(text), backend)
+            .expect("selected backend scan succeeds")
             .iter()
             .all(|m| m.detector_id.as_ref() != detector_id)
     })
@@ -263,9 +267,13 @@ fn aws_both_backends_agree_exact_reports() {
         .iter()
         .map(|&backend| {
             scanner.clear_fragment_cache();
-            scanner.scan_with_backend(&input, backend).expect("selected backend scan succeeds").iter().any(|m| {
-                m.detector_id.as_ref() == "aws-access-key" && m.credential.as_ref() == AWS_AKIA
-            })
+            scanner
+                .scan_with_backend(&input, backend)
+                .expect("selected backend scan succeeds")
+                .iter()
+                .any(|m| {
+                    m.detector_id.as_ref() == "aws-access-key" && m.credential.as_ref() == AWS_AKIA
+                })
         })
         .collect();
     assert_eq!(
@@ -283,7 +291,9 @@ fn aws_both_backends_agree_overlong_suppressed() {
         .iter()
         .map(|&backend| {
             scanner.clear_fragment_cache();
-            scanner.scan_with_backend(&input, backend).expect("selected backend scan succeeds")
+            scanner
+                .scan_with_backend(&input, backend)
+                .expect("selected backend scan succeeds")
                 .iter()
                 .filter(|m| m.detector_id.as_ref() == "aws-access-key")
                 .count()
@@ -304,7 +314,9 @@ fn openai_both_backends_agree_overlong_suppressed() {
         .iter()
         .map(|&backend| {
             scanner.clear_fragment_cache();
-            scanner.scan_with_backend(&input, backend).expect("selected backend scan succeeds")
+            scanner
+                .scan_with_backend(&input, backend)
+                .expect("selected backend scan succeeds")
                 .iter()
                 .filter(|m| m.detector_id.as_ref() == "openai-api-key")
                 .count()

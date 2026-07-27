@@ -53,8 +53,7 @@ fn load_inline_cases() -> Vec<InlineCase> {
         .map(|e| e.path())
         .filter(|p| {
             p.extension().and_then(|s| s.to_str()) == Some("toml")
-                && p
-                    .file_name()
+                && p.file_name()
                     .is_none_or(|name| name != DETECTOR_CORPUS_MANIFEST_FILE)
         })
         .collect();
@@ -328,15 +327,21 @@ fn corrected_primary_role_regressions_have_exact_backend_parity() {
         };
         let chunk = make_chunk(&positive);
         scanner.clear_fragment_cache();
-        let mut cpu = scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
+        let mut cpu = scanner
+            .scan_with_backend(&chunk, ScanBackend::CpuFallback)
+            .expect("selected backend scan succeeds");
         scanner.clear_fragment_cache();
-        let mut simd = scanner.scan_with_backend(&chunk, ScanBackend::SimdCpu).expect("selected backend scan succeeds");
+        let mut simd = scanner
+            .scan_with_backend(&chunk, ScanBackend::SimdCpu)
+            .expect("selected backend scan succeeds");
         cpu.sort();
         simd.sort();
         assert_eq!(cpu, simd, "CPU/SIMD finding drift for {}", case.detector_id);
         for backend in &acquired_gpu_backends {
             scanner.clear_fragment_cache();
-            let mut gpu = scanner.scan_with_backend(&chunk, *backend).expect("selected backend scan succeeds");
+            let mut gpu = scanner
+                .scan_with_backend(&chunk, *backend)
+                .expect("selected backend scan succeeds");
             gpu.sort();
             assert_eq!(
                 cpu,

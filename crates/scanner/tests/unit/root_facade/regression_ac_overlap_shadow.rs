@@ -49,7 +49,9 @@ fn shadowed_inner_literal_is_ac_confirmed_with_variant_skipped() {
     keyhog_scanner::testing::set_phase2_hs(&scanner, Some(false));
     keyhog_scanner::testing::set_homoglyph_ascii_skip(&scanner, Some(true));
     scanner.clear_fragment_cache();
-    let matches: Vec<_> = scanner.scan_chunks_with_backend(std::slice::from_ref(&c), ScanBackend::CpuFallback).expect("selected backend scan succeeds")
+    let matches: Vec<_> = scanner
+        .scan_chunks_with_backend(std::slice::from_ref(&c), ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds")
         .into_iter()
         .flatten()
         .collect();

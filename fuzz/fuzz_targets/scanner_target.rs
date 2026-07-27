@@ -44,20 +44,15 @@ fn scanner() -> &'static CompiledScanner {
         d.push("detectors");
         let all = keyhog_core::load_detectors(&d).expect("detectors");
 
-        // Fuzz the scan PIPELINE, not the full detector corpus. Compiling
-        // every detector's Hyperscan database is the dominant cost of this
-        // target's one-time init, and under libFuzzer's ASan instrumentation it
-        // runs ~15s / ~1.6GB locally, but that init executes INSIDE fuzz unit
-        // #0 (the empty input), so on core/memory-constrained hosted CI runners
-        // it ballooned ~80x and blew past libFuzzer's 1200s per-unit timeout,
-        // failing the smoke before a single real input was fuzzed. A
-        // representative, stride-sampled subset keeps init sub-second and
-        // deterministic on any runner while still driving the whole pipeline
-        // (decode-through, suppression, scoring, reporting). Full-corpus
-        // compile + cross-backend scan parity is covered by the non-fuzz
-        // `worst_case_backend_parity` test, which is not under a per-unit
-        // timeout, this smoke is for panics/hangs/OOM in `scan()`, not corpus
-        // breadth.
+        // Fuzz the scan pipeline, not the full detector corpus. Compiling every
+        // detector under libFuzzer's ASan instrumentation is the dominant cost
+        // of this target's one-time init. That init executes inside fuzz unit
+        // #0, so a full corpus can exhaust constrained hosted runners before a
+        // real input is fuzzed. A representative, stride-sampled subset keeps
+        // init bounded and deterministic while still driving decode-through,
+        // suppression, scoring, and reporting. Full-corpus compile and
+        // cross-backend scan parity are covered by the non-fuzz
+        // `worst_case_backend_parity` test.
         const FUZZ_DETECTOR_CAP: usize = 64;
         let stride = (all.len() / FUZZ_DETECTOR_CAP).max(1);
         let detectors: Vec<_> = all.into_iter().step_by(stride).take(FUZZ_DETECTOR_CAP).collect();

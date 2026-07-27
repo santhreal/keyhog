@@ -40,7 +40,9 @@ fn shape_reasons_for(
     };
     scanner.clear_fragment_cache();
     let _ = telemetry::with_scan_telemetry(trace, || {
-        scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback).expect("selected backend scan succeeds")
+        scanner
+            .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+            .expect("selected backend scan succeeds")
     });
     trace
         .drain()

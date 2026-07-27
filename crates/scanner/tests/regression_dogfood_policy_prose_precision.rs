@@ -15,7 +15,9 @@ fn findings_for(scanner: &CompiledScanner, text: &str) -> Vec<(String, String)> 
 fn findings_for_path(scanner: &CompiledScanner, text: &str, path: &str) -> Vec<(String, String)> {
     let chunk: Chunk = make_chunk(text, "filesystem", path);
     scanner.clear_fragment_cache();
-    scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback).expect("selected backend scan succeeds")
+    scanner
+        .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds")
         .into_iter()
         .flatten()
         .map(|m| (m.detector_id.to_string(), m.credential.as_str().to_string()))
@@ -424,7 +426,9 @@ hygiene_token = "ohw_=uhihuhqfh_f11_fodvvlib_ydvw_qrgh_nlqgv(&[0x8;14])"
         "release/evidence/hygiene/test-hygiene-scan.json",
     );
     scanner.clear_fragment_cache();
-    let findings: Vec<(String, String)> = scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback).expect("selected backend scan succeeds")
+    let findings: Vec<(String, String)> = scanner
+        .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds")
         .into_iter()
         .flatten()
         .map(|m| (m.detector_id.to_string(), m.credential.as_str().to_string()))

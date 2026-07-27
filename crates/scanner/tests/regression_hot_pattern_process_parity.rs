@@ -74,7 +74,9 @@ fn detector_owned_non_stripe_hot_prefix_emits_once_at_exact_nonzero_offset() {
     let expected_offset = 8192 + prefix.len();
 
     for backend in [ScanBackend::SimdCpu, ScanBackend::CpuFallback] {
-        let matches = synthetic_hot_scanner(true).scan_with_backend(&chunk, backend).expect("selected backend scan succeeds");
+        let matches = synthetic_hot_scanner(true)
+            .scan_with_backend(&chunk, backend)
+            .expect("selected backend scan succeeds");
         let exact: Vec<_> = matches
             .iter()
             .filter(|m| {
@@ -104,7 +106,9 @@ fn detector_owned_hot_dedup_is_offset_scoped_not_detector_scoped() {
             ..Default::default()
         },
     };
-    let matches = synthetic_hot_scanner(true).scan_with_backend(&chunk, ScanBackend::SimdCpu).expect("selected backend scan succeeds");
+    let matches = synthetic_hot_scanner(true)
+        .scan_with_backend(&chunk, ScanBackend::SimdCpu)
+        .expect("selected backend scan succeeds");
     let mut offsets: Vec<_> = matches
         .iter()
         .filter(|m| {
@@ -132,9 +136,12 @@ fn detector_owned_hot_and_confirmed_only_paths_emit_byte_identical_findings() {
             ..Default::default()
         },
     };
-    let hot = synthetic_hot_scanner(true).scan_with_backend(&chunk, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
-    let confirmed_only =
-        synthetic_hot_scanner(false).scan_with_backend(&chunk, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
+    let hot = synthetic_hot_scanner(true)
+        .scan_with_backend(&chunk, ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds");
+    let confirmed_only = synthetic_hot_scanner(false)
+        .scan_with_backend(&chunk, ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds");
 
     assert_eq!(hot, confirmed_only);
     assert_eq!(hot.len(), 1, "findings={hot:?}");
@@ -155,9 +162,12 @@ fn shipped_hot_detectors_are_byte_identical_without_hot_acceleration() {
         },
     };
 
-    let accelerated = scanner().scan_with_backend(&chunk, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
-    let confirmed_only =
-        scanner_without_hot_acceleration().scan_with_backend(&chunk, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
+    let accelerated = scanner()
+        .scan_with_backend(&chunk, ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds");
+    let confirmed_only = scanner_without_hot_acceleration()
+        .scan_with_backend(&chunk, ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds");
 
     assert_eq!(accelerated, confirmed_only);
     assert!(accelerated
@@ -197,7 +207,9 @@ fn hot_openai_key_on_non_hex_oid_line_is_reported_on_both_backends() {
     for backend in [ScanBackend::SimdCpu, ScanBackend::CpuFallback] {
         let scanner = scanner();
         scanner.clear_fragment_cache();
-        let matches = scanner.scan_with_backend(&chunk, backend).expect("selected backend scan succeeds");
+        let matches = scanner
+            .scan_with_backend(&chunk, backend)
+            .expect("selected backend scan succeeds");
         assert!(
             matches
                 .iter()

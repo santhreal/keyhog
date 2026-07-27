@@ -459,9 +459,7 @@ pub(crate) fn decode_text_file_for_test(bytes: &[u8]) -> Option<String> {
     read::decode_text_file_for_test(bytes)
 }
 
-pub(crate) fn decode_text_file_owned_or_bytes_for_test(
-    bytes: Vec<u8>,
-) -> Result<String, Vec<u8>> {
+pub(crate) fn decode_text_file_owned_or_bytes_for_test(bytes: Vec<u8>) -> Result<String, Vec<u8>> {
     read::decode_text_file_owned_or_bytes_for_test(bytes)
 }
 

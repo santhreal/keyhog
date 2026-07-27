@@ -193,8 +193,7 @@ fn scan_artifact(
             ..Default::default()
         },
     };
-    let matches =
-        scanner.scan_with_backend(&chunk, keyhog_scanner::ScanBackend::CpuFallback)?;
+    let matches = scanner.scan_with_backend(&chunk, keyhog_scanner::ScanBackend::CpuFallback)?;
     Ok(keyhog_core::dedup_cross_detector(
         keyhog_core::dedup_matches(matches, &DedupScope::Credential),
     ))

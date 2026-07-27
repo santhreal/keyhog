@@ -214,11 +214,7 @@ impl Decoder for JavaScriptStaticDecoder {
     }
 }
 
-fn report_nonstandard_xor_candidates(
-    source: &str,
-    metadata: &ChunkMetadata,
-    base_offset: usize,
-) {
+fn report_nonstandard_xor_candidates(source: &str, metadata: &ChunkMetadata, base_offset: usize) {
     let supported_starts: HashSet<usize> = XOR_MAP_RE
         .find_iter(source)
         .take(MAX_STATIC_EXPRESSIONS)

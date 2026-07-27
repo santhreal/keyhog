@@ -498,16 +498,7 @@ fn daemon_client_merge_retains_exact_static_recovery_dispositions() {
         )
         .expect("compatible daemon telemetry merges through the client lifecycle");
 
-    assert_eq!(
-        snapshot.after.supported - snapshot.before.supported,
-        7
-    );
-    assert_eq!(
-        snapshot.after.unsupported - snapshot.before.unsupported,
-        3
-    );
-    assert_eq!(
-        snapshot.after.erroneous - snapshot.before.erroneous,
-        5
-    );
+    assert_eq!(snapshot.after.supported - snapshot.before.supported, 7);
+    assert_eq!(snapshot.after.unsupported - snapshot.before.unsupported, 3);
+    assert_eq!(snapshot.after.erroneous - snapshot.before.erroneous, 5);
 }

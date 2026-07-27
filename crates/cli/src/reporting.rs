@@ -223,10 +223,7 @@ fn report_metadata_from_scan_run_inner(
     source_chunks_scanned: usize,
     source_bytes_scanned: u64,
     detector_count: usize,
-    detector_corpus: Option<(
-        &str,
-        &crate::orchestrator_config::DetectorCorpusProvenance,
-    )>,
+    detector_corpus: Option<(&str, &crate::orchestrator_config::DetectorCorpusProvenance)>,
     config_digest: Option<u64>,
 ) -> ScanReportMetadata {
     let mut metadata = report_metadata_from_times(started_at, finished_at, config_digest);

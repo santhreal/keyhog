@@ -47,7 +47,9 @@ fn empty_chunk_all_backends_produce_zero_findings() {
     for backend in backends() {
         scanner.clear_fragment_cache();
         let degrade_before = scanner.runtime_status().gpu_degrade_count;
-        let results = scanner.scan_chunks_with_backend(&[empty_chunk.clone()], backend).expect("selected backend scan succeeds");
+        let results = scanner
+            .scan_chunks_with_backend(&[empty_chunk.clone()], backend)
+            .expect("selected backend scan succeeds");
         let degrade_after = scanner.runtime_status().gpu_degrade_count;
 
         assert_eq!(results, vec![Vec::new()], "empty chunk on {backend:?}");
@@ -64,7 +66,9 @@ fn whitespace_only_chunk_all_backends_produce_zero_findings() {
     for backend in backends() {
         scanner.clear_fragment_cache();
         let degrade_before = scanner.runtime_status().gpu_degrade_count;
-        let results = scanner.scan_chunks_with_backend(&[whitespace_chunk.clone()], backend).expect("selected backend scan succeeds");
+        let results = scanner
+            .scan_chunks_with_backend(&[whitespace_chunk.clone()], backend)
+            .expect("selected backend scan succeeds");
         let degrade_after = scanner.runtime_status().gpu_degrade_count;
         assert_eq!(results, vec![Vec::new()], "whitespace chunk on {backend:?}");
         assert_eq!(degrade_after, degrade_before, "{backend:?} degraded");
@@ -80,7 +84,9 @@ fn single_byte_chunk_is_empty_on_all_backends_without_degrade() {
     for backend in backends() {
         scanner.clear_fragment_cache();
         let degrade_before = scanner.runtime_status().gpu_degrade_count;
-        let results = scanner.scan_chunks_with_backend(&[single_byte_chunk.clone()], backend).expect("selected backend scan succeeds");
+        let results = scanner
+            .scan_chunks_with_backend(&[single_byte_chunk.clone()], backend)
+            .expect("selected backend scan succeeds");
         let degrade_after = scanner.runtime_status().gpu_degrade_count;
         assert_eq!(results, vec![Vec::new()], "single byte on {backend:?}");
         assert_eq!(degrade_after, degrade_before, "{backend:?} degraded");
@@ -105,7 +111,9 @@ fn mixed_empty_and_nonempty_chunks_coalesced_dispatch_parity() {
     ];
 
     scanner.clear_fragment_cache();
-    let simd_results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu).expect("selected backend scan succeeds");
+    let simd_results = scanner
+        .scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu)
+        .expect("selected backend scan succeeds");
     assert!(
         simd_results.iter().flatten().next().is_some(),
         "mixed reference must contain a real finding"
@@ -114,7 +122,9 @@ fn mixed_empty_and_nonempty_chunks_coalesced_dispatch_parity() {
     for backend in backends().into_iter().skip(1) {
         scanner.clear_fragment_cache();
         let degrade_before = scanner.runtime_status().gpu_degrade_count;
-        let results = scanner.scan_chunks_with_backend(&chunks, backend).expect("selected backend scan succeeds");
+        let results = scanner
+            .scan_chunks_with_backend(&chunks, backend)
+            .expect("selected backend scan succeeds");
         let degrade_after = scanner.runtime_status().gpu_degrade_count;
         assert_eq!(
             results, simd_results,

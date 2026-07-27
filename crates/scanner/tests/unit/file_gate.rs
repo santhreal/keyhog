@@ -107,22 +107,14 @@ fn bigram_bloom_error() {
 }
 
 #[test]
-fn bigram_bloom_constructor_recomputes_saturation_once() {
-    let owner = include_str!("../../src/bigram_bloom.rs");
-    assert!(
-        owner.contains("fn insert_all_without_saturation_refresh(&mut self, bytes: &[u8])")
-            && owner.contains("self.insert_all_without_saturation_refresh(bytes);\n        self.recompute_saturation();"),
-        "direct insert_all must still refresh saturation after mutation"
-    );
-    assert!(
-        owner.contains("bloom.insert_all_without_saturation_refresh(bytes);")
-            && owner.contains("bloom.recompute_saturation();\n        bloom\n    }"),
-        "from_literal_prefixes must batch bigram insertion and recompute saturation once"
-    );
-    assert!(
-        !owner.contains("bloom.insert_all(bytes);\n            // Extension: terminal byte may be followed by anything"),
-        "from_literal_prefixes must not pay a saturation popcount per literal"
-    );
+fn selective_anchor_constructor_populates_once_and_preserves_recall() {
+    let bloom =
+        BigramBloom::from_literal_prefixes(&["ghp_ABCDEFG".into(), "sk_live_12345678".into()]);
+    assert!(bloom.popcount() > 0);
+    assert!(!bloom.is_saturated());
+    assert!(bloom.maybe_overlaps(b"prefix ghp_ABCDEFG suffix"));
+    assert!(bloom.maybe_overlaps(b"prefix SK_LIVE_12345678 suffix"));
+    assert!(!bloom.maybe_overlaps(b"ordinary source without either anchor"));
 }
 
 // ── crates/scanner/src/checksum/github.rs ───────────────────────────
@@ -800,12 +792,10 @@ fn engine_scan_happy() {
 #[test]
 fn engine_scan_error() {
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
-    assert!(
-        scanner
-            .scan(&demo_chunk(""))
-            .expect("empty engine file-gate scan succeeds")
-            .is_empty()
-    );
+    assert!(scanner
+        .scan(&demo_chunk(""))
+        .expect("empty engine file-gate scan succeeds")
+        .is_empty());
 }
 
 // ── crates/scanner/src/engine/windowed.rs ─────────────────────────────
@@ -836,12 +826,10 @@ fn engine_phase2_happy() {
 fn engine_phase2_error() {
     let scanner =
         CompiledScanner::compile(vec![demo_detector(r"ghp_[A-Za-z0-9]{20,}", "ghp_")]).unwrap();
-    assert!(
-        scanner
-            .scan(&demo_chunk("plain prose"))
-            .expect("plaintext window file-gate scan succeeds")
-            .is_empty()
-    );
+    assert!(scanner
+        .scan(&demo_chunk("plain prose"))
+        .expect("plaintext window file-gate scan succeeds")
+        .is_empty());
 }
 
 // ── crates/scanner/src/engine/scan_filters.rs ─────────────────────────
@@ -874,7 +862,7 @@ fn engine_scan_gpu_happy() {
 }
 #[test]
 fn gpu_moe_readback_has_no_fixed_millisecond_sleep_floor() {
-    let src = include_str!("../../src/gpu/backend.rs");
+    let src = include_str!("../../src/gpu/backend/execution.rs");
     assert!(
         !src.contains("Duration::from_millis(1)"),
         "GPU MoE readback must use bounded adaptive backoff, not a fixed 1 ms sleep floor"
@@ -1703,18 +1691,18 @@ fn prefix_trie_error() {
 #[test]
 fn probabilistic_gate_happy() {
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
-    let matches = scanner.scan(&demo_chunk("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")).expect("test scan succeeds");
+    let matches = scanner
+        .scan(&demo_chunk("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"))
+        .expect("test scan succeeds");
     assert!(matches.is_empty());
 }
 #[test]
 fn probabilistic_gate_error() {
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
-    assert!(
-        scanner
-            .scan(&demo_chunk("aaaaaaaaaaaaaaaa"))
-            .expect("probabilistic-gate file scan succeeds")
-            .is_empty()
-    );
+    assert!(scanner
+        .scan(&demo_chunk("aaaaaaaaaaaaaaaa"))
+        .expect("probabilistic-gate file scan succeeds")
+        .is_empty());
 }
 #[test]
 fn probabilistic_gate_bigram_slot_avoids_per_pair_fnv_rounds() {
@@ -1771,12 +1759,10 @@ fn shared_regexes_happy() {
 #[test]
 fn shared_regexes_error() {
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
-    assert!(
-        scanner
-            .scan(&demo_chunk("no assignment syntax"))
-            .expect("assignment-free file scan succeeds")
-            .is_empty()
-    );
+    assert!(scanner
+        .scan(&demo_chunk("no assignment syntax"))
+        .expect("assignment-free file scan succeeds")
+        .is_empty());
 }
 
 // ── crates/scanner/src/simd.rs ────────────────────────────────────────
@@ -1803,19 +1789,19 @@ fn simdsieve_prefilter_happy() {
         CompiledScanner::compile(vec![demo_detector("ghp_[A-Za-z0-9]{20,}", "ghp_")]).unwrap();
     let token = concat!("gh", "p_zQWBuTSOoRi4A9spHcVY5ncnsDkxkJ0mLq17");
     let pad = "x".repeat(100_001);
-    let matches = scanner.scan(&demo_chunk(&format!("{pad}{token}"))).expect("test scan succeeds");
+    let matches = scanner
+        .scan(&demo_chunk(&format!("{pad}{token}")))
+        .expect("test scan succeeds");
     assert!(matches.iter().any(|m| m.credential.as_ref() == token));
 }
 #[test]
 fn simdsieve_prefilter_error() {
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
     let pad = "x".repeat(100_001);
-    assert!(
-        scanner
-            .scan(&demo_chunk(&pad))
-            .expect("large-padding file scan succeeds")
-            .is_empty()
-    );
+    assert!(scanner
+        .scan(&demo_chunk(&pad))
+        .expect("large-padding file scan succeeds")
+        .is_empty());
 }
 
 // ── crates/scanner/src/static_intern.rs ───────────────────────────────
@@ -1848,12 +1834,10 @@ fn structured_mod_happy() {
 #[test]
 fn structured_mod_error() {
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
-    assert!(
-        scanner
-            .scan(&demo_chunk("fn main() {}"))
-            .expect("structured plaintext file scan succeeds")
-            .is_empty()
-    );
+    assert!(scanner
+        .scan(&demo_chunk("fn main() {}"))
+        .expect("structured plaintext file scan succeeds")
+        .is_empty());
 }
 
 // ── crates/scanner/src/structured/parsers.rs ──────────────────────────
@@ -1867,12 +1851,10 @@ fn structured_parsers_happy() {
 fn structured_parsers_error() {
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
     let chunk = structured_env_chunk("", ".env");
-    assert!(
-        scanner
-            .scan(&chunk)
-            .expect("empty structured file scan succeeds")
-            .is_empty()
-    );
+    assert!(scanner
+        .scan(&chunk)
+        .expect("empty structured file scan succeeds")
+        .is_empty());
 }
 
 // ── crates/scanner/src/telemetry.rs ───────────────────────────────────

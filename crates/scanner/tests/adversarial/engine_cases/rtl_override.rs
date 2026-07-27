@@ -9,7 +9,9 @@ const RTL: char = '\u{202E}';
 fn rtl_override_in_assignment_does_not_hide_credential() {
     let body = format!("TESTKEY_{RTL}token = \"{VALID_CREDENTIAL}\"\n");
     let scanner = test_scanner();
-    let matches = scanner.scan(&make_chunk(&body)).expect(concat!(module_path!(), ": scan should succeed"));
+    let matches = scanner
+        .scan(&make_chunk(&body))
+        .expect(concat!(module_path!(), ": scan should succeed"));
     assert!(
         matches
             .iter()

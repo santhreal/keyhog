@@ -222,7 +222,8 @@ fn ml_pending_confidence_policy_routes_through_confidence_owner() {
             && ml.contains(
                 "internal invariant violation: ML pending queue populated while ML is disabled"
             )
-            && ml.contains("pending={pending}")
+            && ml.contains("pending={}")
+            && ml.contains("scan_state.ml_pending.len()")
             && !ml.contains("scan_state.ml_pending.clear();")
             && !ml.contains("dropping pending ML matches"),
         "ML postprocess must route pending confidence through confidence owner and fail loud on impossible disabled-ML pending state"

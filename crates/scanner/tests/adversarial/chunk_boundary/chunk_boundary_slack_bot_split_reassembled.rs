@@ -41,7 +41,9 @@ fn chunk_boundary_slack_bot_split_reassembled() {
         },
     };
 
-    let results = scanner.scan_coalesced(&[chunk_a, chunk_b]).expect(concat!(module_path!(), ": coalesced scan should succeed"));
+    let results = scanner
+        .scan_coalesced(&[chunk_a, chunk_b])
+        .expect(concat!(module_path!(), ": coalesced scan should succeed"));
     let found = results.iter().flatten().any(|m| {
         m.detector_id.as_ref() == "slack-bot-token"
             && m.credential.as_ref() == "xoxb-1234567890-1234567890123-abcdefghijklmnopqrstuvwx"

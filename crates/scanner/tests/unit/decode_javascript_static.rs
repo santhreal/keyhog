@@ -69,15 +69,16 @@ fn decode(source: String) -> Vec<Chunk> {
 }
 
 fn decode_at(source: String, base_offset: usize) -> Vec<Chunk> {
-    JavaScriptStaticDecoder.decode_chunk(&Chunk {
-        data: source.into(),
-        metadata: ChunkMetadata {
-            source_type: "test".into(),
-            base_offset,
-            ..Default::default()
-        },
-    })
-    .expect("bounded JavaScript static decode should succeed")
+    JavaScriptStaticDecoder
+        .decode_chunk(&Chunk {
+            data: source.into(),
+            metadata: ChunkMetadata {
+                source_type: "test".into(),
+                base_offset,
+                ..Default::default()
+            },
+        })
+        .expect("bounded JavaScript static decode should succeed")
 }
 fn assert_single_spliced_recovery(decoded: &[Chunk]) {
     assert_eq!(decoded.len(), 1);
@@ -500,10 +501,8 @@ fn rejects_aes_expression_with_mismatched_decipher_binding() {
 fn does_not_recurse_on_its_own_output() {
     let mut chunk = decode(xor_program(false, true)).remove(0);
     chunk.data = xor_program(false, true).into();
-    assert!(
-        JavaScriptStaticDecoder
-            .decode_chunk(&chunk)
-            .expect("bounded recursive-guard decode should succeed")
-            .is_empty()
-    );
+    assert!(JavaScriptStaticDecoder
+        .decode_chunk(&chunk)
+        .expect("bounded recursive-guard decode should succeed")
+        .is_empty());
 }

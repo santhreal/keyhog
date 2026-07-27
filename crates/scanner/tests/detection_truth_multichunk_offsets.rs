@@ -23,7 +23,9 @@ fn chunk(data: &str, base_offset: usize) -> Chunk {
 fn scan(chunks: &[Chunk]) -> Vec<Vec<(usize, String)>> {
     let detectors = keyhog_core::embedded_detector_specs().to_vec();
     let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
-    scanner.scan_chunks_with_backend(chunks, ScanBackend::CpuFallback).expect("selected backend scan succeeds")
+    scanner
+        .scan_chunks_with_backend(chunks, ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds")
         .iter()
         .map(|per_chunk| {
             per_chunk

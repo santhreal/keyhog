@@ -4,7 +4,6 @@
 pub(crate) const RFC7519_EXAMPLE_JWT_PREFIX: &str =
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkw";
 
-
 /// True if `credential` matches the XXXXX-XXXXX-XXXXX-XXXXX-XXXXX
 /// dashed-serial / license-key shape: exactly 5 dash-separated
 /// blocks, each exactly 5 alphanumeric characters. Microsoft Office,
@@ -74,11 +73,7 @@ pub(crate) const HASH_ALGO_INTEGRITY_LABELS: &[&str] = &["sha512-", "sha384-", "
 /// the docker/python/git-LFS digest formats, not commit references.
 pub(crate) const HASH_ALGO_COLON_LABELS: &[&[u8]] = &[b"sha256:", b"sha512:", b"sha1:", b"md5:"];
 
-
-pub(super) fn is_five_by_five_dash_shape(
-    value: &str,
-    body_byte_ok: impl Fn(u8) -> bool,
-) -> bool {
+pub(super) fn is_five_by_five_dash_shape(value: &str, body_byte_ok: impl Fn(u8) -> bool) -> bool {
     let bytes = value.as_bytes();
     if bytes.len() != 29 {
         return false;
@@ -141,7 +136,6 @@ pub(crate) fn looks_like_bare_hex_digest(credential: &str) -> bool {
     // a SecretBench-medium FP cluster.
     matches!(credential.len(), 32 | 40 | 48 | 56 | 64 | 72 | 128) && is_uniform_hex(credential)
 }
-
 
 /// The AWS partitions whose IAM ARNs this suppression recognizes. Single owner
 /// for both the full (`arn:<p>:iam::`) and trimmed (`<p>:iam::`) gates, so adding
@@ -295,7 +289,6 @@ pub(crate) fn looks_like_standard_base64_blob(credential: &str) -> bool {
     // opposite directions again (org/dedup audit finding).
     crate::decode_structure::is_random_base64_blob(credential, 40, 80, 32)
 }
-
 
 /// Pure standard-base64 random-byte decoy shape in the 40-80 char band.
 ///

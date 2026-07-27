@@ -22,5 +22,8 @@ fn ci_workflows_include_dogfood_scan_gate() {
         && harness.contains(" scan . ")
         && harness.contains("--dogfood");
 
-    assert!(direct || delegated, "STANDARD dogfood requires CI to run `keyhog scan --dogfood` directly or through the owned repository-scan harness");
+    assert!(
+        direct || delegated,
+        "STANDARD dogfood requires CI to run `keyhog scan --dogfood` directly or through the owned repository-scan harness"
+    );
 }

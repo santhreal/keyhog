@@ -44,7 +44,9 @@ fn r5t_chunk_boundary_heroku_key_split_reassembled() {
             ..Default::default()
         },
     };
-    let results = scanner.scan_coalesced(&[chunk_a, chunk_b]).expect(concat!(module_path!(), ": coalesced scan should succeed"));
+    let results = scanner
+        .scan_coalesced(&[chunk_a, chunk_b])
+        .expect(concat!(module_path!(), ": coalesced scan should succeed"));
     let found = results
         .iter()
         .flatten()

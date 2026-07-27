@@ -99,7 +99,8 @@ fn deduped_match_serialization_fails_closed_without_plaintext() {
                 Some(0.7),
             );
             m.companions.insert("zeta".into(), "companion-last".into());
-            m.companions.insert("alpha".into(), "companion-first".into());
+            m.companions
+                .insert("alpha".into(), "companion-first".into());
             m.companions.insert("middle".into(), "companion-mid".into());
             m
         }],

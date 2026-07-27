@@ -67,7 +67,9 @@ fn batch_dispatch_equals_sum_of_per_chunk_results_all_backends() {
 
     for backend in backends {
         scanner.clear_fragment_cache();
-        let batch_results = scanner.scan_chunks_with_backend(&chunks, backend).expect("selected backend scan succeeds");
+        let batch_results = scanner
+            .scan_chunks_with_backend(&chunks, backend)
+            .expect("selected backend scan succeeds");
         let batch_findings: BTreeSet<FindingKey> = batch_results
             .iter()
             .flat_map(|chunk| {
@@ -81,7 +83,9 @@ fn batch_dispatch_equals_sum_of_per_chunk_results_all_backends() {
         scanner.clear_fragment_cache();
         let mut individual_findings: BTreeSet<FindingKey> = BTreeSet::new();
         for chunk in &chunks {
-            let results = scanner.scan_chunks_with_backend(std::slice::from_ref(chunk), backend).expect("selected backend scan succeeds");
+            let results = scanner
+                .scan_chunks_with_backend(std::slice::from_ref(chunk), backend)
+                .expect("selected backend scan succeeds");
             for m in results.iter().flat_map(|r| r.iter()) {
                 individual_findings.insert((m.credential.as_ref().to_string(), m.location.offset));
             }
@@ -140,7 +144,9 @@ fn per_chunk_order_preserved_coalesced_dispatch() {
 
     for backend in backends {
         scanner.clear_fragment_cache();
-        let results = scanner.scan_chunks_with_backend(&chunks, backend).expect("selected backend scan succeeds");
+        let results = scanner
+            .scan_chunks_with_backend(&chunks, backend)
+            .expect("selected backend scan succeeds");
 
         // Verify results vector has the same length as chunks vector.
         assert_eq!(

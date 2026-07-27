@@ -86,7 +86,9 @@ fn cross_file_reassembly_does_not_cannibalize_singleton() {
         },
     };
 
-    let groups = scanner.scan_coalesced(&[chunk_a, chunk_b]).expect(concat!(module_path!(), ": coalesced scan should succeed"));
+    let groups = scanner
+        .scan_coalesced(&[chunk_a, chunk_b])
+        .expect(concat!(module_path!(), ": coalesced scan should succeed"));
     let flat: Vec<_> = groups.into_iter().flatten().collect();
 
     // Contract A: standalone AKIA finding must still surface with exact

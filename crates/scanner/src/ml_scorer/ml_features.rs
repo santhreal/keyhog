@@ -248,11 +248,8 @@ impl<'a> FeatureContext<'a> {
         if needle.is_empty() {
             return true;
         }
-        if self.any_segment(|segment| {
-            segment
-                .windows(needle.len())
-                .any(|window| window == needle)
-        }) {
+        if self.any_segment(|segment| segment.windows(needle.len()).any(|window| window == needle))
+        {
             return true;
         }
         self.contains_across_boundaries(needle, |left, right| left == right)
@@ -265,23 +262,16 @@ impl<'a> FeatureContext<'a> {
         if self.any_segment(|segment| crate::ascii_ci::ci_find_nonempty(segment, needle)) {
             return true;
         }
-        self.contains_across_boundaries(needle, |left, right| {
-            left.eq_ignore_ascii_case(&right)
-        })
+        self.contains_across_boundaries(needle, |left, right| left.eq_ignore_ascii_case(&right))
     }
 
     fn contains_ascii_case_insensitive_across_boundaries(self, needle: &[u8]) -> bool {
         !needle.is_empty()
-            && self.contains_across_boundaries(needle, |left, right| {
-                left.eq_ignore_ascii_case(&right)
-            })
+            && self
+                .contains_across_boundaries(needle, |left, right| left.eq_ignore_ascii_case(&right))
     }
 
-    fn contains_across_boundaries(
-        self,
-        needle: &[u8],
-        eq: impl Fn(u8, u8) -> bool,
-    ) -> bool {
+    fn contains_across_boundaries(self, needle: &[u8], eq: impl Fn(u8, u8) -> bool) -> bool {
         let Some(path) = self.file_path else {
             return false;
         };
@@ -435,7 +425,6 @@ pub(crate) fn compute_features_for_compiled_detector_from_source_window(
         Some(detector_features),
         Some(channel),
     )
-
 }
 
 fn compute_features_internal(
@@ -497,10 +486,10 @@ fn apply_detector_features(
     let Some(detector) = detector else {
         return;
     };
-    features[ACTIVE_SERVICE_CONTEXT_FEATURE_INDEX] =
-        binary_feature(detector_service.is_some_and(|service| {
-            context.contains_ascii_case_insensitive(service.as_bytes())
-        }));
+    features[ACTIVE_SERVICE_CONTEXT_FEATURE_INDEX] = binary_feature(
+        detector_service
+            .is_some_and(|service| context.contains_ascii_case_insensitive(service.as_bytes())),
+    );
     features[GENERIC_DETECTOR_FEATURE_INDEX] = binary_feature(detector.generic_detector);
     features[WEAK_ANCHOR_FEATURE_INDEX] = binary_feature(detector.weak_anchor);
     features[LIVE_VERIFIER_FEATURE_INDEX] = binary_feature(detector.live_verifier);
@@ -546,15 +535,14 @@ fn apply_decode_structure_feature(features: &mut [f32; NUM_FEATURES], text: &str
 /// the UUID/opaque-shape features: a service-named context makes an
 /// otherwise-generic value credible; a generic-role-word-only context
 /// (feature 17 without this one) marks it an identifier.
-fn apply_service_context_feature(
-    features: &mut [f32; NUM_FEATURES],
-    context: FeatureContext<'_>,
-) {
+fn apply_service_context_feature(features: &mut [f32; NUM_FEATURES], context: FeatureContext<'_>) {
     let names_service = context.any_segment(super::service_vocab::context_names_service)
         || (context.file_path.is_some()
-            && super::service_vocab::service_vocabulary().iter().any(|service| {
-                context.contains_ascii_case_insensitive_across_boundaries(service.as_bytes())
-            }));
+            && super::service_vocab::service_vocabulary()
+                .iter()
+                .any(|service| {
+                    context.contains_ascii_case_insensitive_across_boundaries(service.as_bytes())
+                }));
     features[SERVICE_CONTEXT_FEATURE_INDEX] = binary_feature(names_service);
 }
 
@@ -622,10 +610,14 @@ fn apply_context_features(
     test_keywords: &[String],
 ) {
     features[16] = binary_feature(has_assignment_operator(context));
-    features[17] =
-        binary_feature(context_contains_any_ascii_case_insensitive(context, secret_keywords));
-    features[18] =
-        binary_feature(context_contains_any_ascii_case_insensitive(context, test_keywords));
+    features[17] = binary_feature(context_contains_any_ascii_case_insensitive(
+        context,
+        secret_keywords,
+    ));
+    features[18] = binary_feature(context_contains_any_ascii_case_insensitive(
+        context,
+        test_keywords,
+    ));
     features[19] = binary_feature(context.starts_with_comment_prefix());
 }
 
@@ -719,11 +711,7 @@ fn has_unquoted_equals(value: FeatureContext<'_>) -> bool {
         }
         let prev = idx.checked_sub(1).and_then(|offset| value.byte_at(offset));
         let next = value.byte_at(idx + 1);
-        if prev != Some(b'\'')
-            && prev != Some(b'"')
-            && next != Some(b'\'')
-            && next != Some(b'"')
-        {
+        if prev != Some(b'\'') && prev != Some(b'"') && next != Some(b'\'') && next != Some(b'"') {
             return true;
         }
     }

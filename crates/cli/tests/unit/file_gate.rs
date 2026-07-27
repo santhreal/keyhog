@@ -374,7 +374,6 @@ fn daemon_client_happy() {
     assert!(path.to_string_lossy().contains("keyhog") || path.ends_with(".sock"));
 }
 
-
 // ── crates/cli/src/daemon/server.rs ─────────────────────────────────────
 #[cfg(unix)]
 #[test]

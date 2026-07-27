@@ -55,7 +55,9 @@ fn surfaces(text: &str, needle: &str) -> bool {
     let s = shared();
     s.clear_fragment_cache();
     let chunk: Chunk = make_chunk(text, "filesystem", "cloud.conf");
-    s.scan(&chunk).expect("scanner call should succeed").into_iter()
+    s.scan(&chunk)
+        .expect("scanner call should succeed")
+        .into_iter()
         .any(|m| m.credential.as_str().to_string().contains(needle))
 }
 
@@ -64,7 +66,9 @@ fn detectors_for(text: &str, needle: &str) -> Vec<String> {
     let s = shared();
     s.clear_fragment_cache();
     let chunk: Chunk = make_chunk(text, "filesystem", "cloud.conf");
-    s.scan(&chunk).expect("scanner call should succeed").into_iter()
+    s.scan(&chunk)
+        .expect("scanner call should succeed")
+        .into_iter()
         .filter(|m| m.credential.as_str().to_string().contains(needle))
         .map(|m| m.detector_id.to_string())
         .collect()

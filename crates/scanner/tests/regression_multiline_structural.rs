@@ -214,7 +214,9 @@ fn production_scan_recovers_obfuscated_javascript_array_join() {
         },
     };
 
-    let matches = scanner.scan_chunks_with_backend(&[chunk], ScanBackend::CpuFallback).expect("selected backend scan succeeds");
+    let matches = scanner
+        .scan_chunks_with_backend(&[chunk], ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds");
     assert!(
         matches
             .iter()

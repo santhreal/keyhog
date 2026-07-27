@@ -182,14 +182,16 @@ fn scan_text(text: &str) -> Vec<keyhog_core::RawMatch> {
     // Fragment cache leaks across calls (see contracts_runner) - drop
     // it so each property iteration scans against a clean state.
     SCANNER.clear_fragment_cache();
-    SCANNER.scan(&Chunk {
-        data: text.into(),
-        metadata: ChunkMetadata {
-            source_type: "property/cross_detector".into(),
-            path: Some("cross_detector.txt".into()),
-            ..Default::default()
-        },
-    }).expect("property scan succeeds")
+    SCANNER
+        .scan(&Chunk {
+            data: text.into(),
+            metadata: ChunkMetadata {
+                source_type: "property/cross_detector".into(),
+                path: Some("cross_detector.txt".into()),
+                ..Default::default()
+            },
+        })
+        .expect("property scan succeeds")
 }
 
 fn any_credential_contains(matches: &[keyhog_core::RawMatch], needle: &str) -> bool {

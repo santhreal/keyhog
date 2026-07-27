@@ -18,7 +18,9 @@ fn detector_max_length_is_identical_across_available_backends() {
             data: format!(r#"{{"api_key":"{value}"}}"#).into(),
             metadata: ChunkMetadata::default(),
         };
-        let mut keys = scanner.scan_with_backend(&chunk, backend).expect("selected backend scan succeeds")
+        let mut keys = scanner
+            .scan_with_backend(&chunk, backend)
+            .expect("selected backend scan succeeds")
             .into_iter()
             .map(|finding| {
                 (

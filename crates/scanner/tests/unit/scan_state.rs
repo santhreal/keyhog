@@ -1,7 +1,7 @@
 use keyhog_core::{CompanionMap, MatchLocation, RawMatch, Severity};
-use keyhog_scanner::scan_state::{RawMatchPriority, ScanState};
 #[cfg(feature = "ml")]
 use keyhog_scanner::scan_state::PendingRawMatch;
+use keyhog_scanner::scan_state::{RawMatchPriority, ScanState};
 #[cfg(feature = "ml")]
 use keyhog_scanner::testing::ml_context_for_candidate;
 use std::sync::Arc;
@@ -52,7 +52,6 @@ fn pending_raw_match(raw: RawMatch) -> PendingRawMatch {
         entropy: raw.entropy,
     }
 }
-
 
 fn raw_match(confidence: f64, credential: &'static str, offset: usize) -> RawMatch {
     RawMatch {

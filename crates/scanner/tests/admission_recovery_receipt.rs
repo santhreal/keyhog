@@ -62,11 +62,14 @@ fn mismatched_plan_returns_exact_recovery_receipt_and_preserves_findings() {
     let plan = scanner.phase1_admission_plan(&planned);
     let live = vec![chunk(format!("{TOKEN}!"))];
 
-    let outcome = scanner.scan_coalesced_with_backend_admission_route_and_recovery(&live,
-    ScanBackend::CpuFallback,
-    Some(&plan),
-    scanner.execution_route_for_backend(ScanBackend::CpuFallback),
-    false,)
+    let outcome = scanner
+        .scan_coalesced_with_backend_admission_route_and_recovery(
+            &live,
+            ScanBackend::CpuFallback,
+            Some(&plan),
+            scanner.execution_route_for_backend(ScanBackend::CpuFallback),
+            false,
+        )
         .expect("mismatched plan recovers through exact admission");
 
     assert_eq!(
@@ -106,11 +109,14 @@ fn matching_plan_has_no_recovery_receipt() {
     let live = vec![chunk(format!("{TOKEN}!"))];
     let plan = scanner.phase1_admission_plan(&live);
 
-    let outcome = scanner.scan_coalesced_with_backend_admission_route_and_recovery(&live,
-    ScanBackend::CpuFallback,
-    Some(&plan),
-    scanner.execution_route_for_backend(ScanBackend::CpuFallback),
-    false,)
+    let outcome = scanner
+        .scan_coalesced_with_backend_admission_route_and_recovery(
+            &live,
+            ScanBackend::CpuFallback,
+            Some(&plan),
+            scanner.execution_route_for_backend(ScanBackend::CpuFallback),
+            false,
+        )
         .expect("matching admission identity scans normally");
 
     assert!(outcome.recovery.is_none());
@@ -135,11 +141,14 @@ fn repeated_mismatch_returns_repeated_complete_receipts() {
     let live = vec![chunk("ghp_M3n4B5v6!".into())];
 
     for attempt in 0..2 {
-        let outcome = scanner.scan_coalesced_with_backend_admission_route_and_recovery(&live,
-        ScanBackend::CpuFallback,
-        Some(&plan),
-        scanner.execution_route_for_backend(ScanBackend::CpuFallback),
-        false,)
+        let outcome = scanner
+            .scan_coalesced_with_backend_admission_route_and_recovery(
+                &live,
+                ScanBackend::CpuFallback,
+                Some(&plan),
+                scanner.execution_route_for_backend(ScanBackend::CpuFallback),
+                false,
+            )
             .expect("every mismatched request recovers");
         assert_eq!(
             canonical(&outcome.matches)[0].3,
@@ -164,26 +173,23 @@ fn malformed_plan_cardinality_recovers_every_live_chunk() {
     let scanner = scanner();
     let planned = vec![chunk("ghp_A1b2C3d4!".into())];
     let plan = scanner.phase1_admission_plan(&planned);
-    let live = vec![
-        chunk("ghp_M3n4B5v6!".into()),
-        chunk("ghp_Z9y8X7w6!".into()),
-    ];
+    let live = vec![chunk("ghp_M3n4B5v6!".into()), chunk("ghp_Z9y8X7w6!".into())];
 
-    let outcome = scanner.scan_coalesced_with_backend_admission_route_and_recovery(&live,
-    ScanBackend::CpuFallback,
-    Some(&plan),
-    scanner.execution_route_for_backend(ScanBackend::CpuFallback),
-    false,)
+    let outcome = scanner
+        .scan_coalesced_with_backend_admission_route_and_recovery(
+            &live,
+            ScanBackend::CpuFallback,
+            Some(&plan),
+            scanner.execution_route_for_backend(ScanBackend::CpuFallback),
+            false,
+        )
         .expect("malformed plan identity recovers through exact admission");
     assert_eq!(
         canonical(&outcome.matches)
             .into_iter()
             .map(|row| row.3)
             .collect::<Vec<_>>(),
-        vec![
-            "ghp_M3n4B5v6".to_string(),
-            "ghp_Z9y8X7w6".to_string(),
-        ],
+        vec!["ghp_M3n4B5v6".to_string(), "ghp_Z9y8X7w6".to_string(),],
         "malformed identity recovery must preserve every safe finding"
     );
     let receipt = outcome
@@ -213,9 +219,8 @@ fn receipt_blind_fallible_api_rejects_mismatched_identity() {
     let plan = scanner.phase1_admission_plan(&planned);
     let live = vec![chunk("ghp_M3n4B5v6!".into())];
 
-    let error = scanner.scan_coalesced_with_backend_and_admission(&live,
-    ScanBackend::CpuFallback,
-    Some(&plan),)
+    let error = scanner
+        .scan_coalesced_with_backend_and_admission(&live, ScanBackend::CpuFallback, Some(&plan))
         .expect_err("receipt-blind API must fail closed on identity recovery");
     assert!(matches!(
         error,

@@ -19,11 +19,11 @@ pub(crate) use backend::AutorouteReadiness;
 pub(crate) use backend::AutorouteStateRecovery;
 pub(crate) use backend::BackendRecoveryPlan;
 pub(crate) use backend::StagedAutorouteCache;
-use backend::{is_gpu_backend, AutorouteRoutingError, BackendSelection, MeasuredBackendRouter};
 pub(crate) use backend::{
     autoroute_engine_identity, autoroute_executable_identity, autoroute_gpu_artifact_identity,
     AutorouteMeasurementObserver, AutorouteMeasurementReceipt, CachedBackendRouter,
 };
+use backend::{is_gpu_backend, AutorouteRoutingError, BackendSelection, MeasuredBackendRouter};
 use keyhog_core::{Chunk, RawMatch, Source};
 use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
 use keyhog_scanner::CompiledScanner;
@@ -346,11 +346,13 @@ pub(crate) fn recover_automatic_backend_batch(
         )));
     }
     let admission = (!recovery_plan.backend.is_gpu()).then(|| scanner.phase1_admission_plan(batch));
-    let outcome = scanner.scan_coalesced_with_backend_admission_route_and_recovery(batch,
-    recovery_plan.backend,
-    admission.as_ref(),
-    recovery_plan.execution_route,
-    false,)?;
+    let outcome = scanner.scan_coalesced_with_backend_admission_route_and_recovery(
+        batch,
+        recovery_plan.backend,
+        admission.as_ref(),
+        recovery_plan.execution_route,
+        false,
+    )?;
     if outcome.gpu_recovery_receipts != 0 {
         return Err(keyhog_scanner::ScanError::Gpu(format!(
             "calibrated recovery backend {} emitted {} GPU recovery receipt(s) during this dispatch; scan coverage cannot be certified complete",
@@ -404,11 +406,14 @@ pub(crate) fn scan_selected_batch(
     execution_route: keyhog_scanner::ScanExecutionRoute,
     recovery_plan: Option<BackendRecoveryPlan>,
 ) -> keyhog_scanner::Result<SelectedBatchScan> {
-    let (mut per_chunk, mut recovery, gpu_recovery_receipts) = match scanner.scan_coalesced_with_backend_admission_route_and_recovery(batch,
-    backend,
-    admission_plan,
-    execution_route,
-    false,) {
+    let (mut per_chunk, mut recovery, gpu_recovery_receipts) = match scanner
+        .scan_coalesced_with_backend_admission_route_and_recovery(
+            batch,
+            backend,
+            admission_plan,
+            execution_route,
+            false,
+        ) {
         Ok(outcome) => (
             outcome.matches,
             outcome.recovery,
@@ -416,8 +421,13 @@ pub(crate) fn scan_selected_batch(
         ),
         Err(error) => match recovery_plan {
             Some(recovery_plan) => {
-                let (per_chunk, recovery) =
-                    recover_automatic_backend_batch(scanner, batch, backend, &error, recovery_plan)?;
+                let (per_chunk, recovery) = recover_automatic_backend_batch(
+                    scanner,
+                    batch,
+                    backend,
+                    &error,
+                    recovery_plan,
+                )?;
                 (per_chunk, recovery, 0)
             }
             None => return Err(error),
@@ -429,13 +439,8 @@ pub(crate) fn scan_selected_batch(
             let error = keyhog_scanner::ScanError::Gpu(format!(
                 "GPU dispatch completed with {gpu_recovery_receipts} request-scoped recovery receipt(s)"
             ));
-            (per_chunk, recovery) = recover_automatic_backend_batch(
-                scanner,
-                batch,
-                backend,
-                &error,
-                recovery_plan,
-            )?;
+            (per_chunk, recovery) =
+                recover_automatic_backend_batch(scanner, batch, backend, &error, recovery_plan)?;
         } else {
             return Err(keyhog_scanner::ScanError::Gpu(format!(
                 "selected backend {} emitted {gpu_recovery_receipts} GPU recovery receipt(s) during this dispatch; explicit or required backend requests cannot be substituted",
@@ -495,9 +500,7 @@ fn completed_recovery_summary(
     }
 }
 
-fn completed_recovery_terminal_message(
-    receipt: &keyhog_scanner::BackendRecoveryReceipt,
-) -> String {
+fn completed_recovery_terminal_message(receipt: &keyhog_scanner::BackendRecoveryReceipt) -> String {
     let recovered_chunks = receipt.recovered_chunks();
     let recovered_bytes = receipt.recovered_bytes();
     if receipt.is_phase1_admission_recovery() {

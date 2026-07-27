@@ -6,8 +6,8 @@ fn decode_pipeline_debug_truncation_paths_record_typed_coverage_gap() {
     for marker in [
         "decode caller deadline exhausted; stopping decode-through",
         "decode caller deadline exhausted mid-fan-out; stopping decode-through",
-        "decode caller deadline exhausted while consuming decoder output",
-        "decode depth/size cap reached: chunk truncated to limit",
+        "decode caller deadline exhausted while producing decoder output",
+        "decode depth/size cap reached while producing output",
     ] {
         let tail = source
             .split(marker)
@@ -28,7 +28,7 @@ fn decode_pipeline_debug_truncation_paths_record_typed_coverage_gap() {
 
     assert_eq!(
         source.matches("record_decode_truncation();").count(),
-        4,
-        "every decode pipeline truncation exit should be explicitly accounted for here"
+        3,
+        "the loop deadline, fan-out deadline, and shared sink-exhaustion exits must each record typed telemetry"
     );
 }

@@ -62,7 +62,10 @@ fn production_detector_set_is_healthy_and_materially_populated() {
 fn diagnostics_report_exact_density_and_named_corpus_rejection() {
     let filter = bloom(&["AB"]);
     let status = filter.status();
-    assert_eq!(status.populated_slots, 0, "short anchors use the exact owner");
+    assert_eq!(
+        status.populated_slots, 0,
+        "short anchors use the exact owner"
+    );
     assert_eq!(status.total_slots, 65_536);
     assert_eq!(status.density_basis_points, 0);
     assert_eq!(status.state, BigramPrefilterState::Healthy);
@@ -118,7 +121,11 @@ fn direct_literal_enabled_and_bypass_findings_are_identical() {
         chunk("negative.txt", "T_O_K_E_N".repeat(12)),
         chunk(
             "positive.txt",
-            format!("{}TOKEN_abcdefghijklmnopqrstuvwx{}", "!".repeat(40), "~".repeat(40)),
+            format!(
+                "{}TOKEN_abcdefghijklmnopqrstuvwx{}",
+                "!".repeat(40),
+                "~".repeat(40)
+            ),
         ),
     ];
     let admission = scanner.phase1_admission_plan(&chunks);

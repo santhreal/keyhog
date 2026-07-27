@@ -74,7 +74,9 @@ fn coalesced_reassembles_cross_chunk_fragments() {
         chunk("api_key_part2 = \"FGHIJ67890\"", "frag.env"),
     ];
 
-    let coalesced = scanner.scan_coalesced(&chunks).expect("coalesced scanner call should succeed");
+    let coalesced = scanner
+        .scan_coalesced(&chunks)
+        .expect("coalesced scanner call should succeed");
     let coalesced_reassembled = coalesced
         .iter()
         .flatten()
@@ -105,7 +107,9 @@ fn distant_chunks_do_not_reassemble_from_equal_local_lines() {
 
     for _ in 0..16 {
         scanner.clear_fragment_cache();
-        let findings = scanner.scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
+        let findings = scanner
+            .scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback)
+            .expect("selected backend scan succeeds");
         assert!(
             findings
                 .iter()

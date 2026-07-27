@@ -61,7 +61,9 @@ fn decode_recursion_profile_mirror() {
     // Warm.
     scanner.clear_fragment_cache();
     for c in &chunks {
-        let _ = scanner.scan_chunks_with_backend(std::slice::from_ref(c), ScanBackend::CpuFallback).expect("selected backend scan succeeds");
+        let _ = scanner
+            .scan_chunks_with_backend(std::slice::from_ref(c), ScanBackend::CpuFallback)
+            .expect("selected backend scan succeeds");
     }
     let _ = crate::engine::decode_profile_dump();
 
@@ -69,7 +71,9 @@ fn decode_recursion_profile_mirror() {
     scanner.clear_fragment_cache();
     let t = Instant::now();
     for c in &chunks {
-        let _ = scanner.scan_chunks_with_backend(std::slice::from_ref(c), ScanBackend::CpuFallback).expect("selected backend scan succeeds");
+        let _ = scanner
+            .scan_chunks_with_backend(std::slice::from_ref(c), ScanBackend::CpuFallback)
+            .expect("selected backend scan succeeds");
     }
     let total_ms = t.elapsed().as_secs_f64() * 1000.0;
 

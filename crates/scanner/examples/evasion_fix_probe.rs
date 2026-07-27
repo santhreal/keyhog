@@ -81,7 +81,11 @@ fn strip_comment_prefix(text: &str) -> Option<String> {
     None
 }
 
-fn surfaces(scanner: &CompiledScanner, text: &str, credential: &str) -> keyhog_scanner::Result<bool> {
+fn surfaces(
+    scanner: &CompiledScanner,
+    text: &str,
+    credential: &str,
+) -> keyhog_scanner::Result<bool> {
     scanner.clear_fragment_cache();
     let chunk = Chunk {
         data: text.into(),

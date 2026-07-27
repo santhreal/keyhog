@@ -63,17 +63,18 @@ fn metadata_intern_is_indexed_not_rehashed_per_match() {
     assert_eq!(second.1.as_ref(), "Bravo Secret");
     assert_eq!(second.2.as_ref(), "bravo");
 
-    let matches = scanner.scan(&Chunk {
-        data: "alpha_Q7vL9nP2xR5kT8mW bravo_H4cN6yB9sD2qK7zP"
-            .to_string()
-            .into(),
-        metadata: ChunkMetadata {
-            source_type: "metadata-intern-test".into(),
-            path: Some("fixture.env".into()),
-            ..Default::default()
-        },
-    })
-    .expect("metadata interning production scan succeeds");
+    let matches = scanner
+        .scan(&Chunk {
+            data: "alpha_Q7vL9nP2xR5kT8mW bravo_H4cN6yB9sD2qK7zP"
+                .to_string()
+                .into(),
+            metadata: ChunkMetadata {
+                source_type: "metadata-intern-test".into(),
+                path: Some("fixture.env".into()),
+                ..Default::default()
+            },
+        })
+        .expect("metadata interning production scan succeeds");
     let alpha = matches
         .iter()
         .find(|matched| matched.detector_id.as_ref() == "alpha-token")

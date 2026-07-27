@@ -33,9 +33,8 @@ fn scan_simd_cpu_empty_chunk() {
         data: "".into(),
         metadata: ChunkMetadata::default(),
     };
-    assert!(
-        s.scan_with_backend(&chunk, ScanBackend::SimdCpu)
-            .expect("selected SIMD empty-chunk scan succeeds")
-            .is_empty()
-    );
+    assert!(s
+        .scan_with_backend(&chunk, ScanBackend::SimdCpu)
+        .expect("selected SIMD empty-chunk scan succeeds")
+        .is_empty());
 }

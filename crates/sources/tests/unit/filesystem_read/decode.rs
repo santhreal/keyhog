@@ -2,7 +2,7 @@
 //! classification, magic-byte heuristics, UTF-16/UTF-8 text decoding, and
 //! the owning/non-owning decoder pair.
 
-use keyhog_sources::testing::{SourceTestApi, TestApi, zstd_frame_magic_for_test};
+use keyhog_sources::testing::{zstd_frame_magic_for_test, SourceTestApi, TestApi};
 
 /// Regression: preserves the externally observable `looks_binary_empty_input_is_text` behavior after the inline suite split.
 #[test]
@@ -398,7 +398,9 @@ fn decode_utf16_trailing_orphan_keeps_valid_prefix_lossily() {
     }
     bytes.push(0x68);
 
-    let decoded = TestApi.decode_utf16(&bytes).expect("valid UTF-16 prefix survives trailing orphan byte");
+    let decoded = TestApi
+        .decode_utf16(&bytes)
+        .expect("valid UTF-16 prefix survives trailing orphan byte");
     assert!(
         decoded.contains("sk-ant-svcacct-abcdefghijklmnopqrstuvwxyz1234567890AB"),
         "valid decoded UTF-16 content must remain scannable after a torn trailing byte"
@@ -419,7 +421,9 @@ fn decode_text_file_utf16_trailing_orphan_is_not_binary_skip() {
     }
     bytes.push(0x00);
 
-    let decoded = TestApi.decode_text_file(&bytes).expect("UTF-16 text with a torn tail decodes lossily");
+    let decoded = TestApi
+        .decode_text_file(&bytes)
+        .expect("UTF-16 text with a torn tail decodes lossily");
     assert!(
         decoded.contains("sk-ant-svcacct-abcdefghijklmnopqrstuvwxyz1234567890AB"),
         "decode_text_file must not fall through to binary skip for a valid UTF-16 body"
@@ -441,7 +445,8 @@ fn decode_text_file_bom_prefixed_non_utf16_preserves_ascii_secret_via_lossy_appe
     bytes.extend_from_slice(format!("GITHUB_TOKEN={secret}\n").as_bytes());
     bytes.extend_from_slice(&[0x80, 0x81]);
 
-    let decoded = TestApi.decode_text_file(&bytes)
+    let decoded = TestApi
+        .decode_text_file(&bytes)
         .expect("BOM-prefixed non-UTF-16 buffer still decodes (not binary)");
     assert!(
         decoded.contains(secret),
@@ -480,7 +485,10 @@ fn decode_utf16_unpaired_surrogate_is_none() {
 #[test]
 fn decode_text_file_valid_utf8_takes_fast_path() {
     let s = "let x = 1;\nfn main() {}\n".repeat(500);
-    assert_eq!(TestApi.decode_text_file(s.as_bytes()).as_deref(), Some(s.as_str()));
+    assert_eq!(
+        TestApi.decode_text_file(s.as_bytes()).as_deref(),
+        Some(s.as_str())
+    );
 }
 
 /// Regression: preserves the externally observable `decode_text_file_short_utf8_with_single_nul_is_kept` behavior after the inline suite split.
@@ -499,7 +507,10 @@ fn decode_text_file_short_utf8_with_single_nul_is_kept() {
 fn decode_text_file_with_bom_strips_bom() {
     let mut bytes = vec![0xEF, 0xBB, 0xBF];
     bytes.extend_from_slice(b"hello world");
-    assert_eq!(TestApi.decode_text_file(&bytes).as_deref(), Some("hello world"));
+    assert_eq!(
+        TestApi.decode_text_file(&bytes).as_deref(),
+        Some("hello world")
+    );
 }
 
 /// Regression: preserves the externally observable `decode_text_file_owned_with_bom_strips_bom` behavior after the inline suite split.
@@ -508,7 +519,9 @@ fn decode_text_file_owned_with_bom_strips_bom() {
     let mut bytes = vec![0xEF, 0xBB, 0xBF];
     bytes.extend_from_slice(b"hello world");
 
-    let decoded = TestApi.decode_text_file_owned_or_bytes(bytes).expect("decode");
+    let decoded = TestApi
+        .decode_text_file_owned_or_bytes(bytes)
+        .expect("decode");
 
     assert_eq!(decoded, "hello world");
 }
@@ -519,7 +532,9 @@ fn decode_text_file_owned_with_bom_preserves_original_bytes_on_binary_reject() {
     let mut bytes = vec![0xEF, 0xBB, 0xBF];
     bytes.extend_from_slice(b"\0\0\0\0binary");
 
-    let rejected = TestApi.decode_text_file_owned_or_bytes(bytes.clone()).expect_err("binary reject");
+    let rejected = TestApi
+        .decode_text_file_owned_or_bytes(bytes.clone())
+        .expect_err("binary reject");
 
     assert_eq!(rejected, bytes);
 }
@@ -530,7 +545,9 @@ fn decode_text_file_owned_with_bom_invalid_utf8_preserves_original_bytes_on_bina
     let mut bytes = vec![0xEF, 0xBB, 0xBF, 0xFF];
     bytes.extend_from_slice(b"\0\0\0\0binary");
 
-    let rejected = TestApi.decode_text_file_owned_or_bytes(bytes.clone()).expect_err("binary reject");
+    let rejected = TestApi
+        .decode_text_file_owned_or_bytes(bytes.clone())
+        .expect_err("binary reject");
 
     assert_eq!(rejected, bytes);
 }
@@ -552,7 +569,9 @@ fn decode_text_file_invalid_utf8_falls_back_to_lossy() {
     let mut bytes = b"valid prefix ".to_vec();
     bytes.push(0xFF); // lone byte - invalid UTF-8
     bytes.extend_from_slice(b" suffix");
-    let decoded = TestApi.decode_text_file(&bytes).expect("lossy fallback runs");
+    let decoded = TestApi
+        .decode_text_file(&bytes)
+        .expect("lossy fallback runs");
     assert!(decoded.contains("valid prefix"));
     assert!(decoded.contains("suffix"));
     assert!(decoded.contains('\u{FFFD}'));

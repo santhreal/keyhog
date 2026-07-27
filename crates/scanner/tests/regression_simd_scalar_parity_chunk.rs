@@ -52,7 +52,8 @@ fn chunk(text: &str, path: &str) -> Chunk {
 /// Clear cross-chunk fragment state, then scan ONE chunk on a chosen backend.
 fn run(sc: &CompiledScanner, ch: &Chunk, backend: ScanBackend) -> Vec<RawMatch> {
     sc.clear_fragment_cache();
-    sc.scan_with_backend(ch, backend).expect("selected backend scan succeeds")
+    sc.scan_with_backend(ch, backend)
+        .expect("selected backend scan succeeds")
 }
 
 /// `(detector_id, credential, absolute_offset)` triples (the exact parity key).

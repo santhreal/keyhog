@@ -1,7 +1,9 @@
 //! Read responsibility tests for filesystem read: mmap, windowed mmap,
 //! and the compressed-input read path.
 
-use keyhog_sources::testing::{for_each_file_windowed_mmap_for_test, ForEachWindowedMmapOutcome, SourceTestApi, TestApi};
+use keyhog_sources::testing::{
+    for_each_file_windowed_mmap_for_test, ForEachWindowedMmapOutcome, SourceTestApi, TestApi,
+};
 
 /// Regression: preserves the externally observable `read_file_windowed_mmap_roundtrip_matches_pure_helper` behavior after the inline suite split.
 #[test]
@@ -14,7 +16,9 @@ fn read_file_windowed_mmap_roundtrip_matches_pure_helper() {
     std::fs::write(&path, &bytes).unwrap();
 
     let pure = TestApi.slice_into_windows_with_offsets(&bytes, 1024, 32);
-    let mapped = TestApi.read_file_windowed_mmap(&path, 1024, 32).expect("mmap windows");
+    let mapped = TestApi
+        .read_file_windowed_mmap(&path, 1024, 32)
+        .expect("mmap windows");
     assert_eq!(pure.len(), mapped.len());
     for (a, b) in pure.iter().zip(mapped.iter()) {
         assert_eq!(a.0, b.0);
@@ -59,7 +63,10 @@ fn for_each_file_windowed_mmap_stops_on_consumer_backpressure() {
 /// Regression: preserves the source-shape guard that makes windowed mmap fallback operator-visible.
 #[test]
 fn windowed_mmap_failure_fallback_is_operator_visible() {
-    let window = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/filesystem/read/window.rs"));
+    let window = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/filesystem/read/window.rs"
+    ));
     assert!(
         window.contains("\"cannot windowed-mmap file; falling back to buffered read\""),
         "windowed mmap failure must be operator-visible before buffered fallback"
@@ -91,7 +98,9 @@ fn read_file_for_compressed_input_returns_full_contents_via_mmap() {
     let payload: Vec<u8> = (0..=255u8).cycle().take(8192).collect();
     std::fs::write(&path, &payload).unwrap();
 
-    let fb = TestApi.read_file_for_compressed_input(&path, 1024 * 1024).expect("read ok");
+    let fb = TestApi
+        .read_file_for_compressed_input(&path, 1024 * 1024)
+        .expect("read ok");
     assert_eq!(fb, payload);
     assert_eq!(fb.len(), payload.len());
 }
@@ -106,7 +115,9 @@ fn read_file_for_compressed_input_handles_empty_file() {
     let path = dir.path().join("empty.bin");
     std::fs::write(&path, b"").unwrap();
 
-    let fb = TestApi.read_file_for_compressed_input(&path, 1024).expect("empty ok");
+    let fb = TestApi
+        .read_file_for_compressed_input(&path, 1024)
+        .expect("empty ok");
     assert!(fb.is_empty());
     assert_eq!(fb.len(), 0);
 }
@@ -147,8 +158,10 @@ fn read_file_for_compressed_input_returns_none_for_missing_path() {
     // did `std::fs::read(path)?` and bubbled the error; the new
     // wrapper folds that into None to match the Option-shaped
     // API the windowed helper uses.)
-    let fb =
-        TestApi.read_file_for_compressed_input(std::path::Path::new("/nonexistent/keyhog/test/path"), 1024);
+    let fb = TestApi.read_file_for_compressed_input(
+        std::path::Path::new("/nonexistent/keyhog/test/path"),
+        1024,
+    );
     assert!(fb.is_none());
 }
 

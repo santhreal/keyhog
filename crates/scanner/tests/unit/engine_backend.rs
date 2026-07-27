@@ -38,8 +38,12 @@ fn backend_does_not_report_matches_across_chunk_boundaries() {
     let scanner = demo_scanner();
     let chunks = vec![chunk("ab"), chunk("c")];
 
-    let matches = scanner.scan_chunks_with_backend(&chunks,
-    keyhog_scanner::hw_probe::testing::ScanBackend::CpuFallback,).expect("selected backend scan succeeds");
+    let matches = scanner
+        .scan_chunks_with_backend(
+            &chunks,
+            keyhog_scanner::hw_probe::testing::ScanBackend::CpuFallback,
+        )
+        .expect("selected backend scan succeeds");
 
     assert!(matches.iter().all(Vec::is_empty));
 }
@@ -48,8 +52,12 @@ fn backend_does_not_report_matches_across_chunk_boundaries() {
 fn backend_reports_matches_inside_a_single_chunk() {
     let scanner = demo_scanner();
 
-    let matches = scanner.scan_with_backend(&chunk("abc"),
-    keyhog_scanner::hw_probe::testing::ScanBackend::CpuFallback,).expect("selected backend scan succeeds");
+    let matches = scanner
+        .scan_with_backend(
+            &chunk("abc"),
+            keyhog_scanner::hw_probe::testing::ScanBackend::CpuFallback,
+        )
+        .expect("selected backend scan succeeds");
 
     assert_eq!(matches.len(), 1);
     assert_eq!(matches[0].credential.as_ref(), "abc");

@@ -247,7 +247,9 @@ fn scan_unencoded_akia_baseline_detector_and_bytes() {
     // Control: the un-encoded secret must fire the aws-access-key detector with
     // the exact credential, so the nested-recovery tests below are meaningful.
     let scanner = shipped_scanner();
-    let matches = scanner.scan(&scan_chunk(format!("CONFIG={SECRET}"))).expect("scanner call should succeed");
+    let matches = scanner
+        .scan(&scan_chunk(format!("CONFIG={SECRET}")))
+        .expect("scanner call should succeed");
     let hits = aws_secret_hits(&matches);
     assert_eq!(
         hits.len(),
@@ -263,7 +265,9 @@ fn scan_single_layer_base64_yields_aws_detector_and_bytes() {
     // it and the aws-access-key detector fires on the exact plaintext.
     let scanner = shipped_scanner();
     let data = format!("CONFIG_B64={}", nest(SECRET, 1));
-    let matches = scanner.scan(&scan_chunk(data)).expect("scanner call should succeed");
+    let matches = scanner
+        .scan(&scan_chunk(data))
+        .expect("scanner call should succeed");
     let hits = aws_secret_hits(&matches);
     assert_eq!(
         hits.len(),
@@ -281,7 +285,9 @@ fn scan_nested_depth2_yields_aws_detector_and_bytes() {
     // credential bytes.
     let scanner = shipped_scanner();
     let data = format!("CONFIG_B64={}", nest(SECRET, 2));
-    let matches = scanner.scan(&scan_chunk(data)).expect("scanner call should succeed");
+    let matches = scanner
+        .scan(&scan_chunk(data))
+        .expect("scanner call should succeed");
     let hits = aws_secret_hits(&matches);
     assert_eq!(
         hits.len(),
@@ -298,7 +304,9 @@ fn scan_shallow_wrap_within_default_depth_recovers() {
     // recovered as the exact credential.
     let scanner = shipped_scanner();
     let data = format!("CONFIG_B64={}", nest(SECRET, 3));
-    let matches = scanner.scan(&scan_chunk(data)).expect("scanner call should succeed");
+    let matches = scanner
+        .scan(&scan_chunk(data))
+        .expect("scanner call should succeed");
     let hits = aws_secret_hits(&matches);
     assert_eq!(
         hits.len(),
@@ -315,7 +323,9 @@ fn scan_wrap_beyond_default_depth_limit_finds_nothing() {
     // runaway recursion (the scan returns).
     let scanner = shipped_scanner();
     let data = format!("CONFIG_B64={}", nest(SECRET, 12));
-    let matches = scanner.scan(&scan_chunk(data)).expect("scanner call should succeed");
+    let matches = scanner
+        .scan(&scan_chunk(data))
+        .expect("scanner call should succeed");
     let hits = aws_secret_hits(&matches);
     assert_eq!(
         hits.len(),
@@ -333,7 +343,9 @@ fn scan_depth1_config_does_not_recover_double_wrapped() {
     config.max_decode_depth = 1;
     let scanner = shipped_scanner().with_config(config);
     let data = format!("CONFIG_B64={}", nest(SECRET, 2));
-    let matches = scanner.scan(&scan_chunk(data)).expect("scanner call should succeed");
+    let matches = scanner
+        .scan(&scan_chunk(data))
+        .expect("scanner call should succeed");
     let hits = aws_secret_hits(&matches);
     assert_eq!(
         hits.len(),
@@ -351,7 +363,9 @@ fn scan_depth2_config_recovers_double_wrapped() {
     config.max_decode_depth = 2;
     let scanner = shipped_scanner().with_config(config);
     let data = format!("CONFIG_B64={}", nest(SECRET, 2));
-    let matches = scanner.scan(&scan_chunk(data)).expect("scanner call should succeed");
+    let matches = scanner
+        .scan(&scan_chunk(data))
+        .expect("scanner call should succeed");
     let hits = aws_secret_hits(&matches);
     assert_eq!(
         hits.len(),
@@ -380,7 +394,9 @@ fn scan_corrupted_inner_layer_does_not_surface_real_secret() {
     let e2_corrupt = b64(e1_corrupt.as_bytes());
 
     let scanner = shipped_scanner();
-    let matches = scanner.scan(&scan_chunk(format!("CONFIG_B64={e2_corrupt}"))).expect("scanner call should succeed");
+    let matches = scanner
+        .scan(&scan_chunk(format!("CONFIG_B64={e2_corrupt}")))
+        .expect("scanner call should succeed");
     let hits = aws_secret_hits(&matches);
     assert_eq!(
         hits.len(),

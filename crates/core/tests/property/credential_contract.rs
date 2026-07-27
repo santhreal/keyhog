@@ -221,8 +221,8 @@ fn credential_text_value_that_looks_like_b64_prefix_deserializes_as_tagged_text(
         .to_string();
     assert!(!error.contains("b64:SGVsbG8="));
 
-    let back: Credential = serde_json::from_str(r#"{"text":"b64:SGVsbG8="}"#)
-        .expect("historical tagged text input");
+    let back: Credential =
+        serde_json::from_str(r#"{"text":"b64:SGVsbG8="}"#).expect("historical tagged text input");
     assert_eq!(
         back, literal,
         "tagged `b64:`-looking text input must not be decoded"

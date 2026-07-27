@@ -1,51 +1,46 @@
 //! Standalone unit coverage for `keyhog_scanner::testing::BigramBloom`.
 //!
-//! The bloom is a soundness-critical prefilter: it may admit false positives
-//! but must NEVER drop a chunk whose bigram is present. These tests assert the
-//! exact no-false-negative contract (every inserted bigram overlaps), the
-//! agreement of the unrolled `maybe_overlaps` with the scalar reference, the
-//! terminal-byte row widening, and the saturation short-circuit, real values,
-//! never `is_empty`.
+//! The selective anchor gate is soundness-critical. Short mandatory literals
+//! use exact case-insensitive matching. Long literals use one double-hashed
+//! eight-byte anchor. Invalid and saturated states must fail open.
 
-use keyhog_scanner::testing::BigramBloom;
+use keyhog_scanner::{testing::BigramBloom, BigramPrefilterState};
 
 // ---------------------------------------------------------------------------
 // from_literal_prefixes, every prefix bigram must overlap (no false negatives)
 // ---------------------------------------------------------------------------
 
+/// Locks in exact short-anchor matching while preserving fail-open behavior for
+/// chunks too short to prove that the mandatory anchor is absent.
 #[test]
-fn inserted_prefix_bigrams_overlap() {
+fn short_prefix_matches_exactly_and_too_short_chunks_fail_open() {
     let bloom = BigramBloom::from_literal_prefixes(&["ghp_".into()]);
-    // The exact prefix and any text containing one of its bigrams overlaps.
     assert!(bloom.maybe_overlaps(b"ghp_abcdef"));
-    assert!(bloom.maybe_overlaps(b"xx gh yy")); // "gh" bigram present
-    assert!(bloom.maybe_overlaps(b"hp")); // "hp" bigram present
+    assert!(bloom.maybe_overlaps(b"xx_GHP_yy"));
+    assert!(!bloom.maybe_overlaps(b"xx gh yy"));
+    assert!(bloom.maybe_overlaps(b"hp"));
 }
 
 #[test]
 fn unrelated_chunk_does_not_overlap() {
-    // A bloom keyed only on "ghp_" must reject a chunk with none of its bigrams.
     let bloom = BigramBloom::from_literal_prefixes(&["ghp_".into()]);
-    // "QZ" / "ZQ" / "Q9" never appear in ghp_ bigrams or the `_`/`p` rows...
-    // but the terminal-byte row widening sets the whole `_X` row. Pick bytes
-    // that avoid `g`,`h`,`p`,`_` adjacencies entirely.
     assert!(!bloom.maybe_overlaps(b"QZXJWVKY"));
 }
 
+/// Prevents short inputs from becoming false negatives when no complete anchor
+/// can fit inside the available bytes.
 #[test]
-fn terminal_byte_row_is_widened() {
-    // "ghp_" widens so the terminal '_' may be followed by ANY byte: `_` + any.
+fn chunks_shorter_than_minimum_anchor_fail_open() {
     let bloom = BigramBloom::from_literal_prefixes(&["ghp_".into()]);
-    assert!(bloom.maybe_overlaps(b"_Z")); // "_Z" is in the widened `_` row
-    assert!(bloom.maybe_overlaps(b"_!")); // "_!" too
+    assert!(bloom.maybe_overlaps(b"_Z"));
+    assert!(bloom.maybe_overlaps(b"_!"));
 }
 
 #[test]
-fn empty_prefix_list_rejects_normal_chunks() {
+fn empty_prefix_list_is_invalid_and_fails_open() {
     let bloom = BigramBloom::from_literal_prefixes(&[]);
-    // No bits set, not saturated -> a 2+ byte chunk has no overlap.
-    assert!(!bloom.maybe_overlaps(b"anything here"));
-    // ...but a <2-byte chunk is conservatively admitted (cannot prove clean).
+    assert_eq!(bloom.status().state, BigramPrefilterState::Invalid);
+    assert!(bloom.maybe_overlaps(b"anything here"));
     assert!(bloom.maybe_overlaps(b"x"));
 }
 
@@ -86,13 +81,11 @@ fn unrolled_agrees_with_scalar_reference() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn insert_all_sets_each_bigram() {
-    let mut bloom = BigramBloom::empty();
-    bloom.insert_all(b"abc");
-    // "ab" and "bc" are now present; "zz" is not.
-    assert!(bloom.maybe_overlaps(b"ab"));
-    assert!(bloom.maybe_overlaps(b"bc"));
-    assert!(!bloom.maybe_overlaps(b"zz"));
+fn long_literal_populates_the_hashed_anchor_owner() {
+    let bloom = BigramBloom::from_literal_prefixes(&["abcdefghijk".into()]);
+    assert!(bloom.popcount() > 0);
+    assert!(bloom.maybe_overlaps(b"xxabcdefghijkyy"));
+    assert!(!bloom.maybe_overlaps(b"zzzzzzzz"));
 }
 
 #[test]
@@ -101,14 +94,10 @@ fn empty_bloom_has_zero_popcount() {
 }
 
 #[test]
-fn popcount_grows_with_inserts() {
-    let mut bloom = BigramBloom::empty();
-    let before = bloom.popcount();
-    bloom.insert_all(b"abcdef");
-    assert!(
-        bloom.popcount() > before,
-        "inserting bigrams must raise popcount"
-    );
+fn popcount_grows_with_distinct_long_anchors() {
+    let one = BigramBloom::from_literal_prefixes(&["abcdefghijk".into()]);
+    let two = BigramBloom::from_literal_prefixes(&["abcdefghijk".into(), "ZYXWVUTSRQP".into()]);
+    assert!(two.popcount() > one.popcount());
 }
 
 // ---------------------------------------------------------------------------

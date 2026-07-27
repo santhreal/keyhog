@@ -152,8 +152,7 @@ fn precision_mode_enforces_0_85_floor_on_weak_credentials() {
     // change cannot silently turn this boundary fixture into another admin123.
     assert!(
         def_arr.iter().any(|finding| {
-            finding.get("detector_id").and_then(|value| value.as_str())
-                == Some("abuseipdb-api-key")
+            finding.get("detector_id").and_then(|value| value.as_str()) == Some("abuseipdb-api-key")
                 && finding.get("confidence").and_then(|value| value.as_f64()) == Some(0.795)
         }),
         "default must surface the 0.795 AbuseIPDB finding; got {def_out}"

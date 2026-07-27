@@ -1517,11 +1517,7 @@ fn maintenance_version_validation_rejects_hostile_values_before_execution() {
     // Why: clap is the earliest production boundary; malformed values must
     // fail there rather than reaching either resolver URL construction or I/O.
     for command in ["update", "repair"] {
-        for invalid in [
-            "v1.2.3/../../latest",
-            "v1.2.3?draft=true",
-            "v1.2.3-rc..1",
-        ] {
+        for invalid in ["v1.2.3/../../latest", "v1.2.3?draft=true", "v1.2.3-rc..1"] {
             let output = Command::new(binary())
                 .args([command, "--version", invalid])
                 .output()
@@ -1906,7 +1902,9 @@ fn precision_mode_keeps_strong_drops_weak() {
     );
     let weak = def_findings
         .iter()
-        .find(|finding| finding.get("detector_id").and_then(|v| v.as_str()) == Some("generic-password"))
+        .find(|finding| {
+            finding.get("detector_id").and_then(|v| v.as_str()) == Some("generic-password")
+        })
         .expect("default generic-password finding");
     assert_eq!(
         weak.get("credential_redacted").and_then(|v| v.as_str()),

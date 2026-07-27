@@ -4,7 +4,9 @@ use super::support::*;
 fn secret_surrounded_by_whitespace_noise() {
     let scanner = test_scanner();
     let chunk = make_chunk(&format!("   \t  {VALID_CREDENTIAL}   \t  \n"));
-    let matches = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
+    let matches = scanner
+        .scan(&chunk)
+        .expect(concat!(module_path!(), ": scan should succeed"));
     assert!(
         !matches.is_empty(),
         "whitespace padding must not prevent detection"
@@ -17,7 +19,9 @@ fn secret_in_json_value() {
     let chunk = make_chunk(&format!(
         r#"{{"api_key": "{VALID_CREDENTIAL}", "host": "localhost"}}"#
     ));
-    let matches = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
+    let matches = scanner
+        .scan(&chunk)
+        .expect(concat!(module_path!(), ": scan should succeed"));
     assert!(
         !matches.is_empty(),
         "secret inside JSON string value must be detected"
@@ -28,7 +32,9 @@ fn secret_in_json_value() {
 fn secret_in_yaml_value() {
     let scanner = test_scanner();
     let chunk = make_chunk(&format!("api_key: {VALID_CREDENTIAL}\nport: 8080\n"));
-    let matches = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
+    let matches = scanner
+        .scan(&chunk)
+        .expect(concat!(module_path!(), ": scan should succeed"));
     assert!(
         !matches.is_empty(),
         "secret in YAML mapping value must be detected"

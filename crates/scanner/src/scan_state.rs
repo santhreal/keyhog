@@ -220,7 +220,6 @@ fn pending_companion_map_cmp(
     std::cmp::Ordering::Equal
 }
 
-
 /// Queued ML candidate waiting for batch inference at the end of a scan.
 #[cfg(feature = "ml")]
 #[derive(Debug, Clone)]
@@ -725,7 +724,7 @@ impl ScanState {
             // This is called before phase-2 entropy can queue candidates, so
             // every pending row is an existing pattern/generic finding.
             visit(pending.pending_raw_match.location.line);
-    }
+        }
     }
 
     /// Visit every candidate already produced by a pre-ML scanner stage.

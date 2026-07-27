@@ -82,7 +82,10 @@ fn every_shipped_success_contract_is_classified() {
         status_authoritative, 1,
         "provider-authoritative status accounting drifted"
     );
-    assert_eq!(body_positive, 18, "body-positive contract accounting drifted");
+    assert_eq!(
+        body_positive, 18,
+        "body-positive contract accounting drifted"
+    );
 }
 
 /// Regression: New Relic log ingestion intentionally returns an empty 202, so
@@ -118,7 +121,10 @@ fn conservative_status_policy_rejects_200_error_body() {
     assert_eq!(spec.policy, Some(SuccessPolicy::StatusWithErrorBackstop));
     assert_eq!(replay(&spec, 200, error_body), Ok(true));
     assert_eq!(resolved_replay(&spec, 200, error_body), Ok(false));
-    assert_eq!(resolved_replay(&spec, 200, r#"{"login":"octocat"}"#), Ok(true));
+    assert_eq!(
+        resolved_replay(&spec, 200, r#"{"login":"octocat"}"#),
+        Ok(true)
+    );
 }
 
 /// Regression: the two status policies must make opposite final decisions for

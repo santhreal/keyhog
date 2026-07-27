@@ -3,7 +3,10 @@ use keyhog_scanner::testing::BigramBloom;
 use keyhog_scanner::{BigramPrefilterState, CompiledScanner, ScanBackend};
 
 fn bloom(literals: &[&str]) -> BigramBloom {
-    let literals: Vec<String> = literals.iter().map(|literal| (*literal).to_owned()).collect();
+    let literals: Vec<String> = literals
+        .iter()
+        .map(|literal| (*literal).to_owned())
+        .collect();
     BigramBloom::from_literal_prefixes(&literals)
 }
 
@@ -19,7 +22,10 @@ fn chunk(index: usize, data: String) -> Chunk {
 }
 
 fn padded_chunk(index: usize, credential: &str) -> Chunk {
-    chunk(index, format!("{}{}{}", "!".repeat(29), credential, "~".repeat(41)))
+    chunk(
+        index,
+        format!("{}{}{}", "!".repeat(29), credential, "~".repeat(41)),
+    )
 }
 
 fn selective_alternation_scanner() -> CompiledScanner {
@@ -92,8 +98,14 @@ fn production_corpus_boundary_is_exactly_sixty_four_bytes() {
 
     let production = filter.production_corpus_status("63-and-64-production", inputs);
     assert_eq!(production.input_count, 2);
-    assert_eq!(production.eligible_inputs, 1, "only the 64-byte input is eligible");
-    assert_eq!(production.rejected_inputs, 1, "the eligible 64-byte miss is rejected");
+    assert_eq!(
+        production.eligible_inputs, 1,
+        "only the 64-byte input is eligible"
+    );
+    assert_eq!(
+        production.rejected_inputs, 1,
+        "the eligible 64-byte miss is rejected"
+    );
     assert_eq!(production.rejection_basis_points, 5_000);
 }
 
@@ -101,18 +113,16 @@ fn production_corpus_boundary_is_exactly_sixty_four_bytes() {
 fn ascii_case_insensitive_variants_of_the_selected_ngram_are_admitted() {
     let filter = bloom(&["Ab9_"]);
 
-    for candidate in [
-        &b"Ab9_"[..],
-        &b"ab9_"[..],
-        &b"AB9_"[..],
-        &b"aB9_"[..],
-    ] {
+    for candidate in [&b"Ab9_"[..], &b"ab9_"[..], &b"AB9_"[..], &b"aB9_"[..]] {
         assert!(
             filter.maybe_overlaps(candidate),
             "ASCII-case variant {candidate:?} must remain reachable"
         );
     }
-    assert!(!filter.maybe_overlaps(b"ab8_"), "a non-case near miss must reject");
+    assert!(
+        !filter.maybe_overlaps(b"ab8_"),
+        "a non-case near miss must reject"
+    );
 }
 
 #[test]

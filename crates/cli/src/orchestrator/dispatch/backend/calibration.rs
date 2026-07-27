@@ -41,9 +41,7 @@ fn apply_test_timing_fixture(
     let Some(fixture) = std::env::var_os(TEST_TIMING_FIXTURE_ENV) else {
         return Ok(());
     };
-    if std::env::var(TEST_TIMING_FIXTURE_AUTH_ENV).as_deref()
-        != Ok(TEST_TIMING_FIXTURE_AUTH)
-    {
+    if std::env::var(TEST_TIMING_FIXTURE_AUTH_ENV).as_deref() != Ok(TEST_TIMING_FIXTURE_AUTH) {
         return Err(AutorouteRoutingError::calibration_not_persisted(format!(
             "test-only autoroute timing fixture authorization failed; \
              {TEST_TIMING_FIXTURE_AUTH_ENV} must equal {TEST_TIMING_FIXTURE_AUTH:?}"
@@ -79,33 +77,21 @@ fn apply_test_timing_fixture(
                 }
                 if route.backend == ScanBackend::CpuFallback {
                     vec![
-                        18_000_000,
-                        20_000_000,
-                        20_000_000,
-                        20_000_000,
-                        20_000_000,
-                        20_000_000,
+                        18_000_000, 20_000_000, 20_000_000, 20_000_000, 20_000_000, 20_000_000,
                         22_000_000,
                     ]
                 } else {
                     vec![
-                        19_000_000,
-                        16_000_000,
-                        18_000_000,
-                        18_000_000,
-                        18_000_000,
-                        18_000_000,
+                        19_000_000, 16_000_000, 18_000_000, 18_000_000, 18_000_000, 18_000_000,
                         22_000_000,
                     ]
                 }
             }
             _ => {
-                return Err(AutorouteRoutingError::calibration_not_persisted(
-                    format!(
-                        "unsupported {TEST_TIMING_FIXTURE_ENV} value {fixture:?}; expected \
+                return Err(AutorouteRoutingError::calibration_not_persisted(format!(
+                    "unsupported {TEST_TIMING_FIXTURE_ENV} value {fixture:?}; expected \
                          confidence-separated-v1 or overlapping-v1"
-                    ),
-                ));
+                )));
             }
         };
         entry.timing = BackendTimingEvidence::from_trial_ns(trials_ns).ok_or_else(|| {
@@ -601,11 +587,14 @@ fn scan_calibration_backend(
     admission_plan: Option<&Phase1AdmissionPlan>,
 ) -> Result<Vec<Vec<keyhog_core::RawMatch>>, AutorouteRoutingError> {
     let coverage_before = keyhog_scanner::telemetry::ScannerCoverageSnapshot::capture();
-    let outcome = scanner.scan_coalesced_with_backend_admission_route_and_recovery(sample,
-    route.backend,
-    admission_plan,
-    route.execution_route(),
-    false,)
+    let outcome = scanner
+        .scan_coalesced_with_backend_admission_route_and_recovery(
+            sample,
+            route.backend,
+            admission_plan,
+            route.execution_route(),
+            false,
+        )
         .map_err(|error| {
             AutorouteRoutingError::candidate_backend_rejected(
                 route.backend,

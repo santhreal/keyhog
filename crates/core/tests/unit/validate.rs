@@ -1,8 +1,8 @@
+use keyhog_core::testing::{CoreTestApi, TestApi};
 use keyhog_core::{
     validate_detector, AuthSpec, CompanionSpec, DetectorSpec, HttpMethod, MetadataSpec,
     PatternSpec, QualityIssue, Severity, StepSpec, SuccessPolicy, SuccessSpec, VerifySpec,
 };
-use keyhog_core::testing::{CoreTestApi, TestApi};
 
 fn detector_with_pattern(regex: &str) -> DetectorSpec {
     DetectorSpec {

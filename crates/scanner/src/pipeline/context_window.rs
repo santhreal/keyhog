@@ -97,7 +97,6 @@ pub(crate) fn local_context_window_from_offsets<'a>(
     line: usize,
     radius: usize,
 ) -> &'a str {
-
     let start_line = line.saturating_sub(radius).saturating_sub(1);
     let Some(&start) = line_offsets.get(start_line) else {
         return "";

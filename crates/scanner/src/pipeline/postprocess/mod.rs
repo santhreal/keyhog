@@ -71,7 +71,6 @@ pub(crate) fn build_pending_raw_match(
     }
 }
 
-
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_raw_match(
     detector_severity: Severity,
@@ -206,7 +205,6 @@ pub(crate) fn build_pending_synthetic_raw_match(
         entropy,
     }
 }
-
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_synthetic_raw_match(

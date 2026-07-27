@@ -224,8 +224,8 @@ fn credential_utf8_serde_fails_closed_and_tagged_text_deserializes() {
     assert!(output.is_empty());
     assert!(!error.contains(SECRET));
 
-    let back: Credential = serde_json::from_str(r#"{"text":"roundtrip_text"}"#)
-        .expect("historical tagged text input");
+    let back: Credential =
+        serde_json::from_str(r#"{"text":"roundtrip_text"}"#).expect("historical tagged text input");
     assert_eq!(back, credential);
 }
 
@@ -239,8 +239,8 @@ fn credential_binary_serde_fails_closed_and_tagged_b64_deserializes() {
     assert!(output.is_empty());
     assert!(!error.contains("/wCr"));
 
-    let back: Credential = serde_json::from_str(r#"{"b64":"/wCr"}"#)
-        .expect("historical tagged binary input");
+    let back: Credential =
+        serde_json::from_str(r#"{"b64":"/wCr"}"#).expect("historical tagged binary input");
     assert_eq!(back, credential);
 }
 

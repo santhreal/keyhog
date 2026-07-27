@@ -55,7 +55,11 @@ fn overlay_composes_disjoint_corpora() {
 fn overlay_rejects_sorted_detector_id_collisions() {
     let error = compose_detector_corpus(
         vec![detector("embedded-z"), detector("embedded-a")],
-        vec![detector("embedded-z"), detector("custom"), detector("embedded-a")],
+        vec![
+            detector("embedded-z"),
+            detector("custom"),
+            detector("embedded-a"),
+        ],
         DetectorCorpusMode::Overlay,
     )
     .expect_err("colliding overlay must fail closed");

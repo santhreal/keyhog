@@ -31,7 +31,9 @@ fn surfaces(text: &str, token: &str) -> bool {
     let s = shared();
     s.clear_fragment_cache();
     let chunk: Chunk = make_chunk(text, "filesystem", "gitlab.env");
-    s.scan(&chunk).expect("scanner call should succeed").into_iter()
+    s.scan(&chunk)
+        .expect("scanner call should succeed")
+        .into_iter()
         .any(|m| m.credential.as_str().to_string().contains(token))
 }
 
@@ -40,7 +42,9 @@ fn fired_ids(text: &str) -> Vec<String> {
     let s = shared();
     s.clear_fragment_cache();
     let chunk: Chunk = make_chunk(text, "filesystem", "gitlab.env");
-    s.scan(&chunk).expect("scanner call should succeed").into_iter()
+    s.scan(&chunk)
+        .expect("scanner call should succeed")
+        .into_iter()
         .map(|m| m.detector_id.to_string())
         .collect()
 }

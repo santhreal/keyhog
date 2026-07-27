@@ -180,28 +180,14 @@ impl CompiledScanner {
                             source_end,
                         )
                     });
-                let candidate_len =
-                    source_whole.map_or(value.len(), |span| span.end - span.start);
+                let candidate_len = source_whole.map_or(value.len(), |span| span.end - span.start);
                 let partial_source_value =
                     source_whole.is_some_and(|span| !span.is_exact(source_start, source_end));
-                let telemetry_value =
-                    source_whole.map_or(value, |span| span.as_str(&chunk.data));
-                let length_stage = match execution_policy.length.rejection(candidate_len) {
-                    Some(crate::detector_execution_policy::CandidateLengthRejection::TooShort) => {
-                        Some(crate::adjudicate::StageId::GenericValueShape(
-                            crate::adjudicate::GenericValueShapeStage::ValueTooShort,
-                        ))
-                    }
-                    Some(crate::detector_execution_policy::CandidateLengthRejection::TooLong) => {
-                        Some(crate::adjudicate::StageId::GenericValueShape(
-                            crate::adjudicate::GenericValueShapeStage::ValueTooLong,
-                        ))
-                    }
-                    None if partial_source_value => {
-                        Some(crate::adjudicate::StageId::PartialGenericAssignmentValue)
-                    }
-                    None => None,
-                };
+                let telemetry_value = source_whole.map_or(value, |span| span.as_str(&chunk.data));
+                let length_stage = crate::adjudicate::generic_bridge_length_stage(
+                    execution_policy.length.rejection(candidate_len),
+                    partial_source_value,
+                );
                 if let Some(stage_id) = length_stage {
                     crate::adjudicate::record_suppression(
                         chunk.metadata.path.as_deref(),
@@ -458,7 +444,8 @@ impl CompiledScanner {
                     .flatten()
                 {
                     let ml_features = crate::types::ml_features_for_candidate(
-                        scan_text, line_offsets,
+                        scan_text,
+                        line_offsets,
                         line_idx,
                         chunk.metadata.path.as_deref(),
                         value,
@@ -468,21 +455,20 @@ impl CompiledScanner {
                         ml_policy.features,
                         crate::ml_scorer::MlCandidateChannel::Pattern,
                     );
-                    let pending_raw_match =
-                        crate::pipeline::build_pending_synthetic_raw_match(
-                            (
-                                Arc::clone(&metadata.0),
-                                Arc::clone(&metadata.1),
-                                Arc::clone(&metadata.2),
-                            ),
-                            execution_policy.severity,
-                            chunk,
-                            value,
-                            absolute_offset,
-                            Some(line_number),
-                            Some(entropy),
-                            scan_state,
-                        );
+                    let pending_raw_match = crate::pipeline::build_pending_synthetic_raw_match(
+                        (
+                            Arc::clone(&metadata.0),
+                            Arc::clone(&metadata.1),
+                            Arc::clone(&metadata.2),
+                        ),
+                        execution_policy.severity,
+                        chunk,
+                        value,
+                        absolute_offset,
+                        Some(line_number),
+                        Some(entropy),
+                        scan_state,
+                    );
                     let inserted = scan_state.push_detector_ml_pending(
                         pending_raw_match,
                         policy_conf,

@@ -30,11 +30,10 @@ fn short_chunks_always_pass() {
 }
 
 #[test]
-fn popcount_grows_monotonically() {
-    let mut bloom = BigramBloom::empty();
-    let before = bloom.popcount();
-    bloom.insert_all(b"hello world");
-    assert!(bloom.popcount() > before);
+fn long_anchor_constructor_populates_the_table() {
+    let bloom = BigramBloom::from_literal_prefixes(&["hello world".to_string()]);
+    assert!(bloom.popcount() > 0);
+    assert!(bloom.maybe_overlaps(b"prefix HELLO WORLD suffix"));
 }
 
 #[test]
@@ -81,10 +80,9 @@ fn saturated_table_short_circuits_to_true() {
 }
 
 #[test]
-fn insert_all_refreshes_saturation() {
-    let mut bloom = BigramBloom::empty();
+fn constructor_refreshes_saturation_after_population() {
+    let bloom = BigramBloom::from_literal_prefixes(&["ghp_ABCDEFG".to_string()]);
     assert!(!bloom.is_saturated());
-    bloom.insert_all(b"ghp_");
-    assert!(!bloom.is_saturated());
-    assert!(bloom.maybe_overlaps(b"....ghp_...."));
+    assert!(bloom.popcount() > 0);
+    assert!(bloom.maybe_overlaps(b"....ghp_ABCDEFG...."));
 }

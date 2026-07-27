@@ -24,8 +24,7 @@ keywords = ["CUSTOM_SHARED_RUNTIME_"]
 regex = "CUSTOM_SHARED_RUNTIME_[A-Z0-9]{8}"
 "#,
     );
-    std::fs::write(detector_dir.join("custom.toml"), detector)
-        .expect("write custom detector");
+    std::fs::write(detector_dir.join("custom.toml"), detector).expect("write custom detector");
 }
 
 fn runtime_findings(mode: &str) -> BTreeSet<String> {
@@ -51,10 +50,7 @@ fn runtime_findings(mode: &str) -> BTreeSet<String> {
     )
     .expect("construct shared watch/scan-system runtime");
     let chunk = Chunk {
-        data: format!(
-            "AWS_ACCESS_KEY_ID={EMBEDDED_AWS_KEY}\ncustom_token={CUSTOM_TOKEN}\n"
-        )
-        .into(),
+        data: format!("AWS_ACCESS_KEY_ID={EMBEDDED_AWS_KEY}\ncustom_token={CUSTOM_TOKEN}\n").into(),
         metadata: ChunkMetadata {
             source_type: "filesystem".into(),
             path: Some(root.path().join("planted.txt").display().to_string().into()),

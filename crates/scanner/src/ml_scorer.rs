@@ -191,7 +191,6 @@ pub(crate) fn score_cache_key(
     hasher.finish()
 }
 
-
 /// Preserve pending-match cardinality before confidence blending. A malformed
 /// backend score vector is a typed backend failure, never permission to drop
 /// queued findings or silently rescore them.

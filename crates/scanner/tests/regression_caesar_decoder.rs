@@ -242,11 +242,7 @@ fn decode_chunk_refuses_to_recurse_on_own_caesar_output() {
     // rotate it back to the original.
     let body = format!("api_token = \"{ENCODED_SHIFT3}\"\n");
     let out = CaesarDecoder
-        .decode_chunk(&chunk(
-            &body,
-            "filesystem/caesar",
-            Some("secrets.env"),
-        ))
+        .decode_chunk(&chunk(&body, "filesystem/caesar", Some("secrets.env")))
         .expect("bounded recursive-guard Caesar decode should succeed");
     assert_eq!(
         out.len(),

@@ -104,9 +104,7 @@ pub(crate) fn decode_text_file_for_test(bytes: &[u8]) -> Option<String> {
     decode::decode_text_file(bytes)
 }
 
-pub(crate) fn decode_text_file_owned_or_bytes_for_test(
-    bytes: Vec<u8>,
-) -> Result<String, Vec<u8>> {
+pub(crate) fn decode_text_file_owned_or_bytes_for_test(bytes: Vec<u8>) -> Result<String, Vec<u8>> {
     decode::decode_text_file_owned_or_bytes(bytes)
 }
 
@@ -130,8 +128,12 @@ pub(crate) fn read_file_windowed_mmap_for_test(
     window_size: usize,
     overlap: usize,
 ) -> Option<Vec<(usize, String)>> {
-    window::read_file_windowed_mmap(path, window_size, overlap)
-        .map(|windows| windows.into_iter().map(|window| (window.offset, window.text)).collect())
+    window::read_file_windowed_mmap(path, window_size, overlap).map(|windows| {
+        windows
+            .into_iter()
+            .map(|window| (window.offset, window.text))
+            .collect()
+    })
 }
 
 pub(crate) enum ForEachWindowedMmapTestOutcome {
@@ -149,8 +151,10 @@ where
     F: FnMut(Result<(usize, String), String>) -> bool,
 {
     match window::for_each_file_windowed_mmap(path, window_size, overlap, |row| {
-        emit(row.map(|window| (window.offset, window.text))
-            .map_err(|error| error.to_string()))
+        emit(
+            row.map(|window| (window.offset, window.text))
+                .map_err(|error| error.to_string()),
+        )
     }) {
         window::WindowedMmapOutcome::Consumed => ForEachWindowedMmapTestOutcome::Consumed,
         window::WindowedMmapOutcome::Fallback(_) => ForEachWindowedMmapTestOutcome::Fallback,

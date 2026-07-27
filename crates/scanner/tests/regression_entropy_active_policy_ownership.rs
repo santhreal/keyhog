@@ -388,7 +388,9 @@ fn full_scan_plausibility_findings(
             ..Default::default()
         },
     };
-    let mut findings = scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), backend).expect("selected backend scan succeeds")
+    let mut findings = scanner
+        .scan_chunks_with_backend(std::slice::from_ref(&chunk), backend)
+        .expect("selected backend scan succeeds")
         .into_iter()
         .flatten()
         .filter(|finding| finding.credential.as_ref() == value)
@@ -437,7 +439,9 @@ fn full_scan_bare_auth_findings(
             ..Default::default()
         },
     };
-    let mut findings = scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), backend).expect("selected backend scan succeeds")
+    let mut findings = scanner
+        .scan_chunks_with_backend(std::slice::from_ref(&chunk), backend)
+        .expect("selected backend scan succeeds")
         .into_iter()
         .flatten()
         .filter(|finding| finding.credential.as_ref() == value)
@@ -661,7 +665,9 @@ fn scan_isolated_with_policy_mutation_and_threshold(
             ..Default::default()
         },
     };
-    scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback).expect("selected backend scan succeeds")
+    scanner
+        .scan_with_backend(&chunk, ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds")
         .into_iter()
         .filter(|finding| finding.credential.as_ref() == value)
         .map(|finding| finding.credential.as_str().to_string())
@@ -703,7 +709,9 @@ fn isolated_shape_boundaries_are_exact_on_every_accelerated_backend() {
     let admitted = compile(value.len());
     let rejected = compile(value.len() - 1);
     let exact = |scanner: &CompiledScanner, backend| {
-        scanner.scan_with_backend(&chunk, backend).expect("selected backend scan succeeds")
+        scanner
+            .scan_with_backend(&chunk, backend)
+            .expect("selected backend scan succeeds")
             .into_iter()
             .filter(|finding| finding.credential.as_ref() == value)
             .map(|finding| {
@@ -945,7 +953,9 @@ fn regex_entropy_owner_compiles_its_generic_assignment_generator() {
         data: format!(r#"{ENTROPY_ONLY_KEYWORD} = "{VALUE}""#).into(),
         metadata: ChunkMetadata::default(),
     };
-    let findings = scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback).expect("selected backend scan succeeds")
+    let findings = scanner
+        .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds")
         .into_iter()
         .flatten()
         .filter(|finding| finding.credential.as_ref() == VALUE)
@@ -970,7 +980,9 @@ fn full_scan_findings(bpe_enabled: bool, backend: ScanBackend) -> Vec<(String, S
         data: format!(r#"{ENTROPY_ONLY_KEYWORD} = "{WORD_LIKE_VALUE}""#).into(),
         metadata: ChunkMetadata::default(),
     };
-    let mut findings = scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), backend).expect("selected backend scan succeeds")
+    let mut findings = scanner
+        .scan_chunks_with_backend(std::slice::from_ref(&chunk), backend)
+        .expect("selected backend scan succeeds")
         .into_iter()
         .flatten()
         .map(|finding| {
@@ -1035,7 +1047,9 @@ fn full_scan_keyword_free_values(
             ..Default::default()
         },
     };
-    scanner.scan_with_backend(&chunk, backend).expect("selected backend scan succeeds")
+    scanner
+        .scan_with_backend(&chunk, backend)
+        .expect("selected backend scan succeeds")
         .into_iter()
         .map(|finding| finding.credential.as_str().to_string())
         .collect()
@@ -1207,7 +1221,9 @@ fn entropy_fallback_identity_comes_from_active_detector_policy() {
             ..Default::default()
         },
     };
-    let finding = scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback).expect("selected backend scan succeeds")
+    let finding = scanner
+        .scan_with_backend(&chunk, ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds")
         .into_iter()
         .find(|finding| finding.credential.as_ref() == KEYWORD_FREE_VALUE)
         .expect("custom entropy metadata corpus must emit the keyword-free candidate");

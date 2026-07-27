@@ -296,9 +296,11 @@ fn gpu_region_presence_self_test_impl(
             continue;
         };
         let degrade_before = scanner.runtime_status().gpu_degrade_count;
-        let results = match scanner.scan_coalesced_gpu_region_presence(&[make_chunk()],
-        route,
-        scanner.execution_route_for_backend(route),) {
+        let results = match scanner.scan_coalesced_gpu_region_presence(
+            &[make_chunk()],
+            route,
+            scanner.execution_route_for_backend(route),
+        ) {
             Ok(results) => results,
             Err(error) => {
                 failures.push(format!(

@@ -88,7 +88,10 @@ fn source_chunk_serialization_fails_without_emitting_source_text() {
 /// Locks out container-based bypasses that previously serialized every secret.
 #[test]
 fn nested_sensitive_strings_fail_closed_before_plaintext_is_written() {
-    let secrets = vec![SensitiveString::from(SECRET), SensitiveString::from("second-secret")];
+    let secrets = vec![
+        SensitiveString::from(SECRET),
+        SensitiveString::from("second-secret"),
+    ];
     let mut output = Vec::new();
     let error = serde_json::to_writer(&mut output, &secrets)
         .expect_err("nested SensitiveString values must retain the same fail-closed boundary")

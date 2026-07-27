@@ -16,7 +16,8 @@ pub(crate) use entropy::entropy_fallback_example_suppression_stage;
 pub(crate) use entropy::{EntropyFallbackSignal, EntropyGenerationSignal, EntropyShapeStage};
 pub(crate) use generic::{
     generic_bridge_bare_auth_rejected, generic_bridge_canonical_hex_placeholder_stage,
-    generic_bridge_keyword_boundary_rejected, GenericBridgeSignal, GenericValueShapeStage,
+    generic_bridge_keyword_boundary_rejected, generic_bridge_length_stage, GenericBridgeSignal,
+    GenericValueShapeStage,
 };
 pub(crate) use stage::{StageId, StageOutcome, Verdict};
 
@@ -541,7 +542,6 @@ fn record_suppression_telemetry(path: Option<&str>, credential: &str, stage_id: 
     }
     crate::telemetry::record_shape_suppression(path, credential, reason);
 }
-
 
 pub(crate) fn record_example_suppression(
     detector: &str,

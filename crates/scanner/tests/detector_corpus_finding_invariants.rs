@@ -46,7 +46,9 @@ fn every_corpus_finding_is_well_formed() {
                 ..Default::default()
             },
         };
-        let per = scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback).expect("selected backend scan succeeds");
+        let per = scanner
+            .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+            .expect("selected backend scan succeeds");
         let mut fired = false;
         for m in per.iter().flat_map(|c| c.iter()) {
             fired = true;

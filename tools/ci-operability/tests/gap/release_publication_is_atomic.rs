@@ -111,9 +111,8 @@ fn failed_candidate_smoke_leaves_the_release_private() {
     );
     assert!(
         docker.contains("needs: smoke")
-            && docker.contains(
-                "ghcr.io/${{ github.repository }}:${{ steps.tag.outputs.version }}",
-            )
+            && docker
+                .contains("ghcr.io/${{ github.repository }}:${{ steps.tag.outputs.version }}",)
             && docker.contains("--tag \"ghcr.io/${{ github.repository }}:latest\""),
         "docker must depend on smoke because versioned and latest GHCR tag writes are irreversible public mutations",
     );

@@ -41,7 +41,9 @@ fn chunk_boundary_gitlab_pat_split_reassembled() {
         },
     };
 
-    let results = scanner.scan_coalesced(&[chunk_a, chunk_b]).expect(concat!(module_path!(), ": coalesced scan should succeed"));
+    let results = scanner
+        .scan_coalesced(&[chunk_a, chunk_b])
+        .expect(concat!(module_path!(), ": coalesced scan should succeed"));
     let found = results.iter().flatten().any(|m| {
         m.detector_id.as_ref() == "gitlab-personal-access-token"
             && m.credential.as_ref() == "glpat-aB3kQp7VbT2hYRzNcMfW"

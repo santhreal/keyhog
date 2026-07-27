@@ -22,7 +22,9 @@ fn reverse_stripe_sk_reversed_in_env() {
             ..Default::default()
         },
     };
-    let matches = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
+    let matches = scanner
+        .scan(&chunk)
+        .expect(concat!(module_path!(), ": scan should succeed"));
     assert!(
         matches.iter().any(|m| {
             m.detector_id.as_ref() == "stripe-secret-key" && m.credential.as_ref() == secret

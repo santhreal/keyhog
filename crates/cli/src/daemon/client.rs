@@ -2,11 +2,9 @@
 //! one request/response pair at a time over a Unix socket.
 
 use crate::daemon::frame;
-use crate::daemon::protocol::{
-    response_kind, Request, Response, WarmBackendStatus, WIRE_VERSION,
-};
-use crate::daemon::warm_identity;
+use crate::daemon::protocol::{response_kind, Request, Response, WarmBackendStatus, WIRE_VERSION};
 use crate::daemon::trust;
+use crate::daemon::warm_identity;
 use anyhow::{bail, Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use std::path::Path;
@@ -53,12 +51,7 @@ pub(crate) async fn connect_with_detector_rules_digest(
     socket_path: &Path,
     expected_detector_rules_digest: String,
 ) -> Result<Client> {
-    connect_inner(
-        socket_path,
-        true,
-        Some(expected_detector_rules_digest),
-    )
-    .await
+    connect_inner(socket_path, true, Some(expected_detector_rules_digest)).await
 }
 
 /// Connect WITHOUT the build/corpus staleness rejection. Wire compatibility
@@ -80,9 +73,7 @@ pub(crate) fn current_warm_backend_identity(
     warm_identity::client_identity(detector_rules_digest)
 }
 
-pub(crate) fn current_warm_backend_mismatches(
-    status: &WarmBackendStatus,
-) -> Result<Vec<String>> {
+pub(crate) fn current_warm_backend_mismatches(status: &WarmBackendStatus) -> Result<Vec<String>> {
     let detector_rules_digest = embedded_detector_rules_digest()?;
     let expected = warm_identity::client_identity(detector_rules_digest)?;
     Ok(warm_identity::validate_for_client(status, &expected))

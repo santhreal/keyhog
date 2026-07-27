@@ -6,8 +6,8 @@ use crate::daemon::protocol::{
     BackendRecoveryStatus, RecoveredInputRangeStatus, Request, Response, SourceCoverageGaps,
     WarmBackendStatus, WIRE_VERSION,
 };
-use crate::daemon::warm_identity::WarmBackendReadiness;
 use crate::daemon::trust;
+use crate::daemon::warm_identity::WarmBackendReadiness;
 use crate::style;
 use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
@@ -200,7 +200,6 @@ impl ServerState {
     fn warm_backend_status(&self) -> WarmBackendStatus {
         self.warm_backend.status(&self.scanner)
     }
-
 }
 pub(crate) fn warm_route_error(status: &WarmBackendStatus) -> Option<Response> {
     if status.ready {
@@ -218,7 +217,6 @@ pub(crate) fn warm_route_error(status: &WarmBackendStatus) -> Option<Response> {
     Some(Response::Error { message })
 }
 
-
 pub(crate) async fn run_with_backend_override(
     socket_path: PathBuf,
     detectors: Vec<DetectorSpec>,
@@ -234,11 +232,8 @@ pub(crate) async fn run_with_backend_override(
         keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&detectors));
     let (scanner, router, detector_count, required_backends) =
         compile_daemon_scan_runtime(detectors, backend_override)?;
-    let warm_backend = WarmBackendReadiness::capture(
-        &scanner,
-        &detector_rules_digest,
-        required_backends,
-    )?;
+    let warm_backend =
+        WarmBackendReadiness::capture(&scanner, &detector_rules_digest, required_backends)?;
     let listener = bind_trusted_daemon_socket(&socket_path)?;
     let shutdown = Arc::new(Notify::new());
     let state = Arc::new(ServerState::new(
@@ -547,7 +542,10 @@ async fn handle_connection(state: Arc<ServerState>, stream: UnixStream) -> Resul
             }
             hello_ok = true;
         }
-        let response = if matches!(&request, Request::ScanText { .. } | Request::ScanPath { .. }) {
+        let response = if matches!(
+            &request,
+            Request::ScanText { .. } | Request::ScanPath { .. }
+        ) {
             match warm_route_denial.as_ref() {
                 Some(denial) => denial.clone(),
                 None => dispatch(&state, request).await,
@@ -742,7 +740,10 @@ async fn scan_text(
 /// `working_dir=None` only when its own `std::env::current_dir()` failed (see
 /// subcommands/scan.rs); using the unrelated daemon cwd would scan the wrong
 /// tree, so this path fails closed and surfaces the resolution error.
-pub(crate) fn resolve_scan_target(path: &str, working_dir: Option<&str>) -> Result<PathBuf, String> {
+pub(crate) fn resolve_scan_target(
+    path: &str,
+    working_dir: Option<&str>,
+) -> Result<PathBuf, String> {
     if Path::new(path).is_absolute() {
         Ok(PathBuf::from(path))
     } else if let Some(wd) = working_dir {

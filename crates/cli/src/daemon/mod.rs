@@ -30,13 +30,10 @@
 //! ```
 
 pub(crate) mod client;
-pub(crate) mod frame;
-pub(crate) mod protocol;
-pub(crate) mod server;
-mod warm_identity;
 #[cfg(test)]
 #[path = "client_staleness_tests.rs"]
 mod client_staleness_tests;
+pub(crate) mod frame;
 #[cfg(test)]
 #[path = "frame_incremental_tests.rs"]
 mod frame_incremental_tests;
@@ -49,12 +46,15 @@ mod path_resolution_tests;
 #[cfg(test)]
 #[path = "protected_wire_tests.rs"]
 mod protected_wire_tests;
+pub(crate) mod protocol;
+pub(crate) mod server;
+mod trust;
+mod warm_identity;
 #[cfg(test)]
 #[path = "warm_identity_tests.rs"]
 mod warm_identity_tests;
 #[cfg(test)]
 #[path = "wire_tests.rs"]
 mod wire_tests;
-mod trust;
 
 pub use server::default_socket_path;

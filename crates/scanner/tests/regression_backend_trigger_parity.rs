@@ -61,7 +61,8 @@ fn chunk_at(text: &str, path: &str, base_offset: usize) -> Chunk {
 /// clears first so a reused scanner never leaks fragment state between backends.
 fn run(sc: &CompiledScanner, chunks: &[Chunk], backend: ScanBackend) -> Vec<Vec<RawMatch>> {
     sc.clear_fragment_cache();
-    sc.scan_chunks_with_backend(chunks, backend).expect("selected backend scan succeeds")
+    sc.scan_chunks_with_backend(chunks, backend)
+        .expect("selected backend scan succeeds")
 }
 
 /// `(detector_id, credential, absolute_offset)` triples (the exact parity key).

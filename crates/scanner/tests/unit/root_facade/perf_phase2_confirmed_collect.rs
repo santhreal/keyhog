@@ -529,7 +529,9 @@ fn coalesced_and_per_chunk_findings_match() {
 
     // Coalesced batch API (drives scan_coalesced_phase2 directly).
     scanner.clear_fragment_cache();
-    let coalesced: Vec<RawMatch> = scanner.scan_coalesced(&chunks).expect("coalesced test scan succeeds")
+    let coalesced: Vec<RawMatch> = scanner
+        .scan_coalesced(&chunks)
+        .expect("coalesced test scan succeeds")
         .into_iter()
         .flatten()
         .collect();

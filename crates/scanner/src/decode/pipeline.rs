@@ -249,8 +249,7 @@ impl super::DecodeOutputSink for BoundedDecodeSink<'_> {
         let next_total_bytes = self.total_bytes.saturating_add(decoded.data.len());
         // LAW10: a shared-budget cut is recorded immediately after production
         // stops through the typed decode-truncation counter.
-        if next_produced > MAX_DECODED_CHUNKS_PER_ROOT
-            || next_total_bytes > MAX_DECODED_TOTAL_BYTES
+        if next_produced > MAX_DECODED_CHUNKS_PER_ROOT || next_total_bytes > MAX_DECODED_TOTAL_BYTES
         {
             self.exhaustion = Some(DecodeSinkExhaustion::Budget);
             return false;
@@ -323,11 +322,7 @@ pub(crate) fn canonical_decode_order_probe_for_test() -> Result<usize, String> {
             "canonical-order-probe"
         }
 
-        fn decode_chunk_into(
-            &self,
-            chunk: &Chunk,
-            sink: &mut dyn super::DecodeOutputSink,
-        ) {
+        fn decode_chunk_into(&self, chunk: &Chunk, sink: &mut dyn super::DecodeOutputSink) {
             const ENCODED: [&str; 10] = [
                 "E00", "E01", "E02", "E03", "E04", "E05", "E06", "E07", "E08", "E09",
             ];
@@ -360,10 +355,7 @@ pub(crate) fn canonical_decode_order_probe_for_test() -> Result<usize, String> {
     let decoders = [registry::RegisteredDecoder::Shared(Arc::new(
         IndependentMarkerDecoder,
     ))];
-    Ok(decode_chunk_with_decoders(
-        &chunk, &policy, &decoders, None, 4, false, None, None,
-    )
-    .len())
+    Ok(decode_chunk_with_decoders(&chunk, &policy, &decoders, None, 4, false, None, None).len())
 }
 
 mod extractor;
@@ -385,8 +377,7 @@ pub use registry::{register_decoder, try_register_decoder, DecoderRegistrationEr
 pub(crate) use registry::{register_thread_decoder, ScopedDecoderRegistration};
 pub(crate) use splice::{bytecount_newlines, splice_decoded_payload_at};
 pub(super) use splice::{
-    push_decoded_replacements_spliced, push_decoded_text_chunk,
-    push_decoded_text_chunk_spliced_at, stream_batched_decoded_replacements,
-    stream_candidate_refs_exact, stream_candidate_spans_exact, DecodedReplacementBatcher,
-    DECODE_REPLACEMENT_BATCH_SOURCE_BYTES,
+    push_decoded_replacements_spliced, push_decoded_text_chunk, push_decoded_text_chunk_spliced_at,
+    stream_batched_decoded_replacements, stream_candidate_refs_exact, stream_candidate_spans_exact,
+    DecodedReplacementBatcher, DECODE_REPLACEMENT_BATCH_SOURCE_BYTES,
 };

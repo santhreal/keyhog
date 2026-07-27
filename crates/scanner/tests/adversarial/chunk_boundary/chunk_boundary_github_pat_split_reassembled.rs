@@ -41,7 +41,9 @@ fn chunk_boundary_github_pat_split_reassembled() {
         },
     };
 
-    let results = scanner.scan_coalesced(&[chunk_a, chunk_b]).expect(concat!(module_path!(), ": coalesced scan should succeed"));
+    let results = scanner
+        .scan_coalesced(&[chunk_a, chunk_b])
+        .expect(concat!(module_path!(), ": coalesced scan should succeed"));
     let found = results.iter().flatten().any(|m| {
         m.detector_id.as_ref() == "github-classic-pat"
             && m.credential.as_ref() == "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"

@@ -159,9 +159,7 @@ pub(crate) fn normalize_requested_version(
     Ok(canonical)
 }
 
-fn validate_latest_response_tag(
-    returned: &str,
-) -> std::result::Result<(), ReleaseVersionError> {
+fn validate_latest_response_tag(returned: &str) -> std::result::Result<(), ReleaseVersionError> {
     parse_version(returned)
         .map(|_| ())
         .ok_or_else(|| ReleaseVersionError::InvalidLatestResponse {

@@ -39,7 +39,9 @@ fn scoped_parallel_counts(scanner: &CompiledScanner, chunks: &[Chunk]) -> Scoped
     let trace = Arc::new(ScanTelemetry::new());
     trace.enable_dogfood();
     telemetry::with_scan_telemetry(&trace, || {
-        let findings = scanner.scan_chunks_with_backend(chunks, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
+        let findings = scanner
+            .scan_chunks_with_backend(chunks, ScanBackend::CpuFallback)
+            .expect("selected backend scan succeeds");
         assert!(
             findings.iter().all(Vec::is_empty),
             "published example credentials must be suppressed"
@@ -127,7 +129,9 @@ fn dogfood_detail_budget_keeps_exact_static_recovery_aggregates() {
     let trace = Arc::new(ScanTelemetry::new());
     trace.enable_dogfood();
     telemetry::with_scan_telemetry(&trace, || {
-        let findings = scanner().scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
+        let findings = scanner()
+            .scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback)
+            .expect("selected backend scan succeeds");
         assert!(findings.iter().all(Vec::is_empty));
     });
     let snapshot = trace.drain();
@@ -173,7 +177,9 @@ fn oversized_coalesced_window_workers_inherit_the_request_scope() {
     let trace = Arc::new(ScanTelemetry::new());
     trace.enable_dogfood();
     telemetry::with_scan_telemetry(&trace, || {
-        let findings = scanner.scan_coalesced_with_backend(&[chunk], ScanBackend::SimdCpu).expect("selected-backend coalesced scan should succeed");
+        let findings = scanner
+            .scan_coalesced_with_backend(&[chunk], ScanBackend::SimdCpu)
+            .expect("selected-backend coalesced scan should succeed");
         assert!(findings.iter().all(Vec::is_empty));
     });
     let snapshot = trace.drain();
@@ -195,7 +201,9 @@ fn coalesced_simd_phase_two_workers_inherit_the_request_scope() {
     let trace = Arc::new(ScanTelemetry::new());
     trace.enable_dogfood();
     telemetry::with_scan_telemetry(&trace, || {
-        let findings = scanner.scan_coalesced_with_backend(&chunks, ScanBackend::SimdCpu).expect("selected-backend coalesced scan should succeed");
+        let findings = scanner
+            .scan_coalesced_with_backend(&chunks, ScanBackend::SimdCpu)
+            .expect("selected-backend coalesced scan should succeed");
         assert!(findings.iter().all(Vec::is_empty));
     });
     let snapshot = trace.drain();

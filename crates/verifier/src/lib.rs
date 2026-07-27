@@ -180,8 +180,7 @@ pub(crate) fn apply_proxy_config(
     match resolve_proxy_mode(explicit) {
         ProxyMode::Disabled => Ok(builder.no_proxy()),
         ProxyMode::Explicit(url) => {
-            let parsed = url::Url::parse(&url)
-                .map_err(|_| invalid_proxy_url_diagnostic(None))?;
+            let parsed = url::Url::parse(&url).map_err(|_| invalid_proxy_url_diagnostic(None))?;
             if !matches!(parsed.scheme(), "http" | "https" | "socks5")
                 || parsed.host_str().is_none()
             {

@@ -19,7 +19,6 @@ fn parse_detector_mode(value: &str) -> Option<DetectorMode> {
     }
 }
 
-
 /// Reject a user-supplied keyword list that contains an empty entry.
 ///
 /// An empty keyword is meaningless as a match needle (it would match at every

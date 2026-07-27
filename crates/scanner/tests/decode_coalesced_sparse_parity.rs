@@ -52,14 +52,12 @@ fn aws_findings(results: &[Vec<keyhog_core::RawMatch>]) -> BTreeSet<(String, Str
 fn assert_scalar_coalesced_parity(label: &str, fixture: Chunk) {
     let scanner = scanner();
     scanner.clear_fragment_cache();
-    let scalar =
-        scanner.scan_chunks_with_backend(std::slice::from_ref(&fixture), ScanBackend::CpuFallback).expect("selected backend scan succeeds");
+    let scalar = scanner
+        .scan_chunks_with_backend(std::slice::from_ref(&fixture), ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds");
     scanner.clear_fragment_cache();
     let coalesced = scanner
-        .scan_coalesced_with_backend(
-            std::slice::from_ref(&fixture),
-            ScanBackend::SimdCpu,
-        )
+        .scan_coalesced_with_backend(std::slice::from_ref(&fixture), ScanBackend::SimdCpu)
         .expect("coalesced SIMD decode scan should succeed");
 
     let scalar = aws_findings(&scalar);
@@ -76,8 +74,9 @@ fn assert_scalar_coalesced_parity(label: &str, fixture: Chunk) {
     #[cfg(feature = "gpu")]
     if keyhog_scanner::gpu::gpu_available() {
         scanner.clear_fragment_cache();
-        let gpu =
-            scanner.scan_chunks_with_backend(std::slice::from_ref(&fixture), ScanBackend::GpuWgpu).expect("selected backend scan succeeds");
+        let gpu = scanner
+            .scan_chunks_with_backend(std::slice::from_ref(&fixture), ScanBackend::GpuWgpu)
+            .expect("selected backend scan succeeds");
         assert_eq!(
             aws_findings(&gpu),
             scalar,

@@ -83,8 +83,8 @@ pub(super) fn load_bloom_evidence(
     detector_corpus_sha256: &str,
     scanner_detector_digest: u64,
 ) -> Result<BloomEvidenceSummary> {
-    let bytes = std::fs::read(path)
-        .with_context(|| format!("read Bloom evidence {}", path.display()))?;
+    let bytes =
+        std::fs::read(path).with_context(|| format!("read Bloom evidence {}", path.display()))?;
     let receipt: crate::bloom_diagnostic::BloomCorpusResult = serde_json::from_slice(&bytes)
         .with_context(|| format!("parse Bloom evidence {}", path.display()))?;
     if receipt.schema_version != "bloom-evidence-v1" {
@@ -99,18 +99,9 @@ pub(super) fn load_bloom_evidence(
     for (name, digest) in [
         ("fixture", receipt.fixture_sha256.as_str()),
         ("corpus", receipt.corpus_sha256.as_str()),
-        (
-            "detector corpus",
-            receipt.detector_corpus_sha256.as_str(),
-        ),
-        (
-            "enabled findings",
-            receipt.enabled_findings_sha256.as_str(),
-        ),
-        (
-            "bypassed findings",
-            receipt.bypass_findings_sha256.as_str(),
-        ),
+        ("detector corpus", receipt.detector_corpus_sha256.as_str()),
+        ("enabled findings", receipt.enabled_findings_sha256.as_str()),
+        ("bypassed findings", receipt.bypass_findings_sha256.as_str()),
     ] {
         if !is_lower_hex(digest, 64) {
             bail!("Bloom evidence {name} digest is not lowercase SHA-256");
@@ -129,7 +120,9 @@ pub(super) fn load_bloom_evidence(
                 .saturating_add(receipt.unavailable_input_count)
         || receipt.eligible_input_count > receipt.input_count
         || receipt.rejected_input_count > receipt.eligible_input_count
-        || receipt.admitted_input_count.saturating_add(receipt.rejected_input_count)
+        || receipt
+            .admitted_input_count
+            .saturating_add(receipt.rejected_input_count)
             != receipt.input_count
         || u64::from(receipt.rejection_basis_points)
             != receipt.rejected_input_count.saturating_mul(10_000) / receipt.input_count
@@ -466,10 +459,7 @@ pub(crate) fn run(args: DoctorArgs) -> Result<ExitCode> {
                 green
             };
             println!("  bloom density  {}", diagnostic.density);
-            println!(
-                "  bloom state    {state_color}{}{reset}",
-                diagnostic.state
-            );
+            println!("  bloom state    {state_color}{}{reset}", diagnostic.state);
             println!("  bloom reject   {}", diagnostic.corpus_rejection);
             println!("  bloom parity   {}", diagnostic.finding_parity);
             if let Err(error) = evidence {

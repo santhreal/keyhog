@@ -153,7 +153,9 @@ fn challenging_ac_prefilter_bypass_finds_k8s_base64_secret() {
     let trace = std::sync::Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
     trace.enable_dogfood();
     let matches = keyhog_scanner::telemetry::with_scan_telemetry(&trace, || {
-        production_scanner().scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"))
+        production_scanner()
+            .scan(&chunk)
+            .expect(concat!(module_path!(), ": scan should succeed"))
     });
     let events = trace.drain().dogfood_events;
     // K8S_FULL_SECRET is base64("calico-on-kube-auth-key") - planted in the fixture
@@ -301,6 +303,8 @@ fn challenging_full_file_scan_uses_production_scanner() {
                 ..Default::default()
             },
         };
-        let _ = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
+        let _ = scanner
+            .scan(&chunk)
+            .expect(concat!(module_path!(), ": scan should succeed"));
     }
 }

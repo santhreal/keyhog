@@ -22,7 +22,9 @@ fn reverse_slack_token_reversed() {
             ..Default::default()
         },
     };
-    let matches = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
+    let matches = scanner
+        .scan(&chunk)
+        .expect(concat!(module_path!(), ": scan should succeed"));
     assert!(
         matches.iter().any(|m| m.detector_id.as_ref() == "slack-bot-token" && m.credential.as_ref() == secret),
         "reverse-encoded slack-bot-token must surface; matches={:?}",

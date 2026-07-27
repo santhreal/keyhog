@@ -136,7 +136,9 @@ fn scan_fixture(
 ) -> BTreeSet<FindingKey> {
     scanner.clear_fragment_cache();
     // Gpu routes to the single on-GPU region-presence producer.
-    let results = scanner.scan_chunks_with_backend(chunks, backend).expect("selected backend scan succeeds");
+    let results = scanner
+        .scan_chunks_with_backend(chunks, backend)
+        .expect("selected backend scan succeeds");
     collect_keys(&results)
 }
 

@@ -80,12 +80,15 @@ impl CompiledScanner {
         ));
         for companions in &mut state.companions {
             for companion in companions {
-                companion.name = static_intern.lookup(companion.name.as_ref()).ok_or_else(|| {
-                    crate::error::ScanError::Config(format!(
-                        "compiled companion name missing from static interner: {}",
-                        companion.name
-                    ))
-                })?;
+                companion.name =
+                    static_intern
+                        .lookup(companion.name.as_ref())
+                        .ok_or_else(|| {
+                            crate::error::ScanError::Config(format!(
+                                "compiled companion name missing from static interner: {}",
+                                companion.name
+                            ))
+                        })?;
             }
         }
         let detector_digest = super::detector_digest::from_execution_plan(

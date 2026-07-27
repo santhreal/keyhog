@@ -4,7 +4,9 @@ use super::support::*;
 fn secret_at_start_of_chunk_is_detected() {
     let scanner = test_scanner();
     let chunk = make_chunk(&format!("{VALID_CREDENTIAL}\nsome other content\n"));
-    let matches = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
+    let matches = scanner
+        .scan(&chunk)
+        .expect(concat!(module_path!(), ": scan should succeed"));
     assert!(
         !matches.is_empty(),
         "secret at chunk start must be detected"
@@ -17,7 +19,9 @@ fn secret_at_end_of_chunk_is_detected() {
     let scanner = test_scanner();
     let filler = "x".repeat(500);
     let chunk = make_chunk(&format!("{filler}\n{VALID_CREDENTIAL}"));
-    let matches = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
+    let matches = scanner
+        .scan(&chunk)
+        .expect(concat!(module_path!(), ": scan should succeed"));
     let hit = matches
         .iter()
         .find(|m| m.credential.as_ref() == VALID_CREDENTIAL)
@@ -37,7 +41,9 @@ fn secret_in_large_chunk_is_detected_via_windowing() {
     let filler = "harmless data line\n".repeat(60_000);
     let body = format!("{filler}API_KEY={VALID_CREDENTIAL}\n");
     let chunk = make_chunk(&body);
-    let matches = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
+    let matches = scanner
+        .scan(&chunk)
+        .expect(concat!(module_path!(), ": scan should succeed"));
     let hit = matches
         .iter()
         .find(|m| m.credential.as_ref() == VALID_CREDENTIAL)

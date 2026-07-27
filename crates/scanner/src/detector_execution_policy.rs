@@ -98,8 +98,7 @@ pub(crate) fn whole_assignment_value(
     // Synthetic-source mappings are byte offsets and can point between UTF-8
     // bytes or beyond the original buffer; canonicalize once before byte scans.
     let candidate_start = crate::engine::floor_char_boundary(data, candidate_start);
-    let candidate_end =
-        crate::engine::ceil_char_boundary(data, candidate_end).max(candidate_start);
+    let candidate_end = crate::engine::ceil_char_boundary(data, candidate_end).max(candidate_start);
     let mut active_quote = None;
     let mut escaped = false;
     let mut cursor = 0;

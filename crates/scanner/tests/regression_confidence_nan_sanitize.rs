@@ -93,7 +93,10 @@ fn production_entropy_confidence_changes_with_only_the_owning_toml_tier() {
                 ..Default::default()
             },
         };
-        scanner.scan(&chunk).expect("scanner call should succeed").into_iter()
+        scanner
+            .scan(&chunk)
+            .expect("scanner call should succeed")
+            .into_iter()
             .find(|finding| {
                 finding.detector_id.as_ref() == "entropy-generic"
                     && finding.credential.as_ref() == CREDENTIAL

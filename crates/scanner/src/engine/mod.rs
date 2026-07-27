@@ -213,9 +213,7 @@ pub(crate) const MAX_INNER_LOOP_ITERS: usize = 1_000_000;
 /// used to hardcode a bare `64`).
 pub(crate) const BIGRAM_BLOOM_MIN_CHUNK_BYTES: usize = 64;
 
-pub(crate) use phase1_admission::{
-    Phase1Admission, Phase1AdmissionPlanIdentityError,
-};
+pub(crate) use phase1_admission::{Phase1Admission, Phase1AdmissionPlanIdentityError};
 pub use phase1_admission::{
     Phase1AdmissionPlan, Phase1AdmissionSummary, Phase2KeywordTriggerSummary,
 };

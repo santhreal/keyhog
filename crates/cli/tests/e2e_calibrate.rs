@@ -124,7 +124,9 @@ fn calibrate_fp_flag_records_false_positive() {
 
     let content = std::fs::read_to_string(&cache).expect("read cache");
     assert!(
-        content.contains("github-pat-fine-grained") || content.contains("\"fp\"") || content.contains("false"),
+        content.contains("github-pat-fine-grained")
+            || content.contains("\"fp\"")
+            || content.contains("false"),
         "calibration cache should record the false positive; content: {content}"
     );
 }

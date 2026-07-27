@@ -100,10 +100,24 @@ fn shipped_detector_ceiling_captures_long_values_whole_without_prefix_truncation
         .expect("the shipped 512-byte API-key ceiling admits a 256-byte value");
     assert_eq!(captures.get(2).expect("value capture").as_str(), long_value);
 
-    let over = "a".repeat(513);
+    let sentinel = "a".repeat(513);
+    let sentinel_line = format!("api_key={sentinel}");
+    let sentinel_captures = re
+        .captures(&sentinel_line)
+        .expect("one byte beyond the ceiling is captured as the rejection sentinel");
+    assert_eq!(
+        sentinel_captures
+            .get(2)
+            .expect("sentinel value capture")
+            .as_str(),
+        sentinel,
+        "the rejection sentinel must preserve the whole value"
+    );
+
+    let beyond_sentinel = "a".repeat(514);
     assert!(
-        re.captures(&format!("api_key={over}")).is_none(),
-        "an over-ceiling token must not yield a truncated 512-byte prefix"
+        re.captures(&format!("api_key={beyond_sentinel}")).is_none(),
+        "a value beyond the sentinel must not yield a truncated 513-byte prefix"
     );
 }
 

@@ -2,7 +2,6 @@
 //! UTF-8 bytes, never to a regex prefix.
 #![cfg(feature = "entropy")]
 
-
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::telemetry::{self, DogfoodEvent, ScanTelemetry};
 use keyhog_scanner::{CompiledScanner, ScanBackend, ScannerConfig};
@@ -28,8 +27,7 @@ fn scanner() -> CompiledScanner {
 }
 
 fn candidate(len: usize, mut state: u64) -> String {
-    const ALPHABET: &[u8] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-";
+    const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-";
     let mut value = String::with_capacity(len);
     for _ in 0..len {
         state ^= state << 13;
@@ -41,9 +39,7 @@ fn candidate(len: usize, mut state: u64) -> String {
 }
 
 fn password_candidate(len: usize, state: u64) -> String {
-    let mut value = candidate(len, state)
-        .replace('_', "A")
-        .replace('-', "b");
+    let mut value = candidate(len, state).replace('_', "A").replace('-', "b");
     for index in (8..len).step_by(17) {
         value.replace_range(index..index + 1, "#");
     }
@@ -199,11 +195,7 @@ fn key_family_enforces_511_512_513_byte_boundaries() {
             "key boundary {len} emitted the wrong bytes/span: {generic:#?}"
         );
         assert!(
-            generic.contains(&(
-                "generic-password",
-                safe_password.as_str(),
-                password_offset
-            )),
+            generic.contains(&("generic-password", safe_password.as_str(), password_offset)),
             "rejecting the key must not consume its safe neighbor: {generic:#?}"
         );
         assert_eq!(generic.len(), if accepted { 2 } else { 1 }, "{generic:#?}");
@@ -302,11 +294,7 @@ fn escaped_wrapper_does_not_truncate_overlong_key() {
         "the escaped wrapper must not emit the left key prefix: {generic:#?}"
     );
     assert!(
-        generic.contains(&(
-            "generic-password",
-            safe_password.as_str(),
-            password_offset
-        )),
+        generic.contains(&("generic-password", safe_password.as_str(), password_offset)),
         "encoded-wrapper rejection must preserve the neighboring finding: {generic:#?}"
     );
     assert_eq!(generic.len(), 1, "{generic:#?}");

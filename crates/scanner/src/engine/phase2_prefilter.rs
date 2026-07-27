@@ -3,8 +3,6 @@ mod dispatch_plan;
 mod gating;
 mod trigger_evidence;
 
-use dispatch_plan::{DispatchConfig, DispatchPlan, PrefilterScope};
-use gating::{combined_gate_decision, CombinedGateDecision};
 use super::phase2::*;
 #[cfg(feature = "simd")]
 use super::phase2_hs::Phase2HsEngine;
@@ -12,8 +10,9 @@ use super::phase2_truncate::truncate_for_prefilter;
 use super::*;
 use crate::scanner_config::ResolvedRuntimeTuningConfig;
 use aho_corasick::AhoCorasick;
+use dispatch_plan::{DispatchConfig, DispatchPlan, PrefilterScope};
+use gating::{combined_gate_decision, CombinedGateDecision};
 use std::sync::atomic::Ordering::Relaxed;
-
 
 impl Phase2AlwaysActivePrefilter {
     /// Patterns per RegexSet batch. A single set over all ~2.7k always-active

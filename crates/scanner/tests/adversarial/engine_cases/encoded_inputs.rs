@@ -18,7 +18,9 @@ fn base64_decode_bomb_does_not_hang() {
     let chunk = make_chunk(&adversarial);
 
     let start = std::time::Instant::now();
-    let _ = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
+    let _ = scanner
+        .scan(&chunk)
+        .expect(concat!(module_path!(), ": scan should succeed"));
     assert!(
         start.elapsed().as_secs() < 5,
         "Decode bomb scanning took too long!"
@@ -31,7 +33,9 @@ fn malformed_utf8_sequence_does_not_panic() {
     // Make sure we handle weird evasion chars correctly
     let malformed = format!("API_KEY={}\u{0}\u{8}\u{1b} \u{200B}", VALID_CREDENTIAL);
     let chunk = make_chunk(&malformed);
-    let matches = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
+    let matches = scanner
+        .scan(&chunk)
+        .expect(concat!(module_path!(), ": scan should succeed"));
     // Just asserting we don't panic on weird unicode boundary handling
     assert!(
         !matches.is_empty(),

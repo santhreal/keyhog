@@ -4,10 +4,10 @@ use super::{
     compile_static_regex, cryptojs::collect_inert_regex_bindings, record_static_limit,
     unquote_static_string, RecoveredPlaintext, MAX_BYTE_ARRAY_LEN, MAX_STATIC_EXPRESSIONS,
 };
+use keyhog_core::ChunkMetadata;
 use regex::Regex;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::LazyLock;
-use keyhog_core::ChunkMetadata;
 
 use crate::telemetry::{record_static_recovery_rejection, StaticRecoveryRejection};
 
@@ -27,9 +27,8 @@ static INVOCATION_RE: LazyLock<Regex> = LazyLock::new(|| {
     )
 });
 
-static ATOB_CANDIDATE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    compile_static_regex(r"\batob\s*\(", "reverse/Base64 candidate")
-});
+static ATOB_CANDIDATE_RE: LazyLock<Regex> =
+    LazyLock::new(|| compile_static_regex(r"\batob\s*\(", "reverse/Base64 candidate"));
 
 #[derive(Clone, Copy)]
 struct Helper<'a> {
@@ -158,8 +157,7 @@ pub(super) fn recover_plaintexts(
     }
 
     for invocation in invocations {
-        let Some(expression_offset) =
-            crate::engine::absolute_offset(base_offset, invocation.start)
+        let Some(expression_offset) = crate::engine::absolute_offset(base_offset, invocation.start)
         else {
             record_static_limit("reverse/Base64 expression offset overflow");
             continue;
@@ -367,7 +365,9 @@ fn analyze_code<'a>(
             if candidate_starts.contains(&start) {
                 scopes.insert(
                     start,
-                    *scope_stack.last().ok_or(StaticRecoveryRejection::ResourceLimit)?,
+                    *scope_stack
+                        .last()
+                        .ok_or(StaticRecoveryRejection::ResourceLimit)?,
                 );
             }
             continue;

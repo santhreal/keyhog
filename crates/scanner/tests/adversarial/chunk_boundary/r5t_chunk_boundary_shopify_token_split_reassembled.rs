@@ -38,7 +38,9 @@ fn r5t_chunk_boundary_shopify_token_split_reassembled() {
             ..Default::default()
         },
     };
-    let results = scanner.scan_coalesced(&[chunk_a, chunk_b]).expect(concat!(module_path!(), ": coalesced scan should succeed"));
+    let results = scanner
+        .scan_coalesced(&[chunk_a, chunk_b])
+        .expect(concat!(module_path!(), ": coalesced scan should succeed"));
     // `shpat_` is the Shopify ADMIN API token shape, owned by
     // `shopify-admin-api-token`. (The generic `shopify-access-token` detector
     // owns only the `shpca_` custom-app shape - it no longer double-claims

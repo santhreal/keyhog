@@ -30,11 +30,15 @@ fn shared_scanner() -> &'static CompiledScanner {
 }
 
 fn scan_path(body: &str, path: &str) -> Vec<keyhog_core::RawMatch> {
-    shared_scanner().scan(&chunk_for_path(body, path)).expect(concat!(module_path!(), ": scan should succeed"))
+    shared_scanner()
+        .scan(&chunk_for_path(body, path))
+        .expect(concat!(module_path!(), ": scan should succeed"))
 }
 
 fn scan_path_coalesced(body: &str, path: &str) -> Vec<keyhog_core::RawMatch> {
-    shared_scanner().scan_coalesced(&[chunk_for_path(body, path)]).expect(concat!(module_path!(), ": coalesced scan should succeed"))
+    shared_scanner()
+        .scan_coalesced(&[chunk_for_path(body, path)])
+        .expect(concat!(module_path!(), ": coalesced scan should succeed"))
         .into_iter()
         .flatten()
         .collect()

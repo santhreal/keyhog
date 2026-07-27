@@ -86,8 +86,7 @@ const SATURATION_NUMERATOR: u32 = 3;
 const SATURATION_DENOMINATOR: u32 = 5;
 const TABLE_SLOTS: u32 = 65_536;
 const SATURATION_THRESHOLD_SLOTS: u32 =
-    (TABLE_SLOTS * SATURATION_NUMERATOR + SATURATION_DENOMINATOR - 1)
-        / SATURATION_DENOMINATOR;
+    (TABLE_SLOTS * SATURATION_NUMERATOR + SATURATION_DENOMINATOR - 1) / SATURATION_DENOMINATOR;
 
 const MAX_ANCHOR_BYTES: usize = 8;
 
@@ -149,16 +148,6 @@ impl BigramBloom {
         }
     }
 
-    /// Insert every distinct bigram from `bytes` into this table.
-    #[cfg(test)]
-    pub(crate) fn insert_all(&mut self, bytes: &[u8]) {
-        self.width_mask |= width_bit(2);
-        for window in bytes.windows(2) {
-            self.insert_anchor(window);
-        }
-        self.recompute_saturation();
-    }
-
     #[inline]
     fn insert_anchor(&mut self, anchor: &[u8]) {
         for slot in ngram_slots(anchor) {
@@ -200,11 +189,10 @@ impl BigramBloom {
         }
 
         let mut bloom = Self::blank();
-        bloom.minimum_anchor_bytes = literals
-            .iter()
-            .map(|literal| literal.len())
-            .min()
-            .expect("non-empty literal corpus has a minimum length") as u8;
+        let Some(minimum_literal_bytes) = literals.iter().map(|literal| literal.len()).min() else {
+            return Self::invalid_for_test();
+        };
+        bloom.minimum_anchor_bytes = minimum_literal_bytes.min(MAX_ANCHOR_BYTES) as u8;
         if !short_literals.is_empty() {
             bloom.short_anchors = match aho_corasick::AhoCorasick::builder()
                 .ascii_case_insensitive(true)
@@ -222,20 +210,20 @@ impl BigramBloom {
             if bytes.len() < MAX_ANCHOR_BYTES {
                 continue;
             }
-            let selected = bytes
-                .windows(MAX_ANCHOR_BYTES)
-                .enumerate()
-                .map(|(position, window)| {
-                    let key = AnchorKey::from_slice(window);
-                    let frequency = frequencies
-                        .get(&key)
-                        .copied()
-                        .expect("candidate frequency was measured in the first pass");
-                    (frequency, key, position)
-                })
-                .min()
-                .map(|(_, key, _)| key)
-                .expect("long literal has at least one anchor window");
+            let mut selected = None;
+            for (position, window) in bytes.windows(MAX_ANCHOR_BYTES).enumerate() {
+                let key = AnchorKey::from_slice(window);
+                let Some(frequency) = frequencies.get(&key).copied() else {
+                    return Self::invalid_for_test();
+                };
+                let candidate = (frequency, key, position);
+                if selected.is_none_or(|current| candidate < current) {
+                    selected = Some(candidate);
+                }
+            }
+            let Some((_, selected, _)) = selected else {
+                return Self::invalid_for_test();
+            };
             bloom.width_mask |= width_bit(MAX_ANCHOR_BYTES);
             bloom.insert_folded_anchor(selected);
         }

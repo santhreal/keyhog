@@ -56,7 +56,9 @@ fn credentials_for(line: &str) -> Vec<String> {
     let mut out = Vec::new();
     for backend in [ScanBackend::SimdCpu, ScanBackend::CpuFallback] {
         s.clear_fragment_cache();
-        for m in s.scan_chunks_with_backend(std::slice::from_ref(&chunk), backend).expect("selected backend scan succeeds")
+        for m in s
+            .scan_chunks_with_backend(std::slice::from_ref(&chunk), backend)
+            .expect("selected backend scan succeeds")
             .into_iter()
             .flatten()
         {

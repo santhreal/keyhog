@@ -517,10 +517,7 @@ fn yaml_get<'a>(
     mapping.get(serde_yaml::Value::String(key.into()))
 }
 
-fn workflow_job<'a>(
-    workflow: &'a serde_yaml::Mapping,
-    name: &str,
-) -> &'a serde_yaml::Mapping {
+fn workflow_job<'a>(workflow: &'a serde_yaml::Mapping, name: &str) -> &'a serde_yaml::Mapping {
     yaml_get(workflow, "jobs")
         .and_then(serde_yaml::Value::as_mapping)
         .and_then(|jobs| yaml_get(jobs, name))
@@ -2917,7 +2914,9 @@ fn release_floating_tags_advance_only_after_atomic_publication_gates() {
     let source = fs::read_to_string(release_workflow()).expect("read release.yml");
     let workflow: serde_yaml::Value =
         serde_yaml::from_str(&source).expect("release.yml must parse");
-    let workflow = workflow.as_mapping().expect("release workflow is a mapping");
+    let workflow = workflow
+        .as_mapping()
+        .expect("release workflow is a mapping");
     let docker = workflow_job(workflow, "docker");
     let publish = workflow_job(workflow, "publish");
     let major = workflow_job(workflow, "major-tag");
@@ -3572,7 +3571,9 @@ fn release_stages_privately_then_publishes_the_signed_immutable_receipt() {
     let source = fs::read_to_string(release_workflow()).expect("read release.yml");
     let workflow: serde_yaml::Value =
         serde_yaml::from_str(&source).expect("release.yml must parse");
-    let workflow = workflow.as_mapping().expect("release workflow is a mapping");
+    let workflow = workflow
+        .as_mapping()
+        .expect("release workflow is a mapping");
     let build = workflow_job(workflow, "build");
     let sign = workflow_job(workflow, "sign");
     let smoke = workflow_job(workflow, "smoke");

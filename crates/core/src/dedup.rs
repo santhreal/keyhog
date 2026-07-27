@@ -677,7 +677,6 @@ fn merge_companions(existing: &mut CompanionMap, incoming: CompanionMap) {
     }
 }
 
-
 fn max_confidence(lhs: Option<f64>, rhs: Option<f64>) -> Option<f64> {
     match (lhs, rhs) {
         (Some(a), Some(b)) => Some(a.max(b)),

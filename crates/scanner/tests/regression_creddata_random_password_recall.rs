@@ -65,7 +65,9 @@ fn matches_for_backend(
         metadata: ChunkMetadata::default(),
     };
     scanner.clear_fragment_cache();
-    scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), backend).expect("selected backend scan succeeds")
+    scanner
+        .scan_chunks_with_backend(std::slice::from_ref(&chunk), backend)
+        .expect("selected backend scan succeeds")
         .into_iter()
         .flatten()
         .collect()

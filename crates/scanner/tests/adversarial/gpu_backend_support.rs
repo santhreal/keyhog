@@ -51,7 +51,14 @@ pub fn assert_cpu_gpu_backend_parity(text: &str, path: &str, label: &str) {
     let scanner = production_scanner();
     let chunks = [chunk(text, path)];
 
-    let cpu = credential_keys(&scanner.scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback).expect(concat!(module_path!(), ": selected-backend chunk scan should succeed")));
+    let cpu = credential_keys(
+        &scanner
+            .scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback)
+            .expect(concat!(
+                module_path!(),
+                ": selected-backend chunk scan should succeed"
+            )),
+    );
     assert!(
         !cpu.is_empty(),
         "{label}: CPU baseline must fire on adversarial sample (recall oracle)"
@@ -62,7 +69,12 @@ pub fn assert_cpu_gpu_backend_parity(text: &str, path: &str, label: &str) {
         return;
     }
 
-    let gpu = scanner.scan_coalesced_with_backend_and_admission(&chunks, ScanBackend::GpuWgpu, None).expect(concat!(module_path!(), ": WGPU coalesced scan should succeed after warmup"));
+    let gpu = scanner
+        .scan_coalesced_with_backend_and_admission(&chunks, ScanBackend::GpuWgpu, None)
+        .expect(concat!(
+            module_path!(),
+            ": WGPU coalesced scan should succeed after warmup"
+        ));
     let gpu = credential_keys(&gpu);
 
     assert_eq!(

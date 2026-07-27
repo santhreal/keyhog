@@ -111,8 +111,7 @@ fn missing_companion_refs_stops_scanning_at_max_template_tokens() {
         template.push_str(&i.to_string());
         template.push_str("}}");
     }
-    let missing =
-        missing_companion_refs(&template, &HashMap::<Arc<str>, String>::new());
+    let missing = missing_companion_refs(&template, &HashMap::<Arc<str>, String>::new());
     assert_eq!(
         missing.len(),
         MAX_TEMPLATE_TOKENS,

@@ -35,7 +35,6 @@ pub(crate) fn run(args: ExplainArgs) -> Result<()> {
     Ok(())
 }
 
-
 fn print_bigram_prefilter_status(
     scanner: &CompiledScanner,
     evidence_path: Option<&std::path::Path>,

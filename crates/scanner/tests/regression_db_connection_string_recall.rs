@@ -26,7 +26,9 @@ fn password_surfaces(text: &str, password: &str) -> bool {
     let s = scanner();
     s.clear_fragment_cache();
     let chunk: Chunk = make_chunk(text, "filesystem", "conn.conf");
-    s.scan(&chunk).expect("scanner call should succeed").into_iter()
+    s.scan(&chunk)
+        .expect("scanner call should succeed")
+        .into_iter()
         .any(|m| m.credential.as_str().contains(password))
 }
 
@@ -35,7 +37,9 @@ fn detectors_for(text: &str, password: &str) -> Vec<String> {
     let s = scanner();
     s.clear_fragment_cache();
     let chunk: Chunk = make_chunk(text, "filesystem", "conn.conf");
-    s.scan(&chunk).expect("scanner call should succeed").into_iter()
+    s.scan(&chunk)
+        .expect("scanner call should succeed")
+        .into_iter()
         .filter(|m| m.credential.as_str().to_string().contains(password))
         .map(|m| m.detector_id.to_string())
         .collect()

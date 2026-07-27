@@ -61,13 +61,8 @@ impl CompiledScanner {
         Vec<Vec<keyhog_core::RawMatch>>,
         super::gpu_forced::SelectedGpuDispatchError,
     > {
-        self.scan_coalesced_gpu_region_presence_recovering(
-            chunks,
-            route,
-            execution_route,
-            false,
-        )
-        .map(|outcome| outcome.matches)
+        self.scan_coalesced_gpu_region_presence_recovering(chunks, route, execution_route, false)
+            .map(|outcome| outcome.matches)
     }
 
     pub(crate) fn scan_coalesced_gpu_region_presence_recovering(
@@ -889,31 +884,32 @@ impl CompiledScanner {
                 phase2_gpu_admission.as_ref().map_or(0usize, |admission| {
                     admission.complete.iter().filter(|&&value| value).count()
                 });
-            let results = self.scan_coalesced_phase2_with_admission(
-                chunks,
-                triggers,
-                phase2_gpu_admission
-                    .as_ref()
-                    .map(|admission| admission.admitted.as_slice()),
-                phase2_gpu_admission
-                    .as_ref()
-                    .map(|admission| admission.complete.as_slice()),
-                gpu_evidence_complete.then_some(phase2_keyword_hints.as_slice()),
-                gpu_evidence_complete.then_some(phase2_always_anchor_presence.as_slice()),
-                gpu_evidence_complete
-                    .then_some(phase2_always_anchor_literal_matches.as_deref())
-                    .flatten(),
-                gpu_evidence_complete
-                    .then_some(confirmed_anchor_literal_matches.as_deref())
-                    .flatten(),
-                gpu_evidence_complete
-                    .then_some(generic_keyword_positions.as_deref())
-                    .flatten(),
-                execution_route,
-            )
-            .map_err(|error| {
-                super::gpu_forced::SelectedGpuDispatchError::new(error.to_string())
-            })?;
+            let results = self
+                .scan_coalesced_phase2_with_admission(
+                    chunks,
+                    triggers,
+                    phase2_gpu_admission
+                        .as_ref()
+                        .map(|admission| admission.admitted.as_slice()),
+                    phase2_gpu_admission
+                        .as_ref()
+                        .map(|admission| admission.complete.as_slice()),
+                    gpu_evidence_complete.then_some(phase2_keyword_hints.as_slice()),
+                    gpu_evidence_complete.then_some(phase2_always_anchor_presence.as_slice()),
+                    gpu_evidence_complete
+                        .then_some(phase2_always_anchor_literal_matches.as_deref())
+                        .flatten(),
+                    gpu_evidence_complete
+                        .then_some(confirmed_anchor_literal_matches.as_deref())
+                        .flatten(),
+                    gpu_evidence_complete
+                        .then_some(generic_keyword_positions.as_deref())
+                        .flatten(),
+                    execution_route,
+                )
+                .map_err(|error| {
+                    super::gpu_forced::SelectedGpuDispatchError::new(error.to_string())
+                })?;
             if kh {
                 let phase2_always_anchor_chunks = phase2_always_anchor_presence
                     .iter()

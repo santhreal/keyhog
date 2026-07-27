@@ -30,8 +30,9 @@ fn scan(scanner: &CompiledScanner, body: &str, path: &str) {
         },
     };
     scanner.clear_fragment_cache();
-    let _ =
-        scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback).expect("selected backend scan succeeds");
+    let _ = scanner
+        .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds");
 }
 
 #[test]

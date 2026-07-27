@@ -65,7 +65,9 @@ fn scan_with_trace(source: &str) -> (Vec<RawMatch>, Trace) {
         },
     };
     let matches = telemetry::with_scan_telemetry(&trace, || {
-        scanner().scan_chunks_with_backend(&[chunk], ScanBackend::CpuFallback).expect("selected backend scan succeeds")
+        scanner()
+            .scan_chunks_with_backend(&[chunk], ScanBackend::CpuFallback)
+            .expect("selected backend scan succeeds")
             .into_iter()
             .flatten()
             .collect()
@@ -97,7 +99,9 @@ fn scan_many_with_trace(sources: &[String]) -> (Vec<Vec<RawMatch>>, Trace) {
         })
         .collect();
     let matches = telemetry::with_scan_telemetry(&trace, || {
-        scanner().scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback).expect("selected backend scan succeeds")
+        scanner()
+            .scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback)
+            .expect("selected backend scan succeeds")
     });
     let snapshot = trace.drain();
     (
@@ -123,7 +127,9 @@ fn scan_sources(sources: &[String]) -> Vec<Vec<RawMatch>> {
             },
         })
         .collect();
-    scanner().scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback).expect("selected backend scan succeeds")
+    scanner()
+        .scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback)
+        .expect("selected backend scan succeeds")
 }
 
 fn rejection_reasons(events: &[DogfoodEvent]) -> BTreeSet<&str> {
@@ -439,7 +445,9 @@ fn equal_path_and_offset_rejections_keep_distinct_revision_identity() {
     let trace = Arc::new(ScanTelemetry::new());
     trace.enable_dogfood();
     telemetry::with_scan_telemetry(&trace, || {
-        let findings = scanner().scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
+        let findings = scanner()
+            .scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback)
+            .expect("selected backend scan succeeds");
         assert!(findings.iter().all(Vec::is_empty));
     });
     let snapshot = trace.drain();
@@ -477,8 +485,9 @@ fn repeated_evaluation_counts_each_attempt_without_duplicate_detail() {
     let trace = Arc::new(ScanTelemetry::new());
     trace.enable_dogfood();
     telemetry::with_scan_telemetry(&trace, || {
-        let findings =
-            scanner().scan_chunks_with_backend(&[chunk.clone(), chunk], ScanBackend::CpuFallback).expect("selected backend scan succeeds");
+        let findings = scanner()
+            .scan_chunks_with_backend(&[chunk.clone(), chunk], ScanBackend::CpuFallback)
+            .expect("selected backend scan succeeds");
         assert!(findings.iter().all(Vec::is_empty));
     });
     let snapshot = trace.drain();
@@ -529,7 +538,9 @@ fn absent_source_identity_does_not_collide_with_literal_sentinel_text() {
     let trace = Arc::new(ScanTelemetry::new());
     trace.enable_dogfood();
     telemetry::with_scan_telemetry(&trace, || {
-        let findings = scanner().scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback).expect("selected backend scan succeeds");
+        let findings = scanner()
+            .scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback)
+            .expect("selected backend scan succeeds");
         assert!(findings.iter().all(Vec::is_empty));
     });
     let snapshot = trace.drain();
@@ -578,7 +589,9 @@ fn supported_constructs_have_exact_status_counts() {
         reverse_base64_program(1, "supported"),
     ];
     let (matches, trace) = scan_many_with_trace(&sources);
-    assert!(matches.iter().all(|per_chunk| exact_target_found(per_chunk)));
+    assert!(matches
+        .iter()
+        .all(|per_chunk| exact_target_found(per_chunk)));
     assert_eq!(
         trace.static_recovery_status,
         StaticRecoveryStatus {
@@ -636,7 +649,9 @@ fn exact_status_and_reasons_are_recorded_without_dogfood_capture() {
         Some(&1)
     );
     assert_eq!(
-        snapshot.static_recovery_rejections.get("malformed_expression"),
+        snapshot
+            .static_recovery_rejections
+            .get("malformed_expression"),
         Some(&1)
     );
 }
@@ -661,7 +676,10 @@ fn daemon_merge_rejects_nonconserving_dispositions_before_mutation() {
 
     assert!(error.contains("aggregate conservation failed"));
     assert_eq!(telemetry::static_recovery_status(), before_status);
-    assert_eq!(telemetry::static_recovery_rejection_counts(), before_reasons);
+    assert_eq!(
+        telemetry::static_recovery_rejection_counts(),
+        before_reasons
+    );
 }
 
 /// Regression: calls that could execute and computed access to recovery
@@ -675,7 +693,9 @@ fn unsupported_constructs_are_visible_and_nonexecuting() {
     let (call_matches, call_trace) = scan_with_trace(&call_source);
     assert!(exact_target_found(&call_matches));
     assert_eq!(
-        call_trace.static_recovery_rejections.get("unsupported_call"),
+        call_trace
+            .static_recovery_rejections
+            .get("unsupported_call"),
         Some(&1)
     );
     assert_eq!(call_trace.static_recovery_status.unsupported, 1);
@@ -713,9 +733,7 @@ fn malformed_construct_is_counted_at_exact_offset() {
     let source = "const value = atob('abc'.split('').reverse().join('');";
     let (_, trace) = scan_with_trace(source);
     assert_eq!(
-        trace
-            .static_recovery_rejections
-            .get("malformed_expression"),
+        trace.static_recovery_rejections.get("malformed_expression"),
         Some(&1)
     );
     assert_eq!(trace.static_recovery_status.erroneous, 1);

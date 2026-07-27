@@ -96,11 +96,19 @@ fn custom_directory_defaults_to_replace() {
         root.path(),
         &["--detectors", custom.to_str().expect("utf8 path")],
     );
-    assert_eq!(output.status.code(), Some(1), "stderr={}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let report = json(&output);
     let ids = finding_ids(&report);
     assert!(ids.contains(&"demo-only"), "report={report}");
-    assert!(!ids.contains(&"aws-access-key"), "replace must exclude embedded detectors: {report}");
+    assert!(
+        !ids.contains(&"aws-access-key"),
+        "replace must exclude embedded detectors: {report}"
+    );
     assert_eq!(effective(&report, "detector_corpus_mode"), "replace");
     assert_eq!(effective(&report, "detector_corpus_custom_count"), "1");
     assert_eq!(effective(&report, "detector_corpus_embedded_count"), "0");
@@ -170,7 +178,10 @@ fn reported_digest_distinguishes_legacy_and_current_custom_schema() {
         "current schema identity must survive a detector parse-cache hit"
     );
     assert_eq!(effective(&legacy_report, "detector_corpus_mode"), "replace");
-    assert_eq!(effective(&current_report, "detector_corpus_mode"), "replace");
+    assert_eq!(
+        effective(&current_report, "detector_corpus_mode"),
+        "replace"
+    );
     assert_eq!(finding_ids(&legacy_report), finding_ids(&current_report));
     assert_ne!(
         effective(&legacy_report, "detector_corpus_digest"),
@@ -195,11 +206,19 @@ fn explicit_overlay_composes_and_reports_json_provenance() {
             "overlay",
         ],
     );
-    assert_eq!(output.status.code(), Some(1), "stderr={}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let report = json(&output);
     let ids = finding_ids(&report);
     assert!(ids.contains(&"demo-only"), "report={report}");
-    assert!(ids.contains(&"aws-access-key"), "overlay must retain embedded detectors: {report}");
+    assert!(
+        ids.contains(&"aws-access-key"),
+        "overlay must retain embedded detectors: {report}"
+    );
     assert_eq!(effective(&report, "detector_corpus_mode"), "overlay");
     assert!(effective(&report, "detector_corpus_source").starts_with("embedded+"));
     let digest = effective(&report, "detector_corpus_digest");
@@ -224,7 +243,10 @@ fn overlay_rejects_embedded_id_collision() {
     );
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("overlay collides") && stderr.contains("aws-access-key"), "stderr={stderr}");
+    assert!(
+        stderr.contains("overlay collides") && stderr.contains("aws-access-key"),
+        "stderr={stderr}"
+    );
 }
 
 /// Regression: malformed custom TOML is a hard error in composition modes, never a fallback to embedded detectors.
@@ -233,7 +255,8 @@ fn malformed_custom_corpus_fails_closed() {
     let root = TempDir::new().expect("tempdir");
     let custom = root.path().join("custom-detectors");
     std::fs::create_dir_all(&custom).expect("create detector directory");
-    std::fs::write(custom.join("broken.toml"), "[detector\nid = ???").expect("write malformed detector");
+    std::fs::write(custom.join("broken.toml"), "[detector\nid = ???")
+        .expect("write malformed detector");
 
     let output = run_scan(
         root.path(),
@@ -246,8 +269,14 @@ fn malformed_custom_corpus_fails_closed() {
     );
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("broken.toml") || stderr.contains("parse"), "stderr={stderr}");
-    assert!(output.stdout.is_empty(), "failed scan must not emit a clean report");
+    assert!(
+        stderr.contains("broken.toml") || stderr.contains("parse"),
+        "stderr={stderr}"
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "failed scan must not emit a clean report"
+    );
 }
 
 /// Regression: omitting custom corpus options uses only embedded detectors and reports that provenance.
@@ -255,9 +284,17 @@ fn malformed_custom_corpus_fails_closed() {
 fn default_scan_uses_embedded_corpus() {
     let root = TempDir::new().expect("tempdir");
     let output = run_scan(root.path(), &[]);
-    assert_eq!(output.status.code(), Some(1), "stderr={}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let report = json(&output);
-    assert!(finding_ids(&report).contains(&"aws-access-key"), "report={report}");
+    assert!(
+        finding_ids(&report).contains(&"aws-access-key"),
+        "report={report}"
+    );
     assert_eq!(effective(&report, "detector_corpus_mode"), "embedded");
     assert_eq!(effective(&report, "detector_corpus_source"), "embedded");
     assert_eq!(effective(&report, "detector_corpus_custom_count"), "0");
@@ -274,7 +311,10 @@ fn detector_mode_without_custom_path_is_rejected() {
         stderr.contains("--detectors-mode requires a custom corpus"),
         "stderr={stderr}"
     );
-    assert!(output.stdout.is_empty(), "ambiguous scan must not emit a report");
+    assert!(
+        output.stdout.is_empty(),
+        "ambiguous scan must not emit a report"
+    );
 }
 
 /// Regression: TOML supplies detector path and overlay mode, while an explicit CLI mode wins after that merge.
@@ -290,13 +330,23 @@ fn toml_then_cli_mode_precedence_is_explicit() {
     .expect("write config");
 
     let from_toml = run_scan(root.path(), &[]);
-    assert_eq!(from_toml.status.code(), Some(1), "stderr={}", String::from_utf8_lossy(&from_toml.stderr));
+    assert_eq!(
+        from_toml.status.code(),
+        Some(1),
+        "stderr={}",
+        String::from_utf8_lossy(&from_toml.stderr)
+    );
     let toml_report = json(&from_toml);
     assert_eq!(effective(&toml_report, "detector_corpus_mode"), "overlay");
     assert!(finding_ids(&toml_report).contains(&"aws-access-key"));
 
     let cli_override = run_scan(root.path(), &["--detectors-mode", "replace"]);
-    assert_eq!(cli_override.status.code(), Some(1), "stderr={}", String::from_utf8_lossy(&cli_override.stderr));
+    assert_eq!(
+        cli_override.status.code(),
+        Some(1),
+        "stderr={}",
+        String::from_utf8_lossy(&cli_override.stderr)
+    );
     let cli_report = json(&cli_override);
     assert_eq!(effective(&cli_report, "detector_corpus_mode"), "replace");
     assert!(finding_ids(&cli_report).contains(&"demo-only"));

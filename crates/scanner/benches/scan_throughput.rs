@@ -69,7 +69,11 @@ fn bench_scan_throughput(c: &mut Criterion) {
             &chunk,
             |b, chk| {
                 b.iter(|| {
-                    black_box(scanner.scan_with_backend(black_box(chk), ScanBackend::CpuFallback).expect("selected backend scan succeeds"))
+                    black_box(
+                        scanner
+                            .scan_with_backend(black_box(chk), ScanBackend::CpuFallback)
+                            .expect("selected backend scan succeeds"),
+                    )
                 });
             },
         );
@@ -78,7 +82,11 @@ fn bench_scan_throughput(c: &mut Criterion) {
             &chunk,
             |b, chk| {
                 b.iter(|| {
-                    black_box(scanner.scan_with_backend(black_box(chk), ScanBackend::SimdCpu).expect("selected backend scan succeeds"))
+                    black_box(
+                        scanner
+                            .scan_with_backend(black_box(chk), ScanBackend::SimdCpu)
+                            .expect("selected backend scan succeeds"),
+                    )
                 });
             },
         );
@@ -88,7 +96,11 @@ fn bench_scan_throughput(c: &mut Criterion) {
             &chunk,
             |b, chk| {
                 b.iter(|| {
-                    black_box(scanner.scan_with_backend(black_box(chk), ScanBackend::GpuWgpu).expect("selected backend scan succeeds"))
+                    black_box(
+                        scanner
+                            .scan_with_backend(black_box(chk), ScanBackend::GpuWgpu)
+                            .expect("selected backend scan succeeds"),
+                    )
                 });
             },
         );
@@ -112,7 +124,11 @@ fn bench_scan_no_hit_throughput(c: &mut Criterion) {
             &chunk,
             |b, chk| {
                 b.iter(|| {
-                    black_box(scanner.scan_with_backend(black_box(chk), ScanBackend::CpuFallback).expect("selected backend scan succeeds"))
+                    black_box(
+                        scanner
+                            .scan_with_backend(black_box(chk), ScanBackend::CpuFallback)
+                            .expect("selected backend scan succeeds"),
+                    )
                 });
             },
         );
@@ -121,7 +137,11 @@ fn bench_scan_no_hit_throughput(c: &mut Criterion) {
             &chunk,
             |b, chk| {
                 b.iter(|| {
-                    black_box(scanner.scan_with_backend(black_box(chk), ScanBackend::SimdCpu).expect("selected backend scan succeeds"))
+                    black_box(
+                        scanner
+                            .scan_with_backend(black_box(chk), ScanBackend::SimdCpu)
+                            .expect("selected backend scan succeeds"),
+                    )
                 });
             },
         );
@@ -131,7 +151,11 @@ fn bench_scan_no_hit_throughput(c: &mut Criterion) {
             &chunk,
             |b, chk| {
                 b.iter(|| {
-                    black_box(scanner.scan_with_backend(black_box(chk), ScanBackend::GpuWgpu).expect("selected backend scan succeeds"))
+                    black_box(
+                        scanner
+                            .scan_with_backend(black_box(chk), ScanBackend::GpuWgpu)
+                            .expect("selected backend scan succeeds"),
+                    )
                 });
             },
         );

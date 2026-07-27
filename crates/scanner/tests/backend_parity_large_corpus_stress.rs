@@ -86,7 +86,9 @@ fn large_corpus_many_simultaneous_detector_fires() {
         .collect::<Vec<_>>();
 
     scanner.clear_fragment_cache();
-    let simd_results = scanner.scan_chunks_with_backend(&[fixture.clone()], ScanBackend::SimdCpu).expect("selected backend scan succeeds");
+    let simd_results = scanner
+        .scan_chunks_with_backend(&[fixture.clone()], ScanBackend::SimdCpu)
+        .expect("selected backend scan succeeds");
     let simd_findings = collect_findings(&simd_results);
     assert!(
         simd_findings
@@ -98,7 +100,9 @@ fn large_corpus_many_simultaneous_detector_fires() {
     for backend in backends {
         scanner.clear_fragment_cache();
         let degrade_before = scanner.runtime_status().gpu_degrade_count;
-        let results = scanner.scan_chunks_with_backend(&[fixture.clone()], backend).expect("selected backend scan succeeds");
+        let results = scanner
+            .scan_chunks_with_backend(&[fixture.clone()], backend)
+            .expect("selected backend scan succeeds");
         let degrade_after = scanner.runtime_status().gpu_degrade_count;
         let findings = collect_findings(&results);
 

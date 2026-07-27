@@ -1,6 +1,6 @@
 //! KH-GAP-077: runners-nightly.yml lists all 14 contract multipliers.
 
-use super::support::{read_workflow, STRICT_RUNNERS};
+use super::support::{STRICT_RUNNERS, read_workflow};
 
 #[test]
 fn runners_nightly_lists_fourteen_test_binaries() {

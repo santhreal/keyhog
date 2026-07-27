@@ -180,8 +180,7 @@ fn load_detector_corpus_with_gate(
     let compatibility = read_corpus_compatibility(dir)?;
     let toml_paths = discover_detector_tomls(dir, enforce_gate)?;
     let parsed = parse_detector_files(&toml_paths, compatibility);
-    let specs =
-        assemble_detector_load(dir, enforce_gate, compatibility, toml_paths.len(), parsed)?;
+    let specs = assemble_detector_load(dir, enforce_gate, compatibility, toml_paths.len(), parsed)?;
     Ok(LoadedDetectorCorpus {
         specs,
         schema_version: compatibility.schema_version,
@@ -239,7 +238,9 @@ fn discover_detector_tomls(dir: &Path, enforce_gate: bool) -> Result<Vec<PathBuf
         })?;
         let path = entry.path();
         if path.extension().is_some_and(|ext| ext == "toml")
-            && path.file_name().is_none_or(|name| name != DETECTOR_CORPUS_MANIFEST_FILE)
+            && path
+                .file_name()
+                .is_none_or(|name| name != DETECTOR_CORPUS_MANIFEST_FILE)
         {
             toml_paths.push(path);
         }
@@ -334,11 +335,7 @@ fn assemble_detector_load(
 
     log_load_summary(&load_state);
     if enforce_gate && compatibility.permits_forward_unknown_fields {
-        return Err(load_state.into_forward_error(
-            dir,
-            total,
-            compatibility.schema_version,
-        ));
+        return Err(load_state.into_forward_error(dir, total, compatibility.schema_version));
     }
     if enforce_gate && load_state.has_failures() {
         return Err(load_state.into_rejected_error(dir, total));
@@ -378,12 +375,7 @@ impl DetectorLoadState {
             detail,
         }
     }
-    fn into_forward_error(
-        self,
-        dir: &Path,
-        total: usize,
-        declared_schema: u32,
-    ) -> SpecError {
+    fn into_forward_error(self, dir: &Path, total: usize, declared_schema: u32) -> SpecError {
         let detail = if self.forward_errors.is_empty() {
             format!(
                 "  - {} declares schema {}; schema metadata is part of effective \
@@ -408,7 +400,6 @@ impl DetectorLoadState {
             detail,
         }
     }
-
 }
 
 fn log_load_summary(state: &DetectorLoadState) {
@@ -512,10 +503,7 @@ enum ReadDetectorOutcome {
     },
 }
 
-fn read_detector_file(
-    path: &Path,
-    compatibility: CorpusCompatibility,
-) -> ReadDetectorOutcome {
+fn read_detector_file(path: &Path, compatibility: CorpusCompatibility) -> ReadDetectorOutcome {
     let contents = match read_detector_toml_file(path) {
         Ok(contents) => contents,
         Err(error) => {

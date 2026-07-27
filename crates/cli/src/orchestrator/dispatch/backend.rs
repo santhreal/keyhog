@@ -103,7 +103,6 @@ pub(crate) fn autoroute_gpu_artifact_identity(scanner: &CompiledScanner) -> Opti
     gpu_peer_identity(scanner)
 }
 
-
 fn autoroute_detector_digest(rules_digest: &str) -> u64 {
     let mut hasher = crate::stable_hash::StableHasher::new("autoroute-detector-corpus");
     hasher.field_str("rules_digest", rules_digest);

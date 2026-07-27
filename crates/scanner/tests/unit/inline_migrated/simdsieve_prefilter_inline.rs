@@ -62,8 +62,12 @@ fn custom_detector_prefix_drives_the_real_hot_scan_without_a_rust_table_edit() {
             "test".into()
         )]
     );
-    let matches = scanner.scan_with_backend(&keyhog_core::Chunk::from("token=CUSTOM_1234567890ABCDEF"),
-    ScanBackend::CpuFallback,).expect("selected backend scan succeeds");
+    let matches = scanner
+        .scan_with_backend(
+            &keyhog_core::Chunk::from("token=CUSTOM_1234567890ABCDEF"),
+            ScanBackend::CpuFallback,
+        )
+        .expect("selected backend scan succeeds");
     assert!(matches
         .iter()
         .any(|m| m.detector_id.as_ref() == "custom-hot"

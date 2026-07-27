@@ -406,7 +406,8 @@ impl CompiledScanner {
                 let source_offset =
                     preprocessed.source_offset_for_match(&chunk.data, credential_start, credential);
                 let ml_features = crate::types::ml_features_for_candidate(
-                    data, line_offsets,
+                    data,
+                    line_offsets,
                     line,
                     chunk.metadata.path.as_deref(),
                     credential,

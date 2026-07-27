@@ -1,6 +1,6 @@
 //! KH-GAP-078: PR gate must run all 14 strict runners.
 
-use super::support::{read_workflow, STRICT_RUNNERS};
+use super::support::{STRICT_RUNNERS, read_workflow};
 
 #[test]
 fn pr_ci_runs_all_fourteen_strict_runners() {

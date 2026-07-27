@@ -30,7 +30,9 @@ fn macos_build_job_tests_default_features_with_hyperscan() {
     assert!(
         !macos_block.contains("--test-threads=1")
             && !macos_block.contains("RUST_TEST_THREADS=1")
-            && !macos_block.lines().any(|line| line.trim_start().starts_with("sleep ")),
+            && !macos_block
+                .lines()
+                .any(|line| line.trim_start().starts_with("sleep ")),
         "macos-build must keep the scanner tests parallel and must not mask live-adapter races \
          with process serialization or fixed sleeps. Block excerpt:\n{macos_block}"
     );

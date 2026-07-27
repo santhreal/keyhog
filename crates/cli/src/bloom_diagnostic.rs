@@ -103,8 +103,12 @@ pub(crate) fn run(args: BloomDiagnosticArgs) -> Result<ExitCode> {
         .with_context(|| format!("parse Bloom corpus fixture {}", args.fixture.display()))?;
     validate_fixture(&fixture)?;
     fixture.inputs.sort_by(|left, right| {
-        (&left.path, left.line_start, left.line_end, &left.id)
-            .cmp(&(&right.path, right.line_start, right.line_end, &right.id))
+        (&left.path, left.line_start, left.line_end, &left.id).cmp(&(
+            &right.path,
+            right.line_start,
+            right.line_end,
+            &right.id,
+        ))
     });
 
     let corpus_root = std::fs::canonicalize(&args.corpus_root).with_context(|| {
@@ -142,14 +146,18 @@ pub(crate) fn run(args: BloomDiagnosticArgs) -> Result<ExitCode> {
                     input.path
                 );
             }
-            let resolved = std::fs::canonicalize(corpus_root.join(relative)).with_context(|| {
-                format!(
-                    "Bloom corpus input unavailable: {} (no fallback corpus is used)",
-                    input.path
-                )
-            })?;
+            let resolved =
+                std::fs::canonicalize(corpus_root.join(relative)).with_context(|| {
+                    format!(
+                        "Bloom corpus input unavailable: {} (no fallback corpus is used)",
+                        input.path
+                    )
+                })?;
             if !resolved.starts_with(&corpus_root) {
-                bail!("Bloom corpus fixture input escapes corpus root: {}", input.path);
+                bail!(
+                    "Bloom corpus fixture input escapes corpus root: {}",
+                    input.path
+                );
             }
             loaded_bytes = std::fs::read(&resolved)
                 .with_context(|| format!("read Bloom corpus input {}", input.path))?;
@@ -171,10 +179,7 @@ pub(crate) fn run(args: BloomDiagnosticArgs) -> Result<ExitCode> {
         let data = String::from_utf8_lossy(&loaded_bytes[start..end]).into_owned();
         hash_field(&mut corpus_hasher, input.id.as_bytes());
         hash_field(&mut corpus_hasher, input.path.as_bytes());
-        hash_field(
-            &mut corpus_hasher,
-            input.line_start.to_string().as_bytes(),
-        );
+        hash_field(&mut corpus_hasher, input.line_start.to_string().as_bytes());
         hash_field(&mut corpus_hasher, input.line_end.to_string().as_bytes());
         for label in &input.labels {
             hash_field(&mut corpus_hasher, label.as_bytes());
@@ -197,23 +202,13 @@ pub(crate) fn run(args: BloomDiagnosticArgs) -> Result<ExitCode> {
             },
         });
         if batch.len() >= MAX_BATCH_INPUTS || batch_bytes >= MAX_BATCH_BYTES {
-            measure_batch(
-                &scanner,
-                &fixture.corpus_name,
-                &batch,
-                &mut totals,
-            )?;
+            measure_batch(&scanner, &fixture.corpus_name, &batch, &mut totals)?;
             batch.clear();
             batch_bytes = 0;
         }
     }
     if !batch.is_empty() {
-        measure_batch(
-            &scanner,
-            &fixture.corpus_name,
-            &batch,
-            &mut totals,
-        )?;
+        measure_batch(&scanner, &fixture.corpus_name, &batch, &mut totals)?;
     }
 
     totals.enabled_findings.sort();
@@ -249,10 +244,8 @@ pub(crate) fn run(args: BloomDiagnosticArgs) -> Result<ExitCode> {
         );
     }
 
-    let rejection_basis_points = share_basis_points(
-        totals.rejected_input_count,
-        totals.input_count,
-    );
+    let rejection_basis_points =
+        share_basis_points(totals.rejected_input_count, totals.input_count);
     let unavailable_reason_counts =
         fixture
             .unavailable_inputs
@@ -307,7 +300,10 @@ fn validate_fixture(fixture: &BloomCorpusFixture) -> Result<()> {
     if fixture.inputs.is_empty() {
         bail!("Bloom corpus fixture contains no measurable inputs");
     }
-    let actual_declared = fixture.inputs.len().saturating_add(fixture.unavailable_inputs.len());
+    let actual_declared = fixture
+        .inputs
+        .len()
+        .saturating_add(fixture.unavailable_inputs.len());
     if fixture.declared_input_count != actual_declared as u64 {
         bail!(
             "Bloom corpus fixture count mismatch: declared {}, listed {}",
@@ -318,7 +314,10 @@ fn validate_fixture(fixture: &BloomCorpusFixture) -> Result<()> {
     let mut ids = HashSet::with_capacity(actual_declared);
     for input in &fixture.inputs {
         if input.id.trim().is_empty() || !ids.insert(input.id.as_str()) {
-            bail!("Bloom corpus fixture has an empty or duplicate input id: {:?}", input.id);
+            bail!(
+                "Bloom corpus fixture has an empty or duplicate input id: {:?}",
+                input.id
+            );
         }
         if input.labels.is_empty()
             || input
@@ -371,10 +370,7 @@ fn measure_batch(
         .context("scan Bloom-enabled corpus batch")?;
     scanner.clear_fragment_cache();
     let bypass = scanner
-        .scan_chunks_with_backend_bypassing_bigram_for_diagnostics(
-            chunks,
-            ScanBackend::CpuFallback,
-        )
+        .scan_chunks_with_backend_bypassing_bigram_for_diagnostics(chunks, ScanBackend::CpuFallback)
         .context("scan Bloom-bypassed corpus batch")?;
     totals.enabled_findings.extend(finding_identities(enabled));
     totals.bypass_findings.extend(finding_identities(bypass));
@@ -431,8 +427,7 @@ fn share_basis_points(numerator: u64, denominator: u64) -> u16 {
     if denominator == 0 {
         return 0;
     }
-    ((u128::from(numerator) * 10_000) / u128::from(denominator))
-        .min(10_000) as u16
+    ((u128::from(numerator) * 10_000) / u128::from(denominator)).min(10_000) as u16
 }
 
 fn line_offsets(bytes: &[u8]) -> Vec<usize> {
@@ -472,7 +467,9 @@ fn line_span(
 
 fn safe_relative_path(path: &Path) -> bool {
     !path.as_os_str().is_empty()
-        && path.components().all(|component| matches!(component, Component::Normal(_)))
+        && path
+            .components()
+            .all(|component| matches!(component, Component::Normal(_)))
 }
 
 fn prefilter_state_label(state: BigramPrefilterState) -> &'static str {

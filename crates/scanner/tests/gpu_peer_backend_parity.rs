@@ -71,8 +71,9 @@ fn every_available_gpu_peer_matches_the_cpu_reference() {
         },
     };
     let reference = canonical(
-        &scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback).expect("selected backend scan succeeds")
-            [0],
+        &scanner
+            .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+            .expect("selected backend scan succeeds")[0],
     );
     assert_eq!(
         reference.len(),
@@ -107,8 +108,9 @@ fn every_available_gpu_peer_matches_the_cpu_reference() {
     );
     for candidate in available {
         assert!(candidate.backend.is_gpu());
-        let findings =
-            scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), candidate.backend).expect("selected backend scan succeeds");
+        let findings = scanner
+            .scan_chunks_with_backend(std::slice::from_ref(&chunk), candidate.backend)
+            .expect("selected backend scan succeeds");
         assert_eq!(
             canonical(&findings[0]),
             reference,

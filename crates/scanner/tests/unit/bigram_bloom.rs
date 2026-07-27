@@ -3,7 +3,7 @@
 //! Covers: construction, lookup, edge cases, popcount diagnostics,
 //! and the invariant that false negatives never occur.
 
-use keyhog_scanner::testing::BigramBloom;
+use keyhog_scanner::{testing::BigramBloom, BigramPrefilterState};
 
 // ── Construction ─────────────────────────────────────────────────────
 
@@ -15,20 +15,19 @@ fn empty_bloom_never_matches() {
 }
 
 #[test]
-fn single_literal_inserts_all_bigrams() {
-    let mut bloom = BigramBloom::empty();
-    bloom.insert_all(b"ghp_");
-    // Must find the bigrams that were inserted.
-    assert!(bloom.maybe_overlaps(b"ghp_abc"));
-    assert!(bloom.maybe_overlaps(b"xxghyyp_zz")); // contains "gh" bigram
+fn single_long_literal_selects_exact_mandatory_anchor() {
+    let bloom = BigramBloom::from_literal_prefixes(&["ghp_ABCDEFG".to_string()]);
+    assert!(bloom.maybe_overlaps(b"prefix_GHP_abcdefg_suffix"));
+    assert!(!bloom.maybe_overlaps(b"xxghyyp_zz"));
+    assert!(bloom.popcount() > 0);
 }
 
 #[test]
-fn from_literal_prefixes_uses_exact_trailing_internal_bigram() {
+fn short_literal_uses_exact_case_insensitive_matching() {
     let bloom = BigramBloom::from_literal_prefixes(&["ghp_".to_string()]);
+    assert!(bloom.maybe_overlaps(b"xxx_GHP_token"));
     assert!(!bloom.maybe_overlaps(b"xxx_gh_xxx"));
-    assert!(bloom.maybe_overlaps(b"zzz_p_zzz"));
-    assert!(!bloom.maybe_overlaps(b"zzz_Azzz"));
+    assert!(!bloom.maybe_overlaps(b"zzz_p_zzz"));
 }
 
 #[test]
@@ -57,37 +56,35 @@ fn no_false_negatives_for_inserted_patterns() {
 // ── Edge cases ───────────────────────────────────────────────────────
 
 #[test]
-fn chunk_shorter_than_two_bytes_always_passes() {
+fn chunks_shorter_than_the_compiled_anchor_fail_open() {
     let bloom = BigramBloom::from_literal_prefixes(&["test".to_string()]);
-    // Chunks with < 2 bytes can't form a bigram, should return true
-    // (conservative: can't prove no overlap).
     assert!(bloom.maybe_overlaps(b"x"));
     assert!(bloom.maybe_overlaps(b""));
 }
 
 #[test]
-fn one_byte_literal_prefix_does_not_panic() {
-    // 1-byte literals set an entire row of bigrams (byte followed by
-    // anything). Should not panic and should produce a non-zero bloom.
+fn one_byte_literal_uses_the_exact_short_anchor_owner() {
     let bloom = BigramBloom::from_literal_prefixes(&["x".to_string()]);
-    assert!(bloom.popcount() > 0);
-    // Any chunk with "x" followed by any byte should match.
+    assert_eq!(bloom.popcount(), 0);
     assert!(bloom.maybe_overlaps(b"xA"));
-    assert!(bloom.maybe_overlaps(b"x\x00"));
+    assert!(bloom.maybe_overlaps(b"before_X_after"));
+    assert!(!bloom.maybe_overlaps(b"before_y_after"));
 }
 
 #[test]
-fn empty_literal_prefix_list() {
+fn empty_literal_prefix_list_is_invalid_and_fails_open() {
     let bloom = BigramBloom::from_literal_prefixes(&[]);
     assert_eq!(bloom.popcount(), 0);
-    // Empty bloom should not match any data.
-    assert!(!bloom.maybe_overlaps(b"hello world"));
+    assert_eq!(bloom.status().state, BigramPrefilterState::Invalid);
+    assert!(bloom.maybe_overlaps(b"hello world"));
 }
 
 #[test]
-fn empty_string_literal_ignored() {
+fn empty_string_literal_is_invalid_and_fails_open() {
     let bloom = BigramBloom::from_literal_prefixes(&["".to_string()]);
     assert_eq!(bloom.popcount(), 0);
+    assert_eq!(bloom.status().state, BigramPrefilterState::Invalid);
+    assert!(bloom.maybe_overlaps(b"unrelated input"));
 }
 
 // ── Popcount diagnostics ─────────────────────────────────────────────
@@ -105,12 +102,21 @@ fn popcount_grows_with_literals() {
 }
 
 #[test]
-fn popcount_max_is_4096() {
-    let bloom = BigramBloom::from_literal_prefixes(&["x".to_string()]);
-    // Even a 1-byte literal sets 256 bigrams (x followed by all bytes).
-    // Plus extension (x is also the last byte → another 256). Some will
-    // collide in the 4096-bit bloom.
-    assert!(bloom.popcount() <= 4096);
+fn populated_slots_never_exceed_the_fixed_table() {
+    let bloom = BigramBloom::from_literal_prefixes(&["ghp_ABCDEFG".to_string()]);
+    assert!(bloom.popcount() > 0);
+    assert!(bloom.popcount() <= 65_536);
+}
+
+/// Prevents long literal lengths from wrapping the minimum-anchor boundary and
+/// turning an unrelated short chunk into a false rejection.
+#[test]
+fn overlong_literal_uses_the_eight_byte_anchor_width_without_truncation() {
+    let literal = "a".repeat(300);
+    let bloom = BigramBloom::from_literal_prefixes(std::slice::from_ref(&literal));
+    assert!(bloom.maybe_overlaps(literal.as_bytes()));
+    assert!(!bloom.maybe_overlaps(b"bbbbbbbb"));
+    assert!(bloom.maybe_overlaps(b"short"));
 }
 
 // ── Worst-case scan (no-hit path) ────────────────────────────────────

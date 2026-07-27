@@ -45,23 +45,15 @@ pub(crate) fn finalize_pending_match_for_test(
     finalize_pending_match(config, pending, report_conf)
 }
 
-
 impl CompiledScanner {
-    fn score_pending_batch(
-        &self,
-        pending_matches: &[MlPendingMatch],
-    ) -> crate::Result<Vec<f64>> {
+    fn score_pending_batch(&self, pending_matches: &[MlPendingMatch]) -> crate::Result<Vec<f64>> {
         let tuning = self.tuning.resolve();
         let scores = crate::gpu::batch_ml_inference_with_timeout(
             pending_matches,
             &self.config,
             tuning.gpu_moe_timeout(),
         )?;
-        crate::ml_scorer::complete_batch_scores_with_config(
-            scores,
-            pending_matches,
-            &self.config,
-        )
+        crate::ml_scorer::complete_batch_scores_with_config(scores, pending_matches, &self.config)
     }
 
     fn pending_report_confidence(&self, pending: &MlPendingMatch, ml_conf: f64) -> f64 {
@@ -84,10 +76,7 @@ impl CompiledScanner {
         }
     }
 
-    pub(crate) fn apply_ml_batch_scores(
-        &self,
-        scan_state: &mut ScanState,
-    ) -> crate::Result<()> {
+    pub(crate) fn apply_ml_batch_scores(&self, scan_state: &mut ScanState) -> crate::Result<()> {
         if scan_postprocess_profile::ml_batch_prof_enabled() {
             scan_postprocess_profile::ml_batch_record(scan_state.ml_pending.len());
         }

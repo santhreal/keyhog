@@ -1,7 +1,7 @@
 //! KH-GAP-130: santh-ci migration SPEC waiver must document owner, reason, and expiry.
 
 use super::support::spec_waiver::spec_waiver_active;
-use super::support::{repo_root, CI_YML_WAIVER as WAIVER_REL};
+use super::support::{CI_YML_WAIVER as WAIVER_REL, repo_root};
 
 #[test]
 fn ci_yml_spec_waiver_has_expiry() {

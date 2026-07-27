@@ -459,7 +459,6 @@ fn forced_daemon_stdin_honors_config_byte_limit() {
     );
 }
 
-
 #[test]
 fn forced_daemon_dogfood_prints_the_request_trace() {
     let daemon = DaemonGuard::start();

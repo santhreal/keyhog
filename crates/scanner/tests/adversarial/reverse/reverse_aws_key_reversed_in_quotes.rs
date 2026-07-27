@@ -22,7 +22,9 @@ fn reverse_aws_key_reversed_in_quotes() {
             ..Default::default()
         },
     };
-    let matches = scanner.scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"));
+    let matches = scanner
+        .scan(&chunk)
+        .expect(concat!(module_path!(), ": scan should succeed"));
     assert!(
         matches
             .iter()

@@ -49,10 +49,22 @@ fn pathless_stdin_chunk_detects_aws_key_on_cpu_fallback() {
 
     // Four cells isolate (source_type) × (path present?). The filesystem+path
     // cell is the known-good control; the others must match it.
-    let fs_path = aws_hits(&sc.scan_chunks_with_backend(&[chunk("filesystem", Some("k.txt"))], be).expect("selected backend scan succeeds"));
-    let fs_nopath = aws_hits(&sc.scan_chunks_with_backend(&[chunk("filesystem", None)], be).expect("selected backend scan succeeds"));
-    let stdin_path = aws_hits(&sc.scan_chunks_with_backend(&[chunk("stdin", Some("k.txt"))], be).expect("selected backend scan succeeds"));
-    let stdin_nopath = aws_hits(&sc.scan_chunks_with_backend(&[chunk("stdin", None)], be).expect("selected backend scan succeeds"));
+    let fs_path = aws_hits(
+        &sc.scan_chunks_with_backend(&[chunk("filesystem", Some("k.txt"))], be)
+            .expect("selected backend scan succeeds"),
+    );
+    let fs_nopath = aws_hits(
+        &sc.scan_chunks_with_backend(&[chunk("filesystem", None)], be)
+            .expect("selected backend scan succeeds"),
+    );
+    let stdin_path = aws_hits(
+        &sc.scan_chunks_with_backend(&[chunk("stdin", Some("k.txt"))], be)
+            .expect("selected backend scan succeeds"),
+    );
+    let stdin_nopath = aws_hits(
+        &sc.scan_chunks_with_backend(&[chunk("stdin", None)], be)
+            .expect("selected backend scan succeeds"),
+    );
 
     assert_eq!(
         fs_path, 1,

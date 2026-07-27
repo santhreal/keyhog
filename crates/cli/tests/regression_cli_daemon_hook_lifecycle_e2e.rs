@@ -504,8 +504,7 @@ fn daemon_start_status_stop_reports_exact_lines_and_codes() {
         String::from_utf8_lossy(&status.stderr)
     );
     assert_eq!(
-        status.stderr,
-        b"",
+        status.stderr, b"",
         "a current, ready daemon must not emit a stale/authentication warning"
     );
 
@@ -619,9 +618,7 @@ fn daemon_start_status_stop_reports_exact_lines_and_codes() {
 
     let uptime = uptime_line
         .strip_prefix("keyhog daemon: uptime ")
-        .and_then(|line| {
-            line.strip_suffix("s · 0 scans served · 0 active · 923 detectors")
-        })
+        .and_then(|line| line.strip_suffix("s · 0 scans served · 0 active · 923 detectors"))
         .and_then(|seconds| seconds.parse::<u64>().ok())
         .unwrap_or_else(|| panic!("uptime line must carry exact idle counters; got {uptime_line}"));
     assert!(

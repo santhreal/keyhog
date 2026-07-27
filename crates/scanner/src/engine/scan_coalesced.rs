@@ -193,50 +193,48 @@ impl CompiledScanner {
         };
         let (result, gpu_recovery_receipts) = crate::gpu::with_recovery_receipt_scope(|| {
             let result = if backend == crate::hw_probe::ScanBackend::SimdCpu {
-            self.try_initialize_simd_backend().map_err(|error| {
-                crate::error::ScanError::Simd(format!(
-                    "selected Hyperscan backend initialization failed: {error}"
-                ))
-            })?;
-            Ok(super::CoalescedScanOutcome {
-                matches: self.scan_coalesced_simd(
-                    chunks,
-                    validated_plan,
-                    route,
-                )?,
-                recovery: None,
-                gpu_recovery_receipts: 0,
-            })
-        } else if backend.is_gpu() {
-            #[cfg(feature = "gpu")]
-            {
-                self.scan_coalesced_gpu_region_presence_recovering(chunks,
-                backend,
-                route,
-                recover_gpu_dispatch_faults,)
-                .map_err(|error| {
-                    self.record_gpu_runtime_fault(error.reason());
-                    crate::error::ScanError::Gpu(error.to_string())
+                self.try_initialize_simd_backend().map_err(|error| {
+                    crate::error::ScanError::Simd(format!(
+                        "selected Hyperscan backend initialization failed: {error}"
+                    ))
+                })?;
+                Ok(super::CoalescedScanOutcome {
+                    matches: self.scan_coalesced_simd(chunks, validated_plan, route)?,
+                    recovery: None,
+                    gpu_recovery_receipts: 0,
                 })
-            }
-            #[cfg(not(feature = "gpu"))]
-            {
-                Err(crate::error::ScanError::Gpu(format!(
-                    "{} selected but this scanner build has no GPU support",
-                    backend.label()
-                )))
-            }
-        } else {
-            Ok(super::CoalescedScanOutcome {
-                matches: self.scan_chunks_with_backend_internal_admission_and_route(
-                    chunks,
-                    backend,
-                    validated_plan,
-                    route,
-                )?,
-                recovery: None,
-                gpu_recovery_receipts: 0,
-            })
+            } else if backend.is_gpu() {
+                #[cfg(feature = "gpu")]
+                {
+                    self.scan_coalesced_gpu_region_presence_recovering(
+                        chunks,
+                        backend,
+                        route,
+                        recover_gpu_dispatch_faults,
+                    )
+                    .map_err(|error| {
+                        self.record_gpu_runtime_fault(error.reason());
+                        crate::error::ScanError::Gpu(error.to_string())
+                    })
+                }
+                #[cfg(not(feature = "gpu"))]
+                {
+                    Err(crate::error::ScanError::Gpu(format!(
+                        "{} selected but this scanner build has no GPU support",
+                        backend.label()
+                    )))
+                }
+            } else {
+                Ok(super::CoalescedScanOutcome {
+                    matches: self.scan_chunks_with_backend_internal_admission_and_route(
+                        chunks,
+                        backend,
+                        validated_plan,
+                        route,
+                    )?,
+                    recovery: None,
+                    gpu_recovery_receipts: 0,
+                })
             };
             result
         });
@@ -612,142 +610,144 @@ impl CompiledScanner {
             .map(|(chunk_index, (chunk, triggered_opt))| {
                 crate::gpu::with_captured_recovery_receipts(recovery_receipts.as_ref(), || {
                     crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
-                    let keyword_hints = phase2_keyword_hints
-                        .and_then(|rows| rows.get(chunk_index))
-                        .map(Vec::as_slice);
-                    let always_anchor_present = phase2_always_anchor_presence
-                        .and_then(|rows| rows.get(chunk_index).copied());
-                    let always_anchor_literal_matches = phase2_always_anchor_literal_matches
-                        .and_then(|rows| rows.get(chunk_index))
-                        .map(Vec::as_slice);
-                    let admitted_by_phase2_gpu = match phase2_admission
-                        .and_then(|admission| admission.get(chunk_index))
-                        .copied()
-                    {
-                        Some(admitted) => admitted,
-                        None => false,
-                    };
-                    let phase2_gpu_complete = match phase2_admission_complete
-                        .and_then(|complete| complete.get(chunk_index))
-                        .copied()
-                    {
-                        Some(complete) => complete,
-                        None => false,
-                    };
-                    let phase2_always_active_gpu_evidence =
-                        always_anchor_present.map(|anchor_present| Phase2AlwaysActiveGpuEvidence {
-                            prefixless_admitted: admitted_by_phase2_gpu,
-                            prefixless_complete: phase2_gpu_complete,
-                            anchor_present,
-                            anchor_literal_matches: always_anchor_literal_matches,
-                        });
-                    let confirmed_anchor_matches = confirmed_anchor_literal_matches
-                        .and_then(|rows| rows.get(chunk_index))
-                        .map(Vec::as_slice);
-                    let generic_keyword_positions = generic_keyword_positions
-                        .and_then(|rows| rows.get(chunk_index))
-                        .map(Vec::as_slice);
-                    if let Some(triggered) = triggered_opt {
-                        if chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
-                            let matches = self.scan_windowed_with_triggered(
-                                chunk,
-                                &triggered,
-                                None,
-                                keyword_hints,
-                                phase2_always_active_gpu_evidence,
-                                confirmed_anchor_matches,
-                                generic_keyword_positions,
-                                route,
-                            )?;
-                            return Ok(CoalescedChunkOutput {
-                                state: None,
-                                matches,
-                                needs_postprocess: true,
-                            });
-                        } else {
-                            let prepared = self.prepare_chunk(chunk);
-                            let state = self.scan_prepared_state_with_triggered(
-                                prepared,
-                                &triggered,
-                                None,
-                                keyword_hints,
-                                phase2_always_active_gpu_evidence,
-                                confirmed_anchor_matches,
-                                generic_keyword_positions,
-                                route,
-                            );
-                            return Ok(CoalescedChunkOutput {
-                                state: Some(state),
-                                matches: Vec::new(),
-                                needs_postprocess: true,
-                            });
-                        }
-                    }
-                    let raw_phase2_absence_proven = phase2_always_active_gpu_evidence
-                        .is_some_and(|evidence| evidence.absence_proven())
-                        && phase2_keyword_hints
+                        let keyword_hints = phase2_keyword_hints
                             .and_then(|rows| rows.get(chunk_index))
-                            .is_some();
-                    let admitted_by_phase2_keyword_hint =
-                        keyword_hints.is_some_and(|hints| !hints.is_empty());
-                    let admitted_by_phase2_always_anchor = match always_anchor_present {
-                        Some(present) => present,
-                        None => false,
-                    };
-                    let admitted_by_generic_keyword_hint =
-                        generic_keyword_positions.is_some_and(|positions| !positions.is_empty());
-                    // An absent positioned row is not evidence that the active
-                    // detector corpus has no generic assignment keyword. When
-                    // a producer cannot supply the compiled plan's positioned
-                    // rows, run the shared stem prefilter instead of composing
-                    // that gap with unrelated complete phase-2 absence.
-                    let generic_assignment_absence_proven =
-                        self.detector_plans.generic_assignment().is_none()
-                            || generic_keyword_positions.is_some();
-                    if !admitted_by_phase2_gpu
-                        && !admitted_by_phase2_keyword_hint
-                        && !admitted_by_phase2_always_anchor
-                        && !admitted_by_generic_keyword_hint
-                        && generic_assignment_absence_proven
-                        && !self.should_scan_no_hit_chunk_with_phase2_absence_proof(
-                            chunk,
-                            raw_phase2_absence_proven,
-                            route,
-                        )
-                    {
-                        if let Some(matches) =
-                            self.decode_only_coalesced_matches(chunk, route)?
+                            .map(Vec::as_slice);
+                        let always_anchor_present = phase2_always_anchor_presence
+                            .and_then(|rows| rows.get(chunk_index).copied());
+                        let always_anchor_literal_matches = phase2_always_anchor_literal_matches
+                            .and_then(|rows| rows.get(chunk_index))
+                            .map(Vec::as_slice);
+                        let admitted_by_phase2_gpu = match phase2_admission
+                            .and_then(|admission| admission.get(chunk_index))
+                            .copied()
                         {
+                            Some(admitted) => admitted,
+                            None => false,
+                        };
+                        let phase2_gpu_complete = match phase2_admission_complete
+                            .and_then(|complete| complete.get(chunk_index))
+                            .copied()
+                        {
+                            Some(complete) => complete,
+                            None => false,
+                        };
+                        let phase2_always_active_gpu_evidence =
+                            always_anchor_present.map(|anchor_present| {
+                                Phase2AlwaysActiveGpuEvidence {
+                                    prefixless_admitted: admitted_by_phase2_gpu,
+                                    prefixless_complete: phase2_gpu_complete,
+                                    anchor_present,
+                                    anchor_literal_matches: always_anchor_literal_matches,
+                                }
+                            });
+                        let confirmed_anchor_matches = confirmed_anchor_literal_matches
+                            .and_then(|rows| rows.get(chunk_index))
+                            .map(Vec::as_slice);
+                        let generic_keyword_positions = generic_keyword_positions
+                            .and_then(|rows| rows.get(chunk_index))
+                            .map(Vec::as_slice);
+                        if let Some(triggered) = triggered_opt {
+                            if chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
+                                let matches = self.scan_windowed_with_triggered(
+                                    chunk,
+                                    &triggered,
+                                    None,
+                                    keyword_hints,
+                                    phase2_always_active_gpu_evidence,
+                                    confirmed_anchor_matches,
+                                    generic_keyword_positions,
+                                    route,
+                                )?;
+                                return Ok(CoalescedChunkOutput {
+                                    state: None,
+                                    matches,
+                                    needs_postprocess: true,
+                                });
+                            } else {
+                                let prepared = self.prepare_chunk(chunk);
+                                let state = self.scan_prepared_state_with_triggered(
+                                    prepared,
+                                    &triggered,
+                                    None,
+                                    keyword_hints,
+                                    phase2_always_active_gpu_evidence,
+                                    confirmed_anchor_matches,
+                                    generic_keyword_positions,
+                                    route,
+                                );
+                                return Ok(CoalescedChunkOutput {
+                                    state: Some(state),
+                                    matches: Vec::new(),
+                                    needs_postprocess: true,
+                                });
+                            }
+                        }
+                        let raw_phase2_absence_proven = phase2_always_active_gpu_evidence
+                            .is_some_and(|evidence| evidence.absence_proven())
+                            && phase2_keyword_hints
+                                .and_then(|rows| rows.get(chunk_index))
+                                .is_some();
+                        let admitted_by_phase2_keyword_hint =
+                            keyword_hints.is_some_and(|hints| !hints.is_empty());
+                        let admitted_by_phase2_always_anchor = match always_anchor_present {
+                            Some(present) => present,
+                            None => false,
+                        };
+                        let admitted_by_generic_keyword_hint = generic_keyword_positions
+                            .is_some_and(|positions| !positions.is_empty());
+                        // An absent positioned row is not evidence that the active
+                        // detector corpus has no generic assignment keyword. When
+                        // a producer cannot supply the compiled plan's positioned
+                        // rows, run the shared stem prefilter instead of composing
+                        // that gap with unrelated complete phase-2 absence.
+                        let generic_assignment_absence_proven =
+                            self.detector_plans.generic_assignment().is_none()
+                                || generic_keyword_positions.is_some();
+                        if !admitted_by_phase2_gpu
+                            && !admitted_by_phase2_keyword_hint
+                            && !admitted_by_phase2_always_anchor
+                            && !admitted_by_generic_keyword_hint
+                            && generic_assignment_absence_proven
+                            && !self.should_scan_no_hit_chunk_with_phase2_absence_proof(
+                                chunk,
+                                raw_phase2_absence_proven,
+                                route,
+                            )
+                        {
+                            if let Some(matches) =
+                                self.decode_only_coalesced_matches(chunk, route)?
+                            {
+                                return Ok(CoalescedChunkOutput {
+                                    state: None,
+                                    matches,
+                                    needs_postprocess: false,
+                                });
+                            }
                             return Ok(CoalescedChunkOutput {
                                 state: None,
-                                matches,
+                                matches: Vec::new(),
                                 needs_postprocess: false,
                             });
                         }
-                        return Ok(CoalescedChunkOutput {
-                            state: None,
-                            matches: Vec::new(),
-                            needs_postprocess: false,
-                        });
-                    }
 
-                    let prepared = self.prepare_chunk(chunk);
-                    let state = self.scan_prepared_state_with_triggered(
-                        prepared,
-                        &[],
-                        None,
-                        keyword_hints,
-                        phase2_always_active_gpu_evidence,
-                        confirmed_anchor_matches,
-                        generic_keyword_positions,
-                        route,
-                    );
-                    Ok(CoalescedChunkOutput {
-                        state: Some(state),
-                        matches: Vec::new(),
-                        needs_postprocess: true,
+                        let prepared = self.prepare_chunk(chunk);
+                        let state = self.scan_prepared_state_with_triggered(
+                            prepared,
+                            &[],
+                            None,
+                            keyword_hints,
+                            phase2_always_active_gpu_evidence,
+                            confirmed_anchor_matches,
+                            generic_keyword_positions,
+                            route,
+                        );
+                        Ok(CoalescedChunkOutput {
+                            state: Some(state),
+                            matches: Vec::new(),
+                            needs_postprocess: true,
+                        })
                     })
-                })
                 })
             })
             .collect::<crate::error::Result<Vec<_>>>()?;
@@ -781,10 +781,10 @@ impl CompiledScanner {
             .map(|(mut output, chunk)| {
                 crate::gpu::with_captured_recovery_receipts(recovery_receipts.as_ref(), || {
                     crate::telemetry::with_captured_scan_telemetry(telemetry.as_ref(), || {
-                    if output.needs_postprocess {
-                        self.post_process_coalesced_matches(chunk, &mut output.matches, route)?;
-                    }
-                    Ok(output.matches)
+                        if output.needs_postprocess {
+                            self.post_process_coalesced_matches(chunk, &mut output.matches, route)?;
+                        }
+                        Ok(output.matches)
                     })
                 })
             })

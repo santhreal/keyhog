@@ -32,7 +32,10 @@ fn assert_no_bytes(rendered: &[String], forbidden: &[&[u8]]) {
     for text in rendered {
         for needle in forbidden {
             assert!(
-                !text.as_bytes().windows(needle.len()).any(|window| window == *needle),
+                !text
+                    .as_bytes()
+                    .windows(needle.len())
+                    .any(|window| window == *needle),
                 "error output contained forbidden bytes {needle:?}: {text:?}"
             );
         }
@@ -100,7 +103,12 @@ fn invalid_host_with_control_is_not_echoed() {
     // An unparseable host is attacker-controlled input, including its adjacent credentials.
     assert_no_bytes(
         &rendered,
-        &[raw.as_bytes(), b"proxy-user", b"CONTROL_SECRET", b"bad\0host"],
+        &[
+            raw.as_bytes(),
+            b"proxy-user",
+            b"CONTROL_SECRET",
+            b"bad\0host",
+        ],
     );
     assert_actionable(&error);
 }
@@ -169,6 +177,10 @@ fn malformed_input_without_safe_endpoint_has_exact_generic_diagnostic() {
     );
     assert_no_bytes(
         &rendered,
-        &[b"exact-user", b"EXACT_NEGATIVE_SECRET", b"invalid domain character"],
+        &[
+            b"exact-user",
+            b"EXACT_NEGATIVE_SECRET",
+            b"invalid domain character",
+        ],
     );
 }

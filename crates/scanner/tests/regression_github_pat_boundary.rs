@@ -62,7 +62,9 @@ fn reports_valid_on_all_backends(text: &str) -> bool {
     let scanner = scanner();
     CPU_BACKENDS.iter().all(|&backend| {
         scanner.clear_fragment_cache();
-        scanner.scan_with_backend(&chunk(text), backend).expect("selected backend scan succeeds")
+        scanner
+            .scan_with_backend(&chunk(text), backend)
+            .expect("selected backend scan succeeds")
             .iter()
             .any(|m| {
                 m.detector_id.as_ref() == "github-classic-pat" && m.credential.as_ref() == GHP_VALID
@@ -75,7 +77,9 @@ fn suppressed_on_all_backends(text: &str) -> bool {
     let scanner = scanner();
     CPU_BACKENDS.iter().all(|&backend| {
         scanner.clear_fragment_cache();
-        scanner.scan_with_backend(&chunk(text), backend).expect("selected backend scan succeeds")
+        scanner
+            .scan_with_backend(&chunk(text), backend)
+            .expect("selected backend scan succeeds")
             .iter()
             .all(|m| m.detector_id.as_ref() != "github-classic-pat")
     })
@@ -91,7 +95,9 @@ fn overlong_github_pat_run_is_not_reported_by_any_cpu_backend() {
     let scanner = scanner();
     for backend in CPU_BACKENDS {
         scanner.clear_fragment_cache();
-        let matches = scanner.scan_with_backend(&input, backend).expect("selected backend scan succeeds");
+        let matches = scanner
+            .scan_with_backend(&input, backend)
+            .expect("selected backend scan succeeds");
         assert!(
             matches.is_empty(),
             "overlong contiguous ghp_ payload must fail closed on {backend:?}; got {matches:?}"
@@ -158,7 +164,9 @@ fn exact_github_pat_boundary_still_reports() {
     let scanner = scanner();
     for backend in CPU_BACKENDS {
         scanner.clear_fragment_cache();
-        let matches = scanner.scan_with_backend(&input, backend).expect("selected backend scan succeeds");
+        let matches = scanner
+            .scan_with_backend(&input, backend)
+            .expect("selected backend scan succeeds");
         assert!(
             matches.iter().any(|m| {
                 m.detector_id.as_ref() == "github-classic-pat" && m.credential.as_ref() == GHP_VALID
@@ -270,7 +278,9 @@ fn both_backends_agree_the_exact_token_reports() {
     let mut per_backend = Vec::new();
     for backend in CPU_BACKENDS {
         scanner.clear_fragment_cache();
-        let hit = scanner.scan_with_backend(&input, backend).expect("selected backend scan succeeds")
+        let hit = scanner
+            .scan_with_backend(&input, backend)
+            .expect("selected backend scan succeeds")
             .iter()
             .any(|m| m.credential.as_ref() == GHP_VALID);
         per_backend.push(hit);
@@ -289,7 +299,9 @@ fn both_backends_agree_the_overlong_run_is_suppressed() {
     let mut per_backend = Vec::new();
     for backend in CPU_BACKENDS {
         scanner.clear_fragment_cache();
-        let count = scanner.scan_with_backend(&input, backend).expect("selected backend scan succeeds")
+        let count = scanner
+            .scan_with_backend(&input, backend)
+            .expect("selected backend scan succeeds")
             .iter()
             .filter(|m| m.detector_id.as_ref() == "github-classic-pat")
             .count();

@@ -27,14 +27,15 @@ fn hex32_detector() -> DetectorSpec {
 
 fn scan_text(text: &str) -> Vec<keyhog_core::RawMatch> {
     let scanner = CompiledScanner::compile(vec![hex32_detector()]).expect("compile detector");
-    scanner.scan(&Chunk {
-        data: text.into(),
-        metadata: ChunkMetadata {
-            source_type: "filesystem".into(),
-            path: Some("digest.env".into()),
-            ..Default::default()
-        },
-    })
+    scanner
+        .scan(&Chunk {
+            data: text.into(),
+            metadata: ChunkMetadata {
+                source_type: "filesystem".into(),
+                path: Some("digest.env".into()),
+                ..Default::default()
+            },
+        })
         .expect("digest-fragment guard scan should succeed")
 }
 

@@ -160,16 +160,14 @@ fn wait_for_writer_markers(path: &Path, label: &str) {
     }
 }
 
-
 /// Regression: the subprocess endpoint performs one real production save only when explicitly selected by the parent contention test.
 #[test]
 fn autoroute_cache_contention_writer_subprocess() {
     let Some(cache) = std::env::var_os(CHILD_CACHE_ENV) else {
         return;
     };
-    let gate = PathBuf::from(
-        std::env::var_os(CHILD_GATE_ENV).expect("contention child gate environment"),
-    );
+    let gate =
+        PathBuf::from(std::env::var_os(CHILD_GATE_ENV).expect("contention child gate environment"));
     let ready = PathBuf::from(
         std::env::var_os(CHILD_READY_ENV).expect("contention child ready environment"),
     );
@@ -221,7 +219,8 @@ fn assert_private(path: &Path, kind: &str) {
     };
     let mode = metadata.permissions().mode() & 0o777;
     assert_eq!(
-        mode, 0o600,
+        mode,
+        0o600,
         "{kind} {} must be private, got mode {mode:o}",
         path.display()
     );
@@ -366,7 +365,11 @@ fn multiprocess_writers_publish_one_exact_private_merged_cache() {
             let Some(process) = child.as_mut() else {
                 continue;
             };
-            if process.try_wait().expect("poll contention writer").is_none() {
+            if process
+                .try_wait()
+                .expect("poll contention writer")
+                .is_none()
+            {
                 continue;
             }
             let output = child
@@ -408,9 +411,7 @@ fn multiprocess_writers_publish_one_exact_private_merged_cache() {
     let lock = keyhog_core::state_file_lock_path(&cache).expect("resolve autoroute lock path");
     assert_private(&lock, "autoroute cache lock");
     assert!(
-        std::fs::read(&lock)
-            .expect("read lock artifact")
-            .is_empty(),
+        std::fs::read(&lock).expect("read lock artifact").is_empty(),
         "lock artifacts must never retain state or secret material"
     );
     assert!(

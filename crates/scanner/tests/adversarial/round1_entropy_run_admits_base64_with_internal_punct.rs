@@ -85,7 +85,9 @@ fn scan(body: String) -> Vec<keyhog_core::RawMatch> {
             ..Default::default()
         },
     };
-    shared_scanner().scan(&chunk).expect(concat!(module_path!(), ": scan should succeed"))
+    shared_scanner()
+        .scan(&chunk)
+        .expect(concat!(module_path!(), ": scan should succeed"))
 }
 
 fn scan_cpu_fallback(body: String) -> Vec<keyhog_core::RawMatch> {
@@ -98,7 +100,12 @@ fn scan_cpu_fallback(body: String) -> Vec<keyhog_core::RawMatch> {
             ..Default::default()
         },
     };
-    shared_scanner().scan_with_backend(&chunk, keyhog_scanner::ScanBackend::CpuFallback).expect(concat!(module_path!(), ": selected-backend scan should succeed"))
+    shared_scanner()
+        .scan_with_backend(&chunk, keyhog_scanner::ScanBackend::CpuFallback)
+        .expect(concat!(
+            module_path!(),
+            ": selected-backend scan should succeed"
+        ))
 }
 
 proptest! {

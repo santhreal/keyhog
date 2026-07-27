@@ -31,7 +31,9 @@ fn one_scan(scanner: &CompiledScanner, chunks: &[Chunk]) -> f64 {
     scanner.clear_fragment_cache();
     let t = Instant::now();
     for c in chunks {
-        let _ = scanner.scan_chunks_with_backend(std::slice::from_ref(c), ScanBackend::CpuFallback).expect("selected backend scan succeeds");
+        let _ = scanner
+            .scan_chunks_with_backend(std::slice::from_ref(c), ScanBackend::CpuFallback)
+            .expect("selected backend scan succeeds");
     }
     t.elapsed().as_secs_f64() * 1000.0
 }

@@ -117,10 +117,7 @@ mod serde_companion_map {
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    pub(super) fn serialize<S>(
-        companions: &CompanionMap,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
+    pub(super) fn serialize<S>(companions: &CompanionMap, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -600,12 +597,7 @@ where
 {
     companions
         .iter()
-        .map(|(key, value)| {
-            (
-                key.as_ref().to_string(),
-                crate::redact(value).into_owned(),
-            )
-        })
+        .map(|(key, value)| (key.as_ref().to_string(), crate::redact(value).into_owned()))
         .collect()
 }
 

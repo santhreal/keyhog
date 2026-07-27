@@ -386,12 +386,7 @@ fn gpu_fused_always_anchor_positions_match_cpu_when_keyword_localization_is_disa
         "the CPU oracle must emit the exact always-anchor finding: {cpu:?}"
     );
     let gpu_rows = scanner
-        .scan_coalesced_with_backend_admission_and_route(
-            &chunks,
-            ScanBackend::GpuWgpu,
-            None,
-            route,
-        )
+        .scan_coalesced_with_backend_admission_and_route(&chunks, ScanBackend::GpuWgpu, None, route)
         .expect("GPU routed parity scan should succeed");
     let gpu = collect_keys(&gpu_rows);
     assert_eq!(gpu, cpu);
@@ -423,9 +418,17 @@ fn determinism_each_backend_each_fixture_runs_twice_matches() {
     for fixture in &fixtures {
         for backend in backends {
             scanner.clear_fragment_cache();
-            let a = collect_keys(&scanner.scan_chunks_with_backend(&fixture.chunks, backend).expect("selected backend scan succeeds"));
+            let a = collect_keys(
+                &scanner
+                    .scan_chunks_with_backend(&fixture.chunks, backend)
+                    .expect("selected backend scan succeeds"),
+            );
             scanner.clear_fragment_cache();
-            let b = collect_keys(&scanner.scan_chunks_with_backend(&fixture.chunks, backend).expect("selected backend scan succeeds"));
+            let b = collect_keys(
+                &scanner
+                    .scan_chunks_with_backend(&fixture.chunks, backend)
+                    .expect("selected backend scan succeeds"),
+            );
             if a != b {
                 failures.push(format!(
                     "[{}/{:?}] non-deterministic: run-A={} run-B={} (diff={})",

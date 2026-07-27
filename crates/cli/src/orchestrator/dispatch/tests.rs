@@ -321,23 +321,16 @@ fn admission_recovery_receipt_is_counted_in_json_and_terminal_status() {
     assert_eq!(summaries[0].recovered_bytes, 34);
 
     let cli = crate::args::Cli::parse_from(["keyhog", "scan", "."]);
-    let crate::args::Command::Scan(args) =
-        cli.command.expect("scan command parsed")
-    else {
+    let crate::args::Command::Scan(args) = cli.command.expect("scan command parsed") else {
         panic!("expected scan command");
     };
     let now = chrono::Utc::now();
-    let metadata = crate::reporting::report_metadata_from_scan_run(
-        &args,
-        now,
-        now,
-        0,
-        1,
-        17,
-        1,
-        None,
+    let metadata =
+        crate::reporting::report_metadata_from_scan_run(&args, now, now, 0, 1, 17, 1, None);
+    assert_eq!(
+        metadata.scan_status,
+        ScanCompletionStatus::CompleteAfterRecovery
     );
-    assert_eq!(metadata.scan_status, ScanCompletionStatus::CompleteAfterRecovery);
     assert_eq!(metadata.backend_recoveries.len(), 1);
     assert_eq!(metadata.backend_recoveries[0].events, 2);
     let metadata_json =

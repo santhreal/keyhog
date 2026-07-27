@@ -322,7 +322,10 @@ fn feature_extraction_is_byte_bounded_and_allocation_free_after_warmup() {
         last
     });
 
-    assert_eq!(allocations, 0, "feature rows allocated {allocated_bytes} bytes");
+    assert_eq!(
+        allocations, 0,
+        "feature rows allocated {allocated_bytes} bytes"
+    );
     assert_eq!(allocated_bytes, 0);
     drop(source);
     assert_eq!(retained_row.map(f32::to_bits), warm.map(f32::to_bits));

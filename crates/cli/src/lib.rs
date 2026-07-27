@@ -328,8 +328,7 @@ pub async fn cli_main() -> ExitCode {
     for arg in std::env::args_os().skip(1) {
         if let Some(value) = arg.to_str() {
             maintenance_subcommand_seen |= value == "update" || value == "repair";
-            is_version |= value == "-V"
-                || (value == "--version" && !maintenance_subcommand_seen);
+            is_version |= value == "-V" || (value == "--version" && !maintenance_subcommand_seen);
             full_version |= value == "--full";
         }
     }
@@ -613,6 +612,8 @@ pub(crate) mod runtime_preflight;
 // module so the rest of the CLI still builds on Windows - the
 // `daemon` subcommand and the `--daemon` flag emit a clear
 // "unix-only" error there (see `main.rs` and `subcommands/scan.rs`).
+#[cfg(test)]
+mod cli_reference;
 #[cfg(unix)]
 pub mod daemon;
 pub(crate) mod inline_suppression;
@@ -625,8 +626,6 @@ pub(crate) mod sources;
 mod style;
 pub(crate) mod subcommands;
 pub(crate) mod test_fixture_suppressions;
-#[cfg(test)]
-mod cli_reference;
 #[cfg(test)]
 extern crate self as keyhog;
 #[cfg(test)]

@@ -233,7 +233,6 @@ impl CompiledScanner {
         }
     }
 
-
     /// Number of loaded detectors.
     pub(crate) fn detector_count(&self) -> usize {
         self.detector_plans.len()
@@ -574,7 +573,6 @@ impl CompiledScanner {
         )
     }
 
-
     /// Cumulative count of scanner-local GPU region-dispatch failures.
     ///
     /// Per-request GPU MoE recovery is returned on `CoalescedScanOutcome`;
@@ -687,12 +685,7 @@ impl CompiledScanner {
         if !candidate.acquired || !candidate.available || candidate.is_software {
             return Err(self.gpu_backend_unavailable_reason(backend));
         }
-        let (
-            Some(driver_id),
-            Some(driver_version),
-            Some(device_identity),
-            Some(runtime_identity),
-        ) = (
+        let (Some(driver_id), Some(driver_version), Some(device_identity), Some(runtime_identity)) = (
             candidate
                 .driver_id
                 .as_deref()
@@ -709,8 +702,7 @@ impl CompiledScanner {
                 .runtime_identity
                 .as_deref()
                 .filter(|value| !value.trim().is_empty()),
-        )
-        else {
+        ) else {
             let missing = [
                 (
                     "driver_id",
@@ -871,9 +863,11 @@ impl CompiledScanner {
         chunk: &Chunk,
         backend: crate::hw_probe::ScanBackend,
     ) -> crate::error::Result<Vec<RawMatch>> {
-        let results = self.scan_coalesced_with_backend_and_admission(std::slice::from_ref(chunk),
-        backend,
-        None,)?;
+        let results = self.scan_coalesced_with_backend_and_admission(
+            std::slice::from_ref(chunk),
+            backend,
+            None,
+        )?;
         results.into_iter().next().ok_or_else(|| {
             crate::error::ScanError::Config(
                 "single-chunk backend dispatch returned no result row".to_owned(),
@@ -892,11 +886,13 @@ impl CompiledScanner {
         backend: crate::hw_probe::ScanBackend,
         plan: Option<&crate::engine::Phase1AdmissionPlan>,
     ) -> crate::error::Result<crate::engine::CoalescedScanOutcome> {
-        self.scan_coalesced_with_backend_admission_route_and_recovery(std::slice::from_ref(chunk),
-        backend,
-        plan,
-        self.execution_route_for_backend(backend),
-        false,)
+        self.scan_coalesced_with_backend_admission_route_and_recovery(
+            std::slice::from_ref(chunk),
+            backend,
+            plan,
+            self.execution_route_for_backend(backend),
+            false,
+        )
     }
 
     /// Scan multiple chunks using exactly the caller-selected backend.

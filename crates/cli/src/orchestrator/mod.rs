@@ -759,14 +759,8 @@ fn setup_default_scan_runtime_with_rayon_policy(
     synthetic.path = filter_root.map(std::path::Path::to_path_buf);
     let mut effective_config = resolve_scan_config(&mut synthetic)?;
     let requested_detector_mode = synthetic.detectors_mode.map(Into::into);
-    validate_detector_mode_selection(
-        synthetic.detectors_cli_explicit,
-        requested_detector_mode,
-    )?;
-    validate_explicit_detector_path(
-        &synthetic.detectors,
-        synthetic.detectors_cli_explicit,
-    )?;
+    validate_detector_mode_selection(synthetic.detectors_cli_explicit, requested_detector_mode)?;
+    validate_explicit_detector_path(&synthetic.detectors, synthetic.detectors_cli_explicit)?;
     let detectors_path = auto_discover_detectors(&synthetic.detectors)?;
     let detectors_path_for_compile = detectors_path.clone();
     ResolvedEngineRuntimeSettings::from(&effective_config).apply();
@@ -1061,10 +1055,7 @@ impl ScanOrchestrator {
         effective_config.threads = Some(worker_threads);
 
         let requested_detector_mode = args.detectors_mode.map(Into::into);
-        validate_detector_mode_selection(
-            args.detectors_cli_explicit,
-            requested_detector_mode,
-        )?;
+        validate_detector_mode_selection(args.detectors_cli_explicit, requested_detector_mode)?;
         validate_explicit_detector_path(&args.detectors, args.detectors_cli_explicit)?;
         let detectors_path = auto_discover_detectors(&args.detectors)?;
         let loaded_corpus = load_effective_detector_corpus(

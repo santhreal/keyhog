@@ -103,7 +103,9 @@ fn fixed_corpus_surfaces_exactly_the_expected_detectors_on_simd() {
     let scanner = scanner();
     let corpus = fixed_corpus();
     scanner.clear_fragment_cache();
-    let results = scanner.scan_chunks_with_backend(&corpus, ScanBackend::SimdCpu).expect("selected backend scan succeeds");
+    let results = scanner
+        .scan_chunks_with_backend(&corpus, ScanBackend::SimdCpu)
+        .expect("selected backend scan succeeds");
     let got = detector_ids(&results);
     let expected = expected_detector_ids();
 
@@ -139,10 +141,18 @@ fn simd_and_cpu_fallback_produce_identical_match_records() {
     let corpus = fixed_corpus();
 
     scanner.clear_fragment_cache();
-    let simd = records(&scanner.scan_chunks_with_backend(&corpus, ScanBackend::SimdCpu).expect("selected backend scan succeeds"));
+    let simd = records(
+        &scanner
+            .scan_chunks_with_backend(&corpus, ScanBackend::SimdCpu)
+            .expect("selected backend scan succeeds"),
+    );
 
     scanner.clear_fragment_cache();
-    let cpu = records(&scanner.scan_chunks_with_backend(&corpus, ScanBackend::CpuFallback).expect("selected backend scan succeeds"));
+    let cpu = records(
+        &scanner
+            .scan_chunks_with_backend(&corpus, ScanBackend::CpuFallback)
+            .expect("selected backend scan succeeds"),
+    );
 
     // Positive floor first: neither path may be empty (guards the "both
     // regressed to zero, so equality is vacuously true" failure mode).
@@ -166,7 +176,11 @@ fn gpu_produces_identical_complete_records_without_degrade() {
     let corpus = fixed_corpus();
 
     scanner.clear_fragment_cache();
-    let reference = records(&scanner.scan_chunks_with_backend(&corpus, ScanBackend::SimdCpu).expect("selected backend scan succeeds"));
+    let reference = records(
+        &scanner
+            .scan_chunks_with_backend(&corpus, ScanBackend::SimdCpu)
+            .expect("selected backend scan succeeds"),
+    );
     assert!(
         !reference.is_empty(),
         "fixed-corpus reference must find secrets"
@@ -174,7 +188,11 @@ fn gpu_produces_identical_complete_records_without_degrade() {
 
     scanner.clear_fragment_cache();
     let degrade_before = scanner.runtime_status().gpu_degrade_count;
-    let gpu = records(&scanner.scan_chunks_with_backend(&corpus, ScanBackend::GpuWgpu).expect("selected backend scan succeeds"));
+    let gpu = records(
+        &scanner
+            .scan_chunks_with_backend(&corpus, ScanBackend::GpuWgpu)
+            .expect("selected backend scan succeeds"),
+    );
     let degrade_after = scanner.runtime_status().gpu_degrade_count;
 
     assert_eq!(
@@ -193,9 +211,17 @@ fn each_cpu_backend_is_deterministic_across_two_runs() {
     let corpus = fixed_corpus();
     for backend in [ScanBackend::SimdCpu, ScanBackend::CpuFallback] {
         scanner.clear_fragment_cache();
-        let first = records(&scanner.scan_chunks_with_backend(&corpus, backend).expect("selected backend scan succeeds"));
+        let first = records(
+            &scanner
+                .scan_chunks_with_backend(&corpus, backend)
+                .expect("selected backend scan succeeds"),
+        );
         scanner.clear_fragment_cache();
-        let second = records(&scanner.scan_chunks_with_backend(&corpus, backend).expect("selected backend scan succeeds"));
+        let second = records(
+            &scanner
+                .scan_chunks_with_backend(&corpus, backend)
+                .expect("selected backend scan succeeds"),
+        );
         assert!(
             !first.is_empty(),
             "{backend:?} surfaced nothing on the fixed corpus, recall floor breached"
