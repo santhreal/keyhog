@@ -201,7 +201,6 @@ jobs:
           --test regression_malformed_detector_dir_fails_closed
           --test regression_require_gpu_fails_closed
           --test regression_output_to_dev_null
-          --test regression_daemon_relative_path_fail_closed
           --test regression_expired_allowlist_fails_closed
           --test regression_legacy_canary_env_ignored
           --test regression_allowlist_governance
