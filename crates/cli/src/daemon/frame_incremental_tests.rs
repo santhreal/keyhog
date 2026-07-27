@@ -41,6 +41,8 @@ async fn daemon_frame_reports_truncated_length_prefix_as_error() {
     );
 }
 
+/// Prevents the incremental frame path from regressing to an eager allocation
+/// or bypassing the bounded codec owner when imports are reformatted.
 #[test]
 fn daemon_frame_read_path_does_not_eager_allocate_announced_len() {
     let source = include_str!("frame.rs");
@@ -49,7 +51,12 @@ fn daemon_frame_read_path_does_not_eager_allocate_announced_len() {
         "read_frame must not allocate MAX_FRAME_BYTES before the peer sends the body"
     );
     assert!(
-        source.contains("tokio_util::codec::{Decoder, Encoder, Framed, FramedRead, FramedWrite}"),
+        source.contains("tokio_util::codec")
+            && source.contains("Framed<UnixStream")
+            && source.contains("FramedRead::new")
+            && source.contains("FramedWrite::new")
+            && source.contains("impl Decoder")
+            && source.contains("impl Encoder"),
         "daemon frame transport should be owned by tokio_util codec types"
     );
     assert!(

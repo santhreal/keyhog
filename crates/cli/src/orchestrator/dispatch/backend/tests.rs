@@ -1026,6 +1026,8 @@ fn workload_key_distinguishes_decoder_work_for_same_size_batches() {
     );
 }
 
+/// Locks workload identity to scanner-observed phase-1 outcomes at the same
+/// payload size, including a complete selected anchor in the admitted class.
 #[test]
 fn workload_key_distinguishes_equal_8mib_phase1_admission_classes() {
     const BYTES: usize = 8 * 1024 * 1024;
@@ -1033,7 +1035,7 @@ fn workload_key_distinguishes_equal_8mib_phase1_admission_classes() {
     let decode_disabled = keyhog_scanner::decode::DecodeWorkloadPlan::from_limits(0, usize::MAX);
     let alphabet_batch = vec![test_chunk("~".repeat(BYTES))];
     let bigram_batch = vec![test_chunk("g".repeat(BYTES))];
-    let admitted_batch = vec![test_chunk(repeated_to_len("gh ", BYTES))];
+    let admitted_batch = vec![test_chunk(repeated_to_len("ghp_ABCDEFGH ", BYTES))];
 
     let alphabet_admission = scanner.phase1_admission_plan(&alphabet_batch);
     let bigram_admission = scanner.phase1_admission_plan(&bigram_batch);

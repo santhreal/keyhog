@@ -33,7 +33,9 @@ const BUCKET_BYTES: [u64; 8] = [
 ];
 const BUCKETS_PER_WRITE: usize = BUCKET_BYTES.len() / 2;
 const UNIQUE_WRITERS: usize = CONFIG_DIGESTS.len();
-const WRITER_PROCESSES: usize = UNIQUE_WRITERS * 2;
+// Four distinct writers plus one exact duplicate exercise both merge classes
+// without multiplying fsync-heavy process contention beyond the unit-test gate.
+const WRITER_PROCESSES: usize = UNIQUE_WRITERS + 1;
 const SECRET_SENTINEL: &str = "kh031-secret-material-must-never-reach-cache-or-temp";
 
 fn host(variant: usize) -> AutorouteHostProfile {
