@@ -36,22 +36,20 @@
 //!   seen-locations per group, or skipping the membership check entirely when the
 //!   sort already orders by location so a same-as-previous test suffices).
 //!
-//! RATIO TRIPWIRE (hardware-independent): measure dedup of N vs 2N repeats of the
-//! same credential on distinct lines (one group). A linear/log-linear dedup
-//! doubles (~2x, +sort log factor); the current O(K^2) sweep ~4x. We require the
-//! doubling ratio to stay under SUBQUADRATIC_RATIO (3.0). Best-of-K (min) timing
-//! removes scheduler/allocator noise; the assertion is on a RATIO so it is
-//! immune to absolute clock speed. Run with the release-fast profile
-//! characteristics (the workspace CI/e2e profile): opt-level=3, thin LTO,
-//! debug-assertions=on, build/run via
-//!   CARGO_TARGET_DIR=/mnt/FlareTraining/santh-archive/cargo-target \
-//!   cargo test -p keyhog-core --test perf_algo_complexity --release
-//! (a plain `cargo test` debug build also trips it; the ratio holds either way).
+//! CPU-TIME TRIPWIRE: measure dedup of N vs 2N repeats of the same credential
+//! on distinct lines (one group). A linear/log-linear dedup doubles (~2x, plus
+//! the sort log factor); the old O(K^2) sweep approached 4x. We require the
+//! doubling ratio to stay under SUBQUADRATIC_RATIO (3.0). Best-of-K thread CPU
+//! samples remove scheduler contention from parallel CI jobs while retaining
+//! the algorithmic cost of sorting, hashing, allocation, and location
+//! accumulation. Run with the release-fast profile characteristics (the
+//! workspace CI/e2e profile): opt-level=3, thin LTO, debug-assertions=on.
+//! A debug build exercises the same complexity boundary.
 //!
-//! A runtime FAILURE here is EXPECTED and CORRECT until dedup.rs is fixed.
+//! A failure means the linear seen-location index or its surrounding sort regressed.
 
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use keyhog_core::{dedup_matches, DedupScope, MatchLocation, RawMatch, Severity};
 
@@ -62,17 +60,15 @@ use keyhog_core::{dedup_matches, DedupScope, MatchLocation, RawMatch, Severity};
 /// regression trips it.
 const SUBQUADRATIC_RATIO: f64 = 3.0;
 
-/// Best-of-K wall-clock samples; keep the min to drop scheduler/alloc noise.
+/// Best-of-K thread CPU-time samples; keep the minimum to drop allocator noise.
 const TIMING_SAMPLES: usize = 5;
 
-/// Base group size. Chosen so the quadratic term is clearly measurable
-/// (N^2 = ~36M same-location comparisons at N) without making the optimized
-/// path slow. The group is a SINGLE (detector, credential, file) cluster.
+/// Base group size. Large enough to distinguish the prior quadratic location
+/// sweep from the current log-linear sort and constant-time location index.
 const BASE_N: usize = 6_000;
 
-/// Build `n` RawMatches: identical detector_id + credential + file_path, but
-/// each on a DISTINCT line/offset. They all hash to one DedupKey, so every
-/// match after the first hits the duplicate arm and scans additional_locations.
+/// Build `n` RawMatches with one detector, credential, and file path but a
+/// distinct line and offset. Every match lands in one deduplication group.
 fn build_repeated_credential_group(n: usize) -> Vec<RawMatch> {
     let detector_id: Arc<str> = Arc::from("aws-access-key");
     let detector_name: Arc<str> = Arc::from("AWS Access Key");
@@ -109,38 +105,50 @@ fn build_repeated_credential_group(n: usize) -> Vec<RawMatch> {
         .collect()
 }
 
-/// Min over TIMING_SAMPLES of the wall time to dedup a freshly-built group of
-/// `n` matches. Build is excluded from the timed region.
+#[cfg(unix)]
+fn thread_cpu_time() -> Duration {
+    let mut timestamp = std::mem::MaybeUninit::<libc::timespec>::uninit();
+    // SAFETY: clock_gettime initializes the pointed-to timespec on success. The
+    // pointer is valid for the duration of the call and is read only after rc=0.
+    let rc = unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, timestamp.as_mut_ptr()) };
+    assert_eq!(
+        rc, 0,
+        "CLOCK_THREAD_CPUTIME_ID must be available for the deterministic complexity gate"
+    );
+    // SAFETY: the successful call above initialized every timespec field.
+    let timestamp = unsafe { timestamp.assume_init() };
+    Duration::new(
+        u64::try_from(timestamp.tv_sec).expect("thread CPU seconds must be nonnegative"),
+        u32::try_from(timestamp.tv_nsec).expect("thread CPU nanoseconds must fit u32"),
+    )
+}
+
+#[cfg(not(unix))]
+fn thread_cpu_time() -> Duration {
+    static ORIGIN: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    ORIGIN.get_or_init(std::time::Instant::now).elapsed()
+}
+
+/// Minimum thread CPU time over TIMING_SAMPLES for a freshly built group.
+/// Building the fixture is outside the measured region.
 fn best_dedup_time(n: usize) -> Duration {
-    let mut best = Duration::from_secs(u64::MAX);
+    let mut best = Duration::MAX;
     for _ in 0..TIMING_SAMPLES {
         let matches = build_repeated_credential_group(n);
-        let start = Instant::now();
+        let start = thread_cpu_time();
         let deduped = dedup_matches(matches, &DedupScope::Credential);
-        let elapsed = start.elapsed();
-        // Guard against dead-code elimination AND assert the dedup actually
-        // collapsed the group (so we are timing the real additional_locations
-        // accumulation, not an early bail).
+        let elapsed = thread_cpu_time().saturating_sub(start);
         assert_eq!(
             deduped.len(),
             1,
-            "expected the {n} repeats of one credential to collapse into a single \
-             DedupedMatch; got {}, the perf measurement is only valid when all \
-             matches land in ONE group and exercise the additional_locations sweep",
-            deduped.len()
+            "expected the {n} repeats of one credential to collapse into one finding"
         );
         assert_eq!(
             deduped[0].additional_locations.len(),
             n - 1,
-            "expected {} additional_locations (one per distinct line beyond the \
-             primary); got {}, distinct lines must all be retained, confirming \
-             the per-group additional_locations accumulation is exercised",
-            n - 1,
-            deduped[0].additional_locations.len()
+            "every distinct line beyond the primary must remain visible"
         );
-        if elapsed < best {
-            best = elapsed;
-        }
+        best = best.min(elapsed);
     }
     best
 }
@@ -160,18 +168,12 @@ fn dedup_additional_locations_is_subquadratic_in_group_size() {
         "dedup_matches is super-linear in the size of a single \
          (detector, credential, file) group.\n\
          MEASURED: dedup(N={BASE_N}) = {:.3} ms, dedup(2N={}) = {:.3} ms, \
-         doubling ratio = {ratio:.2}x (best-of-{TIMING_SAMPLES}).\n\
+         doubling ratio = {ratio:.2}x (best-of-{TIMING_SAMPLES} thread CPU samples).\n\
          TARGET: ratio < {SUBQUADRATIC_RATIO:.1}x (log-linear dedup doubles ~2.0-2.4x).\n\
-         DISAMBIGUATE: the additional_locations accumulation is ALREADY O(K) today \
-         (per-group `seen_locations` IndexSet membership, dedup.rs \
-         `insert_new_location_identity`). A ratio over target therefore means \
-         EITHER (a) a real complexity regression, the O(1) IndexSet membership \
-         check was removed and a linear `additional_locations.iter().any(...)` scan \
-         reintroduced, making a K-repeat group O(K^2) again. OR (b), commonly, \
-         wall-clock NOISE: this is a best-of-N WALL-TIME ratio and is load-sensitive, \
-         so a parallel build/test sharing the CPU inflates it. Re-run ISOLATED on an \
-         idle box to disambiguate. The durable fix is to count comparison OPERATIONS \
-         instead of racing the clock (tracked: TEST/flaky-perf-dedup-subquadratic).",
+         The thread CPU clock excludes scheduler stalls from parallel CI jobs. A \
+         ratio over target therefore indicates that the O(1) per-group \
+         seen_locations membership contract regressed toward an O(K^2) location \
+         scan.",
         t_n.as_secs_f64() * 1e3,
         BASE_N * 2,
         t_2n.as_secs_f64() * 1e3,
