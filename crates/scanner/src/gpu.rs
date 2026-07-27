@@ -84,13 +84,22 @@ pub(crate) fn with_recovery_receipt_scope<T>(operation: impl FnOnce() -> T) -> (
 pub(crate) fn record_recovery_receipt() {
     RECOVERY_RECEIPT_COUNTER.with_borrow(|counter| {
         if let Some(counter) = counter {
-            let _previous = counter
-                .fetch_update(
-                    std::sync::atomic::Ordering::Relaxed,
-                    std::sync::atomic::Ordering::Relaxed,
-                    |receipts| Some(receipts.saturating_add(1)),
-                )
-                .expect("recovery receipt update closure always returns Some");
+            match counter.fetch_update(
+                std::sync::atomic::Ordering::Relaxed,
+                std::sync::atomic::Ordering::Relaxed,
+                |receipts| Some(receipts.saturating_add(1)),
+            ) {
+                Ok(_) => {}
+                Err(_) => {
+                    eprintln!(
+                        "keyhog: recovery receipt counter rejected an unconditional saturating update"
+                    );
+                    tracing::error!(
+                        target: "keyhog::gpu",
+                        "recovery receipt counter rejected an unconditional saturating update"
+                    );
+                }
+            }
         }
     });
 }
