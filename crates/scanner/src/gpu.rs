@@ -90,6 +90,8 @@ pub(crate) fn record_recovery_receipt() {
                 |receipts| Some(receipts.saturating_add(1)),
             ) {
                 Ok(_) => {}
+                // LAW10: impossible unconditional update rejection is surfaced loudly to
+                // stderr and tracing; no recovery receipt is silently dropped.
                 Err(_) => {
                     eprintln!(
                         "keyhog: recovery receipt counter rejected an unconditional saturating update"
