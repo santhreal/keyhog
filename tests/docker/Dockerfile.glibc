@@ -83,7 +83,12 @@ WORKDIR /data
 # so successful calibration returns 0 even when the measured scan finds a
 # credential. Any non-zero result is a calibration failure and aborts the image
 # build (Law 10: never ship a silently uncalibrated image).
-RUN calib() { \
+# Hosted-runner timing noise can make equally correct backends statistically
+# indistinguishable. The ci-lean-only fixture replaces timings only after the
+# real scans, parity receipts, and finding identity checks have succeeded.
+RUN export KEYHOG_CI_AUTOROUTE_TIMING_FIXTURE=confidence-separated-v1 \
+        KEYHOG_CI_AUTOROUTE_FIXTURE_AUTH=bench-backend-parity-v1; \
+    calib() { \
         keyhog scan --autoroute-calibrate --autoroute-gpu "$@" --format json >/dev/null; \
         rc=$?; \
         if [ "$rc" != 0 ]; then \

@@ -1,10 +1,11 @@
 mod support;
 
+mod bench_nightly_ci_lean_and_requirements;
 mod bench_nightly_missing_hyperscan_install;
 mod cargo_rdme_spec_waiver_has_expiry;
 mod ci_yml_not_santh_standard_template;
 mod ci_yml_spec_waiver_has_expiry;
-mod workspace_cargo_unpinned_deps;
+mod docker_autoroute_calibration_is_deterministic;
 mod execution_plan_no_retired_registry;
 mod fuzz_not_wired_in_ci;
 mod macos_ci_skips_hyperscan_default_build;
@@ -14,9 +15,9 @@ mod no_dogfood_ci_gate;
 mod pr_ci_runs_all_fourteen_strict_runners;
 mod readme_missing_santh_status_badge;
 mod release_gpu_literal_artifacts_are_shipped;
-mod release_publication_is_atomic;
 mod release_notes_are_changelog_backed;
+mod release_publication_is_atomic;
 mod release_publishes_crates;
 mod workflows_unset_cc_distcc_guard;
 mod workspace_cargo_metadata_drift;
-mod bench_nightly_ci_lean_and_requirements;
+mod workspace_cargo_unpinned_deps;
