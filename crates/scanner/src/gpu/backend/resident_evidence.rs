@@ -5,7 +5,7 @@
 //! Capacity grows geometrically from the real batch instead of reserving the
 //! scanner's full input budget at startup.
 
-use super::CompiledScanner;
+use crate::engine::CompiledScanner;
 use zeroize::Zeroize;
 
 #[cfg(test)]
@@ -63,9 +63,36 @@ pub(crate) struct GpuResidentLiteralState {
     scratch: Vec<u8>,
 }
 
+pub(crate) struct GpuBorrowedLiteralState {
+    output: Vec<u32>,
+    matches: Vec<vyre_libs::scan::LiteralMatch>,
+    scratch: vyre_libs::scan::dispatch_io::ScanDispatchScratch,
+    max_matches: u32,
+}
+
+impl GpuBorrowedLiteralState {
+    fn new() -> Self {
+        Self {
+            output: Vec::new(),
+            matches: Vec::new(),
+            scratch: vyre_libs::scan::dispatch_io::ScanDispatchScratch::default(),
+            max_matches: GPU_FUSED_MATCH_CAP,
+        }
+    }
+
+    fn clear_host_buffers(&mut self) {
+        self.output.as_mut_slice().zeroize();
+        self.output.clear();
+        self.matches.clear();
+        self.scratch.haystack_bytes.zeroize();
+        self.scratch.hit_bytes.zeroize();
+    }
+}
+
 pub(crate) enum GpuResidentLiteralSlot {
     Empty,
     Ready(GpuResidentLiteralState),
+    Borrowed(GpuBorrowedLiteralState),
     Failed(String),
 }
 
@@ -183,19 +210,120 @@ impl GpuResidentLiteralState {
     }
 }
 
-/// Dispatch into scanner-owned readback allocations and expose presence plus
-/// positioned matches only for the duration of `consume`. The callback runs
-/// while the resident slot is locked so no later dispatch can overwrite them.
-pub(super) fn scan_gpu_literal_evidence_by_region_resident<R>(
-    slot: &std::sync::Mutex<GpuResidentLiteralSlot>,
+fn prepare_borrowed_literal_state(slot: &mut GpuResidentLiteralSlot) -> Result<(), String> {
+    let prior = std::mem::replace(slot, GpuResidentLiteralSlot::Empty);
+    match prior {
+        GpuResidentLiteralSlot::Empty => {
+            *slot = GpuResidentLiteralSlot::Borrowed(GpuBorrowedLiteralState::new());
+            Ok(())
+        }
+        GpuResidentLiteralSlot::Borrowed(state) => {
+            *slot = GpuResidentLiteralSlot::Borrowed(state);
+            Ok(())
+        }
+        GpuResidentLiteralSlot::Ready(state) => match state.free() {
+            Ok(()) => {
+                *slot = GpuResidentLiteralSlot::Borrowed(GpuBorrowedLiteralState::new());
+                Ok(())
+            }
+            Err(error) => {
+                *slot = GpuResidentLiteralSlot::Failed(error.clone());
+                Err(error)
+            }
+        },
+        GpuResidentLiteralSlot::Failed(error) => {
+            *slot = GpuResidentLiteralSlot::Failed(error.clone());
+            Err(format!(
+                "GPU literal pipeline is unhealthy after an earlier failure: {error}"
+            ))
+        }
+    }
+}
+
+fn scan_gpu_literal_evidence_by_region_borrowed<R>(
+    slot: &mut GpuResidentLiteralSlot,
     matcher: &vyre_libs::scan::GpuLiteralSet,
     backend: &std::sync::Arc<dyn vyre::VyreBackend>,
     haystack: &[u8],
     region_starts: &[u32],
     consume: impl FnOnce(&[u32], &[vyre_libs::scan::LiteralMatch]) -> Result<R, String>,
 ) -> Result<R, String> {
-    let needed = ResidentLiteralCapacity::for_batch(haystack.len(), region_starts.len())?;
+    prepare_borrowed_literal_state(slot)?;
     let mut consume = Some(consume);
+    for attempt in 0..2 {
+        let (scan_error, current_capacity) = {
+            let GpuResidentLiteralSlot::Borrowed(state) = slot else {
+                return Err(
+                    "GPU borrowed literal pipeline was not installed after successful preparation"
+                        .to_string(),
+                );
+            };
+            let dispatch = matcher
+                .scan_presence_and_positions_by_region_with_scratch(
+                    backend.as_ref(),
+                    haystack,
+                    region_starts,
+                    0,
+                    state.max_matches,
+                    &mut state.matches,
+                    &mut state.scratch,
+                )
+                .map_err(|error| error.to_string());
+            match dispatch {
+                Ok(output) => {
+                    state.output = output;
+                    let consume = consume.take().ok_or_else(|| {
+                        "GPU borrowed literal output consumer was already invoked".to_string()
+                    })?;
+                    let result = consume(state.output.as_slice(), state.matches.as_slice());
+                    state.clear_host_buffers();
+                    return result;
+                }
+                Err(error) => {
+                    let current_capacity = state.max_matches;
+                    state.clear_host_buffers();
+                    (
+                        format!("borrowed fused literal dispatch error: {error}"),
+                        current_capacity,
+                    )
+                }
+            }
+        };
+        if attempt == 1 {
+            return Err(scan_error);
+        }
+        let exact_count = matcher.count(backend.as_ref(), haystack).map_err(|error| {
+            format!("{scan_error}; exact GPU match-count diagnosis also failed: {error}")
+        })?;
+        if exact_count <= current_capacity {
+            return Err(scan_error);
+        }
+        if exact_count > GPU_FUSED_MATCH_REPLAY_CAP {
+            return Err(format!(
+                "{scan_error}; exact GPU match count {exact_count} exceeds the bounded dense-replay cap {GPU_FUSED_MATCH_REPLAY_CAP}. Fix: split the GPU batch or allow automatic stable-byte recovery."
+            ));
+        }
+        let GpuResidentLiteralSlot::Borrowed(state) = slot else {
+            return Err("GPU borrowed literal pipeline disappeared before replay".to_string());
+        };
+        state.max_matches = exact_count;
+    }
+    Err("GPU borrowed literal scan exhausted its bounded replay".to_string())
+}
+
+/// Dispatch into scanner-owned readback allocations and expose presence plus
+/// positioned matches only for the duration of `consume`. The callback runs
+/// while the resident slot is locked so no later dispatch can overwrite them.
+pub(crate) fn scan_gpu_literal_evidence_by_region_resident<R>(
+    slot: &std::sync::Mutex<GpuResidentLiteralSlot>,
+    matcher: &vyre_libs::scan::GpuLiteralSet,
+    backend: &std::sync::Arc<dyn vyre::VyreBackend>,
+    resident_timed_dispatch_supported: bool,
+    haystack: &[u8],
+    region_starts: &[u32],
+    consume: impl FnOnce(&[u32], &[vyre_libs::scan::LiteralMatch]) -> Result<R, String>,
+) -> Result<R, String> {
+    let needed = ResidentLiteralCapacity::for_batch(haystack.len(), region_starts.len())?;
     let mut slot = slot.lock().map_err(|_| {
         "GPU resident literal pipeline lock is poisoned after an earlier scan panic. Fix: restart the scanner process and inspect the preceding GPU fault."
             .to_string()
@@ -206,6 +334,17 @@ pub(super) fn scan_gpu_literal_evidence_by_region_resident<R>(
             "GPU resident literal pipeline is unhealthy after an earlier preparation or cleanup failure: {reason}. Fix: restart the scanner process after correcting the reported GPU fault."
         ));
     }
+    if !resident_timed_dispatch_supported {
+        return scan_gpu_literal_evidence_by_region_borrowed(
+            &mut slot,
+            matcher,
+            backend,
+            haystack,
+            region_starts,
+            consume,
+        );
+    }
+    let mut consume = Some(consume);
 
     let must_rebuild = match &*slot {
         GpuResidentLiteralSlot::Empty => true,
@@ -214,12 +353,15 @@ pub(super) fn scan_gpu_literal_evidence_by_region_resident<R>(
                 || state.backend.version() != backend.version()
                 || !needed.fits(state)
         }
+        GpuResidentLiteralSlot::Borrowed(_) => true,
         GpuResidentLiteralSlot::Failed(_) => false,
     };
     if must_rebuild {
         let capacity = needed.preserving(match &*slot {
             GpuResidentLiteralSlot::Ready(state) => Some(state),
-            GpuResidentLiteralSlot::Empty | GpuResidentLiteralSlot::Failed(_) => None,
+            GpuResidentLiteralSlot::Empty
+            | GpuResidentLiteralSlot::Borrowed(_)
+            | GpuResidentLiteralSlot::Failed(_) => None,
         });
         rebuild_resident_literal_state(&mut slot, matcher, backend, capacity)?;
     }
@@ -232,7 +374,7 @@ pub(super) fn scan_gpu_literal_evidence_by_region_resident<R>(
                         .to_string(),
                 );
             };
-            if super::profile::perf_trace_enabled() {
+            if crate::engine::profile::perf_trace_enabled() {
                 eprintln!(
                     "perf-trace gpu-resident-fused: action={} backend={} haystack_capacity={} region_capacity={} match_capacity={} host_output_capacity={} host_match_capacity={} host_scratch_capacity={}",
                     if must_rebuild || attempt > 0 { "prepare" } else { "reuse" },
@@ -313,7 +455,9 @@ pub(super) fn scan_gpu_literal_evidence_by_region_resident<R>(
         };
         let current_capacity = match &*slot {
             GpuResidentLiteralSlot::Ready(state) => state.pipeline.max_matches(),
-            GpuResidentLiteralSlot::Empty | GpuResidentLiteralSlot::Failed(_) => 0,
+            GpuResidentLiteralSlot::Empty
+            | GpuResidentLiteralSlot::Borrowed(_)
+            | GpuResidentLiteralSlot::Failed(_) => 0,
         };
         if exact_count <= current_capacity {
             return Err(scan_error);
@@ -327,7 +471,9 @@ pub(super) fn scan_gpu_literal_evidence_by_region_resident<R>(
             .with_max_matches(exact_count)
             .preserving(match &*slot {
                 GpuResidentLiteralSlot::Ready(state) => Some(state),
-                GpuResidentLiteralSlot::Empty | GpuResidentLiteralSlot::Failed(_) => None,
+                GpuResidentLiteralSlot::Empty
+                | GpuResidentLiteralSlot::Borrowed(_)
+                | GpuResidentLiteralSlot::Failed(_) => None,
             });
         rebuild_resident_literal_state(&mut slot, matcher, backend, capacity)?;
     }
@@ -341,10 +487,20 @@ fn rebuild_resident_literal_state(
     capacity: ResidentLiteralCapacity,
 ) -> Result<(), String> {
     let prior = std::mem::replace(slot, GpuResidentLiteralSlot::Empty);
-    if let GpuResidentLiteralSlot::Ready(prior) = prior {
-        if let Err(error) = prior.free() {
+    match prior {
+        GpuResidentLiteralSlot::Ready(prior) => {
+            if let Err(error) = prior.free() {
+                *slot = GpuResidentLiteralSlot::Failed(error.clone());
+                return Err(error);
+            }
+        }
+        GpuResidentLiteralSlot::Borrowed(mut prior) => prior.clear_host_buffers(),
+        GpuResidentLiteralSlot::Empty => {}
+        GpuResidentLiteralSlot::Failed(error) => {
             *slot = GpuResidentLiteralSlot::Failed(error.clone());
-            return Err(error);
+            return Err(format!(
+                "GPU literal pipeline is unhealthy after an earlier failure: {error}"
+            ));
         }
     }
     let pipeline = match matcher
@@ -400,7 +556,7 @@ impl CompiledScanner {
         }
     }
 
-    pub(super) fn gpu_resident_literal_slot(
+    pub(crate) fn gpu_resident_literal_slot(
         &self,
         backend: crate::hw_probe::ScanBackend,
     ) -> Option<&std::sync::Mutex<GpuResidentLiteralSlot>> {
@@ -428,6 +584,10 @@ fn reset_resident_literal_slot(
                 "resident literal pipeline was already unhealthy: {error}"
             ))
         }
+        GpuResidentLiteralSlot::Borrowed(mut state) => {
+            state.clear_host_buffers();
+            Ok(())
+        }
         GpuResidentLiteralSlot::Ready(state) => {
             if let Err(error) = state.free() {
                 *slot = GpuResidentLiteralSlot::Failed(error.clone());
@@ -450,17 +610,20 @@ impl Drop for CompiledScanner {
                     std::mem::replace(poisoned.into_inner(), GpuResidentLiteralSlot::Empty)
                 }
             };
-            let GpuResidentLiteralSlot::Ready(state) = state else {
-                continue;
-            };
-            if let Err(error) = state.free() {
-                eprintln!("keyhog: GPU resident literal cleanup failed: {error}");
-                tracing::warn!(target: "keyhog::gpu", %error, "GPU resident literal cleanup failed");
+            match state {
+                GpuResidentLiteralSlot::Ready(state) => {
+                    if let Err(error) = state.free() {
+                        eprintln!("keyhog: GPU resident literal cleanup failed: {error}");
+                        tracing::warn!(target: "keyhog::gpu", %error, "GPU resident literal cleanup failed");
+                    }
+                }
+                GpuResidentLiteralSlot::Borrowed(mut state) => state.clear_host_buffers(),
+                GpuResidentLiteralSlot::Empty | GpuResidentLiteralSlot::Failed(_) => {}
             }
         }
     }
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/gpu_resident_evidence.rs"]
+#[path = "../../../tests/unit/gpu_resident_evidence.rs"]
 mod tests;

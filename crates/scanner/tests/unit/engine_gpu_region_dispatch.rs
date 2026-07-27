@@ -171,7 +171,7 @@ fn automatic_gpu_recovery_rescans_only_unprocessed_dispatch_ranges() {
     let (scanner, backend, chunks, expected) = gpu_recovery_fixture();
 
     let outcome = with_test_region_presence_byte_limit(64, || {
-        crate::engine::gpu_resident_evidence::with_test_resident_dispatch_failure(1, || {
+        crate::gpu::with_test_resident_dispatch_failure(1, || {
             scanner
                 .scan_coalesced_gpu_region_presence_recovering(
                     &chunks,

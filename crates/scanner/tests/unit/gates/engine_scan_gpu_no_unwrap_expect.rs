@@ -15,7 +15,7 @@ const GPU_SCAN_SRCS: &[&str] = &[
     "engine/gpu_region_batch.rs",
     "engine/gpu_region_dispatch.rs",
     "engine/gpu_region_dispatch_helpers.rs",
-    "engine/gpu_resident_evidence.rs",
+    "gpu/backend/resident_evidence.rs",
 ];
 
 /// Files permitted to contain a co-located `#[cfg(test)]` (or

@@ -12,6 +12,8 @@ mod artifact;
 mod diagnostics;
 #[cfg(feature = "gpu")]
 mod execution;
+#[cfg(feature = "gpu")]
+mod resident_evidence;
 
 #[cfg(all(test, feature = "gpu", target_os = "linux"))]
 pub(crate) use acquisition::load_dynamic_library;
@@ -27,6 +29,12 @@ pub(crate) use diagnostics::moe_runtime_degrade;
 #[cfg(feature = "gpu")]
 pub(crate) use execution::{
     batch_score_features, gpu_moe_parity_max_divergence, GPU_MOE_PARITY_TOLERANCE,
+};
+#[cfg(all(test, feature = "gpu"))]
+pub(crate) use resident_evidence::with_test_resident_dispatch_failure;
+#[cfg(feature = "gpu")]
+pub(crate) use resident_evidence::{
+    scan_gpu_literal_evidence_by_region_resident, GpuResidentLiteralSlot,
 };
 
 #[cfg(all(test, feature = "gpu"))]

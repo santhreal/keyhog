@@ -13,6 +13,7 @@ pub(crate) struct AcquiredGpuPeer {
     pub(crate) backend: Arc<dyn vyre::VyreBackend>,
     pub(crate) device_identity: Option<String>,
     pub(crate) is_software: bool,
+    pub(crate) resident_timed_dispatch_supported: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -111,6 +112,10 @@ impl GpuBackendPeers {
             Err(_) => None, // LAW10: status projection only; initialization_error retains the typed diagnostic and execution logs it before refusing this backend.
         }
     }
+    pub(crate) fn resident_timed_dispatch_supported(&self, backend: ScanBackend) -> bool {
+        self.initialized(backend)
+            .is_some_and(|peer| peer.resident_timed_dispatch_supported)
+    }
 
     pub(crate) fn initialization_error(&self, backend: ScanBackend) -> Option<&str> {
         match backend {
@@ -166,12 +171,19 @@ fn acquire_cuda_peer() -> Result<AcquiredGpuPeer, String> {
         backend,
         device_identity: None,
         is_software: false,
+        resident_timed_dispatch_supported: true,
     })
 }
 
 #[cfg(not(all(feature = "gpu", target_os = "linux")))]
 fn acquire_cuda_peer() -> Result<AcquiredGpuPeer, String> {
     Err("CUDA peer is not compiled for this platform".to_string())
+}
+
+#[cfg(feature = "gpu")]
+fn wgpu_resident_timed_dispatch_supported(features: wgpu::Features) -> bool {
+    features
+        .contains(wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS)
 }
 
 #[cfg(feature = "gpu")]
@@ -190,6 +202,8 @@ fn acquire_wgpu_peer() -> Result<AcquiredGpuPeer, String> {
     let device_identity =
         crate::gpu::gpu_adapter_device_identity(info, backend.device_limits().max_buffer_size);
     let is_software = crate::gpu::is_software_adapter(info);
+    let resident_timed_dispatch_supported =
+        wgpu_resident_timed_dispatch_supported(backend.device_queue().0.features());
     tracing::info!(
         target: "keyhog::routing",
         device_identity,
@@ -200,6 +214,7 @@ fn acquire_wgpu_peer() -> Result<AcquiredGpuPeer, String> {
         backend,
         device_identity: Some(device_identity),
         is_software,
+        resident_timed_dispatch_supported,
     })
 }
 
@@ -342,3 +357,7 @@ pub(crate) fn get_gpu() -> Result<Option<&'static GpuContext>, GpuBackendError> 
         Err(error) => Err(error.clone()),
     }
 }
+
+#[cfg(all(test, feature = "gpu"))]
+#[path = "../../../tests/unit/gpu_backend_acquisition.rs"]
+mod tests;

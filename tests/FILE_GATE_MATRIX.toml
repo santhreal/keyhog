@@ -2594,7 +2594,7 @@ error = true
 adversarial = true
 
 [[module]]
-path = "crates/scanner/src/engine/gpu_resident_evidence.rs"
+path = "crates/scanner/src/gpu/backend/resident_evidence.rs"
 error = true
 adversarial = true
 

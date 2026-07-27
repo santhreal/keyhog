@@ -61,9 +61,9 @@ fn coalesced_gpu_uses_region_presence_not_per_rule_catalog() {
     .expect("gpu_region_batch.rs readable");
     let resident_src = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/src/engine/gpu_resident_evidence.rs"
+        "/src/gpu/backend/resident_evidence.rs"
     ))
-    .expect("gpu_resident_evidence.rs readable");
+    .expect("resident_evidence.rs readable");
 
     assert!(
         dispatch_src.contains("scan_gpu_literal_evidence_by_region_resident")

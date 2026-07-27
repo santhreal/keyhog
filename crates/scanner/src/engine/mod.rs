@@ -80,9 +80,7 @@ mod gpu_region_dispatch;
 #[cfg(feature = "gpu")]
 mod gpu_region_dispatch_helpers;
 #[cfg(feature = "gpu")]
-mod gpu_resident_evidence;
-#[cfg(feature = "gpu")]
-pub(crate) use gpu_resident_evidence::GpuResidentLiteralSlot;
+pub(crate) use crate::gpu::GpuResidentLiteralSlot;
 mod gpu_stack;
 mod hot_patterns;
 pub(crate) mod phase2;
@@ -232,11 +230,9 @@ pub struct CompiledScanner {
     pub(crate) gpu_max_literal_len: usize,
     pub(crate) gpu_matcher: OnceLock<Option<vyre_libs::scan::GpuLiteralSet>>,
     #[cfg(feature = "gpu")]
-    pub(crate) gpu_resident_literal_cuda:
-        std::sync::Mutex<gpu_resident_evidence::GpuResidentLiteralSlot>,
+    pub(crate) gpu_resident_literal_cuda: std::sync::Mutex<GpuResidentLiteralSlot>,
     #[cfg(feature = "gpu")]
-    pub(crate) gpu_resident_literal_wgpu:
-        std::sync::Mutex<gpu_resident_evidence::GpuResidentLiteralSlot>,
+    pub(crate) gpu_resident_literal_wgpu: std::sync::Mutex<GpuResidentLiteralSlot>,
     pub(crate) gpu_last_degrade_reason: std::sync::Mutex<Option<String>>,
     pub(crate) gpu_degrade_count: std::sync::atomic::AtomicU64,
     /// One-time backend-neutral GPU literal-program preparation measured by

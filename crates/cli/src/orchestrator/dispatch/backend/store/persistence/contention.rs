@@ -20,7 +20,7 @@ const CHILD_SECRET_ENV: &str = "KEYHOG_AUTOROUTE_CONTENTION_SECRET";
 const CHILD_TEST_NAME: &str = "orchestrator::dispatch::backend::store::persistence::contention::autoroute_cache_contention_writer_subprocess";
 const DETECTOR_DIGEST: u64 = 0x31ca_11b4_a5e0_0310;
 const RULES_DIGEST: &str = "0310310310310310310310310310310310310310310310310310310310310310";
-const CONFIG_DIGESTS: [u64; 4] = [0x3100, 0x3101, 0x3102, 0x3103];
+const CONFIG_DIGESTS: [u64; 2] = [0x3100, 0x3101];
 const BUCKET_BYTES: [u64; 8] = [
     4 * 1024,
     8 * 1024,
@@ -31,10 +31,10 @@ const BUCKET_BYTES: [u64; 8] = [
     16 * 1024 * 1024,
     32 * 1024 * 1024,
 ];
-const BUCKETS_PER_WRITE: usize = BUCKET_BYTES.len() / 2;
-const UNIQUE_WRITERS: usize = CONFIG_DIGESTS.len();
-// Four distinct writers plus one exact duplicate exercise both merge classes
-// without multiplying fsync-heavy process contention beyond the unit-test gate.
+const HOST_VARIANTS: usize = 2;
+const UNIQUE_WRITERS: usize = CONFIG_DIGESTS.len() * HOST_VARIANTS;
+// Four distinct config/host generations plus one exact duplicate maximize
+// process overlap while requiring only one fsync-heavy save per subprocess.
 const WRITER_PROCESSES: usize = UNIQUE_WRITERS + 1;
 const SECRET_SENTINEL: &str = "kh031-secret-material-must-never-reach-cache-or-temp";
 
@@ -99,11 +99,12 @@ fn workload(bytes: u64) -> WorkloadKey {
     }
 }
 
-fn write_spec(path: &Path, config_index: usize, host_variant: usize, bucket_group: usize) {
+fn write_spec(path: &Path, logical_writer: usize) {
+    let config_index = logical_writer / HOST_VARIANTS;
+    let host_variant = logical_writer % HOST_VARIANTS;
     let config = CONFIG_DIGESTS[config_index];
     let host = host(host_variant);
-    let first_bucket = bucket_group * BUCKETS_PER_WRITE;
-    let decisions = BUCKET_BYTES[first_bucket..first_bucket + BUCKETS_PER_WRITE]
+    let decisions = BUCKET_BYTES
         .iter()
         .map(|&bytes| {
             (
@@ -120,19 +121,12 @@ fn write_spec(path: &Path, config_index: usize, host_variant: usize, bucket_grou
         &host,
         &decisions,
     ) {
-        panic!(
-            "contention writer for config {config_index}, host {host_variant}, bucket group {bucket_group} failed: {error}"
-        );
+        panic!("contention writer for config {config_index}, host {host_variant} failed: {error}");
     }
 }
 
 fn write_writer(path: &Path, logical_writer: usize) {
-    let config_index = logical_writer % UNIQUE_WRITERS;
-    for host_variant in 0..2 {
-        for bucket_group in 0..2 {
-            write_spec(path, config_index, host_variant, bucket_group);
-        }
-    }
+    write_spec(path, logical_writer % UNIQUE_WRITERS);
 }
 
 fn wait_for_gate(path: &Path) {
@@ -403,7 +397,7 @@ fn multiprocess_writers_publish_one_exact_private_merged_cache() {
     );
     let parsed: AutorouteCache =
         serde_json::from_slice(&actual).expect("parse exact final contention JSON");
-    assert_eq!(parsed.configs.len(), CONFIG_DIGESTS.len() * 2);
+    assert_eq!(parsed.configs.len(), UNIQUE_WRITERS);
     assert!(parsed
         .configs
         .iter()

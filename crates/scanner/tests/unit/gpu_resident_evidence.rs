@@ -3,6 +3,7 @@ use super::{
     GpuResidentLiteralSlot,
 };
 
+/// Regression: calibration must preserve the diagnostic when a prior GPU cleanup poisoned the slot.
 #[test]
 fn calibration_reset_preserves_an_unhealthy_resident_slot() {
     let slot = std::sync::Mutex::new(GpuResidentLiteralSlot::Failed(
@@ -18,20 +19,78 @@ fn calibration_reset_preserves_an_unhealthy_resident_slot() {
     ));
 }
 
+/// Regression: WGPU adapters without both timestamp features must still return exact fused presence and positions through the untimed borrowed path.
 #[test]
-fn fused_match_overflow_replays_once_with_the_exact_device_count() {
+fn untimed_wgpu_adapter_uses_exact_borrowed_fused_scan() {
     let _gpu_test_guard = crate::testing::gpu_test_lock();
-    let backend: std::sync::Arc<dyn vyre::VyreBackend> = match vyre_driver_wgpu::WgpuBackend::shared(
-    ) {
+    let concrete_backend = match vyre_driver_wgpu::WgpuBackend::shared() {
         Ok(backend) => backend,
         Err(error) => {
             assert!(
-                    !crate::hw_probe::probe_hardware().gpu_available,
-                    "GPU hardware is present but the WGPU fused overflow test could not acquire it: {error}"
-                );
+                !crate::hw_probe::probe_hardware().gpu_available,
+                "GPU hardware is present but the WGPU untimed fused test could not acquire it: {error}"
+            );
             return;
         }
     };
+    let backend: std::sync::Arc<dyn vyre::VyreBackend> = concrete_backend;
+    let matcher = vyre_libs::scan::GpuLiteralSet::compile(&[b"a".as_slice()]);
+    let slot = std::sync::Mutex::new(GpuResidentLiteralSlot::Empty);
+    let mut consumed = None;
+
+    scan_gpu_literal_evidence_by_region_resident(
+        &slot,
+        &matcher,
+        &backend,
+        false,
+        b"zaa",
+        &[0],
+        |presence, matches| {
+            let mut exact_matches = matches
+                .iter()
+                .map(|entry| (entry.pattern_id, entry.start, entry.end))
+                .collect::<Vec<_>>();
+            exact_matches.sort_unstable();
+            consumed = Some((presence.to_vec(), exact_matches));
+            Ok(())
+        },
+    )
+    .expect("untimed WGPU fused scan must preserve complete evidence");
+
+    assert_eq!(
+        consumed,
+        Some((vec![1], vec![(0, 1, 2), (0, 2, 3)])),
+        "the untimed path must return the exact presence bit and byte ranges"
+    );
+    let state_guard = slot.lock().expect("untimed slot remains healthy");
+    let GpuResidentLiteralSlot::Borrowed(state) = &*state_guard else {
+        panic!("an adapter without timestamp support must retain borrowed scratch state")
+    };
+    assert!(state.output.is_empty());
+    assert!(state.matches.is_empty());
+    assert!(state.scratch.haystack_bytes.iter().all(|byte| *byte == 0));
+    drop(state_guard);
+    reset_resident_literal_slot(&slot).expect("untimed borrowed scratch resets cleanly");
+}
+
+/// Regression: fused literal overflow must replay once at the exact count on timed and untimed WGPU adapters.
+#[test]
+fn fused_match_overflow_replays_once_with_the_exact_device_count() {
+    let _gpu_test_guard = crate::testing::gpu_test_lock();
+    let concrete_backend = match vyre_driver_wgpu::WgpuBackend::shared() {
+        Ok(backend) => backend,
+        Err(error) => {
+            assert!(
+                !crate::hw_probe::probe_hardware().gpu_available,
+                "GPU hardware is present but the WGPU fused overflow test could not acquire it: {error}"
+            );
+            return;
+        }
+    };
+    let resident_timed_dispatch_supported = concrete_backend.device_queue().0.features().contains(
+        wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS,
+    );
+    let backend: std::sync::Arc<dyn vyre::VyreBackend> = concrete_backend;
     let matcher = vyre_libs::scan::GpuLiteralSet::compile(&[b"a".as_slice(), b"aa".as_slice()]);
     let slot = std::sync::Mutex::new(GpuResidentLiteralSlot::Empty);
     let haystack = vec![b'a'; super::GPU_FUSED_MATCH_CAP as usize];
@@ -41,6 +100,7 @@ fn fused_match_overflow_replays_once_with_the_exact_device_count() {
         &slot,
         &matcher,
         &backend,
+        resident_timed_dispatch_supported,
         &haystack,
         &[0],
         |presence, matches| {
@@ -58,10 +118,19 @@ fn fused_match_overflow_replays_once_with_the_exact_device_count() {
         "the replay returns every `a` and overlapping `aa` position"
     );
     let state_guard = slot.lock().expect("resident slot remains healthy");
-    let GpuResidentLiteralSlot::Ready(state) = &*state_guard else {
-        panic!("overflow replay must retain a ready resident pipeline");
-    };
-    assert_eq!(state.pipeline.max_matches() as usize, matches);
+    match &*state_guard {
+        GpuResidentLiteralSlot::Ready(state) => {
+            assert!(resident_timed_dispatch_supported);
+            assert_eq!(state.pipeline.max_matches() as usize, matches);
+        }
+        GpuResidentLiteralSlot::Borrowed(state) => {
+            assert!(!resident_timed_dispatch_supported);
+            assert_eq!(state.max_matches as usize, matches);
+        }
+        GpuResidentLiteralSlot::Empty | GpuResidentLiteralSlot::Failed(_) => {
+            panic!("overflow replay must retain a healthy timed or untimed pipeline")
+        }
+    }
     drop(state_guard);
     reset_resident_literal_slot(&slot).expect("resized resident resources free cleanly");
 
@@ -71,6 +140,7 @@ fn fused_match_overflow_replays_once_with_the_exact_device_count() {
         &slot,
         &matcher,
         &backend,
+        resident_timed_dispatch_supported,
         &hostile,
         &[0],
         |_presence, _matches| {

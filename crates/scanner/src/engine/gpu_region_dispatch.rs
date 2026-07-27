@@ -104,6 +104,8 @@ impl CompiledScanner {
             let Some(backend) = self.gpu_backends.get(route) else {
                 return dispatch_failure(self.gpu_backend_unavailable_reason(route));
             };
+            let resident_timed_dispatch_supported =
+                self.gpu_backends.resident_timed_dispatch_supported(route);
             let Some(resident_slot) = self.gpu_resident_literal_slot(route) else {
                 return dispatch_failure(format!(
                     "{} has no scanner-owned resident pipeline slot",
@@ -220,10 +222,11 @@ impl CompiledScanner {
                             .to_string(),
                     )
                 } else {
-                    super::gpu_resident_evidence::scan_gpu_literal_evidence_by_region_resident(
+                    crate::gpu::scan_gpu_literal_evidence_by_region_resident(
                         resident_slot,
                         matcher,
                         backend,
+                        resident_timed_dispatch_supported,
                         haystack,
                         region_starts,
                         |presence, literal_matches| {

@@ -34,7 +34,11 @@ mod backend;
 pub(crate) use backend::load_dynamic_library;
 #[cfg(all(feature = "gpu", target_os = "linux"))]
 pub(crate) use backend::probe_cuda_peer;
+#[cfg(all(test, feature = "gpu"))]
+pub(crate) use backend::with_test_resident_dispatch_failure;
 pub use backend::GpuBackendAvailability;
+#[cfg(feature = "gpu")]
+pub(crate) use backend::{scan_gpu_literal_evidence_by_region_resident, GpuResidentLiteralSlot};
 pub(crate) use backend::{GpuBackendAcquisitionFailure, GpuBackendPeers};
 type RecoveryReceiptCounter = std::sync::Arc<std::sync::atomic::AtomicU64>;
 
@@ -80,11 +84,13 @@ pub(crate) fn with_recovery_receipt_scope<T>(operation: impl FnOnce() -> T) -> (
 pub(crate) fn record_recovery_receipt() {
     RECOVERY_RECEIPT_COUNTER.with_borrow(|counter| {
         if let Some(counter) = counter {
-            let _ = counter.fetch_update(
-                std::sync::atomic::Ordering::Relaxed,
-                std::sync::atomic::Ordering::Relaxed,
-                |receipts| Some(receipts.saturating_add(1)),
-            );
+            let _previous = counter
+                .fetch_update(
+                    std::sync::atomic::Ordering::Relaxed,
+                    std::sync::atomic::Ordering::Relaxed,
+                    |receipts| Some(receipts.saturating_add(1)),
+                )
+                .expect("recovery receipt update closure always returns Some");
         }
     });
 }
