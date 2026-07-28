@@ -27,17 +27,21 @@ jobs:
   leaderboard:
     runs-on: ubuntu-24.04
     timeout-minutes: 180
-    env:
-      KEYHOG_BENCH_SOURCE_ROOT: ${{ runner.temp }}/keyhog-bench-sources
-      KEYHOG_BENCH_SNAPSHOT_ROOT: ${{ runner.temp }}/keyhog-bench-snapshots
-      KEYHOG_BENCH_MIRROR: ${{ runner.temp }}/keyhog-bench-sources/mirror
-      KEYHOG_BENCH_CREDDATA: ${{ runner.temp }}/keyhog-bench-sources/creddata
     # Per-job permissions, see keyhog.yml header note. Top-level
     # `permissions:` rejected at dispatch time on this repo.
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Configure hosted temporary paths
+        run: |
+          printf '%s\n' \
+            "KEYHOG_BENCH_SOURCE_ROOT=$RUNNER_TEMP/keyhog-bench-sources" \
+            "KEYHOG_BENCH_SNAPSHOT_ROOT=$RUNNER_TEMP/keyhog-bench-snapshots" \
+            "KEYHOG_BENCH_MIRROR=$RUNNER_TEMP/keyhog-bench-sources/mirror" \
+            "KEYHOG_BENCH_CREDDATA=$RUNNER_TEMP/keyhog-bench-sources/creddata" \
+            >> "$GITHUB_ENV"
+
 
       - name: Install Rust 1.89.0 toolchain
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8

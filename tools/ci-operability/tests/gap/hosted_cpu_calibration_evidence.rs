@@ -40,28 +40,35 @@ fn assert_contiguous(names: &[&str], expected: &[&str]) {
     );
 }
 
-/// GitHub rejects workflow dispatch when the top-level `env` references the
-/// runner context. Keep temporary-path expressions inside each job, where that
-/// context exists, so calibration can start instead of failing during parsing.
+/// GitHub rejects workflow dispatch when either the workflow-level or
+/// job-level `env` evaluates the runner context. Export temporary paths from a
+/// step after runner assignment so calibration reaches execution.
 #[test]
-fn runner_temp_paths_are_scoped_to_jobs_accepted_by_github_dispatch() {
-    for workflow_name in ["bench-nightly.yml", "differential-bench.yml"] {
+fn runner_temp_paths_are_exported_at_step_runtime_accepted_by_github_dispatch() {
+    for (workflow_name, setup_name) in [
+        ("bench-nightly.yml", "Configure hosted temporary paths"),
+        (
+            "differential-bench.yml",
+            "configure hosted temporary paths",
+        ),
+    ] {
         let workflow = read_workflow(workflow_name);
-        let (workflow_header, jobs) = workflow
-            .split_once("\njobs:\n")
-            .expect("hosted workflow must declare jobs");
         assert!(
-            !workflow_header.contains("${{ runner.temp }}"),
-            "{workflow_name} cannot use the runner context before job evaluation"
+            !workflow.contains("${{ runner.temp }}"),
+            "{workflow_name} cannot evaluate the runner context in workflow YAML"
         );
-        assert!(
-            jobs.contains("env:\n      KEYHOG_BENCH_SOURCE_ROOT: ${{ runner.temp }}/"),
-            "{workflow_name} must keep hosted source storage in runner.temp"
-        );
-        assert!(
-            jobs.contains("KEYHOG_BENCH_SNAPSHOT_ROOT: ${{ runner.temp }}/"),
-            "{workflow_name} must keep hosted snapshots in runner.temp"
-        );
+        let setup = step_block(&workflow, setup_name);
+        for contract in [
+            "KEYHOG_BENCH_SOURCE_ROOT=$RUNNER_TEMP/keyhog-bench-sources",
+            "KEYHOG_BENCH_SNAPSHOT_ROOT=$RUNNER_TEMP/keyhog-bench-snapshots",
+            "KEYHOG_BENCH_MIRROR=$RUNNER_TEMP/keyhog-bench-sources/mirror",
+            ">> \"$GITHUB_ENV\"",
+        ] {
+            assert!(
+                setup.contains(contract),
+                "{workflow_name} temporary-path setup is missing {contract:?}"
+            );
+        }
     }
 }
 
