@@ -1,7 +1,11 @@
 use super::support::read_workflow;
+use std::fs;
+use std::io::Write;
+use std::path::Path;
+use std::process::Output;
+use std::process::{Command, Stdio};
 
-const UPLOAD_ARTIFACT: &str =
-    "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a";
+const UPLOAD_ARTIFACT: &str = "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a";
 
 fn step_block<'a>(workflow: &'a str, name: &str) -> &'a str {
     let marker = format!("      - name: {name}");
@@ -13,6 +17,61 @@ fn step_block<'a>(workflow: &'a str, name: &str) -> &'a str {
         .find("\n      - name: ")
         .map_or(workflow.len(), |offset| after_marker + offset);
     &workflow[start..end]
+}
+
+fn run_script(step: &str) -> String {
+    let marker = "\n        run: |\n";
+    let body = step
+        .split_once(marker)
+        .unwrap_or_else(|| panic!("workflow step has no literal run block"))
+        .1;
+    body.lines()
+        .take_while(|line| line.starts_with("          "))
+        .map(|line| line.strip_prefix("          ").unwrap())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn assert_bash_syntax(workflow_name: &str, step_name: &str, step: &str) {
+    let mut child = Command::new("bash")
+        .arg("-n")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("bash must be available for workflow syntax validation");
+    child
+        .stdin
+        .as_mut()
+        .expect("bash stdin is piped")
+        .write_all(run_script(step).as_bytes())
+        .expect("write workflow run block");
+    let output = child
+        .wait_with_output()
+        .expect("wait for bash syntax check");
+    assert!(
+        output.status.success(),
+        "{workflow_name} step {step_name:?} is invalid Bash: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn run_root_setup(
+    step: &str,
+    working_dir: &Path,
+    runner_temp: &Path,
+    source: &Path,
+    snapshot: &Path,
+) -> Output {
+    Command::new("bash")
+        .arg("-c")
+        .arg(run_script(step))
+        .current_dir(working_dir)
+        .env("RUNNER_TEMP", runner_temp)
+        .env("KEYHOG_BENCH_SOURCE_ROOT", source)
+        .env("KEYHOG_BENCH_SNAPSHOT_ROOT", snapshot)
+        .output()
+        .expect("execute hosted root setup")
 }
 
 fn step_names(workflow: &str) -> Vec<&str> {
@@ -35,7 +94,9 @@ fn upload_paths(step: &str) -> Vec<&str> {
 
 fn assert_contiguous(names: &[&str], expected: &[&str]) {
     assert!(
-        names.windows(expected.len()).any(|window| window == expected),
+        names
+            .windows(expected.len())
+            .any(|window| window == expected),
         "expected contiguous workflow steps {expected:?}, got {names:?}"
     );
 }
@@ -47,10 +108,7 @@ fn assert_contiguous(names: &[&str], expected: &[&str]) {
 fn runner_temp_paths_are_exported_at_step_runtime_accepted_by_github_dispatch() {
     for (workflow_name, setup_name) in [
         ("bench-nightly.yml", "Configure hosted temporary paths"),
-        (
-            "differential-bench.yml",
-            "configure hosted temporary paths",
-        ),
+        ("differential-bench.yml", "configure hosted temporary paths"),
     ] {
         let workflow = read_workflow(workflow_name);
         assert!(
@@ -72,6 +130,91 @@ fn runner_temp_paths_are_exported_at_step_runtime_accepted_by_github_dispatch() 
     }
 }
 
+/// Invalid path-guard shell syntax stops calibration before any evidence is
+/// generated and can also prevent cleanup. Parse-check both boundary steps in
+/// both hosted workflows so GitHub runner execution cannot regress silently.
+#[test]
+fn hosted_private_root_setup_and_cleanup_are_valid_bash() {
+    for (workflow_name, prepare_name, cleanup_name) in [
+        (
+            "bench-nightly.yml",
+            "Prepare clean benchmark artifact and source directories",
+            "Unmount and remove private benchmark snapshots",
+        ),
+        (
+            "differential-bench.yml",
+            "prepare clean benchmark results and source directory",
+            "unmount and remove private benchmark snapshots",
+        ),
+    ] {
+        let workflow = read_workflow(workflow_name);
+        for step_name in [prepare_name, cleanup_name] {
+            assert_bash_syntax(workflow_name, step_name, step_block(&workflow, step_name));
+        }
+    }
+}
+
+/// The private-root guard must accept distinct descendants of `RUNNER_TEMP`,
+/// reject overlapping roots, and reject a sibling path that only shares the
+/// trusted prefix. This prevents cleanup or evidence writes outside runner
+/// temporary storage.
+#[test]
+fn hosted_private_root_setup_enforces_path_boundaries() {
+    for (workflow_name, prepare_name) in [
+        (
+            "bench-nightly.yml",
+            "Prepare clean benchmark artifact and source directories",
+        ),
+        (
+            "differential-bench.yml",
+            "prepare clean benchmark results and source directory",
+        ),
+    ] {
+        let workflow = read_workflow(workflow_name);
+        let step = step_block(&workflow, prepare_name);
+        let suffix = workflow_name.replace(['.', '-'], "_");
+        let root = std::env::temp_dir().join(format!(
+            "keyhog-hosted-root-contract-{}-{suffix}",
+            std::process::id()
+        ));
+        let outside = root.with_extension("outside");
+        fs::remove_dir_all(&root).ok();
+        fs::remove_dir_all(&outside).ok();
+        fs::create_dir_all(&root).expect("create isolated runner temp");
+        fs::create_dir_all(&outside).expect("create adversarial sibling");
+        fs::write(outside.join("sentinel"), b"keep").expect("write sibling sentinel");
+
+        let source = root.join("sources");
+        let snapshot = root.join("snapshots");
+        let accepted = run_root_setup(step, &root, &root, &source, &snapshot);
+        assert!(
+            accepted.status.success(),
+            "{workflow_name} rejected safe roots: {}",
+            String::from_utf8_lossy(&accepted.stderr)
+        );
+        assert!(source.is_dir());
+        assert!(!snapshot.exists());
+
+        let overlapping = root.join("overlapping");
+        let rejected_overlap = run_root_setup(step, &root, &root, &overlapping, &overlapping);
+        assert!(
+            !rejected_overlap.status.success(),
+            "{workflow_name} accepted overlapping source and snapshot roots"
+        );
+
+        let rejected_sibling = run_root_setup(step, &root, &root, &outside, &snapshot);
+        assert!(
+            !rejected_sibling.status.success(),
+            "{workflow_name} accepted a sibling path sharing the RUNNER_TEMP prefix"
+        );
+        assert_eq!(
+            fs::read(outside.join("sentinel")).expect("read sibling sentinel"),
+            b"keep"
+        );
+        fs::remove_dir_all(&root).expect("remove isolated runner temp");
+        fs::remove_dir_all(&outside).expect("remove adversarial sibling");
+    }
+}
 #[test]
 fn dispatch_calibration_runs_immediately_after_raw_generation_and_before_hosted_gate() {
     let nightly = read_workflow("bench-nightly.yml");
@@ -163,7 +306,10 @@ fn calibration_uploads_bind_untrusted_run_identity_and_exact_inventory() {
 
     for upload in [nightly_upload, differential_upload] {
         assert!(upload.contains("if-no-files-found: error"));
-        assert!(!upload.contains('*'), "calibration inventory must not use globs");
+        assert!(
+            !upload.contains('*'),
+            "calibration inventory must not use globs"
+        );
         assert!(!upload.contains("KEYHOG_BENCH_SOURCE_ROOT"));
         assert!(!upload.contains("KEYHOG_BENCH_SNAPSHOT_ROOT"));
         assert!(!upload.contains("benchmarks/corpora/"));
@@ -229,8 +375,12 @@ fn authoritative_hosted_gate_still_controls_the_unchanged_success_publication() 
     let nightly_calibration = nightly
         .find("name: Upload untrusted nightly calibration evidence")
         .unwrap();
-    let nightly_gate = nightly.find("python3 -B -m bench.hosted_cpu_gate gate").unwrap();
-    let nightly_publication = nightly.find("name: Upload benchmark results and reports").unwrap();
+    let nightly_gate = nightly
+        .find("python3 -B -m bench.hosted_cpu_gate gate")
+        .unwrap();
+    let nightly_publication = nightly
+        .find("name: Upload benchmark results and reports")
+        .unwrap();
     assert!(nightly_calibration < nightly_gate && nightly_gate < nightly_publication);
     let nightly_publication_step = step_block(&nightly, "Upload benchmark results and reports");
     assert!(nightly_publication_step.contains("name: bench-unified-results"));

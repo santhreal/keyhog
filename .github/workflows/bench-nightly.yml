@@ -123,10 +123,18 @@ jobs:
             benchmarks/hosted-cpu-immutability.json benchmarks/unicode-parity.json
           source_root="${KEYHOG_BENCH_SOURCE_ROOT}"
           snapshot_root="${KEYHOG_BENCH_SNAPSHOT_ROOT}"
-          case "${source_root}:${snapshot_root}" in
-            "${RUNNER_TEMP}/"*":"${RUNNER_TEMP}/"*) ;;
-            *) echo "::error::unsafe benchmark root"; exit 1 ;;
+          case "${source_root}" in
+            "${RUNNER_TEMP}/"*) ;;
+            *) echo "::error::unsafe benchmark source root"; exit 1 ;;
           esac
+          case "${snapshot_root}" in
+            "${RUNNER_TEMP}/"*) ;;
+            *) echo "::error::unsafe benchmark snapshot root"; exit 1 ;;
+          esac
+          if [[ "${source_root}" == "${snapshot_root}" ]]; then
+            echo "::error::benchmark source and snapshot roots must differ"
+            exit 1
+          fi
           rm -rf "${source_root}" "${snapshot_root}"
           mkdir -p "${source_root}"
           test ! -e "${snapshot_root}"
@@ -616,10 +624,18 @@ jobs:
           set -euo pipefail
           snapshot_root="${KEYHOG_BENCH_SNAPSHOT_ROOT}"
           source_root="${KEYHOG_BENCH_SOURCE_ROOT}"
-          case "${source_root}:${snapshot_root}" in
-            "${RUNNER_TEMP}/"*":"${RUNNER_TEMP}/"*) ;;
-            *) echo "::error::refusing unsafe benchmark cleanup"; exit 1 ;;
+          case "${source_root}" in
+            "${RUNNER_TEMP}/"*) ;;
+            *) echo "::error::refusing unsafe benchmark source cleanup"; exit 1 ;;
           esac
+          case "${snapshot_root}" in
+            "${RUNNER_TEMP}/"*) ;;
+            *) echo "::error::refusing unsafe benchmark snapshot cleanup"; exit 1 ;;
+          esac
+          if [[ "${source_root}" == "${snapshot_root}" ]]; then
+            echo "::error::refusing overlapping benchmark cleanup"
+            exit 1
+          fi
           if mountpoint -q "${snapshot_root}"; then
             sudo umount "${snapshot_root}"
           fi
