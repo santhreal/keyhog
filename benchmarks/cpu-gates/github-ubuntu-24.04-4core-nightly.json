@@ -4,7 +4,7 @@
     "repository": "santhreal/keyhog",
     "workflow_file": ".github/workflows/bench-nightly.yml",
     "job": "leaderboard",
-    "parity_source_sha256": "18723c5e280f5053969fbe81462b9ce096585bf0728ebbaca5aec200f285cd90",
+    "parity_source_sha256": "ec9299f624d097002572adc017b718be5496845da8f9437fdcb169ed867228c2",
     "parity_vector_sha256": "bc9266bf6c2c5a81effc0ef49ea26084552d6838a92b16df9777ecc5a8a94b9d",
     "parity_detector_examples": 848
   },

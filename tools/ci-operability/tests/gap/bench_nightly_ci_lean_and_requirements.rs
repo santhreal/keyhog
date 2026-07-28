@@ -265,12 +265,12 @@ fn hosted_cpu_workflows_bind_reviewed_policy_run_and_snapshot_identity() {
         (
             "bench-nightly",
             nightly,
-            "93dfa46fde14b47d85497297633cdfce38713644dadc4557ea3bd03042aee205",
+            "bba63cc47b10ea4e19210255163daeb6326ef7c0c34f28f20dad860ff8ef397d",
         ),
         (
             "differential-bench",
             differential,
-            "328972c52d55ddc104d2c9dfdfc0bdc78ad8ec0b9e7a115eee40da744f08dd61",
+            "97b6a2af12b36354497bc37167addbb6b0e10c4d210c0ec4638f258a220a7f3b",
         ),
     ] {
         assert!(
