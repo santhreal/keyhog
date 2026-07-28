@@ -48,13 +48,31 @@ jobs:
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           toolchain: '1.89.0'
+      - name: Install exact Hyperscan contract dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5; do
+            if sudo apt-get update -qq \
+              && sudo apt-get install -y --no-install-recommends \
+                libhyperscan-dev=5.4.2-2 \
+                libhyperscan5=5.4.2-2 \
+                pkg-config=1.8.1-2build1; then
+              break
+            fi
+            if [[ "$attempt" == "5" ]]; then exit 1; fi
+            sleep "$((attempt * 2))"
+          done
+          test "$(dpkg-query -W -f='${Version}' libhyperscan-dev)" = "5.4.2-2"
+          test "$(dpkg-query -W -f='${Version}' libhyperscan5)" = "5.4.2-2"
+          test "$(dpkg-query -W -f='${Version}' pkg-config)" = "1.8.1-2build1"
       - name: Enforce root mirror and behavioral contracts
         shell: bash
         run: |
           set -euo pipefail
-          cargo test -p keyhog --no-default-features --features portable --test action_root_mirror_parity
-          cargo test -p keyhog --no-default-features --features portable --test e2e_all -- action_
-          cargo test -p keyhog --no-default-features --features portable --test e2e_all -- composite_action_
+          cargo test -p keyhog --test action_root_mirror_parity
+          cargo test -p keyhog --test e2e_all -- action_
+          cargo test -p keyhog --test e2e_all -- composite_action_
 
   positive-lockdown:
     name: provisioned source-CPU / release-auto lockdown (root and nested)

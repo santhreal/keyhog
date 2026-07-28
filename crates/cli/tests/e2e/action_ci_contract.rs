@@ -479,6 +479,15 @@ fn run_manifest_bash_step(step_name: &str, envs: &[(&str, &str)]) -> Output {
     }
     let mut cmd = Command::new("bash");
     cmd.arg("-c").arg(block);
+    for inherited in [
+        "ACTION_REPOSITORY",
+        "GITHUB_ACTION_PATH",
+        "GITHUB_OUTPUT",
+        "GITHUB_REPOSITORY",
+        "GITHUB_WORKSPACE",
+    ] {
+        cmd.env_remove(inherited);
+    }
     cmd.env("ACTION_SOURCE_ROOT", source_root);
     cmd.env("ACTION_RUNNER_EXIT_CODE", "0");
     cmd.env("RUNNER_TEMP", &runner_temp);
@@ -1065,23 +1074,31 @@ fn hosted_action_e2e_splits_source_and_authenticated_release_modes() {
     }
 }
 
-/// Regression: the Action contract lane once required an ambient Hyperscan
-/// development package, and its tamper lane advertised an unverified report as
-/// present. The hosted proof must use the portable profile and fail closed.
+/// Regression: the Action contract lane once required an unspecified ambient
+/// Hyperscan package, and its tamper lane advertised an unverified report as
+/// present. The hosted proof must install exact native inputs and fail closed.
 #[test]
-fn action_e2e_contract_is_portable_and_hides_unverified_reports() {
+fn action_e2e_contract_pins_hyperscan_and_hides_unverified_reports() {
     let workflow = fs::read_to_string(action_e2e_workflow()).expect("read action-e2e workflow");
     let contract = workflow
         .split("  action-contract:")
         .nth(1)
         .and_then(|tail| tail.split("\n  positive-lockdown:").next())
         .expect("Action contract job exists");
+    for dependency in [
+        "libhyperscan-dev=5.4.2-2",
+        "libhyperscan5=5.4.2-2",
+        "pkg-config=1.8.1-2build1",
+    ] {
+        assert!(
+            contract.contains(dependency),
+            "Action contract job must pin exact Hyperscan build input `{dependency}`"
+        );
+    }
     assert_eq!(
-        contract
-            .matches("cargo test -p keyhog --no-default-features --features portable")
-            .count(),
+        contract.matches("cargo test -p keyhog --test").count(),
         3,
-        "every Action contract test command must avoid ambient Hyperscan packages"
+        "every Action contract test command must run with the production feature profile"
     );
 
     let tamper = workflow
@@ -5071,8 +5088,8 @@ fn keyhog_workflow_dogfoods_local_composite_action() {
         "repo CI must dogfood the bundled composite action, not a divergent inline scanner"
     );
     assert!(
-        workflow.contains("backend: simd"),
-        "hosted one-shot dogfood must pin SIMD instead of spending the job on autoroute calibration"
+        workflow.contains("backend: cpu"),
+        "branch/SHA dogfood must use the portable scalar backend required by source refs"
     );
     let root_action =
         fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../action.yml"))
@@ -6163,6 +6180,13 @@ fn composite_action_source_binary_ignores_all_predictable_preplants() {
         fs::create_dir(&runner_temp).expect("runner temp");
         fs::create_dir(&source_root).expect("source");
         fs::create_dir(&fake_bin).expect("fake bin");
+        fs::create_dir(source_root.join("scripts")).expect("source scripts");
+        fs::write(source_root.join("Cargo.toml"), "[workspace]\n").expect("source manifest");
+        fs::write(
+            source_root.join("scripts/release-version.sh"),
+            "#!/usr/bin/env bash\n",
+        )
+        .expect("release grammar marker");
         preplant_destination(
             &runner_temp.join("keyhog"),
             &dir.path().join("source-victim"),
