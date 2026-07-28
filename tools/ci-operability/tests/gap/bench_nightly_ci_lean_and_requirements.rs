@@ -63,6 +63,9 @@ fn bench_nightly_is_ci_lean_and_rejects_empty_or_stale_artifacts() {
         "bench-nightly must install a versioned, digest-verified TruffleHog release"
     );
 
+    let regression = text
+        .find("name: Benchmark regression tests")
+        .expect("bench-nightly must run benchmark regression tests");
     let clean = text
         .find("rm -rf benchmarks/results-nightly benchmarks/results-ioc-recovery")
         .expect("bench-nightly must remove its isolated generated artifacts");
@@ -81,6 +84,10 @@ fn bench_nightly_is_ci_lean_and_rejects_empty_or_stale_artifacts() {
     let upload = text
         .find("name: Upload benchmark results and reports")
         .expect("bench-nightly must upload generated artifacts after the gate");
+    assert!(
+        regression < clean,
+        "bench-nightly must test committed benchmark fixtures before cleaning generated artifacts"
+    );
     assert!(
         clean < leaderboard
             && leaderboard < run_set
@@ -246,7 +253,7 @@ fn hosted_cpu_workflows_bind_reviewed_policy_run_and_snapshot_identity() {
         );
         assert!(
             text.contains("--snapshot-root \"${snapshot_root}\"")
-                && text.contains("KEYHOG_BENCH_HOSTED_CONTEXT:")
+                && text.contains("KEYHOG_BENCH_HOSTED_CONTEXT=$GITHUB_WORKSPACE/")
                 && text.contains("KEYHOG_BENCH_MIRROR=$RUNNER_TEMP/")
                 && text.contains("--policy cpu-gates/")
                 && text.contains("--binary "),
@@ -420,7 +427,7 @@ fn hosted_cpu_workflows_capture_pinned_supply_receipts_before_context() {
                 && text.contains("\"runner_image\":")
                 && text.contains("\"libhs_runtime\":")
                 && text.contains("\"sha256\": libhs_sha256")
-                && text.contains("KEYHOG_BENCH_SUPPLY_RECEIPT:")
+                && text.contains("KEYHOG_BENCH_SUPPLY_RECEIPT=$GITHUB_WORKSPACE/")
                 && text.contains("benchmarks/hosted-cpu-supply.json"),
             "{name} must emit consumable runner-image and runtime-libhs evidence"
         );

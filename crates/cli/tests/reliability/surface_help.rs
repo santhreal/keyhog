@@ -3,7 +3,7 @@
 //! `--help` is the cheapest promise a CLI makes; it must hold with HOME unset,
 //! a read-only cwd, TERM=dumb, a 1-column terminal, a bogus forced backend.
 //! Each cell asserts: clean exit, exit 0, usage text present, zero ANSI leak,
-//! no panic. 18 subcommands x 16 profiles = 288 distinct tests.
+//! no panic. 19 subcommands x 16 profiles = 304 distinct tests.
 
 use crate::reliability::harness::{
     assert_clean_exit, assert_no_ansi, assert_no_panic, run, Profile,
@@ -38,6 +38,7 @@ pub fn help_invariant(profile: Profile, sub: &str) {
 crate::kh_matrix!(
     crate::reliability::surface_help::help_invariant,
     scan => "scan",
+    action_report => "action-report",
     hook => "hook",
     detectors => "detectors",
     explain => "explain",

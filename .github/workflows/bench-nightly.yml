@@ -19,9 +19,6 @@ env:
   NVIDIA_VISIBLE_DEVICES: "void"
   RUNNER_ENVIRONMENT: "github-hosted"
   KEYHOG_BENCH_RUNNER_PROFILE: "github-ubuntu-24.04-4core-nightly"
-  KEYHOG_BENCH_HOSTED_CONTEXT: ${{ github.workspace }}/benchmarks/hosted-cpu-context.json
-  KEYHOG_BENCH_SUPPLY_RECEIPT: ${{ github.workspace }}/benchmarks/hosted-cpu-supply.json
-  KEYHOG_BENCH_IMMUTABILITY_RECEIPT: ${{ github.workspace }}/benchmarks/hosted-cpu-immutability.json
 
 jobs:
   leaderboard:
@@ -109,6 +106,13 @@ jobs:
             -r benchmarks/requirements.txt
 
 
+      - name: Benchmark regression tests
+        env:
+          KEYHOG_BIN: ${{ github.workspace }}/target/release/keyhog
+        run: |
+          set -euo pipefail
+          cd benchmarks && PYTHONDONTWRITEBYTECODE=1 python3 -B -m pytest -p no:cacheprovider -q -m 'not target_spec' bench/tests
+
       - name: Prepare clean benchmark artifact and source directories
         # Never permit a prior attempt's results, context receipts, source
         # workloads, or snapshots to cross the fresh-run boundary. In
@@ -139,6 +143,11 @@ jobs:
           mkdir -p "${source_root}"
           test ! -e "${snapshot_root}"
           rm -rf benchmarks/corpora/ioc-recovery-v3
+          printf '%s\n' \
+            "KEYHOG_BENCH_HOSTED_CONTEXT=$GITHUB_WORKSPACE/benchmarks/hosted-cpu-context.json" \
+            "KEYHOG_BENCH_SUPPLY_RECEIPT=$GITHUB_WORKSPACE/benchmarks/hosted-cpu-supply.json" \
+            "KEYHOG_BENCH_IMMUTABILITY_RECEIPT=$GITHUB_WORKSPACE/benchmarks/hosted-cpu-immutability.json" \
+            >> "$GITHUB_ENV"
 
       - name: Record pinned hosted CPU supply receipt
         # Context capture can consume this stable path when supply binding is
@@ -192,12 +201,6 @@ jobs:
           )
           PY
 
-      - name: Benchmark regression tests
-        env:
-          KEYHOG_BIN: ${{ github.workspace }}/target/release/keyhog
-        run: |
-          set -euo pipefail
-          cd benchmarks && PYTHONDONTWRITEBYTECODE=1 python3 -B -m pytest -p no:cacheprovider -q -m 'not target_spec' bench/tests
 
 
       - name: Generate fixed mirror workload

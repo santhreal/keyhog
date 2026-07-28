@@ -43,6 +43,7 @@ pub fn subprocess_slot() -> MutexGuard<'static, ()> {
 /// (the `surface_*` matrices reference this list).
 pub const SUBCOMMANDS: &[&str] = &[
     "scan",
+    "action-report",
     "hook",
     "detectors",
     "explain",

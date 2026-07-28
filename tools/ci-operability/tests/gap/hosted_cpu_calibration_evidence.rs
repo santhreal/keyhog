@@ -67,6 +67,8 @@ fn run_root_setup(
         .arg("-c")
         .arg(run_script(step))
         .current_dir(working_dir)
+        .env("GITHUB_WORKSPACE", working_dir)
+        .env("GITHUB_ENV", working_dir.join("github-env"))
         .env("RUNNER_TEMP", runner_temp)
         .env("KEYHOG_BENCH_SOURCE_ROOT", source)
         .env("KEYHOG_BENCH_SNAPSHOT_ROOT", snapshot)

@@ -19,9 +19,6 @@ env:
   NVIDIA_VISIBLE_DEVICES: "void"
   RUNNER_ENVIRONMENT: "github-hosted"
   KEYHOG_BENCH_RUNNER_PROFILE: "github-ubuntu-24.04-4core-differential"
-  KEYHOG_BENCH_HOSTED_CONTEXT: ${{ github.workspace }}/benchmarks/hosted-cpu-context.json
-  KEYHOG_BENCH_SUPPLY_RECEIPT: ${{ github.workspace }}/benchmarks/hosted-cpu-supply.json
-  KEYHOG_BENCH_IMMUTABILITY_RECEIPT: ${{ github.workspace }}/benchmarks/hosted-cpu-immutability.json
 
 jobs:
   gate:
@@ -114,6 +111,11 @@ jobs:
           rm -rf "${source_root}" "${snapshot_root}"
           mkdir -p "${source_root}"
           test ! -e "${snapshot_root}"
+          printf '%s\n' \
+            "KEYHOG_BENCH_HOSTED_CONTEXT=$GITHUB_WORKSPACE/benchmarks/hosted-cpu-context.json" \
+            "KEYHOG_BENCH_SUPPLY_RECEIPT=$GITHUB_WORKSPACE/benchmarks/hosted-cpu-supply.json" \
+            "KEYHOG_BENCH_IMMUTABILITY_RECEIPT=$GITHUB_WORKSPACE/benchmarks/hosted-cpu-immutability.json" \
+            >> "$GITHUB_ENV"
 
       - name: install exact Rust 1.94.0 competitor toolchain
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
