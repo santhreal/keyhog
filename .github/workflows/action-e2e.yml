@@ -7,17 +7,23 @@ on:
       - 'action.yml'
       - '.github/actions/keyhog/**'
       - '.github/workflows/action-e2e.yml'
-      - 'crates/cli/tests/action_root_mirror_parity.rs'
-      - 'crates/cli/tests/e2e/action_ci_contract.rs'
-      - 'crates/cli/src/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.cargo/**'
+      - 'crates/**'
+      - 'detectors/**'
+      - 'rules/**'
   pull_request:
     paths:
       - 'action.yml'
       - '.github/actions/keyhog/**'
       - '.github/workflows/action-e2e.yml'
-      - 'crates/cli/tests/action_root_mirror_parity.rs'
-      - 'crates/cli/tests/e2e/action_ci_contract.rs'
-      - 'crates/cli/src/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.cargo/**'
+      - 'crates/**'
+      - 'detectors/**'
+      - 'rules/**'
   workflow_dispatch:
     inputs:
       version:

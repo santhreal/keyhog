@@ -898,6 +898,29 @@ fn composite_action_manifest_keeps_composite_runs_shape() {
     );
 }
 
+/// Regression: a scanner-only change altered the source-built composite, but
+/// the hosted Action E2E workflow did not run because its path filter watched
+/// only CLI files. Every source-build input must trigger both push and pull
+/// request coverage.
+#[test]
+fn action_e2e_triggers_for_every_source_build_input() {
+    let workflow = fs::read_to_string(action_e2e_workflow()).expect("read action-e2e workflow");
+    for path in [
+        "'Cargo.toml'",
+        "'Cargo.lock'",
+        "'.cargo/**'",
+        "'crates/**'",
+        "'detectors/**'",
+        "'rules/**'",
+    ] {
+        assert_eq!(
+            workflow.matches(path).count(),
+            2,
+            "{path} must trigger Action E2E for both pushes and pull requests"
+        );
+    }
+}
+
 /// Regression: hosted E2E once exercised only the root Action with forced CPU
 /// defaults, leaving the nested mirror and auto+lockdown policy path unexecuted.
 #[test]
