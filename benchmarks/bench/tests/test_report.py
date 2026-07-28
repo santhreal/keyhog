@@ -172,6 +172,7 @@ def test_adversarial_provenance_cannot_forge_markdown_rows():
     assert "\n<script>" not in text
 
 
+@pytest.mark.target_spec
 def test_committed_run_set_matches_exact_result_artifacts():
     """Regression: committed reports must remain bound to their declared JSON rows."""
     results = report.load_results(report._BENCH_ROOT / "results")

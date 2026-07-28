@@ -151,7 +151,7 @@ fn write_receipt_noclobber(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let parent = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
+        .unwrap_or_else(|| Path::new(".")); // LAW10: intentional_default, a basename-only destination is explicitly relative to the current directory.
     let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
     use std::io::Write as _;
     temporary.write_all(bytes)?;
@@ -194,7 +194,7 @@ fn canonical_destination(path: &Path) -> Result<std::path::PathBuf> {
         .join(name))
 }
 
-fn reject_same_open_file(receipt: &File, receipt_path: &Path, report_path: &Path) -> Result<()> {
+fn reject_same_open_file(receipt: &File, _receipt_path: &Path, report_path: &Path) -> Result<()> {
     let report = open_regular(report_path)?;
     #[cfg(unix)]
     {
@@ -206,10 +206,9 @@ fn reject_same_open_file(receipt: &File, receipt_path: &Path, report_path: &Path
         }
     }
     #[cfg(not(unix))]
-    if canonical_destination(receipt_path)? == canonical_destination(report_path)? {
+    if canonical_destination(_receipt_path)? == canonical_destination(report_path)? {
         bail!("Action report and receipt resolve to the same file");
     }
-    let _ = receipt_path;
     Ok(())
 }
 
