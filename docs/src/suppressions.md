@@ -117,7 +117,8 @@ hash:5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8 ; reason="
 ```
 
 `require_reason`, `require_approved_by`, and `max_expires_days` under
-`[allowlist]` in `.keyhog.toml` can require this metadata. An expired entry,
+`[allowlist]` in `.keyhog.toml` can require this metadata. These governance
+rules are enforced before any suppression is active. An expired entry,
 invalid hash, unknown metadata key, missing required field, or overlong expiry
 stops the scan with exit `2`. No line from that file becomes active.
 

@@ -50,7 +50,7 @@ fn non_numeric_max_objects_is_a_named_error() {
         "the error must quote the offending value; got {msg:?}"
     );
     assert!(
-        matches!(err, SourceError::InvalidConfiguration { ref source, .. } if source == "s3"),
+        matches!(err, SourceError::InvalidConfiguration { ref source_name, .. } if source_name == "s3"),
         "expected typed S3 configuration error, got {err:?}"
     );
 }
