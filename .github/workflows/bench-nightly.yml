@@ -22,15 +22,16 @@ env:
   KEYHOG_BENCH_HOSTED_CONTEXT: ${{ github.workspace }}/benchmarks/hosted-cpu-context.json
   KEYHOG_BENCH_SUPPLY_RECEIPT: ${{ github.workspace }}/benchmarks/hosted-cpu-supply.json
   KEYHOG_BENCH_IMMUTABILITY_RECEIPT: ${{ github.workspace }}/benchmarks/hosted-cpu-immutability.json
-  KEYHOG_BENCH_SOURCE_ROOT: ${{ runner.temp }}/keyhog-bench-sources
-  KEYHOG_BENCH_SNAPSHOT_ROOT: ${{ runner.temp }}/keyhog-bench-snapshots
-  KEYHOG_BENCH_MIRROR: ${{ runner.temp }}/keyhog-bench-sources/mirror
-  KEYHOG_BENCH_CREDDATA: ${{ runner.temp }}/keyhog-bench-sources/creddata
 
 jobs:
   leaderboard:
     runs-on: ubuntu-24.04
     timeout-minutes: 180
+    env:
+      KEYHOG_BENCH_SOURCE_ROOT: ${{ runner.temp }}/keyhog-bench-sources
+      KEYHOG_BENCH_SNAPSHOT_ROOT: ${{ runner.temp }}/keyhog-bench-snapshots
+      KEYHOG_BENCH_MIRROR: ${{ runner.temp }}/keyhog-bench-sources/mirror
+      KEYHOG_BENCH_CREDDATA: ${{ runner.temp }}/keyhog-bench-sources/creddata
     # Per-job permissions, see keyhog.yml header note. Top-level
     # `permissions:` rejected at dispatch time on this repo.
     permissions:

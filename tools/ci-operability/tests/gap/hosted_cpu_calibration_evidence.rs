@@ -40,6 +40,31 @@ fn assert_contiguous(names: &[&str], expected: &[&str]) {
     );
 }
 
+/// GitHub rejects workflow dispatch when the top-level `env` references the
+/// runner context. Keep temporary-path expressions inside each job, where that
+/// context exists, so calibration can start instead of failing during parsing.
+#[test]
+fn runner_temp_paths_are_scoped_to_jobs_accepted_by_github_dispatch() {
+    for workflow_name in ["bench-nightly.yml", "differential-bench.yml"] {
+        let workflow = read_workflow(workflow_name);
+        let (workflow_header, jobs) = workflow
+            .split_once("\njobs:\n")
+            .expect("hosted workflow must declare jobs");
+        assert!(
+            !workflow_header.contains("${{ runner.temp }}"),
+            "{workflow_name} cannot use the runner context before job evaluation"
+        );
+        assert!(
+            jobs.contains("env:\n      KEYHOG_BENCH_SOURCE_ROOT: ${{ runner.temp }}/"),
+            "{workflow_name} must keep hosted source storage in runner.temp"
+        );
+        assert!(
+            jobs.contains("KEYHOG_BENCH_SNAPSHOT_ROOT: ${{ runner.temp }}/"),
+            "{workflow_name} must keep hosted snapshots in runner.temp"
+        );
+    }
+}
+
 #[test]
 fn dispatch_calibration_runs_immediately_after_raw_generation_and_before_hosted_gate() {
     let nightly = read_workflow("bench-nightly.yml");
