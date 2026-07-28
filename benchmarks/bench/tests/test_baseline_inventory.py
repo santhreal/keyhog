@@ -219,6 +219,27 @@ def test_gate_uses_canonical_inventory(tmp_path: pathlib.Path):
     assert row.detection.overall.f1() == active.detection.overall.f1()
 
 
+def test_repository_canonical_baseline_is_authenticated_hosted_evidence():
+    """Locks out an unbound local anchor that makes hosted differential CI undecidable."""
+    row = baseline_inventory.load_canonical("mirror")
+
+    assert row.schema_version == "bench-v4"
+    assert row.hosted_binding is not None
+    assert row.hosted_binding.context_sha256 == (
+        "9feaec115f93fe8c0f6357ff15f11f0de8ce052ee731d3eb55d3dfe5cfef8dec"
+    )
+    assert row.hosted_binding.run_id == "30354682715"
+    assert row.hosted_binding.workflow_sha == (
+        "132ba4883408caff092dc0dda644fd3e2322eac2"
+    )
+    assert row.corpus.workload_sha256 == (
+        "610d082aaf00b49e385b3739f22ba6292cc2f14c46f42a8538e6adce56d0d1e0"
+    )
+    assert row.detection.overall.tp == 2717
+    assert row.detection.overall.fp == 107
+    assert row.detection.overall.fn == 283
+
+
 def test_gate_explicit_file_bypasses_inventory(tmp_path: pathlib.Path):
     d = _fresh_baselines(tmp_path)
     run = _make_run("mirror", "keyhog", 10, 0, 0)
