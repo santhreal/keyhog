@@ -4912,6 +4912,95 @@ printf 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  -\n'
     );
 }
 
+/// Git Bash can treat `target/release/keyhog` as executable when only
+/// `keyhog.exe` exists. Windows source installs must select the artifact by
+/// runner identity so PATH and provenance outputs retain the `.exe` suffix.
+#[test]
+fn composite_action_source_build_preserves_windows_exe_name() {
+    let dir = TempDir::new().expect("Windows source-build tempdir");
+    let fake_bin = dir.path().join("bin");
+    let source_root = dir.path().join("source");
+    let runner_temp = dir.path().join("runner-temp");
+    fs::create_dir(&fake_bin).expect("fake bin");
+    fs::create_dir(&source_root).expect("source root");
+    fs::create_dir(&runner_temp).expect("runner temp");
+    fs::create_dir(source_root.join("scripts")).expect("source scripts");
+    fs::write(source_root.join("Cargo.toml"), "[workspace]\n").expect("source manifest");
+    fs::write(
+        source_root.join("scripts/release-version.sh"),
+        "#!/usr/bin/env bash\n",
+    )
+    .expect("release grammar marker");
+    write_executable(
+        &fake_bin.join("cargo"),
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+mkdir -p target/release
+printf 'windows-keyhog' > target/release/keyhog.exe
+chmod +x target/release/keyhog.exe
+"#,
+    );
+    write_executable(
+        &fake_bin.join("sha256sum"),
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+if (( $# != 0 )); then
+  printf '\\ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff  %s\n' "$1"
+  exit 0
+fi
+cat >/dev/null
+printf 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  -\n'
+"#,
+    );
+    let path = format!(
+        "{}:{}",
+        fake_bin.display(),
+        env::var("PATH").expect("PATH is set")
+    );
+    let output_path = dir.path().join("source-output");
+    let output = run_manifest_bash_step(
+        "Build keyhog from source (fallback)",
+        &[
+            ("PATH", &path),
+            (
+                "ACTION_SOURCE_ROOT",
+                source_root.to_str().expect("source root path"),
+            ),
+            (
+                "RUNNER_TEMP",
+                runner_temp.to_str().expect("runner temp path"),
+            ),
+            (
+                "GITHUB_OUTPUT",
+                output_path.to_str().expect("source output path"),
+            ),
+            ("RUNNER_OS", "Windows"),
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "Windows source build must stage the explicit .exe artifact: {}",
+        combined_output(&output)
+    );
+    let outputs = fs::read_to_string(output_path).expect("source outputs");
+    let binary_dir = outputs
+        .lines()
+        .find_map(|line| line.strip_prefix("binary-dir="))
+        .expect("binary dir");
+    let binary_path = outputs
+        .lines()
+        .find_map(|line| line.strip_prefix("binary-path="))
+        .expect("binary path");
+    assert!(
+        binary_path.ends_with("/keyhog.exe") && Path::new(binary_path).is_file(),
+        "Windows source output must retain keyhog.exe, got {binary_path}"
+    );
+    assert!(
+        !Path::new(binary_dir).join("keyhog").exists(),
+        "Windows source output must not publish an extensionless alias"
+    );
+}
+
 #[test]
 fn composite_action_detects_windows_release_asset() {
     let dir = TempDir::new().expect("tempdir");

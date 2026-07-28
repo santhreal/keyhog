@@ -589,8 +589,10 @@ runs:
         # portable feature profile on every runner. This avoids floating native
         # package-manager state while retaining sources and live verification.
         cargo build --locked --release -p keyhog --no-default-features --features portable
-        bin="target/release/keyhog"
-        [[ -x "$bin" ]] || bin="target/release/keyhog.exe"
+        case "${RUNNER_OS:-}" in
+          Windows) bin="target/release/keyhog.exe" ;;
+          *) bin="target/release/keyhog" ;;
+        esac
         if [[ ! -f "$bin" || -L "$bin" ]]; then echo "::error title=KeyHog::Source build did not publish a trusted regular binary."; exit 2; fi
         source_tmp="$(mktemp "$ACTION_RUNTIME/.source-keyhog.XXXXXXXX")"
         cat -- "$bin" > "$source_tmp"
