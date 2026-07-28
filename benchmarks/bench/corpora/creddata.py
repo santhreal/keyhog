@@ -45,6 +45,7 @@ import os
 import pathlib
 import re
 import stat
+import shutil
 import subprocess
 import sys
 
@@ -515,6 +516,19 @@ class CredDataCorpus(Corpus):
               file=sys.stderr)
         subprocess.run([sys.executable, str(downloader), "--data_dir", "data"],
                        cwd=str(clone), check=True)
+        scratch = clone / "tmp"
+        try:
+            scratch_mode = scratch.lstat().st_mode
+        except FileNotFoundError:
+            pass
+        else:
+            if not stat.S_ISDIR(scratch_mode):
+                raise RuntimeError(
+                    f"CredData temporary path is not a real directory: {scratch}; "
+                    "remove it and rerun the download"
+                )
+            print("removing CredData temporary repository clones", file=sys.stderr)
+            shutil.rmtree(scratch)
         print(f"CredData ready: {self.root}", file=sys.stderr)
 
 

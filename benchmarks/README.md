@@ -206,6 +206,12 @@ Benchmarked tools and datasets are credited with their licenses in
 CredData are **gitignored / fetched locally**; keyhog redistributes none of
 their data.
 
+After a successful CredData acquisition, the adapter removes the downloader's
+transient `tmp/` repository clones. The canonical `data/` and `meta/` trees
+remain. A failed acquisition keeps `tmp/` for diagnosis. This prevents dangling
+or recursive links in unscored downloader scratch from entering the immutable
+hosted snapshot.
+
 ## Exact secret recovery benchmark
 
 `ioc-recovery` is an official corpus in the same adapter, runner, scorer,
@@ -369,9 +375,10 @@ identity are separate receipts rather than assumptions implied by the label.
 The nightly policy requires current rows for mirror, CredData, and recovery
 `fast`/`full`/`deep`/`precision`. Context capture derives exact per-category
 positive denominators from the authenticated workload snapshot. Every scorer
-row must expose exactly those categories and conserve them against its overall
-TP/FN counts; each recovery mode additionally applies the policy's independent
-P00-P12 floors.
+row must expose those truth categories and conserve TP/FN against its overall
+counts. A category absent from positive truth is admissible only with zero
+TP/FN, and its false positives remain subject to overall FP conservation. Each
+recovery mode additionally applies the policy's independent P00-P12 floors.
 
 The job generates/acquires source corpora outside the absent snapshot
 destination, then runs `python -m bench.hosted_cpu_gate context`. It copies each
@@ -390,13 +397,17 @@ instead relies on the `ci-lean` build, explicit CPU/SIMD config, hidden GPU
 feature environment, and enforced in-process CPU route.
 
 Only `cpu` or `simd` in-process rows with cache and daemon disabled are
-admissible. The full resolved scan manifest (preset, effective policy and
-overrides) is policy-pinned rather than inferred from the filename. Each row
-has an explicit minimum recall, maximum wall time in milliseconds, minimum
-throughput in MiB/s recomputed from bound bytes/wall time, and maximum peak RSS
-in KiB. Raw JSON booleans, integers and finite numbers are validated before
-schema decoding; impossible confusion-matrix totals and exits outside KeyHog's
-`0`/`1`/`10` success domain fail closed.
+admissible. The benchmark validation mode and the KeyHog preset are separate
+axes. The full resolved scan manifest (preset, effective policy and overrides)
+is policy-pinned rather than inferred from either the mode or filename.
+Authenticated positive category denominators must match the scorer truth
+categories. False-positive-only categories remain visible and must conserve
+the overall false-positive count. Each row has an explicit minimum recall,
+maximum wall time in milliseconds, minimum throughput in MiB/s recomputed from
+bound bytes/wall time, and maximum peak RSS in KiB. Raw JSON booleans, integers
+and finite numbers are validated before schema decoding; impossible
+confusion-matrix totals and exits outside KeyHog's `0`/`1`/`10` success domain
+fail closed.
 
 The committed thresholds are explicitly
 `unmeasured-release-requirements`: they are acceptance limits, not measured

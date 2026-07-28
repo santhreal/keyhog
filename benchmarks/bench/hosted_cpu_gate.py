@@ -1281,9 +1281,6 @@ def validate_evidence(
         else:
             if type(manifest["schema_version"]) is not int or manifest["schema_version"] != 1:
                 violations.append(f"{prefix} scan manifest schema is invalid")
-            expected_preset = requirement.config["mode"]
-            if manifest["preset"] != expected_preset:
-                violations.append(f"{prefix} resolved preset differs from requested mode")
             effective = manifest["effective"]
             overrides = manifest["overrides"]
             if not isinstance(effective, dict) or not effective or any(
@@ -1333,18 +1330,26 @@ def validate_evidence(
                 f"{prefix} policy category denominators differ from authenticated workload"
             )
         observed_categories = row.detection.per_category
-        if set(observed_categories) != set(authenticated_categories):
+        missing_categories = set(authenticated_categories) - set(observed_categories)
+        unexpected_truth_categories = {
+            name
+            for name, outcome in observed_categories.items()
+            if name not in authenticated_categories and outcome.tp + outcome.fn != 0
+        }
+        if missing_categories or unexpected_truth_categories:
             violations.append(
                 f"{prefix} scorer categories differ from authenticated workload: "
-                f"missing={sorted(set(authenticated_categories) - set(observed_categories))}, "
-                f"unexpected={sorted(set(observed_categories) - set(authenticated_categories))}"
+                f"missing={sorted(missing_categories)}, "
+                f"unexpected={sorted(unexpected_truth_categories)}"
             )
         category_tp = 0
         category_fn = 0
-        for name, expected_count in authenticated_categories.items():
-            outcome = observed_categories.get(name)
-            if outcome is None:
+        category_fp = 0
+        for name, outcome in observed_categories.items():
+            category_fp += outcome.fp
+            if name not in authenticated_categories:
                 continue
+            expected_count = authenticated_categories[name]
             cat_denominator = outcome.tp + outcome.fn
             if cat_denominator != expected_count:
                 violations.append(
@@ -1364,9 +1369,10 @@ def validate_evidence(
         if (
             category_tp != overall.tp
             or category_fn != overall.fn
+            or category_fp != overall.fp
             or category_tp + category_fn != expected_positive
         ):
-            violations.append(f"{prefix} category totals do not conserve overall recall")
+            violations.append(f"{prefix} category totals do not conserve overall counts")
 
         if row.speed.wall_ms > requirement.max_wall_ms:
             violations.append(f"{prefix} wall time exceeds ceiling")

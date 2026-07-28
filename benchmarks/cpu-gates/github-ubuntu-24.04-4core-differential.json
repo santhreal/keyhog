@@ -22,13 +22,13 @@
     "nvidia_visible_devices": "void"
   },
   "supply": {
-    "runner_image_version": null,
+    "runner_image_version": "20260720.247.2",
     "cpython": "3.12.11",
     "go": "1.25.10",
     "libhyperscan_dev": "5.4.2-2",
     "libhyperscan_runtime": "5.4.2-2",
     "pkg_config": "1.8.1-2build1",
-    "libhs_runtime_sha256": null
+    "libhs_runtime_sha256": "bc09d609cf5a64fdcdcc0824ebaf05c7ea6784fc138f1278b2ed57c18897044b"
   },
   "calibration": {
     "status": "unmeasured-release-requirements",
@@ -49,8 +49,8 @@
     "mirror": {
       "fixture_count": 15000,
       "labeled_positives": 3000,
-      "bytes": 2430321,
-      "workload_sha256": "f0e8aea6d492f1759fdd7978ae31f6d705d0b91f72c5200f4ca366beeeadfb95",
+      "bytes": 2431242,
+      "workload_sha256": "610d082aaf00b49e385b3739f22ba6292cc2f14c46f42a8538e6adce56d0d1e0",
       "revision": "generator-v1"
     }
   },
@@ -69,7 +69,7 @@
       "max_wall_ms": 180000,
       "min_throughput_mib_s": 0.01,
       "max_peak_rss_kb": 3145728,
-      "scan_manifest_sha256": null,
+      "scan_manifest_sha256": "6269243b33255aaac4801f86b7ef6c4bf579ee82ba6aa533f4967ad285695dff",
       "categories": []
     }
   ]

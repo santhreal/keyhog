@@ -62,7 +62,7 @@ def _json_bytes(value: object) -> bytes:
 def _manifest(mode: str) -> dict[str, object]:
     return {
         "schema_version": 1,
-        "preset": mode,
+        "preset": "default",
         "effective": {
             "backend": "simd",
             "decode_depth": {"fast": "2", "full": "10", "deep": "20", "precision": "10"}[mode],
@@ -478,6 +478,14 @@ def test_complete_resolved_manifest_is_policy_pinned(evidence, mutation):
     assert any("manifest" in item for item in _violations(evidence))
 
 
+def test_scan_preset_is_independent_from_validation_mode(evidence):
+    """The CLI preset and benchmark validation mode are separate axes; valid full-mode default scans must pass."""
+    row = evidence["rows"]["mirror"]
+    assert row["scanner"]["config"]["mode"] == "full"
+    assert row["scan_manifest"]["preset"] == "default"
+    assert _violations(evidence) == []
+
+
 def test_throughput_must_be_derived_from_bound_bytes_and_wall(evidence):
     """A self-reported throughput once passed independently; byte/wall recomputation catches forged units."""
     evidence["rows"]["mirror"]["speed"]["throughput_mb_s"] *= 2
@@ -668,12 +676,32 @@ def test_empty_policy_category_floor_uses_authenticated_scorer_denominators(evid
     assert _violations(evidence) == []
 
 
-def test_unexpected_scorer_category_rejects_even_without_policy_floors(evidence):
-    """Treating [] as accept-any once admitted substituted categories; exact snapshot denominators reject extras."""
+def test_unexpected_truth_category_rejects_even_without_policy_floors(evidence):
+    """A substituted positive category can hide missed authenticated truth, so only zero-truth extras are valid."""
     row = evidence["rows"]["mirror"]
     row["detection"]["per_category"]["forged"] = Outcome(tp=1).to_json()
     _rewrite(evidence["root"], evidence["policy"], "mirror", row)
     assert any("scorer categories differ" in item for item in _violations(evidence))
+
+
+def test_false_positive_only_category_remains_in_authenticated_scoring(evidence):
+    """A detector can emit an FP in a category absent from positive truth; rejecting it would hide honest errors."""
+    row = evidence["rows"]["mirror"]
+    row["detection"]["per_category"]["negative-only-detector"] = Outcome(fp=7).to_json()
+    overall = row["detection"]["overall"]
+    row["detection"]["overall"] = Outcome(
+        tp=overall["tp"], fp=overall["fp"] + 7, fn=overall["fn"]
+    ).to_json()
+    _rewrite(evidence["root"], evidence["policy"], "mirror", row)
+    assert _violations(evidence) == []
+
+
+def test_false_positive_category_must_conserve_overall_count(evidence):
+    """An extra negative-only category cannot carry uncounted errors outside the overall precision denominator."""
+    row = evidence["rows"]["mirror"]
+    row["detection"]["per_category"]["negative-only-detector"] = Outcome(fp=7).to_json()
+    _rewrite(evidence["root"], evidence["policy"], "mirror", row)
+    assert any("category totals do not conserve overall counts" in item for item in _violations(evidence))
 
 
 @pytest.mark.parametrize(
