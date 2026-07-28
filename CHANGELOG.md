@@ -33,6 +33,9 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   same validated source identity.
 - Integration tests run in independent fail-closed lanes while preserving the
   process isolation required by source-backend contracts.
+- Hosted CPU publication gates now bind reviewed runner, Hyperscan, workload,
+  and resolved scan-policy identities. The `fast` recovery contract requires
+  only the categories supported when decoding is disabled.
 
 ### Fixed
 
@@ -42,6 +45,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Marketplace verification rejects untrusted origins, redirect downgrades,
   mutable metadata reads, unsigned exact release tags, duplicate YAML keys, and
   listing pages that do not bind the expected repository and Action ref.
+- SIMD scanning routes Unicode-semantic shorthand patterns through exact CPU
+  recovery when Hyperscan's Unicode tables cannot guarantee Rust-regex parity.
 
 
 ## [0.5.47] - 2026-07-26

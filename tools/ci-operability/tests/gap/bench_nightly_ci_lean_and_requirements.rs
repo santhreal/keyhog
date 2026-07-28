@@ -265,7 +265,7 @@ fn hosted_cpu_workflows_bind_reviewed_policy_run_and_snapshot_identity() {
         (
             "bench-nightly",
             nightly,
-            "e9d30dcd67f08b5ec538c83fa580ec353f730b960b4976c07dde8dc4b9009e2c",
+            "fdebca6c7c7042ad95fd7b779917502adc43c0d38d583ebb9d9b28fb75b56fdd",
         ),
         (
             "differential-bench",

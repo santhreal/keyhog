@@ -40,7 +40,7 @@ from .keyhog_version import (
     workspace_git_hash,
 )
 from .runner import resolve_corpus_with_root
-from .schema import CONF_BINS, CorpusInfo, HostedBinding, RunResult, is_sha256
+from .schema import CONF_BINS, HostedBinding, RunResult, is_sha256
 
 POLICY_SCHEMA = "hosted-cpu-policy-v2"
 CONTEXT_SCHEMA = "hosted-cpu-context-v2"
@@ -429,7 +429,11 @@ def load_policy(path: pathlib.Path) -> HostedCpuPolicy:
             categories.append(CategoryPolicy(
                 name=name,
                 positives=_strict_int(category["positives"], f"{row_id}/{name} positives", positive=True),
-                min_recall=_ratio(category["min_recall"], f"{row_id}/{name} min_recall"),
+                min_recall=_ratio(
+                    category["min_recall"],
+                    f"{row_id}/{name} min_recall",
+                    allow_zero=True,
+                ),
             ))
             category_names.add(name)
         rows.append(RowPolicy(

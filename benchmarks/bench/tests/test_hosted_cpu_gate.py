@@ -383,13 +383,18 @@ def test_arbitrary_policy_and_matching_context_cannot_replace_reviewed_digest(ev
     ))
 
 
-def test_committed_uncalibrated_identity_pins_fail_closed(tmp_path):
-    """Null workload/manifest/image/libhs pins once acted as wildcards; first hosted evidence stays red."""
+def test_committed_calibrated_identity_pins_are_complete():
+    """Reviewed hosted identities must stay explicit so later drift cannot become a wildcard."""
     policy = load_policy(_POLICY)
-    assert policy.workloads["creddata"].workload_sha256 is None
-    assert all(row.scan_manifest_sha256 is None for row in policy.rows)
-    assert policy.supply["runner_image_version"] is None
-    assert policy.supply["libhs_runtime_sha256"] is None
+    creddata = policy.workloads["creddata"]
+    assert creddata.fixture_count == 66896
+    assert creddata.bytes == 1018447685
+    assert creddata.workload_sha256 == "5967f179e55a7feb2ed1939cc9805ff287c5b73f6dab13740f9c11cb8b833a59"
+    assert all(row.scan_manifest_sha256 is not None for row in policy.rows)
+    assert policy.supply["runner_image_version"] == "20260720.247.2"
+    assert policy.supply["libhs_runtime_sha256"] == (
+        "bc09d609cf5a64fdcdcc0824ebaf05c7ea6784fc138f1278b2ed57c18897044b"
+    )
 
 
 def test_null_external_supply_pins_are_gate_violations(evidence, tmp_path):

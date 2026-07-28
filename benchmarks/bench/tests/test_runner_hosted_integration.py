@@ -6,10 +6,13 @@ import hashlib
 import json
 from datetime import datetime, timezone
 
+import pytest
+
 from bench import runner
 from bench.corpora.mirror import MirrorCorpus
 from bench.hosted_cpu_gate import (
     CONTEXT_SCHEMA,
+    HostedCpuInputError,
     TrustedRun,
     capture_context,
     load_policy,
@@ -158,6 +161,30 @@ def _write_policy(path, corpus: MirrorCorpus) -> None:
         },
         "rows": [row],
     }
+    path.write_text(json.dumps(raw, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _set_first_category_floor(path, value: float) -> None:
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw["rows"][0]["categories"][0]["min_recall"] = value
+    raw["calibration"]["thresholds_sha256"] = _canonical_sha(
+        [
+            {
+                field: row[field]
+                for field in (
+                    "id",
+                    "corpus",
+                    "config",
+                    "min_recall",
+                    "max_wall_ms",
+                    "min_throughput_mib_s",
+                    "max_peak_rss_kb",
+                    "categories",
+                )
+            }
+            for row in raw["rows"]
+        ]
+    )
     path.write_text(json.dumps(raw, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
@@ -350,3 +377,26 @@ def test_v2_context_flows_through_runner_scorer_and_gate(tmp_path, monkeypatch):
     )
 
     assert run_gate(policy_path, context_path, parity_path, tmp_path, trusted=trusted) == 0
+
+
+def test_category_recall_floor_accepts_explicit_zero(tmp_path):
+    """A preset can truthfully declare no recall guarantee for an unsupported category."""
+    source = _write_mirror(tmp_path / "source-mirror")
+    policy_path = tmp_path / "policy.json"
+    _write_policy(policy_path, source)
+    _set_first_category_floor(policy_path, 0.0)
+
+    policy = load_policy(policy_path)
+    assert policy.rows[0].categories[0].min_recall == 0.0
+
+
+@pytest.mark.parametrize("invalid_floor", [-0.0001, 1.0001])
+def test_category_recall_floor_rejects_values_outside_closed_ratio(tmp_path, invalid_floor):
+    """Zero is explicit, but negative and above-one recall floors remain invalid."""
+    source = _write_mirror(tmp_path / "source-mirror")
+    policy_path = tmp_path / "policy.json"
+    _write_policy(policy_path, source)
+    _set_first_category_floor(policy_path, invalid_floor)
+
+    with pytest.raises(HostedCpuInputError, match=r"must be in \[0, 1\]"):
+        load_policy(policy_path)

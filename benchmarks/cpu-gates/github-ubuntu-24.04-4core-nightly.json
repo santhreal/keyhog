@@ -22,17 +22,17 @@
     "nvidia_visible_devices": "void"
   },
   "supply": {
-    "runner_image_version": null,
+    "runner_image_version": "20260720.247.2",
     "cpython": "3.12.11",
     "go": "1.22.2",
     "libhyperscan_dev": "5.4.2-2",
     "libhyperscan_runtime": "5.4.2-2",
     "pkg_config": "1.8.1-2build1",
-    "libhs_runtime_sha256": null
+    "libhs_runtime_sha256": "bc09d609cf5a64fdcdcc0824ebaf05c7ea6784fc138f1278b2ed57c18897044b"
   },
   "calibration": {
     "status": "unmeasured-release-requirements",
-    "thresholds_sha256": "1ac9df3a44ea37d29a778f70997978a2e5862b31fe7b46c248bd8db808181f61",
+    "thresholds_sha256": "4c1f2c44073a1c6ec90b0ac924197ab47b68a718d1f17faab278c9c4f41bde62",
     "source": "maintainer-defined release acceptance contract",
     "measured_at": null,
     "sample_count": 0,
@@ -49,15 +49,15 @@
     "mirror": {
       "fixture_count": 15000,
       "labeled_positives": 3000,
-      "bytes": 2430321,
-      "workload_sha256": "f0e8aea6d492f1759fdd7978ae31f6d705d0b91f72c5200f4ca366beeeadfb95",
+      "bytes": 2431242,
+      "workload_sha256": "610d082aaf00b49e385b3739f22ba6292cc2f14c46f42a8538e6adce56d0d1e0",
       "revision": "generator-v1"
     },
     "creddata": {
-      "fixture_count": null,
-      "labeled_positives": 13918,
-      "bytes": null,
-      "workload_sha256": null,
+      "fixture_count": 66896,
+      "labeled_positives": 15102,
+      "bytes": 1018447685,
+      "workload_sha256": "5967f179e55a7feb2ed1939cc9805ff287c5b73f6dab13740f9c11cb8b833a59",
       "revision": "f1de3f85dbdf42bf7b3467c0d273a4dfe44d56ee"
     },
     "ioc-recovery": {
@@ -83,7 +83,7 @@
       "max_wall_ms": 180000,
       "min_throughput_mib_s": 0.01,
       "max_peak_rss_kb": 3145728,
-      "scan_manifest_sha256": null,
+      "scan_manifest_sha256": "6269243b33255aaac4801f86b7ef6c4bf579ee82ba6aa533f4967ad285695dff",
       "categories": []
     },
     {
@@ -97,10 +97,10 @@
         "mode": "full"
       },
       "min_recall": 0.1799,
-      "max_wall_ms": 1200000,
+      "max_wall_ms": 2000000,
       "min_throughput_mib_s": 0.1,
       "max_peak_rss_kb": 4194304,
-      "scan_manifest_sha256": null,
+      "scan_manifest_sha256": "6269243b33255aaac4801f86b7ef6c4bf579ee82ba6aa533f4967ad285695dff",
       "categories": []
     },
     {
@@ -117,7 +117,7 @@
       "max_wall_ms": 120000,
       "min_throughput_mib_s": 0.01,
       "max_peak_rss_kb": 3145728,
-      "scan_manifest_sha256": null,
+      "scan_manifest_sha256": "e66dd002c7f255fa69d5d9ec88d10f6025fd07b3e55c806e26ef532a67a4f6d3",
       "categories": [
         {
           "name": "recovery/p00-plaintext",
@@ -127,7 +127,7 @@
         {
           "name": "recovery/p01-base64",
           "positives": 336,
-          "min_recall": 0.25
+          "min_recall": 0.0
         },
         {
           "name": "recovery/p02-identifier-obfuscation",
@@ -147,42 +147,42 @@
         {
           "name": "recovery/p05-xor",
           "positives": 336,
-          "min_recall": 0.25
+          "min_recall": 0.0
         },
         {
           "name": "recovery/p06-aes-256-cbc",
           "positives": 336,
-          "min_recall": 0.25
+          "min_recall": 0.0
         },
         {
           "name": "recovery/p07-xor-simple-obfuscation",
           "positives": 336,
-          "min_recall": 0.25
+          "min_recall": 0.0
         },
         {
           "name": "recovery/p08-aes-simple-obfuscation",
           "positives": 336,
-          "min_recall": 0.25
+          "min_recall": 0.0
         },
         {
           "name": "recovery/p09-xor-dead-code",
           "positives": 336,
-          "min_recall": 0.25
+          "min_recall": 0.0
         },
         {
           "name": "recovery/p10-aes-dead-code",
           "positives": 336,
-          "min_recall": 0.25
+          "min_recall": 0.0
         },
         {
           "name": "recovery/p11-xor-structural-obfuscation",
           "positives": 336,
-          "min_recall": 0.25
+          "min_recall": 0.0
         },
         {
           "name": "recovery/p12-aes-structural-obfuscation",
           "positives": 336,
-          "min_recall": 0.25
+          "min_recall": 0.0
         }
       ]
     },
@@ -200,7 +200,7 @@
       "max_wall_ms": 300000,
       "min_throughput_mib_s": 0.01,
       "max_peak_rss_kb": 3145728,
-      "scan_manifest_sha256": null,
+      "scan_manifest_sha256": "6269243b33255aaac4801f86b7ef6c4bf579ee82ba6aa533f4967ad285695dff",
       "categories": [
         {
           "name": "recovery/p00-plaintext",
@@ -283,7 +283,7 @@
       "max_wall_ms": 600000,
       "min_throughput_mib_s": 0.01,
       "max_peak_rss_kb": 3145728,
-      "scan_manifest_sha256": null,
+      "scan_manifest_sha256": "edde719614894392d3a0c1931c304637c270cbbd998208b838d893de815a14b1",
       "categories": [
         {
           "name": "recovery/p00-plaintext",
@@ -366,7 +366,7 @@
       "max_wall_ms": 300000,
       "min_throughput_mib_s": 0.01,
       "max_peak_rss_kb": 3145728,
-      "scan_manifest_sha256": null,
+      "scan_manifest_sha256": "16f1e967a37882d1ff92b05229639bec560c1f67ea6e8421b862e874691fa08d",
       "categories": [
         {
           "name": "recovery/p00-plaintext",

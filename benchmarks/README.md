@@ -379,6 +379,10 @@ row must expose those truth categories and conserve TP/FN against its overall
 counts. A category absent from positive truth is admissible only with zero
 TP/FN, and its false positives remain subject to overall FP conservation. Each
 recovery mode additionally applies the policy's independent P00-P12 floors.
+The `fast` preset disables decoding. Its policy requires recall for plaintext,
+identifier-obfuscation, dead-code, and structural-obfuscation rows, while its
+Base64, XOR, and AES floors are zero. The `full`, `deep`, and `precision`
+presets keep positive floors across every P00-P12 category.
 
 The job generates/acquires source corpora outside the absent snapshot
 destination, then runs `python -m bench.hosted_cpu_gate context`. It copies each
@@ -409,15 +413,14 @@ and finite numbers are validated before schema decoding; impossible
 confusion-matrix totals and exits outside KeyHog's `0`/`1`/`10` success domain
 fail closed.
 
-The committed thresholds are explicitly
+The committed thresholds remain
 `unmeasured-release-requirements`: they are acceptance limits, not measured
-performance or calibration claims. CredData workload identity, per-row resolved
-manifest digests, runner image version, and runtime `libhs` SHA-256 are
-intentionally null until a fresh hosted run is reviewed. Null is never a
-wildcard—the gate remains red and names every missing pin. Therefore no hosted
-CPU headline is valid yet; review the first genuine hosted evidence, commit
-those exact values, update the literal workflow policy digest, and only then
-may a subsequent hosted run pass.
+performance or calibration claims. A reviewed hosted run now pins the CredData
+and mirror workload identities, every resolved scan manifest, runner image
+version, and runtime `libhs` SHA-256. These values are exact identities, not
+wildcards. A changed image, library, workload, manifest, or policy digest keeps
+the gate red until you inspect fresh evidence and deliberately update the pin.
+Do not publish a performance headline from these acceptance limits.
 
 The final command is deliberately result-only. It requires current UTC and run
 identity from the workflow invocation rather than trusting self-authored receipt

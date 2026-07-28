@@ -388,7 +388,7 @@ fn authoritative_hosted_gate_still_controls_the_unchanged_success_publication() 
     assert!(nightly_publication_step.contains("name: bench-unified-results"));
     assert!(!nightly_publication_step.contains("if: always()"));
     assert!(nightly.contains(
-        "--policy-sha256 e9d30dcd67f08b5ec538c83fa580ec353f730b960b4976c07dde8dc4b9009e2c"
+        "--policy-sha256 fdebca6c7c7042ad95fd7b779917502adc43c0d38d583ebb9d9b28fb75b56fdd"
     ));
 
     let differential = read_workflow("differential-bench.yml");
