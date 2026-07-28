@@ -175,6 +175,11 @@ fn differential_bench_is_cpu_truthful_canonical_and_fail_closed() {
         "differential-bench must build pinned Betterleaks with its exact supported Go toolchain"
     );
     assert!(
+        text.contains("libboost-dev=1.83.0.1ubuntu2")
+            && text.contains("dpkg-query -W -f='${Version}' libboost-dev"),
+        "differential-bench must pin and verify Kingfisher's native Boost dependency"
+    );
+    assert!(
         text.contains("--no-default-features --features ci-lean"),
         "differential-bench must explicitly compile the CPU-only ci-lean scanner"
     );

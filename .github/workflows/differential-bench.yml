@@ -56,12 +56,12 @@ jobs:
           go-version: "1.22.2"
           cache: false
 
-      - name: install exact Hyperscan development and runtime packages
+      - name: install exact Hyperscan and competitor build packages
         run: |
           set -euo pipefail
           for i in 1 2 3 4 5; do
             if sudo apt-get update -qq \
-              && sudo apt-get install -y --no-install-recommends libhyperscan-dev=5.4.2-2 libhyperscan5=5.4.2-2 pkg-config=1.8.1-2build1; then
+              && sudo apt-get install -y --no-install-recommends libhyperscan-dev=5.4.2-2 libhyperscan5=5.4.2-2 pkg-config=1.8.1-2build1 libboost-dev=1.83.0.1ubuntu2; then
               break
             fi
             sleep $((i * 2))
@@ -134,6 +134,7 @@ jobs:
           # Keep competitor source identities immutable. The result row also
           # records each installed executable SHA-256, so toolchain changes or
           # tampered caches cannot masquerade as a reproducible rerun.
+          test "$(dpkg-query -W -f='${Version}' libboost-dev)" = "1.83.0.1ubuntu2"
           go install github.com/betterleaks/betterleaks@v1.6.1
           cargo install --locked --git https://github.com/mongodb/kingfisher \
             --rev 07644722fd6c3cea60d431cd8a77a914e9b54d65 kingfisher
