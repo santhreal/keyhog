@@ -442,10 +442,11 @@ fn hosted_cpu_workflows_capture_pinned_supply_receipts_before_context() {
         );
         assert!(
             text.contains(&format!("test \"${{go_version}}\" = \"go{go_version}\""))
+                && text.contains("go_version=\"${go_version#go}\"")
                 && text.contains(&format!(
                     "\"go\": {{\"requested\": \"{go_version}\", \"observed\": go_version}}"
                 )),
-            "{name} supply receipt must bind the exact active Go compiler"
+            "{name} supply receipt must normalize and bind the exact active Go compiler"
         );
         assert!(
             text.contains("libhyperscan-dev=5.4.2-2")

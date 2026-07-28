@@ -139,6 +139,7 @@ jobs:
           go_version="$(go env GOVERSION)"
           test "${python_version}" = "3.12.11"
           test "${go_version}" = "go1.25.10"
+          go_version="${go_version#go}"
           test "$(dpkg-query -W -f='${Version}' libhyperscan-dev)" = "5.4.2-2"
           test "$(dpkg-query -W -f='${Version}' libhyperscan5)" = "5.4.2-2"
           test "$(dpkg-query -W -f='${Version}' pkg-config)" = "1.8.1-2build1"
