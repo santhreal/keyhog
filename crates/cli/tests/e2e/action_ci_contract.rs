@@ -5001,6 +5001,61 @@ printf 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  -\n'
     );
 }
 
+/// Git Bash may omit `.exe` from `command -v` even when PATH resolves the
+/// staged Windows executable. The hosted assertion must normalize both forms
+/// while still proving the exact private executable exists.
+#[test]
+fn action_e2e_accepts_git_bash_executable_extension_elision() {
+    let workflow = fs::read_to_string(action_e2e_workflow()).expect("read action E2E workflow");
+    assert!(
+        workflow.contains("installed_unix=\"${installed_unix%.exe}\"")
+            && workflow.contains(
+                "[[ \"$installed_unix\" == \"$runner_temp_unix\"/keyhog-action-runtime.*/*/keyhog ]]",
+            )
+            && workflow.contains("[[ -f \"${installed_unix}.exe\" ]]"),
+        "Windows PATH assertion must normalize Git Bash command resolution and verify keyhog.exe"
+    );
+
+    let dir = TempDir::new().expect("Windows PATH assertion tempdir");
+    let runner_temp = dir.path().join("runner-temp");
+    let installed_base = runner_temp
+        .join("keyhog-action-runtime.test")
+        .join("source-0.5.48-digest")
+        .join("keyhog");
+    fs::create_dir_all(installed_base.parent().expect("installed parent"))
+        .expect("installed directory");
+    fs::write(installed_base.with_extension("exe"), "windows-keyhog").expect("Windows executable");
+    for reported in [
+        installed_base.to_string_lossy().into_owned(),
+        installed_base
+            .with_extension("exe")
+            .to_string_lossy()
+            .into_owned(),
+    ] {
+        let output = Command::new("bash")
+            .args([
+                "-c",
+                r#"set -euo pipefail
+installed_unix="$1"
+runner_temp_unix="$2"
+installed_unix="${installed_unix%.exe}"
+[[ "$installed_unix" == "$runner_temp_unix"/keyhog-action-runtime.*/*/keyhog ]]
+[[ -f "${installed_unix}.exe" ]]
+"#,
+                "bash",
+                &reported,
+                runner_temp.to_str().expect("runner temp path"),
+            ])
+            .output()
+            .expect("run Windows PATH assertion");
+        assert!(
+            output.status.success(),
+            "Git Bash executable form {reported:?} must resolve to the private keyhog.exe: {}",
+            combined_output(&output)
+        );
+    }
+}
+
 #[test]
 fn composite_action_detects_windows_release_asset() {
     let dir = TempDir::new().expect("tempdir");

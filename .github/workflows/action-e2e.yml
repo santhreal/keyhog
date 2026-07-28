@@ -284,7 +284,9 @@ jobs:
             Windows)
               runner_temp_unix="$(cygpath -u "$RUNNER_TEMP")"
               installed_unix="$(cygpath -u "$installed")"
-              [[ "$installed_unix" == "$runner_temp_unix"/keyhog-action-runtime.*/*/keyhog.exe ]]
+              installed_unix="${installed_unix%.exe}"
+              [[ "$installed_unix" == "$runner_temp_unix"/keyhog-action-runtime.*/*/keyhog ]]
+              [[ -f "${installed_unix}.exe" ]]
               programs_glob="$runner_temp_unix/keyhog-action-runtime.*/cache/localappdata/keyhog/programs/*.bin"
               ;;
             macOS)
