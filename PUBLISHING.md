@@ -212,6 +212,11 @@ cryptographically verifies GitHub's exact tag payload/signature with GPG, and
 requires the `VALIDSIG` signing/primary fingerprint to equal the full
 `KEYHOG_RELEASE_SIGNING_FINGERPRINT`. GitHub's generic **Verified** badge alone
 is insufficient.
+The verifier accepts one header-free, LF-terminated canonical ASCII armor
+block, validates its radix-64 layout and CRC-24, and binds the receipt SHA-256
+to the exact decoded public-key packets. It does not compare armor regenerated
+by the installed GnuPG version, because valid GnuPG releases can reserialize
+the same enrolled key differently.
 
 The verified payload must encode the same peeled commit, `type commit`, exact
 tag, exact tagger name/email/date, and exact message returned by the tag-object
@@ -475,7 +480,7 @@ URL:
 
 Success emits the final JSON receipt fields: `schema_version`, `repository`,
 `action_tag`, `release_tag`, signed annotated `release_tag_sha`,
-`release_signer_fingerprint`, canonical-GPG-export
+`release_signer_fingerprint`, exact OpenPGP-packet
 `release_signing_key_sha256`, stable `release_id`, canonical `release_url`, and
 `release_published_at`, common `commit`, `root_action_sha`, `action_name`,
 `listing_url`, rendered

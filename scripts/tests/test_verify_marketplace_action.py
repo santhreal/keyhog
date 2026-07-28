@@ -718,14 +718,54 @@ class MarketplaceActionVerifierTests(unittest.TestCase):
             self.verify(release_signing_key=self.foreign_signer.public_key)
         self.assertEqual(self.transport.requests, [])
 
-    def test_release_key_requires_one_exact_canonical_public_export(self) -> None:
-        """Garbage, multiple keys, secret packets, NUL, and oversize keys fail."""
+    def test_release_key_hash_uses_portable_canonical_packet_bytes(self) -> None:
+        """GnuPG versions may reserialize a key; the receipt must bind the exact armored packet stream."""
 
+        packets = MODULE._canonical_public_key_packets(
+            self.expected_signer.public_key
+        )
+        receipt = self.verify()
+
+        self.assertEqual(packets, self.expected_signer.binary_public_key)
+        self.assertEqual(
+            receipt.release_signing_key_sha256,
+            hashlib.sha256(packets).hexdigest(),
+        )
+
+
+    def test_release_key_requires_one_exact_canonical_public_export(self) -> None:
+        """Garbage, noncanonical armor, multiple keys, secret packets, NUL, and oversize keys fail."""
+
+        public_key = self.expected_signer.public_key
+        armor_lines = public_key.splitlines()
+        encoded = b"".join(armor_lines[2:-2])
+        checksum = armor_lines[-2]
+        rewrapped = b"\n".join(
+            [
+                armor_lines[0],
+                b"",
+                *(encoded[offset : offset + 32] for offset in range(0, len(encoded), 32)),
+                checksum,
+                armor_lines[-1],
+                b"",
+            ]
+        )
+        checksum_offset = public_key.rfind(b"\n=") + 2
+        replacement = b"A" if public_key[checksum_offset : checksum_offset + 1] != b"A" else b"B"
         invalid_keys = [
-            b"prefix" + self.expected_signer.public_key,
-            self.expected_signer.public_key + b"\n",
-            self.expected_signer.public_key + b"\x00",
-            self.expected_signer.public_key + self.foreign_signer.public_key,
+            b"prefix" + public_key,
+            public_key + b"\n",
+            public_key[:-1],
+            public_key.replace(b"\n", b"\r\n"),
+            public_key.replace(
+                b"-----BEGIN PGP PUBLIC KEY BLOCK-----\n\n",
+                b"-----BEGIN PGP PUBLIC KEY BLOCK-----\nVersion: injected\n\n",
+                1,
+            ),
+            rewrapped,
+            public_key[:checksum_offset] + replacement + public_key[checksum_offset + 1 :],
+            public_key + b"\x00",
+            public_key + self.foreign_signer.public_key,
             self.expected_signer.export_secret_key(),
             self.expected_signer.binary_public_key,
             b"x" * (MODULE.MAX_SIGNING_KEY_BYTES + 1),

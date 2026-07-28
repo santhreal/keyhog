@@ -371,6 +371,72 @@ def _signer_fingerprint(value: str) -> str:
     return normalized
 
 
+_PGP_PUBLIC_KEY_BEGIN = b"-----BEGIN PGP PUBLIC KEY BLOCK-----"
+_PGP_PUBLIC_KEY_END = b"-----END PGP PUBLIC KEY BLOCK-----"
+
+
+def _openpgp_crc24(payload: bytes) -> int:
+    """Return the RFC 4880 radix-64 checksum for one packet stream."""
+    crc = 0xB704CE
+    for octet in payload:
+        crc ^= octet << 16
+        for _ in range(8):
+            crc <<= 1
+            if crc & 0x1000000:
+                crc ^= 0x1864CFB
+    return crc & 0xFFFFFF
+
+
+def _canonical_public_key_packets(public_key: bytes) -> bytes:
+    """Decode one byte-exact, header-free OpenPGP public-key armor block."""
+    failure = (
+        "release signing key must be one exact canonical ASCII-armored "
+        "OpenPGP public key export"
+    )
+    lines = public_key.split(b"\n")
+    if (
+        len(lines) < 6
+        or lines[0] != _PGP_PUBLIC_KEY_BEGIN
+        or lines[1] != b""
+        or lines[-2] != _PGP_PUBLIC_KEY_END
+        or lines[-1] != b""
+    ):
+        raise VerificationError(failure)
+    encoded_lines = lines[2:-3]
+    checksum_line = lines[-3]
+    if (
+        not encoded_lines
+        or any(len(line) != 64 for line in encoded_lines[:-1])
+        or not 1 <= len(encoded_lines[-1]) <= 64
+        or len(checksum_line) != 5
+        or not checksum_line.startswith(b"=")
+    ):
+        raise VerificationError(failure)
+    try:
+        packets = base64.b64decode(b"".join(encoded_lines), validate=True)
+        checksum = base64.b64decode(checksum_line[1:], validate=True)
+    except (binascii.Error, ValueError) as error:
+        raise VerificationError(failure) from error
+    if (
+        not packets
+        or len(checksum) != 3
+        or int.from_bytes(checksum, "big") != _openpgp_crc24(packets)
+    ):
+        raise VerificationError(failure)
+    encoded = base64.b64encode(packets)
+    canonical_lines = [
+        _PGP_PUBLIC_KEY_BEGIN,
+        b"",
+        *(encoded[offset : offset + 64] for offset in range(0, len(encoded), 64)),
+        b"=" + base64.b64encode(_openpgp_crc24(packets).to_bytes(3, "big")),
+        _PGP_PUBLIC_KEY_END,
+        b"",
+    ]
+    if public_key != b"\n".join(canonical_lines):
+        raise VerificationError(failure)
+    return packets
+
+
 class _ReleaseSigner:
     """Verify signed Git tag payloads against one operator-enrolled OpenPGP key."""
 
@@ -386,6 +452,7 @@ class _ReleaseSigner:
                 "release signing key must be non-empty canonical ASCII armor "
                 f"without NUL and at most {MAX_SIGNING_KEY_BYTES} bytes"
             )
+        canonical_packets = _canonical_public_key_packets(public_key)
         self._temporary = tempfile.TemporaryDirectory(
             prefix="keyhog-marketplace-gpg-"
         )
@@ -431,19 +498,11 @@ class _ReleaseSigner:
                 )
             self._primary_fingerprint = primary_fingerprints[0]
             exported = self._run(["--export", self._primary_fingerprint])
-            armored = self._run(
-                ["--armor", "--export", self._primary_fingerprint]
-            )
-            if (
-                exported.returncode != 0
-                or armored.returncode != 0
-                or not exported.stdout
-                or public_key != armored.stdout
-            ):
+            if exported.returncode != 0 or not exported.stdout:
                 raise VerificationError(
-                    "release signing key must be one exact canonical public key export"
+                    "release signing key could not be normalized as a public key"
                 )
-            self.key_sha256 = hashlib.sha256(exported.stdout).hexdigest()
+            self.key_sha256 = hashlib.sha256(canonical_packets).hexdigest()
         except Exception:
             self.close()
             raise
