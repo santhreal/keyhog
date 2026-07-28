@@ -30,7 +30,7 @@ _BENCH_ROOT = _THIS.parents[2]
 _TURFS = ("betterleaks", "kingfisher")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _COMMIT = re.compile(r"^[0-9a-f]{40}$")
-_BETTERLEAKS_MANIFEST_SCHEMA: dict[str, type] = {
+_SOURCE_MANIFEST_SCHEMA: dict[str, type] = {
     "id": str,
     "secret": str,
     "label": bool,
@@ -39,15 +39,6 @@ _BETTERLEAKS_MANIFEST_SCHEMA: dict[str, type] = {
     "source_version": str,
     "source_commit": str,
     "source_rules_sha256": str,
-    "file_type": str,
-    "on_disk_path": str,
-}
-_KINGFISHER_MANIFEST_SCHEMA: dict[str, type] = {
-    "id": str,
-    "secret": str,
-    "label": bool,
-    "category": str,
-    "source_tool": str,
     "file_type": str,
     "on_disk_path": str,
 }
@@ -102,13 +93,8 @@ class HomefieldCorpus(Corpus):
                 f"  then score with:  python -m bench leaderboard "
                 f"--corpus homefield-{self.turf}"
             )
-        if self.turf == "betterleaks":
-            self._validate_betterleaks_provenance(man)
-        schema = (
-            _BETTERLEAKS_MANIFEST_SCHEMA
-            if self.turf == "betterleaks"
-            else _KINGFISHER_MANIFEST_SCHEMA
-        )
+        self._validate_source_provenance(man, self.turf)
+        schema = _SOURCE_MANIFEST_SCHEMA
         return load_jsonl_manifest(
             man,
             file_root=self.file_root,
@@ -117,8 +103,8 @@ class HomefieldCorpus(Corpus):
         )
 
     @staticmethod
-    def _validate_betterleaks_provenance(manifest: pathlib.Path) -> None:
-        """Reject harvested fixtures that cannot identify their source rules."""
+    def _validate_source_provenance(manifest: pathlib.Path, turf: str) -> None:
+        """Reject harvested fixtures that cannot identify one exact source rule set."""
         expected: tuple[str, str, str] | None = None
         rows = 0
         with manifest.open() as stream:
@@ -130,11 +116,11 @@ class HomefieldCorpus(Corpus):
                     row = json.loads(line)
                 except json.JSONDecodeError as error:
                     raise SystemExit(
-                        f"betterleaks homefield manifest line {line_number} is invalid JSON: {error}"
+                        f"{turf} homefield manifest line {line_number} is invalid JSON: {error}"
                     ) from error
-                if row.get("source_tool") != "betterleaks":
+                if row.get("source_tool") != turf:
                     raise SystemExit(
-                        f"betterleaks homefield manifest line {line_number} has invalid source_tool"
+                        f"{turf} homefield manifest line {line_number} has invalid source_tool"
                     )
                 provenance = (
                     row.get("source_version"),
@@ -143,25 +129,25 @@ class HomefieldCorpus(Corpus):
                 )
                 if not isinstance(provenance[0], str) or not provenance[0].startswith("v"):
                     raise SystemExit(
-                        f"betterleaks homefield manifest line {line_number} is missing source_version"
+                        f"{turf} homefield manifest line {line_number} is missing source_version"
                     )
                 if not isinstance(provenance[1], str) or not _COMMIT.fullmatch(provenance[1]):
                     raise SystemExit(
-                        f"betterleaks homefield manifest line {line_number} has invalid source_commit"
+                        f"{turf} homefield manifest line {line_number} has invalid source_commit"
                     )
                 if not isinstance(provenance[2], str) or not _SHA256.fullmatch(provenance[2]):
                     raise SystemExit(
-                        f"betterleaks homefield manifest line {line_number} has invalid source_rules_sha256"
+                        f"{turf} homefield manifest line {line_number} has invalid source_rules_sha256"
                     )
                 if expected is None:
                     expected = provenance
                 elif provenance != expected:
                     raise SystemExit(
-                        "betterleaks homefield manifest mixes source versions or rule digests; "
+                        f"{turf} homefield manifest mixes source versions or rule digests; "
                         "re-harvest one pinned source"
                     )
         if rows == 0:
-            raise SystemExit("betterleaks homefield manifest contains no provenance-bound fixtures")
+            raise SystemExit(f"{turf} homefield manifest contains no provenance-bound fixtures")
 
 
 def _main(argv: list[str] | None = None) -> int:

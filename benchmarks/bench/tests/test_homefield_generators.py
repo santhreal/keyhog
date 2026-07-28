@@ -90,6 +90,28 @@ def test_betterleaks_harvest_binds_pinned_source_provenance(tmp_path):
     assert record["source_rules_sha256"] == gen._rules_digest(rules)
 
 
+def test_kingfisher_harvest_binds_pinned_source_provenance(tmp_path):
+    """Kingfisher fixtures must identify the exact pinned rules bytes that defined them."""
+    gen = _load_generator("harvest_kingfisher")
+    rules = tmp_path / "rules"
+    rules.mkdir()
+    (rules / "aws.yml").write_text(
+        "rules:\n"
+        "  - id: aws-access-key\n"
+        "    examples:\n"
+        "      - AKIAIOSFODNN7EXAMPLE\n",
+        encoding="utf-8",
+    )
+
+    records = gen.harvest(rules)
+
+    assert len(records) == 1
+    record = records[0]
+    assert record["source_version"] == gen.KINGFISHER_VERSION
+    assert record["source_commit"] == gen.KINGFISHER_COMMIT
+    assert record["source_rules_sha256"] == gen._rules_digest(rules)
+
+
 # ── manifest placement: answer key beside, never inside, the scan tree ──
 
 _SAMPLE_RECORDS = [
@@ -156,8 +178,38 @@ def test_betterleaks_corpus_rejects_manifest_without_source_provenance(tmp_path)
 def test_kingfisher_write_corpus_places_manifest_beside_scan_tree(tmp_path):
     pytest.importorskip("yaml")
     gen = _load_generator("harvest_kingfisher")
-    gen.write_corpus([dict(r) for r in _SAMPLE_RECORDS], tmp_path)
+    records = [
+        {
+            **row,
+            "source_tool": "kingfisher",
+            "source_version": gen.KINGFISHER_VERSION,
+            "source_commit": gen.KINGFISHER_COMMIT,
+            "source_rules_sha256": "c" * 64,
+        }
+        for row in _SAMPLE_RECORDS
+    ]
+    gen.write_corpus(records, tmp_path)
     _assert_split_layout(tmp_path, "kingfisher")
+
+
+def test_kingfisher_corpus_rejects_manifest_without_source_provenance(tmp_path):
+    """A Kingfisher corpus without its source commit and rules digest is unverifiable."""
+    gen = _load_generator("harvest_kingfisher")
+    records = [
+        {
+            **{
+                key: value
+                for key, value in row.items()
+                if key not in {"source_version", "source_commit", "source_rules_sha256"}
+            },
+            "source_tool": "kingfisher",
+        }
+        for row in _SAMPLE_RECORDS
+    ]
+    gen.write_corpus(records, tmp_path)
+
+    with pytest.raises(SystemExit, match="missing source_version"):
+        HomefieldCorpus(turf="kingfisher", corpus_dir=tmp_path).records()
 
 
 def test_kingfisher_root_resolution_prefers_explicit(tmp_path, monkeypatch):

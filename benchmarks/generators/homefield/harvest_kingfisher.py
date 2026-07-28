@@ -25,6 +25,7 @@ Output (split layout the bench loader reads):
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import pathlib
@@ -32,6 +33,9 @@ import shutil
 import sys
 
 import yaml
+
+KINGFISHER_VERSION = "v1.99.0"
+KINGFISHER_COMMIT = "07644722fd6c3cea60d431cd8a77a914e9b54d65"
 
 # Rules dir under a kingfisher checkout, relative to its root.
 _RULES_REL = pathlib.Path("crates") / "kingfisher-rules" / "data" / "rules"
@@ -79,8 +83,21 @@ def _as_str_list(v) -> list[str]:
     return []
 
 
+def _rules_digest(rules_dir: pathlib.Path) -> str:
+    """Hash the exact YAML rule paths and bytes used for a harvest."""
+    digest = hashlib.sha256()
+    paths = sorted((*rules_dir.glob("*.yml"), *rules_dir.glob("*.yaml")))
+    for path in paths:
+        digest.update(path.name.encode())
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
 def harvest(rules_dir: pathlib.Path) -> list[dict]:
     records: list[dict] = []
+    source_digest = _rules_digest(rules_dir)
     counter = 0
     for yf in sorted(rules_dir.glob("*.yml")) + sorted(rules_dir.glob("*.yaml")):
         try:
@@ -109,6 +126,9 @@ def harvest(rules_dir: pathlib.Path) -> list[dict]:
                             "label": label,
                             "category": str(rid),
                             "source_tool": "kingfisher",
+                            "source_version": KINGFISHER_VERSION,
+                            "source_commit": KINGFISHER_COMMIT,
+                            "source_rules_sha256": source_digest,
                             "value": sample,
                             "file_type": "txt",
                         }
