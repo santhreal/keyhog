@@ -133,29 +133,56 @@ def _affinity_cores() -> int:
 
 def _cgroup_quota_cores(
     cpu_max: str | pathlib.Path = "/sys/fs/cgroup/cpu.max",
+    *,
+    cpu_v1_roots: tuple[str | pathlib.Path, ...] = (
+        "/sys/fs/cgroup/cpu",
+        "/sys/fs/cgroup/cpu,cpuacct",
+    ),
 ) -> float | str:
-    """Return finite v2 cores, ``unbounded``, or ``unknown`` when not observable."""
+    """Return finite v2/v1 cores, ``unbounded``, or ``unknown`` when unobservable."""
     try:
         fields = pathlib.Path(cpu_max).read_text(encoding="utf-8").split()
+    except FileNotFoundError:
+        fields = None
     except (OSError, UnicodeError):
         return CGROUP_QUOTA_UNKNOWN
-    if len(fields) != 2:
-        return CGROUP_QUOTA_UNKNOWN
-    try:
-        period = int(fields[1])
-    except ValueError:
-        return CGROUP_QUOTA_UNKNOWN
-    if period <= 0:
-        return CGROUP_QUOTA_UNKNOWN
-    if fields[0] == "max":
-        return CGROUP_QUOTA_UNBOUNDED
-    try:
-        quota = int(fields[0])
-    except ValueError:
-        return CGROUP_QUOTA_UNKNOWN
-    if quota <= 0:
-        return CGROUP_QUOTA_UNKNOWN
-    return quota / period
+    if fields is not None:
+        if len(fields) != 2:
+            return CGROUP_QUOTA_UNKNOWN
+        try:
+            period = int(fields[1])
+        except ValueError:
+            return CGROUP_QUOTA_UNKNOWN
+        if period <= 0:
+            return CGROUP_QUOTA_UNKNOWN
+        if fields[0] == "max":
+            return CGROUP_QUOTA_UNBOUNDED
+        try:
+            quota = int(fields[0])
+        except ValueError:
+            return CGROUP_QUOTA_UNKNOWN
+        return quota / period if quota > 0 else CGROUP_QUOTA_UNKNOWN
+
+    for root_value in cpu_v1_roots:
+        root = pathlib.Path(root_value)
+        try:
+            quota_text = (root / "cpu.cfs_quota_us").read_text(encoding="utf-8").strip()
+            period_text = (root / "cpu.cfs_period_us").read_text(encoding="utf-8").strip()
+        except FileNotFoundError:
+            continue
+        except (OSError, UnicodeError):
+            return CGROUP_QUOTA_UNKNOWN
+        try:
+            quota = int(quota_text)
+            period = int(period_text)
+        except ValueError:
+            return CGROUP_QUOTA_UNKNOWN
+        if period <= 0:
+            return CGROUP_QUOTA_UNKNOWN
+        if quota == -1:
+            return CGROUP_QUOTA_UNBOUNDED
+        return quota / period if quota > 0 else CGROUP_QUOTA_UNKNOWN
+    return CGROUP_QUOTA_UNKNOWN
 
 
 def _capture() -> Host:

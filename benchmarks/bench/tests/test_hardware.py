@@ -48,10 +48,60 @@ def test_cgroup_quota_cores_marks_invalid_v2_data_unknown(tmp_path, contents):
     assert hardware._cgroup_quota_cores(cpu_max) == hardware.CGROUP_QUOTA_UNKNOWN
 
 
-def test_cgroup_quota_cores_marks_missing_controller_unknown(tmp_path):
-    """A missing v2 controller, including a v1-only host, is not evidence of no limit."""
+def test_cgroup_quota_cores_marks_missing_controllers_unknown(tmp_path):
+    """Missing v2 and v1 controllers must remain unknown, never unbounded."""
     assert (
-        hardware._cgroup_quota_cores(tmp_path / "missing")
+        hardware._cgroup_quota_cores(tmp_path / "missing", cpu_v1_roots=())
+        == hardware.CGROUP_QUOTA_UNKNOWN
+    )
+    assert hardware._cgroup_quota_cores(
+        tmp_path / "missing",
+        cpu_v1_roots=(tmp_path / "also-missing",),
+    ) == hardware.CGROUP_QUOTA_UNKNOWN
+
+
+def test_cgroup_quota_cores_reads_exact_finite_v1_limit(tmp_path):
+    """A v1-only hosted runner must retain its exact four-core CPU allocation."""
+    root = tmp_path / "cpu"
+    root.mkdir()
+    (root / "cpu.cfs_quota_us").write_text("400000\n", encoding="utf-8")
+    (root / "cpu.cfs_period_us").write_text("100000\n", encoding="utf-8")
+
+    assert hardware._cgroup_quota_cores(
+        tmp_path / "missing-v2",
+        cpu_v1_roots=(root,),
+    ) == 4.0
+
+
+def test_cgroup_quota_cores_distinguishes_genuine_unbounded_v1_limit(tmp_path):
+    """The documented v1 ``-1`` quota must remain distinct from missing evidence."""
+    root = tmp_path / "cpu"
+    root.mkdir()
+    (root / "cpu.cfs_quota_us").write_text("-1\n", encoding="utf-8")
+    (root / "cpu.cfs_period_us").write_text("100000\n", encoding="utf-8")
+
+    assert (
+        hardware._cgroup_quota_cores(
+            tmp_path / "missing-v2",
+            cpu_v1_roots=(root,),
+        )
+        == hardware.CGROUP_QUOTA_UNBOUNDED
+    )
+
+
+@pytest.mark.parametrize(("quota", "period"), [("0", "100000"), ("400000", "0"), ("bad", "100000")])
+def test_cgroup_quota_cores_marks_invalid_v1_data_unknown(tmp_path, quota, period):
+    """Malformed or impossible v1 quota data must never become usable evidence."""
+    root = tmp_path / "cpu"
+    root.mkdir()
+    (root / "cpu.cfs_quota_us").write_text(f"{quota}\n", encoding="utf-8")
+    (root / "cpu.cfs_period_us").write_text(f"{period}\n", encoding="utf-8")
+
+    assert (
+        hardware._cgroup_quota_cores(
+            tmp_path / "missing-v2",
+            cpu_v1_roots=(root,),
+        )
         == hardware.CGROUP_QUOTA_UNKNOWN
     )
 
