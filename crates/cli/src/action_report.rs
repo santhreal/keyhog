@@ -151,7 +151,7 @@ fn write_receipt_noclobber(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let parent = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new(".")); // LAW10: intentional_default, a basename-only destination is explicitly relative to the current directory.
+        .unwrap_or_else(|| Path::new(".")); // LAW10: intended path default, a basename-only destination is relative to the current directory.
     let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
     use std::io::Write as _;
     temporary.write_all(bytes)?;
