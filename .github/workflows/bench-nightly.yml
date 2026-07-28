@@ -234,6 +234,16 @@ jobs:
           KEYHOG_BIN: ${{ github.workspace }}/target/release/keyhog
         run: |
           set -euo pipefail
+          for path in /sys/fs/cgroup/cpu.max /sys/fs/cgroup/cgroup.controllers /proc/self/cgroup; do
+            if [[ -r "$path" ]]; then
+              printf '%s=' "$path"
+              tr '\n' ';' < "$path"
+              printf '\n'
+            else
+              printf '%s=unreadable-or-absent\n' "$path"
+            fi
+          done
+          grep -E ' - cgroup2? ' /proc/self/mountinfo || true
           source_root="$(realpath "${KEYHOG_BENCH_SOURCE_ROOT}")"
           snapshot_root="${KEYHOG_BENCH_SNAPSHOT_ROOT}"
           test ! -e "${snapshot_root}"

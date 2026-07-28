@@ -61,6 +61,12 @@ fn bench_nightly_is_ci_lean_and_rejects_empty_or_stale_artifacts() {
         "bench-nightly must install the exact Marketplace verifier parser before source gates"
     );
     assert!(
+        text.contains("/sys/fs/cgroup/cpu.max")
+            && text.contains("/proc/self/cgroup")
+            && text.contains("/proc/self/mountinfo"),
+        "bench-nightly must emit actionable CPU-controller evidence when host capture fails"
+    );
+    assert!(
         text.contains("releases/download/v${version}/trufflehog_${version}_linux_amd64.tar.gz")
             && text.contains("5d836eae522540a32ca0f1a1e00efd4c3153a52462466a4b4008fac1e6c1a548")
             && text.contains("sha256sum --check --strict")
@@ -198,6 +204,12 @@ fn differential_bench_is_cpu_truthful_canonical_and_fail_closed() {
     assert!(
         text.contains("--no-default-features --features ci-lean"),
         "differential-bench must explicitly compile the CPU-only ci-lean scanner"
+    );
+    assert!(
+        text.contains("/sys/fs/cgroup/cpu.max")
+            && text.contains("/proc/self/cgroup")
+            && text.contains("/proc/self/mountinfo"),
+        "differential-bench must emit actionable CPU-controller evidence when host capture fails"
     );
     assert!(
         text.contains("python3 -m pip install --require-hashes --only-binary=:all:")
