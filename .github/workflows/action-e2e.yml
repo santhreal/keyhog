@@ -31,6 +31,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  CC: ""
   KEYHOG_ACTION_E2E_VERSION: ${{ inputs.version || '0.5.48' }}
 jobs:
 

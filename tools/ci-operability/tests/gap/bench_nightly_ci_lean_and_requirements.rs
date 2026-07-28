@@ -26,9 +26,8 @@ fn bench_nightly_is_ci_lean_and_rejects_empty_or_stale_artifacts() {
         "bench-nightly must pin the hosted CPU image instead of following *-latest"
     );
     assert!(
-        text.contains(
-            "uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8"
-        ) && text.contains("toolchain: 1.89.0")
+        text.contains("uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8")
+            && text.contains("toolchain: 1.89.0")
             && !text.contains("toolchain: stable")
             && !text.contains("toolchain: nightly"),
         "bench-nightly must use the immutable Rust 1.89.0 toolchain"
@@ -57,9 +56,7 @@ fn bench_nightly_is_ci_lean_and_rejects_empty_or_stale_artifacts() {
     );
     assert!(
         text.contains("releases/download/v${version}/trufflehog_${version}_linux_amd64.tar.gz")
-            && text.contains(
-                "5d836eae522540a32ca0f1a1e00efd4c3153a52462466a4b4008fac1e6c1a548"
-            )
+            && text.contains("5d836eae522540a32ca0f1a1e00efd4c3153a52462466a4b4008fac1e6c1a548")
             && text.contains("sha256sum --check --strict")
             && !text.contains("raw.githubusercontent.com/trufflesecurity/trufflehog")
             && !text.contains("scripts/install.sh"),
@@ -154,9 +151,8 @@ fn differential_bench_is_cpu_truthful_canonical_and_fail_closed() {
         "differential-bench must pin the hosted CPU image"
     );
     assert!(
-        text.contains(
-            "uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8"
-        ) && text.contains("toolchain: 1.89.0")
+        text.contains("uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8")
+            && text.contains("toolchain: 1.89.0")
             && !text.contains("toolchain: stable")
             && !text.contains("toolchain: nightly"),
         "differential-bench must use the immutable Rust 1.89.0 toolchain"
@@ -241,7 +237,7 @@ fn hosted_cpu_workflows_bind_reviewed_policy_run_and_snapshot_identity() {
         assert!(
             text.contains("--snapshot-root \"${snapshot_root}\"")
                 && text.contains("KEYHOG_BENCH_HOSTED_CONTEXT:")
-                && text.contains("KEYHOG_BENCH_MIRROR:")
+                && text.contains("KEYHOG_BENCH_MIRROR=$RUNNER_TEMP/")
                 && text.contains("--policy cpu-gates/")
                 && text.contains("--binary "),
             "{name} must scan private context-bound snapshots and bind parity inputs"
@@ -270,18 +266,19 @@ fn hosted_cpu_workflows_separate_sources_from_fresh_exported_snapshots() {
         ),
     ] {
         assert!(
-            text.contains(
-                "KEYHOG_BENCH_SOURCE_ROOT: ${{ runner.temp }}/keyhog-bench-sources"
-            ) && text.contains(
-                "KEYHOG_BENCH_SNAPSHOT_ROOT: ${{ runner.temp }}/keyhog-bench-snapshots"
-            ) && text.contains(
-                "KEYHOG_BENCH_MIRROR: ${{ runner.temp }}/keyhog-bench-sources/mirror"
-            ),
+            text.contains("KEYHOG_BENCH_SOURCE_ROOT=$RUNNER_TEMP/keyhog-bench-sources")
+                && text.contains(
+                    "KEYHOG_BENCH_SNAPSHOT_ROOT=$RUNNER_TEMP/keyhog-bench-snapshots"
+                )
+                && text.contains(
+                    "KEYHOG_BENCH_MIRROR=$RUNNER_TEMP/keyhog-bench-sources/mirror"
+                ),
             "{name} must generate the mirror under a dedicated source root"
         );
         assert!(
             text.contains("test ! -e \"${snapshot_root}\"")
-                && text.contains("test \"${source_root}\" != \"${snapshot_root}\"")
+                && text.contains("[[ \"${source_root}\" == \"${snapshot_root}\" ]]")
+                && text.contains("source and snapshot roots must differ")
                 && (text.contains("\"$(realpath \"${snapshot_root}/mirror\")\"")
                     || (text.contains("for workload in mirror creddata ioc-recovery")
                         && text.contains("\"$(realpath \"${snapshot_root}/${workload}\")\"")))
@@ -305,7 +302,7 @@ fn hosted_cpu_workflows_separate_sources_from_fresh_exported_snapshots() {
     }
 
     assert!(
-        nightly.contains("KEYHOG_BENCH_CREDDATA: ${{ runner.temp }}/keyhog-bench-sources/creddata")
+        nightly.contains("KEYHOG_BENCH_CREDDATA=$RUNNER_TEMP/keyhog-bench-sources/creddata")
             && nightly.contains("KEYHOG_BENCH_CREDDATA=${snapshot_root}/creddata")
             && nightly.contains(
                 "mv benchmarks/corpora/ioc-recovery-v3 \\\n            \"${KEYHOG_BENCH_SOURCE_ROOT}/ioc-recovery\""
@@ -355,8 +352,12 @@ fn hosted_cpu_workflows_enforce_interval_immutability_with_read_only_mounts() {
             "{name} must safely unmount and clean the private snapshot"
         );
         let lock = text.find(lock_name).expect("missing snapshot lock step");
-        let upload = text.find(upload_name).expect("missing evidence upload step");
-        let cleanup = text.find(cleanup_name).expect("missing snapshot cleanup step");
+        let upload = text
+            .find(upload_name)
+            .expect("missing evidence upload step");
+        let cleanup = text
+            .find(cleanup_name)
+            .expect("missing snapshot cleanup step");
         assert!(
             lock < upload && upload < cleanup,
             "{name} must hold the read-only mount through publication"
@@ -372,15 +373,15 @@ fn hosted_cpu_workflows_enforce_interval_immutability_with_read_only_mounts() {
 fn hosted_cpu_workflows_capture_pinned_supply_receipts_before_context() {
     for (name, text) in [
         ("bench-nightly", read_workflow("bench-nightly.yml")),
-        ("differential-bench", read_workflow("differential-bench.yml")),
+        (
+            "differential-bench",
+            read_workflow("differential-bench.yml"),
+        ),
     ] {
         assert!(
-            text.contains(
-                "uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97"
-            ) && text.contains("python-version: \"3.12.11\"")
-                && text.contains(
-                    "uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32"
-                )
+            text.contains("uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97")
+                && text.contains("python-version: \"3.12.11\"")
+                && text.contains("uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00")
                 && text.contains("go-version: \"1.22.2\""),
             "{name} must SHA-pin setup actions and exact CPython/Go versions"
         );
@@ -445,7 +446,10 @@ fn benchmark_requirements_are_a_complete_hashed_python_312_linux_lock() {
         );
     }
     assert_eq!(
-        requirements.lines().filter(|line| line.contains("==")).count(),
+        requirements
+            .lines()
+            .filter(|line| line.contains("=="))
+            .count(),
         expected.len(),
         "lock must not contain an undeclared or floating dependency"
     );
