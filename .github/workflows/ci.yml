@@ -61,6 +61,13 @@ jobs:
         uses: taiki-e/install-action@b8cecb83565409bcc297b2df6e77f030b2a468d5 # v2
         with:
           tool: cargo-audit
+      - name: Install prevention gate Python dependencies
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check --no-deps \
+            --require-hashes --only-binary=:all: \
+            -r scripts/requirements-marketplace.txt
+          python3 -c 'import yaml; assert yaml.__version__ == "6.0.3"'
       - name: Run all prevention gates
         run: bash scripts/gates/run_all.sh
 
