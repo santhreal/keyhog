@@ -67,7 +67,6 @@ the mutable actor login is not used as the authority.
    `.github/release-signing-key.asc`. The repository Actions variable
    `KEYHOG_RELEASE_SIGNING_FINGERPRINT` contains the same full fingerprint.
    Short key IDs, a different enrolled key, or placeholder bytes are rejected.
-+
    This identity was enrolled and byte-checked on 2026-07-27. Treat any
    difference among the local secret key, committed armor, GitHub `raw_key`,
    and repository variable as a new hard prepublication blocker.
@@ -99,11 +98,9 @@ the mutable actor login is not used as the authority.
    repository setting was enabled through GitHub's owner-only immutable
    releases endpoint on 2026-07-27. Confirm it before creating every release
    tag:
-+
    ```console
    gh api repos/santhreal/keyhog/immutable-releases
    ```
-+
    The response must contain `"enabled": true`. GitHub applies the setting only
    to future releases, so the historical check below remains useful evidence
    that an older release does not prove the current setting:
