@@ -219,7 +219,7 @@ talks to:
   force a direct connection when TOML configured a proxy.
 - `--insecure` accepts invalid or self-signed certificates in verification and
   remote-source HTTP clients. Use it only for endpoints you control. Strict TLS
-  verification is the default, and no environment variable can disable it.
+  is the default, and no environment variable can disable certificate verification.
 
 An invalid proxy URL prevents the verification engine from starting. A proxy
 that cannot connect produces an `error` result for the affected finding after
@@ -265,8 +265,8 @@ flag has no effect on shipped findings. It is for reviewed custom corpora.
 
 If the collector handshake fails, KeyHog prints a stderr warning naming the
 configured server and a redacted handshake error. Ordinary HTTP verifiers keep
-running. OOB-required findings fail closed as an `error` before their HTTP
-probe is sent. See the
+running. OOB-required findings fail closed as verification errors with an
+`error` result before their HTTP probe is sent. See the
 [OOB verification reference](./reference/oob-verification.md) for detector,
 collector, DNS, egress, and output prerequisites.
 
@@ -294,10 +294,11 @@ service's documented rate limit.
 
 `--verify` sends only findings that meet the verifier confidence floor.
 Findings below that floor still appear in every output format with
-`"verification":"skipped"`. KeyHog also prints a stderr warning with the count
-and floor. `skipped` is not evidence that the credential is dead. A machine
-consumer that requires complete verification must reject both `skipped` and
-`unverifiable`, as well as `rate_limited` and `error`.
+`"verification":"skipped"`. The `verification` field stays `skipped`, and
+KeyHog prints a stderr warning with the count and floor. `skipped` is not
+evidence that the credential is dead. A machine consumer that requires complete
+verification must reject both `skipped` and `unverifiable`, as well as
+`rate_limited` and `error`.
 
 ## Detectors without verification
 

@@ -876,7 +876,15 @@ impl HsScanner {
         } = Self::prepare_patterns(patterns, opts);
 
         if hs_pats.is_empty() {
-            return Err("no patterns compiled".into());
+            return Ok((
+                Self {
+                    shards: Vec::new(),
+                    pattern_map,
+                    scanner_id: SCANNER_ID_SEQ.fetch_add(1, Ordering::Relaxed),
+                    scratch_owner: Arc::new(()),
+                },
+                unsupported,
+            ));
         }
 
         let cache_dir = resolve_cache_dir()?;

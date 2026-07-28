@@ -140,8 +140,9 @@ Branch and commit Action refs build their checked-out source on pinned Rust
 `simd`, `gpu-cuda`, and `gpu-wgpu` require a compatible release binary and
 runner. Authenticated release refs retain proof-backed default auto.
 
-The Action accepts `text`, `json`, `sarif`, and `jsonl`. Use the CLI directly
-for the other formats in [Output formats](../output-formats.md).
+The `format` input intentionally supports the four formats `text`, `json`,
+`sarif`, and `jsonl`. Use the installed CLI directly for the other formats in
+[Output formats](../output-formats.md).
 After report flush, the scanner emits the ordered fields
 `schema=keyhog-action-report-v1`, `format`, `findings`, `report-bytes`,
 `report-sha256`, `scan-status`, and `exit-code`. A hidden Action-only verifier

@@ -71,10 +71,10 @@ Maintenance subcommands also use `0` for their successful state. For example,
 
 ## `1`: findings, none confirmed live
 
-This includes findings that were not verified, verification that was skipped,
-and credentials reported as inactive, dead, or revoked. A verification network
-error remains a per-finding `verification-error`; it does not become exit `2`.
-If findings remain and none is confirmed live, the scan returns `1`.
+Exit `1` covers findings that are unverified, skipped, or verified inactive
+(`dead` or `revoked`). A verification network error remains a per-finding
+`verification-error`; it does not become exit `2`. If findings remain and none
+is confirmed live, the scan returns `1`.
 
 ## `2`: user or operator error
 

@@ -1,30 +1,3 @@
-/// UCP shorthand semantics can differ from Rust regex's Unicode tables, and
-/// Hyperscan rejects word boundaries outright. Doubled backslashes remain
-/// literals and must stay eligible for Hyperscan.
-#[cfg(feature = "simd")]
-#[test]
-fn ucp_semantic_escape_classifier_respects_escape_parity() {
-    for pattern in [
-        r"\bsecret",
-        r"secret\B",
-        r"account:\d+",
-        r"\p{Nd}+",
-        r"\s+\w+",
-        r"\\\D",
-    ] {
-        assert!(
-            crate::simd::backend::contains_ucp_semantic_escape(pattern),
-            "Unicode-semantic escape must use exact CPU recovery: {pattern:?}"
-        );
-    }
-    for pattern in [r"\\bsecret", r"secret\\B", r"\\d+", r"[0-9]+"] {
-        assert!(
-            !crate::simd::backend::contains_ucp_semantic_escape(pattern),
-            "literal or ASCII-only expression must stay eligible for Hyperscan: {pattern:?}"
-        );
-    }
-}
-
 /// Regression: Hyperscan compilation must remain decomposed, cache-stable,
 /// and independent of per-executor scratch allocation; warm-up owns that
 /// fallible runtime resource boundary.

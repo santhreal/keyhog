@@ -21,6 +21,7 @@ or coverage incomplete.
 | Argument | Value | Default | Description |
 |----------|-------|---------|-------------|
 | `<PATH>` | `PATH...` |  | Path(s) to scan. Pass several to scan multiple roots in one run (`keyhog scan a/ b/ c/`); nested or duplicate roots fold into their covering parent. Positional shorthand for `--path` (single root only) |
+| `--action-receipt` *(hidden)* | `PATH` |  | Write an internal composite-Action receipt bound to the completed report |
 | `--allow-gcs-token-forward` |  |  | Forward the ambient GCS bearer token to a custom GCS endpoint you trust. Off by default; googleapis.com endpoints do not need this. This flag is intentionally explicit because it can send a bearer token to a third-party host |
 | `--allow-private-cloud-endpoint` |  |  | Allow cloud sources (`--s3-endpoint`, GCS / Azure container URLs) to reach an endpoint whose host, literal or DNS-resolved, is private, loopback, link-local, or cloud-metadata. OFF by default: the cloud SSRF screen refuses every such endpoint. Enable ONLY for a trusted private-network deployment (self-hosted MinIO / Ceph on an internal gateway). This flag (or its `[http].allow_private_endpoint` TOML equivalent) is the ONLY way to relax the screen, no environment variable can, so an ambient toggle can never silently turn keyhog into an SSRF proxy for internal services |
 | `--allow-s3-credential-forward` |  |  | Forward ambient AWS credentials to a custom S3 endpoint you trust. Off by default; AWS-owned endpoints do not need this. This flag is intentionally explicit because it can send AWS identity material to a third-party host |
@@ -118,7 +119,7 @@ or coverage incomplete.
 | `--no-ml` |  |  | Disable ML-based confidence scoring |
 | `--no-suppress-test-fixtures` |  |  | Opt out of the bundled test-fixture suppression list. By default keyhog suppresses well-known public demo credentials (Stripe's docs example `sk_live_4eC39...`, GitHub's docs example `ghp_aBcD...`, the keyhog test fixtures, etc.) so the report stays focused on real leaks rather than tutorial copies. Pass this flag when you intentionally want those surfaced. Useful for differential benchmarking against gitleaks / trufflehog (which do NOT suppress these), or for auditing the suppression list itself |
 | `--no-unicode-norm` |  |  | Disable Unicode normalization (not recommended) |
-| `--no-verify` |  |  | Disable credential verification, overriding verify = true in .keyhog.toml |
+| `--no-verify` |  |  | Disable credential verification, overriding `verify = true` in `.keyhog.toml` |
 | `--oob-server` | `HOST` | `oast.fun` | Interactsh server for OOB verification. Defaults to projectdiscovery's public collector at `oast.fun`. Use a self-hosted server for sensitive scans; the collector sees correlation IDs and the IPs of services that call back, never the credential itself. Only meaningful with `--verify-oob`; clap rejects the flag without it instead of silently ignoring it (the prior behavior gave false confidence that an override had been applied) |
 | `--oob-timeout` | `SECS` | `30` | Per-finding OOB wait timeout in seconds. Detector specs may set their own `timeout_secs`; this value is the global default and the upper bound. Lower = faster scans, higher = catches services with delayed webhooks (e.g., queued mail delivery). Requires `--verify-oob` |
 | `-o`, `--output` | `OUTPUT` |  | Write findings to file |
@@ -167,24 +168,6 @@ operator explicitly passes `--allow-s3-credential-forward` or
 `--allow-gcs-token-forward`. Private cloud endpoints additionally require
 `--allow-private-cloud-endpoint` (or `[http].allow_private_endpoint = true`).
 
-## `keyhog action-report verify`
-
-Verifies that a bounded composite-Action receipt describes the exact report
-bytes produced by a completed scan. Pass the receipt path with `--receipt`, the
-report path with `--report`, the report's `sarif`, `json`, `jsonl`, or `text`
-format with `--format`, and the scan process status with `--exit-code`.
-Verification succeeds only when the receipt metadata, report digest, format,
-finding count, scan status, and exit code agree.
-
-<!-- keyhog-generated: cli-reference command="action-report/verify" -->
-| Argument | Value | Default | Description |
-|----------|-------|---------|-------------|
-| `--exit-code` *(required)* | `CODE` |  |  |
-| `--format` *(required)* | `FORMAT` |  |  Possible values: `sarif`, `json`, `jsonl`, `text`. |
-| `--receipt` *(required)* | `RECEIPT` |  |  |
-| `--report` *(required)* | `REPORT` |  |  |
-<!-- /keyhog-generated: cli-reference command="action-report/verify" -->
-
 ## `keyhog config --effective [SCAN FLAGS]`
 
 Prints the resolved scan and report policy and exits without scanning. This is
@@ -210,6 +193,7 @@ keyhog config --effective --limit-stdin-bytes 32MB --no-ml
 | Argument | Value | Default | Description |
 |----------|-------|---------|-------------|
 | `<PATH>` | `PATH...` |  | Path(s) to scan. Pass several to scan multiple roots in one run (`keyhog scan a/ b/ c/`); nested or duplicate roots fold into their covering parent. Positional shorthand for `--path` (single root only) |
+| `--action-receipt` *(hidden)* | `PATH` |  | Write an internal composite-Action receipt bound to the completed report |
 | `--allow-gcs-token-forward` |  |  | Forward the ambient GCS bearer token to a custom GCS endpoint you trust. Off by default; googleapis.com endpoints do not need this. This flag is intentionally explicit because it can send a bearer token to a third-party host |
 | `--allow-private-cloud-endpoint` |  |  | Allow cloud sources (`--s3-endpoint`, GCS / Azure container URLs) to reach an endpoint whose host, literal or DNS-resolved, is private, loopback, link-local, or cloud-metadata. OFF by default: the cloud SSRF screen refuses every such endpoint. Enable ONLY for a trusted private-network deployment (self-hosted MinIO / Ceph on an internal gateway). This flag (or its `[http].allow_private_endpoint` TOML equivalent) is the ONLY way to relax the screen, no environment variable can, so an ambient toggle can never silently turn keyhog into an SSRF proxy for internal services |
 | `--allow-s3-credential-forward` |  |  | Forward ambient AWS credentials to a custom S3 endpoint you trust. Off by default; AWS-owned endpoints do not need this. This flag is intentionally explicit because it can send AWS identity material to a third-party host |
@@ -308,7 +292,7 @@ keyhog config --effective --limit-stdin-bytes 32MB --no-ml
 | `--no-ml` |  |  | Disable ML-based confidence scoring |
 | `--no-suppress-test-fixtures` |  |  | Opt out of the bundled test-fixture suppression list. By default keyhog suppresses well-known public demo credentials (Stripe's docs example `sk_live_4eC39...`, GitHub's docs example `ghp_aBcD...`, the keyhog test fixtures, etc.) so the report stays focused on real leaks rather than tutorial copies. Pass this flag when you intentionally want those surfaced. Useful for differential benchmarking against gitleaks / trufflehog (which do NOT suppress these), or for auditing the suppression list itself |
 | `--no-unicode-norm` |  |  | Disable Unicode normalization (not recommended) |
-| `--no-verify` |  |  | Disable credential verification, overriding verify = true in .keyhog.toml |
+| `--no-verify` |  |  | Disable credential verification, overriding `verify = true` in `.keyhog.toml` |
 | `--oob-server` | `HOST` | `oast.fun` | Interactsh server for OOB verification. Defaults to projectdiscovery's public collector at `oast.fun`. Use a self-hosted server for sensitive scans; the collector sees correlation IDs and the IPs of services that call back, never the credential itself. Only meaningful with `--verify-oob`; clap rejects the flag without it instead of silently ignoring it (the prior behavior gave false confidence that an override had been applied) |
 | `--oob-timeout` | `SECS` | `30` | Per-finding OOB wait timeout in seconds. Detector specs may set their own `timeout_secs`; this value is the global default and the upper bound. Lower = faster scans, higher = catches services with delayed webhooks (e.g., queued mail delivery). Requires `--verify-oob` |
 | `-o`, `--output` | `OUTPUT` |  | Write findings to file |

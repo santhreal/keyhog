@@ -406,6 +406,7 @@ fn cli_reference_covers_live_command_and_flag_inventory() {
     ) {
         for argument in command
             .get_arguments()
+            .filter(|argument| !argument.is_hide_set())
             .filter_map(|argument| argument.get_long())
             .filter(|long| *long != "help")
         {
@@ -413,14 +414,17 @@ fn cli_reference_covers_live_command_and_flag_inventory() {
                 missing.insert(argument.to_string());
             }
         }
-        for subcommand in command.get_subcommands() {
+        for subcommand in command
+            .get_subcommands()
+            .filter(|subcommand| !subcommand.is_hide_set())
+        {
             collect_flags(subcommand, docs, missing);
         }
     }
 
     for subcommand in root
         .get_subcommands()
-        .filter(|sub| sub.get_name() != "help")
+        .filter(|subcommand| subcommand.get_name() != "help" && !subcommand.is_hide_set())
     {
         let name = subcommand.get_name();
         if !docs.contains(&format!("keyhog {name}")) {
@@ -673,9 +677,9 @@ fn readme_documents_minisign_install_gate_coherently() {
 
     // Isolate the README `## Install` section (up to the next h2 heading).
     let install_section = readme
-        .split("## Install")
+        .split("\n## Install\n")
         .nth(1)
-        .expect("README must have an `## Install` section")
+        .expect("README must have an exact `## Install` heading")
         .split("\n## ")
         .next()
         .expect("README `## Install` section must have body text");
@@ -730,11 +734,16 @@ fn readme_documents_minisign_install_gate_coherently() {
 }
 
 #[test]
-fn public_ci_install_recipes_name_verified_runtime_prerequisites() {
+fn public_ci_install_recipes_match_signed_static_linux_release() {
     let guide = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../docs/src/workflows/ci.md"
     ));
+    assert!(
+        guide.contains("statically links Hyperscan")
+            && guide.contains("does not require `libhyperscan5`"),
+        "CI guidance must state that the signed Linux release has no runtime Hyperscan package"
+    );
     for heading in ["## GitLab CI", "## CircleCI", "## Drone CI", "## Buildkite"] {
         let section = guide
             .split(heading)
@@ -746,8 +755,8 @@ fn public_ci_install_recipes_name_verified_runtime_prerequisites() {
         assert!(
             section.contains("install.sh")
                 && section.contains("minisign")
-                && section.contains("libhyperscan5"),
-            "{heading} must install the signed installer verifier and Linux release runtime before scanning"
+                && !section.contains("libhyperscan5"),
+            "{heading} must install the signed installer verifier without adding an unused runtime library"
         );
     }
 }

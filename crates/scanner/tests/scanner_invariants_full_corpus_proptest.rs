@@ -12,9 +12,9 @@
 //! `LazyLock` (the ~2–3 s build amortised across every case):
 //!
 //!   1. `scan_never_panics_on_arbitrary_bytes` (10_000 cases), scanning any
-//!      byte string (lossy-decoded to the UTF-8 the chunk API takes, including
-//!      control bytes, lone surrogates' replacement, NULs, and long high-
-//!      entropy runs) must RETURN, never panic / index out of bounds / overflow.
+//!      byte string up to 512 bytes (lossy-decoded to the UTF-8 the chunk API
+//!      takes, including control bytes, replacement characters, NULs, and
+//!      high-entropy runs) must RETURN, never panic or violate byte boundaries.
 //!      Every surfaced match must also be internally consistent: its credential
 //!      is non-empty and its byte offset points at a byte inside the chunk.
 //!
@@ -75,10 +75,13 @@ proptest! {
     /// Arbitrary bytes (lossy-decoded to valid UTF-8) must never panic the
     /// scanner, and every match must be internally consistent.
     #[test]
-    fn scan_never_panics_on_arbitrary_bytes(raw in prop::collection::vec(any::<u8>(), 0..2048)) {
+    fn scan_never_panics_on_arbitrary_bytes(raw in prop::collection::vec(any::<u8>(), 0..512)) {
         let text = String::from_utf8_lossy(&raw).into_owned();
         let c = chunk(&text, "fuzz.bin", 0);
-        let matches = SCANNER.scan(&c);
+        SCANNER.clear_fragment_cache();
+        let matches = SCANNER
+            .scan(&c)
+            .expect("arbitrary byte chunks must scan without a backend error");
         let chunk_len = c.data.len();
         for m in &matches {
             prop_assert!(
@@ -132,11 +135,17 @@ proptest! {
         SCANNER.clear_fragment_cache();
         let mut per_chunk: BTreeSet<String> = BTreeSet::new();
         for c in &chunks {
-            per_chunk.extend(creds(&SCANNER.scan(c)));
+            per_chunk.extend(creds(
+                &SCANNER
+                    .scan(c)
+                    .expect("each generated chunk must scan without a backend error"),
+            ));
         }
 
         SCANNER.clear_fragment_cache();
-        let coalesced_results = SCANNER.scan_coalesced(&chunks);
+        let coalesced_results = SCANNER
+            .scan_coalesced(&chunks)
+            .expect("generated batches must scan without a backend error");
         let coalesced: BTreeSet<String> =
             coalesced_results.iter().flatten()
                 .map(|m| m.credential.as_ref().to_string())

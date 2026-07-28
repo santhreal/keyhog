@@ -11,6 +11,11 @@ Environment variables authenticate an explicitly selected remote source,
 control standard terminal diagnostics, or help the operating system choose a
 runtime directory. They do not select a source or change detector policy.
 
+Backend selection has no environment override. Use `--backend auto`,
+`--backend cpu` (`cpu-fallback`), `--backend simd` (`simd-regex`),
+`--backend gpu-cuda` (`gpu-cuda-region-presence`), or `--backend gpu-wgpu`
+(`gpu-wgpu-region-presence`).
+
 For example, keep a GitHub token out of the process arguments:
 
 ```sh
@@ -64,6 +69,9 @@ explicit credential-forwarding flag. Proxy and TLS behavior also remain
 explicit. `HTTP_PROXY`, `HTTPS_PROXY`, and `ALL_PROXY` do not route KeyHog
 verification or HTTP source requests. Use `--proxy`, `[http] proxy`,
 `--insecure`, or `[http] insecure_tls`.
+KeyHog deliberately does NOT read `KEYHOG_INSECURE_TLS`.
+No proxy or TLS environment variable participates in routing or certificate
+policy.
 
 ## Platform directory discovery
 

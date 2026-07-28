@@ -243,13 +243,9 @@ fn verification_doc_discloses_low_confidence_verify_skips() {
 fn exit_codes_doc_explains_exit_one_inactive_and_skipped_findings() {
     assert!(
         EXIT_CODES_DOC.contains("none confirmed live")
-            && EXIT_CODES_DOC.contains("unverified, skipped, or verified-inactive: dead/revoked"),
+            && EXIT_CODES_DOC.contains("unverified, skipped, or verified inactive")
+            && EXIT_CODES_DOC.contains("`dead` or `revoked`"),
         "exit-codes.md must match --help: exit 1 includes skipped and verified-inactive findings"
-    );
-    assert!(
-        EXIT_CODES_DOC.contains("verified inactive (`dead` or `revoked`)")
-            && EXIT_CODES_DOC.contains("findings, none live"),
-        "exit-codes.md must explain exit 1 without implying only dead findings qualify"
     );
 }
 
@@ -369,10 +365,11 @@ fn docs_do_not_advertise_ambient_proxy_or_tls_env_controls() {
             && ENV_DOC.contains("No proxy or TLS environment variable participates"),
         "env reference must explicitly state ambient verifier proxy/TLS variables are ignored"
     );
+    let verification_lower = VERIFICATION_DOC.to_ascii_lowercase();
     assert!(
-        VERIFICATION_DOC.contains("ambient `HTTPS_PROXY`")
-            && VERIFICATION_DOC.contains("variables are ignored")
-            && VERIFICATION_DOC
+        verification_lower.contains("ambient `https_proxy`")
+            && verification_lower.contains("variables are ignored")
+            && verification_lower
                 .contains("no environment variable can disable certificate verification"),
         "verification.md must state the explicit-only network policy"
     );

@@ -162,6 +162,8 @@ pub mod scanner_misc;
 pub mod segment_attribution;
 pub mod service_vocab;
 pub mod shape_canonical;
+#[cfg(feature = "simd")]
+mod simd_ucp_semantic_escape;
 mod simdsieve_hot_pattern_index_oracle;
 pub mod structured_parsers;
 pub mod sub_facade;
