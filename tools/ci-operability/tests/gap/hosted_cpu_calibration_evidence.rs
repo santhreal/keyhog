@@ -388,7 +388,7 @@ fn authoritative_hosted_gate_still_controls_the_unchanged_success_publication() 
     assert!(nightly_publication_step.contains("name: bench-unified-results"));
     assert!(!nightly_publication_step.contains("if: always()"));
     assert!(nightly.contains(
-        "--policy-sha256 bba63cc47b10ea4e19210255163daeb6326ef7c0c34f28f20dad860ff8ef397d"
+        "--policy-sha256 e9d30dcd67f08b5ec538c83fa580ec353f730b960b4976c07dde8dc4b9009e2c"
     ));
 
     let differential = read_workflow("differential-bench.yml");
@@ -409,6 +409,6 @@ fn authoritative_hosted_gate_still_controls_the_unchanged_success_publication() 
         "name: differential-results-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}"
     ));
     assert!(differential.contains(
-        "--policy-sha256 97b6a2af12b36354497bc37167addbb6b0e10c4d210c0ec4638f258a220a7f3b"
+        "--policy-sha256 b19d7dfb215004b510c7be33c6768e0331391465885cb0c52b4a680d2203adfa"
     ));
 }

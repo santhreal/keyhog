@@ -564,7 +564,7 @@ jobs:
           trusted_now="$(date --utc +%Y-%m-%dT%H:%M:%SZ)"
           python3 -B -m bench.hosted_cpu_gate gate \
             --policy cpu-gates/github-ubuntu-24.04-4core-nightly.json \
-            --policy-sha256 bba63cc47b10ea4e19210255163daeb6326ef7c0c34f28f20dad860ff8ef397d \
+            --policy-sha256 e9d30dcd67f08b5ec538c83fa580ec353f730b960b4976c07dde8dc4b9009e2c \
             --context hosted-cpu-context.json \
             --unicode-parity unicode-parity.json \
             --trusted-now "${trusted_now}" \

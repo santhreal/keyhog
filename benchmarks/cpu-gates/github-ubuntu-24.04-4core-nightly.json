@@ -5,7 +5,7 @@
     "workflow_file": ".github/workflows/bench-nightly.yml",
     "job": "leaderboard",
     "parity_source_sha256": "ec9299f624d097002572adc017b718be5496845da8f9437fdcb169ed867228c2",
-    "parity_vector_sha256": "bc9266bf6c2c5a81effc0ef49ea26084552d6838a92b16df9777ecc5a8a94b9d",
+    "parity_vector_sha256": "b2d3614170aa443148ad70f29170f3db387f3fad32c3a30cfdf159c15a1b375b",
     "parity_detector_examples": 848
   },
   "runner": {
