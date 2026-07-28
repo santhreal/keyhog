@@ -104,6 +104,10 @@ jobs:
           set -euo pipefail
           python3 -m pip install --require-hashes --only-binary=:all: \
             -r benchmarks/requirements.txt
+          python3 -m pip install --disable-pip-version-check --no-deps \
+            --require-hashes --only-binary=:all: \
+            -r scripts/requirements-marketplace.txt
+          python3 -c 'import yaml; assert yaml.__version__ == "6.0.3"'
 
 
       - name: Benchmark regression tests

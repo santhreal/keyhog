@@ -55,6 +55,12 @@ fn bench_nightly_is_ci_lean_and_rejects_empty_or_stale_artifacts() {
         "bench-nightly must require hashes for the binary-only benchmark lock"
     );
     assert!(
+        text.contains("--require-hashes --only-binary=:all:")
+            && text.contains("-r scripts/requirements-marketplace.txt")
+            && text.contains("yaml.__version__ == \"6.0.3\""),
+        "bench-nightly must install the exact Marketplace verifier parser before source gates"
+    );
+    assert!(
         text.contains("releases/download/v${version}/trufflehog_${version}_linux_amd64.tar.gz")
             && text.contains("5d836eae522540a32ca0f1a1e00efd4c3153a52462466a4b4008fac1e6c1a548")
             && text.contains("sha256sum --check --strict")
