@@ -158,6 +158,16 @@ fn differential_bench_is_cpu_truthful_canonical_and_fail_closed() {
         "differential-bench must use the immutable Rust 1.89.0 toolchain"
     );
     assert!(
+        text.contains("name: install exact Rust 1.94.0 competitor toolchain")
+            && text.contains("toolchain: 1.94.0"),
+        "differential-bench must build pinned Kingfisher with its exact supported Rust toolchain"
+    );
+    assert!(
+        text.contains("name: install exact Go 1.25.10 competitor toolchain")
+            && text.contains("go-version: \"1.25.10\""),
+        "differential-bench must build pinned Betterleaks with its exact supported Go toolchain"
+    );
+    assert!(
         text.contains("--no-default-features --features ci-lean"),
         "differential-bench must explicitly compile the CPU-only ci-lean scanner"
     );
@@ -371,19 +381,31 @@ fn hosted_cpu_workflows_enforce_interval_immutability_with_read_only_mounts() {
 /// path plus digest.
 #[test]
 fn hosted_cpu_workflows_capture_pinned_supply_receipts_before_context() {
-    for (name, text) in [
-        ("bench-nightly", read_workflow("bench-nightly.yml")),
+    for (name, text, go_version) in [
+        (
+            "bench-nightly",
+            read_workflow("bench-nightly.yml"),
+            "1.22.2",
+        ),
         (
             "differential-bench",
             read_workflow("differential-bench.yml"),
+            "1.25.10",
         ),
     ] {
         assert!(
             text.contains("uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97")
                 && text.contains("python-version: \"3.12.11\"")
                 && text.contains("uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00")
-                && text.contains("go-version: \"1.22.2\""),
+                && text.contains(&format!("go-version: \"{go_version}\"")),
             "{name} must SHA-pin setup actions and exact CPython/Go versions"
+        );
+        assert!(
+            text.contains(&format!("test \"${{go_version}}\" = \"go{go_version}\""))
+                && text.contains(&format!(
+                    "\"go\": {{\"requested\": \"{go_version}\", \"observed\": go_version}}"
+                )),
+            "{name} supply receipt must bind the exact active Go compiler"
         );
         assert!(
             text.contains("libhyperscan-dev=5.4.2-2")

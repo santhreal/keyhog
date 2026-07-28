@@ -24,7 +24,7 @@
   "supply": {
     "runner_image_version": null,
     "cpython": "3.12.11",
-    "go": "1.22.2",
+    "go": "1.25.10",
     "libhyperscan_dev": "5.4.2-2",
     "libhyperscan_runtime": "5.4.2-2",
     "pkg_config": "1.8.1-2build1",
