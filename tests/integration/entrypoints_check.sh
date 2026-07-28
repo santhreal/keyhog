@@ -58,14 +58,15 @@ if [ -f "$ACT" ] && [ -f "$SCAN" ]; then
   else
     note "OK   GitHub Action entrypoint: no denylisted keyhog flags"
   fi
-  # The Action must actually invoke the tested local scan script, and that
-  # script must build a scan argv and execute `keyhog "${args[@]}"`.
+  # The Action must invoke the tested local scan script, and that script must
+  # execute its scan argv through the authenticated binary selected by the
+  # composite setup.
   if grep -q "run-scan.sh" "$ACT" \
      && grep -q "args=(scan" "$SCAN" \
-     && grep -q 'keyhog "${args\[@\]}"' "$SCAN"; then
+     && grep -Fq '"$keyhog_bin" "${args[@]}"' "$SCAN"; then
     note "OK   GitHub Action entrypoint: invokes the tested keyhog scan CLI"
   else
-    echo "FAIL GitHub Action entrypoint does not route through run-scan.sh to 'keyhog scan'."
+    echo "FAIL GitHub Action entrypoint does not route through run-scan.sh to the authenticated 'keyhog scan' binary."
     fail=1
   fi
   # SARIF upload should be advisory only for fork PRs (no
@@ -78,15 +79,17 @@ if [ -f "$ACT" ] && [ -f "$SCAN" ]; then
     echo "FAIL action.yml: SARIF upload must fail closed on trusted runs and be advisory only for fork PRs."
     fail=1
   fi
-  # Findings counting is a CI security boundary. Missing jq / malformed JSON
-  # must not become findings=0 after the scanner already returned exit 1/10.
+  # Findings counting is a CI security boundary. A missing or substituted
+  # report, malformed receipt, or contradictory exit must fail closed through
+  # the source-emitted receipt verifier.
   if grep -q "count_from_report()" "$SCAN" \
-     && grep -q "Could not parse.*keyhog exited" "$SCAN" \
+     && grep -q "action-report verify" "$SCAN" \
+     && grep -q "Could not verify scan report receipt" "$SCAN" \
      && grep -q "but did not write" "$SCAN" \
      && ! grep -q "jq .*|| echo 0" "$SCAN"; then
-    note "OK   GitHub Action entrypoint: report counting fails closed when parser/report fails"
+    note "OK   GitHub Action entrypoint: receipt-bound report counting fails closed"
   else
-    echo "FAIL GitHub Action entrypoint findings counting must fail closed; do not convert parser/missing-report failures to findings=0."
+    echo "FAIL GitHub Action entrypoint findings counting must verify the source receipt and fail closed."
     fail=1
   fi
   if grep -q "GITHUB_STEP_SUMMARY" "$SCAN" && grep -q "### KeyHog scan" "$SCAN"; then
