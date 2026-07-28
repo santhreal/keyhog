@@ -91,9 +91,10 @@ fn key_chunks(per_chunk: &[Vec<keyhog_core::RawMatch>]) -> BTreeSet<FindingKey> 
     s
 }
 
-/// Hyperscan rejects `\b` under UCP compilation. The SIMD path must retain
-/// shipped detectors that use word boundaries through its exact CPU recovery
-/// route instead of failing backend initialization or losing the finding.
+/// Hyperscan UCP semantics reject word boundaries and can use different
+/// Unicode tables for shorthand classes such as `\d`. The SIMD path must
+/// retain those shipped detectors through its exact CPU recovery route instead
+/// of failing backend initialization or losing a Unicode finding.
 #[test]
 fn daemon_style_stdin_aws_chunk_reports_named_detector() {
     let _telemetry_guard = super::super::telemetry_serial::lock();

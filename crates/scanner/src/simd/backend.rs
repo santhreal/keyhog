@@ -43,14 +43,19 @@ const BASE_PATTERN_COST: u64 = 16;
 const RETRY_DROP_DIVISOR: usize = 10;
 const HS_CRATE_CACHE_VERSION: &[u8] = b"0.3.2";
 
-pub(crate) fn contains_ucp_word_boundary(regex: &str) -> bool {
+pub(crate) fn contains_ucp_semantic_escape(regex: &str) -> bool {
     let mut escaped = false;
     for byte in regex.bytes() {
         if byte == b'\\' {
             escaped = !escaped;
             continue;
         }
-        if escaped && matches!(byte, b'b' | b'B') {
+        if escaped
+            && matches!(
+                byte,
+                b'b' | b'B' | b'd' | b'D' | b'p' | b'P' | b's' | b'S' | b'w' | b'W'
+            )
+        {
             return true;
         }
         escaped = false;
@@ -394,7 +399,7 @@ impl HsScanner {
                 if regex.len() > MAX_HS_PATTERN_LEN {
                     return PrepResult::Unsupported { index: i };
                 }
-                if opts.ucp && contains_ucp_word_boundary(regex) {
+                if opts.ucp && contains_ucp_semantic_escape(regex) {
                     return PrepResult::Unsupported { index: i };
                 }
                 match Pattern::with_flags(regex, Self::pattern_flags(i, opts)) {

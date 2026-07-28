@@ -1,18 +1,26 @@
-/// UCP compilation rejects real word-boundary escapes, while a doubled
-/// backslash is a literal slash followed by `b` and must remain eligible.
+/// UCP shorthand semantics can differ from Rust regex's Unicode tables, and
+/// Hyperscan rejects word boundaries outright. Doubled backslashes remain
+/// literals and must stay eligible for Hyperscan.
 #[cfg(feature = "simd")]
 #[test]
-fn ucp_word_boundary_classifier_respects_escape_parity() {
-    for pattern in [r"\bsecret", r"secret\B", r"\\\bsecret"] {
+fn ucp_semantic_escape_classifier_respects_escape_parity() {
+    for pattern in [
+        r"\bsecret",
+        r"secret\B",
+        r"account:\d+",
+        r"\p{Nd}+",
+        r"\s+\w+",
+        r"\\\D",
+    ] {
         assert!(
-            crate::simd::backend::contains_ucp_word_boundary(pattern),
-            "real UCP word boundary must use exact CPU recovery: {pattern:?}"
+            crate::simd::backend::contains_ucp_semantic_escape(pattern),
+            "Unicode-semantic escape must use exact CPU recovery: {pattern:?}"
         );
     }
-    for pattern in [r"\\bsecret", r"secret\\B", r"\w+secret"] {
+    for pattern in [r"\\bsecret", r"secret\\B", r"\\d+", r"[0-9]+"] {
         assert!(
-            !crate::simd::backend::contains_ucp_word_boundary(pattern),
-            "literal or supported escape must stay eligible for Hyperscan: {pattern:?}"
+            !crate::simd::backend::contains_ucp_semantic_escape(pattern),
+            "literal or ASCII-only expression must stay eligible for Hyperscan: {pattern:?}"
         );
     }
 }
@@ -37,7 +45,7 @@ fn hyperscan_compile_with_opts_delegates_compile_stages() {
         "const RETRY_DROP_DIVISOR: usize = 10;",
         "fn hs_partition_cost(",
         "fn counted_repeat_upper_bound(",
-        "fn contains_ucp_word_boundary(",
+        "fn contains_ucp_semantic_escape(",
         "fn prepare_patterns(",
         "fn compile_cache_key(",
         "fn compile_shard_count(",
