@@ -237,19 +237,18 @@ impl SimdPhase1CompilePlan {
         );
 
         let opts = crate::simd::backend::HsCompileOpts {
-            // Phase 1 consumes set membership only: every callback marks a
-            // pattern bit, and match positions/multiplicity are discarded.
             singlematch: true,
             shard_target: self.shard_target,
+            utf8: true,
+            ucp: true,
             ..Default::default()
         };
         let (scanner, unsupported) =
             crate::simd::backend::HsScanner::compile_with_opts(&pattern_refs, opts)
                 .map_err(|error| format!("Hyperscan phase-one compilation failed: {error}"))?;
 
-        // Map unsupported deduplicated ids back to every canonical pattern
-        // that shares the regex. Their detector-owned literals form the exact
-        // recovery prefilter rather than silently disappearing from SIMD.
+        // Map unsupported deduplicated ids to canonical patterns and retain
+        // their detector-owned literals instead of dropping them from SIMD.
         let mut unsupported_ac = Vec::new();
         for &hs_id in &unsupported {
             let Some(indices) = self.index_map.get(hs_id) else {

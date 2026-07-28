@@ -1,0 +1,439 @@
+{
+  "schema_version": "hosted-cpu-policy-v2",
+  "authority": {
+    "repository": "santhreal/keyhog",
+    "workflow_file": ".github/workflows/bench-nightly.yml",
+    "job": "leaderboard",
+    "parity_source_sha256": "18723c5e280f5053969fbe81462b9ce096585bf0728ebbaca5aec200f285cd90",
+    "parity_vector_sha256": "bc9266bf6c2c5a81effc0ef49ea26084552d6838a92b16df9777ecc5a8a94b9d",
+    "parity_detector_examples": 848
+  },
+  "runner": {
+    "profile": "github-ubuntu-24.04-4core-nightly",
+    "workflow": "bench-nightly",
+    "os": "Linux",
+    "arch": "X64",
+    "environment": "github-hosted",
+    "effective_cores": 4,
+    "min_ram_mb": 7000,
+    "max_ram_mb": 20000,
+    "max_evidence_seconds": 10800,
+    "cuda_visible_devices": "",
+    "nvidia_visible_devices": "void"
+  },
+  "supply": {
+    "runner_image_version": null,
+    "cpython": "3.12.11",
+    "go": "1.22.2",
+    "libhyperscan_dev": "5.4.2-2",
+    "libhyperscan_runtime": "5.4.2-2",
+    "pkg_config": "1.8.1-2build1",
+    "libhs_runtime_sha256": null
+  },
+  "calibration": {
+    "status": "unmeasured-release-requirements",
+    "thresholds_sha256": "1ac9df3a44ea37d29a778f70997978a2e5862b31fe7b46c248bd8db808181f61",
+    "source": "maintainer-defined release acceptance contract",
+    "measured_at": null,
+    "sample_count": 0,
+    "statistic": "none",
+    "units": {
+      "wall": "ms",
+      "throughput": "MiB/s",
+      "rss": "KiB",
+      "recall": "ratio"
+    },
+    "rationale": "Acceptance limits only; no hosted measurement or performance headline is claimed."
+  },
+  "workloads": {
+    "mirror": {
+      "fixture_count": 15000,
+      "labeled_positives": 3000,
+      "bytes": 2430321,
+      "workload_sha256": "f0e8aea6d492f1759fdd7978ae31f6d705d0b91f72c5200f4ca366beeeadfb95",
+      "revision": "generator-v1"
+    },
+    "creddata": {
+      "fixture_count": null,
+      "labeled_positives": 13918,
+      "bytes": null,
+      "workload_sha256": null,
+      "revision": "f1de3f85dbdf42bf7b3467c0d273a4dfe44d56ee"
+    },
+    "ioc-recovery": {
+      "fixture_count": 4368,
+      "labeled_positives": 4368,
+      "bytes": 2011552,
+      "workload_sha256": "9fb324af03e55270f5317e5e15617b4cb0c5d2de5a6d8a75a28210fe8b345417",
+      "revision": "generator-v1"
+    }
+  },
+  "rows": [
+    {
+      "id": "mirror",
+      "path": "results-nightly/mirror-keyhog-simd-nocache-nodaemon-full.json",
+      "corpus": "mirror",
+      "config": {
+        "backend": "simd",
+        "cache": "off",
+        "daemon": "off",
+        "mode": "full"
+      },
+      "min_recall": 0.9,
+      "max_wall_ms": 180000,
+      "min_throughput_mib_s": 0.01,
+      "max_peak_rss_kb": 3145728,
+      "scan_manifest_sha256": null,
+      "categories": []
+    },
+    {
+      "id": "creddata",
+      "path": "results-creddata/creddata-keyhog-simd-nocache-nodaemon-full.json",
+      "corpus": "creddata",
+      "config": {
+        "backend": "simd",
+        "cache": "off",
+        "daemon": "off",
+        "mode": "full"
+      },
+      "min_recall": 0.1799,
+      "max_wall_ms": 1200000,
+      "min_throughput_mib_s": 0.1,
+      "max_peak_rss_kb": 4194304,
+      "scan_manifest_sha256": null,
+      "categories": []
+    },
+    {
+      "id": "recovery-fast",
+      "path": "results-ioc-recovery/ioc-recovery-keyhog-simd-nocache-nodaemon-fast.json",
+      "corpus": "ioc-recovery",
+      "config": {
+        "backend": "simd",
+        "cache": "off",
+        "daemon": "off",
+        "mode": "fast"
+      },
+      "min_recall": 0.25,
+      "max_wall_ms": 120000,
+      "min_throughput_mib_s": 0.01,
+      "max_peak_rss_kb": 3145728,
+      "scan_manifest_sha256": null,
+      "categories": [
+        {
+          "name": "recovery/p00-plaintext",
+          "positives": 336,
+          "min_recall": 0.25
+        },
+        {
+          "name": "recovery/p01-base64",
+          "positives": 336,
+          "min_recall": 0.25
+        },
+        {
+          "name": "recovery/p02-identifier-obfuscation",
+          "positives": 336,
+          "min_recall": 0.25
+        },
+        {
+          "name": "recovery/p03-dead-code",
+          "positives": 336,
+          "min_recall": 0.25
+        },
+        {
+          "name": "recovery/p04-structural-obfuscation",
+          "positives": 336,
+          "min_recall": 0.25
+        },
+        {
+          "name": "recovery/p05-xor",
+          "positives": 336,
+          "min_recall": 0.25
+        },
+        {
+          "name": "recovery/p06-aes-256-cbc",
+          "positives": 336,
+          "min_recall": 0.25
+        },
+        {
+          "name": "recovery/p07-xor-simple-obfuscation",
+          "positives": 336,
+          "min_recall": 0.25
+        },
+        {
+          "name": "recovery/p08-aes-simple-obfuscation",
+          "positives": 336,
+          "min_recall": 0.25
+        },
+        {
+          "name": "recovery/p09-xor-dead-code",
+          "positives": 336,
+          "min_recall": 0.25
+        },
+        {
+          "name": "recovery/p10-aes-dead-code",
+          "positives": 336,
+          "min_recall": 0.25
+        },
+        {
+          "name": "recovery/p11-xor-structural-obfuscation",
+          "positives": 336,
+          "min_recall": 0.25
+        },
+        {
+          "name": "recovery/p12-aes-structural-obfuscation",
+          "positives": 336,
+          "min_recall": 0.25
+        }
+      ]
+    },
+    {
+      "id": "recovery-full",
+      "path": "results-ioc-recovery/ioc-recovery-keyhog-simd-nocache-nodaemon-full.json",
+      "corpus": "ioc-recovery",
+      "config": {
+        "backend": "simd",
+        "cache": "off",
+        "daemon": "off",
+        "mode": "full"
+      },
+      "min_recall": 0.75,
+      "max_wall_ms": 300000,
+      "min_throughput_mib_s": 0.01,
+      "max_peak_rss_kb": 3145728,
+      "scan_manifest_sha256": null,
+      "categories": [
+        {
+          "name": "recovery/p00-plaintext",
+          "positives": 336,
+          "min_recall": 0.75
+        },
+        {
+          "name": "recovery/p01-base64",
+          "positives": 336,
+          "min_recall": 0.75
+        },
+        {
+          "name": "recovery/p02-identifier-obfuscation",
+          "positives": 336,
+          "min_recall": 0.75
+        },
+        {
+          "name": "recovery/p03-dead-code",
+          "positives": 336,
+          "min_recall": 0.75
+        },
+        {
+          "name": "recovery/p04-structural-obfuscation",
+          "positives": 336,
+          "min_recall": 0.75
+        },
+        {
+          "name": "recovery/p05-xor",
+          "positives": 336,
+          "min_recall": 0.75
+        },
+        {
+          "name": "recovery/p06-aes-256-cbc",
+          "positives": 336,
+          "min_recall": 0.75
+        },
+        {
+          "name": "recovery/p07-xor-simple-obfuscation",
+          "positives": 336,
+          "min_recall": 0.75
+        },
+        {
+          "name": "recovery/p08-aes-simple-obfuscation",
+          "positives": 336,
+          "min_recall": 0.75
+        },
+        {
+          "name": "recovery/p09-xor-dead-code",
+          "positives": 336,
+          "min_recall": 0.75
+        },
+        {
+          "name": "recovery/p10-aes-dead-code",
+          "positives": 336,
+          "min_recall": 0.75
+        },
+        {
+          "name": "recovery/p11-xor-structural-obfuscation",
+          "positives": 336,
+          "min_recall": 0.75
+        },
+        {
+          "name": "recovery/p12-aes-structural-obfuscation",
+          "positives": 336,
+          "min_recall": 0.75
+        }
+      ]
+    },
+    {
+      "id": "recovery-deep",
+      "path": "results-ioc-recovery/ioc-recovery-keyhog-simd-nocache-nodaemon-deep.json",
+      "corpus": "ioc-recovery",
+      "config": {
+        "backend": "simd",
+        "cache": "off",
+        "daemon": "off",
+        "mode": "deep"
+      },
+      "min_recall": 1.0,
+      "max_wall_ms": 600000,
+      "min_throughput_mib_s": 0.01,
+      "max_peak_rss_kb": 3145728,
+      "scan_manifest_sha256": null,
+      "categories": [
+        {
+          "name": "recovery/p00-plaintext",
+          "positives": 336,
+          "min_recall": 1.0
+        },
+        {
+          "name": "recovery/p01-base64",
+          "positives": 336,
+          "min_recall": 1.0
+        },
+        {
+          "name": "recovery/p02-identifier-obfuscation",
+          "positives": 336,
+          "min_recall": 1.0
+        },
+        {
+          "name": "recovery/p03-dead-code",
+          "positives": 336,
+          "min_recall": 1.0
+        },
+        {
+          "name": "recovery/p04-structural-obfuscation",
+          "positives": 336,
+          "min_recall": 1.0
+        },
+        {
+          "name": "recovery/p05-xor",
+          "positives": 336,
+          "min_recall": 1.0
+        },
+        {
+          "name": "recovery/p06-aes-256-cbc",
+          "positives": 336,
+          "min_recall": 1.0
+        },
+        {
+          "name": "recovery/p07-xor-simple-obfuscation",
+          "positives": 336,
+          "min_recall": 1.0
+        },
+        {
+          "name": "recovery/p08-aes-simple-obfuscation",
+          "positives": 336,
+          "min_recall": 1.0
+        },
+        {
+          "name": "recovery/p09-xor-dead-code",
+          "positives": 336,
+          "min_recall": 1.0
+        },
+        {
+          "name": "recovery/p10-aes-dead-code",
+          "positives": 336,
+          "min_recall": 1.0
+        },
+        {
+          "name": "recovery/p11-xor-structural-obfuscation",
+          "positives": 336,
+          "min_recall": 1.0
+        },
+        {
+          "name": "recovery/p12-aes-structural-obfuscation",
+          "positives": 336,
+          "min_recall": 1.0
+        }
+      ]
+    },
+    {
+      "id": "recovery-precision",
+      "path": "results-ioc-recovery/ioc-recovery-keyhog-simd-nocache-nodaemon-precision.json",
+      "corpus": "ioc-recovery",
+      "config": {
+        "backend": "simd",
+        "cache": "off",
+        "daemon": "off",
+        "mode": "precision"
+      },
+      "min_recall": 0.75,
+      "max_wall_ms": 300000,
+      "min_throughput_mib_s": 0.01,
+      "max_peak_rss_kb": 3145728,
+      "scan_manifest_sha256": null,
+      "categories": [
+        {
+          "name": "recovery/p00-plaintext",
+          "positives": 336,
+          "min_recall": 0.75
+        },
+        {
+          "name": "recovery/p01-base64",
+          "positives": 336,
+          "min_recall": 0.75
+        },
+        {
+          "name": "recovery/p02-identifier-obfuscation",
+          "positives": 336,
+          "min_recall": 0.75
+        },
+        {
+          "name": "recovery/p03-dead-code",
+          "positives": 336,
+          "min_recall": 0.75
+        },
+        {
+          "name": "recovery/p04-structural-obfuscation",
+          "positives": 336,
+          "min_recall": 0.75
+        },
+        {
+          "name": "recovery/p05-xor",
+          "positives": 336,
+          "min_recall": 0.75
+        },
+        {
+          "name": "recovery/p06-aes-256-cbc",
+          "positives": 336,
+          "min_recall": 0.75
+        },
+        {
+          "name": "recovery/p07-xor-simple-obfuscation",
+          "positives": 336,
+          "min_recall": 0.75
+        },
+        {
+          "name": "recovery/p08-aes-simple-obfuscation",
+          "positives": 336,
+          "min_recall": 0.75
+        },
+        {
+          "name": "recovery/p09-xor-dead-code",
+          "positives": 336,
+          "min_recall": 0.75
+        },
+        {
+          "name": "recovery/p10-aes-dead-code",
+          "positives": 336,
+          "min_recall": 0.75
+        },
+        {
+          "name": "recovery/p11-xor-structural-obfuscation",
+          "positives": 336,
+          "min_recall": 0.75
+        },
+        {
+          "name": "recovery/p12-aes-structural-obfuscation",
+          "positives": 336,
+          "min_recall": 0.75
+        }
+      ]
+    }
+  ]
+}

@@ -21,6 +21,7 @@ _GENERATOR = _BENCH_ROOT / "generators" / "ioc_recovery" / "generate.py"
 
 
 def test_generator_checksum_primitives_match_independent_oracles():
+    """Guards generator checksum primitives match independent oracles; prevents this evidence regression from false-passing or crashing."""
     assert crc32_iso_hdlc(b"abc") == 891_568_578
     assert base62_encode_u32(891_568_578, 6) == "0yKviM"
     assert crc32_base62("A" * 30) == "0uCPlr"
@@ -31,6 +32,7 @@ def test_generator_checksum_primitives_match_independent_oracles():
     reason="recovery corpus AES generation requires Node",
 )
 def test_ioc_recovery_generator_is_deterministic_and_executable(tmp_path):
+    """Guards ioc recovery generator is deterministic and executable; prevents this evidence regression from false-passing or crashing."""
     left = tmp_path / "left"
     right = tmp_path / "right"
     for output in (left, right):
@@ -116,6 +118,7 @@ def test_ioc_recovery_generator_is_deterministic_and_executable(tmp_path):
     reason="recovery corpus AES generation requires Node",
 )
 def test_ioc_recovery_adapter_excludes_answer_key_and_loads_exact_records(tmp_path):
+    """Guards ioc recovery adapter excludes answer key and loads exact records; prevents this evidence regression from false-passing or crashing."""
     home = tmp_path / "recovery"
     corpus = IocRecoveryCorpus(corpus_dir=home)
     corpus.ensure(samples=1, seed=23)
@@ -164,6 +167,7 @@ def test_ioc_recovery_adapter_excludes_answer_key_and_loads_exact_records(tmp_pa
 def test_ioc_recovery_generator_times_out_node_and_removes_staging(
     monkeypatch, tmp_path
 ):
+    """Guards ioc recovery generator times out node and removes staging; prevents this evidence regression from false-passing or crashing."""
     fake_node = tmp_path / "node"
     fake_node.write_text("#!/bin/sh\nsleep 30\n")
     fake_node.chmod(0o755)
@@ -195,6 +199,7 @@ def test_ioc_recovery_generator_times_out_node_and_removes_staging(
 def test_ioc_recovery_generator_rejects_invalid_aes_output_and_removes_staging(
     monkeypatch, tmp_path, node_stdout, error
 ):
+    """Guards ioc recovery generator rejects invalid aes output and removes staging; prevents this evidence regression from false-passing or crashing."""
     class Process:
         returncode = 0
 
@@ -220,6 +225,7 @@ def test_ioc_recovery_generator_rejects_invalid_aes_output_and_removes_staging(
 def test_ioc_recovery_timeout_termination_covers_posix_and_windows_branches(
     monkeypatch,
 ):
+    """Guards ioc recovery timeout termination covers posix and windows branches; prevents this evidence regression from false-passing or crashing."""
     class Stream:
         def __init__(self):
             self.closed = False

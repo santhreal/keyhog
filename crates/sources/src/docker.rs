@@ -368,6 +368,12 @@ pub(crate) fn manifest_layer_archives_for_test(
     layer::find_layer_archives(root_path, crate::SourceLimits::default())
 }
 
+pub(crate) fn fallback_layer_archives_from_rows_for_test(
+    rows: Vec<Result<PathBuf, SourceError>>,
+) -> Vec<PathBuf> {
+    layer::collect_fallback_layer_archives(rows)
+}
+
 pub(crate) fn export_docker_image_archive_for_test(
     docker_bin: &Path,
     image: &str,
@@ -418,6 +424,21 @@ pub(crate) fn unpack_layer_archive_with_entry_cap_for_test(
 ) -> Result<Vec<SourceError>, SourceError> {
     let limits = crate::SourceLimits {
         docker_tar_entry_bytes: entry_cap,
+        ..crate::SourceLimits::default()
+    };
+    archive::unpack_layer_archive(archive_path, destination, limits)
+        .map(archive::DockerExtractReport::into_errors)
+}
+
+pub(crate) fn unpack_layer_archive_with_caps_for_test(
+    archive_path: &Path,
+    destination: &Path,
+    entry_cap: u64,
+    total_cap: u64,
+) -> Result<Vec<SourceError>, SourceError> {
+    let limits = crate::SourceLimits {
+        docker_tar_entry_bytes: entry_cap,
+        docker_tar_total_bytes: total_cap,
         ..crate::SourceLimits::default()
     };
     archive::unpack_layer_archive(archive_path, destination, limits)

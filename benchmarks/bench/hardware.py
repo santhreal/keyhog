@@ -1,10 +1,11 @@
 """Capture the host hardware axis for a benchmark run.
 
-Every probe is best-effort and never raises: an absent ``nvidia-smi`` or an
-unreadable ``/proc`` simply leaves that field empty, so the same code path
-works on Linux desktop, santhserver, the Windows ThinkPad (via WSL/Git
-Bash), and macOS. The result feeds :class:`bench.schema.Host` so runs from
-every machine aggregate into one OS/CPU/GPU matrix.
+Every probe is best-effort and never raises. Accelerator inventory explicitly
+records when the NVIDIA query is unavailable; an empty GPU name alone therefore
+does not assert physical accelerator absence. The same code path works on Linux
+desktop, santhserver, the Windows ThinkPad (via WSL/Git Bash), and macOS. The
+result feeds :class:`bench.schema.Host` so runs from every machine aggregate
+into one OS/CPU/GPU matrix.
 
 ``hostname_hash`` is a truncated SHA-256 of the hostname, stable per
 machine, but not the raw name (keeps committed result files free of bare
@@ -15,14 +16,18 @@ from __future__ import annotations
 
 import hashlib
 import os
+import pathlib
 import platform
 import re
 import shutil
 import subprocess
-from dataclasses import replace
-from functools import lru_cache
 
 from .schema import Host
+
+CGROUP_QUOTA_UNBOUNDED = "unbounded"
+CGROUP_QUOTA_UNKNOWN = "unknown"
+ACCELERATOR_INVENTORY_OBSERVED = "nvidia-smi-observed"
+ACCELERATOR_INVENTORY_UNAVAILABLE = "nvidia-smi-unavailable"
 
 
 def _hostname_hash() -> str:
@@ -75,15 +80,10 @@ def _ram_mb() -> int:
     return 0
 
 
-def _gpu() -> tuple[str, int]:
-    """Return (gpu_name, vram_mb) via nvidia-smi, or ("", 0) if absent.
-
-    A keyhog GPU-backend run is only meaningful where a CUDA device exists,
-    so the perf/parity matrix needs this to label which rows actually
-    exercised the GPU path (vs. silently degrading to SIMD).
-    """
+def _nvidia_inventory() -> tuple[str, tuple[tuple[str, int], ...]]:
+    """Return a best-effort NVIDIA inventory and the scope of that observation."""
     if shutil.which("nvidia-smi") is None:
-        return ("", 0)
+        return (ACCELERATOR_INVENTORY_UNAVAILABLE, ())
     try:
         out = subprocess.run(
             ["nvidia-smi", "--query-gpu=name,memory.total",
@@ -91,27 +91,75 @@ def _gpu() -> tuple[str, int]:
             capture_output=True, text=True, timeout=10, check=False,
         )
     except (OSError, subprocess.SubprocessError):
-        return ("", 0)
-    line = (out.stdout or "").strip().splitlines()
-    if not line:
-        return ("", 0)
-    # First GPU only; "NVIDIA GeForce RTX 5090, 32607"
-    parts = [p.strip() for p in line[0].split(",")]
-    name = parts[0] if parts else ""
-    vram = 0
-    if len(parts) > 1:
-        m = re.search(r"\d+", parts[1])
-        if m:
-            vram = int(m.group(0))
-    return (name, vram)
+        return (ACCELERATOR_INVENTORY_UNAVAILABLE, ())
+    if out.returncode != 0:
+        return (ACCELERATOR_INVENTORY_UNAVAILABLE, ())
+    devices: list[tuple[str, int]] = []
+    for line in (out.stdout or "").strip().splitlines():
+        parts = [part.strip() for part in line.rsplit(",", 1)]
+        if len(parts) != 2 or not parts[0] or re.fullmatch(r"\d+", parts[1]) is None:
+            return (ACCELERATOR_INVENTORY_UNAVAILABLE, ())
+        devices.append((parts[0], int(parts[1])))
+    return (ACCELERATOR_INVENTORY_OBSERVED, tuple(devices))
 
 
-@lru_cache(maxsize=1)
+def accelerator_inventory() -> dict[str, object]:
+    """Describe only what the best-effort NVIDIA query actually observed."""
+    status, devices = _nvidia_inventory()
+    return {
+        "source": "nvidia-smi",
+        "status": status,
+        "devices": [
+            {"name": name, "vram_mb": vram_mb}
+            for name, vram_mb in devices
+        ],
+    }
+
+
+def _gpu() -> tuple[str, int]:
+    """Return the first NVIDIA GPU observed, without treating an empty result as absence."""
+    _, devices = _nvidia_inventory()
+    return devices[0] if devices else ("", 0)
+
+
+def _affinity_cores() -> int:
+    """Return the CPUs available to this process, or zero when not provable."""
+    try:
+        affinity = os.sched_getaffinity(0)
+    except (AttributeError, OSError):
+        return 0
+    return len(affinity) if affinity else 0
+
+
+def _cgroup_quota_cores(
+    cpu_max: str | pathlib.Path = "/sys/fs/cgroup/cpu.max",
+) -> float | str:
+    """Return finite v2 cores, ``unbounded``, or ``unknown`` when not observable."""
+    try:
+        fields = pathlib.Path(cpu_max).read_text(encoding="utf-8").split()
+    except (OSError, UnicodeError):
+        return CGROUP_QUOTA_UNKNOWN
+    if len(fields) != 2:
+        return CGROUP_QUOTA_UNKNOWN
+    try:
+        period = int(fields[1])
+    except ValueError:
+        return CGROUP_QUOTA_UNKNOWN
+    if period <= 0:
+        return CGROUP_QUOTA_UNKNOWN
+    if fields[0] == "max":
+        return CGROUP_QUOTA_UNBOUNDED
+    try:
+        quota = int(fields[0])
+    except ValueError:
+        return CGROUP_QUOTA_UNKNOWN
+    if quota <= 0:
+        return CGROUP_QUOTA_UNKNOWN
+    return quota / period
+
+
 def _capture() -> Host:
-    """Probe the current host ONCE per process. Host hardware is invariant, but
-    the probes spawn nvidia-smi (10s timeout) + sysctl and re-read /proc, and a
-    perf-tier matrix asks for the host for every RunResult (build_result,
-    _unavailable_result, results_dir), dozens of redundant probes without this."""
+    """Probe the current host without caching process-scoped CPU identity."""
     gpu_name, gpu_vram = _gpu()
     return Host(
         hostname_hash=_hostname_hash(),
@@ -119,6 +167,8 @@ def _capture() -> Host:
         kernel=platform.version(),
         cpu=_cpu_model(),
         cores=os.cpu_count() or 0,
+        affinity_cores=_affinity_cores(),
+        cgroup_quota_cores=_cgroup_quota_cores(),
         ram_mb=_ram_mb(),
         gpu=gpu_name,
         gpu_vram_mb=gpu_vram,
@@ -126,9 +176,8 @@ def _capture() -> Host:
 
 
 def capture() -> Host:
-    """Probe the current host into a :class:`Host`. Never raises. Returns a fresh
-    copy of the cached probe so a caller mutating its Host can't poison others."""
-    return replace(_capture())
+    """Probe the current host into a :class:`Host`. Never raises."""
+    return _capture()
 
 
 if __name__ == "__main__":

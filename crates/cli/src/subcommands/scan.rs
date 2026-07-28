@@ -44,6 +44,7 @@ use std::process::ExitCode;
 
 pub(crate) async fn run(args: ScanArgs) -> Result<ExitCode> {
     crate::runtime_preflight::validate_scan_runtime_config()?;
+    crate::action_report::validate_scan_paths(&args)?;
     guard_multi_root_combinations(&args)?;
     if args.daemon_mode() == DaemonMode::Off && args.daemon_socket.is_some() {
         bail!("`--daemon-socket` cannot be combined with `--daemon=off`; remove the socket or choose `--daemon=auto|on`");
@@ -822,25 +823,32 @@ fn finish_daemon_scan(scan: DaemonScan, args: &ScanArgs) -> Result<ExitCode> {
         );
     }
 
-    if findings.is_empty() && fail_gaps > 0 {
+    let exit = if findings.is_empty() && fail_gaps > 0 {
         let palette = crate::style::for_stderr();
         eprintln!(
             "{}: not reporting \"clean\" after incomplete daemon input coverage.",
             crate::style::fail("error", &palette)
         );
-        Ok(ExitCode::from(EXIT_SOURCE_FAILED))
+        EXIT_SOURCE_FAILED
     } else if findings.is_empty() {
-        Ok(ExitCode::SUCCESS)
+        crate::exit_codes::EXIT_SUCCESS
     } else {
         // Same live-vs-findings precedence as in-process `resolve_scan_exit`
         // (KH-1379): a Live finding must exit 10, not collapse to exit 1.
         let code = crate::orchestrator::scan_exit_code(&findings);
         if code == EXIT_LIVE_CREDENTIALS {
-            Ok(ExitCode::from(EXIT_LIVE_CREDENTIALS))
+            EXIT_LIVE_CREDENTIALS
         } else {
-            Ok(ExitCode::from(EXIT_CREDENTIALS_FOUND))
+            EXIT_CREDENTIALS_FOUND
         }
-    }
+    };
+    crate::action_report::write_scan_receipt(
+        args,
+        findings.len(),
+        exit,
+        report_metadata.scan_status,
+    )?;
+    Ok(ExitCode::from(exit))
 }
 
 #[cfg(unix)]

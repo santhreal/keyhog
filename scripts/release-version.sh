@@ -14,8 +14,11 @@ if [[ "$tag" != v* ]]; then
   tag="v$tag"
 fi
 
-if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
-  echo "invalid release tag; expected vMAJOR.MINOR.PATCH with an optional prerelease suffix" >&2
+numeric_identifier='(0|[1-9][0-9]*)'
+prerelease_identifier='(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)'
+semver_pattern="^v${numeric_identifier}[.]${numeric_identifier}[.]${numeric_identifier}(-${prerelease_identifier}([.]${prerelease_identifier})*)?$"
+if ! [[ "$tag" =~ $semver_pattern ]]; then
+  echo "invalid release tag; expected canonical vMAJOR.MINOR.PATCH with an optional SemVer prerelease suffix" >&2
   exit 2
 fi
 

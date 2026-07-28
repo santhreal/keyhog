@@ -88,6 +88,7 @@ A dash means that layer intentionally has no surface.
 | Fused depth | worker-count-derived | `[scan].fused_depth` | `--fused-depth` | Bounded channel depth for fused filesystem batches. |
 | Per-chunk timeout | off | `[scan].per_chunk_timeout_ms` | `--per-chunk-timeout-ms` | Optional hard deadline per chunk scan in milliseconds. |
 | Dedup scope | `credential` | `[scan].dedup` | `--dedup` | `credential` / `file` / `none`. |
+| Credential verification | off | `verify` | `--verify` / `--no-verify` | The explicit CLI enable or disable wins over discovered configuration. The Action always passes one of these flags; its default `verify: 'false'` therefore prevents committed configuration from silently enabling credential egress. |
 | HTTP verification timeout | `5` seconds | `timeout` | `--timeout` | Per-request verifier deadline; it does not bound scanning. Use `per_chunk_timeout_ms` for the optional scanner chunk deadline. |
 | Verification concurrency | `5` per service | `verify_concurrency` | `--verify-concurrency` | Maximum in-flight verification requests per service; zero is rejected. Distinct from the requests/second limiter. |
 | Verification request rate | `5.0` RPS per service | - | `--verify-rate` | Steady-state request-rate ceiling. `--verify-batch` additionally forces concurrency to one. |
@@ -163,19 +164,24 @@ compiled `SourceLimits::default()` → `.keyhog.toml` `[limits]` → CLI
 
 | Preset | TOML | CLI | What it does |
 |---|---|---|---|
-| Fast | `fast = true` | `--fast` | Disables decode recursion (`max_decode_depth = 0`), entropy discovery, and ML scoring. Named regex and multiline detection remain active. Refused under `--lockdown`. |
-| Deep | `deep = true` | `--deep` | Enables entropy and ML, keeps heuristic evidence instead of an ML-only entropy veto, scans source-file entropy, removes comment confidence penalties, sets depth 10, and raises decode-through to one 1 MiB chunk. It keeps the 0.40 floor. |
+| Fast | `fast = true` | `--fast` | Keeps named regex and multiline detection, but disables recursive decode, entropy discovery, and ML scoring. This is the widest recall tradeoff and is refused under `--lockdown`. |
+| Deep | `deep = true` | `--deep` | Enables source-file entropy, keeps heuristic evidence instead of an ML-only entropy veto, removes comment confidence penalties, sets decode depth 10, raises prepared decode-chunk admission to 1 MiB, and keeps the 0.40 floor. |
 | Precision | `precision = true` | `--precision` | Disables entropy discovery and the relaxed keyword-low-entropy bridge, keeps ML enabled, sets decode depth 1, and clamps global and detector confidence floors to at least **0.85**. |
 
 `--fast`, `--deep`, and `--precision` are scan presets. They are mutually
 exclusive and conflict with `--no-decode` and `--no-entropy`.
 
-A preset seeds a base. Compatible explicit options then override that base. For
+A preset seeds a base. Compatible explicit options then refine that base. For
 example, `--deep --decode-depth 3` uses the deep preset with decode depth 3, and
-`--deep --min-confidence 0.9` raises its confidence floor. Two overrides are
+`--deep --min-confidence 0.9` raises its confidence floor. Two refinements are
 one-directional. Under `--precision`, `--min-confidence` may raise the 0.85
 floor but cannot lower it. A preset that disables the relaxed keyword floor
 cannot be used with a flag that assumes that path is active.
+
+`--lockdown` is not a fourth preset. It is a Linux-only, fail-closed execution
+security mode and may be required by `[lockdown] require = true`; that config
+key does not enable it. Lockdown refuses fast and other
+completeness-reducing switches, and the scan remains in process.
 
 `--profile` is not a named configuration profile. It emits the scanner's
 performance profile to standard error. It does not select the fast, deep, or

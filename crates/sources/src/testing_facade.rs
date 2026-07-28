@@ -535,6 +535,11 @@ pub mod testing {
             root_path: &std::path::Path,
         ) -> Result<Vec<std::path::PathBuf>, keyhog_core::SourceError>;
         #[cfg(feature = "docker")]
+        fn docker_fallback_layer_archives_from_rows(
+            &self,
+            rows: Vec<Result<std::path::PathBuf, keyhog_core::SourceError>>,
+        ) -> Vec<std::path::PathBuf>;
+        #[cfg(feature = "docker")]
         fn docker_manifest_config_chunks(
             &self,
             root_path: &std::path::Path,
@@ -565,6 +570,14 @@ pub mod testing {
             archive_path: &std::path::Path,
             destination: &std::path::Path,
             entry_cap: u64,
+        ) -> Result<Vec<keyhog_core::SourceError>, keyhog_core::SourceError>;
+        #[cfg(feature = "docker")]
+        fn unpack_docker_layer_archive_with_caps(
+            &self,
+            archive_path: &std::path::Path,
+            destination: &std::path::Path,
+            entry_cap: u64,
+            total_cap: u64,
         ) -> Result<Vec<keyhog_core::SourceError>, keyhog_core::SourceError>;
         #[cfg(feature = "docker")]
         fn unpack_docker_image_archive_with_entry_cap(
@@ -1438,6 +1451,14 @@ pub mod testing {
         }
 
         #[cfg(feature = "docker")]
+        fn docker_fallback_layer_archives_from_rows(
+            &self,
+            rows: Vec<Result<std::path::PathBuf, keyhog_core::SourceError>>,
+        ) -> Vec<std::path::PathBuf> {
+            crate::docker::fallback_layer_archives_from_rows_for_test(rows)
+        }
+
+        #[cfg(feature = "docker")]
         fn docker_manifest_config_chunks(
             &self,
             root_path: &std::path::Path,
@@ -1489,6 +1510,22 @@ pub mod testing {
                 archive_path,
                 destination,
                 entry_cap,
+            )
+        }
+
+        #[cfg(feature = "docker")]
+        fn unpack_docker_layer_archive_with_caps(
+            &self,
+            archive_path: &std::path::Path,
+            destination: &std::path::Path,
+            entry_cap: u64,
+            total_cap: u64,
+        ) -> Result<Vec<keyhog_core::SourceError>, keyhog_core::SourceError> {
+            crate::docker::unpack_layer_archive_with_caps_for_test(
+                archive_path,
+                destination,
+                entry_cap,
+                total_cap,
             )
         }
 

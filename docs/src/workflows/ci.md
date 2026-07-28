@@ -6,9 +6,10 @@ enforcement, and report retention explicit so a missing upload or unsupported
 source cannot look like a clean run.
 
 The shell recipes use an Ubuntu worker. `minisign` is required because the
-installer refuses unverified release assets. The Linux release binary also
-requires the `libhyperscan5` runtime package. macOS and Windows release assets
-use the portable scanner build, but still require `minisign` for installation.
+installer refuses unverified release assets. The Linux release binary
+statically links Hyperscan and does not require `libhyperscan5`; branch/commit
+Action refs build the portable profile. macOS and Windows release assets are
+also portable but still require `minisign` for installation.
 
 | Workflow | Recommended scan | Why |
 |---|---|---|
@@ -36,39 +37,118 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: santhreal/keyhog@v0.5.47
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: santhreal/keyhog@v0
         with:
           path: .
           severity: high
           format: sarif
           upload-sarif: 'true'
           fail-on-findings: 'true'
+          preset: default
+          lockdown: 'false'
 ```
 
-This Action example scans the checked-out working tree. Use the explicit
+This example scans the checked-out working tree. Use the explicit
 `--git-history` recipe below to inspect added lines across reachable commit
 ancestry. Add `--git-blobs` for complete reachable blob coverage.
 
-The composite Action installs KeyHog, scans the checked-out tree, writes a
-SARIF report, uploads it to **Security > Code scanning**, and retains the report
-as a workflow artifact. It also writes a job summary and exposes the finding
-count, raw KeyHog exit code, scan status, report status, and duration as outputs.
+The composite Action installs KeyHog, scans the tree, writes the requested
+stable-basename SARIF copy, publishes a receipt-bound private snapshot to
+**Security > Code scanning** and the workflow artifact, and writes a job
+summary. Its outputs are the finding count, raw KeyHog exit, duration, private
+snapshot path and publication state, analysis category, and normalized wrapper
+`scan-status`.
 
-The example pins the Action code and scanner release to `v0.5.47`. This is the
-most reproducible choice. `santhreal/keyhog@v0` follows the current v0 release.
-An explicit `version: v0.5.47` installs that scanner release even when the
-Action itself is selected by a branch or commit ref. Pin the Action ref as well
-when the workflow must not change without review.
+This wrapper value is not the report's `scan_status`. Wrapper `success` covers
+ordinary clean/findings exits and a complete scan after visible backend
+recovery. Metadata-bearing CLI reports additionally preserve
+`complete_after_recovery`; with the Action's SARIF default, inspect
+`runs[0].properties["keyhog.scan.status"]` and
+`["keyhog.backend.recoveries"]` when that distinction is a gate. Wrapper
+`partial` means exit `13` with
+a report, while a missing report is `failed`, never clean.
+
+The requested workspace copy is named
+`keyhog-results-<analysis-category>.<ext>`, but it is not the upload authority
+and is untrusted after the Action returns. After verifying the scanner's
+receipt, the wrapper copies those bytes to a mode-`0400` snapshot inside the
+unique mode-`0700` runtime below the unpredictable
+`RUNNER_TEMP/keyhog-action-runtime.*/report-snapshot.*/` parent and verifies it
+again. The public `report` output is that private path; `report-present` is
+`true` only when the receipt-bound snapshot was published, and is `false` with
+an empty path after cancellation or an untrusted/missing report. SARIF and
+artifact uploads SHA-check the snapshot immediately before use. A downstream
+step in the same job may consume `report` after checking `report-present`, but
+must not reconstruct the path or expect it to survive runner job cleanup.
+The snapshot is private, not immutable against another process under the same
+runner UID; a consumer that needs continued integrity must establish it at its
+own time of use.
+
+Choose detection policy with `preset: default|fast|deep|precision`. `default`
+passes no preset flag, so a committed `.keyhog.toml` may select exactly one of
+`fast = true`, `deep = true`, or `precision = true`; an explicit non-default
+Action preset has normal CLI precedence over the file preset.
+`lockdown: 'true'` independently adds `--lockdown`: default, deep, and precision
+may compose with it, while fast plus lockdown is refused. `[lockdown]
+require = true` requires that input and does not enable lockdown. Positive
+lockdown requires Linux with a sufficient memlock limit for the real process.
+`CAP_IPC_LOCK` or unlimited `ulimit -l` are provisioning options, but a
+sufficiently large finite limit also works. Standard hosted Linux currently
+fails closed during the real `mlockall` application; hosted positive lanes use
+`lockdown: 'false'`, while the direct hosted lockdown lane asserts rejection.
+
+The maintained push/PR source lane runs real root and nested composite Actions
+with explicit `backend: cpu` plus lockdown in a digest-pinned Rust container
+provisioned with `IPC_LOCK` and unlimited memlock. Cross-platform source lanes
+exercise explicit-CPU clean and precision scans. Source refs reject auto without
+persisted routing proof. A local production Docker run separately proves
+release-like calibration and auto scan with `mlocked` status.
+
+After v0.5.48 is public, the authenticated manual-dispatch release lane retains
+proof-backed default auto. It passes one ephemeral `RUNNER_TEMP` autoroute
+receipt/cache from calibration to report scan and deletes it during cleanup.
+The Action always passes `path`, `severity`, `format`, `verify`, and the report
+path, so those values override matching file settings.
+See the
+[complete input/output inventory](https://github.com/santhreal/keyhog/blob/main/.github/actions/keyhog/README.md#inputs).
+
+This page documents the 0.5.48 Action candidate. The `@v0` example becomes
+copyable only after the publication verifier proves that the floating tag points
+to `v0.5.48`; it currently points to the prior public release. After publication,
+`santhreal/keyhog@v0.5.48` is the reproducible exact pin, and an explicit
+`version: v0.5.48` selects that scanner asset even when Action code comes from a
+reviewed branch or commit. Pin the Action ref too when workflow code must not
+change without review.
+This Action revision requires canonical final scanner `v0.5.48` or newer because
+it always passes either `--verify` or `--no-verify`. Older versions, prereleases
+including `v0.5.48-*`, and build metadata fail closed rather than weakening that
+contract.
 
 Release refs and explicit `version:` inputs require the signed binary and GPU
-literal bundle. The Action verifies minisign signatures, SHA-256 files, and the
-sidecar archive before execution. A missing or unverifiable release payload
-fails the job. Branch and commit Action refs build their checked-out source
-instead.
+literal bundle. The Action bootstraps minisign `0.11` only from per-platform
+archives whose SHA-256 values are hardcoded, then verifies the payload
+signatures, checksums, and sidecar before execution. A missing or unverifiable
+runtime payload fails the job. The 0.5.48 candidate's signed SPDX SBOM set is a
+separate release-completeness contract and is not public before that release
+succeeds.
+
+Branch and commit Action refs build their checked-out source on pinned Rust
+`1.89.0` with the portable profile on every platform and require explicit
+`backend: cpu`. Source auto without persisted routing proof is rejected;
+`simd`, `gpu-cuda`, and `gpu-wgpu` require a compatible release binary and
+runner. Authenticated release refs retain proof-backed default auto.
 
 The Action accepts `text`, `json`, `sarif`, and `jsonl`. Use the CLI directly
 for the other formats in [Output formats](../output-formats.md).
+After report flush, the scanner emits the ordered fields
+`schema=keyhog-action-report-v1`, `format`, `findings`, `report-bytes`,
+`report-sha256`, `scan-status`, and `exit-code`. A hidden Action-only verifier
+rehashes the exact report bytes, validates the seven-field receipt, and prints
+the count with no `jq`, Python, or `grep` dependency. Cleanup removes the receipt
+only if its observed SHA-256 is unchanged; replaced or type-changed paths fail
+rather than being blindly deleted. These are integration details, not public
+CLI commands.
 
 The `security-events: write` permission enables Code Scanning upload on pushes
 and same-repository pull requests. GitHub downgrades the token for a fork pull
@@ -79,7 +159,12 @@ a missing report or failed SARIF upload fails closed.
 `fail-on-findings: 'false'` makes exit `1` findings advisory after report
 handling. It does not hide scanner, configuration, source-coverage, backend, or
 report failures. With `verify: 'true'`, a confirmed live credential exits `10`
-and always fails after report handling.
+and always fails after report handling. Verification is credential data egress:
+eligible detector policy may place credential or companion material in a
+provider request URL, query, header, or body. Review the committed detector
+corpus and outbound trust boundary before enabling it. The Action input is
+authoritative: `'true'` passes `--verify`, while the default `'false'` passes
+`--no-verify` and overrides a committed `verify = true`.
 
 Self-hosted GPU runners can add `keyhog backend --self-test --json` before the
 scan. On an eligible GPU host, the JSON includes `ok`, `status`, `exit_code`,
@@ -104,7 +189,7 @@ git add .keyhog-baseline.json && git commit -m 'chore: keyhog baseline'
 ```
 
 ```yaml
-      - uses: santhreal/keyhog@v0.5.47
+      - uses: santhreal/keyhog@v0
         with:
           baseline: .keyhog-baseline.json
 ```
@@ -114,14 +199,14 @@ git add .keyhog-baseline.json && git commit -m 'chore: keyhog baseline'
 Use the verified installer when the workflow must own installation explicitly:
 
 ```yaml
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install KeyHog runtime and verifier prerequisites
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends libhyperscan5 minisign
+          sudo apt-get install -y --no-install-recommends minisign
       - name: Install KeyHog
         run: |
-          TAG=v0.5.47
+          TAG=v0.5.48
           BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
           PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
           curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
@@ -166,7 +251,7 @@ is retained whenever the scanner produced it.
 Fetch the pull request base before using `--git-diff`:
 
 ```yaml
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - name: Scan pull request diff
@@ -202,8 +287,8 @@ keyhog:
   stage: test
   image: ubuntu:24.04
   before_script:
-    - apt-get update -qq && apt-get install -y --no-install-recommends curl libhyperscan5 minisign
-    - export TAG=v0.5.47
+    - apt-get update -qq && apt-get install -y --no-install-recommends curl minisign
+    - export TAG=v0.5.48
     - export BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
     - export PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
     - curl -fSLO "$BASE/install.sh" && curl -fSLO "$BASE/install.sh.minisig"
@@ -241,8 +326,8 @@ jobs:
           name: Install keyhog
           command: |
             sudo apt-get update -qq
-            sudo apt-get install -y --no-install-recommends libhyperscan5 minisign
-            TAG=v0.5.47
+            sudo apt-get install -y --no-install-recommends minisign
+            TAG=v0.5.48
             BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
             PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
             curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
@@ -275,8 +360,8 @@ steps:
     image: ubuntu:24.04
     commands:
       - apt-get update -qq
-      - apt-get install -y --no-install-recommends curl libhyperscan5 minisign
-      - export TAG=v0.5.47
+      - apt-get install -y --no-install-recommends curl minisign
+      - export TAG=v0.5.48
       - export BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
       - export PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
       - curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
@@ -350,8 +435,8 @@ steps:
   - label: ":mag: keyhog secret scan"
     command: |
       sudo apt-get update -qq
-      sudo apt-get install -y --no-install-recommends curl libhyperscan5 minisign
-      TAG=v0.5.47
+      sudo apt-get install -y --no-install-recommends curl minisign
+      TAG=v0.5.48
       BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
       PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
       curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
@@ -377,8 +462,8 @@ pipeline {
             steps {
                 sh '''
                     sudo apt-get update -qq
-                    sudo apt-get install -y --no-install-recommends curl libhyperscan5 minisign
-                    TAG=v0.5.47
+                    sudo apt-get install -y --no-install-recommends curl minisign
+                    TAG=v0.5.48
                     BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
                     PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
                     curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
@@ -403,19 +488,20 @@ pipeline {
 For the composite Action, pin the Action ref:
 
 ```yaml
-- uses: santhreal/keyhog@v0.5.47
+- uses: santhreal/keyhog@v0
 ```
 
-The ref selects both the Action implementation and, for a release ref, its
-matching scanner release. The floating `@v0` ref follows later v0 releases.
-Using `version: v0.5.47` pins the scanner asset but does not pin Action code, so
-do not use it as a substitute for a fixed Action ref.
+The floating ref selects the current verified v0 Action implementation and its
+matching scanner release. After 0.5.48 publication, replace it with
+`santhreal/keyhog@v0.5.48` when the workflow must remain immutable.
+`version: v0.5.48` pins only the scanner asset and is not a substitute for
+pinning Action code.
 
 For a manual installation, authenticate the installer before execution and pass
 the same release tag to it:
 
 ```sh
-TAG=v0.5.47
+TAG=v0.5.48
 BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
 PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
 curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"

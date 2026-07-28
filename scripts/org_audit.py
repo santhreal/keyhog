@@ -3,8 +3,8 @@
 
 This is not a style gate. It rejects structural lies that previously made the
 repo look healthier than it was: generated LOC-cap tests, stale current docs for
-removed surfaces, unproven autoroute wording, and CI/Make targets that omit the
-required competitor evidence.
+removed surfaces, unproven autoroute wording, missing or stale load-bearing
+owner boundaries, and CI/Make targets that omit required competitor evidence.
 """
 
 from __future__ import annotations
@@ -15,6 +15,45 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+ARCHITECTURE_OWNER_HEADING = "## Load-bearing boundary owner map"
+REQUIRED_ARCHITECTURE_OWNERS = (
+    (
+        "Marketplace metadata, documented inputs/outputs, and top-level composite steps",
+        "action.yml",
+    ),
+    (
+        "Repository-local Action metadata consumed by GitHub workflows",
+        ".github/actions/keyhog/action.yml",
+    ),
+    (
+        "Action input validation, authenticated binary acquisition, scan invocation, exit mapping, and output publication",
+        ".github/actions/keyhog/run-scan.sh",
+    ),
+    (
+        "Build, sign, attest, stage, and publish job ordering",
+        ".github/workflows/release.yml",
+    ),
+    (
+        "Immutable release ID, source commit, exact asset digests, and signed publication receipt",
+        "scripts/publish_release_assets.py::PublicationReceipt",
+    ),
+    ("CLI argument dispatch and setup-error exit routing", "crates/cli/src/lib.rs::cli_main"),
+    (
+        "Completed-scan exit precedence",
+        "crates/cli/src/orchestrator/run.rs::resolve_scan_exit",
+    ),
+    ("Curated source-crate export surface", "crates/sources/src/api.rs"),
+    (
+        "Live-verification construction and execution",
+        "crates/verifier/src/lib.rs::VerificationEngine",
+    ),
+    (
+        "Deduplicated match to report-safe finding conversion",
+        "crates/core/src/finding.rs::VerifiedFinding::from_deduped",
+    ),
+    ("Scanner execution flow", "crates/scanner/src/engine/mod.rs"),
+)
 
 GENERATED_CACHE_DIRS = (
     ".pytest_cache",
@@ -182,6 +221,123 @@ def check_current_claims(violations: list[str]) -> None:
                 fail(violations, f"{reason}: {rel_path}")
 
 
+def architecture_code_references(src: str) -> set[str]:
+    """Return repository-relative code paths named anywhere in architecture."""
+    return set(
+        re.findall(
+            r"`((?:action\.yml|(?:\.github|scripts|crates)/)[^`\n]*)`",
+            src,
+        )
+    )
+
+
+def architecture_owner_section(src: str) -> str | None:
+    if ARCHITECTURE_OWNER_HEADING not in src:
+        return None
+    section = src.split(ARCHITECTURE_OWNER_HEADING, 1)[1]
+    return section.split("\n## ", 1)[0]
+
+
+def architecture_owner_rows(src: str) -> list[tuple[str, tuple[str, ...]]]:
+    """Parse boundary-to-owner associations from the dedicated Markdown table."""
+    section = architecture_owner_section(src)
+    if section is None:
+        return []
+
+    rows: list[tuple[str, tuple[str, ...]]] = []
+    for raw_line in section.splitlines():
+        stripped = raw_line.strip()
+        if not (stripped.startswith("|") and stripped.endswith("|")):
+            continue
+        cells = [cell.strip() for cell in stripped[1:-1].split("|")]
+        if len(cells) != 2 or cells[0] in {"Boundary", "---"}:
+            continue
+        rows.append((cells[0], tuple(sorted(architecture_code_references(cells[1])))))
+    return rows
+
+
+
+
+def owner_reference_violation(reference: str, root: pathlib.Path = ROOT) -> str | None:
+    """Resolve one architecture path and optional symbol without trusting prose."""
+    raw_path, separator, symbol = reference.partition("::")
+    candidate = (root / raw_path).resolve()
+    try:
+        candidate.relative_to(root.resolve())
+    except ValueError:
+        return f"architecture owner escapes the repository: {reference}"
+    if not candidate.exists():
+        return f"architecture owner path does not exist: {reference}"
+    if separator and not candidate.is_file():
+        return f"architecture owner symbol is not in a file: {reference}"
+    if separator:
+        owner_name = symbol.rsplit("::", 1)[-1]
+        owner_src = candidate.read_text(encoding="utf-8", errors="replace")
+        if candidate.suffix == ".rs":
+            declaration = (
+                r"^\s*(?:pub(?:\([^)\n]+\))?\s+)?(?:async\s+)?"
+                rf"(?:fn|struct|enum|trait|type|const|static|mod)\s+{re.escape(owner_name)}\b"
+            )
+        elif candidate.suffix == ".py":
+            declaration = rf"^\s*(?:class|def)\s+{re.escape(owner_name)}\b"
+        else:
+            declaration = rf"\b{re.escape(owner_name)}\b"
+        if not re.search(declaration, owner_src, flags=re.MULTILINE):
+            return f"architecture owner symbol does not exist: {reference}"
+    return None
+
+
+def architecture_owner_violations(
+    src: str, root: pathlib.Path = ROOT
+) -> list[str]:
+    section = architecture_owner_section(src)
+    violations: list[str] = []
+    if section is None:
+        violations.append(
+            f"architecture is missing its enforceable owner section: {ARCHITECTURE_OWNER_HEADING}"
+        )
+        return violations
+
+    expected = dict(REQUIRED_ARCHITECTURE_OWNERS)
+    assigned: dict[str, str] = {}
+    for boundary, references in architecture_owner_rows(src):
+        if boundary in assigned:
+            violations.append(
+                f"architecture owner map duplicates boundary row: {boundary}"
+            )
+            continue
+        if boundary not in expected:
+            violations.append(
+                f"architecture owner map has unrecognized boundary: {boundary}"
+            )
+        if len(references) != 1:
+            violations.append(
+                f"architecture owner map must name exactly one owner for {boundary}"
+            )
+            continue
+        assigned[boundary] = references[0]
+
+    for boundary, reference in REQUIRED_ARCHITECTURE_OWNERS:
+        actual = assigned.get(boundary)
+        if actual is None:
+            violations.append(
+                f"architecture owner map is missing boundary: {boundary} -> {reference}"
+            )
+        elif actual != reference:
+            violations.append(
+                f"architecture owner map assigns {boundary} to {actual}; expected {reference}"
+            )
+
+    for reference in sorted(architecture_code_references(src)):
+        if violation := owner_reference_violation(reference, root):
+            violations.append(violation)
+    return violations
+
+
+def check_architecture_owners(violations: list[str]) -> None:
+    violations.extend(architecture_owner_violations(text("docs/src/architecture.md")))
+
+
 def check_install_fixture_backend_labels(violations: list[str]) -> None:
     fixture = "tests/install/linux/edge_cases.sh"
     src = text(fixture)
@@ -241,6 +397,7 @@ def main() -> int:
     check_no_generated_cache_clutter(violations)
     check_no_loc_cap_bloat(violations)
     check_current_claims(violations)
+    check_architecture_owners(violations)
     check_install_fixture_backend_labels(violations)
     check_required_evidence_wiring(violations)
     check_complexity_budget(violations)

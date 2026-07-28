@@ -17,8 +17,9 @@ class VersionBumpError(ValueError):
 
 def bump_markdown(text: str, current: str, next_version: str) -> str:
     """Replace the current version outside generated benchmark sections."""
-    current_pin = f"v{current}"
-    next_pin = f"v{next_version}"
+    current_pattern = re.compile(
+        rf"(?<![0-9])(?P<prefix>v?){re.escape(current)}(?![0-9])"
+    )
     inside_benchmark = False
     replacements = 0
     output: list[str] = []
@@ -39,19 +40,21 @@ def bump_markdown(text: str, current: str, next_version: str) -> str:
             continue
 
         if not inside_benchmark:
-            replacements += line.count(current_pin)
-            line = line.replace(current_pin, next_pin)
+            line, line_replacements = current_pattern.subn(
+                lambda match: f"{match.group('prefix')}{next_version}", line
+            )
+            replacements += line_replacements
         output.append(line)
 
     if inside_benchmark:
         raise VersionBumpError("benchmark start marker without an end marker")
     if replacements == 0:
-        raise VersionBumpError(f"document does not contain canonical pin {current_pin}")
+        raise VersionBumpError(f"document does not contain canonical pin {current}")
 
     updated = "".join(output)
     outside = _outside_benchmark_text(updated)
-    if current_pin in outside:
-        raise VersionBumpError(f"canonical pin {current_pin} remains outside benchmark evidence")
+    if current_pattern.search(outside):
+        raise VersionBumpError(f"canonical version {current} remains outside benchmark evidence")
     return updated
 
 

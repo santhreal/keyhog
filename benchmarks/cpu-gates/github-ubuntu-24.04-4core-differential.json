@@ -1,0 +1,76 @@
+{
+  "schema_version": "hosted-cpu-policy-v2",
+  "authority": {
+    "repository": "santhreal/keyhog",
+    "workflow_file": ".github/workflows/differential-bench.yml",
+    "job": "gate",
+    "parity_source_sha256": "18723c5e280f5053969fbe81462b9ce096585bf0728ebbaca5aec200f285cd90",
+    "parity_vector_sha256": "bc9266bf6c2c5a81effc0ef49ea26084552d6838a92b16df9777ecc5a8a94b9d",
+    "parity_detector_examples": 848
+  },
+  "runner": {
+    "profile": "github-ubuntu-24.04-4core-differential",
+    "workflow": "differential-bench",
+    "os": "Linux",
+    "arch": "X64",
+    "environment": "github-hosted",
+    "effective_cores": 4,
+    "min_ram_mb": 7000,
+    "max_ram_mb": 20000,
+    "max_evidence_seconds": 3600,
+    "cuda_visible_devices": "",
+    "nvidia_visible_devices": "void"
+  },
+  "supply": {
+    "runner_image_version": null,
+    "cpython": "3.12.11",
+    "go": "1.22.2",
+    "libhyperscan_dev": "5.4.2-2",
+    "libhyperscan_runtime": "5.4.2-2",
+    "pkg_config": "1.8.1-2build1",
+    "libhs_runtime_sha256": null
+  },
+  "calibration": {
+    "status": "unmeasured-release-requirements",
+    "thresholds_sha256": "cd40dfb88032e5a530dd8ad7faa65d1eebec08edf53931d2feac303065bf064b",
+    "source": "maintainer-defined release acceptance contract",
+    "measured_at": null,
+    "sample_count": 0,
+    "statistic": "none",
+    "units": {
+      "wall": "ms",
+      "throughput": "MiB/s",
+      "rss": "KiB",
+      "recall": "ratio"
+    },
+    "rationale": "Acceptance limits only; no hosted measurement or performance headline is claimed."
+  },
+  "workloads": {
+    "mirror": {
+      "fixture_count": 15000,
+      "labeled_positives": 3000,
+      "bytes": 2430321,
+      "workload_sha256": "f0e8aea6d492f1759fdd7978ae31f6d705d0b91f72c5200f4ca366beeeadfb95",
+      "revision": "generator-v1"
+    }
+  },
+  "rows": [
+    {
+      "id": "mirror",
+      "path": "results/mirror-keyhog-simd-nocache-nodaemon-full.json",
+      "corpus": "mirror",
+      "config": {
+        "backend": "simd",
+        "cache": "off",
+        "daemon": "off",
+        "mode": "full"
+      },
+      "min_recall": 0.9,
+      "max_wall_ms": 180000,
+      "min_throughput_mib_s": 0.01,
+      "max_peak_rss_kb": 3145728,
+      "scan_manifest_sha256": null,
+      "categories": []
+    }
+  ]
+}

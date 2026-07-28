@@ -58,17 +58,20 @@ class ReleaseServerState:
     upload_count: int = 0
     fail_upload_at: int | None = None
     inject_unexpected_asset: bool = False
+    inject_unexpected_asset_after_publish: bool = False
     detach_tag_on_publish: bool = False
     drift_body_on_publish: bool = False
     invert_prerelease_on_publish: bool = False
     tag_commit: str = EXPECTED_COMMIT
-    annotated_tag_sha: str | None = None
+    annotated_tag_sha: str | None = "c" * 40
     move_tag_after_publish: bool = False
+    move_tag_object_after_publish: bool = False
     move_tag_on_manifest_check: bool = False
     wrong_upload_size: bool = False
     wrong_draft_response_id_once: bool = False
     ignore_rollback_after_publish: bool = False
     published_once: bool = False
+    immutable_on_publish: bool = True
 
 
 class ReleaseHandler(BaseHTTPRequestHandler):
@@ -172,7 +175,10 @@ class ReleaseHandler(BaseHTTPRequestHandler):
             and parts[:5] == ["repos", "owner", "keyhog", "releases", "assets"]
         ):
             asset_id = int(parts[5])
-            if asset_id == 999_999 and self.server.state.inject_unexpected_asset:
+            if asset_id == 999_999 and (
+                self.server.state.inject_unexpected_asset
+                or self.server.state.inject_unexpected_asset_after_publish
+            ):
                 self._reply_bytes(200, b"x")
                 return
             asset = next(
@@ -203,8 +209,14 @@ class ReleaseHandler(BaseHTTPRequestHandler):
                 for asset in release["assets"]
             ]
             if (
-                self.server.state.inject_unexpected_asset
-                and self.server.state.upload_count
+                (
+                    self.server.state.inject_unexpected_asset
+                    and self.server.state.upload_count
+                )
+                or (
+                    self.server.state.inject_unexpected_asset_after_publish
+                    and self.server.state.published_once
+                )
             ):
                 assets.append({"id": 999_999, "name": "unexpected.bin", "size": 1})
             if (
@@ -229,6 +241,7 @@ class ReleaseHandler(BaseHTTPRequestHandler):
                 "prerelease": payload["prerelease"],
                 "assets": [],
                 "published_at": None,
+                "immutable": False,
             }
             self.server.state.next_release_id += 1
             self.server.state.releases.append(release)
@@ -285,6 +298,7 @@ class ReleaseHandler(BaseHTTPRequestHandler):
                 release.update(payload)
             if payload.get("draft") is False:
                 release["published_at"] = "2026-07-25T12:00:00Z"
+                release["immutable"] = self.server.state.immutable_on_publish
                 self.server.state.published_once = True
                 if self.server.state.detach_tag_on_publish:
                     release["tag_name"] = "untagged-injected"
@@ -294,6 +308,8 @@ class ReleaseHandler(BaseHTTPRequestHandler):
                     release["prerelease"] = not release["prerelease"]
                 if self.server.state.move_tag_after_publish:
                     self.server.state.tag_commit = "b" * 40
+                if self.server.state.move_tag_object_after_publish:
+                    self.server.state.annotated_tag_sha = "d" * 40
             response = {
                 key: value for key, value in release.items() if key != "assets"
             }
@@ -418,6 +434,7 @@ class PublishReleaseAssetsTests(unittest.TestCase):
             "draft": draft,
             "prerelease": False,
             "published_at": None if draft else "2026-07-25T12:00:00Z",
+            "immutable": not draft,
             "assets": assets or [],
         }
         self.state.releases.append(release)
@@ -534,6 +551,28 @@ class PublishReleaseAssetsTests(unittest.TestCase):
         ]
         self.assertEqual(tag_requests, expected_pair * 5)
 
+    def test_lightweight_tag_is_rejected_before_release_mutation(self) -> None:
+        """Rejects a lightweight ref before any private release state can mutate."""
+        self.state.annotated_tag_sha = None
+        asset = self.asset("keyhog-linux", b"binary")
+        with self.assertRaisesRegex(PublicationError, "annotated tag object"):
+            publish_release(
+                self.client,
+                "owner/keyhog",
+                "v0.5.45",
+                [asset],
+                RELEASE_NOTES,
+                EXPECTED_COMMIT,
+            )
+        self.assertEqual(
+            [
+                request
+                for request in self.state.requests
+                if request[0] in {"POST", "PATCH", "DELETE"}
+            ],
+            [],
+        )
+
     def test_detached_tag_response_reprivatizes_and_fails(self) -> None:
         """Locks out a green workflow that publishes assets under an untagged URL."""
         release = self.existing_release(46, "v0.5.45")
@@ -571,6 +610,24 @@ class PublishReleaseAssetsTests(unittest.TestCase):
 
         with self.assertRaisesRegex(PublicationError, "prerelease"):
             publish_release(self.client, "owner/keyhog", "v0.6.0-rc.1", [asset], RELEASE_NOTES, EXPECTED_COMMIT)
+
+        self.assertTrue(release["draft"])
+
+    def test_mutable_publication_response_reprivatizes_and_fails(self) -> None:
+        """Locks out success when repository release immutability is not enforced."""
+        release = self.existing_release(54, "v0.5.45")
+        self.state.immutable_on_publish = False
+        asset = self.asset("keyhog-linux", b"binary")
+
+        with self.assertRaisesRegex(PublicationError, "immutable"):
+            publish_release(
+                self.client,
+                "owner/keyhog",
+                "v0.5.45",
+                [asset],
+                RELEASE_NOTES,
+                EXPECTED_COMMIT,
+            )
 
         self.assertTrue(release["draft"])
 
@@ -673,7 +730,10 @@ class PublishReleaseAssetsTests(unittest.TestCase):
 
         self.assertEqual(
             [(method, path) for method, path, _payload in self.state.requests],
-            [("GET", "/repos/owner/keyhog/git/ref/tags/v0.5.45")],
+            [
+                ("GET", "/repos/owner/keyhog/git/ref/tags/v0.5.45"),
+                ("GET", f"/repos/owner/keyhog/git/tags/{'c' * 40}"),
+            ],
         )
 
     def test_tag_move_during_publication_reprivatizes_and_fails(self) -> None:
@@ -692,6 +752,40 @@ class PublishReleaseAssetsTests(unittest.TestCase):
                 EXPECTED_COMMIT,
             )
 
+        self.assertTrue(release["draft"])
+
+    def test_tag_object_move_during_publication_reprivatizes_and_fails(self) -> None:
+        """Reprivatizes when the authenticated annotated object changes post-PATCH."""
+        release = self.existing_release(48, "v0.5.45")
+        self.state.move_tag_object_after_publish = True
+        asset = self.asset("keyhog-linux", b"binary")
+
+        with self.assertRaisesRegex(PublicationError, "annotated tag object"):
+            publish_release(
+                self.client,
+                "owner/keyhog",
+                "v0.5.45",
+                [asset],
+                RELEASE_NOTES,
+                EXPECTED_COMMIT,
+            )
+        self.assertTrue(release["draft"])
+
+    def test_post_publish_asset_drift_reprivatizes_and_fails(self) -> None:
+        """Reprivatizes when the exact signed asset set drifts after public PATCH."""
+        release = self.existing_release(47, "v0.5.45")
+        self.state.inject_unexpected_asset_after_publish = True
+        asset = self.asset("keyhog-linux", b"binary")
+
+        with self.assertRaisesRegex(PublicationError, "signed expected manifest"):
+            publish_release(
+                self.client,
+                "owner/keyhog",
+                "v0.5.45",
+                [asset],
+                RELEASE_NOTES,
+                EXPECTED_COMMIT,
+            )
         self.assertTrue(release["draft"])
     def test_tag_move_before_publish_never_exposes_release(self) -> None:
         """Locks out publishing after the tag moves during private asset mutation."""
@@ -778,6 +872,7 @@ class PublishReleaseAssetsTests(unittest.TestCase):
             [(method, path) for method, path, _payload in self.state.requests],
             [
                 ("GET", "/repos/owner/keyhog/git/ref/tags/v0.5.45"),
+                ("GET", f"/repos/owner/keyhog/git/tags/{'c' * 40}"),
                 ("GET", "/repos/owner/keyhog/releases?per_page=100"),
             ],
         )

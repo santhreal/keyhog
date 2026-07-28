@@ -232,7 +232,7 @@ fn extracted_runs_are_emitted_in_a_single_binary_strings_chunk() {
         "binary:strings"
     );
     assert_eq!(
-        strings_chunks[0].data.to_string(),
+        strings_chunks[0].data.as_str(),
         "alphaonewinnerstring",
         "the sole run must be the chunk body verbatim"
     );

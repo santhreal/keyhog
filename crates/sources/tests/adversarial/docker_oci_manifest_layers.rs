@@ -477,48 +477,65 @@ fn docker_manifest_preserves_repeated_layer_content_paths() {
     );
 }
 
-#[cfg(all(feature = "docker", unix))]
+#[cfg(feature = "docker")]
 #[test]
-fn docker_fallback_layer_discovery_unreadable_entry_fails_loud() {
-    use std::os::unix::fs::PermissionsExt;
-
+/// Missing-root policy: an absent archive tree is recorded as one unreadable
+/// coverage gap and yields no fallback layers.
+fn docker_fallback_layer_discovery_missing_root_is_counted() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
     let dir = tempfile::tempdir().expect("tempdir");
-    let root = dir.path();
-    let unreadable = root.join("blocked");
-    std::fs::create_dir(&unreadable).expect("mkdir blocked");
-    let original_permissions = std::fs::metadata(&unreadable)
-        .expect("blocked metadata")
-        .permissions();
-    let mut blocked_permissions = original_permissions.clone();
-    blocked_permissions.set_mode(0);
-    std::fs::set_permissions(&unreadable, blocked_permissions).expect("chmod blocked");
-    struct Restore {
-        path: std::path::PathBuf,
-        permissions: std::fs::Permissions,
-    }
-    impl Drop for Restore {
-        fn drop(&mut self) {
-            let _ = std::fs::set_permissions(&self.path, self.permissions.clone());
-        }
-    }
-    let _restore = Restore {
-        path: unreadable,
-        permissions: original_permissions,
-    };
+    let missing_root = dir.path().join("missing-root");
 
-    let err = TestApi.docker_manifest_layer_archives(root).unwrap_err();
-    let msg = err.to_string();
+    let layers = TestApi
+        .docker_manifest_layer_archives(&missing_root)
+        .expect("an unreadable fallback entry must not abort layer discovery");
+
     assert!(
-        msg.contains("failed to inspect docker image archive")
-            && msg.contains("docker image archive was not fully scanned"),
-        "unreadable fallback layer-discovery entry must fail loud, got {msg}"
+        layers.is_empty(),
+        "a missing archive root cannot contain fallback layers"
+    );
+    assert_eq!(
+        keyhog_sources::skip_counts().unreadable,
+        1,
+        "the continued traversal error must remain visible as a coverage gap"
     );
 }
 
-#[cfg(any(not(feature = "docker"), not(unix)))]
+#[cfg(feature = "docker")]
 #[test]
-fn docker_fallback_layer_discovery_unreadable_entry_fails_loud() {
-    assert!(cfg!(any(not(feature = "docker"), not(unix))));
+/// Continuation contract: a deterministic walker error must not hide a healthy
+/// fallback layer that appears later in the same production collector sequence.
+fn docker_fallback_layer_discovery_continues_to_healthy_sibling() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let healthy_layer = dir.path().join("layer.tar");
+    std::fs::write(&healthy_layer, b"healthy layer fixture").expect("write healthy layer");
+
+    let layers = TestApi.docker_fallback_layer_archives_from_rows(vec![
+        Err(keyhog_core::SourceError::Other(
+            "deterministic unreadable walker row".into(),
+        )),
+        Ok(healthy_layer.clone()),
+    ]);
+
+    assert_eq!(
+        layers,
+        vec![healthy_layer],
+        "the healthy layer after an unreadable row must remain discoverable"
+    );
+    assert_eq!(
+        keyhog_sources::skip_counts().unreadable,
+        1,
+        "the unreadable row must be counted exactly once while discovery continues"
+    );
+}
+
+#[cfg(not(feature = "docker"))]
+#[test]
+fn docker_fallback_layer_discovery_missing_root_is_counted() {
+    assert!(!cfg!(feature = "docker"));
 }
 
 #[cfg(feature = "docker")]

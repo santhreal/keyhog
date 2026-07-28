@@ -31,6 +31,13 @@ byte was recovered. Any
 source or scanner coverage gap overrides it to `partial`; recovery never masks
 incomplete input.
 
+The composite Action output named `scan-status` is a different, normalized
+wrapper receipt: `success`, `partial`, `cancelled`, or `failed`.
+`complete_after_recovery` remains `success` there because the process completed
+with ordinary clean/findings semantics. Consumers that must distinguish healthy
+completion from recovery must inspect a metadata-bearing report (for the
+Action's SARIF default, the KeyHog run properties), not the wrapper output.
+
 After a selected accelerated backend faults, the recovery backend is the confidence-separated
 fastest remaining measured-correct peer for the same workload and runtime
 class. When no trustworthy route can be selected at all, the scalar correctness
@@ -299,7 +306,7 @@ Upload to GitHub even when the scan found credentials:
   continue-on-error: true
   run: keyhog scan . --format sarif --output keyhog-results.sarif
 
-- uses: github/codeql-action/upload-sarif@v3
+- uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
   if: always() && hashFiles('keyhog-results.sarif') != ''
   with:
     sarif_file: keyhog-results.sarif

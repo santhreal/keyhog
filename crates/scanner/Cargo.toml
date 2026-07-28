@@ -41,6 +41,9 @@ entropy = ["dep:tiktoken-rs"]
 decode = ["dep:aes", "dep:md5"]
 multiline = []
 simd = ["dep:hyperscan"]  # Vectorscan/Hyperscan SIMD regex compilation (builds HS database)
+# Linux release-only closure: archive libhs into the executable so Action users
+# never install a mutable system Hyperscan runtime.
+static-hyperscan = ["simd", "hyperscan/static"]
 simdsieve = ["dep:simdsieve"]  # SIMD-accelerated prefilter for top 8 patterns (50 GB/s)
 # GPU dispatch stack: wgpu cross-platform driver (+ pollster/bytemuck), VYRE's
 # GPU literal-set region-presence runtime, and on Linux the VYRE CUDA driver.

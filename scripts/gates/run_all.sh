@@ -15,8 +15,8 @@
 #   #1f github_actions_pinned, repo CI cannot execute mutable third-party refs
 #   package_licenses: publishable crate roots carry canonical license bytes
 #   #4 surface_coverage: a subcommand with no real-process test
-#   #5 complexity_budget: engine grew a new lane/backend/file past budget
-#   org_audit.py: stale claims, generated LOC-cap bloat, evidence wiring
+#   #5 complexity_budget: engine growth, stale slack, or metric drift
+#   org_audit.py: stale claims/owners, generated LOC-cap bloat, evidence wiring
 #   install_static_analysis: install.sh/install.ps1 lint/static parser coverage
 #   cli_claims_check.sh: no hallucinated CLI flags in canonical docs
 #   entrypoints_check.sh: pre-commit hook + composite Action stay wired
@@ -150,16 +150,24 @@ run "Gate #1h: every enforced-crate tests/*.rs is CI-wired (all_tests or --test)
   python3 scripts/gates/tests_wired.py
 run "Gate #4: surface coverage (every subcommand spawned)" \
   python3 scripts/gates/surface_coverage.py
-run "Gate #5: complexity budget (engine lane/backend/file growth)" \
+run "Gate #5: exact complexity ratchet (growth, slack, and metric drift)" \
   python3 scripts/gates/complexity_budget.py
 run "VYRE pin consistency: 5 crates lockstep, registry pins, no vendor build-path" \
   python3 scripts/gates/vyre_pin_consistency.py
-run "Org audit unit tests: Markdown section parser stays code-fence aware" \
-  python3 -m unittest scripts.tests.test_org_audit -v
+run "Organization unit tests: exact complexity ratchet and owner/reference checks" \
+  python3 -m unittest scripts.tests.test_complexity_budget scripts.tests.test_org_audit -v
 run "tests_wired unit tests: CI-orphan model (path/mod/--test/all-targets/pkg)" \
   python3 -m unittest scripts.tests.test_tests_wired -v
 run "Release publisher tests: draft recovery and exact-manifest atomicity" \
   python3 -m unittest scripts.tests.test_publish_release_assets -v
+run "Published release verifier tests: exact 48-asset public completeness" \
+  python3 -B -m unittest scripts.tests.test_verify_published_release -v
+run "Release workflow tests: provenance, publication, and rollback contracts" \
+  python3 -B -m unittest scripts.tests.test_release_workflows -v
+run "Release SBOM tests: complete manifests, signatures, and attestations" \
+  python3 -B -m unittest scripts.tests.test_release_sbom -v
+run "Marketplace Action verifier tests: signed assets, inputs, and exit contract" \
+  python3 -B -m unittest scripts.tests.test_verify_marketplace_action -v
 run "Org audit: stale claims / LOC-cap bloat / evidence wiring" \
   python3 scripts/org_audit.py
 run "Install static analysis: shell + PowerShell parser/linter coverage" \

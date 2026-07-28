@@ -148,6 +148,39 @@ fn config_scan_ml_threshold_and_top_level_verify_knobs_reach_scan_args() {
     assert_eq!(args.max_commits, Some(123));
 }
 
+/// Regression: committed `verify = true` once overrode the Action's false
+/// input, permitting unintended provider network verification.
+#[cfg(feature = "verify")]
+#[test]
+fn explicit_no_verify_overrides_committed_verify_true() {
+    let args = args_for_config_with_extra("verify = true\n", &["--no-verify"]);
+    assert!(!args.verify, "--no-verify must win over committed verify=true");
+    assert!(
+        args.no_verify,
+        "the explicit negative CLI source must remain observable"
+    );
+}
+
+/// Regression: explicit `--verify` must remain authoritative over a committed
+/// false value while adding the negative override path.
+#[cfg(feature = "verify")]
+#[test]
+fn explicit_verify_overrides_committed_verify_false() {
+    let args = args_for_config_with_extra("verify = false\n", &["--verify"]);
+    assert!(args.verify, "--verify must win over committed verify=false");
+    assert!(!args.no_verify);
+}
+
+/// Regression: adding explicit negative precedence must not suppress the
+/// committed verification setting when the CLI is genuinely silent.
+#[cfg(feature = "verify")]
+#[test]
+fn absent_verify_cli_uses_committed_value() {
+    let args = args_for_config("verify = true\n");
+    assert!(args.verify, "committed verify=true applies when CLI is silent");
+    assert!(!args.no_verify);
+}
+
 #[test]
 fn config_scan_ml_threshold_reaches_scan_args() {
     let args = args_for_config("[scan]\nml_threshold = 0.6\n");

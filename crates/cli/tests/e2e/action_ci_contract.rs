@@ -3,7 +3,7 @@
 use std::env;
 use std::fs;
 #[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{FileTypeExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use tempfile::TempDir;
@@ -106,6 +106,13 @@ fn integration_smoke_workflow() -> PathBuf {
         .expect("integration-smoke.yml exists")
 }
 
+fn action_e2e_workflow() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../.github/workflows/action-e2e.yml")
+        .canonicalize()
+        .expect("action-e2e.yml exists")
+}
+
 fn keyhog_binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
@@ -121,8 +128,99 @@ fn write_executable(path: &Path, body: &str) {
 }
 
 fn write_stub(dir: &TempDir, body: &str) -> PathBuf {
+    let scanner = dir.path().join("keyhog-scan-stub");
+    write_executable(&scanner, body);
+    let real_keyhog = dir.path().join("keyhog-real");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(keyhog_binary(), &real_keyhog).expect("link real Action verifier");
+    #[cfg(not(unix))]
+    fs::copy(keyhog_binary(), &real_keyhog).expect("copy real Action verifier");
     let path = dir.path().join("keyhog");
-    write_executable(&path, body);
+    write_executable(
+        &path,
+        r#"#!/usr/bin/env bash
+set -uo pipefail
+root="${0%/*}"
+if [[ "${1:-}" == "action-report" ]]; then
+  exec "$root/keyhog-real" "$@"
+fi
+receipt=""
+report=""
+format=""
+previous=""
+for arg in "$@"; do
+  case "$previous" in
+    --action-receipt) receipt="$arg" ;;
+    --output) report="$arg" ;;
+    --format) format="$arg" ;;
+  esac
+  previous="$arg"
+done
+set +e
+"$root/keyhog-scan-stub" "$@"
+scanner_exit=$?
+set -e
+if [[ -n "$receipt" && -f "$report" && "$scanner_exit" =~ ^(0|1|10|13)$ ]]; then
+  count=""
+  if [[ "$format" == "json" ]]; then
+    mapfile -t json_lines < "$report"
+    if [[ "${#json_lines[@]}" == "1" && "${json_lines[0]}" == "[]" ]]; then count=0; fi
+  fi
+  if [[ -z "$count" ]] && command -v python3 >/dev/null 2>&1; then
+    count="$(python3 - "$format" "$report" <<'PY'
+import json, sys
+fmt, path = sys.argv[1:]
+try:
+    if fmt == "json":
+        value = json.load(open(path, encoding="utf-8"))
+        assert isinstance(value, list)
+        print(len(value))
+    elif fmt == "jsonl":
+        rows = [json.loads(line) for line in open(path, encoding="utf-8") if line.strip()]
+        assert all(isinstance(row, dict) for row in rows)
+        print(len(rows))
+    elif fmt == "sarif":
+        value = json.load(open(path, encoding="utf-8"))
+        assert isinstance(value, dict) and isinstance(value.get("runs"), list)
+        print(sum(len(run["results"]) for run in value["runs"]))
+    elif fmt == "text":
+        lines = open(path, encoding="utf-8").read().splitlines()
+        summaries = [line.strip().split()[0] for line in lines if line.strip().endswith("unverified") and line.strip().split()[0].isdigit()]
+        assert len(summaries) == 1
+        print(summaries[0])
+except Exception:
+    raise SystemExit(1)
+PY
+)" || count=""
+  fi
+  if [[ "$count" =~ ^[0-9]+$ ]]; then
+    read -r report_sha _ < <(sha256sum "$report")
+    report_bytes="$(wc -c < "$report")"
+    report_bytes="${report_bytes//[[:space:]]/}"
+    status=success
+    [[ "$scanner_exit" == "13" ]] && status=partial
+    {
+      printf 'schema=keyhog-action-report-v1\n'
+      printf 'format=%s\n' "$format"
+      printf 'findings=%s\n' "$count"
+      printf 'report-bytes=%s\n' "$report_bytes"
+      printf 'report-sha256=%s\n' "$report_sha"
+      printf 'scan-status=%s\n' "$status"
+      printf 'exit-code=%s\n' "$scanner_exit"
+    } > "$receipt"
+    if [[ "${KEYHOG_TEST_TAMPER_RECEIPT:-}" == "uppercase-sha" ]]; then
+      receipt_text="$(<"$receipt")"
+      receipt_text="${receipt_text/report-sha256=$report_sha/report-sha256=${report_sha^^}}"
+      printf '%s\n' "$receipt_text" > "$receipt"
+    fi
+    if [[ "${KEYHOG_TEST_TAMPER_REPORT_AFTER_RECEIPT:-}" == "true" ]]; then
+      printf ' ' >> "$report"
+    fi
+  fi
+fi
+exit "$scanner_exit"
+"#,
+    );
     path
 }
 
@@ -138,6 +236,8 @@ fn action_script_args(script_args: &[&str], inputs: &[(&str, &str)]) -> Vec<Stri
     push_script_arg(&mut args, "--format", "sarif");
     push_script_arg(&mut args, "--output", "keyhog-results.sarif");
     push_script_arg(&mut args, "--verify", "false");
+    push_script_arg(&mut args, "--preset", "default");
+    push_script_arg(&mut args, "--lockdown", "false");
     push_script_arg(&mut args, "--fail-on-findings", "true");
     push_script_arg(&mut args, "--upload-sarif", "true");
 
@@ -150,6 +250,8 @@ fn action_script_args(script_args: &[&str], inputs: &[(&str, &str)]) -> Vec<Stri
             "ACTION_INPUT_VERIFY" => push_script_arg(&mut args, "--verify", value),
             "ACTION_INPUT_BASELINE" => push_script_arg(&mut args, "--baseline", value),
             "ACTION_INPUT_BACKEND" => push_script_arg(&mut args, "--backend", value),
+            "ACTION_INPUT_PRESET" => push_script_arg(&mut args, "--preset", value),
+            "ACTION_INPUT_LOCKDOWN" => push_script_arg(&mut args, "--lockdown", value),
             "ACTION_INPUT_FAIL_ON_FINDINGS" => {
                 push_script_arg(&mut args, "--fail-on-findings", value)
             }
@@ -172,6 +274,8 @@ fn is_action_input_key(key: &str) -> bool {
             | "ACTION_INPUT_VERIFY"
             | "ACTION_INPUT_BASELINE"
             | "ACTION_INPUT_BACKEND"
+            | "ACTION_INPUT_PRESET"
+            | "ACTION_INPUT_LOCKDOWN"
             | "ACTION_INPUT_FAIL_ON_FINDINGS"
             | "ACTION_INPUT_UPLOAD_SARIF"
     )
@@ -185,6 +289,7 @@ fn run_action_with_script_args_and_path_prefix(
 ) -> Output {
     let output_path = dir.path().join("github-output.txt");
     let summary_path = dir.path().join("summary.md");
+    fs::create_dir_all(dir.path().join("runner-temp")).expect("runner temp");
     let path = format!(
         "{}:{}:{}",
         path_prefix,
@@ -199,8 +304,8 @@ fn run_action_with_script_args_and_path_prefix(
         .current_dir(dir.path())
         .env("PATH", path)
         .env("GITHUB_OUTPUT", &output_path)
-        .env("GITHUB_STEP_SUMMARY", &summary_path);
-
+        .env("GITHUB_STEP_SUMMARY", &summary_path)
+        .env("RUNNER_TEMP", dir.path().join("runner-temp"));
     for (key, value) in envs {
         if !is_action_input_key(key) {
             cmd.env(key, value);
@@ -238,6 +343,7 @@ fn run_action_raw_with_script_args(
 ) -> Output {
     let output_path = dir.path().join("github-output.txt");
     let summary_path = dir.path().join("summary.md");
+    fs::create_dir_all(dir.path().join("runner-temp")).expect("runner temp");
     let path = format!(
         "{}:{}",
         dir.path().display(),
@@ -250,7 +356,8 @@ fn run_action_raw_with_script_args(
         .current_dir(dir.path())
         .env("PATH", path)
         .env("GITHUB_OUTPUT", &output_path)
-        .env("GITHUB_STEP_SUMMARY", &summary_path);
+        .env("GITHUB_STEP_SUMMARY", &summary_path)
+        .env("RUNNER_TEMP", dir.path().join("runner-temp"));
 
     for (key, value) in envs {
         cmd.env(key, value);
@@ -344,14 +451,68 @@ fn run_manifest_bash_step(step_name: &str, envs: &[(&str, &str)]) -> Output {
         .join("../..")
         .canonicalize()
         .expect("repo root exists");
+    let runner_temp = envs
+        .iter()
+        .find_map(|(key, value)| (*key == "RUNNER_TEMP").then(|| PathBuf::from(value)))
+        .unwrap_or_else(|| source_root.join("target/action-contract-runner-temp"));
+    fs::create_dir_all(&runner_temp).expect("create manifest harness runner temp");
+    let runtime = tempfile::Builder::new()
+        .prefix("keyhog-action-runtime.")
+        .tempdir_in(&runner_temp)
+        .expect("create manifest harness runtime")
+        .keep();
+    fs::create_dir(runtime.join("bin")).expect("create manifest harness bin");
+    let path_value = envs
+        .iter()
+        .find_map(|(key, value)| (*key == "PATH").then_some(*value))
+        .unwrap_or("");
+    let resolve_tool = |name: &str| {
+        env::split_paths(path_value)
+            .map(|dir| dir.join(name))
+            .find(|path| path.is_file())
+            .unwrap_or_else(|| PathBuf::from(name))
+    };
+    let verifier_source = resolve_tool("minisign");
+    let private_verifier = runtime.join("private-minisign");
+    if verifier_source.is_file() {
+        fs::copy(&verifier_source, &private_verifier).expect("copy private verifier");
+    }
     let mut cmd = Command::new("bash");
     cmd.arg("-c").arg(block);
     cmd.env("ACTION_SOURCE_ROOT", source_root);
     cmd.env("ACTION_RUNNER_EXIT_CODE", "0");
+    cmd.env("RUNNER_TEMP", &runner_temp);
+    cmd.env("ACTION_RUNTIME", &runtime);
+    cmd.env("ACTION_CACHE_HOME", runtime.join("cache"));
+    cmd.env("ACTION_KEYHOG", resolve_tool("keyhog"));
+    cmd.env(
+        "ACTION_VERIFIER",
+        if private_verifier.is_file() {
+            private_verifier
+        } else {
+            verifier_source
+        },
+    );
+    cmd.env("ACTION_RESOLVED_VERSION", "0.5.48");
     for (key, value) in envs {
         cmd.env(key, value);
     }
     cmd.output().expect("run manifest shell block")
+}
+
+#[cfg(unix)]
+fn preplant_destination(path: &Path, victim: &Path, kind: &str) {
+    fs::write(victim, "victim-unchanged").expect("victim");
+    match kind {
+        "symlink" => std::os::unix::fs::symlink(victim, path).expect("preplant symlink"),
+        "hardlink" => fs::hard_link(victim, path).expect("preplant hardlink"),
+        "fifo" => {
+            let status = Command::new("mkfifo").arg(path).status().expect("mkfifo");
+            assert!(status.success());
+        }
+        "regular" => fs::write(path, "preplanted-regular").expect("preplant regular"),
+        _ => panic!("unknown preplant kind {kind}"),
+    }
 }
 
 fn run_release_download_harness(
@@ -361,13 +522,24 @@ fn run_release_download_harness(
     checksum_exit: &str,
     signature_exit: &str,
     preplant_programs_symlink: bool,
+    action_lockdown: bool,
+    preplant_binary: Option<&str>,
 ) -> (TempDir, Output) {
     let dir = TempDir::new().expect("release download harness tempdir");
     let fake_bin = dir.path().join("bin");
     let runner_temp = dir.path().join("runner-temp");
-    let cache_root = dir.path().join("cache");
+    let action_cache_home = runner_temp.join("keyhog-action-cache");
+    let cache_root = action_cache_home.join("xdg");
     fs::create_dir(&fake_bin).expect("create fake bin");
     fs::create_dir(&runner_temp).expect("create runner temp");
+    #[cfg(unix)]
+    if let Some(kind) = preplant_binary {
+        preplant_destination(
+            &runner_temp.join("keyhog"),
+            &dir.path().join("predictable-binary-victim"),
+            kind,
+        );
+    }
     if preplant_programs_symlink {
         #[cfg(unix)]
         {
@@ -409,7 +581,10 @@ esac
         &fake_bin.join("sha256sum"),
         r#"#!/usr/bin/env bash
 set -euo pipefail
-exit "$FAKE_SHA_EXIT"
+if [[ "${1:-}" == "-c" ]]; then
+  exit "$FAKE_SHA_EXIT"
+fi
+exec /usr/bin/sha256sum "$@"
 "#,
     );
     write_executable(
@@ -462,11 +637,11 @@ esac
             ("ACTION_ASSET_NAME", "keyhog-linux-x86_64"),
             ("ACTION_RESOLVED_VERSION", "0.5.45"),
             ("ACTION_RELEASE_REQUIRED", "true"),
-            ("RUNNER_OS", "Linux"),
             (
-                "XDG_CACHE_HOME",
-                cache_root.to_str().expect("UTF-8 cache path"),
+                "ACTION_LOCKDOWN",
+                if action_lockdown { "true" } else { "false" },
             ),
+            ("RUNNER_OS", "Linux"),
             ("FAKE_CURL_LOG", curl_log.to_str().expect("UTF-8 curl log")),
             ("FAKE_TAR_ENTRY", tar_entry),
             ("FAKE_TAR_KIND", tar_kind),
@@ -508,6 +683,21 @@ fn yaml_literal_run_blocks(yaml: &str) -> Vec<String> {
         blocks.push(block);
     }
     blocks
+}
+
+fn private_action_runtime(dir: &TempDir) -> PathBuf {
+    fs::read_dir(dir.path().join("runner-temp"))
+        .expect("read runner temp")
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| {
+            path.is_dir()
+                && path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with("keyhog-action-runtime."))
+        })
+        .expect("private Action runtime")
 }
 
 fn yaml_get<'a>(
@@ -699,6 +889,279 @@ fn composite_action_manifest_keeps_composite_runs_shape() {
     );
 }
 
+/// Regression: hosted E2E once exercised only the root Action with forced CPU
+/// defaults, leaving the nested mirror and auto+lockdown policy path unexecuted.
+#[test]
+fn hosted_action_e2e_splits_source_and_authenticated_release_modes() {
+    let workflow =
+        fs::read_to_string(action_e2e_workflow()).expect("read action-e2e workflow");
+    serde_yaml::from_str::<serde_yaml::Value>(&workflow)
+        .expect("action-e2e workflow parses as YAML");
+
+    for runner in [
+        "ubuntu-24.04",
+        "windows-2025",
+        "macos-15-intel",
+        "macos-15",
+    ] {
+        assert!(
+            workflow
+                .lines()
+                .any(|line| line.trim() == format!("- runner: {runner}")),
+            "hosted release E2E matrix must name {runner} explicitly"
+        );
+    }
+    assert_eq!(
+        workflow.matches("        uses: ./\n").count(),
+        3,
+        "hosted and provisioned source/release modes must invoke the root composite"
+    );
+    assert_eq!(
+        workflow.matches("        uses: ./.github/actions/keyhog\n").count(),
+        5,
+        "hosted policy and provisioned lockdown modes must invoke the nested mirror"
+    );
+    assert_eq!(
+        workflow
+            .matches("version: ${{ env.KEYHOG_ACTION_E2E_VERSION }}")
+            .count(),
+        3,
+        "only workflow_dispatch release invocations may force the authenticated asset path"
+    );
+    for step_name in [
+        "Invoke root composite from branch/SHA source",
+        "Invoke nested composite with precision finding policy from branch/SHA source",
+        "Reject unsupported hosted CPU lockdown from branch/SHA source",
+    ] {
+        let step = workflow
+            .split(&format!("- name: {step_name}"))
+            .nth(1)
+            .and_then(|tail| tail.split("\n      - name:").next())
+            .unwrap_or_else(|| panic!("source step {step_name} exists"));
+        assert!(
+            step.contains("if: github.event_name != 'workflow_dispatch'")
+                && !step.contains("\n          version:"),
+            "PR/main source proof must never require an unpublished release asset: {step}"
+        );
+    }
+    for step_name in [
+        "Invoke root composite against authenticated release asset",
+        "Invoke nested composite with precision finding policy from authenticated release asset",
+        "Reject unsupported hosted auto lockdown from authenticated release asset",
+    ] {
+        let step = workflow
+            .split(&format!("- name: {step_name}"))
+            .nth(1)
+            .and_then(|tail| tail.split("\n      - name:").next())
+            .unwrap_or_else(|| panic!("release step {step_name} exists"));
+        assert!(
+            step.contains("if: github.event_name == 'workflow_dispatch'")
+                && step.contains("version: ${{ env.KEYHOG_ACTION_E2E_VERSION }}"),
+            "release-asset proof must be explicit and may never silently source-build: {step}"
+        );
+    }
+    let clean_source = workflow
+        .split("- name: Invoke root composite from branch/SHA source")
+        .nth(1)
+        .and_then(|tail| tail.split("\n      - name:").next())
+        .expect("clean source step exists");
+    assert!(
+        clean_source.contains("\n          backend: cpu")
+            && !clean_source.contains("\n          preset:")
+            && !clean_source.contains("\n          lockdown:"),
+        "portable source smoke must request CPU explicitly rather than silently treating auto as CPU"
+    );
+    let source_precision = workflow
+        .split("- name: Invoke nested composite with precision finding policy from branch/SHA source")
+        .nth(1)
+        .and_then(|tail| tail.split("\n      - name:").next())
+        .expect("source precision step exists");
+    assert!(
+        source_precision.contains("preset: precision")
+            && source_precision.contains("lockdown: 'false'")
+            && source_precision.contains("\n          backend: cpu"),
+        "portable precision source smoke must select CPU explicitly"
+    );
+    let release_precision = workflow
+        .split("- name: Invoke nested composite with precision finding policy from authenticated release asset")
+        .nth(1)
+        .and_then(|tail| tail.split("\n      - name:").next())
+        .expect("release precision step exists");
+    assert!(
+        release_precision.contains("preset: precision")
+            && release_precision.contains("lockdown: 'false'")
+            && !release_precision.contains("\n          backend:"),
+        "authenticated production binary smoke must prove default proof-backed backend:auto"
+    );
+    for (name, explicit_cpu) in [
+        ("Reject unsupported hosted CPU lockdown from branch/SHA source", true),
+        (
+            "Reject unsupported hosted auto lockdown from authenticated release asset",
+            false,
+        ),
+    ] {
+        let step = workflow
+            .split(&format!("- name: {name}"))
+            .nth(1)
+            .and_then(|tail| tail.split("\n      - name:").next())
+            .expect("lockdown validation step exists");
+        assert!(step.contains("lockdown: 'true'"));
+        assert_eq!(
+            step.contains("\n          backend: cpu"),
+            explicit_cpu,
+            "source lockdown must select CPU explicitly while release proves default auto"
+        );
+    }
+    assert!(
+        !workflow.contains("cargo build"),
+        "workflow must exercise composite install paths rather than inline builds"
+    );
+
+    for contract in [
+        "steps.clean_release.outputs.findings",
+        "steps.clean_source.outputs.findings",
+        "steps.finding_release.outputs.exit-code",
+        "steps.finding_source.outputs.exit-code",
+        "steps.finding_release.outcome",
+        "steps.finding_source.outcome",
+        "steps.lockdown_release.outcome",
+        "steps.lockdown_source.outcome",
+        "command -v keyhog",
+        "compgen -G \"$programs_glob\"",
+        "Download clean report artifact",
+        "Download findings report artifact",
+        "missing-receipt.txt",
+        "missing-report.txt",
+        "tampered-report-receipt.txt",
+        "scan-status=failed",
+        "security-events: write",
+        "cargo test -p keyhog --test action_root_mirror_parity",
+        "cargo test -p keyhog --test e2e_all -- action_",
+        "uses: ./.github/actions/keyhog",
+    ] {
+        assert!(
+            workflow.contains(contract),
+            "hosted Action E2E must execute and assert `{contract}`"
+        );
+    }
+
+    for line in workflow.lines().map(str::trim) {
+        let Some(target) = line.strip_prefix("uses: ") else {
+            continue;
+        };
+        if matches!(target, "./" | "./.github/actions/keyhog") {
+            continue;
+        }
+        let target = target.split_whitespace().next().expect("action target");
+        let (_, revision) = target
+            .rsplit_once('@')
+            .unwrap_or_else(|| panic!("external Action must be SHA-pinned: {target}"));
+        assert!(
+            matches!(revision.len(), 40 | 64)
+                && revision.bytes().all(|byte| byte.is_ascii_hexdigit()),
+            "external Action revision must be a full commit SHA: {target}"
+        );
+    }
+}
+
+/// Regression: a hosted negative lane cannot prove lockdown works. Maintain a
+/// pinned, provisioned container that executes both real composite entrypoints:
+/// source push/PR uses explicit portable CPU, while authenticated release
+/// dispatch uses proof-backed backend:auto.
+#[test]
+fn action_e2e_maintains_provisioned_positive_lockdown_lane() {
+    let workflow =
+        fs::read_to_string(action_e2e_workflow()).expect("read action-e2e workflow");
+    let job = workflow
+        .split("  positive-lockdown:")
+        .nth(1)
+        .and_then(|tail| tail.split("\n  release-asset:").next())
+        .expect("positive-lockdown job exists");
+    for contract in [
+        "image: rust:1.89.0-bookworm@sha256:948f9b08a66e7fe01b03a98ef1c7568292e07ec2e4fe90d88c07bb14563c84ff",
+        "options: --cap-add IPC_LOCK --ulimit memlock=-1:-1",
+        "uses: ./",
+        "uses: ./.github/actions/keyhog",
+        "version: ${{ github.event_name == 'workflow_dispatch' && env.KEYHOG_ACTION_E2E_VERSION || '' }}",
+        "backend: ${{ github.event_name == 'workflow_dispatch' && 'auto' || 'cpu' }}",
+        "lockdown: 'true'",
+        "steps.root_lockdown.outputs.findings",
+        "steps.nested_lockdown.outputs.findings",
+        "[[ \"$ACTION_REPORT_PRESENT\" == \"true\" ]]",
+        "$RUNNER_TEMP/keyhog-autoroute-cache-*",
+        "literal_bins=(\"$RUNNER_TEMP\"/keyhog-action-runtime.*/cache/**/*.bin)",
+        "authenticated-release-auto",
+        "portable-source-cpu",
+        "installed_keyhog=\"$(command -v keyhog)\"",
+        "[[ \"$(keyhog --version)\" == *\"$KEYHOG_ACTION_E2E_VERSION\"* ]]",
+    ] {
+        assert!(
+            job.contains(contract),
+            "positive real-mlock lane must assert `{contract}`"
+        );
+    }
+    assert_eq!(
+        job.matches("lockdown: 'true'").count(),
+        2,
+        "root and nested composites must both execute real positive lockdown"
+    );
+    assert_eq!(
+        job.matches("backend: ${{ github.event_name == 'workflow_dispatch' && 'auto' || 'cpu' }}")
+            .count(),
+        2,
+        "root and nested must select portable source CPU or authenticated release auto explicitly"
+    );
+    assert_eq!(
+        job.matches("ACTION_MODE: ${{ github.event_name == 'workflow_dispatch' && 'authenticated-release-auto' || 'portable-source-cpu' }}")
+            .count(),
+        2,
+        "each invocation must assert its selected install and routing mode"
+    );
+    assert_eq!(
+        job.matches("[[ \"$ACTION_FINDINGS\" == \"0\" ]]").count(),
+        2,
+        "both composite receipts must prove an exact clean finding count"
+    );
+    assert!(
+        !job.contains("sudo") && !job.contains("apt-get") && !job.contains("jq"),
+        "positive lockdown must use immutable provisioned inputs without mutable bootstrap"
+    );
+}
+
+/// Regression: Marketplace examples and hosted release smoke must track the
+/// workspace version so the Action never advertises or tests a stale asset.
+#[test]
+fn action_examples_and_hosted_release_default_follow_workspace_version() {
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let cargo = fs::read_to_string(repo.join("Cargo.toml")).expect("read workspace Cargo.toml");
+    let workspace_package = cargo
+        .split("[workspace.package]")
+        .nth(1)
+        .and_then(|tail| tail.split("\n[").next())
+        .expect("workspace.package section");
+    let version = workspace_package
+        .lines()
+        .find_map(|line| {
+            line.trim()
+                .strip_prefix("version = \"")
+                .and_then(|value| value.strip_suffix('"'))
+        })
+        .expect("workspace package version");
+
+    let workflow =
+        fs::read_to_string(action_e2e_workflow()).expect("read action-e2e workflow");
+    assert!(
+        workflow.contains(&format!("default: '{version}'"))
+            && workflow.contains(&format!("inputs.version || '{version}'")),
+        "hosted release E2E manual and automatic paths must use workspace version {version}"
+    );
+    let action = fs::read_to_string(action_manifest()).expect("read action manifest");
+    assert!(
+        action.contains(&format!("Published final KeyHog version v{version} or newer")),
+        "Action version example must follow workspace version {version}"
+    );
+}
+
 #[test]
 fn root_and_nested_action_entrypoints_differ_only_by_relative_paths() {
     let root =
@@ -884,7 +1347,7 @@ while [[ "$#" -gt 0 ]]; do
   shift || true
 done
 cat > "$out" <<'JSON'
-{"runs":[{"results":[{},{}]}]}
+{"version":"2.1.0","$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1.0/sarif-schema-2.1.0.json","runs":[{"results":[{"ruleId":"one"},{"ruleId":"two"}],"tool":{"driver":{"name":"keyhog"}}}]}
 JSON
 exit 1
 "#,
@@ -916,18 +1379,18 @@ exit 1
     );
 
     let summary = summary_file(&dir);
-    assert!(summary.contains("| Findings | `2` |"), "summary={summary}");
-    assert!(summary.contains("| Exit code | `1` |"), "summary={summary}");
+    assert!(summary.contains("| Findings | <code>2</code> |"), "summary={summary}");
+    assert!(summary.contains("| Exit code | <code>1</code> |"), "summary={summary}");
     assert!(
-        summary.contains("| Duration | `"),
+        summary.contains("| Duration | <code>"),
         "summary must expose scan duration; summary={summary}"
     );
     assert!(
-        summary.contains("| Fail on findings | `true` |"),
+        summary.contains("| Fail on findings | <code>true</code> |"),
         "summary={summary}"
     );
     assert!(
-        summary.contains("| Upload SARIF | `true` |"),
+        summary.contains("| Upload SARIF | <code>true</code> |"),
         "summary={summary}"
     );
 }
@@ -959,7 +1422,7 @@ if [[ "$cmd" != "scan" ]]; then
   exit 42
 fi
 cat > "$out" <<'JSON'
-{"runs":[{"results":[]}]}
+{"version":"2.1.0","$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1.0/sarif-schema-2.1.0.json","runs":[{"results":[],"tool":{"driver":{"name":"keyhog"}}}]}
 JSON
 exit 0
 "#,
@@ -994,7 +1457,7 @@ exit 0
 }
 
 #[test]
-fn action_effective_config_preflight_is_advisory_and_never_verifies() {
+fn action_effective_config_preflight_reflects_verification_and_backend_inputs() {
     let dir = TempDir::new().expect("tempdir");
     let calls = dir.path().join("calls.txt");
     write_stub(
@@ -1004,6 +1467,7 @@ set -euo pipefail
 cmd="${1:-}"
 out=""
 has_verify=false
+backend=""
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
     --output)
@@ -1013,15 +1477,15 @@ while [[ "$#" -gt 0 ]]; do
     --verify)
       has_verify=true
       ;;
+    --backend)
+      shift
+      backend="$1"
+      ;;
   esac
   shift || true
 done
-printf '%s verify=%s\n' "$cmd" "$has_verify" >> "$CALLS_FILE"
+printf '%s verify=%s backend=%s\n' "$cmd" "$has_verify" "$backend" >> "$CALLS_FILE"
 if [[ "$cmd" == "config" ]]; then
-  if [[ "$has_verify" == "true" ]]; then
-    echo "preflight must not run live verification" >&2
-    exit 43
-  fi
   echo "config preflight failed" >&2
   exit 1
 fi
@@ -1029,12 +1493,12 @@ if [[ "$cmd" != "scan" ]]; then
   echo "expected scan command after preflight, got $cmd" >&2
   exit 42
 fi
-if [[ "$has_verify" != "true" ]]; then
-  echo "real scan must preserve --verify" >&2
+if [[ "$has_verify" != "true" || "$backend" != "cpu" ]]; then
+  echo "real scan must preserve --verify and --backend cpu" >&2
   exit 44
 fi
 cat > "$out" <<'JSON'
-{"runs":[{"results":[]}]}
+{"version":"2.1.0","$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1.0/sarif-schema-2.1.0.json","runs":[{"results":[],"tool":{"driver":{"name":"keyhog"}}}]}
 JSON
 exit 0
 "#,
@@ -1047,6 +1511,7 @@ exit 0
         &[
             ("CALLS_FILE", calls_path.as_str()),
             ("ACTION_INPUT_VERIFY", "true"),
+            ("ACTION_INPUT_BACKEND", "cpu"),
         ],
     );
     let combined = combined_output(&output);
@@ -1062,12 +1527,334 @@ exit 0
     );
     assert_eq!(
         fs::read_to_string(&calls).expect("read calls"),
-        "config verify=false\nscan verify=true\n",
-        "preflight must skip --verify, while the real scan preserves it"
+        "config verify=true backend=cpu\nscan verify=true backend=cpu\n",
+        "`config --effective` and `scan` must receive the same verification and backend policy"
     );
     assert!(
         output_file(&dir).contains("findings=0"),
         "real scan report must still be parsed after advisory preflight"
+    );
+}
+
+/// Regression: Action `verify: false` was once only a default and committed
+/// `verify=true` could re-enable live provider network calls in both CLI phases.
+#[test]
+fn action_verify_false_forces_no_verify_in_preflight_and_scan() {
+    let dir = TempDir::new().expect("tempdir");
+    let calls = dir.path().join("calls.txt");
+    write_stub(
+        &dir,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+cmd="${1:-}"
+out=""
+has_verify=false
+has_no_verify=false
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --output) shift; out="$1" ;;
+    --verify) has_verify=true ;;
+    --no-verify) has_no_verify=true ;;
+  esac
+  shift || true
+done
+printf '%s verify=%s no-verify=%s\n' "$cmd" "$has_verify" "$has_no_verify" >> "$CALLS_FILE"
+if [[ "$cmd" == "config" ]]; then
+  printf '[effective-config]\nverify = false\n'
+  exit 0
+fi
+printf '{"version":"2.1.0","$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1.0/sarif-schema-2.1.0.json","runs":[{"results":[],"tool":{"driver":{"name":"keyhog"}}}]}\n' > "$out"
+"#,
+    );
+    fs::write(dir.path().join(".keyhog.toml"), "verify = true\n")
+        .expect("write committed verify policy");
+
+    let calls_path = calls.to_string_lossy().into_owned();
+    let output = run_action_with_script_args(
+        &dir,
+        &["--print-effective-config"],
+        &[
+            ("CALLS_FILE", calls_path.as_str()),
+            ("ACTION_INPUT_VERIFY", "false"),
+        ],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "verify=false must remain report-producing and offline: {}",
+        combined_output(&output)
+    );
+    assert_eq!(
+        fs::read_to_string(&calls).expect("read calls"),
+        "config verify=false no-verify=true\nscan verify=false no-verify=true\n",
+        "Action false must explicitly override committed verification in both invocations"
+    );
+}
+
+/// Regression: preset and lockdown inputs were documented but not forwarded
+/// consistently to effective-config preflight and the real scan.
+#[test]
+fn action_composes_presets_and_lockdown_for_preflight_and_scan() {
+    const POLICY_FLAGS: [&str; 4] = ["--fast", "--deep", "--precision", "--lockdown"];
+
+    for (preset, lockdown, expected_flags) in [
+        ("default", "false", Vec::<&str>::new()),
+        ("fast", "false", vec!["--fast"]),
+        ("deep", "true", vec!["--deep", "--lockdown"]),
+        ("precision", "true", vec!["--precision", "--lockdown"]),
+        ("fast", "true", vec!["--fast", "--lockdown"]),
+    ] {
+        let dir = TempDir::new().expect("tempdir");
+        let calls = dir.path().join("calls.txt");
+        write_stub(
+            &dir,
+            r#"#!/usr/bin/env bash
+set -euo pipefail
+cmd="${1:-}"
+printf '%s' "$cmd" >> "$CALLS_FILE"
+for arg in "${@:2}"; do
+  printf '|%s' "$arg" >> "$CALLS_FILE"
+done
+printf '\n' >> "$CALLS_FILE"
+if [[ "$cmd" == "config" ]]; then
+  printf '[effective-config]\n'
+  exit 0
+fi
+out=''
+while [[ "$#" -gt 0 ]]; do
+  if [[ "$1" == '--output' ]]; then
+    shift
+    out="$1"
+  fi
+  shift || true
+done
+printf '{"version":"2.1.0","$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1.0/sarif-schema-2.1.0.json","runs":[{"results":[],"tool":{"driver":{"name":"keyhog"}}}]}\n' > "$out"
+"#,
+        );
+
+        let calls_path = calls.to_string_lossy().into_owned();
+        let output = run_action_with_script_args(
+            &dir,
+            &["--print-effective-config"],
+            &[
+                ("CALLS_FILE", calls_path.as_str()),
+                ("ACTION_INPUT_PRESET", preset),
+                ("ACTION_INPUT_LOCKDOWN", lockdown),
+            ],
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "preset={preset} lockdown={lockdown} must complete both invocations: {}",
+            combined_output(&output)
+        );
+
+        let calls = fs::read_to_string(&calls).expect("read policy calls");
+        let calls = calls.lines().collect::<Vec<_>>();
+        assert_eq!(
+            calls.len(),
+            2,
+            "preset={preset} lockdown={lockdown} must run config then scan"
+        );
+        assert!(
+            calls[0].starts_with("config|--effective|"),
+            "policy preflight invocation missing: {}",
+            calls[0]
+        );
+        assert!(
+            calls[1].starts_with("scan|"),
+            "policy scan invocation missing: {}",
+            calls[1]
+        );
+        for call in calls {
+            let selected = call
+                .split('|')
+                .filter(|arg| POLICY_FLAGS.contains(arg))
+                .collect::<Vec<_>>();
+            assert_eq!(
+                selected, expected_flags,
+                "preset={preset} lockdown={lockdown} must preserve orthogonal CLI flags in `{call}`"
+            );
+        }
+    }
+}
+
+/// Regression: preset and lockdown forwarding must compose in the production
+/// CLI rather than only appearing correct under argument-recording stubs.
+#[test]
+fn action_real_cli_preserves_preset_lockdown_composition() {
+    let binary = keyhog_binary();
+
+    for preset in ["deep", "precision", "fast"] {
+        let dir = TempDir::new().expect("tempdir");
+        fs::write(dir.path().join("safe.txt"), "ordinary fixture content\n")
+            .expect("write safe fixture");
+        let output = Command::new(&binary)
+            .args([
+                "config",
+                "--effective",
+                "--backend",
+                "cpu",
+                "--path",
+                ".",
+                "--severity",
+                "high",
+                "--format",
+                "json",
+            ])
+            .arg(format!("--{preset}"))
+            .arg("--lockdown")
+            .current_dir(dir.path())
+            .env("XDG_CACHE_HOME", dir.path().join("cache"))
+            .output()
+            .expect("run real effective-config command");
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "the real CLI must decide preset={preset} + lockdown composition without wrapper overrides: {}",
+            combined_output(&output)
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains("lockdown = true"),
+            "effective config must reflect lockdown for preset={preset}"
+        );
+    }
+}
+
+/// Regression: `backend:auto + lockdown:true` must either reuse one ephemeral
+/// routing receipt or fail closed when the host cannot apply memory protections.
+#[test]
+fn action_real_cli_lockdown_auto_reuses_receipt_or_fails_closed() {
+    let binary = keyhog_binary();
+    let dir = TempDir::new().expect("tempdir");
+    fs::write(dir.path().join("safe.txt"), "ordinary fixture content\n")
+        .expect("write safe fixture");
+    let route_cache = dir.path().join("autoroute.json");
+    let probe = dir.path().join("probe.json");
+    let report = dir.path().join("report.json");
+    let cache_home = dir.path().join("cache");
+
+    let calibration = Command::new(&binary)
+        .args([
+            "scan",
+            "--autoroute-calibrate",
+            "--autoroute-gpu",
+            "--no-verify",
+            "--lockdown",
+            "--autoroute-cache",
+        ])
+        .arg(&route_cache)
+        .args(["--path", ".", "--format", "json", "--output"])
+        .arg(&probe)
+        .current_dir(dir.path())
+        .env("XDG_CACHE_HOME", &cache_home)
+        .output()
+        .expect("run production calibration");
+    if !calibration.status.success() {
+        assert_eq!(
+            calibration.status.code(),
+            Some(2),
+            "unsupported lockdown capability must be a configuration failure"
+        );
+        assert!(
+            combined_output(&calibration)
+                .contains("lockdown mode requested but protections failed to apply"),
+            "production CLI must explain the failed lockdown guarantee: {}",
+            combined_output(&calibration)
+        );
+        return;
+    }
+    assert!(
+        route_cache.is_file() && fs::metadata(&route_cache).expect("route metadata").len() > 0,
+        "calibration must publish a nonempty ephemeral routing receipt"
+    );
+
+    let scan = Command::new(&binary)
+        .args([
+            "scan",
+            "--no-verify",
+            "--lockdown",
+            "--autoroute-cache",
+        ])
+        .arg(&route_cache)
+        .args(["--path", ".", "--format", "json", "--output"])
+        .arg(&report)
+        .current_dir(dir.path())
+        .env("XDG_CACHE_HOME", &cache_home)
+        .output()
+        .expect("run production scan with calibration receipt");
+    assert_eq!(
+        scan.status.code(),
+        Some(0),
+        "production auto scan must consume the lockdown calibration receipt: {}",
+        combined_output(&scan)
+    );
+    assert!(report.is_file(), "production scan must publish its report");
+    fs::remove_file(&route_cache).expect("delete ephemeral routing receipt");
+    assert!(
+        !route_cache.exists(),
+        "Action cleanup contract requires the routing receipt to be deletable"
+    );
+}
+
+/// Regression: the Action must preserve CLI-over-config precedence for an
+/// explicit preset instead of inventing a second conflict policy.
+#[test]
+fn action_defers_committed_preset_conflicts_to_cli_precedence() {
+    let dir = TempDir::new().expect("tempdir");
+    fs::write(
+        dir.path().join(".keyhog.toml"),
+        "fast = true\nprecision = true\n",
+    )
+    .expect("write conflicting committed config");
+    let binary = keyhog_binary();
+    let binary_dir = binary
+        .parent()
+        .expect("binary parent")
+        .to_str()
+        .expect("utf-8 binary dir");
+    let cache = dir.path().join("cache");
+    let cache = cache.to_string_lossy().into_owned();
+
+    let unresolved = run_action_with_script_args_and_path_prefix(
+        &dir,
+        &["--print-effective-config"],
+        binary_dir,
+        &[
+            ("ACTION_INPUT_FORMAT", "json"),
+            ("ACTION_INPUT_OUTPUT", "unresolved.json"),
+            ("ACTION_INPUT_BACKEND", "cpu"),
+            ("XDG_CACHE_HOME", cache.as_str()),
+        ],
+    );
+    assert_eq!(
+        unresolved.status.code(),
+        Some(2),
+        "default preset must not hide a committed preset conflict: {}",
+        combined_output(&unresolved)
+    );
+    assert!(
+        combined_output(&unresolved).contains("choose only one scan preset"),
+        "the CLI's committed-config conflict diagnostic must remain visible"
+    );
+
+    let explicit = run_action_with_script_args_and_path_prefix(
+        &dir,
+        &["--print-effective-config"],
+        binary_dir,
+        &[
+            ("ACTION_INPUT_FORMAT", "json"),
+            ("ACTION_INPUT_OUTPUT", "explicit.json"),
+            ("ACTION_INPUT_BACKEND", "cpu"),
+            ("ACTION_INPUT_PRESET", "deep"),
+            ("XDG_CACHE_HOME", cache.as_str()),
+        ],
+    );
+    assert_eq!(
+        explicit.status.code(),
+        Some(0),
+        "an explicit CLI preset must retain its existing precedence over committed preset keys: {}",
+        combined_output(&explicit)
     );
 }
 
@@ -1149,6 +1936,8 @@ exit 1
     );
 }
 
+/// Regression: malformed reports accompanying a findings exit once fabricated
+/// findings=1; unreadable evidence must instead fail with an unavailable count.
 #[test]
 fn action_rejects_malformed_findings_report_even_when_findings_are_advisory() {
     let dir = TempDir::new().expect("tempdir");
@@ -1177,8 +1966,8 @@ exit 1
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        output_file(&dir).contains("findings=1"),
-        "parse failure after findings exit must not become zero findings"
+        output_file(&dir).contains("findings=\n"),
+        "parse failure after findings exit must publish an unavailable count"
     );
     assert!(
         output_file(&dir).contains("scan-status=failed\n"),
@@ -1186,8 +1975,10 @@ exit 1
     );
 }
 
+/// Regression: a live-verification exit with an unreadable report must not be
+/// treated as proven live evidence or assigned a fabricated finding count.
 #[test]
-fn action_treats_live_malformed_report_as_at_least_one_finding() {
+fn action_rejects_live_exit_with_malformed_report() {
     let dir = TempDir::new().expect("tempdir");
     write_stub(
         &dir,
@@ -1209,30 +2000,37 @@ exit 10
     let output = run_action(&dir, &[]);
     assert_eq!(
         output.status.code(),
-        Some(10),
-        "malformed live report must preserve the live-credential failure; output={}",
+        Some(3),
+        "malformed live report must fail report validation; output={}",
         combined_output(&output)
     );
     assert!(
-        output_file(&dir).contains("findings=1"),
-        "parse failure after live exit must not become zero findings"
+        output_file(&dir).contains("findings=\n"),
+        "parse failure after live exit must publish an unavailable count"
     );
     assert!(
         output_file(&dir).contains("scan-status=failed\n"),
         "malformed live reports must publish a failed completion state"
     );
     assert!(
-        combined_output(&output).contains("LIVE credential(s) confirmed by --verify (exit 10)."),
-        "live verification exit must remain operator-visible"
+        combined_output(&output).contains("refusing to infer a finding count from exit 10"),
+        "invalid live evidence must be operator-visible without claiming confirmation"
     );
 }
 
+/// Regression: wrapper receipts once trusted either process exit or report
+/// count independently, allowing contradictory clean/findings states to pass.
 #[test]
-fn action_rejects_malformed_clean_report() {
-    let dir = TempDir::new().expect("tempdir");
-    write_stub(
-        &dir,
-        r#"#!/usr/bin/env bash
+fn action_rejects_source_receipt_semantic_contradictions() {
+    for (exit_code, report_has_finding, label) in [
+        ("1", false, "findings exit with empty report"),
+        ("10", false, "live exit with empty report"),
+        ("0", true, "clean exit with nonempty report"),
+    ] {
+        let dir = TempDir::new().expect("tempdir");
+        write_stub(
+            &dir,
+            r#"#!/usr/bin/env bash
 set -euo pipefail
 out=""
 while [[ "$#" -gt 0 ]]; do
@@ -1242,53 +2040,75 @@ while [[ "$#" -gt 0 ]]; do
   fi
   shift || true
 done
-printf '{not-json\n' > "$out"
-exit 0
+if [[ "$STUB_REPORT_HAS_FINDING" == "true" ]]; then
+  printf '{"version":"2.1.0","$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1.0/sarif-schema-2.1.0.json","runs":[{"results":[{"ruleId":"detector"}],"tool":{"driver":{"name":"keyhog"}}}]}' > "$out"
+else
+  printf '{"version":"2.1.0","$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1.0/sarif-schema-2.1.0.json","runs":[{"results":[],"tool":{"driver":{"name":"keyhog"}}}]}' > "$out"
+fi
+exit "$STUB_EXIT"
 "#,
-    );
-
-    let output = run_action(&dir, &[]);
-    assert_eq!(
-        output.status.code(),
-        Some(3),
-        "malformed clean report must fail closed; stderr={}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+        );
+        let output = run_action(
+            &dir,
+            &[
+                ("ACTION_INPUT_FAIL_ON_FINDINGS", "false"),
+                ("STUB_EXIT", exit_code),
+                (
+                    "STUB_REPORT_HAS_FINDING",
+                    if report_has_finding { "true" } else { "false" },
+                ),
+            ],
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(3),
+            "{label} must fail closed even when findings are advisory: {}",
+            combined_output(&output)
+        );
+        assert!(
+            combined_output(&output).contains("Could not verify scan report receipt"),
+            "{label} must reject a source receipt contradiction: {}",
+            combined_output(&output)
+        );
+        assert!(
+            output_file(&dir).contains("scan-status=failed\n"),
+            "{label} must publish a failed receipt"
+        );
+    }
 }
 
+/// Regression: report bytes replaced after KeyHog emits its valid source
+/// receipt must fail exact-byte verification without fabricating a clean count.
 #[test]
-fn action_rejects_object_shaped_clean_json_report() {
-    let dir = TempDir::new().expect("tempdir");
+fn action_rejects_report_bytes_changed_after_source_receipt() {
+    let dir = TempDir::new().expect("report tamper tempdir");
     write_stub(
         &dir,
         r#"#!/usr/bin/env bash
 set -euo pipefail
 out=""
 while [[ "$#" -gt 0 ]]; do
-  if [[ "$1" == "--output" ]]; then
-    shift
-    out="$1"
-  fi
+  if [[ "$1" == "--output" ]]; then shift; out="$1"; fi
   shift || true
 done
-printf '{"findings":[{"detector_id":"one"}]}\n' > "$out"
-exit 0
+printf '[]\n' > "$out"
 "#,
     );
-
     let output = run_action(
         &dir,
         &[
             ("ACTION_INPUT_FORMAT", "json"),
             ("ACTION_INPUT_OUTPUT", "keyhog-results.json"),
+            ("KEYHOG_TEST_TAMPER_REPORT_AFTER_RECEIPT", "true"),
         ],
     );
-    assert_eq!(
-        output.status.code(),
-        Some(3),
-        "object-shaped clean json report must fail closed; output={}",
+    assert_eq!(output.status.code(), Some(3), "tampered report must fail closed");
+    assert!(
+        combined_output(&output).contains("Could not verify scan report receipt"),
+        "exact-byte verification failure must be operator-visible: {}",
         combined_output(&output)
     );
+    assert!(output_file(&dir).contains("findings=\n"));
 }
 
 #[test]
@@ -1373,6 +2193,69 @@ exit 0
     );
 }
 
+/// Regression: a stale valid report once let a scanner that wrote nothing
+/// publish success, so the wrapper must remove prior output before invocation.
+#[test]
+fn action_never_accepts_a_stale_report_as_current_scan_output() {
+    let dir = TempDir::new().expect("tempdir");
+    fs::write(
+        dir.path().join("keyhog-results.sarif"),
+        r#"{"runs":[{"results":[]}]}"#,
+    )
+    .expect("seed stale report");
+    write_stub(&dir, "#!/usr/bin/env bash\nexit 0\n");
+
+    let output = run_action(&dir, &[]);
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "a scanner that publishes no report must fail despite stale valid output: {}",
+        combined_output(&output)
+    );
+    assert!(
+        !dir.path().join("keyhog-results.sarif").exists(),
+        "stale report must be removed before the scanner starts"
+    );
+    assert!(
+        output_file(&dir).contains("report-present=false\n"),
+        "receipt must describe the current invocation only"
+    );
+}
+
+/// Regression: report writers followed a workspace-owned output symlink and
+/// could overwrite an unrelated victim before the Action uploaded the result.
+#[cfg(unix)]
+#[test]
+fn action_refuses_symlink_report_output_before_invoking_scanner() {
+    let dir = TempDir::new().expect("tempdir");
+    let victim = dir.path().join("victim");
+    fs::write(&victim, "unchanged").expect("write victim");
+    std::os::unix::fs::symlink(&victim, dir.path().join("keyhog-results.sarif"))
+        .expect("seed report symlink");
+    let invoked = dir.path().join("invoked");
+    write_stub(
+        &dir,
+        &format!(
+            "#!/usr/bin/env bash\nprintf invoked > '{}'\nexit 0\n",
+            invoked.display()
+        ),
+    );
+
+    let output = run_action(&dir, &[]);
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "symlink output must fail before scanning: {}",
+        combined_output(&output)
+    );
+    assert!(!invoked.exists(), "scanner must not run for a symlink report");
+    assert_eq!(
+        fs::read_to_string(victim).expect("read victim"),
+        "unchanged",
+        "report preparation must not follow the symlink"
+    );
+}
+
 #[test]
 fn action_publishes_receipt_before_invalid_config_exit() {
     let dir = TempDir::new().expect("tempdir");
@@ -1408,12 +2291,14 @@ fn action_publishes_receipt_before_invalid_config_exit() {
     );
     let summary = summary_file(&dir);
     assert!(
-        summary.contains("| Completion status | `failed` |")
-            && summary.contains("| Report present | `false` |"),
+        summary.contains("| Completion status | <code>failed</code> |")
+            && summary.contains("| Report present | <code>false</code> |"),
         "failure summary must retain typed state and report presence; summary={summary}"
     );
 }
 
+/// Regression: unexpected exit 13 once published findings=0 before parsing a
+/// valid partial report, hiding findings produced before incomplete coverage.
 #[test]
 fn action_publishes_partial_receipt_before_incomplete_coverage_exit() {
     let dir = TempDir::new().expect("tempdir");
@@ -1429,7 +2314,7 @@ while [[ "$#" -gt 0 ]]; do
   fi
   shift || true
 done
-printf '{"runs":[{"results":[]}]}' > "$out"
+printf '{"version":"2.1.0","$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1.0/sarif-schema-2.1.0.json","runs":[{"results":[{"ruleId":"partial"}],"tool":{"driver":{"name":"keyhog"}}}]}' > "$out"
 exit 13
 "#,
     );
@@ -1447,17 +2332,132 @@ exit 13
         "incomplete coverage must publish raw code and partial state; receipt={receipt}"
     );
     assert!(
+        receipt.contains("findings=1\n"),
+        "partial reports must publish their readable finding count; receipt={receipt}"
+    );
+    assert!(
         receipt.contains("report-present=true\n"),
         "incomplete coverage with a report must publish report presence; receipt={receipt}"
     );
     let summary = summary_file(&dir);
     assert!(
-        summary.contains("| Completion status | `partial` |")
-            && summary.contains("| Exit code | `13` |"),
+        summary.contains("| Completion status | <code>partial</code> |")
+            && summary.contains("| Exit code | <code>13</code> |"),
         "incomplete coverage summary must distinguish the partial terminal class; summary={summary}"
     );
 }
 
+/// Regression: exit 13 is partial only when KeyHog's final source receipt
+/// verifies; an untrusted receipt preserves the raw exit but publishes failure.
+#[test]
+fn action_rejects_untrusted_partial_receipt_without_inventing_count() {
+    let dir = TempDir::new().expect("untrusted partial tempdir");
+    write_stub(
+        &dir,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ "$#" -gt 0 ]]; do
+  if [[ "$1" == "--output" ]]; then shift; out="$1"; fi
+  shift || true
+done
+printf '[]\n' > "$out"
+exit 13
+"#,
+    );
+    let output = run_action(
+        &dir,
+        &[
+            ("ACTION_INPUT_FORMAT", "json"),
+            ("ACTION_INPUT_OUTPUT", "partial.json"),
+            ("KEYHOG_TEST_TAMPER_RECEIPT", "uppercase-sha"),
+        ],
+    );
+    assert_eq!(output.status.code(), Some(13), "raw partial exit is preserved");
+    let receipt = output_file(&dir);
+    assert!(
+        receipt.contains("findings=\n")
+            && receipt.contains("exit-code=13\n")
+            && receipt.contains("scan-status=failed\n"),
+        "untrusted partial source receipt must fail closed: {receipt}"
+    );
+    let runner_temp = dir.path().join("runner-temp");
+    assert!(
+        fs::read_dir(runner_temp)
+            .expect("read runner temp")
+            .all(|entry| !entry
+                .expect("runner temp entry")
+                .file_name()
+                .to_string_lossy()
+                .starts_with("keyhog-action-report-")),
+        "untrusted partial receipt must be cleaned only while unchanged"
+    );
+}
+
+/// Regression: cancellation exit 130 has no completed source receipt, so the
+/// count stays unavailable while cancellation state and cleanup remain truthful.
+#[test]
+fn action_cancellation_publishes_receipt_and_cleans_autoroute_cache() {
+    let dir = TempDir::new().expect("tempdir");
+    let runner_temp = dir.path().join("runner-temp");
+    fs::create_dir(&runner_temp).expect("runner temp");
+    let route_cache = runner_temp.join("route.json");
+    fs::write(&route_cache, r#"{"schema_version":1}"#).expect("seed route cache");
+    let route_lock = runner_temp.join("route.json.lock");
+    fs::write(&route_lock, "owned lock").expect("seed route lock");
+    write_stub(
+        &dir,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ "$#" -gt 0 ]]; do
+  if [[ "$1" == "--output" ]]; then shift; out="$1"; fi
+  shift || true
+done
+printf '{"version":"2.1.0","$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1.0/sarif-schema-2.1.0.json","runs":[{"results":[{"ruleId":"before-cancel"}],"tool":{"driver":{"name":"keyhog"}}}]}' > "$out"
+exit 130
+"#,
+    );
+    let route = route_cache.to_string_lossy().into_owned();
+    let runner_temp_value = runner_temp.to_string_lossy().into_owned();
+    let output = run_action_with_script_args(
+        &dir,
+        &["--autoroute-cache", route.as_str(), "--cleanup-autoroute-cache"],
+        &[("RUNNER_TEMP", runner_temp_value.as_str())],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(130),
+        "cancellation must preserve the scanner exit code: {}",
+        combined_output(&output)
+    );
+    let receipt = output_file(&dir);
+    assert!(
+        receipt.contains("findings=\n")
+            && receipt.contains("exit-code=130\n")
+            && receipt.contains("scan-status=cancelled\n")
+            && receipt.contains("report-present=false\n")
+            && receipt.contains("report=\n"),
+        "cancellation must not publish an unverified report snapshot: {receipt}"
+    );
+    assert!(
+        !route_cache.exists() && !route_lock.exists(),
+        "cancellation must delete the ephemeral autoroute receipt and lock"
+    );
+    assert!(
+        fs::read_dir(&runner_temp)
+            .expect("read runner temp")
+            .all(|entry| !entry
+                .expect("runner temp entry")
+                .file_name()
+                .to_string_lossy()
+                .starts_with("keyhog-action-report-")),
+        "cancellation must not leave an incomplete source receipt"
+    );
+}
+
+/// Regression: unexpected scanner failures must publish a typed failed receipt
+/// and never be mislabeled as successful findings completion.
 #[test]
 fn action_publishes_failure_receipt_before_internal_scanner_exit() {
     let dir = TempDir::new().expect("tempdir");
@@ -1479,8 +2479,8 @@ fn action_publishes_failure_receipt_before_internal_scanner_exit() {
     );
     let summary = summary_file(&dir);
     assert!(
-        summary.contains("| Completion status | `failed` |")
-            && summary.contains("| Exit code | `11` |"),
+        summary.contains("| Completion status | <code>failed</code> |")
+            && summary.contains("| Exit code | <code>11</code> |"),
         "internal scanner failure summary must retain the panic exit class; summary={summary}"
     );
 }
@@ -1514,8 +2514,10 @@ exit 0
     );
 }
 
+/// Regression: invalid authoritative Action policy values must fail before any
+/// scanner invocation so malformed inputs cannot fall through to defaults.
 #[test]
-fn action_validates_severity_and_verify_before_invoking_scanner() {
+fn action_validates_severity_verify_preset_and_lockdown_before_invoking_scanner() {
     let dir = TempDir::new().expect("tempdir");
     let invoked = dir.path().join("invoked");
     write_stub(
@@ -1533,6 +2535,8 @@ exit 0
     for (key, value) in [
         ("ACTION_INPUT_SEVERITY", "emergency"),
         ("ACTION_INPUT_VERIFY", "yes"),
+        ("ACTION_INPUT_PRESET", "turbo"),
+        ("ACTION_INPUT_LOCKDOWN", "sometimes"),
     ] {
         let output = run_action(&dir, &[(key, value)]);
         assert_eq!(
@@ -1756,6 +2760,15 @@ fn composite_action_passes_policy_inputs_to_scanner_script() {
     assert!(
         manifest.contains("--upload-sarif \"$ACTION_UPLOAD_SARIF\""),
         "upload-sarif must reach the tested script through argv"
+    );
+    assert!(
+        manifest.contains("ACTION_PRESET: ${{ inputs.preset }}")
+            && manifest.contains("ACTION_LOCKDOWN: ${{ inputs.lockdown }}")
+            && manifest.contains("--preset \"$ACTION_PRESET\"")
+            && manifest.contains("--lockdown \"$ACTION_LOCKDOWN\"")
+            && manifest.contains("description: 'Scan preset: default | fast | deep | precision.'")
+            && manifest.contains("default: 'false'"),
+        "orthogonal preset and lockdown inputs must reach the tested script through argv"
     );
 }
 
@@ -2130,6 +3143,10 @@ fn composite_action_fail_step_waits_for_scan_outputs() {
         "a tolerated runner failure must be restored after report uploads"
     );
     assert!(
+        fail_step.contains("steps.scan.outcome == 'failure'"),
+        "malformed or missing scan-step outputs must fail closed even when runner-exit-code is unavailable"
+    );
+    assert!(
         fail_step.contains("ACTION_RUNNER_EXIT_CODE: ${{ steps.scan.outputs.runner-exit-code }}"),
         "the final gate must receive the exact standalone runner status"
     );
@@ -2329,12 +3346,14 @@ fn composite_action_version_output_is_validated_before_github_output() {
     );
 }
 
+/// Regression: explicit Action versions once accepted old binaries and
+/// noncanonical SemVer spellings that could resolve ambiguous release assets.
 #[test]
-fn composite_action_version_resolver_matches_publishable_tag_forms() {
+fn composite_action_version_resolver_accepts_only_compatible_publishable_tags() {
     for (input, expected) in [
-        ("0.5.41", "0.5.41"),
-        ("v0.5.41", "0.5.41"),
-        ("0.5.41-rc.1", "0.5.41-rc.1"),
+        ("0.5.48", "0.5.48"),
+        ("v0.5.48", "0.5.48"),
+        ("1.0.0", "1.0.0"),
     ] {
         let dir = TempDir::new().expect("version output tempdir");
         let output_path = dir.path().join("github-output.txt");
@@ -2360,7 +3379,7 @@ fn composite_action_version_resolver_matches_publishable_tag_forms() {
         );
     }
 
-    for rejected in ["0.5.41+build.7", "0.5.41-", "0.5", "main\nversion=owned"] {
+    for rejected in ["0.5.47", "0.5.48-rc.1", "0.5.49-rc.1", "0.5.48+build.7", "0.5.48-", "0.5", "00.5.48", "0.5.49-rc..1", "0.5.49-rc.", "main\nversion=owned"] {
         let dir = TempDir::new().expect("version output tempdir");
         let output_path = dir.path().join("github-output.txt");
         let output = run_manifest_bash_step(
@@ -2378,6 +3397,12 @@ fn composite_action_version_resolver_matches_publishable_tag_forms() {
             Some(2),
             "unpublishable version {rejected:?} must fail"
         );
+        if matches!(rejected, "0.5.47" | "0.5.48-rc.1" | "0.5.49-rc.1") {
+            assert!(
+                combined_output(&output).contains("older than final v0.5.48"),
+                "incompatible binary must fail with an actionable final minimum-version diagnostic"
+            );
+        }
         assert!(
             !output_path.exists()
                 || fs::read_to_string(&output_path)
@@ -2425,6 +3450,73 @@ fn composite_action_floating_major_ref_resolves_exact_signed_release() {
     );
 }
 
+/// Regression: portable source refs must reject default/auto at the resolver
+/// boundary rather than failing indirectly in autoroute calibration.
+#[test]
+fn composite_action_version_resolver_enforces_source_cpu_boundary() {
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("repo root");
+    for backend in ["", "auto"] {
+        let dir = TempDir::new().expect("source boundary tempdir");
+        let output_path = dir.path().join("output");
+        let output = run_manifest_bash_step(
+            "Resolve KeyHog version",
+            &[
+                ("ACTION_VERSION", ""),
+                ("GITHUB_ACTION_REF", "main"),
+                ("ACTION_BACKEND", backend),
+                ("ACTION_SOURCE_ROOT", repo.to_str().expect("repo")),
+                ("GITHUB_OUTPUT", output_path.to_str().expect("output")),
+            ],
+        );
+        assert_eq!(output.status.code(), Some(2), "source backend {backend:?}");
+        assert!(combined_output(&output).contains("require backend: cpu"));
+        assert!(!output_path.exists() || fs::read(&output_path).expect("output").is_empty());
+    }
+    let source_dir = TempDir::new().expect("source CPU tempdir");
+    let source_output = source_dir.path().join("output");
+    let source = run_manifest_bash_step(
+        "Resolve KeyHog version",
+        &[
+            ("ACTION_VERSION", ""),
+            ("GITHUB_ACTION_REF", "main"),
+            ("ACTION_BACKEND", "cpu"),
+            ("ACTION_SOURCE_ROOT", repo.to_str().expect("repo")),
+            ("GITHUB_OUTPUT", source_output.to_str().expect("output")),
+        ],
+    );
+    assert!(source.status.success(), "explicit source CPU: {}", combined_output(&source));
+    assert!(fs::read_to_string(source_output)
+        .expect("source output")
+        .contains("release_required=false"));
+    for backend in ["", "auto"] {
+        let dir = TempDir::new().expect("release boundary tempdir");
+        let output_path = dir.path().join("output");
+        let release = run_manifest_bash_step(
+            "Resolve KeyHog version",
+            &[
+                ("ACTION_VERSION", "0.5.48"),
+                ("ACTION_BACKEND", backend),
+                ("GITHUB_OUTPUT", output_path.to_str().expect("output")),
+            ],
+        );
+        assert!(release.status.success(), "release backend {backend:?}");
+        assert!(fs::read_to_string(output_path)
+            .expect("release output")
+            .contains("release_required=true"));
+    }
+    for manifest_path in [
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../action.yml"),
+        action_manifest(),
+    ] {
+        let manifest = fs::read_to_string(manifest_path).expect("manifest");
+        assert!(manifest.contains("ACTION_BACKEND: ${{ inputs.backend }}"));
+        assert!(manifest.contains("Portable branch and commit source refs require backend: cpu"));
+    }
+}
+
 #[test]
 fn composite_action_error_commands_do_not_reflect_untrusted_env_values() {
     let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
@@ -2438,20 +3530,31 @@ fn composite_action_error_commands_do_not_reflect_untrusted_env_values() {
     );
 }
 
+/// Regression: Action release bootstrap once trusted floating package-manager
+/// state, so this locks the verifier archive hashes, exact source toolchain,
+/// portable source profile, and HTTPS-only authenticated release downloads.
 #[test]
-fn composite_action_verifies_downloaded_release_asset() {
+fn composite_action_pins_release_verifier_and_source_dependencies() {
     let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
     assert!(
-        manifest.contains("Install release runtime and verifier (Linux prebuilt)"),
-        "Linux release binary path must install its runtime and signature verifier"
+        manifest.contains("- name: Install pinned release verifier")
+            && manifest.contains("verifier_version=\"0.11\"")
+            && manifest.contains("f0a0954413df8531befed169e447a66da6868d79052ed7e892e50a4291af7ae0")
+            && manifest.contains("e7c410ae8b8960d7087392472b040bda9b2f307c76df0384ac37f9ad103fc893")
+            && manifest.contains("b9c31c2c3034f81f0e5f5d92cbcc20e67a9671b6e5455661588638848dc58031"),
+        "every supported runner must use an exact byte-authenticated minisign archive"
     );
     assert!(
-        manifest.contains("libhyperscan5") && manifest.contains("minisign"),
-        "Linux prebuilt path must install libhyperscan5 and minisign before executing the release asset"
+        manifest.contains("toolchain: '1.89.0'")
+            && manifest.contains("--no-default-features --features portable")
+            && !manifest.contains("apt-get")
+            && !manifest.contains("brew install")
+            && !manifest.contains("choco install"),
+        "source fallback must not depend on floating toolchains or native package-manager state"
     );
     assert!(
-        manifest.contains("startsWith(steps.asset.outputs.name, 'keyhog-linux-x86_64')"),
-        "both CPU and CUDA Linux prebuilts must install the Hyperscan runtime they link against"
+        manifest.contains("curl --proto '=https' --tlsv1.2 --fail --location"),
+        "verifier and release downloads must require HTTPS with TLS 1.2 or newer"
     );
     assert!(
         manifest.contains("$asset.minisig")
@@ -2478,9 +3581,150 @@ fn composite_action_verifies_downloaded_release_asset() {
     );
 }
 
+/// Regression: a compromised or replaced minisign download must fail before
+/// extraction or PATH mutation rather than bootstrapping a forged verifier.
+#[test]
+fn composite_action_rejects_pinned_verifier_archive_hash_mismatch() {
+    let dir = TempDir::new().expect("verifier bootstrap tempdir");
+    let fake_bin = dir.path().join("bin");
+    let runner_temp = dir.path().join("runner-temp");
+    fs::create_dir(&fake_bin).expect("fake bin");
+    fs::create_dir(&runner_temp).expect("runner temp");
+    write_executable(
+        &fake_bin.join("curl"),
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --output) out="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+printf 'attacker-controlled verifier archive' > "$out"
+"#,
+    );
+    let path = format!(
+        "{}:{}",
+        fake_bin.display(),
+        env::var("PATH").expect("PATH is set")
+    );
+    let github_path = dir.path().join("github-path");
+    let output = run_manifest_bash_step(
+        "Install pinned release verifier",
+        &[
+            ("PATH", path.as_str()),
+            ("RUNNER_OS", "Linux"),
+            ("RUNNER_ARCH", "X64"),
+            (
+                "RUNNER_TEMP",
+                runner_temp.to_str().expect("UTF-8 runner temp"),
+            ),
+            (
+                "GITHUB_PATH",
+                github_path.to_str().expect("UTF-8 GITHUB_PATH"),
+            ),
+        ],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "wrong verifier bytes must fail closed: {}",
+        combined_output(&output)
+    );
+    assert!(
+        combined_output(&output).contains("Pinned minisign archive SHA-256 mismatch"),
+        "hash mismatch must be operator-visible: {}",
+        combined_output(&output)
+    );
+    assert!(
+        !github_path.exists()
+            || fs::read_to_string(github_path)
+                .expect("read GITHUB_PATH")
+                .is_empty(),
+        "failed verifier bootstrap must not mutate PATH"
+    );
+}
+
+/// Regression: verifier bootstrap must fail closed on redirect/download and
+/// archive extraction errors, never publishing a partial verifier to PATH.
+#[test]
+fn composite_action_verifier_redirect_and_extraction_fail_closed() {
+    for mode in ["redirect", "extract"] {
+        let dir = TempDir::new().expect("verifier bootstrap tempdir");
+        let fake_bin = dir.path().join("bin");
+        let runner_temp = dir.path().join("runner-temp");
+        fs::create_dir(&fake_bin).expect("fake bin");
+        fs::create_dir(&runner_temp).expect("runner temp");
+        write_executable(
+            &fake_bin.join("curl"),
+            r#"#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$BOOTSTRAP_FAILURE_MODE" == "redirect" ]]; then exit 22; fi
+out=""
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --output) out="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+printf 'archive-with-authenticated-test-hash' > "$out"
+"#,
+        );
+        write_executable(
+            &fake_bin.join("sha256sum"),
+            r#"#!/usr/bin/env bash
+printf 'f0a0954413df8531befed169e447a66da6868d79052ed7e892e50a4291af7ae0  %s\n' "$1"
+"#,
+        );
+        write_executable(&fake_bin.join("tar"), "#!/usr/bin/env bash\nexit 9\n");
+        let path = format!(
+            "{}:{}",
+            fake_bin.display(),
+            env::var("PATH").expect("PATH is set")
+        );
+        let github_path = dir.path().join("github-path");
+        let output = run_manifest_bash_step(
+            "Install pinned release verifier",
+            &[
+                ("PATH", path.as_str()),
+                ("RUNNER_OS", "Linux"),
+                ("RUNNER_ARCH", "X64"),
+                ("BOOTSTRAP_FAILURE_MODE", mode),
+                (
+                    "RUNNER_TEMP",
+                    runner_temp.to_str().expect("UTF-8 runner temp"),
+                ),
+                (
+                    "GITHUB_PATH",
+                    github_path.to_str().expect("UTF-8 GITHUB_PATH"),
+                ),
+            ],
+        );
+        assert!(
+            !output.status.success(),
+            "{mode} failure must stop verifier bootstrap"
+        );
+        assert!(
+            !runner_temp.join("minisign").exists(),
+            "{mode} failure must not install a verifier"
+        );
+        assert!(
+            !github_path.exists()
+                || fs::read_to_string(&github_path)
+                    .expect("read GITHUB_PATH")
+                    .is_empty(),
+            "{mode} failure must not mutate PATH"
+        );
+    }
+}
+
+/// Regression: authenticated release installation must fetch exactly the six
+/// required payloads and stage only the verified matcher into its isolated cache.
 #[test]
 fn composite_action_authenticated_bundle_executes_all_six_exact_downloads() {
-    let (dir, output) = run_release_download_harness("literal.bin", "-", "bin", "0", "0", false);
+    let (dir, output) =
+        run_release_download_harness("literal.bin", "-", "bin", "0", "0", false, false, None);
     assert!(
         output.status.success(),
         "valid authenticated bundle must install: {}",
@@ -2499,11 +3743,86 @@ fn composite_action_authenticated_bundle_executes_all_six_exact_downloads() {
     .map(|name| format!("{base}{name}"))
     .join("\n");
     assert_eq!(urls, format!("{expected}\n"));
+    let runtime = private_action_runtime(&dir);
     assert!(
-        dir.path()
-            .join("cache/keyhog/programs/literal-program.bin")
+        runtime
+            .join("cache/xdg/keyhog/programs/literal-program.bin")
             .is_file(),
-        "validated sidecar artifact must reach the platform cache"
+        "validated sidecar artifact must reach the invocation-private platform cache"
+    );
+}
+
+/// Regression: the historical predictable release destination could be
+/// preplanted as any filesystem type and `cp` followed symlinks into victims.
+#[cfg(unix)]
+#[test]
+fn composite_action_release_binary_ignores_all_predictable_preplants() {
+    for kind in ["symlink", "hardlink", "fifo", "regular"] {
+        let (dir, output) = run_release_download_harness(
+            "literal.bin",
+            "-",
+            "bin",
+            "0",
+            "0",
+            false,
+            false,
+            Some(kind),
+        );
+        assert!(
+            output.status.success(),
+            "{kind} preplant must not block private install: {}",
+            combined_output(&output)
+        );
+        assert_eq!(
+            fs::read_to_string(dir.path().join("predictable-binary-victim"))
+                .expect("victim contents"),
+            "victim-unchanged",
+            "{kind} preplant must not mutate victim"
+        );
+        let outputs = fs::read_to_string(dir.path().join("github-output.txt")).expect("outputs");
+        let binary = outputs
+            .lines()
+            .find_map(|line| line.strip_prefix("binary-path="))
+            .expect("private binary");
+        let metadata = fs::symlink_metadata(binary).expect("private binary metadata");
+        assert!(metadata.file_type().is_file() && !metadata.file_type().is_symlink());
+        let old = dir.path().join("runner-temp/keyhog");
+        let old_type = fs::symlink_metadata(&old).expect("old preplant").file_type();
+        match kind {
+            "symlink" => assert!(old_type.is_symlink()),
+            "fifo" => assert!(old_type.is_fifo()),
+            "hardlink" => assert_eq!(fs::read_to_string(old).expect("hardlink"), "victim-unchanged"),
+            "regular" => assert_eq!(fs::read_to_string(old).expect("regular"), "preplanted-regular"),
+            _ => unreachable!(),
+        }
+    }
+}
+
+/// Regression: lockdown once seeded persistent GPU artifacts despite claiming
+/// cache refusal, so authenticated sidecars must remain unstaged in this mode.
+#[test]
+fn composite_action_lockdown_authenticates_bundle_without_creating_disk_cache() {
+    let (dir, output) =
+        run_release_download_harness("literal.bin", "-", "bin", "0", "0", false, true, None);
+    assert!(
+        output.status.success(),
+        "lockdown must still authenticate the complete release bundle: {}",
+        combined_output(&output)
+    );
+    let runtime = private_action_runtime(&dir);
+    let outputs = fs::read_to_string(dir.path().join("github-output.txt")).expect("outputs");
+    let binary_path = outputs
+        .lines()
+        .find_map(|line| line.strip_prefix("binary-path="))
+        .expect("private binary output");
+    assert!(Path::new(binary_path).is_file(), "authenticated release binary must be private");
+    assert!(
+        !runtime.join("cache/xdg/keyhog").exists(),
+        "invocation-private GPU cache must remain unseeded so CLI lockdown can apply"
+    );
+    assert!(
+        combined_output(&output).contains("lockdown did not seed the isolated Action cache"),
+        "lockdown cache behavior must be operator-visible"
     );
 }
 
@@ -2512,14 +3831,7 @@ fn composite_action_release_bundle_proofs_fail_closed() {
     for (checksum_exit, signature_exit, expected) in
         [("1", "0", "checksum"), ("0", "1", "signature")]
     {
-        let (_dir, output) = run_release_download_harness(
-            "literal.bin",
-            "-",
-            "bin",
-            checksum_exit,
-            signature_exit,
-            false,
-        );
+        let (_dir, output) = run_release_download_harness("literal.bin", "-", "bin", checksum_exit, signature_exit, false, false, None);
         assert!(
             !output.status.success(),
             "invalid {expected} must stop release installation"
@@ -2537,7 +3849,7 @@ fn composite_action_rejects_cross_platform_archive_traversal() {
         "nested/.../escape.bin",
     ] {
         let (_dir, output) =
-            run_release_download_harness(unsafe_entry, "-", "bin", "0", "0", false);
+            run_release_download_harness(unsafe_entry, "-", "bin", "0", "0", false, false, None);
         let combined = combined_output(&output);
         assert_eq!(
             output.status.code(),
@@ -2559,7 +3871,7 @@ fn composite_action_rejects_links_special_entries_and_empty_matcher_sets() {
         ("-", "txt", "no matcher artifacts"),
     ] {
         let (_dir, output) =
-            run_release_download_harness("literal.bin", kind, extension, "0", "0", false);
+            run_release_download_harness("literal.bin", kind, extension, "0", "0", false, false, None);
         let combined = combined_output(&output);
         assert_eq!(
             output.status.code(),
@@ -2573,19 +3885,24 @@ fn composite_action_rejects_links_special_entries_and_empty_matcher_sets() {
     }
 }
 
+/// Regression: a preplanted predictable cache symlink from an earlier Action
+/// must remain untouched while this invocation stages into its private runtime.
 #[cfg(unix)]
 #[test]
-fn composite_action_rejects_owned_cache_directory_symlinks() {
-    let (dir, output) = run_release_download_harness("literal.bin", "-", "bin", "0", "0", true);
+fn composite_action_resets_isolated_cache_without_following_symlinks() {
+    let (dir, output) =
+        run_release_download_harness("literal.bin", "-", "bin", "0", "0", true, false, None);
     let combined = combined_output(&output);
     assert_eq!(
         output.status.code(),
-        Some(2),
-        "pre-planted programs symlink must fail closed: {combined}"
+        Some(0),
+        "private cache must ignore a stale predictable programs symlink: {combined}"
     );
     assert!(
-        combined.contains("unsafe owned-directory symlink"),
-        "cache rejection must be operator-visible: {combined}"
+        private_action_runtime(&dir)
+            .join("cache/xdg/keyhog/programs/literal-program.bin")
+            .is_file(),
+        "the authenticated matcher must be installed only into the private cache"
     );
     assert!(
         fs::read_dir(dir.path().join("redirected-programs"))
@@ -2596,6 +3913,8 @@ fn composite_action_rejects_owned_cache_directory_symlinks() {
     );
 }
 
+/// Regression: release refs must never silently source-build after an
+/// authenticated asset failure, while branch/commit refs retain that path.
 #[test]
 fn consumer_docs_state_release_assets_fail_closed_before_source_build() {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -2638,12 +3957,16 @@ fn consumer_docs_state_release_assets_fail_closed_before_source_build() {
             path.display()
         );
         assert!(
-            lower.contains("branch/sha"),
-            "{} must scope source builds to branch/SHA action refs",
+            lower.contains("branch/sha")
+                || lower.contains("branch and commit")
+                || lower.contains("branch or commit"),
+            "{} must scope source builds to branch/SHA or branch/commit Action refs",
             path.display()
         );
         assert!(
-            lower.contains("build from source") || lower.contains("source builds"),
+            lower.contains("build from source")
+                || lower.contains("source builds")
+                || lower.contains("build their checked-out source"),
             "{} must still document the allowed branch/SHA source-build path",
             path.display()
         );
@@ -2704,6 +4027,8 @@ fn composite_action_wires_resolved_asset_into_download_step() {
     );
 }
 
+/// Regression: default and explicit-auto Action scans once calibrated a
+/// throwaway report but discarded routing evidence before the real scan.
 #[test]
 fn composite_action_calibrates_exact_workload_without_forcing_a_backend() {
     let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
@@ -2722,18 +4047,205 @@ fn composite_action_calibrates_exact_workload_without_forcing_a_backend() {
             && step.contains("  --effective")
             && step.contains("args+=(--baseline \"$ACTION_BASELINE\")")
             && step.contains("config_args+=(--baseline \"$ACTION_BASELINE\")")
-            && step.contains("keyhog \"${args[@]}\""),
+            && step.contains("ACTION_PRESET: ${{ inputs.preset }}")
+            && step.contains("ACTION_LOCKDOWN: ${{ inputs.lockdown }}")
+            && step.contains("config_args+=(\"$preset_flag\")")
+            && step.contains("args+=(\"$preset_flag\")")
+            && step.contains("config_args+=(--lockdown)")
+            && step.contains("args+=(--lockdown)")
+            && step.contains("\"$ACTION_KEYHOG\" \"${args[@]}\"")
+            && step.matches("--no-verify").count() == 2,
         "fresh and explicit-auto Action scans must calibrate the exact requested workload and policy"
     );
     assert!(
         !step.contains("--backend")
+            && !step.contains("--verify")
             && !step.contains("--no-autoroute-gpu")
             && !step.contains("calibration_passes")
             && !step.contains("for ((pass"),
-        "Action calibration must measure eligible peers, not choose a route"
+        "Action calibration must measure eligible peers without live verification or choosing a route"
     );
 }
 
+/// Regression: non-Linux runners cannot honor core lockdown's `mlockall`
+/// guarantee, so the Action must reject them before invoking calibration.
+#[test]
+fn composite_action_lockdown_requires_linux() {
+    for runner_os in ["macOS", "Windows"] {
+        let dir = TempDir::new().expect("lockdown preflight tempdir");
+        let runner_temp = dir.path().join("runner-temp");
+        fs::create_dir(&runner_temp).expect("runner temp");
+        let output = run_manifest_bash_step(
+            "Calibrate autoroute for this scan",
+            &[
+                ("RUNNER_OS", runner_os),
+                ("ACTION_LOCKDOWN", "true"),
+                ("ACTION_PRESET", "default"),
+                ("ACTION_SCAN_PATH", "."),
+                ("ACTION_SEVERITY", "high"),
+                (
+                    "RUNNER_TEMP",
+                    runner_temp.to_str().expect("UTF-8 runner temp"),
+                ),
+            ],
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "{runner_os} lockdown must fail during Action validation: {}",
+            combined_output(&output)
+        );
+        let combined = combined_output(&output);
+        assert!(
+            combined.contains("requires a Linux runner with sufficient locked-memory capacity")
+                && combined.contains("sufficient memlock limit")
+                && combined.contains("--cap-add IPC_LOCK")
+                && combined.contains("--ulimit memlock=-1:-1")
+                && combined.contains("lockdown:false"),
+            "lockdown rejection must give exact Linux provisioning guidance: {combined}"
+        );
+    }
+}
+
+/// Regression: a finite soft memlock limit can be sufficient. Execute the
+/// composite calibration step under a finite limit and prove the Action
+/// delegates the protection decision to KeyHog instead of rejecting heuristically.
+#[test]
+fn composite_action_accepts_finite_memlock_and_invokes_keyhog() {
+    let dir = TempDir::new().expect("finite memlock tempdir");
+    let runner_temp = dir.path().join("runner-temp");
+    fs::create_dir(&runner_temp).expect("runner temp");
+    let bash_env = dir.path().join("finite-memlock.sh");
+    fs::write(&bash_env, "ulimit -l 64\n").expect("finite memlock Bash environment");
+    let call_log = dir.path().join("calls.log");
+    let limit_log = dir.path().join("limit.log");
+    write_stub(
+        &dir,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$(ulimit -l)" > "$KEYHOG_LIMIT_LOG"
+printf '%s\n' "$1" >> "$KEYHOG_CALL_LOG"
+if [[ "$1" == "config" ]]; then
+  printf '[effective-config]\nincremental = false\n'
+  exit 0
+fi
+previous=""
+for arg in "$@"; do
+  if [[ "$previous" == "--output" ]]; then printf '[]\n' > "$arg"; fi
+  if [[ "$previous" == "--autoroute-cache" ]]; then
+    printf '{"schema_version":1}\n' > "$arg"
+  fi
+  previous="$arg"
+done
+"#,
+    );
+    let path = format!(
+        "{}:{}",
+        dir.path().display(),
+        env::var("PATH").expect("PATH")
+    );
+    let github_output = dir.path().join("github-output");
+    let output = run_manifest_bash_step(
+        "Calibrate autoroute for this scan",
+        &[
+            ("BASH_ENV", bash_env.to_str().expect("UTF-8 BASH_ENV")),
+            ("RUNNER_OS", "Linux"),
+            ("ACTION_LOCKDOWN", "true"),
+            ("ACTION_PRESET", "default"),
+            ("ACTION_SCAN_PATH", "."),
+            ("ACTION_SEVERITY", "high"),
+            (
+                "RUNNER_TEMP",
+                runner_temp.to_str().expect("UTF-8 runner temp"),
+            ),
+            (
+                "GITHUB_OUTPUT",
+                github_output.to_str().expect("UTF-8 GITHUB_OUTPUT"),
+            ),
+            (
+                "KEYHOG_CALL_LOG",
+                call_log.to_str().expect("UTF-8 call log"),
+            ),
+            (
+                "KEYHOG_LIMIT_LOG",
+                limit_log.to_str().expect("UTF-8 limit log"),
+            ),
+            ("PATH", path.as_str()),
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "finite memlock must reach and trust KeyHog's real protection checks: {}",
+        combined_output(&output)
+    );
+    assert_eq!(
+        fs::read_to_string(&limit_log).expect("record finite memlock"),
+        "64\n",
+        "the behavioral probe must execute under a finite memlock limit"
+    );
+    assert_eq!(
+        fs::read_to_string(&call_log).expect("read KeyHog calls"),
+        "config\nscan\n",
+        "the Action must delegate both effective-config and calibration to KeyHog"
+    );
+    assert!(
+        fs::read_to_string(github_output)
+            .expect("read calibration outputs")
+            .contains("cache-sha256="),
+        "successful finite-memlock calibration must publish a bound receipt"
+    );
+}
+
+/// Regression: backend:auto may never silently degrade to CPU when calibration
+/// has not persisted the exact decision consumed by the scan.
+#[test]
+fn composite_action_rejects_missing_autoroute_receipt() {
+    let dir = TempDir::new().expect("missing autoroute receipt tempdir");
+    let runner_temp = dir.path().join("runner-temp");
+    fs::create_dir(&runner_temp).expect("runner temp");
+    write_executable(
+        &dir.path().join("keyhog"),
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "config" ]]; then exit 0; fi
+previous=""
+for arg in "$@"; do
+  if [[ "$previous" == "--output" ]]; then printf '[]\n' > "$arg"; fi
+  previous="$arg"
+done
+"#,
+    );
+    let path = format!(
+        "{}:{}",
+        dir.path().display(),
+        env::var("PATH").expect("PATH")
+    );
+    let output = run_manifest_bash_step(
+        "Calibrate autoroute for this scan",
+        &[
+            ("RUNNER_OS", "Linux"),
+            ("ACTION_LOCKDOWN", "false"),
+            ("ACTION_PRESET", "default"),
+            ("ACTION_SCAN_PATH", "."),
+            ("ACTION_SEVERITY", "high"),
+            (
+                "RUNNER_TEMP",
+                runner_temp.to_str().expect("UTF-8 runner temp"),
+            ),
+            ("PATH", path.as_str()),
+        ],
+    );
+    assert_eq!(output.status.code(), Some(3), "missing route must fail closed");
+    assert!(
+        combined_output(&output).contains("did not publish a trusted routing receipt"),
+        "missing route must explain that auto requires a bound decision: {}",
+        combined_output(&output)
+    );
+}
+
+
+/// Regression: lockdown autoroute must remove stale global state, calibrate
+/// exactly once without verification, and publish only a fresh ephemeral receipt.
 #[test]
 fn composite_action_calibration_executes_exact_argv_once_for_every_incremental_mode() {
     for incremental in ["false", "true"] {
@@ -2748,6 +4260,14 @@ fn composite_action_calibration_executes_exact_argv_once_for_every_incremental_m
 set -euo pipefail
 if [[ "${1:-}" == "config" ]]; then
   printf '%s\0' "$@" > "$KEYHOG_CONFIG_LOG"
+  previous=""
+  for arg in "$@"; do
+    if [[ "$previous" == "--autoroute-cache" && -e "$arg" ]]; then
+      echo "stale autoroute receipt reached config preflight" >&2
+      exit 71
+    fi
+    previous="$arg"
+  done
   printf '[effective-config]\nincremental = %s\n' "$STUB_INCREMENTAL"
   exit "${STUB_CONFIG_EXIT:-0}"
 fi
@@ -2757,6 +4277,8 @@ previous=""
 for arg in "$@"; do
   if [[ "$previous" == "--output" ]]; then
     printf '[]\n' > "$arg"
+  elif [[ "$previous" == "--autoroute-cache" ]]; then
+    printf '{"schema_version":1}\n' > "$arg"
   fi
   previous="$arg"
 done
@@ -2773,6 +4295,8 @@ done
                 ("ACTION_SCAN_PATH", "repo slice"),
                 ("ACTION_SEVERITY", "critical"),
                 ("ACTION_BASELINE", "baseline file.json"),
+                ("ACTION_PRESET", "precision"),
+                ("ACTION_LOCKDOWN", "true"),
                 (
                     "RUNNER_TEMP",
                     runner_temp.to_str().expect("utf-8 runner temp"),
@@ -2797,6 +4321,9 @@ done
             "calibration step failed: {}",
             combined_output(&output)
         );
+        let runtime = private_action_runtime(&dir);
+        let route_cache = runtime.join("autoroute/route.json");
+        let probe = runtime.join("autoroute/probe.json");
         let config_args = fs::read(&config_log)
             .expect("config invocation logged")
             .split(|byte| *byte == 0)
@@ -2808,12 +4335,17 @@ done
             [
                 "config",
                 "--effective",
+                "--no-verify",
                 "--path",
                 "repo slice",
                 "--severity",
                 "critical",
                 "--format",
                 "json",
+                "--autoroute-cache",
+                route_cache.to_str().expect("UTF-8 route cache"),
+                "--precision",
+                "--lockdown",
                 "--baseline",
                 "baseline file.json",
             ]
@@ -2825,11 +4357,11 @@ done
             .filter(|field| !field.is_empty())
             .map(|field| String::from_utf8(field.to_vec()).expect("utf-8 argument"))
             .collect::<Vec<_>>();
-        let probe = runner_temp.join("keyhog-autoroute-probe-42-3-job-action.json");
         let expected = vec![
             "scan".to_string(),
             "--autoroute-calibrate".to_string(),
             "--autoroute-gpu".to_string(),
+            "--no-verify".to_string(),
             "--path".to_string(),
             "repo slice".to_string(),
             "--severity".to_string(),
@@ -2838,6 +4370,10 @@ done
             "json".to_string(),
             "--output".to_string(),
             probe.display().to_string(),
+            "--autoroute-cache".to_string(),
+            route_cache.display().to_string(),
+            "--precision".to_string(),
+            "--lockdown".to_string(),
             "--baseline".to_string(),
             "baseline file.json".to_string(),
         ];
@@ -2853,7 +4389,56 @@ done
             !probe.exists(),
             "throwaway calibration report must be removed"
         );
+        assert!(
+            !route_cache.exists() && !runtime.join("autoroute/route.json.lock").exists(),
+            "unpublished private calibration receipt and lock must be removed"
+        );
     }
+}
+
+/// Regression: a background process could replace the deterministic autoroute
+/// pathname after calibration; the scan must bind and reject substituted bytes.
+#[test]
+fn composite_action_rejects_substituted_autoroute_receipt_before_scan() {
+    let dir = TempDir::new().expect("route substitution tempdir");
+    let runner_temp = dir.path().join("runner-temp");
+    fs::create_dir(&runner_temp).expect("runner temp");
+    let route_cache = runner_temp.join("route.json");
+    fs::write(&route_cache, "substituted-route").expect("write substituted route");
+    let output = run_manifest_bash_step(
+        "Run scan",
+        &[
+            (
+                "RUNNER_TEMP",
+                runner_temp.to_str().expect("UTF-8 runner temp"),
+            ),
+            (
+                "ACTION_AUTOROUTE_CACHE",
+                route_cache.to_str().expect("UTF-8 route cache"),
+            ),
+            (
+                "ACTION_AUTOROUTE_CACHE_SHA256",
+                "0000000000000000000000000000000000000000000000000000000000000000",
+            ),
+            ("ACTION_LOCKDOWN", "false"),
+        ],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "substituted routing state must fail before wrapper execution: {}",
+        combined_output(&output)
+    );
+    assert!(
+        combined_output(&output)
+            .contains("Autoroute calibration receipt changed after calibration"),
+        "receipt substitution must be operator-visible: {}",
+        combined_output(&output)
+    );
+    assert!(
+        !route_cache.exists(),
+        "substituted Action-owned receipt must still be cleaned on failure"
+    );
 }
 
 #[test]
@@ -2909,6 +4494,8 @@ printf 'scan\n' >> "$KEYHOG_CALL_LOG"
     assert!(!call_log.exists(), "scan must not run after config failure");
 }
 
+/// Locks out floating image/action tags advancing before the authenticated CI
+/// verdict, signed candidate smoke, immutable container, and public transition.
 #[test]
 fn release_floating_tags_advance_only_after_atomic_publication_gates() {
     let source = fs::read_to_string(release_workflow()).expect("read release.yml");
@@ -2922,25 +4509,32 @@ fn release_floating_tags_advance_only_after_atomic_publication_gates() {
     let major = workflow_job(workflow, "major-tag");
     let crates = workflow_job(workflow, "crates");
 
+    let mut docker_needs = workflow_job_needs(docker);
+    docker_needs.sort_unstable();
     assert_eq!(
-        workflow_job_needs(docker),
-        ["sign"],
-        "the immutable container must wait for privately signed assets"
+        docker_needs,
+        ["ci-verdict", "smoke"],
+        "the immutable container must wait for authenticated CI and signed candidate smoke"
     );
     let mut publish_needs = workflow_job_needs(publish);
     publish_needs.sort_unstable();
     assert_eq!(
         publish_needs,
-        ["docker", "sign", "smoke"],
-        "public release transition must wait for the signed receipt, immutable container, and candidate smoke"
+        ["ci-verdict", "docker", "sign", "smoke"],
+        "public release transition must explicitly wait for authenticated CI, the signed receipt, immutable container, and candidate smoke"
     );
-    for (name, job) in [("major-tag", major), ("crates", crates)] {
-        assert_eq!(
-            workflow_job_needs(job),
-            ["publish"],
-            "{name} must not advance until the exact immutable release is public"
-        );
-    }
+    let mut major_needs = workflow_job_needs(major);
+    major_needs.sort_unstable();
+    assert_eq!(
+        major_needs,
+        ["ci-verdict", "publish"],
+        "major-tag must wait for authenticated CI and the exact public release"
+    );
+    assert_eq!(
+        workflow_job_needs(crates),
+        ["publish"],
+        "crates must not advance until the exact immutable release is public"
+    );
 
     // Regression: prereleases and older manual reruns must never move either
     // floating namespace, even though the immutable image is a publish prerequisite.
@@ -3083,8 +4677,10 @@ esac
     );
 }
 
+/// Regression: source fallback once depended on floating Linux Hyperscan
+/// packages; every runner must now build the lockfile-backed portable profile.
 #[test]
-fn composite_action_source_build_uses_default_linux_features() {
+fn composite_action_source_build_uses_portable_locked_features() {
     let dir = TempDir::new().expect("tempdir");
     let fake_bin = dir.path().join("bin");
     let source_root = dir.path().join("source");
@@ -3092,6 +4688,7 @@ fn composite_action_source_build_uses_default_linux_features() {
     fs::create_dir(&fake_bin).expect("create fake bin");
     fs::create_dir(&source_root).expect("create source root");
     fs::create_dir(&runner_temp).expect("create runner temp");
+    let source_output = dir.path().join("source-output.txt");
     let cargo_args = dir.path().join("cargo-args.txt");
     write_executable(
         &fake_bin.join("uname"),
@@ -3117,6 +4714,7 @@ chmod +x target/release/keyhog
     );
     let source_root_str = source_root.to_string_lossy().into_owned();
     let runner_temp_str = runner_temp.to_string_lossy().into_owned();
+    let source_output_str = source_output.to_string_lossy().into_owned();
     let cargo_args_str = cargo_args.to_string_lossy().into_owned();
     let output = run_manifest_bash_step(
         "Build keyhog from source (fallback)",
@@ -3124,6 +4722,7 @@ chmod +x target/release/keyhog
             ("PATH", path.as_str()),
             ("ACTION_SOURCE_ROOT", source_root_str.as_str()),
             ("RUNNER_TEMP", runner_temp_str.as_str()),
+            ("GITHUB_OUTPUT", source_output_str.as_str()),
             ("CARGO_ARGS_FILE", cargo_args_str.as_str()),
         ],
     );
@@ -3139,12 +4738,17 @@ chmod +x target/release/keyhog
         "source fallback must build against the committed lockfile; args={args}"
     );
     assert!(
-        !args.contains("--features\ncuda\n"),
-        "removed CUDA alias must not return; args={args}"
+        args.contains("--no-default-features\n--features\nportable\n"),
+        "source fallback must use one deterministic no-native-dependency feature profile; args={args}"
     );
+    let outputs = fs::read_to_string(&source_output).expect("source outputs");
+    let binary_path = outputs
+        .lines()
+        .find_map(|line| line.strip_prefix("binary-path="))
+        .expect("source binary path");
     assert!(
-        runner_temp.join("keyhog").is_file(),
-        "source-build fallback must still install the built binary into RUNNER_TEMP"
+        Path::new(binary_path).is_file() && !runner_temp.join("keyhog").exists(),
+        "source fallback must publish only into its invocation-private digest directory"
     );
 }
 
@@ -3189,6 +4793,8 @@ esac
     );
 }
 
+/// Regression: cross-platform release installation must retain the `.exe`
+/// identity while atomically replacing stale matcher destinations in isolation.
 #[test]
 fn composite_action_download_preserves_windows_exe_name() {
     let dir = TempDir::new().expect("tempdir");
@@ -3229,7 +4835,8 @@ esac
         &fake_bin.join("sha256sum"),
         r#"#!/usr/bin/env bash
 set -euo pipefail
-exit 0
+if [[ "${1:-}" == "-c" ]]; then exit 0; fi
+exec /usr/bin/sha256sum "$@"
 "#,
     );
     write_executable(
@@ -3249,8 +4856,8 @@ exit 0
     let runner_temp = dir.path().join("runner-temp");
     let runner_temp_str = runner_temp.to_string_lossy().into_owned();
     fs::create_dir(&runner_temp).expect("create runner temp");
-    let cache_root = dir.path().join("cache");
-    let cache_root_str = cache_root.to_string_lossy().into_owned();
+    let action_cache_home = runner_temp.join("keyhog-action-cache");
+    let cache_root = action_cache_home.join("xdg");
     #[cfg(unix)]
     {
         let programs = cache_root.join("keyhog/programs");
@@ -3270,7 +4877,6 @@ exit 0
             ("ACTION_RESOLVED_VERSION", "0.5.37"),
             ("ACTION_RELEASE_REQUIRED", "true"),
             ("RUNNER_OS", "Linux"),
-            ("XDG_CACHE_HOME", cache_root_str.as_str()),
             ("KEYHOG_MINISIGN_PUBLIC_KEY", "test-public-key"),
         ],
     );
@@ -3280,23 +4886,29 @@ exit 0
         Some(0),
         "Windows prebuilt download path must complete with local fake tools; output={combined}"
     );
+    let github_output = fs::read_to_string(&output_path).expect("read GITHUB_OUTPUT");
+    let binary_path = github_output
+        .lines()
+        .find_map(|line| line.strip_prefix("binary-path="))
+        .expect("private Windows binary");
     assert!(
-        runner_temp.join("keyhog.exe").is_file(),
-        "Windows prebuilt must be installed as keyhog.exe so PATH lookup can execute it"
+        binary_path.ends_with("/keyhog.exe") && Path::new(binary_path).is_file(),
+        "Windows prebuilt must retain keyhog.exe in its invocation-private digest directory"
     );
     assert!(
-        !runner_temp.join("keyhog").exists(),
-        "Windows prebuilt must not be renamed to an extensionless binary"
+        !runner_temp.join("keyhog.exe").exists() && !runner_temp.join("keyhog").exists(),
+        "Windows prebuilt must not publish to predictable RUNNER_TEMP paths"
     );
+    let private_cache = private_action_runtime(&dir).join("cache/xdg");
     assert!(
-        cache_root
+        private_cache
             .join("keyhog/programs/literal-program.bin")
             .is_file(),
-        "authenticated GPU literal artifacts must be seeded into the platform cache"
+        "authenticated GPU literal artifacts must be seeded into the invocation-private cache"
     );
     #[cfg(unix)]
     {
-        let installed = cache_root.join("keyhog/programs/literal-program.bin");
+        let installed = private_cache.join("keyhog/programs/literal-program.bin");
         assert!(
             fs::symlink_metadata(&installed)
                 .expect("installed artifact metadata")
@@ -3310,7 +4922,6 @@ exit 0
             "artifact installation must never write through a destination symlink"
         );
     }
-    let github_output = fs::read_to_string(&output_path).expect("read GITHUB_OUTPUT");
     assert!(
         github_output.contains("found=true"),
         "verified Windows prebuilt download must advertise found=true; output={github_output}"
@@ -3482,6 +5093,8 @@ fn ci_install_from_build_proof_requires_expect_setup() {
     }
 }
 
+/// Locks out direct dispatch-input interpolation or emitting a release identity
+/// before actor, annotated tag, signer, main ancestry, and exact CI are proven.
 #[test]
 fn release_workflow_validates_manual_tag_before_shell_outputs() {
     let workflow = fs::read_to_string(release_workflow()).expect("read release.yml");
@@ -3498,20 +5111,29 @@ fn release_workflow_validates_manual_tag_before_shell_outputs() {
         "release workflow shell blocks must receive workflow_dispatch tag through env, not direct interpolation: {offenders:#?}"
     );
     assert!(
-        workflow.contains("KEYHOG_RELEASE_INPUT_TAG: ${{ inputs.tag }}"),
-        "manual release tag must enter shell through a named env var"
+        workflow.contains("KEYHOG_MANUAL_TAG: ${{ inputs.tag }}"),
+        "manual release tag must enter shell through the named KEYHOG_MANUAL_TAG env var"
+    );
+    let verifier = workflow
+        .find("automation/scripts/verify_release_tag.py")
+        .expect("authenticated tag verifier");
+    let ci_verdict = workflow
+        .find("(.total_count == (.jobs | length))")
+        .expect("exact complete CI verdict");
+    let output = workflow
+        .find("printf 'tag=%s\\n' \"$tag\" >> \"$GITHUB_OUTPUT\"")
+        .expect("validated tag output");
+    assert!(
+        verifier < ci_verdict && ci_verdict < output,
+        "release outputs must follow signed-tag and exact-CI verification"
     );
     assert!(
-        workflow
-            .matches("bash scripts/release-version.sh \"$tag\"")
-            .count()
-            >= 5,
-        "every release job must use the shared exact semantic-version parser"
-    );
-    assert!(
-        workflow.contains("scripts/release-version.sh")
-            && workflow.contains("Release tag must be exact semver"),
-        "release tag resolver must constrain the entire tag through the shared parser"
+        workflow.contains("release source must name an exact semantic-version tag")
+            && workflow.contains("--authorized-key")
+            && workflow.contains("--authorized-fingerprint")
+            && workflow.contains("--main-ref-json")
+            && workflow.contains("--compare-json"),
+        "release boundary must fail closed on malformed SemVer, signer, or main ancestry"
     );
     assert!(
         workflow.contains("printf 'tag=%s\\n' \"$tag\" >> \"$GITHUB_OUTPUT\""),
@@ -3522,15 +5144,15 @@ fn release_workflow_validates_manual_tag_before_shell_outputs() {
         "release tag resolver must not echo an unvalidated output assignment"
     );
     assert!(
-        workflow.contains("KEYHOG_RELEASE_TAG: ${{ steps.tag.outputs.tag }}"),
-        "validated release tag output should enter follow-up shell steps through env"
+        workflow.contains("KEYHOG_RELEASE_TAG: ${{ needs.ci-verdict.outputs.tag }}"),
+        "validated release tag output should enter downstream shell steps through env"
     );
     assert!(
-        workflow.contains("Prove the release ref is a tag")
-            && workflow.contains("git/ref/tags/$KEYHOG_RELEASE_TAG")
-            && workflow.contains("ref: refs/tags/${{ steps.tag.outputs.tag }}")
-            && workflow.contains("ref: ${{ github.ref }}"),
-        "manual releases must prove and checkout the exact validated tag, never a same-named branch"
+        workflow.contains("git/ref/tags/$tag")
+            && workflow.contains("git/tags/$tag_object")
+            && workflow.contains("ref: ${{ needs.ci-verdict.outputs.commit }}")
+            && !workflow.contains("ref: refs/tags/${{ inputs.tag }}"),
+        "manual releases must authenticate the annotated tag then checkout only its validated commit"
     );
 }
 
@@ -3566,6 +5188,8 @@ fn shared_release_version_parser_accepts_prereleases_and_rejects_build_metadata(
     );
 }
 
+/// Locks out public release mutation before authenticated CI, every private
+/// payload, signed candidate smoke, and immutable container provenance.
 #[test]
 fn release_stages_privately_then_publishes_the_signed_immutable_receipt() {
     let source = fs::read_to_string(release_workflow()).expect("read release.yml");
@@ -3592,15 +5216,19 @@ fn release_stages_privately_then_publishes_the_signed_immutable_receipt() {
             }),
         "matrix jobs must stage unsigned bundles privately"
     );
+    let mut sign_needs = workflow_job_needs(sign);
+    sign_needs.sort_unstable();
     assert_eq!(
-        workflow_job_needs(sign),
-        ["build", "installers"],
-        "the sole signing job must wait for every privately staged payload"
+        sign_needs,
+        ["build", "ci-verdict", "installers"],
+        "the sole signing job must wait for authenticated CI and every privately staged payload"
     );
+    let mut smoke_needs = workflow_job_needs(smoke);
+    smoke_needs.sort_unstable();
     assert_eq!(
-        workflow_job_needs(smoke),
-        ["sign"],
-        "candidate smoke must consume only signed private artifacts"
+        smoke_needs,
+        ["ci-verdict", "sign"],
+        "candidate smoke must explicitly retain authenticated CI and signed private artifacts"
     );
 
     let prepare = workflow_run_step_containing(sign, "publish_release_assets.py\" prepare");
@@ -3614,7 +5242,7 @@ fn release_stages_privately_then_publishes_the_signed_immutable_receipt() {
         "signing must produce and sign an immutable-ID receipt without making the release public"
     );
 
-    let transition = workflow_run_step_containing(publish, "publish_release_assets.py publish");
+    let transition = workflow_run_step_containing(publish, "publish_release_assets.py\" publish");
     let transition = yaml_get(transition, "run")
         .and_then(serde_yaml::Value::as_str)
         .expect("public transition runs shell commands");
@@ -3627,7 +5255,7 @@ fn release_stages_privately_then_publishes_the_signed_immutable_receipt() {
     // prerequisites and the exact private receipt are proven first.
     let mut needs = workflow_job_needs(publish);
     needs.sort_unstable();
-    assert_eq!(needs, ["docker", "sign", "smoke"]);
+    assert_eq!(needs, ["ci-verdict", "docker", "sign", "smoke"]);
     let proof = workflow_run_step_containing(publish, "minisign -Vm");
     let proof = yaml_get(proof, "run")
         .and_then(serde_yaml::Value::as_str)
@@ -3864,10 +5492,14 @@ while [[ "$#" -gt 0 ]]; do
   shift || true
 done
 cat > "$out" <<'TXT'
-  Secret:     [REDACTED]
-  Location:   a:1
-  Secret:     [REDACTED]
-  Location:   b:2
+  ┌ HIGH ─── first
+  │ Secret:     [REDACTED]
+  └─────────────────────────────────────────────
+  ┌ HIGH ─── second
+  │ Secret:     [REDACTED]
+  └─────────────────────────────────────────────
+  ━━━ Results ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  2 secrets found · 2 unverified
 TXT
 exit 1
 "#,
@@ -3892,12 +5524,12 @@ exit 1
     );
     let scan = fs::read_to_string(action_script()).expect("read run-scan.sh");
     assert!(
-        !scan.contains("grep -c 'Secret:' \"$report_path\" 2>/dev/null || true"),
-        "text report counter must not turn grep/read errors into zero findings"
-    );
-    assert!(
-        scan.contains("grep_status=$?") && scan.contains("0 | 1)"),
-        "text report counter must distinguish no matches from grep/read errors"
+        scan.contains("\"$keyhog_bin\" action-report verify")
+            && scan.contains("--receipt \"$action_receipt\"")
+            && !scan.contains("command -v jq")
+            && !scan.contains("python3")
+            && !scan.contains("grep -c"),
+        "the Action must verify KeyHog's source-emitted receipt without ambient parsers"
     );
 }
 
@@ -3979,6 +5611,8 @@ exit 0
     );
 }
 
+/// Regression: a clean exit with structurally invalid JSONL once produced an
+/// uploadable receipt; report corruption must remain fail-closed and visible.
 #[test]
 fn action_rejects_non_object_clean_jsonl_report() {
     let dir = TempDir::new().expect("tempdir");
@@ -4013,12 +5647,14 @@ exit 0
         combined_output(&output)
     );
     assert!(
-        combined_output(&output).contains("Could not parse clean scan report"),
-        "non-object JSONL must be operator-visible as report corruption; output={}",
+        combined_output(&output).contains("Could not verify scan report receipt"),
+        "non-KeyHog JSONL must be operator-visible as untrusted emission: output={}",
         combined_output(&output)
     );
 }
 
+/// Regression: malformed JSONL on a findings exit must not fabricate one
+/// finding merely to reconcile the process status.
 #[test]
 fn action_rejects_non_object_findings_jsonl() {
     let dir = TempDir::new().expect("tempdir");
@@ -4053,11 +5689,73 @@ exit 1
         combined_output(&output)
     );
     assert!(
-        output_file(&dir).contains("findings=1"),
-        "parse failure after findings exit must not become zero findings"
+        output_file(&dir).contains("findings=\n"),
+        "parse failure after findings exit must publish an unavailable count"
     );
 }
 
+/// Regression: the composite must validate and count reports with only Bash
+/// and the KeyHog binary available; jq and Python are not runtime dependencies.
+#[cfg(unix)]
+#[test]
+fn action_counts_report_with_minimal_path_without_jq_or_python() {
+    let dir = TempDir::new().expect("minimal PATH tempdir");
+    write_stub(
+        &dir,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ "$#" -gt 0 ]]; do
+  if [[ "$1" == "--output" ]]; then shift; out="$1"; fi
+  shift || true
+done
+printf '[]\n' > "$out"
+"#,
+    );
+    std::os::unix::fs::symlink("/bin/bash", dir.path().join("bash"))
+        .expect("provide only Bash beside KeyHog");
+    for tool in ["sha256sum", "wc", "rm", "mktemp", "cat", "chmod", "basename"] {
+        std::os::unix::fs::symlink(format!("/usr/bin/{tool}"), dir.path().join(tool))
+            .unwrap_or_else(|error| panic!("provide {tool} in minimal PATH: {error}"));
+    }
+    let runner_temp = dir.path().join("runner-temp");
+    fs::create_dir(&runner_temp).expect("runner temp");
+    let output_path = dir.path().join("github-output.txt");
+    let summary_path = dir.path().join("summary.md");
+    let args = action_script_args(
+        &[],
+        &[
+            ("ACTION_INPUT_FORMAT", "json"),
+            ("ACTION_INPUT_OUTPUT", "keyhog-results.json"),
+        ],
+    );
+    let output = Command::new("bash")
+        .arg(action_script())
+        .args(args)
+        .current_dir(dir.path())
+        .env_clear()
+        .env("PATH", dir.path())
+        .env("GITHUB_OUTPUT", &output_path)
+        .env("GITHUB_STEP_SUMMARY", &summary_path)
+        .env("RUNNER_TEMP", &runner_temp)
+        .output()
+        .expect("run Action with minimal PATH");
+    assert!(
+        output.status.success(),
+        "KeyHog-owned parser must work without jq/python: {}",
+        combined_output(&output)
+    );
+    assert!(
+        fs::read_to_string(output_path)
+            .expect("read receipt")
+            .contains("findings=0\n"),
+        "minimal dependency receipt must carry the exact count"
+    );
+    assert!(!dir.path().join("jq").exists() && !dir.path().join("python3").exists());
+}
+
+/// Regression: untrusted summary values containing Markdown/HTML delimiters
+/// must remain inside one HTML-escaped code cell without table or line injection.
 #[test]
 fn action_sanitizes_markdown_summary_cells() {
     let dir = TempDir::new().expect("tempdir");
@@ -4083,8 +5781,8 @@ exit 0
         &[
             ("ACTION_INPUT_FORMAT", "json"),
             ("ACTION_INPUT_OUTPUT", "report.json"),
-            ("ACTION_INPUT_SCAN_PATH", "src|`name\nsecond"),
-            ("ACTION_INPUT_BASELINE", "base|`line\nthird"),
+            ("ACTION_INPUT_SCAN_PATH", "src|`name\n<second>&"),
+            ("ACTION_INPUT_BASELINE", "<base>|`line\nthird&"),
         ],
     );
     assert_eq!(
@@ -4096,11 +5794,250 @@ exit 0
 
     let summary = summary_file(&dir);
     assert!(
-        summary.contains("| Path | `src\\|\\`name second` |"),
-        "path cell must escape pipes/backticks/newlines; summary={summary}"
+        summary.contains("| Path | <code>src&#124;`name&#10;&lt;second&gt;&amp;</code> |"),
+        "path cell must HTML-escape delimiters and encode newlines without treating backticks as Markdown; summary={summary}"
     );
     assert!(
-        summary.contains("| Baseline | `base\\|\\`line third` |"),
-        "baseline cell must escape pipes/backticks/newlines; summary={summary}"
+        summary.contains("| Baseline | <code>&lt;base&gt;&#124;`line&#10;third&amp;</code> |"),
+        "baseline cell must HTML-escape delimiters and encode newlines without treating backticks as Markdown; summary={summary}"
     );
+}
+/// Regression: cleanup ownership is established before policy validation so an
+/// early invalid argument cannot leak the caller-owned autoroute receipt.
+#[cfg(unix)]
+#[test]
+fn action_cleans_autoroute_receipt_on_early_validation_failure() {
+    for kind in ["symlink", "fifo", "regular"] {
+        let dir = TempDir::new().expect("early cleanup tempdir");
+        let runner_temp = dir.path().join("runner-temp");
+        fs::create_dir(&runner_temp).expect("runner temp");
+        let route = runner_temp.join("route.json");
+        let lock = runner_temp.join("route.json.lock");
+        let victim = dir.path().join("lock-victim");
+        fs::write(&route, "owned route").expect("route");
+        preplant_destination(&lock, &victim, kind);
+        let output = Command::new("bash")
+            .arg(action_script())
+            .args([
+                "--format",
+                "invalid",
+                "--autoroute-cache",
+                route.to_str().expect("route path"),
+                "--cleanup-autoroute-cache",
+            ])
+            .env("RUNNER_TEMP", &runner_temp)
+            .output()
+            .expect("run invalid wrapper");
+        assert_eq!(output.status.code(), Some(2), "{kind}: {}", combined_output(&output));
+        assert!(!route.exists() && !lock.exists(), "{kind} cleanup must remove route + lock");
+        assert_eq!(
+            fs::read_to_string(victim).expect("victim"),
+            "victim-unchanged",
+            "{kind} lock cleanup must not mutate victim"
+        );
+    }
+}
+
+/// Regression: a snapshot replaced after wrapper verification must stop both
+/// internal uploads rather than degrading to a warning-only clean job.
+#[test]
+fn composite_action_report_check_rejects_changed_private_snapshot() {
+    let dir = TempDir::new().expect("snapshot tamper tempdir");
+    let runner_temp = dir.path().join("runner-temp");
+    let runtime = runner_temp.join("keyhog-action-runtime.test");
+    let snapshot_dir = runtime.join("report-snapshot.test");
+    fs::create_dir_all(&snapshot_dir).expect("snapshot dir");
+    let snapshot = snapshot_dir.join("report.sarif");
+    fs::write(&snapshot, "verified bytes").expect("snapshot");
+    let digest_output = Command::new("/usr/bin/sha256sum")
+        .arg(&snapshot)
+        .output()
+        .expect("snapshot digest");
+    let digest_text = String::from_utf8(digest_output.stdout).expect("digest UTF-8");
+    let digest = digest_text.split_whitespace().next().expect("digest");
+    fs::write(&snapshot, "tampered bytes").expect("tamper snapshot");
+    let github_output = dir.path().join("report-check-output");
+    let output = run_manifest_bash_step(
+        "Check receipt-bound report snapshot before upload",
+        &[
+            ("RUNNER_TEMP", runner_temp.to_str().expect("runner temp")),
+            ("ACTION_RUNTIME", runtime.to_str().expect("runtime")),
+            ("ACTION_REPORT_NAME", snapshot.to_str().expect("snapshot")),
+            ("ACTION_REPORT_SHA256", digest),
+            ("ACTION_SCAN_REPORT_PRESENT", "true"),
+            ("GITHUB_OUTPUT", github_output.to_str().expect("output")),
+        ],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "changed private snapshot must fail closed: {}",
+        combined_output(&output)
+    );
+    assert!(combined_output(&output).contains("missing or changed after verification"));
+}
+
+/// Regression: the shared duplicate-category registry must reject symlink
+/// redirection without mutating its victim and still reject a real duplicate.
+#[cfg(unix)]
+#[test]
+fn composite_action_category_registry_rejects_symlink_and_duplicate() {
+    let dir = TempDir::new().expect("category registry tempdir");
+    let runner_temp = dir.path().join("runner-temp");
+    let categories = runner_temp.join("keyhog-analysis-categories");
+    let victim = dir.path().join("victim");
+    fs::create_dir_all(&categories).expect("categories root");
+    fs::create_dir(&victim).expect("victim");
+    std::os::unix::fs::symlink(&victim, categories.join("7-1-job")).expect("identity symlink");
+    let output_path = dir.path().join("category-output");
+    let envs = [
+        ("RUNNER_TEMP", runner_temp.to_str().expect("runner temp")),
+        ("GITHUB_RUN_ID", "7"),
+        ("GITHUB_RUN_ATTEMPT", "1"),
+        ("GITHUB_JOB", "job"),
+        ("ACTION_ANALYSIS_CATEGORY", "slice"),
+        ("ACTION_FORMAT", "sarif"),
+        ("GITHUB_OUTPUT", output_path.to_str().expect("output")),
+    ];
+    let redirected = run_manifest_bash_step("Compute output filename", &envs);
+    assert_eq!(redirected.status.code(), Some(2));
+    assert!(fs::read_dir(&victim).expect("victim entries").next().is_none());
+    fs::remove_file(categories.join("7-1-job")).expect("remove symlink");
+    let first = run_manifest_bash_step("Compute output filename", &envs);
+    assert!(first.status.success(), "first category claim: {}", combined_output(&first));
+    let duplicate = run_manifest_bash_step("Compute output filename", &envs);
+    assert_eq!(duplicate.status.code(), Some(2));
+    assert!(combined_output(&duplicate).contains("Conflicting analysis-category"));
+}
+
+/// Regression: verifier bootstrap must never touch the historical predictable
+/// `$RUNNER_TEMP/minisign` destination regardless of its filesystem type.
+#[cfg(unix)]
+#[test]
+fn composite_action_minisign_ignores_all_predictable_preplants() {
+    for kind in ["symlink", "hardlink", "fifo", "regular"] {
+        let dir = TempDir::new().expect("minisign preplant tempdir");
+        let runner_temp = dir.path().join("runner-temp");
+        let fake_bin = dir.path().join("bin");
+        fs::create_dir(&runner_temp).expect("runner temp");
+        fs::create_dir(&fake_bin).expect("fake bin");
+        preplant_destination(
+            &runner_temp.join("minisign"),
+            &dir.path().join("verifier-victim"),
+            kind,
+        );
+        write_executable(
+            &fake_bin.join("curl"),
+            r#"#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ "$#" -gt 0 ]]; do
+  if [[ "$1" == "--output" ]]; then shift; out="$1"; fi
+  shift || true
+done
+printf 'archive' > "$out"
+"#,
+        );
+        write_executable(
+            &fake_bin.join("sha256sum"),
+            r#"#!/usr/bin/env bash
+printf 'f0a0954413df8531befed169e447a66da6868d79052ed7e892e50a4291af7ae0  %s\n' "$1"
+"#,
+        );
+        write_executable(
+            &fake_bin.join("tar"),
+            r#"#!/usr/bin/env bash
+set -euo pipefail
+dest=""
+while [[ "$#" -gt 0 ]]; do
+  if [[ "$1" == "-C" ]]; then shift; dest="$1"; fi
+  shift || true
+done
+mkdir -p "$dest/minisign-linux/x86_64"
+cat > "$dest/minisign-linux/x86_64/minisign" <<'SH'
+#!/usr/bin/env bash
+printf 'minisign 0.11\n'
+SH
+chmod +x "$dest/minisign-linux/x86_64/minisign"
+"#,
+        );
+        let path = format!("{}:{}", fake_bin.display(), env::var("PATH").expect("PATH"));
+        let github_output = dir.path().join("verifier-output");
+        let output = run_manifest_bash_step(
+            "Install pinned release verifier",
+            &[
+                ("PATH", path.as_str()),
+                ("RUNNER_TEMP", runner_temp.to_str().expect("runner temp")),
+                ("RUNNER_OS", "Linux"),
+                ("RUNNER_ARCH", "X64"),
+                ("GITHUB_OUTPUT", github_output.to_str().expect("output")),
+            ],
+        );
+        assert!(output.status.success(), "{kind}: {}", combined_output(&output));
+        assert_eq!(
+            fs::read_to_string(dir.path().join("verifier-victim")).expect("victim"),
+            "victim-unchanged"
+        );
+        let outputs = fs::read_to_string(github_output).expect("verifier outputs");
+        let verifier = outputs
+            .lines()
+            .find_map(|line| line.strip_prefix("path="))
+            .expect("private verifier");
+        let metadata = fs::symlink_metadata(verifier).expect("verifier metadata");
+        assert!(metadata.file_type().is_file() && !metadata.file_type().is_symlink());
+    }
+}
+
+/// Regression: source fallback must ignore every preplanted old predictable
+/// binary destination and publish only its invocation-private digest copy.
+#[cfg(unix)]
+#[test]
+fn composite_action_source_binary_ignores_all_predictable_preplants() {
+    for kind in ["symlink", "hardlink", "fifo", "regular"] {
+        let dir = TempDir::new().expect("source preplant tempdir");
+        let runner_temp = dir.path().join("runner-temp");
+        let source_root = dir.path().join("source");
+        let fake_bin = dir.path().join("bin");
+        fs::create_dir(&runner_temp).expect("runner temp");
+        fs::create_dir(&source_root).expect("source");
+        fs::create_dir(&fake_bin).expect("fake bin");
+        preplant_destination(
+            &runner_temp.join("keyhog"),
+            &dir.path().join("source-victim"),
+            kind,
+        );
+        write_executable(
+            &fake_bin.join("cargo"),
+            r#"#!/usr/bin/env bash
+set -euo pipefail
+mkdir -p target/release
+printf '#!/usr/bin/env bash\nexit 0\n' > target/release/keyhog
+chmod +x target/release/keyhog
+"#,
+        );
+        let path = format!("{}:{}", fake_bin.display(), env::var("PATH").expect("PATH"));
+        let github_output = dir.path().join("source-output");
+        let output = run_manifest_bash_step(
+            "Build keyhog from source (fallback)",
+            &[
+                ("PATH", path.as_str()),
+                ("RUNNER_TEMP", runner_temp.to_str().expect("runner temp")),
+                ("ACTION_SOURCE_ROOT", source_root.to_str().expect("source")),
+                ("ACTION_RESOLVED_VERSION", "0.5.48"),
+                ("GITHUB_OUTPUT", github_output.to_str().expect("output")),
+            ],
+        );
+        assert!(output.status.success(), "{kind}: {}", combined_output(&output));
+        assert_eq!(
+            fs::read_to_string(dir.path().join("source-victim")).expect("victim"),
+            "victim-unchanged"
+        );
+        let outputs = fs::read_to_string(github_output).expect("source outputs");
+        let binary = outputs
+            .lines()
+            .find_map(|line| line.strip_prefix("binary-path="))
+            .expect("private source binary");
+        let metadata = fs::symlink_metadata(binary).expect("source metadata");
+        assert!(metadata.file_type().is_file() && !metadata.file_type().is_symlink());
+    }
 }

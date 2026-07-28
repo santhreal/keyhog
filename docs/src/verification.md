@@ -5,6 +5,19 @@ declares a verification endpoint. The provider response becomes a structured
 verification outcome. Detectors without a verifier are `unverifiable`, and
 low-confidence findings that do not meet the verifier floor are `skipped`.
 
+> **Data-egress boundary:** verification sends credential material outside the
+> scanner process. Depending on the detector declaration, the captured
+> credential or a companion value is placed in an HTTPS request URL, query,
+> authorization/header field, or body and sent to the detector-declared
+> provider. Only eligible findings with a verifier are sent; this is not every
+> finding. Review custom detector TOML and the outbound network boundary before
+> enabling verification. `--verify` is refused under lockdown.
+
+`--no-verify` explicitly disables credential verification and overrides
+`verify = true` discovered in `.keyhog.toml`. The Action's default
+`verify: 'false'` maps to this flag, so committed configuration cannot silently
+enable network egress in an Action run.
+
 `--timeout <SECONDS>` (or `.keyhog.toml` `timeout`) sets the HTTP timeout for
 each verification request; the default is five seconds. It is not a whole-scan
 deadline. `--per-chunk-timeout-ms` is the separate optional scanner deadline,
@@ -247,7 +260,7 @@ one file.
 
 `--verify-oob` requires `--verify` and starts one interactsh collector session.
 Only detectors with a validated `[detector.verify.oob]` block use that session.
-The v0.5.47 shipped detector corpus contains no OOB-enabled detector, so the
+The v0.5.48 shipped detector corpus contains no OOB-enabled detector, so the
 flag has no effect on shipped findings. It is for reviewed custom corpora.
 
 If the collector handshake fails, KeyHog prints a stderr warning naming the

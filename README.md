@@ -22,7 +22,7 @@ without hand-written runtime configuration. After verified-install calibration,
 `keyhog scan .` works with the canonical defaults; a source-built multi-backend
 binary first runs `keyhog calibrate-autoroute`.
 
-The binary banner is `v0.5.47 · secret scanner · 923 detectors`; its
+The binary banner is `v0.5.48 · secret scanner · 923 detectors`; its
 compiled progress line reports `923 detectors (5822 patterns)` together with
 the operator-visible route (for example, `backend=simd-regex | gpu=none`).
 
@@ -60,6 +60,10 @@ machine without changing tools.
 
 ### Add it to your CI (one workflow file)
 
+The `preset` and `lockdown` inputs below are the 0.5.48 candidate contract.
+Copy this workflow after the publication verifier proves `@v0` points to
+`v0.5.48`; the current public `v0` release does not expose them yet.
+
 ```yaml
 # .github/workflows/keyhog.yml
 name: keyhog
@@ -69,18 +73,82 @@ jobs:
   scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: santhreal/keyhog@v0
-        with: { path: ., severity: high, format: sarif }
+        with:
+          path: .
+          severity: high
+          format: sarif
+          preset: default
+          lockdown: 'false'
 ```
 
-Release refs authenticate the complete binary and GPU literal bundle with
-minisign and SHA-256. Branch/SHA refs skip release lookup and build the
-checked-out source. With no explicit diagnostic backend, the Action visibly
-calibrates the runner before its default auto scan. The job summary reports
-measured duration; cost varies with the runner, cache, configuration, and
-repository. Findings auto-upload to GitHub code-scanning as SARIF. Adopt
-without breaking an existing tree by committing a baseline
+`preset` accepts `default`, `fast`, `deep`, or `precision`. `default` adds no
+preset flag, so a committed `.keyhog.toml` may select `fast = true`,
+`deep = true`, or `precision = true`; an explicit non-default Action preset has
+normal CLI precedence over the file preset. `lockdown: 'true'` independently
+adds `--lockdown`: it may compose with default, deep, or precision, while fast
+is refused by the CLI. `[lockdown] require = true` requires that Action input
+and does not enable lockdown by itself. Positive Action lockdown requires a
+Linux runner with a sufficient memlock limit for the real process. Granting
+`CAP_IPC_LOCK` or setting an unlimited `ulimit -l` are provisioning options, but
+a sufficiently large finite limit also works. Standard GitHub-hosted Linux
+currently fails closed during the real `mlockall` application; hosted
+cross-platform positives therefore use `lockdown: 'false'`, and the direct
+hosted lockdown lane proves that rejection.
+
+The maintained prepublication source lanes pass explicit `backend: cpu`: the
+digest-pinned Rust container runs real root and nested composite Action
+CPU+lockdown with `IPC_LOCK` and unlimited memlock, and the cross-platform lanes
+exercise clean and precision scans. Source Actions do not request auto without
+a persisted routing proof. A local production Docker run independently
+completed auto calibration and scanning with `mlocked` status.
+
+Reviewed branch/SHA Action refs build every platform with pinned Rust `1.89.0`
+and the portable profile and require explicit `backend: cpu`; accelerated
+backends and proof-backed auto require a compatible release binary and runner.
+Release refs bootstrap minisign `0.11` only from archives pinned by hardcoded
+SHA-256. After 0.5.48 is public, the separate authenticated manual-dispatch
+release lane retains default auto, passes one ephemeral `RUNNER_TEMP` autoroute
+receipt/cache from calibration to report scan, and deletes it.
+
+Runtime downloads authenticate the binary and GPU literal bundle with minisign
+and SHA-256. The 0.5.48 publication contract is an exact 60-asset manifest:
+ten payloads (four binaries, four matching GPU-literal sidecars, and two
+installers), their adjacent checksum/signature proofs, ten signed SPDX 2.3 JSON
+documents, and those documents' adjacent proofs. Binary and sidecar SBOMs bind
+attested package-scoped Cargo dependency receipts. The Linux binary additionally
+binds statically linked Hyperscan `5.4.2`, exact `libhs.a` and `libhs.pc`
+provenance hashes, and `STATIC_LINK`; it does not claim runtime `libhs`.
+Installer SBOMs enumerate the compatible signed platform payloads and the real
+shell/PowerShell download, hashing, signature, and file utilities they use,
+without inventing a Cargo graph. These candidate assets are not public until
+the release succeeds. Branch/SHA refs skip release lookup and build the
+checked-out source with explicit CPU. Authenticated release refs with no
+diagnostic backend visibly calibrate the runner before the default auto scan.
+The job summary reports measured duration; cost varies with the runner, cache,
+configuration, and repository. Findings auto-upload to GitHub code-scanning as
+SARIF. After the report flush, the scanner emits an ordered seven-field internal
+receipt: `schema=keyhog-action-report-v1`, `format`, `findings`,
+`report-bytes`, `report-sha256`, `scan-status`, and `exit-code`. A hidden
+Action-only verifier rehashes the exact requested workspace report bytes,
+validates every field, and returns the count without `jq`, Python, or `grep`.
+The requested copy keeps the stable
+`keyhog-results-<analysis-category>.<ext>` basename but is not the public
+output or upload authority and is untrusted after the Action returns. The
+wrapper copies verified bytes to a mode-`0400` snapshot inside a unique
+mode-`0700` runtime below the unpredictable
+`RUNNER_TEMP/keyhog-action-runtime.*/report-snapshot.*/` parent and verifies
+that snapshot against the same receipt. The public `report` output names that
+snapshot, and `report-present` is true only after it is published. SARIF and
+artifact uploads recheck its SHA-256 immediately before use. The snapshot is
+available to downstream steps in the same job and disappears with runner job
+cleanup. It is private, not immutable against another process under the same
+runner UID; publication-time receipt validation is not a promise that later
+bytes are unchanged. Receipt and snapshot paths are implementation details, not
+public CLI APIs.
+
+Adopt without breaking an existing tree by committing a baseline
 (`keyhog scan --create-baseline .keyhog-baseline.json`) so the action
 fails only on NEW secrets.
 
@@ -177,15 +245,15 @@ The installer verifies the selected release artifact before replacing a binary.
 For an installation that authenticates the installer script itself before
 execution, use the pinned signed flow below.
 
-The signed Linux release binary needs the Hyperscan runtime and the installer
-needs `minisign` before it can verify anything. On Debian/Ubuntu, install both
-with `sudo apt-get update && sudo apt-get install -y --no-install-recommends curl libhyperscan5 minisign`;
-on macOS, run `brew install minisign` (the macOS release asset is portable and
-does not need Hyperscan).
+The installer needs `minisign` before it can verify anything. The Linux release
+binary statically links Hyperscan and does not require `libhyperscan5`. On
+Debian/Ubuntu, run
+`sudo apt-get update && sudo apt-get install -y --no-install-recommends curl minisign`;
+on macOS, run `brew install minisign` and use the system `curl`.
 
 ```bash
 # Linux / macOS, pinned and authenticated before execution
-TAG=v0.5.47
+TAG=v0.5.48
 BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
 PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
 curl -fSLO "$BASE/install.sh"
@@ -250,7 +318,7 @@ against the release-side checksum file. The offline `--from-file` path also
 verifies sibling `.minisig` files when present and rejects invalid signatures.
 Passing `--insecure` can accept missing proof, but it never accepts a mismatch.
 
-Pin a version with `KEYHOG_VERSION=v0.5.47`. Change the install dir with
+Pin a version with `KEYHOG_VERSION=v0.5.48`. Change the install dir with
 `--install-dir=/usr/local/bin`. Runtime backend policy belongs to
 `keyhog scan --backend ...`, `[system].gpu`, and autoroute calibration, not the
 installer asset name.
@@ -304,8 +372,8 @@ rollback-protected maintenance operation. A tampered, mismatched, or unsafe
 archive is refused. On a healthy host `keyhog update` is the one-command upgrade
 path. Implicit update/repair resolution ignores drafts and prereleases and
 requires the complete signed host bundle. An explicit `--version <SEMVER>`
-accepts canonical SemVer with an optional leading `v` (for example `0.5.46` or
-`v0.5.47-rc.1`), normalizes it to the exact release tag, and refuses malformed
+accepts canonical SemVer with an optional leading `v` (for example `0.5.48` or
+`v0.5.48-rc.1`), normalizes it to the exact release tag, and refuses malformed
 or mismatched API responses before any asset download. Network responses are
 bounded and timed out before any installed file is changed.
 
@@ -338,20 +406,26 @@ KEYHOG_BITBUCKET_USERNAME="$BB_USER" KEYHOG_BITBUCKET_TOKEN="$BB_APP_PASSWORD" \
 keyhog scan-system --space 50G                         # walk every drive, every git history
 ```
 
-### Choose a scan mode
+### Choose a scan policy
 
-Start with the default mode. Select a preset only when its tradeoff matches
-your task:
+Start with the default. Select another policy only when its tradeoff matches
+the task:
 
-| Mode | Copyable command | Use it when |
+| Policy | Copyable command | Exact tradeoff |
 |---|---|---|
-| Default | `keyhog scan .` | You want the normal balance of recall and runtime |
-| Fast | `keyhog scan . --fast` | You are scanning staged or frequently changed files and can omit entropy, ML, and recursive decoding |
-| Deep | `keyhog scan . --deep` | You are investigating an incident or want the highest-recall built-in preset |
+| Default | `keyhog scan .` | Canonical balance: decode depth 10, entropy and ML enabled, 0.40 global confidence floor |
+| Fast preset | `keyhog scan . --fast` | Keeps named regex and multiline matching; disables recursive decode, entropy discovery, and ML scoring |
+| Deep preset | `keyhog scan . --deep` | Enables source-file entropy, scans comments without a confidence penalty, keeps heuristic entropy evidence beside ML, and admits prepared decode chunks up to 1 MiB |
+| Precision preset | `keyhog scan . --precision` | Disables entropy discovery and the relaxed keyword bridge, keeps ML, uses decode depth 1, and clamps global and detector floors to at least 0.85 |
+| Lockdown execution mode | `keyhog scan . --lockdown` | Linux-only fail-closed memory, dump, cache, output, and network protections. Requires a sufficient memlock limit; `CAP_IPC_LOCK` or unlimited `ulimit -l` are provisioning options, while a sufficiently large finite limit can also work. Standard hosted Linux currently fails closed at `mlockall`; the maintained digest-pinned push/PR lane proves real root+nested Action CPU+lockdown, while the authenticated manual-dispatch release lane proves auto+lockdown. This is a security mode, not a detection preset. |
 
-`--fast` and `--deep` are base presets. Explicit scan options still override
-the preset. See [Deep recovery](https://santhreal.github.io/keyhog/guides/deep-recovery.html)
-for the additional evidence recovered by a deep scan.
+`--fast`, `--deep`, and `--precision` are mutually exclusive base presets.
+Compatible explicit scan options refine the selected base. Precision confidence
+options may raise but never lower its 0.85 floor. Lockdown is separate, refuses
+fast and other completeness-reducing switches, and cannot run through the
+daemon. See [Configuration](https://santhreal.github.io/keyhog/reference/configuration.html#presets),
+[Deep recovery](https://santhreal.github.io/keyhog/guides/deep-recovery.html),
+and [Hardening](https://santhreal.github.io/keyhog/hardening.html).
 
 Filter, format, gate:
 
@@ -359,13 +433,21 @@ Filter, format, gate:
 keyhog scan . --severity high                  # info | client-safe | low | medium | high | critical
 keyhog scan . --min-confidence 0.5             # raise the reporting confidence floor
 keyhog scan . --format sarif -o keyhog.sarif   # GitHub code scanning
-keyhog scan . --verify                         # live-verify against vendor APIs
+keyhog scan . --verify                         # live-verify eligible findings against provider APIs
 keyhog scan . --create-baseline .keyhog-baseline.json
 keyhog scan . --baseline .keyhog-baseline.json # only NEW findings vs snapshot
-keyhog scan . --fast                           # pre-commit speed (no entropy/ML/decode recursion)
-keyhog scan . --deep                           # highest-recall built-in preset
+keyhog scan . --fast                           # pattern-only frequent feedback
+keyhog scan . --deep                           # bounded highest-recall recovery
+keyhog scan . --precision                      # lower-noise mass scanning
 keyhog scan . --incremental                    # BLAKE3 Merkle skip → 10-100× CI loop
 ```
+
+`--verify` is credential data egress. For an eligible detector, credential or
+companion material may be placed in a provider request URL, query, header, or
+body. Review the detector corpus and outbound trust boundary before enabling it,
+especially in CI; findings without a verifier are not sent. `--no-verify`
+explicitly disables verification and overrides `verify = true` from discovered
+configuration.
 
 ### Reuse a daemon or select a custom detector corpus
 
@@ -618,8 +700,9 @@ backend/cache/daemon/OS/GPU matrix.
 ## Daemon mode
 
 The optional Unix daemon keeps a compiled scanner warm for repeated eligible
-stdin and single-file scans. It runs in the foreground and is never started
-implicitly.
+stdin and single-file scans. Starting the foreground server is always explicit;
+KeyHog never starts it implicitly. Once it is ready, however, the default
+`--daemon=auto` policy may route an eligible scan to it.
 
 ```bash
 keyhog daemon start
@@ -669,7 +752,7 @@ inheritance audits, and quarterly developer-laptop sweeps.
 
 ## Lockdown mode (security-critical embeddings)
 
-For deployments where keyhog runs **on the same machine that holds the
+On Linux deployments where keyhog runs **on the same machine that holds the
 secrets** (e.g. paired with [EnvSeal](https://crates.io/crates/envseal))
 and there is no trusted boundary between the scanner and the
 credentials it inspects:
@@ -677,6 +760,13 @@ credentials it inspects:
 ```bash
 keyhog scan . --lockdown
 ```
+
+This requires a sufficient memlock limit for the real process. `CAP_IPC_LOCK`
+or unlimited `ulimit -l` can provide it, but a sufficiently large finite limit
+also works. Standard hosted Linux currently fails closed at `mlockall`. The
+maintained digest-pinned push/PR lane runs real root and nested composite Action
+CPU+lockdown with `IPC_LOCK`, unlimited memlock, and `mlocked` status; the
+authenticated manual-dispatch release lane proves release auto+lockdown.
 
 Enforces:
 

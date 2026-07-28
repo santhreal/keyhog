@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import pathlib
@@ -15,7 +16,13 @@ from .corpora import resolve_corpus
 from .corpora.base import Corpus
 from .scanners import resolve_scanner
 from .scanners.base import Finding, MeasurementProvenance, RunStats
-from .schema import BloomEvidence, Detection, RunResult, StaticRecoveryMetrics
+from .schema import (
+    BloomEvidence,
+    Detection,
+    HostedBinding,
+    RunResult,
+    StaticRecoveryMetrics,
+)
 from .schema import Scanner as ScannerRecord
 from .schema import ScannerConfig, Speed, is_sha256
 from .executable_snapshot import sha256_file
@@ -109,6 +116,37 @@ def _load_bloom_evidence(
     return evidence
 
 
+def _load_hosted_binding() -> HostedBinding | None:
+    """Load and digest the exact hosted context bytes configured for this run."""
+    configured = os.environ.get("KEYHOG_BENCH_HOSTED_CONTEXT")
+    if not configured:
+        return None
+    path = pathlib.Path(configured).expanduser().resolve(strict=True)
+    raw = path.read_bytes()
+    value = json.loads(raw)
+    if not isinstance(value, dict):
+        raise ValueError("hosted context must be an object")
+    from .hosted_cpu_gate import CONTEXT_SCHEMA
+
+    if value.get("schema_version") != CONTEXT_SCHEMA:
+        raise ValueError(
+            f"hosted context schema_version must be {CONTEXT_SCHEMA!r}"
+        )
+    runner = value.get("runner")
+    if not isinstance(runner, dict):
+        raise ValueError("hosted context runner must be an object")
+    binding_value = {
+        "context_sha256": hashlib.sha256(raw).hexdigest(),
+        "repository": runner.get("repository"),
+        "workflow_ref": runner.get("workflow_ref"),
+        "workflow_sha": runner.get("workflow_sha"),
+        "run_id": runner.get("run_id"),
+        "run_attempt": runner.get("run_attempt"),
+        "job": runner.get("job"),
+    }
+    return HostedBinding.from_json(binding_value)
+
+
 def build_result(
     *,
     scanner_name: str,
@@ -165,7 +203,7 @@ def build_result(
     )
 
 
-def _run_resolved_scanner(
+def _run_resolved_scanner_inner(
     scanner: _ScannerAdapter,
     version: str,
     cfg: ScannerConfig,
@@ -361,6 +399,53 @@ def _run_resolved_scanner(
     return result
 
 
+def _run_resolved_scanner(
+    scanner: _ScannerAdapter,
+    version: str,
+    cfg: ScannerConfig,
+    corpus: Corpus,
+) -> RunResult:
+    """Bind one measurement to stable hosted context and corpus bytes."""
+    try:
+        hosted_binding = _load_hosted_binding()
+    except Exception as exc:
+        return _unavailable_result(
+            scanner,
+            version,
+            cfg,
+            corpus,
+            f"hosted context failed: {type(exc).__name__}: {exc}",
+        )
+    try:
+        workload = corpus.workload_snapshot()
+    except Exception as exc:
+        result = _unavailable_result(
+            scanner,
+            version,
+            cfg,
+            corpus,
+            f"workload snapshot failed before scan: {type(exc).__name__}: {exc}",
+        )
+        result.hosted_binding = hosted_binding
+        return result
+
+    result = _run_resolved_scanner_inner(scanner, version, cfg, corpus)
+    try:
+        corpus.assert_workload_unchanged(workload)
+    except Exception as exc:
+        result = _unavailable_result(
+            scanner,
+            version,
+            cfg,
+            corpus,
+            f"workload changed during scan: {type(exc).__name__}: {exc}",
+            executable_sha256=result.scanner.executable_sha256,
+            detector_corpus_sha256=result.scanner.detector_corpus_sha256,
+        )
+    result.hosted_binding = hosted_binding
+    return result
+
+
 def run_once(
     *,
     scanner_name: str,
@@ -393,6 +478,7 @@ def _unavailable_result(
     error: str,
     executable_sha256: str = "",
     detector_corpus_sha256: str = "",
+    hosted_binding: HostedBinding | None = None,
 ) -> RunResult:
     return RunResult(
         generated_at=datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
@@ -410,4 +496,5 @@ def _unavailable_result(
         exit_code=-1,
         available=False,
         error=error,
+        hosted_binding=hosted_binding,
     )

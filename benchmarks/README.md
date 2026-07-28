@@ -64,6 +64,10 @@ finding mismatch fails the command instead of publishing partial evidence.
 - **Host:** OS / kernel / CPU / cores / RAM / GPU + VRAM, captured per run so
   desktop / santhserver / Windows-ThinkPad / macOS results aggregate into one
   matrix.
+- **Workload identity:** every new result hashes the complete, sorted scan tree
+  plus the canonical answer-key records (including scoring mode and source
+  coordinates). The SHA-256 identifies the exact bytes and labels, not just a
+  corpus nickname or fixture count.
 - **Config:** keyhog's `backend × cache × daemon × mode` axes; each competitor
   carries its own knob (kingfisher confidence, etc.) in the same `config_id`.
 - **Resolved scan manifest:** KeyHog benchmark artifacts persist the exact
@@ -232,8 +236,9 @@ Every value is synthetic and deterministic. P5-P12 embed the key and recovery
 logic in the program, matching the program-analysis task rather than creating
 a brute-force benchmark. Generation requires Node.js for its standard
 `crypto` implementation of AES-256-CBC. The generator verifies each encrypted
-value round-trips before publishing the corpus, and the test suite executes all
-13 phase variants against their exact expected plaintext.
+value round-trips before publishing the corpus. Focused tests cover every phase
+with deterministic samples; the expensive hosted deep row covers the complete
+4,368-fixture product.
 
 Run the mode comparison with:
 
@@ -242,9 +247,9 @@ make -C benchmarks ioc-recovery
 ```
 
 The result directory contains ordinary `RunResult` JSON for `full`, `fast`,
-and `deep`. Phase categories (`recovery/p00-*` through `recovery/p12-*`) make
-the exact capability boundary visible instead of collapsing it into one
-aggregate score.
+`deep`, and `precision`. Phase categories (`recovery/p00-*` through
+`recovery/p12-*`) make the exact capability boundary visible instead of
+collapsing it into one aggregate score.
 
 The Make target holds the backend at deterministic SIMD so differences isolate
 scan policy. A GPU host can measure the backend and mode cross-product without
@@ -262,10 +267,10 @@ unavailable result instead of being timed as a silent CPU fallback.
 
 `make -C benchmarks targets` includes the executable deep-mode target: all
 4,368 expected plaintexts recovered exactly, with no blind P0-P12 phase. It is
-marked `target_spec` because it is an explicit, expensive capability gate. The
-checked v0.5.41 SIMD/deep artifact currently satisfies it with 4,368 true
-positives, zero false negatives, and zero false positives. The artifact records
-the exact commit and detector-set identity.
+marked `target_spec` because it is an explicit, expensive capability gate.
+The older local v0.5.41 recovery files are unavailable/stale rows and are not
+release evidence. There is currently no checked-in headline recovery result;
+only a fresh hosted bundle that passes the contract below may establish one.
 
 ### AgentRE Linux recovery slice
 
@@ -352,6 +357,82 @@ KEYHOG_BENCH_DAEMON_FILE=/path/to/representative-file \
 - `perf`: keyhog's in-process `backend × cache × mode` matrix on a tree corpus,
   plus the constrained daemon matrix above on `daemon-file`.
 
+## Hosted CPU release evidence
+
+`bench-nightly` and `differential-bench` use `ubuntu-24.04` four-effective-core
+profiles in `cpu-gates/`. Admission requires exactly four logical and
+affinity-visible CPUs. A cgroup-v2 quota must be observed as exactly four cores
+or explicitly `max`; missing, unreadable, malformed, and unobservable/v1 quota
+state is `unknown` and fails closed. Runner image/version and runtime supply
+identity are separate receipts rather than assumptions implied by the label.
+
+The nightly policy requires current rows for mirror, CredData, and recovery
+`fast`/`full`/`deep`/`precision`. Context capture derives exact per-category
+positive denominators from the authenticated workload snapshot. Every scorer
+row must expose exactly those categories and conserve them against its overall
+TP/FN counts; each recovery mode additionally applies the policy's independent
+P00-P12 floors.
+
+The job generates/acquires source corpora outside the absent snapshot
+destination, then runs `python -m bench.hosted_cpu_gate context`. It copies each
+workload, records source/snapshot hashes, and the workflow makes the snapshot
+root-owned on a read-only bind mount before measurement. A rejected write probe
+is embedded into the final context; a pre/post workload check remains a second
+guard. Scanner rows consume only the mounted snapshot roots and bind the exact
+final context bytes.
+
+The context also binds the Git source, release binary and detector corpus,
+reviewed policy, repository/workflow/ref/SHA/run/attempt/job, effective CPU
+allocation, acquisition revision, category denominators, and workload counts/
+bytes/digests. Accelerator inventory is explicitly best-effort NVIDIA
+observation and is **not** a physical no-accelerator attestation. CPU evidence
+instead relies on the `ci-lean` build, explicit CPU/SIMD config, hidden GPU
+feature environment, and enforced in-process CPU route.
+
+Only `cpu` or `simd` in-process rows with cache and daemon disabled are
+admissible. The full resolved scan manifest (preset, effective policy and
+overrides) is policy-pinned rather than inferred from the filename. Each row
+has an explicit minimum recall, maximum wall time in milliseconds, minimum
+throughput in MiB/s recomputed from bound bytes/wall time, and maximum peak RSS
+in KiB. Raw JSON booleans, integers and finite numbers are validated before
+schema decoding; impossible confusion-matrix totals and exits outside KeyHog's
+`0`/`1`/`10` success domain fail closed.
+
+The committed thresholds are explicitly
+`unmeasured-release-requirements`: they are acceptance limits, not measured
+performance or calibration claims. CredData workload identity, per-row resolved
+manifest digests, runner image version, and runtime `libhs` SHA-256 are
+intentionally null until a fresh hosted run is reviewed. Null is never a
+wildcard—the gate remains red and names every missing pin. Therefore no hosted
+CPU headline is valid yet; review the first genuine hosted evidence, commit
+those exact values, update the literal workflow policy digest, and only then
+may a subsequent hosted run pass.
+
+The final command is deliberately result-only. It requires current UTC and run
+identity from the workflow invocation rather than trusting self-authored receipt
+fields, including a literal reviewed policy digest:
+
+```bash
+python -m bench.hosted_cpu_gate gate \
+  --policy cpu-gates/github-ubuntu-24.04-4core-nightly.json \
+  --policy-sha256 '<reviewed-policy-sha256>' \
+  --context hosted-cpu-context.json --unicode-parity unicode-parity.json \
+  --trusted-now '<current-utc>' --repository "$GITHUB_REPOSITORY" \
+  --workflow-ref "$GITHUB_WORKFLOW_REF" --workflow-sha "$GITHUB_WORKFLOW_SHA" \
+  --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
+  --job "$GITHUB_JOB" --root .
+```
+
+CPU/SIMD parity includes Unicode detector examples explicitly. The only
+accepted Rust receipt line is exactly
+`backend parity: <N> detector examples; CPU == SIMD on all ASCII inputs; 0
+unicode-input divergences`, emitted once after the Rust test rejects every
+mismatch. The reviewed policy pins the exact example count, parity source, and
+source-plus-detector vector digest. `bench.unicode_parity` also hashes the exact
+test executable before/after execution and binds it to the release binary,
+detector set, policy, context and GitHub run. Positive, missing, duplicate,
+count-shrunk and malformed output fails closed.
+
 ## Gate (CI forcing function)
 
 `python -m bench gate` is the single regression + differential gate (it replaced
@@ -366,9 +447,11 @@ newest-wins logic as the README table, and exits non-zero unless keyhog both:
   anchor in `baselines/`).
 
 Exit codes: `0` pass · `1` violation · `2` undecidable (keyhog produced no
-usable result). The `differential-bench` workflow builds the checked-out
-KeyHog commit and runs the gate against BetterLeaks and Kingfisher; the
-`bench-nightly` workflow renders the leaderboard the gate reads.
+usable result). `differential-bench` builds and measures its own checked-out
+commit before running both the F1 competitor gate and the independent hosted
+CPU evidence policy. `bench-nightly` separately measures and publishes its own
+mirror, CredData, and recovery bundle; neither workflow consumes the other's
+results.
 
 ## Continuous-improvement loop
 
@@ -382,12 +465,12 @@ It is the local mirror of the scheduled lanes that keep keyhog improving across
 vectors without manual babysitting:
 
 - **detection / differential:** `differential-bench` (nightly): `bench gate`
-  fails red if a competitor overtakes keyhog on F1 **or** keyhog regresses past
-  `baselines/canonical.toml` (the committed anchor; ratchet it up after a real
-  gain, never down to hide one). The active file is `mirror-keyhog-baseline.json`.
-- **leaderboard + speed/RSS:** `bench-nightly` (nightly): renders the tables.
+  fails red if a competitor overtakes keyhog on F1 or keyhog regresses past
+  `baselines/canonical.toml`; its separate hosted CPU policy also enforces the
+  mirror recall/resource receipt.
+- **hosted CPU recall + resources:** `bench-nightly` (nightly): fail-closed
+  mirror, CredData, and P0-P12 mode rows on a low-core no-GPU runner.
 - **strict recall under evasion:** `runners-nightly` (the Rust strict matrix).
-- **exact secret recovery:** `bench-nightly` (the P0-P12 full/fast/deep/precision matrix).
 - **test depth:** `ci` (`all_tests`, property, e2e on every push).
 
 `loop` deliberately does **not** `--inject` the README: the published tables are
@@ -412,13 +495,13 @@ POSIX-incompatible with this script; drive the ThinkPad via PowerShell.
 
 ## Reproducibility
 
-Scoring passes `--no-gpu` for the deterministic SIMD path on the default
-`simd-*` configs. The exact `gpu-cuda`, `gpu-wgpu`, and `auto` configs dogfood
-each GPU peer, and explicit GPU rows pass `--require-gpu` so they fail instead
-of timing another driver or CPU. GPU-to-SIMD parity is a separate release gate. The
-CredData corpus is
-pinned to an exact commit so a score is reproducible against a fixed dataset
-revision. The overlap scorer remains bit-identical to the now-retired
-`tools/secretbench/scoring/score.py` it replaced. Exact mode is deliberately
-stricter for recovery corpora. Both contracts and their per-category
-conservation rules are regression-anchored in `bench/tests/`.
+Scoring passes `--no-gpu` for deterministic `simd-*` configs. Generic local
+results still record physical GPU inventory, but hosted CPU release evidence
+requires both the explicit no-GPU environment receipt and an empty runner GPU
+inventory; `auto` and GPU configs are inadmissible. Exact GPU rows elsewhere
+use `--require-gpu` and fail instead of timing another backend. CredData is
+pinned to an exact commit and every hosted workload additionally carries a
+scan-tree + answer-key SHA-256. Overlap scoring remains bit-identical to the
+retired SecretBench scorer; exact recovery is deliberately stricter. Focused
+contract tests cover stale/wrong identities, recall and resource limits,
+missing modes/phases, GPU fallback, and Unicode CPU/SIMD divergence.

@@ -1,4 +1,5 @@
 import pathlib
+import tempfile
 import unittest
 
 from scripts import org_audit
@@ -46,6 +47,95 @@ keyhog scan .
             org_audit.scan_commands_under_environment_variables(
                 pathlib.Path("crates/cli/src/subcommands/scan.rs"), src
             ),
+            [],
+        )
+
+
+class OrgAuditArchitectureOwnerTests(unittest.TestCase):
+    @staticmethod
+    def owner_map_fixture(assignments: dict[str, str]) -> str:
+        rows = "\n".join(
+            f"| {boundary} | `{reference}` |"
+            for boundary, reference in assignments.items()
+        )
+        return (
+            f"{org_audit.ARCHITECTURE_OWNER_HEADING}\n\n"
+            "| Boundary | Definitional owner |\n"
+            "|---|---|\n"
+            f"{rows}\n"
+        )
+
+    def test_owner_map_requires_every_load_bearing_boundary(self) -> None:
+        assignments = dict(org_audit.REQUIRED_ARCHITECTURE_OWNERS)
+        boundary = "Curated source-crate export surface"
+        reference = assignments.pop(boundary)
+        violations = org_audit.architecture_owner_violations(
+            self.owner_map_fixture(assignments)
+        )
+        self.assertIn(
+            f"architecture owner map is missing boundary: {boundary} -> {reference}",
+            violations,
+        )
+
+    def test_swapped_owners_are_rejected_even_when_reference_set_is_unchanged(
+        self,
+    ) -> None:
+        assignments = dict(org_audit.REQUIRED_ARCHITECTURE_OWNERS)
+        cli_boundary = "CLI argument dispatch and setup-error exit routing"
+        exit_boundary = "Completed-scan exit precedence"
+        cli_owner = assignments[cli_boundary]
+        exit_owner = assignments[exit_boundary]
+        assignments[cli_boundary], assignments[exit_boundary] = exit_owner, cli_owner
+
+        violations = org_audit.architecture_owner_violations(
+            self.owner_map_fixture(assignments)
+        )
+        self.assertIn(
+            f"architecture owner map assigns {cli_boundary} to {exit_owner}; "
+            f"expected {cli_owner}",
+            violations,
+        )
+        self.assertIn(
+            f"architecture owner map assigns {exit_boundary} to {cli_owner}; "
+            f"expected {exit_owner}",
+            violations,
+        )
+
+
+    def test_planted_stale_owner_symbol_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            owner = root / "crates" / "core" / "src" / "finding.rs"
+            owner.parent.mkdir(parents=True)
+            owner.write_text(
+                "// fn stale_owner() {}\npub fn actual_owner() {}\n",
+                encoding="utf-8",
+            )
+            violation = org_audit.owner_reference_violation(
+                "crates/core/src/finding.rs::stale_owner", root
+            )
+        self.assertEqual(
+            violation,
+            "architecture owner symbol does not exist: "
+            "crates/core/src/finding.rs::stale_owner",
+        )
+
+    def test_planted_missing_owner_path_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            violation = org_audit.owner_reference_violation(
+                "crates/verifier/src/missing.rs", pathlib.Path(tmp)
+            )
+        self.assertEqual(
+            violation,
+            "architecture owner path does not exist: crates/verifier/src/missing.rs",
+        )
+
+    def test_repository_architecture_owner_map_resolves(self) -> None:
+        architecture = (
+            org_audit.ROOT / "docs" / "src" / "architecture.md"
+        ).read_text(encoding="utf-8")
+        self.assertEqual(
+            org_audit.architecture_owner_violations(architecture),
             [],
         )
 

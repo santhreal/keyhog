@@ -18,15 +18,20 @@ mirror still scores identically.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import pathlib
+import stat
+import unicodedata
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from ..schema import CorpusInfo
 
 
-@dataclass
+@dataclass(frozen=True)
 class LabeledRecord:
     """One ground-truth credential candidate.
 
@@ -57,6 +62,15 @@ class LabeledRecord:
                 f"record {self.id!r} has unsupported match_mode "
                 f"{self.match_mode!r}; expected 'overlap' or 'exact'"
             )
+
+
+@dataclass(frozen=True)
+class WorkloadSnapshot:
+    """Immutable identity for one fully validated scan-tree snapshot."""
+
+    bytes: int
+    file_count: int
+    sha256: str
 
 
 class Corpus(ABC):
@@ -112,79 +126,346 @@ class Corpus(ABC):
     def is_labeled(self) -> bool:
         return bool(self.records())
 
+    def workload_snapshot(self) -> WorkloadSnapshot:
+        """Hash a fresh, fail-closed view of the answer key and scan tree."""
+        total_bytes, file_count, sha256 = self._workload_metrics(self.records())
+        return WorkloadSnapshot(total_bytes, file_count, sha256)
+
+    def assert_workload_unchanged(self, expected: WorkloadSnapshot) -> None:
+        """Fail if the live workload differs from a prior snapshot."""
+        actual = self.workload_snapshot()
+        if actual != expected:
+            raise RuntimeError(
+                "benchmark workload changed after it was snapshotted: "
+                f"expected {expected.sha256}, got {actual.sha256}"
+            )
+
     def info(self) -> CorpusInfo:
+        # Deliberately do not cache this. Hosted evidence takes a pre-run
+        # identity and the result builder asks again after scanning; a cached
+        # CorpusInfo would let byte or label mutation silently reuse the old
+        # digest.
         recs = self.records()
         positives = sum(1 for r in recs if r.label and not r.ignore)
-        total_bytes = self._tree_bytes()
+        snapshot = self.workload_snapshot()
         return CorpusInfo(
             name=self.name,
-            fixture_count=len(recs) if recs else self._tree_file_count(),
+            fixture_count=len(recs) if recs else snapshot.file_count,
             labeled_positives=positives,
-            bytes=total_bytes,
+            bytes=snapshot.bytes,
+            workload_sha256=snapshot.sha256,
         )
 
-    # ── size probes (best-effort; never raise) ────────────────────────
-    # Measured over scan_root (the manifest-free tree the scanner sees) so
-    # throughput MB/s is bytes-actually-scanned and the answer key never
-    # inflates the corpus size.
+    # ── exact workload identity ───────────────────────────────────────
 
-    def _tree_bytes(self) -> int:
+    @staticmethod
+    def _hash_part(digest: "hashlib._Hash", payload: bytes) -> None:
+        digest.update(len(payload).to_bytes(8, "big"))
+        digest.update(payload)
+
+    @staticmethod
+    def _stat_identity(value: os.stat_result) -> tuple[int, ...]:
+        return (
+            value.st_dev,
+            value.st_ino,
+            value.st_mode,
+            value.st_size,
+            value.st_mtime_ns,
+            value.st_ctime_ns,
+        )
+
+    @classmethod
+    def _scan_workload_files(
+        cls, root: pathlib.Path
+    ) -> list[tuple[pathlib.Path, str, tuple[int, ...]]]:
+        """Enumerate only regular, non-symlink files under ``root``."""
+        try:
+            root_stat = root.lstat()
+        except FileNotFoundError as error:
+            raise FileNotFoundError(f"benchmark scan root does not exist: {root}") from error
+        if stat.S_ISLNK(root_stat.st_mode):
+            raise ValueError(f"benchmark scan root must not be a symlink: {root}")
+
+        files: list[tuple[pathlib.Path, str, tuple[int, ...]]] = []
+        normalized_paths: set[str] = set()
+
+        def add_file(path: pathlib.Path, relative: str, value: os.stat_result) -> None:
+            normalized = unicodedata.normalize("NFC", relative)
+            if normalized in normalized_paths:
+                raise ValueError(
+                    "benchmark scan tree has duplicate normalized path "
+                    f"{normalized!r}"
+                )
+            normalized_paths.add(normalized)
+            files.append((path, relative, cls._stat_identity(value)))
+
+        def visit(directory: pathlib.Path, prefix: pathlib.PurePosixPath) -> None:
+            try:
+                with os.scandir(directory) as stream:
+                    entries = sorted(stream, key=lambda entry: entry.name)
+            except OSError as error:
+                raise OSError(
+                    f"cannot enumerate benchmark scan directory {directory}: {error}"
+                ) from error
+            for entry in entries:
+                relative_path = prefix / entry.name
+                relative = relative_path.as_posix()
+                try:
+                    value = entry.stat(follow_symlinks=False)
+                except OSError as error:
+                    raise OSError(
+                        f"cannot stat benchmark workload path {entry.path}: {error}"
+                    ) from error
+                mode = value.st_mode
+                if stat.S_ISLNK(mode):
+                    raise ValueError(
+                        f"benchmark scan tree must not contain symlinks: {entry.path}"
+                    )
+                if stat.S_ISDIR(mode):
+                    visit(pathlib.Path(entry.path), relative_path)
+                elif stat.S_ISREG(mode):
+                    add_file(pathlib.Path(entry.path), relative, value)
+                else:
+                    raise ValueError(
+                        "benchmark scan tree must contain only regular files and "
+                        f"directories: {entry.path}"
+                    )
+
+        if stat.S_ISREG(root_stat.st_mode):
+            add_file(root, root.name, root_stat)
+        elif stat.S_ISDIR(root_stat.st_mode):
+            visit(root, pathlib.PurePosixPath())
+        else:
+            raise ValueError(
+                f"benchmark scan root must be a regular file or directory: {root}"
+            )
+        return files
+
+    def _workload_metrics(
+        self, records: list[LabeledRecord]
+    ) -> tuple[int, int, str]:
+        """Return bytes, file count, and a validated answer-key + tree hash."""
+        digest = hashlib.sha256()
+        self._hash_part(digest, b"keyhog-workload-v1")
+        self._hash_part(digest, self.name.encode("utf-8"))
+        for record in records:
+            encoded = json.dumps(
+                {
+                    "id": record.id,
+                    "secret": record.secret,
+                    "label": record.label,
+                    "category": record.category,
+                    "file_path": record.file_path,
+                    "line_start": record.line_start,
+                    "line_end": record.line_end,
+                    "ignore": record.ignore,
+                    "match_mode": record.match_mode,
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+            self._hash_part(digest, encoded)
+
+        root = self.scan_root
+        paths = self._scan_workload_files(root)
         total = 0
-        root = self.scan_root
-        if not root.exists():
-            return 0
-        if root.is_file():
+        for path, relative, expected_identity in paths:
+            self._hash_part(digest, relative.encode("utf-8"))
+            flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+            flags |= getattr(os, "O_NOFOLLOW", 0)
             try:
-                return root.stat().st_size
-            except OSError:
-                return 0
-        for p in root.rglob("*"):
+                descriptor = os.open(path, flags)
+            except OSError as error:
+                raise OSError(f"cannot open benchmark workload file {path}: {error}") from error
+            with os.fdopen(descriptor, "rb") as source:
+                before = os.fstat(source.fileno())
+                if not stat.S_ISREG(before.st_mode):
+                    raise ValueError(
+                        f"benchmark workload path is not a regular file: {path}"
+                    )
+                if self._stat_identity(before) != expected_identity:
+                    raise RuntimeError(
+                        f"benchmark workload changed while being snapshotted: {path}"
+                    )
+                size = before.st_size
+                self._hash_part(digest, size.to_bytes(8, "big"))
+                read_bytes = 0
+                while chunk := source.read(1024 * 1024):
+                    digest.update(chunk)
+                    read_bytes += len(chunk)
+                after = os.fstat(source.fileno())
             try:
-                if p.is_file():
-                    total += p.stat().st_size
-            except OSError:
-                continue
-        return total
+                current = path.lstat()
+            except FileNotFoundError as error:
+                raise RuntimeError(
+                    f"benchmark workload changed while being snapshotted: {path}"
+                ) from error
+            if (
+                read_bytes != size
+                or self._stat_identity(after) != expected_identity
+                or self._stat_identity(current) != expected_identity
+            ):
+                raise RuntimeError(
+                    f"benchmark workload changed while being snapshotted: {path}"
+                )
+            total += size
 
-    def _tree_file_count(self) -> int:
-        root = self.scan_root
-        if not root.exists():
-            return 0
-        if root.is_file():
-            return 1
-        n = 0
-        for p in root.rglob("*"):
-            try:
-                if p.is_file():
-                    n += 1
-            except OSError:
-                continue
-        return n
+        if self._scan_workload_files(root) != paths:
+            raise RuntimeError(
+                "benchmark scan tree changed while being snapshotted"
+            )
+        return total, len(paths), digest.hexdigest()
 
 
-def load_jsonl_manifest(path: pathlib.Path) -> list[LabeledRecord]:
-    """Parse a SecretBench-shape ``manifest.jsonl`` into :class:`LabeledRecord`.
+def _strict_type(value: object, expected: type | tuple[type, ...]) -> bool:
+    allowed = expected if isinstance(expected, tuple) else (expected,)
+    return type(value) in allowed
 
-    Shared by the mirror and home-turf corpora (identical manifest shape and
-    split layout), so the record mapping lives in ONE place. Callers own the
-    manifest-missing error (each phrases its own regenerate hint)."""
+
+def _validate_manifest_file(
+    file_root: pathlib.Path, relative_text: str, *, record_id: str
+) -> str:
+    relative = pathlib.PurePosixPath(relative_text)
+    if (
+        not relative_text
+        or "\\" in relative_text
+        or relative.is_absolute()
+        or relative_text != relative.as_posix()
+        or any(part in {"", ".", ".."} for part in relative.parts)
+    ):
+        raise ValueError(
+            f"manifest record {record_id!r} has unsafe path {relative_text!r}"
+        )
+
+    try:
+        root_stat = file_root.lstat()
+    except FileNotFoundError as error:
+        raise ValueError(f"manifest file root does not exist: {file_root}") from error
+    if stat.S_ISLNK(root_stat.st_mode) or not stat.S_ISDIR(root_stat.st_mode):
+        raise ValueError(
+            f"manifest file root must be a regular non-symlink directory: {file_root}"
+        )
+
+    current = file_root
+    for index, part in enumerate(relative.parts):
+        current = current / part
+        try:
+            value = current.lstat()
+        except FileNotFoundError as error:
+            raise ValueError(
+                f"manifest fixture missing for record {record_id!r}: {relative_text}"
+            ) from error
+        if stat.S_ISLNK(value.st_mode):
+            raise ValueError(
+                f"manifest fixture must not traverse a symlink for record "
+                f"{record_id!r}: {relative_text}"
+            )
+        final = index == len(relative.parts) - 1
+        if final and not stat.S_ISREG(value.st_mode):
+            raise ValueError(
+                f"manifest fixture must be a regular file for record "
+                f"{record_id!r}: {relative_text}"
+            )
+        if not final and not stat.S_ISDIR(value.st_mode):
+            raise ValueError(
+                f"manifest fixture path is not a directory for record "
+                f"{record_id!r}: {relative_text}"
+            )
+    return relative.as_posix()
+
+
+def load_jsonl_manifest(
+    path: pathlib.Path,
+    *,
+    file_root: pathlib.Path,
+    schema: Mapping[str, type | tuple[type, ...]],
+    required_fields: frozenset[str],
+    allow_duplicate_file_paths: bool = False,
+) -> list[LabeledRecord]:
+    """Strictly load a typed JSONL manifest and validate every scanned file."""
+    if not required_fields <= schema.keys():
+        raise ValueError("manifest required fields must be declared in its schema")
     out: list[LabeledRecord] = []
-    with open(path) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
+    ids: set[str] = set()
+    file_paths: set[str] = set()
+    try:
+        manifest_stat = path.lstat()
+    except FileNotFoundError:
+        raise
+    if stat.S_ISLNK(manifest_stat.st_mode) or not stat.S_ISREG(manifest_stat.st_mode):
+        raise ValueError(f"manifest must be a regular non-symlink file: {path}")
+
+    with path.open(encoding="utf-8") as stream:
+        for line_number, line in enumerate(stream, 1):
+            if not line.strip():
                 continue
-            r = json.loads(line)
-            out.append(LabeledRecord(
-                id=r["id"],
-                secret=r.get("secret", ""),
-                label=bool(r.get("label")),
-                category=r.get("category", "unknown"),
-                file_path=r.get("on_disk_path") or r.get("file_path", ""),
-                line_start=int(r.get("start_line", 0) or 0),
-                line_end=int(r.get("end_line", 0) or 0),
-                match_mode=r.get("match_mode", "overlap"),
-            ))
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as error:
+                raise ValueError(
+                    f"{path} line {line_number} is invalid JSON: {error}"
+                ) from error
+            if not isinstance(row, dict):
+                raise ValueError(f"{path} line {line_number} must be a JSON object")
+            unknown = row.keys() - schema.keys()
+            missing = required_fields - row.keys()
+            if unknown:
+                raise ValueError(
+                    f"{path} line {line_number} has unknown fields: "
+                    + ", ".join(sorted(unknown))
+                )
+            if missing:
+                raise ValueError(
+                    f"{path} line {line_number} is missing required fields: "
+                    + ", ".join(sorted(missing))
+                )
+            for field, value in row.items():
+                if not _strict_type(value, schema[field]):
+                    expected = schema[field]
+                    raise ValueError(
+                        f"{path} line {line_number} field {field!r} has type "
+                        f"{type(value).__name__}; expected {expected}"
+                    )
+
+            record_id = row["id"]
+            if not record_id:
+                raise ValueError(f"{path} line {line_number} has an empty id")
+            if record_id in ids:
+                raise ValueError(f"{path} contains duplicate record id {record_id!r}")
+            ids.add(record_id)
+            relative = _validate_manifest_file(
+                file_root, row["on_disk_path"], record_id=record_id
+            )
+            normalized = unicodedata.normalize("NFC", relative)
+            if not allow_duplicate_file_paths and normalized in file_paths:
+                raise ValueError(
+                    f"{path} contains duplicate fixture path {relative!r}"
+                )
+            file_paths.add(normalized)
+
+            line_start = row.get("start_line", 0)
+            line_end = row.get("end_line", 0)
+            if line_start < 0 or line_end < 0:
+                raise ValueError(
+                    f"{path} line {line_number} has negative line coordinates"
+                )
+            if line_end and line_start and line_end < line_start:
+                raise ValueError(
+                    f"{path} line {line_number} has end_line before start_line"
+                )
+            out.append(
+                LabeledRecord(
+                    id=record_id,
+                    secret=row["secret"],
+                    label=row["label"],
+                    category=row["category"],
+                    file_path=relative,
+                    line_start=line_start,
+                    line_end=line_end,
+                    match_mode=row.get("match_mode", "overlap"),
+                )
+            )
     return out
 
 

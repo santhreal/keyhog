@@ -30,6 +30,29 @@ _BENCH_ROOT = _THIS.parents[2]
 _TURFS = ("betterleaks", "kingfisher")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _COMMIT = re.compile(r"^[0-9a-f]{40}$")
+_BETTERLEAKS_MANIFEST_SCHEMA: dict[str, type] = {
+    "id": str,
+    "secret": str,
+    "label": bool,
+    "category": str,
+    "source_tool": str,
+    "source_version": str,
+    "source_commit": str,
+    "source_rules_sha256": str,
+    "file_type": str,
+    "on_disk_path": str,
+}
+_KINGFISHER_MANIFEST_SCHEMA: dict[str, type] = {
+    "id": str,
+    "secret": str,
+    "label": bool,
+    "category": str,
+    "source_tool": str,
+    "file_type": str,
+    "on_disk_path": str,
+}
+
+
 
 
 def _candidate_homes(turf: str) -> list[pathlib.Path]:
@@ -81,7 +104,17 @@ class HomefieldCorpus(Corpus):
             )
         if self.turf == "betterleaks":
             self._validate_betterleaks_provenance(man)
-        return load_jsonl_manifest(man)
+        schema = (
+            _BETTERLEAKS_MANIFEST_SCHEMA
+            if self.turf == "betterleaks"
+            else _KINGFISHER_MANIFEST_SCHEMA
+        )
+        return load_jsonl_manifest(
+            man,
+            file_root=self.file_root,
+            schema=schema,
+            required_fields=frozenset(schema),
+        )
 
     @staticmethod
     def _validate_betterleaks_provenance(manifest: pathlib.Path) -> None:

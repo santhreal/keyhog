@@ -30,7 +30,7 @@ class Response:
     value: Any
     link: str | None
 
-RECEIPT_SCHEMA = "keyhog-release-publication-v1"
+RECEIPT_SCHEMA = "keyhog-release-publication-v2"
 
 
 @dataclass(frozen=True)
@@ -73,6 +73,7 @@ class PublicationReceipt:
     release_id: int
     tag: str
     commit: str
+    tag_object: str
     prerelease: bool
     notes_sha256: str
     assets: tuple[AssetProof, ...]
@@ -85,6 +86,7 @@ class PublicationReceipt:
             "release_id",
             "tag",
             "commit",
+            "tag_object",
             "prerelease",
             "notes_sha256",
             "assets",
@@ -95,6 +97,7 @@ class PublicationReceipt:
         release_id = value["release_id"]
         tag = value["tag"]
         commit = value["commit"]
+        tag_object = value["tag_object"]
         prerelease = value["prerelease"]
         notes_sha256 = value["notes_sha256"]
         raw_assets = value["assets"]
@@ -110,6 +113,8 @@ class PublicationReceipt:
             or not tag
             or not isinstance(commit, str)
             or re.fullmatch(r"[0-9a-f]{40}", commit) is None
+            or not isinstance(tag_object, str)
+            or re.fullmatch(r"[0-9a-f]{40}", tag_object) is None
             or not isinstance(prerelease, bool)
             or prerelease != ("-" in tag)
             or not isinstance(notes_sha256, str)
@@ -130,6 +135,7 @@ class PublicationReceipt:
             release_id=release_id,
             tag=tag,
             commit=commit,
+            tag_object=tag_object,
             prerelease=prerelease,
             notes_sha256=notes_sha256,
             assets=assets,
@@ -152,6 +158,7 @@ class PublicationReceipt:
             "release_id": self.release_id,
             "tag": self.tag,
             "commit": self.commit,
+            "tag_object": self.tag_object,
             "prerelease": self.prerelease,
             "notes_sha256": self.notes_sha256,
             "assets": [asset.value() for asset in self.assets],
@@ -454,15 +461,17 @@ def _validate_receipt_release(
         or value.get("draft") is not draft
         or value.get("prerelease") is not receipt.prerelease
         or (not draft and (not isinstance(published_at, str) or not published_at))
+        or (not draft and value.get("immutable") is not True)
     ):
         raise PublicationError(
             "release identity and body do not match the signed publication receipt; "
             f"expected id={receipt.release_id}, tag={receipt.tag!r}, "
             f"notes_sha256={receipt.notes_sha256}, draft={draft!r}, "
-            f"prerelease={receipt.prerelease!r}; actual id={value.get('id')!r}, "
-            f"tag={value.get('tag_name')!r}, name={value.get('name')!r}, "
-            f"draft={value.get('draft')!r}, prerelease={value.get('prerelease')!r}, "
-            f"published_at={published_at!r}"
+            f"prerelease={receipt.prerelease!r}, immutable={not draft!r}; "
+            f"actual id={value.get('id')!r}, tag={value.get('tag_name')!r}, "
+            f"name={value.get('name')!r}, draft={value.get('draft')!r}, "
+            f"prerelease={value.get('prerelease')!r}, "
+            f"immutable={value.get('immutable')!r}, published_at={published_at!r}"
         )
 
 
@@ -471,11 +480,17 @@ def _assert_tag_commit(
     repository_path: str,
     tag: str,
     expected_commit: str,
-) -> None:
-    """Prove the exact tag ref still resolves to the commit whose bytes were built."""
+    expected_tag_object: str | None = None,
+) -> str:
+    """Prove the exact annotated tag object still resolves to the built commit."""
 
     if re.fullmatch(r"[0-9a-f]{40}", expected_commit) is None:
         raise PublicationError("expected release commit must be a 40-character Git SHA")
+    if (
+        expected_tag_object is not None
+        and re.fullmatch(r"[0-9a-f]{40}", expected_tag_object) is None
+    ):
+        raise PublicationError("expected release tag object must be a 40-character Git SHA")
     encoded_tag = quote(tag, safe="")
     value = client.api(
         "GET", f"/repos/{repository_path}/git/ref/tags/{encoded_tag}"
@@ -485,24 +500,27 @@ def _assert_tag_commit(
             f"GitHub did not return the exact release ref refs/tags/{tag}"
         )
     target = value.get("object")
-    visited: set[str] = set()
-    while isinstance(target, dict) and target.get("type") == "tag":
-        object_sha = target.get("sha")
-        if (
-            not isinstance(object_sha, str)
-            or re.fullmatch(r"[0-9a-f]{40}", object_sha) is None
-            or object_sha in visited
-        ):
-            raise PublicationError(f"release tag {tag} has an invalid tag-object chain")
-        visited.add(object_sha)
-        if len(visited) > 16:
-            raise PublicationError(f"release tag {tag} has an excessive tag-object chain")
-        annotated = client.api(
-            "GET", f"/repos/{repository_path}/git/tags/{object_sha}"
-        ).value
-        if not isinstance(annotated, dict):
-            raise PublicationError("GitHub annotated-tag resolution returned a non-object")
-        target = annotated.get("object")
+    actual_tag_object = target.get("sha") if isinstance(target, dict) else None
+    if (
+        not isinstance(target, dict)
+        or target.get("type") != "tag"
+        or not isinstance(actual_tag_object, str)
+        or re.fullmatch(r"[0-9a-f]{40}", actual_tag_object) is None
+        or (
+            expected_tag_object is not None
+            and actual_tag_object != expected_tag_object
+        )
+    ):
+        raise PublicationError(
+            f"release ref refs/tags/{tag} does not name the expected annotated "
+            f"tag object {expected_tag_object!r}"
+        )
+    annotated = client.api(
+        "GET", f"/repos/{repository_path}/git/tags/{actual_tag_object}"
+    ).value
+    if not isinstance(annotated, dict):
+        raise PublicationError("GitHub annotated-tag resolution returned a non-object")
+    target = annotated.get("object")
     actual_commit = target.get("sha") if isinstance(target, dict) else None
     if (
         not isinstance(target, dict)
@@ -513,6 +531,7 @@ def _assert_tag_commit(
             f"release tag {tag} does not resolve to built commit {expected_commit}; "
             f"GitHub reports {actual_commit!r}"
         )
+    return actual_tag_object
 
 
 def _set_and_confirm_draft(
@@ -653,6 +672,7 @@ def prepare_release(
     asset_paths: Iterable[Path],
     release_notes: str,
     expected_commit: str,
+    expected_tag_object: str | None = None,
 ) -> PublicationReceipt:
     """Privately stage exact assets and return the proof a later job may publish."""
 
@@ -670,7 +690,9 @@ def prepare_release(
     assets = _validate_assets(asset_paths)
     expected_assets = tuple(_proof_for_path(asset) for asset in assets)
     repository_path = quote(repository, safe="/")
-    _assert_tag_commit(client, repository_path, tag, expected_commit)
+    tag_object = _assert_tag_commit(
+        client, repository_path, tag, expected_commit, expected_tag_object
+    )
     releases_path = f"/repos/{repository_path}/releases"
     matching = [
         release
@@ -703,6 +725,7 @@ def prepare_release(
         release_id=release_id,
         tag=tag,
         commit=expected_commit,
+        tag_object=tag_object,
         prerelease="-" in tag,
         notes_sha256=_notes_digest(notes),
         assets=expected_assets,
@@ -713,7 +736,9 @@ def prepare_release(
     if isinstance(current, dict) and current.get("draft") is False:
         _validate_receipt_release(current, receipt, draft=False)
         _assert_remote_assets(client, releases_path, assets_path, receipt.assets)
-        _assert_tag_commit(client, repository_path, tag, expected_commit)
+        _assert_tag_commit(
+            client, repository_path, tag, expected_commit, receipt.tag_object
+        )
         return receipt
 
     _set_and_confirm_draft(
@@ -754,7 +779,9 @@ def prepare_release(
             )
 
     _assert_remote_assets(client, releases_path, assets_path, receipt.assets)
-    _assert_tag_commit(client, repository_path, tag, expected_commit)
+    _assert_tag_commit(
+        client, repository_path, tag, expected_commit, receipt.tag_object
+    )
     confirmed = client.api("GET", release_path).value
     _validate_receipt_release(confirmed, receipt, draft=True)
     return receipt
@@ -769,25 +796,35 @@ def publish_prepared_release(
     releases_path = f"/repos/{repository_path}/releases"
     release_path = f"{releases_path}/{receipt.release_id}"
     assets_path = f"{release_path}/assets"
-    _assert_tag_commit(client, repository_path, receipt.tag, receipt.commit)
+    _assert_tag_commit(
+        client, repository_path, receipt.tag, receipt.commit, receipt.tag_object
+    )
     current = client.api("GET", release_path).value
     if isinstance(current, dict) and current.get("draft") is False:
         _validate_receipt_release(current, receipt, draft=False)
         _assert_remote_assets(client, releases_path, assets_path, receipt.assets)
-        _assert_tag_commit(client, repository_path, receipt.tag, receipt.commit)
+        _assert_tag_commit(
+            client, repository_path, receipt.tag, receipt.commit, receipt.tag_object
+        )
         return receipt.release_id
 
     _validate_receipt_release(current, receipt, draft=True)
     _assert_remote_assets(client, releases_path, assets_path, receipt.assets)
-    _assert_tag_commit(client, repository_path, receipt.tag, receipt.commit)
+    _assert_tag_commit(
+        client, repository_path, receipt.tag, receipt.commit, receipt.tag_object
+    )
     try:
         published = client.api(
             "PATCH", release_path, payload={"draft": False}
         ).value
         _validate_receipt_release(published, receipt, draft=False)
+        _assert_remote_assets(client, releases_path, assets_path, receipt.assets)
         confirmed = client.api("GET", release_path).value
         _validate_receipt_release(confirmed, receipt, draft=False)
-        _assert_tag_commit(client, repository_path, receipt.tag, receipt.commit)
+        _assert_remote_assets(client, releases_path, assets_path, receipt.assets)
+        _assert_tag_commit(
+            client, repository_path, receipt.tag, receipt.commit, receipt.tag_object
+        )
     except PublicationError as error:
         try:
             _set_and_confirm_receipt_draft(client, release_path, receipt)
@@ -824,6 +861,9 @@ def _parser() -> argparse.ArgumentParser:
     prepare.add_argument(
         "--commit", default=os.environ.get("KEYHOG_RELEASE_COMMIT")
     )
+    prepare.add_argument(
+        "--tag-object", default=os.environ.get("KEYHOG_RELEASE_TAG_OBJECT")
+    )
     prepare.add_argument("--receipt", required=True, type=Path)
 
     publish = commands.add_parser("publish")
@@ -848,6 +888,10 @@ def main(argv: list[str] | None = None) -> int:
             raise PublicationError("--repository or GITHUB_REPOSITORY is required")
         if not args.commit:
             raise PublicationError("--commit or KEYHOG_RELEASE_COMMIT is required")
+        if not args.tag_object:
+            raise PublicationError(
+                "--tag-object or KEYHOG_RELEASE_TAG_OBJECT is required"
+            )
         try:
             release_notes = args.notes_file.read_text(encoding="utf-8")
         except OSError as error:
@@ -861,6 +905,7 @@ def main(argv: list[str] | None = None) -> int:
             args.assets,
             release_notes,
             args.commit,
+            args.tag_object,
         )
         receipt.write(args.receipt)
         print(

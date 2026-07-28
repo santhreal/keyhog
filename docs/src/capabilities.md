@@ -22,19 +22,36 @@ Start with the narrowest mode that covers the input you need.
 
 | Need | Command | Boundary |
 |---|---|---|
-| Scan files or directories once | `keyhog scan <path>...` | Runs in the CLI process. Use this for local work and CI. |
-| Scan Git state | `keyhog scan --git-staged`, `--git-diff <range>`, or `--git-history <repo>` | Staged and diff modes inspect selected changes. History mode walks commits. |
-| Scan one file repeatedly on Unix | `keyhog daemon start`, then `keyhog scan <file>` | Eligible single-file and stdin requests can use the warm daemon. Other scan options remain in-process. |
-| Monitor local directories | `keyhog watch <path>...` | Runs a foreground watcher. It is separate from the daemon. |
+| Scan files or directories once | `keyhog scan <path>...` | Directories and ineligible policy combinations run in process. On Unix, an eligible single-file request may use an already-ready daemon under the default `auto` policy. |
+| Scan Git state | `keyhog scan --git-staged`, `--git-diff <range>`, or `--git-history <repo>` | Staged and diff modes inspect selected changes. History mode walks commits. These run in process. |
+| Scan one file repeatedly on Unix | `keyhog daemon start`, then `keyhog scan <file>` | Starting the foreground server is explicit. Eligible single-file and stdin requests may then use its warm scanner. |
+| Monitor local directories | `keyhog watch <path>...` | Own foreground filesystem-event loop and in-process scanner; never uses the daemon socket. |
 | Audit a host | `keyhog scan-system` | Walks eligible local mounted filesystems and discovered Git histories. Network mounts require `--include-network`. |
 
 See [Architecture](./architecture.md#execution-surfaces) for routing ownership
 and [Exit codes](./reference/exit-codes.md) for the process outcome contract.
 
 Daemon routing has three explicit states. An absent daemon flag uses
-opportunistic `auto` behavior. Bare `--daemon` or `--daemon=on` requires a
-compatible running daemon. `--daemon=off` guarantees in-process execution.
-The daemon transport is Unix-only.
+opportunistic `auto` behavior, but never starts a daemon: it uses a compatible
+server only when one is already ready. Bare `--daemon` or `--daemon=on`
+requires that server. `--daemon=off` guarantees in-process execution. The
+daemon transport is Unix-only.
+
+## Choose a scan policy
+
+| Policy | Command | Resolved behavior |
+|---|---|---|
+| Default | `keyhog scan .` | Decode depth 10, entropy and ML enabled, global confidence floor 0.40. |
+| Fast preset | `keyhog scan . --fast` | Named regex and multiline matching remain; recursive decode, entropy discovery, and ML scoring are disabled. |
+| Deep preset | `keyhog scan . --deep` | Source-file entropy and comment scanning at full confidence, heuristic evidence beside entropy ML, depth 10, and prepared decode chunks up to 1 MiB. |
+| Precision preset | `keyhog scan . --precision` | Entropy discovery and the relaxed keyword bridge off, ML on, decode depth 1, every confidence floor at least 0.85. |
+| Lockdown mode | `keyhog scan . --lockdown` | Linux-only fail-closed process protection. Requires a sufficient memlock limit; `CAP_IPC_LOCK`, unlimited `ulimit -l`, or a sufficiently large finite limit can provide it. Standard hosted Linux currently fails closed at `mlockall`; the maintained digest-pinned push/PR source lane proves real root+nested Action explicit-CPU lockdown, while authenticated manual dispatch proves release auto+lockdown. It is an execution security mode, not a scan preset. |
+
+The three presets are mutually exclusive bases. Compatible explicit options
+refine them; a precision confidence override may raise but never lower 0.85.
+Lockdown refuses fast and other completeness-reducing switches, and always runs
+in process. See [Configuration](./reference/configuration.md#presets) and
+[Hardening](./hardening.md#lockdown-mode).
 
 ## Choose a detector corpus mode
 

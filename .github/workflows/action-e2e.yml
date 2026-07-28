@@ -1,0 +1,492 @@
+name: action-e2e
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'action.yml'
+      - '.github/actions/keyhog/**'
+      - '.github/workflows/action-e2e.yml'
+      - 'crates/cli/tests/action_root_mirror_parity.rs'
+      - 'crates/cli/tests/e2e/action_ci_contract.rs'
+      - 'crates/cli/src/**'
+  pull_request:
+    paths:
+      - 'action.yml'
+      - '.github/actions/keyhog/**'
+      - '.github/workflows/action-e2e.yml'
+      - 'crates/cli/tests/action_root_mirror_parity.rs'
+      - 'crates/cli/tests/e2e/action_ci_contract.rs'
+      - 'crates/cli/src/**'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Published version whose signed release bundle the composite must authenticate.'
+        required: true
+        default: '0.5.48'
+        type: string
+
+concurrency:
+  group: action-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  KEYHOG_ACTION_E2E_VERSION: ${{ inputs.version || '0.5.48' }}
+jobs:
+
+  action-contract:
+    name: Action contract and mirror lock
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact Action candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: '1.89.0'
+      - name: Enforce root mirror and behavioral contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test -p keyhog --test action_root_mirror_parity
+          cargo test -p keyhog --test e2e_all -- action_
+          cargo test -p keyhog --test e2e_all -- composite_action_
+
+  positive-lockdown:
+    name: provisioned source-CPU / release-auto lockdown (root and nested)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    container:
+      # Rust and its build/download utilities are immutable inputs; the job
+      # grants the same locked-memory policy required by production lockdown.
+      image: rust:1.89.0-bookworm@sha256:948f9b08a66e7fe01b03a98ef1c7568292e07ec2e4fe90d88c07bb14563c84ff
+      options: --cap-add IPC_LOCK --ulimit memlock=-1:-1
+    steps:
+      - name: Checkout exact Action candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Create clean lockdown fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p -- action-e2e-lockdown
+          printf 'ordinary fixture content\n' > action-e2e-lockdown/input.txt
+
+      - name: Invoke root composite with provisioned lockdown
+        id: root_lockdown
+        uses: ./
+        with:
+          version: ${{ github.event_name == 'workflow_dispatch' && env.KEYHOG_ACTION_E2E_VERSION || '' }}
+          path: action-e2e-lockdown
+          backend: ${{ github.event_name == 'workflow_dispatch' && 'auto' || 'cpu' }}
+          lockdown: 'true'
+          verify: 'false'
+          format: json
+          upload-sarif: 'false'
+          fail-on-findings: 'true'
+          analysis-category: e2e-lockdown-root
+
+      - name: Assert root lockdown receipt and cleanup
+        shell: bash
+        env:
+          ACTION_FINDINGS: ${{ steps.root_lockdown.outputs.findings }}
+          ACTION_EXIT_CODE: ${{ steps.root_lockdown.outputs.exit-code }}
+          ACTION_SCAN_STATUS: ${{ steps.root_lockdown.outputs.scan-status }}
+          ACTION_REPORT_PRESENT: ${{ steps.root_lockdown.outputs.report-present }}
+          ACTION_REPORT: ${{ steps.root_lockdown.outputs.report }}
+          ACTION_MODE: ${{ github.event_name == 'workflow_dispatch' && 'authenticated-release-auto' || 'portable-source-cpu' }}
+        run: |
+          set -euo pipefail
+          [[ "$ACTION_FINDINGS" == "0" ]]
+          [[ "$ACTION_EXIT_CODE" == "0" ]]
+          [[ "$ACTION_SCAN_STATUS" == "success" ]]
+          [[ "$ACTION_REPORT_PRESENT" == "true" ]]
+          [[ "$ACTION_REPORT" == "$RUNNER_TEMP"/keyhog-action-runtime.*/report-snapshot.*/keyhog-results-e2e-lockdown-root.json ]]
+          [[ -s "$ACTION_REPORT" ]]
+          installed_keyhog="$(command -v keyhog)"
+          [[ "$installed_keyhog" == "$RUNNER_TEMP"/keyhog-action-runtime.*/*/keyhog ]]
+          case "$ACTION_MODE" in
+            portable-source-cpu) ;;
+            authenticated-release-auto)
+              [[ "$(keyhog --version)" == *"$KEYHOG_ACTION_E2E_VERSION"* ]]
+              ;;
+            *) echo "unexpected Action proof mode: $ACTION_MODE" >&2; exit 1 ;;
+          esac
+          if compgen -G "$RUNNER_TEMP/keyhog-autoroute-cache-*" >/dev/null; then
+            echo "root composite leaked its autoroute receipt" >&2
+            exit 1
+          fi
+
+      - name: Invoke nested composite with provisioned lockdown
+        id: nested_lockdown
+        uses: ./.github/actions/keyhog
+        with:
+          version: ${{ github.event_name == 'workflow_dispatch' && env.KEYHOG_ACTION_E2E_VERSION || '' }}
+          path: action-e2e-lockdown
+          backend: ${{ github.event_name == 'workflow_dispatch' && 'auto' || 'cpu' }}
+          lockdown: 'true'
+          verify: 'false'
+          format: json
+          upload-sarif: 'false'
+          fail-on-findings: 'true'
+          analysis-category: e2e-lockdown-nested
+
+      - name: Assert nested lockdown receipt and isolated cache cleanup
+        shell: bash
+        env:
+          ACTION_FINDINGS: ${{ steps.nested_lockdown.outputs.findings }}
+          ACTION_EXIT_CODE: ${{ steps.nested_lockdown.outputs.exit-code }}
+          ACTION_SCAN_STATUS: ${{ steps.nested_lockdown.outputs.scan-status }}
+          ACTION_REPORT_PRESENT: ${{ steps.nested_lockdown.outputs.report-present }}
+          ACTION_REPORT: ${{ steps.nested_lockdown.outputs.report }}
+          ACTION_MODE: ${{ github.event_name == 'workflow_dispatch' && 'authenticated-release-auto' || 'portable-source-cpu' }}
+        run: |
+          set -euo pipefail
+          [[ "$ACTION_FINDINGS" == "0" ]]
+          [[ "$ACTION_EXIT_CODE" == "0" ]]
+          [[ "$ACTION_SCAN_STATUS" == "success" ]]
+          [[ "$ACTION_REPORT_PRESENT" == "true" ]]
+          [[ "$ACTION_REPORT" == "$RUNNER_TEMP"/keyhog-action-runtime.*/report-snapshot.*/keyhog-results-e2e-lockdown-nested.json ]]
+          [[ -s "$ACTION_REPORT" ]]
+          installed_keyhog="$(command -v keyhog)"
+          [[ "$installed_keyhog" == "$RUNNER_TEMP"/keyhog-action-runtime.*/*/keyhog ]]
+          case "$ACTION_MODE" in
+            portable-source-cpu) ;;
+            authenticated-release-auto)
+              [[ "$(keyhog --version)" == *"$KEYHOG_ACTION_E2E_VERSION"* ]]
+              ;;
+            *) echo "unexpected Action proof mode: $ACTION_MODE" >&2; exit 1 ;;
+          esac
+          if compgen -G "$RUNNER_TEMP/keyhog-autoroute-cache-*" >/dev/null; then
+            echo "nested composite leaked its autoroute receipt" >&2
+            exit 1
+          fi
+          shopt -s nullglob globstar
+          literal_bins=("$RUNNER_TEMP"/keyhog-action-runtime.*/cache/**/*.bin)
+          [[ "${#literal_bins[@]}" == "0" ]]
+
+  release-asset:
+    name: release asset (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux-x86-64
+          - runner: windows-2025
+            platform: windows-x86-64
+          - runner: macos-15-intel
+            platform: macos-x86-64
+          - runner: macos-15
+            platform: macos-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    # Trusted pushes and same-repository PRs exercise fail-closed SARIF upload.
+    # GitHub downgrades this permission on fork PRs; the composite recognizes
+    # exactly that context and keeps only the Code Scanning upload advisory.
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout exact Action candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Create deterministic scan fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf -- action-e2e-fixtures
+          mkdir -p -- action-e2e-fixtures/clean action-e2e-fixtures/findings
+          printf 'ordinary fixture content\n' > action-e2e-fixtures/clean/input.txt
+          printf 'AWS_ACCESS_KEY_ID=AKIAQYLPMN5HFIQR7XYA\n' > action-e2e-fixtures/findings/secret.env
+
+      - name: Invoke root composite from branch/SHA source
+        if: github.event_name != 'workflow_dispatch'
+        id: clean_source
+        uses: ./
+        with:
+          path: action-e2e-fixtures/clean
+          backend: cpu
+          severity: high
+          format: sarif
+          verify: 'false'
+          upload-sarif: 'true'
+          fail-on-findings: 'true'
+          analysis-category: e2e-${{ matrix.platform }}-clean
+
+      - name: Invoke root composite against authenticated release asset
+        if: github.event_name == 'workflow_dispatch'
+        id: clean_release
+        uses: ./
+        with:
+          version: ${{ env.KEYHOG_ACTION_E2E_VERSION }}
+          path: action-e2e-fixtures/clean
+          severity: high
+          format: sarif
+          verify: 'false'
+          upload-sarif: 'true'
+          fail-on-findings: 'true'
+          analysis-category: e2e-${{ matrix.platform }}-clean
+
+      - name: Assert clean receipt, SARIF, PATH, and selected install path
+        shell: bash
+        env:
+          ACTION_FINDINGS: ${{ github.event_name == 'workflow_dispatch' && steps.clean_release.outputs.findings || steps.clean_source.outputs.findings }}
+          ACTION_EXIT_CODE: ${{ github.event_name == 'workflow_dispatch' && steps.clean_release.outputs.exit-code || steps.clean_source.outputs.exit-code }}
+          ACTION_DURATION_MS: ${{ github.event_name == 'workflow_dispatch' && steps.clean_release.outputs.duration-ms || steps.clean_source.outputs.duration-ms }}
+          ACTION_SCAN_STATUS: ${{ github.event_name == 'workflow_dispatch' && steps.clean_release.outputs.scan-status || steps.clean_source.outputs.scan-status }}
+          ACTION_REPORT_PRESENT: ${{ github.event_name == 'workflow_dispatch' && steps.clean_release.outputs.report-present || steps.clean_source.outputs.report-present }}
+          ACTION_REPORT: ${{ github.event_name == 'workflow_dispatch' && steps.clean_release.outputs.report || steps.clean_source.outputs.report }}
+          ACTION_CATEGORY: ${{ github.event_name == 'workflow_dispatch' && steps.clean_release.outputs.analysis-category || steps.clean_source.outputs.analysis-category }}
+          RELEASE_ASSET_MODE: ${{ github.event_name == 'workflow_dispatch' }}
+          EXPECTED_PLATFORM: ${{ matrix.platform }}
+          EXPECTED_VERSION: ${{ env.KEYHOG_ACTION_E2E_VERSION }}
+        run: |
+          set -euo pipefail
+          expected_category="e2e-${EXPECTED_PLATFORM}-clean"
+          expected_report="keyhog-results-${expected_category}.sarif"
+          [[ "$ACTION_FINDINGS" == "0" ]]
+          [[ "$ACTION_EXIT_CODE" == "0" ]]
+          [[ "$ACTION_DURATION_MS" =~ ^[0-9]+$ ]]
+          [[ "$ACTION_SCAN_STATUS" == "success" ]]
+          [[ "$ACTION_REPORT_PRESENT" == "true" ]]
+          [[ "$ACTION_REPORT" == "$RUNNER_TEMP"/keyhog-action-runtime.*/report-snapshot.*/"$expected_report" ]]
+          [[ "$ACTION_CATEGORY" == "$expected_category" ]]
+          [[ -s "$ACTION_REPORT" ]]
+
+          installed="$(command -v keyhog)"
+          [[ -n "$installed" ]]
+          case "${RUNNER_OS:-}" in
+            Windows)
+              runner_temp_unix="$(cygpath -u "$RUNNER_TEMP")"
+              installed_unix="$(cygpath -u "$installed")"
+              [[ "$installed_unix" == "$runner_temp_unix"/keyhog-action-runtime.*/*/keyhog.exe ]]
+              programs_glob="$runner_temp_unix/keyhog-action-runtime.*/cache/localappdata/keyhog/programs/*.bin"
+              ;;
+            macOS)
+              [[ "$installed" == "$RUNNER_TEMP"/keyhog-action-runtime.*/*/keyhog ]]
+              programs_glob="$RUNNER_TEMP/keyhog-action-runtime.*/cache/home/Library/Caches/keyhog/programs/*.bin"
+              ;;
+            Linux)
+              [[ "$installed" == "$RUNNER_TEMP"/keyhog-action-runtime.*/*/keyhog ]]
+              programs_glob="$RUNNER_TEMP/keyhog-action-runtime.*/cache/xdg/keyhog/programs/*.bin"
+              ;;
+            *)
+              echo "unsupported RUNNER_OS: ${RUNNER_OS:-<unset>}" >&2
+              exit 2
+              ;;
+          esac
+          version_output="$(keyhog --version)"
+          [[ "$version_output" == *"$EXPECTED_VERSION"* ]]
+          if [[ "$RELEASE_ASSET_MODE" == "true" ]]; then
+            compgen -G "$programs_glob" >/dev/null
+          fi
+
+
+      - name: Download clean report artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: keyhog-report-e2e-${{ matrix.platform }}-clean-*
+          path: downloaded-clean
+          merge-multiple: true
+
+      - name: Assert clean artifact payload
+        shell: bash
+        env:
+          EXPECTED_PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          test -s "downloaded-clean/keyhog-results-e2e-${EXPECTED_PLATFORM}-clean.sarif"
+
+      # Regression: hosted runners cannot satisfy CLI memory-locking guarantees;
+      # source CPU and authenticated release auto must both reject with guidance.
+      - name: Reject unsupported hosted CPU lockdown from branch/SHA source
+        if: github.event_name != 'workflow_dispatch' && matrix.platform == 'linux-x86-64'
+        id: lockdown_source
+        continue-on-error: true
+        uses: ./.github/actions/keyhog
+        with:
+          path: action-e2e-fixtures/clean
+          backend: cpu
+          lockdown: 'true'
+          verify: 'false'
+          upload-sarif: 'false'
+          analysis-category: e2e-linux-lockdown-validation
+
+      - name: Reject unsupported hosted auto lockdown from authenticated release asset
+        if: github.event_name == 'workflow_dispatch' && matrix.platform == 'linux-x86-64'
+        id: lockdown_release
+        continue-on-error: true
+        uses: ./.github/actions/keyhog
+        with:
+          version: ${{ env.KEYHOG_ACTION_E2E_VERSION }}
+          path: action-e2e-fixtures/clean
+          lockdown: 'true'
+          verify: 'false'
+          upload-sarif: 'false'
+          analysis-category: e2e-linux-lockdown-validation
+
+      - name: Assert hosted lockdown fails before scanning
+        if: always() && matrix.platform == 'linux-x86-64'
+        shell: bash
+        env:
+          ACTION_OUTCOME: ${{ github.event_name == 'workflow_dispatch' && steps.lockdown_release.outcome || steps.lockdown_source.outcome }}
+        run: |
+          set -euo pipefail
+          [[ "$ACTION_OUTCOME" == "failure" ]]
+
+      - name: Invoke nested composite with precision finding policy from branch/SHA source
+        if: github.event_name != 'workflow_dispatch'
+        id: finding_source
+        continue-on-error: true
+        uses: ./.github/actions/keyhog
+        with:
+          path: action-e2e-fixtures/findings
+          backend: cpu
+          preset: precision
+          lockdown: 'false'
+          severity: high
+          format: sarif
+          verify: 'false'
+          upload-sarif: 'false'
+          fail-on-findings: 'true'
+          analysis-category: e2e-${{ matrix.platform }}-findings
+
+      - name: Invoke nested composite with precision finding policy from authenticated release asset
+        if: github.event_name == 'workflow_dispatch'
+        id: finding_release
+        continue-on-error: true
+        uses: ./.github/actions/keyhog
+        with:
+          version: ${{ env.KEYHOG_ACTION_E2E_VERSION }}
+          path: action-e2e-fixtures/findings
+          preset: precision
+          lockdown: 'false'
+          severity: high
+          format: sarif
+          verify: 'false'
+          upload-sarif: 'false'
+          fail-on-findings: 'true'
+          analysis-category: e2e-${{ matrix.platform }}-findings
+
+      - name: Assert findings failure receipt and SARIF
+        shell: bash
+        env:
+          ACTION_OUTCOME: ${{ github.event_name == 'workflow_dispatch' && steps.finding_release.outcome || steps.finding_source.outcome }}
+          ACTION_FINDINGS: ${{ github.event_name == 'workflow_dispatch' && steps.finding_release.outputs.findings || steps.finding_source.outputs.findings }}
+          ACTION_EXIT_CODE: ${{ github.event_name == 'workflow_dispatch' && steps.finding_release.outputs.exit-code || steps.finding_source.outputs.exit-code }}
+          ACTION_DURATION_MS: ${{ github.event_name == 'workflow_dispatch' && steps.finding_release.outputs.duration-ms || steps.finding_source.outputs.duration-ms }}
+          ACTION_SCAN_STATUS: ${{ github.event_name == 'workflow_dispatch' && steps.finding_release.outputs.scan-status || steps.finding_source.outputs.scan-status }}
+          ACTION_REPORT_PRESENT: ${{ github.event_name == 'workflow_dispatch' && steps.finding_release.outputs.report-present || steps.finding_source.outputs.report-present }}
+          ACTION_REPORT: ${{ github.event_name == 'workflow_dispatch' && steps.finding_release.outputs.report || steps.finding_source.outputs.report }}
+          ACTION_CATEGORY: ${{ github.event_name == 'workflow_dispatch' && steps.finding_release.outputs.analysis-category || steps.finding_source.outputs.analysis-category }}
+          EXPECTED_PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          expected_category="e2e-${EXPECTED_PLATFORM}-findings"
+          expected_report="keyhog-results-${expected_category}.sarif"
+          [[ "$ACTION_OUTCOME" == "failure" ]]
+          [[ "$ACTION_FINDINGS" == "1" ]]
+          [[ "$ACTION_EXIT_CODE" == "1" ]]
+          [[ "$ACTION_DURATION_MS" =~ ^[0-9]+$ ]]
+          [[ "$ACTION_SCAN_STATUS" == "success" ]]
+          [[ "$ACTION_REPORT_PRESENT" == "true" ]]
+          [[ "$ACTION_REPORT" == "$RUNNER_TEMP"/keyhog-action-runtime.*/report-snapshot.*/"$expected_report" ]]
+          [[ "$ACTION_CATEGORY" == "$expected_category" ]]
+          [[ -s "$ACTION_REPORT" ]]
+
+      - name: Download findings report artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: keyhog-report-e2e-${{ matrix.platform }}-findings-*
+          path: downloaded-findings
+          merge-multiple: true
+
+      - name: Assert findings artifact payload
+        shell: bash
+        env:
+          EXPECTED_PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          test -s "downloaded-findings/keyhog-results-e2e-${EXPECTED_PLATFORM}-findings.sarif"
+
+      - name: Exercise tampered and missing wrapper contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          wrapper="$GITHUB_WORKSPACE/.github/actions/keyhog/run-scan.sh"
+          fixture_root="$RUNNER_TEMP/keyhog-wrapper-faults"
+          fake_bin="$fixture_root/bin"
+          mkdir -p -- "$fake_bin"
+
+          missing_receipt="$fixture_root/missing-receipt.txt"
+          : > "$missing_receipt"
+          set +e
+          GITHUB_OUTPUT="$missing_receipt" bash "$wrapper" --severity invalid >"$fixture_root/missing-receipt.log" 2>&1
+          status=$?
+          set -e
+          [[ "$status" == "2" ]]
+          [[ ! -s "$missing_receipt" ]]
+          grep -F "Invalid severity 'invalid'" "$fixture_root/missing-receipt.log" >/dev/null
+
+          cat > "$fake_bin/keyhog" <<'SH'
+          #!/usr/bin/env bash
+          exit 0
+          SH
+          chmod +x "$fake_bin/keyhog"
+          missing_report="$fixture_root/missing-report.txt"
+          : > "$missing_report"
+          set +e
+          PATH="$fake_bin:$PATH" GITHUB_OUTPUT="$missing_report" bash "$wrapper" \
+            --format sarif --output "$fixture_root/missing.sarif" --backend cpu \
+            >"$fixture_root/missing-report.log" 2>&1
+          status=$?
+          set -e
+          [[ "$status" == "3" ]]
+          grep -Fx 'findings=0' "$missing_report" >/dev/null
+          grep -Fx 'exit-code=0' "$missing_report" >/dev/null
+          grep -Fx 'scan-status=failed' "$missing_report" >/dev/null
+          grep -Fx 'report-present=false' "$missing_report" >/dev/null
+          grep -F "did not write" "$fixture_root/missing-report.log" >/dev/null
+
+          real_keyhog="$(command -v keyhog)"
+          scan_root="$fixture_root/clean-input"
+          mkdir -p -- "$scan_root"
+          printf 'ordinary fixture content\n' > "$scan_root/input.txt"
+          cat > "$fake_bin/keyhog" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          if [[ "${1:-}" == 'action-report' ]]; then
+            exec "$REAL_KEYHOG" "$@"
+          fi
+          output=''
+          previous=''
+          for arg in "$@"; do
+            if [[ "$previous" == '--output' ]]; then
+              output="$arg"
+            fi
+            previous="$arg"
+          done
+          "$REAL_KEYHOG" "$@"
+          printf ' ' >> "$output"
+          SH
+          chmod +x "$fake_bin/keyhog"
+          tampered_receipt="$fixture_root/tampered-report-receipt.txt"
+          : > "$tampered_receipt"
+          set +e
+          REAL_KEYHOG="$real_keyhog" PATH="$fake_bin:$PATH" GITHUB_OUTPUT="$tampered_receipt" bash "$wrapper" \
+            --path "$scan_root" --format sarif --output "$fixture_root/tampered.sarif" --backend cpu \
+            >"$fixture_root/tampered-report.log" 2>&1
+          status=$?
+          set -e
+          [[ "$status" == "3" ]]
+          grep -Fx 'findings=' "$tampered_receipt" >/dev/null
+          grep -Fx 'exit-code=0' "$tampered_receipt" >/dev/null
+          grep -Fx 'scan-status=failed' "$tampered_receipt" >/dev/null
+          grep -Fx 'report-present=true' "$tampered_receipt" >/dev/null
+          grep -F "Could not verify scan report receipt" "$fixture_root/tampered-report.log" >/dev/null

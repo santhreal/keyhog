@@ -19,8 +19,8 @@ inputs:
     default: 'false'
   version:
     description: |
-      Published KeyHog version to install, such as v0.5.46. Leave unset to use
-      the version selected by the Action ref. Branch and commit refs build from source.
+      Published final KeyHog version v0.5.48 or newer to install. Prereleases
+      and build metadata are rejected. Leave unset to use the Action ref; branch and commit refs build from source.
     default: ''
   upload-sarif:
     description: 'Upload the report to GitHub Code Scanning when format is sarif.'
@@ -43,9 +43,16 @@ inputs:
     default: ''
   backend:
     description: |
-      Scan backend: auto | simd | cpu | gpu-cuda | gpu-wgpu.
-      Leave unset for calibrated automatic routing.
+      Scan backend: auto | cpu | simd | gpu-cuda | gpu-wgpu. Published exact
+      and floating release refs use calibrated auto. Portable branch and commit
+      source refs require explicit cpu; accelerated backends are unavailable.
     default: ''
+  preset:
+    description: 'Scan preset: default | fast | deep | precision.'
+    default: 'default'
+  lockdown:
+    description: 'Set to "true" to enable lockdown protections independently of the scan preset.'
+    default: 'false'
 
 outputs:
   findings:
@@ -61,11 +68,11 @@ outputs:
     description: 'Terminal scan state: success, partial, cancelled, or failed.'
     value: ${{ steps.scan.outputs.scan-status }}
   report-present:
-    description: 'Whether the requested report was written.'
+    description: 'Whether a receipt-bound private report snapshot was published.'
     value: ${{ steps.scan.outputs.report-present }}
   report:
-    description: 'Report path relative to the workspace.'
-    value: ${{ steps.outfile.outputs.name }}
+    description: 'Receipt-bound private report snapshot retained under RUNNER_TEMP until job cleanup.'
+    value: ${{ steps.scan.outputs.report }}
   analysis-category:
     description: 'Validated report and Code Scanning partition identity.'
     value: ${{ steps.outfile.outputs.category }}
@@ -73,6 +80,26 @@ outputs:
 runs:
   using: 'composite'
   steps:
+    - name: Initialize private Action runtime
+      id: runtime
+      shell: bash
+      run: |
+        set -euo pipefail
+        umask 077
+        if [[ -z "${RUNNER_TEMP:-}" || ! -d "$RUNNER_TEMP" || -L "$RUNNER_TEMP" ]]; then
+          echo "::error title=KeyHog::RUNNER_TEMP must be a trusted non-symlink directory."
+          exit 2
+        fi
+        runtime="$(mktemp -d "$RUNNER_TEMP/keyhog-action-runtime.XXXXXXXX")"
+        if [[ ! -d "$runtime" || -L "$runtime" ]]; then
+          echo "::error title=KeyHog::Could not create a private Action runtime."
+          exit 2
+        fi
+        chmod 700 "$runtime"
+        mkdir -- "$runtime/bin"
+        chmod 700 "$runtime/bin"
+        printf 'path=%s\n' "$runtime" >> "$GITHUB_OUTPUT"
+
     - name: Compute output filename
       id: outfile
       shell: bash
@@ -87,8 +114,24 @@ runs:
           exit 2
         fi
         if [[ -n "${RUNNER_TEMP:-}" && -n "${GITHUB_RUN_ID:-}" && -n "${GITHUB_JOB:-}" ]]; then
-          identity_root="${RUNNER_TEMP}/keyhog-analysis-categories/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT:-1}-${GITHUB_JOB}"
-          mkdir -p -- "$identity_root"
+          categories_root="${RUNNER_TEMP}/keyhog-analysis-categories"
+          if [[ -e "$categories_root" || -L "$categories_root" ]]; then
+            if [[ ! -d "$categories_root" || -L "$categories_root" ]]; then
+              echo "::error title=KeyHog::Analysis-category identity root is unsafe."
+              exit 2
+            fi
+          else
+            mkdir -- "$categories_root"
+          fi
+          identity_root="${categories_root}/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT:-1}-${GITHUB_JOB}"
+          if [[ -e "$identity_root" || -L "$identity_root" ]]; then
+            if [[ ! -d "$identity_root" || -L "$identity_root" ]]; then
+              echo "::error title=KeyHog::Analysis-category job identity is unsafe."
+              exit 2
+            fi
+          else
+            mkdir -- "$identity_root"
+          fi
           if ! mkdir -- "${identity_root}/${category}" 2>/dev/null; then
             echo "::error title=KeyHog::Conflicting analysis-category. Every KeyHog scan in one job must use a distinct category."
             exit 2
@@ -109,6 +152,7 @@ runs:
       env:
         ACTION_VERSION: ${{ inputs.version }}
         ACTION_SOURCE_ROOT: ${{ github.action_path }}
+        ACTION_BACKEND: ${{ inputs.backend }}
       run: |
         set -euo pipefail
         # Always initialize under `set -u` (KH-1267): branch/SHA refs never set
@@ -151,8 +195,13 @@ runs:
               echo "::error title=KeyHog::Floating release ref cannot resolve its exact version because Cargo.toml is unavailable."
               exit 2
             fi
-            v="$(workspace_version_from_cargo "$manifest")"
-            if ! [[ "$v" =~ ^${major}[.][0-9]+[.][0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+            workspace_version="$(workspace_version_from_cargo "$manifest")"
+            if ! normalized_tag="$(bash "$ACTION_SOURCE_ROOT/scripts/release-version.sh" "$workspace_version")"; then
+              echo "::error title=KeyHog::Floating release ref found a noncanonical version in Cargo.toml."
+              exit 2
+            fi
+            v="${normalized_tag#v}"
+            if [[ "${v%%.*}" != "$major" ]]; then
               echo "::error title=KeyHog::Floating release ref does not match the exact version in Cargo.toml."
               exit 2
             fi
@@ -176,6 +225,18 @@ runs:
             exit 2
             ;;
         esac
+        if [[ "$release_required" == "true" ]]; then
+          core_version="${v%%-*}"
+          IFS='.' read -r version_major version_minor version_patch <<< "$core_version"
+          if (( 10#$version_major == 0 && (10#$version_minor < 5 || (10#$version_minor == 5 && 10#$version_patch < 48)) )) || [[ "$v" == *-* ]]; then
+            echo "::error title=KeyHog::Prereleases and release versions older than final v0.5.48 do not support this Action's stable runtime contract."
+            exit 2
+          fi
+        fi
+        if [[ "$release_required" == "false" && "${ACTION_BACKEND:-}" != "cpu" ]]; then
+          echo "::error title=KeyHog::Portable branch and commit source refs require backend: cpu. Use an exact or floating published release ref for calibrated backend:auto."
+          exit 2
+        fi
         printf 'version=%s\n' "$v" >> "$GITHUB_OUTPUT"
         printf 'release_required=%s\n' "$release_required" >> "$GITHUB_OUTPUT"
         printf 'Resolved keyhog version: %s\n' "$v"
@@ -199,30 +260,87 @@ runs:
         echo "name=$name" >> "$GITHUB_OUTPUT"
         echo "Asset name for $os/$arch: ${name:-<none, source build>}"
 
-    - name: Install release runtime and verifier (Linux prebuilt)
-      if: steps.version.outputs.release_required == 'true' && startsWith(steps.asset.outputs.name, 'keyhog-linux-x86_64')
+    - name: Install pinned release verifier
+      id: verifier
+      if: steps.version.outputs.release_required == 'true'
       shell: bash
+      env:
+        ACTION_RUNTIME: ${{ steps.runtime.outputs.path }}
       run: |
         set -euo pipefail
-        sudo apt-get update -qq
-        sudo apt-get install -y --no-install-recommends minisign libhyperscan5 || \
-          sudo apt-get install -y --no-install-recommends minisign libhyperscan-dev
-
-    - name: Install release verifier (macOS and Windows)
-      if: steps.version.outputs.release_required == 'true' && runner.os != 'Linux'
-      shell: bash
-      run: |
-        set -euo pipefail
-        case "${RUNNER_OS:-}" in
-          macOS) brew install minisign ;;
-          Windows) choco install minisign --yes --no-progress ;;
-          *) echo "::error title=KeyHog::Unsupported runner for minisign verification."; exit 2 ;;
+        verifier_version="0.11"
+        case "${RUNNER_OS:-}/${RUNNER_ARCH:-}" in
+          Linux/X64)
+            archive_name="minisign-0.11-linux.tar.gz"
+            expected_sha256="f0a0954413df8531befed169e447a66da6868d79052ed7e892e50a4291af7ae0"
+            verifier_member="minisign-linux/x86_64/minisign"
+            ;;
+          Linux/ARM64)
+            archive_name="minisign-0.11-linux.tar.gz"
+            expected_sha256="f0a0954413df8531befed169e447a66da6868d79052ed7e892e50a4291af7ae0"
+            verifier_member="minisign-linux/aarch64/minisign"
+            ;;
+          macOS/X64 | macOS/ARM64)
+            archive_name="minisign-0.11-macos.zip"
+            expected_sha256="e7c410ae8b8960d7087392472b040bda9b2f307c76df0384ac37f9ad103fc893"
+            verifier_member="minisign"
+            ;;
+          Windows/X64)
+            archive_name="minisign-0.11-win64.zip"
+            expected_sha256="b9c31c2c3034f81f0e5f5d92cbcc20e67a9671b6e5455661588638848dc58031"
+            verifier_member="minisign-win64/x86_64/minisign.exe"
+            ;;
+          *)
+            echo "::error title=KeyHog::Unsupported runner for the pinned minisign verifier."
+            exit 2
+            ;;
         esac
+        verifier_url="https://github.com/jedisct1/minisign/releases/download/${verifier_version}/${archive_name}"
+        verifier_dir="$ACTION_RUNTIME/minisign-${verifier_version}-${expected_sha256}"
+        if [[ -e "$verifier_dir" || -L "$verifier_dir" ]] || ! mkdir -- "$verifier_dir"; then
+          echo "::error title=KeyHog::Private minisign directory already exists or is unsafe."
+          exit 2
+        fi
+        chmod 700 "$verifier_dir"
+        archive="$(mktemp "$verifier_dir/.archive.XXXXXXXX")"
+        extract_dir="$verifier_dir/extract"
+        mkdir -- "$extract_dir"
+        curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error --output "$archive" "$verifier_url"
+        if command -v sha256sum >/dev/null 2>&1; then
+          read -r actual_sha256 _ < <(sha256sum "$archive")
+        elif command -v shasum >/dev/null 2>&1; then
+          read -r actual_sha256 _ < <(shasum -a 256 "$archive")
+        else
+          echo "::error title=KeyHog::No SHA-256 implementation is available to authenticate minisign."
+          exit 2
+        fi
+        if [[ "$actual_sha256" != "$expected_sha256" ]]; then
+          echo "::error title=KeyHog::Pinned minisign archive SHA-256 mismatch."
+          exit 2
+        fi
+        case "$archive_name" in
+          *.tar.gz) tar -xzf "$archive" -C "$extract_dir" ;;
+          *.zip) unzip -q "$archive" -d "$extract_dir" ;;
+        esac
+        verifier_source="$extract_dir/$verifier_member"
+        if [[ ! -f "$verifier_source" || -L "$verifier_source" ]]; then
+          echo "::error title=KeyHog::Pinned minisign archive did not contain a trusted regular verifier."
+          exit 2
+        fi
+        verifier_path="$(mktemp "$verifier_dir/.minisign.XXXXXXXX")"
+        cat -- "$verifier_source" > "$verifier_path"
+        chmod 500 "$verifier_path"
+        verifier_version_output="$("$verifier_path" -v 2>&1)"
+        if [[ "$verifier_version_output" != *"$verifier_version"* ]]; then
+          echo "::error title=KeyHog::Pinned minisign binary reported an unexpected version."
+          exit 2
+        fi
+        printf 'path=%s\n' "$verifier_path" >> "$GITHUB_OUTPUT"
 
     # Release refs use the same two proofs as the installers: detached minisign
     # signatures against KeyHog's pinned public key plus adjacent SHA-256 files.
-    # The signed GPU literal sidecar is required and safely seeded before the
-    # binary runs, so the Action does not silently compile shipped matchers.
+    # The signed GPU literal sidecar is required and authenticated. It is seeded
+    # before ordinary scans, but lockdown keeps the disk cache absent by design.
     - name: Try downloading prebuilt binary
       id: download
       shell: bash
@@ -230,12 +348,42 @@ runs:
         ACTION_ASSET_NAME: ${{ steps.asset.outputs.name }}
         ACTION_RESOLVED_VERSION: ${{ steps.version.outputs.version }}
         ACTION_RELEASE_REQUIRED: ${{ steps.version.outputs.release_required }}
+        ACTION_LOCKDOWN: ${{ inputs.lockdown }}
+        ACTION_RUNTIME: ${{ steps.runtime.outputs.path }}
+        ACTION_CACHE_HOME: ${{ steps.runtime.outputs.path }}/cache
+        ACTION_VERIFIER: ${{ steps.verifier.outputs.path }}
         KEYHOG_MINISIGN_PUBLIC_KEY: 'RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
       run: |
         set -euo pipefail
+        action_cache_home="$ACTION_CACHE_HOME"
+        case "$action_cache_home" in "$ACTION_RUNTIME"/*) ;; *) echo "::error title=KeyHog::Action cache root must be owned by the private runtime."; exit 2 ;; esac
+        if [[ -e "$action_cache_home" || -L "$action_cache_home" ]] || ! mkdir -- "$action_cache_home"; then
+          echo "::error title=KeyHog::Private Action cache already exists or is unsafe."; exit 2
+        fi
+        chmod 700 "$action_cache_home"
+        case "${RUNNER_OS:-}" in
+          macOS)
+            export HOME="$action_cache_home/home"
+            programs_dir="$HOME/Library/Caches/keyhog/programs"
+            ;;
+          Windows)
+            export LOCALAPPDATA="$(cygpath -w "$action_cache_home/localappdata")"
+            programs_dir="$(cygpath -u "$LOCALAPPDATA")/keyhog/programs"
+            ;;
+          Linux | "")
+            export XDG_CACHE_HOME="$action_cache_home/xdg"
+            programs_dir="$XDG_CACHE_HOME/keyhog/programs"
+            ;;
+          *) echo "::error title=KeyHog::Unsupported runner for the isolated Action cache."; exit 2 ;;
+        esac
         asset="${ACTION_ASSET_NAME:-}"
         version="${ACTION_RESOLVED_VERSION:-}"
         release_required="${ACTION_RELEASE_REQUIRED:-false}"
+        lockdown="${ACTION_LOCKDOWN:-false}"
+        case "$lockdown" in
+          true | false) ;;
+          *) echo "::error title=KeyHog::Invalid lockdown. Use 'true' or 'false'."; exit 2 ;;
+        esac
         if [[ "$release_required" != "true" ]]; then
           echo "Branch/SHA action ref uses the checked-out source directly; skipping release lookup."
           echo "found=false" >> "$GITHUB_OUTPUT"
@@ -247,31 +395,34 @@ runs:
         fi
         release_url="https://github.com/santhreal/keyhog/releases/download/v${version}"
         sidecar="$asset.gpu-literals.tar.gz"
-        bundle_dir="$(mktemp -d "$RUNNER_TEMP/keyhog-release.XXXXXX")"
+        bundle_dir="$ACTION_RUNTIME/release-bundle-${version}"
+        if [[ -e "$bundle_dir" || -L "$bundle_dir" ]] || ! mkdir -- "$bundle_dir"; then
+          echo "::error title=KeyHog::Private release bundle directory already exists or is unsafe."; exit 2
+        fi
+        chmod 700 "$bundle_dir"
         extract_dir=""
         staged_target=""
         cleanup_release_bundle() {
           rm -rf -- "$bundle_dir"
-          if [[ -n "$extract_dir" ]]; then
-            rm -rf -- "$extract_dir"
-          fi
-          if [[ -n "$staged_target" ]]; then
-            rm -f -- "$staged_target"
-          fi
+          if [[ -n "$extract_dir" ]]; then rm -rf -- "$extract_dir"; fi
+          if [[ -n "$staged_target" ]]; then rm -f -- "$staged_target"; fi
         }
         trap cleanup_release_bundle EXIT
         echo "Downloading authenticated release bundle from $release_url/$asset"
         for name in \
           "$asset" "$asset.sha256" "$asset.minisig" \
           "$sidecar" "$sidecar.sha256" "$sidecar.minisig"; do
-          if ! curl -fL --retry 2 "$release_url/$name" -o "$bundle_dir/$name"; then
+          if ! curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error --retry 2 "$release_url/$name" -o "$bundle_dir/$name"; then
             echo "::error title=KeyHog::Required release payload '$name' is unavailable; refusing source-build fallback for a release ref."
             exit 2
           fi
         done
 
-        minisign -Vm "$bundle_dir/$asset" -x "$bundle_dir/$asset.minisig" -P "$KEYHOG_MINISIGN_PUBLIC_KEY"
-        minisign -Vm "$bundle_dir/$sidecar" -x "$bundle_dir/$sidecar.minisig" -P "$KEYHOG_MINISIGN_PUBLIC_KEY"
+        if [[ ! -f "$ACTION_VERIFIER" || -L "$ACTION_VERIFIER" || "$ACTION_VERIFIER" != "$ACTION_RUNTIME"/* ]]; then
+          echo "::error title=KeyHog::Private minisign verifier is missing or untrusted."; exit 2
+        fi
+        "$ACTION_VERIFIER" -Vm "$bundle_dir/$asset" -x "$bundle_dir/$asset.minisig" -P "$KEYHOG_MINISIGN_PUBLIC_KEY"
+        "$ACTION_VERIFIER" -Vm "$bundle_dir/$sidecar" -x "$bundle_dir/$sidecar.minisig" -P "$KEYHOG_MINISIGN_PUBLIC_KEY"
         validate_checksum_manifest() {
           local manifest_path="$1"
           local expected_name="$2"
@@ -325,28 +476,32 @@ runs:
           esac
         done < <(tar -tvzf "$bundle_dir/$sidecar")
 
-        extract_dir="$(mktemp -d)"
-        tar -xzf "$bundle_dir/$sidecar" -C "$extract_dir"
-        case "${RUNNER_OS:-}" in
-          macOS) programs_dir="$HOME/Library/Caches/keyhog/programs" ;;
-          Windows)
-            [[ -n "${LOCALAPPDATA:-}" ]] || { echo "::error title=KeyHog::LOCALAPPDATA is unavailable for the GPU literal cache."; exit 2; }
-            programs_dir="$(cygpath -u "$LOCALAPPDATA")/keyhog/programs"
-            ;;
-          *) programs_dir="${XDG_CACHE_HOME:-$HOME/.cache}/keyhog/programs" ;;
-        esac
-        keyhog_cache_dir="${programs_dir%/programs}"
-        if [[ "$keyhog_cache_dir" == "$programs_dir" || -L "$keyhog_cache_dir" || -L "$programs_dir" ]]; then
-          echo "::error title=KeyHog::GPU literal cache contains an unsafe owned-directory symlink."
-          exit 2
+        extract_dir="$ACTION_RUNTIME/release-sidecar-${version}"
+        if [[ -e "$extract_dir" || -L "$extract_dir" ]] || ! mkdir -- "$extract_dir"; then
+          echo "::error title=KeyHog::Private sidecar extraction directory already exists or is unsafe."; exit 2
         fi
-        mkdir -p -- "$programs_dir"
-        if [[ -L "$keyhog_cache_dir" || -L "$programs_dir" || ! -d "$programs_dir" ]]; then
-          echo "::error title=KeyHog::GPU literal cache changed to an unsafe owned-directory symlink."
-          exit 2
+        chmod 700 "$extract_dir"
+        tar -xzf "$bundle_dir/$sidecar" -C "$extract_dir"
+        # The Action-owned cache root was removed above, so authenticated
+        # artifacts from different versions can never coexist.
+        if [[ "$lockdown" != "true" ]]; then
+          keyhog_cache_dir="${programs_dir%/programs}"
+          if [[ "$keyhog_cache_dir" == "$programs_dir" || -L "$keyhog_cache_dir" || -L "$programs_dir" ]]; then
+            echo "::error title=KeyHog::GPU literal cache contains an unsafe owned-directory symlink."
+            exit 2
+          fi
+          mkdir -p -- "$programs_dir"
+          if [[ -L "$keyhog_cache_dir" || -L "$programs_dir" || ! -d "$programs_dir" ]]; then
+            echo "::error title=KeyHog::GPU literal cache changed to an unsafe owned-directory symlink."
+            exit 2
+          fi
         fi
         artifact_count=0
         while IFS= read -r -d '' artifact; do
+          artifact_count=$((artifact_count + 1))
+          if [[ "$lockdown" == "true" ]]; then
+            continue
+          fi
           base="$(basename "$artifact")"
           staged_target="$(mktemp "$programs_dir/.${base}.XXXXXX")"
           if ! cp -- "$artifact" "$staged_target"; then
@@ -358,7 +513,6 @@ runs:
             exit 2
           fi
           staged_target=""
-          artifact_count=$((artifact_count + 1))
         done < <(find "$extract_dir" -type f -name '*.bin' -print0)
         if [[ "$artifact_count" -eq 0 ]]; then
           echo "::error title=KeyHog::GPU literal sidecar contains no matcher artifacts."
@@ -366,99 +520,197 @@ runs:
         fi
 
         bin_name="keyhog"
-        case "$asset" in
-          *.exe) bin_name="keyhog.exe" ;;
-        esac
-        cp "$bundle_dir/$asset" "$RUNNER_TEMP/$bin_name"
-        chmod +x "$RUNNER_TEMP/$bin_name"
-        echo "found=true" >> "$GITHUB_OUTPUT"
-        echo "Downloaded and authenticated $asset plus $artifact_count GPU literal matcher artifact(s) for v$version"
+        case "$asset" in *.exe) bin_name="keyhog.exe" ;; esac
+        if command -v sha256sum >/dev/null 2>&1; then read -r binary_sha256 _ < <(sha256sum "$bundle_dir/$asset"); else read -r binary_sha256 _ < <(shasum -a 256 "$bundle_dir/$asset"); fi
+        install_dir="$ACTION_RUNTIME/release-${version}-${binary_sha256}"
+        if [[ -e "$install_dir" || -L "$install_dir" ]] || ! mkdir -- "$install_dir"; then
+          echo "::error title=KeyHog::Private release install directory already exists or is unsafe."; exit 2
+        fi
+        chmod 700 "$install_dir"
+        binary_tmp="$(mktemp "$install_dir/.keyhog.XXXXXXXX")"
+        cat -- "$bundle_dir/$asset" > "$binary_tmp"
+        if command -v sha256sum >/dev/null 2>&1; then read -r staged_sha256 _ < <(sha256sum "$binary_tmp"); else read -r staged_sha256 _ < <(shasum -a 256 "$binary_tmp"); fi
+        if [[ "$staged_sha256" != "$binary_sha256" ]]; then echo "::error title=KeyHog::Authenticated release binary changed while staging."; exit 2; fi
+        chmod 500 "$binary_tmp"
+        published_binary="$install_dir/$bin_name"
+        if [[ -e "$published_binary" || -L "$published_binary" ]] || ! ln "$binary_tmp" "$published_binary"; then
+          echo "::error title=KeyHog::Refusing to replace a pre-existing release binary destination."; exit 2
+        fi
+        rm -f -- "$binary_tmp"
+        printf 'binary-dir=%s\nbinary-path=%s\nfound=true\n' "$install_dir" "$published_binary" >> "$GITHUB_OUTPUT"
+        if [[ "$lockdown" == "true" ]]; then
+          echo "Downloaded and authenticated $asset plus $artifact_count GPU literal matcher artifact(s) for v$version; lockdown did not seed the isolated Action cache"
+        else
+          echo "Downloaded and authenticated $asset plus $artifact_count staged GPU literal matcher artifact(s) for v$version in the isolated Action cache"
+        fi
 
     - name: Install Rust toolchain (source-build fallback)
       if: steps.download.outputs.found != 'true'
-      uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # pinned action
+      with:
+        toolchain: '1.89.0'
 
     - name: Cache cargo registry/build (source-build fallback)
       if: steps.download.outputs.found != 'true'
       uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
-    - name: Install Vectorscan/Hyperscan (Linux source-build only)
-      if: steps.download.outputs.found != 'true' && runner.os == 'Linux'
-      shell: bash
-      run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
 
     - name: Build keyhog from source (fallback)
+      id: source
       if: steps.download.outputs.found != 'true'
       shell: bash
       env:
         ACTION_SOURCE_ROOT: ${{ github.action_path }}
-        ACTION_ASSET_NAME: ${{ steps.asset.outputs.name }}
+        ACTION_RESOLVED_VERSION: ${{ steps.version.outputs.version }}
+        ACTION_RUNTIME: ${{ steps.runtime.outputs.path }}
       run: |
         set -euo pipefail
         cd "$ACTION_SOURCE_ROOT"
-        # Only the Linux Action asset ships the default `simd` feature. Manual
-        # macOS builds can link Homebrew Vectorscan, but this fallback matches
-        # the portable macOS release asset; Windows has no supported Hyperscan
-        # package. Portable keeps every scanner data path and its portable
-        # source-backend set without the Hyperscan link.
-        # KH-1304: Linux hosted runners cannot afford full default GPU link for
-        # Action source-build; ci-lean keeps sources/verify without GPU.
-        case "$(uname -s)" in
-          Linux*) cargo build --locked --release -p keyhog --no-default-features --features ci-lean ;;
-          *)
-            cargo build --locked --release -p keyhog --no-default-features --features portable
-            ;;
-        esac
+        # Source refs use the lockfile with the exact MSRV toolchain and the
+        # portable feature profile on every runner. This avoids floating native
+        # package-manager state while retaining sources and live verification.
+        cargo build --locked --release -p keyhog --no-default-features --features portable
         bin="target/release/keyhog"
         [[ -x "$bin" ]] || bin="target/release/keyhog.exe"
-        cp "$bin" "$RUNNER_TEMP/$(basename "$bin")"
+        if [[ ! -f "$bin" || -L "$bin" ]]; then echo "::error title=KeyHog::Source build did not publish a trusted regular binary."; exit 2; fi
+        source_tmp="$(mktemp "$ACTION_RUNTIME/.source-keyhog.XXXXXXXX")"
+        cat -- "$bin" > "$source_tmp"
+        if command -v sha256sum >/dev/null 2>&1; then read -r source_sha256 _ < <(sha256sum "$source_tmp"); else read -r source_sha256 _ < <(shasum -a 256 "$source_tmp"); fi
+        install_dir="$ACTION_RUNTIME/source-${ACTION_RESOLVED_VERSION}-${source_sha256}"
+        if [[ -e "$install_dir" || -L "$install_dir" ]] || ! mkdir -- "$install_dir"; then echo "::error title=KeyHog::Private source install directory already exists or is unsafe."; exit 2; fi
+        chmod 700 "$install_dir"
+        chmod 500 "$source_tmp"
+        published_binary="$install_dir/$(basename "$bin")"
+        if [[ -e "$published_binary" || -L "$published_binary" ]] || ! ln "$source_tmp" "$published_binary"; then echo "::error title=KeyHog::Refusing to replace a pre-existing source binary destination."; exit 2; fi
+        rm -f -- "$source_tmp"
+        printf 'binary-dir=%s\nbinary-path=%s\n' "$install_dir" "$published_binary" >> "$GITHUB_OUTPUT"
 
     - name: Add keyhog to PATH
       shell: bash
-      run: echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      env:
+        ACTION_BINARY_DIR: ${{ steps.download.outputs.binary-dir || steps.source.outputs.binary-dir }}
+      run: echo "$ACTION_BINARY_DIR" >> "$GITHUB_PATH"
 
     - name: Calibrate autoroute for this scan
+      id: calibration
       if: inputs.backend == '' || inputs.backend == 'auto'
       shell: bash
       env:
         ACTION_SCAN_PATH: ${{ inputs.path }}
         ACTION_SEVERITY: ${{ inputs.severity }}
         ACTION_BASELINE: ${{ inputs.baseline }}
+        ACTION_PRESET: ${{ inputs.preset }}
+        ACTION_LOCKDOWN: ${{ inputs.lockdown }}
+        ACTION_CACHE_HOME: ${{ steps.runtime.outputs.path }}/cache
+        ACTION_KEYHOG: ${{ steps.download.outputs.binary-path || steps.source.outputs.binary-path }}
+        ACTION_RUNTIME: ${{ steps.runtime.outputs.path }}
       run: |
         set -euo pipefail
-        # Include job + action so concurrent matrix cells cannot clobber one
-        # shared probe file under the same RUN_ID (KH-1336).
-        probe="${RUNNER_TEMP}/keyhog-autoroute-probe-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-job}-${GITHUB_ACTION:-action}.json"
-        trap 'rm -f -- "$probe"' EXIT
+        action_cache_home="${ACTION_CACHE_HOME:-${RUNNER_TEMP:-${TMPDIR:-/tmp}}/keyhog-action-cache}"
+        case "${RUNNER_OS:-}" in
+          macOS) export HOME="$action_cache_home/home" ;;
+          Windows) export LOCALAPPDATA="$(cygpath -w "$action_cache_home/localappdata")" ;;
+          Linux | "") export XDG_CACHE_HOME="$action_cache_home/xdg" ;;
+          *) echo "::error title=KeyHog::Unsupported runner for the isolated Action cache."; exit 2 ;;
+        esac
+        preset_flag=""
+        case "${ACTION_PRESET:-default}" in
+          default) ;;
+          fast | deep | precision) preset_flag="--$ACTION_PRESET" ;;
+          *)
+            echo "::error title=KeyHog::Invalid preset. Use one of: default, fast, deep, precision."
+            exit 2
+            ;;
+        esac
+        case "${ACTION_LOCKDOWN:-false}" in
+          true | false) ;;
+          *)
+            echo "::error title=KeyHog::Invalid lockdown. Use 'true' or 'false'."
+            exit 2
+            ;;
+        esac
+        if [[ "${ACTION_LOCKDOWN:-false}" == "true" && -n "${RUNNER_OS:-}" && "$RUNNER_OS" != "Linux" ]]; then
+          echo "::error title=KeyHog::lockdown=true requires a Linux runner with sufficient locked-memory capacity. Configure a self-hosted Linux runner/container with a sufficient memlock limit (for example --cap-add IPC_LOCK or --ulimit memlock=-1:-1), or set lockdown:false."
+          exit 2
+        fi
+        if [[ -z "${ACTION_RUNTIME:-}" || "$ACTION_RUNTIME" != "$RUNNER_TEMP"/* || ! -d "$ACTION_RUNTIME" || -L "$ACTION_RUNTIME" ]]; then
+          echo "::error title=KeyHog::Private autoroute runtime is missing or untrusted."
+          exit 2
+        fi
+        autoroute_dir="$ACTION_RUNTIME/autoroute"
+        if [[ -e "$autoroute_dir" || -L "$autoroute_dir" ]] || ! mkdir -- "$autoroute_dir"; then
+          echo "::error title=KeyHog::Private autoroute directory already exists or is unsafe."
+          exit 2
+        fi
+        chmod 700 "$autoroute_dir"
+        probe="$autoroute_dir/probe.json"
+        route_cache="$autoroute_dir/route.json"
+        for owned_path in "$probe" "$route_cache" "${route_cache}.lock"; do
+          if [[ -e "$owned_path" || -L "$owned_path" ]]; then
+            echo "::error title=KeyHog::Private autoroute destination was pre-existing or unsafe."
+            exit 2
+          fi
+        done
+        trap 'rm -f -- "$probe" "$route_cache" "${route_cache}.lock"' EXIT
         config_args=(
           config
           --effective
+          --no-verify
           --path "$ACTION_SCAN_PATH"
           --severity "$ACTION_SEVERITY"
           --format json
+          --autoroute-cache "$route_cache"
         )
         args=(
           scan
           --autoroute-calibrate
           --autoroute-gpu
+          --no-verify
           --path "$ACTION_SCAN_PATH"
           --severity "$ACTION_SEVERITY"
           --format json
           --output "$probe"
+          --autoroute-cache "$route_cache"
         )
+        if [[ -n "$preset_flag" ]]; then
+          config_args+=("$preset_flag")
+          args+=("$preset_flag")
+        fi
+        if [[ "${ACTION_LOCKDOWN:-false}" == "true" ]]; then
+          config_args+=(--lockdown)
+          args+=(--lockdown)
+        fi
         if [[ -n "${ACTION_BASELINE:-}" ]]; then
           config_args+=(--baseline "$ACTION_BASELINE")
           args+=(--baseline "$ACTION_BASELINE")
         fi
         set +e
-        keyhog "${config_args[@]}" >/dev/null
+        "$ACTION_KEYHOG" "${config_args[@]}" >/dev/null
         config_exit=$?
         set -e
         if [[ "$config_exit" != "0" ]]; then
           echo "::error title=KeyHog::Could not resolve the exact scan configuration before autoroute calibration. Run keyhog config --effective with the same path and policy inputs."
           exit "$config_exit"
         fi
-        keyhog "${args[@]}"
+        "$ACTION_KEYHOG" "${args[@]}"
+        if [[ ! -s "$route_cache" || -L "$route_cache" ]]; then
+          echo "::error title=KeyHog::Autoroute calibration did not publish a trusted routing receipt; set an explicit backend or fix calibration."
+          exit 3
+        fi
+        if command -v sha256sum >/dev/null 2>&1; then
+          read -r route_sha256 _ < <(sha256sum "$route_cache")
+        elif command -v shasum >/dev/null 2>&1; then
+          read -r route_sha256 _ < <(shasum -a 256 "$route_cache")
+        else
+          echo "::error title=KeyHog::No SHA-256 implementation is available to bind the autoroute receipt."
+          exit 2
+        fi
+        rm -f -- "$probe"
+        if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+          printf 'cache=%s\n' "$route_cache" >> "$GITHUB_OUTPUT"
+          printf 'cache-sha256=%s\n' "$route_sha256" >> "$GITHUB_OUTPUT"
+          trap - EXIT
+        fi
 
     - name: Run scan
       id: scan
@@ -473,11 +725,56 @@ runs:
         ACTION_VERIFY: ${{ inputs.verify }}
         ACTION_BASELINE: ${{ inputs.baseline }}
         ACTION_BACKEND: ${{ inputs.backend }}
+        ACTION_PRESET: ${{ inputs.preset }}
+        ACTION_LOCKDOWN: ${{ inputs.lockdown }}
         ACTION_OUTPUT: ${{ steps.outfile.outputs.name }}
         ACTION_FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
         ACTION_UPLOAD_SARIF: ${{ inputs.upload-sarif }}
+        ACTION_CACHE_HOME: ${{ steps.runtime.outputs.path }}/cache
+        ACTION_RUNTIME: ${{ steps.runtime.outputs.path }}
+        KEYHOG_BIN: ${{ steps.download.outputs.binary-path || steps.source.outputs.binary-path }}
+        ACTION_AUTOROUTE_CACHE: ${{ steps.calibration.outputs.cache }}
+        ACTION_AUTOROUTE_CACHE_SHA256: ${{ steps.calibration.outputs.cache-sha256 }}
       run: |
         set -euo pipefail
+        action_cache_home="${ACTION_CACHE_HOME:-${RUNNER_TEMP:-${TMPDIR:-/tmp}}/keyhog-action-cache}"
+        case "${RUNNER_OS:-}" in
+          macOS) export HOME="$action_cache_home/home" ;;
+          Windows) export LOCALAPPDATA="$(cygpath -w "$action_cache_home/localappdata")" ;;
+          Linux | "") export XDG_CACHE_HOME="$action_cache_home/xdg" ;;
+          *) echo "::error title=KeyHog::Unsupported runner for the isolated Action cache."; exit 2 ;;
+        esac
+        if [[ "${ACTION_LOCKDOWN:-false}" == "true" && -n "${RUNNER_OS:-}" && "$RUNNER_OS" != "Linux" ]]; then
+          echo "::error title=KeyHog::lockdown=true requires a Linux runner with sufficient locked-memory capacity. Configure a self-hosted Linux runner/container with a sufficient memlock limit (for example --cap-add IPC_LOCK or --ulimit memlock=-1:-1), or set lockdown:false."
+          exit 2
+        fi
+        if [[ -n "${ACTION_AUTOROUTE_CACHE:-}" ]]; then
+          case "$ACTION_AUTOROUTE_CACHE" in
+            "$RUNNER_TEMP"/*) ;;
+            *) echo "::error title=KeyHog::Autoroute calibration receipt is outside RUNNER_TEMP."; exit 2 ;;
+          esac
+          if [[ ! -f "$ACTION_AUTOROUTE_CACHE" || -L "$ACTION_AUTOROUTE_CACHE" ]]; then
+            echo "::error title=KeyHog::Autoroute calibration receipt is missing or untrusted; set an explicit backend or rerun calibration."
+            exit 3
+          fi
+          trap 'rm -f -- "$ACTION_AUTOROUTE_CACHE"' EXIT
+          if ! [[ "${ACTION_AUTOROUTE_CACHE_SHA256:-}" =~ ^[0-9A-Fa-f]{64}$ ]]; then
+            echo "::error title=KeyHog::Autoroute calibration receipt identity is missing or invalid."
+            exit 3
+          fi
+          if command -v sha256sum >/dev/null 2>&1; then
+            read -r actual_route_sha256 _ < <(sha256sum "$ACTION_AUTOROUTE_CACHE")
+          elif command -v shasum >/dev/null 2>&1; then
+            read -r actual_route_sha256 _ < <(shasum -a 256 "$ACTION_AUTOROUTE_CACHE")
+          else
+            echo "::error title=KeyHog::No SHA-256 implementation is available to authenticate the autoroute receipt."
+            exit 2
+          fi
+          if [[ "$actual_route_sha256" != "$ACTION_AUTOROUTE_CACHE_SHA256" ]]; then
+            echo "::error title=KeyHog::Autoroute calibration receipt changed after calibration; refusing substituted routing state."
+            exit 3
+          fi
+        fi
         args=(
           --print-effective-config
           --path "$ACTION_SCAN_PATH"
@@ -485,6 +782,8 @@ runs:
           --format "$ACTION_FORMAT"
           --output "$ACTION_OUTPUT"
           --verify "$ACTION_VERIFY"
+          --preset "$ACTION_PRESET"
+          --lockdown "$ACTION_LOCKDOWN"
           --fail-on-findings "$ACTION_FAIL_ON_FINDINGS"
           --upload-sarif "$ACTION_UPLOAD_SARIF"
         )
@@ -494,6 +793,10 @@ runs:
         if [[ -n "${ACTION_BACKEND:-}" ]]; then
           args+=(--backend "$ACTION_BACKEND")
         fi
+        if [[ -n "${ACTION_AUTOROUTE_CACHE:-}" ]]; then
+          args+=(--autoroute-cache "$ACTION_AUTOROUTE_CACHE")
+          args+=(--cleanup-autoroute-cache)
+        fi
         set +e
         bash "${{ github.action_path }}/.github/actions/keyhog/run-scan.sh" "${args[@]}"
         runner_exit=$?
@@ -501,18 +804,31 @@ runs:
         printf 'runner-exit-code=%s\n' "$runner_exit" >> "$GITHUB_OUTPUT"
         exit "$runner_exit"
 
-    - name: Check report exists before SARIF upload
+    - name: Check receipt-bound report snapshot before upload
       id: report-check
       if: always()
       shell: bash
       env:
-        ACTION_REPORT_NAME: ${{ steps.outfile.outputs.name }}
+        ACTION_REPORT_NAME: ${{ steps.scan.outputs.report }}
+        ACTION_REPORT_SHA256: ${{ steps.scan.outputs.report-sha256 }}
+        ACTION_SCAN_REPORT_PRESENT: ${{ steps.scan.outputs.report-present }}
+        ACTION_RUNTIME: ${{ steps.runtime.outputs.path }}
       run: |
-        if [[ -f "$ACTION_REPORT_NAME" ]]; then
-          echo "exists=true" >> "$GITHUB_OUTPUT"
+        set -euo pipefail
+        trusted=false
+        if [[ "${ACTION_SCAN_REPORT_PRESENT:-}" == "true" && "$ACTION_REPORT_NAME" == "$ACTION_RUNTIME"/report-snapshot.*/* && -f "$ACTION_REPORT_NAME" && ! -L "$ACTION_REPORT_NAME" && "$ACTION_REPORT_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]]; then
+          if command -v sha256sum >/dev/null 2>&1; then read -r actual_sha256 _ < <(sha256sum "$ACTION_REPORT_NAME"); else read -r actual_sha256 _ < <(shasum -a 256 "$ACTION_REPORT_NAME"); fi
+          [[ "$actual_sha256" == "$ACTION_REPORT_SHA256" ]] && trusted=true
+        fi
+        if [[ "$trusted" == "true" ]]; then
+          printf 'exists=true\npath=%s\n' "$ACTION_REPORT_NAME" >> "$GITHUB_OUTPUT"
         else
           echo "exists=false" >> "$GITHUB_OUTPUT"
-          echo "::warning title=KeyHog::Scan report '$ACTION_REPORT_NAME' missing; skipping SARIF + artifact upload."
+          if [[ "${ACTION_SCAN_REPORT_PRESENT:-}" == "true" ]]; then
+            echo "::error title=KeyHog::Receipt-bound private report snapshot is missing or changed after verification."
+            exit 3
+          fi
+          echo "::warning title=KeyHog::Scan did not publish a receipt-bound private report snapshot; skipping SARIF + artifact upload."
         fi
 
     - name: Upload SARIF to code-scanning
@@ -528,7 +844,7 @@ runs:
       continue-on-error: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
       uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
       with:
-        sarif_file: ${{ steps.outfile.outputs.name }}
+        sarif_file: ${{ steps.report-check.outputs.path }}
         category: ${{ steps.outfile.outputs.category }}
 
     - name: Upload scan report as workflow artifact
@@ -536,13 +852,13 @@ runs:
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: keyhog-report-${{ steps.outfile.outputs.category }}-${{ github.job }}-${{ strategy.job-index || '0' }}-${{ github.run_attempt }}
-        path: ${{ steps.outfile.outputs.name }}
+        path: ${{ steps.report-check.outputs.path }}
         if-no-files-found: warn
 
     - name: Fail when findings reported
       # The runner is tolerated long enough to upload its report. Re-emit every
       # terminal scanner or wrapper failure here after those always-run steps.
-      if: always() && steps.scan.outputs.runner-exit-code != '' && (steps.scan.outputs.runner-exit-code != '0' || (steps.scan.outputs.findings != '' && steps.scan.outputs.exit-code != '' && ((inputs.fail-on-findings == 'true' && (steps.scan.outputs.findings != '0' || steps.scan.outputs.exit-code == '1')) || steps.scan.outputs.exit-code == '10')))
+      if: always() && (steps.scan.outcome == 'failure' || (steps.scan.outputs.runner-exit-code != '' && (steps.scan.outputs.runner-exit-code != '0' || (steps.scan.outputs.findings != '' && steps.scan.outputs.exit-code != '' && ((inputs.fail-on-findings == 'true' && (steps.scan.outputs.findings != '0' || steps.scan.outputs.exit-code == '1')) || steps.scan.outputs.exit-code == '10')))))
       shell: bash
       env:
         ACTION_RUNNER_EXIT_CODE: ${{ steps.scan.outputs.runner-exit-code }}

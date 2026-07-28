@@ -2,6 +2,48 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.48] - 2026-07-27
+
+### Added
+
+- The release workflow emits ten deterministic SPDX 2.3 SBOMs for four binaries,
+  four GPU-literal bundles, and two installers. The exact 60-asset contract
+  includes each payload/document plus its checksum and detached signature.
+- Composite Action report handling now binds exact flushed report bytes to a
+  source-emitted seven-field receipt and a hidden KeyHog verifier, copies them
+  to a mode-`0400` unpredictable snapshot inside a unique mode-`0700`
+  `RUNNER_TEMP` runtime, and makes that receipt-bound job-lifetime snapshot—not
+  the now-untrusted workspace copy—the public report output and
+  SARIF/artifact upload authority. Internal uploads recheck its SHA-256 at use;
+  publication does not claim immutability against the same runner UID.
+- Composite Action publication now has a fail-closed Marketplace listing
+  verifier, explicit-CPU cross-platform source exercises, and a maintained
+  digest-pinned push/PR container lane proving real root+nested CPU+lockdown.
+  Source auto without persisted routing proof is rejected; authenticated manual
+  dispatch retains proof-backed default auto in a postpublication release lane.
+- Hosted CPU evidence measures exact detection recall, throughput, and peak RSS
+  on a pinned GitHub runner image instead of substituting local workstation
+  measurements.
+
+### Changed
+
+- Release publication requires the successful aggregate CI verdict from the
+  exact tag commit. Crate publication has one post-release path, and release
+  assets, SBOMs, signatures, attestations, containers, and moving tags share the
+  same validated source identity.
+- Integration tests run in independent fail-closed lanes while preserving the
+  process isolation required by source-backend contracts.
+
+### Fixed
+
+- Composite Action configuration reports the effective preset and lockdown
+  policy used by calibration and scanning instead of presenting wrapper inputs
+  that can diverge from the executed command.
+- Marketplace verification rejects untrusted origins, redirect downgrades,
+  mutable metadata reads, unsigned exact release tags, duplicate YAML keys, and
+  listing pages that do not bind the expected repository and Action ref.
+
+
 ## [0.5.47] - 2026-07-26
 
 ### Added

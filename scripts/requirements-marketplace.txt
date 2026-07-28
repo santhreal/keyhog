@@ -1,0 +1,8 @@
+# CPython 3.12 binary wheels for Linux x86_64/aarch64 and macOS x86_64/arm64.
+# Regenerate only from the PyPI release JSON and verify every artifact digest.
+--only-binary=:all:
+PyYAML==6.0.3 \
+    --hash=sha256:7f047e29dcae44602496db43be01ad42fc6f1cc0d8cd6c83d342306c32270196 \
+    --hash=sha256:fc09d0aa354569bc501d4e787133afc08552722d3ab34836a80547331bb5d4a0 \
+    --hash=sha256:9149cad251584d5fb4981be1ecde53a1ca46c891a79788c0df828d2f166bda28 \
+    --hash=sha256:ba1cc08a7ccde2d2ec775841541641e4548226580ab850948cbfda66a1befcdc

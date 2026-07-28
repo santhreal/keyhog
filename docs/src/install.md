@@ -7,7 +7,7 @@ your supported host; platform feature differences are explicit below.
 
 | Host | Release asset | Runtime notes |
 |------|---------------|---------------|
-| Linux x86_64 | `keyhog-linux-x86_64` | Requires `libhyperscan5`; CUDA and WGPU are probed at runtime |
+| Linux x86_64 | `keyhog-linux-x86_64` | Hyperscan is statically linked; CUDA and WGPU are probed at runtime |
 | macOS x86_64 | `keyhog-macos-x86_64` | Portable build, without Hyperscan or GPU backends |
 | macOS aarch64 | `keyhog-macos-aarch64` | Portable build, without Hyperscan or GPU backends |
 | Windows x86_64 | `keyhog-windows-x86_64.exe` | PowerShell 5+; portable build; daemon unavailable |
@@ -46,13 +46,14 @@ a safe synthetic finding and confirm exit `1`.
 ## Pinned verified install: Linux / macOS
 
 Install the host prerequisites before downloading the signed installer. Debian
-or Ubuntu needs `curl`, `minisign`, and the Linux release binary's Hyperscan
-runtime: `sudo apt-get update && sudo apt-get install -y --no-install-recommends curl libhyperscan5 minisign`.
-macOS release assets are portable, so run `brew install minisign` and use the
-system `curl`.
+or Ubuntu needs `curl` and `minisign`:
+`sudo apt-get update && sudo apt-get install -y --no-install-recommends curl minisign`.
+The Linux release binary statically links Hyperscan and does not need
+`libhyperscan5`. On macOS, run `brew install minisign` and use the system
+`curl`.
 
 ```sh
-TAG=v0.5.47
+TAG=v0.5.48
 BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
 KEYHOG_MINISIGN_PUBLIC_KEY='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
 curl -fSLO "$BASE/install.sh"
@@ -110,7 +111,7 @@ part of the current release contract.
 PowerShell 5+ (ships with Windows 10/11):
 
 ```powershell
-$Tag = 'v0.5.47'
+$Tag = 'v0.5.48'
 $Base = "https://github.com/santhreal/keyhog/releases/download/$Tag"
 $PublicKey = 'RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
 iwr "$Base/install.ps1" -OutFile keyhog-install.ps1
@@ -139,7 +140,7 @@ release.
 
 | Env var / flag                          | Effect                                                        |
 |-----------------------------------------|---------------------------------------------------------------|
-| `KEYHOG_VERSION=v0.5.47` (or `--version=v0.5.47`) | Pin a specific release tag. With no pin, the installer admits only the newest stable release with this host's complete signed bundle; it probes the latest redirect first, then checks recent releases when that proof is incomplete. |
+| `KEYHOG_VERSION=v0.5.48` (or `--version=v0.5.48`) | Pin a specific release tag. With no pin, the installer admits only the newest stable release with this host's complete signed bundle; it probes the latest redirect first, then checks recent releases when that proof is incomplete. |
 | `--install-dir=...`                     | Install into a different directory.            |
 | `GITHUB_TOKEN=...`                      | Optional auth for the fallback GitHub releases API lookup. The normal latest-asset path does not need it. |
 | `--yes` / `-y`                          | Accept the displayed defaults without prompting: PATH setup yes, optional completion and repository hook no. |
@@ -174,13 +175,42 @@ the new one is moved into place and restored automatically if the new binary
 fails its post-install self-test, so a failed or interrupted install leaves a
 working binary behind.
 
-Release publication uses the same exact manifest: each platform binary, its
-SHA-256 file, the GPU-literal sidecar and checksum, plus detached minisign
-signatures for both payloads. The versioned POSIX and PowerShell installers,
-their checksums, signatures, and GitHub provenance attestations are part of that
-manifest too. Matrix builds stage those files as private CI artifacts. New
-releases and published-release reruns remain private while the asset set is
-mutated; only the exact signed manifest is made visible.
+The 0.5.48 candidate publication contract is an exact 60-asset release
+manifest: ten payloads (four platform binaries, four matching GPU-literal
+sidecars, and two installers), their 20 adjacent SHA-256/minisign proofs, ten
+deterministic SPDX 2.3 JSON documents, and the SBOMs' 20 adjacent proofs. Each
+document is named `<asset>.spdx.json`, with
+`<asset>.spdx.json.sha256` and `<asset>.spdx.json.minisig`.
+
+Every binary and sidecar SBOM binds an attested
+`<asset>.dependencies.json` produced offline from its package-scoped Cargo tree:
+exact target/features, full non-dev normal/build dependency closure, enabled
+features, `Cargo.lock` hash, tag/commit, and graph digest. Sidecars are
+`GENERATED_FROM` their scanner graph. The Linux binary additionally binds a
+statically linked Hyperscan `5.4.2` BSD-3-Clause package, exact `libhs.a` and
+`libhs.pc` provenance hashes, and `STATIC_LINK`; it does not claim runtime
+`libhs`.
+
+Installer SBOMs contain no Cargo graph. `install.sh` enumerates the exact three
+Unix binaries and three GPU bundles from the release manifest with their
+SHA-256 values and conditional `OPTIONAL_DEPENDENCY_OF` relationships, plus
+`sh`, `curl`, `awk`, `sha256sum` or `shasum`, `minisign`, and POSIX file
+utilities. `install.ps1` enumerates the Windows binary and GPU bundle plus
+PowerShell 5+, `Invoke-WebRequest`, `Get-FileHash`, and `minisign`. These assets
+are not public until the 0.5.48 release succeeds.
+
+After publication, verify a downloaded document with the pinned release key:
+
+```sh
+SBOM=keyhog-linux-x86_64.spdx.json
+PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
+sha256sum -c "$SBOM.sha256"
+minisign -Vm "$SBOM" -P "$PUB"
+```
+
+Both checks must pass. Matrix builds stage the complete set as private CI
+artifacts; new releases and published-release reruns remain private while the
+set is mutated. Only the complete signed manifest is made visible.
 
 `keyhog update` and `keyhog repair` use strict semantic-version precedence.
 Their implicit latest-release lookup ignores drafts and prereleases and skips
@@ -294,7 +324,7 @@ On Windows, save `install.ps1`, then use `.\install.ps1 -Diagnose`,
 | Symptom | Recovery |
 |---------|----------|
 | `keyhog: command not found` after a successful install | Open a new terminal. If it still fails, add `$HOME/.local/bin` to `PATH` on Linux/macOS. Run the installer again interactively to let it add the marked PATH block. |
-| Linux reports that `libhs.so` or Hyperscan is missing | On Debian/Ubuntu, run `sudo apt-get update && sudo apt-get install -y --no-install-recommends libhyperscan5`, then retry `keyhog doctor`. |
+| Linux reports that `libhs.so` or Hyperscan is missing | The signed Linux release statically links Hyperscan and must not need runtime `libhs`. Do not install an unbound library to mask the mismatch; verify the selected release asset and run `sh install.sh --repair`. |
 | The host or architecture is unsupported | Use one of the four release platforms above, or follow the source-build instructions. Do not install an asset for another architecture. |
 | Signature, checksum, or download verification fails | Retry on a working network. If it persists, run `sh install.sh --diagnose`, check the pinned tag, and download a complete bundle from GitHub Releases. Do not use `--insecure` to ignore a present invalid signature or checksum. |
 | `keyhog doctor` exits `4` | Run `sh install.sh --diagnose`, then `sh install.sh --repair`. The repair path keeps or restores the previous working binary if replacement fails. |
@@ -367,7 +397,7 @@ It complements the detached minisign signatures, which remain the installer's
 offline trust root:
 
 ```sh
-TAG=v0.5.47
+TAG=v0.5.48
 gh attestation verify "$ASSET" --repo santhreal/keyhog \
   --signer-workflow github.com/santhreal/keyhog/.github/workflows/release.yml \
   --source-ref "refs/tags/$TAG" --deny-self-hosted-runners

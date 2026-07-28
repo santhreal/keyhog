@@ -1,5 +1,6 @@
 //! Command-line argument parsing for KeyHog.
 
+mod action_report;
 mod calibrate;
 mod calibrate_autoroute;
 mod config;
@@ -14,6 +15,9 @@ mod scan;
 mod scan_system;
 mod watch;
 
+pub use action_report::{
+    ActionReportArgs, ActionReportCommand, ActionReportFormat, ActionReportVerifyArgs,
+};
 pub use calibrate::CalibrateArgs;
 pub use calibrate_autoroute::{AutorouteCalibrationPolicy, CalibrateAutorouteArgs};
 pub use config::ConfigArgs;
@@ -75,6 +79,10 @@ pub enum Command {
     /// Print resolved scan configuration without scanning
     #[command(verbatim_doc_comment)]
     Config(Box<ConfigArgs>),
+
+    /// Verify a report against KeyHog's internal composite-Action receipt
+    #[command(verbatim_doc_comment, hide = true)]
+    ActionReport(ActionReportArgs),
 
     /// Manage git pre-commit hooks
     #[command(verbatim_doc_comment)]

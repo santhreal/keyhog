@@ -14,10 +14,10 @@ fn release_entrypoints_require_exact_changelog_backed_notes() {
     assert!(
         workflow.contains("scripts/release_notes.py")
             && workflow.contains("--tag \"$tag\"")
-            && workflow.contains("--changelog \"$GITHUB_WORKSPACE/CHANGELOG.md\"")
+            && workflow.contains("--changelog \"$GITHUB_WORKSPACE/source/CHANGELOG.md\"")
             && workflow.contains("--output \"$workdir/release-notes.md\"")
             && workflow.contains("--notes-file \"$workdir/release-notes.md\"")
-            && workflow.contains("--commit \"${{ steps.source.outputs.commit }}\""),
+            && workflow.contains("--commit \"$KEYHOG_RELEASE_COMMIT\""),
         "release.yml must render the exact tagged changelog section and pass that file to the immutable-ID publisher"
     );
     assert!(

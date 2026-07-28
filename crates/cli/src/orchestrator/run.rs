@@ -568,6 +568,12 @@ impl ScanOrchestrator {
             incremental_cache_failed,
             source_coverage_incomplete,
         });
+        crate::action_report::write_scan_receipt(
+            &self.args,
+            report_findings.len(),
+            exit,
+            report_metadata.scan_status,
+        )?;
         if exit == EXIT_SOURCE_FAILED {
             eprintln!(
                 "error: input coverage was incomplete (see coverage warnings above). Not \

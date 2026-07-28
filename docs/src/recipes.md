@@ -8,10 +8,12 @@ line. See [environment variables](./reference/env.md) and
 ## Scan code you have locally
 
 ```bash
-keyhog scan .                              # the working tree
-keyhog scan path/to/file.env              # a single file
-keyhog scan . --deep                      # highest-recall preset
-keyhog scan . --fast                      # pre-commit speed, no entropy/ML/decode recursion
+keyhog scan .                              # canonical default policy
+keyhog scan path/to/file.env              # one file; may use a ready Unix daemon
+keyhog scan . --fast                      # pattern-only: no decode, entropy, or ML
+keyhog scan . --deep                      # bounded highest-recall preset
+keyhog scan . --precision                 # 0.85 floor, no entropy/relaxed keyword bridge
+keyhog scan . --lockdown                  # Linux; requires sufficient memlock
 ```
 
 ## Gate commits and pull requests
@@ -38,9 +40,9 @@ jobs:
   scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: santhreal/keyhog@v0
-        with: { path: ., severity: high, format: sarif }
+        with: { path: ., severity: high, format: sarif, preset: default, lockdown: 'false' }
 ```
 
 Findings upload to the GitHub Security tab as SARIF. Commit a baseline first so

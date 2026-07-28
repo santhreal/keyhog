@@ -8,6 +8,10 @@ report="keyhog-results.sarif"
 verify="false"
 baseline=""
 backend=""
+autoroute_cache=""
+cleanup_autoroute_cache=false
+preset="default"
+lockdown="false"
 fail_on_findings="true"
 upload_sarif="true"
 print_effective_config=false
@@ -90,6 +94,34 @@ while [[ "$#" -gt 0 ]]; do
       backend="$2"
       shift 2
       ;;
+    --autoroute-cache)
+      if [[ "$#" -lt 2 ]]; then
+        gha_error "Missing value for run-scan.sh argument: --autoroute-cache"
+        exit 2
+      fi
+      autoroute_cache="$2"
+      shift 2
+      ;;
+    --cleanup-autoroute-cache)
+      cleanup_autoroute_cache=true
+      shift
+      ;;
+    --preset)
+      if [[ "$#" -lt 2 ]]; then
+        gha_error "Missing value for run-scan.sh argument: --preset"
+        exit 2
+      fi
+      preset="$2"
+      shift 2
+      ;;
+    --lockdown)
+      if [[ "$#" -lt 2 ]]; then
+        gha_error "Missing value for run-scan.sh argument: --lockdown"
+        exit 2
+      fi
+      lockdown="$2"
+      shift 2
+      ;;
     --fail-on-findings)
       if [[ "$#" -lt 2 ]]; then
         gha_error "Missing value for run-scan.sh argument: --fail-on-findings"
@@ -116,6 +148,40 @@ while [[ "$#" -gt 0 ]]; do
       ;;
   esac
 done
+keyhog_bin="${KEYHOG_BIN:-keyhog}"
+if [[ -n "${KEYHOG_BIN:-}" ]]; then
+  if [[ -z "${ACTION_RUNTIME:-}" || "$keyhog_bin" != "$ACTION_RUNTIME"/* || ! -f "$keyhog_bin" || -L "$keyhog_bin" ]]; then
+    gha_error "The private KeyHog binary is missing or untrusted."
+    exit 2
+  fi
+fi
+
+if [[ "$cleanup_autoroute_cache" == "true" ]]; then
+  if [[ -z "$autoroute_cache" || -z "${RUNNER_TEMP:-}" ]]; then
+    gha_error "--cleanup-autoroute-cache requires --autoroute-cache under RUNNER_TEMP."
+    exit 2
+  fi
+  case "$autoroute_cache" in
+    "$RUNNER_TEMP"/*) ;;
+    *) gha_error "Refusing to clean an autoroute cache outside RUNNER_TEMP."; exit 2 ;;
+  esac
+  if [[ ! -f "$autoroute_cache" || -L "$autoroute_cache" ]]; then
+    gha_error "Refusing to clean a missing or untrusted autoroute cache."
+    exit 2
+  fi
+  cleanup_requested_autoroute() {
+    local owned_path
+    for owned_path in "$autoroute_cache" "${autoroute_cache}.lock"; do
+      if [[ -d "$owned_path" && ! -L "$owned_path" ]]; then
+        gha_warning "Autoroute cleanup refused a directory at an owned file path."
+      elif [[ -e "$owned_path" || -L "$owned_path" ]]; then
+        rm -f -- "$owned_path"
+      fi
+    done
+  }
+  trap cleanup_requested_autoroute EXIT
+fi
+
 
 now_ms() {
   if [[ -n "${EPOCHREALTIME:-}" ]]; then
@@ -153,11 +219,13 @@ scan_status_for_exit() {
 
 md_cell() {
   local value="$1"
-  value="${value//$'\r'/ }"
-  value="${value//$'\n'/ }"
-  value="${value//|/\\|}"
-  value="${value//\`/\\\`}"
-  printf '%s%s%s' '`' "$value" '`'
+  value="${value//&/\&amp;}"
+  value="${value//</\&lt;}"
+  value="${value//>/\&gt;}"
+  value="${value//$'\r'/\&#13;}"
+  value="${value//$'\n'/\&#10;}"
+  value="${value//|/\&#124;}"
+  printf '<code>%s</code>' "$value"
 }
 
 case "$severity" in
@@ -191,6 +259,26 @@ case "$backend" in
     exit 2
     ;;
 esac
+preset_flag=""
+case "$preset" in
+  default) ;;
+  fast | deep | precision)
+    preset_flag="--$preset"
+    ;;
+  *)
+    gha_error "Invalid preset '$preset'. Use one of: default, fast, deep, precision."
+    exit 2
+    ;;
+esac
+
+case "$lockdown" in
+  true | false) ;;
+  *)
+    gha_error "Invalid lockdown '$lockdown'. Use 'true' or 'false'."
+    exit 2
+    ;;
+esac
+
 
 case "$fail_on_findings" in
   true | false) ;;
@@ -207,25 +295,91 @@ case "$upload_sarif" in
     exit 2
     ;;
 esac
+if [[ -z "${RUNNER_TEMP:-}" ]]; then
+  gha_error "The Action report receipt requires RUNNER_TEMP."
+  exit 2
+fi
+action_receipt_root="${ACTION_RUNTIME:-$RUNNER_TEMP}"
+action_receipt="$action_receipt_root/keyhog-action-report-$$.receipt"
+if [[ -e "$action_receipt" || -L "$action_receipt" ]]; then
+  gha_error "Refusing a pre-existing Action report receipt path."
+  exit 2
+fi
+receipt_owned_sha=""
+cleanup_action_state() {
+  if [[ -n "$receipt_owned_sha" ]]; then
+    if [[ -f "$action_receipt" && ! -L "$action_receipt" ]]; then
+      current_receipt_sha=""
+      if command -v sha256sum >/dev/null 2>&1; then
+        read -r current_receipt_sha _ < <(sha256sum "$action_receipt")
+      elif command -v shasum >/dev/null 2>&1; then
+        read -r current_receipt_sha _ < <(shasum -a 256 "$action_receipt")
+      fi
+      if [[ "$current_receipt_sha" == "$receipt_owned_sha" ]]; then
+        rm -f -- "$action_receipt"
+      else
+        gha_warning "Action report receipt changed after verification; refusing cleanup."
+      fi
+    elif [[ -e "$action_receipt" || -L "$action_receipt" ]]; then
+      gha_warning "Action report receipt changed type after verification; refusing cleanup."
+    fi
+  fi
+  if [[ "$cleanup_autoroute_cache" == "true" ]]; then
+    cleanup_requested_autoroute
+  fi
+}
+trap cleanup_action_state EXIT
+
 
 args=(scan
   --path "$scan_path"
   --severity "$severity"
   --format "$format"
-  --output "$report")
+  --output "$report"
+  --action-receipt "$action_receipt")
 config_args=(config
   --effective
   --path "$scan_path"
   --severity "$severity"
   --format "$format")
+if [[ "$verify" == "true" ]]; then
+  config_args+=(--verify)
+else
+  config_args+=(--no-verify)
+fi
+
+if [[ -n "$backend" ]]; then
+  config_args+=(--backend "$backend")
+fi
+if [[ -n "$preset_flag" ]]; then
+  config_args+=("$preset_flag")
+fi
+if [[ "$lockdown" == "true" ]]; then
+  config_args+=(--lockdown)
+fi
+
+
 
 if [[ "$verify" == "true" ]]; then
   args+=(--verify)
+else
+  args+=(--no-verify)
 fi
 
 if [[ -n "$backend" ]]; then
   args+=(--backend "$backend")
 fi
+if [[ -n "$autoroute_cache" ]]; then
+  args+=(--autoroute-cache "$autoroute_cache")
+  config_args+=(--autoroute-cache "$autoroute_cache")
+fi
+if [[ -n "$preset_flag" ]]; then
+  args+=("$preset_flag")
+fi
+if [[ "$lockdown" == "true" ]]; then
+  args+=(--lockdown)
+fi
+
 
 if [[ -n "$baseline" ]]; then
   args+=(--baseline "$baseline")
@@ -234,7 +388,7 @@ fi
 
 if [[ "$print_effective_config" == "true" ]]; then
   set +e
-  keyhog "${config_args[@]}"
+  "$keyhog_bin" "${config_args[@]}"
   config_exit=$?
   set -e
   if [[ "$config_exit" != "0" ]]; then
@@ -255,6 +409,10 @@ publish_receipt() {
     return
   fi
   receipt_written=true
+  published_report_present=false
+  if [[ -n "${snapshot_report:-}" && -n "${snapshot_sha256:-}" && -f "$snapshot_report" && ! -L "$snapshot_report" ]]; then
+    published_report_present=true
+  fi
 
   if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
     {
@@ -262,12 +420,18 @@ publish_receipt() {
       printf 'exit-code=%s\n' "$keyhog_exit"
       printf 'duration-ms=%s\n' "$duration_ms"
       printf 'scan-status=%s\n' "$scan_status"
-      printf 'report-present=%s\n' "$report_present"
+      printf 'report-present=%s\n' "$published_report_present"
+      printf 'report=%s\n' "${snapshot_report:-}"
+      printf 'report-sha256=%s\n' "${snapshot_sha256:-}"
     } >> "$GITHUB_OUTPUT"
   fi
 
   gha_notice "scan status: $scan_status"
-  gha_notice "Found $findings finding(s) at or above '$severity' severity."
+  if [[ "$findings" =~ ^[0-9]+$ ]]; then
+    gha_notice "Found $findings finding(s) at or above '$severity' severity."
+  else
+    gha_notice "Finding count unavailable because the scan did not publish a valid report."
+  fi
   gha_notice "Scan completed in ${duration_ms} ms."
   if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     {
@@ -278,9 +442,12 @@ publish_receipt() {
       printf '| Path | %s |\n' "$(md_cell "$scan_path")"
       printf '| Severity floor | %s |\n' "$(md_cell "$severity")"
       printf '| Format | %s |\n' "$(md_cell "$format")"
+      printf '| Action preset input | %s |\n' "$(md_cell "$preset")"
+      printf '| Action lockdown input | %s |\n' "$(md_cell "$lockdown")"
+      printf '| Action verification input | %s |\n' "$(md_cell "$verify")"
       printf '| Report | %s |\n' "$(md_cell "$report")"
       printf '| Report present | %s |\n' "$(md_cell "$report_present")"
-      printf '| Findings | %s |\n' "$(md_cell "$findings")"
+      printf '| Findings | %s |\n' "$(md_cell "${findings:-unavailable}")"
       printf '| Exit code | %s |\n' "$(md_cell "$keyhog_exit")"
       printf '| Completion status | %s |\n' "$(md_cell "$scan_status")"
       printf '| Duration | %s |\n' "$(md_cell "${duration_ms} ms")"
@@ -293,17 +460,58 @@ publish_receipt() {
   fi
 }
 
+if [[ -z "$report" ]]; then
+  findings=""
+  keyhog_exit=2
+  publish_receipt
+  gha_error "Report output path must not be empty."
+  exit 2
+fi
+if [[ -L "$report" ]]; then
+  findings=""
+  keyhog_exit=2
+  publish_receipt
+  gha_error "Refusing symlink report output '$report'."
+  exit 2
+fi
+if [[ -e "$report" ]]; then
+  if [[ ! -f "$report" ]] || ! rm -f -- "$report"; then
+    findings=""
+    keyhog_exit=2
+    publish_receipt
+    gha_error "Could not safely remove stale report output '$report'."
+    exit 2
+  fi
+fi
+if [[ -e "$report" || -L "$report" ]]; then
+  findings=""
+  keyhog_exit=2
+  publish_receipt
+  gha_error "Stale report output '$report' remained before the scan."
+  exit 2
+fi
+
+
 scan_start_ms="$(now_ms)"
 set +e
-keyhog "${args[@]}"
+"$keyhog_bin" "${args[@]}"
 keyhog_exit=$?
 set -e
+if [[ -f "$action_receipt" && ! -L "$action_receipt" ]]; then
+  if command -v sha256sum >/dev/null 2>&1; then
+    read -r receipt_owned_sha _ < <(sha256sum "$action_receipt")
+  elif command -v shasum >/dev/null 2>&1; then
+    read -r receipt_owned_sha _ < <(shasum -a 256 "$action_receipt")
+  else
+    receipt_owned_sha=""
+  fi
+fi
 scan_end_ms="$(now_ms)"
 duration_ms="$((scan_end_ms - scan_start_ms))"
 if (( duration_ms < 0 )); then
   duration_ms=0
 fi
-if [[ -f "$report" ]]; then
+if [[ -f "$report" && ! -L "$report" ]]; then
   report_present=true
 fi
 scan_status="$(scan_status_for_exit "$keyhog_exit" "$report_present")"
@@ -311,124 +519,105 @@ scan_status="$(scan_status_for_exit "$keyhog_exit" "$report_present")"
 count_from_report() {
   local report_format="$1"
   local report_path="$2"
-
-  case "$report_format" in
-    sarif)
-      if command -v jq >/dev/null 2>&1; then
-        jq 'if (.runs | type) == "array" then [.runs[] | if type != "object" then error("keyhog SARIF run must be an object") elif (has("results") and (.results | type) != "array") then error("keyhog SARIF results must be an array") else (.results // [])[] end] | length else error("keyhog SARIF report must contain a top-level runs array") end' "$report_path"
-      elif command -v python3 >/dev/null 2>&1; then
-        python3 - "$report_path" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], "r", encoding="utf-8") as f:
-    sarif = json.load(f)
-
-if not isinstance(sarif, dict) or not isinstance(sarif.get("runs"), list):
-    raise SystemExit("keyhog SARIF report must contain a top-level runs array")
-
-count = 0
-for run in sarif["runs"]:
-    if not isinstance(run, dict):
-        raise SystemExit("keyhog SARIF run must be an object")
-    results = run.get("results", [])
-    if not isinstance(results, list):
-        raise SystemExit("keyhog SARIF results must be an array")
-    count += len(results)
-
-print(count)
-PY
-      else
-        return 2
-      fi
-      ;;
-    json)
-      if command -v jq >/dev/null 2>&1; then
-        jq 'if type == "array" then length else error("keyhog JSON report must be a top-level array") end' "$report_path"
-      elif command -v python3 >/dev/null 2>&1; then
-        python3 - "$report_path" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], "r", encoding="utf-8") as f:
-    report = json.load(f)
-
-if not isinstance(report, list):
-    raise SystemExit("keyhog JSON report must be a top-level array")
-
-print(len(report))
-PY
-      else
-        return 2
-      fi
-      ;;
-    jsonl)
-      if command -v jq >/dev/null 2>&1; then
-        jq -s 'if all(.[]; type == "object") then length else error("keyhog JSONL report lines must be objects") end' "$report_path"
-      elif command -v python3 >/dev/null 2>&1; then
-        python3 - "$report_path" <<'PY'
-import json
-import sys
-
-count = 0
-with open(sys.argv[1], "r", encoding="utf-8") as f:
-    for line in f:
-        if not line.strip():
-            continue
-        finding = json.loads(line)
-        if not isinstance(finding, dict):
-            raise SystemExit("keyhog JSONL report lines must be objects")
-        count += 1
-
-print(count)
-PY
-      else
-        return 2
-      fi
-      ;;
-    text)
-      local text_count
-      local grep_status
-      set +e
-      text_count="$(grep -c 'Secret:' "$report_path")"
-      grep_status=$?
-      set -e
-      case "$grep_status" in
-        0 | 1)
-          printf '%s\n' "${text_count:-0}"
-          ;;
-        *)
-          return "$grep_status"
-          ;;
-      esac
-      ;;
-  esac
+  "$keyhog_bin" action-report verify \
+    --receipt "$action_receipt" \
+    --report "$report_path" \
+    --format "$report_format" \
+    --exit-code "$keyhog_exit"
 }
 
-if [[ "$keyhog_exit" != "0" && "$keyhog_exit" != "1" && "$keyhog_exit" != "10" ]]; then
-  publish_receipt
-  gha_error "keyhog exited $keyhog_exit (not a findings code) - treating as a scan failure"
-  exit "$keyhog_exit"
-fi
+unexpected_exit=false
+case "$keyhog_exit" in
+  0 | 1 | 10) ;;
+  *) unexpected_exit=true ;;
+esac
 
-if [[ -f "$report" ]]; then
+if [[ "$report_present" == "true" ]]; then
   if parsed_findings="$(count_from_report "$format" "$report" 2>/dev/null)"; then
     findings="$parsed_findings"
-  elif [[ "$keyhog_exit" == "1" || "$keyhog_exit" == "10" ]]; then
-    scan_status=failed
-    findings=1
-    gha_warning "Could not parse '$report'; keyhog exited $keyhog_exit, so treating the scan as having findings."
+  elif [[ "$unexpected_exit" == "true" ]]; then
+    findings=""
+    if [[ "$keyhog_exit" != "130" ]]; then
+      scan_status=failed
+    fi
   else
     scan_status=failed
+    findings=""
     publish_receipt
-    gha_error "Could not parse clean scan report '$report'."
+    gha_error "Could not verify scan report receipt for '$report'; refusing to infer a finding count from exit $keyhog_exit."
     exit 3
   fi
+elif [[ "$unexpected_exit" == "true" ]]; then
+  findings=""
 else
   scan_status=failed
   publish_receipt
   gha_error "keyhog exited $keyhog_exit but did not write '$report'."
   exit 3
+fi
+
+if [[ "$unexpected_exit" != "true" ]]; then
+  if [[ "$keyhog_exit" == "0" && "$findings" != "0" ]]; then
+    scan_status=failed
+    publish_receipt
+    gha_error "Contradictory scan result: keyhog exited 0 but the report contains $findings finding(s)."
+    exit 3
+  fi
+  if [[ ("$keyhog_exit" == "1" || "$keyhog_exit" == "10") && "$findings" == "0" ]]; then
+    scan_status=failed
+    publish_receipt
+    gha_error "Contradictory scan result: keyhog exited $keyhog_exit but the report contains no findings."
+    exit 3
+  fi
+fi
+
+snapshot_report=""
+snapshot_sha256=""
+if [[ "$report_present" == "true" && -n "$findings" ]]; then
+  snapshot_root="${ACTION_RUNTIME:-$RUNNER_TEMP}"
+  if [[ ! -d "$snapshot_root" || -L "$snapshot_root" ]]; then
+    scan_status=failed
+    publish_receipt
+    gha_error "Private report snapshot root is missing or untrusted."
+    exit 3
+  fi
+  snapshot_dir="$(mktemp -d "$snapshot_root/report-snapshot.XXXXXXXX")"
+  chmod 700 "$snapshot_dir"
+  report_name="$(basename "$report")"
+  snapshot_report="$snapshot_dir/$report_name"
+  if [[ -e "$snapshot_report" || -L "$snapshot_report" ]]; then
+    scan_status=failed
+    publish_receipt
+    gha_error "Refusing a pre-existing private report snapshot destination."
+    exit 3
+  fi
+  set -o noclobber
+  : > "$snapshot_report"
+  set +o noclobber
+  cat -- "$report" > "$snapshot_report"
+  chmod 400 "$snapshot_report"
+  if ! snapshot_findings="$(count_from_report "$format" "$snapshot_report" 2>/dev/null)" || [[ "$snapshot_findings" != "$findings" ]]; then
+    scan_status=failed
+    publish_receipt
+    gha_error "Requested report changed while creating its receipt-bound private snapshot."
+    exit 3
+  fi
+  if command -v sha256sum >/dev/null 2>&1; then
+    read -r snapshot_sha256 _ < <(sha256sum "$snapshot_report")
+  elif command -v shasum >/dev/null 2>&1; then
+    read -r snapshot_sha256 _ < <(shasum -a 256 "$snapshot_report")
+  else
+    scan_status=failed
+    publish_receipt
+    gha_error "No SHA-256 implementation is available to bind the private report snapshot."
+    exit 2
+  fi
+fi
+
+if [[ "$unexpected_exit" == "true" ]]; then
+  publish_receipt
+  gha_error "keyhog exited $keyhog_exit (not a findings code) - treating as a scan failure"
+  exit "$keyhog_exit"
 fi
 
 publish_receipt

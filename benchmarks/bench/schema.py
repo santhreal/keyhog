@@ -560,6 +560,57 @@ class BloomEvidence:
 # ── host: the hardware axis (OS / CPU / GPU) ──────────────────────────
 
 
+@dataclass(frozen=True)
+class HostedBinding:
+    """Exact GitHub Actions run ownership bound to hosted context bytes."""
+
+    context_sha256: str
+    repository: str
+    workflow_ref: str
+    workflow_sha: str
+    run_id: str
+    run_attempt: str
+    job: str
+
+    def __post_init__(self) -> None:
+        for field_name in self.__dataclass_fields__:
+            value = getattr(self, field_name)
+            if not isinstance(value, str) or not value:
+                raise ValueError(
+                    f"hosted binding {field_name} must be a non-empty string"
+                )
+        if not is_sha256(self.context_sha256):
+            raise ValueError(
+                "hosted binding context_sha256 must be a lowercase SHA-256"
+            )
+        if re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", self.workflow_sha) is None:
+            raise ValueError(
+                "hosted binding workflow_sha must be a full lowercase Git commit"
+            )
+        for field_name in ("run_id", "run_attempt"):
+            value = getattr(self, field_name)
+            if not value.isascii() or not value.isdecimal() or int(value) <= 0:
+                raise ValueError(
+                    f"hosted binding {field_name} must be a positive decimal string"
+                )
+
+    def to_json(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_json(cls, value: object) -> "HostedBinding":
+        if not isinstance(value, dict):
+            raise ValueError("hosted binding must be an object")
+        required = set(cls.__dataclass_fields__)
+        missing = sorted(required - set(value))
+        extra = sorted(set(value) - required)
+        if missing:
+            raise ValueError(f"hosted binding missing required fields: {missing}")
+        if extra:
+            raise ValueError(f"hosted binding has unknown fields: {extra}")
+        return cls(**value)
+
+
 @dataclass
 class Host:
     """Captured once per run so Windows-ThinkPad / macOS / santhserver /
@@ -574,6 +625,8 @@ class Host:
     kernel: str = ""
     cpu: str = ""
     cores: int = 0
+    affinity_cores: int = 0
+    cgroup_quota_cores: float = 0.0
     ram_mb: int = 0
     gpu: str = ""
     gpu_vram_mb: int = 0
@@ -695,6 +748,7 @@ class CorpusInfo:
     fixture_count: int = 0
     labeled_positives: int = 0
     bytes: int = 0
+    workload_sha256: str = ""
 
     def to_json(self) -> dict:
         return asdict(self)
@@ -757,6 +811,7 @@ class RunResult:
     scan_manifest: dict[str, object] = field(default_factory=dict)
     static_recovery: StaticRecoveryMetrics | None = None
     bloom: BloomEvidence | None = None
+    hosted_binding: HostedBinding | None = None
 
     def to_json(self) -> dict:
         value = {
@@ -781,6 +836,11 @@ class RunResult:
                 else None
             )
             value["bloom"] = self.bloom.to_json() if self.bloom is not None else None
+            value["hosted_binding"] = (
+                self.hosted_binding.to_json()
+                if self.hosted_binding is not None
+                else None
+            )
         return value
 
     @classmethod
@@ -799,6 +859,7 @@ class RunResult:
         available = bool(d.get("available", True))
         static_recovery = None
         bloom = None
+        hosted_binding = None
         if observed_version == SCHEMA_VERSION:
             if "static_recovery" not in d:
                 raise ValueError(
@@ -815,10 +876,18 @@ class RunResult:
             raw_bloom = d.get("bloom")
             if raw_bloom is not None:
                 bloom = BloomEvidence.from_json(raw_bloom)
-        elif "static_recovery" in d or "bloom" in d:
+            if "hosted_binding" not in d:
+                raise ValueError(
+                    f"{source} is {SCHEMA_VERSION!r} but lacks required "
+                    "'hosted_binding' receipt"
+                )
+            raw_hosted_binding = d["hosted_binding"]
+            if raw_hosted_binding is not None:
+                hosted_binding = HostedBinding.from_json(raw_hosted_binding)
+        elif "static_recovery" in d or "bloom" in d or "hosted_binding" in d:
             current_fields = sorted(
                 field_name
-                for field_name in ("static_recovery", "bloom")
+                for field_name in ("static_recovery", "bloom", "hosted_binding")
                 if field_name in d
             )
             raise ValueError(
@@ -841,6 +910,7 @@ class RunResult:
             scan_manifest=dict(d.get("scan_manifest") or {}),
             static_recovery=static_recovery,
             bloom=bloom,
+            hosted_binding=hosted_binding,
         )
 
     def result_filename(self) -> str:

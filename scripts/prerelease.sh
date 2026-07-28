@@ -193,9 +193,14 @@ apply_version_bump() {
   local current="$1" next="$2" today current_re
   local -a versioned_files=(
     README.md
+    action.yml
+    .github/actions/keyhog/action.yml
+    .github/workflows/action-e2e.yml
     .github/actions/keyhog/README.md
     docs/src/install.md
     docs/src/introduction.md
+    docs/src/first-scan.md
+    docs/src/reference/exit-codes.md
     docs/assets/keyhog-banner.svg
     docs/src/reference/oob-verification.md
     docs/src/verification.md
@@ -221,14 +226,15 @@ apply_version_bump() {
     echo "Cargo.toml does not contain the expected workspace version and four exact internal pins" >&2
     return 1
   fi
+  current_re="${current//./\\.}"
   for file in "${versioned_files[@]}"; do
-    if ! grep -q "v$current" "$file"; then
-      echo "$file does not contain the current canonical version v$current" >&2
+    if ! grep -Eq "(^|[^0-9])v?$current_re([^0-9]|$)" "$file"; then
+      echo "$file does not contain the current canonical version $current" >&2
       return 1
     fi
   done
 
-  current_re="${current//./\\.}"
+
   sed_inplace "s/^version = \"$current_re\"/version = \"$next\"/" Cargo.toml || return 1
   sed_inplace "s/=$current_re\"/=$next\"/g" Cargo.toml || return 1
 

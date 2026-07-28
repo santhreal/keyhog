@@ -2,6 +2,7 @@ mod support;
 
 mod bench_nightly_ci_lean_and_requirements;
 mod bench_nightly_missing_hyperscan_install;
+mod hosted_cpu_calibration_evidence;
 mod cargo_rdme_spec_waiver_has_expiry;
 mod ci_yml_not_santh_standard_template;
 mod ci_yml_references_existing_test_targets;

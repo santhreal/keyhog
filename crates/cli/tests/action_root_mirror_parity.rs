@@ -30,7 +30,14 @@ const SOURCE_ROOT_FROM_INNER: &str = "${{ github.action_path }}/../../..";
 const SOURCE_ROOT_AT_ROOT: &str = "${{ github.action_path }}";
 const RUN_SCAN_FROM_INNER: &str = "${{ github.action_path }}/run-scan.sh";
 const RUN_SCAN_AT_ROOT: &str = "${{ github.action_path }}/.github/actions/keyhog/run-scan.sh";
+const BACKEND_INPUT_CONTRACT: &str = concat!(
+    "      Scan backend: auto | cpu | simd | gpu-cuda | gpu-wgpu. Published exact\n",
+    "      and floating release refs use calibrated auto. Portable branch and commit\n",
+    "      source refs require explicit cpu; accelerated backends are unavailable."
+);
 
+/// Regression: Marketplace root and internal composite copies previously
+/// drifted, leaving fixes active in only one published entrypoint.
 #[test]
 fn root_action_is_the_locked_mirror_of_the_inner_action() {
     let root = repo_root();
@@ -68,4 +75,28 @@ fn root_action_is_the_locked_mirror_of_the_inner_action() {
          regenerate the root by rewriting only the three path expressions this \
          test documents. Do not hand-edit one copy alone."
     );
+}
+
+/// Regression: portable source refs cannot authenticate an accelerated build or
+/// persist an auto-routing decision, so Marketplace metadata must not advertise
+/// source `auto` as equivalent to release `auto`.
+#[test]
+fn mirrored_backend_metadata_distinguishes_source_and_release_capabilities() {
+    let root = repo_root();
+    for relative in ["action.yml", ".github/actions/keyhog/action.yml"] {
+        let path = root.join(relative);
+        let manifest = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        assert_eq!(
+            manifest.matches(BACKEND_INPUT_CONTRACT).count(),
+            1,
+            "{} must publish the exact backend capability contract",
+            path.display()
+        );
+        assert!(
+            !manifest.contains("Auto and cpu work on every install"),
+            "{} must not claim portable source auto support",
+            path.display()
+        );
+    }
 }

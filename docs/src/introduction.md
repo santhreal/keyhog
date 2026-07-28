@@ -8,7 +8,7 @@ credentials.
 $ keyhog scan . --progress
     K E Y H O G
     ───────────
-    v0.5.47 · secret scanner · 923 detectors
+    v0.5.48 · secret scanner · 923 detectors
     by santh
 
   ⚡ 16 cores | SIMD: AVX-512 | Hyperscan | 923 detectors (5822 patterns) io_uring | backend=simd-regex | gpu=none
@@ -121,11 +121,12 @@ keyhog --version
 keyhog scan .
 ```
 
-Linux arm64 and Windows arm64 release assets are not currently produced.
-Debian and Ubuntu also need the `libhyperscan5` runtime. The
-[Install](./install.md) guide gives prerequisite commands, a pinned
-installer-authentication flow, offline and source-build paths, and recovery
-steps. [Your first scan](./first-scan.md) gives you a safe, synthetic finding
+Linux arm64 and Windows arm64 release assets are not currently produced. The
+Linux x86_64 release statically links Hyperscan and needs no
+`libhyperscan5` runtime. The [Install](./install.md) guide gives prerequisite
+commands, a pinned installer-authentication flow, offline and source-build
+paths, and recovery steps. [Your first scan](./first-scan.md) gives you a safe,
+synthetic finding
 to confirm output, redaction, and exit status before you scan a repository.
 
 ## Where things live

@@ -34,6 +34,23 @@ class DocumentationVersionBumpTests(unittest.TestCase):
         self.assertIn("Measured scanner: KeyHog v0.5.45, sha256=abc123.", updated)
         self.assertNotIn("Measured scanner: KeyHog v0.5.46", updated)
 
+    def test_bare_and_prefixed_versions_update_together(self) -> None:
+        """Banners, JSON reports, and Action help must move with canonical v-prefixed pins."""
+        source = (
+            "Published version v0.5.47.\n"
+            '\"keyhog_version\": \"0.5.47\"\n'
+            "Do not rewrite 10.5.470 as a partial numeric match.\n"
+        )
+
+        updated = MODULE.bump_markdown(source, "0.5.47", "0.5.48")
+
+        self.assertEqual(
+            updated,
+            "Published version v0.5.48.\n"
+            '\"keyhog_version\": \"0.5.48\"\n'
+            "Do not rewrite 10.5.470 as a partial numeric match.\n",
+        )
+
     def test_document_without_current_pin_fails_before_mutation(self) -> None:
         """A stale release file must fail loudly instead of reporting a successful no-op bump."""
         with self.assertRaisesRegex(MODULE.VersionBumpError, "does not contain canonical pin"):

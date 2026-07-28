@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.48 - 2026-07-28
+
+- Preserve source-backend process-isolation contracts in the split integration
+  lanes and bind the package candidate to its signed SPDX dependency graph.
+
+
 ## 0.5.47 - 2026-07-26
 
 - Bind the crate release identity to the KeyHog installer-recovery patch so

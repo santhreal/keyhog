@@ -41,12 +41,24 @@ pub(super) fn find_layer_archives(
         return Ok(manifest_layers);
     }
 
-    let mut layers = Vec::new();
     let walker = super::exhaustive_archive_walker(root_path);
+    Ok(collect_fallback_layer_archives(
+        walker
+            .walk_iter()
+            .map(|entry| entry.map(|entry| entry.path)),
+    ))
+}
 
-    for entry in walker.walk_iter() {
-        let entry = match entry {
-            Ok(entry) => entry,
+pub(super) fn collect_fallback_layer_archives<I, E>(entries: I) -> Vec<PathBuf>
+where
+    I: IntoIterator<Item = Result<PathBuf, E>>,
+    E: std::fmt::Display,
+{
+    let mut layers = Vec::new();
+    for entry in entries {
+        match entry {
+            Ok(path) if is_fallback_layer_archive_path(&path) => layers.push(path),
+            Ok(_) => {}
             Err(error) => {
                 // KH-1446: one unreadable walk entry must not abort layer
                 // discovery for the rest of the image archive.
@@ -55,16 +67,12 @@ pub(super) fn find_layer_archives(
                     error = %error,
                     "failed to inspect one docker image archive entry while discovering layer archives; continuing"
                 );
-                continue;
             }
-        };
-        if is_fallback_layer_archive_path(&entry.path) {
-            layers.push(entry.path);
         }
     }
     layers.sort();
     layers.dedup();
-    Ok(layers)
+    layers
 }
 
 pub(super) fn rewrite_layer_chunks<I>(

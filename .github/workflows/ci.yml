@@ -6,6 +6,11 @@ on:
     tags: ['v*']
   pull_request:
 
+# CI never publishes and needs only immutable source reads. Publication is
+# exclusively orchestrated by release.yml after the explicit CI verdict.
+permissions:
+  contents: read
+
 # Cancel older in-flight CI when a newer push lands on the same ref.
 # Without this a rapid succession of pushes stacks 5+ deep, each one
 # burning ~25 minutes of macOS + linux runner time on already-stale
@@ -44,7 +49,7 @@ jobs:
   # standalone CI-operability Rust test crate.
   audit-gates:
     name: Prevention gates (run_all.sh)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -64,7 +69,7 @@ jobs:
   # LFS-tracked.
   strict-runners:
     name: Strict adversarial runners
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     # PR + main gate. contracts_runner is always strict (no env var); the
     # multiplier runners honor KEYHOG_*_STRICT=1.
@@ -103,7 +108,7 @@ jobs:
 
           done
       - name: Strict runner gate (PR subset)
-        # KH-1302: CPU-only ubuntu-latest cannot load libcuda; ci-lean keeps
+        # KH-1302: CPU-only ubuntu-24.04 cannot load libcuda; ci-lean keeps
         # adversarial contracts off the GPU default feature set.
         run: |
           cargo test -p keyhog-scanner --profile release-fast \
@@ -125,7 +130,7 @@ jobs:
 
   test:
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -221,16 +226,77 @@ jobs:
   # Integration aggregators. Every crate ships a `tests/all_tests.rs` that
   # pulls in its `unit/ adversarial/ contract/ gap/ gate/ integration/
   # property/ regression/ concurrent/` modules - ~3900 tests total. Before
-  # this job CI ran only `--lib` plus a handful of named `--test` runners, so
-  # NOTHING built the `all_tests` targets: a unit test under tests/unit/ that
-  # stopped compiling (e.g. the LazyRegex CompiledPattern field change) sailed
-  # through every gate because no CI step ever built that target. This job is
-  # the gate that turns "the integration suite is green on my box" into "green
-  # in CI". lfs:true + Hyperscan mirror the `test` job - the contract corpus
-  # and several fixtures are LFS-tracked and the default build links Hyperscan.
-  integration-tests:
-    name: Integration test aggregators
-    runs-on: ubuntu-latest
+  # these lanes CI ran only `--lib` plus a handful of named `--test` runners,
+  # so NOTHING built the `all_tests` targets: a unit test under tests/unit/
+  # that stopped compiling (e.g. the LazyRegex CompiledPattern field change)
+  # sailed through every gate. The five lanes and their fail-closed aggregate
+  # turn "the integration suite is green on my box" into "green in CI".
+  # lfs:true + Hyperscan mirror the `test` job: the contract corpus and several
+  # fixtures are LFS-tracked and the default build links Hyperscan.
+  # The integration surface used to be one 66-step serial job. Keep the exact
+  # commands and isolation flags, but split independent crate/lane work so one
+  # long scanner binary no longer strands every other integration verdict.
+  integration-core-scanner:
+    name: Integration (core + scanner aggregators)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: true
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - name: Install Vectorscan
+        run: |
+          for i in 1 2 3 4 5; do
+            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
+            sleep $((i * 2))
+            if [ "$i" -eq 5 ]; then exit 1; fi
+          done
+      - name: core all_tests
+        run: cargo test -p keyhog-core --test all_tests --profile release-fast
+      - name: scanner all_tests
+        run: cargo test -p keyhog-scanner --test all_tests --no-default-features --features ci-lean --profile release-fast
+      - name: scanner CI target wiring gates
+        run: cargo test -p keyhog-scanner --test unit_gates_live ci_scanner --no-default-features --features ci-lean --profile release-fast -- --nocapture
+      - name: scanner GPU literal artifact writer
+        run: cargo test -p keyhog-scanner --test gpu_literal_artifact_writer --no-default-features --features ci-lean --profile release-fast
+      - name: scanner adversarial dead corpus
+        run: cargo test -p keyhog-scanner --test adversarial_suite --no-default-features --features ci-lean --profile release-fast
+      - name: RawMatch total-order gate
+        run: cargo test -p keyhog-core --test new_core_finding_dedup --profile release-fast
+
+  # All-target sources tests remain serial inside their own test processes:
+  # several assert process-global skip counters and cannot be co-scheduled.
+  integration-sources:
+    name: Integration (sources)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: true
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - name: Install Vectorscan
+        run: |
+          for i in 1 2 3 4 5; do
+            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
+            sleep $((i * 2))
+            if [ "$i" -eq 5 ]; then exit 1; fi
+          done
+      - name: sources all_tests
+        run: cargo test -p keyhog-sources --test all_tests --profile release-fast
+      - name: sources binary backend (all_tests)
+        run: cargo test -p keyhog-sources --test all_tests --features binary --profile release-fast
+      - name: sources opt-in backends (inline unit tests)
+        run: cargo test -p keyhog-sources --lib --features "github,gitlab,bitbucket,slack,azure,gcs,s3,docker,binary" --profile release-fast
+      - name: sources opt-in backends (all standalone targets, serial)
+        run: cargo test -p keyhog-sources --features "github,gitlab,bitbucket,slack,azure,gcs,s3,docker,binary" --profile release-fast -- --test-threads=1
+
+  integration-verifier:
+    name: Integration (verifier)
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -240,233 +306,113 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       - name: Install Vectorscan
         run: |
-
           for i in 1 2 3 4 5; do
-
             sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
-
             sleep $((i * 2))
-
             if [ "$i" -eq 5 ]; then exit 1; fi
-
           done
-      # Full detection path (Hyperscan/simd + simdsieve hot path + ML/decode/
-      # multiline) MINUS the GPU dispatch stack, via the `ci-lean` feature.
-      # These runners are GPU-less, so the GPU dispatch suites
-      # (`#![cfg(feature = "gpu")]`) must compile out here and run on
-      # runners-nightly (real GPU hosts, `--features gpu`) instead - otherwise
-      # they fail for lack of an adapter rather than a code defect. Detection
-      # results are identical: a `gpu`-on build on a driverless host falls back
-      # to the same CPU path this lean build takes directly. core/sources/
-      # verifier have no GPU feature, so they run default features unchanged.
-      # Each crate's `all_tests` is one binary; run them per crate so a failure
-      # names the crate.
-      - name: core all_tests
-        run: cargo test -p keyhog-core --test all_tests --profile release-fast
-      - name: scanner all_tests
-        run: cargo test -p keyhog-scanner --test all_tests --no-default-features --features ci-lean --profile release-fast
-      - name: scanner CI target wiring gates
-        run: cargo test -p keyhog-scanner --test unit_gates_live ci_scanner --no-default-features --features ci-lean --profile release-fast -- --nocapture
-      - name: scanner GPU literal artifact writer
-        run: cargo test -p keyhog-scanner --test gpu_literal_artifact_writer --no-default-features --features ci-lean --profile release-fast
-      # Dead-corpus adversarial scanner fixtures are a standalone target because
-      # the full adversarial directory contains integration-unsafe unit-internal
-      # probes. This target keeps the real corpus recall shards live in CI.
-      - name: scanner adversarial dead corpus
-        run: cargo test -p keyhog-scanner --test adversarial_suite --no-default-features --features ci-lean --profile release-fast
-      - name: sources all_tests
-        run: cargo test -p keyhog-sources --test all_tests --profile release-fast
-      # The opt-in source backends (binary ELF/PE/Mach-O + Ghidra literal
-      # extraction; the github/gitlab/bitbucket hosted-Git clients; the slack,
-      # azure, gcs, s3 cloud backends; docker image/layer unpacking) are NOT in
-      # `default` features, and no other job runs their tests: feature-matrix only
-      # `cargo check`s `--features full`, which compiles but never executes them.
-      # These two steps run them. No network, daemon, or Ghidra is required:
-      # every covered test is in-memory fixtures, mock HTTP (httpmock), a
-      # fake-binary script, or source inspection.
-      #
-      # 1) The binary backend aggregator: ELF/PE/Mach-O section reader + the
-      #    byte-exact C-string unescaper that secret recall on compiled binaries
-      #    depends on. Deterministic in parallel.
-      - name: sources binary backend (all_tests)
-        run: cargo test -p keyhog-sources --test all_tests --features binary --profile release-fast
-      # 2) Every opt-in backend's `--lib` inline unit tests: hosted-Git SSRF +
-      #    credential redaction, cloud request construction, slack/docker helpers.
-      #    Restricted to `--lib` on purpose: the `all_tests` aggregator with these
-      #    features is NOT yet parallel-deterministic, some integration tests bump
-      #    the process-global skip counters through non-`gate_scan` helper calls
-      #    that escape the exclusive scan scope, so they race a concurrent
-      #    counter-asserting test (e.g. corrupt_zip). The `--lib` inline tests
-      #    carry no process-global counter assertions, so they ARE race-free.
-      #    (Tracked: route every counter-bumping test path through the scan gate
-      #    so the full aggregator can run all backends in parallel.)
-      - name: sources opt-in backends (inline unit tests)
-        run: cargo test -p keyhog-sources --lib --features "github,gitlab,bitbucket,slack,azure,gcs,s3,docker,binary" --profile release-fast
-      # 3) The opt-in backends' INTEGRATION tests (tests/*.rs). Many are
-      #    deliberately their OWN test binary, they assert on the process-global
-      #    skip counters and keep those assertions out of `all_tests.rs` so a
-      #    per-test fixture can reset the atomics without racing sibling tests in
-      #    the same process. Their skip-counter, cloud-listing, hosted-git
-      #    API-failure, private-key-in-git-history, and slack-pagination locks
-      #    were DOUBLE-orphaned before this step: not aggregated into all_tests
-      #    AND all_tests never ran with their feature, so they never executed in
-      #    CI. This runs `cargo test -p keyhog-sources` with NO `--test` filter,
-      #    so EVERY integration target compiles + runs, each standalone file in
-      #    its own process (counter-safe by construction), and the `all_tests`
-      #    aggregator too. `--test-threads=1` keeps the aggregator's own
-      #    process-global-counter tests deterministic (same reason as
-      #    `verifier break_it`). `scripts/gates/tests_wired.py` treats this
-      #    all-targets step as wiring every sources `tests/*.rs`.
-      - name: sources opt-in backends (all standalone targets, serial)
-        run: cargo test -p keyhog-sources --features "github,gitlab,bitbucket,slack,azure,gcs,s3,docker,binary" --profile release-fast -- --test-threads=1
-      # NOTE: two sources perf tripwires are `#[ignore]`d and NOT run in CI 
-      # `perf_io_path` (straces a spawned scan; ptrace-fragile under the parallel
-      # test-binary load) and `perf_parallel_cores` (a multicore speedup RATIO,
-      # only valid on an otherwise-idle host). Both still COMPILE in the
-      # all-targets step above (shown as `ignored`, not orphaned) and run on an
-      # idle host via `cargo test -p keyhog-sources --test <name> -- --ignored`.
-      # Their thresholds are unchanged; only the CI scheduling is gated.
       - name: verifier all_tests
         run: cargo test -p keyhog-verifier --test all_tests --profile release-fast
-      # `break_it.rs` is a fuzz file of engine tests that drive `verify_all`
-      # through the process-global rate limiter on a shared service slot with
-      # tight watchdogs; it is intentionally NOT in `all_tests` (parallel), it
-      # runs as its own SERIAL target so its isolation assumptions hold. Removing
-      # this step orphans it (`scripts/gates/tests_wired.py` would flag).
       - name: verifier break_it (serial)
         run: cargo test -p keyhog-verifier --test break_it --profile release-fast -- --test-threads=1
+
+  integration-cli:
+    name: Integration (CLI)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: true
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - name: Install Vectorscan
+        run: |
+          for i in 1 2 3 4 5; do
+            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
+            sleep $((i * 2))
+            if [ "$i" -eq 5 ]; then exit 1; fi
+          done
       - name: cli all_tests
         run: cargo test -p keyhog --test all_tests --no-default-features --features ci-lean --profile release-fast
       - name: cli Vyre pin coherence
         run: cargo test -p keyhog --test vyre_pin_coherence_lane3 --no-default-features --features ci-lean --profile release-fast
-      # Coherence test binaries: standalone (not in all_tests) so they stay
-      # bounded; each drives the real keyhog binary + reads the committed
-      # docs/README to pin doc<->binary coherence (format set, exit codes,
-      # verify flags, verify-block count). ci-lean includes `verify` so the
-      # --verify* flags exist. Named explicitly because nothing else runs these
-      # standalone targets in CI.
       - name: cli coherence binaries
         run: cargo test -p keyhog --no-default-features --features ci-lean --profile release-fast --test coherence_wiring_lane7 --test lane10_verification_doc_coherence --test coherence_verify_count
-      # Property (proptest) suite - its own bounded binary (was orphaned: empty
-      # property/mod.rs + missing proptest dep, so it never compiled or ran).
       - name: cli property
         run: cargo test -p keyhog --test property --profile release-fast
-      # Adversarial CLI suite - its own bounded binary because each test spawns
-      # keyhog; folding it into all_tests drove OOM/SIGKILL in CI.
       - name: cli adversarial
         run: cargo test -p keyhog --test adversarial --profile release-fast -- --test-threads=4
-      # Detector-corpus integrity: every embedded detector must load, compile
-      # into the scanner backend, declare a >=3-char keyword, carry metadata +
-      # >=1 pattern, and the canonical-shape smoke set must fire. A detector
-      # whose regex fails to compile degrades to a never-match LazyRegex with
-      # only an error! log - silent recall loss this gate is the only thing
-      # that catches.
+
+  integration-detector-contracts:
+    name: Integration (detector + recall contracts)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: true
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - name: Install Vectorscan
+        run: |
+          for i in 1 2 3 4 5; do
+            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
+            sleep $((i * 2))
+            if [ "$i" -eq 5 ]; then exit 1; fi
+          done
       - name: detector self-validation
         run: cargo test -p keyhog-scanner --test all_detectors_self_validate --profile release-fast
-      # Homoglyph ASCII-skip recall-safety gate. The always-active homoglyph
-      # RegexSet variants (the single largest scan line item, ~55% of scan cost)
-      # are SKIPPED on pure-ASCII chunks by default. That is sound ONLY if the
-      # base AC/confirmed path catches every finding the skipped variant would.
-      # `homoglyph_ascii_skip_parity` scans thousands of ASCII inputs with skip
-      # ON vs OFF and asserts byte-identical RawMatch sets; `regression_ac_
-      # overlap_shadow` pins the overlapping-AC trigger fix that closed the one
-      # gap (inner literal `secret` shadowed by `client_secret`). A divergence is
-      # a real recall regression to fix at the source, never to weaken here.
       - name: homoglyph ASCII-skip parity + shadow gate
         run: |
           cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test homoglyph_ascii_skip_parity homoglyph_ascii_skip_parity_default
           cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_ac_overlap_shadow shadowed_inner_literal_is_ac_confirmed_with_variant_skipped
-      # Finding-set determinism gate. `ScanState::push_match` keeps the top-N by
-      # `RawMatch::Ord` when a chunk overflows `max_matches_per_chunk`; the kept set
-      # must not depend on insertion order (== fallback extraction order, and
-      # HashMap-/thread-nondeterministic in production), or the reported findings
-      # flicker run-to-run. `push_match_eviction_set_is_insertion_order_independent`
-      # drives the eviction boundary directly with all-tied-but-offset candidates,
-      # pinning that `RawMatch::Ord` stays total down to (offset, line). The corpus
-      # `fallback_order_independence` test in the same file is `#[ignore]` (needs the
-      # mirror corpus); this invocation runs only the corpus-free boundary gate.
       - name: finding-set eviction order-independence
         run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test fallback_order_independence push_match_eviction_set_is_insertion_order_independent
-      # Basic-Auth detector recall contract. `basic-auth-credentials` closes the
-      # Auth:Basic-Authorization CredData category (0 -> 491 TP, recall 0.824);
-      # this pins that a realistic `Basic <base64>` blob surfaces, the curl-shape
-      # surfaces, and the English word `basically` does NOT trip the `\b`-anchored
-      # detector: a recall regression here is a real detection loss to fix at the
-      # source, never to weaken.
       - name: basic-auth detector recall contract
         run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test basic_auth_credentials_recall
-      # Named-detector anchor-floor recall contract. `compute_confidence` is a
-      # *normalized* signal sum, so a keyword-anchored service detector match
-      # (`Splunk=<uuid>`) that can only earn the context-anchor weight scored
-      # below the 0.40 floor and was dropped as `below_min_confidence`: the
-      # dominant cause of 538 strict contract-positive misses. The floor lifts
-      # such matches; this pins the lift is named+anchor-gated (FP-safe: generic
-      # / entropy / weak-anchor detectors keep the full gate stack), a recovered
-      # positive surfaces, and a bare value without the keyword does not claim
-      # the named detector. A regression here is a real detection loss to fix at
-      # the source, never to weaken.
       - name: named-detector anchor-floor recall contract
         run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_named_detector_anchor_floor_recall
-      # Canonical-hex service-key recall contract. A weak_anchor service detector
-      # (alchemy/datadog/crowdin/…) whose regex REQUIRED its service keyword and
-      # captured canonical-length pure hex (32/40/48/64) had the value dropped by
-      # the bare-hex-digest shape gate BEFORE confidence, defeating its own
-      # min_confidence=0.2. The KH-L-0110 allow_canonical_hex_key escape hatch is
-      # now keyed on the service anchor; this pins a keyword-anchored hex key
-      # surfaces, a bare hex without the keyword does not claim the detector, and
-      # an all-zero placeholder stays suppressed (decoy gates still run).
       - name: named-detector canonical-hex-key recall contract
         run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_named_canonical_hex_key_recall
-      # Per-pattern weak-anchor recall contract. The weak_anchor classification
-      # (which keeps the Tier-B shape gates engaged for collision-prone captures)
-      # is resolved per MATCHED PATTERN, not per detector: a strong pattern
-      # (servicenow `instance=…\.service-now\.com`) must not inherit a sibling
-      # broad-identifier pattern's (`user=([\w-]+)`) gates. This pins the strong
-      # pattern surfaces and the bare-host precision twin (no keyword → no claim).
       - name: per-pattern weak-anchor recall contract
         run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_per_pattern_weak_anchor_recall
-      # Character-class prefix expansion recall contract. A regex opening with a
-      # literal run interrupted by a small enumerable class (`dd[npc]_[a-f0-9]{64}`)
-      # carries no extractable single prefix, so the plural extractor enumerates
-      # the class into one concrete prefix per member (`ddn_`/`ddp_`/`ddc_`) to
-      # earn each branch its AC trigger + literal-prefix anchor. Pins the member
-      # tokens surface and the faithful-expansion twin (non-member `ddz_` → no claim).
       - name: char-class prefix expansion recall contract
         run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_charclass_prefix_expansion_recall
-      # Leading-construct prefix recall contract. A leading zero-width assertion
-      # (`\bser\.…`, flagsmith) and a leading short-literal alternation extended
-      # by a trailing literal (`(?:pk|sk)\.…`, locationiq) previously defeated
-      # prefix extraction; the assertion is stripped and the post-group literal
-      # is carried onto each branch. Pins both surface plus the precision twins
-      # (word-internal `ser.` and a too-short locationiq body → no claim).
       - name: leading-construct prefix recall contract
         run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_leading_assertion_and_alternation_prefix_recall
-      # Distinctive required-infix anchor recall contract. A named detector whose
-      # regex opens with a class (no prefix) and captures the whole match (no
-      # keyword group) but REQUIRES a distinctive literal infix (terraform
-      # `\.atlasv1\.`) earns the anchor floor on that infix. Pins the token
-      # surfaces and the soundness twin (same shape without `.atlasv1.` → no claim).
       - name: distinctive-infix anchor recall contract
         run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_distinctive_infix_anchor_recall
-      # Checksum boundary no-downgrade recall contract. A known-prefix boundary
-      # extension (provider-token bytes / base64 `=` padding) must never turn a
-      # checksum-VALID token into a non-valid one, e.g. a `pypi-…` token abutted
-      # by a `="…"` separator must not absorb the `=` and fail its checksum.
       - name: checksum boundary no-downgrade recall contract
         run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_checksum_boundary_no_downgrade
-      # Inter-keyword separator policy: every detector's separator class collapses
-      # to the single canonical `[_\-\s]*` at spec-load, so `api  key`, `client
-      # id`, and `last fm` are never missed because an author allowed only one
-      # underscore (or over-escaped `\s`). Audits the live corpus + proves the
-      # recall gain end to end.
       - name: keyword-separator canonicalization recall contract
         run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test regression_detector_owned_keyword_separators
-      - name: RawMatch total-order gate
-        run: cargo test -p keyhog-core --test new_core_finding_dedup --profile release-fast
 
+  # Preserve the established required-check name while making it an explicit
+  # fail-closed aggregate of the five independent integration lanes.
+  integration-verdict:
+    name: Integration test aggregators
+    if: ${{ always() }}
+    needs:
+      - integration-core-scanner
+      - integration-sources
+      - integration-verifier
+      - integration-cli
+      - integration-detector-contracts
+    runs-on: ubuntu-24.04
+    permissions: {}
+    env:
+      KEYHOG_INTEGRATION_RESULTS: ${{ toJSON(needs) }}
+    steps:
+      - name: Require every integration lane
+        run: |
+          jq -e '
+            length == 5 and
+            all(.[]; .result == "success")
+          ' <<<"$KEYHOG_INTEGRATION_RESULTS" >/dev/null
   macos-build:
     name: macOS Build
-    runs-on: macos-latest
+    runs-on: macos-15
     # macOS must exercise both the default Vectorscan/Hyperscan path and the
     # portable release asset path.
     steps:
@@ -499,7 +445,7 @@ jobs:
 
   windows-build:
     name: Windows portable release build
-    runs-on: windows-latest
+    runs-on: windows-2025
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
@@ -513,7 +459,7 @@ jobs:
 
   feature-matrix:
     name: Feature matrix sanity check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Cross-package feature combinations the release workflows and the
     # composite Action depend on. Anything anyone might `cargo install`
     # has to compile cleanly with the documented feature set.
@@ -615,7 +561,7 @@ jobs:
 
   clippy:
     name: Clippy (advisory)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Clippy is ADVISORY, not a gate. `-D warnings` made every stylistic lint a
     # release blocker, which pushed us toward churn-y renames and `#[allow]`
     # suppressions that obscured real code more than the lints helped. Clippy
@@ -646,7 +592,7 @@ jobs:
 
   install-scripts:
     name: Install scripts (install.sh edge cases)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install install-script linters
@@ -699,7 +645,7 @@ jobs:
 
   fuzz-smoke:
     name: Fuzz target smoke
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -730,7 +676,7 @@ jobs:
 
   fmt:
     name: Format
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -752,7 +698,7 @@ jobs:
 
   deny:
     name: Supply-chain (cargo deny)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
@@ -771,7 +717,7 @@ jobs:
 
   audit:
     name: Security Audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
@@ -794,7 +740,7 @@ jobs:
 
   build:
     name: Build Release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
@@ -876,53 +822,79 @@ jobs:
           tests/dogfood/product_matrix.sh "$bin" cpu
           tests/dogfood/product_matrix.sh "$bin" simd
 
-  publish:
-    name: Publish to crates.io
-    # Clippy is intentionally NOT a publish gate (it is advisory; see the
-    # clippy job). Release correctness is gated by test/strict-runners/fmt/fuzz/build.
-    needs: [test, strict-runners, fmt, fuzz-smoke, build]
-    # Only attempt publish on an explicit `v*` tag push. Tag-gating matches the
-    # release flow: bump the version, tag, push the tag, publish.
-    if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
-    runs-on: ubuntu-latest
+  # Build the exact Linux release linkage profile before tag time. The isolated
+  # HYPERSCAN_ROOT contains no shared libhs, so a successful link plus ldd check
+  # proves Marketplace users never need a mutable apt Hyperscan runtime.
+  static-release-linkage:
+    name: Static Hyperscan release linkage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - name: Install Vectorscan
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # pinned action
+        with:
+          toolchain: '1.89'
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - name: Install exact static native build inputs
         run: |
-
-          for i in 1 2 3 4 5; do
-
-            sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config && break
-
-            sleep $((i * 2))
-
-            if [ "$i" -eq 5 ]; then exit 1; fi
-
-          done
-
-      - name: Publish subcrates then CLI
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            libhyperscan-dev=5.4.2-2 \
+            pkg-config=1.8.1-2build1
+          root="$RUNNER_TEMP/keyhog-hyperscan-static"
+          mkdir -p "$root/include" "$root/lib/pkgconfig"
+          cp -a /usr/include/hs "$root/include/"
+          cp /usr/lib/x86_64-linux-gnu/libhs.a "$root/lib/libhs.a"
+          cp /usr/lib/x86_64-linux-gnu/pkgconfig/libhs.pc \
+            "$root/lib/pkgconfig/libhs.pc"
+          printf 'HYPERSCAN_ROOT=%s\n' "$root" >> "$GITHUB_ENV"
+      - name: Build and prove self-contained release binary
         run: |
-          set -e
-          for pkg in keyhog-core keyhog-scanner keyhog-verifier keyhog-sources keyhog; do
-            echo "Publishing $pkg..."
-            # --no-verify: already tested in the build job above
-            # Capture stderr so "already published" is a no-op but
-            # any other failure (network, auth, schema) fails the job
-            # instead of silently swallowing.
-            if out=$(cargo publish -p "$pkg" --no-verify 2>&1); then
-              echo "$out"
-            else
-              echo "$out"
-              if echo "$out" | grep -q "is already uploaded"; then
-                echo "  → $pkg already at this version; continuing"
-              else
-                echo "  → $pkg publish failed with unexpected error"
-                exit 1
-              fi
-            fi
-            # Wait for crates.io index propagation between dependent crates
-            sleep 30
-          done
+          set -euo pipefail
+          cargo build --locked --release -p keyhog --features static-hyperscan
+          target/release/keyhog --version
+          linkage="$(ldd target/release/keyhog)"
+          printf '%s\n' "$linkage"
+          if grep -Eiq 'libhs|libhyperscan' <<<"$linkage"; then
+            echo "ERROR: release binary dynamically links Hyperscan" >&2
+            exit 1
+          fi
+
+  # This is the only release-consumable CI verdict. It runs after every
+  # blocking shard, fails closed on failed/skipped/cancelled dependencies, and
+  # intentionally excludes only the documented advisory clippy job.
+  ci-verdict:
+    name: CI verdict
+    if: ${{ always() }}
+    needs:
+      - audit-gates
+      - strict-runners
+      - test
+      - integration-core-scanner
+      - integration-sources
+      - integration-verifier
+      - integration-cli
+      - integration-detector-contracts
+      - integration-verdict
+      - macos-build
+      - windows-build
+      - feature-matrix
+      - install-scripts
+      - fuzz-smoke
+      - fmt
+      - deny
+      - audit
+      - build
+      - static-release-linkage
+    runs-on: ubuntu-24.04
+    permissions: {}
+    env:
+      KEYHOG_BLOCKING_RESULTS: ${{ toJSON(needs) }}
+    steps:
+      - name: Require every blocking CI job
+        run: |
+          jq -e '
+            length == 19 and
+            all(.[]; .result == "success")
+          ' <<<"$KEYHOG_BLOCKING_RESULTS" >/dev/null

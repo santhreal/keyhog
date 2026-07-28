@@ -5,6 +5,23 @@ use keyhog_sources::skip_counts;
 #[cfg(feature = "docker")]
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 #[cfg(feature = "docker")]
+fn write_layer_tar(path: &std::path::Path, entries: &[(&str, &[u8])]) {
+    let file = std::fs::File::create(path).expect("create tar");
+    let mut builder = tar::Builder::new(file);
+    for (name, bytes) in entries {
+        let mut header = tar::Header::new_gnu();
+        header.set_path(name).expect("set entry path");
+        header.set_size(bytes.len() as u64);
+        header.set_entry_type(tar::EntryType::Regular);
+        header.set_cksum();
+        builder
+            .append(&header, *bytes)
+            .expect("append layer entry");
+    }
+    builder.finish().expect("finish tar");
+}
+
+#[cfg(feature = "docker")]
 #[test]
 fn docker_tar_single_entry_exceeds_cap_rejected() {
     let _guard = TestApi.skip_counter_guard();
@@ -44,6 +61,8 @@ fn docker_tar_single_entry_exceeds_cap_rejected() {
 
 #[cfg(feature = "docker")]
 #[test]
+/// A single entry above the per-file cap is skipped without allocation or
+/// extraction, while an in-budget sibling is still extracted.
 fn docker_layer_over_cap_regular_entry_is_reported_without_dropping_safe_siblings() {
     let _guard = TestApi.skip_counter_guard();
     TestApi.reset_skip_counters();
@@ -74,7 +93,7 @@ fn docker_layer_over_cap_regular_entry_is_reported_without_dropping_safe_sibling
     let unpacked = dir.path().join("unpacked");
     std::fs::create_dir(&unpacked).expect("mkdir unpacked");
     let errors = TestApi
-        .unpack_docker_layer_archive_with_entry_cap(&tar_path, &unpacked, 4)
+        .unpack_docker_layer_archive_with_caps(&tar_path, &unpacked, 4, 9)
         .expect("over-cap regular entries must not abort the whole layer");
 
     assert!(
@@ -105,6 +124,141 @@ fn docker_layer_over_cap_regular_entry_is_reported_without_dropping_safe_sibling
         counts.archive_truncated, 0,
         "per-entry skip is not an aggregate archive truncation"
     );
+}
+
+#[cfg(feature = "docker")]
+#[test]
+/// Boundary contract: the inner-layer file cap is inclusive. Only entries
+/// strictly larger than the configured cap are skipped.
+fn docker_layer_regular_entry_exactly_at_cap_is_extracted() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let tar_path = dir.path().join("layer.tar");
+    let file = std::fs::File::create(&tar_path).expect("create tar");
+    let mut builder = tar::Builder::new(file);
+
+    let mut header = tar::Header::new_gnu();
+    header.set_path("at-cap.txt").expect("set path");
+    header.set_size(4);
+    header.set_entry_type(tar::EntryType::Regular);
+    header.set_cksum();
+    builder
+        .append(&header, b"1234".as_slice())
+        .expect("append exact-cap entry");
+    builder.finish().expect("finish tar");
+
+    let unpacked = dir.path().join("unpacked");
+    std::fs::create_dir(&unpacked).expect("mkdir unpacked");
+    let errors = TestApi
+        .unpack_docker_layer_archive_with_entry_cap(&tar_path, &unpacked, 4)
+        .expect("an entry exactly at the cap must be accepted");
+
+    assert!(errors.is_empty(), "exact-cap entry emitted errors: {errors:?}");
+    assert_eq!(
+        std::fs::read(unpacked.join("at-cap.txt")).expect("exact-cap entry extracted"),
+        b"1234"
+    );
+    assert_eq!(
+        skip_counts().over_max_size,
+        0,
+        "an exact-cap entry must not increment skip telemetry"
+    );
+}
+
+#[cfg(feature = "docker")]
+#[test]
+/// Aggregate accounting includes oversized entries even though they are never
+/// allocated or extracted, so multiple skipped entries cannot bypass the cap.
+fn docker_layer_skipped_entries_still_trip_aggregate_cap() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let tar_path = dir.path().join("layer.tar");
+    write_layer_tar(
+        &tar_path,
+        &[("first.bin", b"12345"), ("second.bin", b"67890")],
+    );
+
+    let unpacked = dir.path().join("unpacked");
+    std::fs::create_dir(&unpacked).expect("mkdir unpacked");
+    let err = TestApi
+        .unpack_docker_layer_archive_with_caps(&tar_path, &unpacked, 4, 9)
+        .expect_err("two skipped five-byte entries must exceed the nine-byte aggregate cap");
+
+    let msg = err.to_string();
+    assert!(
+        msg.contains("cumulative size exceeds 9 bytes") && msg.contains("second.bin"),
+        "aggregate refusal must name the cap and crossing entry, got {msg:?}"
+    );
+    assert!(
+        !unpacked.join("first.bin").exists() && !unpacked.join("second.bin").exists(),
+        "preflight rejection must not extract oversized entries"
+    );
+    assert_eq!(
+        skip_counts().archive_truncated,
+        1,
+        "aggregate refusal must increment archive-truncated telemetry"
+    );
+}
+
+#[cfg(feature = "docker")]
+#[test]
+/// The aggregate cap is inclusive: a layer whose declared regular-entry bytes
+/// equal the total cap is accepted, while its over-file-cap member stays skipped.
+fn docker_layer_exactly_at_aggregate_cap_is_accepted() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let tar_path = dir.path().join("layer.tar");
+    write_layer_tar(
+        &tar_path,
+        &[("safe.txt", b"1234"), ("oversized.bin", b"56789")],
+    );
+
+    let unpacked = dir.path().join("unpacked");
+    std::fs::create_dir(&unpacked).expect("mkdir unpacked");
+    let errors = TestApi
+        .unpack_docker_layer_archive_with_caps(&tar_path, &unpacked, 4, 9)
+        .expect("declared bytes exactly at the aggregate cap must be accepted");
+
+    assert_eq!(errors.len(), 1, "only the per-file skip must be reported");
+    assert_eq!(
+        std::fs::read(unpacked.join("safe.txt")).expect("safe entry extracted"),
+        b"1234"
+    );
+    assert!(
+        !unpacked.join("oversized.bin").exists(),
+        "over-file-cap entry must remain unextracted"
+    );
+    let counts = skip_counts();
+    assert_eq!(counts.archive_truncated, 0);
+    assert_eq!(counts.over_max_size, 1);
+}
+
+#[cfg(feature = "docker")]
+#[test]
+/// Positive control: an archive below both budgets extracts every regular
+/// entry and emits no skip or truncation telemetry.
+fn docker_layer_under_both_caps_extracts_every_entry() {
+    let _guard = TestApi.skip_counter_guard();
+    TestApi.reset_skip_counters();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let tar_path = dir.path().join("layer.tar");
+    write_layer_tar(&tar_path, &[("one.txt", b"123"), ("two.txt", b"456")]);
+
+    let unpacked = dir.path().join("unpacked");
+    std::fs::create_dir(&unpacked).expect("mkdir unpacked");
+    let errors = TestApi
+        .unpack_docker_layer_archive_with_caps(&tar_path, &unpacked, 4, 7)
+        .expect("archive below both caps must be extracted");
+
+    assert!(errors.is_empty(), "in-budget archive emitted errors: {errors:?}");
+    assert_eq!(std::fs::read(unpacked.join("one.txt")).unwrap(), b"123");
+    assert_eq!(std::fs::read(unpacked.join("two.txt")).unwrap(), b"456");
+    let counts = skip_counts();
+    assert_eq!(counts.archive_truncated, 0);
+    assert_eq!(counts.over_max_size, 0);
 }
 
 #[cfg(feature = "docker")]

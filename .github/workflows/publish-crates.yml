@@ -1,8 +1,6 @@
 name: Publish crates.io
 
 on:
-  release:
-    types: [published]
   workflow_call:
     inputs:
       tag:
@@ -19,6 +17,10 @@ on:
         required: true
         type: string
 
+# The reusable/manual recovery publisher needs only immutable source and release
+# reads. Its crates.io credential is scoped to the final publish step.
+permissions: {}
+
 # Cargo publishes dependency tiers serially. Never cancel a run after an upload
 # may have started, and never publish two workspace versions concurrently.
 concurrency:
@@ -28,7 +30,7 @@ concurrency:
 jobs:
   publish:
     name: Publish tagged crates
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     env:
@@ -40,10 +42,14 @@ jobs:
         shell: bash
         env:
           KEYHOG_MANUAL_TAG: ${{ inputs.tag }}
-          KEYHOG_PUBLISHED_TAG: ${{ github.event.release.tag_name }}
+          KEYHOG_EVENT_ACTOR_ID: ${{ github.actor_id }}
         run: |
           set -euo pipefail
-          tag="${KEYHOG_MANUAL_TAG:-$KEYHOG_PUBLISHED_TAG}"
+          if [[ "$KEYHOG_EVENT_ACTOR_ID" != "64453045" ]]; then
+            echo "::error title=KeyHog::Crates.io publication is restricted to the repository owner's stable actor ID."
+            exit 2
+          fi
+          tag="$KEYHOG_MANUAL_TAG"
           if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
             echo "::error title=KeyHog::Crates.io publication requires an exact vMAJOR.MINOR.PATCH tag, optionally with a prerelease suffix."
             exit 2
@@ -51,7 +57,7 @@ jobs:
           printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
           printf 'version=%s\n' "${tag#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Prove the release ref is an immutable tag
+      - name: Fetch exact annotated release-tag proof
         id: source
         shell: bash
         env:
@@ -59,23 +65,49 @@ jobs:
           KEYHOG_RELEASE_TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -euo pipefail
-          readarray -t resolved < <(
-            gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$KEYHOG_RELEASE_TAG" \
-              --jq '.ref, .object.sha'
-          )
-          ref="${resolved[0]:-}"
-          object_sha="${resolved[1]:-}"
-          if [[ "$ref" != "refs/tags/$KEYHOG_RELEASE_TAG" || ! "$object_sha" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "ERROR: publication input does not resolve to an exact Git object at refs/tags/$KEYHOG_RELEASE_TAG" >&2
+          ref_json="$RUNNER_TEMP/keyhog-publish-ref.json"
+          tag_json="$RUNNER_TEMP/keyhog-publish-tag.json"
+          main_ref_json="$RUNNER_TEMP/keyhog-publish-main-ref.json"
+          compare_json="$RUNNER_TEMP/keyhog-publish-main-compare.json"
+          signer_keys_json="$RUNNER_TEMP/keyhog-publish-signer-gpg-keys.json"
+          gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$KEYHOG_RELEASE_TAG" >"$ref_json"
+          if ! tag_object="$(
+            jq -er --arg ref "refs/tags/$KEYHOG_RELEASE_TAG" '
+              select(.ref == $ref) |
+              .object |
+              select(.type == "tag") |
+              .sha |
+              select(test("^[0-9a-f]{40}$"))
+            ' "$ref_json"
+          )"; then
+            echo "ERROR: crates.io publication requires an exact annotated Git tag" >&2
             exit 2
           fi
-          commit="$(gh api "repos/$GITHUB_REPOSITORY/commits/$KEYHOG_RELEASE_TAG" --jq '.sha')"
-          if [[ ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "ERROR: publication tag $KEYHOG_RELEASE_TAG did not resolve to an exact commit SHA" >&2
-            exit 2
-          fi
+          gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_object" >"$tag_json"
+          commit="$(
+            jq -er '
+              select(.object.type == "commit") |
+              .object.sha |
+              select(test("^[0-9a-f]{40}$"))
+            ' "$tag_json"
+          )"
+          gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" >"$main_ref_json"
+          main_sha="$(
+            jq -er '
+              select(.ref == "refs/heads/main" and .object.type == "commit") |
+              .object.sha |
+              select(test("^[0-9a-f]{40}$"))
+            ' "$main_ref_json"
+          )"
+          gh api "repos/$GITHUB_REPOSITORY/compare/$commit...$main_sha" >"$compare_json"
+          gh api "users/santhreal/gpg_keys" >"$signer_keys_json"
           printf 'commit=%s\n' "$commit" >> "$GITHUB_OUTPUT"
-          printf 'object=%s\n' "$object_sha" >> "$GITHUB_OUTPUT"
+          printf 'object=%s\n' "$tag_object" >> "$GITHUB_OUTPUT"
+          printf 'ref_json=%s\n' "$ref_json" >> "$GITHUB_OUTPUT"
+          printf 'tag_json=%s\n' "$tag_json" >> "$GITHUB_OUTPUT"
+          printf 'main_ref_json=%s\n' "$main_ref_json" >> "$GITHUB_OUTPUT"
+          printf 'compare_json=%s\n' "$compare_json" >> "$GITHUB_OUTPUT"
+          printf 'signer_keys_json=%s\n' "$signer_keys_json" >> "$GITHUB_OUTPUT"
 
       - name: Check out hardened publication automation
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -83,13 +115,15 @@ jobs:
           ref: ${{ github.workflow_sha }}
           path: automation
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Check out immutable tagged source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: refs/tags/${{ steps.tag.outputs.tag }}
+          ref: ${{ steps.source.outputs.commit }}
           path: source
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Prove tag and workspace version agree
         shell: bash
@@ -99,8 +133,32 @@ jobs:
           KEYHOG_EXPECTED_COMMIT: ${{ steps.source.outputs.commit }}
           KEYHOG_EXPECTED_OBJECT: ${{ steps.source.outputs.object }}
           KEYHOG_AUTOMATION_SHA: ${{ github.workflow_sha }}
+          KEYHOG_REF_JSON: ${{ steps.source.outputs.ref_json }}
+          KEYHOG_TAG_JSON: ${{ steps.source.outputs.tag_json }}
+          KEYHOG_MAIN_REF_JSON: ${{ steps.source.outputs.main_ref_json }}
+          KEYHOG_COMPARE_JSON: ${{ steps.source.outputs.compare_json }}
+          KEYHOG_EVENT_ACTOR_ID: ${{ github.actor_id }}
+          KEYHOG_RELEASE_SIGNING_FINGERPRINT: ${{ vars.KEYHOG_RELEASE_SIGNING_FINGERPRINT }}
+          KEYHOG_SIGNER_KEYS_JSON: ${{ steps.source.outputs.signer_keys_json }}
         run: |
           set -euo pipefail
+          verified_object="$(
+            python3 -B automation/scripts/verify_release_tag.py \
+              --tag "$KEYHOG_RELEASE_TAG" \
+              --expected-commit "$KEYHOG_EXPECTED_COMMIT" \
+              --ref-json "$KEYHOG_REF_JSON" \
+              --actor-id "$KEYHOG_EVENT_ACTOR_ID" \
+              --tag-json "$KEYHOG_TAG_JSON" \
+              --main-ref-json "$KEYHOG_MAIN_REF_JSON" \
+              --compare-json "$KEYHOG_COMPARE_JSON" \
+              --signer-keys-json "$KEYHOG_SIGNER_KEYS_JSON" \
+              --authorized-fingerprint "$KEYHOG_RELEASE_SIGNING_FINGERPRINT" \
+              --authorized-key "$GITHUB_WORKSPACE/automation/.github/release-signing-key.asc"
+          )"
+          if [[ "$verified_object" != "$KEYHOG_EXPECTED_OBJECT" ]]; then
+            echo "ERROR: verified annotated tag object does not match the fetched ref" >&2
+            exit 2
+          fi
           automation_commit="$(git -C automation rev-parse HEAD)"
           if [[ "$automation_commit" != "$KEYHOG_AUTOMATION_SHA" ]]; then
             echo "ERROR: automation checkout $automation_commit does not match workflow revision $KEYHOG_AUTOMATION_SHA" >&2
@@ -152,22 +210,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           KEYHOG_RELEASE_TAG: ${{ steps.tag.outputs.tag }}
           KEYHOG_EXPECTED_COMMIT: ${{ steps.source.outputs.commit }}
-          KEYHOG_PUBLISHED_RELEASE_ID: ${{ github.event.release.id }}
+          KEYHOG_EXPECTED_TAG_OBJECT: ${{ steps.source.outputs.object }}
         run: |
           set -euo pipefail
-          release_id_args=()
-          if [[ -n "${KEYHOG_PUBLISHED_RELEASE_ID:-}" ]]; then
-            if [[ ! "$KEYHOG_PUBLISHED_RELEASE_ID" =~ ^[1-9][0-9]*$ ]]; then
-              echo "ERROR: published release event has no positive immutable release ID" >&2
-              exit 2
-            fi
-            release_id_args=(--expected-release-id "$KEYHOG_PUBLISHED_RELEASE_ID")
-          fi
           python3 -B automation/scripts/verify_published_release.py \
-            --repository "$GITHUB_REPOSITORY" \
             --tag "$KEYHOG_RELEASE_TAG" \
             --expected-commit "$KEYHOG_EXPECTED_COMMIT" \
-            "${release_id_args[@]}" \
+            --expected-tag-object "$KEYHOG_EXPECTED_TAG_OBJECT" \
             --download-dir "$RUNNER_TEMP/keyhog-published-release"
 
       - name: Require crates.io credential

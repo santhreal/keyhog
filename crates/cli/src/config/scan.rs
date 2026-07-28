@@ -462,7 +462,7 @@ pub(super) fn apply_top_level_scan_fields(
 
     #[cfg(feature = "verify")]
     if let Some(verify) = config.verify {
-        if !args.verify {
+        if !args.verify && !args.no_verify {
             args.verify = verify;
         }
     }

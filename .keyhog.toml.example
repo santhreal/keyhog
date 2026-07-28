@@ -11,28 +11,42 @@
 detectors = "detectors"
 
 # ============================================================================
-# SCANNING MODES
+# SCAN PRESETS
 # ============================================================================
+#
+# Leave all three false for the canonical default policy. Choose at most one
+# preset. A CLI --fast, --deep, or --precision flag overrides this file's
+# preset selection; compatible explicit CLI knobs then refine the preset base.
 
-# Fast mode: pattern matching only, maximum speed
-# Use for pre-commit hooks and quick scans
-# WARNING: --fast disables decode + entropy + ML simultaneously, the largest
-# detection blind spot KeyHog ships. Encoded secrets (base64, hex, URL),
-# novel high-entropy strings, and ML-only catches will all be missed.
-# This flag is refused in --lockdown mode.
+# Fast: pattern matches only, for frequent local feedback.
+# Disables recursive decode, entropy discovery, and ML confidence scoring.
+# Named regex and multiline detectors remain active. This is the widest recall
+# tradeoff KeyHog ships and is refused by --lockdown.
 fast = false
 
-# Deep mode: all features enabled, maximum recall
-# Use for security audits and CI/CD pipelines
+# Deep: bounded highest-recall recovery for incident response and audits.
+# Enables source-file entropy, removes comment confidence penalties, retains
+# heuristic evidence alongside ML on entropy candidates, keeps decode depth 10,
+# and admits prepared decode chunks up to 1 MiB. The confidence floor stays 0.40.
 deep = false
 
-# Skip decode-through scanning (base64, hex, URL decoding)
+# Precision: lower-noise mass scanning at a deliberate recall cost.
+# Disables entropy discovery and the relaxed keyword bridge, keeps ML scoring,
+# uses decode depth 1, and clamps global and detector floors to at least 0.85.
+# A CLI confidence option may raise, but cannot lower, that floor.
+precision = false
+
+# Lockdown is a separate Linux-only execution mode, selected with --lockdown.
+# `[lockdown] require = true` near the end of this file requires that flag; it
+# does not enable lockdown by itself.
+
+# Skip decode-through scanning (base64, hex, URL decoding).
 # WARNING: encoded secrets like base64('AKIA…') will slip through.
 # REFUSED in --lockdown mode.
 no_decode = false
 
-# Skip entropy-based detection for unknown patterns
-# WARNING: only catch for novel / unknown high-entropy secrets.
+# Skip entropy-based discovery for novel patterns.
+# WARNING: this removes the only discovery path for unknown high-entropy secrets.
 # REFUSED in --lockdown mode.
 no_entropy = false
 
@@ -40,9 +54,9 @@ no_entropy = false
 # ADVANCED ENCODING OPTIONS
 # ============================================================================
 
-# Maximum file size for decode-through scanning (default: 512KB)
-# Files larger than this skip encoding detection for performance
-# Accepts: "32KB", "1MB", "10MB", "100MB"
+# Maximum prepared chunk admitted to decode-through (default: 512 KiB).
+# Large files are scanned in overlapping windows, so this is not a whole-file
+# cutoff and does not make a larger file skip encoding detection.
 decode_size_limit = "512KB"
 
 # ============================================================================
@@ -89,12 +103,13 @@ no_unicode_norm = false
 # VERIFICATION OPTIONS (requires --verify feature)
 # ============================================================================
 
-# Verify discovered credentials via API calls
-# WARNING: enabling this sends every detected secret to a third-party
-# HTTPS endpoint (only domains on the per-detector allowlist or the
-# builtin service map, see `verifier::domain_allowlist`). Use only in
-# isolated environments and never in CI logs that capture verifier
-# output. REFUSED in --lockdown mode.
+# Verify eligible findings against detector-declared provider HTTPS endpoints.
+# WARNING: this is credential data egress. Depending on detector policy, the
+# captured credential or a companion value is sent in the request URL, query,
+# header, or body. Only eligible findings with a verifier are sent; findings
+# without one remain `unverifiable`. Review the detector corpus and outbound
+# trust boundary before enabling this in CI. REFUSED in --lockdown mode.
+# Explicit CLI `--verify` or `--no-verify` wins; the Action always passes one.
 verify = false
 
 # Verification timeout in seconds
@@ -249,12 +264,13 @@ gpu_moe_timeout_ms = 30000
 # etc.). No config knob (always on for git sources).
 
 # ============================================================================
-# WATCH DAEMON (v0.3.0+)
+# WATCH MODE
 # ============================================================================
 
-# `keyhog watch <path>` starts a notify-based file watcher and re-scans
-# any modified file with the same compiled detector corpus. Sub-100ms
-# detection on file save. No config knob (invoke as a separate command).
+# `keyhog watch <path>` starts a foreground filesystem-event loop with its own
+# in-process compiled scanner. It neither connects to the daemon socket nor
+# appears in `keyhog daemon status`. There is no configuration key that starts
+# either watch or daemon mode.
 
 # ============================================================================
 # ADDITIONAL POLICY TABLES

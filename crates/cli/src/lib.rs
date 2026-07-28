@@ -407,6 +407,9 @@ pub async fn cli_main() -> ExitCode {
     let command_outcome = match cli.command {
         Some(args::Command::Scan(args)) => subcommands::scan::run(*args).await,
         Some(args::Command::Config(args)) => subcommands::config::run(*args),
+        Some(args::Command::ActionReport(args)) => match args.command {
+            args::ActionReportCommand::Verify(args) => action_report::verify(args),
+        },
         Some(args::Command::Hook { command }) => subcommands::hook::run(command),
         Some(args::Command::Detectors(args)) => subcommands::detectors::run(args),
         Some(args::Command::Explain(args)) => {
@@ -594,6 +597,7 @@ fn print_version_info(full: bool) {
 }
 
 pub mod args;
+pub(crate) mod action_report;
 pub(crate) mod atomic_file;
 pub(crate) mod autoroute_cache_path;
 pub(crate) mod baseline;

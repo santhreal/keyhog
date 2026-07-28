@@ -37,6 +37,23 @@ from .base import Corpus, LabeledRecord, load_jsonl_manifest
 
 _THIS = pathlib.Path(__file__).resolve()
 _BENCH_ROOT = _THIS.parents[2]
+_MANIFEST_SCHEMA: dict[str, type] = {
+    "category": str,
+    "end_line": int,
+    "id": str,
+    "key_material_embedded": bool,
+    "label": bool,
+    "match_mode": str,
+    "on_disk_path": str,
+    "phase": int,
+    "secret": str,
+    "seed": int,
+    "source_id": str,
+    "start_line": int,
+    "transform": str,
+}
+
+
 
 
 def _generator_path() -> pathlib.Path:
@@ -163,7 +180,12 @@ class IocRecoveryCorpus(Corpus):
 
     def _load_records(self) -> list[LabeledRecord]:
         metadata = self._validate_layout()
-        records = load_jsonl_manifest(self.manifest)
+        records = load_jsonl_manifest(
+            self.manifest,
+            file_root=self.file_root,
+            schema=_MANIFEST_SCHEMA,
+            required_fields=frozenset(_MANIFEST_SCHEMA),
+        )
         invalid = [record.id for record in records if record.match_mode != "exact"]
         if invalid:
             raise SystemExit(
@@ -176,21 +198,6 @@ class IocRecoveryCorpus(Corpus):
                 f"IoC-recovery manifest has {len(records)} records; "
                 f"metadata declares {expected_fixtures!r}"
             )
-        ids = {record.id for record in records}
-        if len(ids) != len(records):
-            raise SystemExit("IoC-recovery manifest contains duplicate record ids")
-        for record in records:
-            relative = pathlib.PurePosixPath(record.file_path)
-            if relative.is_absolute() or ".." in relative.parts:
-                raise SystemExit(
-                    f"IoC-recovery record {record.id!r} has unsafe path "
-                    f"{record.file_path!r}"
-                )
-            if not (self.scan_root / pathlib.Path(relative)).is_file():
-                raise SystemExit(
-                    f"IoC-recovery fixture missing for record {record.id!r}: "
-                    f"{record.file_path}"
-                )
         return records
 
     def ensure(self, samples: int = 336, seed: int = 260506910) -> None:

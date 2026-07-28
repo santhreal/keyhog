@@ -8,6 +8,7 @@ from bench.schema import (
     Detection,
     DetectorStat,
     Host,
+    HostedBinding,
     Outcome,
     RunResult,
     Scanner,
@@ -53,9 +54,17 @@ def bloom_evidence(**overrides) -> BloomEvidence:
 
 
 def test_run_result_round_trips_losslessly():
+    """Guards run result round trips losslessly; prevents this evidence regression from false-passing or crashing."""
     result = RunResult(
         generated_at="2026-05-31T00:00:00Z",
-        host=Host(os="Linux", cpu="test-cpu", cores=32, ram_mb=65536),
+        host=Host(
+            os="Linux",
+            cpu="test-cpu",
+            cores=32,
+            affinity_cores=4,
+            cgroup_quota_cores=4.0,
+            ram_mb=65536,
+        ),
         scanner=Scanner(
             name="keyhog",
             version="0.5.37",
@@ -66,7 +75,13 @@ def test_run_result_round_trips_losslessly():
             daemon_pid=4242,
             daemon_requests=2,
         ),
-        corpus=CorpusInfo(name="mirror", fixture_count=3, labeled_positives=2, bytes=128),
+        corpus=CorpusInfo(
+            name="mirror",
+            fixture_count=3,
+            labeled_positives=2,
+            bytes=128,
+            workload_sha256="c" * 64,
+        ),
         detection=Detection(overall=Outcome(tp=2, fp=1, fn=0)),
         speed=Speed(wall_ms=12.345, throughput_mb_s=10.0, peak_rss_kb=4096),
         finding_count=3,
@@ -89,6 +104,15 @@ def test_run_result_round_trips_losslessly():
             },
         ),
         bloom=bloom_evidence(),
+        hosted_binding=HostedBinding(
+            context_sha256="d" * 64,
+            repository="owner/keyhog",
+            workflow_ref="owner/keyhog/.github/workflows/bench.yml@refs/heads/main",
+            workflow_sha="e" * 40,
+            run_id="1234",
+            run_attempt="2",
+            job="leaderboard",
+        ),
     )
 
     encoded = result.to_json()
@@ -104,11 +128,49 @@ def test_run_result_round_trips_losslessly():
     assert decoded.scan_manifest["preset"] == "full"
     assert decoded.static_recovery == result.static_recovery
     assert decoded.bloom == result.bloom
+    assert decoded.host.affinity_cores == 4
+    assert decoded.host.cgroup_quota_cores == 4.0
+    assert decoded.hosted_binding == result.hosted_binding
     assert decoded.result_filename() == "mirror-keyhog-simd-nocache-daemon-full.json"
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda value: value.update(context_sha256=True),
+        lambda value: value.update(repository=True),
+        lambda value: value.update(run_id=True),
+        lambda value: value.update(run_attempt=False),
+        lambda value: value.pop("job"),
+        lambda value: value.update(extra="unexpected"),
+    ],
+)
+def test_hosted_binding_rejects_malformed_and_bool_fields(mutation):
+    """Guards hosted binding rejects malformed and bool fields; prevents this evidence regression from false-passing or crashing."""
+    value = HostedBinding(
+        context_sha256="d" * 64,
+        repository="owner/keyhog",
+        workflow_ref="owner/keyhog/.github/workflows/bench.yml@refs/heads/main",
+        workflow_sha="e" * 40,
+        run_id="1234",
+        run_attempt="2",
+        job="leaderboard",
+    ).to_json()
+    mutation(value)
+
+    with pytest.raises((TypeError, ValueError), match="hosted binding"):
+        HostedBinding.from_json(value)
+
+
+def test_hosted_binding_requires_an_object():
+    """Guards hosted binding requires an object; prevents this evidence regression from false-passing or crashing."""
+    with pytest.raises(ValueError, match="hosted binding must be an object"):
+        HostedBinding.from_json(True)
 
 
 @pytest.mark.parametrize("observed", [None, "bench-v999"])
 def test_run_result_rejects_missing_or_unsupported_schema(observed):
+    """Guards run result rejects missing or unsupported schema; prevents this evidence regression from false-passing or crashing."""
     payload = RunResult().to_json()
     if observed is None:
         payload.pop("schema_version")
@@ -120,6 +182,7 @@ def test_run_result_rejects_missing_or_unsupported_schema(observed):
 
 
 def test_current_keyhog_result_requires_exact_static_recovery_object():
+    """Guards current keyhog result requires exact static recovery object; prevents this evidence regression from false-passing or crashing."""
     payload = RunResult(
         scanner=Scanner(name="keyhog"),
         static_recovery=StaticRecoveryMetrics(),
@@ -152,6 +215,7 @@ def test_current_keyhog_result_requires_exact_static_recovery_object():
 def test_static_recovery_schema_rejects_malformed_or_nonconserving_data(
     mutation, message
 ):
+    """Guards static recovery schema rejects malformed or nonconserving data; prevents this evidence regression from false-passing or crashing."""
     value = StaticRecoveryMetrics().to_json()
     mutation(value)
     with pytest.raises(ValueError, match=message):
@@ -185,6 +249,7 @@ def test_static_recovery_schema_rejects_malformed_or_nonconserving_data(
 def test_bloom_evidence_rejects_malformed_or_nonconserving_data(
     mutation, message
 ):
+    """Guards bloom evidence rejects malformed or nonconserving data; prevents this evidence regression from false-passing or crashing."""
     value = bloom_evidence().to_json()
     mutation(value)
     with pytest.raises(ValueError, match=message):
@@ -192,10 +257,12 @@ def test_bloom_evidence_rejects_malformed_or_nonconserving_data(
 
 
 def test_legacy_v3_result_is_explicitly_supported_without_invented_metrics():
+    """Guards legacy v3 result is explicitly supported without invented metrics; prevents this evidence regression from false-passing or crashing."""
     payload = RunResult().to_json()
     payload["schema_version"] = "bench-v3"
     payload.pop("static_recovery")
     payload.pop("bloom")
+    payload.pop("hosted_binding")
 
     result = RunResult.from_json(payload, source="legacy.json")
 
@@ -204,6 +271,8 @@ def test_legacy_v3_result_is_explicitly_supported_without_invented_metrics():
     assert "static_recovery" not in result.to_json()
     assert result.bloom is None
     assert "bloom" not in result.to_json()
+    assert result.hosted_binding is None
+    assert "hosted_binding" not in result.to_json()
 
 
 def test_scanner_config_min_confidence_is_optional_and_off_the_matrix_key():
@@ -225,6 +294,7 @@ def test_scanner_config_min_confidence_is_optional_and_off_the_matrix_key():
 
 
 def test_per_detector_round_trips_with_histograms():
+    """Guards per detector round trips with histograms; prevents this evidence regression from false-passing or crashing."""
     aws = DetectorStat(unique_tp=2)
     aws.add_tp(0.91)   # tp -> 1
     aws.add_tp(0.62)   # tp -> 2
@@ -249,6 +319,7 @@ def test_per_detector_round_trips_with_histograms():
 
 
 def test_conf_bin_buckets_and_clamps():
+    """Guards conf bin buckets and clamps; prevents this evidence regression from false-passing or crashing."""
     assert conf_bin(0.0) == 0
     assert conf_bin(0.049) == 0
     assert conf_bin(0.05) == 1
@@ -259,6 +330,7 @@ def test_conf_bin_buckets_and_clamps():
 
 
 def test_outcome_metrics_handle_zero_denominators():
+    """Guards outcome metrics handle zero denominators; prevents this evidence regression from false-passing or crashing."""
     empty = Outcome()
     assert empty.precision() == 0.0
     assert empty.recall() == 0.0

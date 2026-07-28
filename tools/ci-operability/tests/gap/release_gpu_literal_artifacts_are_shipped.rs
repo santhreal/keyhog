@@ -28,7 +28,7 @@ fn release_workflow_builds_uploads_and_signs_gpu_literal_artifacts() {
         text.contains("${{ matrix.asset }}.gpu-literals.tar.gz")
             && text.contains("${{ matrix.asset }}.gpu-literals.tar.gz.sha256")
             && text.contains("name: unsigned-${{ matrix.asset }}")
-            && text.contains("cp -a \"$GITHUB_WORKSPACE/dist/.\" \"$workdir/\"")
+            && text.contains("cp -a \"$RUNNER_TEMP/keyhog-release-dist/.\" \"$workdir/\"")
             && text.contains("final+=(\"$payload.minisig\")")
             && text.contains("scripts/publish_release_assets.py"),
         "release.yml must stage every GPU literal payload and delegate publication to the exact-manifest publisher"
@@ -53,8 +53,9 @@ fn release_workflow_builds_uploads_and_signs_gpu_literal_artifacts() {
         .expect("release.yml must keep the sign job");
     assert!(
         sign_job.contains("payloads+=(\"$base\" \"$base.gpu-literals.tar.gz\")")
+            && sign_job.contains("signed_payloads=(\"${payloads[@]}\" \"${sboms[@]}\")")
+            && sign_job.contains("for payload in \"${signed_payloads[@]}\"")
             && sign_job.contains("rsign sign")
-            && sign_job.contains("for f in \"${payloads[@]}\"")
             && !sign_job.contains("gh release download \"$tag\""),
         "release signing must sign the privately staged binary and GPU literal payloads without using a public release as staging transport"
     );

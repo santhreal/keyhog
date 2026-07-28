@@ -305,13 +305,8 @@ pub(crate) struct HsCompileOpts<'a> {
     /// Pass `Some(usize::MAX)` to force a single database so `scan_each` pays
     /// the per-scan overhead exactly once.
     pub(crate) shard_target: Option<usize>,
-    /// Set `HS_FLAG_UTF8`. The `regex` crate matches unicode classes as
-    /// CODEPOINTS; the homoglyph fallback variants (`[sѕｓ]…`) are unicode.
-    /// Without this flag HS treats the pattern as BYTES, expanding every
-    /// unicode class into a byte-alternation, a much larger, slower
-    /// automaton AND byte- (not codepoint-) match semantics. UTF8 mode
-    /// matches the `regex` reference and keeps the automaton small.
     pub(crate) utf8: bool,
+    pub(crate) ucp: bool,
     /// Allow Rayon to prepare pattern objects in parallel. Lazy phase-2
     /// compilation disables this because it begins while a scan worker owns
     /// thread-local phase-2 scratch; nested work stealing could re-enter that
@@ -326,6 +321,7 @@ impl Default for HsCompileOpts<'_> {
             caseless: None,
             shard_target: None,
             utf8: false,
+            ucp: false,
             parallel_prepare: true,
         }
     }
@@ -459,6 +455,7 @@ impl HsScanner {
         if opts.utf8 {
             flags |= PatternFlags::UTF8;
         }
+        if opts.ucp { flags |= PatternFlags::UCP; }
         flags
     }
 
@@ -482,6 +479,7 @@ impl HsScanner {
             caseless,
             shard_target: _,
             utf8,
+            ucp,
             parallel_prepare: _,
         } = opts;
         let mut h = Sha256::new();
@@ -516,6 +514,7 @@ impl HsScanner {
         // per-pattern/singlematch one.
         h.update(if singlematch { b"SM1" } else { b"SM0" });
         h.update(if utf8 { b"U81" } else { b"U80" });
+        h.update(if ucp { b"UP1" } else { b"UP0" });
         match caseless {
             None => h.update(b"CLall"),
             Some(cl) => {

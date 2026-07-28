@@ -172,6 +172,9 @@ web = ["keyhog-sources/web"]
 verify = ["keyhog-verifier/live"]
 gpu = ["keyhog-scanner/gpu"]           # wgpu compute shader inference (heavy)
 simd = ["keyhog-scanner/simd"]         # Vectorscan/Hyperscan SIMD regex (system lib required)
+# Linux release artifacts statically archive Hyperscan; source installs use the
+# portable profile instead of acquiring a mutable native runtime.
+static-hyperscan = ["simd", "keyhog-scanner/static-hyperscan"]
 
 [dependencies]
 keyhog-core = { workspace = true }

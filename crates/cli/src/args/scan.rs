@@ -417,8 +417,13 @@ pub struct ScanArgs {
 
     /// Verify discovered credentials via API calls
     #[cfg(feature = "verify")]
-    #[arg(long)]
+    #[arg(long, conflicts_with = "no_verify")]
     pub verify: bool,
+
+    /// Disable credential verification, overriding `verify = true` in `.keyhog.toml`
+    #[cfg(feature = "verify")]
+    #[arg(long, conflicts_with = "verify")]
+    pub no_verify: bool,
 
     /// Enable out-of-band callback verification via an embedded interactsh
     /// client. For webhook- and callback-shaped credentials, OOB verification
@@ -635,6 +640,10 @@ pub struct ScanArgs {
     /// Write findings to file
     #[arg(short, long)]
     pub output: Option<PathBuf>,
+
+    /// Write an internal composite-Action receipt bound to the completed report
+    #[arg(long, value_name = "PATH", hide = true, requires = "output")]
+    pub action_receipt: Option<PathBuf>,
 
     /// Per-request HTTP verification timeout in seconds (default: 5). This does
     /// not impose a deadline on scanning; use `--per-chunk-timeout-ms` for the

@@ -3,20 +3,21 @@
 use super::support::{read_workflow, repo_root};
 use std::{fs, process::Command};
 
-/// Locks out releases that publish binaries but leave crates.io stale, publish from a
-/// branch checkout, skip an internal crate, or accept registry bytes that were not
-/// checksum-verified against the exact locally packaged archive.
+/// Locks out releases that publish binaries but leave crates.io stale, allow an
+/// automatic release-event bypass, publish from a branch checkout, skip an internal
+/// crate, or accept bytes not verified against the exact packaged archive.
 #[test]
 fn published_release_updates_every_crate_from_the_exact_tag() {
     let workflow = read_workflow("publish-crates.yml");
     let release_workflow = read_workflow("release.yml");
 
     assert!(
-        workflow.contains("release:\n    types: [published]")
+        !workflow.contains("release:\n")
+            && workflow.contains("workflow_call:")
             && workflow.contains("workflow_dispatch:")
-            && workflow.contains("KEYHOG_PUBLISHED_TAG: ${{ github.event.release.tag_name }}")
-            && workflow.contains("KEYHOG_MANUAL_TAG: ${{ inputs.tag }}"),
-        "crates publication must run automatically for a published release and permit an explicit exact-tag recovery run"
+            && workflow.contains("KEYHOG_MANUAL_TAG: ${{ inputs.tag }}")
+            && !workflow.contains("github.event.release"),
+        "crates publication must have no standalone release-event bypass and permit only reusable or explicit exact-tag recovery entry"
     );
     assert!(
         workflow.contains("workflow_call:")
@@ -61,12 +62,10 @@ fn published_release_updates_every_crate_from_the_exact_tag() {
         verdict < credential_step
             && workflow.contains("automation/scripts/verify_published_release.py")
             && workflow.contains("--expected-commit \"$KEYHOG_EXPECTED_COMMIT\"")
-            && workflow.contains("KEYHOG_PUBLISHED_RELEASE_ID: ${{ github.event.release.id }}")
-            && workflow.contains(
-                "release_id_args=(--expected-release-id \"$KEYHOG_PUBLISHED_RELEASE_ID\")"
-            )
+            && workflow.contains("--expected-tag-object \"$KEYHOG_EXPECTED_TAG_OBJECT\"")
+            && !workflow.contains("KEYHOG_PUBLISHED_RELEASE_ID")
             && workflow.contains("cargo install rsign2 --version 0.6.6 --locked"),
-        "release/manual recovery must prove the immutable public release ID, commit, checksums, and signatures before a crates.io credential enters scope"
+        "reusable/manual recovery must prove the immutable public release ID, tag object, commit, checksums, and signatures before a crates.io credential enters scope"
     );
     let verifier = fs::read_to_string(repo_root().join("scripts/verify_published_release.py"))
         .expect("read published-release verifier");
@@ -75,23 +74,33 @@ fn published_release_updates_every_crate_from_the_exact_tag() {
             && verifier.contains("/releases/{release_id}")
             && verifier.contains("release has no published_at verdict")
             && verifier.contains("value.get(\"draft\") is not False")
+            && verifier.contains("value.get(\"immutable\") is not True")
             && verifier.contains("exact signed asset manifest is incomplete")
             && verifier.contains("[rsign, \"verify\", \"-q\""),
-        "the release verdict must fail closed on missing/draft/unpublished/incomplete releases and cryptographically verify every exact checksum manifest"
+        "the release verdict must fail closed on missing/mutable/draft/unpublished/incomplete releases and cryptographically verify every exact checksum manifest"
     );
     assert!(
         workflow.contains("git/ref/tags/$KEYHOG_RELEASE_TAG")
-            && workflow.contains("repos/$GITHUB_REPOSITORY/commits/$KEYHOG_RELEASE_TAG")
+            && workflow.contains("git/tags/$tag_object")
+            && workflow.contains("automation/scripts/verify_release_tag.py")
+            && workflow.contains("KEYHOG_EVENT_ACTOR_ID: ${{ github.actor_id }}")
+            && workflow.contains("\"$KEYHOG_EVENT_ACTOR_ID\" != \"64453045\"")
+            && workflow.contains("--actor-id \"$KEYHOG_EVENT_ACTOR_ID\"")
+            && workflow.contains("git/ref/heads/main")
+            && workflow.contains("compare/$commit...$main_sha")
+            && workflow.contains("--main-ref-json \"$KEYHOG_MAIN_REF_JSON\"")
+            && workflow.contains("--compare-json \"$KEYHOG_COMPARE_JSON\"")
+            && workflow.contains("--authorized-key \"$GITHUB_WORKSPACE/automation/.github/release-signing-key.asc\"")
             && workflow.contains("id: source")
             && workflow.contains("KEYHOG_EXPECTED_COMMIT: ${{ steps.source.outputs.commit }}")
             && workflow.contains("KEYHOG_EXPECTED_OBJECT: ${{ steps.source.outputs.object }}")
-            && workflow.contains("ref: refs/tags/${{ steps.tag.outputs.tag }}")
+            && workflow.contains("ref: ${{ steps.source.outputs.commit }}")
             && workflow.contains("git -C source rev-list -n 1 \"$KEYHOG_RELEASE_TAG\"")
             && workflow.contains("git -C source rev-parse HEAD")
             && workflow.contains("git -C source rev-parse \"$KEYHOG_RELEASE_TAG\"")
             && workflow.contains("workspace_version")
             && workflow.contains("KEYHOG_RELEASE_VERSION"),
-        "the job must bind annotated or lightweight tag objects, their resolved commit, the exact clean checkout, and workspace version to one requested release"
+        "the job must bind the stable owner actor, exact signed tag payload, pinned trusted-main ancestry, peeled commit, exact checkout, and workspace version before credentials"
     );
     assert!(
         workflow.contains("ref: ${{ github.workflow_sha }}")

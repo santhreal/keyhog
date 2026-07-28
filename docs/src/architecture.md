@@ -16,6 +16,9 @@ is one source of truth per fact. Read this first; then jump to the cited module.
 - Changing process termination or shell behavior? Read
   [Process and exit ownership](#process-and-exit-ownership), then the
   [exit-code reference](./reference/exit-codes.md).
+- Changing the Marketplace Action or release publication path? Read the
+  [load-bearing boundary owner map](#load-bearing-boundary-owner-map) before
+  changing a wrapper or duplicating policy.
 
 ---
 
@@ -82,6 +85,33 @@ backend. The official and default CLI builds enable the full documented
 network-source set. The `portable`, `ci-lean`, and `ci` profiles deliberately
 remove different accelerator or source features. Library callers select their
 own feature set.
+
+## Load-bearing boundary owner map
+
+The crate DAG is not the whole shipping boundary. The Marketplace entrypoint,
+its fail-closed runner, release publication, and each load-bearing library/CLI
+handoff have one definitional owner. Wrappers may compose these owners; they
+must not restate their policy.
+
+| Boundary | Definitional owner |
+|---|---|
+| Marketplace metadata, documented inputs/outputs, and top-level composite steps | `action.yml` |
+| Repository-local Action metadata consumed by GitHub workflows | `.github/actions/keyhog/action.yml` |
+| Action input validation, authenticated binary acquisition, scan invocation, exit mapping, and output publication | `.github/actions/keyhog/run-scan.sh` |
+| Build, sign, attest, stage, and publish job ordering | `.github/workflows/release.yml` |
+| Immutable release ID, source commit, exact asset digests, and signed publication receipt | `scripts/publish_release_assets.py::PublicationReceipt` |
+| CLI argument dispatch and setup-error exit routing | `crates/cli/src/lib.rs::cli_main` |
+| Completed-scan exit precedence | `crates/cli/src/orchestrator/run.rs::resolve_scan_exit` |
+| Curated source-crate export surface | `crates/sources/src/api.rs` |
+| Live-verification construction and execution | `crates/verifier/src/lib.rs::VerificationEngine` |
+| Deduplicated match to report-safe finding conversion | `crates/core/src/finding.rs::VerifiedFinding::from_deduped` |
+| Scanner execution flow | `crates/scanner/src/engine/mod.rs` |
+
+This table is enforced by `scripts/org_audit.py`: every required boundary must
+remain paired with its exact owner row, every file must exist, and every named
+symbol must resolve. Merely retaining the same unordered set of paths is not
+enough. A move therefore updates implementation and architecture in the same
+change instead of leaving a plausible but stale owner behind.
 
 ---
 
@@ -245,7 +275,7 @@ There is one identity contract with stage-specific keys, not interchangeable
 
 | Stage | Owner | Key | Why |
 |-------|-------|-----|-----|
-| Window overlap and raw collector | `crates/scanner/src/engine/windowed_support.rs::record_window_match`; `crates/scanner/src/scanner_config.rs::ScanState::into_matches` | `(detector_id, credential, source_offset)` | Adjacent 1 MiB windows overlap by 128 KiB, and more than one backend signal can surface the same span. The source-offset key removes duplicate raw hits without merging separate occurrences on different lines. |
+| Window overlap and raw collector | `crates/scanner/src/engine/windowed_support.rs::record_window_match`; `crates/scanner/src/scan_state.rs::ScanState::into_matches` | `(detector_id, credential, source_offset)` | Adjacent 1 MiB windows overlap by 128 KiB, and more than one backend signal can surface the same span. The source-offset key removes duplicate raw hits without merging separate occurrences on different lines. |
 | Raw-match correlation helper | `crates/core/src/finding.rs::RawMatch::deduplication_key` | `(detector_id, credential)` | Tests and internal correlation can ask whether two raw matches carry the same detector/value before a report scope is applied. It is not a report key because it intentionally excludes location. |
 | User-selected report scope | `crates/core/src/dedup.rs::dedup_matches` | `DedupScope::Credential`: `(detector_id, credential)`; `DedupScope::File`: `(detector_id, credential, source + file_path + commit)`; `DedupScope::None`: no grouping | This is the operator-visible grouping. The primary location is the lowest source offset; additional locations use `(source, file_path, line, commit)` so structured/decode aliases on the same source line collapse. |
 | Cross-detector report collapse | `crates/core/src/dedup.rs::dedup_cross_detector` | `(credential_hash, primary_file_path)` after `dedup_matches` | One secret value can match several detectors. This keeps one reported finding, chooses the best detector deterministically, and records alternate detector evidence as companions while preserving file-scoped reports. |

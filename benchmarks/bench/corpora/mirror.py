@@ -42,6 +42,45 @@ from .base import Corpus, LabeledRecord, load_jsonl_manifest
 
 _THIS = pathlib.Path(__file__).resolve()
 _BENCH_ROOT = _THIS.parents[2]                 # benchmarks/
+_MANIFEST_SCHEMA: dict[str, type | tuple[type, ...]] = {
+    "id": str,
+    "secret": str,
+    "repo_name": str,
+    "commit_id": str,
+    "file_path": str,
+    "start_line": int,
+    "end_line": int,
+    "start_column": int,
+    "end_column": int,
+    "label": bool,
+    "category": str,
+    "comment": str,
+    "entropy": (int, float),
+    "character_set": str,
+    "has_words": bool,
+    "length": int,
+    "is_template": bool,
+    "is_multiline": bool,
+    "in_url": bool,
+    "committer_email": str,
+    "commit_date": str,
+    "domain": str,
+    "file_type": str,
+    "on_disk_path": str,
+}
+_REQUIRED_MANIFEST_FIELDS = frozenset(
+    {
+        "id",
+        "secret",
+        "label",
+        "category",
+        "on_disk_path",
+        "start_line",
+        "end_line",
+    }
+)
+
+
 
 
 def _generator_path() -> pathlib.Path:
@@ -103,7 +142,12 @@ class MirrorCorpus(Corpus):
                 f"  generate it with: make mirror  "
                 f"(or python -m bench.corpora.mirror --ensure)"
             )
-        return load_jsonl_manifest(man)
+        return load_jsonl_manifest(
+            man,
+            file_root=self.file_root,
+            schema=_MANIFEST_SCHEMA,
+            required_fields=_REQUIRED_MANIFEST_FIELDS,
+        )
 
     def ensure(self, positives: int = 3000, negatives: int = 12000, seed: int = 0) -> None:
         """Generate the corpus into the split layout if absent (idempotent).

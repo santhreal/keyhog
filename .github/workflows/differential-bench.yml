@@ -1,17 +1,10 @@
 name: differential-bench
 
-# Differential F1 gate: run the unified benchmark package (benchmarks/bench)
-# over the synthetic mirror corpus with KeyHog plus required competitors, then
-# assert KeyHog leads on F1. Precision, recall, and speed remain recorded in
-# the result artifacts; `bench gate` exits non-zero unless BetterLeaks and
-# Kingfisher both produce usable rows and KeyHog's F1 is STRICTLY better.
-#
-# This replaces the retired tools/diff_bench runner: the bench package's
-# scanner adapters + canonical scorer + `gate` subcommand are the single
-# source of differential truth. The corpus is generated at runtime (gitignored,
-# never committed) so no literal credential lands in a tracked file or trips
-# GitHub push-protection. The KeyHog row is always the checked-out commit built
-# by this job, never an unrelated latest release. See benchmarks/README.md.
+# Differential F1 remains a competitor check, but release readiness is a
+# separate fail-closed hosted CPU contract. The same fixed mirror run must bind
+# the current source/binary/detectors, exact low-core GitHub runner image and
+# workload, accelerator enforcement/inventory, recall, wall/throughput/RSS
+# limits, and zero Unicode CPU/SIMD divergence before publication.
 
 on:
   schedule:
@@ -19,26 +12,25 @@ on:
     # spike for actions/runner-images cache.
     - cron: "11 3 * * *"
   workflow_dispatch:
-    inputs:
-      positives:
-        description: "Labeled positive fixtures (smaller = smoke)."
-        required: false
-        default: "3000"
-      negatives:
-        description: "Labeled negative fixtures."
-        required: false
-        default: "12000"
 
 env:
-  # Survive intermittent mid-stream crates.io download drops on hosted runners
-  # (curl [55] SSL_ERROR_SYSCALL); cargo's default of 3 retries is not enough.
   CARGO_NET_RETRY: "10"
+  CUDA_VISIBLE_DEVICES: ""
+  NVIDIA_VISIBLE_DEVICES: "void"
+  RUNNER_ENVIRONMENT: "github-hosted"
+  KEYHOG_BENCH_RUNNER_PROFILE: "github-ubuntu-24.04-4core-differential"
+  KEYHOG_BENCH_HOSTED_CONTEXT: ${{ github.workspace }}/benchmarks/hosted-cpu-context.json
+  KEYHOG_BENCH_SUPPLY_RECEIPT: ${{ github.workspace }}/benchmarks/hosted-cpu-supply.json
+  KEYHOG_BENCH_IMMUTABILITY_RECEIPT: ${{ github.workspace }}/benchmarks/hosted-cpu-immutability.json
+  KEYHOG_BENCH_SOURCE_ROOT: ${{ runner.temp }}/keyhog-bench-sources
+  KEYHOG_BENCH_SNAPSHOT_ROOT: ${{ runner.temp }}/keyhog-bench-snapshots
+  KEYHOG_BENCH_MIRROR: ${{ runner.temp }}/keyhog-bench-sources/mirror
 
 jobs:
   gate:
-    name: keyhog vs required competitors (F1 gate)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    name: keyhog hosted CPU + required competitors
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     # Per-job permissions, see keyhog.yml header note. Top-level
     # `permissions:` rejected at dispatch time on this repo.
     permissions:
@@ -46,12 +38,28 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: install Hyperscan development files
+      - name: install Rust 1.89.0 toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: 1.89.0
+
+      - name: install exact CPython 3.12.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12.11"
+
+      - name: install exact Go 1.22.2
+        uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5.0.2
+        with:
+          go-version: "1.22.2"
+          cache: false
+
+      - name: install exact Hyperscan development and runtime packages
         run: |
           set -euo pipefail
           for i in 1 2 3 4 5; do
             if sudo apt-get update -qq \
-              && sudo apt-get install -y --no-install-recommends libhyperscan-dev pkg-config; then
+              && sudo apt-get install -y --no-install-recommends libhyperscan-dev=5.4.2-2 libhyperscan5=5.4.2-2 pkg-config=1.8.1-2build1; then
               break
             fi
             sleep $((i * 2))
@@ -59,9 +67,8 @@ jobs:
           done
 
       - name: build checked-out keyhog (CPU-only release binary)
-        # Hosted ubuntu runners have no CUDA device or libcuda. Keep the full
-        # detection surface, including Hyperscan, but explicitly omit only the
-        # GPU dispatch stack so this measures the checked-out CPU scanner.
+        # Keep the full detection surface, including Hyperscan, while explicitly
+        # omitting the GPU dispatch stack for this hosted CPU measurement.
         run: |
           set -euo pipefail
           env -u CC cargo build --locked --release -p keyhog --bin keyhog \
@@ -74,14 +81,26 @@ jobs:
       - name: install benchmark dependencies
         run: |
           set -euo pipefail
-          python3 -m pip install -r benchmarks/requirements.txt
+          python3 -m pip install --require-hashes --only-binary=:all: \
+            -r benchmarks/requirements.txt
 
-      - name: prepare clean benchmark results
-        # Results are generated state. Start from an absent directory so the
-        # gate/upload cannot consume a stale row from a cache or checkout.
+      - name: prepare clean benchmark results and source directory
+        # Results, receipts and private roots are generated state; stale files
+        # are inadmissible and the snapshot destination must not exist yet.
         run: |
           set -euo pipefail
-          rm -rf benchmarks/results
+          rm -rf benchmarks/results benchmarks/hosted-cpu-context.json \
+            benchmarks/hosted-cpu-supply.json benchmarks/hosted-cpu-immutability.json \
+            benchmarks/unicode-parity.json
+          source_root="${KEYHOG_BENCH_SOURCE_ROOT}"
+          snapshot_root="${KEYHOG_BENCH_SNAPSHOT_ROOT}"
+          case "${source_root}:${snapshot_root}" in
+            "${RUNNER_TEMP}/"*":"${RUNNER_TEMP}/"*) ;;
+            *) echo "::error::unsafe benchmark root"; exit 1 ;;
+          esac
+          rm -rf "${source_root}" "${snapshot_root}"
+          mkdir -p "${source_root}"
+          test ! -e "${snapshot_root}"
 
       - name: install required competitors
         run: |
@@ -101,6 +120,58 @@ jobs:
           keyhog --version
           betterleaks --version
           kingfisher --version
+
+      - name: record pinned hosted CPU supply receipt
+        # The fixed path is exported for later context-schema consumption and
+        # the exact same receipt is published with this run.
+        run: |
+          set -euo pipefail
+          test -n "${ImageOS:-}" && test -n "${ImageVersion:-}"
+          python_version="$(python3 -c 'import platform; print(platform.python_version())')"
+          go_version="$(go env GOVERSION)"
+          test "${python_version}" = "3.12.11"
+          test "${go_version}" = "go1.22.2"
+          test "$(dpkg-query -W -f='${Version}' libhyperscan-dev)" = "5.4.2-2"
+          test "$(dpkg-query -W -f='${Version}' libhyperscan5)" = "5.4.2-2"
+          test "$(dpkg-query -W -f='${Version}' pkg-config)" = "1.8.1-2build1"
+          libhs_path="$(ldd "$(command -v keyhog)" | awk '$1 ~ /^libhs\.so/ { print $3; exit }')"
+          test -n "${libhs_path}" && test -f "${libhs_path}"
+          libhs_path="$(realpath "${libhs_path}")"
+          libhs_sha256="$(sha256sum "${libhs_path}" | cut -d' ' -f1)"
+          python3 -B - "${KEYHOG_BENCH_SUPPLY_RECEIPT}" \
+            "${ImageOS}" "${ImageVersion}" "${python_version}" "${go_version}" \
+            "${libhs_path}" "${libhs_sha256}" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          (output, image_os, image_version, python_version, go_version,
+           libhs_path, libhs_sha256) = sys.argv[1:]
+          receipt = {
+              "schema_version": "hosted-cpu-supply-v1",
+              "runner_image": {
+                  "label": "ubuntu-24.04",
+                  "os": image_os,
+                  "version": image_version,
+              },
+              "cpython": {"requested": "3.12.11", "observed": python_version},
+              "go": {"requested": "1.22.2", "observed": go_version},
+              "apt": {
+                  "libhyperscan-dev": "5.4.2-2",
+                  "libhyperscan5": "5.4.2-2",
+                  "pkg-config": "1.8.1-2build1",
+              },
+              "libhs_runtime": {
+                  "path": libhs_path,
+                  "sha256": libhs_sha256,
+                  "package": "libhyperscan5",
+                  "package_version": "5.4.2-2",
+              },
+          }
+          pathlib.Path(output).write_text(
+              json.dumps(receipt, indent=2, sort_keys=True) + "\n"
+          )
+          PY
 
       - name: keyhog smoke check (broken binary != F1 regression)
         # A broken install / unsatisfied libhyperscan runtime makes `keyhog scan`
@@ -151,14 +222,83 @@ jobs:
             exit 1
           fi
 
-      - name: generate mirror corpus
-        env:
-          POSITIVES: ${{ inputs.positives || '3000' }}
-          NEGATIVES: ${{ inputs.negatives || '12000' }}
+      - name: generate fixed mirror workload
         run: |
           set -euo pipefail
-          cd benchmarks && python3 -m bench.corpora.mirror --ensure \
-            --positives "$POSITIVES" --negatives "$NEGATIVES" --seed 0
+          cd benchmarks && python3 -B -m bench.corpora.mirror --ensure \
+            --positives 3000 --negatives 12000 --seed 0
+
+      - name: capture current low-core hosted CPU context
+        run: |
+          set -euo pipefail
+          source_root="$(realpath "${KEYHOG_BENCH_SOURCE_ROOT}")"
+          snapshot_root="${KEYHOG_BENCH_SNAPSHOT_ROOT}"
+          test ! -e "${snapshot_root}"
+          cd benchmarks
+          python3 -B -m bench.hosted_cpu_gate context \
+            --policy cpu-gates/github-ubuntu-24.04-4core-differential.json \
+            --source-commit "${GITHUB_SHA}" \
+            --binary "${HOME}/.local/bin/keyhog" \
+            --repo-root .. \
+            --snapshot-root "${snapshot_root}" \
+            --workload mirror \
+            --output hosted-cpu-context.json
+          snapshot_root="$(realpath "${snapshot_root}")"
+          test "${source_root}" != "${snapshot_root}"
+          test "$(realpath "${source_root}/mirror")" != \
+            "$(realpath "${snapshot_root}/mirror")"
+          echo "KEYHOG_BENCH_MIRROR=${snapshot_root}/mirror" >> "${GITHUB_ENV}"
+
+      - name: lock captured snapshots read-only for the measurement interval
+        # chmod alone false-passes because the runner can reverse it. Root
+        # ownership and a read-only bind mount enforce writes at the VFS layer.
+        run: |
+          set -euo pipefail
+          snapshot_root="$(realpath "${KEYHOG_BENCH_SNAPSHOT_ROOT}")"
+          sudo chown -R root:root "${snapshot_root}"
+          sudo mount --bind "${snapshot_root}" "${snapshot_root}"
+          sudo mount -o remount,bind,ro "${snapshot_root}"
+          mount_options="$(findmnt --mountpoint "${snapshot_root}" --noheadings --output OPTIONS)"
+          printf '%s\n' "${mount_options}" | tr ',' '\n' | grep -Fxq ro
+          if touch "${snapshot_root}/.immutability-probe" 2>/dev/null; then
+            echo "::error::snapshot bind mount remained writable"
+            exit 1
+          fi
+          python3 -B - "${KEYHOG_BENCH_IMMUTABILITY_RECEIPT}" \
+            "${snapshot_root}" "${mount_options}" \
+            "${KEYHOG_BENCH_HOSTED_CONTEXT}" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          output, snapshot_root, mount_options, context_path = sys.argv[1:]
+          receipt = {
+              "schema_version": "hosted-cpu-immutability-v1",
+              "snapshot_root": snapshot_root,
+              "owner": "root:root",
+              "mount_options": sorted(mount_options.split(",")),
+              "write_probe": "rejected",
+              "interval_end": "post-publication cleanup",
+          }
+          pathlib.Path(output).write_text(
+              json.dumps(receipt, indent=2, sort_keys=True) + "\n"
+          )
+          context_file = pathlib.Path(context_path)
+          context = json.loads(context_file.read_text())
+          context["immutability"] = receipt
+          context_file.write_text(json.dumps(context, indent=2, sort_keys=True) + "\n")
+          PY
+
+      - name: require exact Unicode CPU/SIMD parity
+        run: |
+          set -euo pipefail
+          cd benchmarks
+          python3 -B -m bench.unicode_parity \
+            --context hosted-cpu-context.json \
+            --policy cpu-gates/github-ubuntu-24.04-4core-differential.json \
+            --binary "${HOME}/.local/bin/keyhog" \
+            --repo-root .. \
+            --output unicode-parity.json
 
       - name: run leaderboard (keyhog + required competitors)
         # The production target passes --require-available, so an adapter that
@@ -166,6 +306,124 @@ jobs:
         run: |
           set -euo pipefail
           make -C benchmarks leaderboard SCANNERS=keyhog,betterleaks,kingfisher
+
+      - name: validate untrusted differential calibration evidence
+        if: github.event_name == 'workflow_dispatch'
+        # This only proves that raw evidence is complete, parseable, and owned by
+        # this run. It deliberately does not evaluate or accept policy limits.
+        run: |
+          set -euo pipefail
+          cd benchmarks
+          python3 -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import stat
+
+          from bench.schema import RunResult
+
+          expected_results = {
+              "results/mirror-keyhog-simd-nocache-nodaemon-full.json",
+              "results/mirror-betterleaks-default-nocache-nodaemon-no-validate.json",
+              "results/mirror-kingfisher-default-nocache-nodaemon-low-no-validate.json",
+          }
+          receipt_paths = {
+              "hosted-cpu-context.json",
+              "hosted-cpu-supply.json",
+              "hosted-cpu-immutability.json",
+              "unicode-parity.json",
+          }
+          result_root = pathlib.Path("results")
+          observed_results = {
+              path.as_posix()
+              for path in result_root.rglob("*")
+          }
+          if observed_results != expected_results:
+              raise SystemExit(
+                  "untrusted differential calibration inventory mismatch: "
+                  f"expected={sorted(expected_results)} "
+                  f"observed={sorted(observed_results)}"
+              )
+          def reject_json_constant(value):
+              raise ValueError(f"non-finite JSON constant {value!r} is forbidden")
+
+
+          parsed = {}
+          for relative in sorted(expected_results | receipt_paths):
+              path = pathlib.Path(relative)
+              if not stat.S_ISREG(path.lstat().st_mode):
+                  raise SystemExit(f"{relative}: calibration evidence is not a regular file")
+              parsed[relative] = json.loads(
+                  path.read_text(), parse_constant=reject_json_constant
+              )
+          rows = {
+              relative: RunResult.from_json(parsed[relative], source=relative)
+              for relative in sorted(expected_results)
+          }
+
+          context = parsed["hosted-cpu-context.json"]
+          supply = parsed["hosted-cpu-supply.json"]
+          immutability = parsed["hosted-cpu-immutability.json"]
+          parity = parsed["unicode-parity.json"]
+          if not all(isinstance(value, dict) for value in (context, supply, immutability, parity)):
+              raise SystemExit("calibration context receipts must be JSON objects")
+          if supply.get("schema_version") != "hosted-cpu-supply-v1":
+              raise SystemExit("calibration supply receipt schema is not current")
+          if immutability.get("schema_version") != "hosted-cpu-immutability-v1":
+              raise SystemExit("calibration immutability receipt schema is not current")
+          if context.get("supply") != supply or context.get("immutability") != immutability:
+              raise SystemExit("standalone supply/immutability receipts differ from context")
+
+          expected_identity = {
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "workflow_ref": os.environ["GITHUB_WORKFLOW_REF"],
+              "workflow_sha": os.environ["GITHUB_WORKFLOW_SHA"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "job": os.environ["GITHUB_JOB"],
+          }
+          runner = context.get("runner")
+          if not isinstance(runner, dict):
+              raise SystemExit("calibration context runner is not an object")
+          if context.get("source_commit") != os.environ["GITHUB_SHA"]:
+              raise SystemExit("calibration context source SHA differs from this run")
+          if runner.get("profile") != "github-ubuntu-24.04-4core-differential":
+              raise SystemExit("calibration context runner profile is unexpected")
+          for field, expected in expected_identity.items():
+              if runner.get(field) != expected:
+                  raise SystemExit(f"calibration context {field} differs from this run")
+          if parity.get("source_commit") != os.environ["GITHUB_SHA"]:
+              raise SystemExit("calibration parity source SHA differs from this run")
+          for field, expected in expected_identity.items():
+              if parity.get(field) != expected:
+                  raise SystemExit(f"calibration parity {field} differs from this run")
+          expected_binding = {
+              "context_sha256": hashlib.sha256(
+                  pathlib.Path("hosted-cpu-context.json").read_bytes()
+              ).hexdigest(),
+              **expected_identity,
+          }
+          for relative, row in rows.items():
+              if row.hosted_binding is None or row.hosted_binding.to_json() != expected_binding:
+                  raise SystemExit(f"{relative}: hosted run/context binding differs")
+          PY
+
+      - name: upload untrusted differential calibration evidence
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: untrusted-calibration-evidence-github-ubuntu-24.04-4core-differential-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          path: |
+            benchmarks/results/mirror-keyhog-simd-nocache-nodaemon-full.json
+            benchmarks/results/mirror-betterleaks-default-nocache-nodaemon-no-validate.json
+            benchmarks/results/mirror-kingfisher-default-nocache-nodaemon-low-no-validate.json
+            benchmarks/hosted-cpu-context.json
+            benchmarks/hosted-cpu-supply.json
+            benchmarks/hosted-cpu-immutability.json
+            benchmarks/unicode-parity.json
+          if-no-files-found: error
+          retention-days: 90
 
       - name: differential + regression gate (keyhog must lead and not regress)
         # BASELINE names the inventory directory, not a hand-picked JSON file:
@@ -178,38 +436,45 @@ jobs:
             BASELINE=baselines EPSILON=0.005
 
       - name: validate differential artifacts
-        # A successful command is not sufficient evidence for publication:
-        # validate schema, provenance axes, availability, and real findings.
+        # Deterministic result-only validation; no scanner rerun or fallback.
         run: |
           set -euo pipefail
           cd benchmarks
-          python3 - <<'PY'
+          trusted_now="$(date --utc +%Y-%m-%dT%H:%M:%SZ)"
+          python3 -B -m bench.hosted_cpu_gate gate \
+            --policy cpu-gates/github-ubuntu-24.04-4core-differential.json \
+            --policy-sha256 563fb8f51ca496ec294436276366c07ef0432148ad5899ee5aded3ede38cfc89 \
+            --context hosted-cpu-context.json \
+            --unicode-parity unicode-parity.json \
+            --trusted-now "${trusted_now}" \
+            --repository "${GITHUB_REPOSITORY}" \
+            --workflow-ref "${GITHUB_WORKFLOW_REF}" \
+            --workflow-sha "${GITHUB_WORKFLOW_SHA}" \
+            --run-id "${GITHUB_RUN_ID}" \
+            --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --job "${GITHUB_JOB}" \
+            --root .
+          python3 -B - <<'PY'
           import json
           import pathlib
-
           from bench.schema import RunResult
 
-          files = sorted(pathlib.Path("results").rglob("*.json"))
-          if not files:
-              raise SystemExit("results: no benchmark result JSON files")
+          files = sorted(pathlib.Path("results").glob("*.json"))
           rows = [
               RunResult.from_json(json.loads(path.read_text()), source=str(path))
               for path in files
           ]
           expected = {"keyhog", "betterleaks", "kingfisher"}
-          observed = {row.scanner.name for row in rows if row.corpus.name == "mirror"}
-          missing = expected - observed
-          if missing:
-              raise SystemExit(f"results: missing required scanner rows: {sorted(missing)}")
+          observed = {row.scanner.name for row in rows}
+          if observed != expected or len(rows) != len(expected):
+              raise SystemExit(
+                  f"differential inventory mismatch: expected={sorted(expected)}, "
+                  f"observed={sorted(observed)}, rows={len(rows)}"
+              )
           for row in rows:
-              if row.corpus.name != "mirror":
-                  raise SystemExit(f"results: unexpected corpus {row.corpus.name!r}")
-              if not row.available:
-                  raise SystemExit(f"results: unavailable {row.scanner.name} row: {row.error}")
-              if row.corpus.fixture_count <= 0 or row.finding_count <= 0:
+              if not row.available or row.finding_count <= 0:
                   raise SystemExit(
-                      f"results: empty {row.scanner.name} result "
-                      f"(fixtures={row.corpus.fixture_count}, findings={row.finding_count})"
+                      f"{row.scanner.name}: unavailable/empty differential result"
                   )
           PY
 
@@ -219,6 +484,28 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: differential-results-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
-          path: benchmarks/results/**
+          path: |
+            benchmarks/results/**
+            benchmarks/hosted-cpu-context.json
+            benchmarks/hosted-cpu-supply.json
+            benchmarks/hosted-cpu-immutability.json
+            benchmarks/unicode-parity.json
+            benchmarks/cpu-gates/github-ubuntu-24.04-4core-differential.json
           if-no-files-found: error
           retention-days: 90
+
+      - name: unmount and remove private benchmark snapshots
+        if: always()
+        run: |
+          set -euo pipefail
+          snapshot_root="${KEYHOG_BENCH_SNAPSHOT_ROOT}"
+          source_root="${KEYHOG_BENCH_SOURCE_ROOT}"
+          case "${source_root}:${snapshot_root}" in
+            "${RUNNER_TEMP}/"*":"${RUNNER_TEMP}/"*) ;;
+            *) echo "::error::refusing unsafe benchmark cleanup"; exit 1 ;;
+          esac
+          if mountpoint -q "${snapshot_root}"; then
+            sudo umount "${snapshot_root}"
+          fi
+          sudo rm -rf --one-file-system "${snapshot_root}"
+          rm -rf "${source_root}"

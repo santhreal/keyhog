@@ -28,7 +28,7 @@ pub(super) fn unpack_tar(
     limits: crate::SourceLimits,
 ) -> Result<DockerExtractReport, SourceError> {
     let file = File::open(archive_path).map_err(SourceError::Io)?;
-    unpack_open_tar(file, destination, limits)
+    unpack_open_tar(file, destination, limits, false)
 }
 
 pub(super) fn unpack_layer_archive(
@@ -41,15 +41,16 @@ pub(super) fn unpack_layer_archive(
     file.rewind().map_err(SourceError::Io)?;
 
     match encoding {
-        LayerArchiveEncoding::RawTar => unpack_open_tar(file, destination, limits),
+        LayerArchiveEncoding::RawTar => unpack_open_tar(file, destination, limits, true),
         LayerArchiveEncoding::GzipTar => {
-            validate_tar_reader(flate2::read::MultiGzDecoder::new(&mut file), limits)?;
+            validate_tar_reader(flate2::read::MultiGzDecoder::new(&mut file), limits, true)?;
 
             file.rewind().map_err(SourceError::Io)?;
             unpack_tar_reader(
                 flate2::read::MultiGzDecoder::new(&mut file),
                 destination,
                 limits,
+                true,
             )
         }
         LayerArchiveEncoding::ZstdTar => {
@@ -60,7 +61,7 @@ pub(super) fn unpack_layer_archive(
                     limits.docker_tar_total_bytes,
                 ))
                 .map_err(SourceError::Io)?;
-            validate_tar_reader(validation_reader, limits)?;
+            validate_tar_reader(validation_reader, limits, true)?;
 
             file.rewind().map_err(SourceError::Io)?;
             let mut extract_reader =
@@ -70,7 +71,7 @@ pub(super) fn unpack_layer_archive(
                     limits.docker_tar_total_bytes,
                 ))
                 .map_err(SourceError::Io)?;
-            unpack_tar_reader(extract_reader, destination, limits)
+            unpack_tar_reader(extract_reader, destination, limits, true)
         }
     }
 }
@@ -92,26 +93,32 @@ fn unpack_open_tar(
     mut file: File,
     destination: &Path,
     limits: crate::SourceLimits,
+    enforce_per_file_cap: bool,
 ) -> Result<DockerExtractReport, SourceError> {
     let mut validation_archive = tar::Archive::new(&mut file);
-    validate_docker_archive_plan(&mut validation_archive, limits)?;
+    validate_docker_archive_plan(&mut validation_archive, limits, enforce_per_file_cap)?;
 
     file.rewind().map_err(SourceError::Io)?;
-    unpack_tar_reader(&mut file, destination, limits)
+    unpack_tar_reader(&mut file, destination, limits, enforce_per_file_cap)
 }
 
-fn validate_tar_reader(reader: impl Read, limits: crate::SourceLimits) -> Result<(), SourceError> {
+fn validate_tar_reader(
+    reader: impl Read,
+    limits: crate::SourceLimits,
+    enforce_per_file_cap: bool,
+) -> Result<(), SourceError> {
     let mut archive = tar::Archive::new(reader);
-    validate_docker_archive_plan(&mut archive, limits)
+    validate_docker_archive_plan(&mut archive, limits, enforce_per_file_cap)
 }
 
 fn unpack_tar_reader(
     reader: impl Read,
     destination: &Path,
     limits: crate::SourceLimits,
+    enforce_per_file_cap: bool,
 ) -> Result<DockerExtractReport, SourceError> {
     let mut archive = tar::Archive::new(reader);
-    extract_docker_archive_entries(&mut archive, destination, limits)
+    extract_docker_archive_entries(&mut archive, destination, limits, enforce_per_file_cap)
 }
 
 enum LayerArchiveEncoding {
@@ -171,6 +178,7 @@ fn validate_extracted_tree_with_limits<R: Read>(
 fn validate_docker_archive_plan<R: Read>(
     archive: &mut tar::Archive<R>,
     limits: crate::SourceLimits,
+    enforce_per_file_cap: bool,
 ) -> Result<(), SourceError> {
     let mut cumulative_bytes: u64 = 0;
     for entry in archive.entries().map_err(SourceError::Io)? {
@@ -179,10 +187,6 @@ fn validate_docker_archive_plan<R: Read>(
         let size = entry.header().entry_size().map_err(SourceError::Io)?;
         let file_type = entry.header().entry_type();
         validate_docker_archive_entry(&path, file_type)?;
-
-        if docker_archive_entry_exceeds_scan_cap(file_type, size, limits) {
-            continue;
-        }
 
         cumulative_bytes = cumulative_bytes.saturating_add(size);
         if cumulative_bytes > limits.docker_tar_total_bytes {
@@ -193,6 +197,10 @@ fn validate_docker_archive_plan<R: Read>(
                 limits.docker_tar_total_bytes,
                 path.display(),
             )));
+        }
+
+        if enforce_per_file_cap && docker_archive_entry_exceeds_scan_cap(file_type, size, limits) {
+            continue;
         }
     }
 
@@ -203,6 +211,7 @@ fn extract_docker_archive_entries<R: Read>(
     archive: &mut tar::Archive<R>,
     destination: &Path,
     limits: crate::SourceLimits,
+    enforce_per_file_cap: bool,
 ) -> Result<DockerExtractReport, SourceError> {
     let mut cumulative_bytes: u64 = 0;
     let mut report = DockerExtractReport::default();
@@ -211,16 +220,6 @@ fn extract_docker_archive_entries<R: Read>(
         let path = entry.path().map_err(SourceError::Io)?.into_owned();
         let size = entry.header().entry_size().map_err(SourceError::Io)?;
         validate_docker_archive_entry(&path, entry.header().entry_type())?;
-
-        if docker_archive_entry_exceeds_scan_cap(entry.header().entry_type(), size, limits) {
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-            report.push_error(docker_archive_entry_over_entry_cap_error(
-                &path,
-                size,
-                limits.docker_tar_entry_bytes,
-            ));
-            continue;
-        }
 
         cumulative_bytes = cumulative_bytes.saturating_add(size);
         if cumulative_bytes > limits.docker_tar_total_bytes {
@@ -231,6 +230,18 @@ fn extract_docker_archive_entries<R: Read>(
                 limits.docker_tar_total_bytes,
                 path.display(),
             )));
+        }
+
+        if enforce_per_file_cap
+            && docker_archive_entry_exceeds_scan_cap(entry.header().entry_type(), size, limits)
+        {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+            report.push_error(docker_archive_entry_over_entry_cap_error(
+                &path,
+                size,
+                limits.docker_tar_entry_bytes,
+            ));
+            continue;
         }
 
         let unpacked_inside_destination = entry.unpack_in(destination).map_err(SourceError::Io)?;

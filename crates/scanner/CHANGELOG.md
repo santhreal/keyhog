@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.48 - 2026-07-28
+
+- Bind the scanner package candidate to the exact validated release commit and
+  hosted CPU recall, throughput, memory, and signed SPDX dependency evidence.
+
+
 ## 0.5.47 - 2026-07-26
 
 - Bind the crate release identity to the KeyHog installer-recovery patch so

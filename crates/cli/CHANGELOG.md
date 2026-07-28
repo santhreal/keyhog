@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.48 - 2026-07-28
+
+- Bind the CLI package and composite Action candidate to the exact validated
+  release commit, signed SPDX dependency graph, and single post-release crate
+  publication path.
+
+
 ## 0.5.47 - 2026-07-26
 
 - Add the POSIX installer `--no-calibrate` override for deterministic

@@ -72,6 +72,16 @@ pub(crate) fn detect_unicode_attacks(text: &str) -> Vec<EvasionMatch> {
             continue;
         }
 
+        if let Some(latin) = unicode_casefold_to_ascii(ch) {
+            matches.push(EvasionMatch {
+                position: byte_pos,
+                kind: EvasionKind::Suspicious,
+                char: ch,
+                replacement: Some(latin),
+            });
+            continue;
+        }
+
         // Check for fullwidth characters
         if is_fullwidth(ch) {
             matches.push(EvasionMatch {
@@ -177,6 +187,9 @@ pub(crate) fn normalized_char(ch: char) -> NormalizedChar {
     if let Some(latin) = greek_to_latin(ch) {
         return NormalizedChar::Replace(latin);
     }
+    if let Some(latin) = unicode_casefold_to_ascii(ch) {
+        return NormalizedChar::Replace(latin);
+    }
     if is_fullwidth(ch) {
         return NormalizedChar::Replace(fullwidth_to_ascii(ch));
     }
@@ -189,6 +202,15 @@ pub(crate) fn normalized_char(ch: char) -> NormalizedChar {
         return NormalizedChar::Drop;
     }
     NormalizedChar::Keep
+}
+
+#[inline]
+fn unicode_casefold_to_ascii(ch: char) -> Option<char> {
+    match ch {
+        '\u{017f}' => Some('s'), // LATIN SMALL LETTER LONG S
+        '\u{212a}' => Some('K'), // KELVIN SIGN
+        _ => None,
+    }
 }
 
 fn normalize_evasive_chars(text: &str) -> std::borrow::Cow<'_, str> {
