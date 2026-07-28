@@ -48,6 +48,83 @@ def test_cgroup_quota_cores_marks_invalid_v2_data_unknown(tmp_path, contents):
     assert hardware._cgroup_quota_cores(cpu_max) == hardware.CGROUP_QUOTA_UNKNOWN
 
 
+def test_cgroup_quota_cores_resolves_current_v2_membership(tmp_path):
+    """A nested systemd service quota must be read from its real cgroup, not the mount root."""
+    root = tmp_path / "cgroup"
+    current = root / "system.slice" / "hosted-compute-agent.service"
+    current.mkdir(parents=True)
+    (current / "cpu.max").write_text("400000 100000\n", encoding="utf-8")
+    membership = tmp_path / "self.cgroup"
+    membership.write_text("0::/system.slice/hosted-compute-agent.service\n", encoding="utf-8")
+
+    assert hardware._cgroup_quota_cores(
+        cgroup_root=root,
+        proc_self_cgroup=membership,
+        cpu_v1_roots=(),
+    ) == 4.0
+
+
+def test_cgroup_quota_cores_applies_tightest_v2_ancestor(tmp_path):
+    """An unbounded leaf must not hide a finite four-core quota imposed by its parent."""
+    root = tmp_path / "cgroup"
+    parent = root / "system.slice"
+    current = parent / "hosted-compute-agent.service"
+    current.mkdir(parents=True)
+    (parent / "cpu.max").write_text("400000 100000\n", encoding="utf-8")
+    (current / "cpu.max").write_text("max 100000\n", encoding="utf-8")
+    membership = tmp_path / "self.cgroup"
+    membership.write_text("0::/system.slice/hosted-compute-agent.service\n", encoding="utf-8")
+
+    assert hardware._cgroup_quota_cores(
+        cgroup_root=root,
+        proc_self_cgroup=membership,
+        cpu_v1_roots=(),
+    ) == 4.0
+
+
+def test_cgroup_quota_cores_accepts_proven_unbounded_v2_membership(tmp_path):
+    """An observed unbounded leaf is usable when exact affinity supplies the four-core limit."""
+    root = tmp_path / "cgroup"
+    current = root / "system.slice" / "hosted-compute-agent.service"
+    current.mkdir(parents=True)
+    (current / "cpu.max").write_text("max 100000\n", encoding="utf-8")
+    membership = tmp_path / "self.cgroup"
+    membership.write_text("0::/system.slice/hosted-compute-agent.service\n", encoding="utf-8")
+
+    assert (
+        hardware._cgroup_quota_cores(
+            cgroup_root=root,
+            proc_self_cgroup=membership,
+            cpu_v1_roots=(),
+        )
+        == hardware.CGROUP_QUOTA_UNBOUNDED
+    )
+
+
+@pytest.mark.parametrize(
+    "membership_text",
+    [
+        "0::/../../outside\n",
+        "0::/one\n0::/two\n",
+    ],
+)
+def test_cgroup_quota_cores_rejects_ambiguous_v2_membership(tmp_path, membership_text):
+    """Traversal or duplicate unified memberships must fail closed before reading quota files."""
+    root = tmp_path / "cgroup"
+    root.mkdir()
+    membership = tmp_path / "self.cgroup"
+    membership.write_text(membership_text, encoding="utf-8")
+
+    assert (
+        hardware._cgroup_quota_cores(
+            cgroup_root=root,
+            proc_self_cgroup=membership,
+            cpu_v1_roots=(),
+        )
+        == hardware.CGROUP_QUOTA_UNKNOWN
+    )
+
+
 def test_cgroup_quota_cores_marks_missing_controllers_unknown(tmp_path):
     """Missing v2 and v1 controllers must remain unknown, never unbounded."""
     assert (

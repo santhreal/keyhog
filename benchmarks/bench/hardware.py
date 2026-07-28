@@ -131,37 +131,93 @@ def _affinity_cores() -> int:
     return len(affinity) if affinity else 0
 
 
+def _parse_cpu_max(path: pathlib.Path) -> tuple[bool, float | str]:
+    """Parse one cgroup v2 quota file and distinguish absence from invalid data."""
+    try:
+        fields = path.read_text(encoding="utf-8").split()
+    except FileNotFoundError:
+        return False, CGROUP_QUOTA_UNKNOWN
+    except (OSError, UnicodeError):
+        return True, CGROUP_QUOTA_UNKNOWN
+    if len(fields) != 2:
+        return True, CGROUP_QUOTA_UNKNOWN
+    try:
+        period = int(fields[1])
+    except ValueError:
+        return True, CGROUP_QUOTA_UNKNOWN
+    if period <= 0:
+        return True, CGROUP_QUOTA_UNKNOWN
+    if fields[0] == "max":
+        return True, CGROUP_QUOTA_UNBOUNDED
+    try:
+        quota = int(fields[0])
+    except ValueError:
+        return True, CGROUP_QUOTA_UNKNOWN
+    if quota <= 0:
+        return True, CGROUP_QUOTA_UNKNOWN
+    return True, quota / period
+
+
+def _current_v2_quota(
+    cgroup_root: pathlib.Path,
+    proc_self_cgroup: pathlib.Path,
+) -> tuple[bool, float | str]:
+    """Resolve the process cgroup and apply the tightest observable ancestor quota."""
+    try:
+        membership = proc_self_cgroup.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        return False, CGROUP_QUOTA_UNKNOWN
+    except (OSError, UnicodeError):
+        return True, CGROUP_QUOTA_UNKNOWN
+    unified = [line.split(":", 2)[2] for line in membership if line.startswith("0::") and line.count(":") == 2]
+    if not unified:
+        return False, CGROUP_QUOTA_UNKNOWN
+    if len(unified) != 1:
+        return True, CGROUP_QUOTA_UNKNOWN
+    relative = pathlib.PurePosixPath(unified[0].lstrip("/"))
+    if any(part in ("", ".", "..") for part in relative.parts):
+        return True, CGROUP_QUOTA_UNKNOWN
+    current = cgroup_root.joinpath(*relative.parts)
+    finite: list[float] = []
+    observed = False
+    while True:
+        exists, quota = _parse_cpu_max(current / "cpu.max")
+        if exists:
+            observed = True
+            if quota == CGROUP_QUOTA_UNKNOWN:
+                return True, CGROUP_QUOTA_UNKNOWN
+            if isinstance(quota, float):
+                finite.append(quota)
+        if current == cgroup_root:
+            break
+        if cgroup_root not in current.parents:
+            return True, CGROUP_QUOTA_UNKNOWN
+        current = current.parent
+    if not observed:
+        return True, CGROUP_QUOTA_UNKNOWN
+    return True, min(finite) if finite else CGROUP_QUOTA_UNBOUNDED
+
+
 def _cgroup_quota_cores(
-    cpu_max: str | pathlib.Path = "/sys/fs/cgroup/cpu.max",
+    cpu_max: str | pathlib.Path | None = None,
     *,
+    cgroup_root: str | pathlib.Path = "/sys/fs/cgroup",
+    proc_self_cgroup: str | pathlib.Path = "/proc/self/cgroup",
     cpu_v1_roots: tuple[str | pathlib.Path, ...] = (
         "/sys/fs/cgroup/cpu",
         "/sys/fs/cgroup/cpu,cpuacct",
     ),
 ) -> float | str:
-    """Return finite v2/v1 cores, ``unbounded``, or ``unknown`` when unobservable."""
-    try:
-        fields = pathlib.Path(cpu_max).read_text(encoding="utf-8").split()
-    except FileNotFoundError:
-        fields = None
-    except (OSError, UnicodeError):
-        return CGROUP_QUOTA_UNKNOWN
-    if fields is not None:
-        if len(fields) != 2:
-            return CGROUP_QUOTA_UNKNOWN
-        try:
-            period = int(fields[1])
-        except ValueError:
-            return CGROUP_QUOTA_UNKNOWN
-        if period <= 0:
-            return CGROUP_QUOTA_UNKNOWN
-        if fields[0] == "max":
-            return CGROUP_QUOTA_UNBOUNDED
-        try:
-            quota = int(fields[0])
-        except ValueError:
-            return CGROUP_QUOTA_UNKNOWN
-        return quota / period if quota > 0 else CGROUP_QUOTA_UNKNOWN
+    """Return the effective finite v2/v1 quota or an authenticated unbounded state."""
+    if cpu_max is None:
+        observed, quota = _current_v2_quota(
+            pathlib.Path(cgroup_root),
+            pathlib.Path(proc_self_cgroup),
+        )
+    else:
+        observed, quota = _parse_cpu_max(pathlib.Path(cpu_max))
+    if observed:
+        return quota
 
     for root_value in cpu_v1_roots:
         root = pathlib.Path(root_value)
@@ -173,15 +229,15 @@ def _cgroup_quota_cores(
         except (OSError, UnicodeError):
             return CGROUP_QUOTA_UNKNOWN
         try:
-            quota = int(quota_text)
+            quota_value = int(quota_text)
             period = int(period_text)
         except ValueError:
             return CGROUP_QUOTA_UNKNOWN
         if period <= 0:
             return CGROUP_QUOTA_UNKNOWN
-        if quota == -1:
+        if quota_value == -1:
             return CGROUP_QUOTA_UNBOUNDED
-        return quota / period if quota > 0 else CGROUP_QUOTA_UNKNOWN
+        return quota_value / period if quota_value > 0 else CGROUP_QUOTA_UNKNOWN
     return CGROUP_QUOTA_UNKNOWN
 
 
