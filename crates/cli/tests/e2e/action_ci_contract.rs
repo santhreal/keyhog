@@ -3030,6 +3030,11 @@ fn keyhog_workflow_covers_trusted_and_fork_sarif_permission_matrix() {
         .and_then(serde_yaml::Value::as_mapping)
         .expect("scan action fixture declares inputs");
     assert_eq!(
+        yaml_get(action_inputs, "backend").and_then(serde_yaml::Value::as_str),
+        Some("cpu"),
+        "a workflow invoking the composite from its branch checkout must use the portable CPU backend"
+    );
+    assert_eq!(
         yaml_get(action_inputs, "format").and_then(serde_yaml::Value::as_str),
         Some("sarif"),
         "the trusted fixture must exercise the SARIF upload path"
