@@ -409,6 +409,6 @@ fn authoritative_hosted_gate_still_controls_the_unchanged_success_publication() 
         "name: differential-results-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}"
     ));
     assert!(differential.contains(
-        "--policy-sha256 563fb8f51ca496ec294436276366c07ef0432148ad5899ee5aded3ede38cfc89"
+        "--policy-sha256 328972c52d55ddc104d2c9dfdfc0bdc78ad8ec0b9e7a115eee40da744f08dd61"
     ));
 }

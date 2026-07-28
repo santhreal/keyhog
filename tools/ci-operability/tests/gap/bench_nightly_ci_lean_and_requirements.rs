@@ -270,7 +270,7 @@ fn hosted_cpu_workflows_bind_reviewed_policy_run_and_snapshot_identity() {
         (
             "differential-bench",
             differential,
-            "563fb8f51ca496ec294436276366c07ef0432148ad5899ee5aded3ede38cfc89",
+            "328972c52d55ddc104d2c9dfdfc0bdc78ad8ec0b9e7a115eee40da744f08dd61",
         ),
     ] {
         assert!(
