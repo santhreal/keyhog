@@ -24,13 +24,13 @@ fn prevention_gate_installs_pinned_marketplace_parser_before_running() {
     let gates = audit
         .find("name: Run all prevention gates")
         .expect("audit-gates must run the prevention entrypoint");
-
     assert!(
         setup < install && install < gates,
         "the pinned parser must exist before prevention tests import the verifier"
     );
     assert!(
-        audit.contains("--disable-pip-version-check --no-deps")
+        audit.contains("python-version: '3.12.11'")
+            && audit.contains("--disable-pip-version-check --no-deps")
             && audit.contains("--require-hashes --only-binary=:all:")
             && audit.contains("-r scripts/requirements-marketplace.txt")
             && audit.contains("yaml.__version__ == \"6.0.3\""),
