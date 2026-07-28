@@ -32,7 +32,7 @@ fn floating_tag_predicate_has_a_single_shell_owner() {
     // Both advance-deciding steps route through the one script.
     assert_eq!(
         release
-            .matches("bash scripts/is-newest-stable-tag.sh")
+            .matches("bash automation/scripts/is-newest-stable-tag.sh")
             .count(),
         2,
         "both release jobs (latest-image + major-tag) must call the single \

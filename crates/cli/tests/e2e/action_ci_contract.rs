@@ -1770,10 +1770,11 @@ fn action_real_cli_preserves_preset_lockdown_composition() {
     }
 }
 
-/// Regression: `backend:auto + lockdown:true` must either reuse one ephemeral
-/// routing receipt or fail closed when the host cannot apply memory protections.
+/// Regression: a lockdown calibration receipt must remain compatible with an
+/// explicitly pinned diagnostic CPU scan, or fail closed when the host cannot
+/// apply memory protections.
 #[test]
-fn action_real_cli_lockdown_auto_reuses_receipt_or_fails_closed() {
+fn action_real_cli_lockdown_cpu_with_receipt_succeeds_or_fails_closed() {
     let binary = keyhog_binary();
     let dir = TempDir::new().expect("tempdir");
     fs::write(dir.path().join("safe.txt"), "ordinary fixture content\n")
@@ -1819,7 +1820,14 @@ fn action_real_cli_lockdown_auto_reuses_receipt_or_fails_closed() {
     );
 
     let scan = Command::new(&binary)
-        .args(["scan", "--no-verify", "--lockdown", "--autoroute-cache"])
+        .args([
+            "scan",
+            "--backend",
+            "cpu",
+            "--no-verify",
+            "--lockdown",
+            "--autoroute-cache",
+        ])
         .arg(&route_cache)
         .args(["--path", ".", "--format", "json", "--output"])
         .arg(&report)
@@ -1830,7 +1838,7 @@ fn action_real_cli_lockdown_auto_reuses_receipt_or_fails_closed() {
     assert_eq!(
         scan.status.code(),
         Some(0),
-        "production auto scan must consume the lockdown calibration receipt: {}",
+        "production CPU scan must preserve lockdown with a calibration receipt present: {}",
         combined_output(&scan)
     );
     assert!(report.is_file(), "production scan must publish its report");

@@ -3,7 +3,7 @@
 //! silently churn via rename) without a deliberate edit to this file.
 //!
 //! This snapshot flags the concern directly: "scan carries
-//! 74 unconditional flags; the binary exposes 18 subcommands. Surface this large is hard to
+//! 76 unconditional flags; the binary exposes 19 subcommands. Surface this large is hard to
 //! keep coherent, document, and test." This gate makes every addition show up
 //! as a failing test that names exactly what was added/removed, forcing the
 //! author to (a) confirm the new surface is intentional and (b) update the
@@ -24,6 +24,7 @@ use keyhog::args::command;
 /// gate feature-robust. Adding a subcommand is a deliberate surface-growth
 /// decision: update this list in the same change and justify the new verb.
 const BASE_SUBCOMMANDS: &[&str] = &[
+    "action-report",
     "backend",
     "bloom-diagnostic",
     "calibrate",
@@ -55,12 +56,13 @@ fn expected_subcommands() -> BTreeSet<String> {
 }
 
 /// `scan` long-flags that are ALWAYS compiled in (no feature gate). This is the
-/// 74-flag base this snapshot protects; the feature-gated source/verify/binary
+/// 76-flag base this snapshot protects; the feature-gated source/verify/binary
 /// flags are layered on in [`expected_scan_long_flags`] under the SAME `#[cfg]`
 /// gates the real args carry, so a new flag fails this gate until it is added
 /// here (or in the matching cfg block) on purpose. A rename shows up as one
 /// removal + one addition, so churn is caught too.
 const BASE_SCAN_LONG_FLAGS: &[&str] = &[
+    "action-receipt",
     "autoroute-cache",
     "autoroute-calibrate",
     "autoroute-gpu",
@@ -116,6 +118,7 @@ const BASE_SCAN_LONG_FLAGS: &[&str] = &[
     "no-color",
     "no-suppress-test-fixtures",
     "no-unicode-norm",
+    "no-verify",
     "output",
     "path",
     "per-chunk-timeout-ms",

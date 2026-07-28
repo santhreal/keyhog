@@ -167,6 +167,24 @@ operator explicitly passes `--allow-s3-credential-forward` or
 `--allow-gcs-token-forward`. Private cloud endpoints additionally require
 `--allow-private-cloud-endpoint` (or `[http].allow_private_endpoint = true`).
 
+## `keyhog action-report verify`
+
+Verifies that a bounded composite-Action receipt describes the exact report
+bytes produced by a completed scan. Pass the receipt path with `--receipt`, the
+report path with `--report`, the report's `sarif`, `json`, `jsonl`, or `text`
+format with `--format`, and the scan process status with `--exit-code`.
+Verification succeeds only when the receipt metadata, report digest, format,
+finding count, scan status, and exit code agree.
+
+<!-- keyhog-generated: cli-reference command="action-report/verify" -->
+| Argument | Value | Default | Description |
+|----------|-------|---------|-------------|
+| `--exit-code` *(required)* | `CODE` |  |  |
+| `--format` *(required)* | `FORMAT` |  |  Possible values: `sarif`, `json`, `jsonl`, `text`. |
+| `--receipt` *(required)* | `RECEIPT` |  |  |
+| `--report` *(required)* | `REPORT` |  |  |
+<!-- /keyhog-generated: cli-reference command="action-report/verify" -->
+
 ## `keyhog config --effective [SCAN FLAGS]`
 
 Prints the resolved scan and report policy and exits without scanning. This is

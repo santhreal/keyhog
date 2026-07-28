@@ -2230,6 +2230,20 @@ adversarial = true
 e2e_linked = true
 
 [[module]]
+path = "crates/cli/src/action_report.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
+path = "crates/cli/src/args/action_report.rs"
+boundary = true
+error = true
+adversarial = true
+e2e_linked = true
+
+[[module]]
 path = "crates/cli/src/config/policy.rs"
 boundary = true
 error = true
