@@ -198,7 +198,7 @@ git add keyhog-baseline.json && git commit -m "chore: keyhog baseline"
 | `findings` | Number of report findings at or above `severity`. |
 | `exit-code` | Raw KeyHog exit: commonly `0` clean, `1` findings, `10` verified-live findings, `13` incomplete coverage; other documented nonzero exits remain failures. |
 | `duration-ms` | Wall-clock scan duration in milliseconds from the wrapper. |
-| `scan-status` | Normalized wrapper terminal state: `success`, `partial`, `cancelled`, or `failed`, published even before a report exists. A CLI report status of `complete_after_recovery` maps to wrapper `success`; with the default SARIF, read `runs[0].properties["keyhog.scan.status"]` and `["keyhog.backend.recoveries"]` to distinguish recovered completion. |
+| `scan-status` | Normalized wrapper terminal state: `success`, `partial`, `cancelled`, or `failed`, published even before a report exists. `partial` preserves clean/findings/live exits `0`/`1`/`10` for advisory coverage gaps and uses exit `13` for fail-class incomplete coverage. A CLI report status of `complete_after_recovery` maps to wrapper `success`; with the default SARIF, read `runs[0].properties["keyhog.scan.status"]` and `["keyhog.backend.recoveries"]` to distinguish recovered completion. |
 | `report-present` | `true` only when a receipt-bound private report snapshot was published; cancellation or an untrusted/missing report leaves it `false`. |
 | `report` | Unpredictable private snapshot path under `RUNNER_TEMP/keyhog-action-runtime.*/report-snapshot.*/`, retained only for the runner job. Its stable basename is `keyhog-results-<analysis-category>.<ext>` and its mode is `0400`; an unpublished snapshot yields an empty path. |
 | `analysis-category` | Validated identity shared by Code Scanning, the stable report basename, and the artifact name. |
@@ -254,7 +254,9 @@ runtime is required by the Action itself. After flushing the report, the scanner
 emits ordered fields `schema=keyhog-action-report-v1`, `format`, `findings`,
 `report-bytes`, `report-sha256`, `scan-status`, and `exit-code`. A hidden
 Action-only verifier rehashes the exact report bytes, validates the seven-field
-receipt, and prints the count dependency-free. Cleanup deletes the receipt only
+receipt, and prints the count dependency-free. Coverage state does not rewrite
+the scan outcome: advisory partial reports keep exit `0`, `1`, or `10`, while
+fail-class incomplete coverage uses exit `13`. Cleanup deletes the receipt only
 if its observed SHA-256 remains unchanged; replaced or type-changed receipt
 paths fail instead of being blindly removed. Neither internal surface is a
 public CLI API.

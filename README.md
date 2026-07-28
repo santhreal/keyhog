@@ -133,6 +133,9 @@ receipt: `schema=keyhog-action-report-v1`, `format`, `findings`,
 `report-bytes`, `report-sha256`, `scan-status`, and `exit-code`. A hidden
 Action-only verifier rehashes the exact requested workspace report bytes,
 validates every field, and returns the count without `jq`, Python, or `grep`.
+Receipt validation keeps coverage and outcome separate. Advisory coverage gaps
+publish `scan-status=partial` while preserving exit `0`, `1`, or `10`; fail-class
+coverage gaps use partial exit `13`.
 The requested copy keeps the stable
 `keyhog-results-<analysis-category>.<ext>` basename but is not the public
 output or upload authority and is untrusted after the Action returns. The

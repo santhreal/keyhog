@@ -65,7 +65,7 @@ outputs:
     description: 'Scan duration in milliseconds.'
     value: ${{ steps.scan.outputs.duration-ms }}
   scan-status:
-    description: 'Terminal scan state: success, partial, cancelled, or failed.'
+    description: 'Terminal coverage state: success, partial, cancelled, or failed; partial preserves the raw scan exit.'
     value: ${{ steps.scan.outputs.scan-status }}
   report-present:
     description: 'Whether a receipt-bound private report snapshot was published.'

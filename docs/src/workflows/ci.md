@@ -66,8 +66,9 @@ recovery. Metadata-bearing CLI reports additionally preserve
 `complete_after_recovery`; with the Action's SARIF default, inspect
 `runs[0].properties["keyhog.scan.status"]` and
 `["keyhog.backend.recoveries"]` when that distinction is a gate. Wrapper
-`partial` means exit `13` with
-a report, while a missing report is `failed`, never clean.
+`partial` preserves clean, findings, or live-findings exit `0`, `1`, or `10`
+when the report records advisory coverage gaps. Fail-class incomplete coverage
+uses partial exit `13`. A missing or untrusted report is `failed`, never clean.
 
 The requested workspace copy is named
 `keyhog-results-<analysis-category>.<ext>`, but it is not the upload authority

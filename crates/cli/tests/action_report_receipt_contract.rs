@@ -126,7 +126,7 @@ fn receipt_verifier_rejects_tampering_and_semantic_contradictions() {
         ),
         (
             "status",
-            original_receipt.replace("scan-status=success", "scan-status=partial"),
+            original_receipt.replace("scan-status=success", "scan-status=failed"),
             "json",
             0,
         ),
@@ -156,6 +156,100 @@ fn receipt_verifier_rejects_tampering_and_semantic_contradictions() {
             rejected.stdout.is_empty(),
             "{name} must not publish a count"
         );
+    }
+}
+
+/// Advisory coverage gaps publish an authenticated report without rewriting the
+/// real clean/findings/live exit. The same partial token therefore covers exits
+/// 0, 1, and 10; only fail-class coverage gaps require exit 13.
+#[test]
+fn advisory_partial_receipts_preserve_scan_outcome_exits() {
+    for (name, visible, expected_exit, expected_count) in [
+        ("clean", "ordinary fixture content\n", 0, 0),
+        ("finding", "AWS_ACCESS_KEY_ID=AKIAQYLPMN5HFIQR7XYA\n", 1, 1),
+    ] {
+        let root = TempDir::new().expect("scan root");
+        let artifacts = TempDir::new().expect("artifact root");
+        fs::write(root.path().join("visible.txt"), visible).expect("visible fixture");
+        let excluded = root.path().join(".cache");
+        fs::create_dir(&excluded).expect("default-excluded directory");
+        fs::write(
+            excluded.join("ignored.env"),
+            "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n",
+        )
+        .expect("excluded fixture");
+        let report = artifacts.path().join(format!("{name}.json"));
+        let receipt = artifacts.path().join(format!("{name}.receipt"));
+        let output = Command::new(binary())
+            .args([
+                "scan",
+                "--backend",
+                "cpu",
+                "--no-verify",
+                "--format",
+                "json",
+                "--output",
+            ])
+            .arg(&report)
+            .arg("--action-receipt")
+            .arg(&receipt)
+            .arg("--path")
+            .arg(root.path())
+            .output()
+            .expect("run advisory-partial scan");
+        assert_eq!(
+            output.status.code(),
+            Some(expected_exit),
+            "{name}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let body = fs::read_to_string(&receipt).expect("advisory-partial receipt");
+        assert!(
+            body.contains(&format!("findings={expected_count}\nreport-bytes="))
+                && body.contains(&format!("scan-status=partial\nexit-code={expected_exit}\n")),
+            "{name}: {body}"
+        );
+        let verified = verify(&report, &receipt, "json", expected_exit);
+        assert_eq!(
+            verified.status.code(),
+            Some(0),
+            "{name}: {}",
+            String::from_utf8_lossy(&verified.stderr)
+        );
+        assert_eq!(
+            verified.stdout,
+            format!("{expected_count}\n").as_bytes(),
+            "{name}"
+        );
+
+        let contradictory = artifacts
+            .path()
+            .join(format!("{name}-contradictory.receipt"));
+        fs::write(
+            &contradictory,
+            body.replace(
+                &format!("findings={expected_count}"),
+                &format!("findings={}", usize::from(expected_count == 0)),
+            ),
+        )
+        .expect("contradictory partial receipt");
+        let rejected = verify(&report, &contradictory, "json", expected_exit);
+        assert_eq!(rejected.status.code(), Some(2), "{name}");
+        assert!(rejected.stdout.is_empty(), "{name}");
+
+        if expected_exit == 1 {
+            let live = artifacts.path().join("live.receipt");
+            fs::write(&live, body.replace("exit-code=1", "exit-code=10"))
+                .expect("live partial receipt");
+            let verified_live = verify(&report, &live, "json", 10);
+            assert_eq!(
+                verified_live.status.code(),
+                Some(0),
+                "live: {}",
+                String::from_utf8_lossy(&verified_live.stderr)
+            );
+            assert_eq!(verified_live.stdout, b"1\n");
+        }
     }
 }
 
