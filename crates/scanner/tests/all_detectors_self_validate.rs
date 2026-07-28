@@ -19,7 +19,7 @@ mod support;
 use support::paths::detector_dir;
 
 use std::collections::BTreeSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use keyhog_core::Chunk;
 use keyhog_core::ChunkMetadata;
@@ -32,13 +32,19 @@ fn contracts_dir() -> PathBuf {
     d
 }
 
+fn is_detector_toml(path: &Path) -> bool {
+    path.extension().and_then(|value| value.to_str()) == Some("toml")
+        && path.file_name().and_then(|value| value.to_str())
+            != Some(keyhog_core::DETECTOR_CORPUS_MANIFEST_FILE)
+}
+
 fn detector_ids_on_disk() -> BTreeSet<String> {
     std::fs::read_dir(detector_dir())
         .expect("detectors dir readable")
         .flatten()
         .filter_map(|e| {
             let p = e.path();
-            if p.extension().and_then(|s| s.to_str()) != Some("toml") {
+            if !is_detector_toml(&p) {
                 return None;
             }
             p.file_stem()
@@ -66,6 +72,17 @@ fn contract_ids_on_disk() -> BTreeSet<String> {
         .unwrap_or_default()
 }
 
+/// The directory schema manifest is TOML but not a detector. Inventory gates
+/// must apply the same canonical exclusion as the production corpus loader.
+#[test]
+fn detector_inventory_excludes_directory_schema_manifest() {
+    assert!(!is_detector_toml(Path::new(
+        keyhog_core::DETECTOR_CORPUS_MANIFEST_FILE
+    )));
+    assert!(is_detector_toml(Path::new("aws-access-key.toml")));
+    assert!(!is_detector_toml(Path::new("aws-access-key.json")));
+}
+
 /// Every detector TOML in `detectors/` must successfully load through
 /// `keyhog_core::load_detectors`. A parse failure here means the TOML
 /// is malformed and the embedded-detectors build would have produced a
@@ -82,7 +99,7 @@ fn every_detector_loads() {
         .flatten()
         .filter_map(|e| {
             let p = e.path();
-            if p.extension().and_then(|s| s.to_str()) == Some("toml") {
+            if is_detector_toml(&p) {
                 Some(p)
             } else {
                 None

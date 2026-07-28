@@ -1,3 +1,22 @@
+/// UCP compilation rejects real word-boundary escapes, while a doubled
+/// backslash is a literal slash followed by `b` and must remain eligible.
+#[cfg(feature = "simd")]
+#[test]
+fn ucp_word_boundary_classifier_respects_escape_parity() {
+    for pattern in [r"\bsecret", r"secret\B", r"\\\bsecret"] {
+        assert!(
+            crate::simd::backend::contains_ucp_word_boundary(pattern),
+            "real UCP word boundary must use exact CPU recovery: {pattern:?}"
+        );
+    }
+    for pattern in [r"\\bsecret", r"secret\\B", r"\w+secret"] {
+        assert!(
+            !crate::simd::backend::contains_ucp_word_boundary(pattern),
+            "literal or supported escape must stay eligible for Hyperscan: {pattern:?}"
+        );
+    }
+}
+
 /// Regression: Hyperscan compilation must remain decomposed, cache-stable,
 /// and independent of per-executor scratch allocation; warm-up owns that
 /// fallible runtime resource boundary.
@@ -18,6 +37,7 @@ fn hyperscan_compile_with_opts_delegates_compile_stages() {
         "const RETRY_DROP_DIVISOR: usize = 10;",
         "fn hs_partition_cost(",
         "fn counted_repeat_upper_bound(",
+        "fn contains_ucp_word_boundary(",
         "fn prepare_patterns(",
         "fn compile_cache_key(",
         "fn compile_shard_count(",
@@ -87,9 +107,10 @@ fn hyperscan_compile_with_opts_delegates_compile_stages() {
         .next()
         .expect("compile_cache_key boundary present");
     for required in [
-        "let HsCompileOpts {\n            singlematch,\n            caseless,\n            shard_target: _,\n            utf8,\n            parallel_prepare: _,\n        } = opts;",
+        "let HsCompileOpts {\n            singlematch,\n            caseless,\n            shard_target: _,\n            utf8,\n            ucp,\n            parallel_prepare: _,\n        } = opts;",
         "h.update(if singlematch { b\"SM1\" } else { b\"SM0\" });",
         "h.update(if utf8 { b\"U81\" } else { b\"U80\" });",
+        "h.update(if ucp { b\"UP1\" } else { b\"UP0\" });",
         "None => h.update(b\"CLall\")",
         "Some(cl) =>",
         "h.update(b\"CLper\")",

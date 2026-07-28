@@ -43,6 +43,21 @@ const BASE_PATTERN_COST: u64 = 16;
 const RETRY_DROP_DIVISOR: usize = 10;
 const HS_CRATE_CACHE_VERSION: &[u8] = b"0.3.2";
 
+pub(crate) fn contains_ucp_word_boundary(regex: &str) -> bool {
+    let mut escaped = false;
+    for byte in regex.bytes() {
+        if byte == b'\\' {
+            escaped = !escaped;
+            continue;
+        }
+        if escaped && matches!(byte, b'b' | b'B') {
+            return true;
+        }
+        escaped = false;
+    }
+    false
+}
+
 /// Effective user id for cache-dir namespacing and ownership checks. On Unix
 /// this is `geteuid()`; on non-Unix (Windows) there is no euid, and per-user
 /// isolation comes from the ACL'd user profile dir (`dirs::cache_dir()` →
@@ -377,6 +392,9 @@ impl HsScanner {
         let prepare =
             |(i, &(det_idx, pat_idx, regex, has_group)): (usize, &(usize, usize, &str, bool))| {
                 if regex.len() > MAX_HS_PATTERN_LEN {
+                    return PrepResult::Unsupported { index: i };
+                }
+                if opts.ucp && contains_ucp_word_boundary(regex) {
                     return PrepResult::Unsupported { index: i };
                 }
                 match Pattern::with_flags(regex, Self::pattern_flags(i, opts)) {
