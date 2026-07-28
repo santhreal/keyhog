@@ -6039,6 +6039,123 @@ fn action_cleans_autoroute_receipt_on_early_validation_failure() {
     }
 }
 
+/// Git for Windows prefixes filename-bearing checksum output with a backslash
+/// when it escapes the displayed path. The wrapper must hash through stdin so
+/// its receipt-bound digest remains exactly 64 hexadecimal characters.
+#[cfg(unix)]
+#[test]
+fn action_report_digest_survives_windows_checksum_escape_format() {
+    let dir = TempDir::new().expect("checksum escape tempdir");
+    let digest_bin = dir.path().join("digest-bin");
+    fs::create_dir(&digest_bin).expect("digest bin");
+    let sha256sum = digest_bin.join("sha256sum");
+    write_executable(
+        &sha256sum,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$#" -eq 1 && ( "$1" == *keyhog-action-report* || "$1" == *report-snapshot.* ) ]]; then
+  read -r digest _ < <(/usr/bin/sha256sum < "$1")
+  printf '\\%s  %s\n' "$digest" "$1"
+  exit 0
+fi
+exec /usr/bin/sha256sum "$@"
+"#,
+    );
+    let escaped_probe = dir.path().join("keyhog-action-report-probe.receipt");
+    fs::write(&escaped_probe, "probe").expect("checksum probe");
+    let escaped = Command::new(&sha256sum)
+        .arg(&escaped_probe)
+        .output()
+        .expect("escaped filename checksum");
+    assert!(
+        escaped.status.success() && escaped.stdout.starts_with(b"\\"),
+        "the checksum fixture must reproduce Git for Windows escape framing"
+    );
+
+    write_stub(
+        &dir,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ "$#" -gt 0 ]]; do
+  if [[ "$1" == "--output" ]]; then
+    shift
+    out="$1"
+  fi
+  shift || true
+done
+printf '%s\n' '{"runs":[{"results":[]}]}' > "$out"
+"#,
+    );
+    let runtime = dir
+        .path()
+        .join("runner-temp")
+        .join("keyhog-action-runtime.test");
+    fs::create_dir_all(&runtime).expect("action runtime");
+    let output = run_action_with_path_prefix(
+        &dir,
+        digest_bin.to_str().expect("digest bin path"),
+        &[
+            ("ACTION_RUNTIME", runtime.to_str().expect("runtime path")),
+            ("ACTION_INPUT_FORMAT", "sarif"),
+            ("ACTION_INPUT_OUTPUT", "report.sarif"),
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "stdin checksum path must complete the scan wrapper: {}",
+        combined_output(&output)
+    );
+    let outputs = output_file(&dir);
+    let report = outputs
+        .lines()
+        .find_map(|line| line.strip_prefix("report="))
+        .expect("report output");
+    let digest = outputs
+        .lines()
+        .find_map(|line| line.strip_prefix("report-sha256="))
+        .expect("report digest output");
+    assert!(
+        digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit()),
+        "report digest must be exact hexadecimal SHA-256, got {digest:?}"
+    );
+    assert!(
+        outputs.lines().any(|line| line == "report-present=true"),
+        "verified scan must publish its private report snapshot"
+    );
+
+    let report_check_output = dir.path().join("report-check-output");
+    let checked = run_manifest_bash_step(
+        "Check receipt-bound report snapshot before upload",
+        &[
+            (
+                "RUNNER_TEMP",
+                dir.path()
+                    .join("runner-temp")
+                    .to_str()
+                    .expect("runner temp path"),
+            ),
+            ("ACTION_RUNTIME", runtime.to_str().expect("runtime path")),
+            ("ACTION_REPORT_NAME", report),
+            ("ACTION_REPORT_SHA256", digest),
+            ("ACTION_SCAN_REPORT_PRESENT", "true"),
+            (
+                "GITHUB_OUTPUT",
+                report_check_output.to_str().expect("report check output"),
+            ),
+        ],
+    );
+    assert!(
+        checked.status.success(),
+        "composite upload boundary must accept the wrapper digest: {}",
+        combined_output(&checked)
+    );
+    assert_eq!(
+        fs::read_to_string(report_check_output).expect("report check outputs"),
+        format!("exists=true\npath={report}\n")
+    );
+}
+
 /// Regression: a snapshot replaced after wrapper verification must stop both
 /// internal uploads rather than degrading to a warning-only clean job.
 #[test]

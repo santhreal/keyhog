@@ -311,9 +311,9 @@ cleanup_action_state() {
     if [[ -f "$action_receipt" && ! -L "$action_receipt" ]]; then
       current_receipt_sha=""
       if command -v sha256sum >/dev/null 2>&1; then
-        read -r current_receipt_sha _ < <(sha256sum "$action_receipt")
+        read -r current_receipt_sha _ < <(sha256sum < "$action_receipt")
       elif command -v shasum >/dev/null 2>&1; then
-        read -r current_receipt_sha _ < <(shasum -a 256 "$action_receipt")
+        read -r current_receipt_sha _ < <(shasum -a 256 < "$action_receipt")
       fi
       if [[ "$current_receipt_sha" == "$receipt_owned_sha" ]]; then
         rm -f -- "$action_receipt"
@@ -499,9 +499,9 @@ keyhog_exit=$?
 set -e
 if [[ -f "$action_receipt" && ! -L "$action_receipt" ]]; then
   if command -v sha256sum >/dev/null 2>&1; then
-    read -r receipt_owned_sha _ < <(sha256sum "$action_receipt")
+    read -r receipt_owned_sha _ < <(sha256sum < "$action_receipt")
   elif command -v shasum >/dev/null 2>&1; then
-    read -r receipt_owned_sha _ < <(shasum -a 256 "$action_receipt")
+    read -r receipt_owned_sha _ < <(shasum -a 256 < "$action_receipt")
   else
     receipt_owned_sha=""
   fi
@@ -603,9 +603,9 @@ if [[ "$report_present" == "true" && -n "$findings" ]]; then
     exit 3
   fi
   if command -v sha256sum >/dev/null 2>&1; then
-    read -r snapshot_sha256 _ < <(sha256sum "$snapshot_report")
+    read -r snapshot_sha256 _ < <(sha256sum < "$snapshot_report")
   elif command -v shasum >/dev/null 2>&1; then
-    read -r snapshot_sha256 _ < <(shasum -a 256 "$snapshot_report")
+    read -r snapshot_sha256 _ < <(shasum -a 256 < "$snapshot_report")
   else
     scan_status=failed
     publish_receipt
