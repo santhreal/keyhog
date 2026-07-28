@@ -153,8 +153,17 @@ runs:
         ACTION_VERSION: ${{ inputs.version }}
         ACTION_SOURCE_ROOT: ${{ github.action_path }}
         ACTION_BACKEND: ${{ inputs.backend }}
+        ACTION_REPOSITORY: ${{ github.action_repository }}
       run: |
         set -euo pipefail
+        if [[ ! -f "$ACTION_SOURCE_ROOT/Cargo.toml" || ! -f "$ACTION_SOURCE_ROOT/scripts/release-version.sh" ]]; then
+          if [[ "${ACTION_REPOSITORY:-}" == "${GITHUB_REPOSITORY:-}" && -f "${GITHUB_WORKSPACE:-}/Cargo.toml" && -f "${GITHUB_WORKSPACE:-}/scripts/release-version.sh" ]]; then
+            ACTION_SOURCE_ROOT="$GITHUB_WORKSPACE"
+          else
+            echo "::error title=KeyHog::Action source tree is unavailable or does not match this repository."
+            exit 2
+          fi
+        fi
         # Always initialize under `set -u` (KH-1267): branch/SHA refs never set
         # `v` in older revisions and aborted with "v: unbound variable".
         v=""
@@ -307,9 +316,9 @@ runs:
         mkdir -- "$extract_dir"
         curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error --output "$archive" "$verifier_url"
         if command -v sha256sum >/dev/null 2>&1; then
-          read -r actual_sha256 _ < <(sha256sum "$archive")
+          read -r actual_sha256 _ < <(sha256sum < "$archive")
         elif command -v shasum >/dev/null 2>&1; then
-          read -r actual_sha256 _ < <(shasum -a 256 "$archive")
+          read -r actual_sha256 _ < <(shasum -a 256 < "$archive")
         else
           echo "::error title=KeyHog::No SHA-256 implementation is available to authenticate minisign."
           exit 2
@@ -521,7 +530,7 @@ runs:
 
         bin_name="keyhog"
         case "$asset" in *.exe) bin_name="keyhog.exe" ;; esac
-        if command -v sha256sum >/dev/null 2>&1; then read -r binary_sha256 _ < <(sha256sum "$bundle_dir/$asset"); else read -r binary_sha256 _ < <(shasum -a 256 "$bundle_dir/$asset"); fi
+        if command -v sha256sum >/dev/null 2>&1; then read -r binary_sha256 _ < <(sha256sum < "$bundle_dir/$asset"); else read -r binary_sha256 _ < <(shasum -a 256 < "$bundle_dir/$asset"); fi
         install_dir="$ACTION_RUNTIME/release-${version}-${binary_sha256}"
         if [[ -e "$install_dir" || -L "$install_dir" ]] || ! mkdir -- "$install_dir"; then
           echo "::error title=KeyHog::Private release install directory already exists or is unsafe."; exit 2
@@ -529,7 +538,7 @@ runs:
         chmod 700 "$install_dir"
         binary_tmp="$(mktemp "$install_dir/.keyhog.XXXXXXXX")"
         cat -- "$bundle_dir/$asset" > "$binary_tmp"
-        if command -v sha256sum >/dev/null 2>&1; then read -r staged_sha256 _ < <(sha256sum "$binary_tmp"); else read -r staged_sha256 _ < <(shasum -a 256 "$binary_tmp"); fi
+        if command -v sha256sum >/dev/null 2>&1; then read -r staged_sha256 _ < <(sha256sum < "$binary_tmp"); else read -r staged_sha256 _ < <(shasum -a 256 < "$binary_tmp"); fi
         if [[ "$staged_sha256" != "$binary_sha256" ]]; then echo "::error title=KeyHog::Authenticated release binary changed while staging."; exit 2; fi
         chmod 500 "$binary_tmp"
         published_binary="$install_dir/$bin_name"
@@ -563,8 +572,17 @@ runs:
         ACTION_SOURCE_ROOT: ${{ github.action_path }}
         ACTION_RESOLVED_VERSION: ${{ steps.version.outputs.version }}
         ACTION_RUNTIME: ${{ steps.runtime.outputs.path }}
+        ACTION_REPOSITORY: ${{ github.action_repository }}
       run: |
         set -euo pipefail
+        if [[ ! -f "$ACTION_SOURCE_ROOT/Cargo.toml" || ! -f "$ACTION_SOURCE_ROOT/scripts/release-version.sh" ]]; then
+          if [[ "${ACTION_REPOSITORY:-}" == "${GITHUB_REPOSITORY:-}" && -f "${GITHUB_WORKSPACE:-}/Cargo.toml" && -f "${GITHUB_WORKSPACE:-}/scripts/release-version.sh" ]]; then
+            ACTION_SOURCE_ROOT="$GITHUB_WORKSPACE"
+          else
+            echo "::error title=KeyHog::Action source tree is unavailable or does not match this repository."
+            exit 2
+          fi
+        fi
         cd "$ACTION_SOURCE_ROOT"
         # Source refs use the lockfile with the exact MSRV toolchain and the
         # portable feature profile on every runner. This avoids floating native
@@ -575,7 +593,7 @@ runs:
         if [[ ! -f "$bin" || -L "$bin" ]]; then echo "::error title=KeyHog::Source build did not publish a trusted regular binary."; exit 2; fi
         source_tmp="$(mktemp "$ACTION_RUNTIME/.source-keyhog.XXXXXXXX")"
         cat -- "$bin" > "$source_tmp"
-        if command -v sha256sum >/dev/null 2>&1; then read -r source_sha256 _ < <(sha256sum "$source_tmp"); else read -r source_sha256 _ < <(shasum -a 256 "$source_tmp"); fi
+        if command -v sha256sum >/dev/null 2>&1; then read -r source_sha256 _ < <(sha256sum < "$source_tmp"); else read -r source_sha256 _ < <(shasum -a 256 < "$source_tmp"); fi
         install_dir="$ACTION_RUNTIME/source-${ACTION_RESOLVED_VERSION}-${source_sha256}"
         if [[ -e "$install_dir" || -L "$install_dir" ]] || ! mkdir -- "$install_dir"; then echo "::error title=KeyHog::Private source install directory already exists or is unsafe."; exit 2; fi
         chmod 700 "$install_dir"
@@ -698,9 +716,9 @@ runs:
           exit 3
         fi
         if command -v sha256sum >/dev/null 2>&1; then
-          read -r route_sha256 _ < <(sha256sum "$route_cache")
+          read -r route_sha256 _ < <(sha256sum < "$route_cache")
         elif command -v shasum >/dev/null 2>&1; then
-          read -r route_sha256 _ < <(shasum -a 256 "$route_cache")
+          read -r route_sha256 _ < <(shasum -a 256 < "$route_cache")
         else
           echo "::error title=KeyHog::No SHA-256 implementation is available to bind the autoroute receipt."
           exit 2
@@ -763,9 +781,9 @@ runs:
             exit 3
           fi
           if command -v sha256sum >/dev/null 2>&1; then
-            read -r actual_route_sha256 _ < <(sha256sum "$ACTION_AUTOROUTE_CACHE")
+            read -r actual_route_sha256 _ < <(sha256sum < "$ACTION_AUTOROUTE_CACHE")
           elif command -v shasum >/dev/null 2>&1; then
-            read -r actual_route_sha256 _ < <(shasum -a 256 "$ACTION_AUTOROUTE_CACHE")
+            read -r actual_route_sha256 _ < <(shasum -a 256 < "$ACTION_AUTOROUTE_CACHE")
           else
             echo "::error title=KeyHog::No SHA-256 implementation is available to authenticate the autoroute receipt."
             exit 2
@@ -817,7 +835,7 @@ runs:
         set -euo pipefail
         trusted=false
         if [[ "${ACTION_SCAN_REPORT_PRESENT:-}" == "true" && "$ACTION_REPORT_NAME" == "$ACTION_RUNTIME"/report-snapshot.*/* && -f "$ACTION_REPORT_NAME" && ! -L "$ACTION_REPORT_NAME" && "$ACTION_REPORT_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]]; then
-          if command -v sha256sum >/dev/null 2>&1; then read -r actual_sha256 _ < <(sha256sum "$ACTION_REPORT_NAME"); else read -r actual_sha256 _ < <(shasum -a 256 "$ACTION_REPORT_NAME"); fi
+          if command -v sha256sum >/dev/null 2>&1; then read -r actual_sha256 _ < <(sha256sum < "$ACTION_REPORT_NAME"); else read -r actual_sha256 _ < <(shasum -a 256 < "$ACTION_REPORT_NAME"); fi
           [[ "$actual_sha256" == "$ACTION_REPORT_SHA256" ]] && trusted=true
         fi
         if [[ "$trusted" == "true" ]]; then

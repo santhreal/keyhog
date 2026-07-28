@@ -52,9 +52,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo test -p keyhog --test action_root_mirror_parity
-          cargo test -p keyhog --test e2e_all -- action_
-          cargo test -p keyhog --test e2e_all -- composite_action_
+          cargo test -p keyhog --no-default-features --features portable --test action_root_mirror_parity
+          cargo test -p keyhog --no-default-features --features portable --test e2e_all -- action_
+          cargo test -p keyhog --no-default-features --features portable --test e2e_all -- composite_action_
 
   positive-lockdown:
     name: provisioned source-CPU / release-auto lockdown (root and nested)
@@ -489,5 +489,5 @@ jobs:
           grep -Fx 'findings=' "$tampered_receipt" >/dev/null
           grep -Fx 'exit-code=0' "$tampered_receipt" >/dev/null
           grep -Fx 'scan-status=failed' "$tampered_receipt" >/dev/null
-          grep -Fx 'report-present=true' "$tampered_receipt" >/dev/null
+          grep -Fx 'report-present=false' "$tampered_receipt" >/dev/null
           grep -F "Could not verify scan report receipt" "$fixture_root/tampered-report.log" >/dev/null

@@ -1065,6 +1065,36 @@ fn hosted_action_e2e_splits_source_and_authenticated_release_modes() {
     }
 }
 
+/// Regression: the Action contract lane once required an ambient Hyperscan
+/// development package, and its tamper lane advertised an unverified report as
+/// present. The hosted proof must use the portable profile and fail closed.
+#[test]
+fn action_e2e_contract_is_portable_and_hides_unverified_reports() {
+    let workflow = fs::read_to_string(action_e2e_workflow()).expect("read action-e2e workflow");
+    let contract = workflow
+        .split("  action-contract:")
+        .nth(1)
+        .and_then(|tail| tail.split("\n  positive-lockdown:").next())
+        .expect("Action contract job exists");
+    assert_eq!(
+        contract
+            .matches("cargo test -p keyhog --no-default-features --features portable")
+            .count(),
+        3,
+        "every Action contract test command must avoid ambient Hyperscan packages"
+    );
+
+    let tamper = workflow
+        .split("- name: Exercise tampered and missing wrapper contracts")
+        .nth(1)
+        .expect("wrapper tamper step exists");
+    assert!(
+        tamper.contains("grep -Fx 'report-present=false' \"$tampered_receipt\"")
+            && !tamper.contains("grep -Fx 'report-present=true' \"$tampered_receipt\""),
+        "a report whose receipt cannot be verified must never be published as present"
+    );
+}
+
 /// Regression: a hosted negative lane cannot prove lockdown works. Maintain a
 /// pinned, provisioned container that executes both real composite entrypoints:
 /// source push/PR uses explicit portable CPU, while authenticated release
@@ -4759,6 +4789,13 @@ fn composite_action_source_build_uses_portable_locked_features() {
     fs::create_dir(&fake_bin).expect("create fake bin");
     fs::create_dir(&source_root).expect("create source root");
     fs::create_dir(&runner_temp).expect("create runner temp");
+    fs::create_dir(source_root.join("scripts")).expect("create source scripts");
+    fs::write(source_root.join("Cargo.toml"), "[workspace]\n").expect("write source manifest");
+    fs::write(
+        source_root.join("scripts/release-version.sh"),
+        "#!/usr/bin/env bash\n",
+    )
+    .expect("write release grammar marker");
     let source_output = dir.path().join("source-output.txt");
     let cargo_args = dir.path().join("cargo-args.txt");
     write_executable(
@@ -4778,11 +4815,25 @@ printf 'fake-keyhog' > target/release/keyhog
 chmod +x target/release/keyhog
 "#,
     );
+    write_executable(
+        &fake_bin.join("sha256sum"),
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+if (( $# != 0 )); then
+  printf '\\ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff  %s\n' "$1"
+  exit 0
+fi
+cat >/dev/null
+printf 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  -\n'
+"#,
+    );
     let path = format!(
         "{}:{}",
         fake_bin.display(),
         env::var("PATH").expect("PATH is set")
     );
+    let declared_source_root = dir.path().join("host-only-source");
+    let declared_source_root_str = declared_source_root.to_string_lossy().into_owned();
     let source_root_str = source_root.to_string_lossy().into_owned();
     let runner_temp_str = runner_temp.to_string_lossy().into_owned();
     let source_output_str = source_output.to_string_lossy().into_owned();
@@ -4791,7 +4842,10 @@ chmod +x target/release/keyhog
         "Build keyhog from source (fallback)",
         &[
             ("PATH", path.as_str()),
-            ("ACTION_SOURCE_ROOT", source_root_str.as_str()),
+            ("ACTION_SOURCE_ROOT", declared_source_root_str.as_str()),
+            ("ACTION_REPOSITORY", "santhreal/keyhog"),
+            ("GITHUB_REPOSITORY", "santhreal/keyhog"),
+            ("GITHUB_WORKSPACE", source_root_str.as_str()),
             ("RUNNER_TEMP", runner_temp_str.as_str()),
             ("GITHUB_OUTPUT", source_output_str.as_str()),
             ("CARGO_ARGS_FILE", cargo_args_str.as_str()),
@@ -4820,6 +4874,16 @@ chmod +x target/release/keyhog
     assert!(
         Path::new(binary_path).is_file() && !runner_temp.join("keyhog").exists(),
         "source fallback must publish only into its invocation-private digest directory"
+    );
+    assert_eq!(
+        Path::new(binary_path)
+            .parent()
+            .and_then(Path::file_name)
+            .and_then(|name| name.to_str()),
+        Some(
+            "source-0.5.48-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ),
+        "source hashing must consume bytes through stdin so Windows path escaping cannot enter the private directory name"
     );
 }
 
