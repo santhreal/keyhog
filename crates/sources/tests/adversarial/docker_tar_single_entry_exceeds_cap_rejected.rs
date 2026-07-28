@@ -14,9 +14,7 @@ fn write_layer_tar(path: &std::path::Path, entries: &[(&str, &[u8])]) {
         header.set_size(bytes.len() as u64);
         header.set_entry_type(tar::EntryType::Regular);
         header.set_cksum();
-        builder
-            .append(&header, *bytes)
-            .expect("append layer entry");
+        builder.append(&header, *bytes).expect("append layer entry");
     }
     builder.finish().expect("finish tar");
 }
@@ -154,7 +152,10 @@ fn docker_layer_regular_entry_exactly_at_cap_is_extracted() {
         .unpack_docker_layer_archive_with_entry_cap(&tar_path, &unpacked, 4)
         .expect("an entry exactly at the cap must be accepted");
 
-    assert!(errors.is_empty(), "exact-cap entry emitted errors: {errors:?}");
+    assert!(
+        errors.is_empty(),
+        "exact-cap entry emitted errors: {errors:?}"
+    );
     assert_eq!(
         std::fs::read(unpacked.join("at-cap.txt")).expect("exact-cap entry extracted"),
         b"1234"
@@ -253,7 +254,10 @@ fn docker_layer_under_both_caps_extracts_every_entry() {
         .unpack_docker_layer_archive_with_caps(&tar_path, &unpacked, 4, 7)
         .expect("archive below both caps must be extracted");
 
-    assert!(errors.is_empty(), "in-budget archive emitted errors: {errors:?}");
+    assert!(
+        errors.is_empty(),
+        "in-budget archive emitted errors: {errors:?}"
+    );
     assert_eq!(std::fs::read(unpacked.join("one.txt")).unwrap(), b"123");
     assert_eq!(std::fs::read(unpacked.join("two.txt")).unwrap(), b"456");
     let counts = skip_counts();

@@ -455,7 +455,9 @@ impl HsScanner {
         if opts.utf8 {
             flags |= PatternFlags::UTF8;
         }
-        if opts.ucp { flags |= PatternFlags::UCP; }
+        if opts.ucp {
+            flags |= PatternFlags::UCP;
+        }
         flags
     }
 

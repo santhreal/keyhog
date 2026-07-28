@@ -154,7 +154,10 @@ fn config_scan_ml_threshold_and_top_level_verify_knobs_reach_scan_args() {
 #[test]
 fn explicit_no_verify_overrides_committed_verify_true() {
     let args = args_for_config_with_extra("verify = true\n", &["--no-verify"]);
-    assert!(!args.verify, "--no-verify must win over committed verify=true");
+    assert!(
+        !args.verify,
+        "--no-verify must win over committed verify=true"
+    );
     assert!(
         args.no_verify,
         "the explicit negative CLI source must remain observable"
@@ -177,7 +180,10 @@ fn explicit_verify_overrides_committed_verify_false() {
 #[test]
 fn absent_verify_cli_uses_committed_value() {
     let args = args_for_config("verify = true\n");
-    assert!(args.verify, "committed verify=true applies when CLI is silent");
+    assert!(
+        args.verify,
+        "committed verify=true applies when CLI is silent"
+    );
     assert!(!args.no_verify);
 }
 

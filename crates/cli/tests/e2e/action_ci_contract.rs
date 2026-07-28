@@ -893,17 +893,11 @@ fn composite_action_manifest_keeps_composite_runs_shape() {
 /// defaults, leaving the nested mirror and auto+lockdown policy path unexecuted.
 #[test]
 fn hosted_action_e2e_splits_source_and_authenticated_release_modes() {
-    let workflow =
-        fs::read_to_string(action_e2e_workflow()).expect("read action-e2e workflow");
+    let workflow = fs::read_to_string(action_e2e_workflow()).expect("read action-e2e workflow");
     serde_yaml::from_str::<serde_yaml::Value>(&workflow)
         .expect("action-e2e workflow parses as YAML");
 
-    for runner in [
-        "ubuntu-24.04",
-        "windows-2025",
-        "macos-15-intel",
-        "macos-15",
-    ] {
+    for runner in ["ubuntu-24.04", "windows-2025", "macos-15-intel", "macos-15"] {
         assert!(
             workflow
                 .lines()
@@ -917,7 +911,9 @@ fn hosted_action_e2e_splits_source_and_authenticated_release_modes() {
         "hosted and provisioned source/release modes must invoke the root composite"
     );
     assert_eq!(
-        workflow.matches("        uses: ./.github/actions/keyhog\n").count(),
+        workflow
+            .matches("        uses: ./.github/actions/keyhog\n")
+            .count(),
         5,
         "hosted policy and provisioned lockdown modes must invoke the nested mirror"
     );
@@ -972,7 +968,9 @@ fn hosted_action_e2e_splits_source_and_authenticated_release_modes() {
         "portable source smoke must request CPU explicitly rather than silently treating auto as CPU"
     );
     let source_precision = workflow
-        .split("- name: Invoke nested composite with precision finding policy from branch/SHA source")
+        .split(
+            "- name: Invoke nested composite with precision finding policy from branch/SHA source",
+        )
         .nth(1)
         .and_then(|tail| tail.split("\n      - name:").next())
         .expect("source precision step exists");
@@ -994,7 +992,10 @@ fn hosted_action_e2e_splits_source_and_authenticated_release_modes() {
         "authenticated production binary smoke must prove default proof-backed backend:auto"
     );
     for (name, explicit_cpu) in [
-        ("Reject unsupported hosted CPU lockdown from branch/SHA source", true),
+        (
+            "Reject unsupported hosted CPU lockdown from branch/SHA source",
+            true,
+        ),
         (
             "Reject unsupported hosted auto lockdown from authenticated release asset",
             false,
@@ -1070,8 +1071,7 @@ fn hosted_action_e2e_splits_source_and_authenticated_release_modes() {
 /// dispatch uses proof-backed backend:auto.
 #[test]
 fn action_e2e_maintains_provisioned_positive_lockdown_lane() {
-    let workflow =
-        fs::read_to_string(action_e2e_workflow()).expect("read action-e2e workflow");
+    let workflow = fs::read_to_string(action_e2e_workflow()).expect("read action-e2e workflow");
     let job = workflow
         .split("  positive-lockdown:")
         .nth(1)
@@ -1148,8 +1148,7 @@ fn action_examples_and_hosted_release_default_follow_workspace_version() {
         })
         .expect("workspace package version");
 
-    let workflow =
-        fs::read_to_string(action_e2e_workflow()).expect("read action-e2e workflow");
+    let workflow = fs::read_to_string(action_e2e_workflow()).expect("read action-e2e workflow");
     assert!(
         workflow.contains(&format!("default: '{version}'"))
             && workflow.contains(&format!("inputs.version || '{version}'")),
@@ -1157,7 +1156,9 @@ fn action_examples_and_hosted_release_default_follow_workspace_version() {
     );
     let action = fs::read_to_string(action_manifest()).expect("read action manifest");
     assert!(
-        action.contains(&format!("Published final KeyHog version v{version} or newer")),
+        action.contains(&format!(
+            "Published final KeyHog version v{version} or newer"
+        )),
         "Action version example must follow workspace version {version}"
     );
 }
@@ -1379,8 +1380,14 @@ exit 1
     );
 
     let summary = summary_file(&dir);
-    assert!(summary.contains("| Findings | <code>2</code> |"), "summary={summary}");
-    assert!(summary.contains("| Exit code | <code>1</code> |"), "summary={summary}");
+    assert!(
+        summary.contains("| Findings | <code>2</code> |"),
+        "summary={summary}"
+    );
+    assert!(
+        summary.contains("| Exit code | <code>1</code> |"),
+        "summary={summary}"
+    );
     assert!(
         summary.contains("| Duration | <code>"),
         "summary must expose scan duration; summary={summary}"
@@ -1770,12 +1777,7 @@ fn action_real_cli_lockdown_auto_reuses_receipt_or_fails_closed() {
     );
 
     let scan = Command::new(&binary)
-        .args([
-            "scan",
-            "--no-verify",
-            "--lockdown",
-            "--autoroute-cache",
-        ])
+        .args(["scan", "--no-verify", "--lockdown", "--autoroute-cache"])
         .arg(&route_cache)
         .args(["--path", ".", "--format", "json", "--output"])
         .arg(&report)
@@ -2102,7 +2104,11 @@ printf '[]\n' > "$out"
             ("KEYHOG_TEST_TAMPER_REPORT_AFTER_RECEIPT", "true"),
         ],
     );
-    assert_eq!(output.status.code(), Some(3), "tampered report must fail closed");
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "tampered report must fail closed"
+    );
     assert!(
         combined_output(&output).contains("Could not verify scan report receipt"),
         "exact-byte verification failure must be operator-visible: {}",
@@ -2248,7 +2254,10 @@ fn action_refuses_symlink_report_output_before_invoking_scanner() {
         "symlink output must fail before scanning: {}",
         combined_output(&output)
     );
-    assert!(!invoked.exists(), "scanner must not run for a symlink report");
+    assert!(
+        !invoked.exists(),
+        "scanner must not run for a symlink report"
+    );
     assert_eq!(
         fs::read_to_string(victim).expect("read victim"),
         "unchanged",
@@ -2373,7 +2382,11 @@ exit 13
             ("KEYHOG_TEST_TAMPER_RECEIPT", "uppercase-sha"),
         ],
     );
-    assert_eq!(output.status.code(), Some(13), "raw partial exit is preserved");
+    assert_eq!(
+        output.status.code(),
+        Some(13),
+        "raw partial exit is preserved"
+    );
     let receipt = output_file(&dir);
     assert!(
         receipt.contains("findings=\n")
@@ -2422,7 +2435,11 @@ exit 130
     let runner_temp_value = runner_temp.to_string_lossy().into_owned();
     let output = run_action_with_script_args(
         &dir,
-        &["--autoroute-cache", route.as_str(), "--cleanup-autoroute-cache"],
+        &[
+            "--autoroute-cache",
+            route.as_str(),
+            "--cleanup-autoroute-cache",
+        ],
         &[("RUNNER_TEMP", runner_temp_value.as_str())],
     );
     assert_eq!(
@@ -3384,7 +3401,18 @@ fn composite_action_version_resolver_accepts_only_compatible_publishable_tags() 
         );
     }
 
-    for rejected in ["0.5.47", "0.5.48-rc.1", "0.5.49-rc.1", "0.5.48+build.7", "0.5.48-", "0.5", "00.5.48", "0.5.49-rc..1", "0.5.49-rc.", "main\nversion=owned"] {
+    for rejected in [
+        "0.5.47",
+        "0.5.48-rc.1",
+        "0.5.49-rc.1",
+        "0.5.48+build.7",
+        "0.5.48-",
+        "0.5",
+        "00.5.48",
+        "0.5.49-rc..1",
+        "0.5.49-rc.",
+        "main\nversion=owned",
+    ] {
         let dir = TempDir::new().expect("version output tempdir");
         let output_path = dir.path().join("github-output.txt");
         let output = run_manifest_bash_step(
@@ -3492,7 +3520,11 @@ fn composite_action_version_resolver_enforces_source_cpu_boundary() {
             ("GITHUB_OUTPUT", source_output.to_str().expect("output")),
         ],
     );
-    assert!(source.status.success(), "explicit source CPU: {}", combined_output(&source));
+    assert!(
+        source.status.success(),
+        "explicit source CPU: {}",
+        combined_output(&source)
+    );
     assert!(fs::read_to_string(source_output)
         .expect("source output")
         .contains("release_required=false"));
@@ -3544,9 +3576,12 @@ fn composite_action_pins_release_verifier_and_source_dependencies() {
     assert!(
         manifest.contains("- name: Install pinned release verifier")
             && manifest.contains("verifier_version=\"0.11\"")
-            && manifest.contains("f0a0954413df8531befed169e447a66da6868d79052ed7e892e50a4291af7ae0")
-            && manifest.contains("e7c410ae8b8960d7087392472b040bda9b2f307c76df0384ac37f9ad103fc893")
-            && manifest.contains("b9c31c2c3034f81f0e5f5d92cbcc20e67a9671b6e5455661588638848dc58031"),
+            && manifest
+                .contains("f0a0954413df8531befed169e447a66da6868d79052ed7e892e50a4291af7ae0")
+            && manifest
+                .contains("e7c410ae8b8960d7087392472b040bda9b2f307c76df0384ac37f9ad103fc893")
+            && manifest
+                .contains("b9c31c2c3034f81f0e5f5d92cbcc20e67a9671b6e5455661588638848dc58031"),
         "every supported runner must use an exact byte-authenticated minisign archive"
     );
     assert!(
@@ -3792,12 +3827,20 @@ fn composite_action_release_binary_ignores_all_predictable_preplants() {
         let metadata = fs::symlink_metadata(binary).expect("private binary metadata");
         assert!(metadata.file_type().is_file() && !metadata.file_type().is_symlink());
         let old = dir.path().join("runner-temp/keyhog");
-        let old_type = fs::symlink_metadata(&old).expect("old preplant").file_type();
+        let old_type = fs::symlink_metadata(&old)
+            .expect("old preplant")
+            .file_type();
         match kind {
             "symlink" => assert!(old_type.is_symlink()),
             "fifo" => assert!(old_type.is_fifo()),
-            "hardlink" => assert_eq!(fs::read_to_string(old).expect("hardlink"), "victim-unchanged"),
-            "regular" => assert_eq!(fs::read_to_string(old).expect("regular"), "preplanted-regular"),
+            "hardlink" => assert_eq!(
+                fs::read_to_string(old).expect("hardlink"),
+                "victim-unchanged"
+            ),
+            "regular" => assert_eq!(
+                fs::read_to_string(old).expect("regular"),
+                "preplanted-regular"
+            ),
             _ => unreachable!(),
         }
     }
@@ -3820,7 +3863,10 @@ fn composite_action_lockdown_authenticates_bundle_without_creating_disk_cache() 
         .lines()
         .find_map(|line| line.strip_prefix("binary-path="))
         .expect("private binary output");
-    assert!(Path::new(binary_path).is_file(), "authenticated release binary must be private");
+    assert!(
+        Path::new(binary_path).is_file(),
+        "authenticated release binary must be private"
+    );
     assert!(
         !runtime.join("cache/xdg/keyhog").exists(),
         "invocation-private GPU cache must remain unseeded so CLI lockdown can apply"
@@ -3836,7 +3882,16 @@ fn composite_action_release_bundle_proofs_fail_closed() {
     for (checksum_exit, signature_exit, expected) in
         [("1", "0", "checksum"), ("0", "1", "signature")]
     {
-        let (_dir, output) = run_release_download_harness("literal.bin", "-", "bin", checksum_exit, signature_exit, false, false, None);
+        let (_dir, output) = run_release_download_harness(
+            "literal.bin",
+            "-",
+            "bin",
+            checksum_exit,
+            signature_exit,
+            false,
+            false,
+            None,
+        );
         assert!(
             !output.status.success(),
             "invalid {expected} must stop release installation"
@@ -3875,8 +3930,16 @@ fn composite_action_rejects_links_special_entries_and_empty_matcher_sets() {
         ("p", "bin", "unsupported entry type"),
         ("-", "txt", "no matcher artifacts"),
     ] {
-        let (_dir, output) =
-            run_release_download_harness("literal.bin", kind, extension, "0", "0", false, false, None);
+        let (_dir, output) = run_release_download_harness(
+            "literal.bin",
+            kind,
+            extension,
+            "0",
+            "0",
+            false,
+            false,
+            None,
+        );
         let combined = combined_output(&output);
         assert_eq!(
             output.status.code(),
@@ -4240,14 +4303,17 @@ done
             ("PATH", path.as_str()),
         ],
     );
-    assert_eq!(output.status.code(), Some(3), "missing route must fail closed");
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "missing route must fail closed"
+    );
     assert!(
         combined_output(&output).contains("did not publish a trusted routing receipt"),
         "missing route must explain that auto requires a bound decision: {}",
         combined_output(&output)
     );
 }
-
 
 /// Regression: lockdown autoroute must remove stale global state, calibrate
 /// exactly once without verification, and publish only a fresh ephemeral receipt.
@@ -5719,7 +5785,15 @@ printf '[]\n' > "$out"
     );
     std::os::unix::fs::symlink("/bin/bash", dir.path().join("bash"))
         .expect("provide only Bash beside KeyHog");
-    for tool in ["sha256sum", "wc", "rm", "mktemp", "cat", "chmod", "basename"] {
+    for tool in [
+        "sha256sum",
+        "wc",
+        "rm",
+        "mktemp",
+        "cat",
+        "chmod",
+        "basename",
+    ] {
         std::os::unix::fs::symlink(format!("/usr/bin/{tool}"), dir.path().join(tool))
             .unwrap_or_else(|error| panic!("provide {tool} in minimal PATH: {error}"));
     }
@@ -5833,8 +5907,16 @@ fn action_cleans_autoroute_receipt_on_early_validation_failure() {
             .env("RUNNER_TEMP", &runner_temp)
             .output()
             .expect("run invalid wrapper");
-        assert_eq!(output.status.code(), Some(2), "{kind}: {}", combined_output(&output));
-        assert!(!route.exists() && !lock.exists(), "{kind} cleanup must remove route + lock");
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "{kind}: {}",
+            combined_output(&output)
+        );
+        assert!(
+            !route.exists() && !lock.exists(),
+            "{kind} cleanup must remove route + lock"
+        );
         assert_eq!(
             fs::read_to_string(victim).expect("victim"),
             "victim-unchanged",
@@ -5906,10 +5988,17 @@ fn composite_action_category_registry_rejects_symlink_and_duplicate() {
     ];
     let redirected = run_manifest_bash_step("Compute output filename", &envs);
     assert_eq!(redirected.status.code(), Some(2));
-    assert!(fs::read_dir(&victim).expect("victim entries").next().is_none());
+    assert!(fs::read_dir(&victim)
+        .expect("victim entries")
+        .next()
+        .is_none());
     fs::remove_file(categories.join("7-1-job")).expect("remove symlink");
     let first = run_manifest_bash_step("Compute output filename", &envs);
-    assert!(first.status.success(), "first category claim: {}", combined_output(&first));
+    assert!(
+        first.status.success(),
+        "first category claim: {}",
+        combined_output(&first)
+    );
     let duplicate = run_manifest_bash_step("Compute output filename", &envs);
     assert_eq!(duplicate.status.code(), Some(2));
     assert!(combined_output(&duplicate).contains("Conflicting analysis-category"));
@@ -5978,7 +6067,11 @@ chmod +x "$dest/minisign-linux/x86_64/minisign"
                 ("GITHUB_OUTPUT", github_output.to_str().expect("output")),
             ],
         );
-        assert!(output.status.success(), "{kind}: {}", combined_output(&output));
+        assert!(
+            output.status.success(),
+            "{kind}: {}",
+            combined_output(&output)
+        );
         assert_eq!(
             fs::read_to_string(dir.path().join("verifier-victim")).expect("victim"),
             "victim-unchanged"
@@ -6032,7 +6125,11 @@ chmod +x target/release/keyhog
                 ("GITHUB_OUTPUT", github_output.to_str().expect("output")),
             ],
         );
-        assert!(output.status.success(), "{kind}: {}", combined_output(&output));
+        assert!(
+            output.status.success(),
+            "{kind}: {}",
+            combined_output(&output)
+        );
         assert_eq!(
             fs::read_to_string(dir.path().join("source-victim")).expect("victim"),
             "victim-unchanged"

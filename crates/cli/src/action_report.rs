@@ -16,11 +16,24 @@ pub(crate) fn validate_scan_paths(args: &ScanArgs) -> Result<()> {
     let Some(receipt) = args.action_receipt.as_ref() else {
         return Ok(());
     };
-    let report = args.output.as_ref().context("--action-receipt requires --output")?;
+    let report = args
+        .output
+        .as_ref()
+        .context("--action-receipt requires --output")?;
     match fs::symlink_metadata(receipt) {
-        Ok(_) => bail!("Action receipt destination must be absent before scan: {}", receipt.display()),
+        Ok(_) => bail!(
+            "Action receipt destination must be absent before scan: {}",
+            receipt.display()
+        ),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error).with_context(|| format!("inspecting Action receipt destination {}", receipt.display())),
+        Err(error) => {
+            return Err(error).with_context(|| {
+                format!(
+                    "inspecting Action receipt destination {}",
+                    receipt.display()
+                )
+            })
+        }
     }
     if canonical_destination(report)? == canonical_destination(receipt)? {
         bail!("Action report and receipt paths must be distinct");
@@ -37,7 +50,10 @@ pub(crate) fn write_scan_receipt(
     let Some(receipt_path) = args.action_receipt.as_ref() else {
         return Ok(());
     };
-    let report_path = args.output.as_ref().context("--action-receipt requires --output")?;
+    let report_path = args
+        .output
+        .as_ref()
+        .context("--action-receipt requires --output")?;
     let format = action_format(&args.format)
         .context("--action-receipt supports only sarif, json, jsonl, or text reports")?;
     validate_semantics(findings, exit_code, status_token(status))?;
@@ -46,8 +62,12 @@ pub(crate) fn write_scan_receipt(
         "schema={SCHEMA}\nformat={format}\nfindings={findings}\nreport-bytes={report_bytes}\nreport-sha256={report_sha256}\nscan-status={}\nexit-code={exit_code}\n",
         status_token(status)
     );
-    write_receipt_noclobber(receipt_path, body.as_bytes())
-        .with_context(|| format!("atomically creating Action receipt {}", receipt_path.display()))
+    write_receipt_noclobber(receipt_path, body.as_bytes()).with_context(|| {
+        format!(
+            "atomically creating Action receipt {}",
+            receipt_path.display()
+        )
+    })
 }
 
 pub(crate) fn verify(args: ActionReportVerifyArgs) -> Result<ExitCode> {
@@ -58,7 +78,9 @@ pub(crate) fn verify(args: ActionReportVerifyArgs) -> Result<ExitCode> {
         bail!("Action receipt length {receipt_len} is outside 1..={MAX_RECEIPT_BYTES} bytes");
     }
     let mut body = String::with_capacity(receipt_len as usize);
-    receipt.read_to_string(&mut body).context("Action receipt must be strict UTF-8 text")?;
+    receipt
+        .read_to_string(&mut body)
+        .context("Action receipt must be strict UTF-8 text")?;
     if !body.is_ascii() {
         bail!("Action receipt must contain ASCII only");
     }
@@ -77,10 +99,16 @@ pub(crate) fn verify(args: ActionReportVerifyArgs) -> Result<ExitCode> {
         bail!("unsupported Action receipt schema {schema:?}");
     }
     if format != args.format.to_string() {
-        bail!("Action receipt format {format:?} contradicts requested {}", args.format);
+        bail!(
+            "Action receipt format {format:?} contradicts requested {}",
+            args.format
+        );
     }
     if receipt_exit != usize::from(args.exit_code) {
-        bail!("Action receipt exit {receipt_exit} contradicts scanner exit {}", args.exit_code);
+        bail!(
+            "Action receipt exit {receipt_exit} contradicts scanner exit {}",
+            args.exit_code
+        );
     }
     if expected_sha.len() != 64
         || !expected_sha
@@ -115,7 +143,9 @@ fn parse_decimal(value: &str, name: &str) -> Result<usize> {
     if value.len() > 1 && value.starts_with('0') {
         bail!("Action receipt field {name} must not contain leading zeroes");
     }
-    value.parse().with_context(|| format!("Action receipt field {name} overflows"))
+    value
+        .parse()
+        .with_context(|| format!("Action receipt field {name} overflows"))
 }
 
 fn validate_semantics(findings: usize, exit_code: u8, status: &str) -> Result<()> {
@@ -177,17 +207,28 @@ fn open_regular(path: &Path) -> Result<File> {
         const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
         options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
     }
-    let file = options.open(path).with_context(|| format!("opening Action file {}", path.display()))?;
+    let file = options
+        .open(path)
+        .with_context(|| format!("opening Action file {}", path.display()))?;
     if !file.metadata()?.file_type().is_file() {
-        bail!("Action file must be a regular, non-symlink file: {}", path.display());
+        bail!(
+            "Action file must be a regular, non-symlink file: {}",
+            path.display()
+        );
     }
     Ok(file)
 }
 
 fn canonical_destination(path: &Path) -> Result<std::path::PathBuf> {
-    let absolute = if path.is_absolute() { path.to_path_buf() } else { std::env::current_dir()?.join(path) };
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
     let parent = absolute.parent().context("Action path has no parent")?;
-    let name = absolute.file_name().context("Action path has no file name")?;
+    let name = absolute
+        .file_name()
+        .context("Action path has no file name")?;
     Ok(parent
         .canonicalize()
         .with_context(|| format!("canonicalizing Action path parent {}", parent.display()))?
@@ -219,8 +260,12 @@ fn digest_regular(path: &Path) -> Result<(u64, String)> {
     let mut buffer = [0u8; 128 * 1024];
     loop {
         let read = file.read(&mut buffer)?;
-        if read == 0 { break; }
-        bytes = bytes.checked_add(read as u64).context("Action report length overflow")?;
+        if read == 0 {
+            break;
+        }
+        bytes = bytes
+            .checked_add(read as u64)
+            .context("Action report length overflow")?;
         hasher.update(&buffer[..read]);
     }
     Ok((bytes, keyhog_core::hex_encode(hasher.finalize())))

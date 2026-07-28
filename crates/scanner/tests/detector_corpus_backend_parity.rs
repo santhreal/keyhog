@@ -61,11 +61,7 @@ fn unicode_rule_detector(id: &str, regex: &str, group: usize) -> DetectorSpec {
 fn unicode_regex_semantics_are_backend_invariant() {
     let scanner = CompiledScanner::compile(vec![
         unicode_rule_detector("unicode-digit", r"(?-i)udigit(\d{2})END", 1),
-        unicode_rule_detector(
-            "unicode-casefold",
-            r"(?i)casekey:([A-F0-9]{16})",
-            1,
-        ),
+        unicode_rule_detector("unicode-casefold", r"(?i)casekey:([A-F0-9]{16})", 1),
         unicode_rule_detector("unicode-codepoint", r"(?-i)multi.([A-F0-9]{16})", 1),
     ])
     .expect("Unicode parity scanner compiles");
