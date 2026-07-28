@@ -1216,15 +1216,10 @@ fn root_and_nested_action_entrypoints_differ_only_by_relative_paths() {
         fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../action.yml"))
             .expect("read root action.yml");
     let nested = fs::read_to_string(action_manifest()).expect("read nested action.yml");
-    let normalized_root = root
-        .replace(
-            "ACTION_SOURCE_ROOT: ${{ github.action_path }}",
-            "ACTION_SOURCE_ROOT: ${{ github.action_path }}/../../..",
-        )
-        .replace(
-            "${{ github.action_path }}/.github/actions/keyhog/run-scan.sh",
-            "${{ github.action_path }}/run-scan.sh",
-        );
+    let normalized_root = root.replace(
+        "ACTION_SOURCE_ROOT: ${{ github.action_path }}",
+        "ACTION_SOURCE_ROOT: ${{ github.action_path }}/../../..",
+    );
     assert_eq!(
         normalized_root, nested,
         "both published action entrypoints must execute one behavior"
@@ -3406,6 +3401,11 @@ fn composite_action_version_output_is_validated_before_github_output() {
         "version resolver must expose whether source-build fallback is allowed"
     );
     assert!(
+        manifest
+            .contains("printf 'source-root=%s\\n' \"$ACTION_SOURCE_ROOT\" >> \"$GITHUB_OUTPUT\""),
+        "version resolver must carry its verified source root into later steps"
+    );
+    assert!(
         manifest.contains("ACTION_RELEASE_REQUIRED: ${{ steps.version.outputs.release_required }}"),
         "download step must receive the release-required decision through env"
     );
@@ -3419,6 +3419,10 @@ fn composite_action_version_output_is_validated_before_github_output() {
 /// noncanonical SemVer spellings that could resolve ambiguous release assets.
 #[test]
 fn composite_action_version_resolver_accepts_only_compatible_publishable_tags() {
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("repo root");
     for (input, expected) in [
         ("0.5.48", "0.5.48"),
         ("v0.5.48", "0.5.48"),
@@ -3444,7 +3448,10 @@ fn composite_action_version_resolver_accepts_only_compatible_publishable_tags() 
         let resolved = fs::read_to_string(output_path).expect("read version output");
         assert_eq!(
             resolved,
-            format!("version={expected}\nrelease_required=true\n")
+            format!(
+                "version={expected}\nrelease_required=true\nsource-root={}\n",
+                repo.display()
+            )
         );
     }
 
@@ -3524,8 +3531,9 @@ fn composite_action_floating_major_ref_resolves_exact_signed_release() {
     assert_eq!(
         fs::read_to_string(output_path).expect("read version output"),
         format!(
-            "version={}\nrelease_required=true\n",
-            env!("CARGO_PKG_VERSION")
+            "version={}\nrelease_required=true\nsource-root={}\n",
+            env!("CARGO_PKG_VERSION"),
+            repo.display()
         )
     );
 }
@@ -5080,6 +5088,31 @@ exit 0
     );
 }
 
+/// Container jobs expose a host-only `github.action_path`, so the scan step must
+/// consume the source root already resolved against the mounted workspace.
+#[test]
+fn composite_action_carries_resolved_source_root_into_scan_step() {
+    for manifest in [
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../action.yml"),
+        action_manifest(),
+    ] {
+        let action = fs::read_to_string(&manifest).expect("read action manifest");
+        assert!(
+            action.contains(
+                "printf 'source-root=%s\\n' \"$ACTION_SOURCE_ROOT\" >> \"$GITHUB_OUTPUT\""
+            ) && action.contains("ACTION_SOURCE_ROOT: ${{ steps.version.outputs.source-root }}",)
+                && action
+                    .contains("bash \"$ACTION_SOURCE_ROOT/.github/actions/keyhog/run-scan.sh\"",)
+                && !action.contains(
+                    "bash \"${{ github.action_path }}/.github/actions/keyhog/run-scan.sh\"",
+                )
+                && !action.contains("bash \"${{ github.action_path }}/run-scan.sh\""),
+            "{} must carry the verified source root across composite steps",
+            manifest.display()
+        );
+    }
+}
+
 #[test]
 fn keyhog_workflow_dogfoods_local_composite_action() {
     let workflow = fs::read_to_string(keyhog_workflow()).expect("read keyhog.yml");
@@ -5097,7 +5130,7 @@ fn keyhog_workflow_dogfoods_local_composite_action() {
     assert!(
         root_action.contains("continue-on-error: true")
             && root_action
-                .contains("bash \"${{ github.action_path }}/.github/actions/keyhog/run-scan.sh\"",)
+                .contains("bash \"$ACTION_SOURCE_ROOT/.github/actions/keyhog/run-scan.sh\"",)
             && root_action.contains("steps.scan.outputs.runner-exit-code != '0'"),
         "the root action must upload reports before restoring the standalone runner status"
     );

@@ -248,6 +248,7 @@ runs:
         fi
         printf 'version=%s\n' "$v" >> "$GITHUB_OUTPUT"
         printf 'release_required=%s\n' "$release_required" >> "$GITHUB_OUTPUT"
+        printf 'source-root=%s\n' "$ACTION_SOURCE_ROOT" >> "$GITHUB_OUTPUT"
         printf 'Resolved keyhog version: %s\n' "$v"
         printf 'Release asset required: %s\n' "$release_required"
 
@@ -737,6 +738,7 @@ runs:
       # its report before the receipt-driven final findings gate runs.
       continue-on-error: true
       env:
+        ACTION_SOURCE_ROOT: ${{ steps.version.outputs.source-root }}
         ACTION_SCAN_PATH: ${{ inputs.path }}
         ACTION_SEVERITY: ${{ inputs.severity }}
         ACTION_FORMAT: ${{ inputs.format }}
@@ -816,7 +818,7 @@ runs:
           args+=(--cleanup-autoroute-cache)
         fi
         set +e
-        bash "${{ github.action_path }}/.github/actions/keyhog/run-scan.sh" "${args[@]}"
+        bash "$ACTION_SOURCE_ROOT/.github/actions/keyhog/run-scan.sh" "${args[@]}"
         runner_exit=$?
         set -e
         printf 'runner-exit-code=%s\n' "$runner_exit" >> "$GITHUB_OUTPUT"
