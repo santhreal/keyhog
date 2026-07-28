@@ -70,6 +70,8 @@ fn cli_definition_is_internally_consistent() {
     Cli::command().debug_assert();
 }
 
+/// Public CLI docs cover visible commands and flags while hidden Action-only
+/// receipt verification remains an internal integration boundary.
 #[test]
 fn every_visible_long_flag_is_in_the_cli_reference() {
     let docs = fs::read_to_string(
@@ -87,12 +89,17 @@ fn every_visible_long_flag_is_in_the_cli_reference() {
                 .filter(|long| !docs.contains(&format!("--{long}")))
                 .map(|long| format!("{path} --{long}")),
         );
-        pending.extend(command.get_subcommands().map(|subcommand| {
-            (
-                format!("{path} {}", subcommand.get_name()),
-                subcommand.clone(),
-            )
-        }));
+        pending.extend(
+            command
+                .get_subcommands()
+                .filter(|subcommand| !subcommand.is_hide_set())
+                .map(|subcommand| {
+                    (
+                        format!("{path} {}", subcommand.get_name()),
+                        subcommand.clone(),
+                    )
+                }),
+        );
     }
     missing.sort();
     assert!(
