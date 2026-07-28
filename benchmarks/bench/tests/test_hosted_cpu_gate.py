@@ -565,7 +565,7 @@ def test_capture_rejects_unknown_cgroup_quota_before_snapshotting(
 
     with pytest.raises(
         hosted_gate.HostedCpuInputError,
-        match="neither the exact finite allocation nor documented unbounded",
+        match="neither the exact finite allocation nor documented unbounded: observed='unknown'",
     ):
         hosted_gate.capture_context(
             policy_path,

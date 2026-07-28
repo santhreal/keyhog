@@ -213,7 +213,7 @@ def _host_cpu_allocation_violations(
     ):
         violations.append(
             "host cgroup quota is neither the exact finite allocation nor "
-            "documented unbounded"
+            f"documented unbounded: observed={quota!r}"
         )
     return violations
 

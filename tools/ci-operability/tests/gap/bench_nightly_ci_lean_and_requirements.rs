@@ -179,6 +179,16 @@ fn differential_bench_is_cpu_truthful_canonical_and_fail_closed() {
             && text.contains("dpkg-query -W -f='${Version}' libboost-dev"),
         "differential-bench must pin and verify Kingfisher's native Boost dependency"
     );
+    let context = text
+        .find("name: capture current low-core hosted CPU context")
+        .expect("differential-bench must capture hosted CPU context");
+    let competitors = text
+        .find("name: install required competitors")
+        .expect("differential-bench must install required competitors");
+    assert!(
+        context < competitors,
+        "differential-bench must reject a mismatched host before the expensive competitor build"
+    );
     assert!(
         text.contains("--no-default-features --features ci-lean"),
         "differential-bench must explicitly compile the CPU-only ci-lean scanner"
