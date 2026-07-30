@@ -10,9 +10,13 @@ on:
       - 'scripts/bump_doc_versions.py'
       - 'scripts/release_notes.py'
       - 'scripts/prerelease.sh'
+      - 'scripts/release.py'
+      - 'scripts/star_history.py'
       - 'scripts/tests/test_prepare_release.py'
       - 'scripts/tests/test_bump_doc_versions.py'
       - 'scripts/tests/test_release_notes.py'
+      - 'scripts/tests/test_release_orchestrator.py'
+      - 'scripts/tests/test_star_history.py'
       - '.github/workflows/release-ready.yml'
   workflow_dispatch:
 
@@ -36,7 +40,12 @@ jobs:
           python3 -B -m unittest \
             scripts.tests.test_prepare_release \
             scripts.tests.test_bump_doc_versions \
-            scripts.tests.test_release_notes
+            scripts.tests.test_release_notes \
+            scripts.tests.test_release_orchestrator \
+            scripts.tests.test_star_history
+
+      - name: Verify repository star viewer
+        run: python3 -B scripts/star_history.py --check
 
       - name: Validate pending release without mutation
         shell: bash

@@ -11,6 +11,7 @@
 #                                      # gate a signed release bundle
 #   scripts/prerelease.sh --bump X.Y.Z  # bump the candidate, then gate it
 #   scripts/prerelease.sh --skip-rust   # skip the slow per-crate cargo gates
+#   scripts/prerelease.sh --pre-tag     # prove all pre-publication source gates
 #
 # Knobs: CARGO_TARGET_DIR, PROFILE, SKIP_RUST, KEYHOG_RELEASE_CANDIDATE.
 #
@@ -28,6 +29,7 @@ cd "$REPO" || exit 1
 BUMP=""
 RELEASE_CANDIDATE="${KEYHOG_RELEASE_CANDIDATE:-}"
 SKIP_RUST="${SKIP_RUST:-0}"
+PRE_TAG=0
 PROFILE="${PROFILE:-release-fast}"
 : "${CARGO_TARGET_DIR:=/mnt/FlareTraining/santh-archive/cargo-target}"
 export CARGO_TARGET_DIR
@@ -39,6 +41,7 @@ while [ $# -gt 0 ]; do
     --release-candidate) RELEASE_CANDIDATE="${2:?--release-candidate needs PATH}"; shift ;;
     --release-candidate=*) RELEASE_CANDIDATE="${1#--release-candidate=}" ;;
     --skip-rust) SKIP_RUST=1 ;;
+    --pre-tag) PRE_TAG=1 ;;
     -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -280,6 +283,10 @@ fi
 # ── 4. shipped install-flow gate ─────────────────────────────────────────────
 # The release bundle must already contain the signed binary and GPU literal
 # sidecar that operators receive. Source builds cannot satisfy this gate.
+if [ "$PRE_TAG" = "1" ]; then
+  step "install smoke: owned by immutable release workflow candidate"
+  echo "  PRE-TAG mode proves source, benchmark, coherence, and Rust gates only"
+else
 step "install smoke: signed release bundle + installer + product workflow"
 SMOKE="$(mktemp -d)"
 if release_candidate_bundle_present "$RELEASE_CANDIDATE"; then
@@ -316,13 +323,19 @@ else
   FAILED+=("signed release bundle")
 fi
 rm -rf "$SMOKE"
+fi
 
 # ── 5. verdict ───────────────────────────────────────────────────────────────
 step "verdict"
 if [ "$fail" = "0" ]; then
-  echo "  PRERELEASE OK${BUMP:+, bumped to $BUMP}"
-  echo "  Next (human): review git diff, commit, tag v${BUMP:-$CUR}, push;"
-  echo "  watch lanes: ci · bench-nightly · differential-bench · runners-nightly"
+  if [ "$PRE_TAG" = "1" ]; then
+    echo "  PRE-TAG OK"
+    echo "  Next: push the reviewed commit and its annotated signed v${BUMP:-$CUR} tag"
+  else
+    echo "  PRERELEASE OK${BUMP:+, bumped to $BUMP}"
+    echo "  Next (human): review git diff, commit, tag v${BUMP:-$CUR}, push;"
+  fi
+  echo "  watch lanes: ci · release · docs · crates"
 else
   echo "  PRERELEASE BLOCKED: ${#FAILED[@]} gate(s) failed: ${FAILED[*]}"
 fi

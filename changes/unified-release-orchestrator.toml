@@ -1,0 +1,3 @@
+category = "Added"
+summary = "A single resumable command now refreshes benchmark evidence, prepares every changelog and version surface, runs pre-tag gates locally or over SSH, pushes one signed tag, and watches GitHub Pages, release assets, containers, and the five-crate crates.io publication chain."
+crates = ["cli", "core", "scanner", "sources", "verifier"]

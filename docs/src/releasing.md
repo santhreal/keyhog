@@ -1,11 +1,34 @@
 # Prepare and publish a release
 
-You prepare one release from small change fragments. The preparer updates the
-workspace version, exact internal dependency pins, lockfile packages, public
-version examples, root changelog, and five crate changelogs as one validated
-transaction.
+You can preview or publish a complete KeyHog release with one script. The script
+runs locally by default. You can point the same command at a prepared SSH host
+when benchmark hardware, signing keys, or build caches live elsewhere.
 
-For example, add `changes/action-receipts.toml`:
+Preview the next release locally:
+
+```sh
+NEXT_VERSION=X.Y.Z
+python3 -B scripts/release.py "$NEXT_VERSION"
+```
+
+The preview is read-only. It verifies the clean `main` checkout, generated star
+chart, change fragments, version transition, lockfile packages, public version
+pins, and release-note structure. It then prints every publication phase.
+
+Publish only after you review that preview:
+
+```sh
+python3 -B scripts/release.py "$NEXT_VERSION" --publish
+```
+
+`--publish` is the explicit irreversible boundary. It permits commits, pushes,
+a signed tag, GitHub release publication, container publication, Pages
+deployment, and the serial crates.io publisher.
+
+## Write the release notes first
+
+Create one `.toml` file under `changes/` for each operator-visible change. Use a
+lowercase, hyphenated file name:
 
 ```toml
 category = "Fixed"
@@ -13,22 +36,7 @@ summary = "Preserve the receipt-bound report when a workspace path changes."
 crates = ["cli"]
 ```
 
-Then preview the next release:
-
-```sh
-NEXT_VERSION=X.Y.Z
-make release-check VERSION="$NEXT_VERSION"
-```
-
-The preview is read-only. It validates every fragment and computes every file
-that the release would change. It rejects an empty release, a stale version,
-unknown fields, duplicate summaries, unknown crate ownership, missing lockfile
-packages, and stale public version pins.
-
-## Write a change fragment
-
-Create one `.toml` file under `changes/` for each operator-visible change. Use a
-lowercase, hyphenated file name. The file has three fields:
+Each fragment has three fields:
 
 | Field | Value |
 |---|---|
@@ -36,96 +44,157 @@ lowercase, hyphenated file name. The file has three fields:
 | `summary` | One concrete, single-line statement without a Markdown bullet prefix |
 | `crates` | One or more owners: `cli`, `core`, `scanner`, `sources`, or `verifier` |
 
-List every crate whose published behavior or API changed. The root release
-notes contain every fragment. Each crate changelog receives only the fragments
-that name that crate.
+Commit the fragments before you run the release command. The root release notes
+contain every fragment. Each crate changelog receives only the fragments that
+name that crate.
 
-The release chain publishes all five crates with exact internal pins. The
-complete fragment set must therefore name every crate at least once. Add one
-release-chain fragment when a crate changes only because its exact dependencies
-or publication identity move with the other packages. The preparer rejects an
-empty crate changelog instead of inventing a placeholder note.
+The release chain publishes all five crates with exact internal dependency pins.
+The complete fragment set must therefore name every crate at least once. Add a
+release-chain fragment when a crate changes only because its exact dependency
+or publication identity moves with the other packages. Empty and placeholder
+crate changelogs fail closed.
 
-Use a summary that explains the result to an operator. Do not describe file
-moves, test counts, or implementation mechanics unless those facts change the
-published contract.
+## Run on an SSH host
 
-## Preview the release transaction
-
-Run the preview before you apply it:
+Pass one SSH target and one absolute repository path:
 
 ```sh
-make release-check VERSION="$NEXT_VERSION" DATE=2026-07-28
+python3 -B scripts/release.py "$NEXT_VERSION" \
+  --ssh release-builder@example.com \
+  --remote-dir /srv/keyhog \
+  --publish
 ```
 
-`DATE` is optional and defaults to the current UTC date. The command runs the
-release automation regression suites and validates the complete transformation
-without writing files. GitHub also runs the same read-only transaction each day
-and whenever release automation or a change fragment changes. If there are no
-fragments, the scheduled job reports that there is no pending candidate.
+The local script opens one foreground SSH process, enters the requested remote
+directory, and executes the same checked-in `scripts/release.py`. It forwards
+the version, date, publication, benchmark, Rust, resume, and watch choices. It
+does not copy the repository, signing key, or credentials.
 
-The preview never invents a version. You choose the next Semantic Versioning
-number. The preparer accepts stable `MAJOR.MINOR.PATCH` versions and requires the
-new version to be greater than the workspace version.
+Use `--ssh-port 2222` for a non-default port. Use
+`--identity-file /path/to/key` when SSH does not select the correct identity.
+The SSH target accepts only a host or `user@host`. It does not accept an
+arbitrary shell command. The remote directory must be absolute. These
+restrictions keep user input from becoming shell syntax.
 
-## Apply and review the candidate
+Prepare the remote host before you publish. It needs:
 
-Apply the exact transaction you previewed:
+- a clean `main` checkout whose `origin` is `https://github.com/santhreal/keyhog.git`
+- the benchmark corpora and required competitor binaries
+- Rust, Python, mdBook, Hyperscan, GPU dependencies, `gh`, and GPG
+- the authorized GitHub account with stable actor ID `64453045`
+- the authorized OpenPGP release secret key configured as `user.signingkey`
+- the persistent Cargo target directory used by the host
+
+The crates.io token remains in GitHub Actions. The local or SSH host never needs
+to read it.
+
+## What the command runs
+
+The publishing command owns five ordered phases.
+
+### 1. Refresh measured evidence
+
+The script builds one `release-fast` KeyHog candidate. It regenerates the mirror
+corpus results, canonical competitor comparison, leaderboard, CPU and GPU
+matrix, cache and daemon measurements, hardware scaling tables, README panels,
+and the repository-owned star chart. It runs the report freshness gate and
+commits only `README.md`, `benchmarks/reports/`, and the generated star SVG.
+Unexpected source or configuration changes stop the release before staging.
+
+Benchmark generation is fail-closed. A missing competitor, corpus, accelerator,
+or output contract is a failed release prerequisite. The script does not invent
+a fallback result. Because generation writes reports while later panels are
+still being measured, the snapshot truthfully records a developer-dirty source
+classification. Executable and detector digests remain bound in the evidence.
+
+### 2. Prepare changelogs and versions
+
+The script applies the deterministic release transaction. It updates:
+
+- the workspace version and four exact internal dependency pins
+- the five KeyHog packages in `Cargo.lock`
+- canonical Action, installer, CLI, and documentation version examples
+- the root changelog and GitHub release-note section
+- all five crate changelogs
+
+It preserves historical benchmark versions. It consumes the committed change
+fragments and commits only the paths owned by this transaction.
+
+### 3. Prove the pre-tag candidate
+
+The script runs `scripts/prerelease.sh --pre-tag`. This mode builds the candidate
+and runs benchmark, differential, GPU crossover, coherence, package, and Rust
+gates. It then runs the complete mdBook build, link validation, Pages metadata
+generation, star-viewer check, and source prevention suite.
+
+The signed-bundle install smoke cannot exist before the signed tag. The
+immutable GitHub release workflow owns that proof. It downloads the staged
+candidate, verifies signatures and checksums, installs it, runs `doctor`, scans
+a planted credential, checks secret redaction, and uninstalls it before public
+release publication.
+
+### 4. Push one signed source identity
+
+The script pushes `main`, creates one annotated OpenPGP-signed tag, and pushes
+that exact tag. A star-history commit that races the push is rebased only when
+the remote change touches `metrics/stars.json` or `metrics/stars.svg`. Any other
+remote change stops publication for review.
+
+The signed tag triggers tag-specific CI and `.github/workflows/release.yml`.
+That workflow binds the successful CI verdict to the exact tag commit, builds
+platform assets, signs payloads, generates SBOMs and attestations, publishes the
+container, exercises the installed product, publishes the GitHub release, calls
+the serial crates.io publisher, and moves the floating Action major tag only
+after publication succeeds.
+
+### 5. Watch every publication lane
+
+The command waits for the exact release workflow and Pages workflow associated
+with the release commit. It exits nonzero if either workflow fails. A successful
+release workflow includes all five crates.io publication jobs. The final check
+requires a public, non-draft, non-prerelease GitHub release with the exact tag.
+
+Use `--no-watch` only when another operator will watch the exact runs. It does
+not change publication behavior.
+
+## Resume an interrupted release
+
+Use the same command with `--resume`:
 
 ```sh
-make release-prepare VERSION="$NEXT_VERSION" DATE=2026-07-28
+python3 -B scripts/release.py "$NEXT_VERSION" --publish --resume
 ```
 
-The command writes all validated outputs and consumes the fragment files. It
-preserves generated benchmark evidence, including measurements from older
-KeyHog versions. Review the resulting diff. In particular, check the release
-notes, crate ownership, public version examples, and release date.
+Resume accepts either clean local release commits ahead of `origin/main`, an
+already prepared workspace version, a local signed tag that still needs to be
+pushed, or the exact remote annotated tag. It verifies that every existing tag
+resolves to the current release commit. It never moves or replaces a release
+tag.
 
-Run the local prerelease gate against the signed candidate bundle when you have
-one:
+If benchmark evidence was already committed before an interruption, add
+`--skip-benchmarks` to retain that checked evidence:
 
 ```sh
-scripts/prerelease.sh \
-  --release-candidate /path/to/keyhog-linux-x86_64
+python3 -B scripts/release.py "$NEXT_VERSION" \
+  --publish --resume --skip-benchmarks
 ```
 
-The gate builds the candidate, checks benchmark and documentation coherence,
-runs the release test lanes, installs the signed bundle, scans a planted
-credential, and uninstalls it. A source binary is not a substitute for the
-signed release bundle.
+`--skip-benchmarks` and `--skip-rust` are diagnostic recovery overrides. They
+are not the normal release path. The command records them in terminal output,
+and the GitHub release still requires its complete immutable CI and publication
+contracts.
 
-## Publish from one signed tag
+## Run individual preparation commands
 
-Commit the reviewed candidate on `main`. Create an annotated, signed tag for the
-same commit, then push that tag. The tag name is the prepared version with a `v`
-prefix, such as `v<next-version>`.
-
-The release workflow performs publication from that immutable tag. It requires
-the exact successful CI verdict, builds and signs platform assets, generates
-SBOMs and attestations, exercises the installed product, publishes the GitHub
-release and container image, publishes the crate chain, and moves maintained
-Action tags only after the required proofs pass.
-
-A maintainer signs the tag. Automation does not manufacture or bypass this
-approval. Manual workflow recovery must run from the same signed tag and passes
-the same identity checks.
-
-## Update documentation
-
-Run the complete documentation command when public behavior or guidance
-changes:
+The lower-level commands remain available for investigation:
 
 ```sh
+make release-check VERSION="$NEXT_VERSION"
+make release-prepare VERSION="$NEXT_VERSION"
+scripts/prerelease.sh --pre-tag
 make docs-build
 ```
 
-This command validates generated README benchmark panels, Action and workflow
-boundaries, documentation truth, mdBook examples, internal links, canonical
-page metadata, `sitemap.xml`, and `robots.txt`. GitHub Pages runs the same build
-for pull requests and deploys only from `main`.
-
-The generated discovery metadata uses
-`https://santhreal.github.io/keyhog/` as the canonical site root. Each guide has
-one canonical URL, Open Graph metadata, a social-card summary, and structured
-software-project context. The sitemap excludes mdBook utility pages such as the
-print view and error page.
+Use them to isolate a failing phase. Use `scripts/release.py` for the actual
+release so benchmark evidence, changelogs, pushes, signing, GitHub publication,
+Pages, and crates.io stay in one ordered workflow.

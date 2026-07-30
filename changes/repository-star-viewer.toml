@@ -1,0 +1,3 @@
+category = "Changed"
+summary = "The README star viewer now uses a deterministic accessible SVG generated from repository-owned observations, records only changed counts, and retries isolated metrics push races without depending on star-history.com."
+crates = ["cli"]

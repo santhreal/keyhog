@@ -740,9 +740,10 @@ lists every command, flag, generated default, and exit status. Use
   redacted credential shape and detector id; each report becomes a
   permanent test fixture under
   [`tests/contracts/`](./crates/scanner/tests/contracts/).
-- **Preparing a release?** Add one validated change fragment, preview the exact
-  version transaction, then publish from one reviewed signed tag. Follow the
-  [release operations guide](https://santhreal.github.io/keyhog/releasing.html).
+- **Preparing a release?** Add validated change fragments, then run
+  `python3 -B scripts/release.py <next-version>` locally or with `--ssh`.
+  The [release operations guide](https://santhreal.github.io/keyhog/releasing.html)
+  covers benchmark refresh, signing, Pages, release assets, and crates.io.
 - **Security issue in KeyHog itself?** Don't open a public issue;
   use [GitHub private vulnerability reporting](https://github.com/santhreal/keyhog/security/advisories/new).
   If that form is unavailable, email `security@santh.dev`; PGP is not required.
@@ -771,8 +772,10 @@ permitted under either license.
 
 ## Star history
 
-If keyhog has saved you from leaking a credential, a star is the
-cheapest way to tell the next person it exists.
+<p align="center">
+  <a href="./metrics/stars.json"><img src="./metrics/stars.svg" alt="KeyHog GitHub star history from repository-owned observations" width="960" /></a>
+</p>
 
-[![GitHub stars](https://img.shields.io/github/stars/santhreal/keyhog?style=for-the-badge&color=ffd60a&label=stars&labelColor=0a0a0a)](https://github.com/santhreal/keyhog/stargazers)
-([chart on star-history.com](https://star-history.com/#santhreal/keyhog&Date))
+<p align="center">
+  <sub>Generated from <a href="./metrics/stars.json">repository-owned observations</a>. The tracker records a new point only when the count changes.</sub>
+</p>

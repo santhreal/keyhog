@@ -180,12 +180,12 @@ Run a read-only release preview when you maintain a release:
 
 ```sh
 NEXT_VERSION=X.Y.Z
-make release-check VERSION="$NEXT_VERSION"
+python3 -B scripts/release.py "$NEXT_VERSION"
 ```
 
 See [Prepare and publish a release](./releasing.md) for categories, crate
-ownership, the complete transaction, signed-tag publication, and Pages
-verification.
+ownership, benchmark refresh, local and SSH execution, OpenPGP signing,
+resumable publication, Pages, release assets, and crates.io verification.
 
 ## License
 

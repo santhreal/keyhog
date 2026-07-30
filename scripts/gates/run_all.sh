@@ -134,6 +134,10 @@ run "Workflow documentation boundary tests: routing and ownership fail closed" \
   python3 -B -m unittest scripts.tests.test_workflow_docs_boundaries -v
 run "Pages metadata tests: canonical discovery output stays deterministic" \
   python3 -B -m unittest scripts.tests.test_docs_site -v
+run "Repository star viewer: data and generated SVG agree" \
+  python3 -B scripts/star_history.py --check
+run "Repository star viewer tests: recording and rendering stay truthful" \
+  python3 -B -m unittest scripts.tests.test_star_history -v
 run "README benchmark matrix: snapshot, reports, and generated panels agree" \
   make -C benchmarks readme-matrix-check
 run "Gate #1i self-test: dangling doc version pins are detected" \
@@ -144,6 +148,8 @@ run "Release documentation bump tests: measured benchmark provenance stays immut
   python3 -B -m unittest scripts.tests.test_bump_doc_versions -v
 run "Release preparation tests: fragments produce one coherent version transaction" \
   python3 -B -m unittest scripts.tests.test_prepare_release -v
+run "Unified release tests: local, SSH, staging, signing, and resume boundaries" \
+  python3 -B -m unittest scripts.tests.test_release_orchestrator -v
 run "Documentation truth tests: measured versions remain bound to evidence" \
   python3 -B -m unittest scripts.tests.test_docs_truth -v
 run "Crate changelog gate: every publishable crate has release notes" \
