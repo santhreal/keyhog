@@ -16,6 +16,26 @@ last command prints the resolved policy. Record it with benchmark or incident
 results.
 
 
+Choose both the detection policy and the Git boundary:
+
+```bash
+# Current working tree only.
+keyhog scan . --deep --format json-envelope --output deep-tree.json
+
+# Reachable commit additions and every reachable blob.
+keyhog scan --deep --git-history . --git-blobs . --daemon=off \
+  --format json-envelope --output deep-history.json
+```
+
+The second command is the recursive Git recovery workflow. It combines patch
+additions with deduplicated reachable blobs, then applies the deep detection
+policy to those sources. It does not scan unreachable deleted objects, sibling
+repositories, provider organizations, cloud buckets, or mounted filesystems.
+Run those boundaries as separate jobs and preserve their reports and statuses.
+
+Deep Git scans run in process. A warm daemon does not accelerate history or
+blob traversal.
+
 When a report is written as `json-envelope`, `jsonl-envelope`, or `html`, its
 metadata contains a `resolved_scan` manifest. The manifest records the selected
 `preset`, every effective detection value, and the keys that differ from that

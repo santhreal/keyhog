@@ -57,10 +57,11 @@ rotate, or suppress the credential. Other nonzero codes describe input,
 system, verification, or coverage failures; see the
 [exit-code reference](https://santhreal.github.io/keyhog/reference/exit-codes.html).
 
-For the next scan, use the [recipes cookbook](https://santhreal.github.io/keyhog/recipes.html)
-or the copyable commands in [Choose what to scan](#choose-what-to-scan). You can scan git history,
-container images, cloud buckets, repository collections, URLs, and a whole
-machine without changing tools.
+For the next scan, use the [recipes
+cookbook](https://santhreal.github.io/keyhog/recipes.html) or the copyable
+commands in [Choose the right workflow](#choose-the-right-workflow). You can
+scan Git history, container images, cloud buckets, repository collections,
+URLs, and a whole machine without changing tools.
 
 ### Add it to GitHub Actions
 
@@ -98,6 +99,88 @@ for GitLab, CircleCI, Jenkins, Buildkite, and generic shell jobs. Use the
 [mass-scanning guide](https://santhreal.github.io/keyhog/guides/mass-scanning.html)
 for repository organizations, hosted Git groups, cloud buckets, and partitioned
 inventories.
+
+## Choose the right workflow
+
+Choose the source boundary first. A preset changes detection work, while a
+backend changes execution. Neither one expands a working-tree scan into Git
+history, a provider inventory, cloud storage, or a host audit.
+
+There is no honest `scan everything` shortcut. A complete estate review runs
+the relevant boundaries below as separate jobs and retains each
+`json-envelope` report with its raw exit code.
+
+| Need | Start with | Throughput and reuse | Coverage boundary |
+|---|---|---|---|
+| Quick local feedback | `keyhog scan . --fast --incremental` | Reuses unchanged-file hashes. The fast preset skips decode, entropy, and ML work. | Run the default policy before merge because fast is intentionally narrower. |
+| Full repository scan | `keyhog scan .` | Calibrated `auto` and the CPU-core worker default. Add `--incremental` for repeated scans of the same trusted tree. | Current files only. It does not add Git history. |
+| GitHub pull-request gate | `santhreal/keyhog@v0` | The Action installs, scans, publishes SARIF and an artifact, then preserves KeyHog's status. | One checked-out path. Use provider inventory scanning for an organization. |
+| GitLab, Jenkins, Buildkite, or shell CI | `keyhog scan . --format json-envelope --output keyhog.json` | Persist the report and exit code on success, findings, and errors. Use `--git-diff <base>` only for an explicitly narrower changed-line gate. | The bytes present in the checkout, or the selected diff. |
+| Recursive Git recovery | `keyhog scan --deep --git-history . --git-blobs . --daemon=off` | Calibrate the deep policy once per worker class. Run in process. | Reachable additions and blobs in one repository. It does not scan deleted unreachable objects or other repositories. |
+| Organization or cloud inventory | `keyhog scan --daemon=off --github-org acme --format json-envelope --output acme.json` | Partition by provider, owner, or bucket. Run independent partitions concurrently with one report and status each. | One selected provider inventory per job. Pagination or object limits remain coverage boundaries. |
+| Whole-host health scan | `sudo keyhog scan-system --space 50G` | Uses all CPU cores by default and scans discovered Git history after filesystem data. | Local mounted filesystems. Network mounts are opt-in and the space ceiling is hard. |
+| Repeated single-file or bounded-stdin scan on Unix | Start `keyhog daemon start`, then use `--daemon=on`. | Reuses one compatible compiled scanner and removes cold startup. | Directories, Git, archives, remote sources, verification, presets, and policy-changing requests stay in process. |
+
+Use the [workflow chooser](https://santhreal.github.io/keyhog/capabilities.html)
+for source and policy details, the [GitHub Action
+guide](https://santhreal.github.io/keyhog/workflows/github-action.html) for the
+maintained repository gate, the [direct CI
+guide](https://santhreal.github.io/keyhog/workflows/ci.html) for durable reports
+and exit handling, and the [mass-scanning
+guide](https://santhreal.github.io/keyhog/guides/mass-scanning.html) for
+partitioning and aggregation. The [recipes
+cookbook](https://santhreal.github.io/keyhog/recipes.html) covers containers,
+archives, URLs, GitHub collaboration content, and cloud sources.
+
+### Speed and concurrency without guesswork
+
+Start with the defaults. A verified installation calibrates every policy for
+the current host, binary, detector corpus, and workload classes. Recalibrate
+after any of those identities changes:
+
+```sh
+keyhog calibrate-autoroute --policy all
+keyhog backend --autoroute --json
+```
+
+| Control | Use it for | Keep this invariant |
+|---|---|---|
+| Calibrated `--backend auto` | Routine CPU, Hyperscan, or GPU selection. | An explicit backend is a diagnostic override, not a faster default. |
+| `--threads <N>` | Reserving CPU capacity on a shared runner. Dedicated hosts should normally leave it unset so KeyHog uses the available cores. | Every value must be positive. Several concurrent KeyHog processes each own a worker pool, so divide the host budget across partitions. |
+| `--reader-threads <N>` | Measured storage pipelines where reader work, not scanning, is the bottleneck. | The default derives from the scan worker pool. Leave it unset until profiling shows a reader bottleneck. |
+| `--incremental` and `--incremental-cache <PATH>` | Repeated scans of the same trusted tree. | Do not share one index across unrelated repositories or untrusted jobs. |
+| Provider or repository partitions | Concurrent estate scanning and independent retries. | Preserve one terminal envelope and raw exit code per partition. Do not concatenate findings and discard coverage state. |
+| `--verify-concurrency`, `--verify-rate`, and `--verify-batch` | Bounding live provider checks independently of file scanning. | Verification sends credential-derived requests. Provider rate limits, not CPU count, own this concurrency. |
+| Warm daemon | Repeated eligible file or stdin requests. | A daemon is not a directory, history, cloud, or mass-scan accelerator. |
+| `--fast`, default, `--deep`, or `--precision` | Selecting an explicit detection-cost and recall policy. | These presets are mutually exclusive and change coverage. They are not interchangeable speed knobs. |
+
+Inspect the resolved policy with `keyhog config --effective`. Use `--profile`
+to measure scanner phases before changing reader, batch, or channel-depth
+controls. Keep advanced pipeline controls unset unless a reproducible
+measurement on the target worker shows an improvement.
+
+For a recurring full repository scan:
+
+```sh
+keyhog scan . --incremental \
+  --format json-envelope --output keyhog.json
+```
+
+For a shared runner where the job is allocated four scanner workers and one
+reader worker:
+
+```sh
+keyhog scan . --threads 4 --reader-threads 1 \
+  --format json-envelope --output keyhog.json
+```
+
+The second command is a resource budget, not a universal optimum. Measure the
+target host before choosing explicit worker counts.
+
+For [deep recovery](https://santhreal.github.io/keyhog/guides/deep-recovery.html)
+and [system-wide triage](https://santhreal.github.io/keyhog/guides/system-wide-triage.html),
+use their dedicated guides because their coverage and completion rules differ
+from a normal repository scan.
 
 ## Secret scanner benchmarks
 
@@ -285,30 +368,6 @@ builds, repair, uninstall, and exact platform support. The
 [release page](https://github.com/santhreal/keyhog/releases/latest) contains
 checksums, signatures, SBOMs, and platform archives.
 
-## Choose what to scan
-
-Source selection defines coverage. A working-tree scan does not silently add
-history, remote repositories, or cloud objects:
-
-| Goal | Command or workflow | Canonical guide |
-|---|---|---|
-| Scan a local tree | `keyhog scan .` | [Your first scan](https://santhreal.github.io/keyhog/first-scan.html) |
-| Scan staged blobs | `keyhog scan --git-staged` | [Pre-commit](https://santhreal.github.io/keyhog/workflows/precommit.html) |
-| Scan changed lines | `keyhog scan --git-diff <base>` | [CI](https://santhreal.github.io/keyhog/workflows/ci.html) |
-| Scan reachable additions | `keyhog scan --git-history .` | [Deep recovery](https://santhreal.github.io/keyhog/guides/deep-recovery.html) |
-| Scan every reachable blob | `keyhog scan --git-blobs .` | [Deep recovery](https://santhreal.github.io/keyhog/guides/deep-recovery.html) |
-| Gate one GitHub checkout | `santhreal/keyhog@v0` | [GitHub Action](https://santhreal.github.io/keyhog/workflows/github-action.html) |
-| Scan a Git provider or cloud inventory | `--github-org`, `--gitlab-group`, `--bitbucket-workspace`, `--s3-bucket`, `--gcs-bucket`, or `--azure-container-url` | [Mass scanning](https://santhreal.github.io/keyhog/guides/mass-scanning.html) |
-| Audit a host | `keyhog scan-system` | [System-wide triage](https://santhreal.github.io/keyhog/guides/system-wide-triage.html) |
-
-Every source returns findings, coverage, and an exit status. Keep those three
-together. Do not reinterpret a source, configuration, backend, or report
-publication failure as a clean scan.
-
-The [workflow chooser](https://santhreal.github.io/keyhog/capabilities.html)
-separates source coverage, detection policy, execution route, and detector
-corpus mode. The [recipes](https://santhreal.github.io/keyhog/recipes.html)
-provide copyable commands for each supported source.
 
 ## What it catches
 

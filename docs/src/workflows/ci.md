@@ -21,6 +21,28 @@ also portable but still require `minisign` for installation.
 | Release verification | `keyhog scan --git-history . --git-blobs . --verify` | Adds live checks for eligible detectors. Unverifiable findings remain unverified, and verification sends credential-derived requests to providers. |
 | Large scheduled inventory | Partitioned repository or cloud scopes | Keeps ownership, coverage, reports, and retries independent. |
 
+## CI speed and concurrency
+
+One KeyHog process uses the available CPU cores by default. Leave
+`--threads` unset on a dedicated runner. When a matrix runs several KeyHog jobs
+on one shared worker, divide the worker's CPU budget across them with
+`--threads <N>` so every process does not claim the full host. Set
+`--reader-threads` only after `--profile` shows a storage-reader bottleneck.
+
+Use `--incremental` only when the CI cache is bound to the same trusted
+repository and partition. Give each monorepo partition a separate
+`--incremental-cache` path and cache key. A cache hit changes work reuse, not
+the selected source boundary or detection policy.
+
+Do not use `--fast` as the only merge or release gate. It intentionally omits
+decode, entropy, and ML work. It is suitable for an additional short feedback
+job when the default policy still runs before merge. Directory and Git jobs run
+in process; a warm daemon does not accelerate them.
+
+Live verification has a separate network budget. Use
+`--verify-concurrency`, `--verify-rate`, or `--verify-batch` based on provider
+limits rather than CPU count.
+
 ## GitHub Actions
 
 Use the [GitHub Action guide](./github-action.md) for the maintained composite

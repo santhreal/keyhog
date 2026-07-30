@@ -60,6 +60,12 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   large blocks, streams corpus hashing without an 8 MiB allocation, rejects
   same-size byte substitutions, and requires an explicit clean or
   developer-dirty source classification.
+- The README now puts source-boundary selection before benchmark detail and
+  provides copyable quick, full, CI, deep Git, mass-inventory, whole-host, and
+  warm-file workflows. Concurrency guidance separates scanner workers, readers,
+  partition jobs, incremental caches, verification limits, and daemon
+  eligibility without presenting one host's worker count as a universal
+  optimum.
 
 ### Fixed
 

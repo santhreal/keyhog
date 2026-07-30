@@ -135,14 +135,17 @@ it reaches your terminal.
 
 ## How KeyHog stays fast
 
-| Capability | What it buys you | Chapter |
-|---|---|---|
-| Autoroute calibration | picks the fastest correct backend for your exact host, corpus, and data shape | [Autoroute calibration](./reference/autoroute-calibration.md) |
-| GPU region presence | VYRE CUDA / WGPU dispatch for the whole corpus at once | [Backends and routing](./backends.md) |
-| Hyperscan SIMD prefilter | vectorized literal and regex prefiltering on the CPU path | [Backends and routing](./backends.md) |
-| Daemon and warm scans | a resident process serves IDE-save and single-file scans without cold start (Unix) | [Daemon and warm scans](./workflows/daemon.md) |
-| Incremental scans | a content-addressed index rescans only what changed | [Mass scanning](./guides/mass-scanning.md) |
-
+| Capability | What it buys you | Boundary | Chapter |
+|---|---|---|---|
+| Autoroute calibration | Picks the fastest correct backend for the exact host, binary, detector corpus, policy, and workload class. | Normal scans consume persisted evidence. They do not benchmark or guess on a cache miss. | [Autoroute calibration](./reference/autoroute-calibration.md) |
+| Parallel scan workers | Uses the available CPU cores by default. `--threads <N>` caps scanner workers when a shared runner has a smaller CPU budget. | Concurrent KeyHog processes each own a worker pool. Divide the host budget across partitions instead of letting every process claim every core. | [CLI reference](./reference/cli.md) |
+| Dedicated readers | Overlaps filesystem reads with scanning. The reader count derives from the scan worker pool by default. | Set `--reader-threads` only after profiling the target storage path. | [CLI reference](./reference/cli.md) |
+| Incremental scans | Reuses content hashes so repeated scans of one trusted tree skip unchanged files. | Keep one cache per repository or partition. Do not share it across unrelated or untrusted workspaces. | [Mass scanning](./guides/mass-scanning.md) |
+| Partition concurrency | Runs independent repositories, provider targets, or buckets in parallel with independent retry boundaries. | Preserve one envelope and raw exit code per partition. | [Mass scanning](./guides/mass-scanning.md) |
+| Verification limits | Controls live provider traffic separately with `--verify-concurrency`, `--verify-rate`, and `--verify-batch`. | Provider quotas, not scanner worker count, own this concurrency. | [Verification](./verification.md) |
+| GPU region presence | Uses VYRE CUDA or WGPU dispatch for the whole corpus at once when measured routing evidence selects it. | GPU availability alone does not prove it is fastest for the workload. | [Backends and routing](./backends.md) |
+| Hyperscan SIMD prefilter | Uses vectorized literal and regex prefiltering on the accelerated CPU path. | Let calibrated automatic routing compare it with every eligible peer. | [Backends and routing](./backends.md) |
+| Daemon and warm scans | Serves IDE-save and single-file scans without cold start on Unix. | Directories, Git, archives, remote sources, verification, and policy changes are not daemon work. | [Daemon and warm scans](./workflows/daemon.md) |
 ## What KeyHog emits
 
 | Output | Use | Chapter |

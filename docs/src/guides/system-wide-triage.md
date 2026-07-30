@@ -19,6 +19,18 @@ Run with enough privilege to read the trees in scope. An unreadable path is a
 coverage gap. KeyHog reports the gap and does not describe the run as complete.
 Use elevated privilege only on a host and scope you are authorized to audit.
 
+Choose the host boundary explicitly:
+
+| Goal | Command | Coverage and cost |
+|---|---|---|
+| Quick working-file health check | `sudo keyhog scan-system --space 50G --no-git-history` | Skips discovered Git history. Choose a space ceiling large enough for the local files you intend to cover. |
+| Full local-host recovery | `sudo keyhog scan-system --space 50G` | Scans eligible filesystem data, then reachable additions from every discovered Git repository. |
+| Authorized network-estate sweep | `sudo keyhog scan-system --space 1T --include-network` | Adds NFS, SMB, and other network mounts. It can be slow and may cross ownership boundaries, so opt in only with authorization. |
+| Shared-host CPU budget | `sudo keyhog scan-system --space 50G --threads <N>` | Caps parallel scanner workers. Leaving it unset uses the available CPU cores. |
+
+The quick command is not a substitute for the full recovery command. Keep its
+report labeled as a working-file-only system check.
+
 ## Execution mode
 
 `scan-system` always builds and runs its scanner in process. It does not accept

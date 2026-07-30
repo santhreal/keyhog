@@ -170,6 +170,37 @@ uses visible scalar correctness recovery. It does not silently claim a
 calibrated CPU, Hyperscan, or GPU route. Treat `complete_after_recovery` as a
 recalibration signal even when scan byte coverage is complete.
 
+## Concurrency and worker sizing
+
+Each KeyHog process uses the available CPU cores by default. This is the right
+default for one dedicated partition. It can oversubscribe a worker when your CI
+or scheduler starts several partitions on the same host.
+
+Allocate the host CPU budget across concurrent processes. For example, four
+partition jobs on a 16-vCPU worker can each start with `--threads 4`. This is a
+resource allocation example, not a universal optimum. Leave
+`--reader-threads` unset until profiling shows that storage readers are the
+bottleneck; its default derives from the scanner worker pool.
+
+Keep these boundaries when increasing concurrency:
+
+- Give every partition its own `json-envelope` report, raw exit code,
+  incremental cache, and retry identity.
+- Keep one incremental cache bound to one trusted repository or partition.
+  Sharing it across unrelated jobs turns reuse into cross-workspace state.
+- Bound provider jobs by API quotas and pagination limits as well as CPU. Live
+  verification has separate `--verify-concurrency`, `--verify-rate`, and
+  `--verify-batch` controls.
+- Do not use a warm daemon to fan out directory or provider jobs. Each of these
+  scans requires the in-process orchestrator.
+- Aggregate only after every concurrent partition has reached a terminal
+  state. One successful job cannot erase another job's coverage gap or error.
+
+Use `--profile` on representative partitions before changing advanced
+`--reader-threads`, `--fused-batch`, or `--fused-depth` values. Keep those
+controls unset when a repeatable target-host measurement does not show a
+benefit.
+
 ## Report aggregation
 
 Aggregate only after every partition has a terminal envelope. Preserve the
