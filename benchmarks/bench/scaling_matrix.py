@@ -191,28 +191,34 @@ def prepare_corpus(root: pathlib.Path, workload: Workload) -> str:
     return digest
 
 
+def _mount_filesystem_from_info(path: pathlib.Path, mountinfo: str) -> str:
+    """Resolve the effective filesystem, preferring a real mount over its autofs trigger."""
+    best: tuple[int, str] | None = None
+    for line in mountinfo.splitlines():
+        left, separator, right = line.partition(" - ")
+        if not separator:
+            continue
+        fields = left.split()
+        right_fields = right.split()
+        if len(fields) < 5 or not right_fields:
+            continue
+        mountpoint = pathlib.Path(fields[4].replace("\\040", " "))
+        try:
+            path.relative_to(mountpoint)
+        except ValueError:
+            continue
+        candidate = (len(str(mountpoint)), right_fields[0])
+        if best is None or candidate[0] >= best[0]:
+            best = candidate
+    return best[1] if best else "unknown"
+
+
 def _mount_filesystem(path: pathlib.Path) -> str:
-    """Return the Linux mount type for path, or an explicit unknown value."""
+    """Return the effective Linux mount type for path, or an explicit unknown value."""
     try:
         resolved = path.resolve(strict=True)
-        best: tuple[int, str] | None = None
-        for line in pathlib.Path("/proc/self/mountinfo").read_text(encoding="utf-8").splitlines():
-            left, separator, right = line.partition(" - ")
-            if not separator:
-                continue
-            fields = left.split()
-            right_fields = right.split()
-            if len(fields) < 5 or not right_fields:
-                continue
-            mountpoint = pathlib.Path(fields[4].replace("\\040", " "))
-            try:
-                resolved.relative_to(mountpoint)
-            except ValueError:
-                continue
-            candidate = (len(str(mountpoint)), right_fields[0])
-            if best is None or candidate[0] > best[0]:
-                best = candidate
-        return best[1] if best else "unknown"
+        mountinfo = pathlib.Path("/proc/self/mountinfo").read_text(encoding="utf-8")
+        return _mount_filesystem_from_info(resolved, mountinfo)
     except (OSError, RuntimeError):
         return "unknown"
 

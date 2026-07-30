@@ -177,6 +177,22 @@ def test_prepare_corpus_is_byte_deterministic_and_repairs_same_size_mutation(
     assert repaired == first
     assert scaling_matrix.corpus_digest(corpus) == first
 
+def test_mount_identity_prefers_real_filesystem_over_equal_autofs_trigger() -> None:
+    """An activated mount must report its real filesystem instead of the autofs trigger."""
+    mountinfo = "\n".join(
+        (
+            "49 32 0:38 / /data rw - autofs systemd-1 rw",
+            "146 49 259:1 / /data rw - ext4 /dev/nvme0n1p1 rw",
+        )
+    )
+
+    assert (
+        scaling_matrix._mount_filesystem_from_info(
+            pathlib.Path("/data/keyhog/scaling"), mountinfo
+        )
+        == "ext4"
+    )
+
 
 def test_effective_core_and_axis_planning_respect_every_host_limit() -> None:
     """Thread axes must not oversubscribe affinity or finite cgroup quotas on constrained runners."""
