@@ -1,55 +1,59 @@
 # Summary
 
 [Introduction](./introduction.md)
-[What KeyHog can do](./capabilities.md)
-[Security](./security.md)
+[Choose a scanning workflow](./capabilities.md)
 
 # Getting started
 
 - [Install](./install.md)
 - [Your first scan](./first-scan.md)
+- [Read and export findings](./output-formats.md)
 - [Recipes](./recipes.md)
-- [Output formats](./output-formats.md)
 
-# Core concepts
+# Repository gates
 
-- [Architecture](./architecture.md)
-- [How detection works](./detection.md)
-- [Detectors](./detectors.md)
-- [Backends and routing](./backends.md)
-- [HTTP and wire scanning](./http-wire.md)
-- [Source archives](./source-archives.md)
-- [Suppressions](./suppressions.md)
-- [Verification](./verification.md)
-- [Hardening and data handling](./hardening.md)
+- [Pre-commit secret scanning](./workflows/precommit.md)
+- [GitHub Action secret scanning](./workflows/github-action.md)
+- [CI secret scanning](./workflows/ci.md)
+- [Scan Git history and recover hidden credentials](./guides/deep-recovery.md)
 
-# Workflows
+# Large inventories
 
-- [Pre-commit hook](./workflows/precommit.md)
-- [CI integration](./workflows/ci.md)
-- [Other integrations](./workflows/integrations.md)
+- [Mass repository and cloud inventory scanning](./guides/mass-scanning.md)
 - [GitHub collaboration scans](./workflows/github-collaboration.md)
+- [System-wide credential triage](./guides/system-wide-triage.md)
+- [Archives and compressed sources](./source-archives.md)
+- [HTTP and wire captures](./http-wire.md)
+
+# Performance and backend selection
+
+- [CPU, Hyperscan, GPU, and automatic routing](./backends.md)
+- [Autoroute calibration](./reference/autoroute-calibration.md)
 - [Daemon and warm scans](./workflows/daemon.md)
 
-# Guides
+# Detection policy and trust
 
-- [Deep recovery](./guides/deep-recovery.md)
-- [Mass scanning](./guides/mass-scanning.md)
-- [System-wide triage](./guides/system-wide-triage.md)
+- [How detection works](./detection.md)
+- [Detectors and custom corpora](./detectors.md)
+- [Suppressions and baselines](./suppressions.md)
+- [Credential verification](./verification.md)
+- [Confidence calibration](./reference/confidence-calibration.md)
+- [Hardening and data handling](./hardening.md)
+- [Security](./security.md)
 
 # Reference
 
 - [CLI reference](./reference/cli.md)
-- [Configuration](./reference/configuration.md)
-- [Confidence calibration](./reference/confidence-calibration.md)
-- [Autoroute calibration](./reference/autoroute-calibration.md)
-- [Exit codes](./reference/exit-codes.md)
+- [Configuration and precedence](./reference/configuration.md)
 - [Environment variables](./reference/env.md)
+- [Exit codes](./reference/exit-codes.md)
 - [`.keyhogignore.toml`](./reference/keyhogignore-toml.md)
 - [Out-of-band verification](./reference/oob-verification.md)
 - [VYRE integration](./reference/vyre-integration.md)
+- [Other integrations](./workflows/integrations.md)
 
----
+# Internals and project
 
-[Contributing](./contributing.md)
-[Changelog](./changelog.md)
+- [Architecture](./architecture.md)
+- [Contributing](./contributing.md)
+- [Changelog](./changelog.md)

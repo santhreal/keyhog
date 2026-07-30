@@ -1,5 +1,11 @@
 # Mass scanning
 
+A mass scan covers an inventory that is too large or too independent for one
+repository gate. Partition it by ownership and retry boundary, then preserve one
+report and raw exit code per partition. Use the [GitHub Action
+guide](../workflows/github-action.md) for one checked-out repository and the
+[CI integration guide](../workflows/ci.md) for provider-specific job setup.
+
 ## One command, whole account
 
 For a single organization, group, workspace, or bucket, keyhog does the
@@ -60,9 +66,9 @@ while IFS= read -r -d '' partition; do
   set -e
   printf '%s\t%s\t%s\n' "$partition" "$rc" "$report" \
     >> "$out/status.tsv"
-  # Preserve the strongest actionable state: findings (1), live credentials
-  # (10), coverage incomplete (13), and system failures remain visible.
-  (( rc > overall )) && overall="$rc"
+  # Keep each raw status in status.tsv. The wrapper only needs one nonzero
+  # terminal status to make the aggregate CI job fail.
+  (( rc != 0 )) && overall=1
 done < <(find ./partitions -mindepth 1 -maxdepth 1 -type d -print0)
 
 exit "$overall"

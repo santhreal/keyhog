@@ -11,19 +11,41 @@ on:
     branches: [main]
     paths:
       - 'docs/**'
+      - 'README.md'
+      - 'action.yml'
+      - '.github/actions/keyhog/**'
+      - 'benchmarks/Makefile'
+      - 'benchmarks/bench/readme_matrix.py'
+      - 'benchmarks/bench/tests/test_readme_matrix.py'
+      - 'benchmarks/reports/*matrix*'
       - 'SECURITY.md'
       - 'CHANGELOG.md'
       - '.github/workflows/docs.yml'
       - 'scripts/gates/docs_truth.py'
       - 'scripts/gates/docs_links.py'
+      - 'scripts/gates/action_docs_contract.py'
+      - 'scripts/tests/test_action_docs_contract.py'
+      - 'scripts/gates/workflow_docs_boundaries.py'
+      - 'scripts/tests/test_workflow_docs_boundaries.py'
   pull_request:
     paths:
       - 'docs/**'
+      - 'README.md'
+      - 'action.yml'
+      - '.github/actions/keyhog/**'
+      - 'benchmarks/Makefile'
+      - 'benchmarks/bench/readme_matrix.py'
+      - 'benchmarks/bench/tests/test_readme_matrix.py'
+      - 'benchmarks/reports/*matrix*'
       - 'SECURITY.md'
       - 'CHANGELOG.md'
       - '.github/workflows/docs.yml'
       - 'scripts/gates/docs_truth.py'
       - 'scripts/gates/docs_links.py'
+      - 'scripts/gates/action_docs_contract.py'
+      - 'scripts/tests/test_action_docs_contract.py'
+      - 'scripts/gates/workflow_docs_boundaries.py'
+      - 'scripts/tests/test_workflow_docs_boundaries.py'
   workflow_dispatch:
 
 # Don't queue parallel deploys -- the latest push wins.
@@ -45,6 +67,19 @@ jobs:
 
       - name: Verify documentation truth
         run: python3 -B scripts/gates/docs_truth.py
+
+      - name: Verify GitHub Action documentation contract
+        run: |
+          python3 -B scripts/gates/action_docs_contract.py
+          python3 -B -m unittest scripts.tests.test_action_docs_contract
+
+      - name: Verify workflow documentation boundaries
+        run: |
+          python3 -B scripts/gates/workflow_docs_boundaries.py
+          python3 -B -m unittest scripts.tests.test_workflow_docs_boundaries
+
+      - name: Verify generated README benchmark panels
+        run: make -C benchmarks readme-matrix-check
 
       - name: Install mdBook
         run: |

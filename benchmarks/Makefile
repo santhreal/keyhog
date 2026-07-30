@@ -11,7 +11,7 @@
 #   make ioc-recovery         # compare all four KeyHog presets on recovery phases
 #   make agentre-corpus       # verify sources and build the pinned Linux binaries
 #   make leakage-audit        # prove train/calibration/sealed-test split isolation
-#   make creddata          # print Samsung/CredData corpus info
+#   make creddata          # fetch, repair, and validate pinned Samsung/CredData
 #   make bloom             # measure Bloom rejection + bypass parity on CredData F/X records
 #   make canonical         # rerun the exact KH-020 mirror run set with Bloom linkage
 #   make kernel-info       # print perf corpus info
@@ -21,6 +21,8 @@
 #   make leaderboard       # alias of bench (run SCANNERS over CORPUS into OUT)
 #   make report            # render reports/ + inject the leaderboard into ../README.md
 #   make report-check      # CI gate: fail if the README tables are stale
+#   make readme-matrix      # measure CPU/SIMD/GPU/presets/cache/daemon and inject panels
+#   make readme-matrix-check # fail if committed matrix reports or README panels drift
 #   make org-audit         # fail on stale claims and generated organization bloat
 #   make gate              # regression + differential gate (keyhog must lead + not regress)
 #   make cross-device-gate # require 10x speed dominance vs Betterleaks/Kingfisher on every OS
@@ -45,9 +47,15 @@ OUT              ?= results
 ANALYZE_TOP      ?= 15
 IOC_RECOVERY_SAMPLES ?= 336
 IOC_RECOVERY_OUT ?= results-ioc-recovery
+CREDDATA_JOBS ?= 8
 LEAKAGE_MANIFEST ?=
 LEAKAGE_CONTENT_ROOT ?=
 LEAKAGE_RECEIPT ?= reports/leakage-receipt.json
+README_MATRIX_CONFIG_OUT ?= results-readme-config
+README_MATRIX_DAEMON_OUT ?= results-readme-daemon
+README_MATRIX_DAEMON_CORPUS ?= corpora/daemon-file-8mib.txt
+README_MATRIX_SNAPSHOT ?= reports/readme-matrix.json
+README_MATRIX_SOURCE_STATE ?= clean
 REPORT_RUN_SET ?= $(if $(filter results,$(OUT)),run-sets/canonical.toml,)
 REPORT_RUN_SET_ARG = $(if $(strip $(REPORT_RUN_SET)),--run-set "$(REPORT_RUN_SET)",)
 
@@ -64,7 +72,7 @@ ifneq ($(strip $(KEYHOG_BIN)),)
 export KEYHOG_BIN
 endif
 
-.PHONY: help test targets host mirror ioc-recovery-corpus ioc-recovery agentre-corpus leakage-audit creddata bloom canonical kernel-info run analyze bench leaderboard report report-check org-audit gate cross-device-gate loop keyhog clean
+.PHONY: help test targets host mirror ioc-recovery-corpus ioc-recovery agentre-corpus leakage-audit creddata bloom canonical readme-matrix-corpus readme-matrix readme-matrix-check kernel-info run analyze bench leaderboard report report-check org-audit gate cross-device-gate loop keyhog clean
 
 help:
 	@grep -E '^#   make ' $(lastword $(MAKEFILE_LIST)) | sed 's/^#   /  /'
@@ -98,7 +106,7 @@ leakage-audit:
 		--content-root "$(LEAKAGE_CONTENT_ROOT)" --receipt "$(LEAKAGE_RECEIPT)"
 
 creddata:
-	cd $(BENCH_DIR) && $(PY) -m bench.corpora.creddata
+	cd $(BENCH_DIR) && $(PY) -m bench.corpora.creddata --download --jobs "$(CREDDATA_JOBS)"
 
 bloom:
 	@test -n "$(KEYHOG_BIN)" || { echo "KEYHOG_BIN is required for the Bloom differential" >&2; exit 2; }
@@ -111,6 +119,28 @@ canonical:
 	cd $(BENCH_DIR) && KEYHOG_BENCH_BLOOM_RESULT="$(BENCH_DIR)/$(CANONICAL_BLOOM_RESULT)" \
 		$(PY) -m bench leaderboard --corpus mirror --scanners "$(CANONICAL_SCANNERS)" \
 		--out results --require-available
+
+readme-matrix-corpus:
+	cd $(BENCH_DIR) && $(PY) -m bench.readme_matrix \
+		--generate-daemon-corpus "$(README_MATRIX_DAEMON_CORPUS)"
+
+readme-matrix: readme-matrix-corpus
+	cd $(BENCH_DIR) && $(PY) -m bench leaderboard --corpus mirror \
+		--scanners keyhog --tier perf --out "$(README_MATRIX_CONFIG_OUT)" --require-available
+	cd $(BENCH_DIR) && $(PY) -m bench leaderboard --corpus daemon-file \
+		--corpus-root "$(README_MATRIX_DAEMON_CORPUS)" --scanners keyhog --tier perf \
+		--out "$(README_MATRIX_DAEMON_OUT)" --require-available
+	cd $(BENCH_DIR) && $(PY) -m bench.readme_matrix \
+		--config-results "$(README_MATRIX_CONFIG_OUT)" \
+		--daemon-results "$(README_MATRIX_DAEMON_OUT)" \
+		--daemon-corpus "$(README_MATRIX_DAEMON_CORPUS)" \
+		--source-state "$(README_MATRIX_SOURCE_STATE)" --snapshot "$(README_MATRIX_SNAPSHOT)" \
+		--reports reports --readme ../README.md --inject
+
+readme-matrix-check:
+	cd $(BENCH_DIR) && $(PY) -m bench.readme_matrix \
+		--snapshot "$(README_MATRIX_SNAPSHOT)" --reports reports \
+		--readme ../README.md --check
 
 kernel-info:
 	cd $(BENCH_DIR) && $(PY) -m bench corpus kernel
@@ -127,7 +157,7 @@ bench leaderboard:
 report:
 	cd $(BENCH_DIR) && $(PY) -m bench report --results "$(OUT)" --reports reports --corpus "$(CORPUS)" $(REPORT_RUN_SET_ARG) --inject
 
-report-check:
+report-check: readme-matrix-check
 	cd $(BENCH_DIR) && $(PY) -m bench report --results "$(OUT)" --reports reports --corpus "$(CORPUS)" $(REPORT_RUN_SET_ARG) --check
 
 org-audit:
@@ -166,7 +196,7 @@ loop:
 # Build is intentionally NOT auto-run by other targets: cargo workspace
 # builds are slow and the harness wants them backgrounded.
 keyhog:
-	cd $(REPO_ROOT) && cargo build --release -p keyhog --bin keyhog
+	cd $(REPO_ROOT) && cargo build --release -p keyhog --bin keyhog --no-default-features --features ci-lean
 
 clean:
 	# Make uses /bin/sh, so use POSIX find instead of a bash globstar. Clean both

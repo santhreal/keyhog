@@ -4,14 +4,14 @@ Corpus: **mirror** - 15000 fixtures, 3000 labeled positives. Every scanner score
 
 | Rank | Scanner | F1 | Precision | Recall | Findings | Wall | Peak RSS |
 |---|---|---|---|---|---|---|---|
-| 1 | **KeyHog** | **0.9447** | 0.9708 | 0.9200 | 2868 | 1.67s | 988 MB |
-| 2 | Kingfisher | 0.4720 | 0.3912 | 0.5947 | 5241 | 3.89s | 415 MB |
-| 3 | Betterleaks | 0.3585 | 0.2313 | 0.7967 | 10828 | 0.82s | 191 MB |
+| 1 | **KeyHog** | **0.9447** | 0.9708 | 0.9200 | 2868 | 0.97s | 1023 MB |
+| 2 | Kingfisher | 0.4720 | 0.3912 | 0.5947 | 5241 | 4.68s | 420 MB |
+| 3 | Betterleaks | 0.3585 | 0.2313 | 0.7967 | 10828 | 0.71s | 196 MB |
 
 ### Result provenance
 
 | Scanner | Scanner version / executable digest | Corpus identity | Host identity | Run date |
 |---|---|---|---|---|
-| KeyHog | version: KeyHog v0.5.45<br>Commit: cb27a3c14d49008530ff3f350f566eac21517abc<br>Detector Set: 923 (923-8785f8837d2cd505)<br>Build Target: x86_64-linux<br>ML Model Version: moe-v1-246a05b92bec9aa3<br>ML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable<br>executable SHA-256: `9a59423907ba73ba17f10817d8f3c16f0c98c8de63d24469b85a903cb438690e` | mirror; 15,000 fixtures; 3,000 labeled positives; 2,430,321 bytes | hostname SHA-256/12: `82fcd9288623`<br>Linux 6.17.0-19-generic<br>AMD Ryzen 9 9950X 16-Core Processor | 2026-07-25T14:39:00Z |
-| Kingfisher | version: kingfisher 1.94.0<br>executable SHA-256: `a49f8e9838d7f1da1e9f328a4dbc45a16996bce5078cde3ff1b8ad422d8ab07a` | mirror; 15,000 fixtures; 3,000 labeled positives; 2,430,321 bytes | hostname SHA-256/12: `82fcd9288623`<br>Linux 6.17.0-19-generic<br>AMD Ryzen 9 9950X 16-Core Processor | 2026-07-25T14:39:06Z |
-| Betterleaks | version: betterleaks version dev<br>executable SHA-256: `466f7d34e1ebcf12ecd5939494f509c17125e54416226976fced2f046da56ba4` | mirror; 15,000 fixtures; 3,000 labeled positives; 2,430,321 bytes | hostname SHA-256/12: `82fcd9288623`<br>Linux 6.17.0-19-generic<br>AMD Ryzen 9 9950X 16-Core Processor | 2026-07-25T14:39:02Z |
+| KeyHog | version: KeyHog v0.5.48<br>Commit: 3a9f5ab01dc1633b0e85450acc3af642b011a7d3<br>Detector Set: 923 (923-8785f8837d2cd505)<br>Build Target: x86_64-linux<br>ML Model Version: moe-v1-246a05b92bec9aa3<br>ML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable<br>executable SHA-256: `1c28bd614ad5c81ec5fe726ee765895ba559cba014a1cda3eb74444a3f8983ee` | mirror; 15,000 fixtures; 3,000 labeled positives; 2,430,321 bytes | hostname SHA-256/12: `82fcd9288623`<br>Linux 6.17.0-19-generic<br>AMD Ryzen 9 9950X 16-Core Processor | 2026-07-29T06:17:21Z |
+| Kingfisher | version: kingfisher 1.94.0<br>executable SHA-256: `a49f8e9838d7f1da1e9f328a4dbc45a16996bce5078cde3ff1b8ad422d8ab07a` | mirror; 15,000 fixtures; 3,000 labeled positives; 2,430,321 bytes | hostname SHA-256/12: `82fcd9288623`<br>Linux 6.17.0-19-generic<br>AMD Ryzen 9 9950X 16-Core Processor | 2026-07-29T06:17:30Z |
+| Betterleaks | version: betterleaks version dev<br>executable SHA-256: `466f7d34e1ebcf12ecd5939494f509c17125e54416226976fced2f046da56ba4` | mirror; 15,000 fixtures; 3,000 labeled positives; 2,430,321 bytes | hostname SHA-256/12: `82fcd9288623`<br>Linux 6.17.0-19-generic<br>AMD Ryzen 9 9950X 16-Core Processor | 2026-07-29T06:17:24Z |

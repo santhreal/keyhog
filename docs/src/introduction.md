@@ -1,8 +1,9 @@
-# KeyHog
+# KeyHog: a Rust secret scanner
 
-A secret scanner. Built in Rust. Made to be fast on big repos, careful with
-your time on small ones, and quiet about findings that aren't actually
-credentials.
+KeyHog scans repositories, Git history, CI workspaces, hosted Git collections,
+cloud object inventories, archives, and local systems for leaked credentials.
+You can start with one command, then choose a source boundary, detection policy,
+and execution route that match the job.
 
 ```text
 $ keyhog scan . --progress
@@ -29,20 +30,19 @@ Scan complete. Found 1 secret in 1.42s.
 
 ## What it does
 
-Walks files - your working tree, your git history, a docker image, GitHub/GitLab/Bitbucket
-repository collections, an S3, GCS, or Azure Blob bucket, a list of URLs - and reports leaked credentials. Every finding
-has:
+KeyHog walks working trees, Git history, Docker images, Git provider
+collections, cloud buckets, URL lists, and local systems. Each finding has:
 
 - a **detector** that fired (`stripe-secret-key`, `aws-access-key`, …)
 - a **location** (file, line, offset, optionally commit hash and author)
 - an **entropy score** + **confidence**
 - an optional **live verification** result if you pass `--verify`
 
-Most of what KeyHog offers is not visible from `keyhog scan .` alone: eleven
-source types (git history, GitHub/GitLab/Bitbucket orgs, S3/GCS/Azure buckets,
-docker images, whole-machine audits), seventeen subcommands, GPU acceleration,
-and always-on process hardening. [What KeyHog can do](./capabilities.md) is the
-map, with every capability linking to its chapter.
+KeyHog also supports Git provider inventories, S3, GCS, and Azure Blob objects,
+Docker images, whole-system audits, CPU, Hyperscan, CUDA and WGPU execution, and
+an optional Unix daemon for repeated eligible inputs. [Choose a scanning
+workflow](./capabilities.md) starts with the operator task and links each
+capability to the chapter that owns its contract.
 
 The detector corpus ships as TOML files under `detectors/`. Run
 `keyhog detectors --format json` to inspect the exact corpus embedded in the
@@ -92,12 +92,11 @@ Three things, in order of how much they matter:
    fastest-correct calibration for the installed host instead of treating a
    benchmark from another machine as a routing threshold.
 
-   VYRE CUDA and WGPU can match region presence for the whole compiled corpus
-   in one resident dispatch, then feed the same confirmation pipeline as the
-   CPU backends. An RTX 5090 diagnostic recorded a 24.6 ms VYRE CUDA median and
-   69.6 ms for Hyperscan with identical findings. That run did not attest a
-   clean source tree, so it is historical performance evidence rather than a
-   release crossover claim. See [Backends and routing](./backends.md).
+   Published benchmark panels separate full-process startup, warm daemon
+   requests, detection policy, cache state, and backend diagnostics. They also
+   label development-host evidence that cannot support a clean-source release
+   routing claim. See [Backends and routing](./backends.md) and the
+   [reproducible benchmark harness](https://github.com/santhreal/keyhog/tree/main/benchmarks).
 
 ## Get going
 

@@ -274,13 +274,16 @@ def receipt_from_metadata(
 
 
 def _cargo_profile_command(asset_name: str) -> tuple[list[str], list[str]]:
+    cargo_bin = os.environ.get("CARGO_BIN", "cargo")
+    if not cargo_bin:
+        raise ReceiptError("CARGO_BIN must name the trusted Cargo executable")
     target, root, default_features, selected_features = DEPENDENCY_PROFILES[asset_name]
     common = ["--locked", "--offline", "--target", target]
     tree = [
-        "cargo", "tree", *common, "-p", root, "--edges", "normal,build",
+        cargo_bin, "tree", *common, "-p", root, "--edges", "normal,build",
         "--prefix", "depth", "--format", "|{p}|{f}",
     ]
-    metadata = ["cargo", "metadata", "--locked", "--offline", "--format-version", "1", "--filter-platform", target]
+    metadata = [cargo_bin, "metadata", "--locked", "--offline", "--format-version", "1", "--filter-platform", target]
     if not default_features:
         tree.append("--no-default-features")
         metadata.append("--no-default-features")

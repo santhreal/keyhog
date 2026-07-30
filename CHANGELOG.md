@@ -24,6 +24,17 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Hosted CPU evidence measures exact detection recall, throughput, and peak RSS
   on a pinned GitHub runner image instead of substituting local workstation
   measurements.
+- A standalone GitHub Action guide documents the copyable repository gate,
+  baseline adoption, monorepo partitioning, verification boundary, inputs,
+  outputs, and failure behavior. A release gate now checks both public reference
+  tables against the root and nested Action manifests.
+- A provenance-bound benchmark snapshot and generator now publish README panels
+  for detection accuracy, CPU/Hyperscan/GPU requests, scan presets, incremental
+  cache reruns, and warm daemon requests. The documentation gate rejects stale
+  panel or report bytes.
+- A workflow-boundary gate and dedicated regression suite keep GitHub Action,
+  direct CI, and mass-inventory documentation separately owned and mutually
+  discoverable.
 
 ### Changed
 
@@ -36,6 +47,19 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Hosted CPU publication gates now bind reviewed runner, Hyperscan, workload,
   and resolved scan-policy identities. The `fast` recovery contract requires
   only the categories supported when decoding is disabled.
+- GitHub Action, direct CI, and mass-inventory guidance now have separate
+  workflow ownership. The README routes each use case to its canonical guide,
+  and CI pages link to the Action or mass-scanning contract instead of
+  duplicating it.
+- The README is now a focused product landing instead of a second full manual.
+  It keeps install, benchmark, source, security, library, and architecture
+  entrypoints while routing detailed contracts to the mdBook. The book adds a
+  30-second workflow chooser and navigation by repository gates, large
+  inventories, backend selection, trust, and reference material.
+- The README benchmark generator now writes its deterministic 8 MiB workload in
+  large blocks, streams corpus hashing without an 8 MiB allocation, rejects
+  same-size byte substitutions, and requires an explicit clean or
+  developer-dirty source classification.
 
 ### Fixed
 
@@ -47,6 +71,19 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   listing pages that do not bind the expected repository and Action ref.
 - SIMD scanning routes Unicode-semantic shorthand patterns through exact CPU
   recovery when Hyperscan's Unicode tables cannot guarantee Rust-regex parity.
+- CredData acquisition now repairs an existing partial corpus at the pinned
+  revision with configurable parallel workers, checks its isolated `pybase62`
+  runtime dependency before mutation, preserves failed repository scratch for
+  diagnosis, and reports incomplete fixture trees as unavailable instead of
+  failing benchmark test collection.
+- The benchmark `make keyhog` target now builds the `ci-lean` candidate required
+  by deterministic autoroute parity tests. Bloom fixture generation can declare
+  missing F/X inputs from structurally present metadata, while normal scoring
+  still rejects partial corpora and every reader rejects an active repair
+  marker.
+- Source-only release gates now export one resolved Cargo executable through
+  dependency-receipt generation. Stripped gate environments no longer resolve a
+  user-session Cargo wrapper that requires an unavailable desktop bus.
 
 
 ## [0.5.47] - 2026-07-26

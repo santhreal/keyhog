@@ -40,7 +40,7 @@ def build_fixture(
     """Build canonical source spans for every CredData F/X record."""
     corpus = CredDataCorpus(root=root)
     clone_root = corpus.file_root.resolve()
-    if not corpus.is_downloaded():
+    if not corpus.is_downloaded(require_complete=False):
         raise SystemExit(
             f"CredData is unavailable at {clone_root}; run `make creddata` (no mirror fallback)"
         )

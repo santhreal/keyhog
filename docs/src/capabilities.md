@@ -1,57 +1,89 @@
-# What KeyHog can do
+# Choose a scanning workflow
 
-Use this page to choose an execution mode, input source, and output contract.
-Each table links to the chapter that owns the details.
+Start with the source boundary you need. Then choose a detection policy and an
+execution route. These are separate decisions: a backend changes how KeyHog
+executes, while a preset changes what detection work it performs.
 
-## GPU detection
+## Choose in 30 seconds
 
-The VYRE CUDA and WGPU engines match region presence for the whole compiled
-detector corpus in a single resident dispatch. They then feed the same
-confirmation pipeline as the CPU backends. A GPU route changes execution, not
-findings, and it is selected only when the host's calibration proves it fastest
-for that workload.
-
-An RTX 5090 diagnostic recorded 24.6 ms on VYRE CUDA and 69.6 ms on Hyperscan
-with identical findings. That run did not attest a clean source tree, so it is
-historical performance evidence rather than a release crossover claim. See
-[Backends and routing](./backends.md) for the evidence contract.
-
-## Choose an execution mode
-
-Start with the narrowest mode that covers the input you need.
-
-| Need | Command | Boundary |
+| Your boundary | Start here | Do not substitute |
 |---|---|---|
-| Scan files or directories once | `keyhog scan <path>...` | Directories and ineligible policy combinations run in process. On Unix, an eligible single-file request may use an already-ready daemon under the default `auto` policy. |
-| Scan Git state | `keyhog scan --git-staged`, `--git-diff <range>`, or `--git-history <repo>` | Staged and diff modes inspect selected changes. History mode walks commits. These run in process. |
-| Scan one file repeatedly on Unix | `keyhog daemon start`, then `keyhog scan <file>` | Starting the foreground server is explicit. Eligible single-file and stdin requests may then use its warm scanner. |
-| Monitor local directories | `keyhog watch <path>...` | Own foreground filesystem-event loop and in-process scanner; never uses the daemon socket. |
-| Audit a host | `keyhog scan-system` | Walks eligible local mounted filesystems and discovered Git histories. Network mounts require `--include-network`. |
+| One checked-out repository in GitHub Actions | [GitHub Action](./workflows/github-action.md) | An organization inventory job |
+| One checkout in GitLab, CircleCI, Jenkins, Buildkite, or a shell runner | [CI secret scanning](./workflows/ci.md) | Action-specific inputs or outputs |
+| A Git provider organization, cloud bucket, or partitioned estate | [Mass scanning](./guides/mass-scanning.md) | One oversized repository gate |
+| A local working tree | [Your first scan](./first-scan.md) | Git history unless you select it |
+| Staged content or changed lines | [Pre-commit](./workflows/precommit.md) or `--git-diff` | A full checkout scan when the policy is diff-only |
+| Repeated one-file or bounded-stdin requests on Unix | [Daemon and warm scans](./workflows/daemon.md) | Directories, Git, archives, remote sources, or verification |
+| A local host and mounted filesystems | [System-wide triage](./guides/system-wide-triage.md) | Repository or cloud inventory ownership |
 
-See [Architecture](./architecture.md#execution-surfaces) for routing ownership
-and [Exit codes](./reference/exit-codes.md) for the process outcome contract.
+Then make three independent choices:
 
-Daemon routing has three explicit states. An absent daemon flag uses
-opportunistic `auto` behavior, but never starts a daemon: it uses a compatible
-server only when one is already ready. Bare `--daemon` or `--daemon=on`
-requires that server. `--daemon=off` guarantees in-process execution. The
-daemon transport is Unix-only.
+1. Select the source boundary. This determines which bytes are eligible.
+2. Keep the default detection policy unless you accept a documented fast,
+   deep, or precision tradeoff.
+3. Use calibrated automatic routing for normal scans. Select an explicit
+   backend only for diagnosis, measurement, or a required-accelerator gate.
+
+If any source reports incomplete coverage, preserve that status with the
+findings and report. A partial scan is not a clean scan.
+
+## Choose the source boundary
+
+| Task | Command or workflow | What it covers |
+|---|---|---|
+| Scan a working tree once | `keyhog scan .` | Files present below the selected path. It does not add Git history automatically. |
+| Scan staged content | `keyhog scan --git-staged` or `keyhog hook install` | Exact blobs in the Git index. It does not scan unstaged working-tree bytes. |
+| Gate a pull-request checkout | [GitHub Action](./workflows/github-action.md) or `keyhog scan .` | The checked-out tree. Add a committed baseline when existing findings should remain visible without blocking adoption. |
+| Gate only pull-request changes | `keyhog scan --git-diff <base>` | Changed lines relative to the selected base. This is narrower than scanning the checkout. |
+| Scan reachable commit additions | `keyhog scan --git-history .` | Added lines from reachable commit patches, bounded by `max_commits` and the ancestry present in the checkout. |
+| Scan every reachable Git blob | `keyhog scan --git-blobs .` | Deduplicated blobs reachable from the repository. Use it when patch additions are not complete enough for the policy. |
+| Verify a release | `keyhog scan --git-history . --git-blobs . --verify` | Reachable additions and blobs, plus live checks for eligible detectors. Verification sends credential-derived requests to provider endpoints. |
+| Scan a Git provider or cloud inventory | `--github-org`, `--gitlab-group`, `--bitbucket-workspace`, `--s3-bucket`, `--gcs-bucket`, or `--azure-container-url` | One provider inventory. Partition larger estates into independent jobs with separate reports and exit codes. |
+| Scan GitHub collaboration content | `--github-collaboration` | Issues, pull requests, discussions, wikis, and gists selected by the collaboration workflow. |
+| Audit a host | `keyhog scan-system` | Eligible local mounted filesystems and discovered Git histories under one space ceiling. |
+| Reuse a warm scanner on Unix | Start `keyhog daemon start`, then scan one file or bounded stdin | Eligible single-file or stdin requests only. Directories, Git, remote, cloud, verification, baselines, presets, and most policy overrides remain in process. |
+| Monitor local directories | `keyhog watch <path>...` | A foreground filesystem-event loop with an in-process scanner. |
+
+Read [Your first scan](./first-scan.md) for a local repository,
+[CI secret scanning](./workflows/ci.md) for direct CI jobs, and
+[Mass repository and cloud scanning](./guides/mass-scanning.md) for inventory
+partitioning and coverage.
 
 ## Choose a scan policy
 
 | Policy | Command | Resolved behavior |
 |---|---|---|
-| Default | `keyhog scan .` | Decode depth 10, entropy and ML enabled, global confidence floor 0.40. |
-| Fast preset | `keyhog scan . --fast` | Named regex and multiline matching remain; recursive decode, entropy discovery, and ML scoring are disabled. |
-| Deep preset | `keyhog scan . --deep` | Source-file entropy and comment scanning at full confidence, heuristic evidence beside entropy ML, depth 10, and prepared decode chunks up to 1 MiB. |
-| Precision preset | `keyhog scan . --precision` | Entropy discovery and the relaxed keyword bridge off, ML on, decode depth 1, every confidence floor at least 0.85. |
-| Lockdown mode | `keyhog scan . --lockdown` | Linux-only fail-closed process protection. Requires a sufficient memlock limit; `CAP_IPC_LOCK`, unlimited `ulimit -l`, or a sufficiently large finite limit can provide it. Standard hosted Linux currently fails closed at `mlockall`; the maintained digest-pinned push/PR source lane proves real root+nested Action explicit-CPU lockdown, while authenticated manual dispatch proves release auto+lockdown. It is an execution security mode, not a scan preset. |
+| Default | `keyhog scan .` | Decode depth 10, ML enabled, and entropy evidence for eligible structured candidates. Generic source-file entropy discovery is off. The global confidence floor is 0.40 unless detector policy owns a different floor. |
+| Fast preset | `keyhog scan . --fast` | Named regex and multiline matching remain. Decode, entropy discovery, and ML are off in the base preset. An explicit compatible option such as `--decode-depth 2` can refine it. |
+| Deep preset | `keyhog scan . --deep` | Source-file entropy and comment scanning at full confidence, heuristic evidence beside entropy ML, decode depth 10, and prepared decode chunks up to 1 MiB. |
+| Precision preset | `keyhog scan . --precision` | Entropy discovery and the relaxed keyword bridge are off, ML remains on for eligible candidates, decode depth is 1, and every confidence floor is at least 0.85. |
+| Lockdown mode | `keyhog scan . --lockdown` | Linux-only fail-closed process protection. It is a security execution mode, not a detection preset. It requires sufficient locked-memory capacity and refuses incompatible completeness-reducing, network, daemon, cache, and plaintext-output requests. |
 
 The three presets are mutually exclusive bases. Compatible explicit options
 refine them; a precision confidence override may raise but never lower 0.85.
 Lockdown refuses fast and other completeness-reducing switches, and always runs
 in process. See [Configuration](./reference/configuration.md#presets) and
 [Hardening](./hardening.md#lockdown-mode).
+
+## Choose an execution route
+
+Normal scans use `auto`. An explicit backend is a diagnostic or benchmark
+contract, not a recommendation for routine routing.
+
+| Route | Select it with | Use case and boundary |
+|---|---|---|
+| Calibrated automatic routing | Verified installation, or run `keyhog calibrate-autoroute`; then `keyhog scan .` | Chooses the fastest parity-checked eligible backend for the exact host, binary, detector policy, and workload class. A normal scan does not benchmark. |
+| Portable CPU-only build | Install a portable release asset, or build with `--no-default-features --features portable` | Use on Windows, on a host without Hyperscan/Vectorscan and GPU drivers, or in a minimal container. A scalar-only build has no routing choice and needs no autoroute cache. |
+| Explicit pure-Rust CPU | `--backend cpu` | Diagnose the portable path or compare it in a benchmark. `--no-gpu` is not equivalent because Hyperscan may remain eligible. |
+| Hyperscan or Vectorscan | Let calibrated `auto` select it, or diagnose with `--backend simd` | Accelerated CPU trigger matching followed by the shared extraction and policy pipeline. It requires a compatible build and runtime. |
+| CUDA or WGPU | Let calibrated `auto` select an eligible peer | GPU region-presence matching followed by the same confirmation pipeline. GPU availability does not mean the GPU is fastest for every workload. |
+| Required GPU | `--require-gpu`, `[system].gpu = "required"`, or diagnostic `--backend gpu-cuda|gpu-wgpu` | Use on a self-hosted GPU lane whose contract must fail if the accelerator cannot initialize or dispatch. It never substitutes another backend. |
+| Warm Unix daemon | Start `keyhog daemon start`; use `--daemon=on` when the server is required | Removes repeated scanner startup for eligible single-file or stdin requests. It does not accelerate directory, Git, archive, remote, cloud, or policy-changing scans. |
+
+Use `keyhog --version --full` to inspect compiled capability, `keyhog backend
+--self-test --json` to prove backend health, and `keyhog backend --autoroute
+--json` to inspect the measured route. These commands answer different
+questions: discovery, correctness, and comparative selection.
 
 ## Choose a detector corpus mode
 

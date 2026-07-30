@@ -91,15 +91,21 @@ checksum = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
 
 def _run(*arguments: str, cwd: Path, env: dict[str, str] | None = None) -> str:
+    command = list(arguments)
     completed = subprocess.run(
-        list(arguments),
+        command,
         cwd=cwd,
         env=env,
-        check=True,
+        check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
     )
+    if completed.returncode != 0:
+        raise AssertionError(
+            f"command failed with exit {completed.returncode} in {cwd}: {command!r}\n"
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+        )
     return completed.stdout.strip()
 
 
@@ -698,14 +704,16 @@ class ReleaseSbomTests(unittest.TestCase):
             cargo_commands: list[list[str]] = []
 
             def checked_output(command: list[str], *args: Any, **kwargs: Any) -> Any:
-                if command[0] != "cargo":
+                if command[0] != "/verified/cargo":
                     return real_check_output(command, *args, **kwargs)
                 cargo_commands.append(command)
                 if command[1] == "tree":
                     return "\n".join(expected["cargoTree"]) + "\n"
                 return json.dumps(metadata).encode()
 
-            with mock.patch(
+            with mock.patch.dict(
+                os.environ, {"CARGO_BIN": "/verified/cargo"}
+            ), mock.patch(
                 "scripts.release_dependency_receipt.subprocess.check_output",
                 side_effect=checked_output,
             ):
@@ -716,6 +724,9 @@ class ReleaseSbomTests(unittest.TestCase):
                     expected,
                 )
             self.assertEqual(len(cargo_commands), 2)
+            self.assertTrue(
+                all(command[0] == "/verified/cargo" for command in cargo_commands)
+            )
             tree, metadata_command = cargo_commands
             self.assertIn("--offline", tree)
             self.assertIn("x86_64-unknown-linux-gnu", tree)
@@ -725,6 +736,18 @@ class ReleaseSbomTests(unittest.TestCase):
                 "keyhog/static-hyperscan",
                 metadata_command,
             )
+
+    def test_dependency_receipt_rejects_empty_cargo_binary(self) -> None:
+        """Prevent an empty trusted executable setting from falling back to ambient Cargo."""
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = ReleaseFixture(Path(directory))
+            with mock.patch.dict(os.environ, {"CARGO_BIN": ""}):
+                with self.assertRaisesRegex(
+                    ReceiptError, "CARGO_BIN must name the trusted Cargo executable"
+                ):
+                    derive_dependency_receipt(
+                        fixture.source, "keyhog-linux-x86_64", fixture.tag
+                    )
 
     def test_dependency_receipt_requires_exact_clean_tagged_inputs(self) -> None:
         """Prevent dirty, hidden, or Cargo-config-poisoned source receipts."""
@@ -1166,7 +1189,7 @@ class WorkflowReceiptIsolationTests(unittest.TestCase):
             (source / "src" / "main.rs").write_text(
                 'fn main() { println!("fixture"); }\n', encoding="utf-8"
             )
-            _run("cargo", "generate-lockfile", "--offline", cwd=source)
+            _run(os.environ.get("CARGO_BIN", "cargo"), "generate-lockfile", "--offline", cwd=source)
             _run("git", "init", "-q", cwd=source)
             _run("git", "config", "user.name", "Release Test", cwd=source)
             _run("git", "config", "user.email", "release@example.invalid", cwd=source)

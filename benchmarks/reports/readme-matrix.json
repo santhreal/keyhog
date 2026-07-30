@@ -1,0 +1,870 @@
+{
+  "configuration_rows": [
+    {
+      "corpus": {
+        "bytes": 2430321,
+        "fixture_count": 15000,
+        "labeled_positives": 3000,
+        "name": "mirror",
+        "workload_sha256": "f0e8aea6d492f1759fdd7978ae31f6d705d0b91f72c5200f4ca366beeeadfb95"
+      },
+      "detection": {
+        "f1": 0.9447,
+        "fn": 240,
+        "fp": 83,
+        "precision": 0.9708,
+        "recall": 0.92,
+        "tp": 2760
+      },
+      "finding_count": 2868,
+      "generated_at": "2026-07-29T06:22:29Z",
+      "host": {
+        "affinity_cores": 32,
+        "cgroup_quota_cores": "unbounded",
+        "cores": 32,
+        "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+        "gpu": "NVIDIA GeForce RTX 5090",
+        "gpu_vram_mb": 32607,
+        "hostname_hash": "82fcd9288623",
+        "kernel": "#19~24.04.2-Ubuntu SMP PREEMPT_DYNAMIC Fri Mar  6 23:08:46 UTC 2",
+        "os": "Linux 6.17.0-19-generic",
+        "ram_mb": 94140
+      },
+      "scanner": {
+        "config": {
+          "backend": "auto",
+          "cache": "off",
+          "daemon": "off",
+          "mode": "full"
+        },
+        "config_id": "auto-nocache-nodaemon-full",
+        "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
+        "executable_sha256": "1c28bd614ad5c81ec5fe726ee765895ba559cba014a1cda3eb74444a3f8983ee",
+        "execution_route": "in_process",
+        "name": "keyhog",
+        "version": "KeyHog v0.5.48\nCommit: 3a9f5ab01dc1633b0e85450acc3af642b011a7d3\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+      },
+      "speed": {
+        "peak_rss_kb": 1190092,
+        "throughput_mb_s": 1.2184,
+        "wall_ms": 1902.25
+      }
+    },
+    {
+      "corpus": {
+        "bytes": 2430321,
+        "fixture_count": 15000,
+        "labeled_positives": 3000,
+        "name": "mirror",
+        "workload_sha256": "f0e8aea6d492f1759fdd7978ae31f6d705d0b91f72c5200f4ca366beeeadfb95"
+      },
+      "detection": {
+        "f1": 0.9447,
+        "fn": 240,
+        "fp": 83,
+        "precision": 0.9708,
+        "recall": 0.92,
+        "tp": 2760
+      },
+      "finding_count": 2868,
+      "generated_at": "2026-07-29T06:17:44Z",
+      "host": {
+        "affinity_cores": 32,
+        "cgroup_quota_cores": "unbounded",
+        "cores": 32,
+        "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+        "gpu": "NVIDIA GeForce RTX 5090",
+        "gpu_vram_mb": 32607,
+        "hostname_hash": "82fcd9288623",
+        "kernel": "#19~24.04.2-Ubuntu SMP PREEMPT_DYNAMIC Fri Mar  6 23:08:46 UTC 2",
+        "os": "Linux 6.17.0-19-generic",
+        "ram_mb": 94140
+      },
+      "scanner": {
+        "config": {
+          "backend": "cpu",
+          "cache": "off",
+          "daemon": "off",
+          "mode": "full"
+        },
+        "config_id": "cpu-nocache-nodaemon-full",
+        "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
+        "executable_sha256": "1c28bd614ad5c81ec5fe726ee765895ba559cba014a1cda3eb74444a3f8983ee",
+        "execution_route": "in_process",
+        "name": "keyhog",
+        "version": "KeyHog v0.5.48\nCommit: 3a9f5ab01dc1633b0e85450acc3af642b011a7d3\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+      },
+      "speed": {
+        "peak_rss_kb": 1092220,
+        "throughput_mb_s": 1.3147,
+        "wall_ms": 1762.9
+      }
+    },
+    {
+      "corpus": {
+        "bytes": 2430321,
+        "fixture_count": 15000,
+        "labeled_positives": 3000,
+        "name": "mirror",
+        "workload_sha256": "f0e8aea6d492f1759fdd7978ae31f6d705d0b91f72c5200f4ca366beeeadfb95"
+      },
+      "detection": {
+        "f1": 0.9447,
+        "fn": 240,
+        "fp": 83,
+        "precision": 0.9708,
+        "recall": 0.92,
+        "tp": 2760
+      },
+      "finding_count": 2868,
+      "generated_at": "2026-07-29T06:18:33Z",
+      "host": {
+        "affinity_cores": 32,
+        "cgroup_quota_cores": "unbounded",
+        "cores": 32,
+        "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+        "gpu": "NVIDIA GeForce RTX 5090",
+        "gpu_vram_mb": 32607,
+        "hostname_hash": "82fcd9288623",
+        "kernel": "#19~24.04.2-Ubuntu SMP PREEMPT_DYNAMIC Fri Mar  6 23:08:46 UTC 2",
+        "os": "Linux 6.17.0-19-generic",
+        "ram_mb": 94140
+      },
+      "scanner": {
+        "config": {
+          "backend": "gpu-cuda",
+          "cache": "off",
+          "daemon": "off",
+          "mode": "full"
+        },
+        "config_id": "gpu-cuda-nocache-nodaemon-full",
+        "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
+        "executable_sha256": "1c28bd614ad5c81ec5fe726ee765895ba559cba014a1cda3eb74444a3f8983ee",
+        "execution_route": "in_process",
+        "name": "keyhog",
+        "version": "KeyHog v0.5.48\nCommit: 3a9f5ab01dc1633b0e85450acc3af642b011a7d3\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+      },
+      "speed": {
+        "peak_rss_kb": 1782852,
+        "throughput_mb_s": 0.2262,
+        "wall_ms": 10248.59
+      }
+    },
+    {
+      "corpus": {
+        "bytes": 2430321,
+        "fixture_count": 15000,
+        "labeled_positives": 3000,
+        "name": "mirror",
+        "workload_sha256": "f0e8aea6d492f1759fdd7978ae31f6d705d0b91f72c5200f4ca366beeeadfb95"
+      },
+      "detection": {
+        "f1": 0.9447,
+        "fn": 240,
+        "fp": 83,
+        "precision": 0.9708,
+        "recall": 0.92,
+        "tp": 2760
+      },
+      "finding_count": 2868,
+      "generated_at": "2026-07-29T06:20:35Z",
+      "host": {
+        "affinity_cores": 32,
+        "cgroup_quota_cores": "unbounded",
+        "cores": 32,
+        "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+        "gpu": "NVIDIA GeForce RTX 5090",
+        "gpu_vram_mb": 32607,
+        "hostname_hash": "82fcd9288623",
+        "kernel": "#19~24.04.2-Ubuntu SMP PREEMPT_DYNAMIC Fri Mar  6 23:08:46 UTC 2",
+        "os": "Linux 6.17.0-19-generic",
+        "ram_mb": 94140
+      },
+      "scanner": {
+        "config": {
+          "backend": "gpu-wgpu",
+          "cache": "off",
+          "daemon": "off",
+          "mode": "full"
+        },
+        "config_id": "gpu-wgpu-nocache-nodaemon-full",
+        "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
+        "executable_sha256": "1c28bd614ad5c81ec5fe726ee765895ba559cba014a1cda3eb74444a3f8983ee",
+        "execution_route": "in_process",
+        "name": "keyhog",
+        "version": "KeyHog v0.5.48\nCommit: 3a9f5ab01dc1633b0e85450acc3af642b011a7d3\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+      },
+      "speed": {
+        "peak_rss_kb": 1706968,
+        "throughput_mb_s": 0.22,
+        "wall_ms": 10536.03
+      }
+    },
+    {
+      "corpus": {
+        "bytes": 2430321,
+        "fixture_count": 15000,
+        "labeled_positives": 3000,
+        "name": "mirror",
+        "workload_sha256": "f0e8aea6d492f1759fdd7978ae31f6d705d0b91f72c5200f4ca366beeeadfb95"
+      },
+      "detection": {
+        "f1": 0.9447,
+        "fn": 240,
+        "fp": 83,
+        "precision": 0.9708,
+        "recall": 0.92,
+        "tp": 2760
+      },
+      "finding_count": 2868,
+      "generated_at": "2026-07-29T06:17:27Z",
+      "host": {
+        "affinity_cores": 32,
+        "cgroup_quota_cores": "unbounded",
+        "cores": 32,
+        "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+        "gpu": "NVIDIA GeForce RTX 5090",
+        "gpu_vram_mb": 32607,
+        "hostname_hash": "82fcd9288623",
+        "kernel": "#19~24.04.2-Ubuntu SMP PREEMPT_DYNAMIC Fri Mar  6 23:08:46 UTC 2",
+        "os": "Linux 6.17.0-19-generic",
+        "ram_mb": 94140
+      },
+      "scanner": {
+        "config": {
+          "backend": "simd",
+          "cache": "on",
+          "daemon": "off",
+          "mode": "full"
+        },
+        "config_id": "simd-cache-nodaemon-full",
+        "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
+        "executable_sha256": "1c28bd614ad5c81ec5fe726ee765895ba559cba014a1cda3eb74444a3f8983ee",
+        "execution_route": "in_process",
+        "name": "keyhog",
+        "version": "KeyHog v0.5.48\nCommit: 3a9f5ab01dc1633b0e85450acc3af642b011a7d3\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+      },
+      "speed": {
+        "peak_rss_kb": 1101508,
+        "throughput_mb_s": 2.5804,
+        "wall_ms": 898.19
+      }
+    },
+    {
+      "corpus": {
+        "bytes": 2430321,
+        "fixture_count": 15000,
+        "labeled_positives": 3000,
+        "name": "mirror",
+        "workload_sha256": "f0e8aea6d492f1759fdd7978ae31f6d705d0b91f72c5200f4ca366beeeadfb95"
+      },
+      "detection": {
+        "f1": 0.9451,
+        "fn": 238,
+        "fp": 83,
+        "precision": 0.9708,
+        "recall": 0.9207,
+        "tp": 2762
+      },
+      "finding_count": 2875,
+      "generated_at": "2026-07-29T06:17:19Z",
+      "host": {
+        "affinity_cores": 32,
+        "cgroup_quota_cores": "unbounded",
+        "cores": 32,
+        "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+        "gpu": "NVIDIA GeForce RTX 5090",
+        "gpu_vram_mb": 32607,
+        "hostname_hash": "82fcd9288623",
+        "kernel": "#19~24.04.2-Ubuntu SMP PREEMPT_DYNAMIC Fri Mar  6 23:08:46 UTC 2",
+        "os": "Linux 6.17.0-19-generic",
+        "ram_mb": 94140
+      },
+      "scanner": {
+        "config": {
+          "backend": "simd",
+          "cache": "off",
+          "daemon": "off",
+          "mode": "deep"
+        },
+        "config_id": "simd-nocache-nodaemon-deep",
+        "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
+        "executable_sha256": "1c28bd614ad5c81ec5fe726ee765895ba559cba014a1cda3eb74444a3f8983ee",
+        "execution_route": "in_process",
+        "name": "keyhog",
+        "version": "KeyHog v0.5.48\nCommit: 3a9f5ab01dc1633b0e85450acc3af642b011a7d3\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+      },
+      "speed": {
+        "peak_rss_kb": 1056324,
+        "throughput_mb_s": 2.5614,
+        "wall_ms": 904.87
+      }
+    },
+    {
+      "corpus": {
+        "bytes": 2430321,
+        "fixture_count": 15000,
+        "labeled_positives": 3000,
+        "name": "mirror",
+        "workload_sha256": "f0e8aea6d492f1759fdd7978ae31f6d705d0b91f72c5200f4ca366beeeadfb95"
+      },
+      "detection": {
+        "f1": 0.9413,
+        "fn": 266,
+        "fp": 75,
+        "precision": 0.9733,
+        "recall": 0.9113,
+        "tp": 2734
+      },
+      "finding_count": 2816,
+      "generated_at": "2026-07-29T06:17:16Z",
+      "host": {
+        "affinity_cores": 32,
+        "cgroup_quota_cores": "unbounded",
+        "cores": 32,
+        "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+        "gpu": "NVIDIA GeForce RTX 5090",
+        "gpu_vram_mb": 32607,
+        "hostname_hash": "82fcd9288623",
+        "kernel": "#19~24.04.2-Ubuntu SMP PREEMPT_DYNAMIC Fri Mar  6 23:08:46 UTC 2",
+        "os": "Linux 6.17.0-19-generic",
+        "ram_mb": 94140
+      },
+      "scanner": {
+        "config": {
+          "backend": "simd",
+          "cache": "off",
+          "daemon": "off",
+          "mode": "fast"
+        },
+        "config_id": "simd-nocache-nodaemon-fast",
+        "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
+        "executable_sha256": "1c28bd614ad5c81ec5fe726ee765895ba559cba014a1cda3eb74444a3f8983ee",
+        "execution_route": "in_process",
+        "name": "keyhog",
+        "version": "KeyHog v0.5.48\nCommit: 3a9f5ab01dc1633b0e85450acc3af642b011a7d3\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+      },
+      "speed": {
+        "peak_rss_kb": 1029908,
+        "throughput_mb_s": 2.8711,
+        "wall_ms": 807.26
+      }
+    },
+    {
+      "corpus": {
+        "bytes": 2430321,
+        "fixture_count": 15000,
+        "labeled_positives": 3000,
+        "name": "mirror",
+        "workload_sha256": "f0e8aea6d492f1759fdd7978ae31f6d705d0b91f72c5200f4ca366beeeadfb95"
+      },
+      "detection": {
+        "f1": 0.9447,
+        "fn": 240,
+        "fp": 83,
+        "precision": 0.9708,
+        "recall": 0.92,
+        "tp": 2760
+      },
+      "finding_count": 2868,
+      "generated_at": "2026-07-29T06:17:12Z",
+      "host": {
+        "affinity_cores": 32,
+        "cgroup_quota_cores": "unbounded",
+        "cores": 32,
+        "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+        "gpu": "NVIDIA GeForce RTX 5090",
+        "gpu_vram_mb": 32607,
+        "hostname_hash": "82fcd9288623",
+        "kernel": "#19~24.04.2-Ubuntu SMP PREEMPT_DYNAMIC Fri Mar  6 23:08:46 UTC 2",
+        "os": "Linux 6.17.0-19-generic",
+        "ram_mb": 94140
+      },
+      "scanner": {
+        "config": {
+          "backend": "simd",
+          "cache": "off",
+          "daemon": "off",
+          "mode": "full"
+        },
+        "config_id": "simd-nocache-nodaemon-full",
+        "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
+        "executable_sha256": "1c28bd614ad5c81ec5fe726ee765895ba559cba014a1cda3eb74444a3f8983ee",
+        "execution_route": "in_process",
+        "name": "keyhog",
+        "version": "KeyHog v0.5.48\nCommit: 3a9f5ab01dc1633b0e85450acc3af642b011a7d3\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+      },
+      "speed": {
+        "peak_rss_kb": 1080744,
+        "throughput_mb_s": 2.4141,
+        "wall_ms": 960.09
+      }
+    },
+    {
+      "corpus": {
+        "bytes": 2430321,
+        "fixture_count": 15000,
+        "labeled_positives": 3000,
+        "name": "mirror",
+        "workload_sha256": "f0e8aea6d492f1759fdd7978ae31f6d705d0b91f72c5200f4ca366beeeadfb95"
+      },
+      "detection": {
+        "f1": 0.8784,
+        "fn": 590,
+        "fp": 77,
+        "precision": 0.969,
+        "recall": 0.8033,
+        "tp": 2410
+      },
+      "finding_count": 2488,
+      "generated_at": "2026-07-29T06:17:23Z",
+      "host": {
+        "affinity_cores": 32,
+        "cgroup_quota_cores": "unbounded",
+        "cores": 32,
+        "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+        "gpu": "NVIDIA GeForce RTX 5090",
+        "gpu_vram_mb": 32607,
+        "hostname_hash": "82fcd9288623",
+        "kernel": "#19~24.04.2-Ubuntu SMP PREEMPT_DYNAMIC Fri Mar  6 23:08:46 UTC 2",
+        "os": "Linux 6.17.0-19-generic",
+        "ram_mb": 94140
+      },
+      "scanner": {
+        "config": {
+          "backend": "simd",
+          "cache": "off",
+          "daemon": "off",
+          "mode": "precision"
+        },
+        "config_id": "simd-nocache-nodaemon-precision",
+        "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
+        "executable_sha256": "1c28bd614ad5c81ec5fe726ee765895ba559cba014a1cda3eb74444a3f8983ee",
+        "execution_route": "in_process",
+        "name": "keyhog",
+        "version": "KeyHog v0.5.48\nCommit: 3a9f5ab01dc1633b0e85450acc3af642b011a7d3\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+      },
+      "speed": {
+        "peak_rss_kb": 1033360,
+        "throughput_mb_s": 2.6981,
+        "wall_ms": 859.01
+      }
+    }
+  ],
+  "daemon_corpus": {
+    "bytes": 8388608,
+    "sha256": "afafbe7b6487fd62866f510e7c281a9e7bfeaa8dc585d7b0478c92ee6c4f5ef5"
+  },
+  "daemon_rows": [
+    {
+      "corpus": {
+        "bytes": 8388608,
+        "fixture_count": 1,
+        "labeled_positives": 0,
+        "name": "daemon-file",
+        "workload_sha256": "72ea2f31000c663a07e3ab1df2c689ae90a42aceb9ed04db610e5b5bc9215adb"
+      },
+      "detection": {
+        "f1": 0.0,
+        "fn": 0,
+        "fp": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "tp": 0
+      },
+      "finding_count": 0,
+      "generated_at": "2026-07-29T06:17:22Z",
+      "host": {
+        "affinity_cores": 32,
+        "cgroup_quota_cores": "unbounded",
+        "cores": 32,
+        "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+        "gpu": "NVIDIA GeForce RTX 5090",
+        "gpu_vram_mb": 32607,
+        "hostname_hash": "82fcd9288623",
+        "kernel": "#19~24.04.2-Ubuntu SMP PREEMPT_DYNAMIC Fri Mar  6 23:08:46 UTC 2",
+        "os": "Linux 6.17.0-19-generic",
+        "ram_mb": 94140
+      },
+      "scanner": {
+        "config": {
+          "backend": "cpu",
+          "cache": "off",
+          "daemon": "on",
+          "mode": "full"
+        },
+        "config_id": "cpu-nocache-daemon-full",
+        "daemon_pid": 1525253,
+        "daemon_requests": 2,
+        "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
+        "executable_sha256": "1c28bd614ad5c81ec5fe726ee765895ba559cba014a1cda3eb74444a3f8983ee",
+        "execution_route": "daemon",
+        "name": "keyhog",
+        "version": "KeyHog v0.5.48\nCommit: 3a9f5ab01dc1633b0e85450acc3af642b011a7d3\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+      },
+      "speed": {
+        "peak_rss_kb": 800636,
+        "throughput_mb_s": 59.6928,
+        "wall_ms": 134.02
+      }
+    },
+    {
+      "corpus": {
+        "bytes": 8388608,
+        "fixture_count": 1,
+        "labeled_positives": 0,
+        "name": "daemon-file",
+        "workload_sha256": "72ea2f31000c663a07e3ab1df2c689ae90a42aceb9ed04db610e5b5bc9215adb"
+      },
+      "detection": {
+        "f1": 0.0,
+        "fn": 0,
+        "fp": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "tp": 0
+      },
+      "finding_count": 0,
+      "generated_at": "2026-07-29T06:17:19Z",
+      "host": {
+        "affinity_cores": 32,
+        "cgroup_quota_cores": "unbounded",
+        "cores": 32,
+        "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+        "gpu": "NVIDIA GeForce RTX 5090",
+        "gpu_vram_mb": 32607,
+        "hostname_hash": "82fcd9288623",
+        "kernel": "#19~24.04.2-Ubuntu SMP PREEMPT_DYNAMIC Fri Mar  6 23:08:46 UTC 2",
+        "os": "Linux 6.17.0-19-generic",
+        "ram_mb": 94140
+      },
+      "scanner": {
+        "config": {
+          "backend": "cpu",
+          "cache": "off",
+          "daemon": "off",
+          "mode": "full"
+        },
+        "config_id": "cpu-nocache-nodaemon-full",
+        "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
+        "executable_sha256": "1c28bd614ad5c81ec5fe726ee765895ba559cba014a1cda3eb74444a3f8983ee",
+        "execution_route": "in_process",
+        "name": "keyhog",
+        "version": "KeyHog v0.5.48\nCommit: 3a9f5ab01dc1633b0e85450acc3af642b011a7d3\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+      },
+      "speed": {
+        "peak_rss_kb": 741988,
+        "throughput_mb_s": 5.555,
+        "wall_ms": 1440.15
+      }
+    },
+    {
+      "corpus": {
+        "bytes": 8388608,
+        "fixture_count": 1,
+        "labeled_positives": 0,
+        "name": "daemon-file",
+        "workload_sha256": "72ea2f31000c663a07e3ab1df2c689ae90a42aceb9ed04db610e5b5bc9215adb"
+      },
+      "detection": {
+        "f1": 0.0,
+        "fn": 0,
+        "fp": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "tp": 0
+      },
+      "finding_count": 0,
+      "generated_at": "2026-07-29T06:17:26Z",
+      "host": {
+        "affinity_cores": 32,
+        "cgroup_quota_cores": "unbounded",
+        "cores": 32,
+        "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+        "gpu": "NVIDIA GeForce RTX 5090",
+        "gpu_vram_mb": 32607,
+        "hostname_hash": "82fcd9288623",
+        "kernel": "#19~24.04.2-Ubuntu SMP PREEMPT_DYNAMIC Fri Mar  6 23:08:46 UTC 2",
+        "os": "Linux 6.17.0-19-generic",
+        "ram_mb": 94140
+      },
+      "scanner": {
+        "config": {
+          "backend": "gpu-cuda",
+          "cache": "off",
+          "daemon": "on",
+          "mode": "full"
+        },
+        "config_id": "gpu-cuda-nocache-daemon-full",
+        "daemon_pid": 1526050,
+        "daemon_requests": 2,
+        "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
+        "executable_sha256": "1c28bd614ad5c81ec5fe726ee765895ba559cba014a1cda3eb74444a3f8983ee",
+        "execution_route": "daemon",
+        "name": "keyhog",
+        "version": "KeyHog v0.5.48\nCommit: 3a9f5ab01dc1633b0e85450acc3af642b011a7d3\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+      },
+      "speed": {
+        "peak_rss_kb": 1187988,
+        "throughput_mb_s": 44.4928,
+        "wall_ms": 179.8
+      }
+    },
+    {
+      "corpus": {
+        "bytes": 8388608,
+        "fixture_count": 1,
+        "labeled_positives": 0,
+        "name": "daemon-file",
+        "workload_sha256": "72ea2f31000c663a07e3ab1df2c689ae90a42aceb9ed04db610e5b5bc9215adb"
+      },
+      "detection": {
+        "f1": 0.0,
+        "fn": 0,
+        "fp": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "tp": 0
+      },
+      "finding_count": 0,
+      "generated_at": "2026-07-29T06:17:24Z",
+      "host": {
+        "affinity_cores": 32,
+        "cgroup_quota_cores": "unbounded",
+        "cores": 32,
+        "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+        "gpu": "NVIDIA GeForce RTX 5090",
+        "gpu_vram_mb": 32607,
+        "hostname_hash": "82fcd9288623",
+        "kernel": "#19~24.04.2-Ubuntu SMP PREEMPT_DYNAMIC Fri Mar  6 23:08:46 UTC 2",
+        "os": "Linux 6.17.0-19-generic",
+        "ram_mb": 94140
+      },
+      "scanner": {
+        "config": {
+          "backend": "gpu-cuda",
+          "cache": "off",
+          "daemon": "off",
+          "mode": "full"
+        },
+        "config_id": "gpu-cuda-nocache-nodaemon-full",
+        "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
+        "executable_sha256": "1c28bd614ad5c81ec5fe726ee765895ba559cba014a1cda3eb74444a3f8983ee",
+        "execution_route": "in_process",
+        "name": "keyhog",
+        "version": "KeyHog v0.5.48\nCommit: 3a9f5ab01dc1633b0e85450acc3af642b011a7d3\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+      },
+      "speed": {
+        "peak_rss_kb": 1180964,
+        "throughput_mb_s": 5.2528,
+        "wall_ms": 1522.99
+      }
+    },
+    {
+      "corpus": {
+        "bytes": 8388608,
+        "fixture_count": 1,
+        "labeled_positives": 0,
+        "name": "daemon-file",
+        "workload_sha256": "72ea2f31000c663a07e3ab1df2c689ae90a42aceb9ed04db610e5b5bc9215adb"
+      },
+      "detection": {
+        "f1": 0.0,
+        "fn": 0,
+        "fp": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "tp": 0
+      },
+      "finding_count": 0,
+      "generated_at": "2026-07-29T06:17:31Z",
+      "host": {
+        "affinity_cores": 32,
+        "cgroup_quota_cores": "unbounded",
+        "cores": 32,
+        "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+        "gpu": "NVIDIA GeForce RTX 5090",
+        "gpu_vram_mb": 32607,
+        "hostname_hash": "82fcd9288623",
+        "kernel": "#19~24.04.2-Ubuntu SMP PREEMPT_DYNAMIC Fri Mar  6 23:08:46 UTC 2",
+        "os": "Linux 6.17.0-19-generic",
+        "ram_mb": 94140
+      },
+      "scanner": {
+        "config": {
+          "backend": "gpu-wgpu",
+          "cache": "off",
+          "daemon": "on",
+          "mode": "full"
+        },
+        "config_id": "gpu-wgpu-nocache-daemon-full",
+        "daemon_pid": 1527089,
+        "daemon_requests": 2,
+        "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
+        "executable_sha256": "1c28bd614ad5c81ec5fe726ee765895ba559cba014a1cda3eb74444a3f8983ee",
+        "execution_route": "daemon",
+        "name": "keyhog",
+        "version": "KeyHog v0.5.48\nCommit: 3a9f5ab01dc1633b0e85450acc3af642b011a7d3\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+      },
+      "speed": {
+        "peak_rss_kb": 1117660,
+        "throughput_mb_s": 43.1245,
+        "wall_ms": 185.51
+      }
+    },
+    {
+      "corpus": {
+        "bytes": 8388608,
+        "fixture_count": 1,
+        "labeled_positives": 0,
+        "name": "daemon-file",
+        "workload_sha256": "72ea2f31000c663a07e3ab1df2c689ae90a42aceb9ed04db610e5b5bc9215adb"
+      },
+      "detection": {
+        "f1": 0.0,
+        "fn": 0,
+        "fp": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "tp": 0
+      },
+      "finding_count": 0,
+      "generated_at": "2026-07-29T06:17:28Z",
+      "host": {
+        "affinity_cores": 32,
+        "cgroup_quota_cores": "unbounded",
+        "cores": 32,
+        "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+        "gpu": "NVIDIA GeForce RTX 5090",
+        "gpu_vram_mb": 32607,
+        "hostname_hash": "82fcd9288623",
+        "kernel": "#19~24.04.2-Ubuntu SMP PREEMPT_DYNAMIC Fri Mar  6 23:08:46 UTC 2",
+        "os": "Linux 6.17.0-19-generic",
+        "ram_mb": 94140
+      },
+      "scanner": {
+        "config": {
+          "backend": "gpu-wgpu",
+          "cache": "off",
+          "daemon": "off",
+          "mode": "full"
+        },
+        "config_id": "gpu-wgpu-nocache-nodaemon-full",
+        "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
+        "executable_sha256": "1c28bd614ad5c81ec5fe726ee765895ba559cba014a1cda3eb74444a3f8983ee",
+        "execution_route": "in_process",
+        "name": "keyhog",
+        "version": "KeyHog v0.5.48\nCommit: 3a9f5ab01dc1633b0e85450acc3af642b011a7d3\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+      },
+      "speed": {
+        "peak_rss_kb": 1117364,
+        "throughput_mb_s": 5.6419,
+        "wall_ms": 1417.96
+      }
+    },
+    {
+      "corpus": {
+        "bytes": 8388608,
+        "fixture_count": 1,
+        "labeled_positives": 0,
+        "name": "daemon-file",
+        "workload_sha256": "72ea2f31000c663a07e3ab1df2c689ae90a42aceb9ed04db610e5b5bc9215adb"
+      },
+      "detection": {
+        "f1": 0.0,
+        "fn": 0,
+        "fp": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "tp": 0
+      },
+      "finding_count": 0,
+      "generated_at": "2026-07-29T06:17:18Z",
+      "host": {
+        "affinity_cores": 32,
+        "cgroup_quota_cores": "unbounded",
+        "cores": 32,
+        "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+        "gpu": "NVIDIA GeForce RTX 5090",
+        "gpu_vram_mb": 32607,
+        "hostname_hash": "82fcd9288623",
+        "kernel": "#19~24.04.2-Ubuntu SMP PREEMPT_DYNAMIC Fri Mar  6 23:08:46 UTC 2",
+        "os": "Linux 6.17.0-19-generic",
+        "ram_mb": 94140
+      },
+      "scanner": {
+        "config": {
+          "backend": "simd",
+          "cache": "off",
+          "daemon": "on",
+          "mode": "full"
+        },
+        "config_id": "simd-nocache-daemon-full",
+        "daemon_pid": 1524483,
+        "daemon_requests": 2,
+        "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
+        "executable_sha256": "1c28bd614ad5c81ec5fe726ee765895ba559cba014a1cda3eb74444a3f8983ee",
+        "execution_route": "daemon",
+        "name": "keyhog",
+        "version": "KeyHog v0.5.48\nCommit: 3a9f5ab01dc1633b0e85450acc3af642b011a7d3\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+      },
+      "speed": {
+        "peak_rss_kb": 780180,
+        "throughput_mb_s": 43.4558,
+        "wall_ms": 184.1
+      }
+    },
+    {
+      "corpus": {
+        "bytes": 8388608,
+        "fixture_count": 1,
+        "labeled_positives": 0,
+        "name": "daemon-file",
+        "workload_sha256": "72ea2f31000c663a07e3ab1df2c689ae90a42aceb9ed04db610e5b5bc9215adb"
+      },
+      "detection": {
+        "f1": 0.0,
+        "fn": 0,
+        "fp": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "tp": 0
+      },
+      "finding_count": 0,
+      "generated_at": "2026-07-29T06:17:16Z",
+      "host": {
+        "affinity_cores": 32,
+        "cgroup_quota_cores": "unbounded",
+        "cores": 32,
+        "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+        "gpu": "NVIDIA GeForce RTX 5090",
+        "gpu_vram_mb": 32607,
+        "hostname_hash": "82fcd9288623",
+        "kernel": "#19~24.04.2-Ubuntu SMP PREEMPT_DYNAMIC Fri Mar  6 23:08:46 UTC 2",
+        "os": "Linux 6.17.0-19-generic",
+        "ram_mb": 94140
+      },
+      "scanner": {
+        "config": {
+          "backend": "simd",
+          "cache": "off",
+          "daemon": "off",
+          "mode": "full"
+        },
+        "config_id": "simd-nocache-nodaemon-full",
+        "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
+        "executable_sha256": "1c28bd614ad5c81ec5fe726ee765895ba559cba014a1cda3eb74444a3f8983ee",
+        "execution_route": "in_process",
+        "name": "keyhog",
+        "version": "KeyHog v0.5.48\nCommit: 3a9f5ab01dc1633b0e85450acc3af642b011a7d3\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+      },
+      "speed": {
+        "peak_rss_kb": 735896,
+        "throughput_mb_s": 14.9876,
+        "wall_ms": 533.77
+      }
+    }
+  ],
+  "schema_version": "readme-config-matrix-v1",
+  "source_state": "developer-dirty"
+}

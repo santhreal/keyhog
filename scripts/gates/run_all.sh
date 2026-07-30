@@ -11,6 +11,9 @@
 #   #1c no_stale_internal_refs, retired planning docs/registries cannot reappear
 #   #1d no_deferral_markers, stale deferral markers cannot reappear
 #   #1e docs_truth, canonical mdBook is complete and source-true
+#   action_docs_contract: Action manifests and public reference tables stay exact
+#   workflow_docs_boundaries: Action, direct CI, and mass scanning stay distinct
+#   readme_matrix: generated accuracy/configuration/daemon panels stay provenance-bound
 #   #1i doc_version_pins, documented action/install pins resolve to a real release
 #   #1f github_actions_pinned, repo CI cannot execute mutable third-party refs
 #   package_licenses: publishable crate roots carry canonical license bytes
@@ -73,6 +76,7 @@ CARGO_BIN="${CARGO_BIN:-cargo}"
 if [ "$CARGO_BIN" = "cargo" ] && [ -x "$HOME/.cargo/bin/cargo" ]; then
   CARGO_BIN="$HOME/.cargo/bin/cargo"
 fi
+export CARGO_BIN
 
 # GATES_SOURCE_ONLY and STRICT_ASSETS are mutually exclusive: forcing every
 # asset gate to skip while also failing on any skip would be a guaranteed red.
@@ -120,6 +124,16 @@ run "Gate #1e self-test: stale and duplicate documentation is detected" \
   python3 scripts/gates/docs_truth.py --self-test
 run "Gate #1e: canonical mdBook documentation is complete and source-true" \
   python3 scripts/gates/docs_truth.py
+run "GitHub Action documentation contract: manifests and references agree" \
+  python3 scripts/gates/action_docs_contract.py
+run "GitHub Action documentation tests: interface drift fails closed" \
+  python3 -B -m unittest scripts.tests.test_action_docs_contract -v
+run "Workflow documentation boundaries: Action, direct CI, and mass scanning stay distinct" \
+  python3 -B scripts/gates/workflow_docs_boundaries.py
+run "Workflow documentation boundary tests: routing and ownership fail closed" \
+  python3 -B -m unittest scripts.tests.test_workflow_docs_boundaries -v
+run "README benchmark matrix: snapshot, reports, and generated panels agree" \
+  make -C benchmarks readme-matrix-check
 run "Gate #1i self-test: dangling doc version pins are detected" \
   python3 scripts/gates/doc_version_pins.py --self-test
 run "Gate #1i: documented action/install pins resolve to v0 or the current version" \

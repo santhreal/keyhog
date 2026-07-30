@@ -41,6 +41,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import importlib.util
 import os
 import pathlib
 import re
@@ -58,6 +59,7 @@ _DEFAULT_ROOT = _BENCH_ROOT / "corpora" / "creddata" / "CredData"
 # CredData score is always reproducible against an exact dataset revision.
 CREDDATA_REPO = "https://github.com/Samsung/CredData.git"
 CREDDATA_PIN = "f1de3f85dbdf42bf7b3467c0d273a4dfe44d56ee"  # 2026-05-26
+_REPAIR_MARKER = ".keyhog-repairing"
 
 
 # ── generic manifest fast-path (jsonl / csv / parquet export) ─────────
@@ -341,6 +343,23 @@ class CredDataCorpus(Corpus):
     def meta_dir(self) -> pathlib.Path:
         return self._root / "meta"
 
+    @property
+    def _repair_marker(self) -> pathlib.Path:
+        return self._root / _REPAIR_MARKER
+
+    def _repair_availability_error(self) -> str | None:
+        if not self._root.is_dir():
+            return None
+        try:
+            marker_mode = self._repair_marker.lstat().st_mode
+        except FileNotFoundError:
+            return None
+        except OSError as error:
+            return f"cannot inspect CredData repair marker {self._repair_marker}: {error}"
+        if not stat.S_ISREG(marker_mode):
+            return f"unsafe CredData repair marker: {self._repair_marker}"
+        return f"CredData repair is incomplete: {self._repair_marker}"
+
     def _find_manifest(self) -> pathlib.Path | None:
         if self._root.is_file():
             return self._root
@@ -350,11 +369,44 @@ class CredDataCorpus(Corpus):
                 return cand
         return None
 
-    def is_downloaded(self) -> bool:
-        if self._find_manifest() is not None:
-            return True
+    @property
+    def availability_error(self) -> str | None:
+        """Explain why the local corpus cannot be scored."""
+        return self.__dict__.get("_availability_error")
+
+    def is_downloaded(self, *, require_complete: bool = True) -> bool:
+        """Report structural or fully validated readiness.
+
+        Inventory builders may set ``require_complete=False`` so they can
+        declare missing source files explicitly. Scoring keeps the default and
+        rejects every missing fixture. Both modes reject active repair markers.
+        """
+        repair_error = self._repair_availability_error()
+        if repair_error is not None:
+            self._availability_error = repair_error
+            return False
+        manifest = self._find_manifest()
         data = self._root / "data"
-        return self.meta_dir().is_dir() and data.is_dir() and any(data.iterdir())
+        structurally_present = manifest is not None or (
+            self.meta_dir().is_dir() and data.is_dir() and any(data.iterdir())
+        )
+        if not structurally_present:
+            self._availability_error = "metadata or fixture data is absent"
+            return False
+        if not require_complete:
+            self._availability_error = None
+            return True
+        try:
+            self.records()
+        except (OSError, ValueError, SystemExit) as error:
+            self._availability_error = str(error)
+            return False
+        repair_error = self._repair_availability_error()
+        if repair_error is not None:
+            self._availability_error = repair_error
+            return False
+        self._availability_error = None
+        return True
 
     def _load_records(self) -> list[LabeledRecord]:
         manifest = self._find_manifest()
@@ -494,28 +546,71 @@ class CredDataCorpus(Corpus):
 
     # ── download (pinned clone + CredData's own downloader) ───────────
 
-    def download(self) -> None:
+    def download(self, *, jobs: int = 1) -> None:
+        if jobs < 1:
+            raise ValueError("CredData repair jobs must be at least 1")
         clone = self._root
         if not (clone / ".git").is_dir():
             clone.parent.mkdir(parents=True, exist_ok=True)
             print(f"cloning CredData -> {clone}", file=sys.stderr)
             subprocess.run(["git", "clone", CREDDATA_REPO, str(clone)], check=True)
         print(f"checking out pinned commit {CREDDATA_PIN[:12]}", file=sys.stderr)
-        subprocess.run(["git", "-C", str(clone), "fetch", "--depth", "1",
-                        "origin", CREDDATA_PIN], check=False)
-        subprocess.run(["git", "-C", str(clone), "checkout", CREDDATA_PIN], check=True)
-        req = clone / "requirements.txt"
-        if req.exists():
-            print("installing CredData requirements", file=sys.stderr)
-            subprocess.run([sys.executable, "-m", "pip", "install", "-q",
-                            "-r", str(req)], check=False)
+        try:
+            subprocess.run(
+                ["git", "-C", str(clone), "checkout", CREDDATA_PIN],
+                check=True,
+            )
+        except subprocess.CalledProcessError:
+            subprocess.run(
+                ["git", "-C", str(clone), "fetch", "--depth", "1", "origin", CREDDATA_PIN],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(clone), "checkout", CREDDATA_PIN],
+                check=True,
+            )
+        if importlib.util.find_spec("base62") is None:
+            raise RuntimeError(
+                "CredData repair requires pybase62==1.0.0 in the active Python "
+                "environment; create a virtual environment, install that pinned "
+                "package, then rerun `make creddata PY=/path/to/venv/bin/python`; "
+                "the benchmark does not mutate the system interpreter"
+            )
+        try:
+            marker_mode = self._repair_marker.lstat().st_mode
+        except FileNotFoundError:
+            pass
+        else:
+            if not stat.S_ISREG(marker_mode):
+                raise RuntimeError(
+                    f"CredData repair marker is not a regular file: "
+                    f"{self._repair_marker}"
+                )
+        self._repair_marker.write_text(
+            f"repairing pinned CredData revision {CREDDATA_PIN}\n",
+            encoding="utf-8",
+        )
         downloader = clone / "download_data.py"
         if not downloader.exists():
             raise SystemExit(f"CredData downloader not found: {downloader}")
-        print("running download_data.py (fetches ~11k files; takes a while)",
-              file=sys.stderr)
-        subprocess.run([sys.executable, str(downloader), "--data_dir", "data"],
-                       cwd=str(clone), check=True)
+        print(
+            f"running download_data.py with {jobs} repair worker(s)",
+            file=sys.stderr,
+        )
+        subprocess.run(
+            [
+                sys.executable,
+                str(downloader),
+                "--data_dir",
+                "data",
+                "--clean_data",
+                "--jobs",
+                str(jobs),
+            ],
+            cwd=str(clone),
+            check=True,
+        )
+        info = self.info()
         scratch = clone / "tmp"
         try:
             scratch_mode = scratch.lstat().st_mode
@@ -527,9 +622,14 @@ class CredDataCorpus(Corpus):
                     f"CredData temporary path is not a real directory: {scratch}; "
                     "remove it and rerun the download"
                 )
-            print("removing CredData temporary repository clones", file=sys.stderr)
+            print("removing validated CredData repository scratch", file=sys.stderr)
             shutil.rmtree(scratch)
-        print(f"CredData ready: {self.root}", file=sys.stderr)
+        self._repair_marker.unlink()
+        print(
+            f"CredData ready: {info.fixture_count} records, "
+            f"{info.labeled_positives} positives at {self.root}",
+            file=sys.stderr,
+        )
 
 
 def _main(argv: list[str] | None = None) -> int:
@@ -537,20 +637,25 @@ def _main(argv: list[str] | None = None) -> int:
     parser.add_argument("--download", action="store_true",
                         help="Clone pinned CredData + run its downloader.")
     parser.add_argument("--root", default=None)
+    parser.add_argument("--jobs", type=int, default=1)
     parser.add_argument("--treat-x", choices=("negative", "ignore"),
                         default="negative")
     args = parser.parse_args(argv)
     corpus = CredDataCorpus(root=args.root, treat_x=args.treat_x)
     if args.download:
-        corpus.download()
+        corpus.download(jobs=args.jobs)
     if corpus.is_downloaded():
         info = corpus.info()
         print(f"{corpus.name}: {info.fixture_count} records, "
               f"{info.labeled_positives} positives at {corpus.root}",
               file=sys.stderr)
     else:
-        print(f"{corpus.name}: not downloaded (run: make creddata)",
-              file=sys.stderr)
+        print(
+            f"{corpus.name}: not ready: {corpus.availability_error}; "
+            "repair it with: make creddata",
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 

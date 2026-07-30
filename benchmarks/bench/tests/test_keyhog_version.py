@@ -10,6 +10,12 @@ import pytest
 from bench import keyhog_version
 
 
+@pytest.fixture(autouse=True)
+def _isolate_dirty_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ambient developer overrides must not disable dirty-tree regression tests."""
+    monkeypatch.delenv("KEYHOG_BENCH_ALLOW_DIRTY", raising=False)
+
+
 def _version_output(*, commit: str, detector_digest: str) -> str:
     return (
         f"KeyHog v{keyhog_version.workspace_keyhog_version()}\n"

@@ -97,21 +97,10 @@ pre-commit:
 
 ## GitHub Actions
 
-Use the canonical [GitHub Actions workflow](./ci.md#github-actions) for the
-composite Action, fail-closed SARIF handling, baseline adoption, history depth,
-and changed-file scans.
-
-### Recommended: composite action (3 lines + a baseline)
-
-The maintained example is in the [GitHub Actions workflow](./ci.md#github-actions).
-
-### Manual installation
-
-See [manual installation](./ci.md#manual-installation).
-
-### Scan only changed files in a PR (faster)
-
-See the [pull request diff workflow](./ci.md#scan-only-changed-files-in-a-pr-faster).
+Use the [GitHub Action guide](./github-action.md) for the composite Action,
+inputs and outputs, baseline adoption, monorepo partitions, SARIF publication,
+and failure behavior. Use the [CI guide](./ci.md#github-actions) when a GitHub
+workflow needs direct CLI flags such as `--git-history` or `--git-blobs`.
 
 ## GitLab CI
 
@@ -282,15 +271,15 @@ keyhog scan /path/to/project --format jsonl-envelope --min-confidence 0.4
 The composite Action is the safest way to create, upload, and retain SARIF:
 
 ```yaml
-- uses: santhreal/keyhog@v0.5.48
+- uses: santhreal/keyhog@v0
   with:
     format: sarif
     upload-sarif: 'true'
     fail-on-findings: 'true'
 ```
 
-Give the job `security-events: write` as shown in the
-[CI integration guide](./ci.md#github-actions). The Action uploads before it
+Grant `security-events: write` as shown in the
+[GitHub Action guide](./github-action.md#scan-a-repository). The Action uploads before it
 enforces findings, keeps a workflow artifact, and makes only a fork pull
 request's restricted-token upload advisory. Trusted upload failures fail the
 job.

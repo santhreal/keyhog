@@ -1,7 +1,7 @@
 [book]
-title = "KeyHog"
+title = "KeyHog: Rust secret scanner"
 authors = ["Santh Project"]
-description = "Secret scanning for source trees, history, archives, and remote sources."
+description = "Scan repositories, Git history, GitHub Actions and CI, hosted Git collections, and cloud object inventories with CPU, Hyperscan, and GPU backends."
 language = "en"
 src = "src"
 
