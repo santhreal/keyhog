@@ -8,6 +8,7 @@ import datetime as dt
 import html
 import json
 import os
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,7 +19,7 @@ class StarHistoryError(ValueError):
 
 @dataclass(frozen=True)
 class Observation:
-    """One monotonic repository star-count observation."""
+    """One chronologically ordered repository star-count observation."""
 
     date: dt.date
     count: int
@@ -55,6 +56,8 @@ def load_observations(path: Path) -> list[Observation]:
 
 def compact_observations(observations: list[Observation]) -> list[Observation]:
     """Keep the first sample and every later count transition."""
+    if not observations:
+        raise StarHistoryError("star history must contain at least one observation")
     compacted = [observations[0]]
     for observation in observations[1:]:
         if observation.count != compacted[-1].count:
@@ -66,8 +69,10 @@ def record_observation(
     observations: list[Observation], date: dt.date, count: int
 ) -> list[Observation]:
     """Append one changed count, replacing only an existing same-day sample."""
-    if count < 0:
-        raise StarHistoryError("star count must be nonnegative")
+    if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+        raise StarHistoryError("star count must be a nonnegative integer")
+    if not observations:
+        return [Observation(date, count)]
     if count == observations[-1].count:
         return observations
     if date < observations[-1].date:
@@ -75,7 +80,10 @@ def record_observation(
             f"new observation {date.isoformat()} predates {observations[-1].date.isoformat()}"
         )
     if date == observations[-1].date:
-        return [*observations[:-1], Observation(date, count)]
+        updated = [*observations[:-1], Observation(date, count)]
+        if len(updated) > 1 and updated[-1].count == updated[-2].count:
+            updated.pop()
+        return updated
     return [*observations, Observation(date, count)]
 
 
@@ -101,21 +109,30 @@ def render_svg(observations: list[Observation]) -> str:
     plot_height = height - top - bottom
     maximum = max(item.count for item in observations)
     y_max = max(10, ((maximum + 9) // 10) * 10)
+    single_observation = len(observations) == 1
     span_days = max(1, (observations[-1].date - observations[0].date).days)
 
     def point(item: Observation) -> tuple[float, float]:
-        x = left + ((item.date - observations[0].date).days / span_days) * plot_width
+        if single_observation:
+            x = left + plot_width / 2
+        else:
+            x = left + ((item.date - observations[0].date).days / span_days) * plot_width
         y = top + plot_height - (item.count / y_max) * plot_height
         return x, y
 
     points = [point(item) for item in observations]
     polyline = " ".join(f"{x:.2f},{y:.2f}" for x, y in points)
-    area = (
-        f"M {left},{top + plot_height} L "
-        + " L ".join(f"{x:.2f},{y:.2f}" for x, y in points)
-        + f" L {left + plot_width},{top + plot_height} Z"
-    )
+    if single_observation:
+        area_element = ""
+    else:
+        area = (
+            f"M {left},{top + plot_height} L "
+            + " L ".join(f"{x:.2f},{y:.2f}" for x, y in points)
+            + f" L {left + plot_width},{top + plot_height} Z"
+        )
+        area_element = f'<path d="{area}" fill="url(#area)"/>'
     gain = observations[-1].count - observations[0].count
+    gain_label = f"{gain:+d}"
     midpoint = observations[len(observations) // 2]
     title = html.escape(
         f"KeyHog GitHub stars: {observations[0].count} on "
@@ -130,11 +147,21 @@ def render_svg(observations: list[Observation]) -> str:
             f'<line x1="{left}" y1="{y:.2f}" x2="{left + plot_width}" y2="{y:.2f}" class="grid"/>'
             f'<text x="{left - 12}" y="{y + 4:.2f}" text-anchor="end" class="axis">{value}</text>'
         )
-    labels = (
-        (left, observations[0].date.isoformat(), "start"),
-        (point(midpoint)[0], midpoint.date.isoformat(), "middle"),
-        (left + plot_width, observations[-1].date.isoformat(), "end"),
-    )
+    if single_observation:
+        labels = (
+            (left + plot_width / 2, observations[0].date.isoformat(), "middle"),
+        )
+    elif len(observations) == 2:
+        labels = (
+            (left, observations[0].date.isoformat(), "start"),
+            (left + plot_width, observations[-1].date.isoformat(), "end"),
+        )
+    else:
+        labels = (
+            (left, observations[0].date.isoformat(), "start"),
+            (point(midpoint)[0], midpoint.date.isoformat(), "middle"),
+            (left + plot_width, observations[-1].date.isoformat(), "end"),
+        )
     date_labels = "".join(
         f'<text x="{x:.2f}" y="{height - 23}" text-anchor="{anchor}" class="axis">{label}</text>'
         for x, label, anchor in labels
@@ -149,9 +176,9 @@ def render_svg(observations: list[Observation]) -> str:
 <rect class="bg" width="{width}" height="{height}" rx="12"/>
 <text x="{left}" y="34" class="label">Repository star history</text>
 <text x="{left}" y="65" class="value">{observations[-1].count} stars</text>
-<text x="{left + 180}" y="62" class="axis">+{gain} since {observations[0].date.isoformat()} · repository-owned data</text>
+<text x="{left + 180}" y="62" class="axis">{gain_label} since {observations[0].date.isoformat()} · repository-owned history</text>
 {''.join(grid)}
-<path d="{area}" fill="url(#area)"/>
+{area_element}
 <polyline points="{polyline}" class="line"/>
 <circle cx="{points[-1][0]:.2f}" cy="{points[-1][1]:.2f}" r="5" fill="#ffd60a"/>
 {date_labels}
@@ -160,11 +187,22 @@ def render_svg(observations: list[Observation]) -> str:
 
 
 def write_atomic(path: Path, content: str) -> None:
-    """Replace one generated file without exposing partial bytes."""
-    temporary = path.with_name(path.name + ".star-history-tmp")
-    temporary.write_text(content, encoding="utf-8")
-    os.chmod(temporary, path.stat().st_mode if path.exists() else 0o644)
-    os.replace(temporary, path)
+    """Replace one generated file without following a predictable temporary path."""
+    mode = path.stat().st_mode if path.exists() else 0o644
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, mode)
+        os.replace(temporary, path)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def main() -> int:

@@ -23,7 +23,9 @@ except ModuleNotFoundError:
 
 REPOSITORY = "https://github.com/santhreal/keyhog.git"
 GITHUB_ACTOR_ID = "64453045"
-_SSH_TARGET_RE = re.compile(r"^[A-Za-z0-9_.@:-]+$")
+_SSH_TARGET_RE = re.compile(
+    r"^(?:[A-Za-z0-9_][A-Za-z0-9_.-]*@)?[A-Za-z0-9](?:[A-Za-z0-9_.-]*[A-Za-z0-9])?$"
+)
 METRIC_PATHS = {Path("metrics/stars.json"), Path("metrics/stars.svg")}
 
 
@@ -136,17 +138,22 @@ def remote_command(
 
 
 def git_status_paths(runner: Runner) -> set[Path]:
-    """Return every changed path and reject rename-shaped ambiguous status."""
-    output = runner.output(
-        ["git", "status", "--porcelain=v1", "--untracked-files=all"]
+    """Return every changed path without losing whitespace or quoted bytes."""
+    result = runner.run(
+        ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
+        capture=True,
     )
     paths: set[Path] = set()
-    for line in output.splitlines():
-        if len(line) < 4:
-            raise ReleaseError(f"cannot parse git status line: {line!r}")
-        status, raw = line[:2], line[3:]
-        if "R" in status or "C" in status or " -> " in raw:
-            raise ReleaseError(f"release automation does not accept renamed paths: {line}")
+    for entry in result.stdout.split("\0"):
+        if not entry:
+            continue
+        if len(entry) < 4 or entry[2] != " ":
+            raise ReleaseError(f"cannot parse git status entry: {entry!r}")
+        status, raw = entry[:2], entry[3:]
+        if "R" in status or "C" in status:
+            raise ReleaseError(
+                f"release automation does not accept renamed paths: {entry!r}"
+            )
         paths.add(Path(raw))
     return paths
 
@@ -178,7 +185,7 @@ def require_clean_main(runner: Runner, *, allow_local_ahead: bool = False) -> No
     )
 
 
-def require_publication_identity(runner: Runner) -> None:
+def require_publication_identity(runner: Runner) -> str:
     """Bind local GitHub and signing credentials to the authorized maintainer."""
     runner.run(["gh", "auth", "status", "--hostname", "github.com"])
     actor_id = runner.output(["gh", "api", "user", "--jq", ".id | tostring"])
@@ -194,7 +201,56 @@ def require_publication_identity(runner: Runner) -> None:
     ).stdout.strip()
     if signing_format not in ("", "openpgp"):
         raise ReleaseError("release tags require an OpenPGP signing key")
-    runner.run(["gpg", "--list-secret-keys", signing_key], capture=True)
+    key_details = runner.output(
+        [
+            "gpg",
+            "--batch",
+            "--with-colons",
+            "--fingerprint",
+            "--fingerprint",
+            "--list-secret-keys",
+            signing_key,
+        ]
+    )
+    saw_secret_key = False
+    for line in key_details.splitlines():
+        fields = line.split(":")
+        if fields[0] == "sec":
+            saw_secret_key = True
+        elif saw_secret_key and fields[0] == "fpr" and len(fields) > 9 and fields[9]:
+            return fields[9].upper()
+    raise ReleaseError(
+        f"git user.signingkey {signing_key!r} has no usable OpenPGP secret-key fingerprint"
+    )
+
+
+def verify_tag_signature(runner: Runner, tag: str, expected_fingerprint: str) -> None:
+    """Require one valid tag signature from the configured primary OpenPGP key."""
+    result = runner.run(
+        ["git", "verify-tag", "--raw", tag],
+        check=False,
+        capture=True,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        raise ReleaseError(
+            f"tag {tag} does not have a valid OpenPGP signature"
+            + (f": {detail}" if detail else "")
+        )
+    valid_fingerprints: set[str] = set()
+    marker = "[GNUPG:] VALIDSIG "
+    for line in (result.stderr + "\n" + result.stdout).splitlines():
+        if marker not in line:
+            continue
+        fields = line.partition(marker)[2].split()
+        if fields:
+            valid_fingerprints.add(fields[0].upper())
+            valid_fingerprints.add(fields[-1].upper())
+    if expected_fingerprint.upper() not in valid_fingerprints:
+        raise ReleaseError(
+            f"tag {tag} was not signed by configured OpenPGP key "
+            f"{expected_fingerprint.upper()}"
+        )
 
 
 def release_tag_state(runner: Runner, tag: str) -> tuple[str | None, bool]:
@@ -450,14 +506,17 @@ def watch_publication(runner: Runner, options: Options, commit: str) -> None:
             "view",
             options.tag,
             "--json",
-            "tagName,isDraft,isPrerelease,url",
+            "tagName,isDraft,isPrerelease,publishedAt,url",
         ]
     )
     release = json.loads(raw)
+    expected_url = f"https://github.com/santhreal/keyhog/releases/tag/{options.tag}"
     if (
         release.get("tagName") != options.tag
         or release.get("isDraft") is not False
         or release.get("isPrerelease") is not False
+        or not release.get("publishedAt")
+        or release.get("url") != expected_url
     ):
         raise ReleaseError(f"published release identity is incomplete: {release}")
     print(f"Published {options.tag}: {release['url']}")
@@ -475,22 +534,30 @@ def preview(runner: Runner, options: Options) -> None:
             f"DATE={options.date}",
         ]
     )
+    benchmark_phase = (
+        "Retain previously checked benchmark evidence"
+        if options.skip_benchmarks
+        else "Refresh benchmark tables and repository star chart"
+    )
+    rust_scope = "excluding the diagnostic Rust rerun" if options.skip_rust else "including Rust"
     print("\nValidated release plan:")
-    print("  1. Refresh benchmark tables and repository star chart")
+    print(f"  1. {benchmark_phase}")
     print("  2. Prepare and commit changelogs, versions, and documentation")
-    print("  3. Run pre-tag source, benchmark, Rust, and mdBook gates")
-    print("  4. Push main and one annotated OpenPGP-signed tag")
+    print(f"  3. Run pre-tag source, benchmark, mdBook, and prevention gates, {rust_scope}")
+    print("  4. Push main and one verified OpenPGP-signed annotated tag")
     print("  5. Watch GitHub release, Pages, GHCR, assets, and crates.io publication")
     print("Run again with --publish to execute these irreversible publication phases.")
 
 
 def publish(runner: Runner, options: Options) -> None:
     """Execute or resume the complete reviewed release and publication workflow."""
-    require_publication_identity(runner)
+    expected_fingerprint = require_publication_identity(runner)
     current = workspace_version(runner)
     current_key = parse_version(current)
     target_key = parse_version(options.version)
     tag_commit, tag_remote = release_tag_state(runner, options.tag)
+    if tag_commit:
+        verify_tag_signature(runner, options.tag, expected_fingerprint)
     if tag_commit and not options.resume:
         raise ReleaseError(f"tag {options.tag} already exists; use --resume to verify it")
     if current_key > target_key:
@@ -506,11 +573,27 @@ def publish(runner: Runner, options: Options) -> None:
         raise ReleaseError(
             f"tag {options.tag} exists but workspace version is still {current}"
         )
-    if not prepared:
-        if not options.skip_benchmarks:
-            refresh_benchmarks(runner, options)
+
+    print("\n[1/5] Measured evidence")
+    if prepared:
+        print(f"Workspace {options.version} is already prepared; retaining committed evidence.")
+    elif options.skip_benchmarks:
+        print("Diagnostic override: retaining previously checked benchmark evidence.")
+    else:
+        refresh_benchmarks(runner, options)
+
+    print("\n[2/5] Changelogs and versions")
+    if prepared:
+        print(f"Workspace and changelogs already identify {options.tag}.")
+    else:
         prepare_release(runner, options)
+
+    print("\n[3/5] Pre-tag proofs")
+    if options.skip_rust:
+        print("Diagnostic override: skipping the duplicate local Rust gate.")
     run_pre_tag_gates(runner, options)
+
+    print("\n[4/5] Main branch and signed tag")
     push_main(runner)
     commit = runner.output(["git", "rev-parse", "HEAD"])
     if tag_commit:
@@ -524,7 +607,10 @@ def publish(runner: Runner, options: Options) -> None:
         runner.run(
             ["git", "tag", "-s", "-a", options.tag, "-m", f"KeyHog {options.tag}"]
         )
+        verify_tag_signature(runner, options.tag, expected_fingerprint)
         runner.run(["git", "push", "origin", f"refs/tags/{options.tag}"])
+
+    print("\n[5/5] Publication verification")
     if options.watch:
         watch_publication(runner, options, commit)
     else:

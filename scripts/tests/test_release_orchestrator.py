@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
+import json
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from scripts import release
@@ -19,8 +23,6 @@ class FakeRunner:
 
     def output(self, args: list[str]) -> str:
         self.commands.append(args)
-        if args[:3] == ["git", "status", "--porcelain=v1"]:
-            return self.status
         raise AssertionError(f"unexpected output command: {args}")
 
     def run(
@@ -32,6 +34,8 @@ class FakeRunner:
         capture: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         self.commands.append(args)
+        if args[:3] == ["git", "status", "--porcelain=v1"]:
+            return subprocess.CompletedProcess(args, 0, self.status, "")
         return subprocess.CompletedProcess(args, 0, "", "")
 
 
@@ -142,7 +146,70 @@ class IdentityRunner:
             return self.actor_id
         if args == ["git", "config", "--get", "user.signingkey"]:
             return "ABCDEF1234567890"
+        if args and args[0] == "gpg":
+            return (
+                "sec:u:4096:1:ABCDEF1234567890:0:0::::::scESC:::+:::23::0:\n"
+                "fpr:::::::::0123456789ABCDEF0123456789ABCDEF01234567:\n"
+            )
         raise AssertionError(f"unexpected output command: {args}")
+
+class SignatureRunner:
+    """Model valid, invalid, and wrong-key OpenPGP tag signatures."""
+
+    def __init__(
+        self,
+        fingerprint: str,
+        *,
+        returncode: int = 0,
+        include_status: bool = True,
+    ) -> None:
+        self.fingerprint = fingerprint
+        self.returncode = returncode
+        self.include_status = include_status
+        self.commands: list[list[str]] = []
+
+    def run(
+        self,
+        args: list[str],
+        *,
+        env: dict[str, str] | None = None,
+        check: bool = True,
+        capture: bool = False,
+    ) -> subprocess.CompletedProcess[str]:
+        self.commands.append(args)
+        status = ""
+        if self.include_status:
+            status = (
+                f"[GNUPG:] VALIDSIG {self.fingerprint} 2026-07-30 0 4 0 1 10 00 "
+                f"{self.fingerprint}\n"
+            )
+        return subprocess.CompletedProcess(args, self.returncode, "", status)
+
+
+class PublicationRunner:
+    """Serve one final GitHub release record after successful workflow watches."""
+
+    def __init__(self, record: dict[str, object]) -> None:
+        self.record = record
+        self.commands: list[list[str]] = []
+
+    def run(
+        self,
+        args: list[str],
+        *,
+        env: dict[str, str] | None = None,
+        check: bool = True,
+        capture: bool = False,
+    ) -> subprocess.CompletedProcess[str]:
+        self.commands.append(args)
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    def output(self, args: list[str]) -> str:
+        self.commands.append(args)
+        if args[:3] == ["gh", "release", "view"]:
+            return json.dumps(self.record)
+        raise AssertionError(f"unexpected output command: {args}")
+
 
 class RemoteReleaseCommandTests(unittest.TestCase):
     """Protect the SSH boundary from injection and option drift."""
@@ -173,8 +240,15 @@ class RemoteReleaseCommandTests(unittest.TestCase):
         self.assertNotIn("--ssh", command[-1])
 
     def test_ssh_target_rejects_shell_syntax(self) -> None:
-        """A caller-supplied SSH target must not become an arbitrary local or remote command."""
-        for target in ("host;touch /tmp/pwn", "host $(id)", "host\nwhoami"):
+        """A caller-supplied SSH target must not become an option or arbitrary command."""
+        for target in (
+            "host;touch /tmp/pwn",
+            "host $(id)",
+            "host\nwhoami",
+            "-oProxyCommand=id",
+            "user@@host",
+            "host-",
+        ):
             with self.subTest(target=target), self.assertRaisesRegex(
                 release.ReleaseError, "without shell syntax"
             ):
@@ -209,11 +283,12 @@ class ReleasePlanContractTests(unittest.TestCase):
             )
 
     def test_publication_identity_uses_supported_gh_status_and_stable_actor_id(self) -> None:
-        """The release must prove the authorized account without relying on an unavailable gh flag."""
+        """The release must bind GitHub identity to one usable OpenPGP primary fingerprint."""
         runner = IdentityRunner()
 
-        release.require_publication_identity(runner)
+        fingerprint = release.require_publication_identity(runner)
 
+        self.assertEqual(fingerprint, "0123456789ABCDEF0123456789ABCDEF01234567")
         self.assertEqual(
             runner.commands[0],
             ["gh", "auth", "status", "--hostname", "github.com"],
@@ -223,7 +298,15 @@ class ReleasePlanContractTests(unittest.TestCase):
             runner.commands,
         )
         self.assertIn(
-            ["gpg", "--list-secret-keys", "ABCDEF1234567890"],
+            [
+                "gpg",
+                "--batch",
+                "--with-colons",
+                "--fingerprint",
+                "--fingerprint",
+                "--list-secret-keys",
+                "ABCDEF1234567890",
+            ],
             runner.commands,
         )
 
@@ -233,6 +316,44 @@ class ReleasePlanContractTests(unittest.TestCase):
         with self.assertRaisesRegex(release.ReleaseError, "not authorized"):
             release.require_publication_identity(runner)
         self.assertFalse(any(command[0] == "gpg" for command in runner.commands))
+
+    def test_missing_primary_fingerprint_fails_before_tag_operations(self) -> None:
+        """A secret-key listing without a primary fingerprint must not authorize signing."""
+        runner = IdentityRunner()
+        original_output = runner.output
+
+        def output(args: list[str]) -> str:
+            if args and args[0] == "gpg":
+                return "sec:u:4096:1:ABCDEF1234567890:0:0::::::scESC:::+:::23::0:\n"
+            return original_output(args)
+
+        runner.output = output  # type: ignore[method-assign]
+        with self.assertRaisesRegex(release.ReleaseError, "no usable OpenPGP"):
+            release.require_publication_identity(runner)
+
+    def test_valid_tag_signature_must_match_configured_primary_key(self) -> None:
+        """A cryptographically valid signature from the configured key permits resume."""
+        fingerprint = "0123456789ABCDEF0123456789ABCDEF01234567"
+        runner = SignatureRunner(fingerprint)
+
+        release.verify_tag_signature(runner, "v0.5.49", fingerprint.lower())
+
+        self.assertEqual(
+            runner.commands,
+            [["git", "verify-tag", "--raw", "v0.5.49"]],
+        )
+
+    def test_unsigned_or_invalid_tag_fails_closed(self) -> None:
+        """An annotated tag without a valid signature must never become release identity."""
+        runner = SignatureRunner("A" * 40, returncode=1, include_status=False)
+        with self.assertRaisesRegex(release.ReleaseError, "valid OpenPGP signature"):
+            release.verify_tag_signature(runner, "v0.5.49", "A" * 40)
+
+    def test_valid_signature_from_another_key_fails_closed(self) -> None:
+        """Any known valid key other than the configured release key must be rejected."""
+        runner = SignatureRunner("B" * 40)
+        with self.assertRaisesRegex(release.ReleaseError, "was not signed by configured"):
+            release.verify_tag_signature(runner, "v0.5.49", "A" * 40)
 
     def test_benchmark_phase_accepts_only_generated_evidence(self) -> None:
         """Benchmark commits must never absorb source, changelog, or unrelated user edits."""
@@ -248,6 +369,82 @@ class ReleasePlanContractTests(unittest.TestCase):
         )
         self.assertTrue(all(release.benchmark_path(path) for path in accepted))
         self.assertFalse(any(release.benchmark_path(path) for path in rejected))
+
+    def test_benchmark_refresh_runs_every_evidence_owner_in_order(self) -> None:
+        """A release refresh must not omit competitor, matrix, scaling, star, or freshness work."""
+        runner = FakeRunner("")
+        options = release.Options(
+            "0.5.49", "2026-07-30", True, False, False, True
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "keyhog"
+            candidate.write_bytes(b"candidate")
+            with mock.patch.object(release, "candidate_binary", return_value=candidate):
+                release.refresh_benchmarks(runner, options)
+
+        self.assertEqual(
+            runner.commands,
+            [
+                [
+                    "cargo",
+                    "build",
+                    "-p",
+                    "keyhog",
+                    "--bin",
+                    "keyhog",
+                    "--profile",
+                    "release-fast",
+                ],
+                ["make", "-C", "benchmarks", "mirror"],
+                ["make", "-C", "benchmarks", "canonical"],
+                ["make", "-C", "benchmarks", "report"],
+                [
+                    "make",
+                    "-C",
+                    "benchmarks",
+                    "readme-matrix",
+                    "README_MATRIX_SOURCE_STATE=developer-dirty",
+                    "README_SCALING_SOURCE_STATE=developer-dirty",
+                ],
+                ["python3", "-B", "scripts/star_history.py"],
+                ["make", "-C", "benchmarks", "report-check"],
+                [
+                    "git",
+                    "status",
+                    "--porcelain=v1",
+                    "-z",
+                    "--untracked-files=all",
+                ],
+            ],
+        )
+
+    def test_missing_benchmark_candidate_stops_before_measurement(self) -> None:
+        """A successful cargo exit without the expected binary must never measure a stale executable."""
+        runner = FakeRunner("")
+        options = release.Options(
+            "0.5.49", "2026-07-30", True, False, False, True
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            missing = Path(directory) / "missing-keyhog"
+            with mock.patch.object(release, "candidate_binary", return_value=missing):
+                with self.assertRaisesRegex(release.ReleaseError, "was not built"):
+                    release.refresh_benchmarks(runner, options)
+
+        self.assertEqual(
+            runner.commands,
+            [
+                [
+                    "cargo",
+                    "build",
+                    "-p",
+                    "keyhog",
+                    "--bin",
+                    "keyhog",
+                    "--profile",
+                    "release-fast",
+                ]
+            ],
+        )
 
     def test_release_phase_accepts_exact_version_and_changelog_surfaces(self) -> None:
         """Release preparation must consume fragments without staging arbitrary repository files."""
@@ -269,7 +466,7 @@ class ReleasePlanContractTests(unittest.TestCase):
 
     def test_commit_expected_stages_only_validated_paths(self) -> None:
         """A generated phase must commit its complete owned diff with no broad git add."""
-        runner = FakeRunner(" M README.md\n?? benchmarks/reports/new.json")
+        runner = FakeRunner(" M README.md\0?? benchmarks/reports/new.json\0")
 
         committed = release.commit_expected(
             runner, "bench: refresh evidence", release.benchmark_path
@@ -286,7 +483,7 @@ class ReleasePlanContractTests(unittest.TestCase):
 
     def test_commit_expected_rejects_unowned_path_before_staging(self) -> None:
         """An unrelated source edit must stop publication before any index mutation."""
-        runner = FakeRunner(" M README.md\n M crates/scanner/src/lib.rs")
+        runner = FakeRunner(" M README.md\0 M crates/scanner/src/lib.rs\0")
 
         with self.assertRaisesRegex(release.ReleaseError, "unexpected paths"):
             release.commit_expected(
@@ -305,8 +502,31 @@ class ReleasePlanContractTests(unittest.TestCase):
 
     def test_git_status_rejects_rename_shape(self) -> None:
         """A rename must not hide its source path from phase ownership validation."""
-        runner = FakeRunner("R  old.txt -> README.md")
+        runner = FakeRunner("R  README-renamed.md\0README.md\0")
         with self.assertRaisesRegex(release.ReleaseError, "renamed"):
+            release.git_status_paths(runner)
+
+    def test_git_status_preserves_whitespace_newlines_and_unicode(self) -> None:
+        """Phase ownership must inspect exact Git path bytes instead of display quoting."""
+        runner = FakeRunner(
+            " M docs/ leading.md\0"
+            "?? docs/line\nbreak.md\0"
+            "?? benchmarks/reports/résumé.json\0"
+        )
+
+        self.assertEqual(
+            release.git_status_paths(runner),
+            {
+                Path("docs/ leading.md"),
+                Path("docs/line\nbreak.md"),
+                Path("benchmarks/reports/résumé.json"),
+            },
+        )
+
+    def test_malformed_nul_status_fails_before_staging(self) -> None:
+        """Truncated porcelain output must not be interpreted as an owned release path."""
+        runner = FakeRunner("M README.md\0")
+        with self.assertRaisesRegex(release.ReleaseError, "cannot parse"):
             release.git_status_paths(runner)
 
     def test_pre_tag_gate_runs_product_docs_and_source_proofs(self) -> None:
@@ -324,7 +544,13 @@ class ReleasePlanContractTests(unittest.TestCase):
                 ["scripts/prerelease.sh", "--pre-tag"],
                 ["make", "docs-build"],
                 ["bash", "scripts/gates/run_all.sh"],
-                ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+                [
+                    "git",
+                    "status",
+                    "--porcelain=v1",
+                    "-z",
+                    "--untracked-files=all",
+                ],
             ],
         )
 
@@ -341,6 +567,74 @@ class ReleasePlanContractTests(unittest.TestCase):
             runner.commands[0],
             ["scripts/prerelease.sh", "--pre-tag", "--skip-rust"],
         )
+
+
+class PublicationContractTests(unittest.TestCase):
+    """Protect final workflow and public GitHub release identity checks."""
+
+    def _record(self, **overrides: object) -> dict[str, object]:
+        record: dict[str, object] = {
+            "tagName": "v0.5.49",
+            "isDraft": False,
+            "isPrerelease": False,
+            "publishedAt": "2026-07-30T12:00:00Z",
+            "url": "https://github.com/santhreal/keyhog/releases/tag/v0.5.49",
+        }
+        record.update(overrides)
+        return record
+
+    def test_exact_public_release_survives_both_workflow_watches(self) -> None:
+        """Success requires the exact tag URL after release and Pages workflows pass."""
+        runner = PublicationRunner(self._record())
+        options = release.Options(
+            "0.5.49", "2026-07-30", True, False, False, True
+        )
+
+        with mock.patch.object(release, "find_workflow_run", side_effect=[101, 202]):
+            release.watch_publication(runner, options, "a" * 40)
+
+        self.assertEqual(
+            runner.commands[:2],
+            [
+                ["gh", "run", "watch", "101", "--exit-status"],
+                ["gh", "run", "watch", "202", "--exit-status"],
+            ],
+        )
+
+    def test_draft_prerelease_unpublished_or_wrong_url_fails(self) -> None:
+        """No nearby release record may masquerade as the final stable publication."""
+        cases = (
+            {"isDraft": True},
+            {"isPrerelease": True},
+            {"publishedAt": None},
+            {"url": "https://github.com/santhreal/keyhog/releases/tag/v0.5.48"},
+        )
+        options = release.Options(
+            "0.5.49", "2026-07-30", True, False, False, True
+        )
+        for override in cases:
+            with self.subTest(override=override):
+                runner = PublicationRunner(self._record(**override))
+                with mock.patch.object(
+                    release, "find_workflow_run", side_effect=[101, 202]
+                ), self.assertRaisesRegex(release.ReleaseError, "identity is incomplete"):
+                    release.watch_publication(runner, options, "a" * 40)
+
+    def test_preview_names_diagnostic_scope_without_publishing(self) -> None:
+        """Preview output must disclose retained evidence and omitted duplicate Rust gates."""
+        runner = FakeRunner()
+        options = release.Options(
+            "0.5.49", "2026-07-30", False, True, True, True
+        )
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            release.preview(runner, options)
+
+        rendered = output.getvalue()
+        self.assertIn("Retain previously checked benchmark evidence", rendered)
+        self.assertIn("excluding the diagnostic Rust rerun", rendered)
+        self.assertNotIn("git push", rendered)
 
 
 class ReleaseResumeContractTests(unittest.TestCase):

@@ -8,7 +8,7 @@
 <rect class="bg" width="960" height="320" rx="12"/>
 <text x="68" y="34" class="label">Repository star history</text>
 <text x="68" y="65" class="value">87 stars</text>
-<text x="248" y="62" class="axis">+43 since 2026-05-27 · repository-owned data</text>
+<text x="248" y="62" class="axis">+43 since 2026-05-27 · repository-owned history</text>
 <line x1="68" y1="266.00" x2="932" y2="266.00" class="grid"/><text x="56" y="270.00" text-anchor="end" class="axis">0</text><line x1="68" y1="221.02" x2="932" y2="221.02" class="grid"/><text x="56" y="225.02" text-anchor="end" class="axis">22</text><line x1="68" y1="174.00" x2="932" y2="174.00" class="grid"/><text x="56" y="178.00" text-anchor="end" class="axis">45</text><line x1="68" y1="126.98" x2="932" y2="126.98" class="grid"/><text x="56" y="130.98" text-anchor="end" class="axis">68</text><line x1="68" y1="82.00" x2="932" y2="82.00" class="grid"/><text x="56" y="86.00" text-anchor="end" class="axis">90</text>
 <path d="M 68,266 L 68.00,176.04 L 81.94,157.64 L 95.87,151.51 L 109.81,137.20 L 123.74,131.07 L 137.68,124.93 L 151.61,120.84 L 165.55,116.76 L 221.29,114.71 L 235.23,110.62 L 249.16,108.58 L 290.97,104.49 L 402.45,102.44 L 458.19,100.40 L 569.68,96.31 L 611.48,94.27 L 639.35,96.31 L 653.29,98.36 L 736.90,96.31 L 820.52,94.27 L 848.39,92.22 L 932.00,88.13 L 932,266 Z" fill="url(#area)"/>
 <polyline points="68.00,176.04 81.94,157.64 95.87,151.51 109.81,137.20 123.74,131.07 137.68,124.93 151.61,120.84 165.55,116.76 221.29,114.71 235.23,110.62 249.16,108.58 290.97,104.49 402.45,102.44 458.19,100.40 569.68,96.31 611.48,94.27 639.35,96.31 653.29,98.36 736.90,96.31 820.52,94.27 848.39,92.22 932.00,88.13" class="line"/>

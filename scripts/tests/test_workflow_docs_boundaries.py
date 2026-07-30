@@ -1,4 +1,4 @@
-"""Behavioral contracts for distinct Action, direct CI, and inventory guides."""
+"""Behavioral contracts for operator discovery and distinct workflow guides."""
 
 from __future__ import annotations
 
@@ -30,6 +30,48 @@ class WorkflowDocumentationBoundaryTests(unittest.TestCase):
         self.assertEqual(len(issues), 1)
         self.assertIn("readme: missing canonical workflow route", issues[0])
         self.assertIn("mass-scanning.html", issues[0])
+
+    def test_readme_cannot_drop_recipe_chooser_or_release_routes(self) -> None:
+        """New users and maintainers must reach commands and release operations from the landing page."""
+        for route in (
+            "https://santhreal.github.io/keyhog/capabilities.html",
+            "https://santhreal.github.io/keyhog/recipes.html",
+            "https://santhreal.github.io/keyhog/releasing.html",
+        ):
+            with self.subTest(route=route):
+                broken = dict(self.texts)
+                broken["readme"] = broken["readme"].replace(route, "missing-route")
+                issues = workflow_docs_boundaries.boundary_issues(broken)
+                self.assertEqual(len(issues), 1)
+                self.assertIn(route, issues[0])
+
+    def test_recipe_index_must_keep_every_source_family_discoverable(self) -> None:
+        """A recipe rewrite must not strand container, cloud, URL, host, or verification users."""
+        broken = dict(self.texts)
+        broken["recipes"] = broken["recipes"].replace(
+            "## Scan a Docker image before you ship it",
+            "## Missing artifact recipe",
+        )
+
+        issues = workflow_docs_boundaries.boundary_issues(broken)
+
+        self.assertEqual(len(issues), 1)
+        self.assertIn("recipes: missing canonical workflow route", issues[0])
+        self.assertIn("Docker image", issues[0])
+
+    def test_release_guide_must_keep_safe_local_remote_and_resume_routes(self) -> None:
+        """Maintainers must not lose the fingerprint check or one-command recovery path."""
+        broken = dict(self.texts)
+        broken["release"] = broken["release"].replace(
+            "configured primary-key fingerprint",
+            "unspecified signing key",
+        )
+
+        issues = workflow_docs_boundaries.boundary_issues(broken)
+
+        self.assertEqual(len(issues), 1)
+        self.assertIn("release: missing canonical workflow route", issues[0])
+        self.assertIn("primary-key fingerprint", issues[0])
 
     def test_action_guide_cannot_absorb_provider_specific_ci_recipes(self) -> None:
         """GitLab or Jenkins recipes in the Action guide would recreate two conflicting CI manuals."""

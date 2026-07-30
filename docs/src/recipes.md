@@ -5,6 +5,26 @@ provider tokens in the documented environment variables, never on the command
 line. See [environment variables](./reference/env.md) and
 [exit codes](./reference/exit-codes.md).
 
+## Find the right recipe
+
+Each command scans one explicit source boundary. Run several recipes when your
+review spans several boundaries, and retain each `json-envelope` report with its
+raw exit code.
+
+| Goal | Recipe | Coverage reminder |
+|---|---|---|
+| Scan local files or choose a detection preset | [Scan code you have locally](#scan-code-you-have-locally) | A filesystem scan does not add Git history. |
+| Gate staged content, a diff, or reachable commits | [Gate commits and pull requests](#gate-commits-and-pull-requests) | Staged, diff, history, and working-tree bytes are different inputs. |
+| Add a maintained GitHub gate | [Add it to CI](#add-it-to-ci-one-workflow-file) | The Action owns one checked-out repository path. |
+| Inventory GitHub, GitLab, or Bitbucket | [Scan an entire GitHub organization](#scan-an-entire-github-organization) or [Scan a GitLab group or Bitbucket workspace](#scan-a-gitlab-group-or-bitbucket-workspace) | Partition large estates and preserve one status per partition. |
+| Inspect issues, pull requests, discussions, wikis, or gists | [Scan collaboration surfaces](#scan-a-single-repos-collaboration-surfaces) | Collaboration content is separate from repository files and Git objects. |
+| Inspect an image, archive, or cloud bucket | [Scan a Docker image](#scan-a-docker-image-before-you-ship-it), [scan third-party archives](#scan-third-party-archives-without-a-false-clean), or [audit a cloud bucket](#audit-a-cloud-bucket) | Preserve coverage gaps for encrypted, corrupt, unsafe, truncated, or limited content. |
+| Inspect a URL, response, HAR capture, or stdin | [Scan a URL](#scan-a-url-endpoint-response-or-har-capture) or [pipe arbitrary text](#pipe-arbitrary-text-through) | URL mode fetches selected responses. It is not a crawler. |
+| Audit a local host | [Sweep an entire machine](#sweep-an-entire-machine) | The space ceiling and mount policy bound coverage. |
+| Test whether eligible credentials are live | [Confirm a finding](#confirm-a-finding-is-a-live-credential) | Verification sends credential-derived requests to providers. |
+| Adopt existing findings or approve one fixture | [Adopt on a noisy repo](#adopt-on-a-legacy-or-noisy-repo) or [approve one fixture](#approve-one-exact-fixture-finding) | A baseline and an exact suppression solve different policy problems. |
+| Export to CI, a SIEM, or another tool | [Emit for any pipeline](#emit-for-any-pipeline-or-siem) | Envelope formats retain source status and coverage state. |
+
 ## Scan code you have locally
 
 ```bash

@@ -57,6 +57,11 @@ class StarHistoryDataTests(unittest.TestCase):
             [observations[0], observations[2], observations[4]],
         )
 
+    def test_empty_history_fails_with_domain_error(self) -> None:
+        """Callers must receive an actionable error instead of an indexing traceback."""
+        with self.assertRaisesRegex(stars.StarHistoryError, "at least one"):
+            stars.compact_observations([])
+
     def test_backdated_unchanged_count_is_a_safe_noop(self) -> None:
         """Clock skew must not fail a run that has no new repository state to record."""
         original = [stars.Observation(dt.date(2026, 7, 2), 84)]
@@ -89,6 +94,20 @@ class StarHistoryDataTests(unittest.TestCase):
         self.assertEqual(len(updated), 2)
         self.assertEqual(updated[-1], stars.Observation(dt.date(2026, 7, 1), 85))
 
+    def test_same_day_correction_back_to_previous_count_removes_transition(self) -> None:
+        """A corrected API sample must not retain a false one-day star transition."""
+        original = [
+            stars.Observation(dt.date(2026, 6, 30), 83),
+            stars.Observation(dt.date(2026, 7, 1), 84),
+        ]
+
+        updated = stars.record_observation(original, dt.date(2026, 7, 1), 83)
+
+        self.assertEqual(
+            updated,
+            [stars.Observation(dt.date(2026, 6, 30), 83)],
+        )
+
     def test_backdated_or_negative_observation_fails_closed(self) -> None:
         """Bad workflow clocks and malformed API values must not reorder committed history."""
         original = [stars.Observation(dt.date(2026, 7, 2), 84)]
@@ -96,6 +115,8 @@ class StarHistoryDataTests(unittest.TestCase):
             stars.record_observation(original, dt.date(2026, 7, 1), 85)
         with self.assertRaisesRegex(stars.StarHistoryError, "nonnegative"):
             stars.record_observation(original, dt.date(2026, 7, 3), -1)
+        with self.assertRaisesRegex(stars.StarHistoryError, "integer"):
+            stars.record_observation(original, dt.date(2026, 7, 3), True)
 
     def test_duplicate_or_unsorted_dates_are_rejected(self) -> None:
         """The chart timeline must never choose an arbitrary point order."""
@@ -130,6 +151,28 @@ class StarHistoryRenderingTests(unittest.TestCase):
         self.assertIn(">87 stars</text>", svg)
         self.assertNotIn("<image", svg)
         self.assertNotIn(" href=", svg)
+
+    def test_unstar_decline_uses_a_single_negative_sign(self) -> None:
+        """A real count decline must render as -N instead of the malformed +-N label."""
+        svg = stars.render_svg(
+            [
+                stars.Observation(dt.date(2026, 7, 1), 84),
+                stars.Observation(dt.date(2026, 7, 2), 83),
+            ]
+        )
+
+        self.assertIn(">-1 since 2026-07-01", svg)
+        self.assertNotIn("+-1", svg)
+
+    def test_single_observation_renders_one_date_without_invented_area_history(self) -> None:
+        """A new repository history must show one measured point, not a fake trend span."""
+        svg = stars.render_svg(
+            [stars.Observation(dt.date(2026, 7, 30), 87)]
+        )
+
+        self.assertEqual(svg.count(">2026-07-30</text>"), 1)
+        self.assertNotIn('<path d="', svg)
+        self.assertIn(">+0 since 2026-07-30", svg)
 
     def test_svg_bytes_are_deterministic(self) -> None:
         """Scheduled reruns over unchanged data must not create a new chart commit."""
