@@ -23,8 +23,10 @@ peer is acquired. An unacquired peer is skipped loudly, never substituted.
 Speed: one stable set of bounded corpus shards per checked backend. Belongs in
 the bench/nightly lane, not the fast unit lane.
 
-Requires: the CredData corpus on disk + a keyhog binary (KEYHOG_BIN or a release
-build). Both checked; absence skips the module with the reason.
+Requires: the CredData corpus, a current full release binary (`KEYHOG_BIN` or a
+release build), and, for timing-fixture tests, a current ci-lean binary in
+`KEYHOG_AUTOROUTE_FIXTURE_BIN`. Missing assets skip loudly instead of changing
+the product binary's feature set.
 """
 
 from __future__ import annotations
@@ -346,6 +348,25 @@ def backend_findings():
 _AUTOROUTE_TIMING_FIXTURE_ENV = "KEYHOG_CI_AUTOROUTE_TIMING_FIXTURE"
 _AUTOROUTE_TIMING_FIXTURE_AUTH_ENV = "KEYHOG_CI_AUTOROUTE_FIXTURE_AUTH"
 _AUTOROUTE_TIMING_FIXTURE_AUTH = "bench-backend-parity-v1"
+_AUTOROUTE_FIXTURE_BIN_ENV = "KEYHOG_AUTOROUTE_FIXTURE_BIN"
+
+
+def _autoroute_fixture_binary() -> str:
+    """Return the explicit ci-lean binary that owns the test-only timing seam."""
+    binary = os.environ.get(_AUTOROUTE_FIXTURE_BIN_ENV)
+    if not binary:
+        pytest.skip(
+            f"{_AUTOROUTE_FIXTURE_BIN_ENV} is unset; build a current ci-lean binary "
+            "before running deterministic autoroute timing-fixture tests"
+        )
+    try:
+        assert_keyhog_binary_current(binary)
+    except KeyhogVersionError as exc:
+        pytest.fail(
+            f"{exc}; refusing to exercise test-only autoroute timing fixtures "
+            "with a stale ci-lean binary"
+        )
+    return binary
 
 
 def _autoroute_timing_fixture_env(fixture: str) -> dict[str, str]:
@@ -364,7 +385,7 @@ def _write_fused_autoroute_fixture(root: pathlib.Path) -> None:
 
 
 def test_fused_autoroute_calibration_cache_replay_matches_simd(tmp_path):
-    binary = _current_keyhog_binary()
+    binary = _autoroute_fixture_binary()
     root = tmp_path / "fused-fixture"
     _write_fused_autoroute_fixture(root)
 
@@ -400,7 +421,7 @@ def test_fused_autoroute_calibration_cache_replay_matches_simd(tmp_path):
 
 
 def test_fused_autoroute_inconclusive_timing_fails_closed(tmp_path):
-    binary = _current_keyhog_binary()
+    binary = _autoroute_fixture_binary()
     root = tmp_path / "noisy-fused-fixture"
     _write_fused_autoroute_fixture(root)
     cache = tmp_path / "autoroute.json"
@@ -443,7 +464,7 @@ def test_fused_autoroute_inconclusive_timing_fails_closed(tmp_path):
 
 
 def test_fused_autoroute_timing_fixture_requires_authorization(tmp_path):
-    binary = _current_keyhog_binary()
+    binary = _autoroute_fixture_binary()
     root = tmp_path / "unauthorized-fused-fixture"
     _write_fused_autoroute_fixture(root)
     cache = tmp_path / "autoroute.json"

@@ -29,7 +29,8 @@
 # These run when their asset is present and LOUD-SKIP (printed, never silent 
 # Law 10) when not, so a developer box without the corpus still gets the source
 # gates and CI (which HAS the assets) gets everything:
-#   #2 backend parity: a scan path silently diverges (pytest, needs corpus+bin)
+#   #2 backend parity: a scan path silently diverges (pytest, needs corpus + full binary)
+#       deterministic autoroute fixtures also need KEYHOG_AUTOROUTE_FIXTURE_BIN (ci-lean)
 #   #3 recall floor: recall regressed below the pinned line (pytest)
 #   docs_links: built mdBook has no broken local resources or fragments
 #   bench gate, keyhog must lead competitors + not regress (needs results/)
@@ -215,6 +216,9 @@ echo "== Gates #2 + #3: backend parity + recall floor (bench pytest) =="
 if [ "$GATES_SOURCE_ONLY" = "1" ]; then
   skip "GATES_SOURCE_ONLY=1 (backend parity + recall floor pytest not run)."
 elif [ -d benchmarks/corpora/creddata/CredData/meta ]; then
+  if [ -z "${KEYHOG_AUTOROUTE_FIXTURE_BIN:-}" ]; then
+    skip "KEYHOG_AUTOROUTE_FIXTURE_BIN is unset (build a current ci-lean binary to enable deterministic autoroute timing-fixture tests)."
+  fi
   ( cd benchmarks && python3 -B -m pytest -p no:cacheprovider \
       bench/tests/test_backend_parity.py \
       bench/tests/test_creddata_recall_matrix.py::test_creddata_recall_does_not_regress_below_floor \
