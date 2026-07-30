@@ -1,0 +1,75 @@
+name: Release readiness
+
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  pull_request:
+    paths:
+      - 'changes/**'
+      - 'scripts/prepare_release.py'
+      - 'scripts/bump_doc_versions.py'
+      - 'scripts/release_notes.py'
+      - 'scripts/prerelease.sh'
+      - 'scripts/tests/test_prepare_release.py'
+      - 'scripts/tests/test_bump_doc_versions.py'
+      - 'scripts/tests/test_release_notes.py'
+      - '.github/workflows/release-ready.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: release-readiness-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    name: Validate next release transaction
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Test release automation
+        run: |
+          python3 -B -m unittest \
+            scripts.tests.test_prepare_release \
+            scripts.tests.test_bump_doc_versions \
+            scripts.tests.test_release_notes
+
+      - name: Validate pending release without mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          fragments=(changes/*.toml)
+          if (( ${#fragments[@]} == 0 )); then
+            {
+              echo '## Release readiness'
+              echo
+              echo 'No pending change fragments. There is no release candidate to prepare.'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          current="$(python3 -B - <<'PY'
+          import tomllib
+          from pathlib import Path
+          print(tomllib.loads(Path('Cargo.toml').read_text())['workspace']['package']['version'])
+          PY
+          )"
+          next="$(python3 -B - "$current" <<'PY'
+          import sys
+          major, minor, patch = map(int, sys.argv[1].split('.'))
+          print(f'{major}.{minor}.{patch + 1}')
+          PY
+          )"
+          python3 -B scripts/prepare_release.py \
+            --version "$next" --date "$(date -u +%Y-%m-%d)"
+          {
+            echo '## Release readiness'
+            echo
+            printf 'Validated %s change fragment(s) for the next patch candidate, `v%s`.\n' \
+              "${#fragments[@]}" "$next"
+            echo 'The check was read-only. A maintainer still reviews the diff and signs the release tag.'
+          } >> "$GITHUB_STEP_SUMMARY"

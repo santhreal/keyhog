@@ -132,6 +132,8 @@ run "Workflow documentation boundaries: Action, direct CI, and mass scanning sta
   python3 -B scripts/gates/workflow_docs_boundaries.py
 run "Workflow documentation boundary tests: routing and ownership fail closed" \
   python3 -B -m unittest scripts.tests.test_workflow_docs_boundaries -v
+run "Pages metadata tests: canonical discovery output stays deterministic" \
+  python3 -B -m unittest scripts.tests.test_docs_site -v
 run "README benchmark matrix: snapshot, reports, and generated panels agree" \
   make -C benchmarks readme-matrix-check
 run "Gate #1i self-test: dangling doc version pins are detected" \
@@ -140,6 +142,8 @@ run "Gate #1i: documented action/install pins resolve to v0 or the current versi
   python3 scripts/gates/doc_version_pins.py
 run "Release documentation bump tests: measured benchmark provenance stays immutable" \
   python3 -B -m unittest scripts.tests.test_bump_doc_versions -v
+run "Release preparation tests: fragments produce one coherent version transaction" \
+  python3 -B -m unittest scripts.tests.test_prepare_release -v
 run "Documentation truth tests: measured versions remain bound to evidence" \
   python3 -B -m unittest scripts.tests.test_docs_truth -v
 run "Crate changelog gate: every publishable crate has release notes" \

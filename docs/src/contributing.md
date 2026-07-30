@@ -14,6 +14,7 @@ welcome.
 | Add a detector                    | Add one detector TOML with its inline truth pair, then add its adversarial contract. |
 | Fix an FP                         | Find the regex / shape gate that's firing. Tighten it. Add a negative test that would catch the regression. |
 | Document something undocumented   | Edit the canonical page under `docs/src/`; the site rebuilds from that mdBook source. |
+| Describe an operator-visible change | Add one validated TOML under `changes/`; the release preparer owns every changelog. |
 
 ## Repo layout
 
@@ -159,6 +160,32 @@ cargo test -p keyhog-scanner property::scanner_fuzz    # proptest
 Run the narrowest behavioral gate that proves the change, then the affected
 package suite. Runtime depends on build profile, host, corpus, enabled features,
 and cache warmth; command output is the timing evidence for that run.
+
+## Describe a published change
+
+Add one change fragment for every operator-visible behavior or API change:
+
+```toml
+category = "Fixed"
+summary = "Preserve the exact report exit status in direct CI jobs."
+crates = ["cli"]
+```
+
+Save the file under `changes/` with a lowercase, hyphenated name. Do not edit
+the newest changelog section. The release preparer validates the fragment,
+renders root release notes, and routes the summary only to the crate
+changelogs you name.
+
+Run a read-only release preview when you maintain a release:
+
+```sh
+NEXT_VERSION=X.Y.Z
+make release-check VERSION="$NEXT_VERSION"
+```
+
+See [Prepare and publish a release](./releasing.md) for categories, crate
+ownership, the complete transaction, signed-tag publication, and Pages
+verification.
 
 ## License
 

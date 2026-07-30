@@ -130,19 +130,6 @@ raise SystemExit(1)
 PY
 }
 
-# Portable in-place sed. GNU `sed -i` and BSD/macOS `sed -i` have incompatible
-# argument rules, so use a temporary file and preserve the original inode.
-sed_inplace() {
-  local script="$1" file="$2" tmp
-  tmp="$(mktemp "${TMPDIR:-/tmp}/prerelease-sed.XXXXXX")" || return 1
-  if sed "$script" "$file" >"$tmp"; then
-    cat "$tmp" >"$file"
-  else
-    rm -f "$tmp"
-    return 1
-  fi
-  rm -f "$tmp"
-}
 
 validate_crate_changelogs() {
   local -a mode=()
@@ -190,105 +177,10 @@ run_gpu_crossover_gate() {
 }
 
 apply_version_bump() {
-  local current="$1" next="$2" today current_re
-  local -a versioned_files=(
-    README.md
-    action.yml
-    .github/actions/keyhog/action.yml
-    .github/workflows/action-e2e.yml
-    .github/actions/keyhog/README.md
-    docs/src/install.md
-    docs/src/introduction.md
-    docs/src/first-scan.md
-    docs/src/reference/exit-codes.md
-    docs/assets/keyhog-banner.svg
-    docs/src/reference/oob-verification.md
-    docs/src/verification.md
-    docs/src/workflows/ci.md
-    docs/src/workflows/integrations.md
-    docs/src/workflows/precommit.md
-  )
-
-  if ! [[ "$next" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    echo "invalid --bump version '$next'; expected X.Y.Z" >&2
-    return 2
-  fi
-  if [ "$next" = "$current" ]; then
-    echo "--bump version already equals workspace version $current" >&2
-    return 2
-  fi
-  if [ "$(grep -c '^## \[Unreleased\]$' CHANGELOG.md)" -ne 1 ]; then
-    echo "CHANGELOG.md must contain exactly one '## [Unreleased]' heading" >&2
-    return 1
-  fi
-  if [ "$(grep -c "^version = \"$current\"$" Cargo.toml)" -ne 1 ] \
-     || [ "$(grep -c "=$current\"" Cargo.toml)" -ne 4 ]; then
-    echo "Cargo.toml does not contain the expected workspace version and four exact internal pins" >&2
-    return 1
-  fi
-  current_re="${current//./\\.}"
-  for file in "${versioned_files[@]}"; do
-    if ! grep -Eq "(^|[^0-9])v?$current_re([^0-9]|$)" "$file"; then
-      echo "$file does not contain the current canonical version $current" >&2
-      return 1
-    fi
-  done
-
-
-  sed_inplace "s/^version = \"$current_re\"/version = \"$next\"/" Cargo.toml || return 1
-  sed_inplace "s/=$current_re\"/=$next\"/g" Cargo.toml || return 1
-
-  python3 - "$current" "$next" Cargo.lock <<'PY' || return 1
-import os
-import pathlib
-import sys
-
-current, next_version, raw_path = sys.argv[1:]
-path = pathlib.Path(raw_path)
-lines = path.read_text().splitlines(keepends=True)
-workspace = {"keyhog", "keyhog-core", "keyhog-scanner", "keyhog-sources", "keyhog-verifier"}
-updated = set()
-package = None
-for index, line in enumerate(lines):
-    if line == "[[package]]\n":
-        package = None
-    elif line.startswith('name = "') and line.rstrip().endswith('"'):
-        package = line[len('name = "'):-2]
-    elif package in workspace and line == f'version = "{current}"\n':
-        lines[index] = f'version = "{next_version}"\n'
-        updated.add(package)
-
-missing = sorted(workspace - updated)
-if missing:
-    raise SystemExit(f"Cargo.lock did not contain expected {current} workspace packages: {missing}")
-tmp = path.with_name(path.name + ".prerelease-tmp")
-tmp.write_text("".join(lines))
-os.chmod(tmp, path.stat().st_mode)
-os.replace(tmp, path)
-PY
-
-  python3 -B scripts/bump_doc_versions.py \
-    --current "$current" \
-    --next "$next" \
-    "${versioned_files[@]}" || return 1
-
-  today="$(date -u +%Y-%m-%d)"
-  sed_inplace "0,/^## \[Unreleased\]$/s//## [$next] - $today/" CHANGELOG.md || return 1
-  for file in \
-    crates/cli/CHANGELOG.md \
-    crates/core/CHANGELOG.md \
-    crates/scanner/CHANGELOG.md \
-    crates/sources/CHANGELOG.md \
-    crates/verifier/CHANGELOG.md; do
-    sed_inplace "0,/^## Unreleased$/s//## $next - $today/" "$file" || return 1
-  done
-
+  local _current="$1" next="$2"
+  python3 -B scripts/prepare_release.py --version "$next" --apply || return 1
   python3 -B scripts/gates/doc_version_pins.py || return 1
-  if [ "$(grep -c '^## \[Unreleased\]$' CHANGELOG.md)" -ne 0 ]; then
-    echo "CHANGELOG.md still contains an Unreleased heading after bump" >&2
-    return 1
-  fi
-  echo "  bumped workspace, lockfile, crate changelogs, and canonical docs to $next"
+  echo "  prepared deterministic changelogs, workspace, lockfile, and canonical docs for $next"
 }
 
 CUR="$(grep -m1 '^version = ' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')"

@@ -30,6 +30,8 @@ on:
       - 'scripts/tests/test_action_docs_contract.py'
       - 'scripts/gates/workflow_docs_boundaries.py'
       - 'scripts/tests/test_workflow_docs_boundaries.py'
+      - 'scripts/docs_site.py'
+      - 'scripts/tests/test_docs_site.py'
   pull_request:
     paths:
       - 'docs/**'
@@ -52,6 +54,8 @@ on:
       - 'scripts/tests/test_action_docs_contract.py'
       - 'scripts/gates/workflow_docs_boundaries.py'
       - 'scripts/tests/test_workflow_docs_boundaries.py'
+      - 'scripts/docs_site.py'
+      - 'scripts/tests/test_docs_site.py'
   workflow_dispatch:
 
 # Don't queue parallel deploys -- the latest push wins.
@@ -84,6 +88,9 @@ jobs:
           python3 -B scripts/gates/workflow_docs_boundaries.py
           python3 -B -m unittest scripts.tests.test_workflow_docs_boundaries
 
+      - name: Verify Pages discovery metadata
+        run: python3 -B -m unittest scripts.tests.test_docs_site
+
       - name: Verify generated README benchmark panels
         run: make -C benchmarks readme-matrix-check
 
@@ -102,17 +109,19 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           "$HOME/.local/bin/mdbook" --version
 
-      - name: Test and build site
+      - name: Test, build, and enhance site
         run: |
           cd docs
           mdbook test
           mdbook build
-          python3 -B ../scripts/gates/docs_links.py book --site-prefix /keyhog/
+          cd ..
+          python3 -B scripts/docs_site.py docs/book
+          python3 -B scripts/gates/docs_links.py docs/book --site-prefix /keyhog/
           # mdbook emits to docs/book/. Move CNAME / .nojekyll if present.
-          if [ -f CNAME ]; then
-            cp CNAME book/CNAME || true
+          if [ -f docs/CNAME ]; then
+            cp docs/CNAME docs/book/CNAME || true
           fi
-          touch book/.nojekyll
+          touch docs/book/.nojekyll
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0

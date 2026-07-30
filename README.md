@@ -740,6 +740,9 @@ lists every command, flag, generated default, and exit status. Use
   redacted credential shape and detector id; each report becomes a
   permanent test fixture under
   [`tests/contracts/`](./crates/scanner/tests/contracts/).
+- **Preparing a release?** Add one validated change fragment, preview the exact
+  version transaction, then publish from one reviewed signed tag. Follow the
+  [release operations guide](https://santhreal.github.io/keyhog/releasing.html).
 - **Security issue in KeyHog itself?** Don't open a public issue;
   use [GitHub private vulnerability reporting](https://github.com/santhreal/keyhog/security/advisories/new).
   If that form is unavailable, email `security@santh.dev`; PGP is not required.

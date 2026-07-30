@@ -56,4 +56,5 @@
 
 - [Architecture](./architecture.md)
 - [Contributing](./contributing.md)
+- [Prepare and publish a release](./releasing.md)
 - [Changelog](./changelog.md)

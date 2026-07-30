@@ -40,6 +40,14 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - A workflow-boundary gate and dedicated regression suite keep GitHub Action,
   direct CI, and mass-inventory documentation separately owned and mutually
   discoverable.
+- Deterministic TOML change fragments now drive one validated release
+  transaction across workspace versions, lockfile packages, public version
+  pins, GitHub release notes, and crate-owned changelogs. A daily read-only
+  workflow validates the next patch candidate without publishing it.
+- The mdBook build now emits one canonical URL, Open Graph and structured
+  project metadata, `sitemap.xml`, and `robots.txt` from tested generated
+  output. A release operations chapter documents the signed-tag publication
+  path and the same local documentation gate used by GitHub Pages.
 
 ### Changed
 
