@@ -424,18 +424,6 @@ jobs:
             --reports reports-nightly --corpus mirror \
             --run-set nightly-run-set.toml
 
-      - name: Measure hosted CPU and partition scaling
-        run: |
-          set -euo pipefail
-          cd benchmarks
-          python3 -B -m bench.scaling_matrix measure \
-            --binary "$GITHUB_WORKSPACE/target/release/keyhog" \
-            --workspace-root "$RUNNER_TEMP/keyhog-scaling" \
-            --storage "github-runner-temp=$RUNNER_TEMP/keyhog-scaling" \
-            --snapshot reports-nightly/readme-scaling.json \
-            --markdown reports-nightly/readme-scaling.md \
-            --trials 3 --warmups 1 --backend simd --source-state clean
-
 
       - name: Validate untrusted nightly calibration evidence
         if: github.event_name == 'workflow_dispatch'
@@ -595,7 +583,6 @@ jobs:
           expected_reports = {
               "leaderboard.md", "perf.md", "recall-gap.md",
               "category-recall.md", "static-recovery.md", "bloom.md",
-              "readme-scaling.json", "readme-scaling.md",
           }
           report_root = pathlib.Path("reports-nightly")
           observed_reports = {
@@ -612,8 +599,6 @@ jobs:
               path = report_root / name
               if not path.is_file() or not path.read_text().strip():
                   raise SystemExit(f"{path}: missing or empty report")
-          from bench.scaling_matrix import load as load_scaling
-          load_scaling(report_root / "readme-scaling.json")
 
           for root in map(pathlib.Path, (
               "results-nightly", "results-creddata", "results-ioc-recovery",
@@ -625,6 +610,35 @@ jobs:
                   row = RunResult.from_json(json.loads(path.read_text()), source=str(path))
                   if row.finding_count <= 0:
                       raise SystemExit(f"{path}: no usable findings")
+          PY
+
+      - name: Measure hosted CPU and partition scaling
+        run: |
+          set -euo pipefail
+          cd benchmarks
+          python3 -B -m bench.scaling_matrix measure \
+            --binary "$GITHUB_WORKSPACE/target/release/keyhog" \
+            --workspace-root "$RUNNER_TEMP/keyhog-scaling" \
+            --storage "github-runner-temp=$RUNNER_TEMP/keyhog-scaling" \
+            --snapshot reports-nightly/readme-scaling.json \
+            --markdown reports-nightly/readme-scaling.md \
+            --trials 3 --warmups 1 --backend simd --source-state clean
+
+      - name: Validate hosted scaling artifacts
+        run: |
+          set -euo pipefail
+          cd benchmarks
+          python3 -B - <<'PY'
+          import pathlib
+
+          from bench.scaling_matrix import load, render
+
+          snapshot = pathlib.Path("reports-nightly/readme-scaling.json")
+          markdown = pathlib.Path("reports-nightly/readme-scaling.md")
+          evidence = load(snapshot)
+          expected = render(evidence) + "\n"
+          if not markdown.is_file() or markdown.read_text() != expected:
+              raise SystemExit("hosted scaling Markdown differs from validated JSON")
           PY
 
 

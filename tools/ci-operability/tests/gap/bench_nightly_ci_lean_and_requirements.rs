@@ -17,6 +17,7 @@
 
 use super::support::{read_workflow, repo_root};
 
+/// Locks the nightly CPU lane to exact measured, validated, and explicitly uploaded artifacts.
 #[test]
 fn bench_nightly_is_ci_lean_and_rejects_empty_or_stale_artifacts() {
     let text = read_workflow("bench-nightly.yml");
@@ -93,6 +94,12 @@ fn bench_nightly_is_ci_lean_and_rejects_empty_or_stale_artifacts() {
     let validate = text
         .find("name: Validate benchmark artifacts")
         .expect("bench-nightly must validate artifacts before upload");
+    let scaling = text
+        .find("name: Measure hosted CPU and partition scaling")
+        .expect("bench-nightly must measure the generated scaling matrix");
+    let validate_scaling = text
+        .find("name: Validate hosted scaling artifacts")
+        .expect("bench-nightly must validate scaling JSON against its Markdown");
     let upload = text
         .find("name: Upload benchmark results and reports")
         .expect("bench-nightly must upload generated artifacts after the gate");
@@ -105,8 +112,10 @@ fn bench_nightly_is_ci_lean_and_rejects_empty_or_stale_artifacts() {
             && leaderboard < run_set
             && run_set < report
             && report < validate
-            && validate < upload,
-        "bench-nightly must clean, measure, identify, render, validate, then upload"
+            && validate < scaling
+            && scaling < validate_scaling
+            && validate_scaling < upload,
+        "bench-nightly must clean, measure, identify, render, gate, scale, validate, then upload"
     );
     assert!(
         text.contains("RunResult.from_json")
@@ -143,6 +152,16 @@ fn bench_nightly_is_ci_lean_and_rejects_empty_or_stale_artifacts() {
             "nightly upload must explicitly allow {report}"
         );
     }
+    assert!(
+        text.contains("python3 -B -m bench.scaling_matrix measure")
+            && text.contains("--storage \"github-runner-temp=$RUNNER_TEMP/keyhog-scaling\"")
+            && text.contains("--trials 3 --warmups 1 --backend simd --source-state clean")
+            && text.contains("evidence = load(snapshot)")
+            && text.contains("expected = render(evidence) + \"\\n\"")
+            && text.contains("benchmarks/reports-nightly/readme-scaling.json")
+            && text.contains("benchmarks/reports-nightly/readme-scaling.md"),
+        "nightly scaling evidence must be measured, schema-validated, rendered, and explicitly uploaded"
+    );
     assert!(
         text.contains("observed_reports != expected_reports")
             && text.contains("test ! -e benchmarks/reports-nightly")
