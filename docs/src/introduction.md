@@ -93,9 +93,11 @@ Three things, in order of how much they matter:
    benchmark from another machine as a routing threshold.
 
    Published benchmark panels separate full-process startup, warm daemon
-   requests, detection policy, cache state, and backend diagnostics. They also
-   label development-host evidence that cannot support a clean-source release
-   routing claim. See [Backends and routing](./backends.md) and the
+   requests, detection policy, cache state, backend diagnostics, scan workers,
+   filesystem readers, corpus size, storage class, and concurrent partitions.
+   Each panel labels development-host evidence that cannot support a
+   clean-source release routing claim. See
+   [Backends and routing](./backends.md) and the
    [reproducible benchmark harness](https://github.com/santhreal/keyhog/tree/main/benchmarks).
 
 ## Get going

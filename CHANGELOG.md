@@ -32,6 +32,11 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
   for detection accuracy, CPU/Hyperscan/GPU requests, scan presets, incremental
   cache reruns, and warm daemon requests. The documentation gate rejects stale
   panel or report bytes.
+- A script-driven scaling snapshot now measures scan workers, filesystem
+  readers, exact corpus sizes, distinct storage classes, and concurrent
+  partitions. It publishes raw trials, median and p95 latency, throughput,
+  speedup, efficiency, and memory from one reproducible command. Nightly hosted
+  CPU runs upload the same JSON and Markdown evidence.
 - A workflow-boundary gate and dedicated regression suite keep GitHub Action,
   direct CI, and mass-inventory documentation separately owned and mutually
   discoverable.

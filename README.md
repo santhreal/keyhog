@@ -256,10 +256,17 @@ One deterministic 8 MiB regular file (`sha256:afafbe7b6487fd62866f510e7c281a9e7b
 The daemon is not a general directory or CI accelerator. It accepts only eligible single-file and bounded-stdin requests on Unix, and it serializes execution.
 <!-- BENCH:daemon:end -->
 
-Reproduce all three panels with `make -C benchmarks readme-matrix`. The command
-measures the required matrix and fails if any requested CPU, Hyperscan, CUDA,
-WGPU, preset, cache, or daemon row is unavailable. Use
-`make -C benchmarks readme-matrix-check` to verify that the snapshot, reports,
+<!-- BENCH:scaling:BEGIN -->
+### CPU, reader, storage, size, and partition scaling
+
+Run `make -C benchmarks readme-scaling` to replace this placeholder with measured tables.
+<!-- BENCH:scaling:END -->
+
+Reproduce all four benchmark groups with `make -C benchmarks readme-matrix`.
+The command measures the required matrix and fails if any requested CPU,
+Hyperscan, CUDA, WGPU, preset, cache, daemon, thread, reader, storage, corpus
+size, or partition row is unavailable. Use
+`make -C benchmarks readme-matrix-check` to verify that both snapshots, reports,
 and README agree.
 
 ### Choose a scan configuration

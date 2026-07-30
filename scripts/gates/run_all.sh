@@ -13,7 +13,7 @@
 #   #1e docs_truth, canonical mdBook is complete and source-true
 #   action_docs_contract: Action manifests and public reference tables stay exact
 #   workflow_docs_boundaries: Action, direct CI, and mass scanning stay distinct
-#   readme_matrix: generated accuracy/configuration/daemon panels stay provenance-bound
+#   readme_matrix: generated accuracy/configuration/daemon/scaling panels stay provenance-bound
 #   #1i doc_version_pins, documented action/install pins resolve to a real release
 #   #1f github_actions_pinned, repo CI cannot execute mutable third-party refs
 #   package_licenses: publishable crate roots carry canonical license bytes

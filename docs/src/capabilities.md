@@ -146,6 +146,13 @@ it reaches your terminal.
 | GPU region presence | Uses VYRE CUDA or WGPU dispatch for the whole corpus at once when measured routing evidence selects it. | GPU availability alone does not prove it is fastest for the workload. | [Backends and routing](./backends.md) |
 | Hyperscan SIMD prefilter | Uses vectorized literal and regex prefiltering on the accelerated CPU path. | Let calibrated automatic routing compare it with every eligible peer. | [Backends and routing](./backends.md) |
 | Daemon and warm scans | Serves IDE-save and single-file scans without cold start on Unix. | Directories, Git, archives, remote sources, verification, and policy changes are not daemon work. | [Daemon and warm scans](./workflows/daemon.md) |
+
+The generated scaling matrix measures these controls instead of prescribing a
+fixed thread count. Run `make -C benchmarks readme-scaling` on the target host.
+The result binds the binary, detector corpus, exact workload bytes, effective
+CPU limit, filesystem identity, page-cache policy, raw trials, and process exit
+status.
+
 ## What KeyHog emits
 
 | Output | Use | Chapter |

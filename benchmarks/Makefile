@@ -23,6 +23,8 @@
 #   make report-check      # CI gate: fail if the README tables are stale
 #   make readme-matrix      # measure CPU/SIMD/GPU/presets/cache/daemon and inject panels
 #   make readme-matrix-check # fail if committed matrix reports or README panels drift
+#   make readme-scaling     # measure CPU/storage/size/partition scaling and inject tables
+#   make readme-scaling-check # fail if committed scaling evidence or README tables drift
 #   make org-audit         # fail on stale claims and generated organization bloat
 #   make gate              # regression + differential gate (keyhog must lead + not regress)
 #   make cross-device-gate # require 10x speed dominance vs Betterleaks/Kingfisher on every OS
@@ -56,6 +58,20 @@ README_MATRIX_DAEMON_OUT ?= results-readme-daemon
 README_MATRIX_DAEMON_CORPUS ?= corpora/daemon-file-8mib.txt
 README_MATRIX_SNAPSHOT ?= reports/readme-matrix.json
 README_MATRIX_SOURCE_STATE ?= clean
+README_SCALING_ROOT ?= corpora/readme-scaling
+README_SCALING_SNAPSHOT ?= reports/readme-scaling.json
+README_SCALING_TRIALS ?= 3
+README_SCALING_WARMUPS ?= 1
+README_SCALING_BACKEND ?= simd
+README_SCALING_SOURCE_STATE ?= clean
+README_SCALING_STORAGE_ARGS ?=
+README_SCALING_THREAD_POINTS ?=
+README_SCALING_READER_POINTS ?=
+README_SCALING_PARTITION_POINTS ?=
+README_SCALING_THREAD_ARG = $(if $(strip $(README_SCALING_THREAD_POINTS)),--thread-points "$(README_SCALING_THREAD_POINTS)",)
+README_SCALING_READER_ARG = $(if $(strip $(README_SCALING_READER_POINTS)),--reader-points "$(README_SCALING_READER_POINTS)",)
+README_SCALING_PARTITION_ARG = $(if $(strip $(README_SCALING_PARTITION_POINTS)),--partition-points "$(README_SCALING_PARTITION_POINTS)",)
+README_SCALING_OPTIONAL_ARGS = $(strip $(README_SCALING_STORAGE_ARGS) $(README_SCALING_THREAD_ARG) $(README_SCALING_READER_ARG) $(README_SCALING_PARTITION_ARG))
 REPORT_RUN_SET ?= $(if $(filter results,$(OUT)),run-sets/canonical.toml,)
 REPORT_RUN_SET_ARG = $(if $(strip $(REPORT_RUN_SET)),--run-set "$(REPORT_RUN_SET)",)
 
@@ -72,7 +88,7 @@ ifneq ($(strip $(KEYHOG_BIN)),)
 export KEYHOG_BIN
 endif
 
-.PHONY: help test targets host mirror ioc-recovery-corpus ioc-recovery agentre-corpus leakage-audit creddata bloom canonical readme-matrix-corpus readme-matrix readme-matrix-check kernel-info run analyze bench leaderboard report report-check org-audit gate cross-device-gate loop keyhog clean
+.PHONY: help test targets host mirror ioc-recovery-corpus ioc-recovery agentre-corpus leakage-audit creddata bloom canonical readme-matrix-corpus readme-scaling readme-scaling-check readme-matrix readme-matrix-check kernel-info run analyze bench leaderboard report report-check org-audit gate cross-device-gate loop keyhog clean
 
 help:
 	@grep -E '^#   make ' $(lastword $(MAKEFILE_LIST)) | sed 's/^#   /  /'
@@ -124,7 +140,7 @@ readme-matrix-corpus:
 	cd $(BENCH_DIR) && $(PY) -m bench.readme_matrix \
 		--generate-daemon-corpus "$(README_MATRIX_DAEMON_CORPUS)"
 
-readme-matrix: readme-matrix-corpus
+readme-matrix: readme-matrix-corpus readme-scaling
 	cd $(BENCH_DIR) && $(PY) -m bench leaderboard --corpus mirror \
 		--scanners keyhog --tier perf --out "$(README_MATRIX_CONFIG_OUT)" --require-available
 	cd $(BENCH_DIR) && $(PY) -m bench leaderboard --corpus daemon-file \
@@ -137,7 +153,19 @@ readme-matrix: readme-matrix-corpus
 		--source-state "$(README_MATRIX_SOURCE_STATE)" --snapshot "$(README_MATRIX_SNAPSHOT)" \
 		--reports reports --readme ../README.md --inject
 
-readme-matrix-check:
+readme-scaling:
+	cd $(BENCH_DIR) && $(PY) -m bench.scaling_matrix measure \
+		--workspace-root "$(README_SCALING_ROOT)" \
+		--snapshot "$(README_SCALING_SNAPSHOT)" --readme ../README.md \
+		--trials "$(README_SCALING_TRIALS)" --warmups "$(README_SCALING_WARMUPS)" \
+		--backend "$(README_SCALING_BACKEND)" \
+		--source-state "$(README_SCALING_SOURCE_STATE)" $(README_SCALING_OPTIONAL_ARGS)
+
+readme-scaling-check:
+	cd $(BENCH_DIR) && $(PY) -m bench.scaling_matrix check \
+		--snapshot "$(README_SCALING_SNAPSHOT)" --readme ../README.md
+
+readme-matrix-check: readme-scaling-check
 	cd $(BENCH_DIR) && $(PY) -m bench.readme_matrix \
 		--snapshot "$(README_MATRIX_SNAPSHOT)" --reports reports \
 		--readme ../README.md --check
