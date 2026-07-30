@@ -6,14 +6,14 @@ when benchmark hardware, signing keys, or build caches live elsewhere.
 
 ## Choose an operation
 
-| Need | Command | What can change |
-|---|---|---|
-| Validate a local release plan | `python3 -B scripts/release.py "$NEXT_VERSION"` | Nothing. The preview is read-only. |
-| Validate on the benchmark and signing host | `python3 -B scripts/release.py "$NEXT_VERSION" --ssh USER@HOST --remote-dir /absolute/keyhog/path` | Nothing on either host. |
-| Publish from the current host | `python3 -B scripts/release.py "$NEXT_VERSION" --publish` | Generated evidence, release commits, `main`, the signed tag, and downstream publication. |
-| Publish on the prepared SSH host | Add `--ssh USER@HOST --remote-dir /absolute/keyhog/path --publish` | The remote checkout and public release surfaces. The local checkout is unchanged. |
-| Continue an interrupted publication | Add `--publish --resume` to the same local or SSH command | Only incomplete phases. Existing tags are verified and never replaced. |
-| Diagnose one lower-level phase | Run the commands under [Run individual preparation commands](#run-individual-preparation-commands) | The named local phase only. Do not use lower-level commands as the publication path. |
+| Need | Command and effect |
+|---|---|
+| Validate a local release plan | Run `python3 -B scripts/release.py "$NEXT_VERSION"`. The preview is read-only. |
+| Validate on the benchmark and signing host | Add `--ssh USER@HOST --remote-dir /absolute/keyhog/path`. Neither checkout changes. |
+| Publish from the current host | Add `--publish`. The command may create generated evidence and release commits, then update `main`, the signed tag, and downstream publication. |
+| Publish on the prepared SSH host | Add `--ssh USER@HOST --remote-dir /absolute/keyhog/path --publish`. The remote checkout and public release surfaces may change. The local checkout stays unchanged. |
+| Continue an interrupted publication | Add `--publish --resume` to the same local or SSH command. Only incomplete phases run. Existing tags are verified and never replaced. |
+| Diagnose one lower-level phase | Run the commands under [Run individual preparation commands](#run-individual-preparation-commands). The named local phase may change. Do not use lower-level commands as the publication path. |
 
 Set `NEXT_VERSION` to the reviewed next stable SemVer without a `v` prefix.
 The script rejects placeholders, prerelease suffixes, and versions that do not
