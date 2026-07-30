@@ -624,10 +624,21 @@ def parser() -> argparse.ArgumentParser:
     command = argparse.ArgumentParser(
         description=(
             "Preview or publish one complete KeyHog release locally or on an SSH host."
-        )
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""examples:
+  scripts/release.py X.Y.Z
+  scripts/release.py X.Y.Z --publish
+  scripts/release.py X.Y.Z --ssh USER@HOST --remote-dir /srv/keyhog --publish
+  scripts/release.py X.Y.Z --publish --resume""",
     )
-    command.add_argument("version", help="next stable version without v")
-    command.add_argument("--date", default=dt.datetime.now(dt.UTC).date().isoformat())
+    command.add_argument("version", help="next stable SemVer without a v prefix")
+    command.add_argument(
+        "--date",
+        metavar="YYYY-MM-DD",
+        default=dt.datetime.now(dt.UTC).date().isoformat(),
+        help="release date in UTC; defaults to today",
+    )
     command.add_argument(
         "--publish",
         action="store_true",
@@ -638,17 +649,42 @@ def parser() -> argparse.ArgumentParser:
         action="store_true",
         help="diagnostic override; retain already-checked benchmark evidence",
     )
-    command.add_argument("--skip-rust", action="store_true")
-    command.add_argument("--no-watch", action="store_true")
+    command.add_argument(
+        "--skip-rust",
+        action="store_true",
+        help="diagnostic override; omit the duplicate local Rust gate",
+    )
+    command.add_argument(
+        "--no-watch",
+        action="store_true",
+        help="return after tag push instead of watching exact publication workflows",
+    )
     command.add_argument(
         "--resume",
         action="store_true",
         help="resume an already prepared commit or exact signed tag",
     )
-    command.add_argument("--ssh", metavar="USER@HOST")
-    command.add_argument("--remote-dir")
-    command.add_argument("--ssh-port", type=int)
-    command.add_argument("--identity-file")
+    command.add_argument(
+        "--ssh",
+        metavar="USER@HOST",
+        help="execute the same release command on one prepared SSH host",
+    )
+    command.add_argument(
+        "--remote-dir",
+        metavar="ABSOLUTE_PATH",
+        help="absolute KeyHog checkout path on the SSH host",
+    )
+    command.add_argument(
+        "--ssh-port",
+        type=int,
+        metavar="PORT",
+        help="SSH port between 1 and 65535",
+    )
+    command.add_argument(
+        "--identity-file",
+        metavar="PATH",
+        help="local SSH private-key path",
+    )
     return command
 
 

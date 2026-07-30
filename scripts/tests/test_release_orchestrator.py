@@ -282,6 +282,22 @@ class ReleasePlanContractTests(unittest.TestCase):
                 release.Options("0.5.49", "30-07-2026", False, False, False, True)
             )
 
+    def test_help_explains_local_remote_resume_and_diagnostic_modes(self) -> None:
+        """The one-command interface must make every safe operator path discoverable."""
+        help_text = " ".join(release.parser().format_help().split())
+
+        for expected in (
+            "next stable SemVer without a v prefix",
+            "release date in UTC",
+            "omit the duplicate local Rust gate",
+            "watching exact publication workflows",
+            "execute the same release command on one prepared SSH host",
+            "absolute KeyHog checkout path on the SSH host",
+            "scripts/release.py X.Y.Z --publish --resume",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, help_text)
+
     def test_publication_identity_uses_supported_gh_status_and_stable_actor_id(self) -> None:
         """The release must bind GitHub identity to one usable OpenPGP primary fingerprint."""
         runner = IdentityRunner()
