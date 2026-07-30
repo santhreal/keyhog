@@ -411,6 +411,7 @@ def test_validation_accepts_explicit_cross_platform_page_cache_identity() -> Non
 def test_render_emits_all_five_detailed_panels_from_measured_rows() -> None:
     """README output must retain every requested tuning axis and computed comparison column."""
     rendered = scaling_matrix.render(_evidence())
+    assert "2 measured trials after 1 warm-up" in rendered
 
     assert "#### Scan worker scaling" in rendered
     assert "#### Filesystem reader scaling" in rendered
