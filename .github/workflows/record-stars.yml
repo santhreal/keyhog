@@ -1,9 +1,9 @@
 name: Record star count
 
-# Daily snapshot of stargazers_count into metrics/stars.json.
-# Lets us plot growth over time without depending on
-# star-history.com staying up. Runs at 07:17 UTC so we don't
-# collide with the wall of cron jobs that fire on the minute.
+# Daily observation of stargazers_count. The repository stores only real count
+# transitions in metrics/stars.json and renders its own chart without depending
+# on star-history.com. Runs at 07:17 UTC so we do not collide with
+# the wall of cron jobs that fire on the minute.
 
 on:
   schedule:
