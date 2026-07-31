@@ -8,7 +8,7 @@ Evidence schema: `bloom-evidence-v1`.
 | Corpus revision | `f1de3f85dbdf42bf7b3467c0d273a4dfe44d56ee` |
 | Corpus SHA-256 | `4f2de506f334521121bb5b4aef8a37bf0b8153a4f9115e7ba9392d0eed1757b9` |
 | Fixture SHA-256 | `a0ff018dc0a64b2cc78b25999043d1a441afa0087070f4cd8d73ae82408a59b4` |
-| Executable SHA-256 | `0d6d4f8f3f71a3d8a4f0221f66034ea2f5d751b8a48618ffece75e16028d4b86` |
+| Executable SHA-256 | `0944d11ac221b61f15a7f67f67cb1bc408430319284f4369af34adf7207d0cb0` |
 | Workspace detector corpus SHA-256 | `4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf` |
 | Scanner detector digest | `0ca3c41a0d87be39` |
 | Detector corpus SHA-256 | `beab12386a58fa89b33be34088bb5b1372b220c9f16cd1c6be0c93b2d8927691` |
