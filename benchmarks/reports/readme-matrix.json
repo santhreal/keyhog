@@ -17,7 +17,7 @@
         "tp": 2760
       },
       "finding_count": 2868,
-      "generated_at": "2026-07-31T00:47:55Z",
+      "generated_at": "2026-07-31T04:07:35Z",
       "host": {
         "affinity_cores": 32,
         "cgroup_quota_cores": "unbounded",
@@ -39,15 +39,15 @@
         },
         "config_id": "auto-nocache-nodaemon-full",
         "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
-        "executable_sha256": "0192bfd820c87a433ec382ae4306b2e1651b0d945a96f663ce91d45d7e283907",
+        "executable_sha256": "60ec526c45b3cff5deae1b816f552eb0490556319dd88ac46d873718c7568dac",
         "execution_route": "in_process",
         "name": "keyhog",
-        "version": "KeyHog v0.5.48\nCommit: 22ae8de04aac19b705b8fab792a7166a5e69ae7e\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+        "version": "KeyHog v0.5.49\nCommit: 1230e9cc1595ec97093a95caa4a6ecc2c56dc728\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
       },
       "speed": {
-        "peak_rss_kb": 1190524,
-        "throughput_mb_s": 0.989,
-        "wall_ms": 2343.58
+        "peak_rss_kb": 1189680,
+        "throughput_mb_s": 0.9114,
+        "wall_ms": 2543.05
       }
     },
     {
@@ -67,7 +67,7 @@
         "tp": 2760
       },
       "finding_count": 2868,
-      "generated_at": "2026-07-31T00:42:40Z",
+      "generated_at": "2026-07-31T04:02:01Z",
       "host": {
         "affinity_cores": 32,
         "cgroup_quota_cores": "unbounded",
@@ -89,15 +89,15 @@
         },
         "config_id": "cpu-nocache-nodaemon-full",
         "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
-        "executable_sha256": "0192bfd820c87a433ec382ae4306b2e1651b0d945a96f663ce91d45d7e283907",
+        "executable_sha256": "60ec526c45b3cff5deae1b816f552eb0490556319dd88ac46d873718c7568dac",
         "execution_route": "in_process",
         "name": "keyhog",
-        "version": "KeyHog v0.5.48\nCommit: 22ae8de04aac19b705b8fab792a7166a5e69ae7e\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+        "version": "KeyHog v0.5.49\nCommit: 1230e9cc1595ec97093a95caa4a6ecc2c56dc728\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
       },
       "speed": {
-        "peak_rss_kb": 1090708,
-        "throughput_mb_s": 1.0876,
-        "wall_ms": 2130.96
+        "peak_rss_kb": 1092496,
+        "throughput_mb_s": 0.9418,
+        "wall_ms": 2461.01
       }
     },
     {
@@ -117,7 +117,7 @@
         "tp": 2760
       },
       "finding_count": 2868,
-      "generated_at": "2026-07-31T00:43:35Z",
+      "generated_at": "2026-07-31T04:03:02Z",
       "host": {
         "affinity_cores": 32,
         "cgroup_quota_cores": "unbounded",
@@ -139,15 +139,15 @@
         },
         "config_id": "gpu-cuda-nocache-nodaemon-full",
         "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
-        "executable_sha256": "0192bfd820c87a433ec382ae4306b2e1651b0d945a96f663ce91d45d7e283907",
+        "executable_sha256": "60ec526c45b3cff5deae1b816f552eb0490556319dd88ac46d873718c7568dac",
         "execution_route": "in_process",
         "name": "keyhog",
-        "version": "KeyHog v0.5.48\nCommit: 22ae8de04aac19b705b8fab792a7166a5e69ae7e\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+        "version": "KeyHog v0.5.49\nCommit: 1230e9cc1595ec97093a95caa4a6ecc2c56dc728\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
       },
       "speed": {
-        "peak_rss_kb": 1793528,
-        "throughput_mb_s": 0.2019,
-        "wall_ms": 11477.74
+        "peak_rss_kb": 1791968,
+        "throughput_mb_s": 0.19,
+        "wall_ms": 12198.33
       }
     },
     {
@@ -167,7 +167,7 @@
         "tp": 2760
       },
       "finding_count": 2868,
-      "generated_at": "2026-07-31T00:45:50Z",
+      "generated_at": "2026-07-31T04:05:21Z",
       "host": {
         "affinity_cores": 32,
         "cgroup_quota_cores": "unbounded",
@@ -189,15 +189,15 @@
         },
         "config_id": "gpu-wgpu-nocache-nodaemon-full",
         "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
-        "executable_sha256": "0192bfd820c87a433ec382ae4306b2e1651b0d945a96f663ce91d45d7e283907",
+        "executable_sha256": "60ec526c45b3cff5deae1b816f552eb0490556319dd88ac46d873718c7568dac",
         "execution_route": "in_process",
         "name": "keyhog",
-        "version": "KeyHog v0.5.48\nCommit: 22ae8de04aac19b705b8fab792a7166a5e69ae7e\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+        "version": "KeyHog v0.5.49\nCommit: 1230e9cc1595ec97093a95caa4a6ecc2c56dc728\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
       },
       "speed": {
-        "peak_rss_kb": 1694460,
-        "throughput_mb_s": 0.2059,
-        "wall_ms": 11257.72
+        "peak_rss_kb": 1707744,
+        "throughput_mb_s": 0.2005,
+        "wall_ms": 11560.57
       }
     },
     {
@@ -217,7 +217,7 @@
         "tp": 2760
       },
       "finding_count": 2868,
-      "generated_at": "2026-07-31T00:42:22Z",
+      "generated_at": "2026-07-31T04:01:39Z",
       "host": {
         "affinity_cores": 32,
         "cgroup_quota_cores": "unbounded",
@@ -239,15 +239,15 @@
         },
         "config_id": "simd-cache-nodaemon-full",
         "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
-        "executable_sha256": "0192bfd820c87a433ec382ae4306b2e1651b0d945a96f663ce91d45d7e283907",
+        "executable_sha256": "60ec526c45b3cff5deae1b816f552eb0490556319dd88ac46d873718c7568dac",
         "execution_route": "in_process",
         "name": "keyhog",
-        "version": "KeyHog v0.5.48\nCommit: 22ae8de04aac19b705b8fab792a7166a5e69ae7e\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+        "version": "KeyHog v0.5.49\nCommit: 1230e9cc1595ec97093a95caa4a6ecc2c56dc728\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
       },
       "speed": {
-        "peak_rss_kb": 1110044,
-        "throughput_mb_s": 2.0136,
-        "wall_ms": 1151.04
+        "peak_rss_kb": 1074916,
+        "throughput_mb_s": 1.7681,
+        "wall_ms": 1310.87
       }
     },
     {
@@ -267,7 +267,7 @@
         "tp": 2762
       },
       "finding_count": 2875,
-      "generated_at": "2026-07-31T00:42:13Z",
+      "generated_at": "2026-07-31T04:01:30Z",
       "host": {
         "affinity_cores": 32,
         "cgroup_quota_cores": "unbounded",
@@ -289,15 +289,15 @@
         },
         "config_id": "simd-nocache-nodaemon-deep",
         "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
-        "executable_sha256": "0192bfd820c87a433ec382ae4306b2e1651b0d945a96f663ce91d45d7e283907",
+        "executable_sha256": "60ec526c45b3cff5deae1b816f552eb0490556319dd88ac46d873718c7568dac",
         "execution_route": "in_process",
         "name": "keyhog",
-        "version": "KeyHog v0.5.48\nCommit: 22ae8de04aac19b705b8fab792a7166a5e69ae7e\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+        "version": "KeyHog v0.5.49\nCommit: 1230e9cc1595ec97093a95caa4a6ecc2c56dc728\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
       },
       "speed": {
-        "peak_rss_kb": 1054428,
-        "throughput_mb_s": 2.3203,
-        "wall_ms": 998.89
+        "peak_rss_kb": 1053140,
+        "throughput_mb_s": 1.7296,
+        "wall_ms": 1340.04
       }
     },
     {
@@ -317,7 +317,7 @@
         "tp": 2734
       },
       "finding_count": 2816,
-      "generated_at": "2026-07-31T00:42:10Z",
+      "generated_at": "2026-07-31T04:01:25Z",
       "host": {
         "affinity_cores": 32,
         "cgroup_quota_cores": "unbounded",
@@ -339,15 +339,15 @@
         },
         "config_id": "simd-nocache-nodaemon-fast",
         "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
-        "executable_sha256": "0192bfd820c87a433ec382ae4306b2e1651b0d945a96f663ce91d45d7e283907",
+        "executable_sha256": "60ec526c45b3cff5deae1b816f552eb0490556319dd88ac46d873718c7568dac",
         "execution_route": "in_process",
         "name": "keyhog",
-        "version": "KeyHog v0.5.48\nCommit: 22ae8de04aac19b705b8fab792a7166a5e69ae7e\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+        "version": "KeyHog v0.5.49\nCommit: 1230e9cc1595ec97093a95caa4a6ecc2c56dc728\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
       },
       "speed": {
-        "peak_rss_kb": 1043232,
-        "throughput_mb_s": 2.5748,
-        "wall_ms": 900.18
+        "peak_rss_kb": 1045696,
+        "throughput_mb_s": 2.2,
+        "wall_ms": 1053.53
       }
     },
     {
@@ -367,7 +367,7 @@
         "tp": 2760
       },
       "finding_count": 2868,
-      "generated_at": "2026-07-31T00:42:06Z",
+      "generated_at": "2026-07-31T04:01:21Z",
       "host": {
         "affinity_cores": 32,
         "cgroup_quota_cores": "unbounded",
@@ -389,15 +389,15 @@
         },
         "config_id": "simd-nocache-nodaemon-full",
         "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
-        "executable_sha256": "0192bfd820c87a433ec382ae4306b2e1651b0d945a96f663ce91d45d7e283907",
+        "executable_sha256": "60ec526c45b3cff5deae1b816f552eb0490556319dd88ac46d873718c7568dac",
         "execution_route": "in_process",
         "name": "keyhog",
-        "version": "KeyHog v0.5.48\nCommit: 22ae8de04aac19b705b8fab792a7166a5e69ae7e\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+        "version": "KeyHog v0.5.49\nCommit: 1230e9cc1595ec97093a95caa4a6ecc2c56dc728\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
       },
       "speed": {
-        "peak_rss_kb": 1046308,
-        "throughput_mb_s": 2.3171,
-        "wall_ms": 1000.27
+        "peak_rss_kb": 1080796,
+        "throughput_mb_s": 1.9158,
+        "wall_ms": 1209.81
       }
     },
     {
@@ -417,7 +417,7 @@
         "tp": 2410
       },
       "finding_count": 2488,
-      "generated_at": "2026-07-31T00:42:17Z",
+      "generated_at": "2026-07-31T04:01:34Z",
       "host": {
         "affinity_cores": 32,
         "cgroup_quota_cores": "unbounded",
@@ -439,15 +439,15 @@
         },
         "config_id": "simd-nocache-nodaemon-precision",
         "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
-        "executable_sha256": "0192bfd820c87a433ec382ae4306b2e1651b0d945a96f663ce91d45d7e283907",
+        "executable_sha256": "60ec526c45b3cff5deae1b816f552eb0490556319dd88ac46d873718c7568dac",
         "execution_route": "in_process",
         "name": "keyhog",
-        "version": "KeyHog v0.5.48\nCommit: 22ae8de04aac19b705b8fab792a7166a5e69ae7e\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+        "version": "KeyHog v0.5.49\nCommit: 1230e9cc1595ec97093a95caa4a6ecc2c56dc728\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
       },
       "speed": {
-        "peak_rss_kb": 1052008,
-        "throughput_mb_s": 2.4526,
-        "wall_ms": 945.02
+        "peak_rss_kb": 1075272,
+        "throughput_mb_s": 2.0486,
+        "wall_ms": 1131.36
       }
     }
   ],
@@ -473,7 +473,7 @@
         "tp": 0
       },
       "finding_count": 0,
-      "generated_at": "2026-07-31T00:48:47Z",
+      "generated_at": "2026-07-31T04:08:35Z",
       "host": {
         "affinity_cores": 32,
         "cgroup_quota_cores": "unbounded",
@@ -494,18 +494,18 @@
           "mode": "full"
         },
         "config_id": "cpu-nocache-daemon-full",
-        "daemon_pid": 1770891,
+        "daemon_pid": 3781344,
         "daemon_requests": 2,
         "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
-        "executable_sha256": "0192bfd820c87a433ec382ae4306b2e1651b0d945a96f663ce91d45d7e283907",
+        "executable_sha256": "60ec526c45b3cff5deae1b816f552eb0490556319dd88ac46d873718c7568dac",
         "execution_route": "daemon",
         "name": "keyhog",
-        "version": "KeyHog v0.5.48\nCommit: 22ae8de04aac19b705b8fab792a7166a5e69ae7e\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+        "version": "KeyHog v0.5.49\nCommit: 1230e9cc1595ec97093a95caa4a6ecc2c56dc728\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
       },
       "speed": {
-        "peak_rss_kb": 778772,
-        "throughput_mb_s": 49.3591,
-        "wall_ms": 162.08
+        "peak_rss_kb": 790048,
+        "throughput_mb_s": 48.1334,
+        "wall_ms": 166.2
       }
     },
     {
@@ -525,7 +525,7 @@
         "tp": 0
       },
       "finding_count": 0,
-      "generated_at": "2026-07-31T00:48:44Z",
+      "generated_at": "2026-07-31T04:08:32Z",
       "host": {
         "affinity_cores": 32,
         "cgroup_quota_cores": "unbounded",
@@ -547,15 +547,15 @@
         },
         "config_id": "cpu-nocache-nodaemon-full",
         "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
-        "executable_sha256": "0192bfd820c87a433ec382ae4306b2e1651b0d945a96f663ce91d45d7e283907",
+        "executable_sha256": "60ec526c45b3cff5deae1b816f552eb0490556319dd88ac46d873718c7568dac",
         "execution_route": "in_process",
         "name": "keyhog",
-        "version": "KeyHog v0.5.48\nCommit: 22ae8de04aac19b705b8fab792a7166a5e69ae7e\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+        "version": "KeyHog v0.5.49\nCommit: 1230e9cc1595ec97093a95caa4a6ecc2c56dc728\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
       },
       "speed": {
-        "peak_rss_kb": 754460,
-        "throughput_mb_s": 4.9048,
-        "wall_ms": 1631.04
+        "peak_rss_kb": 761604,
+        "throughput_mb_s": 4.5099,
+        "wall_ms": 1773.87
       }
     },
     {
@@ -575,7 +575,7 @@
         "tp": 0
       },
       "finding_count": 0,
-      "generated_at": "2026-07-31T00:48:51Z",
+      "generated_at": "2026-07-31T04:08:40Z",
       "host": {
         "affinity_cores": 32,
         "cgroup_quota_cores": "unbounded",
@@ -596,18 +596,18 @@
           "mode": "full"
         },
         "config_id": "gpu-cuda-nocache-daemon-full",
-        "daemon_pid": 1772155,
+        "daemon_pid": 3782967,
         "daemon_requests": 2,
         "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
-        "executable_sha256": "0192bfd820c87a433ec382ae4306b2e1651b0d945a96f663ce91d45d7e283907",
+        "executable_sha256": "60ec526c45b3cff5deae1b816f552eb0490556319dd88ac46d873718c7568dac",
         "execution_route": "daemon",
         "name": "keyhog",
-        "version": "KeyHog v0.5.48\nCommit: 22ae8de04aac19b705b8fab792a7166a5e69ae7e\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+        "version": "KeyHog v0.5.49\nCommit: 1230e9cc1595ec97093a95caa4a6ecc2c56dc728\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
       },
       "speed": {
-        "peak_rss_kb": 1199752,
-        "throughput_mb_s": 35.6977,
-        "wall_ms": 224.1
+        "peak_rss_kb": 1198628,
+        "throughput_mb_s": 33.86,
+        "wall_ms": 236.27
       }
     },
     {
@@ -627,7 +627,7 @@
         "tp": 0
       },
       "finding_count": 0,
-      "generated_at": "2026-07-31T00:48:49Z",
+      "generated_at": "2026-07-31T04:08:37Z",
       "host": {
         "affinity_cores": 32,
         "cgroup_quota_cores": "unbounded",
@@ -649,15 +649,15 @@
         },
         "config_id": "gpu-cuda-nocache-nodaemon-full",
         "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
-        "executable_sha256": "0192bfd820c87a433ec382ae4306b2e1651b0d945a96f663ce91d45d7e283907",
+        "executable_sha256": "60ec526c45b3cff5deae1b816f552eb0490556319dd88ac46d873718c7568dac",
         "execution_route": "in_process",
         "name": "keyhog",
-        "version": "KeyHog v0.5.48\nCommit: 22ae8de04aac19b705b8fab792a7166a5e69ae7e\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+        "version": "KeyHog v0.5.49\nCommit: 1230e9cc1595ec97093a95caa4a6ecc2c56dc728\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
       },
       "speed": {
-        "peak_rss_kb": 1177240,
-        "throughput_mb_s": 5.7336,
-        "wall_ms": 1395.28
+        "peak_rss_kb": 1168660,
+        "throughput_mb_s": 5.1635,
+        "wall_ms": 1549.33
       }
     },
     {
@@ -677,7 +677,7 @@
         "tp": 0
       },
       "finding_count": 0,
-      "generated_at": "2026-07-31T00:48:56Z",
+      "generated_at": "2026-07-31T04:08:45Z",
       "host": {
         "affinity_cores": 32,
         "cgroup_quota_cores": "unbounded",
@@ -698,18 +698,18 @@
           "mode": "full"
         },
         "config_id": "gpu-wgpu-nocache-daemon-full",
-        "daemon_pid": 1773259,
+        "daemon_pid": 3784428,
         "daemon_requests": 2,
         "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
-        "executable_sha256": "0192bfd820c87a433ec382ae4306b2e1651b0d945a96f663ce91d45d7e283907",
+        "executable_sha256": "60ec526c45b3cff5deae1b816f552eb0490556319dd88ac46d873718c7568dac",
         "execution_route": "daemon",
         "name": "keyhog",
-        "version": "KeyHog v0.5.48\nCommit: 22ae8de04aac19b705b8fab792a7166a5e69ae7e\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+        "version": "KeyHog v0.5.49\nCommit: 1230e9cc1595ec97093a95caa4a6ecc2c56dc728\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
       },
       "speed": {
-        "peak_rss_kb": 1134768,
-        "throughput_mb_s": 35.8089,
-        "wall_ms": 223.41
+        "peak_rss_kb": 1132180,
+        "throughput_mb_s": 36.5862,
+        "wall_ms": 218.66
       }
     },
     {
@@ -729,7 +729,7 @@
         "tp": 0
       },
       "finding_count": 0,
-      "generated_at": "2026-07-31T00:48:53Z",
+      "generated_at": "2026-07-31T04:08:42Z",
       "host": {
         "affinity_cores": 32,
         "cgroup_quota_cores": "unbounded",
@@ -751,15 +751,15 @@
         },
         "config_id": "gpu-wgpu-nocache-nodaemon-full",
         "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
-        "executable_sha256": "0192bfd820c87a433ec382ae4306b2e1651b0d945a96f663ce91d45d7e283907",
+        "executable_sha256": "60ec526c45b3cff5deae1b816f552eb0490556319dd88ac46d873718c7568dac",
         "execution_route": "in_process",
         "name": "keyhog",
-        "version": "KeyHog v0.5.48\nCommit: 22ae8de04aac19b705b8fab792a7166a5e69ae7e\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+        "version": "KeyHog v0.5.49\nCommit: 1230e9cc1595ec97093a95caa4a6ecc2c56dc728\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
       },
       "speed": {
-        "peak_rss_kb": 1103808,
-        "throughput_mb_s": 5.8528,
-        "wall_ms": 1366.86
+        "peak_rss_kb": 1109116,
+        "throughput_mb_s": 5.1395,
+        "wall_ms": 1556.57
       }
     },
     {
@@ -779,7 +779,7 @@
         "tp": 0
       },
       "finding_count": 0,
-      "generated_at": "2026-07-31T00:48:42Z",
+      "generated_at": "2026-07-31T04:08:30Z",
       "host": {
         "affinity_cores": 32,
         "cgroup_quota_cores": "unbounded",
@@ -800,18 +800,18 @@
           "mode": "full"
         },
         "config_id": "simd-nocache-daemon-full",
-        "daemon_pid": 1770148,
+        "daemon_pid": 3779880,
         "daemon_requests": 2,
         "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
-        "executable_sha256": "0192bfd820c87a433ec382ae4306b2e1651b0d945a96f663ce91d45d7e283907",
+        "executable_sha256": "60ec526c45b3cff5deae1b816f552eb0490556319dd88ac46d873718c7568dac",
         "execution_route": "daemon",
         "name": "keyhog",
-        "version": "KeyHog v0.5.48\nCommit: 22ae8de04aac19b705b8fab792a7166a5e69ae7e\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+        "version": "KeyHog v0.5.49\nCommit: 1230e9cc1595ec97093a95caa4a6ecc2c56dc728\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
       },
       "speed": {
-        "peak_rss_kb": 780588,
-        "throughput_mb_s": 36.4729,
-        "wall_ms": 219.34
+        "peak_rss_kb": 774920,
+        "throughput_mb_s": 34.9249,
+        "wall_ms": 229.06
       }
     },
     {
@@ -831,7 +831,7 @@
         "tp": 0
       },
       "finding_count": 0,
-      "generated_at": "2026-07-31T00:48:40Z",
+      "generated_at": "2026-07-31T04:08:28Z",
       "host": {
         "affinity_cores": 32,
         "cgroup_quota_cores": "unbounded",
@@ -853,15 +853,15 @@
         },
         "config_id": "simd-nocache-nodaemon-full",
         "detector_corpus_sha256": "4a0520fdfb29ad1d8dac25cc5cb9eb22a7a98570aba6944b68a64e94502a9fbf",
-        "executable_sha256": "0192bfd820c87a433ec382ae4306b2e1651b0d945a96f663ce91d45d7e283907",
+        "executable_sha256": "60ec526c45b3cff5deae1b816f552eb0490556319dd88ac46d873718c7568dac",
         "execution_route": "in_process",
         "name": "keyhog",
-        "version": "KeyHog v0.5.48\nCommit: 22ae8de04aac19b705b8fab792a7166a5e69ae7e\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
+        "version": "KeyHog v0.5.49\nCommit: 1230e9cc1595ec97093a95caa4a6ecc2c56dc728\nDetector Set: 923 (923-8785f8837d2cd505)\nBuild Target: x86_64-linux\nML Model Version: moe-v1-246a05b92bec9aa3\nML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable"
       },
       "speed": {
-        "peak_rss_kb": 749332,
-        "throughput_mb_s": 16.0785,
-        "wall_ms": 497.56
+        "peak_rss_kb": 751176,
+        "throughput_mb_s": 14.3296,
+        "wall_ms": 558.28
       }
     }
   ],
