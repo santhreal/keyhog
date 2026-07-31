@@ -351,6 +351,11 @@ def candidate_binary() -> Path:
     )
     return target / "release-fast" / "keyhog"
 
+def release_proof_binary() -> Path:
+    """Resolve the immutable default-feature candidate copied by prerelease."""
+    return candidate_binary().with_name("keyhog-release-candidate")
+
+
 
 def refresh_benchmarks(runner: Runner, options: Options) -> None:
     """Regenerate every committed README benchmark panel from one candidate."""
@@ -410,7 +415,10 @@ def run_pre_tag_gates(runner: Runner, options: Options) -> None:
         command.append("--skip-rust")
     runner.run(command)
     runner.run(["make", "docs-build"])
-    runner.run(["bash", "scripts/gates/run_all.sh"])
+    runner.run(
+        ["bash", "scripts/gates/run_all.sh"],
+        env={"KEYHOG_BIN": str(release_proof_binary())},
+    )
     if git_status_paths(runner):
         raise ReleaseError("verification changed the committed release tree")
 

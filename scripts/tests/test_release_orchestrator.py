@@ -650,6 +650,26 @@ class ReleasePlanContractTests(unittest.TestCase):
             ],
         )
 
+    def test_pre_tag_aggregate_gate_ignores_an_ambient_stale_binary(self) -> None:
+        """Aggregate parity proofs must consume the immutable current candidate explicitly."""
+        runner = FakeRunner("")
+        options = release.Options(
+            "0.5.49", "2026-07-30", True, False, False, True
+        )
+
+        with mock.patch.dict("os.environ", {"KEYHOG_BIN": "/tmp/stale-keyhog"}):
+            release.run_pre_tag_gates(runner, options)
+
+        self.assertEqual(
+            runner.environments,
+            [
+                None,
+                None,
+                {"KEYHOG_BIN": str(release.release_proof_binary())},
+                None,
+            ],
+        )
+
     def test_skip_rust_is_forwarded_only_as_explicit_diagnostic_override(self) -> None:
         """Recovery may skip duplicate Rust gates only when the caller names that choice."""
         runner = FakeRunner("")
