@@ -171,6 +171,31 @@ class ReleaseTransformationTests(unittest.TestCase):
 
         self.assertEqual(unowned, [])
 
+    def test_publishable_package_discovery_metadata_is_canonical(self) -> None:
+        """Every crates.io package must lead users to one live homepage and repository."""
+        root = Path(__file__).resolve().parents[2]
+        manifests = (
+            ("workspace", root / "Cargo.toml"),
+            ("keyhog", root / "crates/cli/Cargo.toml"),
+            ("keyhog-core", root / "crates/core/Cargo.toml"),
+            ("keyhog-scanner", root / "crates/scanner/Cargo.toml"),
+            ("keyhog-sources", root / "crates/sources/Cargo.toml"),
+            ("keyhog-verifier", root / "crates/verifier/Cargo.toml"),
+        )
+
+        for name, path in manifests:
+            with self.subTest(package=name):
+                document = tomllib.loads(path.read_text())
+                package = (
+                    document["workspace"]["package"]
+                    if name == "workspace"
+                    else document["package"]
+                )
+                self.assertEqual(package["homepage"], "https://santh.dev/keyhog/")
+                self.assertEqual(
+                    package["repository"], "https://github.com/santhreal/keyhog"
+                )
+
     def test_complete_preview_is_read_only_and_apply_consumes_fragments(self) -> None:
         """One command must coherently prepare every release surface without mutating previews."""
         with tempfile.TemporaryDirectory() as directory:

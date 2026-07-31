@@ -19,6 +19,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Release orchestration now prepares the final workspace version before measuring its executable, and pre-tag resumes refresh version-bound evidence while signed-tag resumes preserve immutable evidence.
 - Benchmark freshness now handles the unavoidable Git-stamp change created by committing measured evidence, while rejecting non-ancestor results and every intervening source, manifest, configuration, fixture, rename, or other non-evidence path.
 - The 8 MiB GPU crossover proof now compares independently selected GPU and Hyperscan routes over 300 held-out pairs; it retains every eligible Hyperscan plan for audit without treating a per-trial hindsight oracle as a selectable backend.
+- Published workspace and crate metadata now use the canonical `https://santh.dev/keyhog/` discovery homepage while retaining the source repository as the crates.io repository link.
 
 ## [0.5.48] - 2026-07-27
 
