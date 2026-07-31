@@ -8,11 +8,11 @@ All rows use the default detection policy with incremental cache and daemon off.
 
 | Requested route | Wall | Throughput | Peak RSS | F1 |
 |---|---:|---:|---:|---:|
-| Hyperscan/SIMD | 1.12 s | 2.06 MB/s | 1028 MiB | 0.9447 |
-| Pure-Rust CPU | 2.23 s | 1.04 MB/s | 1070 MiB | 0.9447 |
-| CUDA | 12.22 s | 0.19 MB/s | 1748 MiB | 0.9447 |
-| WGPU | 11.79 s | 0.20 MB/s | 1653 MiB | 0.9447 |
-| Automatic | 2.43 s | 0.95 MB/s | 1160 MiB | 0.9447 |
+| Hyperscan/SIMD | 1.04 s | 2.24 MB/s | 1022 MiB | 0.9447 |
+| Pure-Rust CPU | 2.25 s | 1.03 MB/s | 1071 MiB | 0.9447 |
+| CUDA | 12.15 s | 0.19 MB/s | 1756 MiB | 0.9447 |
+| WGPU | 11.48 s | 0.20 MB/s | 1652 MiB | 0.9447 |
+| Automatic | 2.30 s | 1.01 MB/s | 1158 MiB | 0.9447 |
 
 #### Detection policy on Hyperscan/SIMD
 
@@ -20,10 +20,10 @@ The route, cache, daemon state, corpus, and host remain fixed. Presets change de
 
 | Policy | Wall | Precision | Recall | F1 | Findings |
 |---|---:|---:|---:|---:|---:|
-| Fast | 899 ms | 0.9733 | 0.9113 | 0.9413 | 2,816 |
-| Default | 1.12 s | 0.9708 | 0.9200 | 0.9447 | 2,868 |
-| Deep | 1.04 s | 0.9708 | 0.9207 | 0.9451 | 2,875 |
-| Precision | 1.02 s | 0.9690 | 0.8033 | 0.8784 | 2,488 |
+| Fast | 919 ms | 0.9733 | 0.9113 | 0.9413 | 2,816 |
+| Default | 1.04 s | 0.9708 | 0.9200 | 0.9447 | 2,868 |
+| Deep | 1.00 s | 0.9708 | 0.9207 | 0.9451 | 2,875 |
+| Precision | 1.00 s | 0.9690 | 0.8033 | 0.8784 | 2,488 |
 
 #### Incremental warm rerun
 
@@ -31,5 +31,5 @@ The benchmark populates the BLAKE3 Merkle index, then times the second identical
 
 | Hyperscan/SIMD default policy | Wall | Throughput | Peak RSS |
 |---|---:|---:|---:|
-| Cache off | 1.12 s | 2.06 MB/s | 1028 MiB |
-| Warm incremental cache | 1.15 s | 2.02 MB/s | 1053 MiB |
+| Cache off | 1.04 s | 2.24 MB/s | 1022 MiB |
+| Warm incremental cache | 1.02 s | 2.27 MB/s | 1079 MiB |
