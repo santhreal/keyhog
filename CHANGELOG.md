@@ -23,6 +23,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - The 8 MiB GPU crossover proof now compares independently selected GPU and Hyperscan routes over 300 held-out pairs; it retains every eligible Hyperscan plan for audit without treating a per-trial hindsight oracle as a selectable backend.
 - Published workspace and crate metadata now use the canonical `https://santh.dev/keyhog/` discovery homepage while retaining the source repository as the crates.io repository link.
 - Source skip-counter tests now serialize scans that begin before the first counter guard, eliminating concurrent false failures in the full source matrix. Release dogfood fixtures and documentation now scan cleanly without weakening detector behavior.
+- Release previews now recognize an already-prepared `--resume` workspace instead of asking release preparation to create the current version again and failing before evidence checks.
 
 ## [0.5.48] - 2026-07-27
 

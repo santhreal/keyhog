@@ -538,15 +538,21 @@ def watch_publication(runner: Runner, options: Options, commit: str) -> None:
 def preview(runner: Runner, options: Options) -> None:
     """Run the read-only release transaction and display the publication phases."""
     runner.run(["python3", "-B", "scripts/star_history.py", "--check"])
-    runner.run(
-        [
-            "make",
-            "release-check",
-            f"VERSION={options.version}",
-            f"DATE={options.date}",
-        ]
+    prepared = options.resume and workspace_version(runner) == options.version
+    if not prepared:
+        runner.run(
+            [
+                "make",
+                "release-check",
+                f"VERSION={options.version}",
+                f"DATE={options.date}",
+            ]
+        )
+    version_phase = (
+        "Retain prepared changelogs and versions"
+        if prepared
+        else "Prepare and commit changelogs, versions, and documentation"
     )
-    version_phase = "Retain prepared changelogs and versions" if options.resume else "Prepare and commit changelogs, versions, and documentation"
     benchmark_phase = (
         "Retain previously checked benchmark evidence"
         if options.skip_benchmarks

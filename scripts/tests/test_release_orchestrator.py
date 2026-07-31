@@ -737,20 +737,42 @@ class PublicationContractTests(unittest.TestCase):
                     release.watch_publication(runner, options, "a" * 40)
 
     def test_preview_names_diagnostic_scope_without_publishing(self) -> None:
-        """Preview output must disclose retained evidence and omitted duplicate Rust gates."""
+        """A prepared resume must validate its plan without rejecting the current version."""
         runner = FakeRunner()
         options = release.Options(
-            "0.5.49", "2026-07-30", False, True, True, True
+            "0.5.49", "2026-07-30", False, True, True, True, True
         )
         output = io.StringIO()
 
-        with contextlib.redirect_stdout(output):
+        with mock.patch.object(
+            release, "workspace_version", return_value="0.5.49"
+        ), contextlib.redirect_stdout(output):
             release.preview(runner, options)
 
         rendered = output.getvalue()
+        self.assertIn("Retain prepared changelogs and versions", rendered)
         self.assertIn("Retain previously checked benchmark evidence", rendered)
         self.assertIn("excluding the diagnostic Rust rerun", rendered)
         self.assertNotIn("git push", rendered)
+        self.assertFalse(
+            any(command[:2] == ["make", "release-check"] for command in runner.commands),
+            "a prepared resume must not ask prepare_release to create the same version again",
+        )
+
+    def test_unprepared_resume_still_runs_release_check(self) -> None:
+        """Resume may skip preparation only when the workspace already equals the target."""
+        runner = FakeRunner()
+        options = release.Options(
+            "0.5.49", "2026-07-30", False, True, True, True, True
+        )
+
+        with mock.patch.object(release, "workspace_version", return_value="0.5.48"):
+            release.preview(runner, options)
+
+        self.assertIn(
+            ["make", "release-check", "VERSION=0.5.49", "DATE=2026-07-30"],
+            runner.commands,
+        )
 
 
 class ReleaseResumeContractTests(unittest.TestCase):
