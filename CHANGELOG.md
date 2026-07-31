@@ -16,6 +16,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 - Release preparation now updates standalone GitHub Action guide version pins, its regression suite rejects any canonical current-version document omitted from the release transaction, and the README states the portable macOS and Windows artifact contract exactly.
 - Aggregate release prevention gates now receive the immutable current-version candidate explicitly, so an older default Cargo release binary cannot invalidate backend parity.
+- Release orchestration now prepares the final workspace version before measuring its executable, and pre-tag resumes refresh version-bound evidence while signed-tag resumes preserve immutable evidence.
 
 ## [0.5.48] - 2026-07-27
 

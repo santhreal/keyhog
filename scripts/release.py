@@ -546,6 +546,7 @@ def preview(runner: Runner, options: Options) -> None:
             f"DATE={options.date}",
         ]
     )
+    version_phase = "Retain prepared changelogs and versions" if options.resume else "Prepare and commit changelogs, versions, and documentation"
     benchmark_phase = (
         "Retain previously checked benchmark evidence"
         if options.skip_benchmarks
@@ -553,8 +554,8 @@ def preview(runner: Runner, options: Options) -> None:
     )
     rust_scope = "excluding the diagnostic Rust rerun" if options.skip_rust else "including Rust"
     print("\nValidated release plan:")
-    print(f"  1. {benchmark_phase}")
-    print("  2. Prepare and commit changelogs, versions, and documentation")
+    print(f"  1. {version_phase}")
+    print(f"  2. {benchmark_phase}")
     print(f"  3. Run pre-tag source, benchmark, mdBook, and prevention gates, {rust_scope}")
     print("  4. Push main and one verified OpenPGP-signed annotated tag")
     print("  5. Watch GitHub release, Pages, GHCR, assets, and crates.io publication")
@@ -586,19 +587,19 @@ def publish(runner: Runner, options: Options) -> None:
             f"tag {options.tag} exists but workspace version is still {current}"
         )
 
-    print("\n[1/5] Measured evidence")
-    if prepared:
-        print(f"Workspace {options.version} is already prepared; retaining committed evidence.")
-    elif options.skip_benchmarks:
-        print("Diagnostic override: retaining previously checked benchmark evidence.")
-    else:
-        refresh_benchmarks(runner, options)
-
-    print("\n[2/5] Changelogs and versions")
+    print("\n[1/5] Changelogs and versions")
     if prepared:
         print(f"Workspace and changelogs already identify {options.tag}.")
     else:
         prepare_release(runner, options)
+
+    print("\n[2/5] Measured evidence")
+    if tag_commit:
+        print(f"Signed tag {options.tag} already exists; retaining its immutable evidence.")
+    elif options.skip_benchmarks:
+        print("Diagnostic override: retaining previously checked benchmark evidence.")
+    else:
+        refresh_benchmarks(runner, options)
 
     print("\n[3/5] Pre-tag proofs")
     if options.skip_rust:

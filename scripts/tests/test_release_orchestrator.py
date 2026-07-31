@@ -809,6 +809,107 @@ class ReleaseResumeContractTests(unittest.TestCase):
             runner = type("RootOnlyRunner", (), {"root": root})()
             self.assertEqual(release.workspace_version(runner), "0.5.49")
 
+    def test_new_release_prepares_version_before_measuring_candidate(self) -> None:
+        """Benchmark evidence must bind the final versioned executable, not the prior release."""
+        events: list[str] = []
+        runner = mock.Mock()
+        runner.output.return_value = "a" * 40
+        options = release.Options(
+            "0.5.49", "2026-07-30", True, False, False, False
+        )
+
+        with mock.patch.object(
+            release, "require_publication_identity", return_value="A" * 40
+        ), mock.patch.object(
+            release, "workspace_version", return_value="0.5.48"
+        ), mock.patch.object(
+            release, "release_tag_state", return_value=(None, False)
+        ), mock.patch.object(
+            release,
+            "prepare_release",
+            side_effect=lambda *_: events.append("prepare"),
+        ), mock.patch.object(
+            release,
+            "refresh_benchmarks",
+            side_effect=lambda *_: events.append("benchmarks"),
+        ), mock.patch.object(
+            release,
+            "run_pre_tag_gates",
+            side_effect=lambda *_: events.append("gates"),
+        ), mock.patch.object(
+            release, "push_main", side_effect=lambda *_: events.append("push")
+        ), mock.patch.object(release, "verify_tag_signature"):
+            release.publish(runner, options)
+
+        self.assertEqual(events, ["prepare", "benchmarks", "gates", "push"])
+
+    def test_prepared_resume_refreshes_version_bound_evidence(self) -> None:
+        """An interrupted pre-tag release must repair evidence made before its version bump."""
+        events: list[str] = []
+        runner = mock.Mock()
+        runner.output.return_value = "a" * 40
+        options = release.Options(
+            "0.5.49", "2026-07-30", True, False, False, False, True
+        )
+
+        with mock.patch.object(
+            release, "require_publication_identity", return_value="A" * 40
+        ), mock.patch.object(
+            release, "workspace_version", return_value="0.5.49"
+        ), mock.patch.object(
+            release, "release_tag_state", return_value=(None, False)
+        ), mock.patch.object(
+            release,
+            "prepare_release",
+            side_effect=lambda *_: events.append("prepare"),
+        ), mock.patch.object(
+            release,
+            "refresh_benchmarks",
+            side_effect=lambda *_: events.append("benchmarks"),
+        ), mock.patch.object(
+            release,
+            "run_pre_tag_gates",
+            side_effect=lambda *_: events.append("gates"),
+        ), mock.patch.object(
+            release, "push_main", side_effect=lambda *_: events.append("push")
+        ), mock.patch.object(release, "verify_tag_signature"):
+            release.publish(runner, options)
+
+        self.assertEqual(events, ["benchmarks", "gates", "push"])
+
+    def test_signed_tag_resume_never_remeasures_immutable_evidence(self) -> None:
+        """A published tag may be verified and watched, but its commit must not be rewritten."""
+        commit = "a" * 40
+        events: list[str] = []
+        runner = mock.Mock()
+        runner.output.return_value = commit
+        options = release.Options(
+            "0.5.49", "2026-07-30", True, False, False, False, True
+        )
+
+        with mock.patch.object(
+            release, "require_publication_identity", return_value="A" * 40
+        ), mock.patch.object(
+            release, "workspace_version", return_value="0.5.49"
+        ), mock.patch.object(
+            release, "release_tag_state", return_value=(commit, True)
+        ), mock.patch.object(
+            release, "verify_tag_signature"
+        ), mock.patch.object(
+            release, "refresh_benchmarks"
+        ) as refresh, mock.patch.object(
+            release,
+            "run_pre_tag_gates",
+            side_effect=lambda *_: events.append("gates"),
+        ), mock.patch.object(
+            release, "push_main", side_effect=lambda *_: events.append("push")
+        ):
+            release.publish(runner, options)
+
+        refresh.assert_not_called()
+        runner.run.assert_not_called()
+        self.assertEqual(events, ["gates", "push"])
+
     def test_remote_metrics_commit_does_not_rewrite_release_commit(self) -> None:
         """A post-release star snapshot must leave the already-tested tag commit unchanged."""
         runner = MetricsAheadRunner()
