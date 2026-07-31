@@ -685,10 +685,7 @@ async fn run_via_mass_daemon(args: &mut ScanArgs) -> Result<ExitCode> {
         format!(
             "mass daemon route: connect to {}. Start it with `keyhog daemon start --mass{}`",
             socket.display(),
-            args.daemon_socket
-                .as_ref()
-                .map(|path| format!(" --socket {}", path.display()))
-                .unwrap_or_default()
+            socket_flag(args)
         )
     })?;
     if !conn.is_mass_service() {
@@ -710,8 +707,7 @@ async fn run_via_mass_daemon(args: &mut ScanArgs) -> Result<ExitCode> {
     let mass_ignore_paths =
         crate::sources::merge_scan_ignore_paths(&resolved.exclude_paths, allowlist_paths.clone());
     let sources = crate::sources::build_sources(args, &resolved, allowlist_paths, None)?;
-    let filesystem_requests =
-        mass_filesystem_requests(&sources, &resolved, mass_ignore_paths);
+    let filesystem_requests = mass_filesystem_requests(&sources, &resolved, mass_ignore_paths);
     if sources.is_empty() {
         bail!(
             "mass daemon route: no source was selected. Pass a path, --stdin, or a remote source flag."
@@ -734,8 +730,7 @@ async fn run_via_mass_daemon(args: &mut ScanArgs) -> Result<ExitCode> {
 
     let (matches, expected_wire_payload, source_coverage_gaps) =
         if let Some(requests) = filesystem_requests {
-            let (matches, gaps) =
-                scan_daemon_local_filesystems(&mut conn, requests).await?;
+            let (matches, gaps) = scan_daemon_local_filesystems(&mut conn, requests).await?;
             (matches, None, gaps)
         } else {
             let before_skips = keyhog_sources::skip_counts();
@@ -758,15 +753,10 @@ async fn run_via_mass_daemon(args: &mut ScanArgs) -> Result<ExitCode> {
                                     source_errored = true;
                                     source_failed = source_failed.saturating_add(1);
                                     let _receipt = crate::record_source_error();
-                                    tracing::warn!(
-                                        "mass daemon source chunk skipped: {error:#}"
-                                    );
+                                    tracing::warn!("mass daemon source chunk skipped: {error:#}");
                                     eprintln!(
                                         "{}: mass daemon source chunk was not scanned: {error:#}",
-                                        crate::style::warn(
-                                            "warning",
-                                            &crate::style::for_stderr()
-                                        )
+                                        crate::style::warn("warning", &crate::style::for_stderr())
                                     );
                                 }
                             }
@@ -886,10 +876,10 @@ async fn run_via_mass_daemon(args: &mut ScanArgs) -> Result<ExitCode> {
 
 #[cfg(unix)]
 fn socket_flag(args: &ScanArgs) -> String {
-    args.daemon_socket
-        .as_ref()
-        .map(|path| format!(" --socket {}", path.display()))
-        .unwrap_or_default()
+    match &args.daemon_socket {
+        Some(path) => format!(" --socket {}", path.display()),
+        None => String::new(),
+    }
 }
 
 #[cfg(unix)]
@@ -898,9 +888,7 @@ fn validate_mass_daemon_policy(
     resolved: &crate::orchestrator_config::ResolvedScanConfig,
 ) -> Result<()> {
     if args.baseline.is_some() || args.update_baseline.is_some() {
-        bail!(
-            "--daemon=mass cannot apply baseline state. Run this scan with --daemon=off."
-        );
+        bail!("--daemon=mass cannot apply baseline state. Run this scan with --daemon=off.");
     }
     if resolved.incremental || resolved.incremental_cache_path.is_some() {
         bail!(
@@ -908,9 +896,7 @@ fn validate_mass_daemon_policy(
         );
     }
     if resolved.report.verify {
-        bail!(
-            "--daemon=mass cannot run live verification. Run this scan with --daemon=off."
-        );
+        bail!("--daemon=mass cannot run live verification. Run this scan with --daemon=off.");
     }
     if resolved.report.lockdown || resolved.require_lockdown {
         bail!("--daemon=mass cannot enforce lockdown. Run this scan with --daemon=off.");
@@ -972,7 +958,9 @@ fn mass_filesystem_requests(
             root,
             max_file_size: resolved
                 .max_file_size
-                .map_or(keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES, |bytes| bytes as u64),
+                .map_or(keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES, |bytes| {
+                    bytes as u64
+                }),
             ignore_paths: ignore_paths.clone(),
             respect_default_excludes: !resolved.no_default_excludes,
             reader_threads: resolved.reader_threads,
@@ -1082,10 +1070,7 @@ impl<'a> MassDaemonBatcher<'a> {
         }
         let chunks = std::mem::take(&mut self.chunks);
         self.bytes = 0;
-        let response = self
-            .conn
-            .round_trip(&Request::MassBatch { chunks })
-            .await?;
+        let response = self.conn.round_trip(&Request::MassBatch { chunks }).await?;
         let (matches, gaps) = unwrap_scan_results(response)?;
         self.matches.extend(matches);
         merge_source_coverage(&mut self.source_coverage_gaps, gaps);
@@ -1110,7 +1095,7 @@ pub(crate) fn split_chunk_for_mass(chunk: Chunk) -> Result<Vec<Chunk>> {
     if chunk.metadata.decoded_span.is_some() {
         bail!(
             "decoded source chunk at {} is {} bytes, above the {} byte mass-batch limit",
-            chunk.metadata.path.as_deref().unwrap_or("<unknown>"),
+            chunk.metadata.path.as_deref().unwrap_or("<unknown>"), // LAW10: absent path => reporting-only error label; the oversized decoded chunk still fails closed.
             chunk.data.len(),
             MASS_BATCH_BYTES
         );
@@ -1181,9 +1166,7 @@ fn source_coverage_since(
         archive_duplicate_scan_unavailable: after
             .archive_duplicate_scan_unavailable
             .saturating_sub(before.archive_duplicate_scan_unavailable),
-        git_lfs_pointer: after
-            .git_lfs_pointer
-            .saturating_sub(before.git_lfs_pointer),
+        git_lfs_pointer: after.git_lfs_pointer.saturating_sub(before.git_lfs_pointer),
         source_failed,
     }
 }

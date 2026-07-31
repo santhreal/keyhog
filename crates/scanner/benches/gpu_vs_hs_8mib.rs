@@ -1043,9 +1043,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .find(|(route, _)| *route == selection_hyperscan)
             .map(|(_, samples)| samples)
             .expect("selection-selected Hyperscan route has held-out samples");
-        let interval =
-            paired_ratio_confidence_95(selected_hyperscan_samples, &held_out_gpu)
-                .expect("selected-route timing evidence must contain two positive pairs");
+        let interval = paired_ratio_confidence_95(selected_hyperscan_samples, &held_out_gpu)
+            .expect("selected-route timing evidence must contain two positive pairs");
         println!(
             "paired GPU/selection-selected-Hyperscan ratio geometric_mean={:.4} ci95=[{:.4}, {:.4}] pairs={}",
             interval.geometric_mean_ratio,

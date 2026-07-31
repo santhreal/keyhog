@@ -68,7 +68,6 @@ where
     framed.next().await.transpose()
 }
 
-
 #[derive(Default)]
 pub(crate) struct ServerCodec {
     decoder: RequestDecoder,

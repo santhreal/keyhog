@@ -13,8 +13,8 @@ use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, RawMatch, Source};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
-use std::path::{Path, PathBuf};
 use std::num::NonZeroUsize;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -522,7 +522,9 @@ fn spawn_mass_filesystem_source(
         let _coverage_guard = match DAEMON_SOURCE_COVERAGE_LOCK.lock() {
             Ok(guard) => guard,
             Err(_) => {
+                // LAW10: poisoned coverage lock => fail closed with an explicit daemon error response.
                 let _ = sender.blocking_send(MassFilesystemMessage::Error(
+                    // LAW10: unused-binding marker; a dropped receiver leaves no consumer, so send status has no runtime effect and is not a fallback.
                     "daemon: source coverage lock poisoned".to_string(),
                 ));
                 return;
@@ -591,7 +593,7 @@ fn spawn_mass_filesystem_source(
         }
         let mut gaps = source_coverage_gaps_since(before);
         gaps.source_failed = gaps.source_failed.saturating_add(source_failed);
-        let _ = sender.blocking_send(MassFilesystemMessage::Complete(gaps));
+        let _ = sender.blocking_send(MassFilesystemMessage::Complete(gaps)); // LAW10: unused-binding marker; a dropped receiver leaves no consumer, so send status has no runtime effect and is not a fallback.
     });
     receiver
 }
@@ -622,7 +624,11 @@ impl MassSession {
 
     fn finish_stats(&self) -> MassScanStats {
         MassScanStats {
-            duration_ms: self.started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
+            duration_ms: self
+                .started_at
+                .elapsed()
+                .as_millis()
+                .min(u128::from(u64::MAX)) as u64,
             ..self.stats
         }
     }
@@ -841,7 +847,6 @@ async fn handle_connection(state: Arc<ServerState>, stream: UnixStream) -> Resul
     Ok(())
 }
 
-
 async fn dispatch(state: &ServerState, request: Request) -> Response {
     match request {
         Request::Hello => Response::Hello {
@@ -867,6 +872,7 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 warm_backend: state.warm_backend_status(),
             },
             Err(_) => Response::Error {
+                // LAW10: poisoned health state => fail closed through the operator-visible response.
                 message: "daemon: backend-recovery health lock is poisoned; restart the daemon"
                     .to_string(),
             },
@@ -1239,57 +1245,52 @@ async fn scan_mass_batch(
         if chunks.iter().all(|chunk| chunk.data.is_empty()) {
             return Ok((Vec::new(), telemetry.drain(), None, false));
         }
-        let (matches, backend_recovery, gpu) =
-            keyhog_scanner::telemetry::with_scan_telemetry(
-                &telemetry,
-                || -> Result<(Vec<RawMatch>, Option<BackendRecoveryStatus>, bool)> {
-                    let selection =
-                        router.choose_with_plan(scanner.as_ref(), backend_override, &chunks)?;
-                    let outcome = crate::orchestrator::scan_selected_batch(
-                        scanner.as_ref(),
-                        &chunks,
-                        selection.backend,
-                        selection.phase1_plan.as_ref(),
-                        selection.execution_route,
-                        selection
-                            .recovery_plan
-                            .filter(|_| recover_automatic_backend_faults),
+        let (matches, backend_recovery, gpu) = keyhog_scanner::telemetry::with_scan_telemetry(
+            &telemetry,
+            || -> Result<(Vec<RawMatch>, Option<BackendRecoveryStatus>, bool)> {
+                let selection =
+                    router.choose_with_plan(scanner.as_ref(), backend_override, &chunks)?;
+                let outcome = crate::orchestrator::scan_selected_batch(
+                    scanner.as_ref(),
+                    &chunks,
+                    selection.backend,
+                    selection.phase1_plan.as_ref(),
+                    selection.execution_route,
+                    selection
+                        .recovery_plan
+                        .filter(|_| recover_automatic_backend_faults),
+                )
+                .with_context(|| {
+                    format!(
+                        "selected backend {} failed during mass daemon dispatch",
+                        selection.backend.label()
                     )
-                    .with_context(|| {
-                        format!(
-                            "selected backend {} failed during mass daemon dispatch",
-                            selection.backend.label()
-                        )
-                    })?;
-                    if let Some(recovery) = outcome.recovery.as_ref() {
-                        router.quarantine_recovered_route(&selection, recovery)?;
-                    }
-                    let backend_recovery = outcome
-                        .recovery
-                        .as_ref()
-                        .map(backend_recovery_status_from_receipt)
-                        .or_else(|| {
-                            selection.autoroute_recovery.as_ref().map(|recovery| {
-                                autoroute_state_recovery_status(
-                                    &chunks,
-                                    selection.backend,
-                                    recovery,
-                                )
-                            })
-                        });
-                    let gpu = selection.backend.is_gpu() && !outcome.recovered;
-                    let mut per_chunk = outcome.per_chunk;
-                    crate::inline_suppression::attach_inline_suppression_context(
-                        &chunks,
-                        &mut per_chunk,
-                    );
-                    Ok((
-                        per_chunk.into_iter().flatten().collect(),
-                        backend_recovery,
-                        gpu,
-                    ))
-                },
-            )?;
+                })?;
+                if let Some(recovery) = outcome.recovery.as_ref() {
+                    router.quarantine_recovered_route(&selection, recovery)?;
+                }
+                let backend_recovery = outcome
+                    .recovery
+                    .as_ref()
+                    .map(backend_recovery_status_from_receipt)
+                    .or_else(|| {
+                        selection.autoroute_recovery.as_ref().map(|recovery| {
+                            autoroute_state_recovery_status(&chunks, selection.backend, recovery)
+                        })
+                    });
+                let gpu = selection.backend.is_gpu() && !outcome.recovered;
+                let mut per_chunk = outcome.per_chunk;
+                crate::inline_suppression::attach_inline_suppression_context(
+                    &chunks,
+                    &mut per_chunk,
+                );
+                Ok((
+                    per_chunk.into_iter().flatten().collect(),
+                    backend_recovery,
+                    gpu,
+                ))
+            },
+        )?;
         Ok((matches, telemetry.drain(), backend_recovery, gpu))
     })
     .await;
@@ -1316,9 +1317,7 @@ async fn scan_mass_batch(
                 gpu,
             }
         }
-        Ok(Err(error)) => {
-            MassBatchDispatch::error(format!("daemon: mass batch failed: {error:#}"))
-        }
+        Ok(Err(error)) => MassBatchDispatch::error(format!("daemon: mass batch failed: {error:#}")),
         Err(error) => MassBatchDispatch::error(format!(
             "daemon: mass batch task panicked or was cancelled: {error:#}"
         )),

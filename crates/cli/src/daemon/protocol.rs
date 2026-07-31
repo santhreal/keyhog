@@ -481,10 +481,7 @@ mod protected_chunks {
         })
     }
 
-    fn serialize_sensitive<S>(
-        value: &&SensitiveString,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
+    fn serialize_sensitive<S>(value: &&SensitiveString, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {

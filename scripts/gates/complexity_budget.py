@@ -41,9 +41,9 @@ COMMIT_SHA = re.compile(r"(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})")
 # stale slack can be hidden by a generous ceiling.
 BUDGET = {
     "phase2_lanes": 10,          # engine/phase2*.rs files
-    "scan_backends": 4,          # ScanBackend:: variants
+    "scan_backends": 5,          # ScanBackend:: variants
     "engine_files": 39,          # *.rs files under engine/
-    "engine_loc": 11659,         # total non-blank LOC under engine/
+    "engine_loc": 11625,         # total non-blank LOC under engine/
 }
 
 

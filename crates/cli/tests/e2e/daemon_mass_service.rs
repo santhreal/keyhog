@@ -24,7 +24,13 @@ fn scan_stdin_json(guard: &DaemonGuard, cwd: &std::path::Path, body: &str) -> st
     let mut child = Command::new(binary())
         .current_dir(cwd)
         .env("XDG_RUNTIME_DIR", guard.runtime_dir())
-        .args(["scan", "--daemon=mass", "--stdin", "--format", "json-envelope"])
+        .args([
+            "scan",
+            "--daemon=mass",
+            "--stdin",
+            "--format",
+            "json-envelope",
+        ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -93,7 +99,10 @@ fn mass_daemon_directory_scan_reports_exact_finding_location() {
     let findings = report["findings"].as_array().expect("findings array");
     assert_eq!(findings.len(), 1, "exactly one credential should survive");
     assert_eq!(findings[0]["detector_id"], "aws-access-key");
-    assert_eq!(findings[0]["location"]["file_path"], secret.to_string_lossy().as_ref());
+    assert_eq!(
+        findings[0]["location"]["file_path"],
+        secret.to_string_lossy().as_ref()
+    );
     assert_eq!(findings[0]["location"]["line"], 1);
     assert_eq!(report["metadata"]["source_bytes_scanned"], 119);
     assert_eq!(report["metadata"]["source_chunks_scanned"], 2);
@@ -212,7 +221,10 @@ fn assert_mass_gpu_primary_backend(backend: &'static str) {
     let findings = report["findings"].as_array().expect("findings array");
     assert_eq!(findings.len(), 1);
     assert_eq!(findings[0]["detector_id"], "aws-access-key");
-    assert_eq!(findings[0]["location"]["file_path"], secret.to_string_lossy().as_ref());
+    assert_eq!(
+        findings[0]["location"]["file_path"],
+        secret.to_string_lossy().as_ref()
+    );
 }
 
 /// A forced CUDA mass worker must certify every processed byte as GPU work.
@@ -256,7 +268,10 @@ fn mass_mode_rejects_warm_only_daemon_without_fallback() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert_eq!(output.status.code(), Some(2), "stderr={stderr}");
     assert!(stderr.contains("warm-only service"), "stderr={stderr}");
-    assert!(!stderr.contains("aws-access-key"), "rejection must not scan; stderr={stderr}");
+    assert!(
+        !stderr.contains("aws-access-key"),
+        "rejection must not scan; stderr={stderr}"
+    );
 }
 
 /// A stdin scan must preserve exact bytes and null file attribution across protected IPC.
@@ -355,5 +370,8 @@ fn mass_daemon_endpoint_failure_preserves_coverage_error() {
     assert_eq!(report["scan_status"], "partial");
     assert_eq!(report["findings"].as_array().map(Vec::len), Some(0));
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("not reporting \"clean\""), "stderr={stderr}");
+    assert!(
+        stderr.contains("not reporting \"clean\""),
+        "stderr={stderr}"
+    );
 }

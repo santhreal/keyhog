@@ -36,9 +36,9 @@ fn request_timeout(request: &Request) -> Duration {
         | Request::MassFilesystemBegin { .. }
         | Request::MassEnd => DAEMON_HEALTH_TIMEOUT,
         Request::ScanText { .. } => DAEMON_SCAN_TEXT_TIMEOUT,
-        Request::ScanPath { .. }
-        | Request::MassBatch { .. }
-        | Request::MassFilesystemNext => DAEMON_REQUEST_TIMEOUT,
+        Request::ScanPath { .. } | Request::MassBatch { .. } | Request::MassFilesystemNext => {
+            DAEMON_REQUEST_TIMEOUT
+        }
     }
 }
 

@@ -46,7 +46,14 @@ fn metal_backend_is_advertised_as_an_override() {
 /// Prevents ambiguous or implementation-shaped strings from selecting Metal accidentally.
 #[test]
 fn unsupported_metal_spellings_fail_closed() {
-    for spelling in ["mlx", "gpu-mlx", "metal", "metal-gpu", "apple-gpu", "metal-region"] {
+    for spelling in [
+        "mlx",
+        "gpu-mlx",
+        "metal",
+        "metal-gpu",
+        "apple-gpu",
+        "metal-region",
+    ] {
         assert_eq!(
             parse_backend_str(spelling),
             None,

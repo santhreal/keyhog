@@ -43,6 +43,7 @@ class ExactComplexityRatchetTests(unittest.TestCase):
 pub enum ScanBackend {
     GpuCuda,
     GpuWgpu,
+    GpuMetal,
     SimdCpu,
     CpuFallback,
 }
@@ -51,14 +52,14 @@ pub enum ScanBackend {
         with tempfile.TemporaryDirectory() as tmp:
             owner = pathlib.Path(tmp) / "mod.rs"
             owner.write_text(original, encoding="utf-8")
-            self.assertEqual(complexity_budget.count_scan_backends(owner), 4)
+            self.assertEqual(complexity_budget.count_scan_backends(owner), 5)
             owner.write_text(expanded, encoding="utf-8")
             measured = complexity_budget.BUDGET.copy()
             measured["scan_backends"] = complexity_budget.count_scan_backends(owner)
 
         self.assertEqual(
             complexity_budget.budget_drift(measured, complexity_budget.BUDGET),
-            [("scan_backends", 5, 4)],
+            [("scan_backends", 6, 5)],
         )
 
     def test_removed_measurement_cannot_leave_a_stale_budget(self) -> None:
