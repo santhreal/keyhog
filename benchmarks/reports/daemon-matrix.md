@@ -4,9 +4,9 @@ One deterministic 8 MiB regular file (`sha256:afafbe7b6487fd62866f510e7c281a9e7b
 
 | Explicit route | In process | Warm daemon | Warm / one-shot | In-process RSS | Daemon RSS |
 |---|---:|---:|---:|---:|---:|
-| Hyperscan/SIMD | 519 ms | 231 ms | 0.44× | 733 MiB | 760 MiB |
-| Pure-Rust CPU | 1.84 s | 178 ms | 0.10× | 746 MiB | 767 MiB |
-| CUDA | 1.62 s | 230 ms | 0.14× | 1145 MiB | 1161 MiB |
-| WGPU | 1.49 s | 237 ms | 0.16× | 1087 MiB | 1109 MiB |
+| Hyperscan/SIMD | 495 ms | 216 ms | 0.44× | 738 MiB | 743 MiB |
+| Pure-Rust CPU | 1.59 s | 152 ms | 0.10× | 746 MiB | 778 MiB |
+| CUDA | 1.34 s | 213 ms | 0.16× | 1137 MiB | 1161 MiB |
+| WGPU | 1.28 s | 220 ms | 0.17× | 1078 MiB | 1089 MiB |
 
 The daemon is not a general directory or CI accelerator. It accepts only eligible single-file and bounded-stdin requests on Unix, and it serializes execution.

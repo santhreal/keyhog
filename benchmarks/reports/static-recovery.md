@@ -1,6 +1,6 @@
 # Bounded static recovery - mirror
 
-Selected run: scanner **KeyHog** `KeyHog v0.5.49<br>Commit: 6de9f13b010c17e6776202e23c48360412f5aebb<br>Detector Set: 923 (923-8785f8837d2cd505)<br>Build Target: x86_64-linux<br>ML Model Version: moe-v1-246a05b92bec9aa3<br>ML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable`; corpus **mirror** (15,000 fixtures, 2,430,321 bytes); generated `2026-07-31T12:10:53Z`; artifact `mirror-keyhog-simd-nocache-nodaemon-full.json`.
+Selected run: scanner **KeyHog** `KeyHog v0.5.49<br>Commit: a4e845308e8c5e35fd1739e6ed4f88726ad3c69e<br>Detector Set: 923 (923-8785f8837d2cd505)<br>Build Target: x86_64-linux<br>ML Model Version: moe-v1-246a05b92bec9aa3<br>ML Model Card: recorded 2026-07-15; features 55; synthetic F1 0.971 / P 0.945 / R 0.999; real F1 0.832 / P 0.753 / R 0.931 / recall@0.40 0.938; zero-recall detectors 2/32; six-scanner differential unavailable`; corpus **mirror** (15,000 fixtures, 2,430,321 bytes); generated `2026-07-31T12:54:55Z`; artifact `mirror-keyhog-simd-nocache-nodaemon-full.json`.
 
 Telemetry schema: `static-recovery-v1`.
 
