@@ -129,19 +129,24 @@ def _assert_keyhog_results_current(rows: list[RunResult]) -> None:
                 "invalid keyhog benchmark result: executable SHA-256 "
                 f"is {observed}; rerun `make leaderboard` with immutable execution evidence"
             )
-        if row.scanner.executable_sha256 != expected_executable_digest:
+        try:
+            exact_commit = assert_reported_identity_matches_workspace(
+                row.scanner.version,
+                what="keyhog benchmark result",
+                allow_generated_evidence_ancestor=True,
+            )
+        except KeyhogVersionError as exc:
+            raise GateError(f"{exc}; rerun `make leaderboard` with the current binary") from exc
+        # Committing benchmark output changes only the embedded Git stamp.
+        if (
+            exact_commit
+            and row.scanner.executable_sha256 != expected_executable_digest
+        ):
             raise GateError(
                 "stale keyhog benchmark result: executable SHA-256 is "
                 f"{row.scanner.executable_sha256}, current={expected_executable_digest}; "
                 "rerun `make leaderboard` with the current binary"
             )
-        try:
-            assert_reported_identity_matches_workspace(
-                row.scanner.version,
-                what="keyhog benchmark result",
-            )
-        except KeyhogVersionError as exc:
-            raise GateError(f"{exc}; rerun `make leaderboard` with the current binary") from exc
         if expected_digest is None:
             try:
                 expected_digest = workspace_detector_corpus_sha256()

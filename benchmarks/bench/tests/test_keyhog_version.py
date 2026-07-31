@@ -55,6 +55,88 @@ def _build_rs_detector_digest(detector_dir: pathlib.Path) -> str:
     return f"{len(entries)}-{value:016x}"
 
 
+def _git_commit_all(repo: pathlib.Path, message: str) -> str:
+    """Commit the complete temporary tree and return its exact object identity."""
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "-c",
+            "user.name=Santh",
+            "-c",
+            "user.email=santh@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            message,
+        ],
+        check=True,
+    )
+    return subprocess.check_output(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        text=True,
+    ).strip()
+
+
+def test_generated_evidence_commit_preserves_measured_binary_identity(tmp_path):
+    """Committing a report must not create an impossible self-referential hash gate."""
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    source = tmp_path / "crates/scanner/src/lib.rs"
+    report = tmp_path / "benchmarks/reports/leaderboard.md"
+    source.parent.mkdir(parents=True)
+    report.parent.mkdir(parents=True)
+    source.write_text("pub fn version() -> u8 { 1 }\n", encoding="utf-8")
+    report.write_text("old evidence\n", encoding="utf-8")
+    measured_commit = _git_commit_all(tmp_path, "source")
+
+    report.write_text("current evidence\n", encoding="utf-8")
+    current_commit = _git_commit_all(tmp_path, "evidence")
+
+    assert keyhog_version._generated_evidence_only_since(
+        measured_commit, current_commit, tmp_path
+    )
+
+
+def test_source_commit_invalidates_ancestor_benchmark_identity(tmp_path):
+    """A source change after measurement must still fail even beside generated reports."""
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    source = tmp_path / "crates/scanner/src/lib.rs"
+    report = tmp_path / "benchmarks/reports/leaderboard.md"
+    source.parent.mkdir(parents=True)
+    report.parent.mkdir(parents=True)
+    source.write_text("pub fn version() -> u8 { 1 }\n", encoding="utf-8")
+    report.write_text("old evidence\n", encoding="utf-8")
+    measured_commit = _git_commit_all(tmp_path, "source")
+
+    source.write_text("pub fn version() -> u8 { 2 }\n", encoding="utf-8")
+    report.write_text("current evidence\n", encoding="utf-8")
+    current_commit = _git_commit_all(tmp_path, "source and evidence")
+
+    assert not keyhog_version._generated_evidence_only_since(
+        measured_commit, current_commit, tmp_path
+    )
+
+
+def test_source_rename_into_report_directory_cannot_evade_freshness_gate(tmp_path):
+    """Rename detection must expose the deleted source path, not only its safe destination."""
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    source = tmp_path / "crates/scanner/src/lib.rs"
+    destination = tmp_path / "benchmarks/reports/disguised.md"
+    source.parent.mkdir(parents=True)
+    destination.parent.mkdir(parents=True)
+    source.write_text("pub fn version() -> u8 { 1 }\n", encoding="utf-8")
+    measured_commit = _git_commit_all(tmp_path, "source")
+
+    source.rename(destination)
+    current_commit = _git_commit_all(tmp_path, "disguised source")
+
+    assert not keyhog_version._generated_evidence_only_since(
+        measured_commit, current_commit, tmp_path
+    )
+
+
 def test_workspace_detector_digest_matches_build_rs_on_current_tree():
     repo_root = pathlib.Path(__file__).resolve().parents[3]
     detector_dir = repo_root / "detectors"

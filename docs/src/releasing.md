@@ -135,8 +135,12 @@ or output contract is a failed release prerequisite. The script does not invent
 a fallback result. Because generation writes reports while later panels are
 still being measured, the snapshot truthfully records a developer-dirty source
 classification. Executable and detector digests remain bound in the evidence.
-The executable digest identifies the final versioned candidate that the pre-tag
-gates consume.
+The executable digest identifies the final versioned candidate used for the
+measurement. Committing that evidence creates one child commit and changes the
+Git hash embedded in the next build. The pre-tag gate accepts this unavoidable
+digest difference only when every intervening path is generated evidence.
+Any source, manifest, configuration, fixture, or other path change rejects the
+measurement as stale.
 
 Choose the benchmark path by intent:
 

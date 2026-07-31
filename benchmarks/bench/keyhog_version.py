@@ -116,6 +116,67 @@ def _is_generated_evidence_path(path: pathlib.PurePosixPath) -> bool:
     )
 
 
+
+def _generated_evidence_only_since(
+    observed_commit: str,
+    current_commit: str,
+    repo_root: pathlib.Path = _REPO_ROOT,
+) -> bool:
+    """Return whether one ancestor differs from HEAD only by generated evidence."""
+    try:
+        ancestor = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo_root),
+                "merge-base",
+                "--is-ancestor",
+                observed_commit,
+                current_commit,
+            ],
+            capture_output=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise KeyhogVersionError(
+            f"cannot validate benchmark commit ancestry: {exc}"
+        ) from exc
+    if ancestor.returncode != 0:
+        return False
+    try:
+        changed = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo_root),
+                "diff",
+                "--name-only",
+                "--no-renames",
+                "-z",
+                observed_commit,
+                current_commit,
+                "--",
+            ],
+            capture_output=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise KeyhogVersionError(
+            f"cannot inspect post-benchmark commit paths: {exc}"
+        ) from exc
+    if changed.returncode != 0:
+        detail = (changed.stdout + changed.stderr)[:500]
+        raise KeyhogVersionError(
+            "cannot inspect post-benchmark commit paths: "
+            f"git exited {changed.returncode}, output={detail!r}"
+        )
+    paths = {
+        pathlib.PurePosixPath(os.fsdecode(raw_path))
+        for raw_path in changed.stdout.split(b"\0")
+        if raw_path
+    }
+    return bool(paths) and all(_is_generated_evidence_path(path) for path in paths)
+
 def assert_workspace_tracked_tree_clean(repo_root: pathlib.Path = _REPO_ROOT) -> None:
     """Require source and build inputs to match HEAD for release evidence.
 
@@ -269,15 +330,28 @@ def workspace_detector_corpus_sha256(repo_root: pathlib.Path = _REPO_ROOT) -> st
     return detector_corpus_sha256(repo_root / "detectors")
 
 
-def assert_reported_identity_matches_workspace(raw: str, *, what: str) -> None:
+def assert_reported_identity_matches_workspace(
+    raw: str,
+    *,
+    what: str,
+    allow_generated_evidence_ancestor: bool = False,
+) -> bool:
+    """Validate a reported identity and return whether its commit equals HEAD."""
     assert_version_matches_workspace(raw, what=what)
     commit_match = _COMMIT_RE.search(raw)
     if commit_match is None:
         raise KeyhogVersionError(f"{what} does not report a Commit line; rebuild or rerun it")
+    observed_commit = commit_match.group(1)
     expected_commit = workspace_git_hash()
-    if commit_match.group(1) != expected_commit:
+    exact_commit = observed_commit == expected_commit
+    generated_evidence_ancestor = (
+        allow_generated_evidence_ancestor
+        and observed_commit != "unknown"
+        and _generated_evidence_only_since(observed_commit, expected_commit)
+    )
+    if not exact_commit and not generated_evidence_ancestor:
         raise KeyhogVersionError(
-            f"stale {what}: commit={commit_match.group(1)}, workspace={expected_commit}; "
+            f"stale {what}: commit={observed_commit}, workspace={expected_commit}; "
             "rebuild or rerun the benchmark"
         )
     detector_match = _DETECTOR_SET_RE.search(raw)
@@ -291,6 +365,7 @@ def assert_reported_identity_matches_workspace(raw: str, *, what: str) -> None:
             f"stale {what}: detector_set={detector_match.group(1)}, "
             f"workspace={expected_detectors}; rebuild after detector TOML or corpus.toml changes"
         )
+    return exact_commit
 
 
 def assert_keyhog_binary_current(binary: str, *, pass_fds: tuple[int, ...] = ()) -> str:

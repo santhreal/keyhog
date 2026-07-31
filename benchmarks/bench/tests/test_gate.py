@@ -394,6 +394,54 @@ def test_run_gate_rejects_well_formed_digest_from_another_executable(
     assert rc == 2
 
 
+
+def test_run_gate_accepts_digest_delta_from_evidence_only_child_commit(
+    monkeypatch, tmp_path
+):
+    """The report commit changes the Git stamp but not the measured scanner behavior."""
+    detector_digest = "f" * 64
+    identity_calls: list[bool] = []
+
+    def accept_evidence_ancestor(
+        raw: str,
+        *,
+        what: str,
+        allow_generated_evidence_ancestor: bool = False,
+    ) -> bool:
+        assert raw == _current_keyhog_version_record()
+        assert what == "keyhog benchmark result"
+        identity_calls.append(allow_generated_evidence_ancestor)
+        return False
+
+    monkeypatch.setattr(
+        gate, "assert_reported_identity_matches_workspace", accept_evidence_ancestor
+    )
+    monkeypatch.setattr(
+        gate, "workspace_detector_corpus_sha256", lambda: detector_digest
+    )
+    measured = _row(
+        "keyhog",
+        tp=5,
+        fp=0,
+        fn=0,
+        version=_current_keyhog_version_record(),
+        executable_sha256="b" * 64,
+        detector_corpus_sha256=detector_digest,
+    )
+    (tmp_path / "mirror-keyhog-default.json").write_text(
+        json.dumps(measured.to_json())
+    )
+
+    rc = gate.run_gate(
+        "mirror",
+        ["keyhog"],
+        results_dir=tmp_path,
+        beat_competitors=False,
+    )
+
+    assert rc == 0
+    assert identity_calls == [True]
+
 def test_run_gate_reports_broken_workspace_detector_corpus(monkeypatch, tmp_path, capsys):
     current = _row(
         "keyhog", tp=5, fp=0, fn=0,
