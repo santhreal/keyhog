@@ -14,7 +14,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 ### Fixed
 
-- Release preparation now updates standalone GitHub Action guide version pins, and its regression suite rejects any canonical current-version document omitted from the release transaction.
+- Release preparation now updates standalone GitHub Action guide version pins, its regression suite rejects any canonical current-version document omitted from the release transaction, and the README states the portable macOS and Windows artifact contract exactly.
 
 ## [0.5.48] - 2026-07-27
 

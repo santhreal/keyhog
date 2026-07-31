@@ -411,8 +411,9 @@ iwr https://santh.dev/keyhog/install.ps1 -UseBasicParsing | iex
 ```
 
 Installers authenticate release assets before replacing a binary. Linux x86_64
-statically links Hyperscan. macOS x86_64 and arm64, plus Windows x86_64, use
-portable builds. Linux and Windows arm64 release assets are not produced.
+statically links Hyperscan. macOS and Windows release assets are portable
+no-system-library builds. The current matrix includes macOS x86_64 and arm64
+and Windows x86_64. Linux and Windows arm64 release assets are not produced.
 
 Verify and maintain the installed binary:
 
