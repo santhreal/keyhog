@@ -1,6 +1,4 @@
-#[cfg(any(feature = "simd", feature = "gpu", test))]
 use super::phase2::Phase2AlwaysActiveGpuEvidence;
-#[cfg(any(feature = "simd", feature = "gpu", test))]
 use super::windowed_support::window_ranges;
 use super::windowed_support::{
     next_window_offset, record_window_match, window_chunk, window_end_offset,
@@ -59,7 +57,6 @@ impl CompiledScanner {
         Ok(all_matches)
     }
 
-    #[cfg(any(feature = "simd", feature = "gpu", test))]
     pub(crate) fn scan_windowed_with_triggered(
         &self,
         chunk: &Chunk,

@@ -484,6 +484,8 @@ jobs:
           done
       - name: portable (no Hyperscan or GPU build libraries)
         run: cargo check -p keyhog --no-default-features --features portable
+      - name: portable coalesced windowing contract
+        run: cargo test -p keyhog-scanner --test portable_coalesced_windowing --no-default-features --features ml,entropy,decode,multiline
       - name: portable runtime dogfood (scalar CPU, real exclusions)
         run: |
           cargo build --profile release-fast -p keyhog --no-default-features --features portable

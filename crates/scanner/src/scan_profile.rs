@@ -110,7 +110,6 @@ pub(crate) fn enabled() -> bool {
     PROFILE_ENABLED.load(Relaxed)
 }
 
-#[cfg(any(feature = "simd", feature = "gpu"))]
 pub(crate) fn perf_trace_enabled() -> bool {
     PERF_TRACE_ENABLED.load(Relaxed)
 }

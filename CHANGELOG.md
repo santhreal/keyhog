@@ -25,6 +25,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Source skip-counter tests now serialize scans that begin before the first counter guard, eliminating concurrent false failures in the full source matrix. Release dogfood fixtures and documentation now scan cleanly without weakening detector behavior.
 - Release previews now recognize an already-prepared `--resume` workspace instead of asking release preparation to create the current version again and failing before evidence checks.
 - The exact architecture ratchet now counts native Metal as the fifth scan backend and binds the current engine source total, so the source-only prevention gate reflects the shipped backend set without stale budget drift.
+- Portable source builds now retain coalesced triggered windowing and performance-trace support without SIMD or GPU features, so branch and commit refs compile before Action scans. A dedicated oversized-window suite covers exact offsets, overlap deduplication, multiple findings, and hostile near-matches under the portable feature profile.
 
 ## [0.5.48] - 2026-07-27
 
