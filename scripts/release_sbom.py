@@ -84,8 +84,8 @@ SUPPORTED_ASSETS: dict[str, tuple[str, str]] = {
 # byte identities and runtime contracts are deliberately reviewed here: a
 # command-surface change cannot silently inherit a stale SBOM inventory.
 INSTALLER_SOURCE_SHA256 = {
-    "install.ps1": "f13ff428fe25a5261ec8a21c0ace4b07ff63e71cdcff136508a765a3087ca443",
-    "install.sh": "fde09407387604ee229d1ad99580192395c70767b213b3e913e4d80cace1214a",
+    "install.ps1": "9d349d4cd3af1ea6d30ceead67ddfe98ed122e03b038d536926ff0b269dc0db1",
+    "install.sh": "a4fad3e1b452dac46ac8aa4e66d5b87c1ff8d7e469d48a63cfa7d2ddea36808a",
 }
 INSTALLER_RUNTIME_TOOLS = {
     "install.sh": (
