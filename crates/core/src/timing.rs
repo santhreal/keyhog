@@ -59,6 +59,32 @@ pub fn paired_ratio_confidence_95(
         high_ratio: (mean + half_width).exp(),
     })
 }
+/// Select the earliest candidate unless paired 95% evidence proves a later
+/// candidate faster.
+///
+/// Every candidate must provide the same number of positive observations, with
+/// at least two observations per candidate. Returning the earliest candidate
+/// when intervals overlap gives callers a deterministic tie-break without
+/// converting measurement noise into a route change.
+pub fn select_confidently_fastest_index<'a>(
+    sample_sets: impl IntoIterator<Item = &'a [Duration]>,
+) -> Option<usize> {
+    let mut candidates = sample_sets.into_iter().enumerate();
+    let (_, mut selected_samples) = candidates.next()?;
+    if selected_samples.len() < 2 || selected_samples.iter().any(|sample| sample.is_zero()) {
+        return None;
+    }
+
+    let mut selected_index = 0;
+    for (index, candidate_samples) in candidates {
+        let comparison = paired_ratio_confidence_95(selected_samples, candidate_samples)?;
+        if comparison.high_ratio < 1.0 {
+            selected_index = index;
+            selected_samples = candidate_samples;
+        }
+    }
+    Some(selected_index)
+}
 
 /// Median duration using the midpoint of the two central observations for an
 /// even-length sample.

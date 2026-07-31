@@ -26,6 +26,8 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - Release previews now recognize an already-prepared `--resume` workspace instead of asking release preparation to create the current version again and failing before evidence checks.
 - The exact architecture ratchet now counts native Metal as the fifth scan backend and binds the current engine source total, so the source-only prevention gate reflects the shipped backend set without stale budget drift.
 - Portable source builds now retain coalesced triggered windowing and performance-trace support without SIMD or GPU features, so branch and commit refs compile before Action scans. A dedicated oversized-window suite covers exact offsets, overlap deduplication, multiple findings, and hostile near-matches under the portable feature profile.
+- Crossover route selection now keeps deterministic candidate order when paired 95% evidence cannot distinguish near-tied GPU peers, so a point-median fluctuation cannot redirect all held-out release evidence to an unproven peer.
+
 
 ## [0.5.48] - 2026-07-27
 

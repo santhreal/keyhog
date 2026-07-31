@@ -26,13 +26,15 @@
 //! gate refuses either restriction and measures all four plans for every peer.
 //!
 //! Selection uses rotating candidate order to choose one exact GPU route and one
-//! exact Hyperscan route. Both receive 300 fresh rotating held-out comparisons.
-//! Every other parity-correct Hyperscan route remains measured for audit, but
-//! held-out observations cannot change the independently selected competitors.
+//! exact Hyperscan route. A later candidate replaces the deterministic first
+//! candidate only when paired 95% evidence proves it faster. Both selected routes
+//! receive 300 fresh rotating held-out comparisons. Every other parity-correct
+//! Hyperscan route remains measured for audit, but held-out observations cannot
+//! change the independently selected competitors.
 
 use keyhog_core::{
     load_detectors,
-    timing::{median_duration, paired_ratio_confidence_95},
+    timing::{median_duration, paired_ratio_confidence_95, select_confidently_fastest_index},
     Chunk, ChunkMetadata, RawMatch,
 };
 use keyhog_scanner::{
@@ -880,18 +882,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .filter(|(route, _)| route.backend == ScanBackend::SimdCpu)
             .map(|(route, _)| *route)
             .collect::<Vec<_>>();
+        let selection_hyperscan_index = select_confidently_fastest_index(
+            selection_samples
+                .iter()
+                .filter(|(route, _)| route.backend == ScanBackend::SimdCpu)
+                .map(|(_, samples)| samples.as_slice()),
+        )
+        .expect("Hyperscan has valid route-selection evidence");
         let selection_hyperscan = selection_samples
             .iter()
             .filter(|(route, _)| route.backend == ScanBackend::SimdCpu)
-            .min_by_key(|(_, samples)| median_duration(samples).expect("selection samples"))
+            .nth(selection_hyperscan_index)
             .map(|(route, _)| *route)
-            .expect("Hyperscan has route-selection evidence");
+            .expect("selected Hyperscan route index remains in bounds");
+        let selected_gpu_index = select_confidently_fastest_index(
+            selection_samples
+                .iter()
+                .filter(|(route, _)| route.backend.is_gpu())
+                .map(|(_, samples)| samples.as_slice()),
+        )
+        .expect("an acquired GPU peer has valid route-selection evidence");
         let selected_gpu = selection_samples
             .iter()
             .filter(|(route, _)| route.backend.is_gpu())
-            .min_by_key(|(_, samples)| median_duration(samples).expect("selection samples"))
+            .nth(selected_gpu_index)
             .map(|(route, _)| *route)
-            .expect("an acquired GPU peer has selection evidence");
+            .expect("selected GPU route index remains in bounds");
         println!(
             "held-out routes selected from selection-only evidence: hyperscan={} gpu={}",
             selection_hyperscan.label(),
