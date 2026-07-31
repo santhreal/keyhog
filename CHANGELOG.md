@@ -12,6 +12,10 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 
 - The README star viewer now uses a deterministic accessible SVG generated from repository-owned observations, records only real count transitions, handles same-day corrections and declines truthfully, writes atomically, and retries isolated metrics push races without depending on star-history.com.
 
+### Fixed
+
+- Release preparation now updates standalone GitHub Action guide version pins, and its regression suite rejects any canonical current-version document omitted from the release transaction.
+
 ## [0.5.48] - 2026-07-27
 
 ### Added

@@ -178,7 +178,7 @@ even when `fail-on-findings` is `false`.
 | `severity` | `high` | Minimum reported tier: `info`, `client-safe`, `low`, `medium`, `high`, or `critical`. |
 | `format` | `sarif` | Action report format: `text`, `json`, `sarif`, or `jsonl`. |
 | `verify` | `'false'` | Enables provider verification only when exactly `'true'`. |
-| `version` | empty | Scanner release selected by the Action ref. A value pins a final release at `v0.5.48` or newer. |
+| `version` | empty | Scanner release selected by the Action ref. A value pins a final release at `v0.5.49` or newer. |
 | `upload-sarif` | `'true'` | Uploads Code Scanning results when `format` is `sarif`. The artifact is retained independently. |
 | `analysis-category` | `keyhog` | Stable identity for one report and Code Scanning partition. |
 | `fail-on-findings` | `'true'` | Set to `'false'` to make ordinary findings advisory. |
@@ -236,7 +236,7 @@ The floating major ref follows the latest published `v0` release:
 Use an exact Action ref when workflow code must change only through review:
 
 ```yaml
-- uses: santhreal/keyhog@v0.5.48
+- uses: santhreal/keyhog@v0.5.49
 ```
 
 The optional `version` input pins the scanner asset. It does not pin the Action

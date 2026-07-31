@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -144,6 +145,32 @@ class ReleaseTransformationTests(unittest.TestCase):
         with self.assertRaisesRegex(release.PrepareError, "scanner.*sources.*verifier"):
             release.validate_crate_coverage(fragments)
 
+    def test_release_transaction_owns_every_canonical_current_version_pin(self) -> None:
+        """A release must update every operator-maintained doc that names its current version."""
+        root = Path(__file__).resolve().parents[2]
+        current = tomllib.loads((root / "Cargo.toml").read_text())["workspace"]["package"][
+            "version"
+        ]
+        versioned = {root / relative for relative in release.VERSIONED_FILES}
+        canonical_docs = [
+            root / "README.md",
+            root / ".github/actions/keyhog/README.md",
+            *sorted((root / "docs/src").rglob("*.md")),
+        ]
+        unowned: list[str] = []
+
+        for path in canonical_docs:
+            try:
+                release.bump_markdown(path.read_text(), current, "999.999.999")
+            except release.VersionBumpError as error:
+                if "does not contain canonical pin" not in str(error):
+                    raise
+            else:
+                if path not in versioned:
+                    unowned.append(str(path.relative_to(root)))
+
+        self.assertEqual(unowned, [])
+
     def test_complete_preview_is_read_only_and_apply_consumes_fragments(self) -> None:
         """One command must coherently prepare every release surface without mutating previews."""
         with tempfile.TemporaryDirectory() as directory:
@@ -194,7 +221,7 @@ class ReleaseTransformationTests(unittest.TestCase):
 
             preview = release.prepare(root, "0.5.49", "2026-07-28", False)
 
-            self.assertEqual(len(preview), 22)
+            self.assertEqual(len(preview), 23)
             self.assertEqual((root / "Cargo.toml").read_text(), manifest)
             self.assertTrue(fragment.exists())
 

@@ -38,6 +38,7 @@ VERSIONED_FILES = (
     Path("docs/src/reference/oob-verification.md"),
     Path("docs/src/verification.md"),
     Path("docs/src/workflows/ci.md"),
+    Path("docs/src/workflows/github-action.md"),
     Path("docs/src/workflows/precommit.md"),
 )
 _VERSION_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
