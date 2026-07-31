@@ -627,7 +627,7 @@ fn daemon_start_status_stop_reports_exact_lines_and_codes() {
     );
     assert_eq!(
         *scope_line,
-        "scan scope: eligible stdin/single-file scans before baseline, Merkle skip-cache, and verification; directories, git/remote sources, policy changes, baseline, and --verify run in-process."
+        "scan scope: warm stdin/single-file requests only; start with --mass for bounded client-acquired source batches."
     );
     assert_eq!(
         *policy_line,

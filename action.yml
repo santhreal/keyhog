@@ -585,10 +585,11 @@ runs:
           fi
         fi
         cd "$ACTION_SOURCE_ROOT"
-        # Source refs use the lockfile with the exact MSRV toolchain and the
-        # portable feature profile on every runner. This avoids floating native
-        # package-manager state while retaining sources and live verification.
-        cargo build --locked --release -p keyhog --no-default-features --features portable
+        # Source refs retain the release profile for each platform. macOS adds
+        # native Metal and WGPU without requiring Homebrew Vectorscan.
+        source_features="portable"
+        if [[ "${RUNNER_OS:-}" == "macOS" ]]; then source_features="portable,gpu"; fi
+        cargo build --locked --release -p keyhog --no-default-features --features "$source_features"
         case "${RUNNER_OS:-}" in
           Windows) bin="target/release/keyhog.exe" ;;
           *) bin="target/release/keyhog" ;;
