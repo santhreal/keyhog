@@ -25,10 +25,10 @@
 //! `KH_BENCH_PHASE2_KEYWORD_LOCALIZER=1|0` restrict diagnostic runs; the release
 //! gate refuses either restriction and measures all four plans for every peer.
 //!
-//! Selection uses rotating candidate order. The selected exact GPU route then
-//! receives fresh rotating held-out comparisons against every Hyperscan route.
-//! The release gate pairs GPU time with the fastest Hyperscan observation in
-//! each trial and requires that ratio's 95% confidence upper bound below 1.0.
+//! Selection uses rotating candidate order to choose one exact GPU route and one
+//! exact Hyperscan route. Both receive 300 fresh rotating held-out comparisons.
+//! Every other parity-correct Hyperscan route remains measured for audit, but
+//! held-out observations cannot change the independently selected competitors.
 
 use keyhog_core::{
     load_detectors,
@@ -48,10 +48,10 @@ use std::time::{Duration, Instant};
 
 const MIB: usize = 1024 * 1024;
 const WINDOW_OVERLAP: usize = 128 * 1024;
-// The measured crossover is close enough that 20 pairs produced a 95% interval
-// spanning parity. These floors distinguish a repeatable 1% win from noise
-// without reusing peer-selection samples as held-out evidence.
-const RELEASE_HELD_OUT_PAIRS: usize = 100;
+// The measured crossover is close enough that smaller samples produced 95%
+// intervals spanning parity. This floor distinguishes a repeatable win from
+// noise without reusing peer-selection samples as held-out evidence.
+const RELEASE_HELD_OUT_PAIRS: usize = 300;
 const RELEASE_SELECTION_ROUNDS: usize = 20;
 
 #[derive(serde::Serialize)]
@@ -123,9 +123,9 @@ struct CrossoverArtifact {
     logical_cores: usize,
     total_memory_mb: Option<u64>,
     simd_features: String,
-    fastest_hyperscan_backend: String,
-    fastest_hyperscan_phase2_plain_localizer: bool,
-    fastest_hyperscan_phase2_keyword_localizer: bool,
+    selected_hyperscan_backend: String,
+    selected_hyperscan_phase2_plain_localizer: bool,
+    selected_hyperscan_phase2_keyword_localizer: bool,
     hyperscan_reference: String,
     selected_gpu_backend: String,
     selected_gpu_phase2_plain_localizer: bool,
@@ -1038,24 +1038,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
             hyperscan_comparisons.push((*route, hs_median, interval));
         }
-        let (fastest_hyperscan, _, _) = hyperscan_comparisons
+        let selected_hyperscan_samples = held_out_hs
             .iter()
-            .copied()
-            .min_by_key(|(_, median, _)| *median)
-            .expect("at least one held-out Hyperscan comparison exists");
-        let held_out_fastest_hs = (0..iters)
-            .map(|pair| {
-                held_out_hs
-                    .iter()
-                    .map(|(_, samples)| samples[pair])
-                    .min()
-                    .expect("at least one held-out Hyperscan route exists")
-            })
-            .collect::<Vec<_>>();
-        let interval = paired_ratio_confidence_95(&held_out_fastest_hs, &held_out_gpu)
-            .expect("per-pair fastest Hyperscan evidence must contain two positive pairs");
+            .find(|(route, _)| *route == selection_hyperscan)
+            .map(|(_, samples)| samples)
+            .expect("selection-selected Hyperscan route has held-out samples");
+        let interval =
+            paired_ratio_confidence_95(selected_hyperscan_samples, &held_out_gpu)
+                .expect("selected-route timing evidence must contain two positive pairs");
         println!(
-            "paired GPU/per-pair-fastest-Hyperscan ratio geometric_mean={:.4} ci95=[{:.4}, {:.4}] pairs={}",
+            "paired GPU/selection-selected-Hyperscan ratio geometric_mean={:.4} ci95=[{:.4}, {:.4}] pairs={}",
             interval.geometric_mean_ratio,
             interval.low_ratio,
             interval.high_ratio,
@@ -1115,7 +1107,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 && iters >= RELEASE_HELD_OUT_PAIRS
                 && selection_rounds >= RELEASE_SELECTION_ROUNDS;
             let artifact = CrossoverArtifact {
-                schema_version: 8,
+                schema_version: 9,
                 measured_at_utc: chrono::Utc::now().to_rfc3339(),
                 diagnostic,
                 production_comparable,
@@ -1146,11 +1138,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 logical_cores: hardware.logical_cores,
                 total_memory_mb: hardware.total_memory_mb,
                 simd_features: simd_features.to_owned(),
-                fastest_hyperscan_backend: fastest_hyperscan.backend.label().to_owned(),
-                fastest_hyperscan_phase2_plain_localizer: fastest_hyperscan.phase2_plain_localizer,
-                fastest_hyperscan_phase2_keyword_localizer: fastest_hyperscan
+                selected_hyperscan_backend: selection_hyperscan.backend.label().to_owned(),
+                selected_hyperscan_phase2_plain_localizer: selection_hyperscan
+                    .phase2_plain_localizer,
+                selected_hyperscan_phase2_keyword_localizer: selection_hyperscan
                     .phase2_keyword_localizer,
-                hyperscan_reference: "per-pair-fastest-parity-correct-route".to_owned(),
+                hyperscan_reference: "selection-selected-parity-correct-route".to_owned(),
                 selected_gpu_backend: selected_gpu.backend.label().to_owned(),
                 selected_gpu_phase2_plain_localizer: selected_gpu.phase2_plain_localizer,
                 selected_gpu_phase2_keyword_localizer: selected_gpu.phase2_keyword_localizer,
@@ -1235,9 +1228,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             assert!(
                 interval.high_ratio < 1.0,
-                "8 MiB crossover missed: selected exact GPU route {} has paired GPU/per-pair-fastest-Hyperscan 95% CI upper bound {:.4}, which does not prove it faster than every parity-correct Hyperscan route",
+                "8 MiB crossover missed: selection-selected exact GPU route {} has paired 95% CI upper bound {:.4} against selection-selected exact Hyperscan route {}, so GPU is not proven faster",
                 selected_gpu.label(),
                 interval.high_ratio,
+                selection_hyperscan.label(),
             );
         }
     }

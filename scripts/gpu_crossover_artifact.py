@@ -28,7 +28,7 @@ def main() -> int:
         return 1
 
     failures: list[str] = []
-    require(artifact.get("schema_version") == 8, "schema_version must be 8", failures)
+    require(artifact.get("schema_version") == 9, "schema_version must be 9", failures)
     require(artifact.get("git_hash") == args.git_hash, "git_hash must match the candidate source", failures)
     require(artifact.get("build_source_tree_state") == "clean", "benchmark binary must be built from a clean tree", failures)
     require(artifact.get("source_tree_state") == "clean", "source tree must remain clean through measurement", failures)
@@ -36,14 +36,15 @@ def main() -> int:
     require(artifact.get("production_comparable") is True, "production_comparable must be true", failures)
     require(artifact.get("crossover_passed") is True, "crossover_passed must be true", failures)
     require(artifact.get("source_bytes") == 8 * 1024 * 1024, "source_bytes must be exactly 8 MiB", failures)
-    require(artifact.get("held_out_pairs", 0) >= 100, "at least 100 held-out pairs are required", failures)
+    require(artifact.get("held_out_pairs", 0) >= 300, "at least 300 held-out pairs are required", failures)
     require(artifact.get("selection_rounds", 0) >= 20, "at least 20 selection rounds are required", failures)
     require(artifact.get("full_result_parity") is True, "full finding parity must pass", failures)
     require(artifact.get("gpu_degraded") is False, "GPU execution must not be degraded", failures)
 
     ratio = artifact.get("ratio_ci95_high")
     require(isinstance(ratio, float) and math.isfinite(ratio) and ratio < 1.0, "GPU/Hyperscan 95% ratio upper bound must be finite and below 1.0", failures)
-    require(str(artifact.get("fastest_hyperscan_backend", "")).startswith("simd"), "fastest Hyperscan route identity is missing", failures)
+    require(str(artifact.get("selected_hyperscan_backend", "")).startswith("simd"), "selection-selected Hyperscan route identity is missing", failures)
+    require(artifact.get("hyperscan_reference") == "selection-selected-parity-correct-route", "Hyperscan reference must come from independent route selection", failures)
     require(str(artifact.get("selected_gpu_backend", "")).startswith("gpu-"), "selected GPU route identity is missing", failures)
     for field in ("selected_gpu_driver", "selected_gpu_driver_version", "selected_gpu_device", "selected_gpu_runtime"):
         require(bool(artifact.get(field)), f"{field} is missing", failures)

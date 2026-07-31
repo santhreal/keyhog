@@ -12,7 +12,7 @@ GIT_HASH = "0123456789012345678901234567890123456789"
 
 def valid_artifact() -> dict[str, object]:
     return {
-        "schema_version": 8,
+        "schema_version": 9,
         "git_hash": GIT_HASH,
         "build_source_tree_state": "clean",
         "source_tree_state": "clean",
@@ -20,12 +20,13 @@ def valid_artifact() -> dict[str, object]:
         "production_comparable": True,
         "crossover_passed": True,
         "source_bytes": 8 * 1024 * 1024,
-        "held_out_pairs": 100,
+        "held_out_pairs": 300,
         "selection_rounds": 20,
         "full_result_parity": True,
         "gpu_degraded": False,
         "ratio_ci95_high": 0.98,
-        "fastest_hyperscan_backend": "simd-hyperscan",
+        "selected_hyperscan_backend": "simd-hyperscan",
+        "hyperscan_reference": "selection-selected-parity-correct-route",
         "selected_gpu_backend": "gpu-cuda-region-presence",
         "selected_gpu_driver": "cuda",
         "selected_gpu_driver_version": "0.6.5",
@@ -87,4 +88,25 @@ def test_rejects_dirty_stale_or_nonwinning_evidence(tmp_path: pathlib.Path) -> N
         "GPU crossover evidence rejected: full finding parity must pass",
         "GPU crossover evidence rejected: GPU execution must not be degraded",
         "GPU crossover evidence rejected: GPU/Hyperscan 95% ratio upper bound must be finite and below 1.0",
+    ]
+
+
+def test_rejects_oracle_reference_and_underpowered_sample(tmp_path: pathlib.Path) -> None:
+    """Release evidence must compare independently selected routes with 300 held-out pairs."""
+    artifact = valid_artifact()
+    artifact.update(
+        schema_version=8,
+        held_out_pairs=299,
+        selected_hyperscan_backend="",
+        hyperscan_reference="per-pair-fastest-parity-correct-route",
+    )
+
+    result = run_validator(tmp_path, artifact)
+
+    assert result.returncode == 1
+    assert result.stderr.splitlines() == [
+        "GPU crossover evidence rejected: schema_version must be 9",
+        "GPU crossover evidence rejected: at least 300 held-out pairs are required",
+        "GPU crossover evidence rejected: selection-selected Hyperscan route identity is missing",
+        "GPU crossover evidence rejected: Hyperscan reference must come from independent route selection",
     ]

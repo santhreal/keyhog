@@ -188,22 +188,25 @@ through the explicit production execution-route entry point for Hyperscan and
 every acquired CUDA or WGPU peer, with all four combinations of plain-pattern
 and keyword-anchor localization.
 It requires sorted full-match parity from every route, rejects GPU degradation,
-and rotates candidate order during selection. The selected measured-correct GPU
-route then runs in fresh rotating held-out trials against every parity-correct
-Hyperscan execution plan. Selection samples cannot enter any final interval.
-The gate passes only when the paired GPU/per-pair-fastest-Hyperscan ratio's 95%
-confidence upper bound is below 1.0 at 8 MiB. Each paired trial uses the fastest
-Hyperscan observation across the eligible localization plans, then computes one
-confidence interval against that CPU envelope. A slower CPU tuning choice
-therefore cannot make the GPU result look favorable. A forced plain or keyword
-localizer filter, profiling, or perf tracing retains parity and degradation
-checks but cannot pass the release speed gate.
+and rotates candidate order during selection. Selection-only samples choose one
+measured-correct GPU route and one measured-correct Hyperscan route. Both routes
+then run in 300 fresh rotating held-out trials. Every other parity-correct
+Hyperscan route also runs in those trials and remains visible in the artifact,
+but no held-out observation can change either selected route.
 
-Schema 8 records the selected GPU backend and both localization choices, the
-fastest observed Hyperscan plan, every route-selection sample, and a separate
-held-out confidence interval for each Hyperscan plan. `crossover_passed` is
-based on the paired fastest-Hyperscan envelope, not whichever CPU route looks
-favorable.
+The gate passes only when the selected GPU to selected Hyperscan paired ratio's
+95% confidence upper bound is below 1.0 at 8 MiB. A slower CPU tuning choice
+cannot make the GPU result look favorable because independent selection compares
+all eligible localization plans before the held-out phase. A per-trial minimum
+across several CPU plans is not an eligible backend and is not used as a
+hindsight oracle. A forced plain or keyword localizer filter, profiling, or perf
+tracing retains parity and degradation checks but cannot pass the release speed
+gate.
+
+Schema 9 records both selected backends and localization choices, every
+route-selection sample, and a separate held-out confidence interval for each
+Hyperscan plan. `crossover_passed` is based only on the independently selected
+GPU and Hyperscan routes.
 Use `--diagnostic` for an unprofiled 8 MiB measurement from a dirty development
 tree. That mode retains exact parity and degradation checks but records
 `diagnostic = true`, `production_comparable = false`, and cannot pass the
