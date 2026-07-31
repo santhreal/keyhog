@@ -14,6 +14,10 @@ from bench import keyhog_version
 def _isolate_dirty_override(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ambient developer overrides must not disable dirty-tree regression tests."""
     monkeypatch.delenv("KEYHOG_BENCH_ALLOW_DIRTY", raising=False)
+    monkeypatch.delenv(
+        "KEYHOG_BENCH_ALLOW_GENERATED_EVIDENCE_DIRTY",
+        raising=False,
+    )
 
 
 def _version_output(*, commit: str, detector_digest: str) -> str:
@@ -251,6 +255,108 @@ def test_workspace_cleanliness_rejects_unstaged_and_staged_tracked_edits(tmp_pat
         check=True,
     )
     keyhog_version.assert_workspace_tracked_tree_clean(tmp_path)
+
+
+def test_generated_evidence_scope_accepts_only_release_owned_outputs(
+    tmp_path, monkeypatch
+):
+    """Release measurements may continue after their own reports dirty the tree."""
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    paths = [
+        tmp_path / "README.md",
+        tmp_path / "metrics/stars.svg",
+        tmp_path / "benchmarks/reports/leaderboard.md",
+        tmp_path / "benchmarks/run-sets/canonical.toml",
+    ]
+    for path in paths:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("old\n")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
+    subprocess.run(
+        [
+            "git", "-C", str(tmp_path), "-c", "user.name=Santh",
+            "-c", "user.email=64453045+santhreal@users.noreply.github.com",
+            "commit", "-qm", "fixture",
+        ],
+        check=True,
+    )
+    for path in paths:
+        path.write_text("new\n")
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "add", "benchmarks/run-sets/canonical.toml"],
+        check=True,
+    )
+    monkeypatch.setenv("KEYHOG_BENCH_ALLOW_GENERATED_EVIDENCE_DIRTY", "1")
+
+    keyhog_version.assert_workspace_tracked_tree_clean(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "relative",
+    [
+        "Cargo.toml",
+        "benchmarks/bench/report.py",
+        "benchmarks/run-sets/lookalike.toml",
+        "benchmarks/results/result.json",
+        "metrics/stars.json",
+    ],
+)
+def test_generated_evidence_scope_rejects_source_and_lookalike_paths(
+    tmp_path, monkeypatch, relative
+):
+    """The release-only scope must not become a broad dirty-worktree bypass."""
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    path = tmp_path / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("old\n")
+    subprocess.run(["git", "-C", str(tmp_path), "add", relative], check=True)
+    subprocess.run(
+        [
+            "git", "-C", str(tmp_path), "-c", "user.name=Santh",
+            "-c", "user.email=64453045+santhreal@users.noreply.github.com",
+            "commit", "-qm", "fixture",
+        ],
+        check=True,
+    )
+    path.write_text("new\n")
+    monkeypatch.setenv("KEYHOG_BENCH_ALLOW_GENERATED_EVIDENCE_DIRTY", "1")
+
+    with pytest.raises(
+        keyhog_version.KeyhogVersionError,
+        match="Unexpected non-evidence paths",
+    ):
+        keyhog_version.assert_workspace_tracked_tree_clean(tmp_path)
+
+
+def test_generated_evidence_scope_rejects_renamed_report(
+    tmp_path, monkeypatch
+):
+    """A rename must not hide deleted evidence or an unexpected destination path."""
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    report = tmp_path / "benchmarks/reports/leaderboard.md"
+    report.parent.mkdir(parents=True)
+    report.write_text("old\n")
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "add", "benchmarks/reports/leaderboard.md"],
+        check=True,
+    )
+    subprocess.run(
+        [
+            "git", "-C", str(tmp_path), "-c", "user.name=Santh",
+            "-c", "user.email=64453045+santhreal@users.noreply.github.com",
+            "commit", "-qm", "fixture",
+        ],
+        check=True,
+    )
+    report.rename(report.with_name("renamed.md"))
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    monkeypatch.setenv("KEYHOG_BENCH_ALLOW_GENERATED_EVIDENCE_DIRTY", "1")
+
+    with pytest.raises(
+        keyhog_version.KeyhogVersionError,
+        match="does not accept renamed or copied paths",
+    ):
+        keyhog_version.assert_workspace_tracked_tree_clean(tmp_path)
 
 
 @pytest.mark.parametrize("flag", ["--assume-unchanged", "--skip-worktree"])

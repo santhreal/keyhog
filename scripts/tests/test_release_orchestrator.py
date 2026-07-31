@@ -20,6 +20,7 @@ class FakeRunner:
     def __init__(self, status: str = "") -> None:
         self.status = status
         self.commands: list[list[str]] = []
+        self.environments: list[dict[str, str] | None] = []
 
     def output(self, args: list[str]) -> str:
         self.commands.append(args)
@@ -34,6 +35,7 @@ class FakeRunner:
         capture: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         self.commands.append(args)
+        self.environments.append(env)
         if args[:3] == ["git", "status", "--porcelain=v1"]:
             return subprocess.CompletedProcess(args, 0, self.status, "")
         return subprocess.CompletedProcess(args, 0, "", "")
@@ -434,6 +436,22 @@ class ReleasePlanContractTests(unittest.TestCase):
                 ],
             ],
         )
+        make_environments = [
+            environment
+            for command, environment in zip(runner.commands, runner.environments)
+            if command[:2] == ["make", "-C"]
+        ]
+        self.assertEqual(
+            make_environments,
+            [
+                {
+                    "KEYHOG_BIN": str(candidate),
+                    "KEYHOG_BENCH_ALLOW_GENERATED_EVIDENCE_DIRTY": "1",
+                }
+            ]
+            * 5,
+        )
+
     def test_canonical_bloom_report_is_published_after_freshness_scoring(self) -> None:
         """Generated Bloom Markdown must not dirty the tree before candidate scoring."""
         makefile = Path("benchmarks/Makefile").resolve()

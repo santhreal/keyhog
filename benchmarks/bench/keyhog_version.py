@@ -16,6 +16,17 @@ import subprocess
 import tomllib
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+_ALLOW_GENERATED_EVIDENCE_DIRTY_ENV = (
+    "KEYHOG_BENCH_ALLOW_GENERATED_EVIDENCE_DIRTY"
+)
+_GENERATED_EVIDENCE_EXACT_PATHS = frozenset(
+    {
+        pathlib.PurePosixPath("README.md"),
+        pathlib.PurePosixPath("metrics/stars.svg"),
+        pathlib.PurePosixPath("benchmarks/run-sets/canonical.toml"),
+    }
+)
+_GENERATED_EVIDENCE_DIRECTORY = pathlib.PurePosixPath("benchmarks/reports")
 _DETECTOR_CORPUS_MANIFEST_FILE = "corpus.toml"
 _SEMVER_RE = re.compile(
     r"(?<![0-9A-Za-z])v?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)"
@@ -80,12 +91,37 @@ def workspace_git_hash(repo_root: pathlib.Path = _REPO_ROOT) -> str:
     return value
 
 
-def assert_workspace_tracked_tree_clean(repo_root: pathlib.Path = _REPO_ROOT) -> None:
-    """Require every tracked workspace byte to match HEAD for release evidence.
+def _tracked_status_paths(raw: bytes) -> set[pathlib.PurePosixPath]:
+    """Decode exact tracked paths from NUL-delimited porcelain status."""
+    paths: set[pathlib.PurePosixPath] = set()
+    for entry in raw.split(b"\0"):
+        if not entry:
+            continue
+        if len(entry) < 4 or entry[2:3] != b" ":
+            raise KeyhogVersionError(
+                f"malformed tracked workspace status entry: {entry[:100]!r}"
+            )
+        status = entry[:2]
+        if b"R" in status or b"C" in status:
+            raise KeyhogVersionError(
+                "generated-evidence freshness does not accept renamed or copied paths"
+            )
+        paths.add(pathlib.PurePosixPath(os.fsdecode(entry[3:])))
+    return paths
 
-    Setting ``KEYHOG_BENCH_ALLOW_DIRTY=1`` skips this check so a developer can
-    measure a locally-modified tree without committing; CI/release pipelines
-    must never set this.
+
+def _is_generated_evidence_path(path: pathlib.PurePosixPath) -> bool:
+    return path in _GENERATED_EVIDENCE_EXACT_PATHS or (
+        _GENERATED_EVIDENCE_DIRECTORY in path.parents
+    )
+
+
+def assert_workspace_tracked_tree_clean(repo_root: pathlib.Path = _REPO_ROOT) -> None:
+    """Require source and build inputs to match HEAD for release evidence.
+
+    ``KEYHOG_BENCH_ALLOW_DIRTY=1`` remains a developer-only full bypass.
+    The release orchestrator may set the narrower generated-evidence switch,
+    which still rejects every dirty source, manifest, fixture, or executable input.
     """
     if os.environ.get("KEYHOG_BENCH_ALLOW_DIRTY") == "1":
         return
@@ -109,11 +145,24 @@ def assert_workspace_tracked_tree_clean(repo_root: pathlib.Path = _REPO_ROOT) ->
             f"git exited {proc.returncode}, output={detail!r}"
         )
     if proc.stdout:
-        raise KeyhogVersionError(
-            "the tracked KeyHog workspace has uncommitted changes, so the candidate "
-            "binary cannot prove it represents the current source. Commit the changes, "
-            "rebuild the release candidate, and rerun the benchmark"
+        paths = _tracked_status_paths(proc.stdout)
+        allow_generated = (
+            os.environ.get(_ALLOW_GENERATED_EVIDENCE_DIRTY_ENV) == "1"
         )
+        unexpected = sorted(
+            str(path) for path in paths if not _is_generated_evidence_path(path)
+        )
+        if not allow_generated or unexpected:
+            detail = (
+                f" Unexpected non-evidence paths: {', '.join(unexpected)}."
+                if unexpected
+                else ""
+            )
+            raise KeyhogVersionError(
+                "the tracked KeyHog workspace has uncommitted changes, so the candidate "
+                "binary cannot prove it represents the current source. Commit the changes, "
+                f"rebuild the release candidate, and rerun the benchmark.{detail}"
+            )
     try:
         flags = subprocess.run(
             ["git", "-C", str(repo_root), "ls-files", "-v", "-z"],

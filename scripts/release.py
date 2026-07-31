@@ -360,7 +360,10 @@ def refresh_benchmarks(runner: Runner, options: Options) -> None:
     )
     if not candidate.is_file():
         raise ReleaseError(f"benchmark candidate was not built at {candidate}")
-    make_env = {"KEYHOG_BIN": str(candidate)}
+    make_env = {
+        "KEYHOG_BIN": str(candidate),
+        "KEYHOG_BENCH_ALLOW_GENERATED_EVIDENCE_DIRTY": "1",
+    }
     runner.run(["make", "-C", "benchmarks", "mirror"], env=make_env)
     runner.run(["make", "-C", "benchmarks", "canonical"], env=make_env)
     runner.run(["make", "-C", "benchmarks", "report"], env=make_env)
