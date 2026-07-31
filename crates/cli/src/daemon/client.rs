@@ -29,9 +29,16 @@ const DAEMON_SCAN_TEXT_TIMEOUT: Duration = Duration::from_secs(60);
 /// full-file budget; ScanText is mid-tier for pre-commit chunks.
 fn request_timeout(request: &Request) -> Duration {
     match request {
-        Request::Hello | Request::Health | Request::Shutdown => DAEMON_HEALTH_TIMEOUT,
+        Request::Hello
+        | Request::Health
+        | Request::Shutdown
+        | Request::MassBegin { .. }
+        | Request::MassFilesystemBegin { .. }
+        | Request::MassEnd => DAEMON_HEALTH_TIMEOUT,
         Request::ScanText { .. } => DAEMON_SCAN_TEXT_TIMEOUT,
-        Request::ScanPath { .. } => DAEMON_REQUEST_TIMEOUT,
+        Request::ScanPath { .. }
+        | Request::MassBatch { .. }
+        | Request::MassFilesystemNext => DAEMON_REQUEST_TIMEOUT,
     }
 }
 
@@ -106,6 +113,8 @@ async fn connect_inner(
         backend_policy: String::new(),
         stale_reason: None,
         warm_backend: None,
+        mass_service: false,
+        mass_gpu_primary_required: false,
     };
 
     // Hello handshake gates the connection on wire compatibility. A
@@ -136,6 +145,8 @@ async fn connect_inner(
             detector_rules_digest,
             backend_policy,
             warm_backend,
+            mass_service,
+            mass_gpu_primary_required,
             ..
         } if wire_version == WIRE_VERSION => {
             validate_backend_policy(&backend_policy)?;
@@ -197,6 +208,8 @@ async fn connect_inner(
             client.backend_policy = backend_policy;
             client.stale_reason = stale_reason;
             client.warm_backend = Some(warm_backend);
+            client.mass_service = mass_service;
+            client.mass_gpu_primary_required = mass_gpu_primary_required;
             Ok(client)
         }
         Response::Hello {
@@ -234,6 +247,8 @@ pub(crate) struct Client {
     backend_policy: String,
     stale_reason: Option<String>,
     warm_backend: Option<WarmBackendStatus>,
+    mass_service: bool,
+    mass_gpu_primary_required: bool,
 }
 
 impl Client {
@@ -262,6 +277,14 @@ impl Client {
 
     pub(crate) fn warm_backend_status(&self) -> Option<&WarmBackendStatus> {
         self.warm_backend.as_ref()
+    }
+
+    pub(crate) fn is_mass_service(&self) -> bool {
+        self.mass_service
+    }
+
+    pub(crate) fn mass_gpu_primary_required(&self) -> bool {
+        self.mass_gpu_primary_required
     }
 
     pub(crate) async fn send(&mut self, request: &Request) -> Result<()> {

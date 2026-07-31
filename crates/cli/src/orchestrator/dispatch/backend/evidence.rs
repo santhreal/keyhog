@@ -303,7 +303,7 @@ impl AutorouteCalibrationPoint {
             ScanBackend::SimdCpu => self
                 .timing_for_route(route)
                 .and_then(simd_cold_warm_route_evidence),
-            ScanBackend::GpuCuda | ScanBackend::GpuWgpu => {
+            ScanBackend::GpuCuda | ScanBackend::GpuMetal | ScanBackend::GpuWgpu => {
                 self.gpu_cold_warm_route_for_measured(route)
             }
             _ => None,
@@ -419,7 +419,8 @@ impl AutorouteCalibrationPoint {
                     ScanBackend::CpuFallback => 0u8,
                     ScanBackend::SimdCpu => 1,
                     ScanBackend::GpuCuda => 2,
-                    ScanBackend::GpuWgpu => 3,
+                    ScanBackend::GpuMetal => 3,
+                    ScanBackend::GpuWgpu => 4,
                     _ => 4,
                 };
                 (
@@ -440,6 +441,7 @@ impl AutorouteCalibrationPoint {
             ScanBackend::CpuFallback,
             ScanBackend::SimdCpu,
             ScanBackend::GpuCuda,
+            ScanBackend::GpuMetal,
             ScanBackend::GpuWgpu,
         ] {
             if backend == selected.backend {
@@ -543,7 +545,10 @@ impl AutorouteCalibrationPoint {
             ScanBackend::CpuFallback => self
                 .timing_for_route(route)
                 .map(BackendTimingEvidence::median_ns),
-            ScanBackend::SimdCpu | ScanBackend::GpuCuda | ScanBackend::GpuWgpu => {
+            ScanBackend::SimdCpu
+            | ScanBackend::GpuCuda
+            | ScanBackend::GpuMetal
+            | ScanBackend::GpuWgpu => {
                 let (_, warm_timing, one_shot_ns) =
                     self.accelerator_cold_warm_route_for_measured(route)?;
                 Some(if persistent_runtime {

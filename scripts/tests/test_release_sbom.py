@@ -677,6 +677,21 @@ class ReleaseSbomTests(unittest.TestCase):
             with self.assertRaisesRegex(SbomError, "duplicate JSON key"):
                 ReleaseManifest.read(path)
 
+    def test_macos_binary_profiles_enable_gpu_without_default_features(self) -> None:
+        """Keep native Metal in both macOS release receipts without adding Hyperscan."""
+        for asset, target in (
+            ("keyhog-macos-aarch64", "aarch64-apple-darwin"),
+            ("keyhog-macos-x86_64", "x86_64-apple-darwin"),
+        ):
+            self.assertEqual(
+                DEPENDENCY_PROFILES[asset],
+                (target, "keyhog", False, ("gpu", "portable")),
+            )
+        self.assertEqual(
+            DEPENDENCY_PROFILES["keyhog-windows-x86_64.exe"],
+            ("x86_64-pc-windows-msvc", "keyhog", False, ("portable",)),
+        )
+
     def test_dependency_receipt_executes_exact_offline_cargo_profile(self) -> None:
         """Prevent mocked validators from hiding the real Cargo re-derivation contract."""
         with tempfile.TemporaryDirectory() as directory:

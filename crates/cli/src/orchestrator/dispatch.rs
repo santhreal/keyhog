@@ -262,7 +262,7 @@ impl CoalescedScannerWorker {
             // The VYRE GpuLiteralSet region-presence route is the single on-GPU
             // trigger path. Explicit requests remain hard contracts; automatic
             // routes may recover visibly at the fallible boundary below.
-            ScanBackend::GpuCuda | ScanBackend::GpuWgpu => {
+            ScanBackend::GpuCuda | ScanBackend::GpuMetal | ScanBackend::GpuWgpu => {
                 let batch_bytes: u64 = batch.iter().map(|c| c.data.len() as u64).sum();
                 tracing::debug!(
                     target: "keyhog::routing",

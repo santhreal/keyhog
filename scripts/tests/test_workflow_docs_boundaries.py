@@ -31,6 +31,20 @@ class WorkflowDocumentationBoundaryTests(unittest.TestCase):
         self.assertIn("readme: missing canonical workflow route", issues[0])
         self.assertIn("mass-scanning.html", issues[0])
 
+    def test_readme_cannot_drop_gpu_mass_worker_or_endpoint_discovery(self) -> None:
+        """The landing page must expose mass GPU workers and non-filesystem source entry points."""
+        for route in (
+            "## GPU-backed mass daemon workers",
+            "--github-collaboration",
+            "--azure-container-url",
+        ):
+            with self.subTest(route=route):
+                broken = dict(self.texts)
+                broken["readme"] = broken["readme"].replace(route, "missing-route")
+                issues = workflow_docs_boundaries.boundary_issues(broken)
+                self.assertEqual(len(issues), 1)
+                self.assertIn(route, issues[0])
+
     def test_readme_cannot_drop_recipe_chooser_or_release_routes(self) -> None:
         """New users and maintainers must reach commands and release operations from the landing page."""
         for route in (
@@ -59,6 +73,36 @@ class WorkflowDocumentationBoundaryTests(unittest.TestCase):
         self.assertIn("recipes: missing canonical workflow route", issues[0])
         self.assertIn("Docker image", issues[0])
 
+    def test_mass_and_daemon_guides_keep_gpu_mass_worker_contract_discoverable(self) -> None:
+        """GPU mass setup must remain explicit in both operator guides."""
+        for document, route in (
+            ("mass", "### GPU-backed daemon worker"),
+            ("daemon", "## GPU-backed mass worker"),
+        ):
+            with self.subTest(document=document):
+                broken = dict(self.texts)
+                broken[document] = broken[document].replace(route, "## Missing worker setup")
+                issues = workflow_docs_boundaries.boundary_issues(broken)
+                self.assertEqual(len(issues), 1)
+                self.assertIn(route, issues[0])
+
+
+    def test_native_metal_route_stays_visible_from_install_to_mass_service(self) -> None:
+        """The shipped macOS GPU peer must remain discoverable in every operator path."""
+        for document, route in (
+            ("readme", "gpu-metal-region-presence"),
+            ("install", "--no-default-features --features portable,gpu"),
+            ("backends", "CUDA, native Metal, and WGPU"),
+            ("mass", "gpu-metal-region-presence"),
+            ("daemon", "gpu-metal-region-presence"),
+        ):
+            with self.subTest(document=document):
+                broken = dict(self.texts)
+                broken[document] = broken[document].replace(route, "missing-metal-route")
+                issues = workflow_docs_boundaries.boundary_issues(broken)
+                self.assertEqual(len(issues), 1)
+                self.assertIn(document, issues[0])
+                self.assertIn(route, issues[0])
     def test_release_guide_must_keep_safe_local_remote_and_resume_routes(self) -> None:
         """Maintainers must not lose the fingerprint check or one-command recovery path."""
         broken = dict(self.texts)

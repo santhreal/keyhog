@@ -84,15 +84,9 @@ impl CompiledScanner {
         let dispatch_failure =
             |reason: String| Err(super::gpu_forced::SelectedGpuDispatchError::new(reason));
 
-        // The shared coalesced phase-2 tail is `#[cfg(feature = "simd")]` (it is
-        // the Hyperscan path's extraction). `gpu` implies `simd` at the feature
-        // level (see keyhog-scanner Cargo.toml: `gpu = ["simd", ...]`), so this
-        // body is ALWAYS compiled under `gpu` and the region-presence path always
-        // has its tail. The `#[cfg(feature = "simd")]` is retained as a fail-closed
-        // assertion of that invariant: were the dependency ever dropped, this
-        // function would fail to compile rather than silently lose its tail.
-        #[cfg(feature = "simd")]
-        {
+        // This phase-2 tail is backend-neutral. GPU-only builds use it without
+        // linking Hyperscan, while SIMD builds feed the same trigger bitmap into
+        // the same extraction and policy pipeline.
             let kh = super::profile::perf_trace_enabled();
             let t_matcher = kh.then(std::time::Instant::now);
             let Some(matcher) = self.gpu_matcher() else {
@@ -626,6 +620,7 @@ impl CompiledScanner {
             drop(region_dispatch_profile);
             let t_floor = kh.then(std::time::Instant::now);
             let full_recall_floor = self.tuning.gpu_recall_floor_enabled();
+            #[cfg(feature = "simd")]
             let cpu_triggers = if full_recall_floor {
                 match self.try_simd_prefilter() {
                     Ok(prefilter) => match self.compute_coalesced_triggers(chunks, prefilter, None)
@@ -643,6 +638,14 @@ impl CompiledScanner {
                         ));
                     }
                 }
+            } else {
+                None
+            };
+            #[cfg(not(feature = "simd"))]
+            let cpu_triggers: Option<Vec<Option<Vec<u64>>>> = if full_recall_floor {
+                return dispatch_failure(
+                    "gpu_recall_floor requires a build with Hyperscan/SIMD support; disable gpu_recall_floor or install a SIMD-enabled KeyHog build".to_string(),
+                );
             } else {
                 None
             };
@@ -1009,7 +1012,6 @@ impl CompiledScanner {
                 recovery,
                 gpu_recovery_receipts: 0,
             })
-        }
     }
 }
 

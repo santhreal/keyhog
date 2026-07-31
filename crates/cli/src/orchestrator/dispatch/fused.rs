@@ -355,6 +355,7 @@ impl ScanOrchestrator {
                 // execution from a route completed by another calibrated peer.
                 match backend {
                     keyhog_scanner::hw_probe::ScanBackend::GpuCuda
+                    | keyhog_scanner::hw_probe::ScanBackend::GpuMetal
                     | keyhog_scanner::hw_probe::ScanBackend::GpuWgpu => {
                         tracing::debug!(
                             target: "keyhog::routing",

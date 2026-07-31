@@ -82,7 +82,11 @@ fn every_available_gpu_peer_matches_the_cpu_reference() {
     );
 
     let candidates = scanner.gpu_backend_candidates();
-    for expected in [ScanBackend::GpuCuda, ScanBackend::GpuWgpu] {
+    for expected in [
+        ScanBackend::GpuCuda,
+        ScanBackend::GpuMetal,
+        ScanBackend::GpuWgpu,
+    ] {
         let status = candidates
             .iter()
             .find(|candidate| candidate.backend == expected)
@@ -296,7 +300,11 @@ fn detector_required_literals_preserve_every_backend_finding() {
     );
 
     let candidates = scanner.gpu_backend_candidates();
-    for expected in [ScanBackend::GpuCuda, ScanBackend::GpuWgpu] {
+    for expected in [
+        ScanBackend::GpuCuda,
+        ScanBackend::GpuMetal,
+        ScanBackend::GpuWgpu,
+    ] {
         assert!(
             candidates
                 .iter()

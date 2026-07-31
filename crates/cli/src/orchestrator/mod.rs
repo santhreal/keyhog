@@ -1476,7 +1476,9 @@ fn backend_name_gpu_policy(name: Option<&str>) -> Option<GpuInitPolicy> {
 
 fn backend_gpu_policy(backend: keyhog_scanner::ScanBackend) -> GpuInitPolicy {
     match backend {
-        keyhog_scanner::ScanBackend::GpuCuda | keyhog_scanner::ScanBackend::GpuWgpu => {
+        keyhog_scanner::ScanBackend::GpuCuda
+        | keyhog_scanner::ScanBackend::GpuMetal
+        | keyhog_scanner::ScanBackend::GpuWgpu => {
             GpuInitPolicy::ForceEnabled
         }
         keyhog_scanner::ScanBackend::SimdCpu | keyhog_scanner::ScanBackend::CpuFallback => {

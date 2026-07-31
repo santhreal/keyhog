@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed};
+use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 /// How many files the filesystem walker skipped because they exceeded
@@ -270,30 +270,18 @@ pub fn reset_skipped_over_max_size() {
 // Scan serialization gate (test isolation for the process-global counters).
 //
 // The skip counters above are process-global atomics. In production that is
-// exactly right: a keyhog process runs ONE scan and reads the counters once at
-// end-of-scan. But the integration test binary runs hundreds of scans
-// concurrently in a single process, so a counter-asserting test
-// (`reset → scan → read skip_counts()`) can observe increments from another
-// test's scan running on a different thread, a false failure that has nothing
-// to do with the code under test.
+// exactly right: a keyhog process runs one scan and reads the counters once at
+// end-of-scan. The integration test binary runs hundreds of scans concurrently
+// in one process, so a counter-asserting test (`reset → scan → read`) can
+// otherwise observe another test's increments.
 //
-// The gate makes the asserting window EXCLUSIVE without changing the counters'
-// production semantics or weakening any assertion:
-//   * A counter-asserting test takes `enter_exclusive_scan_scope()` (a write
-//     lease) for the whole reset→scan→read window; while it is held no other
-//     scan may record.
-//   * Every source's `chunks()` takes a read lease for the scan's lifetime via
-//     `gate_scan` / `acquire_scan_read_lease`, so concurrent scans serialize
-//     behind an active asserting test instead of polluting its counters.
-//
-// The gate is ARMED only when the test harness first enters an exclusive scope.
-// A production scan never arms it, so `scan_gate_read_lease` returns after a
-// single relaxed atomic-bool load and never touches the lock, zero production
-// cost (Law 7). The asserting test's OWN scan bypasses the read lease via a
-// thread-local flag, so its reader-pool workers (which never touch the gate)
-// run freely under the held write lease without self-deadlock.
+// Every source scan takes a shared lease for its lifetime. A counter-asserting
+// test takes the exclusive lease for its reset→scan→read window, while its own
+// scan bypasses the shared lease through the thread-local flag below. Taking the
+// shared lease even before the first exclusive scope is essential: an optional
+// "armed" fast path lets an already-running unleased scan increment counters
+// after the first exclusive scope begins.
 static SCAN_GATE: RwLock<()> = RwLock::new(());
-static SCAN_GATE_ARMED: AtomicBool = AtomicBool::new(false);
 thread_local! {
     static IN_EXCLUSIVE_SCAN_SCOPE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
@@ -313,36 +301,29 @@ impl Drop for ScanCounterScope {
     }
 }
 
-/// Enter an exclusive scan scope. Arms the gate (so subsequent scans take read
-/// leases), then blocks until every in-flight gated scan has finished and no
-/// other exclusive scope is held. Recovers the inner guard on poison so one
-/// panicking test does not cascade.
+/// Enter an exclusive scan scope. Blocks until every in-flight gated scan has
+/// finished and no other exclusive scope is held. Recovers the inner guard on
+/// poison so one panicking test does not cascade.
 pub(crate) fn enter_exclusive_scan_scope() -> ScanCounterScope {
-    SCAN_GATE_ARMED.store(true, Relaxed);
     let write = SCAN_GATE
         .write()
-        // LAW10: recover the inner guard, test-only scan gate, never armed in
-        // production; a recovered guard still serializes the asserting test.
+        // LAW10: recover the inner guard after a panicking test; the recovered
+        // guard still preserves counter-isolation serialization.
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     IN_EXCLUSIVE_SCAN_SCOPE.with(|in_scope| in_scope.set(true));
     ScanCounterScope { _write: write }
 }
 
-/// Read lease held for the lifetime of one scan. `None` inside when the gate is
-/// unarmed (production) or the current thread already holds the exclusive scope
-/// (the asserting test's own scan must not block on its own write lease).
+/// Read lease held for the lifetime of one scan. `None` only when the current
+/// thread already holds the exclusive scope, because the asserting test's own
+/// scan must not block on its write lease.
 pub(crate) struct ScanReadLease {
     _lease: Option<RwLockReadGuard<'static, ()>>,
 }
 
-/// Acquire a scan read lease. Must be taken BEFORE any recording work (eager
-/// walk errors, reader-pool spawn) so a concurrent scan blocks here, behind an
-/// active exclusive scope, instead of recording into the counters an asserting
-/// test is about to read. Returns immediately in production (gate unarmed).
+/// Acquire a scan read lease before any recording work (eager walk errors or
+/// reader-pool spawn), then retain it for the complete iterator lifetime.
 pub(crate) fn acquire_scan_read_lease() -> ScanReadLease {
-    if !SCAN_GATE_ARMED.load(Relaxed) {
-        return ScanReadLease { _lease: None };
-    }
     if IN_EXCLUSIVE_SCAN_SCOPE.with(|in_scope| in_scope.get()) {
         return ScanReadLease { _lease: None };
     }
@@ -350,11 +331,15 @@ pub(crate) fn acquire_scan_read_lease() -> ScanReadLease {
         _lease: Some(
             SCAN_GATE
                 .read()
-                // LAW10: recover the inner guard, test-only scan gate, never
-                // armed in production; a recovered guard still serializes scans.
+                // LAW10: recover the inner guard after a panicking test; the
+                // recovered guard still serializes scans.
                 .unwrap_or_else(|poisoned| poisoned.into_inner()),
         ),
     }
+}
+
+pub(crate) fn scan_gate_exclusive_available_for_test() -> bool {
+    SCAN_GATE.try_write().is_ok()
 }
 
 struct LeasedScanIter<'a, T> {

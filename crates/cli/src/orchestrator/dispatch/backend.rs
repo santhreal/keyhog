@@ -1091,6 +1091,7 @@ pub(super) fn backend_requires_coalesced_batch_pipeline(
     match explicit {
         Some(
             keyhog_scanner::hw_probe::ScanBackend::GpuCuda
+            | keyhog_scanner::hw_probe::ScanBackend::GpuMetal
             | keyhog_scanner::hw_probe::ScanBackend::GpuWgpu,
         ) => true,
         Some(keyhog_scanner::hw_probe::ScanBackend::SimdCpu)

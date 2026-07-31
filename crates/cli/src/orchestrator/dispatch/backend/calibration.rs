@@ -236,6 +236,7 @@ pub(super) fn calibrate_fastest_correct_backend(
         cpu_baseline_ms = decision.cpu_baseline_ms(),
         gpu_considered = gpu_candidate_allowed,
         cuda_baseline_ms = decision.baseline_timing_for_backend(ScanBackend::GpuCuda).map(BackendTimingEvidence::median_ms),
+        metal_baseline_ms = decision.baseline_timing_for_backend(ScanBackend::GpuMetal).map(BackendTimingEvidence::median_ms),
         wgpu_baseline_ms = decision.baseline_timing_for_backend(ScanBackend::GpuWgpu).map(BackendTimingEvidence::median_ms),
         trials = AUTOROUTE_CALIBRATION_TRIALS,
         "autoroute calibrated backend decision"

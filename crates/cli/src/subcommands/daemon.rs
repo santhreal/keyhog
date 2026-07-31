@@ -22,6 +22,8 @@ pub(crate) async fn run(args: DaemonArgs) -> Result<ExitCode> {
             cache_dir,
             backend,
             request_timeout_secs,
+            mass,
+            mass_gpu_primary,
         } => {
             start(
                 socket,
@@ -30,6 +32,8 @@ pub(crate) async fn run(args: DaemonArgs) -> Result<ExitCode> {
                 cache_dir,
                 backend,
                 request_timeout_secs,
+                mass,
+                mass_gpu_primary,
             )
             .await
         }
@@ -45,6 +49,8 @@ async fn start(
     cache_dir: Option<PathBuf>,
     backend: Option<String>,
     request_timeout_secs: u64,
+    mass: bool,
+    mass_gpu_primary: bool,
 ) -> Result<ExitCode> {
     crate::runtime_preflight::validate_scan_runtime_config()?;
     crate::orchestrator_config::validate_explicit_detector_path(
@@ -78,6 +84,8 @@ async fn start(
         })?;
     let options = server::ServerOptions {
         request_read_timeout: Duration::from_secs(request_timeout_secs),
+        mass_service: mass,
+        mass_gpu_primary_required: mass_gpu_primary,
     };
     server::run_with_backend_override(socket, detectors, options, backend_override).await?;
     Ok(ExitCode::SUCCESS)
@@ -136,6 +144,7 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
     let mut stale = conn.is_stale();
     let daemon_version = conn.daemon_version().to_string();
     let backend_policy = conn.backend_policy().to_string();
+    let mass_service = conn.is_mass_service();
     let mut stale_reason = conn.stale_reason().map(str::to_string);
     let hello_warm_backend = conn
         .warm_backend_status()
@@ -210,11 +219,19 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
                 "keyhog daemon: uptime {}s · {} scans served · {} active · {} detectors",
                 uptime_secs, scans_served, active_scans, detector_count
             );
-            println!(
-                "scan scope: eligible stdin/single-file scans before baseline, Merkle \
-                 skip-cache, and verification; directories, git/remote sources, policy \
-                 changes, baseline, and --verify run in-process."
-            );
+            if mass_service {
+                println!(
+                    "scan scope: bounded directory, Git, archive, binary, remote, and cloud \
+                     batches via --daemon=mass; warm stdin/single-file requests remain available. \
+                     Baseline, Merkle state, verification, lockdown, and per-request scanner policy \
+                     remain in-process."
+                );
+            } else {
+                println!(
+                    "scan scope: warm stdin/single-file requests only; start with --mass for \
+                     bounded client-acquired source batches."
+                );
+            }
             if backend_policy == "autoroute" {
                 println!("backend policy: autoroute (persisted warm-route evidence)");
             } else if backend_policy == "autoroute-recovery" {

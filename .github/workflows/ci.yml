@@ -421,7 +421,7 @@ jobs:
     name: macOS Build
     runs-on: macos-15
     # macOS must exercise both the default Vectorscan/Hyperscan path and the
-    # portable release asset path.
+    # native Metal release asset path without a Vectorscan dependency.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
@@ -434,13 +434,9 @@ jobs:
       - run: cargo test -p keyhog-core --lib
       - run: cargo test -p keyhog-scanner --lib -- --nocapture
       - run: cargo test -p keyhog-sources --lib
-      # Lock the EXACT invocation the release workflow uses. The release
-      # tag flow runs `cargo build --release -p keyhog --no-default-features
-      # --features portable`; if that ever breaks (e.g. because someone
-      # moved a feature flag between crates), this lane catches it on PR
-      # instead of on a tag push. v0.5.11 + v0.5.12 both failed because
-      # this lane didn't exist.
-      - run: cargo build --release -p keyhog --no-default-features --features portable
+      # Lock the exact invocation used by the macOS release matrix. Native
+      # Metal and WGPU are enabled without pulling in Hyperscan.
+      - run: cargo build --release -p keyhog --no-default-features --features portable,gpu
       # Prove the freshly-built macOS binary actually INSTALLS and RUNS via
       # install.sh's --from-file path: doctor self-test (exit 0), seeded scan
       # (exit 1 + findings), SARIF, and the local-checksum gate. The mocked

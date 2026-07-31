@@ -15,7 +15,7 @@ pub enum GpuInitPolicy {
     /// Census GPU peers regardless of the disabled-GPU policy. The selected
     /// execution backend is still materialized lazily.
     ForceEnabled,
-    /// Skip CUDA/WGPU census and acquisition. Used when the selected CLI path
+    /// Skip CUDA, Metal, and WGPU census and acquisition. Used when the selected CLI path
     /// cannot route to GPU, avoiding startup and RSS overhead without changing
     /// scan results.
     ForceDisabled,

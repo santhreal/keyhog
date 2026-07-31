@@ -308,13 +308,17 @@ fn gpu_init_diagnostics_return_required_error_and_receipt_recovery() {
         .expect("ordinary GPU initialization failure must emit a recovery receipt");
 }
 
-/// Locks out accidental CUDA/WGPU driver work on the production CPU-absence
-/// state by proving both exact backend identities remain uninitialized.
+/// Locks out accidental CUDA, Metal, or WGPU driver work on the production
+/// CPU-absence state by proving every exact backend identity remains uninitialized.
 #[test]
 fn default_backend_peers_are_cpu_absent_and_lazy() {
     let peers = GpuBackendPeers::default();
     assert_eq!(peers.availability(), GpuBackendAvailability::default());
-    for backend in [crate::ScanBackend::GpuCuda, crate::ScanBackend::GpuWgpu] {
+    for backend in [
+        crate::ScanBackend::GpuCuda,
+        crate::ScanBackend::GpuMetal,
+        crate::ScanBackend::GpuWgpu,
+    ] {
         assert!(peers.get(backend).is_none());
         assert!(peers.initialized(backend).is_none());
         assert!(peers.initialization_error(backend).is_none());

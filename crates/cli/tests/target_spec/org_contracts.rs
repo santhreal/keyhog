@@ -351,8 +351,8 @@ fn org_backend_enum_arm_count_matches_label_impl() {
     }
     assert_eq!(
         variants.len(),
-        4,
-        "ORG GAP [backend]: expected exactly 4 ScanBackend variants (GpuCuda, GpuWgpu, \
+        5,
+        "ORG GAP [backend]: expected exactly 5 ScanBackend variants (GpuCuda, GpuMetal, GpuWgpu, \
          SimdCpu, CpuFallback); found {}: {variants:?}. A new arm must be wired into selection, dispatch, \
          label, and the backend-parity matrix before it counts as live.",
         variants.len(),

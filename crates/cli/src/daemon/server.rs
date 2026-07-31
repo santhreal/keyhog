@@ -3,8 +3,8 @@
 
 use crate::daemon::frame;
 use crate::daemon::protocol::{
-    BackendRecoveryStatus, RecoveredInputRangeStatus, Request, Response, SourceCoverageGaps,
-    WarmBackendStatus, WIRE_VERSION,
+    BackendRecoveryStatus, MassScanStats, RecoveredInputRangeStatus, Request, Response,
+    SourceCoverageGaps, WarmBackendStatus, MASS_BATCH_BYTES, MASS_BATCH_CHUNKS, WIRE_VERSION,
 };
 use crate::daemon::trust;
 use crate::daemon::warm_identity::WarmBackendReadiness;
@@ -14,11 +14,12 @@ use futures_util::{SinkExt, StreamExt};
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, RawMatch, Source};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::path::{Path, PathBuf};
+use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::{Notify, Semaphore};
+use tokio::sync::{mpsc, Mutex, Notify, OwnedMutexGuard, Semaphore};
 
 const KEYHOG_VERSION: &str = env!("CARGO_PKG_VERSION");
 static DAEMON_SOURCE_COVERAGE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -33,6 +34,10 @@ pub(crate) struct ServerOptions {
     /// 64 MiB `MAX_FRAME_BYTES`) then sends the body slowly, or never, would
     /// otherwise hold a `connection_limit` semaphore permit forever.
     pub request_read_timeout: Duration,
+    /// Enable the explicit bounded mass-service transaction protocol.
+    pub mass_service: bool,
+    /// Require a terminal receipt proving GPU processed most mass payload bytes.
+    pub mass_gpu_primary_required: bool,
 }
 
 /// Fatal terminal outcomes from the running daemon service.
@@ -77,6 +82,8 @@ impl Default for ServerOptions {
     fn default() -> Self {
         Self {
             request_read_timeout: Duration::from_secs(DEFAULT_REQUEST_READ_TIMEOUT_SECS),
+            mass_service: false,
+            mass_gpu_primary_required: false,
         }
     }
 }
@@ -125,10 +132,12 @@ struct ServerState {
     backend_recoveries: AtomicU64,
     last_backend_fault: std::sync::Mutex<Option<BackendRecoveryStatus>>,
     warm_backend: WarmBackendReadiness,
-    // Fragment reassembly is scanner-owned mutable state. Until it becomes an
-    // explicit per-scan context, serialize clear/scan/clear so independent
-    // clients can never combine secret fragments across requests.
-    fragment_scan_lock: Arc<std::sync::Mutex<()>>,
+    mass_service: bool,
+    mass_gpu_primary_required: bool,
+    // Fragment reassembly is scanner-owned mutable state. A normal request
+    // leases it for one scan; a mass connection leases it from MassBegin
+    // through MassEnd so batches preserve seam recall without cross-job state.
+    fragment_scan_lock: Arc<Mutex<()>>,
     // Caps concurrent in-flight client connections. Without this,
     // every accepted socket spawns an unbounded tokio task that in
     // turn unboundedly spawn_blocks a scanner thread. A burst of
@@ -169,7 +178,9 @@ impl ServerState {
             backend_recoveries: AtomicU64::new(0),
             last_backend_fault: std::sync::Mutex::new(None),
             warm_backend,
-            fragment_scan_lock: Arc::new(std::sync::Mutex::new(())),
+            mass_service: options.mass_service,
+            mass_gpu_primary_required: options.mass_gpu_primary_required,
+            fragment_scan_lock: Arc::new(Mutex::new(())),
             connection_limit: Arc::new(Semaphore::new(max_conns)),
         }
     }
@@ -493,38 +504,155 @@ pub(crate) fn is_transient_accept_error(e: &std::io::Error) -> bool {
     false
 }
 
+enum MassFilesystemMessage {
+    Batch(Vec<Chunk>),
+    Complete(SourceCoverageGaps),
+    Error(String),
+}
+
+fn spawn_mass_filesystem_source(
+    root: PathBuf,
+    max_file_size: u64,
+    ignore_paths: Vec<String>,
+    respect_default_excludes: bool,
+    reader_threads: Option<NonZeroUsize>,
+) -> mpsc::Receiver<MassFilesystemMessage> {
+    let (sender, receiver) = mpsc::channel(2);
+    tokio::task::spawn_blocking(move || {
+        let _coverage_guard = match DAEMON_SOURCE_COVERAGE_LOCK.lock() {
+            Ok(guard) => guard,
+            Err(_) => {
+                let _ = sender.blocking_send(MassFilesystemMessage::Error(
+                    "daemon: source coverage lock poisoned".to_string(),
+                ));
+                return;
+            }
+        };
+        let before = keyhog_sources::skip_counts();
+        let mut source = keyhog_sources::FilesystemSource::new(root.clone())
+            .with_max_file_size(max_file_size)
+            .with_ignore_paths(ignore_paths)
+            .with_default_excludes(respect_default_excludes);
+        if let Some(threads) = reader_threads {
+            source = source.with_reader_threads(threads);
+        }
+
+        let mut batch = Vec::with_capacity(MASS_BATCH_CHUNKS);
+        let mut batch_bytes = 0usize;
+        let mut source_failed = 0usize;
+        for chunk_result in source.chunks() {
+            let chunk = match chunk_result {
+                Ok(chunk) => chunk,
+                Err(error) => {
+                    source_failed = source_failed.saturating_add(1);
+                    tracing::warn!(
+                        "mass daemon local filesystem source {}: {error}",
+                        root.display()
+                    );
+                    continue;
+                }
+            };
+            let chunks = match crate::subcommands::scan::split_chunk_for_mass(chunk) {
+                Ok(chunks) => chunks,
+                Err(error) => {
+                    source_failed = source_failed.saturating_add(1);
+                    tracing::warn!(
+                        "mass daemon local filesystem chunk {}: {error:#}",
+                        root.display()
+                    );
+                    continue;
+                }
+            };
+            for chunk in chunks {
+                let chunk_bytes = chunk.data.len();
+                if !batch.is_empty()
+                    && (batch.len() >= MASS_BATCH_CHUNKS
+                        || batch_bytes.saturating_add(chunk_bytes) > MASS_BATCH_BYTES)
+                {
+                    if sender
+                        .blocking_send(MassFilesystemMessage::Batch(std::mem::take(&mut batch)))
+                        .is_err()
+                    {
+                        return;
+                    }
+                    batch = Vec::with_capacity(MASS_BATCH_CHUNKS);
+                    batch_bytes = 0;
+                }
+                batch_bytes = batch_bytes.saturating_add(chunk_bytes);
+                batch.push(chunk);
+            }
+        }
+        if !batch.is_empty()
+            && sender
+                .blocking_send(MassFilesystemMessage::Batch(batch))
+                .is_err()
+        {
+            return;
+        }
+        let mut gaps = source_coverage_gaps_since(before);
+        gaps.source_failed = gaps.source_failed.saturating_add(source_failed);
+        let _ = sender.blocking_send(MassFilesystemMessage::Complete(gaps));
+    });
+    receiver
+}
+
+struct MassSession {
+    state: Arc<ServerState>,
+    dogfood: bool,
+    stats: MassScanStats,
+    started_at: Instant,
+    filesystem_batches: Option<mpsc::Receiver<MassFilesystemMessage>>,
+    _fragment_guard: OwnedMutexGuard<()>,
+}
+
+impl MassSession {
+    fn record(&mut self, batch: &MassBatchDispatch) {
+        if !matches!(batch.response, Response::ScanResults { .. }) {
+            return;
+        }
+        self.stats.batches = self.stats.batches.saturating_add(1);
+        self.stats.chunks = self.stats.chunks.saturating_add(batch.chunks);
+        self.stats.bytes = self.stats.bytes.saturating_add(batch.bytes);
+        if batch.gpu {
+            self.stats.gpu_batches = self.stats.gpu_batches.saturating_add(1);
+            self.stats.gpu_chunks = self.stats.gpu_chunks.saturating_add(batch.chunks);
+            self.stats.gpu_bytes = self.stats.gpu_bytes.saturating_add(batch.bytes);
+        }
+    }
+
+    fn finish_stats(&self) -> MassScanStats {
+        MassScanStats {
+            duration_ms: self.started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
+            ..self.stats
+        }
+    }
+}
+
+impl Drop for MassSession {
+    fn drop(&mut self) {
+        self.state.scanner.clear_fragment_cache();
+        self.state.active_scans.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
 async fn handle_connection(state: Arc<ServerState>, stream: UnixStream) -> Result<()> {
-    // Peer credentials are the authentication boundary, symmetric with the
-    // client's `verify_connected_peer`. Verify them before constructing the
-    // decoder or reading any request bytes. The `0600` socket and private
-    // parent directory are independent defense-in-depth access controls.
     trust::verify_accepted_peer(&stream)?;
     let mut transport = frame::server_transport(stream);
     let read_timeout = state.request_read_timeout;
-    // KH-1337: first frame on a connection must be Hello so wire/corpus
-    // identity is established before Scan/Shutdown.
     let mut hello_ok = false;
     let mut warm_route_denial: Option<Response> = None;
+    let mut mass_session: Option<MassSession> = None;
+
     loop {
-        // Bound the per-request read so a half-frame / slowloris stall (a peer
-        // that announces a frame length then sends the body slowly or never)
-        // cannot hold this connection's `connection_limit` permit forever and
-        // starve other same-uid clients. keyhog daemon clients do one
-        // round-trip then disconnect, so a connection idle past the timeout is
-        // either finished (should have closed) or stuck, closing it is correct
-        // and frees the permit.
         let request = match tokio::time::timeout(read_timeout, transport.next()).await {
             Ok(Some(Ok(req))) => req,
-            // Clean EOF: peer closed. Done.
             Ok(None) => break,
-            // Frame/parse error: propagate so the connection is dropped.
             Ok(Some(Err(e))) => return Err(e),
             Err(_elapsed) => {
                 anyhow::bail!(
                     "daemon: connection idle for {}s without a complete request; \
-                 closing it to reclaim the connection slot (a stuck or slow \
-                 client). Restart the daemon with --request-timeout-secs \
-                 <N> for very large pre-warmed batches.",
+                     closing it to reclaim the connection slot. Restart the daemon with \
+                     --request-timeout-secs <N> for large bounded batches.",
                     read_timeout.as_secs()
                 );
             }
@@ -542,19 +670,166 @@ async fn handle_connection(state: Arc<ServerState>, stream: UnixStream) -> Resul
             }
             hello_ok = true;
         }
-        let response = if matches!(
-            &request,
-            Request::ScanText { .. } | Request::ScanPath { .. }
-        ) {
-            match warm_route_denial.as_ref() {
-                Some(denial) => denial.clone(),
-                None => dispatch(&state, request).await,
+
+        let response = match request {
+            Request::MassBegin { dogfood } => {
+                if !state.mass_service {
+                    Response::Error {
+                        message: "daemon: mass transaction refused because this service was not \
+                                  started with `keyhog daemon start --mass`"
+                            .to_string(),
+                    }
+                } else if mass_session.is_some() {
+                    Response::Error {
+                        message: "daemon: this connection already owns an active mass transaction"
+                            .to_string(),
+                    }
+                } else if let Some(denial) = warm_route_denial.as_ref() {
+                    denial.clone()
+                } else {
+                    let guard = state.fragment_scan_lock.clone().lock_owned().await;
+                    state.scanner.clear_fragment_cache();
+                    state.active_scans.fetch_add(1, Ordering::Relaxed);
+                    mass_session = Some(MassSession {
+                        state: state.clone(),
+                        dogfood,
+                        stats: MassScanStats::default(),
+                        started_at: Instant::now(),
+                        filesystem_batches: None,
+                        _fragment_guard: guard,
+                    });
+                    Response::MassReady
+                }
             }
-        } else {
-            dispatch(&state, request).await
+            Request::MassBatch { chunks } => match mass_session.as_mut() {
+                Some(session) if session.filesystem_batches.is_some() => Response::Error {
+                    message: "daemon: MassBatch cannot interleave with active daemon-local filesystem acquisition"
+                        .to_string(),
+                },
+                Some(session) => {
+                    let batch = scan_mass_batch(&state, chunks, session.dogfood).await;
+                    session.record(&batch);
+                    batch.response
+                }
+                None => Response::Error {
+                    message: "daemon: MassBatch requires an active MassBegin transaction"
+                        .to_string(),
+                },
+            },
+            Request::MassFilesystemBegin {
+                root,
+                max_file_size,
+                ignore_paths,
+                respect_default_excludes,
+                reader_threads,
+            } => match mass_session.as_mut() {
+                Some(session) if session.filesystem_batches.is_some() => Response::Error {
+                    message: "daemon: finish the active daemon-local filesystem source before starting another"
+                        .to_string(),
+                },
+                Some(session) => {
+                    let resolved = resolve_scan_target(&root, None);
+                    let reader_threads = match reader_threads {
+                        Some(0) => Err(
+                            "daemon: MassFilesystemBegin reader_threads must be positive"
+                                .to_string(),
+                        ),
+                        Some(value) => Ok(NonZeroUsize::new(value)),
+                        None => Ok(None),
+                    };
+                    match (resolved, reader_threads) {
+                        (Ok(root), Ok(reader_threads)) => {
+                            session.filesystem_batches = Some(spawn_mass_filesystem_source(
+                                root,
+                                max_file_size,
+                                ignore_paths,
+                                respect_default_excludes,
+                                reader_threads,
+                            ));
+                            Response::MassFilesystemReady
+                        }
+                        (Err(message), _) | (_, Err(message)) => Response::Error { message },
+                    }
+                }
+                None => Response::Error {
+                    message:
+                        "daemon: MassFilesystemBegin requires an active MassBegin transaction"
+                            .to_string(),
+                },
+            },
+            Request::MassFilesystemNext => match mass_session.as_mut() {
+                Some(session) => match session.filesystem_batches.as_mut() {
+                    Some(receiver) => match receiver.recv().await {
+                        Some(MassFilesystemMessage::Batch(chunks)) => {
+                            let batch = scan_mass_batch(&state, chunks, session.dogfood).await;
+                            session.record(&batch);
+                            batch.response
+                        }
+                        Some(MassFilesystemMessage::Complete(source_coverage_gaps)) => {
+                            session.filesystem_batches = None;
+                            Response::MassFilesystemComplete {
+                                source_coverage_gaps,
+                            }
+                        }
+                        Some(MassFilesystemMessage::Error(message)) => {
+                            session.filesystem_batches = None;
+                            Response::Error { message }
+                        }
+                        None => {
+                            session.filesystem_batches = None;
+                            Response::Error {
+                                message: "daemon: local filesystem producer ended without a completion receipt"
+                                    .to_string(),
+                            }
+                        }
+                    },
+                    None => Response::Error {
+                        message: "daemon: MassFilesystemNext requires an active daemon-local filesystem source"
+                            .to_string(),
+                    },
+                },
+                None => Response::Error {
+                    message: "daemon: MassFilesystemNext requires an active MassBegin transaction"
+                        .to_string(),
+                },
+            },
+            Request::MassEnd
+                if mass_session
+                    .as_ref()
+                    .is_some_and(|session| session.filesystem_batches.is_some()) =>
+            {
+                Response::Error {
+                    message: "daemon: MassEnd refused while daemon-local filesystem acquisition is active"
+                        .to_string(),
+                }
+            }
+            Request::MassEnd => match mass_session.take() {
+                Some(session) => {
+                    let stats = session.finish_stats();
+                    state.scans_served.fetch_add(1, Ordering::Relaxed);
+                    drop(session);
+                    Response::MassComplete { stats }
+                }
+                None => Response::Error {
+                    message: "daemon: MassEnd requires an active MassBegin transaction".to_string(),
+                },
+            },
+            other if mass_session.is_some() => Response::Error {
+                message: format!(
+                    "daemon: active mass transaction accepts only mass batch, filesystem, or end requests; got {}",
+                    crate::daemon::protocol::request_kind(&other)
+                ),
+            },
+            other @ (Request::ScanText { .. } | Request::ScanPath { .. }) => {
+                match warm_route_denial.as_ref() {
+                    Some(denial) => denial.clone(),
+                    None => dispatch(&state, other).await,
+                }
+            }
+            other => dispatch(&state, other).await,
         };
         if let Response::Hello { warm_backend, .. } = &response {
-            warm_route_denial = warm_route_error(&warm_backend);
+            warm_route_denial = warm_route_error(warm_backend);
         }
         let is_shutdown_ack = matches!(response, Response::Shutdown);
         transport.send(response).await?;
@@ -565,6 +840,7 @@ async fn handle_connection(state: Arc<ServerState>, stream: UnixStream) -> Resul
     }
     Ok(())
 }
+
 
 async fn dispatch(state: &ServerState, request: Request) -> Response {
     match request {
@@ -577,6 +853,8 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             detector_count: state.detector_count,
             uptime_secs: state.uptime_secs(),
             warm_backend: state.warm_backend_status(),
+            mass_service: state.mass_service,
+            mass_gpu_primary_required: state.mass_gpu_primary_required,
         },
         Request::Health => match state.last_backend_fault.lock() {
             Ok(last_backend_fault) => Response::Health {
@@ -588,7 +866,6 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
                 last_backend_fault: last_backend_fault.clone(),
                 warm_backend: state.warm_backend_status(),
             },
-            // LAW10: loud operator error; lock poisoning returns a restart instruction and fabricates no health value.
             Err(_) => Response::Error {
                 message: "daemon: backend-recovery health lock is poisoned; restart the daemon"
                     .to_string(),
@@ -604,6 +881,13 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
             working_dir,
             dogfood,
         } => scan_path(state, path, working_dir, dogfood).await,
+        Request::MassBegin { .. }
+        | Request::MassBatch { .. }
+        | Request::MassFilesystemBegin { .. }
+        | Request::MassFilesystemNext
+        | Request::MassEnd => Response::Error {
+            message: "daemon: mass transaction request reached invalid dispatch state".to_string(),
+        },
         Request::Shutdown => Response::Shutdown,
     }
 }
@@ -629,6 +913,8 @@ async fn scan_text(
     if dogfood {
         telemetry.enable_dogfood();
     }
+    let _fragment_guard = fragment_scan_lock.lock_owned().await;
+    scanner.clear_fragment_cache();
     // Hand the actual scan to a blocking thread - calibrated backend scanning
     // is CPU-heavy and not async-aware. Without `spawn_blocking` a
     // large scan would stall the tokio reactor and block every
@@ -637,9 +923,6 @@ async fn scan_text(
         let (matches, backend_recovery) = keyhog_scanner::telemetry::with_scan_telemetry(
             &telemetry,
             || -> Result<(Vec<RawMatch>, Option<BackendRecoveryStatus>)> {
-                let _fragment_guard = fragment_scan_lock
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("daemon fragment scan lock is poisoned"))?;
                 scanner.clear_fragment_cache();
                 let chunk = Chunk {
                     data: text.into(),
@@ -796,6 +1079,8 @@ async fn scan_path(
     if dogfood {
         telemetry.enable_dogfood();
     }
+    let _fragment_guard = fragment_scan_lock.lock_owned().await;
+    scanner.clear_fragment_cache();
     type ScanOutput = (
         Vec<RawMatch>,
         keyhog_scanner::telemetry::ScanTelemetrySnapshot,
@@ -810,10 +1095,6 @@ async fn scan_path(
         let (matches, backend_recovery) = keyhog_scanner::telemetry::with_scan_telemetry(
             &telemetry,
             || -> Result<(Vec<RawMatch>, Option<BackendRecoveryStatus>)> {
-                let _fragment_guard = fragment_scan_lock
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("daemon fragment scan lock is poisoned"))?;
-                scanner.clear_fragment_cache();
                 let selection =
                     router.choose_with_plan(scanner.as_ref(), backend_override, &chunks)?;
                 let outcome = crate::orchestrator::scan_selected_batch(
@@ -889,6 +1170,158 @@ async fn scan_path(
         Err(e) => Response::Error {
             message: format!("daemon: scan task panicked or was cancelled: {e:#}"),
         },
+    }
+}
+
+struct MassBatchDispatch {
+    response: Response,
+    chunks: u64,
+    bytes: u64,
+    gpu: bool,
+}
+
+impl MassBatchDispatch {
+    fn error(message: String) -> Self {
+        Self {
+            response: Response::Error { message },
+            chunks: 0,
+            bytes: 0,
+            gpu: false,
+        }
+    }
+}
+
+fn validate_mass_batch(chunks: &[Chunk]) -> std::result::Result<(u64, usize), String> {
+    if chunks.is_empty() {
+        return Err("daemon: MassBatch must contain at least one chunk".to_string());
+    }
+    if chunks.len() > MASS_BATCH_CHUNKS {
+        return Err(format!(
+            "daemon: MassBatch contains {} chunks; maximum is {MASS_BATCH_CHUNKS}",
+            chunks.len()
+        ));
+    }
+    let batch_bytes = chunks
+        .iter()
+        .try_fold(0usize, |total, chunk| total.checked_add(chunk.data.len()))
+        .ok_or_else(|| "daemon: MassBatch byte count overflow".to_string())?;
+    if batch_bytes > MASS_BATCH_BYTES {
+        return Err(format!(
+            "daemon: MassBatch contains {batch_bytes} raw bytes; maximum is {MASS_BATCH_BYTES}"
+        ));
+    }
+    Ok((chunks.len() as u64, batch_bytes))
+}
+
+async fn scan_mass_batch(
+    state: &ServerState,
+    chunks: Vec<Chunk>,
+    dogfood: bool,
+) -> MassBatchDispatch {
+    let (chunk_count, batch_bytes) = match validate_mass_batch(&chunks) {
+        Ok(shape) => shape,
+        Err(message) => return MassBatchDispatch::error(message),
+    };
+
+    let scanner = state.scanner.clone();
+    let router = state.router.clone();
+    let backend_override = state.backend_override;
+    let recover_automatic_backend_faults = crate::orchestrator::automatic_backend_recovery_allowed(
+        backend_override,
+        false,
+        keyhog_scanner::gpu::gpu_runtime_policy(),
+    );
+    let telemetry = Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
+    if dogfood {
+        telemetry.enable_dogfood();
+    }
+    let res = tokio::task::spawn_blocking(move || -> Result<_> {
+        if chunks.iter().all(|chunk| chunk.data.is_empty()) {
+            return Ok((Vec::new(), telemetry.drain(), None, false));
+        }
+        let (matches, backend_recovery, gpu) =
+            keyhog_scanner::telemetry::with_scan_telemetry(
+                &telemetry,
+                || -> Result<(Vec<RawMatch>, Option<BackendRecoveryStatus>, bool)> {
+                    let selection =
+                        router.choose_with_plan(scanner.as_ref(), backend_override, &chunks)?;
+                    let outcome = crate::orchestrator::scan_selected_batch(
+                        scanner.as_ref(),
+                        &chunks,
+                        selection.backend,
+                        selection.phase1_plan.as_ref(),
+                        selection.execution_route,
+                        selection
+                            .recovery_plan
+                            .filter(|_| recover_automatic_backend_faults),
+                    )
+                    .with_context(|| {
+                        format!(
+                            "selected backend {} failed during mass daemon dispatch",
+                            selection.backend.label()
+                        )
+                    })?;
+                    if let Some(recovery) = outcome.recovery.as_ref() {
+                        router.quarantine_recovered_route(&selection, recovery)?;
+                    }
+                    let backend_recovery = outcome
+                        .recovery
+                        .as_ref()
+                        .map(backend_recovery_status_from_receipt)
+                        .or_else(|| {
+                            selection.autoroute_recovery.as_ref().map(|recovery| {
+                                autoroute_state_recovery_status(
+                                    &chunks,
+                                    selection.backend,
+                                    recovery,
+                                )
+                            })
+                        });
+                    let gpu = selection.backend.is_gpu() && !outcome.recovered;
+                    let mut per_chunk = outcome.per_chunk;
+                    crate::inline_suppression::attach_inline_suppression_context(
+                        &chunks,
+                        &mut per_chunk,
+                    );
+                    Ok((
+                        per_chunk.into_iter().flatten().collect(),
+                        backend_recovery,
+                        gpu,
+                    ))
+                },
+            )?;
+        Ok((matches, telemetry.drain(), backend_recovery, gpu))
+    })
+    .await;
+
+    match res {
+        Ok(Ok((matches, telemetry, backend_recovery, gpu))) => {
+            if let Some(recovery) = backend_recovery.clone() {
+                if let Err(error) = state.record_backend_recovery(recovery) {
+                    return MassBatchDispatch::error(format!(
+                        "daemon: mass batch recovered, but health recording failed: {error:#}"
+                    ));
+                }
+            }
+            MassBatchDispatch {
+                response: scan_results_response(
+                    None,
+                    matches,
+                    telemetry,
+                    SourceCoverageGaps::default(),
+                    backend_recovery,
+                ),
+                chunks: chunk_count,
+                bytes: batch_bytes as u64,
+                gpu,
+            }
+        }
+        Ok(Err(error)) => {
+            MassBatchDispatch::error(format!("daemon: mass batch failed: {error:#}"))
+        }
+        Err(error) => MassBatchDispatch::error(format!(
+            "daemon: mass batch task panicked or was cancelled: {error:#}"
+        )),
     }
 }
 
@@ -1013,6 +1446,7 @@ fn source_coverage_gaps_since(before: keyhog_sources::SkipCounts) -> SourceCover
             .archive_duplicate_scan_unavailable
             .saturating_sub(before.archive_duplicate_scan_unavailable),
         git_lfs_pointer: after.git_lfs_pointer.saturating_sub(before.git_lfs_pointer),
+        source_failed: 0,
     }
 }
 // Sibling file (daemon/server_tests.rs), not server/ subdir.

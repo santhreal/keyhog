@@ -124,7 +124,32 @@ the relevant boundaries below as separate jobs and retains each
 | Organization or cloud inventory | `keyhog scan --daemon=off --github-org acme --format json-envelope --output acme.json` | Partition by provider, owner, or bucket. Run independent partitions concurrently with one report and status each. | One selected provider inventory per job. Pagination or object limits remain coverage boundaries. |
 | Confirm whether eligible findings are live | `keyhog scan . --verify` | Provider concurrency and rate controls are separate from scanner workers. | Sends credential-derived requests to declared provider endpoints. Not every detector supports verification. |
 | Whole-host health scan | `sudo keyhog scan-system --space 50G` | Uses all CPU cores by default and scans discovered Git history after filesystem data. | Local mounted filesystems. Network mounts are opt-in and the space ceiling is hard. |
-| Repeated single-file or bounded-stdin scan on Unix | Start `keyhog daemon start`, then use `--daemon=on`. | Reuses one compatible compiled scanner and removes cold startup. | Directories, Git, archives, remote sources, verification, presets, and policy-changing requests stay in process. |
+| GPU-backed directory, history, archive, remote, or cloud inventory on Unix | Calibrate autoroute, start `keyhog daemon start --mass`, then run `keyhog scan --daemon=mass <SOURCE>`. | Streams bounded batches through one compiled CPU, Hyperscan, CUDA, Metal, or WGPU worker. The terminal receipt reports exact total and GPU batches, chunks, bytes, GPU share, and throughput. | Baselines, incremental state, verification, lockdown, presets, overlays, and other scanner-policy changes are rejected before acquisition. |
+
+### Scan every supported source boundary
+
+Use one command per boundary. Keep a `json-envelope` report and the raw exit
+status for each inventory partition.
+
+| Source or use case | Command |
+|---|---|
+| Several local roots | `keyhog scan services/api services/web deploy/` |
+| Continuously changed files | `keyhog watch services/api deploy/` |
+| Staged bytes, changed lines, reachable history, or blobs | `keyhog scan --git-staged`, `--git-diff main`, `--git-history .`, or `--git-blobs .` |
+| Native binaries and firmware strings | `keyhog scan --binary firmware.bin` |
+| Archives and compressed sources | `keyhog scan incoming/` (supported members expand automatically) |
+| Docker image layers | `keyhog scan --docker-image registry/app:v1` |
+| JavaScript, source maps, WASM, or an endpoint response | `keyhog scan --url https://api.example.com/config` |
+| HTTP request and response captures | `keyhog scan capture.har` |
+| GitHub issues, pull requests, discussions, wikis, and gists | `keyhog scan --github-collaboration owner/repo --github-issues --github-pull-requests --github-discussions --github-wiki --github-gists` |
+| GitHub, GitLab, or Bitbucket inventories | `--github-org ORG`, `--gitlab-group GROUP`, or `--bitbucket-workspace WORKSPACE` |
+| S3, GCS, or Azure Blob inventories | `--s3-bucket BUCKET`, `--gcs-bucket BUCKET`, or `--azure-container-url URL` |
+| A bounded stream from another tool | `producer | keyhog scan --stdin` |
+
+Endpoint fetching is bounded and SSRF-screened. It is not a crawler. Private
+cloud endpoints and credential forwarding require their explicit trust flags.
+Provider tokens belong in the documented environment variables, not process
+arguments.
 
 Use the [workflow chooser](https://santhreal.github.io/keyhog/capabilities.html)
 for source and policy details, the [GitHub Action
@@ -156,7 +181,7 @@ keyhog backend --autoroute --json
 | `--incremental` and `--incremental-cache <PATH>` | Repeated scans of the same trusted tree. | Do not share one index across unrelated repositories or untrusted jobs. |
 | Provider or repository partitions | Concurrent estate scanning and independent retries. | Preserve one terminal envelope and raw exit code per partition. Do not concatenate findings and discard coverage state. |
 | `--verify-concurrency`, `--verify-rate`, and `--verify-batch` | Bounding live provider checks independently of file scanning. | Verification sends credential-derived requests. Provider rate limits, not CPU count, own this concurrency. |
-| Warm daemon | Repeated eligible file or stdin requests. | A daemon is not a directory, history, cloud, or mass-scan accelerator. |
+| Mass daemon | TB-scale directory, history, archive, remote, or cloud streams on one Unix worker. | Each frame is limited to 8 MiB and 1,024 chunks. The daemon serializes fragment state and returns an exact CPU/GPU execution receipt. |
 | `--fast`, default, `--deep`, or `--precision` | Selecting an explicit detection-cost and recall policy. | These presets are mutually exclusive and change coverage. They are not interchangeable speed knobs. |
 
 Inspect the resolved policy with `keyhog config --effective`. Use `--profile`
@@ -318,7 +343,7 @@ These rows are measurements, not universal tuning constants. Run the generator o
 
 Reproduce all four benchmark groups with `make -C benchmarks readme-matrix`.
 The command measures the required matrix and fails if any requested CPU,
-Hyperscan, CUDA, WGPU, preset, cache, daemon, thread, reader, storage, corpus
+Hyperscan, CUDA, Metal, WGPU, preset, cache, daemon, thread, reader, storage, corpus
 size, or partition row is unavailable. Use
 `make -C benchmarks readme-matrix-check` to verify that both snapshots, reports,
 and README agree.
@@ -335,7 +360,7 @@ only when the workflow requires it:
 | Short feedback loop | `--fast` | Calibrated `auto`; optional `--incremental` | Accept reduced decode, entropy, and ML coverage. Run the default policy before merge. |
 | Highest-recall recovery | `--deep` | In process | Deep is mutually exclusive with fast and precision, and is not daemon eligible. |
 | Lower-noise large inventory | `--precision` | In process for repository collections, history, and cloud sources | The preset raises confidence floors and disables entropy discovery. It can miss lower-confidence credentials. |
-| Repeated eligible file or bounded-stdin requests on Unix | Default | Warm daemon | The daemon serializes requests. It does not accelerate directories, history, remote sources, or CI orchestration. |
+| TB-scale directory, history, archive, remote, or cloud inventory on Unix | Default | `keyhog daemon start --mass`, then `--daemon=mass` | Batches stay bounded at 8 MiB and 1,024 chunks. Preserve the terminal coverage report and GPU execution receipt. |
 | Live credential validation | Default | In process | Add `--verify` explicitly. Verification sends credential-derived requests to providers. |
 | Linux no-swap scan | Default plus `--lockdown` | In process; incremental cache disabled | Lockdown refuses verification, plaintext secrets, fast mode, and completeness-reducing switches. |
 
@@ -362,6 +387,7 @@ contract:
 |---|---|---|
 | `simdsieve` prefilter | AVX-512 / AVX2 / NEON | Layer 1: skims every file for 12 high-value literal prefixes in one SIMD pass: AWS `AKIA`/`ASIA`, GitHub `ghp_`, OpenAI `sk-proj-`, Slack `xoxb-`/`xoxp-`, SendGrid `SG.`, Square `sq0csp-`, and Stripe `sk_live_`/`sk_test_`/`rk_live_`/`rk_test_` |
 | `gpu-cuda-region-presence` | executable CUDA peer + persisted calibration proof | VYRE literal-set region-presence through CUDA, followed by the shared CPU validation tail |
+| `gpu-metal-region-presence` | executable native Metal peer + persisted calibration proof | VYRE literal-set region-presence through Metal, followed by the shared CPU validation tail |
 | `gpu-wgpu-region-presence` | executable WGPU peer + persisted calibration proof | VYRE literal-set region-presence through WGPU, followed by the shared CPU validation tail |
 | `simd-regex` | Hyperscan compiled and live | parallel Hyperscan trigger scan plus full-regex extraction; portable builds do not expose this backend and report `cpu-fallback` instead |
 | `cpu-fallback` | portable build or explicit CPU selection | Aho-Corasick prefix + Rust `regex` extraction |
@@ -411,7 +437,8 @@ iwr https://santh.dev/keyhog/install.ps1 -UseBasicParsing | iex
 ```
 
 Installers authenticate release assets before replacing a binary. Linux x86_64
-statically links Hyperscan. macOS and Windows release assets are portable
+statically links Hyperscan. macOS release assets enable native Metal and WGPU
+without requiring Homebrew Vectorscan. Windows assets are portable
 no-system-library builds. The current matrix includes macOS x86_64 and arm64
 and Windows x86_64. Linux and Windows arm64 release assets are not produced.
 
@@ -610,24 +637,61 @@ the executable-bound CredData Bloom differential, into `benchmarks/results/`;
 for the corpora (mirror, competitor home-turf, Samsung/CredData) and the
 backend/cache/daemon/OS/GPU matrix.
 
-## Warm daemon for eligible inputs
+## GPU-backed mass daemon workers
 
-The optional Unix daemon removes repeated scanner startup for one regular file
-or bounded stdin. It serializes requests and never turns directory, Git,
-archive, remote, cloud, verification, baseline, or policy-changing scans into
-daemon work.
+The optional Unix mass daemon keeps one compiled scanner and its calibrated
+CPU, Hyperscan, CUDA, Metal, or WGPU backend state warm. Local filesystem scans send
+only canonical root and source-policy metadata; the daemon reads and batches
+those bytes in its own process. Git, binary, remote, and cloud sources that
+require client-side credentials still use protected bounded chunk frames:
 
 ```sh
-keyhog daemon start
-keyhog scan --daemon=on path/to/file
+# Calibrate on this worker class, then run the service in the foreground
+# or under a service manager.
+keyhog calibrate-autoroute --policy default
+keyhog daemon start --mass
+
+# Stream one independently retryable inventory partition.
+keyhog scan --daemon=mass /srv/inventory/team-a \
+  --format json-envelope --output team-a.json
 keyhog daemon status
 keyhog daemon stop
 ```
 
-Use `--daemon=on` only when absence or incompatibility must fail. The normal
-Unix default, `--daemon=auto`, uses a compatible running daemon for eligible
-requests and otherwise keeps supported work in process. See
-[daemon and warm scans](https://santhreal.github.io/keyhog/workflows/daemon.html).
+Daemon-local filesystem batches and protected wire batches each carry at most
+8 MiB of raw payload and 1,024 chunks. Input size does not determine resident
+batch memory, so the same route can process a TB-scale tree without collecting
+it in RAM. Local file payload bytes never cross the IPC socket. The daemon holds
+an exclusive fragment-state lease for the transaction and clears that state
+when the client finishes, disconnects, or fails.
+
+For protected wire batches, the client validates the completion receipt against
+the exact chunks and bytes it sent. For daemon-local paths, the daemon receipt
+is the source-byte authority. Stderr reports the transport, total and GPU
+batches, chunks, bytes, GPU byte share, whether GPU processed more than half of
+all bytes, and daemon-side throughput. Invalid receipt invariants fail instead
+of emitting a scan report. Acquisition gaps remain visible in the envelope and
+use exit `13`.
+
+Routine workers use persisted autoroute evidence. Add `--mass-gpu-primary` at
+daemon startup when a TB-scale worker must prove that GPU processed more than
+half of all non-empty payload bytes. The client fails before reporting when the
+terminal receipt is CPU-majority. To diagnose a GPU-only worker, force
+`--backend gpu-cuda-region-presence` or `--backend
+gpu-wgpu-region-presence`. A forced GPU service exits `12` when GPU startup
+fails and returns an error instead of substituting CPU after a runtime fault.
+An explicit backend remains a diagnostic override, not autoroute proof.
+
+`--daemon=mass` is an explicit required route. It never falls back to an
+in-process scan. Baseline state, incremental state, live verification,
+lockdown, presets, detector overlays, custom allowlists, and scanner-policy
+overrides remain in-process contracts and are rejected before source
+acquisition. Warm one-file and stdin requests remain available on the same
+socket through `--daemon=on`.
+
+See
+[daemon and warm scans](https://santhreal.github.io/keyhog/workflows/daemon.html)
+and [mass scanning](https://santhreal.github.io/keyhog/guides/mass-scanning.html).
 
 ## System-wide credential triage
 

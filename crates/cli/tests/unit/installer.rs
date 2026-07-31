@@ -85,10 +85,11 @@ fn installer_platform_words_match_release_feature_matrix() {
 
     assert!(
         release_yml.contains("asset: keyhog-macos-aarch64")
+            && release_yml.contains("features: '--no-default-features --features portable,gpu'")
             && release_yml.contains("asset: keyhog-windows-x86_64.exe")
             && release_yml.contains("features: '--no-default-features --features portable'")
             && release_yml.contains("artifact_features: 'ml,entropy,decode,multiline'"),
-        "release matrix must keep macOS/Windows portable feature evidence visible"
+        "release matrix must keep native Metal macOS and portable Windows feature evidence visible"
     );
 
     for (name, text) in [
@@ -105,6 +106,7 @@ fn installer_platform_words_match_release_feature_matrix() {
             "Windows installer ships the WGPU + SIMD",
             "WGPU + SIMD Windows build",
             "default WGPU + SIMD build, skip GPU detection",
+            "no Hyperscan, WGPU, CUDA, or native Metal asset in the current release",
         ] {
             assert!(
                 !text.contains(stale),
@@ -114,13 +116,15 @@ fn installer_platform_words_match_release_feature_matrix() {
     }
 
     assert!(
-        readme_words
-            .contains("macOS and Windows release assets are portable no-system-library builds")
-            && install_doc_words
-                .contains("macOS and Windows assets use the portable no-system-library build")
-            && install_doc_words
-                .contains("Windows installer ships the portable no-system-library build")
-            && install_sh.contains("portable no-system-library macOS build")
+        readme_words.contains(
+            "macOS release assets enable native Metal and WGPU without requiring Homebrew Vectorscan",
+        )
+            && readme_words.contains("Windows assets are portable no-system-library builds")
+            && install_doc_words.contains(
+                "macOS assets enable VYRE's native Metal and WGPU drivers without requiring Homebrew Vectorscan",
+            )
+            && install_doc_words.contains("Windows uses the portable CPU build")
+            && install_sh.contains("native Metal and WGPU macOS build")
             && install_ps1.contains("portable no-system-library Windows build")
             && !maintenance_rs.contains("variant"),
         "docs, installers, and CLI help must describe the platform artifacts honestly"

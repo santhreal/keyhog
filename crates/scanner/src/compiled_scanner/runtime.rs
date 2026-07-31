@@ -13,6 +13,7 @@ fn scan_deadline_expired(deadline: Option<std::time::Instant>) -> bool {
 fn backend_driver_name(backend: ScanBackend) -> &'static str {
     match backend {
         ScanBackend::GpuCuda => "cuda",
+        ScanBackend::GpuMetal => "metal",
         ScanBackend::GpuWgpu => "wgpu",
         _ => "",
     }
@@ -503,7 +504,7 @@ impl CompiledScanner {
         const WARM_SAMPLE: &str = concat!(
             "int main(void){ char *buf = malloc(4096); for(size_t i=0;i<len;i++){ ",
             "config.timeout_ms = 30000; user_id=0x1f3b9c; const KEY = \"abcDEF0123456789\"; ",
-            "https://example.org/api/v2?token=eyJhbGciOi&id=550e8400-e29b-41d4-a716; ",
+            "https://example.org/api/v2?payload=eyJhbGciOi&id=550e8400-e29b-41d4-a716; ",
             "base64=QUtJQUlPU0ZPRE5ON0VYQU1QTEU= sha=da39a3ee5e6b4b0d3255bfef95601890; ",
             "snake_case_name camelCaseName SCREAMING_CASE path/to/file.rs node_modules ",
             "} /* comment */ // trailing\n\t<xml attr='v'>text</xml> {\"json\":true,\"n\":42}"
@@ -610,12 +611,13 @@ impl CompiledScanner {
     #[must_use]
     pub fn gpu_backend_candidates(&self) -> Vec<GpuBackendCandidateStatus> {
         use crate::hw_probe::ScanBackend;
-        [ScanBackend::GpuCuda, ScanBackend::GpuWgpu]
+        [ScanBackend::GpuCuda, ScanBackend::GpuMetal, ScanBackend::GpuWgpu]
             .into_iter()
             .map(|backend| {
                 let acquired = self.gpu_backends.initialized(backend);
                 let available = match backend {
                     ScanBackend::GpuCuda => self.gpu_backends.cuda_available,
+                    ScanBackend::GpuMetal => self.gpu_backends.metal_available,
                     ScanBackend::GpuWgpu => self.gpu_backends.wgpu_available,
                     _ => false,
                 };
@@ -636,6 +638,7 @@ impl CompiledScanner {
                     driver_id: available.then(|| backend_driver_name(backend)),
                     driver_version: available.then(|| match backend {
                         ScanBackend::GpuCuda => env!("KEYHOG_VYRE_CUDA_VERSION"),
+                        ScanBackend::GpuMetal => env!("KEYHOG_VYRE_METAL_VERSION"),
                         ScanBackend::GpuWgpu => env!("KEYHOG_VYRE_WGPU_VERSION"),
                         _ => unreachable!("candidate list contains only GPU backends"),
                     }),
@@ -643,17 +646,20 @@ impl CompiledScanner {
                         .and_then(|peer| peer.device_identity.clone())
                         .or_else(|| match backend {
                             ScanBackend::GpuCuda => self.gpu_backends.cuda_device_identity.clone(),
+                            ScanBackend::GpuMetal => self.gpu_backends.metal_device_identity.clone(),
                             ScanBackend::GpuWgpu => self.gpu_backends.wgpu_device_identity.clone(),
                             _ => None,
                         }),
                     runtime_identity: match backend {
                         ScanBackend::GpuCuda => self.gpu_backends.cuda_runtime_identity.clone(),
+                        ScanBackend::GpuMetal => self.gpu_backends.metal_runtime_identity.clone(),
                         ScanBackend::GpuWgpu => self.gpu_backends.wgpu_runtime_identity.clone(),
                         _ => None,
                     },
                     is_software: acquired.map_or_else(
                         || match backend {
                             ScanBackend::GpuCuda => false,
+                            ScanBackend::GpuMetal => false,
                             ScanBackend::GpuWgpu => self.gpu_backends.wgpu_is_software,
                             _ => true,
                         },
@@ -822,7 +828,9 @@ impl CompiledScanner {
         // region presence. Retired per-rule routes do not keep compatibility
         // identities here.
         let ready = match backend {
-            crate::hw_probe::ScanBackend::GpuCuda | crate::hw_probe::ScanBackend::GpuWgpu => {
+            crate::hw_probe::ScanBackend::GpuCuda
+            | crate::hw_probe::ScanBackend::GpuMetal
+            | crate::hw_probe::ScanBackend::GpuWgpu => {
                 self.gpu_stack_usable_for(backend)
             }
             crate::hw_probe::ScanBackend::SimdCpu => {

@@ -67,6 +67,7 @@ pub(crate) fn backend_override_label(backend: Option<keyhog_scanner::ScanBackend
 pub(crate) fn backend_override_cli_value(backend: keyhog_scanner::ScanBackend) -> &'static str {
     match backend {
         keyhog_scanner::ScanBackend::GpuCuda => "gpu-cuda",
+        keyhog_scanner::ScanBackend::GpuMetal => "gpu-metal",
         keyhog_scanner::ScanBackend::GpuWgpu => "gpu-wgpu",
         keyhog_scanner::ScanBackend::SimdCpu => "simd",
         keyhog_scanner::ScanBackend::CpuFallback => "cpu",
@@ -90,9 +91,11 @@ pub(crate) fn gpu_runtime_policy_for_backend_override(
     backend: Option<keyhog_scanner::ScanBackend>,
 ) -> Result<keyhog_scanner::gpu::GpuRuntimePolicy> {
     let policy = match backend {
-        Some(keyhog_scanner::ScanBackend::GpuCuda | keyhog_scanner::ScanBackend::GpuWgpu) => {
-            keyhog_scanner::gpu::GpuRuntimePolicy::Required
-        }
+        Some(
+            keyhog_scanner::ScanBackend::GpuCuda
+            | keyhog_scanner::ScanBackend::GpuMetal
+            | keyhog_scanner::ScanBackend::GpuWgpu,
+        ) => keyhog_scanner::gpu::GpuRuntimePolicy::Required,
         Some(keyhog_scanner::ScanBackend::SimdCpu | keyhog_scanner::ScanBackend::CpuFallback) => {
             keyhog_scanner::gpu::GpuRuntimePolicy::Disabled
         }

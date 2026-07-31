@@ -8,7 +8,7 @@
 - [Install](./install.md)
 - [Your first scan](./first-scan.md)
 - [Read and export findings](./output-formats.md)
-- [Recipes](./recipes.md)
+- [Source and endpoint recipes](./recipes.md)
 
 # Repository gates
 
@@ -17,19 +17,19 @@
 - [CI secret scanning](./workflows/ci.md)
 - [Scan Git history and recover hidden credentials](./guides/deep-recovery.md)
 
-# Large inventories
+# Inventory, endpoint, and host scans
 
-- [Mass repository and cloud inventory scanning](./guides/mass-scanning.md)
+- [Mass repository and cloud scanning](./guides/mass-scanning.md)
+- [GPU-backed daemon file queues](./workflows/daemon.md)
 - [GitHub collaboration scans](./workflows/github-collaboration.md)
 - [System-wide credential triage](./guides/system-wide-triage.md)
 - [Archives and compressed sources](./source-archives.md)
-- [HTTP and wire captures](./http-wire.md)
+- [HTTP endpoints and wire captures](./http-wire.md)
 
-# Performance and backend selection
+# Performance, worker sizing, and routing
 
 - [CPU, Hyperscan, GPU, and automatic routing](./backends.md)
 - [Autoroute calibration](./reference/autoroute-calibration.md)
-- [Daemon and warm scans](./workflows/daemon.md)
 
 # Detection policy and trust
 

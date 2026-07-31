@@ -571,8 +571,12 @@ fn source_symbol_policy_reaches_every_full_backend_plan() {
             full_scan_plausibility_findings(value, false, ScanBackend::SimdCpu)
         );
     }
+    #[cfg(all(feature = "gpu", target_os = "macos"))]
+    let native_gpu_backend = ScanBackend::GpuMetal;
+    #[cfg(all(feature = "gpu", not(target_os = "macos")))]
+    let native_gpu_backend = ScanBackend::GpuCuda;
     #[cfg(feature = "gpu")]
-    for backend in [ScanBackend::GpuCuda, ScanBackend::GpuWgpu] {
+    for backend in [native_gpu_backend, ScanBackend::GpuWgpu] {
         assert!(
             probe.warm_backend(backend),
             "{} must be usable on a GPU parity host",
@@ -1464,8 +1468,12 @@ fn custom_owner_bpe_policy_reaches_the_full_scan() {
             "CPU and Hyperscan must preserve the exact detector, credential, and offset"
         );
     }
+    #[cfg(all(feature = "gpu", target_os = "macos"))]
+    let native_gpu_backend = ScanBackend::GpuMetal;
+    #[cfg(all(feature = "gpu", not(target_os = "macos")))]
+    let native_gpu_backend = ScanBackend::GpuCuda;
     #[cfg(feature = "gpu")]
-    for backend in [ScanBackend::GpuCuda, ScanBackend::GpuWgpu] {
+    for backend in [native_gpu_backend, ScanBackend::GpuWgpu] {
         assert!(
             probe.warm_backend(backend),
             "{} must be usable on a GPU parity host",

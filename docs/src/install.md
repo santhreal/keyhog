@@ -8,9 +8,9 @@ your supported host; platform feature differences are explicit below.
 | Host | Release asset | Runtime notes |
 |------|---------------|---------------|
 | Linux x86_64 | `keyhog-linux-x86_64` | Hyperscan is statically linked; CUDA and WGPU are probed at runtime |
-| macOS x86_64 | `keyhog-macos-x86_64` | Portable build, without Hyperscan or GPU backends |
-| macOS aarch64 | `keyhog-macos-aarch64` | Portable build, without Hyperscan or GPU backends |
-| Windows x86_64 | `keyhog-windows-x86_64.exe` | PowerShell 5+; portable build; daemon unavailable |
+| macOS x86_64 | `keyhog-macos-x86_64` | Native Metal and WGPU; no Hyperscan or Homebrew Vectorscan dependency |
+| macOS aarch64 | `keyhog-macos-aarch64` | Native Metal and WGPU; no Hyperscan or Homebrew Vectorscan dependency |
+| Windows x86_64 | `keyhog-windows-x86_64.exe` | PowerShell 5+; portable CPU build; daemon unavailable |
 
 Linux arm64 and Windows arm64 release assets are not produced. The installer
 stops with an unsupported-platform error instead of choosing a different
@@ -68,10 +68,10 @@ Drops a binary in `~/.local/bin/keyhog`. The installer detects the platform and
 existing install before downloading and tells you the chosen asset. Linux
 x86_64 has one accelerator-capable binary: Hyperscan plus VYRE's CUDA and WGPU
 drivers. CUDA/NVRTC use dynamic loading, so no build-time toolkit is required
-and the same artifact runs on GPU and CPU-only hosts. Backend probing and
-persisted autoroute evidence, not installer variants, decide execution. macOS and
-Windows assets use the portable no-system-library build without Hyperscan or GPU
-drivers.
+and the same artifact runs on GPU and CPU-only hosts. macOS assets enable
+VYRE's native Metal and WGPU drivers without requiring Homebrew Vectorscan.
+Windows uses the portable CPU build. Backend probing and persisted autoroute
+evidence, not installer variants, decide execution.
 
 This path authenticates the versioned installer before execution. Changing the
 repository's `main` branch cannot change a pinned install. On macOS, replace the
@@ -429,32 +429,37 @@ The default feature set requires **Hyperscan / Vectorscan**:
 
 - Debian / Ubuntu: `sudo apt install libhyperscan-dev libssl-dev pkg-config`
 - macOS: `brew install vectorscan pkg-config`, then use the default build for
-  the Hyperscan path. Use `--no-default-features --features portable` for the
-  portable scanner build used by the official macOS asset.
+  the Hyperscan path. Build the official release profile with
+  `--no-default-features --features portable,gpu`; it enables native Metal and
+  WGPU without requiring Vectorscan.
 - Windows: build with `--no-default-features --features portable`.
 
 The portable profile removes Hyperscan, Ghidra, CUDA, and WGPU build
-dependencies. It retains network sources and verification through `reqwest`
-native TLS. A portable source build on Debian/Ubuntu still needs `libssl-dev`
-and `pkg-config`.
+dependencies. Add `gpu` on macOS to enable native Metal and WGPU without adding
+Hyperscan. Both profiles retain network sources and verification through
+`reqwest` native TLS. A portable source build on Debian/Ubuntu still needs
+`libssl-dev` and `pkg-config`.
 
-The default Linux build includes the dynamically loaded CUDA and WGPU backends:
+The default Linux build includes dynamically loaded CUDA and WGPU. The macOS
+release profile enables native Metal and WGPU:
 
 ```sh
+# Linux with statically linked Hyperscan and runtime GPU discovery
 cargo build --release -p keyhog
+
+# macOS release profile without Homebrew Vectorscan
+cargo build --release -p keyhog --no-default-features --features portable,gpu
 ```
 
-CUDA is attempted only when its runtime libraries and a compatible device are
-present. On Linux, scanner construction acquires CUDA first and tries WGPU only
-when CUDA acquisition fails. That acquisition failure is reported. It is not a
-scan-time backend substitution. `keyhog backend --self-test --json` reports the
-acquired runtime state, and autoroute calibration determines whether that GPU
-route is eligible against the CPU candidates.
+CUDA, Metal, and WGPU are independent autoroute candidates. Scanner compilation
+censuses each executable peer without selecting one as a fallback for another.
+Calibration acquires and measures every eligible peer. An acquisition failure
+is reported and does not become a scan-time backend substitution.
 
-The `portable` feature is what the official Windows + macOS release
-binaries are built with. It keeps the portable scanner data paths without
-native Hyperscan, GPU, or Ghidra dependencies. Throughput varies by host and
-workload; benchmark the intended scan class instead of applying a fixed ratio.
+The official Windows binary uses `portable`. The macOS binaries add `gpu` to
+that source and verification profile. They do not require Hyperscan or
+Vectorscan. Throughput varies by host and workload; benchmark the intended scan
+class instead of applying a fixed ratio.
 
 ## crates.io
 

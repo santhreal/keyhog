@@ -46,7 +46,7 @@ config_for() {
     # ~/.ssh/config aliases still carry stale on-site LAN IPs). Absolute remote
     # paths -- `cd '$tree'` is single-quoted, so a ~ would not expand.
     santhserver) echo "santh@100.110.246.73|linux|/mnt/santh-desktop/software/keyhog|/var/santh-cargo-target|--no-default-features --features portable" ;;
-    macbook)     echo "thiruthangarathinam@100.103.221.82|macos|/Users/thiruthangarathinam/Santh/software/keyhog|/Users/thiruthangarathinam/.cache/keyhog-cargo-target|--no-default-features --features portable" ;;
+    macbook)     echo "thiruthangarathinam@100.103.221.82|macos|/Users/thiruthangarathinam/Santh/software/keyhog|/Users/thiruthangarathinam/.cache/keyhog-cargo-target|--no-default-features --features portable,gpu" ;;
     win)         echo "windows-thinkpad|windows|-|C:/cargo-target|" ;;
     *)           echo "" ;;
   esac

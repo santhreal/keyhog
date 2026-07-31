@@ -1,6 +1,6 @@
 //! Single boundary for GPU acquisition, device artifacts, execution, and diagnostics.
 //!
-//! CUDA/WGPU peer lifecycle and the WGPU MoE implementation are deliberately
+//! CUDA, Metal, and WGPU peer lifecycle and the WGPU MoE implementation are deliberately
 //! private modules. Scanner code consumes only the narrow reexports below, so
 //! backend-specific lazy cells, artifacts, and diagnostics cannot grow a second
 //! lifecycle owner.

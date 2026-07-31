@@ -89,7 +89,7 @@ A dash means that layer intentionally has no surface.
 | Per-chunk timeout | off | `[scan].per_chunk_timeout_ms` | `--per-chunk-timeout-ms` | Optional hard deadline per chunk scan in milliseconds. |
 | Dedup scope | `credential` | `[scan].dedup` | `--dedup` | `credential` / `file` / `none`. |
 | Credential verification | off | `verify` | `--verify` / `--no-verify` | The explicit CLI enable or disable wins over discovered configuration. The Action always passes one of these flags; its default `verify: 'false'` therefore prevents committed configuration from silently enabling credential egress. |
-| HTTP verification timeout | `5` seconds | `timeout` | `--timeout` | Per-request verifier deadline; it does not bound scanning. Use `per_chunk_timeout_ms` for the optional scanner chunk deadline. |
+| HTTP verification timeout | `5` seconds | `timeout` | `--timeout` | Per-request verifier deadline; it does not bound scanning. Use `per_chunk_timeout_ms` for the optional scanner chunk deadline. | <!-- keyhog:ignore detector=entropy-token -->
 | Verification concurrency | `5` per service | `verify_concurrency` | `--verify-concurrency` | Maximum in-flight verification requests per service; zero is rejected. Distinct from the requests/second limiter. |
 | Verification request rate | `5.0` RPS per service | - | `--verify-rate` | Steady-state request-rate ceiling. `--verify-batch` additionally forces concurrency to one. |
 | Max file size | 100 MiB | `max_file_size` | `--max-file-size` | Walker skips files larger than this. |
@@ -110,7 +110,7 @@ A dash means that layer intentionally has no surface.
 | Secret-context keywords | embedded scanner set | `secret_keywords` | - | Replace the scan-wide positive context words used by generic confidence scoring. Empty entries fail closed. |
 | Test-context keywords | embedded scanner set | `test_keywords` | - | Replace the scan-wide test/mock context words used by confidence policy. Empty entries fail closed. |
 | Placeholder keywords | embedded scanner set | `placeholder_keywords` | - | Replace the scan-wide placeholder markers used by confidence policy. Empty entries fail closed. |
-| Backend | `auto` | - | `--backend <BACKEND>` | `auto`, `cpu` (`cpu-fallback`), `simd` (`simd-regex`), `gpu-cuda` (`gpu-cuda-region-presence`), or `gpu-wgpu` (`gpu-wgpu-region-presence`). Aliases are accepted spellings of the same backend, not extra routing candidates. CUDA and WGPU remain separate measured candidates with distinct route labels and timing evidence. Auto uses a persisted fastest-correct decision for the exact workload bucket; missing, stale, incomplete, or runtime-quarantined state warns and completes through reported scalar correctness recovery, which is not called autoroute. |
+| Backend | `auto` | - | `--backend <BACKEND>` | `auto`, `cpu` (`cpu-fallback`), `simd` (`simd-regex`), `gpu-cuda` (`gpu-cuda-region-presence`), `gpu-metal` (`gpu-metal-region-presence`), or `gpu-wgpu` (`gpu-wgpu-region-presence`). Aliases are accepted spellings of the same backend, not extra routing candidates. CUDA, Metal, and WGPU remain separate measured candidates with distinct route labels and timing evidence. Auto uses a persisted fastest-correct decision for the exact workload bucket; missing, stale, incomplete, or runtime-quarantined state warns and completes through reported scalar correctness recovery, which is not called autoroute. |
 
 The scan worker pool is process-global. Repeated in-process scans may reuse the
 same resolved width when KeyHog created the pool. A later request for a

@@ -1,16 +1,12 @@
 //! Logic for the `scan` subcommand.
 //!
-//! Default: build a [`ScanOrchestrator`] and run the full in-process
-//! pipeline. For the simple stdin / single-file case there is also a
-//! daemon fast path: when `--daemon=auto` sees a live socket, eligible
-//! stdin / single-file scans go through the running `keyhog daemon`
-//! and skip the ~3 s `CompiledScanner::compile` cold start. The daemon
-//! path is deliberately narrow - it can honor stdin and a single regular
-//! file through the source-owned filesystem expansion path; directory
-//! walks, git-staged scans, baseline filtering, merkle skip cache, and
-//! verification still go through the orchestrator. `--daemon=on` is a hard
-//! contract: if the daemon cannot honor the requested scan exactly, the
-//! command fails instead of silently running a different path.
+//! Default scans build a [`ScanOrchestrator`] and run in process. The warm
+//! daemon route serves bounded stdin or one regular file. The explicit mass
+//! route keeps local filesystem payloads daemon-local while streaming protected
+//! chunks for credential-bound remote sources. Both paths use bounded batches
+//! and reuse one compiled CPU, Hyperscan, CUDA, or WGPU scanner across complete
+//! partitions. `--daemon=on` and `--daemon=mass` are hard contracts and never
+//! fall back.
 
 use crate::args::{DaemonMode, ScanArgs};
 #[cfg(unix)]
@@ -23,7 +19,10 @@ use crate::exit_codes::{EXIT_CREDENTIALS_FOUND, EXIT_LIVE_CREDENTIALS, EXIT_SOUR
 #[cfg(unix)]
 use crate::daemon::client;
 #[cfg(unix)]
-use crate::daemon::protocol::{Request, RequiredOption, Response, SourceCoverageGaps};
+use crate::daemon::protocol::{
+    response_kind, Request, RequiredOption, Response, SourceCoverageGaps, MASS_BATCH_BYTES,
+    MASS_BATCH_CHUNKS,
+};
 #[cfg(unix)]
 use crate::daemon::server::default_socket_path;
 use crate::orchestrator::ScanOrchestrator;
@@ -37,32 +36,31 @@ use anyhow::{bail, Result};
 #[cfg(unix)]
 use anyhow::Context;
 #[cfg(unix)]
-use keyhog_core::{RawMatch, RuleSuppressor, ScanCompletionStatus, VerifiedFinding};
+use keyhog_core::{Chunk, RawMatch, RuleSuppressor, ScanCompletionStatus, VerifiedFinding};
 #[cfg(unix)]
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-pub(crate) async fn run(args: ScanArgs) -> Result<ExitCode> {
+pub(crate) async fn run(mut args: ScanArgs) -> Result<ExitCode> {
     crate::runtime_preflight::validate_scan_runtime_config()?;
     crate::action_report::validate_scan_paths(&args)?;
     guard_multi_root_combinations(&args)?;
     if args.daemon_mode() == DaemonMode::Off && args.daemon_socket.is_some() {
-        bail!("`--daemon-socket` cannot be combined with `--daemon=off`; remove the socket or choose `--daemon=auto|on`");
+        bail!("`--daemon-socket` cannot be combined with `--daemon=off`; remove the socket or choose `--daemon=auto|on|mass`");
     }
 
-    // On Windows, the daemon route is never available (the `crate::daemon`
-    // module is cfg(unix)). If the user explicitly requested `auto` or `on`,
-    // refuse loudly so the request is not silently rewritten as `off`. An
-    // absent flag and explicit `off` both
-    // mean the only supported Windows execution path: in-process.
+    // On Windows, the daemon transport is unavailable. An explicitly selected
+    // auto, warm, or mass mode therefore fails instead of rewriting execution.
+    // An absent flag and explicit off both run in process.
     #[cfg(not(unix))]
     {
         let mode = args.daemon_mode();
         if args.daemon.is_some() && mode.may_use_daemon_transport() {
-            let requested = if mode == DaemonMode::Auto {
-                "auto"
-            } else {
-                "on"
+            let requested = match mode {
+                DaemonMode::Auto => "auto",
+                DaemonMode::On => "on",
+                DaemonMode::Mass => "mass",
+                DaemonMode::Off => unreachable!("off cannot use daemon transport"),
             };
             bail!(
                 "`--daemon={requested}` is a unix-only mode (the daemon serves scans \
@@ -96,6 +94,9 @@ pub(crate) async fn run(args: ScanArgs) -> Result<ExitCode> {
     #[cfg(unix)]
     {
         let mode = args.daemon_mode();
+        if mode == DaemonMode::Mass {
+            return run_via_mass_daemon(&mut args).await;
+        }
         let daemon_reachable = mode == DaemonMode::On
             || (mode != DaemonMode::Off && effective_daemon_socket(&args).exists());
         if !daemon_reachable {
@@ -657,6 +658,566 @@ fn effective_single_file_path(args: &ScanArgs) -> Result<Option<&Path>> {
 }
 
 #[cfg(unix)]
+async fn run_via_mass_daemon(args: &mut ScanArgs) -> Result<ExitCode> {
+    crate::reset_scan_runtime_state();
+    if args.dogfood {
+        keyhog_scanner::telemetry::enable_dogfood();
+    }
+    let wall_start = chrono::Utc::now();
+    let mut resolved = crate::orchestrator_config::resolve_scan_config(args)?;
+    if resolved.threads.is_none() {
+        resolved.threads = Some(rayon::current_num_threads());
+    }
+    validate_mass_daemon_policy(args, &resolved)?;
+    let ExpectedDaemonDetectorCorpus {
+        rules_digest,
+        corpus_digest: detector_corpus_digest,
+        provenance: detector_corpus_provenance,
+        detector_count,
+    } = expected_daemon_detector_corpus(args)?;
+
+    let socket = effective_daemon_socket(args);
+    let mut conn = match rules_digest {
+        Some(digest) => client::connect_with_detector_rules_digest(&socket, digest).await,
+        None => client::connect(&socket).await,
+    }
+    .with_context(|| {
+        format!(
+            "mass daemon route: connect to {}. Start it with `keyhog daemon start --mass{}`",
+            socket.display(),
+            args.daemon_socket
+                .as_ref()
+                .map(|path| format!(" --socket {}", path.display()))
+                .unwrap_or_default()
+        )
+    })?;
+    if !conn.is_mass_service() {
+        bail!(
+            "mass daemon route: {} is a warm-only service. Restart it with \
+             `keyhog daemon stop{} && keyhog daemon start --mass{}`.",
+            socket.display(),
+            socket_flag(args),
+            socket_flag(args)
+        );
+    }
+    let require_gpu_primary = conn.mass_gpu_primary_required();
+
+    let allowlist_paths: Vec<String> = load_daemon_allowlist(args)?
+        .ignored_paths
+        .iter()
+        .cloned()
+        .collect();
+    let mass_ignore_paths =
+        crate::sources::merge_scan_ignore_paths(&resolved.exclude_paths, allowlist_paths.clone());
+    let sources = crate::sources::build_sources(args, &resolved, allowlist_paths, None)?;
+    let filesystem_requests =
+        mass_filesystem_requests(&sources, &resolved, mass_ignore_paths);
+    if sources.is_empty() {
+        bail!(
+            "mass daemon route: no source was selected. Pass a path, --stdin, or a remote source flag."
+        );
+    }
+
+    match conn
+        .round_trip(&Request::MassBegin {
+            dogfood: args.dogfood,
+        })
+        .await?
+    {
+        Response::MassReady => {}
+        Response::Error { message } => bail!("mass daemon route: {message}"),
+        other => bail!(
+            "mass daemon route: expected MassReady, got {}",
+            response_kind(&other)
+        ),
+    }
+
+    let (matches, expected_wire_payload, source_coverage_gaps) =
+        if let Some(requests) = filesystem_requests {
+            let (matches, gaps) =
+                scan_daemon_local_filesystems(&mut conn, requests).await?;
+            (matches, None, gaps)
+        } else {
+            let before_skips = keyhog_sources::skip_counts();
+            let mut source_failed = 0usize;
+            let mut batcher = MassDaemonBatcher::new(&mut conn);
+            for source in sources {
+                let mut source_chunks = 0usize;
+                let mut source_errored = false;
+                for chunk_result in source.chunks() {
+                    match chunk_result {
+                        Ok(chunk) => {
+                            source_chunks = source_chunks.saturating_add(1);
+                            match split_chunk_for_mass(chunk) {
+                                Ok(chunks) => {
+                                    for chunk in chunks {
+                                        batcher.push(chunk).await?;
+                                    }
+                                }
+                                Err(error) => {
+                                    source_errored = true;
+                                    source_failed = source_failed.saturating_add(1);
+                                    let _receipt = crate::record_source_error();
+                                    tracing::warn!(
+                                        "mass daemon source chunk skipped: {error:#}"
+                                    );
+                                    eprintln!(
+                                        "{}: mass daemon source chunk was not scanned: {error:#}",
+                                        crate::style::warn(
+                                            "warning",
+                                            &crate::style::for_stderr()
+                                        )
+                                    );
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            source_errored = true;
+                            source_failed = source_failed.saturating_add(1);
+                            let _receipt = crate::record_source_error();
+                            tracing::warn!("mass daemon source: {error}");
+                        }
+                    }
+                }
+                batcher.flush().await?;
+                if source_chunks == 0 && source_errored {
+                    let _receipt = crate::record_failed_source();
+                }
+            }
+            batcher.flush().await?;
+            let (matches, chunks, bytes, mut gaps) = batcher.finish();
+            merge_source_coverage(
+                &mut gaps,
+                source_coverage_since(before_skips, source_failed),
+            );
+            (matches, Some((chunks, bytes)), gaps)
+        };
+
+    let mass_stats = match conn.round_trip(&Request::MassEnd).await? {
+        Response::MassComplete { stats } => stats,
+        Response::Error { message } => bail!("mass daemon route: {message}"),
+        other => bail!(
+            "mass daemon route: expected MassComplete, got {}",
+            response_kind(&other)
+        ),
+    };
+    if mass_stats.gpu_chunks > mass_stats.chunks || mass_stats.gpu_bytes > mass_stats.bytes {
+        bail!(
+            "mass daemon route: inconsistent execution receipt: daemon reported \
+             {} total chunks/{} total bytes with {} GPU chunks/{} GPU bytes",
+            mass_stats.chunks,
+            mass_stats.bytes,
+            mass_stats.gpu_chunks,
+            mass_stats.gpu_bytes
+        );
+    }
+    if let Some((expected_chunks, expected_bytes)) = expected_wire_payload {
+        if mass_stats.chunks != expected_chunks as u64 || mass_stats.bytes != expected_bytes {
+            bail!(
+                "mass daemon route: inconsistent execution receipt: client sent \
+                 {expected_chunks} chunks/{expected_bytes} bytes, daemon reported \
+                 {} chunks/{} bytes",
+                mass_stats.chunks,
+                mass_stats.bytes,
+            );
+        }
+    }
+    let source_chunks_scanned = usize::try_from(mass_stats.chunks)
+        .context("mass daemon receipt chunk count exceeds this platform's usize")?;
+    let source_bytes_scanned = mass_stats.bytes;
+    if require_gpu_primary && mass_stats.bytes > 0 && !mass_stats.gpu_is_primary() {
+        bail!(
+            "mass daemon route: GPU-primary contract failed: GPU processed {} of {} bytes \
+             ({:.1}%), but this service requires more than 50%. Recalibrate autoroute for \
+             this mass workload or restart the daemon without --mass-gpu-primary.",
+            mass_stats.gpu_bytes,
+            mass_stats.bytes,
+            100.0 * mass_stats.gpu_bytes as f64 / mass_stats.bytes as f64,
+        );
+    }
+    crate::TOTAL_CHUNKS.store(source_chunks_scanned, std::sync::atomic::Ordering::Relaxed);
+    crate::SCANNED_CHUNKS.store(source_chunks_scanned, std::sync::atomic::Ordering::Relaxed);
+    crate::SCANNED_BYTES.store(source_bytes_scanned, std::sync::atomic::Ordering::Relaxed);
+    crate::GPU_SCANNED_CHUNKS.store(
+        mass_stats.gpu_chunks.min(usize::MAX as u64) as usize,
+        std::sync::atomic::Ordering::Relaxed,
+    );
+    let elapsed_secs = (mass_stats.duration_ms as f64 / 1_000.0).max(0.001);
+    eprintln!(
+        "mass daemon: {} batches, {} chunks, {} bytes; GPU {} batches, {} chunks, {} bytes ({:.1}%, primary: {}); {:.1} MiB/s; transport={}",
+        mass_stats.batches,
+        mass_stats.chunks,
+        mass_stats.bytes,
+        mass_stats.gpu_batches,
+        mass_stats.gpu_chunks,
+        mass_stats.gpu_bytes,
+        if mass_stats.bytes == 0 {
+            0.0
+        } else {
+            100.0 * mass_stats.gpu_bytes as f64 / mass_stats.bytes as f64
+        },
+        if mass_stats.gpu_is_primary() {
+            "yes"
+        } else {
+            "no"
+        },
+        mass_stats.bytes as f64 / (1024.0 * 1024.0) / elapsed_secs,
+        if expected_wire_payload.is_some() {
+            "protected-chunks"
+        } else {
+            "daemon-local-path"
+        },
+    );
+
+    finish_daemon_scan(
+        DaemonScan {
+            matches,
+            source_coverage_gaps,
+            source_bytes_scanned,
+            source_chunks_scanned,
+            wall_start,
+            detector_corpus_digest,
+            detector_corpus_provenance,
+            detector_count,
+        },
+        args,
+    )
+}
+
+#[cfg(unix)]
+fn socket_flag(args: &ScanArgs) -> String {
+    args.daemon_socket
+        .as_ref()
+        .map(|path| format!(" --socket {}", path.display()))
+        .unwrap_or_default()
+}
+
+#[cfg(unix)]
+fn validate_mass_daemon_policy(
+    args: &ScanArgs,
+    resolved: &crate::orchestrator_config::ResolvedScanConfig,
+) -> Result<()> {
+    if args.baseline.is_some() || args.update_baseline.is_some() {
+        bail!(
+            "--daemon=mass cannot apply baseline state. Run this scan with --daemon=off."
+        );
+    }
+    if resolved.incremental || resolved.incremental_cache_path.is_some() {
+        bail!(
+            "--daemon=mass cannot apply Merkle incremental state. Run this scan with --daemon=off."
+        );
+    }
+    if resolved.report.verify {
+        bail!(
+            "--daemon=mass cannot run live verification. Run this scan with --daemon=off."
+        );
+    }
+    if resolved.report.lockdown || resolved.require_lockdown {
+        bail!("--daemon=mass cannot enforce lockdown. Run this scan with --daemon=off.");
+    }
+    if resolved.report.severity.is_some()
+        || !resolved.detector_min_confidence.is_empty()
+        || !resolved.disabled_detectors.is_empty()
+    {
+        bail!(
+            "--daemon=mass cannot apply per-request severity or detector policy. \
+             Run this scan with --daemon=off."
+        );
+    }
+    if resolved.allowlist.file.is_some()
+        || resolved.allowlist.require_reason
+        || resolved.allowlist.require_approved_by
+        || resolved.allowlist.max_expires_days.is_some()
+    {
+        bail!(
+            "--daemon=mass cannot apply configured allowlist governance. \
+             Run this scan with --daemon=off."
+        );
+    }
+    if args.detectors_mode == Some(crate::args::DetectorMode::Overlay) {
+        bail!(
+            "--daemon=mass cannot compose a per-request detector overlay. Start the \
+             daemon with the exact replacement corpus or run with --daemon=off."
+        );
+    }
+    let resolved_identity = format!(
+        "{:016x}",
+        crate::orchestrator_config::autoroute_config_digest(resolved)
+    );
+    let daemon_identity = crate::orchestrator::autoroute_default_config_identity();
+    if resolved_identity != daemon_identity {
+        bail!(
+            "--daemon=mass resolved scanner policy {resolved_identity}, but the mass \
+             daemon owns default scanner policy {daemon_identity}. Remove per-scan engine, \
+             backend, preset, confidence, or detector-vocabulary overrides, or run with \
+             --daemon=off."
+        );
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn mass_filesystem_requests(
+    sources: &[Box<dyn keyhog_core::Source>],
+    resolved: &crate::orchestrator_config::ResolvedScanConfig,
+    ignore_paths: Vec<String>,
+) -> Option<Vec<Request>> {
+    let mut requests = Vec::with_capacity(sources.len());
+    for source in sources {
+        let filesystem = source
+            .as_any()
+            .downcast_ref::<keyhog_sources::FilesystemSource>()?;
+        let root = filesystem.root_path().to_str()?.to_owned();
+        requests.push(Request::MassFilesystemBegin {
+            root,
+            max_file_size: resolved
+                .max_file_size
+                .map_or(keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES, |bytes| bytes as u64),
+            ignore_paths: ignore_paths.clone(),
+            respect_default_excludes: !resolved.no_default_excludes,
+            reader_threads: resolved.reader_threads,
+        });
+    }
+    Some(requests)
+}
+
+#[cfg(unix)]
+async fn scan_daemon_local_filesystems(
+    conn: &mut client::Client,
+    requests: Vec<Request>,
+) -> Result<(Vec<RawMatch>, SourceCoverageGaps)> {
+    let mut matches = Vec::new();
+    let mut gaps = SourceCoverageGaps::default();
+    for request in requests {
+        match conn.round_trip(&request).await? {
+            Response::MassFilesystemReady => {}
+            Response::Error { message } => {
+                bail!("mass daemon local filesystem route: {message}")
+            }
+            other => bail!(
+                "mass daemon local filesystem route: expected MassFilesystemReady, got {}",
+                response_kind(&other)
+            ),
+        }
+        loop {
+            match conn.round_trip(&Request::MassFilesystemNext).await? {
+                response @ Response::ScanResults { .. } => {
+                    let (batch_matches, batch_gaps) = unwrap_scan_results(response)?;
+                    matches.extend(batch_matches);
+                    merge_source_coverage(&mut gaps, batch_gaps);
+                }
+                Response::MassFilesystemComplete {
+                    source_coverage_gaps,
+                } => {
+                    merge_source_coverage(&mut gaps, source_coverage_gaps);
+                    break;
+                }
+                Response::Error { message } => {
+                    bail!("mass daemon local filesystem route: {message}")
+                }
+                other => bail!(
+                    "mass daemon local filesystem route: expected ScanResults or \
+                     MassFilesystemComplete, got {}",
+                    response_kind(&other)
+                ),
+            }
+        }
+    }
+    Ok((matches, gaps))
+}
+
+#[cfg(unix)]
+struct MassDaemonBatcher<'a> {
+    conn: &'a mut client::Client,
+    chunks: Vec<Chunk>,
+    bytes: usize,
+    source_bytes_scanned: u64,
+    source_chunks_scanned: usize,
+    matches: Vec<RawMatch>,
+    source_coverage_gaps: SourceCoverageGaps,
+}
+
+#[cfg(unix)]
+impl<'a> MassDaemonBatcher<'a> {
+    fn new(conn: &'a mut client::Client) -> Self {
+        Self {
+            conn,
+            chunks: Vec::with_capacity(MASS_BATCH_CHUNKS),
+            bytes: 0,
+            source_bytes_scanned: 0,
+            source_chunks_scanned: 0,
+            matches: Vec::new(),
+            source_coverage_gaps: SourceCoverageGaps::default(),
+        }
+    }
+
+    async fn push(&mut self, chunk: Chunk) -> Result<()> {
+        let next_bytes = self
+            .bytes
+            .checked_add(chunk.data.len())
+            .context("mass daemon batch byte count overflow")?;
+        if !self.chunks.is_empty()
+            && (self.chunks.len() >= MASS_BATCH_CHUNKS || next_bytes > MASS_BATCH_BYTES)
+        {
+            self.flush().await?;
+        }
+        self.bytes = self
+            .bytes
+            .checked_add(chunk.data.len())
+            .context("mass daemon batch byte count overflow")?;
+        self.source_bytes_scanned = self
+            .source_bytes_scanned
+            .saturating_add(chunk.data.len() as u64);
+        self.source_chunks_scanned = self.source_chunks_scanned.saturating_add(1);
+        self.chunks.push(chunk);
+        if self.chunks.len() >= MASS_BATCH_CHUNKS || self.bytes >= MASS_BATCH_BYTES {
+            self.flush().await?;
+        }
+        Ok(())
+    }
+
+    async fn flush(&mut self) -> Result<()> {
+        if self.chunks.is_empty() {
+            return Ok(());
+        }
+        let chunks = std::mem::take(&mut self.chunks);
+        self.bytes = 0;
+        let response = self
+            .conn
+            .round_trip(&Request::MassBatch { chunks })
+            .await?;
+        let (matches, gaps) = unwrap_scan_results(response)?;
+        self.matches.extend(matches);
+        merge_source_coverage(&mut self.source_coverage_gaps, gaps);
+        Ok(())
+    }
+
+    fn finish(self) -> (Vec<RawMatch>, usize, u64, SourceCoverageGaps) {
+        (
+            self.matches,
+            self.source_chunks_scanned,
+            self.source_bytes_scanned,
+            self.source_coverage_gaps,
+        )
+    }
+}
+
+#[cfg(unix)]
+pub(crate) fn split_chunk_for_mass(chunk: Chunk) -> Result<Vec<Chunk>> {
+    if chunk.data.len() <= MASS_BATCH_BYTES {
+        return Ok(vec![chunk]);
+    }
+    if chunk.metadata.decoded_span.is_some() {
+        bail!(
+            "decoded source chunk at {} is {} bytes, above the {} byte mass-batch limit",
+            chunk.metadata.path.as_deref().unwrap_or("<unknown>"),
+            chunk.data.len(),
+            MASS_BATCH_BYTES
+        );
+    }
+
+    let text = chunk.data.as_ref();
+    let mut pieces = Vec::with_capacity(text.len().div_ceil(MASS_BATCH_BYTES));
+    let mut start = 0usize;
+    let mut line_offset = 0usize;
+    while start < text.len() {
+        let mut end = start.saturating_add(MASS_BATCH_BYTES).min(text.len());
+        while end > start && !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        if end == start {
+            bail!("mass daemon could not split a UTF-8 chunk at a valid character boundary");
+        }
+        let mut metadata = chunk.metadata.clone();
+        metadata.base_offset = metadata
+            .base_offset
+            .checked_add(start)
+            .context("mass daemon chunk base offset overflow")?;
+        metadata.base_line = metadata
+            .base_line
+            .checked_add(line_offset)
+            .context("mass daemon chunk base line overflow")?;
+        pieces.push(Chunk {
+            data: text[start..end].to_owned().into(),
+            metadata,
+        });
+        line_offset = line_offset.saturating_add(
+            text[start..end]
+                .as_bytes()
+                .iter()
+                .filter(|byte| **byte == b'\n')
+                .count(),
+        );
+        start = end;
+    }
+    Ok(pieces)
+}
+
+#[cfg(unix)]
+fn source_coverage_since(
+    before: keyhog_sources::SkipCounts,
+    source_failed: usize,
+) -> SourceCoverageGaps {
+    let after = keyhog_sources::skip_counts();
+    SourceCoverageGaps {
+        over_max_size: after.over_max_size.saturating_sub(before.over_max_size),
+        binary: after.binary.saturating_sub(before.binary),
+        unreadable: after.unreadable.saturating_sub(before.unreadable),
+        git_object_unreadable: after
+            .git_object_unreadable
+            .saturating_sub(before.git_object_unreadable),
+        archive_truncated: after
+            .archive_truncated
+            .saturating_sub(before.archive_truncated),
+        binary_section_name_unresolved: after
+            .binary_section_name_unresolved
+            .saturating_sub(before.binary_section_name_unresolved),
+        source_truncated: after
+            .source_truncated
+            .saturating_sub(before.source_truncated),
+        structured_source_parse_failures: after
+            .structured_source_parse_failures
+            .saturating_sub(before.structured_source_parse_failures),
+        archive_duplicate_scan_unavailable: after
+            .archive_duplicate_scan_unavailable
+            .saturating_sub(before.archive_duplicate_scan_unavailable),
+        git_lfs_pointer: after
+            .git_lfs_pointer
+            .saturating_sub(before.git_lfs_pointer),
+        source_failed,
+    }
+}
+
+#[cfg(unix)]
+fn merge_source_coverage(target: &mut SourceCoverageGaps, source: SourceCoverageGaps) {
+    target.over_max_size = target.over_max_size.saturating_add(source.over_max_size);
+    target.binary = target.binary.saturating_add(source.binary);
+    target.unreadable = target.unreadable.saturating_add(source.unreadable);
+    target.git_object_unreadable = target
+        .git_object_unreadable
+        .saturating_add(source.git_object_unreadable);
+    target.archive_truncated = target
+        .archive_truncated
+        .saturating_add(source.archive_truncated);
+    target.binary_section_name_unresolved = target
+        .binary_section_name_unresolved
+        .saturating_add(source.binary_section_name_unresolved);
+    target.source_truncated = target
+        .source_truncated
+        .saturating_add(source.source_truncated);
+    target.structured_source_parse_failures = target
+        .structured_source_parse_failures
+        .saturating_add(source.structured_source_parse_failures);
+    target.archive_duplicate_scan_unavailable = target
+        .archive_duplicate_scan_unavailable
+        .saturating_add(source.archive_duplicate_scan_unavailable);
+    target.git_lfs_pointer = target
+        .git_lfs_pointer
+        .saturating_add(source.git_lfs_pointer);
+    target.source_failed = target.source_failed.saturating_add(source.source_failed);
+}
+
+#[cfg(unix)]
 async fn run_via_daemon(args: &mut ScanArgs) -> Result<ExitCode> {
     let scan = acquire_via_daemon(args).await?;
     finish_daemon_scan(scan, args)
@@ -667,6 +1228,7 @@ struct DaemonScan {
     matches: Vec<RawMatch>,
     source_coverage_gaps: SourceCoverageGaps,
     source_bytes_scanned: u64,
+    source_chunks_scanned: usize,
     wall_start: chrono::DateTime<chrono::Utc>,
     detector_corpus_digest: String,
     detector_corpus_provenance: crate::orchestrator_config::DetectorCorpusProvenance,
@@ -752,6 +1314,7 @@ async fn acquire_via_daemon(args: &mut ScanArgs) -> Result<DaemonScan> {
         matches,
         source_coverage_gaps,
         source_bytes_scanned,
+        source_chunks_scanned: 1,
         wall_start,
         detector_corpus_digest,
         detector_corpus_provenance,
@@ -765,6 +1328,7 @@ fn finish_daemon_scan(scan: DaemonScan, args: &ScanArgs) -> Result<ExitCode> {
         matches,
         source_coverage_gaps,
         source_bytes_scanned,
+        source_chunks_scanned,
         wall_start,
         detector_corpus_digest,
         detector_corpus_provenance,
@@ -777,7 +1341,7 @@ fn finish_daemon_scan(scan: DaemonScan, args: &ScanArgs) -> Result<ExitCode> {
         wall_start,
         report_finished_at,
         (report_finished_at - wall_start).num_milliseconds().max(0) as u128,
-        1,
+        source_chunks_scanned,
         source_bytes_scanned,
         detector_count,
         &detector_corpus_digest,

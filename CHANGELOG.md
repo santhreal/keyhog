@@ -7,19 +7,22 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 ### Added
 
 - A single resumable local or SSH command now refreshes benchmark evidence without invalidating candidate freshness, rebinds the exact canonical run-set after scoring, prepares every changelog and version surface, runs pre-tag gates with isolated full and ci-lean binary contracts, preserves exact Git path bytes, verifies the configured OpenPGP fingerprint before any tag push, and watches GitHub Pages, release assets, containers, and the five-crate crates.io publication chain.
+- Unix mass daemons now accept bounded directory, Git, archive, binary, remote, hosted Git, and cloud streams through `scan --daemon=mass`; local filesystem payloads remain daemon-local, credential-bound sources use protected chunk framing, each batch is capped at 8 MiB and 1,024 chunks, source gaps fail closed, the client validates an exact total/GPU execution receipt before reporting, and `daemon start --mass-gpu-primary` rejects CPU-majority completion.
 
 ### Changed
 
 - The README star viewer now uses a deterministic accessible SVG generated from repository-owned observations, records only real count transitions, handles same-day corrections and declines truthfully, writes atomically, and retries isolated metrics push races without depending on star-history.com.
+- Apple release assets now ship VYRE's native Metal and WGPU peers without requiring Homebrew Vectorscan. GPU region-presence no longer acquires Hyperscan transitively, and autoroute persists Metal as a distinct measured candidate.
 
 ### Fixed
 
-- Release preparation now updates standalone GitHub Action guide version pins, its regression suite rejects any canonical current-version document omitted from the release transaction, and the README states the portable macOS and Windows artifact contract exactly.
+- Release preparation now updates standalone GitHub Action guide version pins, its regression suite rejects any canonical current-version document omitted from the release transaction, and the README states the native Metal macOS and portable CPU Windows artifact contracts exactly.
 - Aggregate release prevention gates now receive the immutable current-version candidate explicitly, so an older default Cargo release binary cannot invalidate backend parity.
 - Release orchestration now prepares the final workspace version before measuring its executable, and pre-tag resumes refresh version-bound evidence while signed-tag resumes preserve immutable evidence.
 - Benchmark freshness now handles the unavoidable Git-stamp change created by committing measured evidence, while rejecting non-ancestor results and every intervening source, manifest, configuration, fixture, rename, or other non-evidence path.
 - The 8 MiB GPU crossover proof now compares independently selected GPU and Hyperscan routes over 300 held-out pairs; it retains every eligible Hyperscan plan for audit without treating a per-trial hindsight oracle as a selectable backend.
 - Published workspace and crate metadata now use the canonical `https://santh.dev/keyhog/` discovery homepage while retaining the source repository as the crates.io repository link.
+- Source skip-counter tests now serialize scans that begin before the first counter guard, eliminating concurrent false failures in the full source matrix. Release dogfood fixtures and documentation now scan cleanly without weakening detector behavior.
 
 ## [0.5.48] - 2026-07-27
 

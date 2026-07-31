@@ -47,6 +47,16 @@ pub enum DaemonAction {
             )
         )]
         backend: Option<String>,
+        /// Enable bounded directory, Git, archive, binary, remote, and cloud
+        /// batches from `keyhog scan --daemon=mass`. Warm one-file requests
+        /// remain available on the same socket.
+        #[arg(long)]
+        mass: bool,
+        /// Require each completed mass transaction to prove that GPU processed
+        /// more than half of all non-empty payload bytes. The client validates
+        /// the terminal receipt and fails instead of accepting CPU-majority work.
+        #[arg(long, requires = "mass")]
+        mass_gpu_primary: bool,
         /// Max seconds a client connection may sit without completing one
         /// request frame before the daemon closes it and reclaims the slot.
         #[arg(

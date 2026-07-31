@@ -80,6 +80,27 @@ fn cli_default_scanner_feature_comment_matches_manifest_contract() {
     );
 }
 
+/// Keeps native GPU releases independent from the optional Hyperscan system library.
+#[test]
+fn scanner_gpu_feature_does_not_pull_hyperscan_transitively() {
+    let scanner_toml = read(&manifest_dir().join("../scanner/Cargo.toml"));
+    let scanner_manifest: toml::Value =
+        toml::from_str(&scanner_toml).expect("scanner Cargo.toml parses");
+    let scanner_features = features(&scanner_manifest);
+    let gpu = feature_list(scanner_features, "gpu");
+    let defaults = feature_list(scanner_features, "default");
+
+    assert!(gpu.contains(&"ml"), "GPU must retain its ML parity gate");
+    assert!(
+        !gpu.contains(&"simd") && !gpu.contains(&"dep:hyperscan"),
+        "native Metal/WGPU builds must not acquire Hyperscan through `gpu`"
+    );
+    assert!(
+        defaults.contains(&"gpu") && defaults.contains(&"simd"),
+        "the default desktop build must still enable both independent accelerators"
+    );
+}
+
 #[test]
 fn workspace_build_profile_comments_match_cli_feature_contract() {
     let workspace_toml = read(&workspace_manifest_path());

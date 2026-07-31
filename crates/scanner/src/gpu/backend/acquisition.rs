@@ -1,4 +1,4 @@
-//! Lazy CUDA/WGPU acquisition behind the scanner GPU boundary.
+//! Lazy CUDA, Metal, and WGPU acquisition behind the scanner GPU boundary.
 
 #[cfg(feature = "gpu")]
 use super::artifact::{load_moe_artifacts, MoeArtifacts};
@@ -19,13 +19,14 @@ pub(crate) struct AcquiredGpuPeer {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct GpuBackendAvailability {
     pub cuda: bool,
+    pub metal: bool,
     pub wgpu: bool,
 }
 
 impl GpuBackendAvailability {
     #[must_use]
     pub const fn any(self) -> bool {
-        self.cuda || self.wgpu
+        self.cuda || self.metal || self.wgpu
     }
 }
 
@@ -37,11 +38,15 @@ pub(crate) struct GpuBackendAcquisitionFailure {
 
 pub(crate) struct GpuBackendPeers {
     cuda: OnceLock<Result<AcquiredGpuPeer, String>>,
+    metal: OnceLock<Result<AcquiredGpuPeer, String>>,
     wgpu: OnceLock<Result<AcquiredGpuPeer, String>>,
     pub(crate) cuda_available: bool,
+    pub(crate) metal_available: bool,
     pub(crate) wgpu_available: bool,
     pub(crate) cuda_device_identity: Option<String>,
     pub(crate) cuda_runtime_identity: Option<String>,
+    pub(crate) metal_device_identity: Option<String>,
+    pub(crate) metal_runtime_identity: Option<String>,
     pub(crate) wgpu_device_identity: Option<String>,
     pub(crate) wgpu_runtime_identity: Option<String>,
     pub(crate) wgpu_is_software: bool,
@@ -51,10 +56,14 @@ impl Default for GpuBackendPeers {
     fn default() -> Self {
         Self {
             cuda: OnceLock::new(),
+            metal: OnceLock::new(),
             wgpu: OnceLock::new(),
             cuda_available: false,
+            metal_available: false,
             wgpu_available: false,
             cuda_device_identity: None,
+            metal_device_identity: None,
+            metal_runtime_identity: None,
             cuda_runtime_identity: None,
             wgpu_device_identity: None,
             wgpu_runtime_identity: None,
@@ -80,6 +89,9 @@ impl GpuBackendPeers {
             ScanBackend::GpuCuda => {
                 lazy_acquire(self.cuda_available, &self.cuda, acquire_cuda_peer)
             }
+            ScanBackend::GpuMetal => {
+                lazy_acquire(self.metal_available, &self.metal, acquire_metal_peer)
+            }
             ScanBackend::GpuWgpu => {
                 lazy_acquire(self.wgpu_available, &self.wgpu, acquire_wgpu_peer)
             }
@@ -102,6 +114,7 @@ impl GpuBackendPeers {
     pub(crate) fn initialized(&self, backend: ScanBackend) -> Option<&AcquiredGpuPeer> {
         let result = match backend {
             ScanBackend::GpuCuda => self.cuda.get(),
+            ScanBackend::GpuMetal => self.metal.get(),
             ScanBackend::GpuWgpu => self.wgpu.get(),
             _ => None,
         }?;
@@ -120,6 +133,7 @@ impl GpuBackendPeers {
     pub(crate) fn initialization_error(&self, backend: ScanBackend) -> Option<&str> {
         match backend {
             ScanBackend::GpuCuda => self.cuda.get(),
+            ScanBackend::GpuMetal => self.metal.get(),
             ScanBackend::GpuWgpu => self.wgpu.get(),
             _ => None,
         }
@@ -129,6 +143,7 @@ impl GpuBackendPeers {
     pub(crate) fn availability(&self) -> GpuBackendAvailability {
         GpuBackendAvailability {
             cuda: self.cuda_available,
+            metal: self.metal_available,
             wgpu: self.wgpu_available,
         }
     }
@@ -178,6 +193,32 @@ fn acquire_cuda_peer() -> Result<AcquiredGpuPeer, String> {
 #[cfg(not(all(feature = "gpu", target_os = "linux")))]
 fn acquire_cuda_peer() -> Result<AcquiredGpuPeer, String> {
     Err("CUDA peer is not compiled for this platform".to_string())
+}
+
+#[cfg(all(feature = "gpu", target_os = "macos"))]
+fn acquire_metal_peer() -> Result<AcquiredGpuPeer, String> {
+    let backend = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+        vyre_driver_metal::acquire,
+    ))
+    .map_err(|panic| {
+        format!(
+            "Metal backend acquisition panicked: {}. Fix: repair Metal.framework or select another calibrated backend",
+            crate::error::panic_payload_detail(panic)
+        )
+    })?
+    .map_err(|error| error.to_string())?;
+    tracing::info!(target: "keyhog::routing", "selected native Metal peer backend acquired");
+    Ok(AcquiredGpuPeer {
+        backend: Arc::from(backend),
+        device_identity: Some("Apple Metal default device".to_string()),
+        is_software: false,
+        resident_timed_dispatch_supported: false,
+    })
+}
+
+#[cfg(not(all(feature = "gpu", target_os = "macos")))]
+fn acquire_metal_peer() -> Result<AcquiredGpuPeer, String> {
+    Err("native Metal peer is not compiled for this platform".to_string())
 }
 
 #[cfg(feature = "gpu")]

@@ -595,6 +595,14 @@ impl FilesystemSource {
         }
     }
 
+    /// Return the canonical scan root owned by this source.
+    ///
+    /// Daemon clients use this to send local path metadata instead of copying
+    /// file payload bytes through the IPC frame.
+    pub fn root_path(&self) -> &Path {
+        &self.root
+    }
+
     /// Toggle the walker's built-in exclusion list (lock/minified/vendored).
     /// Pass `false` (from `--no-default-excludes`) to scan files the default
     /// list would otherwise drop. Default `true`.

@@ -73,11 +73,11 @@ contract, not a recommendation for routine routing.
 | Route | Select it with | Use case and boundary |
 |---|---|---|
 | Calibrated automatic routing | Verified installation, or run `keyhog calibrate-autoroute`; then `keyhog scan .` | Chooses the fastest parity-checked eligible backend for the exact host, binary, detector policy, and workload class. A normal scan does not benchmark. |
-| Portable CPU-only build | Install a portable release asset, or build with `--no-default-features --features portable` | Use on Windows, on a host without Hyperscan/Vectorscan and GPU drivers, or in a minimal container. A scalar-only build has no routing choice and needs no autoroute cache. |
+| Portable CPU-only build | Install the Windows portable release asset, or build with `--no-default-features --features portable` | Use on Windows, on a host without Hyperscan/Vectorscan and GPU drivers, or in a minimal container. A scalar-only build has no routing choice and needs no autoroute cache. |
 | Explicit pure-Rust CPU | `--backend cpu` | Diagnose the portable path or compare it in a benchmark. `--no-gpu` is not equivalent because Hyperscan may remain eligible. |
 | Hyperscan or Vectorscan | Let calibrated `auto` select it, or diagnose with `--backend simd` | Accelerated CPU trigger matching followed by the shared extraction and policy pipeline. It requires a compatible build and runtime. |
-| CUDA or WGPU | Let calibrated `auto` select an eligible peer | GPU region-presence matching followed by the same confirmation pipeline. GPU availability does not mean the GPU is fastest for every workload. |
-| Required GPU | `--require-gpu`, `[system].gpu = "required"`, or diagnostic `--backend gpu-cuda|gpu-wgpu` | Use on a self-hosted GPU lane whose contract must fail if the accelerator cannot initialize or dispatch. It never substitutes another backend. |
+| CUDA, native Metal, or WGPU | Let calibrated `auto` select an eligible peer | GPU region-presence matching followed by the same confirmation pipeline. GPU availability does not mean the GPU is fastest for every workload. |
+| Required GPU | `--require-gpu`, `[system].gpu = "required"`, or diagnostic `--backend gpu-cuda|gpu-metal|gpu-wgpu` | Use on a self-hosted GPU lane whose contract must fail if the accelerator cannot initialize or dispatch. It never substitutes another backend. |
 | Warm Unix daemon | Start `keyhog daemon start`; use `--daemon=on` when the server is required | Removes repeated scanner startup for eligible single-file or stdin requests. It does not accelerate directory, Git, archive, remote, cloud, or policy-changing scans. |
 
 Use `keyhog --version --full` to inspect compiled capability, `keyhog backend
@@ -143,7 +143,7 @@ it reaches your terminal.
 | Incremental scans | Reuses content hashes so repeated scans of one trusted tree skip unchanged files. | Keep one cache per repository or partition. Do not share it across unrelated or untrusted workspaces. | [Mass scanning](./guides/mass-scanning.md) |
 | Partition concurrency | Runs independent repositories, provider targets, or buckets in parallel with independent retry boundaries. | Preserve one envelope and raw exit code per partition. | [Mass scanning](./guides/mass-scanning.md) |
 | Verification limits | Controls live provider traffic separately with `--verify-concurrency`, `--verify-rate`, and `--verify-batch`. | Provider quotas, not scanner worker count, own this concurrency. | [Verification](./verification.md) |
-| GPU region presence | Uses VYRE CUDA or WGPU dispatch for the whole corpus at once when measured routing evidence selects it. | GPU availability alone does not prove it is fastest for the workload. | [Backends and routing](./backends.md) |
+| GPU region presence | Uses VYRE CUDA, native Metal, or WGPU dispatch for the whole corpus at once when measured routing evidence selects it. | GPU availability alone does not prove it is fastest for the workload. | [Backends and routing](./backends.md) |
 | Hyperscan SIMD prefilter | Uses vectorized literal and regex prefiltering on the accelerated CPU path. | Let calibrated automatic routing compare it with every eligible peer. | [Backends and routing](./backends.md) |
 | Daemon and warm scans | Serves IDE-save and single-file scans without cold start on Unix. | Directories, Git, archives, remote sources, verification, and policy changes are not daemon work. | [Daemon and warm scans](./workflows/daemon.md) |
 

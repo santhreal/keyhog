@@ -285,7 +285,7 @@ impl CompiledScanner {
     ) -> crate::error::Result<Vec<u64>> {
         let _g = profile::span(profile::P::Phase1Triggers);
         match backend {
-            ScanBackend::GpuCuda | ScanBackend::GpuWgpu => {
+            ScanBackend::GpuCuda | ScanBackend::GpuMetal | ScanBackend::GpuWgpu => {
                 self.collect_triggered_patterns_gpu(text, backend)
             }
             ScanBackend::SimdCpu => self.collect_triggered_patterns_simd(text),

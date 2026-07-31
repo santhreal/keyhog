@@ -229,7 +229,7 @@ source.
 - `description` - what shape this captures (env var, header, URL, …).
 - `required_literals` - optional detector-owned routing literals. Every regex
   match must contain at least one listed ASCII literal. Corpus loading proves
-  that OR-condition from the regex AST, then scalar, Hyperscan, CUDA, and WGPU
+  that OR-condition from the regex AST, then scalar, Hyperscan, CUDA, Metal, and WGPU
   compile the same literals into their candidate plan. Invalid, optional, or
   branch-incomplete declarations reject the detector instead of risking recall.
   KeyHog never selects a non-prefix literal from the regex implicitly.

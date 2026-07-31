@@ -232,6 +232,8 @@ pub struct CompiledScanner {
     #[cfg(feature = "gpu")]
     pub(crate) gpu_resident_literal_cuda: std::sync::Mutex<GpuResidentLiteralSlot>,
     #[cfg(feature = "gpu")]
+    pub(crate) gpu_resident_literal_metal: std::sync::Mutex<GpuResidentLiteralSlot>,
+    #[cfg(feature = "gpu")]
     pub(crate) gpu_resident_literal_wgpu: std::sync::Mutex<GpuResidentLiteralSlot>,
     pub(crate) gpu_last_degrade_reason: std::sync::Mutex<Option<String>>,
     pub(crate) gpu_degrade_count: std::sync::atomic::AtomicU64,

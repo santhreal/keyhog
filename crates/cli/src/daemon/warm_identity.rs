@@ -149,7 +149,7 @@ fn initialized_backends(scanner: &CompiledScanner, required: &[ScanBackend]) -> 
         .filter(|backend| match backend {
             ScanBackend::CpuFallback => true,
             ScanBackend::SimdCpu => scanner.simd_backend_initialized(),
-            ScanBackend::GpuCuda | ScanBackend::GpuWgpu => scanner
+            ScanBackend::GpuCuda | ScanBackend::GpuMetal | ScanBackend::GpuWgpu => scanner
                 .gpu_backend_candidates()
                 .iter()
                 .any(|candidate| candidate.backend == *backend && candidate.is_acquired_eligible()),

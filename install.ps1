@@ -1049,16 +1049,13 @@ function Invoke-AutorouteCalibration {
                 return $false
             }
             if ($scanHelp -notmatch '--autoroute-calibrate') {
-                # This build does not expose autoroute calibration. The portable
-                # Windows/macOS builds gate it out (only the Linux build ships
-                # it), so the binary routes with its compiled-in defaults and has
-                # no cache to prime -- calibration is a no-op here. Passing
-                # --autoroute-calibrate to a binary that lacks it makes EVERY
-                # probe fail with "unexpected argument", which (before this guard)
-                # rolled back the entire install on Windows/macOS. Skip
-                # calibration and report success so the install completes.
+                # This binary does not expose autoroute calibration. The Windows
+                # portable build and older releases can gate it out, so
+                # calibration is a no-op for that binary. Passing
+                # --autoroute-calibrate would fail every probe with "unexpected
+                # argument"; skip calibration and report success.
                 Warn "  Autoroute calibration not supported by this build (no --autoroute-calibrate flag); using the binary's compiled-in routing."
-                Dim "  Install is complete; this is expected on portable (Windows/macOS) builds."
+                Dim "  Install is complete; this is expected on portable CPU builds."
                 return $true
             }
             # Reinstalls of the same build on the same host reuse a complete,

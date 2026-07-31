@@ -113,6 +113,9 @@ pub mod testing {
         /// against every other gated scan so concurrent tests cannot pollute the
         /// process-global skip counters this test is about to assert on.
         fn skip_counter_guard(&self) -> ScanCounterScope;
+        /// Return whether no scan currently holds the shared counter-isolation
+        /// lease. Used to prove first-scope serialization before any guard runs.
+        fn scan_gate_exclusive_available(&self) -> bool;
         /// Archive entry-name path-traversal validator (test accessor; the
         /// `src/filesystem/extract/**` no-inline-tests contract keeps the unit
         /// coverage out of `src`). Returns `Ok(())` for a safe relative entry
@@ -726,6 +729,10 @@ pub mod testing {
     impl SourceTestApi for TestApi {
         fn skip_counter_guard(&self) -> ScanCounterScope {
             crate::enter_exclusive_scan_scope()
+        }
+
+        fn scan_gate_exclusive_available(&self) -> bool {
+            crate::skip::scan_gate_exclusive_available_for_test()
         }
 
         fn validate_archive_entry_name(&self, name: &str) -> Result<(), String> {

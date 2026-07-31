@@ -110,11 +110,12 @@ impl From<DetectorMode> for keyhog_core::DetectorCorpusMode {
     }
 }
 
-/// Tri-state daemon routing policy for `scan --daemon[=auto|on|off]` (CLI-02).
+/// Daemon routing policy for `scan --daemon[=auto|on|mass|off]`.
 ///
 /// One flag owns the complete daemon policy:
-///   * `--daemon` (bare)  → [`Self::On`]   (force the daemon route)
-///   * `--daemon=auto`    → [`Self::Auto`] (the default when the flag is absent)
+///   * `--daemon` (bare)  → [`Self::On`]   (force the warm daemon route)
+///   * `--daemon=auto`    → [`Self::Auto`] (the default when absent)
+///   * `--daemon=mass`    → [`Self::Mass`] (force bounded source batches)
 ///   * `--daemon=off`     → [`Self::Off`]  (force in-process execution)
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum, Debug)]
 pub enum DaemonMode {
@@ -126,6 +127,9 @@ pub enum DaemonMode {
     Auto,
     /// Force the scan through a running `keyhog daemon`; fail if none is up.
     On,
+    /// Force a complete client-acquired source stream through a daemon started
+    /// with `keyhog daemon start --mass`.
+    Mass,
     /// Force in-process scanning even when a daemon is running.
     Off,
 }
@@ -600,14 +604,13 @@ pub struct ScanArgs {
     #[arg(long, conflicts_with = "batch_pipeline")]
     pub no_batch_pipeline: bool,
 
-    /// Daemon routing: `auto` (default, use a live daemon if one is up, else
-    /// scan in-process), `on` (force the daemon route; fail if none is up), or
-    /// `off` (force in-process). Bare `--daemon` means `on`. Custom stdin or
-    /// single-file hook glue can reuse a compatible compiled scanner. The
-    /// shipped `keyhog hook install` path and `--git-staged` are not daemon
-    /// eligible. Startup and request latency depend on the corpus, backend,
-    /// cache state, host, and input. See
-    /// `keyhog daemon start --help`.
+    /// Daemon routing: `auto` (default, use a live daemon for eligible warm
+    /// requests), `on` (require the warm stdin/single-file route), `mass`
+    /// (stream bounded directory, Git, archive, binary, remote, or cloud source
+    /// batches to a daemon started with `daemon start --mass`), or `off`
+    /// (force in-process). Bare `--daemon` means `on`. Startup and request
+    /// latency depend on the corpus, backend, cache state, host, and input.
+    /// See `keyhog daemon start --help`.
     ///
     /// Socket: the daemon route connects to the shared default resolution
     /// (`$XDG_RUNTIME_DIR`, then the OS cache directory, then the OS temporary
@@ -622,7 +625,7 @@ pub struct ScanArgs {
         num_args = 0..=1,
         require_equals = true,
         default_missing_value = "on",
-        value_name = "auto|on|off"
+        value_name = "auto|on|mass|off"
     )]
     pub daemon: Option<DaemonMode>,
 

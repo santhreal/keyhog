@@ -129,46 +129,84 @@ failure as a clean scan. Respect each provider's pagination and retry headers.
 
 ## Daemon and corpus semantics at scale
 
-The examples use `--daemon=off` to make the execution contract explicit.
-Directory trees, Git history, hosted inventories, cloud buckets, archives,
-multiple roots, and source-limit changes require the in-process orchestrator.
-A running daemon does not accelerate them.
+Use `--daemon=off` when a scan needs baseline state, Merkle incremental state,
+live verification, lockdown, a preset, a detector overlay, a custom allowlist,
+or another per-scan engine policy. These contracts remain in the in-process
+orchestrator.
 
-Omitting the flag gives `--daemon=auto` on Unix. These unsupported request
-classes are recognized before a socket connection and stay in process.
-`--daemon=on` rejects them before scanning. It does not fall back:
+Use the explicit mass service for standard-policy directory trees, Git history,
+hosted inventories, cloud buckets, archives, binaries, and remote endpoints:
 
 ```bash
-# Supported in process.
-keyhog scan --daemon=off ./partitions/team-a
+keyhog calibrate-autoroute --policy default
+keyhog daemon start --mass --socket /run/user/$UID/keyhog-mass.sock
 
-# Unsupported. This exits before scanning the directory.
-keyhog scan --daemon=on ./partitions/team-a
+keyhog scan --daemon=mass \
+  --daemon-socket /run/user/$UID/keyhog-mass.sock \
+  ./partitions/team-a \
+  --format json-envelope --output team-a.json
 ```
 
-The daemon is useful only when a partitioner emits repeated eligible `stdin`
-or single-regular-file requests. Start it with an explicit replacement corpus
-only when each client selects the exact same corpus:
+`--daemon=mass` is required routing. A missing, warm-only, stale, or
+incompatible service is an error. KeyHog does not fall back to an in-process
+scan. Policy incompatibility is checked before source acquisition.
+
+### GPU-backed daemon worker
+
+For a local filesystem root, the client sends only canonical path and
+source-policy metadata. The daemon reads and batches the files without copying
+payload bytes through IPC. Sources that require client-side credentials, such
+as hosted Git and cloud inventories, use protected wire frames. Both paths keep
+each batch at no more than 8 MiB of raw payload and 1,024 chunks. The daemon
+processes each batch with its persisted autoroute decision while retaining one
+exclusive fragment-state lease for the transaction. It clears fragment state
+when the transaction ends or the client disconnects. This bounds batch memory
+independently of total inventory size.
+
+The completion receipt contains exact total and GPU batches, chunks, bytes, and
+daemon execution time. Protected wire mode compares total chunks and bytes with
+the sent stream. Daemon-local path mode uses the daemon receipt as source-byte
+authority. Stderr reports the transport, GPU byte share, whether GPU processed
+more than half of all bytes, and throughput. Invalid receipt invariants fail.
+Source acquisition gaps remain visible in the envelope and exit `13`.
+
+Check `keyhog daemon status --socket /run/user/$UID/keyhog-mass.sock` before
+admitting jobs. The daemon serializes fragment-sensitive engine work, so
+additional concurrent clients do not create extra GPU lanes. Scale across
+separately budgeted worker hosts, not unbounded clients on one socket.
+
+Routine workers use persisted autoroute evidence. Add
+`--mass-gpu-primary` when the worker must prove that GPU processed more than
+half of all non-empty payload bytes. The client rejects a CPU-majority receipt
+before producing the final report. A forced `--backend
+gpu-cuda-region-presence`, `gpu-metal-region-presence`, or
+`gpu-wgpu-region-presence` service is a diagnostic GPU-only contract. It exits
+`12` when required GPU startup fails and returns a
+request error instead of substituting CPU after a runtime fault. It does not
+prove that GPU is the fastest route for the workload.
+
+The daemon and client must use the same replacement detector corpus. Overlay
+composition is unsupported. Start the service with the reviewed replacement
+corpus, then select that same corpus on the client:
 
 ```bash
-keyhog daemon start --detectors ./reviewed-detectors
-keyhog scan --daemon=on \
+keyhog daemon start --mass --detectors ./reviewed-detectors
+keyhog scan --daemon=mass \
   --detectors ./reviewed-detectors --detectors-mode=replace \
-  one-object.txt
+  ./partitions/team-a
 ```
 
-Overlay composition is unsupported by the daemon. Use `--daemon=off` with
-`--detectors-mode=overlay`. A replacement identity mismatch is a handshake
-error. Required daemon mode exits instead of using either the daemon's corpus
-or an in-process scan. See [daemon and warm scans](../workflows/daemon.md) for
-the lifecycle, socket, eligibility, and retry matrix.
+A replacement identity mismatch is a handshake error. See
+[daemon and warm scans](../workflows/daemon.md) for lifecycle, socket,
+eligibility, and retry behavior.
 
 For a large inventory, partition at the provider or repository boundary.
 Calibrate autoroute on the actual worker class and retain the per-partition
-resolved policy and coverage envelope. A missing or stale autoroute decision
-uses visible scalar correctness recovery. It does not silently claim a
-calibrated CPU, Hyperscan, or GPU route. Treat `complete_after_recovery` as a
-recalibration signal even when scan byte coverage is complete.
+resolved policy, coverage envelope, and execution receipt. Missing or stale
+autoroute evidence uses visible scalar correctness recovery. It does not
+silently claim calibrated CPU, Hyperscan, or GPU execution. Treat
+`complete_after_recovery` as a recalibration signal even when byte coverage is
+complete.
 
 ## Concurrency and worker sizing
 
@@ -191,8 +229,9 @@ Keep these boundaries when increasing concurrency:
 - Bound provider jobs by API quotas and pagination limits as well as CPU. Live
   verification has separate `--verify-concurrency`, `--verify-rate`, and
   `--verify-batch` controls.
-- Do not use a warm daemon to fan out directory or provider jobs. Each of these
-  scans requires the in-process orchestrator.
+- Use `--daemon=mass` for standard-policy directory, history, archive, remote,
+  or cloud streams. Use `--daemon=off` when the partition needs policy state
+  that the mass service rejects.
 - Aggregate only after every concurrent partition has reached a terminal
   state. One successful job cannot erase another job's coverage gap or error.
 

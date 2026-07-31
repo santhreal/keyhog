@@ -543,8 +543,8 @@ pub(super) fn gpu_moe_parity_probe_features() -> Vec<[f32; INPUT_DIM]> {
         // DET-1: a probe whose context names a specific service from the vocab so
         // feature 42 (SERVICE_CONTEXT) is exercised by at least one probe vector.
         (
-            "Z9x8c7v6b5n4m3q2w1e0PkR",
-            "zendesk_api_token = \"Z9x8c7v6b5n4m3q2w1e0PkR\"",
+            "Z9x8c7v6b5n4m3q2w1e0PkR", // keyhog:ignore detector=generic-secret
+            "zendesk_api_token = \"Z9x8c7v6b5n4m3q2w1e0PkR\"", // keyhog:ignore detector=generic-secret
         ),
     ];
     // Representative keyword activators so the probe EXERCISES the config-driven

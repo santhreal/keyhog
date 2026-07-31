@@ -25,10 +25,10 @@ DEPENDENCY_PROFILES: dict[str, tuple[str, str, bool, tuple[str, ...]]] = {
         "x86_64-unknown-linux-gnu", "keyhog", True, ("static-hyperscan",),
     ),
     "keyhog-macos-aarch64": (
-        "aarch64-apple-darwin", "keyhog", False, ("portable",),
+        "aarch64-apple-darwin", "keyhog", False, ("gpu", "portable"),
     ),
     "keyhog-macos-x86_64": (
-        "x86_64-apple-darwin", "keyhog", False, ("portable",),
+        "x86_64-apple-darwin", "keyhog", False, ("gpu", "portable"),
     ),
     "keyhog-windows-x86_64.exe": (
         "x86_64-pc-windows-msvc", "keyhog", False, ("portable",),

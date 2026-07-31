@@ -538,10 +538,9 @@ fn severity_partition_totals_all_kinds() {
     );
 }
 
-/// Daemon `SourceCoverageGaps::fail_class_total` is the source-skip FAIL
-/// subset (no binary/scanner/source_errors). Pin it against skip-field FAIL
-/// kinds so protocol and CLI incomplete exits cannot diverge on those fields
-/// (KH-1463 partial lock).
+/// Daemon `SourceCoverageGaps::fail_class_total` includes every source-skip
+/// FAIL field plus client-acquisition failures. Pin the exact sum so mass
+/// daemon source errors cannot be reported as clean.
 #[test]
 fn daemon_source_coverage_gaps_fail_class_matches_source_skip_fail_kinds() {
     use crate::daemon::protocol::SourceCoverageGaps;
@@ -556,12 +555,13 @@ fn daemon_source_coverage_gaps_fail_class_matches_source_skip_fail_kinds() {
         structured_source_parse_failures: 7,
         archive_duplicate_scan_unavailable: 8,
         git_lfs_pointer: 9,
+        source_failed: 10,
     };
     // WARN fields must not contribute.
     assert_eq!(
         gaps.fail_class_total(),
-        2 + 3 + 4 + 5 + 6 + 7 + 8 + 9,
-        "daemon fail_class_total must exclude over_max_size and binary"
+        2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10,
+        "daemon fail_class_total must exclude only over_max_size and binary"
     );
     assert_eq!(gaps.total(), gaps.fail_class_total() + 1 + 1);
 }

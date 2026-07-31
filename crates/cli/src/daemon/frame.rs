@@ -6,7 +6,7 @@
 //! arrive, so a hostile peer cannot pin `MAX_FRAME_BYTES` of zeroed
 //! memory by announcing a large frame and then stalling.
 
-use crate::daemon::protocol::{response_kind, Request, Response, MAX_FRAME_BYTES};
+use crate::daemon::protocol::{request_kind, response_kind, Request, Response, MAX_FRAME_BYTES};
 use anyhow::{bail, Context, Result};
 use bytes::{Buf, BufMut, BytesMut};
 #[cfg(test)]
@@ -68,17 +68,6 @@ where
     framed.next().await.transpose()
 }
 
-/// One-word kind label for a Request. Keeps frame-serialize errors
-/// from leaking JSON-shaped payloads into operator logs.
-fn request_kind(r: &Request) -> &'static str {
-    match r {
-        Request::Hello => "Hello",
-        Request::Health => "Health",
-        Request::ScanText { .. } => "ScanText",
-        Request::ScanPath { .. } => "ScanPath",
-        Request::Shutdown => "Shutdown",
-    }
-}
 
 #[derive(Default)]
 pub(crate) struct ServerCodec {

@@ -3,6 +3,7 @@
 ## 0.5.49 - 2026-07-30
 
 - A single resumable local or SSH command now refreshes benchmark evidence without invalidating candidate freshness, rebinds the exact canonical run-set after scoring, prepares every changelog and version surface, runs pre-tag gates with isolated full and ci-lean binary contracts, preserves exact Git path bytes, verifies the configured OpenPGP fingerprint before any tag push, and watches GitHub Pages, release assets, containers, and the five-crate crates.io publication chain.
+- Serialize every source scan against counter-asserting test scopes from the first scan onward, preventing in-flight scans from polluting process-global skip counts.
 
 ## 0.5.48 - 2026-07-28
 

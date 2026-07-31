@@ -86,6 +86,8 @@ async fn spawn_mock_daemon_identity(
             detector_count: 902,
             uptime_secs: 1,
             warm_backend: ready_warm_backend(&detector_rules_digest),
+            mass_service: false,
+            mass_gpu_primary_required: false,
         },
     )
     .await;
@@ -136,6 +138,8 @@ async fn spawn_mock_daemon_backend_policy(socket: PathBuf, backend_policy: &str)
             detector_count: detectors.len(),
             uptime_secs: 1,
             warm_backend: ready_warm_backend(&detector_rules_digest),
+            mass_service: false,
+            mass_gpu_primary_required: false,
         },
     )
     .await;

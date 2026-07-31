@@ -17,6 +17,9 @@ PATHS = {
     "action": REPO / "docs" / "src" / "workflows" / "github-action.md",
     "ci": REPO / "docs" / "src" / "workflows" / "ci.md",
     "mass": REPO / "docs" / "src" / "guides" / "mass-scanning.md",
+    "daemon": REPO / "docs" / "src" / "workflows" / "daemon.md",
+    "backends": REPO / "docs" / "src" / "backends.md",
+    "install": REPO / "docs" / "src" / "install.md",
 }
 
 REQUIRED_TEXT = {
@@ -27,13 +30,22 @@ REQUIRED_TEXT = {
         "https://santhreal.github.io/keyhog/workflows/ci.html",
         "https://santhreal.github.io/keyhog/guides/mass-scanning.html",
         "https://santhreal.github.io/keyhog/releasing.html",
+        "### Scan every supported source boundary",
+        "## GPU-backed mass daemon workers",
+        "--mass-gpu-primary",
+        "Local file payload bytes never cross the IPC socket",
+        "--github-collaboration",
+        "--azure-container-url",
+        "gpu-metal-region-presence",
+        "macOS release assets enable native Metal and WGPU",
     ),
     "summary": (
         "[Choose a scanning workflow](./capabilities.md)",
-        "[Recipes](./recipes.md)",
+        "[Source and endpoint recipes](./recipes.md)",
         "[GitHub Action secret scanning](./workflows/github-action.md)",
         "[CI secret scanning](./workflows/ci.md)",
-        "[Mass repository and cloud inventory scanning](./guides/mass-scanning.md)",
+        "[Mass repository and cloud scanning](./guides/mass-scanning.md)",
+        "[GPU-backed daemon file queues](./workflows/daemon.md)",
         "[Prepare and publish a release](./releasing.md)",
     ),
     "chooser": (
@@ -78,6 +90,31 @@ REQUIRED_TEXT = {
         "[GitHub Action guide](../workflows/github-action.md)",
         "[CI integration guide](../workflows/ci.md)",
         "too large or too independent for one repository gate",
+        "### GPU-backed daemon worker",
+        "keyhog daemon start --mass",
+        "The completion receipt contains exact total and GPU batches, chunks, bytes",
+        "--mass-gpu-primary",
+        "gpu-metal-region-presence",
+        "without copying payload bytes through IPC",
+    ),
+    "daemon": (
+        "## GPU-backed mass worker",
+        "keyhog calibrate-autoroute --policy default",
+        "gpu-wgpu-region-presence",
+        "gpu-cuda-region-presence",
+        "gpu-metal-region-presence",
+        "The completion receipt records exact total and GPU batches, chunks, bytes",
+        "--mass-gpu-primary",
+        "payload bytes remain in the daemon process",
+    ),
+    "backends": (
+        "CUDA, native Metal, and WGPU are acquired and measured independently",
+        "`gpu-cuda`, `gpu-metal`, or `gpu-wgpu`",
+    ),
+    "install": (
+        "| macOS aarch64 | `keyhog-macos-aarch64` | Native Metal and WGPU",
+        "--no-default-features --features portable,gpu",
+        "Windows uses the portable CPU build",
     ),
 }
 

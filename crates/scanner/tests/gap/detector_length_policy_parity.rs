@@ -65,7 +65,11 @@ fn detector_max_length_is_identical_across_available_backends() {
             value.len(),
         );
         #[cfg(feature = "gpu")]
-        for backend in [ScanBackend::GpuCuda, ScanBackend::GpuWgpu] {
+        for backend in [
+            ScanBackend::GpuCuda,
+            ScanBackend::GpuMetal,
+            ScanBackend::GpuWgpu,
+        ] {
             if scanner.warm_backend(backend) {
                 checked_gpu = true;
                 assert_eq!(

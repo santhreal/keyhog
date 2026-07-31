@@ -248,7 +248,11 @@ fn select_backend_for_workload(
         return BackendRoutingVerdict::new(
             caps,
             workload,
-            ScanBackend::GpuWgpu,
+            if cfg!(target_os = "macos") {
+                ScanBackend::GpuMetal
+            } else {
+                ScanBackend::GpuWgpu
+            },
             BackendRoutingReason::GpuSelected,
         );
     }
@@ -415,10 +419,12 @@ pub(super) fn test_backend_override() -> Option<ScanBackend> {
 /// Keep this list at the parser owner so Clap validation, error messages, docs
 /// gates, and `parse_backend_str` cannot drift into rejecting canonical labels
 /// before routing sees them.
-pub const BACKEND_OVERRIDE_VALUES: [&str; 9] = [
+pub const BACKEND_OVERRIDE_VALUES: [&str; 11] = [
     "auto",
     "gpu-cuda",
     "gpu-cuda-region-presence",
+    "gpu-metal",
+    "gpu-metal-region-presence",
     "gpu-wgpu",
     "gpu-wgpu-region-presence",
     "simd",
@@ -436,6 +442,7 @@ pub const BACKEND_OVERRIDE_VALUES: [&str; 9] = [
 pub fn parse_backend_str(raw: &str) -> Option<ScanBackend> {
     match raw.trim().to_ascii_lowercase().as_str() {
         "gpu-cuda" | "gpu-cuda-region-presence" => Some(ScanBackend::GpuCuda),
+        "gpu-metal" | "gpu-metal-region-presence" => Some(ScanBackend::GpuMetal),
         "gpu-wgpu" | "gpu-wgpu-region-presence" => Some(ScanBackend::GpuWgpu),
         "simd" | "simd-regex" => Some(ScanBackend::SimdCpu),
         "cpu" | "cpu-fallback" => Some(ScanBackend::CpuFallback),

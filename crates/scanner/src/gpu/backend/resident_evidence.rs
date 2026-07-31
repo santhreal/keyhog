@@ -566,6 +566,7 @@ impl CompiledScanner {
     ) -> Option<&std::sync::Mutex<GpuResidentLiteralSlot>> {
         match backend {
             crate::hw_probe::ScanBackend::GpuCuda => Some(&self.gpu_resident_literal_cuda),
+            crate::hw_probe::ScanBackend::GpuMetal => Some(&self.gpu_resident_literal_metal),
             crate::hw_probe::ScanBackend::GpuWgpu => Some(&self.gpu_resident_literal_wgpu),
             _ => None,
         }

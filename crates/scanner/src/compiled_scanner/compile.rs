@@ -185,6 +185,17 @@ impl CompiledScanner {
                 peers.wgpu_device_identity = Some(probe.device_identity.clone());
                 peers.wgpu_runtime_identity = Some(probe.runtime_identity.clone());
                 peers.wgpu_is_software = probe.is_software;
+                #[cfg(target_os = "macos")]
+                {
+                    peers.metal_available = true;
+                    peers.metal_device_identity = Some(probe.device_identity.clone());
+                    peers.metal_runtime_identity = Some(format!(
+                        "vyre-metal={};{}",
+                        env!("KEYHOG_VYRE_METAL_VERSION"),
+                        probe.runtime_identity
+                    ));
+                    tracing::debug!(target: "keyhog::routing", "native Metal peer identity probed");
+                }
                 tracing::debug!(target: "keyhog::routing", "WGPU peer identity probed");
             } else {
                 failures.push(GpuBackendAcquisitionFailure {
@@ -431,6 +442,8 @@ impl CompiledScanner {
             gpu_matcher: OnceLock::new(),
             #[cfg(feature = "gpu")]
             gpu_resident_literal_cuda: std::sync::Mutex::new(GpuResidentLiteralSlot::Empty),
+            #[cfg(feature = "gpu")]
+            gpu_resident_literal_metal: std::sync::Mutex::new(GpuResidentLiteralSlot::Empty),
             #[cfg(feature = "gpu")]
             gpu_resident_literal_wgpu: std::sync::Mutex::new(GpuResidentLiteralSlot::Empty),
             gpu_last_degrade_reason: std::sync::Mutex::new(None),

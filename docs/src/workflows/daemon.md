@@ -1,10 +1,10 @@
 # Daemon and warm scans
 
-The Unix daemon keeps one compiled scanner and its backend state warm. It is
-useful for repeated standard-policy scans of `stdin` or one regular file.
-Directory, repository, remote, watch, and system-wide scans require the
-in-process orchestrator. Automatic routing keeps them in process. Required
-daemon mode rejects them instead of falling back.
+The Unix daemon keeps one compiled scanner and its backend state warm. The
+default service handles repeated standard-policy scans of `stdin` or one
+regular file. Starting it with `--mass` also accepts bounded streams acquired
+from directories, repositories, archives, binaries, remote endpoints, and
+cloud inventories. Watch and system-wide scans remain in process.
 
 Starting the daemon is an explicit operational step. KeyHog never starts one
 for you. Run the server in one terminal or under a service manager:
@@ -31,6 +31,22 @@ keyhog scan --daemon=off path/to/one-file.txt
 keyhog daemon status
 keyhog daemon stop
 ```
+
+Start an opt-in mass service when one worker should process a large source
+stream:
+
+```sh
+# Terminal 1.
+keyhog daemon start --mass
+
+# Terminal 2. This required route never falls back to an in-process scan.
+keyhog scan --daemon=mass /srv/inventory/team-a \
+  --format json-envelope --output team-a.json
+```
+
+The client sends at most 8 MiB and 1,024 chunks per batch. The terminal receipt
+reports exact total and GPU batches, chunks, bytes, GPU share, and throughput.
+The client rejects a receipt that does not match the bytes it sent.
 
 `keyhog watch` is separate. It is a foreground filesystem watcher with its own
 compiled scanner. It does not use the daemon socket and does not appear in
@@ -59,7 +75,7 @@ With missing, stale, or invalid autoroute state, the daemon becomes ready with
 only scalar correctness recovery initialized. Each affected request reports
 `autoroute-invalid`, recovered ranges and bytes, and recalibration guidance;
 neither daemon health nor scan output calls that recovery autoroute. A forced
-`--backend gpu-cuda|gpu-wgpu|simd|cpu` is a diagnostic startup choice and must
+`--backend gpu-cuda|gpu-metal|gpu-wgpu|simd|cpu` is a diagnostic startup choice and must
 be usable as requested. See
 [Autoroute calibration](../reference/autoroute-calibration.md).
 
@@ -159,13 +175,15 @@ On Unix, omitting `--daemon` is equivalent to `--daemon=auto`. Bare
 |---|---|---|---|
 | `--daemon=auto` or omitted | Use the daemon. A connection, handshake, request, or daemon execution error is printed, then the request is retried in process. | Run in process. A stale socket that exists is attempted, so its failure is printed before the retry. | Run in process without sending a daemon request. |
 | `--daemon=on` or bare `--daemon` | Require the daemon result. | Exit with the specific availability, trust, identity, or protocol error. | Exit with the specific unsupported requirement. |
+| `--daemon=mass` | Require a daemon started with `--mass`, stream bounded source batches, and validate its execution receipt. | Exit with the specific availability, trust, identity, or protocol error. | Exit before source acquisition when scanner policy is incompatible. |
 | `--daemon=off` | Do not connect. | Run in process. | Run in process. |
 
-`--daemon=on` and bare `--daemon` require the daemon route. If the daemon is unavailable or cannot
-honor the request's source or policy, that is an error and the scan exits with
-the specific diagnostic; no in-process retry is attempted. Use
-`--daemon=auto` when an opportunistic daemon attempt with an in-process retry
-is the intended behavior: use a reachable daemon only when it can honor the request.
+`--daemon=on`, bare `--daemon`, and `--daemon=mass` require daemon execution.
+If the selected service is unavailable or cannot honor the source or policy,
+the scan exits with the specific diagnostic. No in-process retry occurs.
+`--daemon=auto` is the opportunistic warm route. It uses a reachable compatible
+daemon only for one-file or bounded-stdin requests and retries those requests
+in process on failure.
 
 `--daemon-socket` cannot be combined with `--daemon=off`.
 
@@ -204,13 +222,60 @@ An automatic in-process retry uses the normal one-shot autoroute contract. It
 does not pin CPU to make the retry succeed. Missing or stale one-shot evidence
 therefore remains a visible calibration error.
 
+## GPU-backed mass worker
+
+Calibrate the worker host, then start an opt-in mass service under a service
+manager:
+
+```sh
+keyhog calibrate-autoroute --policy default
+keyhog daemon start --mass --socket /run/user/$UID/keyhog-mass.sock
+```
+
+The persisted decision table may select CPU, Hyperscan, CUDA, Metal, or WGPU for each
+batch. Confirm the ready identity before admitting jobs:
+
+```sh
+keyhog daemon status --socket /run/user/$UID/keyhog-mass.sock
+keyhog scan --daemon=mass \
+  --daemon-socket /run/user/$UID/keyhog-mass.sock \
+  /srv/inventory/team-a --format json-envelope --output team-a.json
+```
+
+Each batch contains no more than 8 MiB of raw payload and 1,024 chunks. The
+daemon holds an exclusive fragment-state lease across the transaction and
+clears it on completion or disconnect. Additional concurrent clients do not
+create extra GPU lanes. Partition across separately budgeted hosts when one
+worker is saturated.
+
+The completion receipt records exact total and GPU batches, chunks, bytes, and
+daemon execution time. The client verifies total chunks and bytes against its
+sent stream. Stderr reports GPU byte share, whether GPU handled more than half
+of all bytes, and throughput. Acquisition gaps remain visible in the report
+and use exit `13`.
+
+Add `--mass-gpu-primary` when each completed transaction must prove that GPU
+processed more than half of all non-empty payload bytes. The client rejects a
+CPU-majority receipt before reporting. You may force `--backend
+gpu-cuda-region-presence`, `gpu-metal-region-presence`, or
+`gpu-wgpu-region-presence` at daemon startup for
+diagnostics. A forced GPU service exits `12` when required startup fails and
+returns a request error instead of substituting CPU after a runtime fault.
+Routine workers use persisted autoroute evidence. A forced backend is not proof
+that the route is fastest for the exact workload.
+
 ## Request eligibility
 
-The daemon accepts exactly one primary input:
+The warm route accepts exactly one primary input:
 
 - `--stdin`, subject to the configured stdin byte limit
 - one path whose metadata identifies it as a regular file
 
+The mass route accepts the source classes supported by `keyhog scan`, including
+directories, Git modes, archives, binaries, remote endpoints, hosted Git, and
+cloud inventories. Local filesystem roots send only canonical path and policy
+metadata; payload bytes remain in the daemon process. Sources that require
+client-side credentials stream protected chunks to the daemon.
 Eligible requests may still use client-owned reporting and finalization such as
 output formats, output files, deduplication, bundled test-fixture suppression,
 local default allowlists, inline suppression, and `--dogfood`. Dogfood detail is
@@ -251,16 +316,16 @@ If the client and daemon select different replacement corpora, the handshake
 fails. `auto` prints the identity error and retries in process. `on` prints the
 identity error and exits. It never substitutes the daemon's corpus.
 
-The in-process orchestrator is required for any of these request classes:
+The warm route requires the in-process orchestrator for directories, multiple
+roots, Git modes, remote, cloud, container, binary, dynamic, or mixed sources.
+The mass route accepts those source classes, but it requires the daemon-owned
+standard scanner policy. Both routes reject these per-scan contracts:
 
-- directories, multiple roots, Git modes, remote, cloud, container, binary,
-  dynamic, or mixed sources
 - baseline filtering, live verification, or Merkle/incremental source state
 - `--fast`, `--deep`, `--precision`, benchmark mode, or changes to decode,
-  entropy, ML, Unicode normalization, comment scanning, scanner limits, source
-  limits, detector vocabulary, or detector overlay composition
-- a replacement corpus whose rules identity does not exactly match the warm
-  daemon; this mismatch is detected during the handshake
+  entropy, ML, Unicode normalization, comment scanning, scanner limits,
+  detector vocabulary, or detector overlay composition
+- a replacement corpus whose rules identity does not exactly match the daemon
 - per-request backend, GPU, batch-pipeline, autoroute, cache, or calibration
   controls
 - path-exclusion changes
@@ -268,24 +333,23 @@ The in-process orchestrator is required for any of these request classes:
   custom AWS canaries, detector disable or confidence policy, allowlist
   governance, or a malformed effective configuration
 
-In `auto`, requests rejected by source or policy stay in process. A replacement
-identity mismatch is the exception described above because it is learned from
-the handshake, after which `auto` reports it and retries in process. In `on`,
-every unsupported or incompatible request fails without an in-process scan.
-Daemon availability therefore cannot weaken a requested policy or change the
-selected detector and engine configuration.
+`--daemon=auto` keeps a source or policy rejected by the warm route in process.
+A replacement identity mismatch is learned during the handshake, then `auto`
+reports it and retries in process. `--daemon=on` and `--daemon=mass` fail
+without an in-process scan. The mass route checks incompatible policy before
+source acquisition. Daemon availability cannot weaken the selected policy.
 
-These distinctions are useful when checking an unsupported combination:
+These examples show the routing boundary:
 
 ```sh
-# Supported in process. Auto also keeps this directory request in process.
-keyhog scan --daemon=off source-tree/
+# Standard-policy directory stream through an opt-in mass service.
+keyhog scan --daemon=mass source-tree/
 
-# Unsupported as a required daemon request. This exits before scanning.
-keyhog scan --daemon=on source-tree/
+# The same directory with baseline state stays in process.
+keyhog scan --daemon=off --baseline .keyhog-baseline.json source-tree/
 
-# Unsupported as a required daemon request because overlays are per scan.
-keyhog scan --daemon=on \
+# Overlay composition remains in process.
+keyhog scan --daemon=off \
   --detectors ./site-detectors --detectors-mode=overlay one-file.txt
 ```
 

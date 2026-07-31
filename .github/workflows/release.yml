@@ -246,20 +246,14 @@ jobs:
               done
             features: '--features static-hyperscan'
             artifact_features: 'ml,entropy,decode,multiline,simdsieve,simd'
-          # macOS manual builds can link Homebrew Vectorscan, but release assets
-          # must not require a separate Homebrew runtime install. We ship the
-          # portable feature set without Hyperscan. The `portable`
-          # alias in `crates/cli/Cargo.toml` enables every keyhog-scanner
-          # data feature plus the portable git/web/hosted-Git/cloud/Docker and
-          # verification surface, without the Hyperscan / Ghidra / GPU
-          # system-lib paths. Users who need the Hyperscan-accelerated
-          # path on macOS install Homebrew vectorscan and build manually; the
-          # Action's macOS source fallback intentionally matches this portable
-          # asset.
+          # macOS release assets ship native Metal and portable WGPU without a
+          # Homebrew Vectorscan dependency. The `portable` alias retains every
+          # source and verification surface; the additive `gpu` feature enables
+          # the backend-neutral GPU pipeline without enabling Hyperscan.
           - os: macos-15
             asset: keyhog-macos-aarch64
             install: ''
-            features: '--no-default-features --features portable'
+            features: '--no-default-features --features portable,gpu'
             artifact_features: 'ml,entropy,decode,multiline'
           # macOS x86_64 (Intel): same feature subset as Apple Silicon.
           # macos-15-intel is GitHub's supported x86_64 runner after the
@@ -269,7 +263,7 @@ jobs:
           - os: macos-15-intel
             asset: keyhog-macos-x86_64
             install: ''
-            features: '--no-default-features --features portable'
+            features: '--no-default-features --features portable,gpu'
             artifact_features: 'ml,entropy,decode,multiline'
           # Windows MSVC: same portable subset. Hyperscan is not
           # shipped on Windows, and daemon IPC is Unix-socket-only

@@ -2894,6 +2894,7 @@ dependencies = [
  "unicode-normalization",
  "vyre",
  "vyre-driver-cuda",
+ "vyre-driver-metal",
  "vyre-driver-wgpu",
  "vyre-libs",
  "vyre-runtime",
@@ -5363,6 +5364,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "vyre-driver-metal"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f80770d14f82cf0a356eab21ed1aea07cac81af8f44e4c4ed496d549a2b2d598"
+dependencies = [
+ "inventory",
+ "metal",
+ "tracing",
+ "vyre-driver",
+ "vyre-emit-metal",
+ "vyre-foundation",
+ "vyre-lower",
+]
+
+[[package]]
 name = "vyre-driver-wgpu"
 version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5396,6 +5412,23 @@ dependencies = [
  "vyre-self-substrate",
  "vyre-spec",
  "wgpu",
+]
+
+[[package]]
+name = "vyre-emit-metal"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "182722636920095dc7132a2683d725ff52f401f66e97de99a66b39435955f911"
+dependencies = [
+ "bincode",
+ "blake3",
+ "naga",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "vyre-emit-naga",
+ "vyre-foundation",
+ "vyre-lower",
 ]
 
 [[package]]

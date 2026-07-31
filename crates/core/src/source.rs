@@ -5,7 +5,7 @@
 #![allow(missing_docs)]
 
 use crate::SensitiveString;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -45,7 +45,7 @@ impl std::fmt::Display for SourceCoverageGapKind {
 ///
 /// assert_eq!(chunk.metadata.path.as_deref(), Some("app.env"));
 /// ```
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Chunk {
     /// UTF-8 text content to scan.
     pub data: SensitiveString,
@@ -86,7 +86,7 @@ impl From<&str> for Chunk {
 ///
 /// assert_eq!(&*metadata.source_type, "git-diff");
 /// ```
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ChunkMetadata {
     /// `Arc<str>` (not `String`) so cloning a chunk's metadata, done per decode
     /// sub-chunk, where every sub-chunk of a file shares the same `source_type`

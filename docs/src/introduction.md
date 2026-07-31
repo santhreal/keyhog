@@ -39,7 +39,7 @@ collections, cloud buckets, URL lists, and local systems. Each finding has:
 - an optional **live verification** result if you pass `--verify`
 
 KeyHog also supports Git provider inventories, S3, GCS, and Azure Blob objects,
-Docker images, whole-system audits, CPU, Hyperscan, CUDA and WGPU execution, and
+Docker images, whole-system audits, CPU, Hyperscan, CUDA, Metal, and WGPU execution, and
 an optional Unix daemon for repeated eligible inputs. [Choose a scanning
 workflow](./capabilities.md) starts with the operator task and links each
 capability to the chapter that owns its contract.

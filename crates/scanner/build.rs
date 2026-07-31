@@ -119,6 +119,7 @@ fn stamp_gpu_driver_versions(manifest_dir: &Path) -> io::Result<()> {
     for (dependency, variable) in [
         ("vyre-driver-cuda", "KEYHOG_VYRE_CUDA_VERSION"),
         ("vyre-driver-wgpu", "KEYHOG_VYRE_WGPU_VERSION"),
+        ("vyre-driver-metal", "KEYHOG_VYRE_METAL_VERSION"),
     ] {
         let version = dependency_version(&crate_manifest, dependency)
             .or_else(|| {

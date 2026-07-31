@@ -130,6 +130,7 @@ vyre = "=0.6.5"
 vyre_libs = { package = "vyre-libs", version = "=0.6.5" }
 vyre-driver-wgpu = { package = "vyre-driver-wgpu", version = "=0.6.5" }
 vyre-driver-cuda = { package = "vyre-driver-cuda", version = "=0.6.5" }
+vyre-driver-metal = { package = "vyre-driver-metal", version = "=0.6.5" }
 vyre-runtime = "=0.6.5"
 wgpu = "=25.0.2"
 pollster = "=0.4.0"

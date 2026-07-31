@@ -288,11 +288,11 @@ resolve_asset() {
         ;;
       darwin-arm64|darwin-aarch64)
         ASSET="keyhog-macos-aarch64"
-        GPU_NOTE="Apple Silicon. Installing the portable no-system-library macOS build (no Hyperscan, WGPU, CUDA, or native Metal asset in the current release)."
+        GPU_NOTE="Apple Silicon. Installing the native Metal and WGPU macOS build (no Hyperscan or Homebrew Vectorscan required)."
         ;;
       darwin-x86_64|darwin-amd64)
         ASSET="keyhog-macos-x86_64"
-        GPU_NOTE="Intel Mac. Installing the portable no-system-library macOS build (no Hyperscan, WGPU, CUDA, or native Metal asset in the current release)."
+        GPU_NOTE="Intel Mac. Installing the native Metal and WGPU macOS build (no Hyperscan or Homebrew Vectorscan required)."
         ;;
       *)
         err "Unsupported platform: $OS-$ARCH"
@@ -1403,13 +1403,10 @@ prime_autoroute_cache() {
         return 1
     fi
     if ! printf '%s' "$scan_help" | grep -q -- '--autoroute-calibrate'; then
-        # This build does not expose autoroute calibration. The portable
-        # macOS/Windows builds gate it out (only the Linux build ships it), so
-        # the binary routes with its compiled-in defaults and has no cache to
-        # prime -- calibration is a no-op here. Passing --autoroute-calibrate to
-        # a binary that lacks it makes every probe fail with "unexpected
-        # argument" and (before this guard) rolled back the whole install on
-        # those platforms; skip calibration and report success instead.
+        # This binary does not expose autoroute calibration. Windows portable
+        # builds and older releases can gate it out, so calibration is a no-op
+        # for that binary. Passing --autoroute-calibrate would fail every probe
+        # with "unexpected argument"; skip calibration and report success.
         warn "  Autoroute calibration not supported by this build (no --autoroute-calibrate flag); using the binary's compiled-in routing."
         return 0
     fi

@@ -51,8 +51,18 @@ use std::collections::BTreeMap;
 /// * v8 - `ScanResults` carries the exact static-recovery disposition totals
 ///   (`supported`, `unsupported`, and `erroneous`) as well as per-reason
 ///   rejections, so daemon routing conserves the complete recovery receipt.
+/// * v9 - adds an explicit bounded mass-service transaction. The client acquires
+///   directory, Git, archive, binary, remote, and cloud sources, then streams
+///   authenticated `Chunk` batches while one server-side fragment-cache lease
+///   prevents cross-job state contamination.
+/// * v10 - `Hello` advertises a mass-service GPU-majority contract. Clients
+///   validate the terminal execution receipt and fail closed when GPU did not
+///   process more than half of all non-empty payload bytes.
+/// * v11 - mass services can acquire local filesystem roots directly. The wire
+///   carries only path/config metadata while bounded source batches remain in
+///   the daemon process.
 
-pub(crate) const WIRE_VERSION: u32 = 8;
+pub(crate) const WIRE_VERSION: u32 = 11;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -76,11 +86,35 @@ pub(crate) struct WarmBackendStatus {
     pub repair_command: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct MassScanStats {
+    pub batches: u64,
+    pub chunks: u64,
+    pub bytes: u64,
+    pub gpu_batches: u64,
+    pub gpu_chunks: u64,
+    pub gpu_bytes: u64,
+    pub duration_ms: u64,
+}
+
+impl MassScanStats {
+    pub(crate) fn gpu_is_primary(self) -> bool {
+        self.bytes > 0 && self.gpu_bytes > self.bytes.saturating_sub(self.gpu_bytes)
+    }
+}
+
 /// Maximum length of a single framed message body. 64 MiB ceiling
 /// matches `MAX_SCAN_CHUNK_BYTES * 64` so a chunk batch fits, but
 /// bounds the recv buffer so a hostile client can't OOM the daemon
 /// by lying about the length prefix.
 pub(crate) const MAX_FRAME_BYTES: u32 = 64 * 1024 * 1024;
+/// Raw UTF-8 payload accepted in one mass-service batch. JSON escaping can
+/// expand a byte to six bytes, so 8 MiB keeps the worst-case body below the
+/// 64 MiB frame ceiling with metadata and framing headroom.
+pub(crate) const MASS_BATCH_BYTES: usize = 8 * 1024 * 1024;
+/// Bound metadata and allocation overhead even for many tiny source chunks.
+pub(crate) const MASS_BATCH_CHUNKS: usize = 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
@@ -105,6 +139,28 @@ pub(crate) enum Request {
         working_dir: Option<String>,
         dogfood: bool,
     },
+    /// Begin one bounded mass scan. The server acquires exclusive ownership of
+    /// fragment-reassembly state until `MassEnd` or connection teardown.
+    MassBegin { dogfood: bool },
+    /// Scan one client-acquired source batch inside an active mass transaction.
+    /// The raw payload and chunk count are independently bounded.
+    MassBatch {
+        #[serde(with = "protected_chunks")]
+        chunks: Vec<keyhog_core::Chunk>,
+    },
+    /// Start daemon-local acquisition for one filesystem root. Only path and
+    /// source policy cross the socket; file payload bytes stay in the daemon.
+    MassFilesystemBegin {
+        root: String,
+        max_file_size: u64,
+        ignore_paths: Vec<String>,
+        respect_default_excludes: bool,
+        reader_threads: Option<usize>,
+    },
+    /// Pull and scan the next bounded daemon-local filesystem batch.
+    MassFilesystemNext,
+    /// Finish the transaction, clear fragment state, and release the worker.
+    MassEnd,
     /// Liveness + cheap status (uptime, scans served, detector count).
     Health,
     /// Graceful shutdown - daemon flushes in-flight scans, drops the
@@ -127,6 +183,10 @@ pub(crate) enum Response {
         detector_count: usize,
         uptime_secs: u64,
         warm_backend: WarmBackendStatus,
+        /// Whether this daemon was explicitly started as a mass-service worker.
+        mass_service: bool,
+        /// Whether mass scans must prove that GPU processed most payload bytes.
+        mass_gpu_primary_required: bool,
     },
     /// Returned for `ScanText` and `ScanPath`. `matches` are the
     /// scanner's `RawMatch` outputs - same wire shape as
@@ -179,6 +239,16 @@ pub(crate) enum Response {
         /// faulted or autoroute state was invalid. `None` means no recovery.
         backend_recovery: RequiredOption<BackendRecoveryStatus>,
     },
+    /// The mass-service fragment-state lease is held and batches may follow.
+    MassReady,
+    /// Daemon-local filesystem acquisition is ready for bounded pulls.
+    MassFilesystemReady,
+    /// One daemon-local filesystem root drained. Coverage gaps remain explicit.
+    MassFilesystemComplete {
+        source_coverage_gaps: SourceCoverageGaps,
+    },
+    /// The mass transaction completed and released its scanner-state lease.
+    MassComplete { stats: MassScanStats },
     Health {
         uptime_secs: u64,
         scans_served: u64,
@@ -318,6 +388,9 @@ pub(crate) struct SourceCoverageGaps {
     pub structured_source_parse_failures: usize,
     pub archive_duplicate_scan_unavailable: usize,
     pub git_lfs_pointer: usize,
+    /// Client-side source acquisition failed or produced an explicit source
+    /// error. This is always a FAIL-class gap.
+    pub source_failed: usize,
 }
 
 impl SourceCoverageGaps {
@@ -332,6 +405,7 @@ impl SourceCoverageGaps {
             + self.structured_source_parse_failures
             + self.archive_duplicate_scan_unavailable
             + self.git_lfs_pointer
+            + self.source_failed
     }
 
     /// CoverageGapKind FAIL set only (KH-1347 / KH-1368). WARN skips
@@ -345,6 +419,7 @@ impl SourceCoverageGaps {
             + self.structured_source_parse_failures
             + self.archive_duplicate_scan_unavailable
             + self.git_lfs_pointer
+            + self.source_failed
     }
 
     pub(crate) fn is_empty(self) -> bool {
@@ -357,12 +432,69 @@ impl SourceCoverageGaps {
     }
 }
 
-/// Explicit plaintext adapter for the authenticated, user-only daemon socket.
-///
-/// `RawMatch` intentionally refuses implicit plaintext serialization. This
-/// private DTO is the sole IPC boundary that exposes `credential.as_str()`;
-/// deserialization moves the temporary owned string directly into
-/// `SensitiveString`, whose storage is zeroized on drop.
+/// Explicit plaintext adapter for source chunks crossing the authenticated,
+/// same-uid Unix socket. `SensitiveString` rejects implicit serialization.
+mod protected_chunks {
+    use keyhog_core::{Chunk, ChunkMetadata, SensitiveString};
+    use serde::ser::SerializeSeq;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize)]
+    struct ChunkRef<'a> {
+        #[serde(serialize_with = "serialize_sensitive")]
+        data: &'a SensitiveString,
+        metadata: &'a ChunkMetadata,
+    }
+
+    #[derive(Deserialize)]
+    struct ChunkOwned {
+        data: String,
+        metadata: ChunkMetadata,
+    }
+
+    pub(super) fn serialize<S>(chunks: &[Chunk], serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut sequence = serializer.serialize_seq(Some(chunks.len()))?;
+        for chunk in chunks {
+            sequence.serialize_element(&ChunkRef {
+                data: &chunk.data,
+                metadata: &chunk.metadata,
+            })?;
+        }
+        sequence.end()
+    }
+
+    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<Vec<Chunk>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Vec::<ChunkOwned>::deserialize(deserializer).map(|chunks| {
+            chunks
+                .into_iter()
+                .map(|chunk| Chunk {
+                    data: chunk.data.into(),
+                    metadata: chunk.metadata,
+                })
+                .collect()
+        })
+    }
+
+    fn serialize_sensitive<S>(
+        value: &&SensitiveString,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(value.as_str())
+    }
+}
+
+/// Explicit plaintext adapter for scanner matches crossing the authenticated,
+/// same-uid Unix socket. `RawMatch` refuses implicit plaintext serialization,
+/// and the temporary owned credential string moves into zeroized storage.
 mod protected_raw_matches {
     use super::{CompanionMap, CredentialHash, MatchLocation, RawMatch, SensitiveString, Severity};
     use serde::ser::{SerializeMap, SerializeSeq};
@@ -483,6 +615,23 @@ mod protected_raw_matches {
     }
 }
 
+/// One-word kind label for a daemon [`Request`]. Never format a request with
+/// `Debug` because mass batches and text requests contain credential-shaped data.
+pub(crate) fn request_kind(request: &Request) -> &'static str {
+    match request {
+        Request::Hello => "Hello",
+        Request::ScanText { .. } => "ScanText",
+        Request::ScanPath { .. } => "ScanPath",
+        Request::MassBegin { .. } => "MassBegin",
+        Request::MassBatch { .. } => "MassBatch",
+        Request::MassFilesystemBegin { .. } => "MassFilesystemBegin",
+        Request::MassFilesystemNext => "MassFilesystemNext",
+        Request::MassEnd => "MassEnd",
+        Request::Health => "Health",
+        Request::Shutdown => "Shutdown",
+    }
+}
+
 /// One-word kind label for a daemon [`Response`]. Use this in user-facing
 /// protocol errors instead of `Debug`: response payloads can contain scanner
 /// results and therefore credential-shaped data.
@@ -491,6 +640,10 @@ pub(crate) fn response_kind(response: &Response) -> &'static str {
         Response::Hello { .. } => "Hello",
         Response::Health { .. } => "Health",
         Response::ScanResults { .. } => "ScanResults",
+        Response::MassReady => "MassReady",
+        Response::MassFilesystemReady => "MassFilesystemReady",
+        Response::MassFilesystemComplete { .. } => "MassFilesystemComplete",
+        Response::MassComplete { .. } => "MassComplete",
         Response::Shutdown => "Shutdown",
         Response::Error { .. } => "Error",
     }

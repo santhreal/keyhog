@@ -54,13 +54,11 @@ simdsieve = ["dep:simdsieve"]  # SIMD-accelerated prefilter for top 8 patterns (
 # `vyre`/`vyre_libs` stay on either way because their CPU primitives are woven
 # into the scan types.
 #
-# `gpu` IMPLIES `simd` and `ml`: the region-presence producer shares the
-# coalesced phase-2 validation tail with SIMD, while the WGPU context also owns
-# the GPU MoE parity gate. A GPU build without either dependency would expose a
-# partial accelerator surface, so the unsupported combinations are rejected by
-# the feature graph instead of failing inside the implementation.
+# `gpu` IMPLIES `ml`: the WGPU context owns the GPU MoE parity gate. GPU
+# region-presence feeds the backend-neutral phase-2 confirmation tail and does
+# not require Hyperscan. Keeping `simd` independent lets native Metal ship in
+# macOS release assets without a mutable Homebrew Vectorscan dependency.
 gpu = [
-    "simd",
     "ml",
     "dep:wgpu",
     "dep:pollster",
@@ -68,6 +66,7 @@ gpu = [
     "dep:vyre-driver-wgpu",
     "dep:vyre-runtime",
     "dep:vyre-driver-cuda",
+    "dep:vyre-driver-metal",
     # VYRE's batch GPU ABI is exposed under this feature name. KeyHog's
     # production route uses the literal-set region-presence API, not the retired
     # per-rule route (see the internal design notes).
@@ -154,6 +153,11 @@ io-uring = { workspace = true }
 # so a `gpu`-on build with no CUDA toolkit installed still compiles and a
 # driverless host falls back to wgpu. macOS / Windows never compile CUDA.
 vyre-driver-cuda = { workspace = true, optional = true, features = ["cuda"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Native Metal is the primary Apple GPU backend. WGPU remains a separately
+# measured portability fallback and is never silently substituted.
+vyre-driver-metal = { workspace = true, optional = true }
 
 # Optional: Vectorscan SIMD backend
 

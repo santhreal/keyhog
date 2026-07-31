@@ -350,16 +350,16 @@ relaxes a detector to make a backend look faster.
 | Change detector TOML, corpus schema, replacement/overlay membership, or a matching `enabled = false` override | Candidates, suppressions, confidence, or final findings may change | Active corpus/rules identity changes; recalibration is required |
 | Change a preset, scan-wide policy, per-detector floor, configured disabled-ID set, workers, or GPU/runtime policy | Results or scan cost may change according to the setting | Configuration identity changes; calibration for the old identity is not reused |
 | Change CPU, GPU, driver, or accelerator availability | None for the same resolved detector/configuration and input; a parity mismatch rejects that route | Host/device/runtime identity changes; old host evidence is not reusable |
-| Use `--backend cpu|simd|gpu-cuda|gpu-wgpu` | Intended to be parity-identical | This diagnostic override bypasses autoroute and creates no reusable fastest-correct evidence |
+| Use `--backend cpu|simd|gpu-cuda|gpu-metal|gpu-wgpu` | Intended to be parity-identical | This diagnostic override bypasses autoroute and creates no reusable fastest-correct evidence |
 | Change input size, chunk count, source execution class, decoder-kind mask, decode candidate count or byte bucket, decoder uncertainty, or full-source-size availability | The input can change findings; backend choice must not | A different exact workload key is selected |
 | Switch between a one-shot process and a ready daemon/watch runtime | Runtime lifetime must not change detector policy or canonical matches | Cold-aware and warm persistent-runtime routes may have different winners |
 
 ### Strict Backend Parity
 
 KeyHog exposes three search-backend classes: pure Rust CPU, SIMD/Hyperscan
-(`simd-regex`), and GPU/VYRE region presence. Autoroute measures four concrete
-runtime peers when eligible: scalar CPU, Hyperscan CPU, CUDA, and WGPU. Portable
-builds retain the pure-Rust trigger path without Hyperscan. `keyhog
+(`simd-regex`), and GPU/VYRE region presence. Autoroute measures five concrete
+runtime peers when eligible: scalar CPU, Hyperscan CPU, CUDA, native Metal, and
+WGPU. Portable builds retain the pure-Rust trigger path without Hyperscan. `keyhog
 calibrate-autoroute` rejects any peer whose canonical match identity differs
 from the reference. It records the first real GPU dispatch plus warm trials: an
 ordinary process resolves against the cold-aware GPU cost, while a daemon that

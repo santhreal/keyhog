@@ -72,7 +72,11 @@ fn nonparticipating_selected_capture_fails_closed_across_available_backends() {
         assert!(credentials(&scanner, ScanBackend::SimdCpu, input).is_empty());
     }
     #[cfg(feature = "gpu")]
-    for backend in [ScanBackend::GpuCuda, ScanBackend::GpuWgpu] {
+    for backend in [
+        ScanBackend::GpuCuda,
+        ScanBackend::GpuMetal,
+        ScanBackend::GpuWgpu,
+    ] {
         if scanner.warm_backend(backend) {
             assert!(credentials(&scanner, backend, input).is_empty());
         }

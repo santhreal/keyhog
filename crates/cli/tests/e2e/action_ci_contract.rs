@@ -3672,11 +3672,15 @@ fn composite_action_pins_release_verifier_and_source_dependencies() {
     );
     assert!(
         manifest.contains("toolchain: '1.89.0'")
-            && manifest.contains("--no-default-features --features portable")
+            && manifest.contains("source_features=\"portable\"")
+            && manifest.contains(
+                "if [[ \"${RUNNER_OS:-}\" == \"macOS\" ]]; then source_features=\"portable,gpu\"; fi",
+            )
+            && manifest.contains("--no-default-features --features \"$source_features\"")
             && !manifest.contains("apt-get")
             && !manifest.contains("brew install")
             && !manifest.contains("choco install"),
-        "source fallback must not depend on floating toolchains or native package-manager state"
+        "source fallback must select native Metal only on macOS without floating toolchains or native package-manager state",
     );
     assert!(
         manifest.contains("curl --proto '=https' --tlsv1.2 --fail --location"),

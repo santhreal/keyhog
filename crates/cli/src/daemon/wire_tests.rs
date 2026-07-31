@@ -28,7 +28,7 @@ fn ready_warm_backend() -> WarmBackendStatus {
 }
 
 #[tokio::test]
-async fn daemon_wire_v7_hello_roundtrip() {
+async fn daemon_wire_v10_hello_roundtrip_carries_mass_gpu_contract() {
     let (mut client, mut server) = tokio::io::duplex(64 * 1024);
 
     frame::write_request(&mut client, &Request::Hello)
@@ -51,6 +51,8 @@ async fn daemon_wire_v7_hello_roundtrip() {
             detector_count: 1,
             uptime_secs: 0,
             warm_backend: ready_warm_backend(),
+            mass_service: true,
+            mass_gpu_primary_required: true,
         },
     )
     .await
@@ -60,7 +62,14 @@ async fn daemon_wire_v7_hello_roundtrip() {
         .expect("read response")
         .expect("Hello response frame");
     match resp {
-        Response::Hello { wire_version, .. } => assert_eq!(wire_version, WIRE_VERSION),
+        Response::Hello {
+            wire_version,
+            mass_gpu_primary_required,
+            ..
+        } => {
+            assert_eq!(wire_version, WIRE_VERSION);
+            assert!(mass_gpu_primary_required);
+        }
         other => panic!("expected Hello response, got {other:?}"),
     }
 }

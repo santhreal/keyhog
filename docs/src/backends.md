@@ -79,10 +79,10 @@ The scalar `cpu-fallback` backend is always the portable reference. The
 `simd-regex` backend requires a build with scanner SIMD support and a usable,
 identifiable Hyperscan/Vectorscan runtime. A CPU with AVX2 or AVX-512 alone does
 not provide that runtime. GPU candidates require scanner GPU support, a
-physical device, and a usable driver path. CUDA and WGPU are acquired and
-measured independently, so one available peer does not imply that the other is
-available. An explicit `--backend simd`, `gpu-cuda`, or `gpu-wgpu` scan is the
-final diagnostic that the selected engine can initialize for that scan.
+physical device, and a usable driver path. CUDA, native Metal, and WGPU are
+acquired and measured independently, so one available peer does not imply that
+another is available. Use explicit `--backend simd`, `gpu-cuda`, `gpu-metal`,
+or `gpu-wgpu` scans to diagnose whether that exact engine can initialize.
 
 ## Library backend contract
 
@@ -185,7 +185,7 @@ marked `production_comparable = false` and must not support a crossover claim.
 
 The checked benchmark now sends identical 1 MiB windows with 128 KiB overlap
 through the explicit production execution-route entry point for Hyperscan and
-every acquired CUDA or WGPU peer, with all four combinations of plain-pattern
+every acquired CUDA, Metal, or WGPU peer, with all four combinations of plain-pattern
 and keyword-anchor localization.
 It requires sorted full-match parity from every route, rejects GPU degradation,
 and rotates candidate order during selection. Selection-only samples choose one

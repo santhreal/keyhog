@@ -114,10 +114,31 @@ pub fn autoroute_calibration_slot() -> MutexGuard<'static, ()> {
 #[cfg(unix)]
 impl DaemonGuard {
     pub fn start() -> Self {
-        Self::start_with_env(&[])
+        Self::start_impl(&[], false, false, None)
+    }
+
+    pub fn start_mass() -> Self {
+        Self::start_impl(&[], true, false, None)
+    }
+
+    pub fn start_mass_gpu_primary() -> Self {
+        Self::start_impl(&[], true, true, None)
+    }
+
+    pub fn start_mass_gpu_primary_with_backend(backend: &'static str) -> Self {
+        Self::start_impl(&[], true, true, Some(backend))
     }
 
     pub fn start_with_env(envs: &[(&str, &str)]) -> Self {
+        Self::start_impl(envs, false, false, None)
+    }
+
+    fn start_impl(
+        envs: &[(&str, &str)],
+        mass: bool,
+        mass_gpu_primary: bool,
+        backend: Option<&'static str>,
+    ) -> Self {
         use std::process::Stdio;
         use std::time::{Duration, Instant};
 
@@ -129,15 +150,22 @@ impl DaemonGuard {
         for (key, value) in envs {
             cmd.env(key, value);
         }
+        let mut daemon_args = vec![
+            "daemon",
+            "start",
+            "--backend",
+            backend.unwrap_or(if mass { "cpu" } else { "simd" }),
+            "--detectors",
+            detectors.to_str().expect("detectors path"),
+        ];
+        if mass {
+            daemon_args.push("--mass");
+        }
+        if mass_gpu_primary {
+            daemon_args.push("--mass-gpu-primary");
+        }
         let mut child = cmd
-            .args([
-                "daemon",
-                "start",
-                "--backend",
-                "simd",
-                "--detectors",
-                detectors.to_str().expect("detectors path"),
-            ])
+            .args(daemon_args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()

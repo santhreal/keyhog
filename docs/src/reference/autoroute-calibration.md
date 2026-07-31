@@ -7,17 +7,17 @@
 > [Confidence calibration](./confidence-calibration.md).
 
 KeyHog uses measured evidence to select an execution route for a calibrated
-workload key: Hyperscan/SIMD, scalar CPU, CUDA, or WGPU, each measured with all
-four combinations of phase-two plain-pattern and keyword-anchor localization.
-It does
-not guess from a device name or a hard-coded size threshold. Autoroute is *not*
-a fallback hierarchy: during calibration KeyHog measures every eligible
-execution class exposed by that scanner, rejects candidates whose complete
-redacted raw-match identity differs from the independent scalar reference, and
-records the fastest survivor for the measured representative. Optional SIMD,
-CUDA, and WGPU engines are candidates, never correctness oracles. Every
-executable CUDA and WGPU path is acquired and measured independently during
-calibration. One driver never substitutes for the other. The parity identity
+workload key: Hyperscan/SIMD, scalar CPU, CUDA, native Metal, or WGPU, each
+measured with all four combinations of phase-two plain-pattern and
+keyword-anchor localization. It does not guess from a device name or a
+hard-coded size threshold. Autoroute is not a fallback hierarchy. During
+calibration KeyHog measures every eligible execution class exposed by that
+scanner, rejects candidates whose complete redacted raw-match identity differs
+from the independent scalar reference, and records the fastest survivor for the
+measured representative. Optional SIMD, CUDA, Metal, and WGPU engines are
+candidates, never correctness oracles. Every executable GPU path is acquired
+and measured independently. One driver never substitutes for another. The
+parity identity
 covers chunk membership; detector
 id/name/service/severity; exact credential, stored-hash, and companion identity;
 full source/history location; entropy; confidence; and finding multiplicity.
@@ -206,8 +206,8 @@ normal all-candidate decision.
 Startup reports every available GPU peer without creating execution devices or
 pipelines. Calibration acquires each peer when its candidate is measured and
 reports the exact acquisition failure. The
-autoroute cache stores separate CUDA and WGPU cold and warm timing vectors, and
-`keyhog backend --autoroute` prints both. A failed driver is ineligible until it
+autoroute cache stores separate CUDA, Metal, and WGPU cold and warm timing
+vectors, and `keyhog backend --autoroute` prints each eligible peer. A failed driver is ineligible until it
 is repaired and calibration is rerun.
 
 Low-level calibration saves take an exclusive sibling-file lock across the

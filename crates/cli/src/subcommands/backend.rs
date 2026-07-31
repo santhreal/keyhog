@@ -252,9 +252,11 @@ fn run_autoroute_inspection(
     );
     let mut one_shot_gpu = 0usize;
     let mut one_shot_cuda = 0usize;
+    let mut one_shot_metal = 0usize;
     let mut one_shot_wgpu = 0usize;
     let mut daemon_gpu = 0usize;
     let mut daemon_cuda = 0usize;
+    let mut daemon_metal = 0usize;
     let mut daemon_wgpu = 0usize;
     let mut vyre_gpu_receipts = 0usize;
     let mut first_gpu_workload = None;
@@ -266,6 +268,7 @@ fn run_autoroute_inspection(
                     first_gpu_workload.get_or_insert(decision.workload.clone());
                     match backend {
                         keyhog_scanner::ScanBackend::GpuCuda => one_shot_cuda += 1,
+                        keyhog_scanner::ScanBackend::GpuMetal => one_shot_metal += 1,
                         keyhog_scanner::ScanBackend::GpuWgpu => one_shot_wgpu += 1,
                         _ => {}
                     }
@@ -278,6 +281,7 @@ fn run_autoroute_inspection(
                     daemon_gpu += 1;
                     match backend {
                         keyhog_scanner::ScanBackend::GpuCuda => daemon_cuda += 1,
+                        keyhog_scanner::ScanBackend::GpuMetal => daemon_metal += 1,
                         keyhog_scanner::ScanBackend::GpuWgpu => daemon_wgpu += 1,
                         _ => {}
                     }
@@ -294,7 +298,7 @@ fn run_autoroute_inspection(
         }
     }
     println!(
-        "  route summary: one-shot GPU {one_shot_gpu}/{total_decisions} (CUDA {one_shot_cuda}, WGPU {one_shot_wgpu}); daemon GPU {daemon_gpu}/{total_decisions} (CUDA {daemon_cuda}, WGPU {daemon_wgpu}); VYRE candidate receipts {vyre_gpu_receipts}"
+        "  route summary: one-shot GPU {one_shot_gpu}/{total_decisions} (CUDA {one_shot_cuda}, Metal {one_shot_metal}, WGPU {one_shot_wgpu}); daemon GPU {daemon_gpu}/{total_decisions} (CUDA {daemon_cuda}, Metal {daemon_metal}, WGPU {daemon_wgpu}); VYRE candidate receipts {vyre_gpu_receipts}"
     );
     if inspection.runtime_fault_count > 0 {
         println!(

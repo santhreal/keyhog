@@ -104,7 +104,6 @@ impl CompiledScanner {
     /// batch, then return each finalized finding to its originating chunk
     /// state. This is the production path that lets sparse per-file candidates
     /// reach GPU-sized batches without changing per-chunk caps or attribution.
-    #[cfg(feature = "simd")]
     pub(crate) fn apply_ml_batch_scores_across(
         &self,
         scan_states: &mut [ScanState],

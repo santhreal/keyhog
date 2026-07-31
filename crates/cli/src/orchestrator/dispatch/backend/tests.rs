@@ -23,10 +23,12 @@ fn route_timings(
     simd: BackendTimingEvidence,
     cpu: Option<BackendTimingEvidence>,
     cuda: Option<BackendTimingEvidence>,
+    metal: Option<BackendTimingEvidence>,
     wgpu: Option<BackendTimingEvidence>,
     simd_plain: Option<BackendTimingEvidence>,
     cpu_plain: Option<BackendTimingEvidence>,
     cuda_plain: Option<BackendTimingEvidence>,
+    metal_plain: Option<BackendTimingEvidence>,
     wgpu_plain: Option<BackendTimingEvidence>,
 ) -> Vec<RouteTimingEvidence> {
     let mut routes = Vec::new();
@@ -34,6 +36,7 @@ fn route_timings(
         (ScanBackend::SimdCpu, Some(simd), simd_plain),
         (ScanBackend::CpuFallback, cpu, cpu_plain),
         (ScanBackend::GpuCuda, cuda, cuda_plain),
+        (ScanBackend::GpuMetal, metal, metal_plain),
         (ScanBackend::GpuWgpu, wgpu, wgpu_plain),
     ] {
         let Some(base) = base else {
@@ -864,16 +867,7 @@ fn valid_decision_for_host(host: &AutorouteHostProfile) -> AutorouteDecision {
         test_measurement_shape_evidence(8 * 1024 * 1024, 1),
         0xA11D_0B57_A11D_0B57,
         1,
-        route_timings(
-            timing(12),
-            Some(timing(20)),
-            has(ScanBackend::GpuCuda).then(|| timing(30)),
-            has(ScanBackend::GpuWgpu).then(|| timing(40)),
-            Some(timing(1_012)),
-            Some(timing(1_020)),
-            has(ScanBackend::GpuCuda).then(|| timing(1_030)),
-            has(ScanBackend::GpuWgpu).then(|| timing(1_040)),
-        ),
+        route_timings(timing(12), Some(timing(20)), has(ScanBackend::GpuCuda).then(|| timing(30)), has(ScanBackend::GpuMetal).then(|| timing(35)), has(ScanBackend::GpuWgpu).then(|| timing(40)), Some(timing(1_012)), Some(timing(1_020)), has(ScanBackend::GpuCuda).then(|| timing(1_030)), has(ScanBackend::GpuMetal).then(|| timing(1_035)), has(ScanBackend::GpuWgpu).then(|| timing(1_040))),
         false,
         false,
     )
@@ -1172,14 +1166,14 @@ fn workload_key_projects_scanner_owned_decoder_families() {
     let fixtures = [
         (
             "reverse",
-            "token = \"AYX7RQIFH5NMPLYQAIKA\"",
+            "payload = \"AYX7RQIFH5NMPLYQAIKA\"",
             Sketch::REVERSE,
         ),
-        ("caesar", "token = \"FPNFNTXKTISS7JCFRUQJ\"", Sketch::CAESAR),
-        ("z85", "token = \"k$:^nqcuN?o?)MpmOcDPh=%iG\"", Sketch::Z85),
+        ("caesar", "payload = \"FPNFNTXKTISS7JCFRUQJ\"", Sketch::CAESAR),
+        ("z85", "payload = \"k$:^nqcuN?o?)MpmOcDPh=%iG\"", Sketch::Z85),
         (
             "quoted-printable",
-            "token = \"AK=49AQYLPMN5HFIQR7XYA\"",
+            "payload = \"AK=49AQYLPMN5HFIQR7XYA\"",
             Sketch::QUOTED_PRINTABLE,
         ),
         (
@@ -1189,7 +1183,7 @@ fn workload_key_projects_scanner_owned_decoder_families() {
         ),
         (
             "json",
-            r#"{"token":"AK\u0049AQYLPMN5HFIQR7XYA"}"#,
+            r#"{"payload":"AK\u0049AQYLPMN5HFIQR7XYA"}"#,
             Sketch::JSON,
         ),
         (
@@ -1199,12 +1193,12 @@ fn workload_key_projects_scanner_owned_decoder_families() {
         ),
         (
             "dense-base64",
-            "token = \"QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo\"",
+            "payload = \"QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo\"",
             Sketch::BASE64,
         ),
         (
             "compressed-container",
-            "token = \"H4sIAAAAAAAAA3P09nQMjPQJ8PUz9XDzDAwyj4h0BABAsjTDFAAAAA==\"",
+            "payload = \"H4sIAAAAAAAAA3P09nQMjPQJ8PUz9XDzDAwyj4h0BABAsjTDFAAAAA==\"",
             Sketch::COMPRESSED_CONTAINER,
         ),
     ];
@@ -1297,14 +1291,14 @@ proptest::proptest! {
     ) {
         const SHAPES: &[&str] = &[
             "ordinary prose. short words.",
-            "token = \"AK%49AQYLPMN5HFIQR7XYA\"",
-            "token = \"AYX7RQIFH5NMPLYQAIKA\"",
-            "token = \"FPNFNTXKTISS7JCFRUQJ\"",
-            "token = \"k$:^nqcuN?o?)MpmOcDPh=%iG\"",
-            "token = \"AK=49AQYLPMN5HFIQR7XYA\"",
+            "payload = \"AK%49AQYLPMN5HFIQR7XYA\"",
+            "payload = \"AYX7RQIFH5NMPLYQAIKA\"",
+            "payload = \"FPNFNTXKTISS7JCFRUQJ\"",
+            "payload = \"k$:^nqcuN?o?)MpmOcDPh=%iG\"",
+            "payload = \"AK=49AQYLPMN5HFIQR7XYA\"",
             "Subject: =?UTF-8?Q?AK=49AQYLPMN5HFIQR7XYA?=",
-            r#"{"token":"AK\u0049AQYLPMN5HFIQR7XYA"}"#,
-            "token = \"QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo\"",
+            r#"{"payload":"AK\u0049AQYLPMN5HFIQR7XYA"}"#,
+            "payload = \"QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo\"",
         ];
         let forward = shape_indices
             .iter()
@@ -2091,16 +2085,7 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
             test_measurement_shape_evidence(sample_bytes, 1),
             0xA11D_0B57_A11D_0B57,
             1,
-            route_timings(
-                timing(simd_ms),
-                Some(timing(simd_ms + 8)),
-                None,
-                Some(timing(gpu_ms)),
-                Some(timing(localizer_ms)),
-                Some(timing(localizer_ms + 8)),
-                None,
-                Some(timing(gpu_ms + 1)),
-            ),
+            route_timings(timing(simd_ms), Some(timing(simd_ms + 8)), None, None, Some(timing(gpu_ms)), Some(timing(localizer_ms)), Some(timing(localizer_ms + 8)), None, None, Some(timing(gpu_ms + 1))),
             false,
             false,
         );
@@ -2752,16 +2737,7 @@ fn same_backend_tie_with_overlapping_peer_uses_noninferior_compiled_default() {
         test_measurement_shape_evidence(8 * 1024 * 1024, 1),
         7,
         1,
-        route_timings(
-            timing(10),
-            Some(timing(10)),
-            None,
-            None,
-            Some(timing(10)),
-            Some(timing(10)),
-            None,
-            None,
-        ),
+        route_timings(timing(10), Some(timing(10)), None, None, None, Some(timing(10)), Some(timing(10)), None, None, None),
         false,
         false,
     );
@@ -2788,16 +2764,7 @@ fn separated_backend_uses_compiled_default_when_same_backend_plans_tie() {
         test_measurement_shape_evidence(1, 1),
         7,
         1,
-        route_timings(
-            timing(10_000),
-            Some(timing(10)),
-            None,
-            None,
-            Some(timing(10_000)),
-            Some(timing(10)),
-            None,
-            None,
-        ),
+        route_timings(timing(10_000), Some(timing(10)), None, None, None, Some(timing(10_000)), Some(timing(10)), None, None, None),
         false,
         false,
     );
@@ -2940,16 +2907,7 @@ fn paired_same_backend_rounds_retain_shared_host_drift() {
         test_measurement_shape_evidence(8 * 1024 * 1024, 1),
         7,
         1,
-        route_timings(
-            BackendTimingEvidence::constant_ms(200, AUTOROUTE_CALIBRATION_TRIALS),
-            Some(candidate),
-            None,
-            None,
-            None,
-            Some(competitor),
-            None,
-            None,
-        ),
+        route_timings(BackendTimingEvidence::constant_ms(200, AUTOROUTE_CALIBRATION_TRIALS), Some(candidate), None, None, None, None, Some(competitor), None, None, None),
         false,
         false,
     );
@@ -2975,16 +2933,7 @@ fn selected_margin_includes_the_next_same_backend_route() {
         test_measurement_shape_evidence(8 * 1024 * 1024, 1),
         7,
         1,
-        route_timings(
-            timing(10),
-            Some(timing(30)),
-            None,
-            None,
-            Some(timing(15)),
-            Some(timing(40)),
-            None,
-            None,
-        ),
+        route_timings(timing(10), Some(timing(30)), None, None, None, Some(timing(15)), Some(timing(40)), None, None, None),
         false,
         false,
     );
@@ -5836,11 +5785,17 @@ fn autoroute_cache_requires_every_live_gpu_candidate_timing_and_receipt() {
     host.eligible_backends = test_eligible_backends(Some(ScanBackend::GpuWgpu));
     host.eligible_backends
         .push(ScanBackend::GpuCuda.label().to_string());
+    host.eligible_backends
+        .push(ScanBackend::GpuMetal.label().to_string());
     host.eligible_backends.sort_unstable();
     let key = test_workload_key();
     let complete = valid_decision_for_host(&host);
 
-    for backend in [ScanBackend::GpuCuda, ScanBackend::GpuWgpu] {
+    for backend in [
+        ScanBackend::GpuCuda,
+        ScanBackend::GpuMetal,
+        ScanBackend::GpuWgpu,
+    ] {
         let mut missing = complete.clone();
         missing
             .primary_point_mut()
@@ -6337,16 +6292,7 @@ fn daemon_warm_routes_come_only_from_persisted_selected_backends() {
             test_measurement_shape_evidence(8 * 1024 * 1024, 1),
             7,
             1,
-            route_timings(
-                timing(30),
-                Some(timing(40)),
-                Some(timing(8)),
-                Some(timing(16)),
-                Some(timing(1_030)),
-                Some(timing(1_040)),
-                Some(timing(1_008)),
-                Some(timing(1_016)),
-            ),
+            route_timings(timing(30), Some(timing(40)), Some(timing(8)), None, Some(timing(16)), Some(timing(1_030)), Some(timing(1_040)), Some(timing(1_008)), None, Some(timing(1_016))),
             false,
             false,
         ),
@@ -6742,16 +6688,7 @@ fn cuda_and_wgpu_are_independent_measured_candidates() {
         test_measurement_shape_evidence(8 * 1024 * 1024, 1),
         7,
         1,
-        route_timings(
-            timing(30),
-            Some(timing(40)),
-            Some(timing(10)),
-            Some(timing(15)),
-            Some(timing(1_030)),
-            Some(timing(1_040)),
-            Some(timing(1_010)),
-            Some(timing(1_015)),
-        ),
+        route_timings(timing(30), Some(timing(40)), Some(timing(10)), None, Some(timing(15)), Some(timing(1_030)), Some(timing(1_040)), Some(timing(1_010)), None, Some(timing(1_015))),
         false,
         false,
     );
@@ -6779,16 +6716,7 @@ fn cuda_and_wgpu_are_independent_measured_candidates() {
         test_measurement_shape_evidence(8 * 1024 * 1024, 1),
         7,
         1,
-        route_timings(
-            timing(30),
-            Some(timing(40)),
-            Some(timing(16)),
-            Some(timing(9)),
-            Some(timing(1_030)),
-            Some(timing(1_040)),
-            Some(timing(1_016)),
-            Some(timing(1_009)),
-        ),
+        route_timings(timing(30), Some(timing(40)), Some(timing(16)), None, Some(timing(9)), Some(timing(1_030)), Some(timing(1_040)), Some(timing(1_016)), None, Some(timing(1_009))),
         false,
         false,
     );
@@ -6826,16 +6754,7 @@ fn phase2_plain_localizer_is_an_independent_measured_route_candidate() {
         test_measurement_shape_evidence(8 * 1024 * 1024, 8),
         7,
         1,
-        route_timings(
-            timing(30),
-            Some(timing(45)),
-            None,
-            None,
-            Some(timing(8)),
-            Some(timing(20)),
-            None,
-            None,
-        ),
+        route_timings(timing(30), Some(timing(45)), None, None, None, Some(timing(8)), Some(timing(20)), None, None, None),
         false,
         false,
     );
@@ -6855,16 +6774,7 @@ fn phase2_plain_localizer_is_an_independent_measured_route_candidate() {
 #[test]
 fn phase2_keyword_localizer_is_an_independent_measured_route_candidate() {
     let timing = |ms| BackendTimingEvidence::constant_ms(ms, AUTOROUTE_CALIBRATION_TRIALS);
-    let mut timings = route_timings(
-        timing(30),
-        Some(timing(45)),
-        None,
-        None,
-        Some(timing(40)),
-        Some(timing(50)),
-        None,
-        None,
-    );
+    let mut timings = route_timings(timing(30), Some(timing(45)), None, None, None, Some(timing(40)), Some(timing(50)), None, None, None);
     let keyword_route = MeasuredRoute {
         backend: ScanBackend::SimdCpu,
         phase2_plain_localizer: false,
