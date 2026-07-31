@@ -56,7 +56,7 @@ formats that the Action does not expose.
 | `severity` | `high` | Minimum reported tier: `info`, `client-safe`, `low`, `medium`, `high`, or `critical`. |
 | `format` | `sarif` | Action report format: `text`, `json`, `sarif`, or `jsonl`. |
 | `verify` | `'false'` | Enables provider verification only when exactly `'true'`. |
-| `version` | empty | Scanner release selected by the Action ref. A value pins a final release at `v0.5.48` or newer. |
+| `version` | empty | Scanner release selected by the Action ref. A value pins a final release at `v0.5.49` or newer. |
 | `upload-sarif` | `'true'` | Uploads Code Scanning results when `format` is `sarif`. The artifact is retained independently. |
 | `analysis-category` | `keyhog` | Stable identity for one report and Code Scanning partition. |
 | `fail-on-findings` | `'true'` | Set to `'false'` to make ordinary findings advisory. Verified-live credentials and operational errors still fail. |
@@ -160,8 +160,8 @@ commits so GitHub updates the same Code Scanning partition.
 ## Pin releases
 
 `santhreal/keyhog@v0` follows the latest published `v0` Action. Use
-`santhreal/keyhog@v0.5.48` when Action code must stay fixed. The optional
-`version: v0.5.48` input pins only the scanner asset, so it is not a substitute
+`santhreal/keyhog@v0.5.49` when Action code must stay fixed. The optional
+`version: v0.5.49` input pins only the scanner asset, so it is not a substitute
 for pinning the Action ref.
 
 Release refs require signed and checksummed runtime assets. Missing or invalid

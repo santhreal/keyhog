@@ -53,7 +53,7 @@ The Linux release binary statically links Hyperscan and does not need
 `curl`.
 
 ```sh
-TAG=v0.5.48
+TAG=v0.5.49
 BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
 KEYHOG_MINISIGN_PUBLIC_KEY='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
 curl -fSLO "$BASE/install.sh"
@@ -111,7 +111,7 @@ part of the current release contract.
 PowerShell 5+ (ships with Windows 10/11):
 
 ```powershell
-$Tag = 'v0.5.48'
+$Tag = 'v0.5.49'
 $Base = "https://github.com/santhreal/keyhog/releases/download/$Tag"
 $PublicKey = 'RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
 iwr "$Base/install.ps1" -OutFile keyhog-install.ps1
@@ -140,7 +140,7 @@ release.
 
 | Env var / flag                          | Effect                                                        |
 |-----------------------------------------|---------------------------------------------------------------|
-| `KEYHOG_VERSION=v0.5.48` (or `--version=v0.5.48`) | Pin a specific release tag. With no pin, the installer admits only the newest stable release with this host's complete signed bundle; it probes the latest redirect first, then checks recent releases when that proof is incomplete. |
+| `KEYHOG_VERSION=v0.5.49` (or `--version=v0.5.49`) | Pin a specific release tag. With no pin, the installer admits only the newest stable release with this host's complete signed bundle; it probes the latest redirect first, then checks recent releases when that proof is incomplete. |
 | `--install-dir=...`                     | Install into a different directory.            |
 | `GITHUB_TOKEN=...`                      | Optional auth for the fallback GitHub releases API lookup. The normal latest-asset path does not need it. |
 | `--yes` / `-y`                          | Accept the displayed defaults without prompting: PATH setup yes, optional completion and repository hook no. |
@@ -175,7 +175,7 @@ the new one is moved into place and restored automatically if the new binary
 fails its post-install self-test, so a failed or interrupted install leaves a
 working binary behind.
 
-The 0.5.48 candidate publication contract is an exact 60-asset release
+The 0.5.49 candidate publication contract is an exact 60-asset release
 manifest: ten payloads (four platform binaries, four matching GPU-literal
 sidecars, and two installers), their 20 adjacent SHA-256/minisign proofs, ten
 deterministic SPDX 2.3 JSON documents, and the SBOMs' 20 adjacent proofs. Each
@@ -197,7 +197,7 @@ SHA-256 values and conditional `OPTIONAL_DEPENDENCY_OF` relationships, plus
 `sh`, `curl`, `awk`, `sha256sum` or `shasum`, `minisign`, and POSIX file
 utilities. `install.ps1` enumerates the Windows binary and GPU bundle plus
 PowerShell 5+, `Invoke-WebRequest`, `Get-FileHash`, and `minisign`. These assets
-are not public until the 0.5.48 release succeeds.
+are not public until the 0.5.49 release succeeds.
 
 After publication, verify a downloaded document with the pinned release key:
 
@@ -397,7 +397,7 @@ It complements the detached minisign signatures, which remain the installer's
 offline trust root:
 
 ```sh
-TAG=v0.5.48
+TAG=v0.5.49
 gh attestation verify "$ASSET" --repo santhreal/keyhog \
   --signer-workflow github.com/santhreal/keyhog/.github/workflows/release.yml \
   --source-ref "refs/tags/$TAG" --deny-self-hosted-runners

@@ -19,7 +19,7 @@ inputs:
     default: 'false'
   version:
     description: |
-      Published final KeyHog version v0.5.48 or newer to install. Prereleases
+      Published final KeyHog version v0.5.49 or newer to install. Prereleases
       and build metadata are rejected. Leave unset to use the Action ref; branch and commit refs build from source.
     default: ''
   upload-sarif:
@@ -238,7 +238,7 @@ runs:
           core_version="${v%%-*}"
           IFS='.' read -r version_major version_minor version_patch <<< "$core_version"
           if (( 10#$version_major == 0 && (10#$version_minor < 5 || (10#$version_minor == 5 && 10#$version_patch < 48)) )) || [[ "$v" == *-* ]]; then
-            echo "::error title=KeyHog::Prereleases and release versions older than final v0.5.48 do not support this Action's stable runtime contract."
+            echo "::error title=KeyHog::Prereleases and release versions older than final v0.5.49 do not support this Action's stable runtime contract."
             exit 2
           fi
         fi

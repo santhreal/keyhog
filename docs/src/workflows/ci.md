@@ -93,7 +93,7 @@ keyhog:
   image: ubuntu:24.04
   before_script:
     - apt-get update -qq && apt-get install -y --no-install-recommends curl minisign
-    - export TAG=v0.5.48
+    - export TAG=v0.5.49
     - export BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
     - export PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
     - curl -fSLO "$BASE/install.sh" && curl -fSLO "$BASE/install.sh.minisig"
@@ -132,7 +132,7 @@ jobs:
           command: |
             sudo apt-get update -qq
             sudo apt-get install -y --no-install-recommends minisign
-            TAG=v0.5.48
+            TAG=v0.5.49
             BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
             PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
             curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
@@ -166,7 +166,7 @@ steps:
     commands:
       - apt-get update -qq
       - apt-get install -y --no-install-recommends curl minisign
-      - export TAG=v0.5.48
+      - export TAG=v0.5.49
       - export BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
       - export PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
       - curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
@@ -241,7 +241,7 @@ steps:
     command: |
       sudo apt-get update -qq
       sudo apt-get install -y --no-install-recommends curl minisign
-      TAG=v0.5.48
+      TAG=v0.5.49
       BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
       PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
       curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
@@ -268,7 +268,7 @@ pipeline {
                 sh '''
                     sudo apt-get update -qq
                     sudo apt-get install -y --no-install-recommends curl minisign
-                    TAG=v0.5.48
+                    TAG=v0.5.49
                     BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
                     PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
                     curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"
@@ -294,7 +294,7 @@ Manual CI installation uses one exact release tag for the authenticated
 installer and scanner payload:
 
 ```sh
-TAG=v0.5.48
+TAG=v0.5.49
 BASE="https://github.com/santhreal/keyhog/releases/download/$TAG"
 PUB='RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
 curl -fSLO "$BASE/install.sh" -fSLO "$BASE/install.sh.minisig"

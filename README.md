@@ -24,7 +24,7 @@ without hand-written runtime configuration. After verified-install calibration,
 `keyhog scan .` works with the canonical defaults; a source-built multi-backend
 binary first runs `keyhog calibrate-autoroute`.
 
-The binary banner is `v0.5.48 · secret scanner · 923 detectors`; its
+The binary banner is `v0.5.49 · secret scanner · 923 detectors`; its
 compiled progress line reports `923 detectors (5822 patterns)` together with
 the operator-visible route (for example, `backend=simd-regex | gpu=none`).
 
