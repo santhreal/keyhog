@@ -433,6 +433,65 @@ class ReleasePlanContractTests(unittest.TestCase):
                 ],
             ],
         )
+    def test_canonical_bloom_report_is_published_after_freshness_scoring(self) -> None:
+        """Generated Bloom Markdown must not dirty the tree before candidate scoring."""
+        makefile = Path("benchmarks/Makefile").resolve()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            reports = root / "reports"
+            results = root / "results"
+            reports.mkdir()
+            results.mkdir()
+            tracked = reports / "bloom-creddata-fx-record-spans-v1.md"
+            tracked.write_text("committed receipt\n", encoding="utf-8")
+            candidate = root / "keyhog"
+            candidate.write_bytes(b"candidate")
+            fake_python = root / "fake-python"
+            fake_python.write_text(
+                "#!/usr/bin/env python3\n"
+                "import sys\n"
+                "from pathlib import Path\n"
+                "args = sys.argv[1:]\n"
+                "module = args[1] if len(args) > 1 and args[0] == '-m' else ''\n"
+                "tracked = Path('reports/bloom-creddata-fx-record-spans-v1.md')\n"
+                "staged = Path('results/.bloom-creddata-fx-record-spans-v1.md')\n"
+                "if module == 'bench.corpora.mirror':\n"
+                "    raise SystemExit(0)\n"
+                "if module == 'bench.bloom':\n"
+                "    target = Path(args[args.index('--report') + 1]) "
+                "if '--report' in args else tracked\n"
+                "    target.write_text('fresh receipt\\n', encoding='utf-8')\n"
+                "    raise SystemExit(0)\n"
+                "if module == 'bench':\n"
+                "    if tracked.read_text(encoding='utf-8') != 'committed receipt\\n':\n"
+                "        raise SystemExit('tracked report changed before freshness scoring')\n"
+                "    if staged.read_text(encoding='utf-8') != 'fresh receipt\\n':\n"
+                "        raise SystemExit('staged report is missing current evidence')\n"
+                "    raise SystemExit(0)\n"
+                "raise SystemExit(f'unexpected command: {args!r}')\n",
+                encoding="utf-8",
+            )
+            fake_python.chmod(0o755)
+
+            completed = subprocess.run(
+                [
+                    "make",
+                    "-f",
+                    str(makefile),
+                    "canonical",
+                    f"BENCH_DIR={root}/",
+                    f"PY={fake_python}",
+                    f"KEYHOG_BIN={candidate}",
+                    "CANONICAL_SCANNERS=keyhog",
+                ],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            self.assertEqual(tracked.read_text(encoding="utf-8"), "fresh receipt\n")
 
     def test_missing_benchmark_candidate_stops_before_measurement(self) -> None:
         """A successful cargo exit without the expected binary must never measure a stale executable."""

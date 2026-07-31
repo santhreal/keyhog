@@ -43,6 +43,8 @@ SCANNER          ?= keyhog
 SCANNERS         ?= keyhog,betterleaks,kingfisher,noseyparker,trufflehog,titus
 CANONICAL_SCANNERS ?= keyhog,betterleaks,kingfisher
 CANONICAL_BLOOM_RESULT ?= results/bloom-creddata-fx-record-spans-v1.json
+CANONICAL_BLOOM_REPORT ?= reports/bloom-creddata-fx-record-spans-v1.md
+CANONICAL_BLOOM_STAGED_REPORT ?= results/.bloom-creddata-fx-record-spans-v1.md
 CORPUS           ?= mirror
 OUTPUT           ?= -
 OUT              ?= results
@@ -131,10 +133,12 @@ bloom:
 canonical:
 	@test -n "$(KEYHOG_BIN)" || { echo "KEYHOG_BIN is required for the canonical benchmark" >&2; exit 2; }
 	cd $(BENCH_DIR) && $(PY) -m bench.corpora.mirror --ensure
-	cd $(BENCH_DIR) && $(PY) -m bench.bloom --keyhog "$(KEYHOG_BIN)"
+	cd $(BENCH_DIR) && $(PY) -m bench.bloom --keyhog "$(KEYHOG_BIN)" \
+		--report "$(CANONICAL_BLOOM_STAGED_REPORT)"
 	cd $(BENCH_DIR) && KEYHOG_BENCH_BLOOM_RESULT="$(BENCH_DIR)/$(CANONICAL_BLOOM_RESULT)" \
 		$(PY) -m bench leaderboard --corpus mirror --scanners "$(CANONICAL_SCANNERS)" \
 		--out results --require-available
+	cp "$(BENCH_DIR)/$(CANONICAL_BLOOM_STAGED_REPORT)" "$(BENCH_DIR)/$(CANONICAL_BLOOM_REPORT)"
 
 readme-matrix-corpus:
 	cd $(BENCH_DIR) && $(PY) -m bench.readme_matrix \
