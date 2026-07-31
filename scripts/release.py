@@ -323,6 +323,7 @@ def benchmark_path(path: Path) -> bool:
     return (
         path == Path("README.md")
         or path == Path("metrics/stars.svg")
+        or path == Path("benchmarks/run-sets/canonical.toml")
         or Path("benchmarks/reports") in path.parents
     )
 

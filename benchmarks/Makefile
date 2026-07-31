@@ -138,6 +138,8 @@ canonical:
 	cd $(BENCH_DIR) && KEYHOG_BENCH_BLOOM_RESULT="$(BENCH_DIR)/$(CANONICAL_BLOOM_RESULT)" \
 		$(PY) -m bench leaderboard --corpus mirror --scanners "$(CANONICAL_SCANNERS)" \
 		--out results --require-available
+	cd $(BENCH_DIR) && $(PY) -m bench.report --results results --corpus mirror \
+		--run-set run-sets/canonical.toml --refresh-run-set
 	cp "$(BENCH_DIR)/$(CANONICAL_BLOOM_STAGED_REPORT)" "$(BENCH_DIR)/$(CANONICAL_BLOOM_REPORT)"
 
 readme-matrix-corpus:

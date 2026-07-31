@@ -206,6 +206,81 @@ def test_explicit_run_set_selects_path_instead_of_newest_timestamp():
     assert selected == [declared]
 
 
+def test_run_set_refresh_rebinds_declared_path_and_round_trips_exact_toml(tmp_path):
+    """A release refresh must update identities without selecting a newer undeclared row."""
+    previous = _result("keyhog", 5, 20.0)
+    current = _result("keyhog", 5, 18.0)
+    current.generated_at = "2026-07-31T00:19:20Z"
+    current.host.hostname_hash = "abcdef012345"
+    current.scanner.executable_sha256 = "b" * 64
+    current.corpus.fixture_count = 15_000
+    current.corpus.labeled_positives = 3_000
+    current.corpus.bytes = 2_430_321
+    current._report_source = "selected.json"
+    undeclared = _result("keyhog", 1, 5.0)
+    undeclared.generated_at = "2099-01-01T00:00:00Z"
+    undeclared.scanner.executable_sha256 = "c" * 64
+    undeclared._report_source = "archive/newer.json"
+
+    refreshed = report.refresh_run_set(
+        [undeclared, current],
+        "mirror",
+        _run_set(previous),
+    )
+
+    declaration = refreshed.runs[0]
+    assert declaration.path == "selected.json"
+    assert declaration.generated_at == "2026-07-31T00:19:20Z"
+    assert declaration.executable_sha256 == "b" * 64
+    assert declaration.hostname_hash == "abcdef012345"
+    assert declaration.fixture_count == 15_000
+    assert declaration.labeled_positives == 3_000
+    assert declaration.corpus_bytes == 2_430_321
+    inventory = tmp_path / "canonical.toml"
+    inventory.write_text(report.render_run_set(refreshed), encoding="utf-8")
+    assert report.load_run_set(inventory) == refreshed
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "diagnostic"),
+    [
+        ("scanner.name", "other", "scanner='other'"),
+        ("scanner.config.mode", "fast", "config_id='default-nocache-nodaemon-fast'"),
+        ("scanner.executable_sha256", "", "executable_sha256 is invalid"),
+        ("host.hostname_hash", "not-a-hash", "hostname_hash is invalid"),
+        ("corpus.fixture_count", 0, "corpus identity counts are invalid"),
+    ],
+)
+def test_run_set_refresh_rejects_identity_drift(field, value, diagnostic):
+    """Malformed or substituted result identity must not rewrite the canonical inventory."""
+    result = _result("keyhog", 5, 20.0)
+    result.scanner.executable_sha256 = "a" * 64
+    result._report_source = "selected.json"
+    current = _run_set(result)
+    target = result
+    segments = field.split(".")
+    for segment in segments[:-1]:
+        target = getattr(target, segment)
+    setattr(target, segments[-1], value)
+
+    with pytest.raises(report.ResultSelectionError, match=diagnostic):
+        report.refresh_run_set([result], "mirror", current)
+
+
+@pytest.mark.parametrize("match_count", [0, 2])
+def test_run_set_refresh_requires_one_current_declared_path(match_count):
+    """A missing or duplicated result path must not produce ambiguous release evidence."""
+    result = _result("keyhog", 5, 20.0)
+    result.scanner.executable_sha256 = "a" * 64
+    result._report_source = "selected.json"
+
+    with pytest.raises(
+        report.ResultSelectionError,
+        match=f"expected one current result, found {match_count}",
+    ):
+        report.refresh_run_set([result] * match_count, "mirror", _run_set(result))
+
+
 @pytest.mark.parametrize("match_count", [0, 2])
 def test_run_set_requires_exactly_one_artifact_per_declared_path(match_count):
     """Regression: missing or duplicate inventory paths must fail closed."""

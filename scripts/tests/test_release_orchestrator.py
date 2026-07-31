@@ -377,6 +377,7 @@ class ReleasePlanContractTests(unittest.TestCase):
             Path("README.md"),
             Path("metrics/stars.svg"),
             Path("benchmarks/reports/readme-matrix.json"),
+            Path("benchmarks/run-sets/canonical.toml"),
         )
         rejected = (
             Path("Cargo.toml"),
@@ -467,6 +468,8 @@ class ReleasePlanContractTests(unittest.TestCase):
                 "        raise SystemExit('tracked report changed before freshness scoring')\n"
                 "    if staged.read_text(encoding='utf-8') != 'fresh receipt\\n':\n"
                 "        raise SystemExit('staged report is missing current evidence')\n"
+                "    raise SystemExit(0)\n"
+                "if module == 'bench.report':\n"
                 "    raise SystemExit(0)\n"
                 "raise SystemExit(f'unexpected command: {args!r}')\n",
                 encoding="utf-8",

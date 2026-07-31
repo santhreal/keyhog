@@ -360,6 +360,104 @@ def load_run_set(path: pathlib.Path) -> RunSet:
     return RunSet(corpus=corpus, runs=tuple(runs))
 
 
+def refresh_run_set(
+    results: list[RunResult],
+    corpus: str,
+    current: RunSet,
+) -> RunSet:
+    """Bind the declared result paths to their newly measured exact identities."""
+    if current.corpus != corpus:
+        raise ResultSelectionError(
+            f"run-set corpus {current.corpus!r} conflicts with requested corpus {corpus!r}"
+        )
+    by_path: dict[str, list[RunResult]] = {}
+    for result in results:
+        source = getattr(result, "_report_source", None)
+        if isinstance(source, str):
+            by_path.setdefault(source, []).append(result)
+
+    refreshed: list[RunDeclaration] = []
+    errors: list[str] = []
+    for declaration in current.runs:
+        matches = by_path.get(declaration.path, [])
+        if len(matches) != 1:
+            errors.append(
+                f"{declaration.path}: expected one current result, found {len(matches)}"
+            )
+            continue
+        result = matches[0]
+        if result.corpus.name != corpus:
+            errors.append(
+                f"{declaration.path}: corpus={result.corpus.name!r}, expected {corpus!r}"
+            )
+        if result.scanner.name != declaration.scanner:
+            errors.append(
+                f"{declaration.path}: scanner={result.scanner.name!r}, "
+                f"expected {declaration.scanner!r}"
+            )
+        if result.scanner.config_id != declaration.config_id:
+            errors.append(
+                f"{declaration.path}: config_id={result.scanner.config_id!r}, "
+                f"expected {declaration.config_id!r}"
+            )
+        if not result.available:
+            errors.append(
+                f"{declaration.path}: current result is unavailable: {result.error}"
+            )
+        identity = RunDeclaration(
+            scanner=declaration.scanner,
+            config_id=declaration.config_id,
+            path=declaration.path,
+            generated_at=result.generated_at,
+            executable_sha256=result.scanner.executable_sha256,
+            hostname_hash=result.host.hostname_hash,
+            fixture_count=result.corpus.fixture_count,
+            labeled_positives=result.corpus.labeled_positives,
+            corpus_bytes=result.corpus.bytes,
+        )
+        if _run_date_error(identity.generated_at):
+            errors.append(f"{declaration.path}: generated_at is invalid")
+        if not is_sha256(identity.executable_sha256):
+            errors.append(f"{declaration.path}: executable_sha256 is invalid")
+        if not _HOST_HASH_RE.fullmatch(identity.hostname_hash):
+            errors.append(f"{declaration.path}: hostname_hash is invalid")
+        if not all(
+            value > 0
+            for value in (
+                identity.fixture_count,
+                identity.labeled_positives,
+                identity.corpus_bytes,
+            )
+        ):
+            errors.append(f"{declaration.path}: corpus identity counts are invalid")
+        refreshed.append(identity)
+    if errors:
+        raise ResultSelectionError("cannot refresh run-set inventory: " + "; ".join(errors))
+    return RunSet(corpus=corpus, runs=tuple(refreshed))
+
+
+def render_run_set(run_set: RunSet) -> str:
+    """Render one deterministic TOML inventory from validated run identities."""
+    lines = ["schema_version = 1", f"corpus = {json.dumps(run_set.corpus)}", ""]
+    for run in run_set.runs:
+        lines.extend(
+            [
+                "[[run]]",
+                f"scanner = {json.dumps(run.scanner)}",
+                f"config_id = {json.dumps(run.config_id)}",
+                f"path = {json.dumps(run.path)}",
+                f"generated_at = {json.dumps(run.generated_at)}",
+                f"executable_sha256 = {json.dumps(run.executable_sha256)}",
+                f"hostname_hash = {json.dumps(run.hostname_hash)}",
+                f"fixture_count = {run.fixture_count}",
+                f"labeled_positives = {run.labeled_positives}",
+                f"corpus_bytes = {run.corpus_bytes}",
+                "",
+            ]
+        )
+    return "\n".join(lines)
+
+
 def select_declared_results(
     results: list[RunResult],
     corpus: str,
@@ -1085,6 +1183,11 @@ def _main(argv: list[str] | None = None) -> int:
             "The committed results directory uses run-sets/canonical.toml by default."
         ),
     )
+    ap.add_argument(
+        "--refresh-run-set",
+        action="store_true",
+        help="Rewrite the exact inventory from its declared current result paths and exit.",
+    )
     ap.add_argument("--inject", action="store_true", help="Rewrite README between markers.")
     ap.add_argument("--check", action="store_true",
                     help="Exit 1 if reports or the README would change (idempotence gate).")
@@ -1096,14 +1199,20 @@ def _main(argv: list[str] | None = None) -> int:
         run_set_path = pathlib.Path(args.run_set) if args.run_set else None
         if run_set_path is None:
             run_set_path = default_run_set_path(results_path)
-        if run_set_path is not None:
-            results = select_declared_results(
-                results,
-                args.corpus,
-                load_run_set(run_set_path),
+        if args.refresh_run_set and run_set_path is None:
+            raise ResultSelectionError(
+                "--refresh-run-set requires --run-set outside the committed results directory"
             )
+        if run_set_path is not None:
+            run_set = load_run_set(run_set_path)
+            if args.refresh_run_set:
+                run_set = refresh_run_set(results, args.corpus, run_set)
+                run_set_path.write_text(render_run_set(run_set), encoding="utf-8")
+                print(f"refreshed exact run-set inventory: {run_set_path}", file=sys.stderr)
+                return 0
+            results = select_declared_results(results, args.corpus, run_set)
         assert_reports_populated(results, args.corpus)
-    except (ReportEmptyError, ResultLoadError, ResultSelectionError) as exc:
+    except (OSError, ReportEmptyError, ResultLoadError, ResultSelectionError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
