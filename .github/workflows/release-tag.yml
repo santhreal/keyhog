@@ -1,0 +1,136 @@
+name: Create signed release tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Prepared stable version without a v prefix (for example, 0.5.49).'
+        required: true
+        type: string
+
+concurrency:
+  group: release-tag-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  sign:
+    name: Sign exact prepared main commit
+    runs-on: ubuntu-24.04
+    environment: release-signing
+    permissions:
+      contents: write
+    env:
+      KEYHOG_RELEASE_VERSION: ${{ inputs.version }}
+      KEYHOG_RELEASE_COMMIT: ${{ github.sha }}
+      KEYHOG_RELEASE_ACTOR_ID: ${{ github.actor_id }}
+      KEYHOG_RELEASE_FINGERPRINT: ${{ vars.KEYHOG_RELEASE_SIGNING_FINGERPRINT }}
+      KEYHOG_RELEASE_GPG_PRIVATE_KEY: ${{ secrets.KEYHOG_RELEASE_GPG_PRIVATE_KEY }}
+      KEYHOG_RELEASE_GPG_PASSPHRASE: ${{ secrets.KEYHOG_RELEASE_GPG_PASSPHRASE }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out exact workflow commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind owner, main, version, and unused tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REPOSITORY" != "santhreal/keyhog" ||
+                "$KEYHOG_RELEASE_ACTOR_ID" != "64453045" ||
+                "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo 'ERROR: release-tag dispatch requires santhreal/keyhog main and owner actor 64453045' >&2
+            exit 2
+          fi
+          python3 -B - "$KEYHOG_RELEASE_VERSION" <<'PY'
+          import re
+          import sys
+          import tomllib
+          from pathlib import Path
+
+          version = sys.argv[1]
+          if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', version):
+              raise SystemExit('ERROR: version must be canonical stable X.Y.Z SemVer')
+          workspace = tomllib.loads(Path('Cargo.toml').read_text(encoding='utf-8'))
+          if workspace['workspace']['package']['version'] != version:
+              raise SystemExit('ERROR: dispatched version does not match workspace.package.version')
+          changelog = Path('CHANGELOG.md').read_text(encoding='utf-8')
+          if f'## {version} - ' not in changelog:
+              raise SystemExit('ERROR: root changelog has no prepared release heading')
+          PY
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git fetch origin main
+          head="$(git rev-parse HEAD)"
+          test "$head" = "$KEYHOG_RELEASE_COMMIT"
+          test "$head" = "$(git rev-parse origin/main)"
+          tag="v$KEYHOG_RELEASE_VERSION"
+          if git show-ref --verify --quiet "refs/tags/$tag" ||
+             git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "ERROR: $tag already exists and will not be replaced" >&2
+            exit 2
+          fi
+
+      - name: Import and prove enrolled release key
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$KEYHOG_RELEASE_FINGERPRINT"
+          test -n "$KEYHOG_RELEASE_GPG_PRIVATE_KEY"
+          test -n "$KEYHOG_RELEASE_GPG_PASSPHRASE"
+          export GNUPGHOME="$RUNNER_TEMP/keyhog-release-gnupg"
+          passphrase_file="$RUNNER_TEMP/keyhog-release-passphrase"
+          mkdir -m 700 "$GNUPGHOME"
+          umask 077
+          printf '%s' "$KEYHOG_RELEASE_GPG_PRIVATE_KEY" > "$RUNNER_TEMP/keyhog-release-key.asc"
+          printf '%s' "$KEYHOG_RELEASE_GPG_PASSPHRASE" > "$passphrase_file"
+          gpg --batch --import "$RUNNER_TEMP/keyhog-release-key.asc"
+          gpg --batch --armor --export "$KEYHOG_RELEASE_FINGERPRINT" > "$RUNNER_TEMP/keyhog-release-public.asc"
+          cmp -s .github/release-signing-key.asc "$RUNNER_TEMP/keyhog-release-public.asc"
+          gh api users/santhreal/gpg_keys > "$RUNNER_TEMP/keyhog-release-github-keys.json"
+          python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          armor = Path('.github/release-signing-key.asc').read_text(encoding='utf-8')
+          keys = json.loads(
+              Path(os.environ['RUNNER_TEMP'], 'keyhog-release-github-keys.json').read_text(
+                  encoding='utf-8'
+              )
+          )
+          if not any(key.get('raw_key') == armor for key in keys):
+              raise SystemExit('ERROR: committed release key is not enrolled on santhreal')
+          PY
+          echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
+          echo "KEYHOG_RELEASE_PASSPHRASE_FILE=$passphrase_file" >> "$GITHUB_ENV"
+
+      - name: Create and verify signed annotated tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B scripts/sign_release_tag.py \
+            --tag "v$KEYHOG_RELEASE_VERSION" \
+            --commit "$KEYHOG_RELEASE_COMMIT" \
+            --fingerprint "$KEYHOG_RELEASE_FINGERPRINT" \
+            --passphrase-file "$KEYHOG_RELEASE_PASSPHRASE_FILE"
+          git push origin "refs/tags/v$KEYHOG_RELEASE_VERSION"
+          {
+            echo '## Signed release tag'
+            echo
+            printf 'Created and pushed `v%s` at `%s` with `%s`.\n' \
+              "$KEYHOG_RELEASE_VERSION" "$KEYHOG_RELEASE_COMMIT" "$KEYHOG_RELEASE_FINGERPRINT"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove imported release secrets
+        if: always()
+        shell: bash
+        run: |
+          rm -rf \
+            "$RUNNER_TEMP/keyhog-release-gnupg" \
+            "$RUNNER_TEMP/keyhog-release-key.asc" \
+            "$RUNNER_TEMP/keyhog-release-public.asc" \
+            "$RUNNER_TEMP/keyhog-release-passphrase" \
+            "$RUNNER_TEMP/keyhog-release-github-keys.json"

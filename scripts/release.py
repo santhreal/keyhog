@@ -28,6 +28,25 @@ _SSH_TARGET_RE = re.compile(
 )
 METRIC_PATHS = {Path("metrics/stars.json"), Path("metrics/stars.svg")}
 
+DEFAULT_RELEASE_GNUPGHOME = Path("/credentials/keyhog-release-gnupg")
+DEFAULT_RELEASE_GPG_PASSPHRASE_FILE = Path(
+    "/credentials/keyhog-release-gpg-passphrase"
+)
+
+
+def release_gpg_environment() -> dict[str, str]:
+    """Use the dedicated release keyring when this host has one."""
+    configured = os.environ.get("KEYHOG_RELEASE_GNUPGHOME")
+    home = Path(configured) if configured else DEFAULT_RELEASE_GNUPGHOME
+    return {"GNUPGHOME": str(home)} if home.is_dir() else {}
+
+
+def release_passphrase_file() -> Path | None:
+    """Return the protected noninteractive passphrase file when configured."""
+    configured = os.environ.get("KEYHOG_RELEASE_GPG_PASSPHRASE_FILE")
+    path = Path(configured) if configured else DEFAULT_RELEASE_GPG_PASSPHRASE_FILE
+    return path if path.is_file() else None
+
 
 class ReleaseError(RuntimeError):
     """The release cannot continue without violating a publication invariant."""
@@ -201,7 +220,7 @@ def require_publication_identity(runner: Runner) -> str:
     ).stdout.strip()
     if signing_format not in ("", "openpgp"):
         raise ReleaseError("release tags require an OpenPGP signing key")
-    key_details = runner.output(
+    key_details = runner.run(
         [
             "gpg",
             "--batch",
@@ -210,8 +229,10 @@ def require_publication_identity(runner: Runner) -> str:
             "--fingerprint",
             "--list-secret-keys",
             signing_key,
-        ]
-    )
+        ],
+        env=release_gpg_environment(),
+        capture=True,
+    ).stdout.strip()
     saw_secret_key = False
     for line in key_details.splitlines():
         fields = line.split(":")
@@ -228,6 +249,7 @@ def verify_tag_signature(runner: Runner, tag: str, expected_fingerprint: str) ->
     """Require one valid tag signature from the configured primary OpenPGP key."""
     result = runner.run(
         ["git", "verify-tag", "--raw", tag],
+        env=release_gpg_environment(),
         check=False,
         capture=True,
     )
@@ -623,9 +645,28 @@ def publish(runner: Runner, options: Options) -> None:
         if not tag_remote:
             runner.run(["git", "push", "origin", f"refs/tags/{options.tag}"])
     else:
-        runner.run(
-            ["git", "tag", "-s", "-a", options.tag, "-m", f"KeyHog {options.tag}"]
-        )
+        passphrase_file = release_passphrase_file()
+        if passphrase_file is None:
+            runner.run(
+                ["git", "tag", "-s", "-a", options.tag, "-m", f"KeyHog {options.tag}"]
+            )
+        else:
+            runner.run(
+                [
+                    "python3",
+                    "-B",
+                    "scripts/sign_release_tag.py",
+                    "--tag",
+                    options.tag,
+                    "--commit",
+                    commit,
+                    "--fingerprint",
+                    expected_fingerprint,
+                    "--passphrase-file",
+                    str(passphrase_file),
+                ],
+                env=release_gpg_environment(),
+            )
         verify_tag_signature(runner, options.tag, expected_fingerprint)
         runner.run(["git", "push", "origin", f"refs/tags/{options.tag}"])
 

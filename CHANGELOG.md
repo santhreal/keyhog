@@ -27,6 +27,7 @@ All notable changes to KeyHog. Versions follow [Semantic Versioning](https://sem
 - The exact architecture ratchet now counts native Metal as the fifth scan backend and binds the current engine source total, so the source-only prevention gate reflects the shipped backend set without stale budget drift.
 - Portable source builds now retain coalesced triggered windowing and performance-trace support without SIMD or GPU features, so branch and commit refs compile before Action scans. A dedicated oversized-window suite covers exact offsets, overlap deduplication, multiple findings, and hostile near-matches under the portable feature profile.
 - Crossover route selection now keeps deterministic candidate order when paired 95% evidence cannot distinguish near-tied GPU peers, so a point-median fluctuation cannot redirect all held-out release evidence to an unproven peer.
+- Release tag signing now uses a dedicated protected keyring and owner-only passphrase file locally, with the same encrypted key available to a manual `release-signing` GitHub Actions workflow. Both paths verify the full enrolled fingerprint, exact prepared commit, canonical tag, and immutable existing-ref boundary without exposing a passphrase to command arguments or logs.
 
 
 ## [0.5.48] - 2026-07-27

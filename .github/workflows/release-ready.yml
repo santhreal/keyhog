@@ -11,13 +11,16 @@ on:
       - 'scripts/release_notes.py'
       - 'scripts/prerelease.sh'
       - 'scripts/release.py'
+      - 'scripts/sign_release_tag.py'
       - 'scripts/star_history.py'
       - 'scripts/tests/test_prepare_release.py'
       - 'scripts/tests/test_bump_doc_versions.py'
       - 'scripts/tests/test_release_notes.py'
       - 'scripts/tests/test_release_orchestrator.py'
+      - 'scripts/tests/test_sign_release_tag.py'
       - 'scripts/tests/test_star_history.py'
       - '.github/workflows/release-ready.yml'
+      - '.github/workflows/release-tag.yml'
   workflow_dispatch:
 
 concurrency:
@@ -42,6 +45,7 @@ jobs:
             scripts.tests.test_bump_doc_versions \
             scripts.tests.test_release_notes \
             scripts.tests.test_release_orchestrator \
+            scripts.tests.test_sign_release_tag \
             scripts.tests.test_star_history
 
       - name: Verify repository star viewer

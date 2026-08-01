@@ -56,18 +56,21 @@ and `publish-crates` entry. Those jobs fail closed for every other actor ID;
 the mutable actor login is not used as the authority.
 
 1. Confirm that the workspace version and the four exact internal dependency
-   pins in `Cargo.toml` are `0.5.48`.
-2. Cut the root and per-crate changelog entries for `0.5.48`.
+   pins in `Cargo.toml` are `0.5.49`.
+2. Cut the root and per-crate changelog entries for `0.5.49`.
 3. Use the enrolled OpenPGP release key whose full uppercase fingerprint is
-   `45B4239F87DBCB01428A8939C035E85273132EB2`. The annotated tag identity is
+   `8274A86A4788415D757FF88E668A9C88FA19175E`. The annotated tag identity is
    exactly `Santh <64453045+santhreal@users.noreply.github.com>`.
    `user.signingkey` names that key, `gpg.format` is `openpgp`, and the private
-   half remains protected in the local GnuPG keyring. The exact ASCII-armored
-   public half returned by `/users/santhreal/gpg_keys` is committed as
+   half remains protected in `/credentials/keyhog-release-gnupg`. The same
+   encrypted private key and passphrase are stored as the protected repository
+   secrets `KEYHOG_RELEASE_GPG_PRIVATE_KEY` and
+   `KEYHOG_RELEASE_GPG_PASSPHRASE`. The exact ASCII-armored public half returned
+   by `/users/santhreal/gpg_keys` is committed as
    `.github/release-signing-key.asc`. The repository Actions variable
    `KEYHOG_RELEASE_SIGNING_FINGERPRINT` contains the same full fingerprint.
    Short key IDs, a different enrolled key, or placeholder bytes are rejected.
-   This identity was enrolled and byte-checked on 2026-07-27. Treat any
+   This identity was enrolled and byte-checked on 2026-07-31. Treat any
    difference among the local secret key, committed armor, GitHub `raw_key`,
    and repository variable as a new hard prepublication blocker.
 
@@ -93,6 +96,22 @@ the mutable actor login is not used as the authority.
    The full uppercase `fpr` value from the local secret key and committed public
    key must be identical to `KEYHOG_RELEASE_SIGNING_FINGERPRINT`, and the API
    must contain the committed armor exactly, before creating the tag.
+
+   To create the tag without a local pinentry prompt, dispatch the protected
+   signing workflow from the prepared `main` commit:
+
+   ```console
+   gh workflow run release-tag.yml --ref main -f version=0.5.49
+   gh run watch --exit-status
+   ```
+
+   `.github/workflows/release-tag.yml` accepts only the stable owner actor ID on
+   `refs/heads/main`. It requires the workspace and changelog version to match,
+   imports the protected key into an ephemeral keyring, compares its public
+   armor with the committed and GitHub-enrolled key, creates the tag through
+   `scripts/sign_release_tag.py`, verifies the exact signature and commit, then
+   pushes the immutable tag. The `release-signing` environment is the approval
+   boundary for this operation.
 
 4. Require immutable releases to remain enabled for `santhreal/keyhog`. The
    repository setting was enabled through GitHub's owner-only immutable

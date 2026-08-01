@@ -12,6 +12,7 @@ when benchmark hardware, signing keys, or build caches live elsewhere.
 | Validate on the benchmark and signing host | Add `--ssh USER@HOST --remote-dir /absolute/keyhog/path`. Neither checkout changes. |
 | Publish from the current host | Add `--publish`. The command may create generated evidence and release commits, then update `main`, the signed tag, and downstream publication. |
 | Publish on the prepared SSH host | Add `--ssh USER@HOST --remote-dir /absolute/keyhog/path --publish`. The remote checkout and public release surfaces may change. The local checkout stays unchanged. |
+| Create the signed tag in GitHub Actions | Run `gh workflow run release-tag.yml --ref main -f version="$NEXT_VERSION"`. The protected workflow signs the exact prepared `main` commit without local pinentry. |
 | Continue an interrupted publication | Add `--publish --resume` to the same local or SSH command. Only incomplete phases run. Existing tags are verified and never replaced. |
 | Diagnose one lower-level phase | Run the commands under [Run individual preparation commands](#run-individual-preparation-commands). The named local phase may change. Do not use lower-level commands as the publication path. |
 
@@ -97,7 +98,9 @@ Prepare the remote host before you publish. It needs:
 - the benchmark corpora and required competitor binaries
 - Rust, Python, mdBook, Hyperscan, GPU dependencies, `gh`, and GPG
 - the authorized GitHub account with stable actor ID `64453045`
-- the authorized OpenPGP release secret key configured as `user.signingkey`
+- either the authorized OpenPGP release secret key in the host keyring, or the
+  dedicated `/credentials/keyhog-release-gnupg` keyring and owner-only
+  `/credentials/keyhog-release-gpg-passphrase` file
 - the persistent Cargo target directory used by the host
 
 The crates.io token remains in GitHub Actions. The local or SSH host never needs
@@ -173,9 +176,15 @@ release publication.
 
 The script pushes `main`, creates one annotated OpenPGP-signed tag, verifies the
 signature against the configured primary-key fingerprint, and only then pushes
-that exact tag. Resume applies the same signature and fingerprint check to an
-existing local or remote tag. An unsigned tag, a valid signature from another
-key, or a lightweight tag fails closed.
+that exact tag. When the dedicated keyring and owner-only passphrase file exist
+under `/credentials`, the script signs noninteractively through
+`scripts/sign_release_tag.py`. It does not place the passphrase in an argument,
+log, repository file, or process output. A host without those credentials uses
+the configured GPG pinentry path.
+
+Resume applies the same signature and fingerprint check to an existing local or
+remote tag. An unsigned tag, a valid signature from another key, a lightweight
+tag, or a tag at another commit fails closed.
 
 A star-history commit that races the push is rebased only when the remote change
 touches `metrics/stars.json` or `metrics/stars.svg`. Any other remote change
@@ -187,6 +196,33 @@ platform assets, signs payloads, generates SBOMs and attestations, publishes the
 container, exercises the installed product, publishes the GitHub release, calls
 the serial crates.io publisher, and moves the floating Action major tag only
 after publication succeeds.
+
+#### Sign with the protected GitHub workflow
+
+You can create the same signed tag without access to the local desktop:
+
+```sh
+gh workflow run release-tag.yml --ref main -f version="$NEXT_VERSION"
+gh run watch --exit-status
+```
+
+The `release-signing` environment protects this manual operation. The workflow
+accepts only the repository owner actor on `refs/heads/main`. It requires the
+input version, workspace version, and changelog version to match. It also
+requires the dispatch commit to equal `origin/main` and rejects an existing
+local or remote tag.
+
+The workflow imports `KEYHOG_RELEASE_GPG_PRIVATE_KEY` into an ephemeral keyring
+and unlocks it from `KEYHOG_RELEASE_GPG_PASSPHRASE`. It compares the exported
+public key with `.github/release-signing-key.asc` and the key enrolled on the
+`santhreal` GitHub account. It then calls the same
+`scripts/sign_release_tag.py` helper, verifies the exact signed tag and commit,
+pushes that tag, and removes the ephemeral keyring.
+
+Set `KEYHOG_RELEASE_SIGNING_FINGERPRINT` as a repository variable. Store the
+private key and passphrase as repository or `release-signing` environment
+secrets. A missing secret, mismatched key, wrong actor, wrong ref, dirty
+checkout, or stale version stops before tag creation.
 
 ### 5. Watch every publication lane
 

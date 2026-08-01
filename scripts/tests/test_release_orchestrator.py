@@ -138,6 +138,14 @@ class IdentityRunner:
         capture: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         self.commands.append(args)
+        if args and args[0] == "gpg":
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                "sec:u:4096:1:ABCDEF1234567890:0:0::::::scESC:::+:::23::0:\n"
+                "fpr:::::::::0123456789ABCDEF0123456789ABCDEF01234567:\n",
+                "",
+            )
         if args[:3] == ["git", "config", "--get"]:
             return subprocess.CompletedProcess(args, 1, "", "")
         return subprocess.CompletedProcess(args, 0, "", "")
@@ -148,11 +156,6 @@ class IdentityRunner:
             return self.actor_id
         if args == ["git", "config", "--get", "user.signingkey"]:
             return "ABCDEF1234567890"
-        if args and args[0] == "gpg":
-            return (
-                "sec:u:4096:1:ABCDEF1234567890:0:0::::::scESC:::+:::23::0:\n"
-                "fpr:::::::::0123456789ABCDEF0123456789ABCDEF01234567:\n"
-            )
         raise AssertionError(f"unexpected output command: {args}")
 
 class SignatureRunner:
@@ -338,14 +341,26 @@ class ReleasePlanContractTests(unittest.TestCase):
     def test_missing_primary_fingerprint_fails_before_tag_operations(self) -> None:
         """A secret-key listing without a primary fingerprint must not authorize signing."""
         runner = IdentityRunner()
-        original_output = runner.output
+        original_run = runner.run
 
-        def output(args: list[str]) -> str:
+        def run(
+            args: list[str],
+            *,
+            env: dict[str, str] | None = None,
+            check: bool = True,
+            capture: bool = False,
+        ) -> subprocess.CompletedProcess[str]:
             if args and args[0] == "gpg":
-                return "sec:u:4096:1:ABCDEF1234567890:0:0::::::scESC:::+:::23::0:\n"
-            return original_output(args)
+                runner.commands.append(args)
+                return subprocess.CompletedProcess(
+                    args,
+                    0,
+                    "sec:u:4096:1:ABCDEF1234567890:0:0::::::scESC:::+:::23::0:\n",
+                    "",
+                )
+            return original_run(args, env=env, check=check, capture=capture)
 
-        runner.output = output  # type: ignore[method-assign]
+        runner.run = run  # type: ignore[method-assign]
         with self.assertRaisesRegex(release.ReleaseError, "no usable OpenPGP"):
             release.require_publication_identity(runner)
 

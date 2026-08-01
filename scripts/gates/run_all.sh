@@ -151,6 +151,8 @@ run "Release preparation tests: fragments produce one coherent version transacti
   python3 -B -m unittest scripts.tests.test_prepare_release -v
 run "Unified release tests: local, SSH, staging, signing, and resume boundaries" \
   python3 -B -m unittest scripts.tests.test_release_orchestrator -v
+run "Signed release tag tests: protected key, exact commit, and immutable ref" \
+  python3 -B -m unittest scripts.tests.test_sign_release_tag -v
 run "Documentation truth tests: measured versions remain bound to evidence" \
   python3 -B -m unittest scripts.tests.test_docs_truth -v
 run "Crate changelog gate: every publishable crate has release notes" \
